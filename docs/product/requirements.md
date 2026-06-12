@@ -23,6 +23,8 @@
 
 > **v0.3 change note (2026-06-12):** Folded in two founder decisions (Decisions A and B). Added LD-8 (unified DSP action-space model + governing principle + phase). Reframed FR-NLT-02 output target as an explicit DSP action vector. Reframed FR-NLT-10 as a point on the directness spectrum (band approximation is the shippable baseline). Added FR-NLT-12 (abstract/aesthetic descriptors as first-class inputs). Expanded §3.9.1 phrase-mapping table with aesthetic/emotional descriptor rows and added a unified action-space lead-in paragraph. Updated Adaptivity Signal Decision Matrix NLT rows to governing-principle framing. Resolved OQ-12 (band approximation baseline; source separation optional later) and OQ-15a (governing-principle takes precedence); recorded recommended defaults for OQ-15b and OQ-15c as pending confirmation. OQ-11 remains deferred.
 
+> **v0.4 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/architecture/prior-art.md`. (A) FR-SYS group: added FR-SYS-07 (process-tap primary path) and FR-SYS-08 (TCC permission for tap); reframed FR-SYS-01..06 as the FALLBACK (driver) path; updated Journey 2.6 to tap-primary + driver-fallback flows; updated NFR-INSTALL-01/02/03/04 and CON-05/07 for tap vs. driver paths; added CON-10 (tap requires macOS 14.2+/14.4+ — verify); updated OQ-07 note. (B) FR-SPAT-01/02: clarified HRTF rendering as custom SOFA-HRIR partitioned convolution (libmysofa + FFTConvolver); noted Apple PHASE/AVAudioEnvironmentNode HRTFs are non-replaceable; updated DEP-06 and ASM-04. (C) FR-ADAPT / LD-5 note: added clarification that real-time ML inference uses BNNS Graph (RT-safe); Core ML / SoundAnalysis are off-RT pre-analysis only. (D) FR-TONAL-04: added mono-summed low-band constraint (patent avoidance — Waves US-11,102,577 active); added CON-11 (patent constraint); added OQ-16 (IP review spike). (E) DEP and CON: replaced vague data deps with concrete licensed picks (SADIE II Apache-2.0, libmysofa BSD-3, libebur128 MIT, AutoEq MIT, FFTConvolver MIT, libASPL MIT, Demucs+MLX MIT); added CON-12 (permissive-only shipping rule); added OQ-17 (libbs2b license dispute). Resolved OQ-04 (SADIE II default, IRCAM avoided) and OQ-08 (AutoEq MIT computed curves). OQ-11 (Conversational Tuning architecture) remains deferred.
+
 ---
 
 ## 0. Locked Decisions (as of 2026-06-12)
@@ -40,6 +42,7 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 | LD-7 | HRTF + hearing profile | **Generic HRTF** + calibration positioned strictly as a **"listening preference" tool, not a medical device** (resolves OQ-04 direction + OQ-05). Custom HRTF measurement deferred. |
 | LD-8 | Conversational Tuning — unified DSP action-space, governing principle, and phase | (a) **In scope at Phase 1 launch** as a supporting/discovery feature. (b) **Governing principle:** a confirmed user natural-language instruction is a governing principle that the Adaptivity Engine adapts *around*, never against. Automatic adaptation (volume, content, ambient noise) is subordinate to the user's stated intent for the targeted aspect for the remainder of the session, or until the user explicitly undoes the change. Session-scoped by default; the user must explicitly tap [Yes, keep it] to persist beyond the session (mirrors FR-NLT-06 persistence model). (c) **Unified DSP action-space:** every natural-language utterance — whether naming a frequency ("bass too low"), an instrument ("can't hear guitar"), or an aesthetic/emotional quality ("sounds boring / bland") — resolves to the same fundamental output: a **DSP action vector** comprising per-band gain changes across the frequency spectrum, plus optional dynamics (compression/transient) adjustments and spatial (width/crossfeed) moves. There is one shared action-space; phrases differ only in how directly they map onto it. (d) **Directness spectrum:** Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation of where that source dominates) | Abstract (aesthetic/emotional descriptors → combination of spectral, dynamic, and/or spatial moves). (e) **Band approximation is the baseline and is shippable at Phase 1.** ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement for instrument-named requests, deferred to a later phase — it is NOT a prerequisite and NOT on the critical path (resolves OQ-12). (f) **Aesthetic/emotional descriptors are first-class inputs** handled by the same action-space model; see FR-NLT-12 and §3.9.1 (resolves OQ-15a via governing-principle framing). |
 | LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. |
+| LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic, hearing profile) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
 
 ---
 
@@ -259,42 +262,77 @@ Step 6 — Mic Permission Denied Fallback
 
 ---
 
-### Journey 2.6 — Phase 2: Installing and Selecting the Virtual Audio Device
+### Journey 2.6 — Phase 2: Enabling System-Wide Enhancement
 
-**Actor:** User who has installed the Phase 2 system-wide enhancement (free, no paywall — LD-9).  
+**Actor:** User who wants to enable the Phase 2 system-wide enhancement (free, no paywall — LD-9).  
 **Goal:** All system audio (Spotify, Apple Music, YouTube, etc.) routed through the DSP engine.
 
+> **Architecture note (prior-art ADR-002, Proposed — see `docs/architecture/prior-art.md`):** The primary mechanism for macOS 14.2/14.4+ is a **Core Audio process tap** (no driver, no admin password, no coreaudiod restart). The AudioServerPlugIn virtual device (FALLBACK PATH) is used when the tap path is unavailable (macOS < 14.2) or when the user specifically wants a persistent, selectable output device. Both paths are described below; the app selects the primary path automatically.
+
 ```
-Step 1 — Pre-Install Notice
-  App presents a clear, plain-language explanation:
-    "To enhance all apps, we install a virtual audio device. This requires your Mac
-     administrator password and briefly interrupts all system audio for ~2 seconds."
+─── PRIMARY PATH: Core Audio Process Tap (macOS 14.2+) ─────────────────────────
+
+Step 1 — Permission Request (TCC consent only)
+  App detects macOS 14.2+ (or 14.4+ — verify minimum in AudioHardwareTapping.h headers;
+  see CON-10 / OQ-07).
+  App presents a plain-language explanation:
+    "To enhance all apps, Adaptive Sound needs permission to capture audio output.
+     You'll see a one-time macOS permission dialog. No admin password needed."
+  User acknowledges with [Enable System Enhancement] or [Not Now].
+  macOS presents the standard audio-capture TCC consent dialog
+  (NSAudioCaptureUsageDescription; purple mic-like indicator while tap is active).
+
+Step 2 — Tap Activation (no install, no restart)
+  App creates a CATapDescription for global output, creates an AudioHardwareTap,
+  and constructs a private aggregate device that reads the tap and mutes the original
+  output device. All audio now flows: [any app] → tap capture → DSP engine → physical
+  output device.
+  No HAL plug-in installed. No coreaudiod restart. No audio interruption.
+
+Step 3 — Physical Output Selection
+  App confirms or lets the user select the physical output device for processed audio
+  (defaults to the current system default output).
+
+Step 4 — Verification
+  App plays a brief internal test tone through the chain.
+  User confirms they can hear it; setup wizard closes.
+  App enters menu-bar mode (always-on background processing).
+  Purple audio-capture indicator visible in menu bar while tap is active.
+
+Step 5 — Disable / Revoke
+  User navigates to Settings → System Enhancement → Disable, or revokes audio-capture
+  permission in System Settings → Privacy & Security → Microphone (or equivalent).
+  App stops the tap; original output device is unmuted automatically.
+  No residual audio routing or installed files left behind.
+
+─── FALLBACK PATH: AudioServerPlugIn Virtual Device (macOS < 14.2 or user preference) ──
+
+Step 1 — Pre-Install Notice (driver path)
+  App presents a plain-language explanation:
+    "To enhance all apps on this macOS version, we install a virtual audio device.
+     This requires your administrator password and briefly interrupts system audio (~2 s)."
   User acknowledges with [Install System Enhancer] or [Not Now].
 
 Step 2 — Privileged Installer
-  A signed, notarised privileged helper (SMJobBless / ServiceManagement framework) is invoked.
+  A signed, notarised privileged helper (SMAppService / ServiceManagement framework)
+  is invoked.
   Helper copies the AudioServerPlugIn bundle to /Library/Audio/Plug-Ins/HAL/.
-  Helper restarts coreaudiod (sudo killall coreaudiod).
+  Helper restarts coreaudiod.
   Audio interruption is expected; app shows a "Restarting audio system…" overlay.
 
 Step 3 — Virtual Device Activation
   coreaudiod loads the new plug-in.
   App detects the virtual device appears in the device list.
-  App instructs the user (or does it automatically with permission) to set the virtual device
-  as the macOS System Output in System Settings → Sound.
-  [Open Question OQ-01: Should the app auto-switch the default output via property API,
-   or require manual selection by the user? Auto-switching is possible but may feel invasive.]
+  App instructs the user (or does so automatically with permission) to set the virtual
+  device as the macOS System Output in System Settings → Sound.
+  [Open Question OQ-01: auto-switch vs. manual selection — see §7.]
 
 Step 4 — Physical Output Selection
-  Within the app, user selects the real physical output device the virtual device should
-  forward processed audio to (e.g., AirPods Pro, Built-in Speakers).
-  App configures its DSP engine to read from the virtual device and write to the selected
-  physical device.
+  Within the app, user selects the real physical output device.
+  App configures the DSP engine to read from the virtual device and write to the
+  selected physical device.
 
-Step 5 — Verification
-  App plays a brief internal test tone through the chain.
-  User confirms they can hear it; setup wizard closes.
-  App enters system-tray / menu bar mode (always-on background processing).
+Step 5 — Verification (same as tap path Step 4 above)
 
 Step 6 — Uninstall Path
   User navigates to Settings → System Enhancer → Remove.
@@ -303,7 +341,7 @@ Step 6 — Uninstall Path
   No residual audio routing left behind.
 ```
 
-**Success Condition:** After Phase 2 setup, music from Spotify playing through the virtual device sounds measurably different (with enhancement active) vs. enhancement disabled, with no additional audio latency perceptible to the user (< 10 ms round-trip added).
+**Success Condition:** After Phase 2 setup (either path), music from Spotify sounds measurably different (enhancement active vs. disabled) with no additional audio latency perceptible to the user (< 10 ms round-trip added, per NFR-PERF-05). On the tap path, no admin password was required and no files were installed.
 
 ---
 
@@ -458,18 +496,18 @@ The app should detect and surface unsupported file formats with a clear error ra
 ### 3.2 Spatialization (FR-SPAT)
 
 **FR-SPAT-01** — Binaural HRTF Rendering for Headphones (P1)  
-When a headphone output is detected, the app shall apply HRTF-based binaural processing to produce an out-of-head, spatialised soundstage.
+When a headphone output is detected, the app shall apply HRTF-based binaural processing to produce an out-of-head, spatialised soundstage. HRTF rendering shall be implemented as **our own SOFA-HRIR partitioned convolution** using the **libmysofa** loader (BSD-3) and **vDSP / FFTConvolver** (MIT) as the convolution engine. The default dataset shall be **SADIE II (Apache-2.0)**. Apple's PHASE, AVAudioEnvironmentNode (HRTF/HRTFHQ), and AUSpatialMixer are explicitly **not** used for HRTF rendering because they apply fixed, non-replaceable Apple HRTFs with no API for loading a SOFA dataset (see `docs/architecture/prior-art.md`).
 
 > Given a stereo track is playing and a headphone device is active,  
 > When HRTF mode is enabled (default for headphones),  
-> Then the audio output includes binaural cues such that a naive listener ABX test shows audible spatial difference vs. bypass at a statistically significant rate.
+> Then the audio output includes binaural cues produced by the custom SOFA-HRIR convolution engine such that a naive listener ABX test shows audible spatial difference vs. bypass at a statistically significant rate.
 
 **FR-SPAT-02** — HRTF Profile Selection (P2)  
-The app shall provide at least 3 selectable HRTF profiles (e.g., generic, small-head, large-head) and indicate which is recommended given the user's hearing calibration data.
+The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA dataset library (e.g., SADIE II subjects offering generic, small-head, and large-head approximations) and indicate which is recommended given the user's hearing calibration data. Profile selection loads a different SOFA HRIR set; it does not switch to a platform-provided spatialization API.
 
 > Given the hearing calibration is complete,  
 > When the HRTF profile selector is opened,  
-> Then the app highlights a recommended profile based on measured ear characteristics and the active HRTF renders immediately on selection without requiring restart.
+> Then the app highlights a recommended profile based on measured ear characteristics and the active HRTF (loaded from the SOFA dataset) renders immediately on selection without requiring restart.
 
 **FR-SPAT-03** — Crossfeed for Headphones (P1)  
 The app shall apply adjustable crossfeed processing to reduce unnatural extreme stereo panning on headphones.
@@ -479,7 +517,7 @@ The app shall apply adjustable crossfeed processing to reduce unnatural extreme 
 > Then channel separation is measurably reduced (verifiable via FFT analysis) without perceived image collapse.
 
 **FR-SPAT-04** — Head-Tracked Soundstage via AirPods Motion (P2)  
-When AirPods (3rd gen or later, AirPods Pro 1/2, AirPods Max) are the active output, the app shall use CoreMotion head-tracking data to stabilise the virtual soundstage relative to a fixed world reference.
+When AirPods (3rd gen or later, AirPods Pro 1/2, AirPods Max) are the active output, the app shall use **CMHeadphoneMotionManager** (macOS 14+) head-tracking data to stabilise the virtual soundstage relative to a fixed world reference.
 
 > Given AirPods Pro are active, head-tracking is enabled, and the user rotates their head 30 degrees,  
 > When head-tracking data is received (via CoreMotion / AirPods motion API),  
@@ -532,11 +570,15 @@ The app shall continuously measure playback volume and adjust bass and treble ga
 > Then bass (80–200 Hz) gain increases by approximately 6–10 dB (per ISO 226 curves) and high-frequency (8–12 kHz) gain increases by approximately 3–5 dB, applied within one DSP processing block.
 
 **FR-TONAL-04** — Psychoacoustic Bass Enhancement (P1)  
-The app shall apply harmonic excitation to bass frequencies to enhance perceived bass weight on small speakers and headphones that cannot reproduce low fundamentals.
+The app shall apply harmonic excitation to bass frequencies to enhance perceived bass weight on small speakers and headphones that cannot reproduce low fundamentals. Bass harmonics shall be generated from a **mono-summed (L+R) low band** — per-channel (stereo) harmonic generation is explicitly prohibited to avoid infringement of Waves patent US-11,102,577 (active, ~2038; see CON-11 and OQ-16). The implementation shall target the expired MaxxBass approach (US-5,930,373, ~2019 — verify on USPTO before shipping) or a clean-room nonlinear-distortion (NLD) design from the mono low band. Formal IP review is required before any public release (OQ-16).
 
 > Given the active output is built-in MacBook speakers and a bass-heavy track is playing,  
 > When psychoacoustic bass enhancement is enabled,  
-> Then harmonic partials of sub-bass frequencies (below 80 Hz) are generated and audible, without physical speaker over-excursion (no distortion artefacts perceptible on casual listen).
+> Then harmonic partials of sub-bass frequencies (below 80 Hz) are generated from the mono-summed low band and are audible, without physical speaker over-excursion (no distortion artefacts perceptible on casual listen).
+
+> Given the implementation under review,  
+> When the harmonic generation path is inspected,  
+> Then bass harmonics are derived from a mono (L+R) low-band signal, not from per-channel stereo signals independently.
 
 **FR-TONAL-05** — Adaptive Dynamics (P1)  
 The app shall apply a multi-band dynamic range processor (compressor/limiter) that adapts its parameters based on content type, ambient noise level, and listening volume.
@@ -562,6 +604,8 @@ A transparent true-peak limiter shall be the final DSP stage, preventing output 
 ---
 
 ### 3.4 Adaptivity Engine (FR-ADAPT)
+
+> **ML path constraint (prior-art finding, ADR-004 Proposed — see `docs/architecture/prior-art.md`):** Any ML inference that occurs **inside the real-time render callback** (on the audio thread) shall use **BNNS Graph** exclusively — it is RT-safe (no runtime allocation, single-threaded, no locks). **Core ML, SoundAnalysis, and Metal/MPS** are off-RT only: they may be used freely for pre-analysis, background classification, and model training, but never inside the render block. This applies to FR-ADAPT-01 (content/genre classification), LD-5 (Core ML genre model), and any future on-device ML inference. This constraint refines but does not replace LD-5.
 
 **FR-ADAPT-01** — Content / Genre Classification (P1)  
 The app shall analyse the spectral and rhythmic characteristics of the currently playing audio on a non-real-time thread and derive a content classification (minimum: speech, classical, electronic/bass-heavy, acoustic/folk, rock/metal, other).
@@ -765,45 +809,75 @@ The UI shall provide subtle, non-intrusive visual feedback whenever the adaptivi
 
 ### 3.8 Phase 2 — System-Wide Enhancement (FR-SYS)
 
-**FR-SYS-01** — AudioServerPlugIn Virtual Device (P1 for Phase 2)  
-The app shall ship a signed, notarised AudioServerPlugIn that appears as a selectable output device in macOS System Settings → Sound. The virtual device shall accept PCM audio from any app and pass it to the DSP engine.
+> **Architecture note:** Requirements FR-SYS-07 and FR-SYS-08 cover the **PRIMARY PATH** (Core Audio process tap, macOS 14.2+/14.4+, no driver). Requirements FR-SYS-01 through FR-SYS-06 cover the **FALLBACK PATH** (AudioServerPlugIn virtual device, for macOS < 14.2 or where a persistent selectable output device is required). The app shall use the tap path by default when the OS version permits; the driver path is only invoked when the tap path is unavailable or explicitly chosen. See `docs/architecture/prior-art.md` (ADR-002, Proposed) and Journey 2.6.
 
-> Given the AudioServerPlugIn is installed,  
+---
+
+#### PRIMARY PATH — Core Audio Process Tap (macOS 14.2+)
+
+**FR-SYS-07** — Process-Tap System Audio Capture (P1 for Phase 2, primary path)  
+On macOS 14.2 or later (exact floor to be confirmed in `<CoreAudio/AudioHardwareTapping.h>` — see CON-10 / OQ-07), the app shall capture all system audio output via a `CATapDescription` + `AudioHardwareCreateProcessTap` (or equivalent SDK entry point) combined with a private aggregate device that mutes the original output. The captured audio shall be processed through the DSP engine and replayed to the physical output device. No HAL plug-in shall be installed, no privileged helper shall be used, and coreaudiod shall not be restarted.
+
+> Given the user is on macOS 14.2+ and grants audio-capture TCC permission (NSAudioCaptureUsageDescription),  
+> When the tap is activated,  
+> Then audio from any playing application is captured, processed through the DSP chain, and played on the physical output device; no admin password was required and no files were installed in /Library.
+
+> Given the process tap is active,  
+> When the companion app is quit or the user revokes audio-capture permission,  
+> Then the tap is stopped and the original output device is unmuted automatically; audio returns to normal within 500 ms with no residual routing or installed artefacts.
+
+**FR-SYS-08** — TCC Audio-Capture Permission (P1 for Phase 2, primary path)  
+The app shall declare `NSAudioCaptureUsageDescription` in its Info.plist with a plain-language explanation of purpose. The purple audio-capture indicator shall be visible to the user whenever the tap is active. The app shall handle TCC denial gracefully by falling back to the driver path (if available) or displaying a clear explanation of the limitation.
+
+> Given the user denies the audio-capture TCC permission,  
+> When the app attempts to activate the tap path,  
+> Then the tap is not created; the app informs the user, offers to use the driver-based fallback path if the OS supports it, and does not crash or enter an inconsistent state.
+
+---
+
+#### FALLBACK PATH — AudioServerPlugIn Virtual Device (macOS < 14.2 or user preference)
+
+> The following requirements FR-SYS-01 through FR-SYS-06 apply to the **driver fallback path only**. They remain valid requirements for that path and are not deleted; they are reframed here to make the architecture hierarchy clear.
+
+**FR-SYS-01** — AudioServerPlugIn Virtual Device (P1 for Phase 2, fallback path)  
+When the process-tap primary path is unavailable (macOS < 14.2 or tap denied), the app shall ship a signed, notarised AudioServerPlugIn that appears as a selectable output device in macOS System Settings → Sound. The virtual device shall accept PCM audio from any app and pass it to the DSP engine.
+
+> Given the AudioServerPlugIn is installed (fallback path),  
 > When the user selects it as the system output in System Settings,  
 > Then audio from any playing application is routed through the DSP chain and heard on the physical output device.
 
-**FR-SYS-02** — Privileged Installer with Minimal Footprint (P1 for Phase 2)  
-Installation of the HAL plug-in shall use a signed privileged helper via ServiceManagement. The helper shall do no more than: copy the bundle to /Library/Audio/Plug-Ins/HAL/ and restart coreaudiod.
+**FR-SYS-02** — Privileged Installer with Minimal Footprint (P1 for Phase 2, fallback path)  
+Installation of the HAL plug-in shall use a signed privileged helper via ServiceManagement (SMAppService). The helper shall do no more than: copy the bundle to /Library/Audio/Plug-Ins/HAL/ and restart coreaudiod.
 
-> Given the user initiates installation,  
+> Given the user initiates installation (fallback path),  
 > When the privileged helper runs,  
 > Then only the plug-in bundle is written to the HAL directory and coreaudiod is restarted; no other system files are modified (verifiable by fs_usage).
 
-**FR-SYS-03** — Safe Uninstall and Fallback (P1 for Phase 2)  
+**FR-SYS-03** — Safe Uninstall and Fallback (P1 for Phase 2, fallback path)  
 The app shall provide a one-click uninstall that removes the HAL plug-in, restarts coreaudiod, and restores system output to built-in speakers (or previous device). No manual system repair shall be required.
 
-> Given the Phase 2 enhancer is installed and active,  
+> Given the Phase 2 driver enhancer is installed and active (fallback path),  
 > When the user clicks Uninstall,  
 > Then the plug-in is removed, coreaudiod restarts, and the system output is set to built-in speakers within 10 seconds, leaving no orphaned audio devices in the system.
 
-**FR-SYS-04** — Crash-Safe Audio Passthrough (P1 for Phase 2)  
+**FR-SYS-04** — Crash-Safe Audio Passthrough (P1 for Phase 2, fallback path)  
 If the companion app crashes or is force-quit while the virtual device is active, the virtual device shall silently pass audio through unprocessed (bypass mode) rather than causing a system audio outage.
 
-> Given the companion app is killed via Activity Monitor while Spotify plays through the virtual device,  
+> Given the companion app is killed via Activity Monitor while Spotify plays through the virtual device (fallback path),  
 > When the app process terminates,  
 > Then Spotify audio continues to play (unprocessed) within 200 ms; no system-level audio dropout occurs.
 
-**FR-SYS-05** — IPC Between Plug-In and Companion App (P1 for Phase 2)  
+**FR-SYS-05** — IPC Between Plug-In and Companion App (P1 for Phase 2, fallback path)  
 Parameter updates from the companion app to the AudioServerPlugIn shall use Mach IPC (registered under the AudioServerPlugIn_MachServices Info.plist key). No other IPC mechanism (file, socket, memory-mapped file) shall be used on the hot audio path.
 
-> Given the companion app changes the active EQ profile,  
+> Given the companion app changes the active EQ profile (fallback path),  
 > When the message is sent via the Mach port,  
 > Then the plug-in receives and applies the update within the next audio render cycle.
 
-**FR-SYS-06** — Zero Objective-C in Plug-In (P1 for Phase 2)  
+**FR-SYS-06** — Zero Objective-C in Plug-In (P1 for Phase 2, fallback path)  
 The AudioServerPlugIn bundle shall be implemented in pure C/C++ with no Objective-C runtime calls, in compliance with AudioServerPlugIn sandbox restrictions.
 
-> Given the plug-in bundle is compiled,  
+> Given the plug-in bundle is compiled (fallback path),  
 > When inspected with otool -L,  
 > Then no libobjc or Foundation dependency is linked.
 
@@ -1025,26 +1099,26 @@ Total processing time per render callback on the audio thread shall not exceed 5
 > When audio plays for 60 continuous minutes,  
 > Then average audio thread CPU usage is ≤ 50% of the period and no buffer under-runs occur (no XRuns reported by coreaudiod).
 
-**NFR-PERF-02** — Overall CPU Usage (P1)  
-Total CPU usage (audio thread + UI + adaptivity engine) shall not exceed 15% of one CPU core on an Apple M1 or later at default settings during continuous playback.
+**NFR-PERF-02** — Compute Usage: Quality-First (P1) *(revised per LD-10)*  
+Compute is not a primary constraint — spend available compute on quality, and prefer hardware-accelerated, platform-native paths: Accelerate (vDSP/vForce/BNNS), Core ML on the Neural Engine, Metal/MPS on the GPU, and multi-core parallelism (including macOS **Audio Workgroups** for any real-time helper threads). There is no fixed CPU-percentage cap. Hard limits: (a) the real-time per-buffer deadline (NFR-PERF-01) is never missed; (b) sustained load stays within reasonable battery/thermal bounds, for which an optional efficiency profile may reduce quality.
 
-> Given the app plays a 44.1 kHz stereo file with all Phase 1 DSP active (EQ, HRTF, dynamics, ambient sensing) on an M1 MacBook Air,  
-> When measured over 10 minutes via Activity Monitor,  
-> Then total CPU is ≤ 15% of one core (averaged).
+> Given all DSP active at the max-quality profile on Apple Silicon,  
+> When audio plays continuously,  
+> Then there are zero audio-thread overruns (NFR-PERF-01 holds), regardless of average CPU/GPU/ANE utilisation.
 
-**NFR-PERF-03** — Memory Footprint (P1)  
-The app's resident memory shall not exceed 200 MB under normal operating conditions. All audio buffers shall be pre-allocated at session start; no heap allocation shall occur on the audio thread.
+**NFR-PERF-03** — Memory & Storage: Quality-First (P1) *(revised per LD-10)*  
+RAM and SSD are not primary constraints — use memory and disk generously for quality: cached full-track pre-analysis, decoded look-ahead buffers, impulse responses, FFT plans, lookup tables, and precomputed filters (cached to fast SSD across sessions). There is no fixed resident-memory cap. Two rules still hold: (a) all real-time buffers are pre-allocated at session start; (b) **no heap allocation occurs on the audio thread** (CON-01).
 
-> Given the app is running with one track queued and all DSP active,  
-> When memory is inspected via Instruments Allocations template,  
-> Then resident size is ≤ 200 MB and zero allocations occur in the render callback.
+> Given all DSP and full-track pre-analysis are active,  
+> When memory is inspected via Instruments Allocations,  
+> Then zero allocations occur in the render callback; resident/disk-cache size is bounded by cache policy, not a fixed cap.
 
-**NFR-PERF-04** — Content Analysis Latency (P1)  
-Content/genre classification shall complete within 5 seconds of a track starting and shall not consume more than 10% of one CPU core.
+**NFR-PERF-04** — Content Analysis: Parallel Look-Ahead Pre-Analysis (P1) *(revised per LD-10)*  
+Content/genre and signal analysis runs off the real-time thread, may be parallelised across cores / GPU / Neural Engine, and in the own-player may pre-scan ahead of the playhead (up to the full track), caching results to RAM/SSD. No CPU-percentage cap applies to this non-RT work. A usable classification shall be available no later than 5 s into playback, and ideally before playback from pre-analysis.
 
-> Given a new track starts,  
-> When 5 seconds of audio have passed,  
-> Then the content classifier has produced a genre classification and communicated it to the adaptivity engine.
+> Given a new track starts (or is pre-scanned before playback),  
+> When analysis completes,  
+> Then a content classification is available to the adaptivity engine at or before 5 s of playback, without affecting the real-time render deadline.
 
 **NFR-PERF-05** — End-to-End Added Latency (Phase 2) (P1)  
 In Phase 2 virtual device mode, the total additional round-trip latency introduced by the DSP pipeline (reading from virtual device, processing, writing to physical device) shall be ≤ 10 ms.
@@ -1126,20 +1200,20 @@ No combination of user actions (rapid profile switching, device hotplug, simulta
 ### 4.5 Installation, Uninstall, and Safe Fallback (NFR-INSTALL)
 
 **NFR-INSTALL-01** — Standard App Install (P1)  
-Phase 1 app installation shall follow standard macOS drag-to-Applications convention. No kernel extensions, no privileged installers, no sudo required.
+Phase 1 app installation shall follow standard macOS drag-to-Applications convention. No kernel extensions, no privileged installers, no sudo required. Phase 2 tap-path activation (FR-SYS-07) also requires no privileged install — only a TCC audio-capture consent dialog (NSAudioCaptureUsageDescription). The requirements below (NFR-INSTALL-02 through NFR-INSTALL-04) apply to the **driver fallback path** (FR-SYS-01..06) only.
 
-**NFR-INSTALL-02** — Phase 2 Privileged Install — User Informed Consent (P1)  
-Before invoking any privileged installer, the app shall display a plain-language explanation of what will be installed, what system change will occur (coreaudiod restart), and how to uninstall. User must click a clearly labelled confirmation.
+**NFR-INSTALL-02** — Phase 2 Privileged Install — User Informed Consent (P1, driver fallback path)  
+Before invoking any privileged installer (driver fallback path only), the app shall display a plain-language explanation of what will be installed, what system change will occur (coreaudiod restart), and how to uninstall. User must click a clearly labelled confirmation.
 
-**NFR-INSTALL-03** — Phase 2 Safe Fallback (P1)  
+**NFR-INSTALL-03** — Phase 2 Safe Fallback (P1, driver fallback path)  
 If the AudioServerPlugIn fails to load after coreaudiod restart (e.g., due to a signing issue or incompatibility), system audio shall automatically fall back to built-in speakers. The app shall detect this failure and guide the user through a recovery or uninstall flow.
 
-> Given the plug-in bundle is corrupt or unsigned,  
+> Given the plug-in bundle is corrupt or unsigned (fallback path),  
 > When coreaudiod restarts,  
 > Then coreaudiod ignores the plug-in, audio falls back to built-in speakers, and the companion app detects the failure within 10 seconds and shows a recovery prompt.
 
 **NFR-INSTALL-04** — Clean Uninstall (P1)  
-Uninstalling the app (Phase 1: delete from Applications; Phase 2: in-app uninstall) shall leave no residual files in /Library/Audio/Plug-Ins/HAL/, /Library/LaunchDaemons/, or application support directories.
+Uninstalling the app (Phase 1 / tap path: delete from Applications or disable tap — no files to remove beyond app bundle; driver fallback path: in-app uninstall) shall leave no residual files in /Library/Audio/Plug-Ins/HAL/, /Library/LaunchDaemons/, or application support directories. For the tap path, "clean uninstall" means: tap stopped, original output unmuted, TCC permission may be revoked by the user independently in System Settings — no additional cleanup required by the app.
 
 ---
 
@@ -1210,8 +1284,8 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | ASM-01 | Target users have macOS 14 (Sonoma) or later. API availability (CoreMotion for AirPods, AudioObjectAddPropertyListenerBlock, AVAudioEngine) assumed on this baseline. | Lower deployment target would restrict head-tracking (AirPods CoreMotion requires macOS 14+) and other APIs. |
 | ASM-02 | The app will be distributed outside the Mac App Store initially (to avoid sandboxing restrictions on AudioServerPlugIn in Phase 2). | App Store distribution would require separate entitlement review for HAL plug-ins; currently not straightforward. |
 | ASM-03 | Developer ID signing and notarization are in place before any Phase 2 beta. | Without notarization, macOS Gatekeeper blocks plug-in load; system audio fails silently. |
-| ASM-04 | HRTF data sets (at minimum one generic public-domain HRTF, e.g., from MIT KEMAR or SADIE II) are licensed for redistribution in open-source software (permissive licence required; project is personal/open-source per LD-9). | Inability to ship HRTF data under a permissive licence would eliminate spatialization features entirely. |
-| ASM-05 | Device correction EQ curves for common headphone/speaker models are either self-measured, sourced from AutoEQ project data (MIT license), or licensed from a third party. | Without correction curves, headphone EQ is approximate/generic; a differentiating feature weakens significantly. |
+| ASM-04 | **SADIE II (Apache-2.0)** is confirmed as the default shipped HRTF dataset (OQ-04 resolved). Additional datasets KEMAR and CIPIC are also available under permissive/compatible terms. IRCAM Listen is explicitly avoided (unverifiable license). Custom HRTF measurement is deferred per LD-7. | Resolved — SADIE II covers the requirement; no blocking risk. |
+| ASM-05 | Device correction EQ curves are sourced from **AutoEq computed parametric curves (MIT, + attribution)**. Raw measurement databases from upstream measurers are not shipped (may be CC-BY-NC-SA); only AutoEq's derived curves are included. Upstream measurement provenance must be verified per curve before shipping (OQ-08 resolved as AutoEq, but provenance check is ongoing). | Without verified correction curves, headphone EQ is generic; differentiating feature weakens. Provenance verification is a per-model ongoing task. |
 | ASM-06 | The content/genre classifier runs as a lightweight on-device ML model (Core ML) or a signal-processing heuristic, not a cloud inference call. | Cloud inference would violate real-time requirements, add latency, and raise privacy concerns. |
 | ASM-07 | Apple will not revoke or restrict AudioServerPlugIn entitlements for independent developers between now and Phase 2 launch. | Apple has not announced changes, but policy can shift; monitor Apple Developer Forums. |
 | ASM-08 | The AirPods motion data API (CMHeadphoneMotionManager) is accessible from a sandboxed companion app without additional entitlements beyond the standard headphone motion permission. | Additional entitlement requirement would delay feature. |
@@ -1225,11 +1299,14 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | CON-02 | No mutex, lock, or blocking call on the audio thread. All cross-thread communication via lock-free ring buffers (e.g., TPCircularBuffer, CARingBuffer) or std::atomic. | Core Audio real-time constraints. |
 | CON-03 | AudioServerPlugIn must be pure C/C++ — no Objective-C runtime, no Swift, no Foundation. | QA1811; AudioServerPlugIn sandbox restrictions. |
 | CON-04 | AudioServerPlugIn runs inside coreaudiod; IPC with companion app must use registered Mach services (AudioServerPlugIn_MachServices plist key). | QA1811. |
-| CON-05 | macOS provides no direct interception of another app's audio stream. System-wide processing requires the virtual device architecture (Phase 2). | Core Audio architecture; no workaround exists. |
+| CON-05 | macOS provides no direct interception of another app's audio stream via a public "tap all audio" API on macOS < 14.2. On macOS 14.2+, Core Audio process taps (`CATapDescription` + `AudioHardwareCreateProcessTap`) provide this capability without a virtual device. The driver path (AudioServerPlugIn) remains required for macOS < 14.2 or when a persistent selectable output device is needed. | Core Audio architecture; process tap API introduced in macOS 14.2/14.4 (confirm exact floor — see CON-10). |
 | CON-06 | Microphone access is user-grantable/revocable at any time via System Settings → Privacy. The app must handle mid-session revocation gracefully. | macOS privacy framework. |
-| CON-07 | Phase 2 installation requires administrator privileges (for writing to /Library/Audio/Plug-Ins/HAL/ and restarting coreaudiod). This is unavoidable with the AudioServerPlugIn architecture. | macOS file system permissions. |
-| CON-08 | Distribution of the HAL plug-in requires Developer ID Application + Developer ID Installer certificates and a passing notarization ticket. | Apple Gatekeeper policy; macOS 13+ enforces notarization strictly. |
-| CON-09 | AudioDriverKit dext is NOT an alternative for virtual audio devices — Apple does not grant the required entitlements for this use case. Use AudioServerPlugIn only. | WWDC21 session 10190; Apple Developer Forums confirmation. |
+| CON-07 | The driver fallback path (AudioServerPlugIn) requires administrator privileges for writing to /Library/Audio/Plug-Ins/HAL/ and restarting coreaudiod. This is unavoidable with the driver architecture. The tap primary path (macOS 14.2+) requires **no** administrator privileges — only TCC audio-capture consent. | macOS file system permissions / TCC framework. |
+| CON-08 | Distribution of the HAL plug-in (driver fallback path) requires Developer ID Application + Developer ID Installer certificates and a passing notarization ticket. | Apple Gatekeeper policy; macOS 13+ enforces notarization strictly. |
+| CON-09 | AudioDriverKit dext is NOT an alternative for virtual audio devices — Apple does not grant the required entitlements for this use case. Use AudioServerPlugIn only (driver path). | WWDC21 session 10190; Apple Developer Forums confirmation. |
+| CON-10 | The Core Audio process tap primary path requires macOS **14.2 or later** (minimum floor; exact version — 14.2 vs. 14.4 — must be confirmed by inspecting `<CoreAudio/AudioHardwareTapping.h>` SDK headers before engineering begins). This constraint interacts with OQ-07 (minimum OS deployment target). | `docs/architecture/prior-art.md` §5 open verifications; SDK headers. |
+| CON-11 | Bass harmonic generation must be derived from a **mono-summed (L+R) low band**. Per-channel (stereo) harmonic generation is prohibited — it falls within Waves patent US-11,102,577 (active, filed 2018, ~2038 expiry). Formal IP review required before public release (see OQ-16). The MaxxBass approach (US-5,930,373) appears expired (~2019) but must be verified on USPTO before reliance. | `docs/architecture/prior-art.md` §6 patent watch. |
+| CON-12 | All third-party code and data shipped in the app (libraries, HRTF datasets, EQ correction curves, ML model weights) must be under **permissive, redistributable licences** (MIT, BSD-2/3, Apache-2.0, Boost, 0BSD, ISC, zlib, public-domain, or equivalent). Copyleft (GPL/AGPL/LGPL) code and NC-licensed weights/data are reference-only and must not be shipped. This constraint implements LD-9 at the dependency level. Approved shipable picks: libmysofa (BSD-3), FFTConvolver (MIT), libebur128 (MIT), libASPL (MIT), SADIE II (Apache-2.0), AutoEq computed curves (MIT — verify upstream measurement provenance per `docs/architecture/prior-art.md` §5), Demucs+MLX (MIT). libbs2b licence is disputed and must be resolved before shipping (see OQ-17). | LD-9; `docs/architecture/prior-art.md` §1–§5. |
 
 ### 6.3 Dependencies
 
@@ -1239,12 +1316,18 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | DEP-02 | Apple Accelerate / vDSP framework (FFT, biquad, convolution) | Platform | Low — stable, highly optimised for Apple Silicon. |
 | DEP-03 | CMHeadphoneMotionManager (CoreMotion) — AirPods head-tracking | Platform | Medium — requires AirPods that support motion; API introduced macOS 14. |
 | DEP-04 | AVAudioEngine (Phase 1 own-player) | Platform | Low — stable, well-documented. |
-| DEP-05 | AudioServerPlugIn API (Phase 2) | Platform | Medium — complex, limited documentation; reference BlackHole / Background Music / libASPL. |
-| DEP-06 | HRTF data set (e.g., SADIE II, MIT KEMAR, or custom) | External data | High if not licensed — must confirm license before Phase 1 spatialization feature. |
-| DEP-07 | Headphone correction EQ data (AutoEQ or custom measurements) | External data | Medium — AutoEQ is MIT licensed; must validate each measurement before shipping. |
-| DEP-08 | ServiceManagement / SMJobBless (Phase 2 privileged helper) | Platform | Medium — Apple deprecated SMJobBless in macOS 13 in favour of SMAppService; evaluate migration path. |
+| DEP-05 | AudioServerPlugIn API (Phase 2, driver fallback path) | Platform | Medium — complex, limited documentation; reference BlackHole / Background Music / libASPL (MIT). |
+| DEP-06 | HRTF datasets: **SADIE II (Apache-2.0)** — primary default; also KEMAR (cite), CIPIC (commercial OK — common NC claim is false), ARI (CC BY-SA — keep data under SA). Loaded via **libmysofa (BSD-3)**. IRCAM Listen is **avoided** (license unverifiable — see `docs/architecture/prior-art.md` §5; SADIE II covers the use case). OQ-04 resolved: SADIE II is the default; custom HRTF measurement deferred per LD-7. | External data + OSS library | Low — SADIE II Apache-2.0 confirmed; libmysofa BSD-3 confirmed. |
+| DEP-07 | Headphone correction EQ curves: **AutoEq computed parametric curves (MIT, + attribution)**. Ship AutoEq's *computed* curves only — do not republish raw measurement databases unchecked (upstream measurers may be CC-BY-NC-SA; verify per `docs/architecture/prior-art.md` §5). OQ-08 resolved: AutoEq MIT computed curves are the source. | External data | Medium — MIT code; upstream measurement provenance requires per-file verification. |
+| DEP-08 | ServiceManagement / **SMAppService** (Phase 2 privileged helper, driver fallback path). SMJobBless is deprecated in macOS 13+; use SMAppService. | Platform | Medium — SMAppService is the current API; evaluate migration path confirmed. |
 | DEP-09 | TPCircularBuffer or CARingBuffer (lock-free ring buffer) | OSS library | Low — well-tested, MIT/BSD licensed. |
-| DEP-10 | Core ML (optional, for content classifier) | Platform | Low — available macOS 12+; fallback to DSP heuristic classifier possible. |
+| DEP-10 | Core ML / SoundAnalysis (off-RT content classification, LD-5 Phase 2 upgrade) | Platform | Low — available macOS 12+; fallback to DSP heuristic classifier possible. Never used on the audio render thread (see BNNS Graph constraint in §3.4). |
+| DEP-11 | **libebur128 (MIT)** — LUFS / true-peak measurement per ITU-R BS.1770 (replaces any bespoke LUFS implementation). | OSS library | Low — MIT confirmed; well-maintained. |
+| DEP-12 | **FFTConvolver (MIT)** — partitioned convolution engine for SOFA HRIR and linear-phase EQ. Confirm `LICENSE` file path in-repo before vendoring (README says MIT; canonical `/LICENSE` path 404'd — see `docs/architecture/prior-art.md` §5). | OSS library | Low risk once file confirmed. |
+| DEP-13 | **libASPL (MIT)** — AudioServerPlugIn framework (driver fallback path). | OSS library | Low — MIT confirmed. |
+| DEP-14 | **Demucs + MLX port (MIT, including weights)** — future offline source-separation feature (LD-8(e), Phase 2+). Offline-only / heavy; not on the audio thread. Confirms LD-8(e) is offline-only. | OSS library + model | Low — MIT confirmed for code and weights. |
+| DEP-15 | **BNNS Graph (Apple Accelerate)** — RT-safe ML inference on the audio thread. Single-threaded, no runtime allocation. | Platform | Low — part of Accelerate framework, stable. |
+| DEP-16 | **libbs2b** (crossfeed) — ⚠️ license disputed (MIT vs. GPL-2.0+; see `docs/architecture/prior-art.md` §5 and OQ-17). Do not ship until licence is confirmed. Algorithm is public; reimplement on biquads if not clearly permissive. | OSS library (disputed) | High until resolved — see OQ-17. |
 
 ---
 
@@ -1257,11 +1340,11 @@ The following items are unresolved and require founder/product-owner decisions b
 | OQ-01 | Phase 2 — Installation | Should the app automatically switch the macOS default output device to the virtual device after install, or instruct the user to do it manually in System Settings? Auto-switching via property API is technically possible but may feel invasive and could conflict with user preference. | Determines onboarding UX complexity and the number of manual steps in Journey 2.6. | Critical |
 | OQ-02 | ~~Monetization / Feature Gating~~ | ✓ **Resolved — removed (LD-9).** The project is personal / open-source and non-commercial. There is no business model, no paid tier, no paywall, and no feature-gating. All features are free. Feature-flag or entitlement-check logic for paid access is not required anywhere in the codebase. | Resolved — no action required. | ✓ Resolved |
 | OQ-03 | Adaptivity Engine — Ambient Sensing | What is the required update cadence and smoothing window for ambient noise estimation? The current draft says "every 2 seconds" with 3-second hysteresis, but an audio engineer must validate whether this produces acceptable latency vs. stability trade-off. | NFR-PERF-04 and FR-ADAPT-04 acceptance criteria cannot be finalised without this specification. | High |
-| OQ-04 | HRTF / Spatialization | Which HRTF data set(s) will ship in Phase 1? Is a custom HRTF measurement flow (using the device camera / earprint) on the product roadmap, or will the app rely on generic + selectable preset HRTFs? Custom measurement is a significant differentiator but also a significant engineering investment. | FR-SPAT-01 and FR-SPAT-02 scope and timeline depend on this decision. | ✓ Resolved (LD-7): generic HRTF; custom measurement deferred |
+| OQ-04 | HRTF / Spatialization | Which HRTF data set(s) will ship in Phase 1? | FR-SPAT-01 and FR-SPAT-02 scope and timeline depend on this decision. | ✓ Resolved (LD-7 + prior-art pass): **SADIE II (Apache-2.0)** is the default dataset; custom HRTF measurement deferred. IRCAM Listen avoided (unverifiable license). Rendering is custom SOFA-HRIR partitioned convolution (libmysofa + FFTConvolver) — Apple PHASE/AVAudioEnvironmentNode HRTFs are non-replaceable. See DEP-06 and FR-SPAT-01. |
 | OQ-05 | Hearing Calibration — Medical/Audiological Standards | Should the hearing calibration claim clinical accuracy (requiring ISO 8253-1 compliance and potentially a medical device regulatory pathway) or be explicitly positioned as a "listening preference" tool for entertainment only? The distinction has significant legal, regulatory, and marketing implications. | Incorrect positioning risks regulatory exposure (FDA, CE marking). Correct positioning shapes all FR-HEAR-* requirements and marketing copy. | ✓ Resolved (LD-7): "listening preference" tool, not a medical device |
 | OQ-06 | Phase 1 Scope — Streaming Sources | Does Phase 1 (own player) include any streaming source integration (Spotify Connect, Apple Music API, YouTube Music)? Or is Phase 1 strictly local file playback only? The question materially affects FR-PLAY-* and the breadth of source support. | A Spotify Connect or MusicKit integration is weeks of additional work; must be scoped before sprint planning. | ✓ Resolved (LD-4): local files only in Phase 1 |
-| OQ-07 | macOS Version — Minimum Deployment Target | The draft assumes macOS 14 for AirPods CoreMotion. Is this acceptable, or does the market require macOS 13 (or 12) support? Lowering the target eliminates head-tracking and may affect other API choices (SMAppService requires macOS 13). | Determines which APIs are available and the Phase 2 privileged helper approach (SMJobBless vs. SMAppService). | Medium |
-| OQ-08 | Device Correction Library — Scope | How many headphone/speaker models will be included in the correction library at launch? Self-measurement requires a reference microphone and controlled environment. Licensing AutoEQ data is faster but may have gaps for newer models. Who owns ongoing library curation? | FR-TONAL-02 cannot be validated without knowing the minimum supported device count. | Medium |
+| OQ-07 | macOS Version — Minimum Deployment Target | The draft assumes macOS 14 for AirPods CoreMotion. Is this acceptable, or does the market require macOS 13 (or 12) support? Lowering the target eliminates head-tracking and may affect other API choices. Additional constraint from prior-art pass: the **process-tap primary Phase 2 path requires macOS 14.2 or later** (CON-10); the exact floor (14.2 vs. 14.4) must be confirmed in `<CoreAudio/AudioHardwareTapping.h>` before Phase 2 engineering begins. If the minimum OS is set below 14.2, the driver fallback path (FR-SYS-01..06) becomes the Phase 2 mechanism for those users. | Determines which APIs are available, whether the tap primary path is viable for the target user base, and the Phase 2 installer approach. | Medium |
+| OQ-08 | Device Correction Library — Scope | How many headphone/speaker models will be included in the correction library at launch? Who owns ongoing library curation? | FR-TONAL-02 cannot be validated without knowing the minimum supported device count. | ✓ Resolved (prior-art pass): **AutoEq computed parametric curves (MIT + attribution)** are the source. Raw measurement databases are not shipped (provenance uncertain). Ongoing per-model provenance verification is required (see DEP-07 and CON-12). Minimum model count and curation owner remain to be confirmed in SPIKE-DEVCORRLIB. |
 | OQ-09 | Content / Genre Classifier — Approach | Will the content classifier be a Core ML model (requires training data, model management, CoreML conversion pipeline) or a DSP heuristic (spectral centroid, BPM estimation, onset detection)? The ML approach is more accurate but has higher cold-start and maintenance cost. | FR-ADAPT-01 acceptance criteria and engineering estimates differ substantially between the two approaches. | ✓ Resolved (LD-5): heuristics in Phase 1, Core ML later |
 | OQ-10 | Telemetry and Crash Reporting | Will the app use a third-party crash reporting SDK (e.g., Sentry, Firebase Crashlytics)? If so, which one, and how does this interact with the App Store privacy label and NFR-PRIV-04? | Data residency, privacy disclosure, and SDK dependency must be confirmed before SDK is integrated. | Medium |
 | OQ-11 *(NLT — DEFERRED ARCHITECTURE)* | Conversational Tuning — Text Interpretation Mechanism | How is user-submitted natural-language text converted into a structured audio intent (direction + aspect + magnitude)? Candidate approaches include: (a) deterministic rule/keyword engine (fast, on-device, no external dependency, limited coverage), (b) on-device small language model (broader coverage, privacy-safe, hardware/model size constraints), (c) cloud LLM API (broadest coverage, adds latency, network dependency, privacy implications, ongoing cost). This decision has cascading implications for privacy disclosure, offline behaviour, latency SLA (FR-NLT-04 target of < 1 500 ms), App Store compliance, and cost model. **This question is explicitly deferred — do not resolve in requirements.** | Affects implementation approach for FR-NLT-01 through FR-NLT-08; privacy policy; NFR-PRIV telemetry posture; offline/airplane-mode behaviour; latency acceptance criteria in FR-NLT-04. Cannot finalise engineering estimates until resolved. | Critical (deferred by design) |
@@ -1269,6 +1352,8 @@ The following items are unresolved and require founder/product-owner decisions b
 | OQ-13 *(NLT)* | Conversational Tuning — Ambiguity and Clarification UX | FR-NLT-08 specifies a maximum of two clarification rounds before the app falls back to directing the user to the EQ panel. The following sub-questions require product decisions: (a) Is a two-round limit correct, or should it be one round (to avoid the interaction feeling tedious)? (b) Should unanswered clarification prompts that time out be treated as "no action" or as "cancel input"? (c) Should the app offer suggested auto-complete phrases as the user types (predictive suggestions), and if so, is this limited to a fixed vocabulary or powered by the same mechanism as intent derivation? | The two-round limit and auto-complete decision affect acceptance criteria for FR-NLT-08 and the UI specification for FR-NLT-01. Auto-complete requires design and — depending on mechanism choice (OQ-11) — additional engineering scope. | Medium |
 | OQ-14 *(NLT)* | Conversational Tuning — Multilingual Support | All phrase examples in §3.9.1 and FR-NLT-* are specified in English. Two decisions are required: (a) Is Conversational Tuning English-only at launch, with multilingual support deferred? (b) If multilingual support is in scope (even future-phase), should the system auto-detect the language of the input, or require the user to set a preferred language? The answer affects the interpretation mechanism (OQ-11), the set of example phrases and vocabulary lists, and NFR-L10N-01 string externalisation scope for dynamic reply strings. | English-only at launch is the lowest-risk position; committing to multilingual support at launch substantially increases scope of the interpretation mechanism and QA effort. If deferred, the UI must be designed to handle future addition without rework. | Medium |
 | OQ-15 *(NLT)* — partially resolved | Conversational Tuning — Reconciliation of Learned Text Preferences with Automatic Adaptation and Hearing Profile | FR-NLT-06 specifies that confirmed text-driven changes are stored as a delta on the active profile. Three reconciliation scenarios: **(a) RESOLVED (LD-8, Decision B — governing principle):** A confirmed NLT instruction is a governing principle. The automatic Adaptivity Engine (volume-based Fletcher-Munson, content/genre curves, ambient-noise adjustments) is subordinate to the user's stated intent for the targeted DSP parameter(s) for the session or until undone. Composition model: automatic adaptation continues to operate on *other* bands not targeted by the NLT instruction; for the targeted band(s), the NLT delta is the floor and the engine does not push changes that would counteract it. Session-scoped by default; persists only on explicit [Yes, keep it] confirmation. **(b) PENDING CONFIRMATION — recommended default:** When the user re-runs hearing calibration (FR-HEAR-01) and the new profile shifts a band that has an existing NLT delta, the NLT delta should be **surfaced for review** rather than silently preserved or discarded. Recommended UX: post-calibration, the app presents a summary of any NLT deltas that conflict with the new hearing profile and asks the user to confirm, adjust, or discard each. This recommendation is pending founder confirmation before being locked into FR-NLT-06 and FR-HEAR-01. **(c) PENDING CONFIRMATION — recommended default:** A per-band accumulated NLT delta cap of **±12 dB** is recommended to prevent runaway drift from repeated one-directional feedback across many sessions. The cap should be surfaced to the user (e.g., "You've reached the maximum bass boost — try the EQ panel for further adjustment") rather than silently clamped. This recommendation is pending founder confirmation before being locked as a hard constraint in the profile-delta storage specification. | (a) resolved; (b) and (c) pending founder confirmation of recommended defaults — not deferred. Engineering must not proceed on profile-delta storage design until (b) and (c) are confirmed. | High |
+| OQ-16 | Patents — Psychoacoustic Bass Enhancement IP Review | CON-11 requires formal IP review before any public release of FR-TONAL-04. Specific items: (a) Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on it. (b) Verify the mono-summed NLD approach is clearly outside Waves US-11,102,577 (active, ~2038). (c) Check whether any Xperi/SRS virtual-bass patents are still active and whether the mono-summed design avoids them. This is a formal legal/IP task, not a technical investigation — requires qualified IP counsel. Engineering may proceed with the mono-summed design; public release is blocked until this review is complete. | Public release of FR-TONAL-04 is blocked without IP review sign-off. Engineering is unblocked (use mono-summed design per CON-11). | High — blocks public release |
+| OQ-17 | libbs2b License Dispute | `docs/architecture/prior-art.md` §5 notes conflicting reports on the libbs2b licence: one source found MIT in source headers; another reported GPL-2.0+. This must be resolved before libbs2b is shipped (CON-12). Action: open the canonical `LICENSE` / source header in the upstream repo. If not clearly MIT, reimplement the Bauer crossfeed algorithm from the public specification (a small number of biquad filters + delay — trivial to reimplement cleanly). FR-SPAT-03 / US-DEVICE-07 are blocked on this resolution. | FR-SPAT-03 (crossfeed) cannot be shipped with libbs2b until confirmed permissive. Reimplementation unblocks the feature if licence is not clear. | Medium — blocks crossfeed shipping |
 
 ---
 
@@ -1327,3 +1412,10 @@ The following items are unresolved and require founder/product-owner decisions b
 | SMJobBless / SMAppService | Apple's ServiceManagement APIs for installing a privileged helper tool. SMJobBless is deprecated in macOS 13 in favour of SMAppService. |
 | dBTP | Decibels relative to True Peak (0 dBTP = digital full scale, accounting for inter-sample peaks). |
 | LUFS | Loudness Units relative to Full Scale. Standard loudness measurement per ITU-R BS.1770 / EBU R128. |
+| Process Tap | A Core Audio mechanism (macOS 14.2+) using `CATapDescription` + `AudioHardwareCreateProcessTap` that captures system audio output without installing a HAL plug-in or requiring administrator privileges. Used as the primary Phase 2 mechanism (FR-SYS-07/08). |
+| SOFA | Spatially Oriented Format for Acoustics. A standardised file format for storing Head-Related Transfer Functions (HRTFs) as measured impulse-response pairs. Loaded by libmysofa (BSD-3). |
+| BNNS Graph | Apple's Accelerate framework API for building and executing neural-network inference graphs on the CPU in a real-time-safe manner (no runtime allocation, single-threaded). The only ML inference mechanism permitted on the audio render thread. |
+| libmysofa | BSD-3-licensed SOFA loader library used to read HRTF datasets (e.g., SADIE II) for the custom binaural convolution engine (FR-SPAT-01). |
+| libebur128 | MIT-licensed C library implementing ITU-R BS.1770 / EBU R128 loudness and true-peak measurement (DEP-11). |
+| SADIE II | Spatially Oriented Format for Acoustics Dataset II. An Apache-2.0-licensed binaural HRTF dataset used as the default SOFA dataset for FR-SPAT-01. |
+| AutoEq | Open-source project providing MIT-licensed *computed* parametric EQ correction profiles for hundreds of headphone models. Used as the source for device correction curves (FR-TONAL-02, DEP-07). Raw upstream measurements are not shipped. |

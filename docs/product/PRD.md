@@ -20,9 +20,10 @@ These were confirmed with the founder and supersede any conflicting text below. 
 | LD-4 | **MVP listening source** | **Local files only** in Phase 0. Spotify/Apple Music enhancement is deferred to Phase 2 (platform reality — own-player cannot access their PCM). | P0-1, P0-15 |
 | LD-5 | **Content-aware brain** | **Phased**: DSP heuristics (FFT/spectral) ship in Phase 0; on-device Core ML genre/mood model layered in during Phase 1. Resolves §7 Decision 4. | P0-2/3, P1-8 |
 | LD-6 | **Ambient mic adaptation** | **On-demand sampling** (user taps "adapt to my environment"; mic samples ~3 s). No always-on mic / no persistent orange indicator. Resolves §7 Decision 5. | P0-11, P1-4 |
-| LD-7 | **HRTF & hearing personalization** | **Generic HRTF** (e.g. MIT KEMAR) + a simple in-app calibration **framed strictly as a "listening preference" tool**, not a medical/audiological device. Custom HRTF measurement deferred. Resolves §7 Decision 2 + regulatory framing. | P1-1, P1-5 |
-| LD-8 | **Conversational Tuning** | Natural-language sound feedback is in scope. (a) A user instruction acts as a **governing principle** the Adaptivity Engine adapts *around*, never against. (b) **Session-scoped by default**, with explicit save to persist. (c) Instrument/source requests use **band approximation + honest caveat** now; ML source separation deferred to a later phase. (d) Positioned as a **supporting/discovery** feature at the Phase 1 launch, not the headline. Resolves §7 Decisions 6 & 7. | §3a, FR-NLT, P1-13..16 |
+| LD-7 | **HRTF & hearing personalization** | **Generic HRTF** (default: **SADIE II**, Apache-2.0; MIT KEMAR also acceptable) + a simple in-app calibration **framed strictly as a "listening preference" tool**, not a medical/audiological device. Custom HRTF measurement deferred. Resolves §7 Decision 2 + regulatory framing. *Confirmed by prior-art research: SADIE II is the highest-quality permissively-licensed SOFA-native dataset available.* | P1-1, P1-5 |
+| LD-8 | **Conversational Tuning** | Natural-language sound feedback is in scope. (a) A user instruction acts as a **governing principle** the Adaptivity Engine adapts *around*, never against. (b) **Session-scoped by default**, with explicit save to persist. (c) Instrument/source requests use **band approximation + honest caveat** now; ML source separation (Demucs/HTDemucs via MLX port, MIT-licensed including weights) deferred to a later phase. (d) Positioned as a **supporting/discovery** feature at the Phase 1 launch, not the headline. Resolves §7 Decisions 6 & 7. *Source-separation choice confirmed by prior-art research: Demucs is the only viable permissively-licensed option; real-time use is not feasible — offline only.* | §3a, FR-NLT, P1-13..16 |
 | LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. All features are free to everyone in every phase. (Specific OSS license **deferred to post-MVP** / post-Phase 0.) | Whole doc |
+| LD-10 | **Quality-first / ample use of modern hardware** | Maximize audio quality by making **ample use of all modern hardware** — RAM, CPU, **multi-core + GPU (Metal) + Neural Engine** parallelism, **fast SSD** (aggressive disk caching / precompute), and **fast networks** (optional cloud assist for non-sensitive, latency-tolerant work). **Prefer platform-native, hardware-accelerated multimedia frameworks/OS features** over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, **Audio Workgroups (`os_workgroup`) for safe real-time parallelism**, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + `AVAudioConverter` SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are **not** primary constraints. **Hard limits that remain:** (a) the real-time **per-buffer deadline** (no jitter/overruns); (b) the core playback path stays **offline-capable** — network is optional, never required; (c) **privacy** — sensitive data (mic, hearing profile) stays on-device; (d) laptop battery/thermal (optional efficiency mode). In the own-player, **latency is free** (we are the clock) → exploit look-ahead: linear-phase FIR EQ, look-ahead limiting, oversampling, long convolutions, and full-track **pre-analysis** (parallelized across cores/ANE, cached to RAM/SSD). Kernel exposes a latency/quality budget (max-quality in player, bounded-latency in Phase 2). Default: max quality. *Confirmed by prior-art research: BNNS Graph is the correct RT-safe ML inference path on the render thread; Core ML / Metal are off-RT only.* | NFR-PERF-02/03/04; DSPKernel; PreAnalysisPipeline |
 
 ---
 
@@ -99,7 +100,7 @@ Adaptive Sound is the only Mac audio enhancer that continuously reacts to contex
 | Hearing personalization | Yes (Phase 1) | No | No | No | Via Mimi | No |
 | Natural-language sound tuning | Yes (Phase 1+) | No | No | No | No | No |
 | Price | Free / open-source | Free | $19.99 | $39 | $99/yr | Free (Apple ecosystem) |
-| macOS virtual audio driver required | Phase 2 only | Yes | Yes | Yes | No | No |
+| macOS virtual audio driver required | **Phase 2: no driver** (process tap, primary); driver only as fallback | Yes | Yes | Yes | No | No |
 
 **Sharp differentiation in one sentence**: Every competitor requires the user to configure a static profile up-front and leave it alone; Adaptive Sound is the only product that keeps working on your behalf every second the audio is playing.
 
@@ -197,7 +198,7 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 | P0-13 | HRTF binaural rendering (full spatial) | W | Phase 1. Computationally heavier; needs tuning time. |
 | P0-14 | Personal hearing profile / audiogram import | W | Phase 1. |
 | P0-15 | Streaming service integration (Spotify, Apple Music) | W | Phase 2 (requires system-wide driver). |
-| P0-16 | System-wide audio processing | W | Phase 2. Requires AudioServerPlugIn — explicitly deferred. |
+| P0-16 | System-wide audio processing | W | Phase 2 (process tap primary; driver fallback) — explicitly deferred. |
 | P0-17 | Windows / cross-platform | W | Not in roadmap. macOS only. |
 
 **What is explicitly NOT in Phase 0**: Any virtual audio device, any sudo/install step, any system-wide processing, any streaming app integration. The MVP is a music player with a smart brain, nothing more.
@@ -207,7 +208,7 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 ### Phase 1 — Richer Adaptivity & Profiles
 
 **Goal**: Deepen the "adaptive" story, ship spatial audio, add personalization. Target: 16–24 weeks after Phase 0 launch. Begin growing beyond own-player by layering intelligence, not distribution scope.
-**Architecture**: All Phase 0 plus CoreMotion (AirPods head tracking), HRTF convolution engine (can use measured IRs from MIT KEMAR or user-chosen), optional mic-based ambient sensing.
+**Architecture**: All Phase 0 plus CMHeadphoneMotionManager (AirPods head tracking, macOS 14+), a custom SOFA-HRIR convolution engine (default dataset SADIE II; libmysofa + vDSP/FFTConvolver), optional mic-based ambient sensing.
 
 #### Features
 
@@ -232,27 +233,32 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 
 ---
 
-### Phase 2 — System-Wide Enhancement via Virtual Audio Device
+### Phase 2 — System-Wide Enhancement
 
 **Goal**: Process audio from any app — Spotify, Apple Music, YouTube, Zoom — through the Adaptivity Engine. This is the full product vision.
-**Architecture**: AudioServerPlugIn virtual device (reference: BlackHole, Background Music, eqMac). User sets "Adaptive Sound" as system output. The driver reads audio, pipes it to the companion DSP engine via Mach IPC, and writes to the real hardware device. Requires: Developer ID signing, notarization, Hardened Runtime, sudo install, `coreaudiod` restart.
 
-**Non-trivial engineering gate**: The AudioServerPlugIn lives in `coreaudiod`'s process space, must be pure C/C++, cannot allocate on the audio thread, and must communicate with the UI process via Mach services declared in Info.plist. Plan 6–10 additional engineering weeks for driver stability before shipping. Reference: eqMac, BlackHole, libASPL.
+**Architecture — primary path (macOS 14.2+)**: **Core Audio process taps** (muted global tap + private aggregate device). Capture all system audio, mute the original stream, run the C++ DSP kernel, and play the processed result to the real hardware device. No HAL plug-in to sign/notarize/install, no privileged helper, no sudo, no `coreaudiod` restart. This is a genuine UX simplification and a competitive advantage vs. eqMac, Boom 3D, and SoundSource, all of which require a driver. See ADR-002 (Proposed) in `docs/architecture/prior-art.md`.
+
+**Architecture — fallback path (older macOS or where a persistent selectable output device is needed)**: **AudioServerPlugIn virtual device** (libASPL, MIT). User sets "Adaptive Sound" as system output. The driver reads audio, pipes it to the companion DSP engine via Mach IPC, and writes to the real hardware device. Requires: Developer ID signing, notarization, Hardened Runtime, SMAppService privileged helper, sudo install, `coreaudiod` restart.
+
+**Fallback engineering gate**: The AudioServerPlugIn lives in `coreaudiod`'s process space, must be pure C/C++, cannot allocate on the audio thread, and must communicate with the UI process via Mach services declared in Info.plist. Plan 6–10 additional engineering weeks for driver stability before shipping the fallback path. Reference: libASPL, eqMac (Apache-2.0 v1.3.2 snapshot).
+
+**Platform requirement**: The primary process-tap path requires **macOS 14.2 or later** (exact min-OS to be confirmed against `<CoreAudio/AudioHardwareTapping.h>` headers — see open verification in prior-art.md §5). This interacts with the still-open minimum-macOS question. The fallback driver path supports older macOS versions.
 
 #### Features
 
 | # | Feature | Priority | Notes |
 |---|---|---|---|
-| P2-1 | Virtual audio device (AudioServerPlugIn) — intercept any app's output | M | The architectural foundation of Phase 2. |
-| P2-2 | Installer with guided setup UX (sudo, coreaudiod restart, device selection) | M | UX must make the complexity invisible. Critical for Persona B adoption. |
-| P2-3 | Auto-reconnect after OS update / coreaudiod restart | M | Reliability non-negotiable. |
+| P2-1 | System-wide audio capture and processing via **Core Audio process tap** (primary) | M | The primary architectural foundation of Phase 2. No driver install, no sudo. macOS 14.2+ required. |
+| P2-2 | Guided setup UX for process-tap path: screen-recording / audio-capture permission grant + output device selection | M | UX must make permission grant feel trustworthy and straightforward. Critical for Persona B adoption. |
+| P2-3 | Auto-reconnect after OS update or permission revocation | M | Reliability non-negotiable for both tap and fallback paths. |
 | P2-4 | Per-app enhancement profiles (different settings for Spotify vs. Zoom) | S | SoundSource's core value — competitive necessity in Phase 2. |
 | P2-5 | All Phase 1 adaptivity features applied system-wide | S | Content-aware, volume-aware, ambient — now work for all apps. |
-| P2-6 | Low-latency mode for gaming / video calls (< 5 ms added latency target) | S | Without this, Zoom/Teams users will disable the driver. |
-| P2-7 | macOS 14.4+ Core Audio process tap as capture alternative (read-only) | C | Supplementary. Capture-only; still needs virtual device for processing. |
+| P2-6 | Low-latency mode for gaming / video calls (< 5 ms added latency target) | S | Without this, Zoom/Teams users will disable the processing. |
+| P2-7 | **Fallback: AudioServerPlugIn virtual device** (libASPL) for older macOS or users who prefer a persistent selectable output device | S | Fallback to the driver path when process tap is unavailable or unsuitable. Includes installer with sudo + coreaudiod restart. |
 | P2-8 | Spatial audio for video (movie/YouTube content) | C | Extend head tracking to non-music content. |
 | P2-9 | CLI / API for pro users to script profile switching | C | Persona C power user feature. |
-| P2-10 | Multi-output routing (e.g., headphones + HDMI simultaneously) | W | Complex driver edge case; defer. |
+| P2-10 | Multi-output routing (e.g., headphones + HDMI simultaneously) | W | Complex edge case; defer. |
 | P2-11 | iOS / iPadOS companion | W | Out of scope for Phase 2. |
 | P2-12 | **Conversational Tuning — Class 2b (true ML source separation)**: instrument/source requests fulfilled by genuinely isolating the source signal before applying gain adjustment | C | Depends on a capable real-time source-separation model running on-device (Apple Silicon Neural Engine is the target platform). Computationally heavy. Delivers significantly more accurate "I can't hear the guitar" responses than the Phase 1 EQ approximation. Explicit open decision whether this is in-scope for Phase 2 or a later phase. |
 
@@ -295,10 +301,11 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 
 | Metric | Target | Measurement Method |
 |---|---|---|
-| Driver install success rate (first attempt) | > 90% | Installer telemetry |
+| **System-audio permission grant + tap setup success rate** (primary path, macOS 14.2+) | > 90% | In-app onboarding funnel telemetry |
+| **Driver install success rate** (fallback path only) | > 90% | Installer telemetry (fallback path users only) |
 | System-wide mode adoption among existing users | > 60% | Feature analytics |
 | Added latency (P95) | < 5 ms | Internal measurement, user-reported |
-| Driver-related crash rate | < 0.05% of sessions | Crash reporting |
+| Driver-related crash rate (fallback path only) | < 0.05% of sessions | Crash reporting (fallback path users only) |
 | MAU | 20,000+ | Analytics |
 | GitHub stars / forks | Tracked; growth trend as community adoption signal | GitHub Insights |
 
@@ -319,12 +326,14 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Adaptivity Engine introduces audible artifacts or latency on the audio thread | High | Critical | Strict real-time thread rules (no allocation, no locks). Extensive A/B testing against bypass mode. Ship Phase 0 as validation gate before investing in Phase 2 driver. |
-| Phase 2 virtual audio driver causes system instability / coreaudiod crashes | Medium | Critical | Reference BlackHole and eqMac's stability track records. Extensive beta testing. Auto-recovery mechanism. Clear user communication about the complexity. |
-| macOS future OS updates break the AudioServerPlugIn ABI | Medium | High | Monitor Apple developer forums. Maintain fast release cadence for compatibility patches. |
-| App Store sandbox blocks Phase 2 AudioServerPlugIn (technical constraint) | High | High | Direct notarized DMG is the required distribution path for Phase 2 — plan this from day one. App Store listing (if used) can still serve as a discovery page for Phase 0/1 and link to the direct download. Notarization and Developer ID signing are still required even for free distribution. |
+| Phase 2 virtual audio driver causes system instability / coreaudiod crashes (**fallback path only**) | Medium | Critical | Applies only to the AudioServerPlugIn fallback path, not to the primary process-tap path. Reference libASPL, eqMac stability track records. Extensive beta on the fallback path. Auto-recovery mechanism. Primary tap path is unaffected. |
+| macOS future OS updates break the AudioServerPlugIn ABI (**fallback path only**) | Medium | High | Applies only to the fallback driver path. Monitor Apple developer forums. Maintain fast release cadence for compatibility patches. The primary tap path is governed by a different API surface. |
+| App Store sandbox blocks Phase 2 AudioServerPlugIn (**fallback path only**) | High | High | Applies to the fallback driver path. Direct notarized DMG is the required distribution path for the fallback — plan this from day one. The primary process-tap path does not require an AudioServerPlugIn and may be distributable via the App Store; verify during Phase 2 planning. |
+| **Patent risk — psychoacoustic bass enhancement** | Medium | High | Virtual-bass is patent-dense. Waves US 11,102,577 (stereo virtual bass, filed 2018) is **ACTIVE to ~2038** — covers per-channel harmonic generation that preserves stereo image. Mitigation: generate bass harmonics from a **mono-summed (L+R) low band only** (the classic approach this patent distinguishes itself from). Do NOT implement per-channel/stereo virtual bass. Obtain formal IP review before any public release. |
+| **OSS license-compliance risk** | Medium | High | Shipping code and data must be permissively licensed and redistributable (LD-9). Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole, etc.) are reference-only — do not copy code or ship their weights/data. All permissive dependencies in the ship set require attribution. Weights/data licenses are separate from code licenses (e.g., MIT-code + NC-weights is not shippable). Verify each dependency against `docs/architecture/prior-art.md` §4–5 before vendoring. |
 | Apple Spatial Audio / AirPods improvements narrow the differentiation gap | Medium | Medium | Stay ahead on content-awareness and ambient adaptation — areas Apple has not addressed. Speed of iteration is the moat. |
 | HRTF quality not compelling enough out-of-box with generic HRTFs | Medium | High | Invest in a high-quality default HRTF (MIT KEMAR or licensed). Offer personalization path. Ship A/B mode so users can directly compare. |
-| User confusion about "why do I need to change my audio output?" (Phase 2 setup) | High | High | Dedicated onboarding flow. Auto-switching prompt. One-click guided installer. Study how eqMac handles this UX. |
+| Phase 2 setup friction (primary tap path: granting system-audio capture; fallback driver path: "why change my audio output?") | Medium | Medium | Primary tap path needs only a one-screen permission grant (no device switch). Fallback driver path: dedicated onboarding, guided installer; study eqMac's UX. |
 | **Conversational Tuning — phrase interpretation produces a wrong or unexpected EQ move** | Medium | Medium | Ship a transparent "here is what I did" confirmation card after each adjustment so the user can see and undo the mapping. Log failure patterns from opt-in telemetry to iteratively improve phrase coverage. |
 | **Conversational Tuning — discomfort phrase is not recognised quickly enough** | Low | High | Maintain a hard-coded priority list of known discomfort signals as an in-app safety layer, independent of the phrase-interpretation architecture. This list executes at the app level with no network round-trip. |
 | **Conversational Tuning — Class 2b source separation model is too slow or power-hungry for real-time use on older Apple Silicon** | Medium | Medium | Gate Class 2b on Apple Silicon generation at runtime. M2 and later is the minimum viable target. M1 gets the Class 2a EQ approximation instead. |
@@ -337,9 +346,9 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 
 ---
 
-**Decision 2 — HRTF strategy: Generic vs. personalized from day one?** ✓ **RESOLVED (LD-7): Choice A** — ship a quality generic HRTF (MIT KEMAR or similar) + a "listening preference" calibration. Custom/personalized HRTF deferred. Marketing must avoid any medical/audiological claim.
+**Decision 2 — HRTF strategy: Generic vs. personalized from day one?** ✓ **RESOLVED (LD-7): Choice A** — ship a quality generic HRTF (**SADIE II, Apache-2.0**, confirmed as the highest-quality permissively-licensed SOFA-native dataset; MIT KEMAR as secondary option) + a "listening preference" calibration. Custom/personalized HRTF deferred. Marketing must avoid any medical/audiological claim. *Confirmed by prior-art research (ADR-003, Proposed).*
 
-Choice A: Ship a single high-quality generic HRTF (MIT KEMAR or similar open-license IR) in Phase 1 and call it done for now. Fast, predictable. Some users will not find it compelling because HRTF is highly individual.
+Choice A: Ship a single high-quality generic HRTF (**SADIE II**, Apache-2.0) in Phase 1 and call it done for now. Fast, predictable. Some users will not find it compelling because HRTF is highly individual.
 Choice B: Integrate an open or freely-licensable personalization SDK (e.g., Embody, or an open-source ear-shape pipeline) in Phase 1. Slower, requires evaluating whether any candidate SDK is compatible with an open-source project, but delivers significantly stronger spatial quality.
 
 This decision affects the Phase 1 timeline and the perceived quality of the spatial audio feature at launch.
@@ -348,7 +357,9 @@ This decision affects the Phase 1 timeline and the perceived quality of the spat
 
 **Decision 3 — Distribution channels for Phase 2: App Store or direct-only?**
 
-The Phase 2 virtual audio device (`AudioServerPlugIn`) cannot be installed inside the Mac App Store sandbox. This is a hard technical constraint that applies regardless of pricing. Phase 2 **must** ship as a notarized direct-download DMG with a guided installer (sudo + `coreaudiod` restart). Developer ID signing and Hardened Runtime are still required for notarization even though the app is free.
+For the **fallback AudioServerPlugIn path**: the virtual audio device cannot be installed inside the Mac App Store sandbox. This is a hard technical constraint. The fallback path **must** ship as a notarized direct-download DMG with a guided installer (sudo + `coreaudiod` restart). Developer ID signing and Hardened Runtime are still required.
+
+For the **primary process-tap path** (macOS 14.2+): the tap path does not install a HAL plug-in, so App Store sandbox restrictions may not apply. Verify whether screen-recording/audio-capture entitlements are grantable inside the App Store sandbox before committing to distribution strategy for Phase 2.
 
 Distribution options for free / open-source release (open for founder to decide):
 
@@ -419,11 +430,16 @@ Phase 1 (Weeks 13-36):  Spatial audio, personalization, ambient sensing
                          Success gate: > 40% D30 retention, > 5,000 MAU,
                                        > 30% of users engaging with Conversational Tuning
 
-Phase 2 (Weeks 37+):    System-wide via AudioServerPlugIn virtual device
+Phase 2 (Weeks 37+):    System-wide via Core Audio process tap (primary, macOS 14.2+)
+                         No driver, no sudo, no coreaudiod restart on primary path
+                         AudioServerPlugIn virtual device (libASPL) as fallback
+                           for older macOS / persistent-output-device use case
                          All apps: Spotify, Apple Music, YouTube, Zoom
-                         Direct-download DMG, guided installer
+                         Direct-download DMG for fallback path; tap path may support App Store
                          Conversational Tuning — Class 2b (ML source separation, if scoped in)
-                         Success gate: > 90% driver install success, < 5 ms latency
+                         See ADR-002 (Proposed) in docs/architecture/prior-art.md
+                         Success gate: > 90% tap-path permission grant success,
+                                       > 90% driver install success (fallback), < 5 ms latency
 ```
 
 ---

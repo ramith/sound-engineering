@@ -2,10 +2,12 @@
 ## Epics, User Stories, Spikes, and Phase 0 Sprint Sequencing
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-06-12
 **Author:** Lead Business Analyst
 **Status:** Draft — Pending sprint planning review
+
+> **v1.1 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/architecture/prior-art.md`. (A) EP-VDEVICE reframed as driver **fallback path** only; EP-SYSWIDE updated to lead with tap-primary path, drive-fallback secondary; US-SYS-01..05 annotated accordingly. (B) SPIKE-HRTF updated: largely resolved to SADIE II (Apache-2.0) + libmysofa (BSD-3) + custom SOFA-HRIR convolution; remaining work is performance benchmark and integration. (C) US-SPAT-01 and US-SPAT-01a/b/c updated to reference custom SOFA convolution. (D) US-TON-04 updated with mono-summed constraint (CON-11). (E) SPIKE-VDEVICE updated to include tap-path prototype as primary workstream. (F) Added SPIKE-IPREVIEW (OQ-16 — patent IP review for bass enhancement). (G) Added SPIKE-LIBBS2B (OQ-17 — libbs2b licence dispute). (H) Updated Open Items table with OQ-16 and OQ-17.
 
 ---
 
@@ -100,8 +102,8 @@ A story is done when:
 | EP-AMBIENT | On-demand mic ambient sensing, DSP adaptation to noise floor | 1 | FR-ADAPT-04, NFR-PRIV-01, NFR-PRIV-02 | Measurable DSP parameter change within 5 s of triggering environment sample |
 | EP-PROFILE | Named profile save/load, iCloud sync, import/export, A/B mode | 1 | FR-DEVICE-04, FR-DEVICE-05, FR-HEAR-03, FR-HEAR-04, P1-7, P1-10 | D30 active-use rate > 40% (quality/engagement signal, not a commercial target) |
 | EP-NLT | Conversational Tuning — all FR-NLT; session persistence; governing principle integration | 1 | FR-NLT-01..12, FR-ADAPT-07, LD-8 | Conversational Tuning weekly active users > 30%; phrase success rate > 75%; discomfort latency < 300 ms |
-| EP-VDEVICE | AudioServerPlugIn virtual device, privileged installer, IPC, crash-safe passthrough, uninstall | 2 | FR-SYS-01..06, NFR-INSTALL-02..04, NFR-PERF-05 | Driver install success > 90%; added latency P95 < 5 ms; driver crash rate < 0.05% |
-| EP-SYSWIDE | System-wide adaptivity, per-app profiles, low-latency gaming mode, macOS 14.4 process tap | 2 | P2-4..9, FR-SYS-01..06 | System-wide adoption > 60% of existing users; community growth (GitHub stars / contributors) as proxy for reach |
+| EP-VDEVICE | AudioServerPlugIn virtual device, privileged installer, IPC, crash-safe passthrough, uninstall — **FALLBACK PATH only** (macOS < 14.2 or driver preference); see EP-SYSWIDE for tap-primary path | 2 | FR-SYS-01..06, NFR-INSTALL-02..04, NFR-PERF-05 | Driver install success > 90%; added latency P95 < 5 ms; driver crash rate < 0.05% |
+| EP-SYSWIDE | System-wide adaptivity via **Core Audio process tap (primary, macOS 14.2+)** + AudioServerPlugIn fallback; per-app profiles; low-latency gaming mode | 2 | P2-4..9, FR-SYS-07, FR-SYS-08, FR-SYS-01..06 | System-wide adoption > 60% of existing users; community growth (GitHub stars / contributors) as proxy for reach; tap-path activation requires no admin password on macOS 14.2+ |
 
 ---
 
@@ -346,12 +348,14 @@ As a **Priya** I want the app to automatically boost bass and treble when I turn
 As a **Priya** I want the app to generate harmonic partials of sub-bass frequencies on my MacBook Air built-in speakers so that I can feel bass weight even though the speakers cannot reproduce low fundamentals.
 
 **Acceptance Criteria:**
-- See FR-TONAL-04 Given/When/Then: MacBook built-in speakers, bass-heavy track; enhancement active; harmonic partials of sub-bass (below 80 Hz) audible; no distortion artefacts on casual listen.
+- See FR-TONAL-04 Given/When/Then (updated): MacBook built-in speakers, bass-heavy track; enhancement active; harmonic partials of sub-bass (below 80 Hz) audible from a **mono-summed (L+R) low-band** signal; no distortion artefacts on casual listen.
+- **Patent constraint (CON-11):** Bass harmonics MUST be generated from a mono-summed (L+R) low band. Per-channel (stereo) harmonic generation is prohibited — it falls within Waves US-11,102,577 (active, ~2038). Verifiable by inspecting the signal path: the NLD input must be L+R, not separate L and R signals.
 - Enhancement is automatically enabled only for devices classified as small speakers or in-ear headphones (FR-DEVICE-03 / Adaptivity Signal Matrix: output device type).
 - Enhancement strength configurable via the DSP controls panel.
+- Engineering may proceed; **public release blocked** until SPIKE-IPREVIEW IP review is complete (OQ-16).
 
-**Priority:** Could | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-DEVICE-03
-**Traceability:** FR-TONAL-04, FR-DEVICE-03
+**Priority:** Could | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-IPREVIEW (for public release only)
+**Traceability:** FR-TONAL-04, FR-DEVICE-03, CON-11, OQ-16
 
 ---
 
@@ -564,9 +568,10 @@ As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed
 - See FR-SPAT-03 Given/When/Then: hard-panned stereo on headphones; crossfeed enabled at default (~700 Hz crossover); channel separation measurably reduced via FFT; no perceived image collapse.
 - Crossfeed is automatically active when device is classified as headphones (any type); disabled for speakers.
 - Crossfeed level is adjustable in the DSP controls panel (0 = off, default = moderate Bauer level).
+- **Licence gate (OQ-17 / CON-12):** If SPIKE-LIBBS2B confirms libbs2b is MIT, use it. If not clearly permissive, the implementation shall be a clean-room reimplementation of the Bauer algorithm from the public specification (biquad filters + delay). This story is blocked on SPIKE-LIBBS2B resolution.
 
-**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-03, US-ENG-02
-**Traceability:** FR-SPAT-03
+**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp (or +2 sp if clean-room reimplement is needed) | **Dependencies:** US-DEVICE-03, US-ENG-02, SPIKE-LIBBS2B
+**Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
 
 ---
 
@@ -732,20 +737,21 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 ---
 
-#### US-SPAT-01 — HRTF binaural rendering (generic MIT KEMAR / SADIE II)
+#### US-SPAT-01 — HRTF binaural rendering (custom SOFA-HRIR convolution, SADIE II default)
 
 As a **Marcus** I want binaural HRTF rendering that places the soundstage outside my head when I use headphones, so that listening feels three-dimensional and less fatiguing on long commutes.
 
 **Acceptance Criteria:**
 - See FR-SPAT-01 Given/When/Then: stereo track, headphone device active, HRTF mode enabled; naive listener ABX test shows audible spatial difference vs. bypass at statistically significant rate.
-- HRTF dataset must be licensed for redistribution in open-source software (ASM-04 / DEP-06 — project is personal/open-source per LD-9; a permissive licence such as MIT, BSD, or Creative Commons is required). Validated in SPIKE-HRTF.
-- Convolution implemented via vDSP Accelerate (DEP-02); CPU within NFR-PERF-02 budget.
+- HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/architecture/prior-art.md`).
+- Default dataset is **SADIE II (Apache-2.0)** (ASM-04, DEP-06 — confirmed permissive; OQ-04 resolved).
+- Convolution CPU within NFR-PERF-02 budget. Validated in SPIKE-HRTF.
 - HRTF is default-on for any device classified as headphones; off for speakers.
 - Non-medical framing enforced in all UI copy (LD-7).
 
-**Priority:** Must | **Phase:** 1 | **Estimate:** 13 — split into: US-SPAT-01a (HRTF convolution engine), US-SPAT-01b (integration into DSP chain), US-SPAT-01c (HRTF toggle and UI)
+**Priority:** Must | **Phase:** 1 | **Estimate:** 13 — split into: US-SPAT-01a (SOFA-HRIR convolution engine with libmysofa + FFTConvolver), US-SPAT-01b (integration into DSP chain), US-SPAT-01c (HRTF toggle and UI)
 **Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-HRTF
-**Traceability:** FR-SPAT-01, ASM-04, DEP-06, LD-7
+**Traceability:** FR-SPAT-01, ASM-04, DEP-06, DEP-12, DEP-15 (BNNS for any RT ML path), LD-7
 
 ---
 
@@ -1073,48 +1079,50 @@ As a **developer** I want all NLT UI elements (text field, confirmation card, al
 
 Phase 2 is far out and subject to change. Full story detail is deferred; epics and stubs provide engineering team visibility for architecture decisions made now.
 
-### EP-VDEVICE — AudioServerPlugIn Virtual Device
+### EP-VDEVICE — AudioServerPlugIn Virtual Device (FALLBACK PATH)
 
-**Epic goal:** Build, sign, notarise, and install an AudioServerPlugIn that intercepts system audio from any application, processes it through the Adaptivity Engine, and forwards processed audio to the physical output device.
+**Epic goal:** Build, sign, notarise, and install an AudioServerPlugIn that intercepts system audio from any application, processes it through the Adaptivity Engine, and forwards processed audio to the physical output device. **This epic covers the FALLBACK PATH only** (macOS < 14.2 or where the user explicitly requests a persistent selectable output device). The primary Phase 2 mechanism is the Core Audio process tap (EP-SYSWIDE / US-SYSW-TAP). Both paths are needed; this epic is not deprecated.
+
+> **Prior-art note (ADR-002, Proposed — `docs/architecture/prior-art.md`):** Reference implementation: **libASPL (MIT)** as the AudioServerPlugIn framework; **AudioCap (BSD-2)** as tap-path sample. Ref-only: eqMac (Apache-2.0 v1.3.2 snapshot), BlackHole (GPL — ref only), Background Music (GPL — ref only).
 
 **Critical architecture notes:**
 - Plug-in must be pure C/C++ — no Objective-C, no Swift, no Foundation (FR-SYS-06 / CON-03).
 - Plug-in runs inside coreaudiod (CON-04); IPC via Mach services only (FR-SYS-05).
-- Privileged installer uses SMAppService (DEP-08; SMJobBless deprecated on macOS 13+).
+- Privileged installer uses **SMAppService** (DEP-08; SMJobBless deprecated on macOS 13+).
 - Plan 6–10 engineering weeks for driver stability alone (PRD §4 Phase 2 note).
 - Validate feasibility first via SPIKE-VDEVICE.
 
 ---
 
-#### US-SYS-01 [Stub] — AudioServerPlugIn virtual device bundle
+#### US-SYS-01 [Stub] — AudioServerPlugIn virtual device bundle (fallback path)
 
-As a **developer** I want an AudioServerPlugIn bundle that appears as a selectable output in macOS Sound settings and passes audio to the DSP engine via Mach IPC.
-Refs: FR-SYS-01, FR-SYS-05, FR-SYS-06, CON-03, CON-04, DEP-05, DEP-08 | Phase: 2 | Estimate: TBD (post-spike)
+As a **developer** I want an AudioServerPlugIn bundle (built on libASPL, MIT) that appears as a selectable output in macOS Sound settings and passes audio to the DSP engine via Mach IPC.
+Refs: FR-SYS-01, FR-SYS-05, FR-SYS-06, CON-03, CON-04, DEP-05, DEP-08, DEP-13 | Phase: 2 | Estimate: TBD (post-spike)
 
 ---
 
-#### US-SYS-02 [Stub] — Privileged installer with informed consent UX
+#### US-SYS-02 [Stub] — Privileged installer with informed consent UX (fallback path)
 
 As a **Priya** I want a guided one-click installer that explains what it does in plain language, asks for admin password once, and restarts coreaudiod transparently.
 Refs: FR-SYS-02, NFR-INSTALL-02, OQ-01 | Phase: 2 | Estimate: TBD
 
 ---
 
-#### US-SYS-03 [Stub] — Crash-safe audio passthrough
+#### US-SYS-03 [Stub] — Crash-safe audio passthrough (fallback path)
 
 As a **system** I want the virtual device to pass audio through unprocessed if the companion app crashes, so that no system-level audio outage occurs.
 Refs: FR-SYS-04 | Phase: 2 | Estimate: TBD
 
 ---
 
-#### US-SYS-04 [Stub] — Safe uninstall and fallback
+#### US-SYS-04 [Stub] — Safe uninstall and fallback (fallback path)
 
 As a **Tom** I want a one-click uninstall that removes the HAL plug-in, restarts coreaudiod, and restores system output with no residual orphaned devices.
 Refs: FR-SYS-03, NFR-INSTALL-04 | Phase: 2 | Estimate: TBD
 
 ---
 
-#### US-SYS-05 [Stub] — Auto-reconnect after OS update or coreaudiod restart
+#### US-SYS-05 [Stub] — Auto-reconnect after OS update or coreaudiod restart (fallback path)
 
 As a **Marcus** I want the virtual device to reconnect automatically after a macOS update or coreaudiod restart without manual intervention.
 Refs: P2-3 | Phase: 2 | Estimate: TBD
@@ -1123,12 +1131,21 @@ Refs: P2-3 | Phase: 2 | Estimate: TBD
 
 ### EP-SYSWIDE — System-Wide Adaptivity and Per-App Profiles
 
+> **Primary mechanism (macOS 14.2+):** Core Audio process tap (`CATapDescription` + `AudioHardwareCreateProcessTap` + private aggregate device with original output muted) — no HAL plug-in, no privileged helper, no coreaudiod restart, no admin password; TCC audio-capture consent only. Sample reference: **AudioCap (BSD-2)** — `docs/architecture/prior-art.md`. This is ADR-002 (Proposed); architecture discussion will confirm. The driver path (EP-VDEVICE) remains as fallback for macOS < 14.2.
+
+---
+
+#### US-SYSW-TAP [Stub] — Core Audio process tap activation (primary path, macOS 14.2+)
+
+As a **Marcus** I want to enable system-wide audio enhancement with a single permission dialog — no admin password, no driver install — so that all apps (Spotify, YouTube, Zoom) benefit without any system disruption.
+Refs: FR-SYS-07, FR-SYS-08, CON-10, OQ-07 | Phase: 2 | Estimate: TBD (post SPIKE-VDEVICE tap workstream) | Note: Depends on confirming exact macOS version floor in AudioHardwareTapping.h (CON-10).
+
 ---
 
 #### US-SYSW-01 [Stub] — All Phase 1 adaptivity applied system-wide
 
 As a **Marcus** I want content-aware EQ, volume compensation, and ambient sensing to work for Spotify, Apple Music, and YouTube, not just the own-player.
-Refs: P2-5, FR-SYS-01 | Phase: 2 | Estimate: TBD
+Refs: P2-5, FR-SYS-07 (primary) / FR-SYS-01 (fallback) | Phase: 2 | Estimate: TBD
 
 ---
 
@@ -1141,7 +1158,7 @@ Refs: P2-4 | Phase: 2 | Estimate: TBD
 
 #### US-SYSW-03 [Stub] — Low-latency mode for gaming and video calls (< 5 ms added latency)
 
-As a **Tom** I want a low-latency mode that keeps added DSP latency under 5 ms so that the virtual device does not cause perceptible delay during Zoom calls or gaming.
+As a **Tom** I want a low-latency mode that keeps added DSP latency under 5 ms so that the tap or virtual device does not cause perceptible delay during Zoom calls or gaming.
 Refs: P2-6, NFR-PERF-05 | Phase: 2 | Estimate: TBD
 
 ---
@@ -1161,31 +1178,33 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 ---
 
-#### SPIKE-HRTF — HRTF dataset selection and license validation
+#### SPIKE-HRTF — HRTF dataset and convolution engine validation
 
-**Goal:** Identify and validate the specific HRTF dataset(s) to ship in Phase 1 (MIT KEMAR, SADIE II, or alternative). Confirm the dataset licence permits redistribution in open-source software (permissive licence required per LD-9 — project is personal/open-source, not commercial). Validate dataset quality and convolution performance on M1.
+**Goal:** Prior-art research pass has largely resolved the dataset selection question (OQ-04 resolved — see `docs/architecture/prior-art.md`). The remaining work is: (a) confirm SADIE II (Apache-2.0) SOFA file quality and subject coverage for the 3-preset requirement (FR-SPAT-02); (b) benchmark partitioned SOFA-HRIR convolution using **libmysofa (BSD-3)** + **vDSP / FFTConvolver (MIT)** on M1 MacBook Air at 44.1 and 48 kHz; (c) confirm that Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly **not** used (their HRTFs are fixed and non-replaceable — custom convolution is the only path); (d) confirm FFTConvolver `LICENSE` file path in-repo (README says MIT; canonical `/LICENSE` path 404'd per `docs/architecture/prior-art.md` §5).
 
 **Outputs:**
-- Selected dataset with license confirmation
-- Performance benchmark: convolution CPU cost at 44.1 kHz / 48 kHz on M1 MacBook Air
-- Go/no-go recommendation for FR-SPAT-01 scope
+- SADIE II subject selection for generic / small-head / large-head presets with SOFA file inventory
+- Performance benchmark: libmysofa SOFA load time + partitioned convolution CPU cost on M1
+- FFTConvolver licence file path confirmed (or decision to use vDSP-only)
+- Go/no-go recommendation for FR-SPAT-01 scope; note that dataset licence (Apache-2.0) is already confirmed
 
-**Time-box:** 3 days | **Phase:** 1 (must complete before EP-SPAT sprint) | **Estimate:** 3 sp
-**Traceability:** FR-SPAT-01, ASM-04, DEP-06, OQ-04 (resolved direction: generic HRTF, LD-7)
+**Time-box:** 2 days (reduced from 3 — dataset selection resolved) | **Phase:** 1 (must complete before EP-SPAT sprint) | **Estimate:** 2 sp
+**Traceability:** FR-SPAT-01, FR-SPAT-02, ASM-04, DEP-06, DEP-12, OQ-04 (resolved: SADIE II default)
 
 ---
 
 #### SPIKE-DEVCORRLIB — Device correction library scope and data sourcing
 
-**Goal:** Determine the 20+ headphone/speaker correction profiles to ship at Phase 0 launch. Validate AutoEQ data quality and license for each model. Define the ongoing curation process.
+**Goal:** OQ-08 is partially resolved: **AutoEq computed parametric curves (MIT + attribution)** are the confirmed source. The remaining work is: (a) select the 20+ headphone/speaker models to ship at Phase 0; (b) verify upstream measurement provenance per model — AutoEq's code is MIT but upstream measurers (oratory1990, Crinacle, etc.) may be CC-BY-NC-SA; ship only AutoEq's *computed* curves with attribution, do not republish raw databases (see `docs/architecture/prior-art.md` §5 and CON-12); (c) define format for integrating AutoEq parametric curves into the app's EQ profile format; (d) identify owner of ongoing library curation.
 
 **Outputs:**
-- List of 20+ validated device correction profiles with license confirmation
-- Engineering effort estimate to integrate AutoEQ data into the profile format
-- Owner of ongoing library curation identified
+- List of 20+ validated device correction profiles with per-model provenance note
+- Confirmation that only AutoEq *computed* curves (not raw measurements) are shipped
+- Engineering effort estimate to integrate AutoEq data into the profile format
+- Ongoing curation process and owner identified
 
 **Time-box:** 3 days | **Phase:** 0 (must complete before US-TON-02) | **Estimate:** 2 sp
-**Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08
+**Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08 (resolved: AutoEq MIT computed curves)
 
 ---
 
@@ -1219,18 +1238,73 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 ---
 
-#### SPIKE-VDEVICE — Phase 2 virtual audio device feasibility
+#### SPIKE-VDEVICE — Phase 2 system-wide audio feasibility (tap-primary + driver-fallback)
 
-**Goal:** Prototype an AudioServerPlugIn skeleton (pure C, Mach IPC stub, loads into coreaudiod) on macOS 14 Sonoma. Validate: (a) SMAppService as replacement for deprecated SMJobBless; (b) notarization requirements for HAL plug-ins; (c) estimated engineering weeks for driver stability; (d) IPC latency budget; (e) OQ-01 (auto-switch vs. manual output selection) impact on installer UX.
+**Goal:** Validate both Phase 2 mechanisms (per ADR-002 Proposed — `docs/architecture/prior-art.md`). Two parallel workstreams:
+
+**Workstream A — Core Audio process tap (primary path, macOS 14.2+):**
+- Confirm exact minimum macOS version for `CATapDescription` + `AudioHardwareCreateProcessTap` + muted-aggregate-device topology by inspecting `<CoreAudio/AudioHardwareTapping.h>` SDK headers (CON-10 — 14.2 vs. 14.4 unconfirmed).
+- Prototype the tap + private aggregate device topology using **AudioCap (BSD-2)** as reference.
+- Confirm TCC entitlement string (NSAudioCaptureUsageDescription) and purple indicator behaviour.
+- Measure added round-trip latency of tap path vs. direct output (target ≤ 10 ms, NFR-PERF-05).
+
+**Workstream B — AudioServerPlugIn (fallback path):**
+- Prototype an AudioServerPlugIn skeleton (pure C, Mach IPC stub, loads into coreaudiod) on macOS 14 Sonoma using **libASPL (MIT)** as the framework (DEP-13).
+- Validate SMAppService as replacement for deprecated SMJobBless.
+- Confirm notarization requirements for HAL plug-ins.
+- Estimated engineering weeks for driver stability (targeting 6–10 weeks per PRD).
+- IPC latency budget.
+- OQ-01 (auto-switch vs. manual output selection) impact on installer UX.
 
 **Outputs:**
-- Working plug-in skeleton that loads without coreaudiod crash
-- SMAppService vs. SMJobBless migration recommendation
-- Confirmed engineering estimate for driver stabilisation (targeting 6–10 weeks per PRD)
+- Confirmed macOS version floor for tap path; go/no-go on tap-primary vs. driver-fallback split
+- Working tap prototype demonstrating muted-aggregate-device topology with measured latency
+- Working plug-in skeleton (libASPL) that loads without coreaudiod crash
+- SMAppService migration recommendation
+- Engineering estimate for both paths; phasing recommendation
 - OQ-01 recommendation
 
-**Time-box:** 5 days | **Phase:** 2 planning (begin in Phase 1 Week 16+) | **Estimate:** 5 sp
-**Traceability:** FR-SYS-01..06, DEP-05, DEP-08, CON-03, CON-04, OQ-01, ASM-03, ASM-07
+**Time-box:** 7 days | **Phase:** 2 planning (begin in Phase 1 Week 16+) | **Estimate:** 7 sp
+**Traceability:** FR-SYS-01..06, FR-SYS-07, FR-SYS-08, DEP-05, DEP-08, DEP-13, CON-03, CON-04, CON-10, OQ-01, OQ-07, ASM-03, ASM-07
+
+---
+
+#### SPIKE-IPREVIEW — Patent IP review for psychoacoustic bass enhancement (OQ-16)
+
+**Goal:** Obtain formal IP counsel review before any public release of FR-TONAL-04. This is not a technical investigation — it is a legal/IP task. Engineering may proceed with the mono-summed NLD design (CON-11) but public release is blocked until this review is complete.
+
+**Scope:**
+- Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on the nonlinear-multiplier + harmonics approach.
+- Confirm the mono-summed (L+R) low-band NLD design clearly falls outside Waves US-11,102,577 (active, ~2038 — covers per-channel/stereo virtual bass).
+- Check whether any Xperi/SRS virtual-bass patents active post-~2006 are triggered by the implementation.
+- Document the legal opinion and approved implementation constraints for the engineering team.
+
+**Outputs:**
+- Written IP counsel opinion on the three patent questions above
+- Approved implementation note: "use mono-summed low-band NLD; confirmed clear of US-11,102,577"
+- Go/no-go sign-off for public release of FR-TONAL-04
+
+**Time-box:** Depends on IP counsel availability — not a fixed time-box; must complete before Phase 0 public release | **Phase:** 0 (before public release, not before engineering) | **Estimate:** 1 sp (BA coordination only; legal cost is external)
+**Traceability:** FR-TONAL-04, CON-11, OQ-16
+
+---
+
+#### SPIKE-LIBBS2B — libbs2b licence dispute resolution (OQ-17)
+
+**Goal:** Resolve the disputed libbs2b licence (MIT vs. GPL-2.0+) before shipping FR-SPAT-03 (crossfeed). This is a short investigation, not a technical prototype.
+
+**Scope:**
+- Open the upstream libbs2b repository and inspect the canonical `LICENSE` file and C source file headers.
+- If clearly MIT: confirm and record; unblocks shipping libbs2b.
+- If GPL or ambiguous: do not ship libbs2b. Instead, plan a clean-room reimplementation of the Bauer stereophonic-to-binaural crossfeed algorithm from the public specification (a small number of biquad filters + a delay line — trivial to reimplement). Estimate reimplementation effort.
+
+**Outputs:**
+- Definitive licence finding with source (repo URL + commit hash)
+- Decision: ship libbs2b (if MIT confirmed) OR reimplement (if not)
+- If reimplement: engineering effort estimate added to US-DEVICE-07
+
+**Time-box:** 0.5 days | **Phase:** 0 (must resolve before US-DEVICE-07 enters sprint) | **Estimate:** 1 sp
+**Traceability:** FR-SPAT-03, US-DEVICE-07, CON-12, DEP-16, OQ-17
 
 ---
 
@@ -1426,15 +1500,17 @@ Could-priority stories deferred within Phase 0 (not in sprint plan above; add if
 
 Phase 1 is not sequenced into named sprints here; the Phase 0 private-beta feedback will reshape priorities. The following epic order should guide Phase 1 sprint planning:
 
-1. **EP-ENGINE** Phase 1 extension — Core ML genre/mood model layered into US-ADAPT-02 (LD-5); SPIKE-NLT-ARCH completed before Phase 1 Sprint 1.
-2. **SPIKE-HRTF** (complete before EP-SPAT begins)
+1. **EP-ENGINE** Phase 1 extension — Core ML genre/mood model layered into US-ADAPT-02 (LD-5, off-RT only; BNNS Graph for any RT ML path); SPIKE-NLT-ARCH completed before Phase 1 Sprint 1.
+2. **SPIKE-HRTF** (complete before EP-SPAT begins — scope reduced to SADIE II benchmark + FFTConvolver licence confirm; OQ-04 resolved)
 3. **SPIKE-AMBNOISE** and **SPIKE-OQ15BC** (complete before EP-AMBIENT and EP-NLT profile-delta storage begin)
-4. **EP-SPAT** (US-SPAT-01a → 01b → 01c → US-SPAT-02 → US-SPAT-03) — leads Phase 1 marketing narrative.
-5. **EP-HEADTRACK** (depends on EP-SPAT)
+4. **EP-SPAT** (US-SPAT-01a → 01b → 01c → US-SPAT-02 → US-SPAT-03) — leads Phase 1 marketing narrative; US-SPAT-01a builds custom SOFA-HRIR convolution engine with libmysofa + FFTConvolver.
+5. **EP-HEADTRACK** (depends on EP-SPAT; uses CMHeadphoneMotionManager macOS 14+)
 6. **EP-HEAR** (US-HEAR-01 → US-HEAR-02 → US-HEAR-03)
 7. **EP-AMBIENT** (depends on SPIKE-AMBNOISE)
 8. **EP-NLT** (depends on SPIKE-NLT-ARCH; US-NLT-00 → 01 → 02 → 05 → 06 → 07 → 03 → 04 → 08 → 09 → 10; US-NLT-05 must ship in same sprint as US-NLT-02)
 9. **EP-PROFILE** (iCloud sync, A/B mode)
+
+**Phase 2 pre-work (begin in Phase 1 Week 16+):** SPIKE-VDEVICE (expanded to include tap-path prototype); SPIKE-IPREVIEW (patent IP review — parallel, not on critical path for engineering); SPIKE-LIBBS2B (if not already resolved in Phase 0 Sprint 9).
 
 ---
 
@@ -1448,8 +1524,12 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | OQ-15b — post-calibration NLT delta review UX | SPIKE-OQ15BC → FR-NLT-06, FR-HEAR-01 | High — before profile-delta storage design |
 | OQ-15c — ±12 dB NLT delta cap | SPIKE-OQ15BC → FR-NLT-06 | High — before profile-delta storage design |
 | ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
-| OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX | High — before Phase 2 Sprint 1 |
-| OQ-07 — macOS minimum deployment target | ASM-01 validation; may affect Phase 0 API choices | Medium — before Phase 0 Sprint 1 |
+| OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | High — before Phase 2 Sprint 1 |
+| OQ-07 — macOS minimum deployment target | ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice | Medium — before Phase 0 Sprint 1; critical for Phase 2 tap-vs-driver decision |
 | OQ-13 — NLT clarification round limit | US-NLT-07 acceptance criteria (1 round vs. 2?) | Medium — before US-NLT-07 enters sprint |
 | OQ-14 — Conversational Tuning multilingual support scope | FR-NLT-* scope, NFR-L10N-01 | Medium — before Phase 1 launch |
 | OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this |
+| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design |
+| OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 enters sprint | Medium — before US-DEVICE-07 enters sprint; clean-room reimplement is ready fallback |
+| ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
+| ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
