@@ -105,7 +105,8 @@ System-wide (Phase 2) last:
 
 | Sprint | Title | Stories | SP | Duration | Dependencies |
 |---|---|---|---|---|---|
-| 1 | Audio engine foundation | US-ENG-01 | 8 | ~1 wk | None (first sprint) |
+| **0** | **Project bootstrap** | (Xcode project, Swift/C++ interop, build system) | **3** | **~1 day** | **None (first sprint)** |
+| 1 | Audio engine foundation | US-ENG-01 | 8 | ~1 wk | Sprint 0 |
 | 2 | DSP scaffold + biquad framework | US-ENG-02 | 8 | ~1 wk | US-ENG-01 |
 | (parallel) | SPIKE-MASKING-MODEL (roex masking) | SPIKE-MASKING-MODEL | 5 | ~3–4 days | US-ENG-02 |
 | (parallel) | SPIKE-BRIR (SOFA convolution integration) | SPIKE-BRIR | 5 | ~3–4 days | US-ENG-02 |
@@ -122,6 +123,59 @@ System-wide (Phase 2) last:
 - Spikes (SPIKE-*) are investigation/design work; they unblock feature stories but are not user-facing features themselves.
 - Some sprints may be split (e.g., US-PERC-01 + US-PERC-02 = 16 sp could become 2× 8-sp sprints).
 - The founder can reorder or reprioritize at any sprint boundary.
+
+---
+
+## Sprint 0: Project Bootstrap (Locked Plan)
+
+**Goal:** Set up a buildable Xcode project with Swift/C++ interop working, so Sprint 1 can start audio code on day 1.
+
+**Project Details:**
+- **Name:** AdaptiveSound
+- **Language:** Swift UI (app shell) + C++ (audio DSP kernel)
+- **Target macOS:** Current version - 1 (e.g., macOS 14 Sonoma if current is 15)
+- **Minimum Deployment:** Same as target
+- **Signing:** No Apple Developer ID needed for local dev (unsigned, runs locally only)
+- **Build System:** Xcode, Swift Package Manager optional (use plain Xcode project for audio, simpler)
+
+**Done-Done Checklist:**
+
+```
+☐ Xcode project created and committed to git
+☐ Frameworks linked: CoreAudio, AudioToolbox, Accelerate, os (Audio Workgroups)
+☐ Swift/C++ interop set up:
+  - Bridging header (ObjC++ wrapper if needed)
+  - C++ module compiles with -Wall -Wextra -fno-exceptions
+  - Swift can call C++ functions
+☐ Dummy "Hello Audio" app:
+  - AppDelegate or main App struct initializes an AudioEngine stub
+  - Logs "Audio engine initialized" to console on launch
+  - Does not crash; AVAudioEngine object exists in memory
+☐ README.md with build/run instructions:
+  - Xcode version requirement (15.0+)
+  - macOS version tested
+  - How to build & run locally
+  - Where to find the app output
+☐ Project structure organized:
+  - Sources/AdaptiveSound/ (Swift app code)
+  - Sources/AudioDSP/ (C++ code)
+  - Tests/ (empty, ready for US-ENG-01)
+  - docs/ (pointer to project docs)
+☐ Manual testing by founder:
+  - App launches without crash
+  - Console output shows initialization messages
+  - No compiler warnings
+☐ Code is committed to main branch
+
+Acceptance: App builds, runs, and logs a message. That's it.
+```
+
+**Success Measure:**
+You can run the app on your M1 Mac, see "Audio engine initialized" in the console, and know that Sprint 1 (US-ENG-01) can start writing real AVAudioEngine code in the next sprint.
+
+**Estimate:** 3 sp | **Duration:** ~1 day | **Timeline:** Ready whenever you say "start Sprint 0"
+
+---
 
 ---
 
