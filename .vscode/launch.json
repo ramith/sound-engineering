@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug AdaptiveSound",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/Debug/AdaptiveSound",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build",
+      "sourceLanguages": ["cpp", "swift"],
+      "stopOnEntry": false,
+      "console": "integratedTerminal"
+    }
+  ]
+}
