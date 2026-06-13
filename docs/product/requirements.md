@@ -103,6 +103,8 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 
 ## 2. User Journeys and Workflows
 
+> **Note:** User journeys are documented in detail in `docs/product/user-journeys.md`. That document is the authoritative reference; the journeys below are extracted here for requirements traceability.
+
 ### Journey 2.1 — First-Run Onboarding
 
 **Actor:** New user, app just launched for the first time.  
@@ -1165,6 +1167,12 @@ Own-player-only (LD-15). Live/system-wide audio (Phase 2 tap) is mix-level only.
 **FR-STEM-01** — Offline 6-Stem Separation + Cache (P1 for Phase 1.5) *(download integrity & fallback)*  
 On add/first-play, the app shall separate a local track offline into **6 stems** (vocals, drums, bass, guitar, piano, other) using an on-device model (Demucs/HTDemucs via Core ML/MLX, MIT) and cache the stems to SSD. Separation is non-real-time and must not block playback. **Model weights are auto-downloaded on first run** from the official **Demucs GitHub releases** (primary) with fallback to **Hugging Face MLX-Community**. **Integrity verification:** validate the downloaded weights against GitHub's published checksums (SHA-256) before loading. **Failure handling:** if verification fails or both sources are unreachable, warn the user ("Separation weights unavailable; operating in mix-only mode"), disable stem separation, and proceed with mix-level DSP only. **Updates:** users obtain new model weights by downloading a new app version (in-app weight updates deferred).
 
+**ML backend selection (architecture.md §12, decision tree):**
+- **MLX (primary, production):** unconditional; handles STFT and complex operations Core ML doesn't convert cleanly. Expected runtime ~5–15 sec/track on M1 Pro; acceptable for offline pre-pass.
+- **Core ML (secondary, pre-release only):** attempted conversion only if Phase 1.5 tuning data shows MLX latency is a user-visible blocker. Conversion is lossy; only pursue if SPIKE-SEP-QUALITY measures unacceptable overhead.
+- **Mix-only (safety fallback, always enabled):** triggered by download failure, integrity failure, or runtime error on both paths. Full feature set active except FR-STEM-02…06; NL macros fall back to mix-level; Reimagine shows mix-range only.
+- **SPIKE-SEP-QUALITY (Phase 1.5 tuning gate):** measure sec/track at M1 Pro, M4, M5 hardware tiers; lock decision by Phase 1.5 release gate.
+
 > Given a local track is added,
 > When offline separation runs (GPU/ANE),
 > Then 6 stem files are produced and cached, and a status indicator reflects progress; playback of the original mix is available immediately regardless.
@@ -1192,6 +1200,14 @@ NL macros (FR-NLT) shall be able to target a specific stem ("bring up the guitar
 
 **FR-STEM-05** — Quality-Gating + Graceful Fallback (P1 for Phase 1.5)  
 6-stem separation (esp. guitar/piano) is the least-robust case. The app shall **quality-gate** separated stems and gracefully fall back (fewer stems; route poorly-separated content to "other") rather than expose bad stems. Confidence shall bound how far the stem-range / per-stem moves are allowed for that track.
+
+**Validation Protocol (SPIKE-SEP-QUALITY method):**
+- **Listening panel:** 3–5 listeners with audio engineering background; per-track A/B test (original mix vs. separated+recombined stems vs. Reimagine stem-range).
+- **Per-stem artifact scoring:** each stem scored on a 5-point scale for audible artifacts (leakage, distortion, phase issues). Threshold: ≤1 artifact (on scale 1–5) per stem to pass gating; stems scoring >1 are merged into "other" or the track's Reimagine ceiling is lowered.
+- **Genre-specific criteria:** vocal/drums/bass (most critical, lower threshold); piano/guitar (higher threshold — worst 6-stem cases); "other" (implicit — absorbs poor stems).
+- **Confidence metric:** 1 − (artifacts + confidence_penalty). Confidence ≥0.7 allows full stem-range (Reimagine 0–100%); 0.5–0.7 caps at mix-range (0–50%); <0.5 disables stem features (falls back to mix-only for that track).
+- **Acceptance:** all tested genres must pass (0 broken stems audibly exposed; at least 3 stems fully usable per track).
+- See SPIKE-SEP-QUALITY for full test plan, hardware tiers, and confidence curve fitting.
 
 > Given a track separates poorly for guitar/piano,
 > When quality-gating evaluates the stems,

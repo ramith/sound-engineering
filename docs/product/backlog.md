@@ -1,5 +1,5 @@
 # Adaptive Sound — Product Backlog
-## Epics, User Stories, Spikes, and Phase 0 Sprint Sequencing
+## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
 **Version:** 2.1 — aligned to architecture.md v0.3 + requirements v0.6
@@ -15,6 +15,8 @@
 
 ---
 
+> **Note:** Sprint planning and Kanban model details are documented separately in `docs/product/sprint-plan.md`. This backlog contains epics, stories, and spikes; sprint assignments are tracked in sprint-plan.md.
+
 ## How to Read This Backlog
 
 ### Story Format
@@ -25,9 +27,11 @@ Every user story uses the following template:
 Story ID | Title
 As a [persona] I want [goal] so that [outcome].
 Acceptance Criteria: references to FR/NFR IDs plus any story-specific criteria not already covered.
-Priority: MoSCoW  |  Phase: 0 / 1 / 1.5 / 2  |  Estimate: N sp  |  Dependencies: [IDs]
+Priority: MoSCoW  |  Estimate: N sp  |  Dependencies: [IDs]
 Traceability: FR-* / NFR-*
 ```
+
+Note: Phase tags (0 / 1 / 1.5 / 2) appear in story descriptions for context, but sprint assignment is managed separately in `docs/product/sprint-plan.md`.
 
 Personas referenced in stories are drawn directly from the PRD:
 - **Marcus** — Persona A, The Audiophile Commuter
@@ -57,12 +61,16 @@ Anything estimated at 13+ is flagged as an epic and must be split into smaller s
 
 > **Project model note (LD-9):** Adaptive Sound is a personal / open-source, non-commercial project. All features are free. MoSCoW prioritisation reflects engineering effort and phasing only — it does not gate any feature behind a paid tier, paywall, or entitlement check. Monetization stories and the OQ-02 feature-gating spike have been removed from this backlog.
 
-### Phase Tags
+### Phase Tags (Organizational Grouping)
+
+Phase tags organize stories by architectural scope and dependency depth. They are **not** lifecycle gates; sprints may span phases and phases may overlap.
 
 - **Phase 0** — Player MVP: the DSP spine (playback through the kernel, param bus, passthrough → first DSP)
 - **Phase 1** — Mix-based core: perceptual clarity/correction, loudness-comp, adaptive engine, **BRIR** immersion, NL (typed-macro, mix-level), **Reimagine** knob (mix range)
 - **Phase 1.5** — **Stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, Reimagine (stem range) — own-player-only
 - **Phase 2** — System-wide via Core Audio process taps (mix-level), virtual-device fallback
+
+**Phase ordering principle:** Enablers and foundational work (Phase 0) typically precede higher phases, but sprint sequencing is determined in `docs/product/sprint-plan.md`, not by phase alone.
 
 ### Traceability Convention
 
@@ -92,6 +100,8 @@ A story is done when:
 
 ## Epics
 
+**Note:** The Phase column indicates architectural scope (0 = player foundation, 1 = mix-level features, 1.5 = stem features, 2 = system-wide). It is **not** a timeline or gate; sprint assignments are in `docs/product/sprint-plan.md`.
+
 | Epic ID | Goal | Phase | FR / NFR Coverage | Success Measure (from PRD KPIs) |
 |---------|------|-------|-------------------|--------------------------------|
 | EP-ENGINE | Real-time engine spine — AVAudioEngine + custom AU (C++ kernel, Swift/C++ interop), **per-stem** lock-free param bus, Audio Workgroups, off-RT Realizer | 0 | FR-ADAPT-02/03, NFR-PERF-01/06, NFR-QUAL-01..04, CON-01/02 | Zero XRuns in 1-hour playback; audio thread ≤ 50% of buffer period |
@@ -115,7 +125,7 @@ A story is done when:
 
 ---
 
-## Phase 0 — Own-Player MVP: Full Stories
+## Phase 0 Stories — Own-Player MVP (Foundation)
 
 ### EP-ENGINE — Real-Time Audio Engine Skeleton
 
@@ -739,7 +749,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 ---
 
-## Phase 1 — Richer Adaptivity and Profiles: Full Stories
+## Phase 1 Stories — Mix-Level Core Features
 
 ### EP-SPAT — HRTF Binaural Rendering
 
@@ -1083,7 +1093,7 @@ As a **developer** I want all NLT UI elements (text field, confirmation card, al
 
 ---
 
-## Phase 1 (v2.0 additions) — Perceptual Engine & Reimagine
+## Phase 1 Stories (Continued) — Perceptual Engine & Reimagine
 
 ### EP-PERCEPTUAL — Typed Contributors, Perceptual Arbiter, Off-RT Realizer
 
@@ -1095,9 +1105,18 @@ Traceability: LD-12, LD-8, FR-ADAPT-02/03, FR-NLT
 
 **US-PERC-02 | Off-RT Realizer (min-phase default; FIR opt-in)** [Enabler]
 As a **developer** I want an off-RT Realizer that turns a TargetState into finished coefficients — **minimum-phase biquads by default**, linear/mixed-phase FIR opt-in or content-selected — so the RT kernel only ramps & runs.
-Acceptance: LD-13; biquad fit (NLLS/L-M, ERB/masking-weighted, ≤ ±1 dB to target); no design/fitting on the audio thread.
-Priority: Must | Phase: 1 | Estimate: 8 sp | Dependencies: US-ENG-02, OQ-18
-Traceability: LD-13, FR-TONAL-01, NFR-PERF-01
+
+**Biquad fitting specification (architecture.md §4, locked 2026-06-13):**
+- **Greedy iterative add:** Start with 2 biquads initialized at max-gain frequency; L-M optimize; check weighted Chebyshev error `E_max`; if > 1.0 dB and < 10 biquads, add 1 biquad at peak-residual frequency, re-optimize. Repeat until `E_max ≤ 1.0 dB` or 10 biquads.
+- **L-M optimizer:** Semi-analytical Jacobian (log-magnitude separability + per-biquad finite differences); projected-gradient box constraints (f0 ∈ [50, 20k], Q ∈ [0.5, 10], gain ∈ [-12, +12]); terminate at ||J^T r||_inf < 1e-5 or 200 iterations.
+- **Error metric:** Weighted Chebyshev-adjacent, `E_max = max_k( W[k] × |H(f_k) − target[k]| )` dB, where `W[k] = W_ath × W_erb × W_intent` (absolute-threshold perceptual weight × ERB-bandwidth normalization × intent salience amplification).
+- **Biquad structure:** TDF-II (Transposed Direct Form II) for numeric stability. Promote end sections to shelves (low-shelf at f0 < 200 Hz, high-shelf at f0 > 8 kHz). Sort by ascending f0.
+- **Convergence:** Typical ~20–50 L-M iterations per greedy pass; ~5 passes for typical curve = ~10–15 ms total on M1 Pro.
+- **Test acceptance:** (1) Null test: all-zero target → E_max ≤ 0.01 dB. (2) Single-peak test: +6 dB at 1 kHz → 1 section, E_max ≤ 1.0 dB. (3) Stress test: 1000 random ERB curves → ≥95% meet budget in ≤8 sections within 10 ms. (4) Stability: all poles `|p| < 1 − 1e-6`. (5) Phase coherence: re-sum comb artifacts ≤ −20 dB relative to direct signal.
+
+Acceptance: LD-13; biquad fit per spec above (greedy add + L-M, ERB/masking-weighted, ≤ ±1 dB to target); no design/fitting on the audio thread; all 5 tests pass.
+Priority: Must | Phase: 1 | Estimate: 13 sp | Dependencies: US-ENG-02, SPIKE-MASKING-MODEL, OQ-18
+Traceability: LD-13, FR-TONAL-01, NFR-PERF-01, architecture.md §4 (biquad cascade fitting)
 
 **US-PERC-03 | Masking/clarity contributor**
 As **Marcus** I want masked detail (e.g. a buried instrument region) lifted so I can actually hear what's playing.
@@ -1121,7 +1140,7 @@ Traceability: FR-REIMAGINE-03, FR-REIMAGINE-04, LD-16
 
 ---
 
-## Phase 1.5 — Stem-Based Object Engine: Full Stories
+## Phase 1.5 Stories — Stem-Based Object Engine
 
 > Own-player-only (LD-15). **Sized by SPIKE-PERF-BUDGET** (NFR-PERF-06) — which sets per-tier QualityProfile caps. Low risk on the M1 Pro floor + current hardware (LD-18).
 
@@ -1171,7 +1190,7 @@ Traceability: FR-REIMAGINE-03, FR-STEM-06, LD-15, LD-16
 
 ---
 
-## Phase 2 — System-Wide Enhancement: Epics and Story Stubs
+## Phase 2 Stories — System-Wide Enhancement
 
 Phase 2 is far out and subject to change. Full story detail is deferred; epics and stubs provide engineering team visibility for architecture decisions made now.
 
@@ -1282,7 +1301,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - FFTConvolver licence file path confirmed (or decision to use vDSP-only)
 - Go/no-go recommendation for FR-SPAT-01 scope; note that dataset licence (Apache-2.0) is already confirmed
 
-**Time-box:** 2 days (reduced from 3 — dataset selection resolved) | **Phase:** 1 (must complete before EP-SPAT sprint) | **Estimate:** 2 sp
+**Time-box:** 2 days (reduced from 3 — dataset selection resolved) | **Phase:** 1 | **Estimate:** 2 sp | **Blocks:** US-SPAT-01
 **Traceability:** FR-SPAT-01, FR-SPAT-02, ASM-04, DEP-06, DEP-12, OQ-04 (resolved: SADIE II default)
 
 ---
@@ -1297,7 +1316,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Engineering effort estimate to integrate AutoEq data into the profile format
 - Ongoing curation process and owner identified
 
-**Time-box:** 3 days | **Phase:** 0 (must complete before US-TON-02) | **Estimate:** 2 sp
+**Time-box:** 3 days | **Phase:** 0 | **Estimate:** 2 sp | **Blocks:** US-TON-02
 **Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08 (resolved: AutoEq MIT computed curves)
 
 ---
@@ -1358,7 +1377,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Engineering estimate for both paths; phasing recommendation
 - OQ-01 recommendation
 
-**Time-box:** 7 days | **Phase:** 2 planning (begin in Phase 1 Week 16+) | **Estimate:** 7 sp
+**Time-box:** 7 days | **Phase:** 2 | **Estimate:** 7 sp | **Note:** Pre-work for Phase 2 (can begin after core Phase 1 features stabilize)
 **Traceability:** FR-SYS-01..06, FR-SYS-07, FR-SYS-08, DEP-05, DEP-08, DEP-13, CON-03, CON-04, CON-10, OQ-01, OQ-07, ASM-03, ASM-07
 
 ---
@@ -1397,7 +1416,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Decision: ship libbs2b (if MIT confirmed) OR reimplement (if not)
 - If reimplement: engineering effort estimate added to US-DEVICE-07
 
-**Time-box:** 0.5 days | **Phase:** 0 (must resolve before US-DEVICE-07 enters sprint) | **Estimate:** 1 sp
+**Time-box:** 0.5 days | **Phase:** 0 | **Estimate:** 1 sp | **Blocks:** US-DEVICE-07
 **Traceability:** FR-SPAT-03, US-DEVICE-07, CON-12, DEP-16, OQ-17
 
 ---
@@ -1407,20 +1426,28 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 **Output:** measured budget + per-tier QualityProfile caps. Given LD-18 (M1 Pro floor, sole-occupancy) + current-gen headroom (M4/M5 ~3–4× the floor), this is a **tuning spike that sets caps — not a go/no-go.**
 Time-box: 5 days | Estimate: 5 sp | Refs: NFR-PERF-06, OQ-19, EP-STEM
 
-#### SPIKE-SEP-QUALITY — 6-stem separation model, quality, and gating
-**Goal:** Evaluate 6-stem separation (Demucs/HTDemucs and any 6-stem variants) on-device via Core ML / MLX across genres; quantify separation quality and artifacts (esp. guitar/piano); define the **quality-gating** criteria (when to merge a stem into "other" / drop to fewer stems) and how confidence bounds the Reimagine ceiling.
-**Output:** model choice + conversion path; a quality-gating policy (FR-STEM-05).
-Time-box: 5 days | Estimate: 5 sp | Refs: FR-STEM-01/05, OQ-20
+#### SPIKE-SEP-QUALITY — 6-stem separation model, quality, gating, and ML backend decision
+**Goal:** Evaluate 6-stem separation (Demucs/HTDemucs) on-device via MLX (primary) across genres; quantify separation quality and artifacts (esp. guitar/piano); define the **quality-gating** criteria (when to merge a stem into "other" / drop to fewer stems) and how confidence bounds the Reimagine ceiling. Additionally, **measure runtime per hardware tier** (M1 Pro, M4, M5) to lock the MLX-vs-Core ML decision (primary is MLX unconditional unless Phase 1.5 tuning reveals user-visible latency).
+
+**Test Protocol (see FR-STEM-05 Validation Protocol):**
+1. **Listening panel:** 3–5 audio engineers. Per-track A/B test: original mix vs. separated+recombined stems vs. Reimagine stem-range (controlled blind).
+2. **Artifact scoring:** 5-point scale per stem (leakage, distortion, phase). Threshold: ≤1 artifact per stem passes; >1 artifact merged into "other" or track ceiling lowered.
+3. **Genre coverage:** representative tracks from vocal-heavy (pop/soul), drums-prominent (rock/electronic), classical/acoustic (piano/strings), mixed-instrumentation (indie/alternative). At least 12 tracks (3 per genre).
+4. **Confidence metric:** fitted curve (1 − artifacts − penalty). Acceptance: ≥0.7 (full stem range), 0.5–0.7 (mix range), <0.5 (mix-only). All genres must pass (0 broken stems audible; ≥3 usable stems per track).
+5. **Hardware timing:** measure sec/track on M1 Pro (target hardware), M4 (current market), M5 (future-proofing). Log coldstart (first run) vs. cached (subsequent). Lock MLX-primary or escalate to Core ML eval if M1 Pro >20 sec/track (user-visible).
+
+**Output:** (1) model choice + quality-gating policy + confidence curves (FR-STEM-05); (2) sec/track measurements at three hardware tiers + MLX-vs-Core-ML decision (architecture.md §12); (3) per-genre artifact threshold recommendations; (4) test dataset (tracks + panel feedback) for regression testing in Phase 1.5+.
+Time-box: 5 days | Estimate: 5 sp | Refs: FR-STEM-01/05 (validation protocol), architecture.md §12 (ML decision tree), OQ-20
 
 #### SPIKE-REIMAGINE-MAP — Reimagine intensity→parameter mapping + user test
 **Goal:** Define the mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (mix-range and stem-range ceiling), and validate with a small listening test that the progression feels natural and that 0% is unmistakably "faithful".
 **Output:** the mapping curve (FR-REIMAGINE-03) + test findings.
 Time-box: 3 days | Estimate: 3 sp | Refs: FR-REIMAGINE-03/04, OQ-21
 
-#### SPIKE-MASKING-MODEL — ERB/Bark masking + partial-loudness model choice
-**Goal:** Choose the perceptual model (Moore-Glasberg partial-loudness vs MPEG psychoacoustic vs other) and the ERB/Bark arbitration approach the Arbiter uses for clarity/adaptive and between-stem unmasking decisions (LD-12). Prototype on vDSP; confirm off-RT cost.
-**Output:** model selection + an arbitration spec for US-PERC-01/03 and US-STEM-04.
-Time-box: 4 days | Estimate: 5 sp | Refs: LD-12, OQ-22, EP-PERCEPTUAL
+#### SPIKE-MASKING-MODEL — Moore-Glasberg roex excitation-pattern implementation + validation
+**Goal (locked model choice, 2026-06-13):** Implement the roex(p) excitation-pattern masking model on the ERB-rate scale (34 bands, 50 Hz–16 kHz) as locked in architecture.md §4 (ADR-006 amendment). Prototype on vDSP to confirm off-RT cost; unit-test masking-aware clarity decisions (before/after) on 8–10 representative tracks; document the roex parameter fitting and the absolute-threshold floor (ISO 226); validate arbitration logic (governing-principle locks + additive composition + proportional clamping) in the Arbiter unit tests.
+**Output:** (1) vDSP implementation of roex convolution + masked-threshold per-frame computation; (2) unit tests (masking-aware EQ vs. naive level-match A/B); (3) arbitration code + tests for LD-8 governing-principle locks and multi-contributor composition; (4) off-RT cost profile (sec/frame, vDSP utilization); (5) documentation of roex parameters and ISO 226 absolute threshold application.
+Time-box: 4 days | Estimate: 5 sp | Refs: architecture.md §4 (Moore-Glasberg roex lock, arbitration rules), LD-12 (masking domain), US-PERC-01/03 (Arbiter + clarity contributor), US-STEM-04 (between-stem unmasking)
 
 #### SPIKE-BRIR — BRIR room synthesis + externalisation validation
 **Goal:** Validate the BRIR-first immersion: synthesise (image-source + FDN) or source CC0/CC-BY room responses combined with the SADIE-II HRIR; ABX-test externalisation **vs. the dry-HRTF minimal mode**; confirm convolution cost fits the budget.
@@ -1436,7 +1463,7 @@ Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 - App Store privacy nutrition label entries required
 - Integration effort estimate
 
-**Time-box:** 2 days | **Phase:** 0 (must complete before US-PRIV-03) | **Estimate:** 1 sp
+**Time-box:** 2 days | **Phase:** 0 | **Estimate:** 1 sp | **Blocks:** US-PRIV-03
 **Traceability:** NFR-PRIV-04, OQ-10
 
 ---
@@ -1456,184 +1483,9 @@ Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 
 ---
 
-## Suggested Phase 0 Sprint Sequencing (DRAFT)
-
-**IMPORTANT — This sequencing is a DRAFT proposal for discussion at sprint planning. It is not a commitment. Actual sprint content will be determined by the team during sprint planning, accounting for actual velocity and resourcing.**
-
-**Velocity assumption:** The sprint plan below was drafted assuming a team of 2 full-stack macOS/C++ engineers averaging approximately 20 story points per 2-week sprint. **For a personal or solo open-source project, this figure is purely illustrative and should be re-baselined to actual capacity before sprint planning.** A solo contributor will likely run at 5–10 sp/sprint; adjust sprint groupings and timelines accordingly. The sprint *sequencing and ordering* below remains valid regardless of velocity — it reflects genuine technical dependencies, not team size. Story-point estimates have not been re-estimated and should be treated as relative sizing only until the actual contributor(s) are known. Some Phase 0 stories carry risk that may pull velocity; a 15–20% planning buffer is built in by not filling sprints to 100% capacity.
-
-**Sequencing principle:** Infrastructure and enablers first (no feature work starts before the audio engine is stable); then core playback; then the engine's differentiating intelligence; then UI polish and accessibility.
-
 ---
 
-### Sprint 1 — Audio Engine Foundation
-**Target capacity:** 18–20 sp | **Rationale:** Nothing else can start until the audio thread is stable and the lock-free bus is in place. This sprint produces no user-visible feature but is the critical path gate.
-
-| Story | Points |
-|-------|--------|
-| SPIKE-DEVCORRLIB | 2 |
-| SPIKE-TELEMETRY | 1 |
-| US-ENG-01 (AVAudioEngine bootstrap) | 5 |
-| US-ENG-02 (C++ DSP module + biquad scaffold) | 8 |
-| **Sprint total** | **16 sp** |
-
-Buffer used for risk on US-ENG-02 (first C++ audio thread code; may surface unknowns). Team should spike AVAudioEngine + C++ interop pattern in the first two days before committing to the full estimate.
-
----
-
-### Sprint 2 — Lock-Free Bus, Ramp, Limiter, and SRC
-**Target capacity:** 18–20 sp | **Rationale:** Complete the engine skeleton before any playback or EQ feature starts. Lock-free bus (US-ENG-03) and ramp (US-ENG-04) are depended on by nearly everything downstream.
-
-| Story | Points |
-|-------|--------|
-| US-ENG-03 (lock-free SPSC parameter bus) | 5 |
-| US-ENG-04 (parameter ramp engine) | 3 |
-| US-ENG-05 (true-peak limiter) | 3 |
-| US-ENG-06 (SRC and device negotiation) | 3 |
-| US-UI-06 (localisation-ready strings — no deps, cheap, do now) | 2 |
-| **Sprint total** | **16 sp** |
-
----
-
-### Sprint 3 — Local Playback and Device Enumeration
-**Target capacity:** 18–20 sp | **Rationale:** Engine is now stable. First user-visible sprint: open a file, play audio, see the device change. Sets the foundation for all adaptive and tonal work.
-
-| Story | Points |
-|-------|--------|
-| US-PLAY-01 (local file import + format playback) | 5 |
-| US-PLAY-02 (playback controls) | 3 |
-| US-PLAY-04 (metadata and album art) | 2 |
-| US-DEVICE-01 (device enumeration + change listener) | 3 |
-| US-DEVICE-03 (device type classification) | 3 |
-| **Sprint total** | **16 sp** |
-
----
-
-### Sprint 4 — Core Tonal Engine and Device Switching
-**Target capacity:** 18–20 sp | **Rationale:** Deliver the first version of the "Adaptive Sound" claim: volume-aware EQ and auto-profile switching. This is the minimum viable product nucleus for Ramith's use case.
-
-| Story | Points |
-|-------|--------|
-| US-TON-03 (Fletcher-Munson loudness compensation) | 5 |
-| US-DEVICE-02 (device-change auto-profile switching with crossfade) | 5 |
-| US-DEVICE-06 (speaker widening + spatialisation mode auto-switch) | 3 |
-| US-PLAY-05 (session state persistence) | 3 |
-| **Sprint total** | **16 sp** |
-
----
-
-### Sprint 5 — Content Classification, Adaptive EQ, and Crossfeed
-**Target capacity:** 18–20 sp | **Rationale:** Ship the differentiated intelligent brain. Adaptive EQ driven by genre classification is the core Phase 0 value proposition.
-
-| Story | Points |
-|-------|--------|
-| US-ADAPT-01 (FFT spectrum analysis pipeline) | 8 |
-| US-ADAPT-02 (content/genre classification — DSP heuristics) | 8 |
-| **Sprint total** | **16 sp** |
-
-US-ADAPT-01 and US-ADAPT-02 are both 8-point stories; the sprint is focused and slightly under-loaded intentionally because FFT+classifier work frequently surfaces real-time threading edge cases.
-
----
-
-### Sprint 6 — Dynamics, Tonal EQ, and Profile System
-**Target capacity:** 18–20 sp | **Rationale:** Add the full tonal and dynamics stack and the named profile system. This rounds out the core engine and gives Tom a reason to care.
-
-| Story | Points |
-|-------|--------|
-| US-TON-05 (adaptive multi-band dynamics) | 8 |
-| US-TON-01 (10-band parametric EQ + visualisation) | 5 |
-| US-DEVICE-04 (named profile creation, editing, device association) | 5 |
-| **Sprint total** | **18 sp** |
-
----
-
-### Sprint 7 — Now Playing UI, DSP Controls Panel, and Queue
-**Target capacity:** 18–20 sp | **Rationale:** First full UI sprint. Engine is solid; now make it usable and demonstrable for private beta signups.
-
-| Story | Points |
-|-------|--------|
-| US-ADAPT-03 (volume-level tracking + dispatch) | 3 |
-| US-UI-01 (Now Playing view + spectrum analyser) | 5 |
-| US-UI-02 (DSP controls panel) | 5 |
-| US-PLAY-03 (queue with reorder, shuffle, repeat) | 5 |
-| **Sprint total** | **18 sp** |
-
----
-
-### Sprint 8 — Onboarding, Privacy, Transparency, and Accessibility
-**Target capacity:** 18–20 sp | **Rationale:** Final sprint before private beta. Onboarding, privacy compliance, accessibility, and the transparency view are the quality gates for a shippable build.
-
-| Story | Points |
-|-------|--------|
-| US-UI-03 (first-run onboarding wizard) | 5 |
-| US-PRIV-01 (mic permission UX + denial fallback) | 2 |
-| US-PRIV-02 (sandbox compliance + entitlements) | 2 |
-| US-PRIV-03 (telemetry opt-in framework) | 3 |
-| US-ADAPT-04 (adaptation transparency view) | 3 |
-| US-UI-04 (dark mode / light mode) | 2 |
-| US-UI-05 (VoiceOver + keyboard accessibility) | 3 |
-| **Sprint total** | **20 sp** |
-
----
-
-### Sprint 9 — Polish, Device Correction Presets, and Private Beta
-**Target capacity:** 18–20 sp | **Rationale:** Deliver the device correction library (the immediate "wow" for Marcus), the preset library, and the adaptive UI feedback indicators. Buffer sprint for anything that slipped from Sprint 8.
-
-| Story | Points |
-|-------|--------|
-| US-TON-02 (device correction EQ — 20+ presets) | 5 |
-| US-TON-06 (tonal preset library — 8 presets) | 3 |
-| US-DEVICE-07 (crossfeed for headphones) | 3 |
-| US-ADAPT-05 (adaptation strength slider) | 2 |
-| US-UI-07 (adaptive UI feedback indicators) | 2 |
-| US-PLAY-06 (unsupported format error surfacing) | 1 |
-| **Sprint total** | **16 sp** |
-
-Remaining capacity (~4 sp) is reserved for bug fixes and private beta feedback from testers.
-
----
-
-### Phase 0 Sprint Summary
-
-| Sprint | Theme | Delivered | Points |
-|--------|-------|-----------|--------|
-| 1 | Audio engine foundation | AVAudioEngine + biquad DSP scaffold | 16 |
-| 2 | Lock-free bus + engine completion | Ramp, limiter, SRC, l10n strings | 16 |
-| 3 | First playback + device enumeration | Local playback, metadata, device list | 16 |
-| 4 | Core tonal + device switching | Fletcher-Munson, auto-profile switch, speaker mode | 16 |
-| 5 | Content classification brain | FFT pipeline, genre heuristic classifier | 16 |
-| 6 | Full tonal + dynamics + profiles | EQ, compressor, named profiles | 18 |
-| 7 | Now Playing UI + queue | Full UI shell, spectrum analyser, DSP panel | 18 |
-| 8 | Onboarding, privacy, accessibility | Beta-ready build, compliance complete | 20 |
-| 9 | Polish + device correction + beta | 20+ device presets, preset library, crossfeed | 16 |
-| **Total** | | | **152 sp** |
-
-**Phase 0 total story-point estimate: 152 points across 9 sprints (illustrative)**
-At the original 2-engineer / 20 sp/sprint assumption this maps to 8–9 sprints (16–18 weeks). For a solo contributor at ~8 sp/sprint, the same scope spans approximately 19 sprints (~38 weeks) — this is expected and normal for a personal open-source project. The sprint sequencing is the priority; the timeline should be re-baselined at kickoff against actual contributor capacity. The PRD Phase 0 target of 8–12 weeks to private beta was written with a team context and should be re-evaluated accordingly.
-
-Could-priority stories deferred within Phase 0 (not in sprint plan above; add if velocity allows): US-TON-04 (psychoacoustic bass enhancement, 5 sp), US-DEVICE-05 (profile import/export, 3 sp).
-
----
-
-## Phase 1 Epic Ordering (Sprint-Planning Level)
-
-Phase 1 is not sequenced into named sprints here; the Phase 0 private-beta feedback will reshape priorities. The following epic order should guide Phase 1 sprint planning:
-
-1. **EP-ENGINE** Phase 1 extension — Core ML genre/mood model layered into US-ADAPT-02 (LD-5, off-RT only; BNNS Graph for any RT ML path); SPIKE-NLT-ARCH completed before Phase 1 Sprint 1.
-2. **SPIKE-HRTF** (complete before EP-SPAT begins — scope reduced to SADIE II benchmark + FFTConvolver licence confirm; OQ-04 resolved)
-3. **SPIKE-AMBNOISE** and **SPIKE-OQ15BC** (complete before EP-AMBIENT and EP-NLT profile-delta storage begin)
-4. **EP-SPAT** (US-SPAT-01a → 01b → 01c → US-SPAT-02 → US-SPAT-03) — leads Phase 1 marketing narrative; US-SPAT-01a builds custom SOFA-HRIR convolution engine with libmysofa + FFTConvolver.
-5. **EP-HEADTRACK** (depends on EP-SPAT; uses CMHeadphoneMotionManager macOS 14+)
-6. **EP-HEAR** (US-HEAR-01 → US-HEAR-02 → US-HEAR-03)
-7. **EP-AMBIENT** (depends on SPIKE-AMBNOISE)
-8. **EP-NLT** (depends on SPIKE-NLT-ARCH; US-NLT-00 → 01 → 02 → 05 → 06 → 07 → 03 → 04 → 08 → 09 → 10; US-NLT-05 must ship in same sprint as US-NLT-02)
-9. **EP-PROFILE** (iCloud sync, A/B mode)
-
-> **Epic renames (v2.0):** "EP-SPAT" above = **EP-IMMERSION** (BRIR-first); "EP-HEADTRACK" is folded into EP-IMMERSION; "EP-AMBIENT" is folded into EP-ADAPT. Foundational Phase-1 additions that precede the spatial/NLT epics (everything composes through them): **EP-PERCEPTUAL** (Arbiter + ERB/Bark + off-RT Realizer — gated by SPIKE-MASKING-MODEL) and **EP-REIMAGINE** mix-range (gated by SPIKE-REIMAGINE-MAP); **EP-IMMERSION** BRIR is gated by SPIKE-BRIR.
-
-**Phase 1.5 ordering (own-player-only; sized by SPIKE-PERF-BUDGET + SPIKE-SEP-QUALITY):** US-STEM-01 (separation + cache) → US-STEM-02 (per-stem render graph) → US-STEM-06 (quality-gating) → US-STEM-03 (spatial placement) → US-STEM-04 (between-stem unmasking) → US-STEM-05 (per-stem NL) → US-STEM-07 (Reimagine stem-range). **Run SPIKE-PERF-BUDGET first to set the per-tier QualityProfile caps** (low risk on the M1 Pro floor + current hardware, LD-18).
-
-**Phase 2 pre-work (begin in Phase 1 Week 16+):** SPIKE-VDEVICE (expanded to include tap-path prototype); SPIKE-IPREVIEW (patent IP review — parallel, not on critical path for engineering); SPIKE-LIBBS2B (if not already resolved in Phase 0 Sprint 9).
+> **Sprint sequencing and epic ordering:** See `docs/product/sprint-plan.md` for sprint assignments, dependency sequencing, and team cadence. This backlog contains stories and epics; sprint-plan.md contains the sprint schedule and planning details.
 
 ---
 
@@ -1651,11 +1503,11 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
 | OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | High — before Phase 2 Sprint 1 |
 | OQ-07 — macOS minimum deployment target | ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice | Medium — before Phase 0 Sprint 1; critical for Phase 2 tap-vs-driver decision |
-| OQ-13 — NLT clarification round limit | US-NLT-07 acceptance criteria (1 round vs. 2?) | Medium — before US-NLT-07 enters sprint |
-| OQ-14 — Conversational Tuning multilingual support scope | FR-NLT-* scope, NFR-L10N-01 | Medium — before Phase 1 launch |
+| OQ-13 — NLT clarification round limit | US-NLT-07 acceptance criteria (1 round vs. 2?) | Medium — blocks US-NLT-07 |
+| OQ-14 — Conversational Tuning multilingual support scope | FR-NLT-* scope, NFR-L10N-01 | Medium — design decision needed before Phase 1 features complete |
 | OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this |
 | OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design |
-| OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 enters sprint | Medium — before US-DEVICE-07 enters sprint; clean-room reimplement is ready fallback |
+| OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 | Medium — blocks US-DEVICE-07; clean-room reimplement is ready fallback |
 | ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
 | ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
 | OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation |
