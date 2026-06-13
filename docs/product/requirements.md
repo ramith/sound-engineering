@@ -528,6 +528,14 @@ When a headphone output is detected, the app shall apply **binaural room-respons
 > When HRTF mode is enabled (default for headphones),  
 > Then the audio output includes externalised binaural cues produced by the BRIR convolution engine such that a naive listener ABX test shows audible spatial difference (and improved externalisation vs. the dry-HRTF minimal mode) at a statistically significant rate.
 
+**ABX Test Protocol (Two-Stage Validation):**
+
+**Stage 1 — Sanity Gate (early Phase 1):** 2 listeners (yourself + 1 other), 10 ABX trials each. Test material: 2–3 representative tracks (e.g., orchestral for spatial cues, vocal for center-image stability). Criterion: PASS if both listeners identify correct (BRIR) in ≥6/10 trials (60% threshold). Purpose: quick validation that BRIR implementation is working before full testing.
+
+**Stage 2 — Full Validation (Phase 1 mid-sprint):** 5 listeners (including yourself), 10 ABX trials each (50 trials total). Test material: 4 diverse tracks (orchestral, vocal, acoustic, ensemble). Criterion: PASS if ≥60% overall correct across all 50 trials (≥30/50). All trials double-blind (tester does not know which is A vs. B); listener explicitly rates externalisation quality on each trial (5-point scale: "in-head" to "externalised outside").
+
+**Pass overall:** Both Stage 1 and Stage 2 must pass. If Stage 1 fails, investigate BRIR implementation before proceeding to Stage 2. If Stage 2 fails, evaluate BRIR quality vs. competing algorithms (e.g., dry HRTF + room synthesis alternatives) and iterate.
+
 **FR-SPAT-02** — HRTF Profile Selection (P2)  
 The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA dataset library (e.g., SADIE II subjects offering generic, small-head, and large-head approximations) and indicate which is recommended given the user's hearing calibration data. Profile selection loads a different SOFA HRIR set; it does not switch to a platform-provided spatialization API.
 
@@ -588,12 +596,14 @@ The app shall apply a device-specific correction EQ curve that compensates for t
 > When correction EQ is enabled,  
 > Then the device correction profile is loaded and applied, and the user can toggle it on/off with an audible difference.
 
-**FR-TONAL-03** — Loudness-Compensated EQ (P1) *(revised per LD-17)*  
-The app shall apply loudness compensation as a **fraction of the equal-loudness contour difference** (ISO 226) between an assumed program reference level and the actual playback level — **not** a raw single-contour boost. It requires a **per-device SPL calibration** (the app cannot know absolute SPL otherwise), applies **loudness-matched makeup gain**, is **rate-limited to volume changes** (never program dynamics), caps low-frequency boost, and is defeatable.
+**FR-TONAL-03** — Loudness-Compensated EQ (P1) *(revised per LD-17; Phase 0 tuning gate)*  
+The app shall apply loudness compensation as a **fraction of the equal-loudness contour difference** (ISO 226) between a program reference level (default 83 dB SPL) and the actual playback level — **not** a raw single-contour boost. It requires a **per-device SPL calibration** (the app cannot know absolute SPL otherwise), applies **loudness-matched makeup gain**, is **rate-limited to volume changes** (never program dynamics), implements hard gain caps, and is defeatable.
+
+**Provisional implementation (Phase 0):** Apply **50% of the ISO 226 contour difference** uniformly across the spectrum as the baseline. Internally, implement three separately tunable fractions (`bass_fraction`, `mid_fraction`, `hi_fraction`), all initialized to 0.5. Hard gain caps: **+6 dB maximum in the bass (≤200 Hz), +4 dB maximum in the treble (≥6 kHz)**. Phase 0 testing will determine whether frequency-variable fractions improve perceived quality and whether the 50% fraction is correct (candidate range: 30–75%; precedent suggests 40–60% is optimal).
 
 > Given a track is playing, equal-loudness compensation is enabled, and the user reduces volume by 20 dB,  
 > When the volume change is detected,  
-> Then bass (80–200 Hz) gain increases by approximately 6–10 dB (per ISO 226 curves) and high-frequency (8–12 kHz) gain increases by approximately 3–5 dB, applied within one DSP processing block.
+> Then bass (80–200 Hz) gain increases by approximately 4–6 dB (50% of ISO 226 contour difference, hard-capped at +6 dB) and high-frequency (8–12 kHz) gain increases by approximately 1–3 dB (50%, hard-capped at +4 dB), applied within one DSP processing block. The compensation is audibly noticeable but not artificial or "pumpy."
 
 **FR-TONAL-04** — Psychoacoustic Bass Enhancement (P1)  
 The app shall apply harmonic excitation to bass frequencies to enhance perceived bass weight on small speakers and headphones that cannot reproduce low fundamentals. Bass harmonics shall be generated from a **mono-summed (L+R) low band** — per-channel (stereo) harmonic generation is explicitly prohibited to avoid infringement of Waves patent US-11,102,577 (active, ~2038; see CON-11 and OQ-16). The implementation shall target the expired MaxxBass approach (US-5,930,373, ~2019 — verify on USPTO before shipping) or a clean-room nonlinear-distortion (NLD) design from the mono low band. Formal IP review is required before any public release (OQ-16).
@@ -930,8 +940,10 @@ The app shall provide a dedicated text input control, accessible from the Now Pl
 
 ---
 
-**FR-NLT-02** — Intent Derivation: DSP Action Vector Output (P1)  
+**FR-NLT-02** — Intent Derivation: DSP Action Vector Output (P1) *(hearing-safety clamps locked; Phase 0 UX validation via SPIKE-HEARING-SAFETY-VALIDATION)*  
 The intent-derivation subsystem shall parse submitted text and produce a **typed multi-band macro** as its output: `{ eq_bands[], dynamics?, transient?, spatial?, target_stem?, confidence }` — (a) per-band gain deltas (direction + magnitude from language intensity markers), (b) optional dynamics, (c) optional transient, (d) optional spatial (width/crossfeed/placement), (e) an optional **target stem** (Phase 1.5; e.g., "the guitar"), and (f) a confidence score. Every phrase type — frequency-referencing, instrument-naming, or aesthetic/emotional — maps to this same macro; they differ only in directness (LD-8, §3.9.1). Mappings shall be seeded from descriptor priors (SAFE-DB / SocialEQ-style) and be **per-user-adaptable** (cross-user agreement on terms like "warm" is low). If an embedding/LLM back-end is used, descriptor→effect **monotonicity shall be validated** before shipping (some embeddings invert "warm"). The `context` passed to the interpreter shall **exclude** audio buffers and hearing-profile data (privacy). The mechanism that converts text → macro is deferred (OQ-11).
+
+**Hearing-Safety Clamps (Arbiter enforcement, architecture §11):** All NL interpreter output is schema-validated + numerically clamped before forwarding to DSP: **per-band boost cap +10 dB (hard clamp +12 dB); per-band cut cap −12 dB (hard −15 dB); low-confidence magnitude cap ±3 dB; confirmation gate triggers at +8 dB per band; cumulative NL loudness-change cap +12 dB total; session-integrated loudness cap −9 LUFS (gated)**. These bounds prevent hearing damage (NIOSH/WHO-ITU H.870 basis) and prompt-injection. UX validation in Phase 0 (SPIKE-HEARING-SAFETY-VALIDATION) will measure whether +10 dB is appropriately responsive to "MUCH louder" requests or requires adjustment.
 
 > Given the user submits "bass is too low",  
 > When intent derivation completes,  
@@ -1150,8 +1162,8 @@ Default intensity and behaviour shall be artifact-conservative; higher intensiti
 
 Own-player-only (LD-15). Live/system-wide audio (Phase 2 tap) is mix-level only.
 
-**FR-STEM-01** — Offline 6-Stem Separation + Cache (P1 for Phase 1.5)  
-On add/first-play, the app shall separate a local track offline into **6 stems** (vocals, drums, bass, guitar, piano, other) using an on-device model (Demucs/HTDemucs via Core ML/MLX, MIT) and cache the stems to SSD. Separation is non-real-time and must not block playback.
+**FR-STEM-01** — Offline 6-Stem Separation + Cache (P1 for Phase 1.5) *(download integrity & fallback)*  
+On add/first-play, the app shall separate a local track offline into **6 stems** (vocals, drums, bass, guitar, piano, other) using an on-device model (Demucs/HTDemucs via Core ML/MLX, MIT) and cache the stems to SSD. Separation is non-real-time and must not block playback. **Model weights are auto-downloaded on first run** from the official **Demucs GitHub releases** (primary) with fallback to **Hugging Face MLX-Community**. **Integrity verification:** validate the downloaded weights against GitHub's published checksums (SHA-256) before loading. **Failure handling:** if verification fails or both sources are unreachable, warn the user ("Separation weights unavailable; operating in mix-only mode"), disable stem separation, and proceed with mix-level DSP only. **Updates:** users obtain new model weights by downloading a new app version (in-app weight updates deferred).
 
 > Given a local track is added,
 > When offline separation runs (GPU/ANE),
@@ -1438,7 +1450,7 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | DEP-11 | **libebur128 (MIT)** — LUFS / true-peak measurement per ITU-R BS.1770 (replaces any bespoke LUFS implementation). | OSS library | Low — MIT confirmed; well-maintained. |
 | DEP-12 | **FFTConvolver (MIT)** — partitioned convolution engine for SOFA HRIR and linear-phase EQ. Confirm `LICENSE` file path in-repo before vendoring (README says MIT; canonical `/LICENSE` path 404'd — see `docs/architecture/prior-art.md` §5). | OSS library | Low risk once file confirmed. |
 | DEP-13 | **libASPL (MIT)** — AudioServerPlugIn framework (driver fallback path). | OSS library | Low — MIT confirmed. |
-| DEP-14 | **Demucs + MLX port (MIT, including weights)** — future offline source-separation feature (LD-8(e), Phase 2+). Offline-only / heavy; not on the audio thread. Confirms LD-8(e) is offline-only. | OSS library + model | Low — MIT confirmed for code and weights. |
+| DEP-14 | **Demucs + MLX port (code MIT; weights NC-trained, auto-downloaded on first run, not redistributed)** — future offline source-separation feature (LD-15, Phase 1.5+). Offline-only / heavy; not on the audio thread. Code is MIT; weights are licensed under NC terms from MUSDB18-HQ training data and must be downloaded on first run, not bundled. | OSS library + model | Medium — MIT code confirmed; weights license requires download-on-first-run approach and gates any commercial distribution. |
 | DEP-15 | **BNNS Graph (Apple Accelerate)** — RT-safe ML inference on the audio thread. Single-threaded, no runtime allocation. | Platform | Low — part of Accelerate framework, stable. |
 | DEP-16 | **libbs2b** (crossfeed) — ⚠️ license disputed (MIT vs. GPL-2.0+; see `docs/architecture/prior-art.md` §5 and OQ-17). Do not ship until licence is confirmed. Algorithm is public; reimplement on biquads if not clearly permissive. | OSS library (disputed) | High until resolved — see OQ-17. |
 

@@ -1,0 +1,1 @@
+cat /tmp/design-system-draft.md
