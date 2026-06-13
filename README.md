@@ -107,12 +107,13 @@ swiftformat Sources/AdaptiveSound/
 
 ---
 
-## Architecture
+## Architecture & Planning
 
 See `docs/` for complete architecture, requirements, and design decisions:
 - `docs/architecture/architecture.md` — technical design
 - `docs/product/requirements.md` — functional requirements
-- `docs/product/sprint-plan.md` — sprint roadmap
+- `docs/sprints/00-sprint-model.md` — sprint model & methodology
+- `docs/sprints/01-engine-plan.md` — Sprint 1 implementation plan
 
 ---
 

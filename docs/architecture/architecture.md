@@ -4,7 +4,7 @@
 **Supersedes:** [proposal.md](proposal.md) (v0.1). **Shaped by:** [proposal-review.md](proposal-review.md) (panel 1) + [review-v0.2.md](review-v0.2.md) (expert panel 2) + founder talk-through.
 
 > **v0.3 (expert-panel fold-in):** **shared late-reverb** decomposition (not 6 independent BRIRs — the ~6× cost cut); **re-sum mixbus discipline** (loudness-matched per-stem trim); **bass + lead-vocal exempt from spatial spread**; masking re-scoped to the **excitation-pattern (ERB) subset** (full Moore-Glasberg is ~50× too slow); stems **gated on perceptual artifacts, not SDR**; BRIR room amount **content-adaptive**; Demucs **weights auto-downloaded on first run** (code MIT; NC-trained weights not redistributed), **MLX primary**; NL planned **on-device LLM + SAFE/SocialEQ priors** (mechanism still deferred) with **untrusted-output clamping**; global tap reframed as a **high-consent, captures-everything** capability. Detail: [review-v0.2.md](review-v0.2.md).
-**Companion docs:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/user-journeys.md](../product/user-journeys.md) · [../product/backlog.md](../product/backlog.md) · [../product/sprint-plan.md](../product/sprint-plan.md)
+**Companion docs:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/user-journeys.md](../product/user-journeys.md) · [../product/backlog.md](../product/backlog.md) · [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)
 
 > One-line: **turn any good-quality song into a personal, perceptually-tuned, spatially-rendered mix you can steer in plain language** — on modern Macs, headphones or speakers.
 
@@ -16,7 +16,7 @@ Canonical decision registry for the architecture. Product/scope locked decisions
 
 **Sprint Model (BA-2, locked 2026-06-13):** Development uses **sprint-based Kanban** (5–10 story points per sprint, ~1 week) instead of phase gates. Each sprint ships a locally-testable binary; manual testing occurs at sprint end before team retro; **done-done criteria are validated per sprint** (Claude asks, user picks acceptance). **Enablers ship before features** (dependency ordering). Shipping to GitHub releases is a manual decision, not automatic per sprint. Epics span multiple sprints; each sprint is independently implementable and testable.
 
-See **[../product/sprint-plan.md](../product/sprint-plan.md)** for sprint sequencing, done-done templates, and team cadence details.
+See **[../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)** for sprint sequencing, done-done templates, and team cadence details.
 
 | LD | Decision |
 |---|---|

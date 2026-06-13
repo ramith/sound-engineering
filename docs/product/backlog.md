@@ -15,7 +15,7 @@
 
 ---
 
-> **Note:** Sprint planning and Kanban model details are documented separately in `docs/product/sprint-plan.md`. This backlog contains epics, stories, and spikes; sprint assignments are tracked in sprint-plan.md.
+> **Note:** Sprint planning and Kanban model details are documented separately in `docs/sprints/00-sprint-model.md`. This backlog contains epics, stories, and spikes; sprint assignments are tracked in sprint-plan.md.
 
 ## How to Read This Backlog
 
@@ -31,7 +31,7 @@ Priority: MoSCoW  |  Estimate: N sp  |  Dependencies: [IDs]
 Traceability: FR-* / NFR-*
 ```
 
-Note: Phase tags (0 / 1 / 1.5 / 2) appear in story descriptions for context, but sprint assignment is managed separately in `docs/product/sprint-plan.md`.
+Note: Phase tags (0 / 1 / 1.5 / 2) appear in story descriptions for context, but sprint assignment is managed separately in `docs/sprints/00-sprint-model.md`.
 
 Personas referenced in stories are drawn directly from the PRD:
 - **Marcus** — Persona A, The Audiophile Commuter
@@ -70,7 +70,7 @@ Phase tags organize stories by architectural scope and dependency depth. They ar
 - **Phase 1.5** — **Stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, Reimagine (stem range) — own-player-only
 - **Phase 2** — System-wide via Core Audio process taps (mix-level), virtual-device fallback
 
-**Phase ordering principle:** Enablers and foundational work (Phase 0) typically precede higher phases, but sprint sequencing is determined in `docs/product/sprint-plan.md`, not by phase alone.
+**Phase ordering principle:** Enablers and foundational work (Phase 0) typically precede higher phases, but sprint sequencing is determined in `docs/sprints/00-sprint-model.md`, not by phase alone.
 
 ### Traceability Convention
 
@@ -100,7 +100,7 @@ A story is done when:
 
 ## Epics
 
-**Note:** The Phase column indicates architectural scope (0 = player foundation, 1 = mix-level features, 1.5 = stem features, 2 = system-wide). It is **not** a timeline or gate; sprint assignments are in `docs/product/sprint-plan.md`.
+**Note:** The Phase column indicates architectural scope (0 = player foundation, 1 = mix-level features, 1.5 = stem features, 2 = system-wide). It is **not** a timeline or gate; sprint assignments are in `docs/sprints/00-sprint-model.md`.
 
 | Epic ID | Goal | Phase | FR / NFR Coverage | Success Measure (from PRD KPIs) |
 |---------|------|-------|-------------------|--------------------------------|
@@ -1485,7 +1485,7 @@ Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 
 ---
 
-> **Sprint sequencing and epic ordering:** See `docs/product/sprint-plan.md` for sprint assignments, dependency sequencing, and team cadence. This backlog contains stories and epics; sprint-plan.md contains the sprint schedule and planning details.
+> **Sprint sequencing and epic ordering:** See `docs/sprints/00-sprint-model.md` for sprint assignments, dependency sequencing, and team cadence. This backlog contains stories and epics; sprint-plan.md contains the sprint schedule and planning details.
 
 ---
 
