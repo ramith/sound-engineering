@@ -78,7 +78,7 @@ Legend: **Use-native** (Apple framework) · **Reuse** (ship permissive OSS) · *
 | Content-type detector | Reuse | **YAMNet** (Apache-2.0 weights) → Core ML | Apache-2.0 |
 | BPM / key / spectral features | Build | Reimplement on **vDSP**, using **librosa** (ISC) as the spec | ISC ref → our code |
 | Headphone correction curves | Reuse | **AutoEq** computed parametric curves (+ attribution) | MIT (verify upstream measurement provenance) |
-| Source separation (future, offline) | Reuse | **Demucs/HTDemucs** via **MLX port** (offline only — heavy) | MIT (incl. weights) |
+| Source separation (future, offline) | Reuse | **Demucs/HTDemucs** via **MLX port** (offline only — heavy) | MIT (code); weights NC-trained — auto-downloaded on first run, not redistributed |
 | (avoid for code/weights) | Ref-only | **Essentia** (AGPL + NC-ND models), **aubio**, **libKeyFinder/QM-DSP** (GPL), Open-Unmix/MusicNN weights (NC) | copyleft/NC |
 
 ### Phase 2 — system-wide
@@ -110,7 +110,7 @@ Lean on these before writing or importing anything:
 
 ## 4. Clean-reuse shortlist (the "yes, ship it" set)
 
-`bradhowes/LPF` (MIT) · Apple `AudioUnitSDK` (Apache-2.0) · `FFTConvolver` (MIT) · `DSPFilters` (MIT) · `cycfi/q` (Boost) · `LimiterClass` (MIT) · `Chunkware SimpleSource` (MIT) · `sndfilter` (0BSD) · `Aphex_Exciter` (BSD-3) · `libmysofa` (BSD-3) · **SADIE II** (Apache-2.0) / KEMAR / CIPIC HRTFs · `libebur128` (MIT) · `YAMNet` (Apache-2.0) · `AutoEq` curves (MIT) · `Demucs` + MLX port (MIT) · `libASPL` (MIT) · `AudioCap` (BSD-2).
+`bradhowes/LPF` (MIT) · Apple `AudioUnitSDK` (Apache-2.0) · `FFTConvolver` (MIT) · `DSPFilters` (MIT) · `cycfi/q` (Boost) · `LimiterClass` (MIT) · `Chunkware SimpleSource` (MIT) · `sndfilter` (0BSD) · `Aphex_Exciter` (BSD-3) · `libmysofa` (BSD-3) · **SADIE II** (Apache-2.0) / KEMAR / CIPIC HRTFs · `libebur128` (MIT) · `YAMNet` (Apache-2.0) · `AutoEq` curves (MIT) · `Demucs` code + MLX port (MIT), weights auto-downloaded (NC-trained) · `libASPL` (MIT) · `AudioCap` (BSD-2).
 
 ## 5. ⚠️ Open verifications (confirm before relying)
 

@@ -1,0 +1,1 @@
+cat /tmp/qa-strategy-draft.md
