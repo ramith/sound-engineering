@@ -1,9 +1,9 @@
 # Product Requirements Document
-## Adaptive Sound Enhancer — macOS Desktop Application
+## Adaptive Sound — Object-Based Spatial Music Renderer (macOS)
 
 **Document ID:** PRD-ASE-001  
-**Version:** 0.1 (Draft — Early Definition / Brainstorm)  
-**Date:** 2026-06-12  
+**Version:** 0.6 — aligned to architecture.md v0.3 (architecture is the source of truth)  
+**Date:** 2026-06-13  
 **Author:** Business Analyst (Lead)  
 **Status:** Open for stakeholder review  
 
@@ -25,24 +25,50 @@
 
 > **v0.4 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/architecture/prior-art.md`. (A) FR-SYS group: added FR-SYS-07 (process-tap primary path) and FR-SYS-08 (TCC permission for tap); reframed FR-SYS-01..06 as the FALLBACK (driver) path; updated Journey 2.6 to tap-primary + driver-fallback flows; updated NFR-INSTALL-01/02/03/04 and CON-05/07 for tap vs. driver paths; added CON-10 (tap requires macOS 14.2+/14.4+ — verify); updated OQ-07 note. (B) FR-SPAT-01/02: clarified HRTF rendering as custom SOFA-HRIR partitioned convolution (libmysofa + FFTConvolver); noted Apple PHASE/AVAudioEnvironmentNode HRTFs are non-replaceable; updated DEP-06 and ASM-04. (C) FR-ADAPT / LD-5 note: added clarification that real-time ML inference uses BNNS Graph (RT-safe); Core ML / SoundAnalysis are off-RT pre-analysis only. (D) FR-TONAL-04: added mono-summed low-band constraint (patent avoidance — Waves US-11,102,577 active); added CON-11 (patent constraint); added OQ-16 (IP review spike). (E) DEP and CON: replaced vague data deps with concrete licensed picks (SADIE II Apache-2.0, libmysofa BSD-3, libebur128 MIT, AutoEq MIT, FFTConvolver MIT, libASPL MIT, Demucs+MLX MIT); added CON-12 (permissive-only shipping rule); added OQ-17 (libbs2b license dispute). Resolved OQ-04 (SADIE II default, IRCAM avoided) and OQ-08 (AutoEq MIT computed curves). OQ-11 (Conversational Tuning architecture) remains deferred.
 
+> **v0.5 change note (2026-06-13 — architecture v0.2 alignment):** Major revamp to align with `docs/architecture/architecture.md` v0.2 (now the source of truth). Adopted the four-phase scheme (0 / 1 / 1.5 / 2). Added LD-11…LD-17; updated LD-1/5/7/8. Added **FR-STEM-*** (stem-based object engine, Phase 1.5) and **FR-REIMAGINE-*** (intensity control). Reframed **FR-SPAT** around BRIR-first immersion; **FR-TONAL** for minimum-phase-default + no-program-DRC + loudness-comp method; **FR-ADAPT** for ERB/Bark perceptual + masking decisions + a "processing must not be perceived as moving" criterion; **FR-NLT** as a typed multi-band macro with per-stem targeting. Added a **performance/feasibility-budget NFR** (6-stem × per-stem chain × BRIR convolution) and set the **bit-transparent bypass = Reimagine intensity 0**. Tightened privacy; updated CON/ASM/DEP, the decision matrix, journeys, and open questions.
+
+> **v0.6 — architecture v0.3 sync (authoritative; amends the FRs/NFRs it names).** Folds in the expert-panel review ([../architecture/review-v0.2.md](../architecture/review-v0.2.md)) + founder hardware/persona/power/app-shape decisions, now canonical in architecture.md v0.3 §0/§18:
+> - **Re-sum mixbus (ADR-011) — amends FR-STEM-02:** per-stem chains sum through a *managed mixbus* — per-stem makeup ≤ gain-reduction removed, loudness-matched per-stem trim to the intensity-0 reference, headroom budget pre-limiter, metered limiter GR, group-delay-aligned center.
+> - **Spatial exemptions — amends FR-SPAT-01/06, FR-STEM-02/03:** bass (≲120 Hz) high-passed out of the BRIR path + summed mono; lead vocal kept centered (no L/R spread) at every intensity.
+> - **Shared late-reverb / content-adaptive room — amends FR-SPAT-01/05, NFR-PERF-06:** one shared late-reverb tail + cheap per-stem early/direct filters (not 6 independent BRIRs); BRIR room amount adapts to the source's existing reverberation.
+> - **Masking — amends FR-ADAPT, OQ-22:** clarity/between-stem decisions use the **excitation-pattern / masked-threshold (ERB) subset**, not full Moore-Glasberg partial loudness (~50× too slow).
+> - **Stem gating — amends FR-STEM-05:** gate on a **perceptual-artifact estimate, not SDR**; confidence clamps the per-track Reimagine ceiling.
+> - **Separation models — amends FR-STEM-01, DEP:** **MLX primary** (Core ML secondary); code MIT, **model weights auto-downloaded on first run** (NC-trained → not redistributed); cached stems FLAC + bounded LRU.
+> - **Reimagine defaults — amends FR-REIMAGINE-03/04:** default low-to-lower-mid; dead-band above 0% (no crossfade of bit-perfect vs imperfect-phase stems); loudness-matched across the knob.
+> - **NL — amends FR-NLT-02:** planned primary = on-device LLM + SAFE/SocialEQ priors (CLAP demoted to reranker; rules floor; cloud opt-in); **mechanism still deferred (OQ-11)**; interpreter output is **untrusted → schema-validated + numeric-clamped** to governing-principle + hearing-safety limits; `context` field-allowlist excludes audio, hearing data, and track identity.
+> - **RT ML — amends LD-5/FR-ADAPT:** ADR-004 (BNNS-Graph RT ML) is **contingent** — no RT ML is currently needed.
+> - **Tap consent — amends FR-SYS-07/08, NFR-PRIV:** the muted global tap is a **high-consent, captures-everything** capability (TCC + purple indicator; all apps incl. calls) — explicit consent UX, **auto-exclude communication apps**, tapped audio **never persisted** and never fed to stem separation.
+> - **Hardware (LD-18) / power / app-shape (LD-19) / persona:** floor M1 Pro/16 GB (M4/M5 far above); foreground sole-occupancy; max-quality on AC, lighter on battery; full-window listening app + menu-bar extra; primary persona **Ramith** (developer-audiophile). Risk R-3 → Low; perf spike is tuning, not a gate.
+
 ---
 
-## 0. Locked Decisions (as of 2026-06-12)
+## 0. Locked Decisions (as of 2026-06-13)
 
 Founder-confirmed decisions. These supersede any conflicting requirement text below; affected requirements have been annotated. Remaining open items are in §7.
 
+> **Phase scheme:** canonical phasing is **Phase 0** (player MVP) · **Phase 1** (mix-based core: clarity / correction / loudness-comp / adaptive / **BRIR** / NL + Reimagine mix-range) · **Phase 1.5** (stem-based object engine) · **Phase 2** (system-wide via process taps) — per architecture.md §16. Where an older FR body still tags "Phase 1" for the own-player, read it as Phase 0–1.
+
 | # | Decision | Resolution |
 |---|---|---|
-| LD-1 | Scope / phasing | Own-player MVP (Phase 1) first, then system-wide virtual device (Phase 2). |
+| LD-1 | Scope / phasing | Own-player first (Phase 0 MVP → Phase 1 mix core → Phase 1.5 stem engine), then system-wide via **process tap** (Phase 2; virtual-device fallback). |
 | LD-2 | "Immersive" | Both spatial **and** tonal/dynamic, equally weighted. |
 | LD-3 | Output targets | Both headphones/AirPods and speakers; auto-detect + switch profiles. |
 | LD-4 | MVP source | **Local files only** in Phase 1 (resolves OQ-06). Streaming enhancement deferred to Phase 2. |
-| LD-5 | Content classifier | **Phased** (resolves OQ-09): DSP heuristics in Phase 1; Core ML genre/mood model in a later iteration. |
+| LD-5 | Content classifier | **Phased** (resolves OQ-09): DSP heuristics first; Core ML genre/mood model (off-RT; trained via Create ML) layered in during Phase 1. Real-time ML inference uses BNNS Graph only. |
 | LD-6 | Ambient mic sensing | **On-demand sampling only** — no continuous/always-on mic. See revised FR-ADAPT-04 and Journey 2.5. |
-| LD-7 | HRTF + hearing profile | **Generic HRTF** + calibration positioned strictly as a **"listening preference" tool, not a medical device** (resolves OQ-04 direction + OQ-05). Custom HRTF measurement deferred. |
-| LD-8 | Conversational Tuning — unified DSP action-space, governing principle, and phase | (a) **In scope at Phase 1 launch** as a supporting/discovery feature. (b) **Governing principle:** a confirmed user natural-language instruction is a governing principle that the Adaptivity Engine adapts *around*, never against. Automatic adaptation (volume, content, ambient noise) is subordinate to the user's stated intent for the targeted aspect for the remainder of the session, or until the user explicitly undoes the change. Session-scoped by default; the user must explicitly tap [Yes, keep it] to persist beyond the session (mirrors FR-NLT-06 persistence model). (c) **Unified DSP action-space:** every natural-language utterance — whether naming a frequency ("bass too low"), an instrument ("can't hear guitar"), or an aesthetic/emotional quality ("sounds boring / bland") — resolves to the same fundamental output: a **DSP action vector** comprising per-band gain changes across the frequency spectrum, plus optional dynamics (compression/transient) adjustments and spatial (width/crossfeed) moves. There is one shared action-space; phrases differ only in how directly they map onto it. (d) **Directness spectrum:** Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation of where that source dominates) | Abstract (aesthetic/emotional descriptors → combination of spectral, dynamic, and/or spatial moves). (e) **Band approximation is the baseline and is shippable at Phase 1.** ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement for instrument-named requests, deferred to a later phase — it is NOT a prerequisite and NOT on the critical path (resolves OQ-12). (f) **Aesthetic/emotional descriptors are first-class inputs** handled by the same action-space model; see FR-NLT-12 and §3.9.1 (resolves OQ-15a via governing-principle framing). |
+| LD-7 | Spatial + hearing profile | **BRIR-first** (superseded by LD-14): default binaural = BRIR (HRTF + early reflections + late reverb); dry HRTF = minimal mode; SADIE II (Apache-2.0) is the anechoic HRIR core. Calibration framed strictly as a **"listening preference" tool, not a medical device** (resolves OQ-05). Custom HRTF measurement deferred. |
+| LD-8 | Conversational Tuning — unified DSP action-space, governing principle, and phase | (a) **In scope at Phase 1 launch** as a supporting/discovery feature. (b) **Governing principle:** a confirmed user natural-language instruction is a governing principle that the Adaptivity Engine adapts *around*, never against. Automatic adaptation (volume, content, ambient noise) is subordinate to the user's stated intent for the targeted aspect for the remainder of the session, or until the user explicitly undoes the change. Session-scoped by default; the user must explicitly tap [Yes, keep it] to persist beyond the session (mirrors FR-NLT-06 persistence model). (c) **Unified DSP action-space:** every natural-language utterance — whether naming a frequency ("bass too low"), an instrument ("can't hear guitar"), or an aesthetic/emotional quality ("sounds boring / bland") — resolves to the same fundamental output: a **DSP action vector** comprising per-band gain changes across the frequency spectrum, plus optional dynamics (compression/transient) adjustments and spatial (width/crossfeed) moves. There is one shared action-space; phrases differ only in how directly they map onto it. (d) **Directness spectrum:** Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation of where that source dominates) | Abstract (aesthetic/emotional descriptors → combination of spectral, dynamic, and/or spatial moves). (e) **Band approximation is the baseline and is shippable at Phase 1.** ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement for instrument-named requests, deferred to a later phase — it is NOT a prerequisite and NOT on the critical path (resolves OQ-12). (f) **Aesthetic/emotional descriptors are first-class inputs** handled by the same action-space model; see FR-NLT-12 and §3.9.1 (resolves OQ-15a via governing-principle framing). (g) **Per-stem targeting (Phase 1.5):** once the stem object engine exists, an NL macro may target a specific stem ("bring up the guitar"); at Phase 1 (mix-level), instrument requests use band approximation. (h) The interpretation mechanism remains deferred (OQ-11). |
 | LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. |
 | LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic, hearing profile) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
+| **LD-11** | Source quality & non-goals | Assume good-quality sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise/de-clip/upsample to "fix" bad audio). Network may be used for non-sensitive, latency-tolerant work; core playback + RT DSP stay **offline-capable**. |
+| **LD-12** | Perceptual tonal model | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial); the dB curve is a realization/interchange format only. |
+| **LD-13** | Phase realization | **Minimum-phase by default**; phase mode chosen by content (transient density from pre-analysis); linear/mixed-phase opt-in or band-limited where it genuinely helps (pre-ringing, not latency, is the real cost). |
+| **LD-14** | BRIR-first immersion | Headphone spatialization defaults to a **binaural room response** (HRTF + early reflections + late reverb); dry HRTF = minimal mode; head-tracking opt-in for music. Speakers = **M/S width + ambience extraction (mono-safe)**; crosstalk-cancellation opt-in (centered near-field only); crossfeed opt-in. |
+| **LD-15** | Stem-based object engine (Phase 1.5) | Offline **6-stem** separation (vocals/drums/bass/guitar/piano/other), cached to SSD; **full per-stem chains incl. spatial placement**, re-summed to binaural; masking computed **between stems**. **Own-player-only** — the live tap path (Phase 2) is mix-level only; real-time-lite separation is a research track. |
+| **LD-16** | "Reimagine" intensity knob | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. |
+| **LD-17** | Dynamics & loudness | **No program DRC by default** (transparent LUFS normalization + true-peak safety limiter only). Loudness compensation = **fraction of the equal-loudness contour difference** (ISO 226) + per-device SPL calibration + loudness-matched makeup, **rate-limited to volume changes only**. |
+| **LD-18** | Target hardware & runtime posture | Floor = Apple-Silicon Pro-class (M1 Pro, 2021) / ≥16 GB; shipping generation far above (M4 38-TOPS NE; M4 Pro/Max 10–12 P-cores, 273–546 GB/s, 64–128 GB; M5 per-GPU-core neural accelerators ~4× M4 GPU-AI). App is foreground/sole-occupancy ("lean-back listening") and may use many cores + occupy memory generously. Large headroom on current hardware; design for the floor, exploit the abundance. Supersedes the base-8 GB-Air framing; **downgrades the stem-render risk to Low** — see revised NFR-PERF-06. **Power:** default max-quality on AC; auto-lighter (Efficiency profile) on battery, user-overridable. |
+| **LD-19** | App shape | Full-window lean-back listening experience (now-playing + visualizer + Reimagine dial) **plus a menu-bar extra** for quick control; both share one app-level engine. Refines FR-UI. |
 
 ---
 
@@ -495,12 +521,12 @@ The app should detect and surface unsupported file formats with a clear error ra
 
 ### 3.2 Spatialization (FR-SPAT)
 
-**FR-SPAT-01** — Binaural HRTF Rendering for Headphones (P1)  
-When a headphone output is detected, the app shall apply HRTF-based binaural processing to produce an out-of-head, spatialised soundstage. HRTF rendering shall be implemented as **our own SOFA-HRIR partitioned convolution** using the **libmysofa** loader (BSD-3) and **vDSP / FFTConvolver** (MIT) as the convolution engine. The default dataset shall be **SADIE II (Apache-2.0)**. Apple's PHASE, AVAudioEnvironmentNode (HRTF/HRTFHQ), and AUSpatialMixer are explicitly **not** used for HRTF rendering because they apply fixed, non-replaceable Apple HRTFs with no API for loading a SOFA dataset (see `docs/architecture/prior-art.md`).
+**FR-SPAT-01** — BRIR Binaural Rendering for Headphones (P1) *(revised per LD-14: BRIR-first)*  
+When a headphone output is detected, the app shall apply **binaural room-response (BRIR) rendering** — a SOFA HRIR convolved with **early reflections + late reverberation that carry interaural differences** — to produce an externalised, out-of-head soundstage. Dry (anechoic) HRTF is the **minimal mode**, not the default, because dry HRTF alone reliably collapses in-head with non-individualised data. Implemented as our own partitioned convolution using **libmysofa** (BSD-3) + **vDSP / FFTConvolver** (MIT); anechoic HRIR core = **SADIE II (Apache-2.0)**; the room layer is synthesised (image-source + FDN) or a CC0/CC-BY BRIR. Headphone-correction EQ (FR-TONAL-02) corrects **timbre only** and is not relied on for externalisation. Apple PHASE/AVAudioEnvironmentNode/AUSpatialMixer are **not** used (fixed, non-replaceable HRTFs).
 
 > Given a stereo track is playing and a headphone device is active,  
 > When HRTF mode is enabled (default for headphones),  
-> Then the audio output includes binaural cues produced by the custom SOFA-HRIR convolution engine such that a naive listener ABX test shows audible spatial difference vs. bypass at a statistically significant rate.
+> Then the audio output includes externalised binaural cues produced by the BRIR convolution engine such that a naive listener ABX test shows audible spatial difference (and improved externalisation vs. the dry-HRTF minimal mode) at a statistically significant rate.
 
 **FR-SPAT-02** — HRTF Profile Selection (P2)  
 The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA dataset library (e.g., SADIE II subjects offering generic, small-head, and large-head approximations) and indicate which is recommended given the user's hearing calibration data. Profile selection loads a different SOFA HRIR set; it does not switch to a platform-provided spatialization API.
@@ -509,29 +535,29 @@ The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA da
 > When the HRTF profile selector is opened,  
 > Then the app highlights a recommended profile based on measured ear characteristics and the active HRTF (loaded from the SOFA dataset) renders immediately on selection without requiring restart.
 
-**FR-SPAT-03** — Crossfeed for Headphones (P1)  
-The app shall apply adjustable crossfeed processing to reduce unnatural extreme stereo panning on headphones.
+**FR-SPAT-03** — Crossfeed for Headphones (P3, opt-in / off by default) *(revised per LD-14)*  
+The app shall offer adjustable crossfeed to reduce unnatural extreme stereo panning on headphones. Crossfeed is **opt-in and off by default** — it is largely subsumed by the BRIR path (a BRIR is a physically-correct crossfeed-plus-room). The Bauer-style algorithm is reimplemented in-house pending the libbs2b license check (OQ-17).
 
 > Given a stereo track with hard-panned elements is playing on headphones,  
 > When crossfeed is enabled at the default level (Bauer stereophonic-to-binaural, ~700 Hz crossover),  
 > Then channel separation is measurably reduced (verifiable via FFT analysis) without perceived image collapse.
 
-**FR-SPAT-04** — Head-Tracked Soundstage via AirPods Motion (P2)  
-When AirPods (3rd gen or later, AirPods Pro 1/2, AirPods Max) are the active output, the app shall use **CMHeadphoneMotionManager** (macOS 14+) head-tracking data to stabilise the virtual soundstage relative to a fixed world reference.
+**FR-SPAT-04** — Head-Tracked Soundstage via AirPods Motion (P2, opt-in) *(revised per LD-14)*  
+When AirPods (3rd gen or later, AirPods Pro 1/2, AirPods Max) are the active output **and the user opts in**, the app shall use **CMHeadphoneMotionManager** (macOS 14+) head-tracking to stabilise the soundstage relative to a fixed world reference. Head-tracking is **off by default for music** (many listeners prefer a head-locked music stage); its externalisation benefit is largely already delivered by the BRIR path.
 
 > Given AirPods Pro are active, head-tracking is enabled, and the user rotates their head 30 degrees,  
 > When head-tracking data is received (via CoreMotion / AirPods motion API),  
 > Then the soundstage rotation counter-compensates such that the perceived source direction does not move with the head, with lag < 20 ms.
 
-**FR-SPAT-05** — Virtual Room Convolution (P3)  
-The app shall optionally convolve audio with an impulse response representing a virtual listening room (e.g., small studio, concert hall).
+**FR-SPAT-05** — Virtual Room / BRIR Layer (P1) *(promoted per LD-14 — the room component of FR-SPAT-01)*  
+The app shall provide the room layer (early reflections + late reverberation carrying interaural difference) that, combined with the SADIE-II HRIR, forms the BRIR of FR-SPAT-01. At least one default "treated listening room" plus alternates (e.g., studio, living room, hall) shall be selectable. The room may be synthesised (image-source + FDN) or loaded from CC0/CC-BY BRIR/IR data.
 
 > Given a room IR is selected from the library,  
 > When convolution is enabled,  
 > Then the output contains reverb characteristics consistent with that IR (measurable RT60), and CPU usage remains within the NFR-PERF-01 budget.
 
-**FR-SPAT-06** — Speaker Stereo Widening (P1)  
-When a built-in or external speaker output is detected, HRTF rendering shall be disabled and a stereo widening / mid-side processing mode shall activate instead.
+**FR-SPAT-06** — Speaker Immersion: M/S Width + Ambience (P1) *(revised per LD-14)*  
+When a speaker output is detected, BRIR/HRTF rendering shall be disabled and a **mid-side width + ambience-extraction** mode shall activate, with a **hard mono-compatibility constraint** (the M channel is preserved). Crosstalk-cancellation/transaural is an **opt-in "centered near-field" mode** only (stereo-dipole narrow span); aggressive XTC shall not be applied blindly on laptop speakers.
 
 > Given the active output device is identified as speakers (not headphones),  
 > When a stereo track plays,  
@@ -548,8 +574,8 @@ The app shall automatically choose spatial processing mode based on device type 
 
 ### 3.3 Tonal and Dynamic Optimization (FR-TONAL)
 
-**FR-TONAL-01** — Parametric EQ Engine (P1)  
-The app shall include a minimum 10-band parametric EQ with adjustable frequency, gain (±20 dB), and Q for each band, implemented as biquad filters on the audio thread.
+**FR-TONAL-01** — Parametric EQ Engine (P1) *(revised per LD-12/LD-13)*  
+The app shall provide a parametric EQ (≥10 bands; adjustable frequency, gain ±20 dB, Q). The canonical tonal target is a composable curve realized **off-RT** as **minimum-phase biquads by default**; **linear/mixed-phase FIR is opt-in or selected by content** (transient-dense material stays minimum-phase to avoid pre-ringing — LD-13). The RT kernel runs finished coefficients only (no design/fitting on the audio thread).
 
 > Given the user sets band 3 to 200 Hz, +6 dB, Q=1.0,  
 > When audio plays,  
@@ -562,8 +588,8 @@ The app shall apply a device-specific correction EQ curve that compensates for t
 > When correction EQ is enabled,  
 > Then the device correction profile is loaded and applied, and the user can toggle it on/off with an audible difference.
 
-**FR-TONAL-03** — Loudness-Compensated EQ (Fletcher-Munson) (P1)  
-The app shall continuously measure playback volume and adjust bass and treble gain in real-time to maintain perceptually flat tonal balance as volume changes, per equal-loudness contour data (ISO 226:2003).
+**FR-TONAL-03** — Loudness-Compensated EQ (P1) *(revised per LD-17)*  
+The app shall apply loudness compensation as a **fraction of the equal-loudness contour difference** (ISO 226) between an assumed program reference level and the actual playback level — **not** a raw single-contour boost. It requires a **per-device SPL calibration** (the app cannot know absolute SPL otherwise), applies **loudness-matched makeup gain**, is **rate-limited to volume changes** (never program dynamics), caps low-frequency boost, and is defeatable.
 
 > Given a track is playing, equal-loudness compensation is enabled, and the user reduces volume by 20 dB,  
 > When the volume change is detected,  
@@ -580,8 +606,8 @@ The app shall apply harmonic excitation to bass frequencies to enhance perceived
 > When the harmonic generation path is inspected,  
 > Then bass harmonics are derived from a mono (L+R) low-band signal, not from per-channel stereo signals independently.
 
-**FR-TONAL-05** — Adaptive Dynamics (P1)  
-The app shall apply a multi-band dynamic range processor (compressor/limiter) that adapts its parameters based on content type, ambient noise level, and listening volume.
+**FR-TONAL-05** — Dynamics Policy: No Program DRC by Default (P1) *(revised per LD-17)*  
+For good-quality sources aimed at fidelity, the app shall **not** apply program dynamic-range compression by default. The default dynamics chain is **transparent LUFS normalization + the true-peak safety limiter (FR-TONAL-07)** only. Any dynamics adaptation (e.g., raising intelligibility in a loud ambient environment) is **opt-in and conservative**, and shall **prefer dynamic EQ over broadband multiband compression**.
 
 > Given a classical track (high dynamic range) is playing and ambient noise is Quiet,  
 > When the adaptivity engine classifies the content,  
@@ -606,6 +632,8 @@ A transparent true-peak limiter shall be the final DSP stage, preventing output 
 ### 3.4 Adaptivity Engine (FR-ADAPT)
 
 > **ML path constraint (prior-art finding, ADR-004 Proposed — see `docs/architecture/prior-art.md`):** Any ML inference that occurs **inside the real-time render callback** (on the audio thread) shall use **BNNS Graph** exclusively — it is RT-safe (no runtime allocation, single-threaded, no locks). **Core ML, SoundAnalysis, and Metal/MPS** are off-RT only: they may be used freely for pre-analysis, background classification, and model training, but never inside the render block. This applies to FR-ADAPT-01 (content/genre classification), LD-5 (Core ML genre model), and any future on-device ML inference. This constraint refines but does not replace LD-5.
+
+> **Perceptual-domain decisions (LD-12) & imperceptible adaptation:** Adaptive and clarity decisions (masking relief, content/loudness/ambient moves) shall be computed in the **ERB/Bark domain against a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Adaptation shall be **conservative and imperceptible-as-motion**: coalesced updates, slow ramps (≥50 ms, FR-ADAPT-03), hysteresis/deadbands, and no move that fights intentional musical contrast. **Acceptance:** in listening tests, users shall **not** be able to identify that "the EQ is moving" — only a net improvement (a Phase-0 KPI gate; see architecture.md §10).
 
 **FR-ADAPT-01** — Content / Genre Classification (P1)  
 The app shall analyse the spectral and rhythmic characteristics of the currently playing audio on a non-real-time thread and derive a content classification (minimum: speech, classical, electronic/bass-heavy, acoustic/folk, rock/metal, other).
@@ -903,7 +931,7 @@ The app shall provide a dedicated text input control, accessible from the Now Pl
 ---
 
 **FR-NLT-02** — Intent Derivation: DSP Action Vector Output (P1)  
-The intent-derivation subsystem shall parse submitted text and produce a **DSP action vector** as its output — a structured set of changes over the shared DSP parameter space comprising: (a) per-band gain deltas across the frequency spectrum (direction: increase/decrease/neutral; magnitude: subtle/moderate/strong derived from language intensity markers), (b) optional dynamics adjustment (compression ratio / transient enhancement), and (c) optional spatial adjustment (stereo width / crossfeed). Every phrase type — frequency-referencing ("bass too low"), instrument-naming ("can't hear guitar"), or aesthetic/emotional ("sounds boring") — maps to this same action vector; they differ only in how directly the mapping is derived (see LD-8 directness spectrum and §3.9.1). The mechanism by which text is converted to this vector is not specified here — see OQ-11.
+The intent-derivation subsystem shall parse submitted text and produce a **typed multi-band macro** as its output: `{ eq_bands[], dynamics?, transient?, spatial?, target_stem?, confidence }` — (a) per-band gain deltas (direction + magnitude from language intensity markers), (b) optional dynamics, (c) optional transient, (d) optional spatial (width/crossfeed/placement), (e) an optional **target stem** (Phase 1.5; e.g., "the guitar"), and (f) a confidence score. Every phrase type — frequency-referencing, instrument-naming, or aesthetic/emotional — maps to this same macro; they differ only in directness (LD-8, §3.9.1). Mappings shall be seeded from descriptor priors (SAFE-DB / SocialEQ-style) and be **per-user-adaptable** (cross-user agreement on terms like "warm" is low). If an embedding/LLM back-end is used, descriptor→effect **monotonicity shall be validated** before shipping (some embeddings invert "warm"). The `context` passed to the interpreter shall **exclude** audio buffers and hearing-profile data (privacy). The mechanism that converts text → macro is deferred (OQ-11).
 
 > Given the user submits "bass is too low",  
 > When intent derivation completes,  
@@ -1088,6 +1116,84 @@ The table below documents how representative natural-language phrases map to aud
 
 ---
 
+### 3.10 Reimagine Intensity Control (FR-REIMAGINE)
+
+The single user-facing control that scales *how much we transform* the sound (LD-16).
+
+**FR-REIMAGINE-01** — Single Intensity Control (P1)  
+The app shall expose one continuous "Reimagine" intensity control (0–100%) that scales the overall degree of transformation: 0% faithful → rising clarity → spatial widening → (Phase 1.5) full stem-based spatial reimagining.
+
+> Given the Reimagine control is at any value,
+> When the user changes it,
+> Then the render transitions smoothly (no clicks/zipper; ramped per FR-ADAPT-03) toward the new intensity.
+
+**FR-REIMAGINE-02** — Intensity 0 = Bit-Faithful Bypass (P1)  
+At 0%, the stem engine and all transformation stages shall be bypassed and the original mix played unaltered — bit-transparent (see NFR-QUAL bit-transparent bypass).
+
+> Given Reimagine = 0% at the device's native sample rate,
+> When a loopback capture is compared to the source file,
+> Then the captured audio is bit-identical to the source (MD5-equal).
+
+**FR-REIMAGINE-03** — Continuous Mapping, Phased Ceiling (P1)  
+The intensity→parameter mapping shall crossfade original↔processed and scale spatial spread / unmask depth along the way. **Phase 1** implements the mix-level range; **Phase 1.5** raises the ceiling into the stem-based spatial range. The exact mapping curve is an open item (OQ — user-tested).
+
+> Given Phase 1 (no stem engine yet),
+> When the user raises intensity to maximum,
+> Then only the mix-level range is reachable (clarity + BRIR widening); stem-range behaviour is unavailable until Phase 1.5.
+
+**FR-REIMAGINE-04** — Artifact-Conservative Defaults (P1)  
+Default intensity and behaviour shall be artifact-conservative; higher intensities (which expose separation artifacts) shall be opt-in territory the user chooses by dialing up. Quality-gating (FR-STEM-05) informs how high the stem-range is allowed to go for a given track.
+
+---
+
+### 3.11 Stem-Based Object Engine — Phase 1.5 (FR-STEM)
+
+Own-player-only (LD-15). Live/system-wide audio (Phase 2 tap) is mix-level only.
+
+**FR-STEM-01** — Offline 6-Stem Separation + Cache (P1 for Phase 1.5)  
+On add/first-play, the app shall separate a local track offline into **6 stems** (vocals, drums, bass, guitar, piano, other) using an on-device model (Demucs/HTDemucs via Core ML/MLX, MIT) and cache the stems to SSD. Separation is non-real-time and must not block playback.
+
+> Given a local track is added,
+> When offline separation runs (GPU/ANE),
+> Then 6 stem files are produced and cached, and a status indicator reflects progress; playback of the original mix is available immediately regardless.
+
+**FR-STEM-02** — Per-Stem Chains + Re-Sum (P1 for Phase 1.5)  
+Each stem shall be processable with its own gain, EQ, dynamics, and **spatial placement** (rendered via the BRIR field, FR-SPAT-01), then re-summed to binaural/stereo.
+
+> Given cached stems and Reimagine in the stem range,
+> When playback runs,
+> Then each stem is rendered with its own placement/level and the re-summed output reflects the per-stem moves without glitches (Audio-Workgroups-parallel render, NFR-PERF).
+
+**FR-STEM-03** — Between-Stem Unmasking (P1 for Phase 1.5)  
+Masking/clarity shall be computed **between stems** (ERB/Bark, LD-12) so that a masked source (e.g., vocals under guitar) can be genuinely unmasked — not approximated by mix EQ.
+
+> Given vocals are masked by other stems in a region,
+> When unmasking is active,
+> Then the vocal stem is raised / competing stems dipped in the masked ERB bands, measurably improving vocal prominence.
+
+**FR-STEM-04** — Per-Stem Natural-Language Targeting (P1 for Phase 1.5)  
+NL macros (FR-NLT) shall be able to target a specific stem ("bring up the guitar", "move the vocals forward").
+
+> Given the user says "bring up the guitar",
+> When intent is derived with the stem engine active,
+> Then the guitar stem's level/placement is adjusted (governing principle, LD-8), confirmed in the transparency view.
+
+**FR-STEM-05** — Quality-Gating + Graceful Fallback (P1 for Phase 1.5)  
+6-stem separation (esp. guitar/piano) is the least-robust case. The app shall **quality-gate** separated stems and gracefully fall back (fewer stems; route poorly-separated content to "other") rather than expose bad stems. Confidence shall bound how far the stem-range / per-stem moves are allowed for that track.
+
+> Given a track separates poorly for guitar/piano,
+> When quality-gating evaluates the stems,
+> Then those stems are merged into "other" (or the track is limited to fewer usable stems) and the achievable Reimagine ceiling is reduced accordingly, with no audibly broken stem presented.
+
+**FR-STEM-06** — Own-Player-Only Boundary (P1 for Phase 1.5)  
+Stem features require local files + offline pre-separation and shall be available only in the own player; the Phase-2 system-wide tap path applies mix-level processing only.
+
+> Given audio arriving via the Phase-2 process tap (live),
+> When the user requests a stem-level action,
+> Then the app indicates stem features are own-player-only and applies the nearest mix-level equivalent instead.
+
+---
+
 ## 4. Non-Functional Requirements
 
 ### 4.1 Performance (NFR-PERF)
@@ -1127,6 +1233,13 @@ In Phase 2 virtual device mode, the total additional round-trip latency introduc
 > When measured with a loopback cable and impulse-response latency test,  
 > Then added latency is ≤ 10 ms.
 
+**NFR-PERF-06** — Stem-Engine Render Budget (P1 for Phase 1.5) *(new per LD-15 / architecture.md §15)*  
+The Phase-1.5 stem render (up to **6 stems × per-stem EQ/dynamics/spatial + BRIR convolution**, re-summed) shall hold the per-buffer deadline (NFR-PERF-01) on the **M1 Pro / 16 GB floor** (LD-18; foreground sole-occupancy — current M4/M5 hardware has ~3–4× headroom, so this is now **Low-risk**) by: doing all heavy work off-RT (separation, FIR/BRIR design, masking — pre-computed/cached); running fixed partitioned convolutions parallelised via **Audio Workgroups**; **sharing one late-reverb tail across stems** (cheap per-stem placement filters); and the QualityProfile auto-scaling **stem count / reverb-tail length** (not buffer size) under thermal/battery pressure. Cached-stem + BRIR-kernel memory shall be bounded by a cache policy.
+
+> Given 6 cached stems at the max-quality profile on a base Apple-Silicon laptop,
+> When all stems render with per-stem chains + BRIR convolution for 60 continuous minutes,
+> Then zero audio-thread overruns occur (NFR-PERF-01 holds); if the budget cannot be met, the QualityProfile reduces stem count / convolution length before any overrun. *(A pre-Phase-1.5 spike must measure real per-stem cost + memory — backlog SPIKE-PERF-BUDGET.)*
+
 ---
 
 ### 4.2 Audio Quality (NFR-QUAL)
@@ -1141,8 +1254,8 @@ Zero audible glitches (clicks, pops, dropouts > 1 ms) during any continuous 1-ho
 > When the session ends,  
 > Then the XRun count reported by the app's internal monitor is 0.
 
-**NFR-QUAL-03** — Bit-Transparent Bypass (P1)  
-When all DSP processing is disabled (bypass mode), the audio output shall be bit-for-bit identical to the input (after any required format conversion). No unintentional dithering, gain, or processing shall be applied.
+**NFR-QUAL-03** — Bit-Transparent Bypass = Reimagine Intensity 0 (P1) *(revised per LD-16)*  
+At **Reimagine intensity 0%** (and in any explicit bypass), the stem engine and all DSP stages shall be bypassed and the output shall be bit-for-bit identical to the input (after any required format conversion) — no unintentional dithering, gain, or processing. This is the architecture's fidelity anchor (FR-REIMAGINE-02).
 
 > Given a 24-bit FLAC file plays in bypass mode at the device's native sample rate,  
 > When a loopback capture is compared to the source file,  
@@ -1354,6 +1467,11 @@ The following items are unresolved and require founder/product-owner decisions b
 | OQ-15 *(NLT)* — partially resolved | Conversational Tuning — Reconciliation of Learned Text Preferences with Automatic Adaptation and Hearing Profile | FR-NLT-06 specifies that confirmed text-driven changes are stored as a delta on the active profile. Three reconciliation scenarios: **(a) RESOLVED (LD-8, Decision B — governing principle):** A confirmed NLT instruction is a governing principle. The automatic Adaptivity Engine (volume-based Fletcher-Munson, content/genre curves, ambient-noise adjustments) is subordinate to the user's stated intent for the targeted DSP parameter(s) for the session or until undone. Composition model: automatic adaptation continues to operate on *other* bands not targeted by the NLT instruction; for the targeted band(s), the NLT delta is the floor and the engine does not push changes that would counteract it. Session-scoped by default; persists only on explicit [Yes, keep it] confirmation. **(b) PENDING CONFIRMATION — recommended default:** When the user re-runs hearing calibration (FR-HEAR-01) and the new profile shifts a band that has an existing NLT delta, the NLT delta should be **surfaced for review** rather than silently preserved or discarded. Recommended UX: post-calibration, the app presents a summary of any NLT deltas that conflict with the new hearing profile and asks the user to confirm, adjust, or discard each. This recommendation is pending founder confirmation before being locked into FR-NLT-06 and FR-HEAR-01. **(c) PENDING CONFIRMATION — recommended default:** A per-band accumulated NLT delta cap of **±12 dB** is recommended to prevent runaway drift from repeated one-directional feedback across many sessions. The cap should be surfaced to the user (e.g., "You've reached the maximum bass boost — try the EQ panel for further adjustment") rather than silently clamped. This recommendation is pending founder confirmation before being locked as a hard constraint in the profile-delta storage specification. | (a) resolved; (b) and (c) pending founder confirmation of recommended defaults — not deferred. Engineering must not proceed on profile-delta storage design until (b) and (c) are confirmed. | High |
 | OQ-16 | Patents — Psychoacoustic Bass Enhancement IP Review | CON-11 requires formal IP review before any public release of FR-TONAL-04. Specific items: (a) Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on it. (b) Verify the mono-summed NLD approach is clearly outside Waves US-11,102,577 (active, ~2038). (c) Check whether any Xperi/SRS virtual-bass patents are still active and whether the mono-summed design avoids them. This is a formal legal/IP task, not a technical investigation — requires qualified IP counsel. Engineering may proceed with the mono-summed design; public release is blocked until this review is complete. | Public release of FR-TONAL-04 is blocked without IP review sign-off. Engineering is unblocked (use mono-summed design per CON-11). | High — blocks public release |
 | OQ-17 | libbs2b License Dispute | `docs/architecture/prior-art.md` §5 notes conflicting reports on the libbs2b licence: one source found MIT in source headers; another reported GPL-2.0+. This must be resolved before libbs2b is shipped (CON-12). Action: open the canonical `LICENSE` / source header in the upstream repo. If not clearly MIT, reimplement the Bauer crossfeed algorithm from the public specification (a small number of biquad filters + delay — trivial to reimplement cleanly). FR-SPAT-03 / US-DEVICE-07 are blocked on this resolution. | FR-SPAT-03 (crossfeed) cannot be shipped with libbs2b until confirmed permissive. Reimplementation unblocks the feature if licence is not clear. | Medium — blocks crossfeed shipping |
+| OQ-18 | DSP — Phase realization per content | Minimum-phase is the default (LD-13). Open: should transient-dense content force minimum-phase even where linear/mixed-phase is otherwise selected, and what transient-density threshold triggers the switch? Resolve before the Realizer is implemented. | Realizer design + FR-TONAL-01 acceptance. | High |
+| OQ-19 | Stem engine — feasibility budget | Measured per-stem RT cost, total memory for 6 cached stems + BRIR kernels, and worst-case render on a base Apple-Silicon laptop are unknown (NFR-PERF-06). A spike must measure these before Phase 1.5 scope is committed. | Gates Phase 1.5 scope; informs QualityProfile scaling. | High — gates Phase 1.5 |
+| OQ-20 | Stem engine — quality-gating policy | What objective + perceptual criteria gate a separated stem as "usable" vs. merged into "other", and how does confidence bound the Reimagine ceiling per track (FR-STEM-05)? | FR-STEM-05 acceptance; user-perceived quality. | High |
+| OQ-21 | Reimagine — intensity→parameter mapping | The exact mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (and the mix-range vs stem-range ceiling) needs definition and user testing (FR-REIMAGINE-03). | FR-REIMAGINE-03 acceptance; UX. | Medium-High |
+| OQ-22 | Perceptual model — masking choice | Which masking + partial-loudness model (Moore-Glasberg vs MPEG psychoacoustic) and what ERB/Bark arbitration details drive clarity/adaptive decisions (LD-12)? | Arbiter design; FR-ADAPT perceptual decisions; between-stem unmasking (FR-STEM-03). | Medium |
 
 ---
 
@@ -1370,6 +1488,8 @@ The following items are unresolved and require founder/product-owner decisions b
 | FR-UI | UI and Controls |
 | FR-SYS | Phase 2 System-Wide Enhancement |
 | FR-NLT | Conversational Tuning — Natural-Language Sound Feedback |
+| FR-REIMAGINE | Reimagine Intensity Control |
+| FR-STEM | Stem-Based Object Engine (Phase 1.5) |
 | NFR-PERF | Performance |
 | NFR-QUAL | Audio Quality |
 | NFR-PRIV | Privacy |

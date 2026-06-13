@@ -1,29 +1,38 @@
 # Product Requirements Document
-## Adaptive Sound — macOS Intelligent Audio Enhancer
+## Adaptive Sound — Object-Based Spatial Music Renderer
 
-**Status**: Draft v0.1
-**Date**: 2026-06-12
+**Status**: Draft v0.3 — aligned to architecture.md v0.3 (architecture is the source of truth)
+**Date**: 2026-06-13
 **Owner**: Product (ramith@wso2.com)
 **Phase**: Pre-development / Concept validation
 
 ---
 
-## 0. Locked Decisions (as of 2026-06-12)
+## 0. Locked Decisions (as of 2026-06-13)
 
-These were confirmed with the founder and supersede any conflicting text below. Open decisions still pending are listed in §7.
+These were confirmed with the founder and supersede any conflicting text below. LD-1…LD-10 were established in v0.1; LD-11…LD-17 were added in v0.2 to mirror architecture.md §0 (the canonical ADR registry). Open decisions still pending are listed in §7.
 
 | # | Decision | Resolution | Affects |
 |---|---|---|---|
-| LD-1 | **Scope / phasing** | Start as a self-contained own-player (Phase 0), then grow to system-wide via virtual device (Phase 2). | Whole roadmap |
-| LD-2 | **Meaning of "immersive"** | Both spatial (HRTF, crossfeed, room, head-tracking) **and** tonal/dynamic optimization, weighted equally. | §4 feature set |
+| LD-1 | **Scope / phasing** | Start as a self-contained own-player (Phase 0), grow to system-wide via process tap (Phase 2). | Whole roadmap |
+| LD-2 | **Meaning of "immersive"** | Both spatial (**BRIR-first**, see LD-14; crossfeed; head-tracking) **and** tonal/dynamic optimization, weighted equally. | §4 feature set |
 | LD-3 | **Output targets** | Both headphones/AirPods **and** speakers; auto-detect device and switch profiles. | P0-5, P1-1, FR-SPAT/DEVICE |
-| LD-4 | **MVP listening source** | **Local files only** in Phase 0. Spotify/Apple Music enhancement is deferred to Phase 2 (platform reality — own-player cannot access their PCM). | P0-1, P0-15 |
-| LD-5 | **Content-aware brain** | **Phased**: DSP heuristics (FFT/spectral) ship in Phase 0; on-device Core ML genre/mood model layered in during Phase 1. Resolves §7 Decision 4. | P0-2/3, P1-8 |
-| LD-6 | **Ambient mic adaptation** | **On-demand sampling** (user taps "adapt to my environment"; mic samples ~3 s). No always-on mic / no persistent orange indicator. Resolves §7 Decision 5. | P0-11, P1-4 |
-| LD-7 | **HRTF & hearing personalization** | **Generic HRTF** (default: **SADIE II**, Apache-2.0; MIT KEMAR also acceptable) + a simple in-app calibration **framed strictly as a "listening preference" tool**, not a medical/audiological device. Custom HRTF measurement deferred. Resolves §7 Decision 2 + regulatory framing. *Confirmed by prior-art research: SADIE II is the highest-quality permissively-licensed SOFA-native dataset available.* | P1-1, P1-5 |
-| LD-8 | **Conversational Tuning** | Natural-language sound feedback is in scope. (a) A user instruction acts as a **governing principle** the Adaptivity Engine adapts *around*, never against. (b) **Session-scoped by default**, with explicit save to persist. (c) Instrument/source requests use **band approximation + honest caveat** now; ML source separation (Demucs/HTDemucs via MLX port, MIT-licensed including weights) deferred to a later phase. (d) Positioned as a **supporting/discovery** feature at the Phase 1 launch, not the headline. Resolves §7 Decisions 6 & 7. *Source-separation choice confirmed by prior-art research: Demucs is the only viable permissively-licensed option; real-time use is not feasible — offline only.* | §3a, FR-NLT, P1-13..16 |
-| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. All features are free to everyone in every phase. (Specific OSS license **deferred to post-MVP** / post-Phase 0.) | Whole doc |
-| LD-10 | **Quality-first / ample use of modern hardware** | Maximize audio quality by making **ample use of all modern hardware** — RAM, CPU, **multi-core + GPU (Metal) + Neural Engine** parallelism, **fast SSD** (aggressive disk caching / precompute), and **fast networks** (optional cloud assist for non-sensitive, latency-tolerant work). **Prefer platform-native, hardware-accelerated multimedia frameworks/OS features** over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, **Audio Workgroups (`os_workgroup`) for safe real-time parallelism**, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + `AVAudioConverter` SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are **not** primary constraints. **Hard limits that remain:** (a) the real-time **per-buffer deadline** (no jitter/overruns); (b) the core playback path stays **offline-capable** — network is optional, never required; (c) **privacy** — sensitive data (mic, hearing profile) stays on-device; (d) laptop battery/thermal (optional efficiency mode). In the own-player, **latency is free** (we are the clock) → exploit look-ahead: linear-phase FIR EQ, look-ahead limiting, oversampling, long convolutions, and full-track **pre-analysis** (parallelized across cores/ANE, cached to RAM/SSD). Kernel exposes a latency/quality budget (max-quality in player, bounded-latency in Phase 2). Default: max quality. *Confirmed by prior-art research: BNNS Graph is the correct RT-safe ML inference path on the render thread; Core ML / Metal are off-RT only.* | NFR-PERF-02/03/04; DSPKernel; PreAnalysisPipeline |
+| LD-4 | **MVP listening source** | **Local files only** in Phase 0. Streaming integration deferred to Phase 2 (platform reality — own-player cannot access Spotify/Apple Music PCM). | P0-1, P0-15 |
+| LD-5 | **Content-aware brain** | **Phased**: DSP heuristics (FFT/spectral) ship in Phase 0; on-device Core ML genre/mood model layered in during Phase 1. | P0-2/3, P1-8 |
+| LD-6 | **Ambient mic adaptation** | **On-demand sampling** (user taps "adapt to my environment"; mic samples ~3 s, then released). No always-on mic. | P0-11, P1-4 |
+| LD-7 | **HRTF & hearing personalization** | **BRIR-first** (see LD-14 — BRIR supersedes the generic-HRTF-only approach in LD-7 v0.1). Default binaural experience = BRIR (HRTF + early reflections + late reverb). Dry HRTF = "minimal" fallback mode. In-app calibration framed as a "listening preference" tool, not a medical device. SADIE-II (Apache-2.0) remains the anechoic HRIR core inside the BRIR. | P1-1, P1-5 |
+| LD-8 | **Conversational Tuning** | NL input becomes a **typed multi-band macro** (optionally targeting a stem) that acts as a **governing principle** — session-scoped by default, explicit save to persist. Instrument/source requests use band approximation at Phase 1 mix-level; per-stem NL targeting is Phase 1.5. Mechanism (rules / CLAP / LLM) deferred (OQ-11). | §3a, FR-NLT, P1-13…16, P1.5-6 |
+| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. OSS license deferred to post-MVP. | Whole doc |
+| LD-10 | **Quality-first / ample use of modern hardware** | Maximize quality using all modern hardware: multi-core + GPU (Metal) + Neural Engine, fast SSD (aggressive caching/precompute), optional network assist for non-sensitive latency-tolerant work. Hard limits: per-buffer RT deadline; core playback stays offline-capable; privacy (mic/hearing on-device); battery/thermal. In own-player, latency is free → exploit look-ahead. Kernel exposes latency/quality budget (max-quality in player, bounded-latency in Phase 2). | NFR-PERF-02/03/04 |
+| **LD-11** | **Source quality & non-goals** | Assume reasonably good sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise, de-clip, or upsampling to fix bad audio). Network may be used for non-sensitive, latency-tolerant work; **core playback + RT DSP stay offline-capable**. | §4, §7 |
+| **LD-12** | **Perceptual tonal model** | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial), not a single magnitude curve. The dB curve is a realization/interchange format only. | §4, Arbiter design |
+| **LD-13** | **Phase realization = minimum-phase by default** | Phase mode is chosen by **content** (transient density from pre-analysis); linear/mixed-phase is opt-in or band-limited where it genuinely helps. Pre-ringing (not latency) is the real cost. | §4 DSP, P1-DSP |
+| **LD-14** | **BRIR-first immersion** | Headphone spatialization defaults to a **binaural room response** (HRTF + early reflections + late reverb); dry HRTF is a "minimal" mode. Head-tracking is opt-in for music. Speaker immersion = M/S width + ambience extraction (mono-safe); crosstalk-cancellation is opt-in (centered near-field only). Crossfeed opt-in. | P1-1, P1-3, §4 spatial |
+| **LD-15** | **Stem-based object engine (Phase 1.5)** | Offline **6-stem** separation (vocals/drums/bass/guitar/piano/other), cached to SSD. Full **per-stem chains including spatial placement**, re-summed to binaural. Masking computed **between stems**. **Own-player-only** — the live tap path (Phase 2) is mix-level only; real-time-lite separation is a research track. | §4 Phase 1.5, P1.5-1…6 |
+| **LD-16** | **"Reimagine" intensity knob** | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → rising = clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. | §3b, P1-17, P1.5-7 |
+| **LD-17** | **Dynamics & loudness** | **No program DRC by default** (transparent LUFS normalization + true-peak safety limiter only). Loudness compensation = **fraction of the equal-loudness contour difference** (ISO 226) + per-device SPL calibration + loudness-matched makeup, **rate-limited to volume changes only**. | §4 dynamics, P1-6 |
+| **LD-18** | **Target hardware & runtime posture** | **Floor = Apple-Silicon Pro-class (M1 Pro, 2021) / ≥16 GB**; the shipping generation is far above it — **M4** (38-TOPS NE, ~120 GB/s) → **M4 Pro/Max** (10–12 P-cores, 273–546 GB/s, 64–128 GB) and **M5** (per-GPU-core neural accelerators, ~4× M4 GPU-AI compute, 153 GB/s base). The app is the **foreground, primary activity** ("lean-back listening"), free to **use many cores and occupy memory generously**. Net: the Phase-1.5 render has **large headroom on current hardware**; design for the M1 Pro floor and exploit the abundance above it. Supersedes the base-8 GB-Air framing; **downgrades Risk R-3 to Low**. Degrade gracefully if backgrounded. **Power:** default max-quality on AC; auto-lighter (Efficiency profile) on battery — user-overridable. | §15, NFR-PERF-06, R-3, personas |
+| **LD-19** | **App shape** | A focused **full-window lean-back listening app** (now-playing + scene visualizer + Reimagine dial) **plus a menu-bar extra** for quick control. Both surfaces share one engine. | FR-UI |
 
 ---
 
@@ -31,11 +40,43 @@ These were confirmed with the founder and supersede any conflicting text below. 
 
 ### One-Line Vision
 
-> Make every pair of headphones and every laptop speaker sound like the best version of itself — automatically, in real time, without the listener having to think about it.
+> Turn any good-quality song into a personal, perceptually-tuned, spatially-rendered mix you can steer in plain language.
+
+### What Adaptive Sound Is
+
+Adaptive Sound is an **object-based spatial music renderer** with its own player. It does three things simultaneously:
+
+1. **Perceptual clarity** — a masking-aware, ERB/Bark tonal engine ensures every element of the recording is actually audible at the playback level and device in use.
+2. **Spatial rendering** — BRIR-first binaural reproduction (HRTF + early reflections + late reverb) places the mix in a convincing acoustic space on headphones; M/S width + ambience extraction on speakers.
+3. **Natural-language steering** — users direct the engine in plain language; instructions become typed multi-band macros that govern how the engine adapts, without needing to touch a slider.
 
 ### Positioning Statement
 
-For **audio-conscious Mac users** who are frustrated that their expensive headphones or high-end laptop speakers are never actually heard at their full potential, **Adaptive Sound** is a **macOS audio enhancement app** that continuously optimizes playback quality by adapting — in real time — to what you are listening to, how loud it is, what output device is connected, and your individual hearing profile. Unlike static equalizers such as eqMac or one-size-fits-all "3D" effects like Boom 3D, Adaptive Sound treats every listening session as a unique acoustic event and adjusts accordingly.
+For **audio-conscious Mac users** who want to hear their music the way it was meant to sound — not the flattened, device-compromised version their hardware delivers by default — **Adaptive Sound** is an **object-based spatial music renderer** that turns any good-quality song into a personal, perceptually-tuned mix they can steer in plain language. Unlike static equalizers (eqMac), one-size "3D" effects (Boom 3D), or Apple's Spatial Audio Foundation (ASAF) — which applies fixed post-decode processing — Adaptive Sound **adapts continuously** to audio content, playback level, output device, and individual hearing, and lets the user direct it naturally.
+
+### The Reimagine Knob — Reconciling Fidelity and Transformation
+
+The central user-facing control is a single **Reimagine intensity knob**:
+
+| Intensity | Experience |
+|---|---|
+| **0%** | **Bit-faithful bypass.** Original mix, stem engine off, zero separation artifacts. "Hear exactly what was recorded." |
+| Low (mix range) | Subtle masking-aware clarity + gentle BRIR externalization. Sources remain near original positions. |
+| Mid (mix range) | Audible clarity gains + spatial widening. Mix placed in a convincing virtual room. |
+| High (stem range, Phase 1.5+) | Full per-stem reimagining: each stem placed independently in the spatial field, aggressive unmasking and rebalancing. |
+| **100%** | **Full spatial reimagining.** Maximum transformation — artifacts accepted at this extreme; quality-gated. |
+
+The knob is the honest single control spanning fidelity to transformation. It replaces the "on/off enhancement" framing with a continuous dial the user owns.
+
+### Durable Moat
+
+Apple's Spatial Audio Foundation (ASAF) applies **static, post-decode** binaural processing. Adaptive Sound's moat is three-layered and continuous:
+
+- **Content-adaptive**: processing responds to what is actually playing — spectral balance, transient density, dynamic range — on every buffer.
+- **Personalized**: per-device correction, hearing profile, per-user NL governing principles.
+- **System-responsive**: playback level, ambient noise, battery/thermal mode all feed the engine.
+
+None of this is available to a static post-decode pass. The stem object engine (Phase 1.5) adds a fourth layer: **per-instrument spatial placement** that no static profile can replicate.
 
 ---
 
@@ -43,37 +84,54 @@ For **audio-conscious Mac users** who are frustrated that their expensive headph
 
 ### Persona A — "The Audiophile Commuter" (Primary)
 
-**Profile**: Marcus, 31, software engineer. Owns Sony WH-1000XM5 or AirPods Pro. Commutes by train and works from coffee shops. Listens to a mix of lo-fi, jazz, and electronic music for 3–5 hours per day on a MacBook Pro.
+**Profile**: Marcus, 31, software engineer. Owns Sony WH-1000XM5 or AirPods Pro. Commutes by train and works from coffee shops. Listens to lo-fi, jazz, and electronic music 3–5 hours per day on a MacBook Pro.
 
-**Pain**: His headphones sound flat at low volume in a quiet cafe, then harsh and fatiguing at high volume on a noisy train. He has tried eqMac but finds manual EQ fiddling tedious. He knows his headphones are capable of more than he is hearing.
+**Pain**: Headphones sound flat at low volume in a quiet cafe, then harsh and fatiguing at high volume on a noisy train. Manual EQ fiddling in eqMac is tedious. He knows his headphones are capable of more.
 
 **Job to be Done**: "When I press play, I want it to sound great right now — not after I spend 20 minutes tweaking sliders."
 
-**What they value**: Immediate, effortless improvement to daily listening with zero configuration overhead. Will abandon if there is any noticeable latency or dropout.
+**What they value**: Immediate, effortless improvement with zero configuration overhead. Will abandon on any noticeable latency or dropout.
+
+**Where Adaptive Sound specifically serves Marcus:**
+- **BRIR immersion (LD-14)**: his headphones get a convincing soundstage externalized out of his head — ASAF gives him a fixed stage; we adapt it to content and level continuously.
+- **Reimagine knob (LD-16)**: at a moderate setting he gets spatial improvement without touching anything; he can pull it back to 0% on commutes when he wants pure fidelity.
+- **NL steering (LD-8)**: on a noisy train, "make it a bit less harsh" gives an immediate protective attenuation without breaking his flow.
 
 ---
 
-### Persona B — "The Late-Night Laptop Listener" (Primary)
+### Persona B — "The Developer-Audiophile" (Primary — and the maker)
 
-**Profile**: Priya, 27, product designer. Uses MacBook Air M2 built-in speakers exclusively, often late at night at low volume. Listens to podcasts, indie pop, and ambient music.
+**Profile**: Ramith, software developer and audio enthusiast; owns an Apple-Silicon Mac from the M1 generation **and** a current M4. Listens widely on good headphones and capable Macs; cares about both fidelity *and* immersion; comfortable with technical controls but wants results — not an afternoon of slider-tweaking. He is building this **for himself first** (personal / open-source — LD-9), so the product is tuned to his ears and his hardware.
 
-**Pain**: MacBook Air speakers sound thin at low volume; the bass disappears entirely below 30% volume. Apple's Spatial Audio on AirPods is impressive but she often listens without headphones. She does not know what an EQ is and will not configure one.
+**Pain**: Existing tools are static EQs (eqMac) or one-size "3D" effects (Boom 3D); none adapt to the content, none let him direct the sound in plain language, and none turn a stereo track into a placeable spatial mix. He has abundant hardware headroom (M1 Pro → M4) and wants software that actually **spends it on quality**.
 
-**Job to be Done**: "Make my laptop speakers sound full and warm even when I have to keep the volume low so I don't wake anyone."
+**Job to be Done**: "Turn any good track into the most immersive, clear version of itself on my gear — and let me steer it in plain language — instead of a static preset."
 
-**What they value**: Sound that is noticeably fuller and warmer with zero setup or learning curve. Discoverability through word-of-mouth or a simple direct download.
+**What they value**: Maximal quality that exploits modern Apple Silicon; control and transparency when wanted; a bit-faithful anchor he can trust; open-source.
+
+**Where Adaptive Sound specifically serves Ramith:**
+- **Stem-based spatial reimagining (LD-15, LD-18)**: his M1 Pro / M4 Macs have the headroom to separate a track and place its stems in a virtual room — the signature experience.
+- **Reimagine knob (LD-16)**: one dial from 0% (bit-faithful — "hear exactly what's recorded") to full spatial reimagining — fidelity and transformation on a single honest axis.
+- **NL steering, incl. per-stem (LD-8, LD-15)**: "bring up the guitar," "less harsh," "more air" — direct the sound conversationally.
+- **Quality-first / ample hardware (LD-10, LD-18)**: the engine uses many cores + memory generously on his hardware rather than playing it safe.
 
 ---
 
 ### Persona C — "The Home Studio Hobbyist" (Secondary)
 
-**Profile**: Tom, 38, musician and weekend producer. Uses Audio-Technica ATH-M50x studio headphones. Switches between headphone mixing, Spotify reference listening, and YouTube tutorials constantly. Runs Ableton on the same machine.
+**Profile**: Tom, 38, musician and weekend producer. Uses Audio-Technica ATH-M50x studio headphones. Switches between headphone mixing, reference listening, and YouTube tutorials constantly. Runs Ableton on the same machine.
 
-**Pain**: His studio headphones are not tuned for casual listening; they are flat and analytical. He uses Sonarworks SoundID in the DAW but it only works inside the DAW. He wants a global correction profile that works across all apps, not just Ableton.
+**Pain**: Studio headphones are flat and analytical for casual listening. Sonarworks SoundID works only inside the DAW. He wants a globally-active correction profile across every app.
 
 **Job to be Done**: "I want my reference headphones to sound like they were tuned for enjoyment everywhere, not just inside my DAW."
 
-**What they value**: A technically credible, globally-active correction profile that works across every app on the machine, not just inside a DAW. Respects well-documented tools; will read the release notes.
+**What they value**: Technically credible, globally-active correction. Respects well-documented tools; will read the release notes.
+
+**Where Adaptive Sound specifically serves Tom:**
+- **BRIR immersion + per-stem spatial placement (LD-14, LD-15)**: Phase 1.5 lets him hear stems placed spatially in the virtual room — a reference-quality experience he cannot get in casual listening anywhere else.
+- **Per-stem NL control (LD-8, LD-15)**: "bring up the guitar" actually targets the guitar stem in Phase 1.5, not just the guitar frequency region.
+- **Reimagine knob at 0% (LD-16)**: when referencing for mixing, he pulls to 0% for a verified bit-faithful bypass, then dials back up for enjoyment listening.
+- **Phase 2 system-wide**: the correction profile he trusts in the own-player follows him to Spotify, YouTube, and Zoom.
 
 ---
 
@@ -81,85 +139,86 @@ For **audio-conscious Mac users** who are frustrated that their expensive headph
 
 ### Core Value Proposition
 
-Adaptive Sound is the only Mac audio enhancer that continuously reacts to context. The Adaptivity Engine adjusts processing in real time across five dimensions simultaneously: audio content, ambient environment, output device, playback volume, and personal hearing. The result is an experience that feels effortlessly perfect rather than technically configured.
+Adaptive Sound is the only Mac audio enhancer that continuously re-renders music to your current context. The engine adjusts processing in real time across five dimensions simultaneously: audio content (spectral, dynamic, transient), ambient environment, output device, playback volume, and personal hearing profile. The result feels effortlessly perfect rather than technically configured — and when it is not quite right, you tell it in plain English.
 
-### Competitive Comparison Table
+### 3a. Feature Definition — Conversational Tuning
 
-| Capability | Adaptive Sound | eqMac | Boom 3D | SoundSource | Sonarworks SoundID | Apple Spatial Audio |
-|---|---|---|---|---|---|---|
-| System-wide processing | Phase 2 | Yes | Yes | Yes | DAW only | AirPods only |
-| Own-player mode (no driver) | Phase 0 MVP | No | No | No | No | No |
-| Adaptive / real-time adjustment | Yes (core) | No — static | No — static | No — static | No — static | Limited (head tracking) |
-| Content-aware EQ (genre/spectrum) | Yes | No | No | No | No | No |
-| Volume-aware EQ (Fletcher-Munson) | Yes | Manual | No | No | No | No |
-| Ambient noise sensing (mic) | Yes | No | No | No | No | No |
-| HRTF binaural / spatial staging | Yes | No | Basic "3D" | No | No | Yes |
-| Head tracking (AirPods motion) | Yes | No | No | No | No | Yes |
-| Headphone correction profiles | Yes | No | No | No | Yes (excellent) | No |
-| Speaker auto-detection + switch | Yes | Manual | Manual | Manual | No | No |
-| Hearing personalization | Yes (Phase 1) | No | No | No | Via Mimi | No |
-| Natural-language sound tuning | Yes (Phase 1+) | No | No | No | No | No |
-| Price | Free / open-source | Free | $19.99 | $39 | $99/yr | Free (Apple ecosystem) |
-| macOS virtual audio driver required | **Phase 2: no driver** (process tap, primary); driver only as fallback | Yes | Yes | Yes | No | No |
+#### What It Is
 
-**Sharp differentiation in one sentence**: Every competitor requires the user to configure a static profile up-front and leave it alone; Adaptive Sound is the only product that keeps working on your behalf every second the audio is playing.
+Conversational Tuning lets users describe what they hear in plain English — "bass is too low," "I can't hear voices," "this is hurting my ears," "bring up the guitar" — and have the engine respond with an immediate, meaningful adjustment. There are no sliders, no band numbers, no audio vocabulary required.
 
----
+In Phase 1.5, NL instructions can **target a stem** directly (e.g., "bring up the guitar" routes to the guitar stem chain, not just the guitar frequency region). This is the full realization of directable audio.
 
-## 3a. Feature Definition — Conversational Tuning
+#### User Value
 
-### What It Is
+- **Zero-knowledge interface to the engine.** For Ramith, "more warmth" is far more accessible than a 200 Hz slider.
+- **Escapes the frustration gap.** The engine is excellent at automatic inference but cannot know subjective taste in the moment. NL closes the gap.
+- **Protective response to discomfort.** Phrases signalling pain ("it hurts my ears," "too harsh," "piercing") are treated as an urgent protective event. Immediate attenuation is applied before any confirmation.
 
-Conversational Tuning lets users describe what they hear in plain English — "bass is too low," "I can't hear voices," "this is hurting my ears" — and have the Adaptivity Engine respond with an immediate, meaningful adjustment. There are no sliders to find, no band numbers to know, no audio vocabulary required. The user simply speaks the problem; the app fixes it.
+#### How Any Phrase Becomes an Adjustment
 
-This makes the Adaptivity Engine *directable*: fully automatic by default, but steerable in plain English when the automatic result is not quite right.
-
-### User Value
-
-- **Zero-knowledge interface to the engine.** For users who do not know what an EQ is (Persona B — Priya), this is the only way to express a sound preference without learning a new domain. Typing "more warmth" is far more accessible than locating a 200 Hz slider.
-- **Escapes the frustration gap.** The Adaptivity Engine is excellent at what it infers automatically, but it cannot know the listener's subjective taste in the moment. Conversational Tuning closes the gap between "pretty good automatically" and "exactly how I want it right now."
-- **Protective response to discomfort.** Phrases signalling pain or discomfort ("it hurts my ears," "too harsh," "piercing") are treated as an urgent signal, not a preference adjustment. The app responds with an immediate protective reduction before any fine-tuning occurs.
-
-### Jobs to Be Done (JTBD)
-
-| Persona | JTBD Statement |
-|---|---|
-| **Persona B — Priya** (primary JTBD) | "When the sound bothers me or feels off, I want to fix it by just saying what's wrong — without learning anything about audio." |
-| **Persona A — Marcus** | "When I'm on a noisy train and the automatic settings aren't quite right, I want to nudge the sound quickly without breaking my flow." |
-| **Persona C — Tom** | "When I want a specific instrument to sit better in the mix, I want to direct the app with professional intent without manually hunting EQ bands." |
-
-### How Any Phrase Becomes an Adjustment — the Unified Model
-
-Whatever the user says — a frequency word, an instrument name, or a purely aesthetic impression — it resolves to the **same underlying action**: a set of **gain changes across frequency regions**, plus optional **dynamics** (compression / transient) and **spatial** (width / crossfeed) moves. There is one shared **DSP action-space**; phrases differ only in how *directly* they map onto it, not in the machinery behind them.
+Every NL utterance resolves to a **typed multi-band macro** — gain changes across frequency regions, plus optional dynamics and spatial moves. The macro optionally targets a stem (Phase 1.5). There is one shared DSP action-space; phrases differ only in how directly they map onto it.
 
 | Directness | Example phrases | How it maps |
 |---|---|---|
-| **Direct** — frequency word | "bass too low," "too much treble," "more warmth" | 1:1 to a band's gain (e.g. bass → 60–250 Hz). Trivial, real-time. |
-| **Indirect** — instrument / source | "can't hear voices," "guitar isn't clear," "drums too loud" | Adjust the region where that source's energy dominates (e.g. vocal presence 2–4 kHz). |
-| **Abstract** — aesthetic / emotional | "sounds boring / bland / lifeless," "muddy," "harsh," "thin," "boxy" | A *combination* of moves (e.g. "lifeless" → +presence +air +transient punch, maybe +width). The richest expression of taste. |
+| **Direct** — frequency word | "bass too low," "too much treble," "more warmth" | 1:1 to a band's gain (bass → 60–250 Hz). Trivial, real-time. |
+| **Indirect** — instrument / source | "can't hear voices," "guitar isn't clear," "drums too loud" | Phase 1: adjust dominant frequency region. Phase 1.5: target the specific stem. |
+| **Abstract** — aesthetic / emotional | "muddy," "harsh," "thin," "lifeless" | A combination of moves (e.g., "lifeless" → +presence +air +transient punch + optional width). |
 
-**Key consequence:** the engineering target is a **parameter vector over the spectrum + dynamics + spatial**, *not* a stem separator. This collapses what once looked like "two classes" into a single mechanism and **removes ML source separation from the critical path** — for instrument-named requests, EQ-region approximation is the baseline, and true per-source isolation (source separation) becomes an *optional precision upgrade* in a later phase, never a prerequisite for the feature to ship.
+**Key consequence:** the engineering target is a parameter vector over spectrum + dynamics + spatial, not a stem separator in the NL path itself. Per-stem precision is layered in at Phase 1.5 via LD-15, not required for Phase 1 shipping.
 
-### Safety Principle — Discomfort Phrases
+#### Safety Principle — Discomfort Phrases
 
-Any input that signals physical discomfort ("hurts my ears," "too painful," "it's piercing," "too harsh at this volume") must be treated as a *protective event*, not a preference signal. The required response is:
+Any input signalling physical discomfort must be treated as a *protective event*, not a preference signal:
 
-1. Immediately attenuate the problematic frequency region by a meaningful amount (e.g., −4 to −6 dB on the offending range).
-2. Apply the reduction before any confirmation or explanation is shown to the user.
+1. Immediately attenuate the problematic frequency region by a meaningful amount (e.g., −4 to −6 dB).
+2. Apply the reduction before any confirmation or explanation.
 3. Surface a brief, human confirmation: "Turned down the harsh highs — adjusting now." Do not ask the user to confirm first.
 
-This is a first-class product principle, not a nice-to-have. Discomfort signals are urgent; the cost of under-reacting is real harm and immediate loss of trust.
+This is a first-class product principle. A hard-coded priority list of known discomfort signals executes at the app level with no network round-trip.
 
-### Interaction with the Adaptivity Engine and Adaptation Strength
+#### Interaction with the Engine
 
-Conversational Tuning adjustments operate as a **user preference layer** that sits on top of the automatic Adaptivity Engine output — they do not replace it.
+A Conversational Tuning instruction is a **governing principle**: the engine keeps adapting to volume, content, and environment, but does so in service of the principle, never against it. Governing principles are session-scoped by default; users can promote any instruction to a saved principle with an explicit save (LD-8). Multiple instructions accumulate; "reset" or "undo everything" clears all in one action.
 
-**Behavioral model:**
+---
 
-- A Conversational Tuning instruction is treated as a **governing principle for adaptation**, not a one-off offset. It expresses the listener's intent for some aspect of the sound (e.g., "keep vocals intelligible," "less bass"), and the Adaptivity Engine adopts that intent as a **standing objective**: it keeps adapting to volume, content, and environment, but does so **in service of the principle, never against it.** Where automatic adaptation would move a band counter to a stated instruction, the instruction wins and the engine adapts the rest of the chain around it.
-- Governing principles are **session-scoped by default**: they reset when a new session starts, so the engine begins fresh. The user can promote any instruction to a **saved principle** (tied to the current device profile or content type) with an explicit save — see LD-8.
-- Interaction with the Adaptation Strength slider: **Adaptation Strength governs the engine's *autonomous* range; a user instruction is not subject to that range.** It is an explicit directive, so it executes fully and then constrains subsequent autonomous adaptation regardless of the strength setting.
-- Multiple sequential instructions accumulate (e.g., "bass up" then "treble down" both persist). The user can reset all adjustments with a single "reset" or "undo everything" instruction, or via a visual reset button in the UI.
+### 3b. The Reimagine Knob — Product Design Principle
+
+The Reimagine intensity knob is the primary user-facing control for transformation depth. It is **not** an effects preset or a quality switch — it is a continuous spectrum from **"hear exactly what was recorded"** to **"hear the recording reimagined for your headphones and hearing."**
+
+Design principles:
+- **0% is a first-class listening mode.** It is not a "disable processing" fallback. At 0%, the audio path is verified bit-faithful (MD5-equal bypass, per NFR-QUAL). This is the anchor that earns user trust for higher settings.
+- **The knob is the only control most users need.** Below the knob, the engine works automatically. Above, stems and NL give expert users more resolution.
+- **Default should sit in the low-to-mid mix range.** Enough improvement to be immediately noticeable; far enough from the stem range that separation artifacts are never an out-of-box surprise.
+- **Phase 1 mix range and Phase 1.5 stem range are a single continuous control.** The ceiling raises when stems are available; the UX does not change.
+
+---
+
+### Competitive Comparison Table
+
+| Capability | Adaptive Sound | eqMac | Boom 3D | SoundSource | Sonarworks SoundID | Apple Spatial Audio (ASAF) |
+|---|---|---|---|---|---|---|
+| System-wide processing | Phase 2 (process tap primary, no driver; libASPL fallback) | Yes (driver) | Yes (driver) | Yes (driver) | DAW only | AirPods / system (static) |
+| Own-player mode (no driver) | Phase 0 MVP | No | No | No | No | No |
+| Adaptive / real-time adjustment | Yes — continuous, content-driven | No — static | No — static | No — static | No — static | No — static post-decode |
+| Content-aware EQ (spectral + genre) | Yes (ERB/Bark perceptual model, LD-12) | No | No | No | No | No |
+| Volume-aware EQ (equal-loudness comp) | Yes (fractional contour diff, LD-17) | Manual | No | No | No | No |
+| Ambient noise sensing (mic) | Yes (on-demand, LD-6) | No | No | No | No | No |
+| **Object-based / per-stem spatial rendering** | **Yes (Phase 1.5, LD-15)** | No | No | No | No | No |
+| BRIR binaural (HRTF + room) | Yes (default, LD-14) | No | Basic "3D" | No | No | HRTF-only / static ASAF |
+| Head tracking (AirPods motion) | Yes (opt-in, LD-14) | No | No | No | No | Yes |
+| Headphone correction profiles | Yes | No | No | No | Yes (excellent) | No |
+| Speaker auto-detection + switch | Yes | Manual | Manual | Manual | No | No |
+| Hearing personalization | Yes (Phase 1) | No | No | No | Via Mimi | No |
+| **Natural-language control (mix-level)** | **Yes (Phase 1, LD-8)** | No | No | No | No | No |
+| **Natural-language control (per-stem)** | **Yes (Phase 1.5, LD-15)** | No | No | No | No | No |
+| **Reimagine intensity knob (fidelity → spatial remix)** | **Yes (Phase 1 mix range; Phase 1.5 stem range, LD-16)** | No | No | No | No | No |
+| macOS driver required | **Phase 2: no driver primary** (process tap, macOS 14.2+); libASPL fallback only | Yes | Yes | Yes | No | No |
+| Continuous adaptation (vs. static post-decode) | **Yes — adapts every buffer** | No | No | No | No | **No — static post-decode** |
+| Price | Free / open-source | Free | $19.99 | $39 | $99/yr | Free (Apple ecosystem) |
+
+**Sharp differentiation in one sentence**: Every competitor — including Apple's Spatial Audio Foundation — applies a fixed, static profile decided at setup; Adaptive Sound continuously re-renders every buffer to your current audio, volume, device, and hearing, and lets you steer the result in plain language down to the individual stem.
 
 ---
 
@@ -167,135 +226,173 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 
 ### Prioritization Scheme: MoSCoW
 
-- **M** (Must Have): Ship-blocking. MVP is unusable without it.
+- **M** (Must Have): Ship-blocking. The phase is unusable without it.
 - **S** (Should Have): High user value, ship in the phase if feasible.
 - **C** (Could Have): Nice to have; defer if schedule is tight.
 - **W** (Won't Have this phase): Explicitly out of scope — documented to prevent scope creep.
 
 ---
 
-### Phase 0 — Own-Player MVP
+### Phase 0 — Local-File Player MVP (DSP Spine)
 
-**Goal**: Prove the Adaptivity Engine concept end-to-end. Ship fast with zero driver complexity. Target: 8–12 weeks to private beta.
-**Architecture**: AVAudioEngine / AUHAL + C++ DSP engine + SwiftUI UI. No virtual audio device, no sudo, no notarization complexity beyond standard app notarization.
+**Goal**: Prove the DSP spine end-to-end. Ship fast with zero driver complexity. Target: 8–12 weeks to private beta.
+**Architecture**: AVAudioEngine + one custom AUAudioUnit v3 (C++ DSP kernel) + SwiftUI. Swift/C++ interop. No virtual audio device, no sudo, no driver complexity. Passthrough → first DSP as the gate.
 
 #### Features
 
 | # | Feature | Priority | Notes |
 |---|---|---|---|
-| P0-1 | Local file playback (FLAC, ALAC, MP3, AAC, WAV) | M | The player shell. Use AVAudioEngine. |
-| P0-2 | Real-time spectral analysis of playing content | M | FFT via vDSP. Foundation of content-aware EQ. |
-| P0-3 | Content-aware adaptive EQ — auto-adjusts bands per spectral profile | M | The core differentiator, must be demonstrated in MVP. |
-| P0-4 | Volume-aware EQ (Fletcher-Munson compensation) | M | Boosts bass/treble at low volume. Immediate "wow" for Persona B. |
+| P0-1 | Local file playback (FLAC, ALAC, MP3, AAC, WAV) | M | The player shell. AVAudioEngine for decode, format/SR conversion, device routing. |
+| P0-2 | Real-time spectral analysis of playing content | M | FFT via vDSP. Foundation of content-aware EQ. Meters + loudness up via seqlock/ring to UI at ≥30 fps. |
+| P0-3 | Content-aware adaptive EQ — auto-adjusts bands per spectral profile | M | Core differentiator. ERB/Bark perceptual domain (LD-12) in pre-analysis; first DSP results here. |
+| P0-4 | Volume-aware EQ (equal-loudness compensation) | M | Fractional equal-loudness contour difference per LD-17. Immediate "wow" for Persona B. |
 | P0-5 | Output device auto-detection (headphones vs. speakers) | M | Via `kAudioHardwarePropertyDefaultOutputDevice`. Switch profiles on plug/unplug. |
-| P0-6 | Built-in device preset library (MacBook Air/Pro speakers, AirPods, Sony, Bose, Sennheiser top models) | S | ~20 presets covering 80% of users. Enables out-of-box experience. |
-| P0-7 | Manual EQ override (10-band) with real-time visualization | S | Escape hatch for Persona C. Keeps audiophiles happy. |
-| P0-8 | Basic crossfeed (reduce stereo separation for headphones) | S | Reduces listening fatigue. Differentiates from plain EQ. |
+| P0-6 | Built-in device preset library (Mac built-in speakers, AirPods, Sony, Bose, Sennheiser top models) | S | ~20 presets covering common output devices. Enables out-of-box experience. |
+| P0-7 | Manual EQ override with real-time visualization | S | Escape hatch for Persona C. Typed contribution; does not replace the engine. |
+| P0-8 | Basic crossfeed (reduce stereo separation for headphones) | S | Reduces listening fatigue. Opt-in per LD-14. |
 | P0-9 | Playback queue, basic library view, drag-and-drop | S | Minimum viable player UX. |
-| P0-10 | Adaptive dynamics: soft limiter + psychoacoustic bass enhancement | C | Nice-to-have for bass emphasis on laptop speakers. |
-| P0-11 | Ambient noise sensing via built-in mic (adjust EQ/volume) | C | Requires mic permission UX; can defer to Phase 1. |
-| P0-12 | Head tracking via AirPods motion | W | Phase 1. Requires CoreMotion, adds complexity. |
-| P0-13 | HRTF binaural rendering (full spatial) | W | Phase 1. Computationally heavier; needs tuning time. |
-| P0-14 | Personal hearing profile / audiogram import | W | Phase 1. |
-| P0-15 | Streaming service integration (Spotify, Apple Music) | W | Phase 2 (requires system-wide driver). |
-| P0-16 | System-wide audio processing | W | Phase 2 (process tap primary; driver fallback) — explicitly deferred. |
-| P0-17 | Windows / cross-platform | W | Not in roadmap. macOS only. |
+| P0-10 | True-peak safety limiter + LUFS normalization | M | Per LD-17: transparent normalization + ≥4× oversampling limiter (−1 dBTP, ~1 ms look-ahead, ITU-R BS.1770-5). Non-optional. |
+| P0-11 | Psychoacoustic bass enhancement (device/SPL-gated) | C | Mono-sum NLD (avoids Waves US-11,102,577 per §7 patent risk). Gate on transducer capability. IP review required before release. |
+| P0-12 | Ambient noise sensing via built-in mic (on-demand, ~3 s sample) | C | LD-6: on-demand only. Requires mic-permission UX. Can defer to Phase 1. |
+| P0-13 | Head tracking via AirPods motion | W | Phase 1. |
+| P0-14 | BRIR binaural rendering (full spatial) | W | Phase 1 (LD-14). |
+| P0-15 | Personal hearing profile / audiogram import | W | Phase 1. |
+| P0-16 | Streaming service integration | W | Phase 2 (requires system-wide process tap). |
+| P0-17 | System-wide audio processing | W | Phase 2 (process tap primary; libASPL fallback) — explicitly deferred. |
+| P0-18 | Windows / cross-platform | W | Not in roadmap. macOS-only. |
 
-**What is explicitly NOT in Phase 0**: Any virtual audio device, any sudo/install step, any system-wide processing, any streaming app integration. The MVP is a music player with a smart brain, nothing more.
+**What is explicitly NOT in Phase 0**: Any virtual audio device, sudo/install step, system-wide processing, streaming app integration, BRIR convolution, stem separation. Phase 0 is a music player with a smart DSP brain and a verified bypass mode.
 
 ---
 
-### Phase 1 — Richer Adaptivity & Profiles
+### Phase 1 — Mix-Based Core
 
-**Goal**: Deepen the "adaptive" story, ship spatial audio, add personalization. Target: 16–24 weeks after Phase 0 launch. Begin growing beyond own-player by layering intelligence, not distribution scope.
-**Architecture**: All Phase 0 plus CMHeadphoneMotionManager (AirPods head tracking, macOS 14+), a custom SOFA-HRIR convolution engine (default dataset SADIE II; libmysofa + vDSP/FFTConvolver), optional mic-based ambient sensing.
+**Goal**: Ship the full mix-level immersive and adaptive story. Perceptual clarity/correction, BRIR immersion, adaptive engine, loudness-comp, NL (typed-macro, mix-level), and the Reimagine knob (mix range). Target: 16–24 weeks after Phase 0 launch.
+**Architecture**: All Phase 0 plus CMHeadphoneMotionManager (head tracking, macOS 14+), BRIR convolution engine (room synthesis or CC0/CC-BY IRs; libmysofa BSD-3; vDSP/FFTConvolver MIT), full Arbiter (typed contributors, ERB/Bark, masking model), off-RT Realizer (min-phase biquad default; FIR opt-in).
 
 #### Features
 
 | # | Feature | Priority | Notes |
 |---|---|---|---|
-| P1-1 | HRTF binaural rendering — virtual soundstage outside the head | M | The spatial half of "immersive." Needs a library of HRTFs and a default generic HRTF. |
-| P1-2 | Head tracking via AirPods motion (CoreMotion / CMHeadphoneMotionManager) | M | Makes HRTF dynamic. Strong differentiation vs. Boom 3D. |
-| P1-3 | Virtual room convolution (living room, studio, concert hall IRs) | S | Pairs with HRTF for full spatial experience. |
-| P1-4 | Ambient noise sensing via mic — adapts EQ and dynamics to room noise floor | S | Differentiates from all static competitors. |
-| P1-5 | Personal hearing profile: in-app audiogram test or Mimi SDK import | S | Addresses Persona C; meaningful for users 35+. |
-| P1-6 | Adaptive loudness — automatic volume leveling across tracks | S | User convenience. Competes with Apple's Sound Check. |
-| P1-7 | Profile system: save/load named profiles, sync via iCloud | S | Enables device-switching workflow. |
-| P1-8 | Genre detection / tagging integration for content-aware mode | C | Improve spectral classification by reading ID3 genre tags. |
-| P1-9 | Apple Music / iTunes library integration (local files only, no streaming) | C | Surfaces local library without dragging files in. |
-| P1-10 | A/B listening mode (bypass toggle with matched loudness) | C | Helps users perceive the enhancement — retention driver. |
-| P1-11 | Basic analytics dashboard: listening time, enhancement deltas | C | Engagement / habit-formation feature. |
-| P1-12 | System-wide audio (Phase 2 scope) | W | Keep gate between phases clean. |
-| P1-13 | **Conversational Tuning — Class 1 (frequency-band requests)**: natural-language input mapped to EQ band adjustments ("bass too low," "too bright") | S | Zero-knowledge interface for Persona B. Requires text input field + phrase-to-band mapping layer. Interpretation architecture is a deferred open decision (see §7). |
-| P1-14 | **Conversational Tuning — Class 2a (instrument EQ approximation)**: source-named requests ("I can't hear voices") mapped to the dominant frequency range of that instrument | S | Ships alongside P1-13. Uses a static instrument-to-frequency-range lookup; no source separation. Accuracy is approximate by design — document expectation clearly in UX copy. |
-| P1-15 | **Conversational Tuning — discomfort/safety response**: phrases signalling pain or harshness trigger immediate protective attenuation before any confirmation | M (if P1-13 ships) | Non-negotiable safety behaviour. Must ship at the same time as P1-13; cannot be deferred independently. See §3a Safety Principle. |
-| P1-16 | Conversational Tuning — session preference persistence and "reset all adjustments" control | S | Required for the feature to feel coherent across a session. Visual reset button + spoken "undo everything" equivalent. |
+| P1-1 | **BRIR binaural rendering** — virtual soundstage externalized outside the head | M | LD-14 default. HRTF + early reflections + late reverb (room synthesis or CC0/CC-BY IRs). SADIE-II HRIR as anechoic core. libmysofa + vDSP/FFTConvolver. |
+| P1-2 | Head tracking via AirPods motion (opt-in) | M | CMHeadphoneMotionManager, macOS 14+. Opt-in per LD-14. |
+| P1-3 | Dry HRTF "minimal" mode (crossfeed opt-in) | S | Per LD-14: BRIR is default; dry HRTF is the minimal fallback for users who prefer less room. |
+| P1-4 | Ambient noise sensing via mic — adapts EQ/dynamics to room noise floor | S | On-demand per LD-6. |
+| P1-5 | Personal hearing profile: in-app calibration or audiogram import | S | Typed contributor (hearing profile EQ curve per ear). |
+| P1-6 | Adaptive loudness — LUFS normalization across tracks + loudness-matched makeup | S | LD-17: fraction of equal-loudness contour diff; rate-limited to volume changes; per-device SPL calibration required. |
+| P1-7 | Profile system: save/load named profiles, iCloud sync | S | Device↔profile binding (per architecture §14). |
+| P1-8 | Genre / mood detection (Core ML, on-device) | S | LD-5: layered in during Phase 1. vDSP feature analysis (BPM/key/spectral) per ADR-005. |
+| P1-9 | Apple Music / iTunes library integration (local files only, no streaming) | C | Surfaces local library without drag-and-drop. |
+| P1-10 | A/B listening mode (bypass toggle with matched loudness) | S | Helps users perceive the enhancement. Bypass = Reimagine at 0% (bit-faithful per LD-16). |
+| P1-11 | Basic analytics dashboard: listening time, enhancement deltas | C | Engagement / habit-formation. |
+| P1-12 | Speaker immersion: M/S width + ambience extraction (mono-safe) | S | LD-14 speaker path. Hard mono-compatibility. Crosstalk-cancellation = opt-in near-field only. |
+| P1-13 | **Conversational Tuning — direct (frequency-word) requests**: NL input → EQ band adjustments | S | Mix-level only in Phase 1. Typed macro (multi-band EQ + dynamics + transient + spatial). SAFE-DB / SocialEQ priors (LD-8, ADR-009). |
+| P1-14 | **Conversational Tuning — indirect (instrument-named) requests**: source-named requests → dominant frequency region (band approximation) | S | Ships with P1-13 on the unified action-space directness spectrum (LD-8). No stem separation required; approximate by design — set UX expectation clearly. Phase 1.5 upgrades this to true per-stem targeting. |
+| P1-15 | **Conversational Tuning — discomfort/safety response**: immediate protective attenuation on pain/harshness phrases | M (if P1-13 ships) | Non-negotiable. Hard-coded priority list; no network round-trip. Ships simultaneously with P1-13. |
+| P1-16 | Conversational Tuning — session preference persistence and "reset all adjustments" control | S | Governing-principle model per LD-8. Visual reset button + spoken "undo everything" equivalent. |
+| P1-17 | **Reimagine intensity knob (mix range, 0%–~60%)** | M | LD-16. 0% = bit-faithful bypass (verified MD5-equal). Rising = clarity + BRIR widening. Stem range ceiling unlocked in Phase 1.5. Single most prominent user control. |
+| P1-18 | System-wide audio (Phase 2 scope) | W | Gate between phases clean. |
 
 ---
 
-### Phase 2 — System-Wide Enhancement
+### Phase 1.5 — Stem-Based Object Engine
 
-**Goal**: Process audio from any app — Spotify, Apple Music, YouTube, Zoom — through the Adaptivity Engine. This is the full product vision.
+**Goal**: Unlock the full spatial reimagining story via per-stem rendering. This phase is **gated on a performance/feasibility spike** (see §7) that must complete before Phase 1.5 engineering begins.
+**Architecture**: All Phase 1 plus offline 6-stem Demucs/HTDemucs separation (Core ML / MLX, MIT weights), per-stem DSP chains, extended Arbiter (between-stem masking), per-stem NL targeting, Reimagine knob stem range.
 
-**Architecture — primary path (macOS 14.2+)**: **Core Audio process taps** (muted global tap + private aggregate device). Capture all system audio, mute the original stream, run the C++ DSP kernel, and play the processed result to the real hardware device. No HAL plug-in to sign/notarize/install, no privileged helper, no sudo, no `coreaudiod` restart. This is a genuine UX simplification and a competitive advantage vs. eqMac, Boom 3D, and SoundSource, all of which require a driver. See ADR-002 (Proposed) in `docs/architecture/prior-art.md`.
-
-**Architecture — fallback path (older macOS or where a persistent selectable output device is needed)**: **AudioServerPlugIn virtual device** (libASPL, MIT). User sets "Adaptive Sound" as system output. The driver reads audio, pipes it to the companion DSP engine via Mach IPC, and writes to the real hardware device. Requires: Developer ID signing, notarization, Hardened Runtime, SMAppService privileged helper, sudo install, `coreaudiod` restart.
-
-**Fallback engineering gate**: The AudioServerPlugIn lives in `coreaudiod`'s process space, must be pure C/C++, cannot allocate on the audio thread, and must communicate with the UI process via Mach services declared in Info.plist. Plan 6–10 additional engineering weeks for driver stability before shipping the fallback path. Reference: libASPL, eqMac (Apache-2.0 v1.3.2 snapshot).
-
-**Platform requirement**: The primary process-tap path requires **macOS 14.2 or later** (exact min-OS to be confirmed against `<CoreAudio/AudioHardwareTapping.h>` headers — see open verification in prior-art.md §5). This interacts with the still-open minimum-macOS question. The fallback driver path supports older macOS versions.
+**Tuning spike (before Phase 1.5 kickoff)**: measure per-stem RT cost, memory for 6 cached stems + BRIR kernels, and worst-case render budget on the **M1 Pro / 16 GB floor** (LD-18; sole-occupancy). Sets per-tier QualityProfile caps and confirms Audio Workgroups fan-out. Given the raised floor + current-gen headroom (M4/M5 ~3–4× the floor), this is a **tuning exercise, not a go/no-go**. See §7 Risk R-3 and architecture.md §15.
 
 #### Features
 
 | # | Feature | Priority | Notes |
 |---|---|---|---|
-| P2-1 | System-wide audio capture and processing via **Core Audio process tap** (primary) | M | The primary architectural foundation of Phase 2. No driver install, no sudo. macOS 14.2+ required. |
-| P2-2 | Guided setup UX for process-tap path: screen-recording / audio-capture permission grant + output device selection | M | UX must make permission grant feel trustworthy and straightforward. Critical for Persona B adoption. |
+| P1.5-1 | **Offline 6-stem separation** (vocals/drums/bass/guitar/piano/other) | M | Demucs/HTDemucs via Core ML / MLX (MIT). On add/first-play, run offline (GPU/ANE, ~seconds/track), cache stems to SSD. |
+| P1.5-2 | **Per-stem DSP chains** (EQ + dynamics + spatial placement per stem) | M | Each stem runs its own typed contributor chain. Re-summed to binaural via BRIR. |
+| P1.5-3 | **Per-stem spatial placement in BRIR field** | M | Stems placed as objects in the virtual room. This is the headline Phase 1.5 capability. |
+| P1.5-4 | **Between-stem masking / unmasking** | M | Masking computed between stems in ERB/Bark. This is where the true clarity gain over mix-level processing lives. |
+| P1.5-5 | **Quality-gating and graceful fallback** for low-confidence separations | M | 6-stem (esp. guitar/piano) is least-robust. "Other" as catch-all. Fallback to fewer stems or mix-level processing if separation quality threshold not met. |
+| P1.5-6 | **Per-stem NL targeting**: "bring up the guitar," "push the vocals forward" | M | LD-8, LD-15: NL macros can target a specific stem. Full realization of directable audio. |
+| P1.5-7 | **Reimagine intensity knob — stem range (0%–100%)** | M | LD-16: Phase 1.5 raises the ceiling. Rising from mix-range ceiling → stem placement → aggressive unmask/rebalance → 100% full reimagining. Crossfades original↔stem-render. |
+| P1.5-8 | Per-stem manual controls (optional level / mute / solo per stem) | C | Expert/Persona C feature. Expose only if UX complexity budget allows. |
+| P1.5-9 | Real-time-lite separation (research track) | W | Architecture §6: not in scope for Phase 1.5. Remains a research track. |
+
+**Own-player-only**: All Phase 1.5 stem features apply in the own player only. The Phase 2 process-tap path is mix-level by design (LD-15).
+
+---
+
+### Phase 2 — System-Wide (Process Tap)
+
+**Goal**: Process audio from any app — Spotify, Apple Music, YouTube, Zoom — through the same kernel. Mix-level only (stem features remain own-player-only).
+
+**Architecture — primary path (macOS 14.2+)**: Core Audio process taps (muted global tap + private aggregate device). Same C++ DSP kernel, BoundedLatency QualityProfile. No HAL plug-in, no privileged helper, no sudo, no `coreaudiod` restart. Competitive advantage vs. eqMac, Boom 3D, SoundSource (all require a driver).
+
+**Architecture — fallback path**: AudioServerPlugIn virtual device (libASPL, MIT) for older macOS or where a persistent selectable output device is needed. Requires Developer ID signing, notarization, Hardened Runtime, SMAppService privileged helper, sudo install, `coreaudiod` restart. Plan 6–10 additional engineering weeks for fallback stability.
+
+#### Features
+
+| # | Feature | Priority | Notes |
+|---|---|---|---|
+| P2-1 | System-wide audio capture via **Core Audio process tap** (primary) | M | macOS 14.2+ required. No driver install, no sudo. BoundedLatency profile. Mix-level processing only. |
+| P2-2 | Guided setup UX for process-tap path (screen-recording / audio-capture permission) | M | UX must make permission grant feel trustworthy. Critical for Persona B adoption. |
 | P2-3 | Auto-reconnect after OS update or permission revocation | M | Reliability non-negotiable for both tap and fallback paths. |
-| P2-4 | Per-app enhancement profiles (different settings for Spotify vs. Zoom) | S | SoundSource's core value — competitive necessity in Phase 2. |
-| P2-5 | All Phase 1 adaptivity features applied system-wide | S | Content-aware, volume-aware, ambient — now work for all apps. |
-| P2-6 | Low-latency mode for gaming / video calls (< 5 ms added latency target) | S | Without this, Zoom/Teams users will disable the processing. |
-| P2-7 | **Fallback: AudioServerPlugIn virtual device** (libASPL) for older macOS or users who prefer a persistent selectable output device | S | Fallback to the driver path when process tap is unavailable or unsuitable. Includes installer with sudo + coreaudiod restart. |
-| P2-8 | Spatial audio for video (movie/YouTube content) | C | Extend head tracking to non-music content. |
+| P2-4 | Per-app enhancement profiles (different settings for Spotify vs. Zoom) | S | Competitive necessity in Phase 2. |
+| P2-5 | All Phase 1 mix-level adaptivity features applied system-wide | S | Content-aware, volume-aware, BRIR, NL — now work for all apps. |
+| P2-6 | Low-latency mode for gaming / video calls (< 5 ms added latency target) | S | Without this, Zoom/Teams users will disable processing. |
+| P2-7 | **Fallback: AudioServerPlugIn virtual device** (libASPL) for older macOS | S | Driver path. Includes installer with sudo + coreaudiod restart. |
+| P2-8 | Spatial audio for video (movie/YouTube content) | C | Extend BRIR immersion to non-music content. |
 | P2-9 | CLI / API for pro users to script profile switching | C | Persona C power user feature. |
 | P2-10 | Multi-output routing (e.g., headphones + HDMI simultaneously) | W | Complex edge case; defer. |
 | P2-11 | iOS / iPadOS companion | W | Out of scope for Phase 2. |
-| P2-12 | **Conversational Tuning — Class 2b (true ML source separation)**: instrument/source requests fulfilled by genuinely isolating the source signal before applying gain adjustment | C | Depends on a capable real-time source-separation model running on-device (Apple Silicon Neural Engine is the target platform). Computationally heavy. Delivers significantly more accurate "I can't hear the guitar" responses than the Phase 1 EQ approximation. Explicit open decision whether this is in-scope for Phase 2 or a later phase. |
+| P2-12 | Per-stem / stem object engine via process tap | W | LD-15: own-player-only. Real-time-lite separation is a research track. |
 
 ---
 
 ## 5. Success Metrics / KPIs by Phase
 
-### Phase 0 KPIs (Own-Player MVP)
+### Phase 0 KPIs (Local-File Player MVP)
 
 | Metric | Target | Measurement Method |
 |---|---|---|
 | Private beta signups | 200+ before launch | Landing page waitlist |
-| Day-7 retention (users still opening app) | > 50% | In-app analytics (anonymous, opt-in) |
+| Day-7 retention | > 50% | In-app analytics (anonymous, opt-in) |
 | Session length (median) | > 25 minutes | In-app analytics |
-| App Store / direct rating | > 4.3 stars | Store reviews |
 | "Sounds better" self-reported (post-install survey) | > 70% | In-app NPS prompt at Day 3 |
+| **EQ/processing perceptibility gate: users do NOT perceive the adaptive processing "moving"** | < 10% of sessions flagged (opt-in feedback prompt) | In-app "did anything sound weird?" binary prompt; threshold for Phase 1 gate |
 | Crash-free sessions | > 99.5% | Crashlytics or Sentry |
 | Audio thread underruns (dropouts) | < 0.1% of sessions | In-app counter, anonymous telemetry |
 | GitHub stars (open-source repo) | Tracked; growth trend as adoption signal | GitHub Insights |
 | Personal daily use by maintainer | Used as primary daily driver | Self-reported / qualitative |
 
-### Phase 1 KPIs (Richer Adaptivity)
+### Phase 1 KPIs (Mix-Based Core)
 
 | Metric | Target | Measurement Method |
 |---|---|---|
-| HRTF spatial mode adoption | > 35% of active users | Feature-level analytics |
+| **Reimagine knob engagement: users who moved the knob at least once per week** | > 50% of active users | Feature-level analytics |
+| **Reimagine default position (median setting across active users)** | Tracked; alert if median consistently at 0% or 100% | Feature analytics; inform UX tuning of default |
+| BRIR spatial mode adoption | > 35% of active users | Feature-level analytics |
 | Head tracking enablement rate (AirPods users) | > 50% | Feature-level analytics |
 | D30 retention | > 40% | Cohort analysis |
 | Personal hearing profile completion | > 25% of users | Funnel analytics |
 | NPS score | > 45 | Quarterly in-app survey |
 | Monthly active users (MAU) | 5,000+ | Analytics |
-| GitHub contributors (open-source) | Tracked; any external contributor is a milestone | GitHub Insights |
-| **Conversational Tuning — weekly active users of feature** | > 30% of Phase 1 active users | Feature-level analytics (count of sessions with at least one Conversational Tuning input) |
-| **Conversational Tuning — phrase success rate** (user did not immediately undo or re-enter a correction) | > 75% | Event sequence analysis: input → [no undo within 60 s] |
-| **Conversational Tuning — discomfort phrase response latency** (time from input submission to first attenuation applied) | < 300 ms | In-app instrumentation |
-| **Conversational Tuning — Persona B discovery rate** (users who have never touched the manual EQ but have used Conversational Tuning) | Tracked; baseline to be set at launch | Segment analysis: Conversational Tuning users ∩ zero-manual-EQ-interactions |
-| **Conversational Tuning — saved preference promotions** (session adjustments promoted to a named profile) | Tracked; baseline to be set at launch | Feature-level analytics |
+| **EQ/processing perceptibility gate: users do NOT perceive the adaptive EQ "moving"** | < 10% of sessions with negative-movement feedback | Opt-in feedback prompt; Phase 1 equivalent of Phase 0 gate |
+| Conversational Tuning — weekly active users | > 30% of Phase 1 active users | Feature-level analytics (sessions with at least one NL input) |
+| Conversational Tuning — phrase success rate (no undo within 60 s) | > 75% | Event sequence analysis |
+| Conversational Tuning — discomfort phrase response latency | < 300 ms | In-app instrumentation |
+| Conversational Tuning — Persona B discovery rate (used NL, never touched manual EQ) | Tracked; baseline at launch | Segment analysis |
+| GitHub contributors (open-source) | Any external contributor is a milestone | GitHub Insights |
+
+### Phase 1.5 KPIs (Stem-Based Object Engine)
+
+| Metric | Target | Measurement Method |
+|---|---|---|
+| **Separation quality acceptance: users at Reimagine > 70% who did NOT report artifacts** | > 80% | Post-session opt-in artifact report (binary: "did you hear any glitching / separation artifacts?") |
+| **Reimagine high-intensity use (> 60% setting, stem range) — weekly active** | > 25% of Phase 1.5 active users | Feature analytics; confirms stem engine drives engagement |
+| **Per-stem NL adoption (at least one stem-targeted instruction per week)** | > 20% of active users with stem features available | Feature analytics |
+| Quality-gate fallback rate (tracks that fell back to mix-level or fewer stems) | Tracked; alert if > 20% of tracks | Separation pipeline telemetry |
+| Performance: render budget on the M1 Pro / 16 GB floor (P99 per-buffer CPU) | < 60% of per-buffer deadline | Internal measurement from tuning spike |
+| Crash-free sessions (stem engine active) | > 99.5% | Crash reporting |
+| D30 retention (Phase 1.5 cohort) | > 40% | Cohort analysis |
 
 ### Phase 2 KPIs (System-Wide)
 
@@ -304,10 +401,10 @@ Conversational Tuning adjustments operate as a **user preference layer** that si
 | **System-audio permission grant + tap setup success rate** (primary path, macOS 14.2+) | > 90% | In-app onboarding funnel telemetry |
 | **Driver install success rate** (fallback path only) | > 90% | Installer telemetry (fallback path users only) |
 | System-wide mode adoption among existing users | > 60% | Feature analytics |
-| Added latency (P95) | < 5 ms | Internal measurement, user-reported |
+| Added latency (P95) | < 5 ms | Internal measurement + user-reported |
 | Driver-related crash rate (fallback path only) | < 0.05% of sessions | Crash reporting (fallback path users only) |
 | MAU | 20,000+ | Analytics |
-| GitHub stars / forks | Tracked; growth trend as community adoption signal | GitHub Insights |
+| GitHub stars / forks | Tracked; growth trend | GitHub Insights |
 
 ---
 
@@ -323,125 +420,128 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 
 ### Risk Register
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Adaptivity Engine introduces audible artifacts or latency on the audio thread | High | Critical | Strict real-time thread rules (no allocation, no locks). Extensive A/B testing against bypass mode. Ship Phase 0 as validation gate before investing in Phase 2 driver. |
-| Phase 2 virtual audio driver causes system instability / coreaudiod crashes (**fallback path only**) | Medium | Critical | Applies only to the AudioServerPlugIn fallback path, not to the primary process-tap path. Reference libASPL, eqMac stability track records. Extensive beta on the fallback path. Auto-recovery mechanism. Primary tap path is unaffected. |
-| macOS future OS updates break the AudioServerPlugIn ABI (**fallback path only**) | Medium | High | Applies only to the fallback driver path. Monitor Apple developer forums. Maintain fast release cadence for compatibility patches. The primary tap path is governed by a different API surface. |
-| App Store sandbox blocks Phase 2 AudioServerPlugIn (**fallback path only**) | High | High | Applies to the fallback driver path. Direct notarized DMG is the required distribution path for the fallback — plan this from day one. The primary process-tap path does not require an AudioServerPlugIn and may be distributable via the App Store; verify during Phase 2 planning. |
-| **Patent risk — psychoacoustic bass enhancement** | Medium | High | Virtual-bass is patent-dense. Waves US 11,102,577 (stereo virtual bass, filed 2018) is **ACTIVE to ~2038** — covers per-channel harmonic generation that preserves stereo image. Mitigation: generate bass harmonics from a **mono-summed (L+R) low band only** (the classic approach this patent distinguishes itself from). Do NOT implement per-channel/stereo virtual bass. Obtain formal IP review before any public release. |
-| **OSS license-compliance risk** | Medium | High | Shipping code and data must be permissively licensed and redistributable (LD-9). Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole, etc.) are reference-only — do not copy code or ship their weights/data. All permissive dependencies in the ship set require attribution. Weights/data licenses are separate from code licenses (e.g., MIT-code + NC-weights is not shippable). Verify each dependency against `docs/architecture/prior-art.md` §4–5 before vendoring. |
-| Apple Spatial Audio / AirPods improvements narrow the differentiation gap | Medium | Medium | Stay ahead on content-awareness and ambient adaptation — areas Apple has not addressed. Speed of iteration is the moat. |
-| HRTF quality not compelling enough out-of-box with generic HRTFs | Medium | High | Invest in a high-quality default HRTF (MIT KEMAR or licensed). Offer personalization path. Ship A/B mode so users can directly compare. |
-| Phase 2 setup friction (primary tap path: granting system-audio capture; fallback driver path: "why change my audio output?") | Medium | Medium | Primary tap path needs only a one-screen permission grant (no device switch). Fallback driver path: dedicated onboarding, guided installer; study eqMac's UX. |
-| **Conversational Tuning — phrase interpretation produces a wrong or unexpected EQ move** | Medium | Medium | Ship a transparent "here is what I did" confirmation card after each adjustment so the user can see and undo the mapping. Log failure patterns from opt-in telemetry to iteratively improve phrase coverage. |
-| **Conversational Tuning — discomfort phrase is not recognised quickly enough** | Low | High | Maintain a hard-coded priority list of known discomfort signals as an in-app safety layer, independent of the phrase-interpretation architecture. This list executes at the app level with no network round-trip. |
-| **Conversational Tuning — Class 2b source separation model is too slow or power-hungry for real-time use on older Apple Silicon** | Medium | Medium | Gate Class 2b on Apple Silicon generation at runtime. M2 and later is the minimum viable target. M1 gets the Class 2a EQ approximation instead. |
+| Risk | ID | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|
+| Adaptivity Engine introduces audible artifacts or latency on the audio thread | R-1 | High | Critical | Strict RT thread rules (no allocation, no locks). Phase 0 is the validation gate. A/B against bypass mode. The Reimagine 0% anchor is a verified bit-faithful path. |
+| **EQ/processing perceived as "moving" by users** (perceptibility failure) | R-2 | Medium | High | Conservative adaptation cadence: coalesced updates, slow ramps (≥50 ms), hysteresis/deadbands. Phase 0 KPI gates Phase 1. Never fight intentional musical contrast. |
+| **Performance / feasibility budget: 6 stems × per-stem chains × BRIR convolution real-time budget** | R-3 | Low | Medium | **Downgraded (LD-18):** the M1 Pro / 16 GB floor + sole-occupancy + current-gen headroom (M4/M5 ~3–4× the floor) make this comfortable, and the **shared-late-reverb decomposition** (review C2) cuts the dominant cost ~6×. Mitigations: all heavy work off-RT (separation, FIR/BRIR design, masking — pre-computed/cached); RT kernel runs fixed partitioned convolutions via Audio Workgroups; QualityProfile auto-scales **stem count / reverb-tail length** (not buffer size — see review C5). A **tuning spike** before Phase 1.5 sets per-tier caps; it informs scope rather than being a go/no-go. |
+| **Separation artifacts exposed at high Reimagine intensity** | R-4 | High | Medium | By design at high intensity; managed by: (a) intensity-0 anchor is bit-faithful — users can always return; (b) conservative default Reimagine setting (low-to-mid); (c) quality-gating per stem (fallback to "other" or mix-level if threshold not met); (d) transparent artifact disclosure in UX at high intensities. |
+| **6-stem separation robustness (guitar/piano)** | R-5 | High | Medium | Guitar and piano are the least-robust Demucs separation cases. Mitigation: "other" stem as catch-all; quality-gate per stem; graceful fallback to fewer stems; do not expose low-confidence stems to users without a quality signal. Validate separation quality on a curated test set before Phase 1.5 launch. |
+| Phase 2 AudioServerPlugIn virtual device causes system instability (fallback path only) | R-6 | Medium | Critical | Applies only to libASPL fallback path. Reference eqMac stability track record. Extensive fallback-path beta. Auto-recovery mechanism. Primary tap path unaffected. |
+| macOS future OS updates break AudioServerPlugIn ABI (fallback path only) | R-7 | Medium | High | Fallback driver path only. Monitor Apple developer forums. Fast release cadence for compatibility patches. Primary tap path governed by a different API surface. |
+| App Store sandbox blocks Phase 2 AudioServerPlugIn (fallback path only) | R-8 | High | High | Fallback driver path: direct notarized DMG is the required distribution path. Verify whether primary process-tap path is App Store-eligible during Phase 2 planning. |
+| **Patent risk — psychoacoustic bass enhancement** | R-9 | Medium | High | Waves US-11,102,577 (stereo virtual bass, active ~2038). Mitigation: generate bass harmonics from mono-summed (L+R) low band only (per architecture §9). Do NOT implement per-channel/stereo virtual bass. Obtain formal IP review before any public release (OQ-16). |
+| **OSS license-compliance risk** | R-10 | Medium | High | All shipped code and data must be permissively licensed. Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole) are reference-only — do not copy or ship. Weights/data licenses are separate from code licenses (MIT-code + NC-weights is not shippable). Verify each dependency against `docs/architecture/prior-art.md` §4–5 before vendoring. |
+| Apple Spatial Audio / ASAF improvements narrow the differentiation gap | R-11 | Medium | Medium | Stay ahead on continuous content-awareness, per-stem spatial rendering, and NL steering — areas ASAF (static post-decode) structurally cannot address. Speed of iteration is the moat. |
+| BRIR quality not compelling out-of-box with generic HRTFs | R-12 | Medium | High | Invest in a high-quality default BRIR set (room synthesis + SADIE-II HRIR core). Offer personalization path (Phase 1). Ship A/B mode (Reimagine 0% vs. current setting). |
+| Phase 2 setup friction (permission grant or driver install) | R-13 | Medium | Medium | Primary tap path needs only a one-screen permission grant (no device switch, no sudo). Fallback: dedicated onboarding, guided installer. Study eqMac's UX. |
+| Conversational Tuning phrase interpretation produces wrong EQ move | R-14 | Medium | Medium | Transparent "here is what I did" confirmation card after each adjustment. Log failure patterns from opt-in telemetry. Per-user adaptable term mappings (LD-8, ADR-009). |
+| Conversational Tuning discomfort phrase not recognized quickly enough | R-15 | Low | High | Hard-coded priority list of known discomfort signals at the app level; executes with no network round-trip regardless of interpretation mechanism. |
 
 ---
 
 ### Open Product Decisions — Requires Founder Input
 
-**Decision 1 — Monetization timing** ✓ **RESOLVED (LD-9): Not applicable.** This project is non-commercial. There is no paywall, no trial gate, and no paid tier in any phase. All features ship free.
+**Decision 1 — Monetization timing** ✓ **RESOLVED (LD-9): Not applicable.** Non-commercial. No paywall, no trial gate, no paid tier in any phase.
 
 ---
 
-**Decision 2 — HRTF strategy: Generic vs. personalized from day one?** ✓ **RESOLVED (LD-7): Choice A** — ship a quality generic HRTF (**SADIE II, Apache-2.0**, confirmed as the highest-quality permissively-licensed SOFA-native dataset; MIT KEMAR as secondary option) + a "listening preference" calibration. Custom/personalized HRTF deferred. Marketing must avoid any medical/audiological claim. *Confirmed by prior-art research (ADR-003, Proposed).*
-
-Choice A: Ship a single high-quality generic HRTF (**SADIE II**, Apache-2.0) in Phase 1 and call it done for now. Fast, predictable. Some users will not find it compelling because HRTF is highly individual.
-Choice B: Integrate an open or freely-licensable personalization SDK (e.g., Embody, or an open-source ear-shape pipeline) in Phase 1. Slower, requires evaluating whether any candidate SDK is compatible with an open-source project, but delivers significantly stronger spatial quality.
-
-This decision affects the Phase 1 timeline and the perceived quality of the spatial audio feature at launch.
+**Decision 2 — BRIR / HRTF strategy** ✓ **RESOLVED (LD-7, updated by LD-14):** BRIR-first (HRTF + early reflections + late reverb) is the default. Dry HRTF = minimal fallback mode. SADIE-II (Apache-2.0) is the anechoic HRIR core inside the BRIR. Custom/personalized HRTF deferred. Room synthesis (image-source + FDN) or CC0/CC-BY IRs. Marketing must avoid medical/audiological claims.
 
 ---
 
 **Decision 3 — Distribution channels for Phase 2: App Store or direct-only?**
 
-For the **fallback AudioServerPlugIn path**: the virtual audio device cannot be installed inside the Mac App Store sandbox. This is a hard technical constraint. The fallback path **must** ship as a notarized direct-download DMG with a guided installer (sudo + `coreaudiod` restart). Developer ID signing and Hardened Runtime are still required.
+For the **fallback AudioServerPlugIn path**: must ship as a notarized direct-download DMG (sandbox incompatible).
 
-For the **primary process-tap path** (macOS 14.2+): the tap path does not install a HAL plug-in, so App Store sandbox restrictions may not apply. Verify whether screen-recording/audio-capture entitlements are grantable inside the App Store sandbox before committing to distribution strategy for Phase 2.
+For the **primary process-tap path** (macOS 14.2+): App Store eligibility unconfirmed. Verify during Phase 2 planning.
 
-Distribution options for free / open-source release (open for founder to decide):
-
-- **Choice A**: Direct notarized DMG download only — linked from the GitHub repository / project website. Simplest; full control over installer UX.
-- **Choice B**: Phase 0–1 on the Mac App Store (free listing); Phase 2 as a direct-download DMG linked from the App Store listing description. Adds App Store discoverability.
-- **Choice C**: Direct DMG + Homebrew cask (`brew install --cask adaptive-sound`). Convenient for developer / power-user audience who already uses Homebrew.
-
-Choice C (Homebrew) is recommended for the open-source audience and can be combined with Choice B for broader reach. Choice A is sufficient to start.
+Options (open for founder to decide):
+- **Choice A**: Direct notarized DMG only — linked from GitHub / project website.
+- **Choice B**: Phase 0–1 on Mac App Store (free); Phase 2 as direct-download DMG linked from listing.
+- **Choice C**: Direct DMG + Homebrew cask. Recommended for open-source developer audience; combinable with Choice B.
 
 ---
 
-**Decision 4 — Content classification: On-device ML model or DSP-only heuristics?** ✓ **RESOLVED (LD-5): Both, phased** — DSP heuristics (Choice A) ship in Phase 0; Core ML model (Choice B) layered in during Phase 1.
-
-The Adaptivity Engine's content-awareness (detecting genre, energy, spectral profile) can be implemented two ways:
-
-Choice A: Pure DSP heuristics — real-time FFT analysis, spectral centroid, RMS energy, dynamic range estimation. Zero ML runtime. Fully on-device, deterministic, no model maintenance. Less nuanced classification.
-Choice B: Small on-device Core ML model (trained offline) for genre/mood classification, triggered every N seconds. Richer semantic understanding (e.g., "this is classical piano" vs. "this is electronic with heavy sub-bass"). Requires training data, model maintenance, and adds ~10–20 MB to app size.
-
-This decision shapes the engineering sprint plan for Phase 0 (Choice A is faster) and Phase 1 (Choice B could be phased in).
+**Decision 4 — Content classification** ✓ **RESOLVED (LD-5): Both, phased** — DSP heuristics (Phase 0); Core ML genre/mood model (Phase 1).
 
 ---
 
-**Decision 5 — Ambient noise sensing: Mic always-on or user-triggered?** ✓ **RESOLVED (LD-6): Choice B** — user-triggered on-demand sampling. No always-on mic in any phase.
-
-Choice A: Mic is always listening (with explicit opt-in) when the app is running. Fully adaptive to real-time noise changes. Privacy-sensitive. Apple will show the orange mic indicator dot on macOS — this is visible and may concern users.
-Choice B: User manually triggers "I am in a noisy environment" mode, or the app samples mic for 3 seconds on demand. Less invasive. Loses real-time ambient adaptation but avoids the continuous mic concern.
-
-This is as much a trust/privacy decision as a product decision. Recommendation: Ship Choice B in Phase 0–1, offer Choice A as an opt-in "deep adaptation" mode with clear privacy disclosure.
+**Decision 5 — Ambient mic** ✓ **RESOLVED (LD-6): On-demand only** — user-triggered ~3 s sample, mic then released. No always-on mic.
 
 ---
 
-**Decision 6 — Conversational Tuning: Is it a headline marketing feature or a supporting capability?** ✓ **RESOLVED (LD-8): supporting / discovery feature** for the Phase 1 launch — lead with spatial audio; let Conversational Tuning earn word-of-mouth and become a headline once phrase accuracy is proven.
-
-Choice A: Lead marketing with Conversational Tuning at Phase 1 launch. Position Adaptive Sound as "the audio app you can just talk to." This creates a memorable, shareable demo moment and is likely the first product of its kind in the Mac audio space.
-Choice B: Ship it as a useful but non-headlining feature. Lead marketing with spatial audio and HRTF (more tangible, easier to demo in a 15-second clip). Conversational Tuning is surfaced in onboarding and word-of-mouth, but not the lead story.
-
-This is a positioning decision with downstream effects on the App Store listing, press pitch, and demo video. The feature differentiates regardless — the question is how loudly to announce it at launch.
+**Decision 6 — Conversational Tuning positioning** ✓ **RESOLVED (LD-8): Supporting / discovery feature** for Phase 1 launch — lead marketing with BRIR spatial audio; Conversational Tuning earns word-of-mouth and becomes a headline once phrase accuracy is proven.
 
 ---
 
-**Decision 7 — Conversational Tuning: Session-scoped preferences by default, or saved by default?** ✓ **RESOLVED (LD-8): session-scoped by default + explicit save.** Note the refined model: instructions are governing principles within the session (see §3a behavioral model), not passive deltas.
-
-Choice A: Adjustments are session-scoped by default (reset on next app launch). Users who want persistence explicitly save them. This keeps the engine's autonomous adaptation fresh for each session and avoids "stacking" corrections over time that the user forgets about.
-Choice B: Adjustments persist across sessions by default (tied to the current device profile). Users who want a clean slate explicitly reset. This feels more like the app is "learning" the user's taste, which may improve perceived value — but risks accumulating adjustments that conflict with future automatic adaptation.
-
-Recommendation: Choice A (session-scoped by default) with a prominent, low-friction "save these preferences" prompt shown after the first successful Conversational Tuning interaction. Re-evaluate based on usage telemetry after Phase 1 launch.
+**Decision 7 — Conversational Tuning persistence** ✓ **RESOLVED (LD-8): Session-scoped by default + explicit save.** Governing-principle model (see §3a). Accumulating instructions per session; explicit save to persist.
 
 ---
 
-**Decision 8 — Conversational Tuning: Deferred architecture for phrase interpretation (OPEN — explicitly not decided)**
+**Decision 8 — Conversational Tuning: NL interpretation mechanism (OPEN — OQ-11)**
 
-How the app understands and parses natural-language input — whether on-device, cloud-based, rule-based, or model-based — is an explicit open architecture decision. No recommendation is made here. This decision must be made before Phase 1 engineering begins on P1-13 and should be treated as its own scoping exercise, separate from the product requirements above. The product requirements are written to be architecture-agnostic; what the system does in response to a phrase is defined above; how it understands the phrase is not.
+How the app parses natural-language input (on-device rules, CLAP, on-device or cloud LLM) is an explicit open architecture decision. Product requirements are written architecture-agnostically. This must be decided before Phase 1 engineering begins on P1-13. If cloud LLM is used, `context` must exclude audio buffers and hearing-profile data (privacy, per architecture §11).
+
+---
+
+**Decision 9 — Reimagine knob intensity→parameter mapping curve (OPEN — OQ per architecture §17)**
+
+The exact curve from knob position to processing parameters (how fast clarity ramps, at what position BRIR widening kicks in, where stem placement begins, etc.) must be user-tested. Initial proposal: roughly linear in perceptual magnitude, with a natural "gap" at the mix/stem range boundary that the UX should surface as the Phase 1.5 upgrade moment. This decision must be made before Phase 1 UX finalization.
 
 ---
 
 ## Appendix: Phasing Summary
 
 ```
-Phase 0 (Weeks 0-12):   Own-player MVP — prove the Adaptivity Engine
-                         AVAudioEngine + C++ DSP + SwiftUI
-                         No virtual device, no sudo, no streaming apps
-                         Success gate: > 50% D7 retention, > 70% "sounds better"
+Phase 0 (Weeks 0–12):     Local-file player MVP — prove the DSP spine
+                            AVAudioEngine + custom AUv3 (C++ kernel) + SwiftUI
+                            No virtual device, no sudo, no streaming apps
+                            BRIR and stem separation explicitly NOT in Phase 0
+                            Success gates: > 50% D7 retention, > 70% "sounds better",
+                                          < 10% of sessions flagging adaptive EQ as perceptible
 
-Phase 1 (Weeks 13-36):  Spatial audio, personalization, ambient sensing
-                         HRTF + head tracking + hearing profiles
-                         Conversational Tuning (Class 1 + Class 2a + safety response)
-                         All features free, open-source
-                         Success gate: > 40% D30 retention, > 5,000 MAU,
-                                       > 30% of users engaging with Conversational Tuning
+Phase 1 (Weeks 13–36):    Mix-based core — full immersive + adaptive story
+                            BRIR-first binaural (LD-14) + head tracking
+                            Perceptual clarity/correction (ERB/Bark, LD-12)
+                            Adaptive engine: loudness-comp, content-aware, ambient
+                            Reimagine intensity knob: mix range (0%–~60%, LD-16)
+                            NL Conversational Tuning: mix-level typed macros (LD-8)
+                            All features free, open-source
+                            Success gates: > 40% D30 retention, > 5,000 MAU,
+                                          Reimagine knob engagement > 50% weekly active,
+                                          BRIR spatial adoption > 35%,
+                                          < 10% of sessions flagging EQ as perceptible
 
-Phase 2 (Weeks 37+):    System-wide via Core Audio process tap (primary, macOS 14.2+)
-                         No driver, no sudo, no coreaudiod restart on primary path
-                         AudioServerPlugIn virtual device (libASPL) as fallback
-                           for older macOS / persistent-output-device use case
-                         All apps: Spotify, Apple Music, YouTube, Zoom
-                         Direct-download DMG for fallback path; tap path may support App Store
-                         Conversational Tuning — Class 2b (ML source separation, if scoped in)
-                         See ADR-002 (Proposed) in docs/architecture/prior-art.md
-                         Success gate: > 90% tap-path permission grant success,
-                                       > 90% driver install success (fallback), < 5 ms latency
+Phase 1.5 (gated on perf spike):
+                            Stem-based object engine — full spatial reimagining
+                            TUNING: spike sets QualityProfile caps on the M1 Pro / 16 GB
+                              floor before Phase 1.5 kickoff (§7 Risk R-3 — Low; LD-18)
+                            Offline 6-stem separation (Demucs, LD-15)
+                            Per-stem DSP chains + BRIR spatial placement
+                            Between-stem masking/unmasking
+                            Per-stem NL targeting ("bring up the guitar")
+                            Reimagine knob: stem range ceiling raised to 100%
+                            Own-player-only (stem features do not reach Phase 2 tap path)
+                            Success gates: > 80% artifact-acceptance at Reimagine > 70%,
+                                          > 25% weekly use of Reimagine stem range,
+                                          > 20% per-stem NL adoption,
+                                          render budget < 60% of per-buffer deadline
+
+Phase 2 (Weeks 37+):       System-wide via Core Audio process tap (primary, macOS 14.2+)
+                            No driver, no sudo, no coreaudiod restart on primary path
+                            Same C++ DSP kernel, BoundedLatency profile, mix-level only
+                            AudioServerPlugIn virtual device (libASPL) as fallback
+                              for older macOS / persistent-output-device use case
+                            All apps: Spotify, Apple Music, YouTube, Zoom
+                            Direct-download DMG for fallback path
+                            Stem features remain own-player-only (LD-15)
+                            Success gates: > 90% tap-path permission grant success,
+                                          > 90% driver install success (fallback),
+                                          < 5 ms added latency (P95),
+                                          > 60% system-wide mode adoption among existing users
 ```
 
 ---
 
-*Document owner: Ramith (ramith@wso2.com). Next review: 2026-07-12. Approval required from founder before Phase 0 engineering kickoff.*
+*Document owner: Ramith (ramith@wso2.com). Architecture source of truth: `docs/architecture/architecture.md` (v0.3). Next PRD review: 2026-07-13. Approval required from founder before Phase 0 engineering kickoff.*
