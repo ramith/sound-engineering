@@ -1,0 +1,13 @@
+---
+# SwiftFormat configuration for AdaptiveSound
+indent: 4
+indentcase: true
+lineLength: 100
+wrapArguments: preserve
+wrapParameters: preserve
+wrapCollections: preserve
+closingParenPosition: balanced
+spaceAroundOperators: true
+useVoidReturnType: true
+explicitSelf: insert
+swiftVersion: 6.0
