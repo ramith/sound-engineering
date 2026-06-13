@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "AdaptiveSound",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
     ],
     dependencies: [
     ],
@@ -14,7 +14,7 @@ let package = Package(
             dependencies: ["AudioDSP"],
             path: "Sources/AdaptiveSound",
             swiftSettings: [
-                .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug))
+                .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug)),
             ]
         ),
         .target(
@@ -25,13 +25,24 @@ let package = Package(
             cxxSettings: [
                 .headerSearchPath("include"),
                 .unsafeFlags(["-D_LIBCPP_DISABLE_AVAILABILITY"], .when(platforms: [.macOS])),
-                .unsafeFlags(["-Wall", "-Wextra", "-fno-exceptions"], .when(configuration: .debug))
+                .unsafeFlags([
+                    "-Wall", "-Wextra", "-Wpedantic",
+                    "-Wunused", "-Wshadow", "-Wconversion",
+                    "-Wsign-conversion", "-Wnull-dereference",
+                    "-Wold-style-cast", "-Wno-exceptions",
+                    "-Werror=all", "-Werror=conversion",
+                    "-fno-exceptions", "-fno-rtti",
+                ], .when(configuration: .debug)),
+                .unsafeFlags([
+                    "-Wall", "-Wextra",
+                    "-fno-exceptions", "-fno-rtti",
+                ], .when(configuration: .release)),
             ],
             linkerSettings: [
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("AudioToolbox"),
-                .linkedFramework("Accelerate")
+                .linkedFramework("Accelerate"),
             ]
-        )
+        ),
     ]
 )

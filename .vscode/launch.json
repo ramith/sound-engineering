@@ -9,9 +9,22 @@
       "args": [],
       "cwd": "${workspaceFolder}",
       "preLaunchTask": "build",
-      "sourceLanguages": ["cpp", "swift"],
+      "sourceLanguages": [
+        "cpp",
+        "swift"
+      ],
       "stopOnEntry": false,
       "console": "integratedTerminal"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Release AdaptiveSound",
+      "target": "AdaptiveSound",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release AdaptiveSound"
     }
   ]
 }
