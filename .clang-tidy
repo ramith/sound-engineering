@@ -1,0 +1,47 @@
+---
+Checks: |
+  cppcoreguidelines-*,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  modernize-*,
+  -modernize-use-auto,
+  readability-*,
+  -readability-magic-numbers,
+  performance-*,
+  bugprone-*,
+  cert-*,
+  -cert-err09-cpp,
+  -cert-err61-cpp,
+  clang-analyzer-*,
+  concurrency-*,
+  -concurrency-mt-unsafe
+
+WarningsAsErrors: |
+  cppcoreguidelines-*,
+  modernize-use-nullptr,
+  readability-*,
+  performance-*,
+  bugprone-*,
+  clang-analyzer-*
+
+HeaderFilterRegex: "Sources/AudioDSP.*\\.h"
+FormatStyle: file
+CheckOptions:
+  - key: readability-identifier-naming.VariableCase
+    value: lower_snake_case
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 10
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+    value: false
+  - key: bugprone-narrowing-conversions.PedanticMode
+    value: true
+  - key: cppcoreguidelines-pro-bounds-constant-array-index.GslHeader
+    value: "gsl/gsl.h"
+
+InlinePassUnsafePointerCasts: false
+UseColor: true
