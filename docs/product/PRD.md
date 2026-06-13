@@ -9,7 +9,7 @@
 **Related Documents:**
 - `docs/product/user-journeys.md` — detailed user journeys and workflows (authoritative reference)
 - `docs/product/requirements.md` — detailed functional and non-functional requirements
-- `docs/product/sprint-plan.md` — sprint model, sequencing, and done-done criteria
+- `docs/sprints/00-sprint-model.md` — sprint model, sequencing, and done-done criteria
 - `docs/architecture/architecture.md` — technical architecture and design decisions (source of truth)
 
 ---
