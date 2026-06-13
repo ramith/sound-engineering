@@ -6,6 +6,12 @@
 **Owner**: Product (ramith@wso2.com)
 **Phase**: Pre-development / Concept validation
 
+**Related Documents:**
+- `docs/product/user-journeys.md` — detailed user journeys and workflows (authoritative reference)
+- `docs/product/requirements.md` — detailed functional and non-functional requirements
+- `docs/product/sprint-plan.md` — sprint model, sequencing, and done-done criteria
+- `docs/architecture/architecture.md` — technical architecture and design decisions (source of truth)
+
 ---
 
 ## 0. Locked Decisions (as of 2026-06-13)

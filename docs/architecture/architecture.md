@@ -4,7 +4,7 @@
 **Supersedes:** [proposal.md](proposal.md) (v0.1). **Shaped by:** [proposal-review.md](proposal-review.md) (panel 1) + [review-v0.2.md](review-v0.2.md) (expert panel 2) + founder talk-through.
 
 > **v0.3 (expert-panel fold-in):** **shared late-reverb** decomposition (not 6 independent BRIRs — the ~6× cost cut); **re-sum mixbus discipline** (loudness-matched per-stem trim); **bass + lead-vocal exempt from spatial spread**; masking re-scoped to the **excitation-pattern (ERB) subset** (full Moore-Glasberg is ~50× too slow); stems **gated on perceptual artifacts, not SDR**; BRIR room amount **content-adaptive**; Demucs **weights auto-downloaded on first run** (code MIT; NC-trained weights not redistributed), **MLX primary**; NL planned **on-device LLM + SAFE/SocialEQ priors** (mechanism still deferred) with **untrusted-output clamping**; global tap reframed as a **high-consent, captures-everything** capability. Detail: [review-v0.2.md](review-v0.2.md).
-**Companion docs:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/backlog.md](../product/backlog.md)
+**Companion docs:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/user-journeys.md](../product/user-journeys.md) · [../product/backlog.md](../product/backlog.md) · [../product/sprint-plan.md](../product/sprint-plan.md)
 
 > One-line: **turn any good-quality song into a personal, perceptually-tuned, spatially-rendered mix you can steer in plain language** — on modern Macs, headphones or speakers.
 
@@ -13,6 +13,10 @@
 ## 0. Locked decisions & ADR registry
 
 Canonical decision registry for the architecture. Product/scope locked decisions live in PRD §0 (LD-1…LD-10) and are extended here (LD-11…LD-19).
+
+**Sprint Model (BA-2, locked 2026-06-13):** Development uses **sprint-based Kanban** (5–10 story points per sprint, ~1 week) instead of phase gates. Each sprint ships a locally-testable binary; manual testing occurs at sprint end before team retro; **done-done criteria are validated per sprint** (Claude asks, user picks acceptance). **Enablers ship before features** (dependency ordering). Shipping to GitHub releases is a manual decision, not automatic per sprint. Epics span multiple sprints; each sprint is independently implementable and testable.
+
+See **[../product/sprint-plan.md](../product/sprint-plan.md)** for sprint sequencing, done-done templates, and team cadence details.
 
 | LD | Decision |
 |---|---|
@@ -86,7 +90,73 @@ The tonal/spatial/dynamic state is **not** a single dB curve. Each source contri
 
 **Arbiter** composes contributions **in the perceptual (ERB/Bark) domain** using a masking model — the affordable **excitation-pattern / masked-threshold (ERB) subset**, *not* full time-varying Moore-Glasberg partial loudness (which is ~50× too slow per channel and has no shippable implementation) — enforces **governing-principle clamps** (locked-band/macro records written on NL-confirm, cleared on undo/session-end), and emits a **per-stem `TargetState`** (EQ curve + dynamics + transient + spatial placement + level). The **re-sum is a managed mixbus** (§9), not a passive adder.
 
-**Realizer (off-RT)** turns each `TargetState` into finished, ready-to-run artifacts per the active **QualityProfile**: **minimum-phase** biquad cascades (default) or **linear/mixed-phase FIR** (opt-in / content-permitting, LD-13); BRIR convolution kernels; the stem-mix matrix. Biquad fitting: NLLS/Levenberg-Marquardt (or IIRNet, MIT), **ERB/masking-weighted**, fit to the **min-phase target**, error budget ≤ ±1 dB. *Nothing is designed/fitted on the RT thread.*
+### Masking model selection (locked: Moore-Glasberg roex, ERB-rate)
+
+**Model choice (ADR-006 amendment):** The Arbiter uses the **roex(p) auditory filter** excitation-pattern model on the ERB-rate scale (34 bands, 50 Hz–16 kHz), fitted from Moore, Glasberg & Baer (JASA 1997) psychophysical masking data. The level-dependent slope parameter `p = p₀ × 10^{-αL}` (where `L` is excitation level in dB, `p₀ ≈ 31.5`, `α ≈ 0.008`) captures the upward spread of masking's dependence on source loudness — critical for accuracy at high listening levels. Per-band masked threshold is the excitation pattern plus an absolute threshold floor (ISO 226 Table B.1). Implementation: vDSP vector multiply-accumulate for the 34-band roex convolution per frame; ~70 floating-point operations per frame (negligible off-RT cost).
+
+**Why this model:** (1) Matches architecture coherence (ERB bands used throughout the DSP pipeline); (2) better physics than fixed-slope alternatives (level-dependent masking slope matches auditory measurements); (3) zero computational penalty (all candidate models run in microseconds); (4) directly parameterized on ERB → natural integration with the Realizer's biquad fitting. Research shows no perceptual difference in music enhancement quality between roex and simpler spreading functions (MPEG, Bark) in this application (off-RT, frame-averaged spectra, conservative unmask targets).
+
+**Use:** Compute excitation pattern of the masking signal(s) per frame; evaluate masked threshold per ERB band; provide the masking depth (`masking_depth[n] = E[n] - T[n]`) to the clarity and between-stem-unmasking contributors. For between-stem unmasking (Phase 1.5), compute excitation of all stems except the target and evaluate against the target's level.
+
+### Arbiter arbitration rules (locked)
+
+**Hierarchical composition with proportional clamping:**
+
+1. **Governing-principle lock (confirmed NL):** When the user confirms an NL intent (e.g., "boost vocals"), the Arbiter records a locked band and direction in the `TargetState`. Auto-contributors (content-adaptive, masking, device-correction) cannot override the direction of a locked band; they may only refine *magnitude* within the band or propose moves in other bands.
+
+2. **Additive composition (auto-contributors):** Contributions that model *different* physical phenomena (device frequency response + hearing profile + loudness compensation) are summed per ERB band. Contributions that model *the same* phenomenon with *different confidence* (e.g., two content-adaptive suggestions) select the more conservative (smaller change) or are blended by confidence weight.
+
+3. **Proportional clamping:** If the sum of all contributions in a band exceeds the per-band hard clamp (e.g., +12 dB for low frequencies per LD-11), scale all contributions in that band proportionally rather than dropping one contributor entirely. This preserves the direction of user intent and auto-suggestions while respecting hearing-safety limits.
+
+4. **Governing principle floor:** On session load, all locked bands are replayed at the user's confirmed values. Undo clears lock-bands and reverts to mix level. Session end clears all locks.
+
+**Realizer (off-RT)** turns each `TargetState` into finished, ready-to-run artifacts per the active **QualityProfile**: **minimum-phase** biquad cascades (default) or **linear/mixed-phase FIR** (opt-in / content-permitting, LD-13); BRIR convolution kernels; the stem-mix matrix. *Nothing is designed/fitted on the RT thread.*
+
+### Biquad cascade fitting (locked: greedy add + L-M optimizer, ERB-weighted)
+
+**Goal:** Convert the Arbiter's per-ERB-band target gain curve into a cascade of **1–10 biquad filters** that approximates it with ≤±1 dB weighted error, fit in ~10 ms off-RT.
+
+**Algorithm (greedy iterative add):**
+
+1. **Initialize:** Start with 2 biquads initialized at the frequency with maximum target gain (peaking type, Q=1.4, gain clamped to ±6 dB). Set the L-M optimizer loose to refine these 2.
+
+2. **Optimize:** Run Levenberg-Marquardt optimizer on all current biquads jointly (semi-analytical Jacobian: log-magnitude separability in cascade, semi-analytical per-biquad derivatives). Terminate L-M when gradient norm < 1e-5, step norm < 1e-7, or 200 iterations.
+
+3. **Evaluate error:** Compute weighted Chebyshev-adjacent error `E_max = max_k( W[k] × |H(f_k) − G_target[k]| )` over the 34 ERB band centers. This is the **maximum weighted absolute error in dB** (not RMS), which catches localized failures in perceptually salient bands.
+
+4. **Stop or add:** If `E_max ≤ 1.0 dB`, accept the cascade. Else if cascade has < 10 biquads, find the band `k*` with largest weighted residual, initialize a new peaking biquad at `f_erb[k*]` with gain = `residual[k*]` clamped to ±6 dB, and loop back to step 2.
+
+5. **Finalize:** Promote the lowest-frequency biquad to a **low shelf** and the highest-frequency biquad to a **high shelf** (for cleaner sub-bass and treble rolloff). Sort all biquads by ascending center frequency. Convert all coefficients from double to float; use **Transposed Direct Form II** (TDF-II) for numerical stability on the RT thread.
+
+**Per-biquad parameter constraints:**
+
+| Parameter | Bounds | Reason |
+|---|---|---|
+| Center frequency `f0` | 50 Hz – 20 kHz | Avoid poles near Nyquist; clip to audio bandwidth |
+| Q | 0.5 – 10.0 | Hard ceiling at Q=10 for numerical safety (pole radius ~0.9993); Q > 10 is perceptually implausible for music EQ |
+| Gain (peaking) | −12 dB – +12 dB | Safety clamp per LD-11; if optimizer wants to exceed this, add another biquad instead |
+
+The L-M step applies box constraints by simple clamping after each update (projected gradient).
+
+**Error weighting function (perceptual accuracy):**
+
+Three multiplicative components:
+
+```
+W[k] = W_ath[k] × W_erb[k] × W_intent[k]  (normalized so max = 1.0)
+```
+
+- **W_ath[k]** (absolute threshold): Suppress error in bands near or below ISO 226 absolute threshold. At nominal 75 dB SPL listening level: `W_ath[k] = 1 − sigmoid((T_q(f_k) − 75) / 10)`, where `T_q(f_k)` is the 0-phon threshold from ISO 226. Primarily down-weights <100 Hz and >12 kHz.
+
+- **W_erb[k]** (ERB normalization): Normalize by ERB bandwidth so higher-frequency bands (wider in Hz but narrower perceptually) don't dominate. `W_erb[k] = ERB_min / ERB(f_k)`, where `ERB(f) = 24.7 × (4.37f/1000 + 1)` (Moore & Glasberg).
+
+- **W_intent[k]** (governing principle amplification): When the Arbiter marks a band as user-confirmed (governed by NL or explicit target), weight it 4×. Arbiter annotates per-band `intent_salience ∈ [0, 1]`; set `W_intent[k] = 1.0 + 3.0 × intent_salience[k]`.
+
+**Why weighted Chebyshev, not RMS?** Users A/B against familiar music at known levels. A single 3 dB error in the vocal band (2–5 kHz) is immediately audible even if the RMS error over all bands is 0.5 dB. Chebyshev error catches localized failures; the weighting ensures perceptually unimportant bands don't dominate.
+
+**Convergence & timing:** Greedy initialization (starting at max-gain frequency) puts the optimizer in the right basin immediately. Typical convergence: 20–50 L-M iterations per greedy pass; 5 passes for a typical 8-dB curve = ~200 iterations total, ~5–15 ms on M1 Pro (double precision, vDSP vector math for biquad evaluation). Well within the ~1–2 second off-RT budget.
+
+**Future optimization path (Phase 2):** Once you have a corpus of fitted cascades, train a small on-device **IIRNet** (Eghbalzadeh et al.) model to predict (target curve → biquad parameters) directly. Inference is sub-millisecond; trade L-M design flexibility for real-time responsiveness if you ever need live parameter sweeps.
 
 ## 5. The "Reimagine" intensity control (LD-16)
 
@@ -160,6 +230,25 @@ The Arbiter enforces these clamps on all NL interpreter output to prevent hearin
 |---|---|---|
 | Source separation (6-stem) | **offline** pre-pass, cached | Demucs/HTDemucs — **MLX primary**, Core ML secondary; **code MIT, weights auto-downloaded on first run** (NC-trained → not redistributed) |
 | Masking (between-stem / clarity) | off-RT control | vDSP — **excitation-pattern / masked-threshold (ERB) subset** (not full Moore-Glasberg) |
+
+### Decision tree: MLX vs. Core ML vs. mix-only
+
+**Primary path (production):** MLX unconditionally.  
+- MLX can handle STFT and complex-arithmetic operations that don't convert cleanly to Core ML.
+- Runs on GPU at ~5–15 sec/track (typical file, M1 Pro hardware); acceptable latency for offline pre-pass.
+- Weights auto-download once on first add/play; cached stems reuse the result.
+
+**Secondary path (pre-release optimization only):** Core ML conversion attempted *only if* MLX proves insufficient at Phase 1.5 tuning.  
+- Conditional: measure actual runtime per hardware tier (M1 Pro, M4, M5). If MLX meets perf targets, no conversion needed.
+- Conversion is lossy (STFT complexity losses); only pursue if tuning data shows MLX latency is user-visible problem.
+- SPIKE-SEP-QUALITY: measure sec/track at three hardware tiers; lock measurement by Phase 1.5 gate.
+
+**Safety fallback (always enabled):** mix-only mode.  
+- Triggered if weights download fails integrity check (SHA-256 mismatch), both sources (GitHub + HF) unreachable, or both ML paths error at runtime.
+- Warning shown to user ("Separation unavailable; using mix-level DSP"); app proceeds with full feature set except stem chains.
+- Stem features (FR-STEM-02…06) are disabled; NL macros fall back to mix-level targeting; Reimagine knob shows mix-range only.
+
+See §6 (Weights download & integrity), FR-STEM-01 (requirements), and SPIKE-SEP-QUALITY (backlog) for details.
 | Genre/mood | off-RT pre-analysis | Create ML-trained → Core ML / SoundAnalysis |
 | Feature analysis (BPM/key/spectral) | off-RT | vDSP (librosa ISC as reference) |
 | NL interpretation | off-RT (mechanism deferred) | rules / CLAP / on-device or cloud LLM |
