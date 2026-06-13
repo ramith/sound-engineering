@@ -21,6 +21,83 @@ static std::string cfStringToStdString(CFStringRef cfStr) {
     return std::string(buffer.data());
 }
 
+// MARK: - Static Listener State
+
+CoreAudioDevice::DeviceListenerCallback CoreAudioDevice::gListenerCallback = nullptr;
+void* CoreAudioDevice::gListenerContext = nullptr;
+
+// MARK: - Device Listener Implementation
+
+void CoreAudioDevice::listenerCallback(
+    AudioObjectID objectID [[maybe_unused]],
+    UInt32 numberAddresses,
+    const AudioObjectPropertyAddress inAddresses[],
+    void* clientData [[maybe_unused]]) {
+    // Verify callback is registered
+    if (!gListenerCallback) {
+        return;
+    }
+
+    // Check if this is a default output device change
+    for (UInt32 i = 0; i < numberAddresses; ++i) {
+        if (inAddresses[i].mSelector == kAudioHardwarePropertyDefaultOutputDevice) {
+            AudioDeviceID newDeviceID = getDefaultOutputDevice();
+            if (newDeviceID != kAudioObjectUnknown && gListenerCallback) {
+                gListenerCallback(newDeviceID, gListenerContext);
+            }
+            break;
+        }
+    }
+}
+
+bool CoreAudioDevice::addDefaultDeviceListener(DeviceListenerCallback callback, void* context) {
+    if (!callback) {
+        return false;
+    }
+
+    // Store callback and context
+    gListenerCallback = callback;
+    gListenerContext = context;
+
+    // Register listener for default output device changes
+    AudioObjectPropertyAddress defaultDeviceAddr{
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+
+    OSStatus status = AudioObjectAddPropertyListenerBlock(
+        kAudioObjectSystemObject,
+        &defaultDeviceAddr,
+        dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0),
+        ^(UInt32 inNumberAddresses, const AudioObjectPropertyAddress inAddresses[]) {
+          listenerCallback(kAudioObjectSystemObject, inNumberAddresses, inAddresses, context);
+        });
+
+    if (status != noErr) {
+        fprintf(stderr, "[CoreAudioDevice] Failed to add device listener: %d\n", status);
+        gListenerCallback = nullptr;
+        gListenerContext = nullptr;
+        return false;
+    }
+
+    fprintf(stderr, "[CoreAudioDevice] Device listener registered\n");
+    return true;
+}
+
+bool CoreAudioDevice::removeDefaultDeviceListener() {
+    if (!gListenerCallback) {
+        return true;  // Already removed
+    }
+
+    // Note: We can't remove a block-based listener directly via Core Audio API,
+    // but we can disable the callback by clearing the function pointer
+    gListenerCallback = nullptr;
+    gListenerContext = nullptr;
+
+    fprintf(stderr, "[CoreAudioDevice] Device listener disabled\n");
+    return true;
+}
+
 // MARK: - CoreAudioDevice Implementation
 
 std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
