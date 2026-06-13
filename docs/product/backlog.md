@@ -1,0 +1,1663 @@
+# Adaptive Sound — Product Backlog
+## Epics, User Stories, Spikes, and Phase 0 Sprint Sequencing
+
+**Document ID:** BACKLOG-ASE-001
+**Version:** 2.1 — aligned to architecture.md v0.3 + requirements v0.6
+**Date:** 2026-06-13
+**Author:** Lead Business Analyst
+**Status:** Draft — Pending sprint planning review
+
+> **v1.1 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/architecture/prior-art.md`. (A) EP-VDEVICE reframed as driver **fallback path** only; EP-SYSWIDE updated to lead with tap-primary path, drive-fallback secondary; US-SYS-01..05 annotated accordingly. (B) SPIKE-HRTF updated: largely resolved to SADIE II (Apache-2.0) + libmysofa (BSD-3) + custom SOFA-HRIR convolution; remaining work is performance benchmark and integration. (C) US-SPAT-01 and US-SPAT-01a/b/c updated to reference custom SOFA convolution. (D) US-TON-04 updated with mono-summed constraint (CON-11). (E) SPIKE-VDEVICE updated to include tap-path prototype as primary workstream. (F) Added SPIKE-IPREVIEW (OQ-16 — patent IP review for bass enhancement). (G) Added SPIKE-LIBBS2B (OQ-17 — libbs2b licence dispute). (H) Updated Open Items table with OQ-16 and OQ-17.
+
+> **v2.0 change note (2026-06-13 — architecture v0.2 alignment):** Major revamp to align with `docs/architecture/architecture.md` v0.2 (source of truth) and requirements v0.5. Adopted the **four-phase scheme (0 / 1 / 1.5 / 2)**. Epics restructured: added **EP-PERCEPTUAL** (typed contributors + ERB/Bark masking); **EP-SPAT → EP-IMMERSION** (BRIR-first); **EP-TONAL** reframed (min-phase default, no program DRC, loudness-comp method); **EP-NLT** reframed (typed-macro + per-stem); added **EP-REIMAGINE** (intensity control) and **EP-STEM** (Phase 1.5 object engine). New spikes: **SPIKE-PERF-BUDGET** (gates Phase 1.5), **SPIKE-SEP-QUALITY**, **SPIKE-REIMAGINE-MAP**, **SPIKE-MASKING-MODEL**, **SPIKE-BRIR** (kept SPIKE-IPREVIEW, SPIKE-LIBBS2B). Open Items updated with OQ-18–22. Existing Phase 0/1 stories are retained; affected ones are annotated rather than rewritten.
+
+> **v2.1 change note (2026-06-13 — architecture v0.3 sync):** Folded in the expert-panel review ([../architecture/review-v0.2.md](../architecture/review-v0.2.md)) + founder decisions: **re-sum mixbus** (ADR-011) onto US-STEM-02; **bass/lead-vocal spatial exemptions**; **shared late-reverb** + content-adaptive room; masking = **ERB excitation-pattern** subset; gate stems on **perceptual artifacts, not SDR**; **MLX-primary** + **weights auto-download on first run**; Reimagine defaults (low-mid / dead-band / loudness-matched); NL **on-device-lean + output-clamping** (mechanism still deferred); **ADR-004 RT-ML → contingent**; tap **high-consent + comms-exclusion + never-persist**. Hardware floor **M1 Pro/16 GB** (M4/M5 above) → **Risk R-3 Low**, SPIKE-PERF-BUDGET is a **tuning** spike (sets QualityProfile caps, not a go/no-go). Persona → **Ramith**. **Removed outdated:** Class-1/2a/2b labels and the M1/M2 runtime-gating stub (US-SYSW-04 — superseded by the Phase-1.5 stem engine); MacBook-Air/8 GB baselines → M1 Pro/16 GB floor.
+
+---
+
+## How to Read This Backlog
+
+### Story Format
+
+Every user story uses the following template:
+
+```
+Story ID | Title
+As a [persona] I want [goal] so that [outcome].
+Acceptance Criteria: references to FR/NFR IDs plus any story-specific criteria not already covered.
+Priority: MoSCoW  |  Phase: 0 / 1 / 1.5 / 2  |  Estimate: N sp  |  Dependencies: [IDs]
+Traceability: FR-* / NFR-*
+```
+
+Personas referenced in stories are drawn directly from the PRD:
+- **Marcus** — Persona A, The Audiophile Commuter
+- **Ramith** — Persona B, The Developer-Audiophile (the maker)
+- **Tom** — Persona C, The Home Studio Hobbyist
+- **developer** / **system** — used for enabler stories with no direct end-user actor
+
+### Estimation Scale (Fibonacci Story Points)
+
+| Points | Meaning |
+|--------|---------|
+| 1 | Trivial — a few hours, no unknowns |
+| 2 | Small — half a day, well-understood |
+| 3 | Medium — 1–2 days, some complexity |
+| 5 | Medium-large — 2–4 days, moderate complexity |
+| 8 | Large — nearly a sprint, significant unknowns or risk |
+| 13 | Too large — split before planning; treat as an epic boundary |
+
+Anything estimated at 13+ is flagged as an epic and must be split into smaller stories before it enters a sprint.
+
+### Priority Convention (MoSCoW)
+
+- **Must** — ship-blocking for the phase; MVP is unusable without it
+- **Should** — high value, ship in the phase if feasible
+- **Could** — nice-to-have; defer to next phase if schedule is tight
+- **Won't** — explicitly out of scope for the stated phase; documented to prevent creep
+
+> **Project model note (LD-9):** Adaptive Sound is a personal / open-source, non-commercial project. All features are free. MoSCoW prioritisation reflects engineering effort and phasing only — it does not gate any feature behind a paid tier, paywall, or entitlement check. Monetization stories and the OQ-02 feature-gating spike have been removed from this backlog.
+
+### Phase Tags
+
+- **Phase 0** — Player MVP: the DSP spine (playback through the kernel, param bus, passthrough → first DSP)
+- **Phase 1** — Mix-based core: perceptual clarity/correction, loudness-comp, adaptive engine, **BRIR** immersion, NL (typed-macro, mix-level), **Reimagine** knob (mix range)
+- **Phase 1.5** — **Stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, Reimagine (stem range) — own-player-only
+- **Phase 2** — System-wide via Core Audio process taps (mix-level), virtual-device fallback
+
+### Traceability Convention
+
+Every story includes a "Traceability" field listing all FR and NFR IDs it satisfies. Where the requirement document already contains Given/When/Then acceptance criteria, this backlog references the FR ID rather than re-typing the criteria verbatim. Story-specific conditions that are not already covered in the requirements document are written out explicitly under "Acceptance Criteria."
+
+### Definition of Ready (DoR)
+
+A story is ready to enter a sprint when:
+1. The story has a clear, agreed acceptance criterion (referencing FR/NFR or written explicitly).
+2. All upstream dependency stories are either done or in the same sprint.
+3. Any spike result needed to begin implementation is available.
+4. Design mocks or engineering architecture decision records (ADRs) are available for stories of 5+ points.
+5. The story is estimated by the team.
+
+### Definition of Done (DoD)
+
+A story is done when:
+1. All acceptance criteria pass (including referenced FR/NFR criteria).
+2. Unit and/or integration tests are written and green.
+3. The feature works on Apple Silicon (M1 or later) under macOS 14 Sonoma.
+4. No new XRuns, memory leaks, or audio-thread allocations introduced (verified by Instruments).
+5. VoiceOver labels and keyboard navigation verified for any new UI control.
+6. Code reviewed by at least one other engineer.
+7. The story is demonstrable in the sprint review.
+
+---
+
+## Epics
+
+| Epic ID | Goal | Phase | FR / NFR Coverage | Success Measure (from PRD KPIs) |
+|---------|------|-------|-------------------|--------------------------------|
+| EP-ENGINE | Real-time engine spine — AVAudioEngine + custom AU (C++ kernel, Swift/C++ interop), **per-stem** lock-free param bus, Audio Workgroups, off-RT Realizer | 0 | FR-ADAPT-02/03, NFR-PERF-01/06, NFR-QUAL-01..04, CON-01/02 | Zero XRuns in 1-hour playback; audio thread ≤ 50% of buffer period |
+| EP-PLAYER | Local file playback, queue, metadata, session state | 0 | FR-PLAY-01..06, FR-UI-01/04/06, NFR-REL-01..03 | Median session > 25 min; crash-free > 99.5% |
+| EP-DEVICE | Output-device enumeration, type classification, auto-profile switching | 0→1 | FR-DEVICE-01..06, FR-SPAT-06/07 | Profile switch < 500 ms; no dropout > 50 ms |
+| EP-PERCEPTUAL | **(new)** Typed-contributor model + Arbiter (ERB/Bark + masking + partial-loudness) + off-RT Realizer (min-phase default, content-driven phase; FIR/biquad fit) | 1 | LD-12/13, FR-TONAL-01, FR-ADAPT-*, NFR-PERF-01 | Clarity/masking decisions made perceptually; users do **not** perceive the EQ "moving" |
+| EP-TONAL | **(reframed)** Correction-to-target EQ (AutoEq), loudness-comp (fractional contour-diff + SPL calibration), **no-program-DRC** dynamics + true-peak limiter, psychoacoustic bass (mono-sum) | 1 | FR-TONAL-02..07, LD-17 | "Sounds better" > 70%; dropouts < 0.1% |
+| EP-IMMERSION | **(was EP-SPAT + EP-HEADTRACK)** BRIR-first binaural (HRTF + room reflections/reverb), room synthesis, head-tracking (opt-in), speaker M/S + ambience (mono-safe) | 1 | FR-SPAT-01..07, LD-14, DEP-03 | Externalisation works (ABX vs dry-HRTF); spatial adoption |
+| EP-ADAPT | **(absorbs EP-AMBIENT)** Pre-analysis pipeline (look-ahead, cached), content/genre, on-demand ambient, conservative cadence | 1 | FR-ADAPT-01/04..08, NFR-PERF-02/04 | Adaptation imperceptible-as-motion; adapts with foresight |
+| EP-HEAR | Guided calibration, hearing-profile contributor, safe-volume guard | 1 | FR-HEAR-01..05, FR-ADAPT-06, NFR-PRIV-03 | Calibration completion > 25% |
+| EP-NLT | **(reframed)** Conversational Tuning — typed-macro interface, governing principle, **per-stem targeting (1.5)**, SAFE/SocialEQ priors + validation harness | 1 (per-stem 1.5) | FR-NLT-01..12, LD-8 | NLT weekly active > 30%; phrase success > 75%; discomfort < 300 ms |
+| EP-REIMAGINE | **(new)** The single intensity control (0 = bit-faithful → full reimagine); mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
+| EP-PROFILE | Named profiles, device↔profile binding, A/B mode, session NL principles | 1 | FR-DEVICE-04/05, FR-HEAR-03/04 | D30 active-use > 40% |
+| EP-UI | Now Playing, DSP + **Reimagine** controls, onboarding, dark mode, accessibility, l10n-ready | 0→1 | FR-UI-01..07, NFR-ACC-01..04, NFR-L10N-01/03 | Rating > 4.3; onboarding < 3 min |
+| EP-PRIVACY | Mic permission (on-demand), hearing-data encryption, **cloud-LLM context exclusions**, sandbox | 1 | NFR-PRIV-01..05 | No mic/hearing data in outbound traffic |
+| EP-STEM | **(new — Phase 1.5)** Stem object engine: offline 6-stem separation + SSD cache, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, quality-gating | **1.5** | FR-STEM-01..06, FR-REIMAGINE (stem range), NFR-PERF-06 | Separation quality-gate pass; per-stem unmasking measurable; render budget held |
+| EP-SYSWIDE | System-wide via **Core Audio process tap (primary, macOS 14.2+)** + libASPL fallback; **mix-level only** | 2 | FR-SYS-07/08/01..06, NFR-PERF-05 | System-wide adoption; no admin password on tap path |
+| EP-VDEVICE | AudioServerPlugIn **fallback** (older macOS / driver preference) | 2 | FR-SYS-01..06, NFR-INSTALL-02..04 | Driver install success > 90% |
+
+> **Epic migration note (v2.0):** `EP-SPAT` + `EP-HEADTRACK` → **`EP-IMMERSION`** (BRIR-first); `EP-AMBIENT` → folded into **`EP-ADAPT`**; perceptual decision-making split out into **`EP-PERCEPTUAL`**. Existing `US-SPAT-*` / `US-AMBIENT-*` stories below now live under the renamed epics; affected stories are annotated rather than rewritten.
+
+---
+
+## Phase 0 — Own-Player MVP: Full Stories
+
+### EP-ENGINE — Real-Time Audio Engine Skeleton
+
+**Epic goal:** Establish the AVAudioEngine / AUHAL graph and C++ DSP module framework with a lock-free parameter bus before any feature work begins. This is the foundation every other Phase 0 epic depends on.
+
+---
+
+#### US-ENG-01 [Enabler] — AVAudioEngine graph bootstrap
+
+As a **developer** I want a runnable AVAudioEngine graph that opens the default Core Audio output device, renders silence, and reports its buffer size and sample rate, so that all subsequent DSP modules have a stable audio thread to attach to.
+
+**Acceptance Criteria:**
+- Engine initialises on macOS 14 without errors on Apple Silicon (M1+).
+- Buffer size and sample rate are logged at startup and match the device's preferred values (FR-DEVICE-06 / FR-ADAPT-05 context).
+- Audio thread renders without XRuns for 10 minutes on an M1 Pro / 16 GB Mac (the floor; LD-18) (NFR-QUAL-02 baseline).
+- Zero heap allocations in the render callback (CON-01); verified by Instruments Allocations with guard malloc.
+- Instruments Thread State Trace shows no lock contention on the audio thread (CON-02).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** none
+**Traceability:** NFR-PERF-01, NFR-PERF-03, NFR-QUAL-02, CON-01, CON-02
+
+---
+
+#### US-ENG-02 [Enabler] — C++ DSP module framework with biquad EQ scaffold
+
+As a **developer** I want a C++ DSP module framework that exposes a process(buffer, frames) interface and includes a working 10-band biquad EQ (all bands pass-through at 0 dB by default), so that tonal and adaptive modules can be slotted in without redesigning the chain.
+
+**Acceptance Criteria:**
+- Framework compiles with -Wall -Wextra -fno-exceptions on the audio thread translation unit (CON-01/CON-02 guard).
+- 10-band biquad EQ with frequency, gain, and Q per band; at 0 dB all bands, output is bit-identical to input (NFR-QUAL-03).
+- THD+N in bypass ≤ -90 dB at 1 kHz (NFR-QUAL-01).
+- Module chain supports 44.1, 48, 88.2, and 96 kHz sample rates (NFR-QUAL-04).
+- Pre-allocated audio buffers; no std::vector or new on the render path (CON-01).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ENG-01
+**Traceability:** FR-TONAL-01, NFR-QUAL-01, NFR-QUAL-03, NFR-QUAL-04, CON-01, CON-02
+
+---
+
+#### US-ENG-03 [Enabler] — Lock-free SPSC parameter bus
+
+As a **developer** I want a single-producer, single-consumer ring buffer (e.g., TPCircularBuffer) wiring the UI/adaptivity thread to the DSP audio thread, so that all parameter updates arrive without mutex or blocking on the render callback.
+
+**Acceptance Criteria:**
+- Parameter messages are consumed by the audio thread within the next render cycle after being enqueued (FR-ADAPT-02).
+- Instruments Thread State Trace: zero audio-thread preemptions attributable to lock acquisition during a 5-minute stress test (FR-ADAPT-02 AC).
+- Ring buffer depth sufficient for burst of 20 simultaneous parameter updates.
+- Ring buffer is the only cross-thread mechanism on the hot path; no additional sync primitives introduced (CON-02).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02
+**Traceability:** FR-ADAPT-02, CON-02, DEP-09
+
+---
+
+#### US-ENG-04 [Enabler] — Parameter smoothing / ramp engine
+
+As a **developer** I want every DSP parameter change applied via a per-block linear ramp of at least 50 ms, so that automated and user-driven EQ changes never produce audible zipper noise.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-03 Given/When/Then: gain 0 → +6 dB on a 1 kHz sine wave produces no audible click; ramp is >= 50 ms; verified by scope/FFT.
+- Ramp applies to all band gains, dynamics thresholds, and spatial parameters uniformly.
+- Ramp time is configurable per parameter type (e.g., EQ: 50 ms, profile crossfade: 200 ms).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-03
+**Traceability:** FR-ADAPT-03
+
+---
+
+#### US-ENG-05 [Enabler] — True-peak limiter (final DSP stage)
+
+As a **developer** I want a transparent true-peak limiter as the final stage in the DSP chain, so that no upstream gain change can cause the output to exceed -1 dBTP and damage hearing or clip the DAC.
+
+**Acceptance Criteria:**
+- See FR-TONAL-07 Given/When/Then: +6 dB upstream gain on a 0 dBFS signal; output TP ≤ -1 dBTP verified by reference meter.
+- Limiter introduces no perceptible colouration at normal listening levels (verify by bypass A/B with white noise at -18 dBFS).
+- Limiter threshold is adjustable by the adaptivity engine (for FR-NLT-09 urgent path, Phase 1).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-02
+**Traceability:** FR-TONAL-07, NFR-QUAL-01
+
+---
+
+#### US-ENG-06 [Enabler] — Sample-rate conversion and device negotiation
+
+As a **developer** I want the DSP chain to query the output device's preferred sample rate and perform high-quality SRC when the source file's rate differs, so that a 44.1 kHz file plays correctly on a 48 kHz device and vice versa.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-06 Given/When/Then: 44.1 kHz file on 48 kHz device plays at correct pitch and duration.
+- SRC algorithm meets stopband attenuation ≥ 90 dB (NFR-QUAL-04).
+- 88.2 and 96 kHz pass-through also verified (no SRC needed when rates match).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-01
+**Traceability:** FR-DEVICE-06, NFR-QUAL-04
+
+---
+
+### EP-PLAYER — Local File Playback
+
+**Epic goal:** Deliver a functional music player for local files with standard controls, metadata display, queue management, and session state persistence.
+
+---
+
+#### US-PLAY-01 — Local file import and supported-format playback
+
+As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files into the app and hear them immediately, so that I can load my existing library without format conversion.
+
+**Acceptance Criteria:**
+- See FR-PLAY-01 Given/When/Then: file added to queue, Play pressed, audio within 500 ms, routed through DSP chain.
+- Drag-and-drop from Finder and from macOS Open panel both work.
+- OGG Vorbis handled via AVAudioFile or a bundled decoder (note: AVFoundation support for OGG is partial; if not natively supported, surface FR-PLAY-06 error rather than silent failure).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-01
+**Traceability:** FR-PLAY-01, FR-PLAY-06
+
+---
+
+#### US-PLAY-02 — Playback controls (play, pause, skip, seek, volume)
+
+As a **Marcus** I want play, pause, skip forward, skip backward, seek, and volume controls that respond within 100 ms, so that I can manage playback without breaking my listening flow.
+
+**Acceptance Criteria:**
+- See FR-PLAY-02 Given/When/Then: any control activated within 100 ms, no audio glitch.
+- Media keys (F7/F8/F9) and Touch Bar (where applicable) trigger the same actions.
+- Seek updates playback position correctly without dropout.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-PLAY-01
+**Traceability:** FR-PLAY-02
+
+---
+
+#### US-PLAY-03 — Playback queue with drag-to-reorder, remove, shuffle, and repeat
+
+As a **Marcus** I want to build and reorder a playback queue and toggle shuffle and repeat, so that I can manage long listening sessions without manually restarting the app.
+
+**Acceptance Criteria:**
+- See FR-PLAY-03 Given/When/Then: drag-to-reorder in a 5-track queue; new order reflected immediately; next track plays in updated order.
+- Remove track from queue without stopping current playback.
+- Shuffle mode randomises remaining tracks; repeat-all and repeat-one both work.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-PLAY-01
+**Traceability:** FR-PLAY-03
+
+---
+
+#### US-PLAY-04 — Track metadata and album art display
+
+As a **Ramith** I want to see track title, artist, album, album art, and duration in the Now Playing view, so that I know what is playing without switching apps.
+
+**Acceptance Criteria:**
+- See FR-PLAY-04 Given/When/Then: ID3v2-tagged file; all metadata fields populated correctly.
+- Missing art shows a tasteful placeholder; missing fields show empty/dash without crashing.
+- Metadata reading occurs on a background thread; never blocks the audio thread.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-PLAY-01
+**Traceability:** FR-PLAY-04
+
+---
+
+#### US-PLAY-05 — Session state persistence across app restarts
+
+As a **Marcus** I want the app to restore my queue and playback position when I reopen it, so that I can resume exactly where I stopped.
+
+**Acceptance Criteria:**
+- See FR-PLAY-05 Given/When/Then: app closed paused at 2:34; on relaunch, queue restored and track pre-loaded at 2:34 with same profile active.
+- State written atomically to UserDefaults or a local JSON file on pause/close; partial writes do not corrupt state.
+- If a queued file has been moved or deleted, the app shows an inline error for that track rather than crashing.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-PLAY-01
+**Traceability:** FR-PLAY-05
+
+---
+
+#### US-PLAY-06 — Unsupported format error surfacing
+
+As a **Tom** I want the app to name the unsupported format and explain why it cannot play it when I drag in an unsupported file, so that I am not left wondering why the track is silent.
+
+**Acceptance Criteria:**
+- See FR-PLAY-06 Given/When/Then: unsupported format dragged in; inline error names the format and links to supported-formats list.
+- Unsupported file does not appear as a valid queue entry; it is rejected at import.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 1 sp | **Dependencies:** US-PLAY-01
+**Traceability:** FR-PLAY-06
+
+---
+
+### EP-TONAL — Tonal and Dynamic Optimization
+
+**Epic goal:** Implement the parametric EQ, device correction profiles, Fletcher-Munson loudness compensation, psychoacoustic bass enhancement, adaptive dynamics, and preset library.
+
+---
+
+#### US-TON-01 — 10-band parametric EQ with real-time visualisation
+
+As a **Tom** I want a 10-band parametric EQ where I can adjust frequency, gain, and Q per band and see the resulting curve update in real time, so that I can fine-tune the sound to my preference as a manual escape hatch.
+
+**Acceptance Criteria:**
+- See FR-TONAL-01 Given/When/Then: band at 200 Hz, +6 dB, Q=1.0; FFT output shows +6 dB peak centred at 200 Hz ±0.5 dB.
+- EQ curve visualisation updates within one render cycle of any band change (< 23 ms at 512 frames / 44.1 kHz — FR-UI-02).
+- User can reset all bands to 0 dB with a single button.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-ENG-03, US-ENG-04
+**Traceability:** FR-TONAL-01, FR-UI-02
+
+---
+
+#### US-TON-02 — Device correction EQ (headphone and speaker profiles)
+
+As a **Marcus** I want the app to automatically apply a frequency response correction for my AirPods Pro or Sony WH-1000XM5, so that the headphones sound as neutrally balanced as the driver allows right out of the box.
+
+**Acceptance Criteria:**
+- See FR-TONAL-02 Given/When/Then: "Apple AirPods Pro 2" identified; correction profile loaded and togglable on/off with audible difference.
+- At least 20 device correction profiles ship at launch (per P0-6: AirPods, Sony, Bose, Sennheiser, Mac built-in — covering common output devices).
+- Correction data sourced from AutoEQ (MIT license) or self-measured and validated (ASM-05).
+- Toggle persists per profile.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-DEVCORRLIB
+**Traceability:** FR-TONAL-02, DEP-07, ASM-05
+
+---
+
+#### US-TON-03 — Fletcher-Munson loudness-compensated EQ
+
+As a **Ramith** I want the app to automatically boost bass and treble when I turn the volume down, so that music sounds full and warm even at low volume.
+
+**Acceptance Criteria:**
+- See FR-TONAL-03 Given/When/Then: volume reduced by 20 dB; bass (80–200 Hz) increases ~6–10 dB; highs (8–12 kHz) increases ~3–5 dB per ISO 226 curves; applied within one DSP processing block.
+- Compensation updates on every volume change event (FR-ADAPT-05).
+- Compensation is limited to a configurable maximum boost (default: +12 dB) to prevent distortion on laptop speakers.
+- No audible discontinuity during volume changes (ramp per US-ENG-04).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-03, US-ENG-04
+**Traceability:** FR-TONAL-03, FR-ADAPT-05
+
+---
+
+#### US-TON-04 — Psychoacoustic bass enhancement for small speakers
+
+As a **Ramith** I want the app to generate harmonic partials of sub-bass frequencies on small or built-in speakers so that I can feel bass weight even though the speakers cannot reproduce low fundamentals.
+
+**Acceptance Criteria:**
+- See FR-TONAL-04 Given/When/Then (updated): MacBook built-in speakers, bass-heavy track; enhancement active; harmonic partials of sub-bass (below 80 Hz) audible from a **mono-summed (L+R) low-band** signal; no distortion artefacts on casual listen.
+- **Patent constraint (CON-11):** Bass harmonics MUST be generated from a mono-summed (L+R) low band. Per-channel (stereo) harmonic generation is prohibited — it falls within Waves US-11,102,577 (active, ~2038). Verifiable by inspecting the signal path: the NLD input must be L+R, not separate L and R signals.
+- Enhancement is automatically enabled only for devices classified as small speakers or in-ear headphones (FR-DEVICE-03 / Adaptivity Signal Matrix: output device type).
+- Enhancement strength configurable via the DSP controls panel.
+- Engineering may proceed; **public release blocked** until SPIKE-IPREVIEW IP review is complete (OQ-16).
+
+**Priority:** Could | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-IPREVIEW (for public release only)
+**Traceability:** FR-TONAL-04, FR-DEVICE-03, CON-11, OQ-16
+
+---
+
+#### US-TON-05 — Adaptive multi-band dynamics (compressor/limiter)
+
+As a **Marcus** I want the app to apply appropriate compression per content type (e.g., preserve dynamics for classical, more compression for podcasts), so that every genre sounds natural and intelligible without me touching any settings.
+
+**Acceptance Criteria:**
+- See FR-TONAL-05 Given/When/Then: classical track, Quiet ambient; ratio < 1.5:1; switching to Loud ambient increases ratio ≥ 3:1.
+- Attack and release parameters are genre-appropriate per the Adaptivity Signal Matrix.
+- Parameter updates go through lock-free bus and ramp (US-ENG-03, US-ENG-04); no zipper noise on ratio changes.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ENG-02, US-ENG-03, US-ENG-04, US-ENG-05, US-ADAPT-01
+**Traceability:** FR-TONAL-05, NFR-QUAL-02
+
+---
+
+#### US-TON-06 — Tonal preset library (8+ named presets)
+
+As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Boost, Podcast, Film, Classical, Electronic) and save custom variations, so that I can quickly switch tonal characters without manual EQ work.
+
+**Acceptance Criteria:**
+- See FR-TONAL-06 Given/When/Then: "Electronic" preset selected; EQ parameters update within one render cycle; "Save as Custom" appears on any subsequent adjustment.
+- At least 8 named presets shipped.
+- Custom presets are stored in the profile system (FR-DEVICE-04) and survive app restarts.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-TON-01, US-DEVICE-04
+**Traceability:** FR-TONAL-06, FR-DEVICE-04
+
+---
+
+### EP-ADAPT — Adaptivity Engine and Content Classification
+
+**Epic goal:** Build the FFT-based content/genre classifier, the adaptivity engine orchestrator that coordinates all DSP signals, the volume tracker, and the transparency view.
+
+---
+
+#### US-ADAPT-01 [Enabler] — FFT spectrum analysis pipeline
+
+As a **developer** I want a real-time FFT analysis pipeline running on a non-real-time background thread that feeds spectral data into the adaptivity engine within 5 seconds of a track starting, so that all content-aware features have the signal data they need.
+
+**Acceptance Criteria:**
+- FFT runs on a non-real-time thread (separate from the audio render callback); audio thread is not blocked (CON-02).
+- Window size and hop configurable; default 2048-sample FFT at 44.1 kHz.
+- Spectral data (magnitude spectrum, spectral centroid, RMS energy) delivered to adaptivity engine via lock-free channel.
+- Classification latency: first classification result within 5 s of track start (NFR-PERF-04).
+- CPU usage for classifier ≤ 10% of one core (NFR-PERF-04).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ENG-01, US-ENG-03
+**Traceability:** FR-ADAPT-01, NFR-PERF-04, DEP-02
+
+---
+
+#### US-ADAPT-02 — Content/genre classification (DSP heuristics)
+
+As a **Marcus** I want the app to automatically detect whether I am playing classical, electronic, rock, acoustic, or speech and adjust the tonal and dynamic profile accordingly, so that every genre sounds like it was specifically tuned.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-01 Given/When/Then: electronic track with dominant bass + 4/4 drum pattern; classified as "Electronic" within 5 s; genre-tuned curve applied.
+- Six minimum classifications: speech, classical, electronic/bass-heavy, acoustic/folk, rock/metal, other.
+- Classification uses DSP heuristics only (spectral centroid, BPM estimation, onset detection) — no Core ML in Phase 0 (LD-5).
+- Genre change between tracks triggers a smooth crossfade (per US-ENG-04), not an abrupt shift.
+- Adaptivity Signal Matrix tonal and dynamics rules per genre are implemented and verifiable in the transparency view (US-ADAPT-04).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ADAPT-01
+**Traceability:** FR-ADAPT-01, LD-5, NFR-PERF-04
+
+---
+
+#### US-ADAPT-03 — Volume-level tracking and signal dispatch
+
+As a **developer** I want the adaptivity engine to monitor current playback volume continuously and dispatch updated compensation curve parameters to the DSP chain within 100 ms of any volume change, so that Fletcher-Munson compensation is always current.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-05 Given/When/Then: volume 50% → 30%; compensation EQ parameters update within 100 ms; no audio dropout.
+- Volume is monitored via system volume API (kAudioHardwareServiceDeviceProperty_VirtualMainVolume) and the in-app volume control.
+- Dispatch uses lock-free bus (US-ENG-03); ramp applied (US-ENG-04).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-03, US-ENG-04, US-TON-03
+**Traceability:** FR-ADAPT-05
+
+---
+
+#### US-ADAPT-04 — Adaptation transparency view
+
+As a **Tom** I want to open a debug/analysis view that shows exactly which signals are driving which DSP changes in real time, so that I can understand and trust what the engine is doing.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-07 Given/When/Then: adaptivity engine active; Transparency view open; each active signal listed with current value and DSP adjustment; updates at ≥ 2 Hz.
+- View shows at minimum: Volume level → bass/treble gain; Genre → EQ curve name; Device type → spatialisation mode.
+- Each row has an inline Undo link (required for Phase 1 NLT history rows — future-proofing the data model now).
+- View is accessible via VoiceOver (NFR-ACC-01).
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ADAPT-02, US-ADAPT-03
+**Traceability:** FR-ADAPT-07, NFR-ACC-01
+
+---
+
+#### US-ADAPT-05 — Adaptation strength slider
+
+As a **Tom** I want a master Adaptation Strength slider (0–100%) that lets me dial back how aggressively the engine modifies the sound, so that I can choose how much automation I want while keeping my manual EQ corrections.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-08 Given/When/Then: Adaptation Strength = 0%; content/volume/ambient all change; DSP parameters do not change from baseline (verifiable in Transparency view).
+- At 100% (default), full adaptive range is active.
+- Slider position persists per profile.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-ADAPT-02, US-ADAPT-03, US-ADAPT-04
+**Traceability:** FR-ADAPT-08
+
+---
+
+### EP-DEVICE — Device Enumeration, Classification, and Profile Switching
+
+**Epic goal:** Enumerate Core Audio output devices, classify them by type, auto-switch DSP profiles on plug/unplug, and enable user-created named profiles.
+
+---
+
+#### US-DEVICE-01 [Enabler] — Output device enumeration and change listener
+
+As a **developer** I want the app to enumerate all available Core Audio output devices on launch and register an AudioObjectAddPropertyListenerBlock callback so that device changes are detected immediately, so that profile switching logic has a reliable device event source.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-01 Given/When/Then: two devices connected; both appear with correct names and type icons.
+- Callback fires on the non-real-time thread within 100 ms of a device plug/unplug event.
+- Device list updates UI without a restart.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-01
+**Traceability:** FR-DEVICE-01, FR-DEVICE-02
+
+---
+
+#### US-DEVICE-02 — Device-change auto-profile switching with crossfade
+
+As a **Marcus** I want the DSP profile to switch automatically within 500 ms when I plug in or unplug headphones, with no audio dropout and a smooth crossfade, so that my listening is never interrupted.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-02 Given/When/Then: AirPods Pro profile saved; AirPods connected; profile loaded within 500 ms; no dropout.
+- Journey 2.4 Step 3: crossfade window = 200 ms default (configurable); ring buffer absorbs the gap.
+- Non-blocking banner confirms the switch (Journey 2.4 Step 4).
+- If no specific profile exists for the new device, the generic profile for the device category is loaded.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-ENG-03, US-ENG-04
+**Traceability:** FR-DEVICE-02, NFR-REL-03
+
+---
+
+#### US-DEVICE-03 — Device type classification (in-ear, over-ear, built-in speakers, etc.)
+
+As a **developer** I want connected output devices classified into six categories (in-ear headphones, over-ear headphones, built-in speakers, external speakers, DAC/amplifier, unknown) using device name heuristics and Core Audio transport type, so that spatialisation mode and bass enhancement are selected automatically.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-03 Given/When/Then: AirPods Pro identified as "in-ear headphones"; HRTF + headphone correction pipeline auto-selected.
+- Built-in MacBook speaker classified as "built-in speakers"; speaker widening and psychoacoustic bass enhancement selected.
+- Unknown devices default to neutral/headphones profile with a prompt to select category manually.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-01
+**Traceability:** FR-DEVICE-03
+
+---
+
+#### US-DEVICE-04 — Named profile creation, editing, and device association
+
+As a **Tom** I want to create named DSP profiles ("Night Mode — AirPods," "Office — Sony"), link them to specific output devices, and switch between them from the device menu, so that I can maintain different listening setups without re-configuring the app every time I switch headphones.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-04 Given/When/Then: "Night Mode — AirPods" created with custom EQ; AirPods connected; app offers to auto-load; manual switch also available.
+- Profile stores: EQ bands, spatialization settings, dynamics settings, Adaptation Strength, linked device ID.
+- Profiles persist across app restarts (FR-PLAY-05 persistence layer reused).
+- At least 3 profiles can coexist; no artificial limit imposed.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-02, US-TON-01
+**Traceability:** FR-DEVICE-04
+
+---
+
+#### US-DEVICE-05 — Profile import and export (JSON)
+
+As a **Tom** I want to export any profile as a JSON file and import it on another Mac, so that I can share my carefully tuned settings with other users.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-05 Given/When/Then: profile exported; imported on different Mac; all parameters correctly restored and audible.
+- Export uses a versioned schema; import validates schema version before applying.
+- Import/export available from profile menu.
+
+**Priority:** Could | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-04
+**Traceability:** FR-DEVICE-05
+
+---
+
+#### US-DEVICE-06 — Speaker stereo widening and spatialisation mode auto-switch
+
+As a **Ramith** I want the app to automatically switch to stereo widening mode when I am using MacBook speakers and back to HRTF mode when I plug in headphones, so that I get the appropriate spatialisation for each device without manual intervention.
+
+**Acceptance Criteria:**
+- See FR-SPAT-06 Given/When/Then: active output is speakers; HRTF inactive; stereo width processing applied; mid/side balance adjustable.
+- See FR-SPAT-07 Given/When/Then: device changes headphones → speakers; spatialisation mode updates within 500 ms; banner confirms; override available.
+- Mode transition uses crossfade (US-ENG-04); no audible click.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-03, US-ENG-04
+**Traceability:** FR-SPAT-06, FR-SPAT-07
+
+---
+
+#### US-DEVICE-07 — Basic crossfeed for headphones
+
+As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed on headphones so that hard-panned elements feel less fatiguing and more natural over long listening sessions.
+
+**Acceptance Criteria:**
+- See FR-SPAT-03 Given/When/Then: hard-panned stereo on headphones; crossfeed enabled at default (~700 Hz crossover); channel separation measurably reduced via FFT; no perceived image collapse.
+- Crossfeed is automatically active when device is classified as headphones (any type); disabled for speakers.
+- Crossfeed level is adjustable in the DSP controls panel (0 = off, default = moderate Bauer level).
+- **Licence gate (OQ-17 / CON-12):** If SPIKE-LIBBS2B confirms libbs2b is MIT, use it. If not clearly permissive, the implementation shall be a clean-room reimplementation of the Bauer algorithm from the public specification (biquad filters + delay). This story is blocked on SPIKE-LIBBS2B resolution.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp (or +2 sp if clean-room reimplement is needed) | **Dependencies:** US-DEVICE-03, US-ENG-02, SPIKE-LIBBS2B
+**Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
+
+---
+
+### EP-UI — Now Playing View, Controls Panel, Onboarding, and Accessibility
+
+**Epic goal:** Deliver the full SwiftUI shell — Now Playing view with spectrum analyser, DSP controls panel, first-run onboarding wizard, dark/light mode, VoiceOver, keyboard navigation, and localisation-ready strings.
+
+---
+
+#### US-UI-01 — Now Playing view with spectrum analyser
+
+As a **Marcus** I want a persistent Now Playing view showing album art, track metadata, playback controls, a real-time spectrum analyser at ≥ 30 fps, and the active profile name, so that I can see what is playing and how the engine is processing it at a glance.
+
+**Acceptance Criteria:**
+- See FR-UI-01 Given/When/Then: track playing; spectrum analyser updates ≥ 30 fps; all metadata visible without scrolling on 13-inch MacBook display.
+- Spectrum analyser is powered by the FFT pipeline (US-ADAPT-01); does not re-run its own FFT.
+- VoiceOver label for analyser reads accessible text equivalent (e.g., "Spectrum: Bass heavy, moderate highs") — FR-UI-05.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-PLAY-04, US-ADAPT-01
+**Traceability:** FR-UI-01, FR-UI-05, NFR-ACC-01
+
+---
+
+#### US-UI-02 — DSP controls panel
+
+As a **Tom** I want a single panel that exposes EQ bands, spatialisation toggle, dynamics controls, and profile selector without navigating into settings, so that I can tune the sound mid-session without losing my flow.
+
+**Acceptance Criteria:**
+- See FR-UI-02 Given/When/Then: panel open; EQ band adjusted; change audible in next render cycle (< 23 ms at 512 frames); EQ curve visualisation updates immediately.
+- Panel accessible via keyboard shortcut (no mouse required) — NFR-ACC-02.
+- All controls have meaningful VoiceOver labels — NFR-ACC-01.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-TON-01, US-DEVICE-04
+**Traceability:** FR-UI-02, NFR-ACC-01, NFR-ACC-02
+
+---
+
+#### US-UI-03 — First-run onboarding wizard
+
+As a **Ramith** I want a first-run wizard that detects my output device, explains what the app does in one screen, and lets me start listening in under 3 minutes without being forced to complete any step, so that I can get value immediately without learning anything about audio.
+
+**Acceptance Criteria:**
+- See FR-UI-04 Given/When/Then: user skips all steps; main player view reached within 10 seconds with default settings active.
+- Journey 2.1: Steps 1–6 implemented; device detected and displayed; skip available at every step.
+- Mic permission dialog uses NSMicrophoneUsageDescription string explaining purpose in plain English (NFR-PRIV-02).
+- Hearing check step present but skippable (FR-HEAR-01 hearing test itself is Phase 1; onboarding step is a placeholder with "coming soon" or skip-always in Phase 0).
+- Onboarding state persisted; wizard does not re-run on subsequent launches.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-PLAY-01
+**Traceability:** FR-UI-04, NFR-PRIV-02
+
+---
+
+#### US-UI-04 — Dark mode and light mode support
+
+As a **Ramith** I want the app to match macOS dark or light mode automatically and switch in real time, so that it feels native and does not clash with the rest of my desktop.
+
+**Acceptance Criteria:**
+- See FR-UI-06 Given/When/Then: system switches to Dark Mode while app is open; all windows update to dark theme without restart; no illegible text or invisible controls.
+- All colours defined using semantic NSColor/SwiftUI Color tokens (not hardcoded hex values).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-UI-01
+**Traceability:** FR-UI-06
+
+---
+
+#### US-UI-05 — VoiceOver and keyboard accessibility
+
+As a **developer** I want every interactive control to have a meaningful VoiceOver label and be operable via keyboard alone, so that the app meets macOS accessibility standards at launch.
+
+**Acceptance Criteria:**
+- See FR-UI-05 Given/When/Then: VoiceOver enabled; DSP controls panel navigated via arrow keys; every slider and button announces label and current value.
+- All primary functions (play/pause, skip, volume, profile select, DSP toggle) accessible via keyboard shortcuts with no conflicts with standard macOS shortcuts (NFR-ACC-02).
+- Reduce Motion: all animations disabled or reduced when macOS "Reduce Motion" is active (NFR-ACC-04 — see AC).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-UI-02
+**Traceability:** FR-UI-05, NFR-ACC-01, NFR-ACC-02, NFR-ACC-04
+
+---
+
+#### US-UI-06 — Localisation-ready string externalisation
+
+As a **developer** I want all user-visible strings stored in .strings files from day one with no hardcoded English strings in UI components, so that future localisation requires only translation without code changes.
+
+**Acceptance Criteria:**
+- All strings in Views and ViewModels reference NSLocalizedString or SwiftUI LocalizedStringKey; no inline string literals in UI code (NFR-L10N-01).
+- Build lint rule or CI check fails if a hardcoded UI string is introduced.
+- No audio processing logic depends on locale settings for numeric formatting (NFR-L10N-03).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** none
+**Traceability:** NFR-L10N-01, NFR-L10N-03
+
+---
+
+#### US-UI-07 — Adaptive UI feedback (engine activity indicators)
+
+As a **Marcus** I want subtle visual feedback when the adaptivity engine changes a DSP parameter, so that I can see the engine working without it being distracting.
+
+**Acceptance Criteria:**
+- See FR-UI-07 Given/When/Then: bass EQ updated by 3 dB; bass band indicator briefly animates; does not disrupt user interaction.
+- Reduce Motion compliance: animation disabled when NFR-ACC-04 applies; state change shown by colour pulse instead.
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-UI-02, US-ADAPT-02
+**Traceability:** FR-UI-07, NFR-ACC-04
+
+---
+
+### EP-PRIVACY — Privacy, Permissions, and Sandbox Compliance
+
+**Epic goal:** Ensure mic permission is handled transparently, hearing data is encrypted locally, telemetry is opt-in, and the app is sandbox compliant for App Store submission.
+
+---
+
+#### US-PRIV-01 — Microphone permission UX and denial graceful fallback
+
+As a **Ramith** I want the app to explain in plain language why it needs the microphone before requesting permission, and I want to know that ambient sensing will simply be unavailable (not broken) if I deny, so that I feel safe granting or declining without anxiety.
+
+**Acceptance Criteria:**
+- See NFR-PRIV-02 Given/When/Then: user denies microphone; all features except ambient adaptation function normally; persistent dismissable banner shown.
+- NSMicrophoneUsageDescription string: "Used only to sense room noise — never recorded or transmitted." or equivalent.
+- Mid-session mic permission revocation handled gracefully (CON-06): ambient sensing silently stops; banner shown; no crash.
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-UI-03
+**Traceability:** NFR-PRIV-01, NFR-PRIV-02, CON-06
+
+---
+
+#### US-PRIV-02 — App sandbox compliance and entitlements declaration
+
+As a **developer** I want the app to be fully sandboxed per App Store requirements with all entitlements declared and justified, so that it passes App Store review and the privacy nutrition label is accurate.
+
+**Acceptance Criteria:**
+- App is sandboxed (com.apple.security.app-sandbox = true).
+- Microphone entitlement (com.apple.security.device.microphone) declared only if ambient sensing is included (NFR-PRIV-05).
+- No entitlements claimed beyond those actually used; reviewed by a second engineer.
+- Privacy nutrition label entries verified against actual data collection (NFR-PRIV-01, NFR-PRIV-03).
+
+**Priority:** Must | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-PRIV-01
+**Traceability:** NFR-PRIV-05, NFR-INSTALL-01
+
+---
+
+#### US-PRIV-03 — Telemetry opt-in framework
+
+As a **developer** I want an opt-in analytics framework that is clearly described at onboarding, excludes audio content and hearing data, and respects opt-out immediately, so that optional anonymous quality and diagnostics data (crash-free rate, audio-engine error counts) can be collected ethically if the project chooses to implement telemetry at all (LD-9 — no commercial analytics purpose).
+
+**Acceptance Criteria:**
+- See NFR-PRIV-04 Given/When/Then: user opts out; no analytics events sent after opt-out (verified by Charles Proxy).
+- Opt-in dialog at first launch; default is opted-out.
+- Telemetry excludes any audio content, hearing profile data, or personal identifiers.
+- Crash reporting SDK selection deferred to SPIKE-TELEMETRY resolution (OQ-10).
+
+**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-UI-03, SPIKE-TELEMETRY
+**Traceability:** NFR-PRIV-04
+
+---
+
+---
+
+## Phase 1 — Richer Adaptivity and Profiles: Full Stories
+
+### EP-SPAT — HRTF Binaural Rendering
+
+---
+
+#### US-SPAT-01 — HRTF binaural rendering (custom SOFA-HRIR convolution, SADIE II default)
+
+As a **Marcus** I want binaural HRTF rendering that places the soundstage outside my head when I use headphones, so that listening feels three-dimensional and less fatiguing on long commutes.
+
+**Acceptance Criteria:**
+- See FR-SPAT-01 Given/When/Then: stereo track, headphone device active, HRTF mode enabled; naive listener ABX test shows audible spatial difference vs. bypass at statistically significant rate.
+- HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/architecture/prior-art.md`).
+- Default dataset is **SADIE II (Apache-2.0)** (ASM-04, DEP-06 — confirmed permissive; OQ-04 resolved).
+- Convolution CPU within NFR-PERF-02 budget. Validated in SPIKE-HRTF.
+- HRTF is default-on for any device classified as headphones; off for speakers.
+- Non-medical framing enforced in all UI copy (LD-7).
+
+**Priority:** Must | **Phase:** 1 | **Estimate:** 13 — split into: US-SPAT-01a (SOFA-HRIR convolution engine with libmysofa + FFTConvolver), US-SPAT-01b (integration into DSP chain), US-SPAT-01c (HRTF toggle and UI)
+**Dependencies:** US-ENG-02, US-DEVICE-03, SPIKE-HRTF
+**Traceability:** FR-SPAT-01, ASM-04, DEP-06, DEP-12, DEP-15 (BNNS for any RT ML path), LD-7
+
+---
+
+#### US-SPAT-02 — HRTF profile selection (3 presets: generic, small-head, large-head)
+
+As a **Marcus** I want to choose from at least 3 HRTF profiles and see a recommended one based on my hearing calibration, so that I can pick the one that sounds most natural for my head shape.
+
+**Acceptance Criteria:**
+- See FR-SPAT-02 Given/When/Then: calibration complete; HRTF selector open; recommended profile highlighted; renders immediately on selection, no restart.
+- Non-medical framing: profiles labelled as "listening preference" variants, not audiological recommendations.
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-SPAT-01, US-HEAR-01
+**Traceability:** FR-SPAT-02, LD-7
+
+---
+
+#### US-SPAT-03 — Virtual room convolution (studio, living room, concert hall IRs)
+
+As a **Marcus** I want to optionally place a virtual listening room around my music, so that I can experience a concert hall or studio feel on headphones.
+
+**Acceptance Criteria:**
+- See FR-SPAT-05 Given/When/Then: room IR selected; convolution enabled; output contains reverb consistent with IR RT60; CPU within NFR-PERF-01 budget.
+- At least 3 IR presets shipped. IRs are licensed for redistribution in open-source software (permissive licence required — project is personal/open-source per LD-9).
+- Room convolution is off by default; user opt-in only.
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-SPAT-01
+**Traceability:** FR-SPAT-05, NFR-PERF-01
+
+---
+
+### EP-HEADTRACK — AirPods Head Tracking
+
+---
+
+#### US-HT-01 — CoreMotion AirPods head-tracking integration
+
+As a **Marcus** I want the HRTF soundstage to remain fixed in space when I turn my head while wearing AirPods, so that the music stays in front of me and the experience feels like real speakers in a room.
+
+**Acceptance Criteria:**
+- See FR-SPAT-04 Given/When/Then: AirPods Pro active, head-tracking enabled, 30-degree rotation; soundstage counter-compensates; perceived source does not move with head; lag < 20 ms.
+- Update rate gated: only update HRTF when orientation delta > 1 degree (Adaptivity Signal Matrix).
+- CMHeadphoneMotionManager checked at runtime; feature gracefully unavailable on non-AirPods devices (ASM-08).
+- Head tracking is opt-in with a clear permission explanation; macOS 14+ required (ASM-01).
+
+**Priority:** Must | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-SPAT-01, DEP-03
+**Traceability:** FR-SPAT-04, DEP-03, ASM-01, ASM-08
+
+---
+
+### EP-HEAR — Guided Hearing Calibration
+
+---
+
+#### US-HEAR-01 — Guided hearing calibration test
+
+As a **Tom** I want to run a guided hearing test that plays tones at 7 audiometric frequencies per ear and stores a personal hearing profile, so that the app can compensate for my specific hearing characteristics.
+
+**Acceptance Criteria:**
+- See FR-HEAR-01 Given/When/Then: headphones on; each tone presented; user responds; thresholds recorded per ear per frequency; stored in structured hearing profile.
+- See FR-HEAR-05 Given/When/Then: system volume 100% during test; app overrides to safe level; cannot be bypassed.
+- Journey 2.2 implemented: pre-check, tone sequence, graph, save, label, device link.
+- Profile stored encrypted (AES-256 or platform Data Protection) — NFR-PRIV-03.
+- Profile not transmitted remotely; network traffic verified (FR-HEAR-02 AC).
+- Non-medical framing: all UI copy describes this as a "listening preference" test, not a clinical audiogram (LD-7).
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-ENG-01, US-DEVICE-03
+**Traceability:** FR-HEAR-01, FR-HEAR-02, FR-HEAR-05, NFR-PRIV-03, LD-7
+
+---
+
+#### US-HEAR-02 — Hearing profile DSP integration
+
+As a **Tom** I want the app to apply personalised per-frequency gain correction based on my hearing profile automatically, so that frequencies where my hearing is weaker are boosted to restore balance.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-06 Given/When/Then: 15 dB threshold elevation at 4 kHz right ear; profile active; compensating gain added at 4 kHz right channel proportional to deficit; no manual adjustment needed.
+- Hearing compensation is additive on top of the base profile; does not replace it.
+- Profile can be toggled on/off from the DSP controls panel.
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-HEAR-01, US-ENG-02, US-ENG-04
+**Traceability:** FR-ADAPT-06
+
+---
+
+#### US-HEAR-03 — Multiple hearing profiles and retest prompt
+
+As a **Tom** I want to store separate hearing profiles for different family members and be reminded to re-test after 12 months, so that the app remains accurate as my hearing changes.
+
+**Acceptance Criteria:**
+- See FR-HEAR-03 Given/When/Then: two profiles exist; "Bob" selected; DSP curve changes; UI confirms.
+- See FR-HEAR-04 Given/When/Then: profile 366 days old; launch shows non-blocking prompt; dismissable.
+
+**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-HEAR-01
+**Traceability:** FR-HEAR-03, FR-HEAR-04
+
+---
+
+### EP-AMBIENT — On-Demand Ambient Noise Sensing
+
+---
+
+#### US-AMB-01 — On-demand ambient noise sample and DSP adaptation
+
+As a **Marcus** I want to tap "Adapt to my environment" and have the app sample the room noise for 3 seconds and adjust the EQ and dynamics accordingly, without keeping the microphone on.
+
+**Acceptance Criteria:**
+- See FR-ADAPT-04 first Given/When/Then: "Adapt to my environment" tapped; noisy room (>65 dBA); 3 s sample completes; ambient classified "Loud"; DSP adapted; mic released; orange indicator clears within 1 s.
+- See FR-ADAPT-04 second Given/When/Then: no trigger event; audio playing; microphone not accessed; no mic-in-use indicator.
+- Journey 2.5 Steps 1–6 implemented (including noise-decrease return path).
+- Adaptivity Signal Matrix DSP rules for ambient noise applied (multi-band compressor ratio, low-frequency gain, presence EQ).
+- Mic permission denied gracefully: ambient sensing skipped; banner shown; NFR-PRIV-02.
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-ENG-03, US-ENG-04, US-ADAPT-02, SPIKE-AMBNOISE
+**Traceability:** FR-ADAPT-04, NFR-PRIV-01, NFR-PRIV-02, LD-6, CON-06
+
+---
+
+### EP-PROFILE — Named Profiles, iCloud Sync, A/B Mode
+
+---
+
+#### US-PROF-01 — Profile import/export and iCloud sync
+
+As a **Tom** I want to sync my profiles across my Macs via iCloud and export/import them as JSON files, so that I can use the same settings everywhere without manual re-configuration.
+
+**Acceptance Criteria:**
+- Profile JSON export/import (US-DEVICE-05 extended to iCloud).
+- iCloud sync using NSUbiquitousKeyValueStore or CloudKit (decision: choose simpler option for Phase 1, document in ADR).
+- Sync conflict resolution: last-write-wins with a merge prompt if profiles differ.
+- Hearing profiles NOT synced by default (NFR-PRIV-03 — remote transmission requires explicit opt-in).
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-05
+**Traceability:** FR-DEVICE-05, NFR-PRIV-03
+
+---
+
+#### US-PROF-02 — A/B listening mode (bypass toggle with matched loudness)
+
+As a **Tom** I want to quickly toggle between enhanced and bypassed audio with loudness-matched levels so that I can hear exactly what the Adaptivity Engine is adding.
+
+**Acceptance Criteria:**
+- Single button or keyboard shortcut toggles between enhanced and bypass mode.
+- Loudness is matched (LUFS-matched, ± 0.5 LU) so the comparison is fair (loudness preference bias eliminated).
+- NFR-QUAL-03: bypass mode is bit-transparent.
+- A/B state visible in the UI and announced via VoiceOver.
+
+**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-ENG-02
+**Traceability:** NFR-QUAL-03, FR-ADAPT-08
+
+---
+
+### EP-NLT — Conversational Tuning
+
+**Epic goal:** Ship the full Conversational Tuning feature (FR-NLT-01 through FR-NLT-12) as a supporting/discovery feature at Phase 1 launch. The interpretation mechanism (OQ-11) is resolved via a Spike before engineering begins. All stories are architecture-agnostic; they specify behavior, not mechanism.
+
+> **Blocker resolved:** The previously flagged OQ-02 blocker (monetization / feature-gating model affecting whether NLT and other Phase 1 features could be gated) is fully resolved. The project is personal / open-source and non-commercial (LD-9). No feature-flag or entitlement-check layer is needed; all features ship unconditionally.
+
+---
+
+#### US-NLT-00 [Enabler] — Intent derivation subsystem scaffold
+
+As a **developer** I want a Conversational Tuning subsystem module that accepts raw text, calls the interpretation mechanism (whichever is chosen via SPIKE-NLT-ARCH), and returns a typed DSP action vector for forwarding to the lock-free parameter bus, so that all NLT stories have a stable, testable integration point.
+
+**Acceptance Criteria:**
+- Module exposes a single async interface: `deriveIntent(text: String) async -> DSPActionVector?`
+- DSP action vector type encodes: per-band gain deltas (array of frequency band + direction + magnitude), optional dynamics delta, optional spatial delta.
+- Module is mockable; unit tests stub the interpretation mechanism independently of the chosen approach.
+- Processing indicator visible to user within 100 ms of submission (FR-NLT-01 second AC).
+- Total round-trip from submission to DSP parameter applied ≤ 1500 ms for the chosen mechanism (FR-NLT-04 / ASM-09).
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** SPIKE-NLT-ARCH, US-ENG-03, US-ENG-04
+**Traceability:** FR-NLT-01, FR-NLT-02, FR-NLT-03, ASM-09
+
+---
+
+#### US-NLT-01 — Free-text input field in Now Playing view
+
+As a **Ramith** I want a "Tell us what you hear" text field accessible from the Now Playing view by clicking a button or pressing a keyboard shortcut, so that I can describe the sound problem in plain English without needing to find an EQ slider.
+
+**Acceptance Criteria:**
+- See FR-NLT-01 Given/When/Then (both ACs): field appears and focuses on activation; accepts free-form Unicode up to 280 chars; raw text passed to intent subsystem within 100 ms of submission; processing indicator visible.
+- Placeholder text: "e.g. 'bass is too low' or 'voices are hard to hear'" (Journey 2.7 Step 1).
+- Field operable via keyboard alone and via VoiceOver (FR-NLT-11).
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-00, US-UI-01
+**Traceability:** FR-NLT-01, FR-NLT-11, NFR-ACC-01
+
+---
+
+#### US-NLT-02 — Intent derivation: DSP action vector for direct frequency phrases
+
+As a **Marcus** I want phrases like "bass is too low" and "slightly too bright" to map directly to EQ band adjustments with the right magnitude, so that simple corrections happen immediately without multiple clarification rounds.
+
+**Acceptance Criteria:**
+- See FR-NLT-02 Given/When/Then (first two ACs): "bass is too low" → increase 60–250 Hz, moderate; "slightly too bright" → decrease 6–12 kHz, subtle (intensity qualifier respected).
+- Magnitude scale: subtle ≤ ±2 dB, moderate ~±3 dB, strong ≥ ±6 dB.
+- DSP change delivered via FR-ADAPT-02/FR-ADAPT-03 lock-free ramp (FR-NLT-03 AC verified by Thread State Trace).
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00
+**Traceability:** FR-NLT-02, FR-NLT-03, LD-8
+
+---
+
+#### US-NLT-03 — Intent derivation: abstract and aesthetic descriptor phrases
+
+As a **Ramith** I want phrases like "sounds boring," "dull," "muffled," "boxy," or "make it wider" to produce meaningful multi-component DSP adjustments, so that I can express dissatisfaction in natural everyday language without knowing any audio vocabulary.
+
+**Acceptance Criteria:**
+- See FR-NLT-12 Given/When/Then (all ACs): "sounds boring" → presence +2–5 kHz + air shelf +10–15 kHz + transient enhancement + optional stereo width; "dull/muffled" → treble shelf + low-mid cut; "wider/spacious" → spatial move (stereo width / crossfeed).
+- See FR-NLT-02 third AC: "music sounds boring" → multi-component action vector.
+- All descriptors in §3.9.1 mapping table produce a non-null action vector.
+- Confirmation card summarises combined changes in plain language (not band numbers alone).
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-NLT-00
+**Traceability:** FR-NLT-02, FR-NLT-12, LD-8
+
+---
+
+#### US-NLT-04 — Intent derivation: instrument and source requests (band approximation)
+
+As a **Tom** I want "I can't hear the guitar" or "vocals too quiet" to boost the frequency region where that source dominates, with an honest note in the confirmation that the full mix in that range is being adjusted, so that I get a quick directional fix with clear expectations.
+
+**Acceptance Criteria:**
+- See FR-NLT-10 Given/When/Then (both ACs): "can't hear guitar" → 250 Hz–4 kHz boost; confirmation reads "Boosted guitar presence region (250 Hz–4 kHz) — better? Note: this affects the full mix in that range, not guitar alone." "can't hear voices" → 2–4 kHz boost; note surfaced.
+- Source-to-frequency mapping covers at minimum: vocals, guitar, bass, drums (§3.9.1 table rows).
+- No ML source separation required or used — band approximation is the production baseline (LD-8, OQ-12 resolved).
+
+**Priority:** Should (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00
+**Traceability:** FR-NLT-10, LD-8
+
+---
+
+#### US-NLT-05 — Urgent protective reduction for discomfort phrases
+
+As a **Marcus** I want "it hurts my ears" or "too painful" to immediately reduce the offending frequency range by at least -6 dB and tighten the limiter before any confirmation is shown, so that I am never left in auditory discomfort waiting for the app to respond.
+
+**Acceptance Criteria:**
+- See FR-NLT-09 Given/When/Then (both ACs): discomfort phrase submitted; ≥ -6 dB reduction on implicated band within 500 ms; true-peak limiter tightened; applied before confirmation card renders.
+- High-urgency card: amber/warning colour, states what was reduced, recommends volume reduction, [Undo] and [Keep it] (default focus on [Keep it]).
+- Discomfort keyword list is hard-coded in-app independent of interpretation mechanism (PRD Risk Register: "priority list of known discomfort signals").
+- Discomfort path bypasses confidence-check gate entirely (FR-NLT-09).
+- KPI: discomfort phrase response latency < 300 ms measured end-to-end (Phase 1 KPI).
+
+**Priority:** Must (ships with US-NLT-02 — non-deferrable per LD-8 / P1-15) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00, US-ENG-05
+**Traceability:** FR-NLT-09, LD-8, NFR-QUAL-02
+
+---
+
+#### US-NLT-06 — Confirmation card, one-tap undo, and governing principle persistence
+
+As a **Marcus** I want a confirmation card after every NLT adjustment showing what changed and why, with one-tap undo and an explicit "Yes, keep it" to persist, and I want the engine to respect my instruction for the rest of the session, so that I stay in control of the sound and can correct the engine when needed.
+
+**Acceptance Criteria:**
+- See FR-NLT-04 Given/When/Then (all ACs): confirmation card appears within 1500 ms; auto-dismisses after 8 s as implicit acceptance without persisting; multi-component changes summarised in plain language.
+- See FR-NLT-05 Given/When/Then (both ACs): undo from card; undo from Transparency view; DSP reverts over ≥ 50 ms; no audible click.
+- See FR-NLT-06 Given/When/Then (both ACs): [Yes, keep it] → delta persists across restart; auto-dismiss → no residual delta on restart.
+- Governing principle: once confirmed, automatic adaptation does not counteract the NLT-stated parameter direction for the session (LD-8 / Adaptivity Signal Matrix NLT row).
+- Session-scoped by default; persists only on explicit [Yes, keep it] (LD-8).
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-02, US-NLT-03, US-ADAPT-04
+**Traceability:** FR-NLT-04, FR-NLT-05, FR-NLT-06, LD-8
+
+---
+
+#### US-NLT-07 — Ambiguity handling and clarifying question flow
+
+As a **Ramith** I want the app to ask me a clarifying question when it cannot understand my phrase (up to two rounds), and then offer me the EQ panel if it still cannot help, so that I am never left with no path forward.
+
+**Acceptance Criteria:**
+- See FR-NLT-08 Given/When/Then (both ACs): low-confidence phrase → no DSP change; clarifying question displayed with examples; after two failed rounds → EQ panel deep-link offered.
+- Journey 2.7 Step 5 (ambiguity/low-confidence path) implemented.
+- Clarifying question text follows example phrasing in FR-NLT-08.
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-00, US-UI-02
+**Traceability:** FR-NLT-08
+
+---
+
+#### US-NLT-08 — NLT transparency history in Transparency view
+
+As a **Tom** I want every confirmed NLT change to appear as a row in the Transparency view with the original phrase, the full DSP action (plain language + technical notation), timestamp, and an undo link, so that I can review every text-driven change made in the session.
+
+**Acceptance Criteria:**
+- See FR-NLT-07 Given/When/Then (all ACs): single-band row example; multi-component row lists all components; "Clear session log" clears history rows without affecting persisted profile delta.
+- Journey 2.7 Step 8: row persists in session history.
+- Transparency view row format consistent with US-ADAPT-04 row format for existing signals.
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-06, US-ADAPT-04
+**Traceability:** FR-NLT-07, FR-ADAPT-07
+
+---
+
+#### US-NLT-09 — "Reset all NLT adjustments" control
+
+As a **Marcus** I want a single "Reset all NLT adjustments" button (and a spoken "undo everything" phrase) that reverts all Conversational Tuning changes made in the session in one action, so that I can start fresh when I have been iterating and lost track of the baseline.
+
+**Acceptance Criteria:**
+- Reset button visible in the Transparency view and in the NLT input area.
+- "undo everything" or "reset all adjustments" as an NLT phrase triggers the same action.
+- All session governing principles cleared; DSP parameters return to pre-NLT baseline via smooth ramp.
+- Session NLT history cleared from Transparency view.
+- Persisted profile deltas (from previous sessions' [Yes, keep it] confirmations) are NOT affected by this action; it resets only the current session.
+
+**Priority:** Should | **Phase:** 1 | **Estimate:** 2 sp | **Dependencies:** US-NLT-06
+**Traceability:** FR-NLT-05, FR-NLT-06, LD-8
+
+---
+
+#### US-NLT-10 — NLT VoiceOver and keyboard accessibility
+
+As a **developer** I want all NLT UI elements (text field, confirmation card, all action buttons) to be fully operable via VoiceOver and keyboard alone, so that the feature meets the same accessibility bar as the rest of the app.
+
+**Acceptance Criteria:**
+- See FR-NLT-11 Given/When/Then: VoiceOver enabled; Conversational Tuning input active; keyboard navigation to confirmation card; VoiceOver announces description of change and all available actions with keyboard shortcuts.
+- Text field, [Yes keep it], [Undo], [Adjust more], clarifying question response — all keyboard-accessible.
+
+**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 2 sp | **Dependencies:** US-NLT-01, US-NLT-06
+**Traceability:** FR-NLT-11, NFR-ACC-01, NFR-ACC-02
+
+---
+
+---
+
+## Phase 1 (v2.0 additions) — Perceptual Engine & Reimagine
+
+### EP-PERCEPTUAL — Typed Contributors, Perceptual Arbiter, Off-RT Realizer
+
+**US-PERC-01 | Typed-contributor model + Arbiter** [Enabler]
+As a **developer** I want an Arbiter that composes **typed** contributions (EQ-curve + per-band dynamic + transient + spatial) in the **ERB/Bark** domain with a masking + partial-loudness model and enforces governing-principle clamps, producing a per-stem TargetState, so that clarity/adaptive/NL moves compose correctly.
+Acceptance: LD-12; governing-principle clamp (LD-8) verified — an auto-contributor cannot counteract a confirmed NL move in its band.
+Priority: Must | Phase: 1 | Estimate: 8 sp | Dependencies: US-ENG-03, SPIKE-MASKING-MODEL
+Traceability: LD-12, LD-8, FR-ADAPT-02/03, FR-NLT
+
+**US-PERC-02 | Off-RT Realizer (min-phase default; FIR opt-in)** [Enabler]
+As a **developer** I want an off-RT Realizer that turns a TargetState into finished coefficients — **minimum-phase biquads by default**, linear/mixed-phase FIR opt-in or content-selected — so the RT kernel only ramps & runs.
+Acceptance: LD-13; biquad fit (NLLS/L-M, ERB/masking-weighted, ≤ ±1 dB to target); no design/fitting on the audio thread.
+Priority: Must | Phase: 1 | Estimate: 8 sp | Dependencies: US-ENG-02, OQ-18
+Traceability: LD-13, FR-TONAL-01, NFR-PERF-01
+
+**US-PERC-03 | Masking/clarity contributor**
+As **Marcus** I want masked detail (e.g. a buried instrument region) lifted so I can actually hear what's playing.
+Acceptance: ERB/Bark masking-relief contribution; conservative, gain-limited; imperceptible-as-motion (FR-ADAPT note).
+Priority: Should | Phase: 1 | Estimate: 8 sp | Dependencies: US-PERC-01, SPIKE-MASKING-MODEL
+Traceability: LD-12, FR-ADAPT, OQ-22
+
+### EP-REIMAGINE — Intensity Control
+
+**US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful)**
+As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can dial how much the app transforms my music.
+Acceptance: FR-REIMAGINE-01/02; at 0% the engine is bypassed and output is MD5-identical to source (NFR-QUAL-03).
+Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-ENG-02, US-UI-02
+Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
+
+**US-RMG-02 | Intensity→parameter mapping (mix-range)**
+As a **developer** I want the knob to crossfade original↔processed and scale clarity/widening across the mix-range, smoothly.
+Acceptance: FR-REIMAGINE-03/04; ramped (FR-ADAPT-03); mapping curve per SPIKE-REIMAGINE-MAP.
+Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-RMG-01, SPIKE-REIMAGINE-MAP
+Traceability: FR-REIMAGINE-03, FR-REIMAGINE-04, LD-16
+
+---
+
+## Phase 1.5 — Stem-Based Object Engine: Full Stories
+
+> Own-player-only (LD-15). **Sized by SPIKE-PERF-BUDGET** (NFR-PERF-06) — which sets per-tier QualityProfile caps. Low risk on the M1 Pro floor + current hardware (LD-18).
+
+### EP-STEM — Stem Separation, Per-Stem Chains, Spatial Placement, Unmasking
+
+**US-STEM-01 | Offline 6-stem separation + SSD cache** [Enabler]
+As a **developer** I want tracks separated offline into 6 stems (vocals/drums/bass/guitar/piano/other) via an on-device model (Demucs/HTDemucs through Core ML/MLX) and cached, without blocking playback.
+Acceptance: FR-STEM-01; separation is non-RT; original mix plays immediately; progress indicated.
+Priority: Must (Phase 1.5) | Phase: 1.5 | Estimate: 8 sp | Dependencies: SPIKE-SEP-QUALITY, SPIKE-PERF-BUDGET
+Traceability: FR-STEM-01, NFR-PERF-06, LD-15
+
+**US-STEM-02 | Per-stem render graph + re-sum** [Enabler]
+As a **developer** I want the kernel to render N stems each through its own chain, parallelised via Audio Workgroups, and re-sum to binaural without glitches.
+Acceptance: FR-STEM-02; holds the per-buffer deadline at max-quality on a base Apple-Silicon laptop (NFR-PERF-06) or the QualityProfile reduces stem count first.
+Priority: Must (Phase 1.5) | Phase: 1.5 | Estimate: 8 sp | Dependencies: US-STEM-01, US-PERC-02, US-SPAT-01 (BRIR), SPIKE-PERF-BUDGET
+Traceability: FR-STEM-02, NFR-PERF-06
+
+**US-STEM-03 | Per-stem spatial placement**
+As **Tom** I want each stem placed in the spatial field so I can spread the mix into a personal stage.
+Acceptance: FR-STEM-02 (spatial); each stem rendered via the BRIR field at its own position/level.
+Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 8 sp | Dependencies: US-STEM-02
+Traceability: FR-STEM-02, FR-SPAT-01, LD-14
+
+**US-STEM-04 | Between-stem unmasking**
+As **Marcus** I want masked sources (e.g. vocals under guitar) genuinely unmasked, not approximated.
+Acceptance: FR-STEM-03; masking computed between stems (ERB/Bark); measurable improvement in the masked source's prominence.
+Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 8 sp | Dependencies: US-STEM-02, US-PERC-03
+Traceability: FR-STEM-03, LD-12
+
+**US-STEM-05 | Per-stem natural-language targeting**
+As **Tom** I want to say "bring up the guitar" / "move the vocals forward" and have it act on that stem.
+Acceptance: FR-STEM-04; NL macro targets a stem (governing principle, LD-8); shown in transparency view.
+Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 5 sp | Dependencies: US-STEM-02, EP-NLT
+Traceability: FR-STEM-04, FR-NLT, LD-8
+
+**US-STEM-06 | Quality-gating + graceful fallback**
+As **Ramith** I want the app to never present an obviously-broken separated stem.
+Acceptance: FR-STEM-05; poorly-separated stems merged into "other" / fewer stems; confidence bounds the achievable Reimagine ceiling.
+Priority: Must (Phase 1.5) | Phase: 1.5 | Estimate: 5 sp | Dependencies: US-STEM-01, SPIKE-SEP-QUALITY
+Traceability: FR-STEM-05, OQ-20
+
+**US-STEM-07 | Reimagine stem-range + own-player-only boundary**
+As **Ramith** I want the Reimagine knob's upper range to unlock the stem-based spatial reimagining in the player, and the system-wide path to fall back to mix-level gracefully.
+Acceptance: FR-REIMAGINE-03 (stem range); FR-STEM-06 (tap path = mix-level; app indicates stem features are own-player-only).
+Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 3 sp | Dependencies: US-STEM-02, US-RMG-02
+Traceability: FR-REIMAGINE-03, FR-STEM-06, LD-15, LD-16
+
+---
+
+## Phase 2 — System-Wide Enhancement: Epics and Story Stubs
+
+Phase 2 is far out and subject to change. Full story detail is deferred; epics and stubs provide engineering team visibility for architecture decisions made now.
+
+### EP-VDEVICE — AudioServerPlugIn Virtual Device (FALLBACK PATH)
+
+**Epic goal:** Build, sign, notarise, and install an AudioServerPlugIn that intercepts system audio from any application, processes it through the Adaptivity Engine, and forwards processed audio to the physical output device. **This epic covers the FALLBACK PATH only** (macOS < 14.2 or where the user explicitly requests a persistent selectable output device). The primary Phase 2 mechanism is the Core Audio process tap (EP-SYSWIDE / US-SYSW-TAP). Both paths are needed; this epic is not deprecated.
+
+> **Prior-art note (ADR-002, Proposed — `docs/architecture/prior-art.md`):** Reference implementation: **libASPL (MIT)** as the AudioServerPlugIn framework; **AudioCap (BSD-2)** as tap-path sample. Ref-only: eqMac (Apache-2.0 v1.3.2 snapshot), BlackHole (GPL — ref only), Background Music (GPL — ref only).
+
+**Critical architecture notes:**
+- Plug-in must be pure C/C++ — no Objective-C, no Swift, no Foundation (FR-SYS-06 / CON-03).
+- Plug-in runs inside coreaudiod (CON-04); IPC via Mach services only (FR-SYS-05).
+- Privileged installer uses **SMAppService** (DEP-08; SMJobBless deprecated on macOS 13+).
+- Plan 6–10 engineering weeks for driver stability alone (PRD §4 Phase 2 note).
+- Validate feasibility first via SPIKE-VDEVICE.
+
+---
+
+#### US-SYS-01 [Stub] — AudioServerPlugIn virtual device bundle (fallback path)
+
+As a **developer** I want an AudioServerPlugIn bundle (built on libASPL, MIT) that appears as a selectable output in macOS Sound settings and passes audio to the DSP engine via Mach IPC.
+Refs: FR-SYS-01, FR-SYS-05, FR-SYS-06, CON-03, CON-04, DEP-05, DEP-08, DEP-13 | Phase: 2 | Estimate: TBD (post-spike)
+
+---
+
+#### US-SYS-02 [Stub] — Privileged installer with informed consent UX (fallback path)
+
+As a **Ramith** I want a guided one-click installer that explains what it does in plain language, asks for admin password once, and restarts coreaudiod transparently.
+Refs: FR-SYS-02, NFR-INSTALL-02, OQ-01 | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYS-03 [Stub] — Crash-safe audio passthrough (fallback path)
+
+As a **system** I want the virtual device to pass audio through unprocessed if the companion app crashes, so that no system-level audio outage occurs.
+Refs: FR-SYS-04 | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYS-04 [Stub] — Safe uninstall and fallback (fallback path)
+
+As a **Tom** I want a one-click uninstall that removes the HAL plug-in, restarts coreaudiod, and restores system output with no residual orphaned devices.
+Refs: FR-SYS-03, NFR-INSTALL-04 | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYS-05 [Stub] — Auto-reconnect after OS update or coreaudiod restart (fallback path)
+
+As a **Marcus** I want the virtual device to reconnect automatically after a macOS update or coreaudiod restart without manual intervention.
+Refs: P2-3 | Phase: 2 | Estimate: TBD
+
+---
+
+### EP-SYSWIDE — System-Wide Adaptivity and Per-App Profiles
+
+> **Primary mechanism (macOS 14.2+):** Core Audio process tap (`CATapDescription` + `AudioHardwareCreateProcessTap` + private aggregate device with original output muted) — no HAL plug-in, no privileged helper, no coreaudiod restart, no admin password; TCC audio-capture consent only. Sample reference: **AudioCap (BSD-2)** — `docs/architecture/prior-art.md`. This is ADR-002 (Proposed); architecture discussion will confirm. The driver path (EP-VDEVICE) remains as fallback for macOS < 14.2.
+
+---
+
+#### US-SYSW-TAP [Stub] — Core Audio process tap activation (primary path, macOS 14.2+)
+
+As a **Marcus** I want to enable system-wide audio enhancement with a single permission dialog — no admin password, no driver install — so that all apps (Spotify, YouTube, Zoom) benefit without any system disruption.
+Refs: FR-SYS-07, FR-SYS-08, CON-10, OQ-07 | Phase: 2 | Estimate: TBD (post SPIKE-VDEVICE tap workstream) | Note: Depends on confirming exact macOS version floor in AudioHardwareTapping.h (CON-10).
+
+---
+
+#### US-SYSW-01 [Stub] — All Phase 1 adaptivity applied system-wide
+
+As a **Marcus** I want content-aware EQ, volume compensation, and ambient sensing to work for Spotify, Apple Music, and YouTube, not just the own-player.
+Refs: P2-5, FR-SYS-07 (primary) / FR-SYS-01 (fallback) | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYSW-02 [Stub] — Per-app enhancement profiles
+
+As a **Tom** I want different EQ profiles for Spotify (music) and Zoom (voice), so that each app sounds optimal without me switching profiles manually.
+Refs: P2-4 | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYSW-03 [Stub] — Low-latency mode for gaming and video calls (< 5 ms added latency)
+
+As a **Tom** I want a low-latency mode that keeps added DSP latency under 5 ms so that the tap or virtual device does not cause perceptible delay during Zoom calls or gaming.
+Refs: P2-6, NFR-PERF-05 | Phase: 2 | Estimate: TBD
+
+---
+
+#### US-SYSW-04 — *removed (superseded).*
+True per-instrument source separation is the **Phase-1.5 own-player stem engine** (EP-STEM / US-STEM-*, LD-15), **not** a Phase-2 system-wide feature. The old "Class 2b / gate on M2+ vs M1-fallback" framing is obsolete: the floor is M1 Pro (LD-18) and separation is an offline pre-pass, not a runtime chip gate.
+
+---
+
+---
+
+## Spike / Research Stories
+
+Spikes are time-boxed investigations. Each produces a written decision or recommendation that unblocks one or more user stories. Spikes do not produce shippable code.
+
+---
+
+#### SPIKE-HRTF — HRTF dataset and convolution engine validation
+
+**Goal:** Prior-art research pass has largely resolved the dataset selection question (OQ-04 resolved — see `docs/architecture/prior-art.md`). The remaining work is: (a) confirm SADIE II (Apache-2.0) SOFA file quality and subject coverage for the 3-preset requirement (FR-SPAT-02); (b) benchmark partitioned SOFA-HRIR convolution using **libmysofa (BSD-3)** + **vDSP / FFTConvolver (MIT)** on the M1 Pro / 16 GB floor (LD-18) at 44.1 and 48 kHz; (c) confirm that Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly **not** used (their HRTFs are fixed and non-replaceable — custom convolution is the only path); (d) confirm FFTConvolver `LICENSE` file path in-repo (README says MIT; canonical `/LICENSE` path 404'd per `docs/architecture/prior-art.md` §5).
+
+**Outputs:**
+- SADIE II subject selection for generic / small-head / large-head presets with SOFA file inventory
+- Performance benchmark: libmysofa SOFA load time + partitioned convolution CPU cost on M1
+- FFTConvolver licence file path confirmed (or decision to use vDSP-only)
+- Go/no-go recommendation for FR-SPAT-01 scope; note that dataset licence (Apache-2.0) is already confirmed
+
+**Time-box:** 2 days (reduced from 3 — dataset selection resolved) | **Phase:** 1 (must complete before EP-SPAT sprint) | **Estimate:** 2 sp
+**Traceability:** FR-SPAT-01, FR-SPAT-02, ASM-04, DEP-06, DEP-12, OQ-04 (resolved: SADIE II default)
+
+---
+
+#### SPIKE-DEVCORRLIB — Device correction library scope and data sourcing
+
+**Goal:** OQ-08 is partially resolved: **AutoEq computed parametric curves (MIT + attribution)** are the confirmed source. The remaining work is: (a) select the 20+ headphone/speaker models to ship at Phase 0; (b) verify upstream measurement provenance per model — AutoEq's code is MIT but upstream measurers (oratory1990, Crinacle, etc.) may be CC-BY-NC-SA; ship only AutoEq's *computed* curves with attribution, do not republish raw databases (see `docs/architecture/prior-art.md` §5 and CON-12); (c) define format for integrating AutoEq parametric curves into the app's EQ profile format; (d) identify owner of ongoing library curation.
+
+**Outputs:**
+- List of 20+ validated device correction profiles with per-model provenance note
+- Confirmation that only AutoEq *computed* curves (not raw measurements) are shipped
+- Engineering effort estimate to integrate AutoEq data into the profile format
+- Ongoing curation process and owner identified
+
+**Time-box:** 3 days | **Phase:** 0 (must complete before US-TON-02) | **Estimate:** 2 sp
+**Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08 (resolved: AutoEq MIT computed curves)
+
+---
+
+#### SPIKE-NLT-ARCH — Conversational Tuning interpretation mechanism selection
+
+**Goal:** Evaluate the three candidate approaches for text-to-DSP-intent derivation (a) deterministic keyword/rule engine, (b) on-device small language model, (c) cloud LLM API) against the acceptance criteria in FR-NLT-04 (< 1500 ms), NFR-PRIV-01..05, offline/airplane-mode behaviour, App Store compliance, and ongoing cost. This is OQ-11 and is explicitly deferred by design — do not resolve without founder input.
+
+**Outputs:**
+- Written comparison of all three approaches against criteria
+- Latency benchmark (prototype or reference data) for the chosen mechanism especially for multi-component abstract phrases (ASM-09)
+- Privacy implications per mechanism documented for App Store privacy label
+- Recommended approach with founder sign-off
+- Engineering effort delta per approach
+
+**Time-box:** 5 days | **Phase:** 1 (must complete before US-NLT-00) | **Estimate:** 5 sp
+**Traceability:** FR-NLT-01..12, NFR-PRIV-01..05, ASM-09, OQ-11
+
+---
+
+#### SPIKE-AMBNOISE — Ambient noise sensing: sample window and smoothing specification
+
+**Goal:** Determine the optimal mic sample window length, A-weighted SPL smoothing parameters, and hysteresis thresholds for the on-demand ambient sensing feature (FR-ADAPT-04). Validate the 3-second sample window proposed in requirements and confirm whether the < 5-second DSP adaptation target from Journey 2.5 is achievable.
+
+**Outputs:**
+- Validated sample window length and smoothing algorithm recommendation
+- Acceptance criterion update for NFR-PERF-04 and FR-ADAPT-04 if needed
+- Audio engineer sign-off
+
+**Time-box:** 2 days | **Phase:** 1 (must complete before US-AMB-01) | **Estimate:** 2 sp
+**Traceability:** FR-ADAPT-04, NFR-PERF-04, OQ-03
+
+---
+
+#### SPIKE-VDEVICE — Phase 2 system-wide audio feasibility (tap-primary + driver-fallback)
+
+**Goal:** Validate both Phase 2 mechanisms (per ADR-002 Proposed — `docs/architecture/prior-art.md`). Two parallel workstreams:
+
+**Workstream A — Core Audio process tap (primary path, macOS 14.2+):**
+- Confirm exact minimum macOS version for `CATapDescription` + `AudioHardwareCreateProcessTap` + muted-aggregate-device topology by inspecting `<CoreAudio/AudioHardwareTapping.h>` SDK headers (CON-10 — 14.2 vs. 14.4 unconfirmed).
+- Prototype the tap + private aggregate device topology using **AudioCap (BSD-2)** as reference.
+- Confirm TCC entitlement string (NSAudioCaptureUsageDescription) and purple indicator behaviour.
+- Measure added round-trip latency of tap path vs. direct output (target ≤ 10 ms, NFR-PERF-05).
+
+**Workstream B — AudioServerPlugIn (fallback path):**
+- Prototype an AudioServerPlugIn skeleton (pure C, Mach IPC stub, loads into coreaudiod) on macOS 14 Sonoma using **libASPL (MIT)** as the framework (DEP-13).
+- Validate SMAppService as replacement for deprecated SMJobBless.
+- Confirm notarization requirements for HAL plug-ins.
+- Estimated engineering weeks for driver stability (targeting 6–10 weeks per PRD).
+- IPC latency budget.
+- OQ-01 (auto-switch vs. manual output selection) impact on installer UX.
+
+**Outputs:**
+- Confirmed macOS version floor for tap path; go/no-go on tap-primary vs. driver-fallback split
+- Working tap prototype demonstrating muted-aggregate-device topology with measured latency
+- Working plug-in skeleton (libASPL) that loads without coreaudiod crash
+- SMAppService migration recommendation
+- Engineering estimate for both paths; phasing recommendation
+- OQ-01 recommendation
+
+**Time-box:** 7 days | **Phase:** 2 planning (begin in Phase 1 Week 16+) | **Estimate:** 7 sp
+**Traceability:** FR-SYS-01..06, FR-SYS-07, FR-SYS-08, DEP-05, DEP-08, DEP-13, CON-03, CON-04, CON-10, OQ-01, OQ-07, ASM-03, ASM-07
+
+---
+
+#### SPIKE-IPREVIEW — Patent IP review for psychoacoustic bass enhancement (OQ-16)
+
+**Goal:** Obtain formal IP counsel review before any public release of FR-TONAL-04. This is not a technical investigation — it is a legal/IP task. Engineering may proceed with the mono-summed NLD design (CON-11) but public release is blocked until this review is complete.
+
+**Scope:**
+- Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on the nonlinear-multiplier + harmonics approach.
+- Confirm the mono-summed (L+R) low-band NLD design clearly falls outside Waves US-11,102,577 (active, ~2038 — covers per-channel/stereo virtual bass).
+- Check whether any Xperi/SRS virtual-bass patents active post-~2006 are triggered by the implementation.
+- Document the legal opinion and approved implementation constraints for the engineering team.
+
+**Outputs:**
+- Written IP counsel opinion on the three patent questions above
+- Approved implementation note: "use mono-summed low-band NLD; confirmed clear of US-11,102,577"
+- Go/no-go sign-off for public release of FR-TONAL-04
+
+**Time-box:** Depends on IP counsel availability — not a fixed time-box; must complete before Phase 0 public release | **Phase:** 0 (before public release, not before engineering) | **Estimate:** 1 sp (BA coordination only; legal cost is external)
+**Traceability:** FR-TONAL-04, CON-11, OQ-16
+
+---
+
+#### SPIKE-LIBBS2B — libbs2b licence dispute resolution (OQ-17)
+
+**Goal:** Resolve the disputed libbs2b licence (MIT vs. GPL-2.0+) before shipping FR-SPAT-03 (crossfeed). This is a short investigation, not a technical prototype.
+
+**Scope:**
+- Open the upstream libbs2b repository and inspect the canonical `LICENSE` file and C source file headers.
+- If clearly MIT: confirm and record; unblocks shipping libbs2b.
+- If GPL or ambiguous: do not ship libbs2b. Instead, plan a clean-room reimplementation of the Bauer stereophonic-to-binaural crossfeed algorithm from the public specification (a small number of biquad filters + a delay line — trivial to reimplement). Estimate reimplementation effort.
+
+**Outputs:**
+- Definitive licence finding with source (repo URL + commit hash)
+- Decision: ship libbs2b (if MIT confirmed) OR reimplement (if not)
+- If reimplement: engineering effort estimate added to US-DEVICE-07
+
+**Time-box:** 0.5 days | **Phase:** 0 (must resolve before US-DEVICE-07 enters sprint) | **Estimate:** 1 sp
+**Traceability:** FR-SPAT-03, US-DEVICE-07, CON-12, DEP-16, OQ-17
+
+---
+
+#### SPIKE-PERF-BUDGET — Stem-engine render budget (tuning; sets Phase 1.5 caps)
+**Goal:** Measure the real cost of the Phase-1.5 render — up to **6 stems × per-stem EQ/dynamics/spatial + BRIR convolution**, re-summed — on the **M1 Pro / 16 GB floor** (LD-18; foreground sole-occupancy): per-stem RT cost, worst-case (p99.9) render vs. the per-buffer deadline (NFR-PERF-01), memory for 6 cached stems + BRIR kernels, Audio-Workgroups parallel scaling. **Compare independent-per-stem BRIR vs. shared-late-reverb decomposition** (expect ~6× saving — review C2). Set per-tier QualityProfile caps (stem count / reverb-tail length — *not* buffer size; review C5).
+**Output:** measured budget + per-tier QualityProfile caps. Given LD-18 (M1 Pro floor, sole-occupancy) + current-gen headroom (M4/M5 ~3–4× the floor), this is a **tuning spike that sets caps — not a go/no-go.**
+Time-box: 5 days | Estimate: 5 sp | Refs: NFR-PERF-06, OQ-19, EP-STEM
+
+#### SPIKE-SEP-QUALITY — 6-stem separation model, quality, and gating
+**Goal:** Evaluate 6-stem separation (Demucs/HTDemucs and any 6-stem variants) on-device via Core ML / MLX across genres; quantify separation quality and artifacts (esp. guitar/piano); define the **quality-gating** criteria (when to merge a stem into "other" / drop to fewer stems) and how confidence bounds the Reimagine ceiling.
+**Output:** model choice + conversion path; a quality-gating policy (FR-STEM-05).
+Time-box: 5 days | Estimate: 5 sp | Refs: FR-STEM-01/05, OQ-20
+
+#### SPIKE-REIMAGINE-MAP — Reimagine intensity→parameter mapping + user test
+**Goal:** Define the mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (mix-range and stem-range ceiling), and validate with a small listening test that the progression feels natural and that 0% is unmistakably "faithful".
+**Output:** the mapping curve (FR-REIMAGINE-03) + test findings.
+Time-box: 3 days | Estimate: 3 sp | Refs: FR-REIMAGINE-03/04, OQ-21
+
+#### SPIKE-MASKING-MODEL — ERB/Bark masking + partial-loudness model choice
+**Goal:** Choose the perceptual model (Moore-Glasberg partial-loudness vs MPEG psychoacoustic vs other) and the ERB/Bark arbitration approach the Arbiter uses for clarity/adaptive and between-stem unmasking decisions (LD-12). Prototype on vDSP; confirm off-RT cost.
+**Output:** model selection + an arbitration spec for US-PERC-01/03 and US-STEM-04.
+Time-box: 4 days | Estimate: 5 sp | Refs: LD-12, OQ-22, EP-PERCEPTUAL
+
+#### SPIKE-BRIR — BRIR room synthesis + externalisation validation
+**Goal:** Validate the BRIR-first immersion: synthesise (image-source + FDN) or source CC0/CC-BY room responses combined with the SADIE-II HRIR; ABX-test externalisation **vs. the dry-HRTF minimal mode**; confirm convolution cost fits the budget.
+**Output:** a default "treated room" BRIR + alternates, and evidence BRIR externalises better than dry HRTF (FR-SPAT-01).
+Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
+
+#### SPIKE-TELEMETRY — Crash reporting and analytics SDK selection
+
+**Goal:** Evaluate crash reporting and anonymous analytics SDK options (Sentry, Firebase Crashlytics, TelemetryDeck) against NFR-PRIV-04, App Store privacy label requirements, and EU data residency considerations. Recommend SDK and integration approach.
+
+**Outputs:**
+- Recommended SDK with privacy justification
+- App Store privacy nutrition label entries required
+- Integration effort estimate
+
+**Time-box:** 2 days | **Phase:** 0 (must complete before US-PRIV-03) | **Estimate:** 1 sp
+**Traceability:** NFR-PRIV-04, OQ-10
+
+---
+
+#### SPIKE-OQ15BC — NLT delta cap and hearing-profile reconciliation defaults (OQ-15b / OQ-15c)
+
+**Goal:** Obtain founder confirmation on the two pending OQ-15 recommendations: (b) post-calibration NLT delta review UX; (c) ±12 dB per-band accumulated delta cap. Engineering must not proceed on profile-delta storage design (FR-NLT-06, FR-HEAR-01) until both are confirmed. This spike is a facilitated decision session, not a technical investigation.
+
+**Outputs:**
+- Written founder confirmation of OQ-15b (post-calibration review UX) and OQ-15c (±12 dB cap)
+- Updated acceptance criteria for FR-NLT-06 and FR-HEAR-01
+
+**Time-box:** 1 day (decision session + write-up) | **Phase:** 1 (before profile-delta storage design) | **Estimate:** 1 sp
+**Traceability:** FR-NLT-06, FR-HEAR-01, OQ-15
+
+---
+
+---
+
+## Suggested Phase 0 Sprint Sequencing (DRAFT)
+
+**IMPORTANT — This sequencing is a DRAFT proposal for discussion at sprint planning. It is not a commitment. Actual sprint content will be determined by the team during sprint planning, accounting for actual velocity and resourcing.**
+
+**Velocity assumption:** The sprint plan below was drafted assuming a team of 2 full-stack macOS/C++ engineers averaging approximately 20 story points per 2-week sprint. **For a personal or solo open-source project, this figure is purely illustrative and should be re-baselined to actual capacity before sprint planning.** A solo contributor will likely run at 5–10 sp/sprint; adjust sprint groupings and timelines accordingly. The sprint *sequencing and ordering* below remains valid regardless of velocity — it reflects genuine technical dependencies, not team size. Story-point estimates have not been re-estimated and should be treated as relative sizing only until the actual contributor(s) are known. Some Phase 0 stories carry risk that may pull velocity; a 15–20% planning buffer is built in by not filling sprints to 100% capacity.
+
+**Sequencing principle:** Infrastructure and enablers first (no feature work starts before the audio engine is stable); then core playback; then the engine's differentiating intelligence; then UI polish and accessibility.
+
+---
+
+### Sprint 1 — Audio Engine Foundation
+**Target capacity:** 18–20 sp | **Rationale:** Nothing else can start until the audio thread is stable and the lock-free bus is in place. This sprint produces no user-visible feature but is the critical path gate.
+
+| Story | Points |
+|-------|--------|
+| SPIKE-DEVCORRLIB | 2 |
+| SPIKE-TELEMETRY | 1 |
+| US-ENG-01 (AVAudioEngine bootstrap) | 5 |
+| US-ENG-02 (C++ DSP module + biquad scaffold) | 8 |
+| **Sprint total** | **16 sp** |
+
+Buffer used for risk on US-ENG-02 (first C++ audio thread code; may surface unknowns). Team should spike AVAudioEngine + C++ interop pattern in the first two days before committing to the full estimate.
+
+---
+
+### Sprint 2 — Lock-Free Bus, Ramp, Limiter, and SRC
+**Target capacity:** 18–20 sp | **Rationale:** Complete the engine skeleton before any playback or EQ feature starts. Lock-free bus (US-ENG-03) and ramp (US-ENG-04) are depended on by nearly everything downstream.
+
+| Story | Points |
+|-------|--------|
+| US-ENG-03 (lock-free SPSC parameter bus) | 5 |
+| US-ENG-04 (parameter ramp engine) | 3 |
+| US-ENG-05 (true-peak limiter) | 3 |
+| US-ENG-06 (SRC and device negotiation) | 3 |
+| US-UI-06 (localisation-ready strings — no deps, cheap, do now) | 2 |
+| **Sprint total** | **16 sp** |
+
+---
+
+### Sprint 3 — Local Playback and Device Enumeration
+**Target capacity:** 18–20 sp | **Rationale:** Engine is now stable. First user-visible sprint: open a file, play audio, see the device change. Sets the foundation for all adaptive and tonal work.
+
+| Story | Points |
+|-------|--------|
+| US-PLAY-01 (local file import + format playback) | 5 |
+| US-PLAY-02 (playback controls) | 3 |
+| US-PLAY-04 (metadata and album art) | 2 |
+| US-DEVICE-01 (device enumeration + change listener) | 3 |
+| US-DEVICE-03 (device type classification) | 3 |
+| **Sprint total** | **16 sp** |
+
+---
+
+### Sprint 4 — Core Tonal Engine and Device Switching
+**Target capacity:** 18–20 sp | **Rationale:** Deliver the first version of the "Adaptive Sound" claim: volume-aware EQ and auto-profile switching. This is the minimum viable product nucleus for Ramith's use case.
+
+| Story | Points |
+|-------|--------|
+| US-TON-03 (Fletcher-Munson loudness compensation) | 5 |
+| US-DEVICE-02 (device-change auto-profile switching with crossfade) | 5 |
+| US-DEVICE-06 (speaker widening + spatialisation mode auto-switch) | 3 |
+| US-PLAY-05 (session state persistence) | 3 |
+| **Sprint total** | **16 sp** |
+
+---
+
+### Sprint 5 — Content Classification, Adaptive EQ, and Crossfeed
+**Target capacity:** 18–20 sp | **Rationale:** Ship the differentiated intelligent brain. Adaptive EQ driven by genre classification is the core Phase 0 value proposition.
+
+| Story | Points |
+|-------|--------|
+| US-ADAPT-01 (FFT spectrum analysis pipeline) | 8 |
+| US-ADAPT-02 (content/genre classification — DSP heuristics) | 8 |
+| **Sprint total** | **16 sp** |
+
+US-ADAPT-01 and US-ADAPT-02 are both 8-point stories; the sprint is focused and slightly under-loaded intentionally because FFT+classifier work frequently surfaces real-time threading edge cases.
+
+---
+
+### Sprint 6 — Dynamics, Tonal EQ, and Profile System
+**Target capacity:** 18–20 sp | **Rationale:** Add the full tonal and dynamics stack and the named profile system. This rounds out the core engine and gives Tom a reason to care.
+
+| Story | Points |
+|-------|--------|
+| US-TON-05 (adaptive multi-band dynamics) | 8 |
+| US-TON-01 (10-band parametric EQ + visualisation) | 5 |
+| US-DEVICE-04 (named profile creation, editing, device association) | 5 |
+| **Sprint total** | **18 sp** |
+
+---
+
+### Sprint 7 — Now Playing UI, DSP Controls Panel, and Queue
+**Target capacity:** 18–20 sp | **Rationale:** First full UI sprint. Engine is solid; now make it usable and demonstrable for private beta signups.
+
+| Story | Points |
+|-------|--------|
+| US-ADAPT-03 (volume-level tracking + dispatch) | 3 |
+| US-UI-01 (Now Playing view + spectrum analyser) | 5 |
+| US-UI-02 (DSP controls panel) | 5 |
+| US-PLAY-03 (queue with reorder, shuffle, repeat) | 5 |
+| **Sprint total** | **18 sp** |
+
+---
+
+### Sprint 8 — Onboarding, Privacy, Transparency, and Accessibility
+**Target capacity:** 18–20 sp | **Rationale:** Final sprint before private beta. Onboarding, privacy compliance, accessibility, and the transparency view are the quality gates for a shippable build.
+
+| Story | Points |
+|-------|--------|
+| US-UI-03 (first-run onboarding wizard) | 5 |
+| US-PRIV-01 (mic permission UX + denial fallback) | 2 |
+| US-PRIV-02 (sandbox compliance + entitlements) | 2 |
+| US-PRIV-03 (telemetry opt-in framework) | 3 |
+| US-ADAPT-04 (adaptation transparency view) | 3 |
+| US-UI-04 (dark mode / light mode) | 2 |
+| US-UI-05 (VoiceOver + keyboard accessibility) | 3 |
+| **Sprint total** | **20 sp** |
+
+---
+
+### Sprint 9 — Polish, Device Correction Presets, and Private Beta
+**Target capacity:** 18–20 sp | **Rationale:** Deliver the device correction library (the immediate "wow" for Marcus), the preset library, and the adaptive UI feedback indicators. Buffer sprint for anything that slipped from Sprint 8.
+
+| Story | Points |
+|-------|--------|
+| US-TON-02 (device correction EQ — 20+ presets) | 5 |
+| US-TON-06 (tonal preset library — 8 presets) | 3 |
+| US-DEVICE-07 (crossfeed for headphones) | 3 |
+| US-ADAPT-05 (adaptation strength slider) | 2 |
+| US-UI-07 (adaptive UI feedback indicators) | 2 |
+| US-PLAY-06 (unsupported format error surfacing) | 1 |
+| **Sprint total** | **16 sp** |
+
+Remaining capacity (~4 sp) is reserved for bug fixes and private beta feedback from testers.
+
+---
+
+### Phase 0 Sprint Summary
+
+| Sprint | Theme | Delivered | Points |
+|--------|-------|-----------|--------|
+| 1 | Audio engine foundation | AVAudioEngine + biquad DSP scaffold | 16 |
+| 2 | Lock-free bus + engine completion | Ramp, limiter, SRC, l10n strings | 16 |
+| 3 | First playback + device enumeration | Local playback, metadata, device list | 16 |
+| 4 | Core tonal + device switching | Fletcher-Munson, auto-profile switch, speaker mode | 16 |
+| 5 | Content classification brain | FFT pipeline, genre heuristic classifier | 16 |
+| 6 | Full tonal + dynamics + profiles | EQ, compressor, named profiles | 18 |
+| 7 | Now Playing UI + queue | Full UI shell, spectrum analyser, DSP panel | 18 |
+| 8 | Onboarding, privacy, accessibility | Beta-ready build, compliance complete | 20 |
+| 9 | Polish + device correction + beta | 20+ device presets, preset library, crossfeed | 16 |
+| **Total** | | | **152 sp** |
+
+**Phase 0 total story-point estimate: 152 points across 9 sprints (illustrative)**
+At the original 2-engineer / 20 sp/sprint assumption this maps to 8–9 sprints (16–18 weeks). For a solo contributor at ~8 sp/sprint, the same scope spans approximately 19 sprints (~38 weeks) — this is expected and normal for a personal open-source project. The sprint sequencing is the priority; the timeline should be re-baselined at kickoff against actual contributor capacity. The PRD Phase 0 target of 8–12 weeks to private beta was written with a team context and should be re-evaluated accordingly.
+
+Could-priority stories deferred within Phase 0 (not in sprint plan above; add if velocity allows): US-TON-04 (psychoacoustic bass enhancement, 5 sp), US-DEVICE-05 (profile import/export, 3 sp).
+
+---
+
+## Phase 1 Epic Ordering (Sprint-Planning Level)
+
+Phase 1 is not sequenced into named sprints here; the Phase 0 private-beta feedback will reshape priorities. The following epic order should guide Phase 1 sprint planning:
+
+1. **EP-ENGINE** Phase 1 extension — Core ML genre/mood model layered into US-ADAPT-02 (LD-5, off-RT only; BNNS Graph for any RT ML path); SPIKE-NLT-ARCH completed before Phase 1 Sprint 1.
+2. **SPIKE-HRTF** (complete before EP-SPAT begins — scope reduced to SADIE II benchmark + FFTConvolver licence confirm; OQ-04 resolved)
+3. **SPIKE-AMBNOISE** and **SPIKE-OQ15BC** (complete before EP-AMBIENT and EP-NLT profile-delta storage begin)
+4. **EP-SPAT** (US-SPAT-01a → 01b → 01c → US-SPAT-02 → US-SPAT-03) — leads Phase 1 marketing narrative; US-SPAT-01a builds custom SOFA-HRIR convolution engine with libmysofa + FFTConvolver.
+5. **EP-HEADTRACK** (depends on EP-SPAT; uses CMHeadphoneMotionManager macOS 14+)
+6. **EP-HEAR** (US-HEAR-01 → US-HEAR-02 → US-HEAR-03)
+7. **EP-AMBIENT** (depends on SPIKE-AMBNOISE)
+8. **EP-NLT** (depends on SPIKE-NLT-ARCH; US-NLT-00 → 01 → 02 → 05 → 06 → 07 → 03 → 04 → 08 → 09 → 10; US-NLT-05 must ship in same sprint as US-NLT-02)
+9. **EP-PROFILE** (iCloud sync, A/B mode)
+
+> **Epic renames (v2.0):** "EP-SPAT" above = **EP-IMMERSION** (BRIR-first); "EP-HEADTRACK" is folded into EP-IMMERSION; "EP-AMBIENT" is folded into EP-ADAPT. Foundational Phase-1 additions that precede the spatial/NLT epics (everything composes through them): **EP-PERCEPTUAL** (Arbiter + ERB/Bark + off-RT Realizer — gated by SPIKE-MASKING-MODEL) and **EP-REIMAGINE** mix-range (gated by SPIKE-REIMAGINE-MAP); **EP-IMMERSION** BRIR is gated by SPIKE-BRIR.
+
+**Phase 1.5 ordering (own-player-only; sized by SPIKE-PERF-BUDGET + SPIKE-SEP-QUALITY):** US-STEM-01 (separation + cache) → US-STEM-02 (per-stem render graph) → US-STEM-06 (quality-gating) → US-STEM-03 (spatial placement) → US-STEM-04 (between-stem unmasking) → US-STEM-05 (per-stem NL) → US-STEM-07 (Reimagine stem-range). **Run SPIKE-PERF-BUDGET first to set the per-tier QualityProfile caps** (low risk on the M1 Pro floor + current hardware, LD-18).
+
+**Phase 2 pre-work (begin in Phase 1 Week 16+):** SPIKE-VDEVICE (expanded to include tap-path prototype); SPIKE-IPREVIEW (patent IP review — parallel, not on critical path for engineering); SPIKE-LIBBS2B (if not already resolved in Phase 0 Sprint 9).
+
+---
+
+## Open Items Requiring Founder / Product Owner Decision Before Engineering Can Proceed
+
+The following items are tracked from OQ-* and must be resolved before the stories that depend on them enter sprint planning:
+
+| Item | Blocks | Urgency |
+|------|--------|---------|
+| OQ-11 — NLT interpretation mechanism | SPIKE-NLT-ARCH → all US-NLT-* stories | Critical — before Phase 1 Sprint 1 |
+| OQ-15b — post-calibration NLT delta review UX | SPIKE-OQ15BC → FR-NLT-06, FR-HEAR-01 | High — before profile-delta storage design |
+| OQ-15c — ±12 dB NLT delta cap | SPIKE-OQ15BC → FR-NLT-06 | High — before profile-delta storage design |
+| ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
+| OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | High — before Phase 2 Sprint 1 |
+| OQ-07 — macOS minimum deployment target | ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice | Medium — before Phase 0 Sprint 1; critical for Phase 2 tap-vs-driver decision |
+| OQ-13 — NLT clarification round limit | US-NLT-07 acceptance criteria (1 round vs. 2?) | Medium — before US-NLT-07 enters sprint |
+| OQ-14 — Conversational Tuning multilingual support scope | FR-NLT-* scope, NFR-L10N-01 | Medium — before Phase 1 launch |
+| OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this |
+| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design |
+| OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 enters sprint | Medium — before US-DEVICE-07 enters sprint; clean-room reimplement is ready fallback |
+| ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
+| ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
+| OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation |
+| OQ-19 — Stem-engine render budget (caps) | SPIKE-PERF-BUDGET → EP-STEM QualityProfile caps | Low risk (LD-18); spike sets per-tier caps |
+| OQ-20 — 6-stem quality-gating policy | SPIKE-SEP-QUALITY → US-STEM-06 | High — Phase 1.5 |
+| OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 |
+| OQ-22 — Masking + partial-loudness model choice | SPIKE-MASKING-MODEL → US-PERC-01/03, US-STEM-04 | Medium — before EP-PERCEPTUAL |
