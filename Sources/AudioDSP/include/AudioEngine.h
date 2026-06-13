@@ -71,6 +71,9 @@ namespace AdaptiveSound
         // Helper: Query device properties
         bool queryDeviceProperties(AudioDeviceID deviceID);
 
+        // Device listener callback (called off-RT when device changes)
+        static void onDeviceChanged(AudioDeviceID deviceID, void* context);
+
         // State
         void* outputUnit_; // AVAudioEngine* (opaque to C++ header)
         void* outputBus_;  // AUAudioUnitBus* (opaque to C++ header)

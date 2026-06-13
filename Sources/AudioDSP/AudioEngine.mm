@@ -3,6 +3,7 @@
 #include <cstring>
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+#include <dispatch/dispatch.h>
 
 namespace AdaptiveSound {
 
@@ -120,6 +121,9 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
         workBuffer_.resize(bufferSamples, 0.0f);
         filterState_.resize(MAX_CHANNELS * 2, 0.0f);  // bi-quad state per channel
 
+        // Register device change listener (called off-RT)
+        CoreAudioDevice::addDefaultDeviceListener(AudioEngine::onDeviceChanged, this);
+
         isRunning_.store(true, std::memory_order_release);
         fprintf(stderr, "[AudioEngine] Audio engine initialized: %u Hz, %u frames\n",
                 sampleRate_, bufferFrameSize_);
@@ -135,6 +139,9 @@ void AudioEngine::shutdown() {
     fprintf(stderr, "[AudioEngine] Shutting down\n");
 
     isRunning_.store(false, std::memory_order_release);
+
+    // Remove device listener
+    CoreAudioDevice::removeDefaultDeviceListener();
 
     @autoreleasepool {
         if (outputUnit_) {
@@ -202,6 +209,27 @@ bool AudioEngine::queryDeviceProperties(AudioDeviceID deviceID) {
     sampleRate_ = device.sampleRate;
     bufferFrameSize_ = device.bufferFrameSize;
     return true;
+}
+
+// MARK: - Device Listener Callback
+
+void AudioEngine::onDeviceChanged(AudioDeviceID deviceID, void* context) {
+    if (!context) {
+        return;
+    }
+
+    AudioEngine* self = static_cast<AudioEngine*>(context);
+
+    // Enqueue device change for RT thread to process
+    DeviceChangeMessage msg;
+    msg.deviceID = deviceID;
+    msg.timestamp = 0;
+
+    if (!self->deviceChangeRing_->tryPush(msg)) {
+        fprintf(stderr, "[AudioEngine] Device change ring buffer full, dropping message\n");
+    } else {
+        fprintf(stderr, "[AudioEngine] Device change enqueued: %u\n", deviceID);
+    }
 }
 
 }  // namespace AdaptiveSound
