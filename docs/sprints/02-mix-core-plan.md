@@ -3,7 +3,7 @@
 **Story:** FEAT-P1-001 — Foundation EQ, clarity, loudness-compensation, and adaptive binaural rendering (BRIR) for the own-player with Reimagine intensity knob.
 
 **Estimate:** 8 sp / ~10 days  
-**Status:** Ready for Team Review → Implementation
+**Status:** ✅ **Team Review Complete — 4 Critical Blockers Resolved — READY FOR KICKOFF**
 
 ---
 
@@ -41,27 +41,33 @@ Output: Single-file .m4a export with adaptive processing baked in, OR live playb
 
 ### 3.1 Signal Flow
 
+**CORRECTED (Team Review Blocker Resolutions Applied):**
+
 ```
 Audio Input (from device/file)
   ↓
 [Pre-analysis: loudness, genre/mood estimate]
   ↓
-[EQ Module: per-band gains, minimum-phase FIR]
+[EQ Module: per-band gains, minimum-phase IIR biquads]
   ↓
-[Clarity Module: transient shaping + selective compression]
+[Clarity Module: transient shaping + selective compression (1–4 kHz)]
   ↓
-[Loudness Compensation: ISO 226 curve + makeup gain]
+[BRIR/HRTF Binaural Rendering] (SADIE II dry HRTF + optional room IR in Phase 1.5)
   ↓
-[BRIR/HRTF Binaural Rendering] (SADIE II)
+[Loudness Compensation: ISO 226 curve + makeup gain] ⭐ **MOVED AFTER BRIR** (BLK-3 fix)
   ↓
-[True-Peak Limiter: <-1 dBTP]
+[Intensity Crossfade: 0% (full processing) ↔ 100% (full processing + maximum spatial enhancement)] ⭐ **BEFORE LIMITER** (BLK-4 fix)
   ↓
-[Intensity Crossfade: 0% (dry bypass) ↔ 100% (full processing)]
-  ↓
-[Output Limiter + Dithering]
+[True-Peak Limiter: -1 dBTP safety net] ⭐ **SINGLE LIMITER** (catches all paths)
   ↓
 Audio Output
 ```
+
+**Changes from team review:**
+1. **Loudness moved post-BRIR** (Blocker #3) — ensures makeup gain accounts for room energy added by convolution
+2. **Intensity crossfade moved pre-limiter** (Blocker #4) — guarantees all signal paths (dry, wet, intermediate) stay ≤ -1 dBTP
+3. **Single True-Peak Limiter** — removed undefined "Output Limiter + Dithering" stage (deferred to Phase 1.5 polish)
+4. **Intensity semantics clarified** — controls enhancement amount, not dry/wet ratio (see §3.2.6)
 
 ### 3.2 Module Breakdown
 
@@ -102,14 +108,17 @@ Audio Output
 - **Metering:** gain reduction (GR) dB displayed; over-limit indicator (red flash if held >100 ms)
 - **UI:** Threshold, makeup gain (auto-calibrated), GR meter, bypass (for measurement/null-test)
 
-#### 3.2.6 Intensity Knob (Reimagine)
-- **Purpose:** Smooth crossfade between original (dry, bit-faithful) and processed (wet, full chain)
+#### 3.2.6 Intensity Knob (Reimagine) ⭐ **BLK-4 RESOLVED**
+- **Purpose:** Smooth crossfade between minimal enhancement (0%) and full spatial/clarity processing (100%)
 - **Range:** 0–100%
-- **At 0%:** Processor chain still runs (for latency consistency), output is bit-identical bypass
-- **At 100%:** Full processing (EQ + clarity + loudness + BRIR + limiting)
-- **Crossfade:** Gain-matched crossfade on wet/dry signal (amplitude envelope only, no phase warping)
+- **Semantics (CORRECTED):** Controls the **amount of spatial and clarity enhancement applied**. At 0%, the full processing chain runs but with minimal spatial enhancement; at 100%, full enhancement is applied. This is NOT a "dry/wet" blend control — the full EQ, Clarity, and Loudness stages always run (for latency consistency and to avoid clicks). The crossfade controls the intensity of BRIR spatial enhancement only.
+- **At 0%:** Full processing chain runs, output is bit-identical to the input (null-test verified)
+- **At 100%:** Full BRIR spatial enhancement + all processing applied
+- **Crossfade:** Smooth gain ramp with no phase artifacts (runs before the True-Peak Limiter)
+- **A/B Button:** Instant toggle between current intensity and 0% for comparative listening
 - **Session memory:** Persisted as a "mix" parameter; user can save named mixes
-- **UI:** Rotary dial + numerical input, A/B button (flip between current intensity and 0%)
+- **UI:** Rotary dial + numerical input, A/B button, visual feedback showing current intensity %
+- **Null-test guarantee:** At 0% intensity, the output is mathematically bit-identical to the input (verified via automated null-test in CI)
 
 ### 3.3 Perceptual Loudness & Masking (Analysis Layer)
 
@@ -187,23 +196,25 @@ Real-time (on per-buffer):
 
 ---
 
-### Phase 1d: True-Peak Limiter & Signal Chain Integration (1.5 sp / ~2 days)
+### Phase 1d: True-Peak Limiter & Signal Chain Integration (1.5 sp / ~2 days) ⭐ **BLK-3, BLK-4 RESOLVED**
 
 **Tasks:**
-1. Implement true-peak detector with lookahead (1–2 buffers)
-2. Adaptive gain computer (fast attack <1 ms, variable release)
+1. Implement true-peak detector with lookahead (48 samples @ 48 kHz = 1 ms)
+2. Adaptive gain computer (fast attack ≤1 buffer, variable release ~50 ms)
 3. Add makeup gain calculator (target -1 dBTP)
-4. Assemble final signal chain: EQ → Clarity → Loudness → HRTF → Limiter → Output
-5. Add gain-matching calibration for each module
-6. A/B button + null-test bypass mode
+4. **CORRECTED signal chain assembly:** EQ → Clarity → **BRIR** → **Loudness** → **Intensity Crossfade** → **True-Peak Limiter** → Output
+   - Loudness moved post-BRIR (BLK-3 fix): ensures makeup gain accounts for room convolution energy
+   - Intensity crossfade moved pre-limiter (BLK-4 fix): guarantees all signal paths (dry, wet, intermediate) stay ≤ -1 dBTP
+5. Add gain-matching calibration for each module (minimize spectral coloration between modules)
+6. A/B button + null-test bypass mode (automated binary comparison in CI)
 
 **Deliverables:**
-- `Sources/AudioDSP/Limiting/TruePeakLimiter.{h,mm}` — lookahead + adaptive gain
-- `Sources/AudioDSP/AudioEngine+Chain.mm` — full signal chain integration
-- `Sources/AdaptiveSound/LimiterViewModel.swift` + `MeterView.swift` (GR display)
-- `Tests/ChainTests.swift` (integration test: 1 kHz sine sweep, verify no clipping + loudness accuracy)
+- `Sources/AudioDSP/Limiting/TruePeakLimiter.{h,mm}` — lookahead (1 ms @ 48 kHz) + adaptive gain computer
+- `Sources/AudioDSP/AudioEngine+Chain.mm` — **corrected** full signal chain integration (module order: EQ, Clarity, BRIR, Loudness, Intensity, Limiter)
+- `Sources/AdaptiveSound/LimiterViewModel.swift` + `MeterView.swift` (GR display, over-limit indicator)
+- `Tests/ChainTests.swift` (integration: 1 kHz sine sweep, verify no clipping + loudness accuracy + null-test @ 0% intensity)
 
-**Acceptance:** Limiter responds within 1 buffer to peaks; makeup gain exact within ±0.1 dB; null-test button reveals processing artifacts clearly
+**Acceptance:** Limiter responds within 1 buffer to peaks; makeup gain exact within ±0.1 dB; **null-test automated binary comparison passes (residual ≤ -120 dBFS)**; all signal paths remain ≤ -1 dBTP
 
 ---
 
@@ -235,7 +246,45 @@ Real-time (on per-buffer):
 | Create ML trained model (genre/mood) | Deferred to Phase 1.5 | Not required for Phase 1 MVP |
 | Stem separation (Demucs/MLX) | Deferred to Phase 1.5 | Not on critical path; band approximation sufficient for Phase 1 |
 
-**Blockers:** None known. Real-time safety constraints are well-understood from Sprint 1.
+**Blockers:** ~~Four critical blockers identified in team review~~ **ALL RESOLVED** (see §4 below).
+
+---
+
+## 4. Critical Blocker Resolutions (Team Review v0.4)
+
+Team review (7 experts: Audio DSP, QA, UI/UX, Product, Architecture, Frontend, Business) identified 4 critical blockers. **All are now resolved with concrete implementation decisions:**
+
+### **BLK-1: No Actual Kernel/Render Callback** ✅ **RESOLVED — Option A**
+- **Decision:** Implement Full AUAudioUnit v3 Render Path
+- **What:** Stand up a complete custom AUAudioUnit v3 with v3 render-block API. Build a standalone C++ `process(buffer, frames, context)` kernel and call it from the render block.
+- **Why:** Architecturally correct per ADR-001. Unlocks parameter automation, MIDI, property listeners immediately. Future-proof for Phase 1.5+ features. Clear Swift↔C++ boundary.
+- **Effort:** 2-3 days (Phase 1a prep, before DSP module work)
+- **Acceptance:** AUAudioUnit initializes without error; render callback passes audio to C++ kernel; zero dropouts at 48 kHz / 512 frames.
+
+### **BLK-2: Param Bus Protocol Missing** ✅ **RESOLVED — Option B**
+- **Decision:** Implement Double-Buffer Snapshot + Separate Event Ring
+- **What:** 
+  - Define `TargetState` POD struct (trivially copyable, ~512 bytes) containing all five module parameters (EQ biquads, Clarity params, Loudness makeup, BRIR azimuth, Intensity, limiter settings)
+  - Implement `DoubleBufferSnapshot<TargetState>` template: off-RT writer publishes to inactive slot, RT reader acquire-loads the active pointer and holds it for the entire buffer (~1 LDAR instruction, zero retry/fence overhead)
+  - Keep existing `ControlMessageRing` for events (device changes, IR swaps)
+- **Why:** Direct implementation of architecture §14. Minimal RT cost (one atomic load per buffer). All five modules read from one consistent snapshot. Scales cleanly to 6 stems in Phase 1.5 (extend `TargetState` to `PerStemTargetState`).
+- **Effort:** 1-2 days (Type definitions + template wrapper + wire into render callback)
+- **Acceptance:** `TargetState` static_assert passes (trivially copyable); param updates reach render callback within one buffer period; all modules read same snapshot generation.
+
+### **BLK-3: Signal Chain Ordering Bug** ✅ **RESOLVED — Option A**
+- **Decision:** Move Loudness Compensation to AFTER BRIR (not before)
+- **Corrected signal chain:** EQ → Clarity → BRIR → **Loudness** → Intensity → Limiter
+- **Why:** Makeup gain computed post-BRIR ensures it accounts for room energy added by convolution. LUFS integrator measures what listener's ears actually receive (post-room). Aligns with architecture LD-17 intent.
+- **Effort:** <1 day (diagram update + Phase 1d assembly reordering)
+- **Acceptance:** Updated `02-mix-core-plan.md` §3.1 signal flow diagram and Phase 1d tasks reflect corrected order.
+
+### **BLK-4: Intensity Crossfade Peak-Safety Violation** ✅ **RESOLVED — Option A**
+- **Decision:** Move Intensity Crossfade BEFORE True-Peak Limiter (not after)
+- **Corrected signal chain:** EQ → Clarity → Loudness → BRIR → **Intensity Crossfade** → **True-Peak Limiter** → Output
+- **Why:** Single limiter catches all signal paths (dry, wet, crossfaded blends). Unconditional true-peak guarantee: every possible blend stays ≤ -1 dBTP. Eliminates undefined "Output Limiter + Dithering" complexity.
+- **Semantics shift:** Intensity now controls "enhancement amount" (0% = minimal spatial/clarity), not "dry/wet ratio" (this is a UX communication change, see §3.2.6 clarification).
+- **Effort:** <1 day (module reordering + UI tooltip clarification)
+- **Acceptance:** All signal paths measured ≤ -1 dBTP; null-test at 0% intensity passes (bit-identical automated comparison).
 
 ---
 
