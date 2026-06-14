@@ -43,18 +43,24 @@ struct ContentView: View {
 
 struct HeaderView: View {
     var body: some View {
-        VStack {
+        VStack(spacing: 12) {
             Image(systemName: "waveform.circle.fill")
                 .font(.system(size: 64))
-                .foregroundColor(.blue)
+                .foregroundColor(.asPink)
 
             Text("Adaptive Sound")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                .font(.system(size: 28, weight: .bold, design: .default))
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.asPink, .asOrange, .asGold]),
+                        startPoint: .bottomLeading,
+                        endPoint: .topTrailing
+                    )
+                )
 
             Text("Audio Enhancement Engine")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(.asInk)
         }
         .padding()
     }
@@ -91,7 +97,7 @@ struct StatusCardView: View {
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Color.asDark.opacity(0.6))
             .cornerRadius(8)
         }
         .padding()
@@ -122,7 +128,7 @@ struct DeviceInfoView: View {
                 }
             }
             .padding(12)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(Color.asDark.opacity(0.5))
             .cornerRadius(8)
             .padding(.horizontal)
         }
@@ -151,7 +157,7 @@ struct DevicePickerView: View {
                     .padding(8)
                 }
                 .frame(maxHeight: 200)
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(Color.asPaper)
                 .cornerRadius(6)
                 .padding(.horizontal)
             }
@@ -181,15 +187,15 @@ struct DeviceRowView: View {
                 Spacer()
                 if device.id == viewModel.selectedDevice?.id {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(.asPink)
                 }
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(
                 device.id == viewModel.selectedDevice?.id
-                    ? Color.blue.opacity(0.15)
-                    : Color(nsColor: .controlBackgroundColor)
+                    ? Color.asPink.opacity(0.2)
+                    : Color.asDark.opacity(0.3)
             )
             .cornerRadius(6)
         }
@@ -214,20 +220,22 @@ struct ErrorBannerView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(.asOrange)
                     Text(error)
                         .font(.body)
+                        .foregroundColor(.asInk)
                     Spacer()
                 }
                 Button(action: { viewModel.retryInitialization() }) {
                     Text("Retry")
                         .font(.caption)
                         .fontWeight(.semibold)
+                        .foregroundColor(.asPink)
                 }
                 .buttonStyle(.bordered)
             }
             .padding(12)
-            .background(Color.orange.opacity(0.1))
+            .background(Color.asOrange.opacity(0.1))
             .cornerRadius(8)
             .padding()
             .accessibilityElement(children: .combine)

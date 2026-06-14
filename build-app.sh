@@ -17,6 +17,9 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 echo "📋 Copying Info.plist..."
 cp "Sources/AdaptiveSound/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
+echo "🎨 Copying app icon..."
+cp "Sources/AdaptiveSound/Assets.xcassets/AppIcon.appiconset/app-icon-512.png" "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+
 echo "📂 Copying executable..."
 cp "$EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/AdaptiveSound"
 chmod +x "$APP_BUNDLE/Contents/MacOS/AdaptiveSound"
