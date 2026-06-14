@@ -304,6 +304,8 @@ llvm-cov export --format lcov swiftc-coverage > coverage.lcov
 
 ---
 
+**Reference:** See [Sprint 2 Implementation Plan](02-mix-core-plan.md) and [Sprint 2 Briefing](02-mix-core-briefing.md).
+
 **Prepared by:** QA Team  
 **Date:** 2026-06-14  
 **Status:** Ready for Team Review & Execution

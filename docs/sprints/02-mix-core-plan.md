@@ -319,6 +319,8 @@ Real-time (on per-buffer):
 
 ---
 
+**Reference:** See [Sprint 2 Briefing](02-mix-core-briefing.md) for executive summary.
+
 **Prepared by:** Audio DSP Team  
 **Date:** 2026-06-14  
 **Status:** Ready for Team Review
