@@ -19,19 +19,23 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: AudioViewModel
 
     var body: some View {
-        VStack(spacing: 20) {
-            HeaderView()
-            StatusCardView()
-            PlaybackControlView()
-            VolumeControlView()
-            DeviceInfoView()
-            DevicePickerView()
-            if viewModel.errorMessage != nil {
-                ErrorBannerView()
+        ScrollView {
+            VStack(spacing: 20) {
+                HeaderView()
+                StatusCardView()
+                PlaybackControlView()
+                VolumeControlView()
+                EQView()
+                DeviceInfoView()
+                DevicePickerView()
+                if viewModel.errorMessage != nil {
+                    ErrorBannerView()
+                }
+                Spacer()
             }
-            Spacer()
+            .frame(minWidth: 600)
         }
-        .frame(minWidth: 600, minHeight: 500)
+        .frame(minHeight: 500)
         .onAppear {
             viewModel.initializeEngine()
         }
