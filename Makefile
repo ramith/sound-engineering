@@ -1,7 +1,7 @@
 .PHONY: build run clean xcode profile test format help
 
 build:
-	swift build -c debug
+	swift build -c debug -j 8
 	@bash -c '\
 		EXECUTABLE=$$(find .build -type f -name AdaptiveSound -not -path "*/.*" | head -1); \
 		BUILD_DIR=$$(dirname "$$EXECUTABLE"); \
@@ -26,7 +26,7 @@ xcode:
 	open -a Xcode .
 
 profile: build
-	@open "$(APP_BUNDLE)" --args -com.apple.CoreFoundation.logging.level 3
+	@APP_PATH=$$(cat /tmp/adaptive-sound-app-path); open "$$APP_PATH" --args -com.apple.CoreFoundation.logging.level 3
 
 test:
 	swift test
