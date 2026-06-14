@@ -2,7 +2,29 @@
 
 A personal, open-source audio enhancement app for macOS that turns any good-quality song into a personal, perceptually-tuned, spatially-rendered mix steerable via plain language.
 
-**Status:** Sprint 0 — Project bootstrap (Xcode + Swift/C++ interop) ✅
+**Status:** Sprint 1 — Audio engine + device management + branded UI ✅
+
+---
+
+## Brand Identity
+
+**The Mark:** *Flux* — eighth note flag transformed into an adaptive waveform  
+**Concept:** Music (note) + Adaptation (flowing wave) = the core promise
+
+**Colors** (Sunset Gradient):
+- `#F80791` Pink — gradient start, note head
+- `#FF6405` Orange — gradient midpoint  
+- `#FDC025` Gold — gradient end, wave tip
+- `#140C0A` Dark — surfaces & dark backgrounds
+- `#211510` Ink — text, single-color mark
+- `#FEFBF8` Paper — light surfaces
+
+**Typography:** [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk) (Google Fonts, weights 400/500/600/700)
+
+**Assets:** See `assets/` folder for complete brand kit:
+- SVG vectors (mark, lockup, favicon, app-icon) — *source of truth*
+- PNG rasterized (512×512, 1024×1024 for macOS; favicons for web)
+- Full brand guidelines in `assets/README.md`
 
 ---
 
@@ -52,13 +74,16 @@ Expected output:
 
 ### Option 2: Swift Package (Command Line)
 
-Build:
+Build and run as proper macOS app bundle:
 ```bash
-swift build -c debug
+bash build-app.sh
 ```
 
-Run:
+This builds the app and launches it as a native macOS application (appears in Dock, Command+Tab switcher).
+
+Manual build:
 ```bash
+swift build -c debug
 swift run AdaptiveSound
 ```
 
