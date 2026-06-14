@@ -58,33 +58,39 @@ adaptive-sound/
 
 ## Build & Run
 
-### Option 1: Xcode (Recommended)
+### Option 1: Xcode IDE (Recommended for Development)
 
-Open the project using Swift Package:
+Open the project in Xcode with full debugger, canvas preview, and profiling tools:
+```bash
+make xcode
+```
+
+Or manually:
 ```bash
 open -a Xcode .
 ```
 
-Build and run in Xcode: **Product > Run** (`Cmd+R`)
+Then: **Product > Run** (`Cmd+R`)
 
-Expected output:
-```
-[AdaptiveSound] Audio engine initialized ✓
-```
+### Option 2: Makefile (Command Line)
 
-### Option 2: Swift Package (Command Line)
-
-Build and run as proper macOS app bundle:
+Build and launch as native macOS app bundle:
 ```bash
-bash build-app.sh
+make run
 ```
 
-This builds the app and launches it as a native macOS application (appears in Dock, Command+Tab switcher).
+Other targets:
+```bash
+make build          # Build only (no launch)
+make clean          # Remove build artifacts
+make test           # Run test suite
+make format         # Format code (Swift + C++)
+make help           # Show all targets
+```
 
-Manual build:
+Manual Swift Package build:
 ```bash
 swift build -c debug
-swift run AdaptiveSound
 ```
 
 ---
