@@ -209,7 +209,7 @@ final class AudioViewModel: ObservableObject {
 
 class AudioEngineBridge {
     private var audioEngine: AVAudioEngine?
-    private var auUnit: AUAudioUnit?
+    private var playerNode: AVAudioPlayerNode?
     private var referenceToneBuffer: AVAudioPCMBuffer?
 
     func initialize() async throws -> Bool {
@@ -222,8 +222,16 @@ class AudioEngineBridge {
                         return
                     }
 
-                    // Attach the AU to engine (this will be done when we get the real AU)
-                    // For now, just verify the engine exists
+                    // Create a mono PCM format at 48 kHz
+                    let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1) ??
+                        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000.0, channels: 1, interleaved: false)
+
+                    self.playerNode = AVAudioPlayerNode()
+                    if let playerNode = self.playerNode, let format = audioFormat {
+                        engine.attach(playerNode)
+                        engine.connect(playerNode, to: engine.mainMixerNode, format: format)
+                    }
+
                     continuation.resume(returning: true)
                 } catch {
                     continuation.resume(returning: false)
@@ -235,11 +243,14 @@ class AudioEngineBridge {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                if let playerNode = self.playerNode, playerNode.isPlaying {
+                    playerNode.stop()
+                }
                 if let engine = self.audioEngine, engine.isRunning {
                     engine.stop()
                 }
                 self.audioEngine = nil
-                self.auUnit = nil
+                self.playerNode = nil
                 self.referenceToneBuffer = nil
                 continuation.resume()
             }
@@ -261,19 +272,30 @@ class AudioEngineBridge {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 do {
-                    guard let engine = self.audioEngine else {
+                    guard let engine = self.audioEngine, let playerNode = self.playerNode else {
                         throw AudioBridgeError.engineNotInitialized
                     }
 
-                    // Generate reference tone (1 kHz, 5 seconds at 48 kHz)
+                    // Start the engine first
+                    if !engine.isRunning {
+                        try engine.start()
+                    }
+
+                    // Generate reference tone (1 kHz, 5 seconds at 48 kHz, mono)
                     self.referenceToneBuffer = self.generateReferenceTone(
                         frequency: 1000.0,
                         duration: 5.0,
                         sampleRate: 48000.0
                     )
 
-                    // Start the engine
-                    try engine.start()
+                    // Schedule and play the reference tone
+                    if let buffer = self.referenceToneBuffer {
+                        if !playerNode.isPlaying {
+                            playerNode.play()
+                        }
+                        playerNode.scheduleBuffer(buffer, at: nil)
+                    }
+
                     continuation.resume(returning: ())
                 } catch {
                     continuation.resume(throwing: error)
@@ -285,6 +307,9 @@ class AudioEngineBridge {
     func stopAudio() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                if let playerNode = self.playerNode, playerNode.isPlaying {
+                    playerNode.stop()
+                }
                 if let engine = self.audioEngine, engine.isRunning {
                     engine.stop()
                 }
@@ -294,11 +319,15 @@ class AudioEngineBridge {
         }
     }
 
-    func setParameter(_: UInt32, value _: Float) async throws {
+    func setParameter(_ id: UInt32, value: Float) async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                // Set AU parameter via the parameter tree
-                // For now, this is a placeholder for the real AU parameter control
+                if id == 0 {
+                    // Master gain parameter
+                    if let playerNode = self.playerNode {
+                        playerNode.volume = value
+                    }
+                }
                 continuation.resume()
             }
         }

@@ -3,14 +3,13 @@
 
 #include <array>
 #include <cstdint>
+#include <type_traits>
 
 namespace AdaptiveSound
 {
 
     static constexpr int kMaxBiquads = 10;
-    static constexpr int kMaxERBBands = 34;
 
-    // Parameter structures for lock-free parameter bus transport
     struct EQParams
     {
         struct BiquadCoeffs
@@ -60,7 +59,6 @@ namespace AdaptiveSound
         float releaseCoeff = 0.f;
     };
 
-    // Master state snapshot
     struct alignas(64) TargetState
     {
         EQParams eq;
@@ -72,9 +70,12 @@ namespace AdaptiveSound
         uint64_t sequenceNumber = 0;
     };
 
-    static_assert(std::is_trivially_copyable_v<TargetState>);
-    static_assert(std::is_standard_layout_v<TargetState>);
+    // Verify trivially copyable at compile time (C++11 compatible)
+    static_assert(std::is_trivially_copyable<TargetState>::value,
+                  "TargetState must be trivially copyable");
+    static_assert(std::is_standard_layout<TargetState>::value,
+                  "TargetState must have standard layout");
 
 } // namespace AdaptiveSound
 
-#endif // ADAPTIVE_SOUND_TARGET_STATE_H
+#endif
