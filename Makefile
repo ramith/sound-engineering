@@ -1,19 +1,22 @@
-.PHONY: build run clean open profile test
+.PHONY: build run clean xcode profile test format help
 
 build:
 	swift build -c debug
 	@bash -c '\
-		BUILD_DIR=".build/debug"; \
+		EXECUTABLE=$$(find .build -type f -name AdaptiveSound -not -path "*/.*" | head -1); \
+		BUILD_DIR=$$(dirname "$$EXECUTABLE"); \
 		APP_BUNDLE="$$BUILD_DIR/AdaptiveSound.app"; \
-		mkdir -p "$$APP_BUNDLE/Contents/MacOS" "$$APP_BUNDLE/Contents/Resources"; \
-		cp "Sources/AdaptiveSound/Info.plist" "$$APP_BUNDLE/Contents/Info.plist"; \
-		cp "Sources/AdaptiveSound/Assets.xcassets/AppIcon.appiconset/AppIcon.icns" "$$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true; \
-		cp "$$BUILD_DIR/AdaptiveSound" "$$APP_BUNDLE/Contents/MacOS/AdaptiveSound"; \
-		chmod +x "$$APP_BUNDLE/Contents/MacOS/AdaptiveSound"; \
+		python3 scripts/bundle-app.py \
+			--executable "$$EXECUTABLE" \
+			--output "$$APP_BUNDLE" \
+			--info-plist Sources/AdaptiveSound/Info.plist \
+			--icon Sources/AdaptiveSound/Assets.xcassets/AppIcon.appiconset/AppIcon.icns; \
+		echo "✅ App bundle: $$APP_BUNDLE"; \
+		echo "$$APP_BUNDLE" > /tmp/adaptive-sound-app-path; \
 	'
 
 run: build
-	@open .build/debug/AdaptiveSound.app
+	@APP_PATH=$$(cat /tmp/adaptive-sound-app-path); open "$$APP_PATH"
 
 clean:
 	rm -rf .build
@@ -22,9 +25,8 @@ clean:
 xcode:
 	open -a Xcode .
 
-profile:
-	swift build -c debug
-	open .build/debug/AdaptiveSound.app --args -com.apple.CoreFoundation.logging.level 3
+profile: build
+	@open "$(APP_BUNDLE)" --args -com.apple.CoreFoundation.logging.level 3
 
 test:
 	swift test
@@ -36,8 +38,9 @@ format:
 help:
 	@echo "AdaptiveSound Build Commands:"
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
-	@echo "  make build  - Build from command line"
-	@echo "  make run    - Build and run"
+	@echo "  make build  - Build + bundle app"
+	@echo "  make run    - Build and launch app"
 	@echo "  make clean  - Remove build artifacts"
-	@echo "  make test   - Run tests"
-	@echo "  make format - Format code"
+	@echo "  make test   - Run test suite"
+	@echo "  make format - Format code (Swift + C++)"
+	@echo "  make profile- Build and profile with system trace"

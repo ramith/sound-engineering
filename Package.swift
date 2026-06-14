@@ -13,6 +13,9 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: ["AudioDSP"],
             path: "Sources/AdaptiveSound",
+            resources: [
+                .process("Assets.xcassets"),
+            ],
             swiftSettings: [
                 .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug)),
             ]
