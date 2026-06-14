@@ -44,23 +44,21 @@ struct ContentView: View {
 struct HeaderView: View {
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
-                .foregroundColor(.asPink)
+            Image(systemName: "waveform")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 76, height: 76)
+                .background(LinearGradient.asIconFill)
+                .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
 
             Text("Adaptive Sound")
-                .font(.system(size: 28, weight: .bold, design: .default))
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(colors: [.asPink, .asOrange, .asGold]),
-                        startPoint: .bottomLeading,
-                        endPoint: .topTrailing
-                    )
-                )
+                .font(BrandFont.heading)
+                .foregroundColor(.asLabel)
 
             Text("Audio Enhancement Engine")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundColor(.asInk)
+                .foregroundColor(.asLabelSecond)
         }
         .padding()
     }
@@ -74,7 +72,10 @@ struct StatusCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Engine Status")
-                .font(.headline)
+                .font(BrandFont.sectionLabel)
+                .textCase(.uppercase)
+                .tracking(0.6)
+                .foregroundColor(.asLabelTertiary)
 
             HStack {
                 Image(
@@ -84,7 +85,7 @@ struct StatusCardView: View {
                 )
                 .foregroundColor(
                     viewModel.isEngineReady
-                        ? .green
+                        ? .asGreen
                         : .orange
                 )
                 Text(
@@ -92,13 +93,15 @@ struct StatusCardView: View {
                         ? "Audio Engine Ready"
                         : "Initializing..."
                 )
-                .font(.system(.body, design: .monospaced))
+                .font(BrandFont.mono)
+                .foregroundColor(.asLabel)
                 Spacer()
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color.asDark.opacity(0.6))
-            .cornerRadius(8)
+            .background(Color.asCard)
+            .cornerRadius(9)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
         }
         .padding()
     }
@@ -113,23 +116,26 @@ struct DeviceInfoView: View {
         if let device = viewModel.selectedDevice {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Output Device")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(BrandFont.sectionLabel)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .foregroundColor(.asLabelTertiary)
                 Text(device.displayName)
                     .font(.body)
-                    .fontWeight(.semibold)
+                    .foregroundColor(.asLabel)
                 HStack(spacing: 12) {
                     Text("\(device.sampleRate) Hz")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.asLabelSecond)
                     Text("\(device.bufferFrameSize) frames")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.asLabelSecond)
                 }
             }
             .padding(12)
-            .background(Color.asDark.opacity(0.5))
-            .cornerRadius(8)
+            .background(Color.asCard)
+            .cornerRadius(9)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
             .padding(.horizontal)
         }
     }
@@ -144,8 +150,10 @@ struct DevicePickerView: View {
         if !viewModel.availableDevices.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Available Devices")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(BrandFont.sectionLabel)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .foregroundColor(.asLabelTertiary)
                     .padding(.horizontal)
 
                 ScrollView {
@@ -157,8 +165,8 @@ struct DevicePickerView: View {
                     .padding(8)
                 }
                 .frame(maxHeight: 200)
-                .background(Color.asPaper)
-                .cornerRadius(6)
+                .background(Color.asInset)
+                .cornerRadius(11)
                 .padding(.horizontal)
             }
         }
@@ -176,26 +184,31 @@ struct DeviceRowView: View {
             HStack {
                 Image(systemName: device.systemIcon)
                     .frame(width: 20)
+                    .foregroundStyle(
+                        device.id == viewModel.selectedDevice?.id
+                            ? Color.asAccent
+                            : Color.asLabelSecond
+                    )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.name)
                         .font(.body)
-                        .fontWeight(.medium)
+                        .foregroundColor(.asLabel)
                     Text("\(device.sampleRate) Hz")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.asLabelSecond)
                 }
                 Spacer()
                 if device.id == viewModel.selectedDevice?.id {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.asPink)
+                        .foregroundColor(.asAccent)
                 }
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
             .background(
                 device.id == viewModel.selectedDevice?.id
-                    ? Color.asPink.opacity(0.2)
-                    : Color.asDark.opacity(0.3)
+                    ? Color.asSelection
+                    : Color.clear
             )
             .cornerRadius(6)
         }
@@ -220,22 +233,22 @@ struct ErrorBannerView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.asOrange)
+                        .foregroundColor(.asAccent)
                     Text(error)
                         .font(.body)
-                        .foregroundColor(.asInk)
+                        .foregroundColor(.asLabel)
                     Spacer()
                 }
                 Button(action: { viewModel.retryInitialization() }) {
                     Text("Retry")
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.asPink)
+                        .foregroundColor(.asAccent)
                 }
                 .buttonStyle(.bordered)
             }
             .padding(12)
-            .background(Color.asOrange.opacity(0.1))
+            .background(Color.asAccent.opacity(0.10))
             .cornerRadius(8)
             .padding()
             .accessibilityElement(children: .combine)
