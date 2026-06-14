@@ -65,14 +65,9 @@ Open the project in Xcode with full debugger, canvas preview, and profiling tool
 make xcode
 ```
 
-Or manually:
-```bash
-open -a Xcode .
-```
-
 Then: **Product > Run** (`Cmd+R`)
 
-### Option 2: Makefile (Command Line)
+### Option 2: Makefile (Command Line / CI)
 
 Build and launch as native macOS app bundle:
 ```bash
@@ -81,17 +76,36 @@ make run
 
 Other targets:
 ```bash
-make build          # Build only (no launch)
+make build          # Build + bundle (no launch)
 make clean          # Remove build artifacts
 make test           # Run test suite
 make format         # Format code (Swift + C++)
+make profile        # Build + profile with Instruments
 make help           # Show all targets
 ```
 
-Manual Swift Package build:
-```bash
-swift build -c debug
-```
+---
+
+## Build System Architecture
+
+**Why Makefile + Python bundler (not bash, not Swift Bundler)?**
+
+| Component | Why |
+|-----------|-----|
+| **Makefile** | Standard build tool, clean targets, CI-friendly |
+| **`swift build`** | Native SPM, handles compilation + asset processing |
+| **`scripts/bundle-app.py`** | Pure Python (portable), no external dependencies, explicit bundling |
+| **`make xcode`** | Xcode IDE for professional GUI development |
+
+**Resource Management** (SPM native):
+- `Assets.xcassets` declared in `Package.swift`
+- SPM automatically processes and bundles assets
+- No manual file copying needed for assets
+
+**App Bundling**:
+- Swift executable → macOS `.app` bundle structure
+- Python script handles: Info.plist, icon, executable placement
+- Works across macOS versions (Intel + Apple Silicon)
 
 ---
 
