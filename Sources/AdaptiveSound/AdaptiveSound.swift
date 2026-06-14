@@ -22,6 +22,8 @@ struct ContentView: View {
         VStack(spacing: 20) {
             HeaderView()
             StatusCardView()
+            PlaybackControlView()
+            VolumeControlView()
             DeviceInfoView()
             DevicePickerView()
             if viewModel.errorMessage != nil {
@@ -220,6 +222,94 @@ struct DeviceRowView: View {
                 ? .isSelected
                 : []
         )
+    }
+}
+
+// MARK: - Playback Control
+
+struct PlaybackControlView: View {
+    @EnvironmentObject var viewModel: AudioViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Playback")
+                .font(BrandFont.sectionLabel)
+                .textCase(.uppercase)
+                .tracking(0.6)
+                .foregroundColor(.asLabelTertiary)
+
+            HStack(spacing: 12) {
+                Button(action: {
+                    if viewModel.isPlaying {
+                        viewModel.stopPlayback()
+                    } else {
+                        viewModel.startPlayback()
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: viewModel.isPlaying ? "stop.fill" : "play.fill")
+                        Text(viewModel.isPlaying ? "Stop" : "Play 1 kHz Tone")
+                            .font(BrandFont.body)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .background(viewModel.isPlaying ? Color.asAccent.opacity(0.2) : Color.asCard)
+                    .foregroundColor(.asLabel)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.isEngineReady)
+
+                Text(viewModel.isPlaying ? "Playing" : "Ready")
+                    .font(BrandFont.mono)
+                    .foregroundColor(viewModel.isPlaying ? .asGreen : .asLabelSecond)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.asCard)
+            .cornerRadius(9)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
+        }
+        .padding()
+    }
+}
+
+// MARK: - Volume Control
+
+struct VolumeControlView: View {
+    @EnvironmentObject var viewModel: AudioViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Master Gain")
+                .font(BrandFont.sectionLabel)
+                .textCase(.uppercase)
+                .tracking(0.6)
+                .foregroundColor(.asLabelTertiary)
+
+            HStack(spacing: 12) {
+                Image(systemName: "speaker.wave.1")
+                    .foregroundColor(.asLabelSecond)
+
+                Slider(value: $viewModel.masterGain, in: 0 ... 1, step: 0.01)
+                    .tint(.asAccent)
+
+                Image(systemName: "speaker.wave.3")
+                    .foregroundColor(.asAccent)
+
+                Text("\(Int(viewModel.masterGain * 100))%")
+                    .font(BrandFont.mono)
+                    .foregroundColor(.asLabel)
+                    .frame(width: 40, alignment: .trailing)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(Color.asCard)
+            .cornerRadius(9)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
+        }
+        .padding()
     }
 }
 

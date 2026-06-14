@@ -1,3 +1,5 @@
+import Accelerate
+import AVFoundation
 import Combine
 import Foundation
 
@@ -52,13 +54,20 @@ struct AudioDeviceModel: Identifiable, Equatable {
 @MainActor
 final class AudioViewModel: ObservableObject {
     @Published var isEngineReady = false
+    @Published var isPlaying = false
     @Published var errorMessage: String?
     @Published var selectedDevice: AudioDeviceModel?
     @Published var availableDevices: [AudioDeviceModel] = []
     @Published var sampleRate: UInt32 = 0
     @Published var bufferFrameSize: UInt32 = 0
+    @Published var masterGain: Float = 0.7 {
+        didSet {
+            setParameter(masterGainParameterID, value: masterGain)
+        }
+    }
 
     private let audioEngine: AudioEngineBridge
+    private let masterGainParameterID: UInt32 = 0
 
     init(audioEngine: AudioEngineBridge = AudioEngineBridge()) {
         self.audioEngine = audioEngine
@@ -106,6 +115,7 @@ final class AudioViewModel: ObservableObject {
     }
 
     func shutdown() {
+        stopPlayback()
         Task.detached { [weak self] in
             try await self?.audioEngine.shutdown()
             await MainActor.run {
@@ -146,19 +156,94 @@ final class AudioViewModel: ObservableObject {
         isEngineReady = false
         initializeEngine()
     }
+
+    // MARK: - Playback Control
+
+    func startPlayback() {
+        guard isEngineReady else {
+            errorMessage = "Engine not ready"
+            return
+        }
+
+        Task.detached { [weak self] in
+            do {
+                try await self?.audioEngine.startAudio()
+                await MainActor.run {
+                    self?.isPlaying = true
+                    self?.errorMessage = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self?.errorMessage = "Playback failed: \(error.localizedDescription)"
+                    self?.isPlaying = false
+                }
+            }
+        }
+    }
+
+    func stopPlayback() {
+        Task.detached { [weak self] in
+            do {
+                try await self?.audioEngine.stopAudio()
+                await MainActor.run {
+                    self?.isPlaying = false
+                }
+            } catch {
+                await MainActor.run {
+                    self?.errorMessage = "Stop playback failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    // MARK: - Parameter Control
+
+    func setParameter(_ id: UInt32, value: Float) {
+        Task.detached { [weak self] in
+            try await self?.audioEngine.setParameter(id, value: value)
+        }
+    }
 }
 
 // MARK: - C++ Bridge
 
 class AudioEngineBridge {
+    private var audioEngine: AVAudioEngine?
+    private var auUnit: AUAudioUnit?
+    private var referenceToneBuffer: AVAudioPCMBuffer?
+
     func initialize() async throws -> Bool {
-        // Bridge to C++ AudioEngine::initialize()
-        // For now, return true to allow UI development to proceed
-        return true
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                do {
+                    self.audioEngine = AVAudioEngine()
+                    guard let engine = self.audioEngine else {
+                        continuation.resume(returning: false)
+                        return
+                    }
+
+                    // Attach the AU to engine (this will be done when we get the real AU)
+                    // For now, just verify the engine exists
+                    continuation.resume(returning: true)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+        }
     }
 
     func shutdown() async throws {
-        // Bridge to C++ AudioEngine::shutdown()
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                if let engine = self.audioEngine, engine.isRunning {
+                    engine.stop()
+                }
+                self.audioEngine = nil
+                self.auUnit = nil
+                self.referenceToneBuffer = nil
+                continuation.resume()
+            }
+        }
     }
 
     func getOutputDeviceNames() async throws -> [String] {
@@ -171,4 +256,111 @@ class AudioEngineBridge {
         // Bridge to C++ AudioEngine::selectOutputDevice()
         return true
     }
+
+    func startAudio() async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                do {
+                    guard let engine = self.audioEngine else {
+                        throw AudioBridgeError.engineNotInitialized
+                    }
+
+                    // Generate reference tone (1 kHz, 5 seconds at 48 kHz)
+                    self.referenceToneBuffer = self.generateReferenceTone(
+                        frequency: 1000.0,
+                        duration: 5.0,
+                        sampleRate: 48000.0
+                    )
+
+                    // Start the engine
+                    try engine.start()
+                    continuation.resume(returning: ())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func stopAudio() async throws {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                if let engine = self.audioEngine, engine.isRunning {
+                    engine.stop()
+                }
+                self.referenceToneBuffer = nil
+                continuation.resume()
+            }
+        }
+    }
+
+    func setParameter(_: UInt32, value _: Float) async throws {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                // Set AU parameter via the parameter tree
+                // For now, this is a placeholder for the real AU parameter control
+                continuation.resume()
+            }
+        }
+    }
+
+    // MARK: - Reference Tone Generation (using vDSP)
+
+    func generateReferenceTone(
+        frequency: Float,
+        duration: Float,
+        sampleRate: Float
+    ) -> AVAudioPCMBuffer? {
+        let frameCount = AVAudioFrameCount(duration * sampleRate)
+
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1) else {
+            return nil
+        }
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            return nil
+        }
+
+        buffer.frameLength = frameCount
+
+        guard let floatChannelData = buffer.floatChannelData else {
+            return nil
+        }
+
+        let floatData = floatChannelData[0]
+
+        // Generate sine wave using vDSP
+        // Phase increment per sample: 2π * frequency / sampleRate
+        let phaseIncrement = 2.0 * Float.pi * frequency / sampleRate
+
+        // Build angle array: angle[i] = phaseIncrement * i
+        var angles = [Float](repeating: 0, count: Int(frameCount))
+        for i in 0 ..< Int(frameCount) {
+            angles[i] = phaseIncrement * Float(i)
+        }
+
+        // Compute sine using vForce.sin (Accelerate, vectorised single-precision)
+        let sineValues = vForce.sin(angles)
+        sineValues.withUnsafeBufferPointer { src in
+            UnsafeMutableBufferPointer(start: floatData, count: Int(frameCount))
+                .baseAddress
+                .map { dst in
+                    cblas_scopy(Int32(frameCount), src.baseAddress!, 1, dst, 1)
+                }
+        }
+
+        // Apply gain
+        var gain = Float(0.3)
+        vDSP_vsmul(floatData, 1, &gain, floatData, 1, vDSP_Length(frameCount))
+
+        return buffer
+    }
+}
+
+// MARK: - AudioEngineBridge Error
+
+enum AudioBridgeError: Error {
+    case engineNotInitialized
+    case auInitializationFailed
+    case parameterSetFailed
 }
