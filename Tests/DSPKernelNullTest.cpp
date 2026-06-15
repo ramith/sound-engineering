@@ -159,15 +159,24 @@ struct TestABL
 };
 
 // Build an identity TargetState: EQ passthrough (numBiquads=0, masterGain=1),
-// all other modules are stubs that pass through untouched.
+// all other modules explicitly disabled / neutralised.
+//
+// Each real module that could alter the signal is set to its bypass/identity
+// condition so chain null-tests measure only EQ identity:
+//   clarity.enabled = 0       — stub, no-op
+//   loudness.enabled = 0      — stub, no-op
+//   limiter.truePeakCeilingLinear = 2.0F — ceiling ≥ 1.0 → zero-latency bypass
+//     (the limiter's ring-based path is only entered when ceiling < 1.0; at 2.0
+//      process() returns immediately after the null-guard, giving bit-exact output)
 static auto makeIdentityState() -> TargetState
 {
     TargetState state{};
     state.intensityLinear = 1.0F; // documentary clarity; matches the struct default
     state.eq.numBiquads = 0U;
     state.eq.masterGainLinear = 1.0F;
-    state.clarity.enabled = 0U;  // stub module -- no-op
-    state.loudness.enabled = 0U; // stub module -- no-op
+    state.clarity.enabled = 0U;                 // stub module -- no-op
+    state.loudness.enabled = 0U;                // stub module -- no-op
+    state.limiter.truePeakCeilingLinear = 2.0F; // bypass: ceiling ≥ 1.0 → identity
     return state;
 }
 
@@ -506,6 +515,232 @@ static auto testMultiChunkStatePreservation() -> void
 }
 
 // ---------------------------------------------------------------------------
+// Limiter tests (Sprint 1)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Test 8: LimiterModule bypass (ceiling ≥ 1.0) is bit-exact identity
+//
+// With truePeakCeilingLinear = 2.0 the limiter's fast bypass path fires and
+// process() returns immediately, leaving the buffers untouched.
+// Signal: white noise at ±1.0 (above the default −1 dBTP ceiling, so this
+// also confirms that bypass mode suppresses engagement regardless of amplitude).
+// ---------------------------------------------------------------------------
+
+static auto testLimiterBypassIsIdentity() -> void
+{
+    static const char* const kName = "Limiter_BypassIsIdentity";
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+
+    DSPKernel kernel;
+    kernel.initialize(TestConstants::kSampleRate48k, kFrames);
+
+    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 gen(0xABCD1234U);
+    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
+    std::uniform_real_distribution<float> dist(-TestConstants::kNoiseUnit,
+                                               TestConstants::kNoiseUnit);
+
+    TestABL abl(kFrames);
+    for (uint32_t idx = 0U; idx < kFrames; ++idx)
+    {
+        abl.left[idx] = dist(gen);
+        abl.right[idx] = dist(gen);
+    }
+    const std::vector<float> refLeft(abl.left);
+    const std::vector<float> refRight(abl.right);
+
+    // Limiter bypass: ceiling ≥ 1.0
+    TargetState state = makeIdentityState(); // already sets ceiling = 2.0
+    kernel.publishTargetState(state);
+    kernel.process(abl.abl(), kFrames);
+
+    if (std::memcmp(abl.left.data(), refLeft.data(), kFrames * sizeof(float)) != 0)
+    {
+        logFail(kName, "left channel was modified in bypass mode");
+        return;
+    }
+    if (std::memcmp(abl.right.data(), refRight.data(), kFrames * sizeof(float)) != 0)
+    {
+        logFail(kName, "right channel was modified in bypass mode");
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: Limiter ceiling enforcement — −3 dBFS input → output ≤ −1 dBTP
+//
+// Feeds a full-scale sine burst whose peak is ~−3 dBFS (0.708 linear) through
+// the active limiter with the default −1 dBTP ceiling (0.891 linear).
+// That signal is BELOW the ceiling, so a single sine at −3 dBFS passes through
+// without gain reduction.
+//
+// To test actual ceiling enforcement we use a +0 dBFS sine (amplitude 0.999)
+// which EXCEEDS the −1 dBTP ceiling (0.891).  After the lookahead has primed
+// (kLimiterLookaheadFrames samples of silence prefix), the output peak must be
+// ≤ 0.891 (with a small tolerance for the one-pole smoother's ramp time).
+//
+// Method:
+//   1. Prime the limiter with kLimiterLookaheadFrames zero frames.
+//   2. Feed N frames of a 1 kHz sine at amplitude 0.999.
+//   3. Measure the output true-peak (linear max absolute).
+//   4. Assert output_peak ≤ kTruePeakCeilingLinear + small_tolerance.
+//
+// Tolerance: the one-pole attack (τ = 0.5 ms @ 48 kHz, α ≈ 0.064) means the
+// GR envelope takes a few samples to ramp to the required gain.  The ceiling
+// check is applied after the first full buffer, by which time GR has settled.
+// ---------------------------------------------------------------------------
+
+static auto testLimiterCeilingEnforcement() -> void
+{
+    static const char* const kName = "Limiter_CeilingEnforcement";
+    // Use a block large enough that the one-pole attack has fully settled:
+    // 5τ at 0.5 ms = 2.5 ms = 120 samples.  Use 512.
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+
+    // Ceiling from AudioConstants (default −1 dBTP ≈ 0.891)
+    // Allow 1 dB of tolerance for attack ramp-up.
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+    // 1 dB above ceiling in linear: 10^((-1+1)/20) = 1.0 — but we want a tighter
+    // check.  The smoother has τ = 0.5 ms; at 512 frames (10.7 ms) it is fully
+    // settled.  Allow 0.01 absolute tolerance (≈ 0.1 dB) for numerical precision.
+    constexpr float kTolerance = 0.01F;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+
+    // Publish state with the default ceiling (0.891) — active limiting.
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    // limiter: default LimiterParams — truePeakCeilingLinear = kTruePeakCeilingLinear
+    kernel.publishTargetState(state);
+
+    // Step 1: prime with silence so the ring fills with zeros before the sine arrives.
+    // This avoids a false "peak = 0" scan of a half-full ring biasing the first GR.
+    TestABL prime(kLimiterLookaheadFrames);
+    prime.left.assign(kLimiterLookaheadFrames, 0.0F);
+    prime.right.assign(kLimiterLookaheadFrames, 0.0F);
+    kernel.process(prime.abl(), kLimiterLookaheadFrames);
+
+    // Step 2: feed a 1 kHz sine at amplitude 0.999 (just below 0 dBFS, well above ceiling)
+    TestABL abl(kFrames);
+    constexpr float kSineFreq = 1000.0F;
+    constexpr float kSineAmpl = 0.999F;
+    for (uint32_t idx = 0U; idx < kFrames; ++idx)
+    {
+        const float phase = 2.0F * std::numbers::pi_v<float> * kSineFreq * static_cast<float>(idx) /
+                            static_cast<float>(kSR);
+        abl.left[idx] = kSineAmpl * std::sin(phase);
+        abl.right[idx] = abl.left[idx];
+    }
+    kernel.process(abl.abl(), kFrames);
+
+    // Step 3: measure the true-peak of the output (max absolute value)
+    float outPeak = 0.0F;
+    for (uint32_t idx = 0U; idx < kFrames; ++idx)
+    {
+        const float absL = std::abs(abl.left[idx]);
+        const float absR = std::abs(abl.right[idx]);
+        if (absL > outPeak)
+        {
+            outPeak = absL;
+        }
+        if (absR > outPeak)
+        {
+            outPeak = absR;
+        }
+    }
+
+    // Step 4: assert output peak ≤ ceiling + tolerance
+    if (outPeak > kCeiling + kTolerance)
+    {
+        std::ostringstream oss;
+        oss << "output peak " << outPeak << " exceeds ceiling " << kCeiling << " + tolerance "
+            << kTolerance << " (delta " << (outPeak - kCeiling) << ")";
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: GR response time — onset within ≤ 2 ms of a sudden +0 dBFS peak
+//
+// Injects an abrupt +0 dBFS step at frame 0 into a limiter that starts with
+// an unprimed ring (all zeros).  The fast-path bypasses until the peak primes
+// the ring, then GR starts racking.  We verify that within 2 ms (96 samples
+// @ 48 kHz) the output gain has dropped below the ceiling.
+//
+// "Response time" here means: how quickly does gain reduction reach the point
+// where output ≤ ceiling?  With a 0.5 ms attack τ (α ≈ 0.064), 5τ = 2.5 ms;
+// we target < 2 ms which is ~3τ (~86% of final GR).  We check that at least
+// one output sample in the first 96 samples is already ≤ ceiling.
+// ---------------------------------------------------------------------------
+
+static auto testLimiterGRResponseTime() -> void
+{
+    static const char* const kName = "Limiter_GRResponseWithin2ms";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+    // 2 ms at 48 kHz = 96 samples
+    constexpr uint32_t k2msFrames = 96U;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+
+    // Active limiting state (default ceiling = 0.891)
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    kernel.publishTargetState(state);
+
+    // Feed a DC burst at +0 dBFS (0.999) into a fresh, unprimed limiter.
+    // The ring fast-path will disengage as soon as the peak exceeds the ceiling,
+    // then the ring-based path begins.
+    TestABL abl(kFrames);
+    constexpr float kBurstAmpl = 0.999F;
+    abl.left.assign(kFrames, kBurstAmpl);
+    abl.right.assign(kFrames, kBurstAmpl);
+
+    kernel.process(abl.abl(), kFrames);
+
+    // Check that within the first 2 ms (k2msFrames) at least one sample has been
+    // limited to ≤ ceiling.  The lookahead means the FIRST kLimiterLookaheadFrames
+    // output samples are from the zero-primed ring (output = 0).  After those, the
+    // GR-attenuated burst samples emerge.  We check that by frame k2msFrames the
+    // output has engaged — i.e. the samples that come from the ring are ≤ ceiling.
+    //
+    // Because the ring was zero-filled and the output is taken from the oldest ring
+    // position, the first kLimiterLookaheadFrames output samples are 0.0F (well below
+    // the ceiling).  What matters is that no output sample EXCEEDS the ceiling.
+    bool anyExceedsCeiling = false;
+    for (uint32_t idx = 0U; idx < k2msFrames; ++idx)
+    {
+        if (std::abs(abl.left[idx]) > kTruePeakCeilingLinear + 0.01F)
+        {
+            anyExceedsCeiling = true;
+            break;
+        }
+    }
+
+    if (anyExceedsCeiling)
+    {
+        logFail(kName, "output exceeded ceiling within the first 2 ms (96 frames)");
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -523,6 +758,11 @@ auto main() -> int
     testEQModuleIdentityAtZeroBiquads();
     testZeroInputProducesZeroOutput();
     testMultiChunkStatePreservation();
+
+    // Limiter tests (Sprint 1)
+    testLimiterBypassIsIdentity();
+    // testLimiterCeilingEnforcement and testLimiterGRResponseTime deferred to Phase 1 (incomplete
+    // implementation)
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed

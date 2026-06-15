@@ -1,0 +1,14 @@
+// AudioDSP module map.
+//
+// Only DeviceBridge.h is pure C and safe for direct Swift import.
+// All other headers in this directory use C++ and are excluded from
+// the Swift-visible module.
+//
+// The module umbrella approach does not work here because the umbrella
+// would also try to parse C++ headers in Swift's C mode, causing errors.
+// Instead we explicitly declare only the C-safe header as the module content.
+
+module AudioDSP {
+    header "DeviceBridge.h"
+    export *
+}

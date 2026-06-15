@@ -10,11 +10,12 @@ namespace AdaptiveSound
     {
       public:
         BRIRModule() = default;
-        void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
+        void initialize(uint32_t /*sampleRate*/, uint32_t /*maxFrames*/) noexcept
         {
         }
-        void
-        process(const BRIRParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
+        void process(const BRIRParams& /*params*/,
+                     AudioBufferList* /*ioData*/,
+                     uint32_t /*frameCount*/) noexcept
         {
         }
     };
