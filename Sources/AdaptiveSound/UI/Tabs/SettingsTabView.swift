@@ -3,12 +3,9 @@ import SwiftUI
 struct SettingsTabView: View {
     var body: some View {
         VStack(spacing: 24) {
-            // Placeholder text
+            // Placeholder text. No "Settings" title here — the tab and the header
+            // breadcrumb already name this screen; repeating it was redundant.
             VStack(spacing: 8) {
-                Text("Settings")
-                    .font(BrandFont.heading)
-                    .foregroundColor(.asLabel)
-
                 Text("Coming in Phase 1b")
                     .font(.system(size: 16, weight: .regular))
                     .foregroundColor(.asLabelSecond)
