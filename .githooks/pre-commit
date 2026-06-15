@@ -101,9 +101,10 @@ is_exempt() {
 if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
         sdk="$(xcrun --show-sdk-path 2>/dev/null)"
-        # gnu++17 (not c++17) so Apple ObjC extensions like __typeof parse;
-        # all AudioDSP module dirs on the include path so quote-includes resolve.
-        compile_flags=(-std=gnu++17)
+        # gnu++2b matches Package.swift's cxxLanguageStandard (C++23, GNU dialect
+        # so Apple ObjC extensions like __typeof parse); all AudioDSP module dirs
+        # on the include path so quote-includes resolve.
+        compile_flags=(-std=gnu++2b)
         while IFS= read -r d; do compile_flags+=(-I "$d"); done \
             < <(find Sources/AudioDSP -type d 2>/dev/null)
         [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
