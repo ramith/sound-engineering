@@ -357,7 +357,7 @@ struct ResponseLabelView: View {
 // MARK: - Main EQ View
 
 struct EQView: View {
-    @EnvironmentObject var audioViewModel: AudioViewModel
+    @Environment(AudioViewModel.self) var audioViewModel
     @StateObject private var eqViewModel: EQViewModel
 
     init() {

@@ -376,10 +376,13 @@ struct FrequencyResponseCanvas: View {
         plotWidth: CGFloat,
         plotHeight: CGFloat
     ) {
+        // Interpolate gains at finer frequency intervals for smooth visual curve
+        let interpolatedPoints = interpolateFrequencyResponse(eqValues)
+
         var curvePath = Path()
         var isFirstPoint = true
 
-        for (freq, gain) in eqValues {
+        for (freq, gain) in interpolatedPoints {
             let logFreq = log10(freq)
             let xPos = plotLeft + (logFreq - log10(20.0)) / (log10(20000.0) - log10(20.0)) * plotWidth
             let yPos = plotBottom - ((gain + 20.0) / 40.0) * plotHeight
@@ -420,6 +423,90 @@ struct FrequencyResponseCanvas: View {
             ))
             context.fill(dotPath, with: .color(Color.asAccent))
         }
+    }
+
+    // MARK: - Interpolation & Smoothing
+
+    /// Generate smooth curve with interpolated points at ~1/6 octave intervals (~60 points)
+    /// Apply 3-tap smoothing for subtle processing smoothing (avoids harsh peaks)
+    private func interpolateFrequencyResponse(
+        _ isoPoints: [(freq: Double, gain: Double)]
+    ) -> [(freq: Double, gain: Double)] {
+        guard !isoPoints.isEmpty else { return isoPoints }
+
+        // Generate finer frequency grid: every ~1/6 octave (6 points per octave)
+        var interpolatedFreqs: [Double] = []
+        let logFreqMin = log10(20.0)
+        let logFreqMax = log10(20000.0)
+        let numSteps = 120 // ~6 points per octave across 20Hz-20kHz
+
+        for i in 0 ... numSteps {
+            let t = Double(i) / Double(numSteps)
+            let logFreq = logFreqMin + t * (logFreqMax - logFreqMin)
+            interpolatedFreqs.append(pow(10.0, logFreq))
+        }
+
+        // Interpolate gains at these finer frequencies (log-linear)
+        var interpolatedGains: [Double] = interpolatedFreqs.map { freq in
+            gainAtFrequency(freq, from: isoPoints)
+        }
+
+        // Apply 3-tap moving average smoothing (subtle, prevents harsh peaks)
+        interpolatedGains = smoothGains(interpolatedGains, tapCount: 3)
+
+        return zip(interpolatedFreqs, interpolatedGains).map { ($0, $1) }
+    }
+
+    /// Linear interpolation on log frequency scale for smooth curve
+    private func gainAtFrequency(
+        _ freq: Double,
+        from isoPoints: [(freq: Double, gain: Double)]
+    ) -> Double {
+        guard freq >= 20 && freq <= 20000 else { return 0 }
+
+        let logFreq = log10(freq)
+
+        // Find bounding ISO points
+        var lower = isoPoints[0]
+        var upper = isoPoints.last ?? isoPoints[0]
+
+        for i in 0 ..< (isoPoints.count - 1) {
+            if logFreq >= log10(isoPoints[i].freq) && logFreq <= log10(isoPoints[i + 1].freq) {
+                lower = isoPoints[i]
+                upper = isoPoints[i + 1]
+                break
+            }
+        }
+
+        // Linear interpolation on log-frequency scale
+        let logLower = log10(lower.freq)
+        let logUpper = log10(upper.freq)
+        let t = (logFreq - logLower) / (logUpper - logLower)
+        let clampedT = max(0, min(1, t))
+
+        return lower.gain + clampedT * (upper.gain - lower.gain)
+    }
+
+    /// Apply N-tap moving average smoothing to prevent harsh peaks
+    private func smoothGains(_ gains: [Double], tapCount: Int) -> [Double] {
+        guard gains.count >= tapCount else { return gains }
+
+        let halfTap = tapCount / 2
+        var smoothed = gains
+
+        for i in 0 ..< gains.count {
+            var sum = 0.0
+            var count = 0
+
+            for j in max(0, i - halfTap) ... min(gains.count - 1, i + halfTap) {
+                sum += gains[j]
+                count += 1
+            }
+
+            smoothed[i] = sum / Double(count)
+        }
+
+        return smoothed
     }
 
     private func getEQValuesForPreset(_ preset: EQPreset) -> [(freq: Double, gain: Double)] {

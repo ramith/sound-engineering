@@ -1,6 +1,6 @@
 import Accelerate
 import AVFoundation
-import Combine
+import Darwin
 import Foundation
 
 // MARK: - Audio Device Model
@@ -52,17 +52,67 @@ struct AudioDeviceModel: Identifiable, Equatable {
 // MARK: - AudioViewModel
 
 @MainActor
-final class AudioViewModel: ObservableObject {
-    @Published var isEngineReady = false
-    @Published var isPlaying = false
-    @Published var errorMessage: String?
-    @Published var selectedDevice: AudioDeviceModel?
-    @Published var availableDevices: [AudioDeviceModel] = []
-    @Published var sampleRate: UInt32 = 0
-    @Published var bufferFrameSize: UInt32 = 0
-    @Published var masterGain: Float = 0.7 {
+@Observable
+final class AudioViewModel {
+    var isEngineReady = false
+    var isPlaying = false
+    var errorMessage: String?
+    var selectedDevice: AudioDeviceModel?
+    var availableDevices: [AudioDeviceModel] = []
+    var sampleRate: UInt32 = 0
+    var bufferFrameSize: UInt32 = 0
+    var masterGain: Float = 0.7 {
         didSet {
             setParameter(masterGainParameterID, value: masterGain)
+        }
+    }
+
+    // MARK: - Spectrum Analyzer State
+
+    /// 88 normalised bar heights in [0, 1] for the spectrum display.
+    /// Updated on the main thread at ~20 Hz by `spectrumTimer`.
+    /// Index 0 = lowest frequency band; index 87 = highest.
+    var spectrumBars: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
+
+    /// Retained so we can invalidate on shutdown.
+    private var spectrumTimer: Timer?
+
+    /// Scratch array — reused each tick, never reallocated.
+    private var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
+
+    // MARK: - Playlist State
+
+    var musicFolderURL: URL? {
+        didSet {
+            // Update folder monitoring when folder changes
+            stopFolderMonitoring()
+            if let url = musicFolderURL {
+                startFolderMonitoring(url)
+            }
+        }
+    }
+
+    var playlist: [AudioFile] = []
+    var folderPathDisplay: String = ""
+    /// Track selection (does NOT auto-play). Selection and playback are separate.
+    /// Use playTrack() or startPlayback() to actually play the selected track.
+    var selectedTrackIndex: Int?
+
+    // MARK: - Directory Monitoring
+
+    private var folderMonitorSource: DispatchSourceFileSystemObject?
+    private var monitoringQueue = DispatchQueue(label: "com.adaptivesound.folder-monitor", qos: .default)
+    private var folderMonitorDebounceTask: Task<Void, Never>?
+
+    // MARK: - Playback Modes (WinAmp Style)
+
+    /// Shuffle mode: when enabled, plays tracks in random order
+    var shuffleEnabled = false
+
+    /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
+    var repeatMode: Int = 0 {
+        didSet {
+            repeatMode = repeatMode % 3 // Cycle 0 → 1 → 2 → 0
         }
     }
 
@@ -104,6 +154,7 @@ final class AudioViewModel: ObservableObject {
                     self?.selectedDevice = devices.first
                     self?.isEngineReady = true
                     self?.errorMessage = nil
+                    self?.startSpectrumTimer()
                 }
             } catch {
                 await MainActor.run {
@@ -115,12 +166,51 @@ final class AudioViewModel: ObservableObject {
     }
 
     func shutdown() {
+        stopSpectrumTimer()
+        stopFolderMonitoring()
         stopPlayback()
         Task.detached { [weak self] in
             try await self?.audioEngine.shutdown()
             await MainActor.run {
                 self?.isEngineReady = false
             }
+        }
+    }
+
+    // MARK: - Spectrum Timer
+
+    /// Start polling the spectrum double-buffer at 20 Hz.
+    /// Safe to call multiple times — guards against duplicate timers.
+    func startSpectrumTimer() {
+        guard spectrumTimer == nil else { return }
+        spectrumTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+            self?.tickSpectrum()
+        }
+        // Include in common run-loop modes so the timer fires during tracking
+        RunLoop.main.add(spectrumTimer!, forMode: .common)
+    }
+
+    func stopSpectrumTimer() {
+        spectrumTimer?.invalidate()
+        spectrumTimer = nil
+    }
+
+    /// Called at 20 Hz on the main thread. Reads the latest band magnitudes
+    /// from the double-buffer, interpolates 44 bands → 88 display bars, and
+    /// writes into `spectrumBars` to trigger SwiftUI observation.
+    @MainActor
+    private func tickSpectrum() {
+        guard audioEngine.readSpectrumBands(into: &spectrumScratch) else { return }
+        // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
+        // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
+        let bandCount = SpectrumConstants.bandCount
+        let barCount = SpectrumConstants.displayBarCount
+        for bar in 0 ..< barCount {
+            let frac = Float(bar) / Float(barCount - 1) * Float(bandCount - 1)
+            let lower = Int(frac)
+            let upper = min(lower + 1, bandCount - 1)
+            let t = frac - Float(lower)
+            spectrumBars[bar] = spectrumScratch[lower] * (1 - t) + spectrumScratch[upper] * t
         }
     }
 
@@ -165,9 +255,16 @@ final class AudioViewModel: ObservableObject {
             return
         }
 
+        guard let selectedIndex = selectedTrackIndex, selectedIndex < playlist.count else {
+            errorMessage = "No track selected"
+            return
+        }
+
+        let fileURL = playlist[selectedIndex].absoluteURL
+
         Task.detached { [weak self] in
             do {
-                try await self?.audioEngine.startAudio()
+                try await self?.audioEngine.startAudio(fileURL: fileURL)
                 await MainActor.run {
                     self?.isPlaying = true
                     self?.errorMessage = nil
@@ -203,6 +300,135 @@ final class AudioViewModel: ObservableObject {
             try await self?.audioEngine.setParameter(id, value: value)
         }
     }
+
+    // MARK: - Folder Loading & Monitoring
+
+    /// Enumerate all audio files under `folderURL` recursively and update `playlist`.
+    func loadMusicFolder(_ folderURL: URL) async {
+        musicFolderURL = folderURL
+        folderPathDisplay = Self.makeDisplayPath(folderURL)
+        playlist = []
+
+        let files = await Task.detached(priority: .userInitiated) {
+            AudioFileEnumerator.enumerate(folderURL: folderURL)
+        }.value
+
+        playlist = files
+    }
+
+    /// Start monitoring the folder for changes using FSEvents-style notification.
+    /// When files are added/removed/modified, automatically reload the playlist.
+    private func startFolderMonitoring(_ folderURL: URL) {
+        let fileDescriptor = open(folderURL.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .delete, .rename, .extend],
+            queue: monitoringQueue
+        )
+
+        source.setEventHandler { [weak self] in
+            // Debounce rapid file system changes (100ms)
+            self?.folderMonitorDebounceTask?.cancel()
+            self?.folderMonitorDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        if let folderURL = self?.musicFolderURL {
+                            Task {
+                                await self?.loadMusicFolder(folderURL)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        source.setCancelHandler {
+            close(fileDescriptor)
+        }
+
+        folderMonitorSource = source
+        source.resume()
+    }
+
+    /// Stop monitoring the folder for changes.
+    private func stopFolderMonitoring() {
+        folderMonitorDebounceTask?.cancel()
+        folderMonitorSource?.cancel()
+        folderMonitorSource = nil
+    }
+
+    // MARK: - Playlist Reordering & Editing
+
+    /// Reorder playlist items via drag-and-drop.
+    /// Called when user drags items in the playlist.
+    func movePlaylistItems(from source: IndexSet, to destination: Int) {
+        playlist.move(fromOffsets: source, toOffset: destination)
+        // If the currently selected track was moved, update its index
+        if let current = selectedTrackIndex, source.contains(current) {
+            if let newIndex = playlist.firstIndex(where: { $0.id == self.playlist[destination].id }) {
+                selectedTrackIndex = newIndex
+            }
+        }
+    }
+
+    /// Remove a track from the playlist.
+    func removeTrack(at index: Int) {
+        guard index >= 0, index < playlist.count else { return }
+        playlist.remove(at: index)
+
+        // If we removed the selected track, select the next one (or previous if it was the last)
+        if selectedTrackIndex == index {
+            if index < playlist.count {
+                selectedTrackIndex = index // Next track shifts into this position
+            } else if index > 0 {
+                selectedTrackIndex = index - 1
+            } else {
+                selectedTrackIndex = nil
+            }
+        } else if let current = selectedTrackIndex, current > index {
+            // Shift index if a track before the selected one was removed
+            selectedTrackIndex = current - 1
+        }
+    }
+
+    /// Clear the entire playlist.
+    func clearPlaylist() {
+        playlist.removeAll()
+        selectedTrackIndex = nil
+        stopPlayback()
+    }
+
+    /// Toggle shuffle mode.
+    func toggleShuffle() {
+        shuffleEnabled.toggle()
+    }
+
+    /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
+    func cycleRepeatMode() {
+        repeatMode = (repeatMode + 1) % 3
+    }
+
+    // MARK: - Playback
+
+    /// Play the track at the given playlist index.
+    func playTrack(at index: Int) {
+        guard index < playlist.count else { return }
+        startPlayback()
+    }
+
+    // MARK: - Helpers
+
+    private static func makeDisplayPath(_ url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let raw = url.path
+        if raw.hasPrefix(home) {
+            return "~" + raw.dropFirst(home.count)
+        }
+        return raw
+    }
 }
 
 // MARK: - C++ Bridge
@@ -211,6 +437,19 @@ class AudioEngineBridge {
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var referenceToneBuffer: AVAudioPCMBuffer?
+
+    // MARK: - Spectrum Analyzer
+
+    /// Owns the FFT state and the lock-free double-buffer.
+    /// Created on initialize() (off the audio thread) so all buffers are
+    /// pre-allocated before the tap fires.
+    private var spectrumAnalyzer: SpectrumAnalyzer?
+
+    /// Tap is installed on mainMixerNode's output; the node's format fixes
+    /// the sample rate that `SpectrumAnalyzer` must be initialised with.
+    private var tapInstalled = false
+
+    // MARK: - Initialize
 
     func initialize() async throws -> Bool {
         return await withCheckedContinuation { continuation in
@@ -222,15 +461,25 @@ class AudioEngineBridge {
                         return
                     }
 
-                    // Create a mono PCM format at 48 kHz
-                    let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1) ??
-                        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000.0, channels: 1, interleaved: false)
+                    // Use stereo 48 kHz format to support any input file (mono, stereo, WebM, etc).
+                    // AVAudio will automatically convert any file format to match this.
+                    let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2) ??
+                        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000.0, channels: 2, interleaved: false)
 
                     self.playerNode = AVAudioPlayerNode()
                     if let playerNode = self.playerNode, let format = audioFormat {
                         engine.attach(playerNode)
                         engine.connect(playerNode, to: engine.mainMixerNode, format: format)
                     }
+
+                    // Pre-allocate the spectrum analyzer using the mixer's output sample rate.
+                    // This MUST happen off the audio thread (vDSP_create_fftsetup allocates).
+                    let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
+                    let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
+                    self.spectrumAnalyzer = SpectrumAnalyzer(
+                        fftSize: SpectrumConstants.fftSize,
+                        sampleRate: sampleRate
+                    )
 
                     continuation.resume(returning: true)
                 } catch {
@@ -240,9 +489,60 @@ class AudioEngineBridge {
         }
     }
 
+    // MARK: - Spectrum tap
+
+    /// Install a single output tap on `mainMixerNode`.
+    ///
+    /// The tap block runs on the audio thread (or a CoreAudio I/O thread).
+    /// It may NOT allocate, lock, log, or call Obj-C/Swift runtime.
+    ///
+    /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the
+    /// analyzer can process one tap delivery per FFT frame. AVAudioEngine
+    /// will round up to a power-of-two multiple of the hardware buffer size
+    /// automatically if needed.
+    private func installSpectrumTap() {
+        guard let engine = audioEngine, !tapInstalled else { return }
+        let mixer = engine.mainMixerNode
+        let mixerFormat = mixer.outputFormat(forBus: 0)
+
+        mixer.installTap(onBus: 0,
+                         bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                         format: mixerFormat)
+        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+            // --- AUDIO THREAD ---
+            // Access only pre-allocated state through the analyzer pointer.
+            guard let analyzer = self?.spectrumAnalyzer else { return }
+            let abl = buffer.mutableAudioBufferList
+            analyzer.processTapBuffer(
+                abl,
+                frameCount: buffer.frameLength,
+                channelCount: buffer.format.channelCount
+            )
+        }
+        tapInstalled = true
+    }
+
+    private func removeSpectrumTap() {
+        guard let engine = audioEngine, tapInstalled else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        tapInstalled = false
+    }
+
+    // MARK: - Public spectrum read (called from main thread via ViewModel)
+
+    /// Copy the latest 44 band magnitudes into `out`. Returns `false` if no
+    /// data has been published yet (engine not running or no signal).
+    @discardableResult
+    func readSpectrumBands(into out: inout [Float]) -> Bool {
+        return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
+    }
+
+    // MARK: - Shutdown
+
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                self.removeSpectrumTap()
                 if let playerNode = self.playerNode, playerNode.isPlaying {
                     playerNode.stop()
                 }
@@ -252,6 +552,7 @@ class AudioEngineBridge {
                 self.audioEngine = nil
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
+                self.spectrumAnalyzer = nil
                 continuation.resume()
             }
         }
@@ -268,7 +569,7 @@ class AudioEngineBridge {
         return true
     }
 
-    func startAudio() async throws {
+    func startAudio(fileURL: URL? = nil) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 do {
@@ -281,19 +582,44 @@ class AudioEngineBridge {
                         try engine.start()
                     }
 
-                    // Generate reference tone (1 kHz, 5 seconds at 48 kHz, mono)
-                    self.referenceToneBuffer = self.generateReferenceTone(
-                        frequency: 1000.0,
-                        duration: 5.0,
-                        sampleRate: 48000.0
-                    )
+                    // Install the spectrum tap once the engine is running.
+                    // installSpectrumTap is idempotent (guarded by tapInstalled flag).
+                    self.installSpectrumTap()
 
-                    // Schedule and play the reference tone
-                    if let buffer = self.referenceToneBuffer {
-                        if !playerNode.isPlaying {
+                    if let fileURL = fileURL {
+                        // Establish security-scoped access for sandboxed macOS file access
+                        let didAccess = fileURL.startAccessingSecurityScopedResource()
+                        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+                        // Load and schedule the audio file (AVAudioFile handles format conversion)
+                        do {
+                            // CRITICAL: Stop and reset the player before scheduling a new file.
+                            // If we don't stop, the new file queues AFTER the old one instead of replacing it.
+                            // This ensures track switching happens immediately, not after current track finishes.
+                            if playerNode.isPlaying {
+                                playerNode.stop()
+                            }
+
+                            let audioFile = try AVAudioFile(forReading: fileURL)
+                            playerNode.scheduleFile(audioFile, at: nil)
                             playerNode.play()
+                        } catch {
+                            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
                         }
-                        playerNode.scheduleBuffer(buffer, at: nil)
+                    } else {
+                        // Fallback to reference tone if no file provided
+                        self.referenceToneBuffer = self.generateReferenceTone(
+                            frequency: 1000.0,
+                            duration: 5.0,
+                            sampleRate: 48000.0
+                        )
+
+                        if let buffer = self.referenceToneBuffer {
+                            if !playerNode.isPlaying {
+                                playerNode.play()
+                            }
+                            playerNode.scheduleBuffer(buffer, at: nil)
+                        }
                     }
 
                     continuation.resume(returning: ())
@@ -313,6 +639,7 @@ class AudioEngineBridge {
                 if let engine = self.audioEngine, engine.isRunning {
                     engine.stop()
                 }
+                self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
                 continuation.resume()
             }
@@ -393,4 +720,18 @@ enum AudioBridgeError: Error {
     case engineNotInitialized
     case auInitializationFailed
     case parameterSetFailed
+    case unsupportedFormat(String)
+
+    var localizedDescription: String {
+        switch self {
+        case .engineNotInitialized:
+            return "Audio engine not initialized"
+        case .auInitializationFailed:
+            return "Audio unit initialization failed"
+        case .parameterSetFailed:
+            return "Parameter setting failed"
+        case let .unsupportedFormat(ext):
+            return "Unsupported file format: .\(ext). Supported: MP3, WAV, AAC, M4A, FLAC, AIFF, OGG"
+        }
+    }
 }

@@ -9,7 +9,7 @@ import SwiftUI
 /// `.layoutPriority(1)` to prevent compression before the device pill collapses.
 /// The device pill has a `minWidth` to stay readable at the 800pt window minimum.
 struct ToolbarView: View {
-    @EnvironmentObject private var viewModel: AudioViewModel
+    @Environment(AudioViewModel.self) private var viewModel
 
     /// Binding to the tab selection owned by ContentView so the toolbar
     /// controls navigation without owning state it does not produce.
@@ -64,7 +64,7 @@ private struct AppLogoView: View {
 // MARK: - Device Dropdown Pill
 
 private struct DevicePillView: View {
-    @EnvironmentObject private var viewModel: AudioViewModel
+    @Environment(AudioViewModel.self) private var viewModel
 
     var body: some View {
         Menu {

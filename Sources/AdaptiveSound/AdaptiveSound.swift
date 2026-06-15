@@ -3,12 +3,12 @@ import SwiftUI
 
 @main
 struct AdaptiveSound: App {
-    @StateObject private var viewModel = AudioViewModel()
+    @State private var viewModel = AudioViewModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(viewModel)
+                .environment(viewModel)
         }
     }
 }
@@ -16,7 +16,7 @@ struct AdaptiveSound: App {
 // MARK: - Main Content View (Phase 2: Tab-Based Layout)
 
 struct ContentView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
+    @Environment(AudioViewModel.self) var viewModel
     @State private var selectedTab: TabSelection = .nowPlaying
     @State private var volume: Float = 0.75
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -25,10 +25,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Primary Toolbar (60pt): Logo | Device | Tabs | Volume
             ToolbarView(selectedTab: $selectedTab, volume: $volume)
-                .environmentObject(viewModel)
-
-            // Minimal section header (44pt)
-            FixedHeaderView()
+                .environment(viewModel)
 
             // Tab Content
             tabContent
