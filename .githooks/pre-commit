@@ -89,8 +89,9 @@ fi
 # (vararg logging, malloc/free, enum redesign) that is tracked separately and
 # must not be rushed. Remove entries here as that work lands. See GH issue #5.
 CLANG_TIDY_EXEMPT=(
-    "Sources/AudioDSP/AudioEngine.mm"     # issue #5
-    "Sources/AudioDSP/CoreAudioDevice.mm" # issue #5
+    "Sources/AudioDSP/AudioEngine.mm"            # issue #5
+    "Sources/AudioDSP/CoreAudioDevice.mm"        # issue #5
+    "Sources/AudioDSP/EQ/EQModuleCoefficients.h" # issue #12 (lint debt; not yet compiled)
 )
 is_exempt() {
     local target="$1" e

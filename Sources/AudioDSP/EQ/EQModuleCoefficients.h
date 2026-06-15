@@ -2,10 +2,12 @@
 #define EQ_MODULE_COEFFICIENTS_H
 
 #include "../include/TargetState.h"
+#include <algorithm> // std::min / std::max
 #include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 
 namespace AdaptiveSound
 {
@@ -184,7 +186,7 @@ namespace AdaptiveSound
 
             // RBJ peaking EQ filter (Audio EQ Cookbook)
             float A = std::pow(10.0f, gainDb / 40.0f); // Amplitude
-            float w0 = 2.0f * 3.14159265359f * centerFreqHz / sampleRate;
+            float w0 = 2.0f * std::numbers::pi_v<float> * centerFreqHz / sampleRate;
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
