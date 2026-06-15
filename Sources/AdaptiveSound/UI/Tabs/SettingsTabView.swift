@@ -7,8 +7,8 @@ struct SettingsTabView: View {
             // breadcrumb already name this screen; repeating it was redundant.
             VStack(spacing: 8) {
                 Text("Coming in Phase 1b")
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(.asLabelSecond)
+                    .font(.body)
+                    .foregroundStyle(Color.asLabelSecond)
             }
             .padding(.top, 32)
 
@@ -52,25 +52,28 @@ struct SettingsControlRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .regular))
-                .foregroundColor(.asLabelTertiary)
+                .font(.body)
+                .foregroundStyle(Color.asLabelTertiary)
                 .frame(width: 24)
 
             Text(title)
-                .font(.system(size: 16, weight: .regular))
-                .foregroundColor(.asLabelTertiary)
+                .font(.body)
+                .foregroundStyle(Color.asLabelTertiary)
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.asLabelTertiary)
+                .font(.callout)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.asLabelTertiary)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 12)
         .background(Color.asCard)
-        .cornerRadius(9)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5)
+        }
         .opacity(0.5)
     }
 }

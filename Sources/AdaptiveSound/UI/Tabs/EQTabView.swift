@@ -8,6 +8,11 @@ struct EQTabView: View {
     @State private var isUsingDiscreteSteps = false
     @State private var bandGains: [Double] = Array(repeating: 0.0, count: 31)
 
+    /// Passed down to FrequencyResponseCanvas so gesture bounds match drawing bounds.
+    @State private var canvasSize: CGSize = .zero
+    /// Tracks the last touched band within a drag stroke for gap-fill interpolation.
+    @State private var lastBandIndex: Int? = nil
+
     var body: some View {
         VStack(spacing: 20) {
             // Frequency Response Canvas (Interactive)
@@ -15,7 +20,9 @@ struct EQTabView: View {
                 currentPreset: currentPreset,
                 bandGains: $bandGains,
                 isCustomized: $isCustomized,
-                isUsingDiscreteSteps: isUsingDiscreteSteps
+                isUsingDiscreteSteps: isUsingDiscreteSteps,
+                canvasSize: $canvasSize,
+                lastBandIndex: $lastBandIndex
             )
             .frame(height: 400, alignment: .center)
             .frame(minWidth: 400)
@@ -24,60 +31,36 @@ struct EQTabView: View {
 
             // Control Section
             VStack(spacing: 10) {
-                // Preset Buttons Row
-                HStack(spacing: 8) {
-                    PresetButton(
-                        label: "Flat",
-                        preset: .flat,
-                        isSelected: currentPreset == .flat && !isCustomized,
-                        action: applyFlatPreset
-                    )
-
-                    PresetButton(
-                        label: "Presence",
-                        preset: .presence,
-                        isSelected: currentPreset == .presence && !isCustomized,
-                        action: applyPresencePreset
-                    )
-
-                    PresetButton(
-                        label: "Clarity",
-                        preset: .clarity,
-                        isSelected: currentPreset == .clarity && !isCustomized,
-                        action: applyClarityPreset
-                    )
-
-                    PresetButton(
-                        label: "Warm",
-                        preset: .warm,
-                        isSelected: currentPreset == .warm && !isCustomized,
-                        action: applyWarmPreset
-                    )
-
-                    Spacer()
+                // Preset selection — native segmented control bound to currentPreset
+                Picker("Preset", selection: $currentPreset) {
+                    ForEach(EQPreset.allCases, id: \.self) { preset in
+                        Text(preset.displayName).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("EQ Preset")
+                .onChange(of: currentPreset) { _, newPreset in
+                    applyPreset(newPreset)
                 }
 
-                // Interpolation Mode Row
+                // Interpolation mode — native segmented 2-way switch
                 HStack(spacing: 8) {
                     Text("Interpolation")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.caption)
+                        .fontWeight(.semibold)
                         .foregroundStyle(Color.asLabelTertiary)
                         .textCase(.uppercase)
                         .tracking(0.6)
 
-                    BlendingToggleButton(
-                        label: "Smooth Curve",
-                        isActive: !isUsingDiscreteSteps,
-                        action: activateSmoothCurve
-                    )
-
-                    BlendingToggleButton(
-                        label: "Discrete Steps",
-                        isActive: isUsingDiscreteSteps,
-                        action: activateDiscreteSteps
-                    )
-
-                    Spacer()
+                    Picker("Interpolation", selection: $isUsingDiscreteSteps) {
+                        Text("Smooth Curve").tag(false)
+                        Text("Discrete Steps").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Interpolation mode")
+                    .onChange(of: isUsingDiscreteSteps) { _, newValue in
+                        print("Switched to \(newValue ? "discrete steps" : "smooth curve")")
+                    }
                 }
             }
             .padding(.horizontal)
@@ -88,40 +71,18 @@ struct EQTabView: View {
 
     // MARK: - Preset Actions
 
-    private func applyFlatPreset() {
-        currentPreset = .flat
+    private func applyPreset(_ preset: EQPreset) {
         isCustomized = false
-        bandGains = Array(repeating: 0.0, count: 31)
-    }
-
-    private func applyPresencePreset() {
-        currentPreset = .presence
-        isCustomized = false
-        bandGains = getPresenceGains()
-    }
-
-    private func applyClarityPreset() {
-        currentPreset = .clarity
-        isCustomized = false
-        bandGains = getClarityGains()
-    }
-
-    private func applyWarmPreset() {
-        currentPreset = .warm
-        isCustomized = false
-        bandGains = getWarmGains()
-    }
-
-    // MARK: - Blending Actions
-
-    private func activateSmoothCurve() {
-        isUsingDiscreteSteps = false
-        print("Switched to smooth curve")
-    }
-
-    private func activateDiscreteSteps() {
-        isUsingDiscreteSteps = true
-        print("Switched to discrete steps")
+        switch preset {
+        case .flat:
+            bandGains = Array(repeating: 0.0, count: 31)
+        case .presence:
+            bandGains = getPresenceGains()
+        case .clarity:
+            bandGains = getClarityGains()
+        case .warm:
+            bandGains = getWarmGains()
+        }
     }
 
     // MARK: - EQ Gain Helpers
@@ -175,69 +136,6 @@ struct EQTabView: View {
     }
 }
 
-// MARK: - Preset Button
-
-struct PresetButton: View {
-    let label: String
-    let preset: EQPreset
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? Color.white : Color.asLabel)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 13)
-                .background(isSelected ? Color.asAccent : Color.asCard)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(
-                            isSelected ? Color.asAccent : Color.asHairline,
-                            lineWidth: isSelected ? 2 : 0.5
-                        )
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Preset: \(label)")
-        .accessibilityHint(isSelected ? "Currently selected" : "Click to select")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-// MARK: - Blending Toggle Button
-
-struct BlendingToggleButton: View {
-    let label: String
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isActive ? Color.white : Color.asLabel)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 13)
-                .background(isActive ? Color.asAccent : Color.asCard)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(
-                            isActive ? Color.asAccent : Color.asHairline,
-                            lineWidth: isActive ? 2 : 0.5
-                        )
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Blending mode: \(label)")
-        .accessibilityHint(isActive ? "Currently active" : "Click to activate")
-        .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-}
-
 // MARK: - Frequency Response Canvas
 
 struct FrequencyResponseCanvas: View {
@@ -246,14 +144,12 @@ struct FrequencyResponseCanvas: View {
     @Binding var isCustomized: Bool
     let isUsingDiscreteSteps: Bool
 
-    /// Tracks the actual rendered canvas size so the gesture handler uses
-    /// identical plot bounds to the drawing code.
-    @State private var canvasSize: CGSize = .zero
-    /// Tracks which band index was last touched within a single drag stroke,
-    /// so gap-fill can interpolate over skipped bands on fast drags.
-    @State private var lastBandIndex: Int? = nil
+    /// Captured layout size — must match drawing bounds exactly.
+    @Binding var canvasSize: CGSize
+    /// Tracks the last touched band within a single drag stroke for gap-fill.
+    @Binding var lastBandIndex: Int?
 
-    // Plot-margin constants — single source of truth shared by drawing and gesture.
+    // Plot-margin constants — single source of truth for drawing and gesture handler.
     private let plotLeftInset: CGFloat = 50
     private let plotRightInset: CGFloat = 20
     private let plotTopInset: CGFloat = 20
@@ -278,11 +174,9 @@ struct FrequencyResponseCanvas: View {
                 let plotRight: CGFloat = width - plotRightInset
                 let plotTop: CGFloat = plotTopInset
                 let plotBottom: CGFloat = height - plotBottomInset
-
                 let plotWidth = plotRight - plotLeft
                 let plotHeight = plotBottom - plotTop
 
-                // Draw grid lines and labels
                 drawGridAndLabels(
                     context: &context,
                     plotLeft: plotLeft,
@@ -293,13 +187,11 @@ struct FrequencyResponseCanvas: View {
                     plotHeight: plotHeight
                 )
 
-                // Get EQ values: use custom gains if customized, otherwise use preset
                 let isoFreqs = getISO31Frequencies()
                 let eqValues = isCustomized
                     ? zip(isoFreqs, bandGains).map { ($0, $1) }
                     : getEQValuesForPreset(currentPreset)
 
-                // Draw frequency response curve
                 drawFrequencyResponseCurve(
                     context: &context,
                     eqValues: eqValues,
@@ -311,7 +203,6 @@ struct FrequencyResponseCanvas: View {
                     plotHeight: plotHeight
                 )
 
-                // Plot 31 dots at ISO 1/3-octave center frequencies
                 drawISOOctaveDots(
                     context: &context,
                     eqValues: eqValues,
@@ -323,11 +214,10 @@ struct FrequencyResponseCanvas: View {
                     plotHeight: plotHeight
                 )
             }
-            // Capture the rendered size so the gesture handler stays in sync.
+            // Keep canvasSize in sync with the GeometryReader's reported frame.
             .onAppear { canvasSize = geometry.size }
             .onChange(of: geometry.size) { _, newSize in canvasSize = newSize }
-            // coordinateSpace: .local ensures DragGesture reports locations in the
-            // same local frame that GeometryReader measures, matching canvasSize exactly.
+            // coordinateSpace: .local matches the local frame GeometryReader measures.
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
@@ -359,7 +249,6 @@ struct FrequencyResponseCanvas: View {
     private func updateEQFromDrag(location: CGPoint) {
         guard canvasSize.width > 0, canvasSize.height > 0 else { return }
 
-        // Mirror the exact plot bounds used by the drawing code.
         let plotLeft = plotLeftInset
         let plotRight = canvasSize.width - plotRightInset
         let plotTop = plotTopInset
@@ -368,7 +257,7 @@ struct FrequencyResponseCanvas: View {
         let plotHeight = plotBottom - plotTop
         guard plotWidth > 0, plotHeight > 0 else { return }
 
-        // Map x → band index (0…30), using rounded() to avoid left-bias.
+        // Map x → band index (0…30); rounded() avoids left-bias from truncation.
         let relativeX = max(0.0, min(1.0, (location.x - plotLeft) / plotWidth))
         let bandIndex = max(0, min(30, Int((relativeX * 30.0).rounded())))
 
@@ -385,11 +274,10 @@ struct FrequencyResponseCanvas: View {
                 endGain: cursorGain
             )
         } else {
-            // Single-band paint (also handles the first sample of each stroke).
-            paintBand(index: bandIndex, gain: cursorGain)
+            bandGains[bandIndex] = cursorGain
         }
 
-        // Apply smooth shoulder to the landed band after all writes are done.
+        // Smooth shoulder only in smooth-curve mode; discrete leaves sharp edits.
         if !isUsingDiscreteSteps {
             applySmoothShoulder(centerIndex: bandIndex, targetGain: cursorGain)
         }
@@ -398,13 +286,8 @@ struct FrequencyResponseCanvas: View {
         isCustomized = true
     }
 
-    /// Sets a single band to the given gain (discrete-accurate, no spreading).
-    private func paintBand(index: Int, gain: Double) {
-        bandGains[index] = gain
-    }
-
-    /// Linearly interpolates gain across the integer band indices between `from`
-    /// and `to` (exclusive of `from`, inclusive of `to`), so fast drags fill gaps.
+    /// Linearly interpolates gain between `from` and `to` band indices, inclusive
+    /// of `to` and exclusive of `from`, so fast drags leave no unedited gaps.
     private func fillGapBetweenBands(from startIndex: Int, to endIndex: Int,
                                      startGain: Double, endGain: Double)
     {
@@ -418,9 +301,9 @@ struct FrequencyResponseCanvas: View {
         }
     }
 
-    /// Pulls the ±2 neighbors of `centerIndex` toward `targetGain` using a
-    /// raised-cosine falloff (weights: d=1 → 0.75, d=2 → 0.25). Blends rather
-    /// than overwrites, so repeated drag samples compose smoothly.
+    /// Blends the ±1 and ±2 neighbors of `centerIndex` toward `targetGain` with
+    /// raised-cosine weights (d=1 → 0.75, d=2 → 0.25), composing well across
+    /// repeated drag samples without overshooting.
     private func applySmoothShoulder(centerIndex: Int, targetGain: Double) {
         let neighborWeights: [(offset: Int, weight: Double)] = [(1, 0.75), (2, 0.25)]
         for (offset, weight) in neighborWeights {
@@ -433,22 +316,12 @@ struct FrequencyResponseCanvas: View {
         }
     }
 
+    // MARK: - Drawing Helpers
+
     private func getISO31Frequencies() -> [Double] {
         [20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
          630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
          10000, 12500, 16000, 20000]
-    }
-
-    private func getPresenceGains() -> [Double] {
-        getISO31Frequencies().map { gainForPresence($0) }
-    }
-
-    private func getClarityGains() -> [Double] {
-        getISO31Frequencies().map { gainForClarity($0) }
-    }
-
-    private func getWarmGains() -> [Double] {
-        getISO31Frequencies().map { gainForWarm($0) }
     }
 
     private func drawGridAndLabels(
@@ -460,7 +333,6 @@ struct FrequencyResponseCanvas: View {
         plotWidth: CGFloat,
         plotHeight: CGFloat
     ) {
-        // Draw horizontal grid lines for dB levels (-20, -10, 0, 10, 20)
         let dbLevels = [-20.0, -10.0, 0.0, 10.0, 20.0]
         for dbLevel in dbLevels {
             let yPos = plotBottom - ((dbLevel + 20.0) / 40.0) * plotHeight
@@ -473,13 +345,11 @@ struct FrequencyResponseCanvas: View {
             let lineWidth: CGFloat = dbLevel == 0.0 ? 1 : 0.5
             context.stroke(gridLine, with: .color(strokeColor), lineWidth: lineWidth)
 
-            let labelText = Text("\(Int(dbLevel))")
-                .font(.system(size: 10, weight: .regular))
+            let labelText = Text("\(Int(dbLevel))").font(.caption2)
             let resolvedLabel = context.resolve(labelText)
             context.draw(resolvedLabel, at: CGPoint(x: plotLeft - 15, y: yPos), anchor: .trailing)
         }
 
-        // Draw vertical grid lines for frequency decades (logarithmic: 20Hz, 200Hz, 2kHz, 20kHz)
         let freqLabels = [(20, "20Hz"), (200, "200Hz"), (2000, "2kHz"), (20000, "20kHz")]
         for (freq, freqLabel) in freqLabels {
             let logFreq = log10(Double(freq))
@@ -490,8 +360,7 @@ struct FrequencyResponseCanvas: View {
             gridLine.addLine(to: CGPoint(x: xPos, y: plotBottom))
             context.stroke(gridLine, with: .color(Color.asHairline), lineWidth: 0.5)
 
-            let labelText = Text(freqLabel)
-                .font(.system(size: 10, weight: .regular))
+            let labelText = Text(freqLabel).font(.caption2)
             let resolvedLabel = context.resolve(labelText)
             context.draw(resolvedLabel, at: CGPoint(x: xPos, y: plotBottom + 12), anchor: .top)
         }

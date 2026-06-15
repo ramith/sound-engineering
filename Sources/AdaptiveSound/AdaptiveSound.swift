@@ -30,13 +30,8 @@ struct ContentView: View {
             VStack(spacing: 12) {
                 Picker("Tab Selection", selection: $selectedTab.animation(reduceMotion ? nil : .easeInOut(duration: 0.2))) {
                     ForEach(TabSelection.allCases, id: \.id) { tab in
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(tab.rawValue)
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .tag(tab)
+                        Label(tab.rawValue, systemImage: tab.icon)
+                            .tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -46,8 +41,8 @@ struct ContentView: View {
                 // Breadcrumb subtitle
                 HStack {
                     Text(selectedTab.subtitle)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(.asLabelSecond)
+                        .font(.caption)
+                        .foregroundStyle(Color.asLabelSecond)
                         .transition(.opacity)
                         .id(selectedTab.id)
                     Spacer()
