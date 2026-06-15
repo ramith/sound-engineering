@@ -416,6 +416,7 @@ final class AudioViewModel {
     /// Play the track at the given playlist index.
     func playTrack(at index: Int) {
         guard index < playlist.count else { return }
+        selectedTrackIndex = index
         startPlayback()
     }
 

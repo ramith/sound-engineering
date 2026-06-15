@@ -3,135 +3,93 @@ import SwiftUI
 // MARK: - EQ Tab View
 
 struct EQTabView: View {
-    @State private var currentPreset: EQPreset = .flat
-    @State private var isCustomized = false
+    @Environment(EQViewModel.self) private var eqViewModel
     @State private var isUsingDiscreteSteps = false
-    @State private var bandGains: [Double] = Array(repeating: 0.0, count: 31)
-
-    /// Passed down to FrequencyResponseCanvas so gesture bounds match drawing bounds.
-    @State private var canvasSize: CGSize = .zero
-    /// Tracks the last touched band within a drag stroke for gap-fill interpolation.
-    @State private var lastBandIndex: Int? = nil
 
     var body: some View {
         VStack(spacing: 20) {
-            // Frequency Response Canvas (Interactive)
             FrequencyResponseCanvas(
-                currentPreset: currentPreset,
-                bandGains: $bandGains,
-                isCustomized: $isCustomized,
-                isUsingDiscreteSteps: isUsingDiscreteSteps,
-                canvasSize: $canvasSize,
-                lastBandIndex: $lastBandIndex
+                eqViewModel: eqViewModel,
+                isUsingDiscreteSteps: isUsingDiscreteSteps
             )
             .frame(height: 400, alignment: .center)
             .frame(minWidth: 400)
             .padding(.top, 20)
             .padding(.horizontal)
 
-            // Control Section
-            VStack(spacing: 10) {
-                // Preset selection — native segmented control bound to currentPreset
-                Picker("Preset", selection: $currentPreset) {
-                    ForEach(EQPreset.allCases, id: \.self) { preset in
-                        Text(preset.displayName).tag(preset)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("EQ Preset")
-                .onChange(of: currentPreset) { _, newPreset in
-                    applyPreset(newPreset)
-                }
-
-                // Interpolation mode — native segmented 2-way switch
-                HStack(spacing: 8) {
-                    Text("Interpolation")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.asLabelTertiary)
-                        .textCase(.uppercase)
-                        .tracking(0.6)
-
-                    Picker("Interpolation", selection: $isUsingDiscreteSteps) {
-                        Text("Smooth Curve").tag(false)
-                        Text("Discrete Steps").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Interpolation mode")
-                    .onChange(of: isUsingDiscreteSteps) { _, newValue in
-                        print("Switched to \(newValue ? "discrete steps" : "smooth curve")")
-                    }
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
+            ControlsSection(
+                eqViewModel: eqViewModel,
+                isUsingDiscreteSteps: $isUsingDiscreteSteps
+            )
         }
         .background(Color.asWindow)
     }
+}
 
-    // MARK: - Preset Actions
+// MARK: - Controls Section
 
-    private func applyPreset(_ preset: EQPreset) {
-        isCustomized = false
-        switch preset {
-        case .flat:
-            bandGains = Array(repeating: 0.0, count: 31)
-        case .presence:
-            bandGains = getPresenceGains()
-        case .clarity:
-            bandGains = getClarityGains()
-        case .warm:
-            bandGains = getWarmGains()
+private struct ControlsSection: View {
+    let eqViewModel: EQViewModel
+    @Binding var isUsingDiscreteSteps: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            PresetPickerView(eqViewModel: eqViewModel)
+
+            InterpolationPickerView(isUsingDiscreteSteps: $isUsingDiscreteSteps)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 20)
+    }
+}
+
+// MARK: - Preset Picker
+
+private struct PresetPickerView: View {
+    let eqViewModel: EQViewModel
+
+    var body: some View {
+        // Using @Bindable inline because EQViewModel is passed as a let constant.
+        // We need a Bindable wrapper to create a binding from an @Observable class.
+        let bindable = Bindable(eqViewModel)
+
+        Picker("Preset", selection: bindable.selectedPreset) {
+            ForEach(EQPreset.allCases) { preset in
+                Text(preset.displayName).tag(EQPreset?.some(preset))
+            }
+            Text("Custom").tag(EQPreset?.none)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel("EQ Preset")
+        .accessibilityValue(eqViewModel.selectedPresetName)
+        .onChange(of: eqViewModel.selectedPreset) { _, newPreset in
+            if let preset = newPreset {
+                eqViewModel.selectPreset(preset)
+            }
         }
     }
+}
 
-    // MARK: - EQ Gain Helpers
+// MARK: - Interpolation Picker
 
-    private func getISO31Frequencies() -> [Double] {
-        [20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-         630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
-         10000, 12500, 16000, 20000]
-    }
+private struct InterpolationPickerView: View {
+    @Binding var isUsingDiscreteSteps: Bool
 
-    private func getPresenceGains() -> [Double] {
-        getISO31Frequencies().map { gainForPresence($0) }
-    }
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Interpolation")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.asLabelTertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
 
-    private func getClarityGains() -> [Double] {
-        getISO31Frequencies().map { gainForClarity($0) }
-    }
-
-    private func getWarmGains() -> [Double] {
-        getISO31Frequencies().map { gainForWarm($0) }
-    }
-
-    private func gainForPresence(_ freq: Double) -> Double {
-        if freq >= 1000 && freq <= 4000 {
-            return 8.0 * sin((log10(freq) - log10(1000)) / (log10(4000) - log10(1000)) * .pi)
-        } else if freq > 4000 && freq <= 8000 {
-            return 4.0 * sin((log10(8000) - log10(freq)) / (log10(8000) - log10(4000)) * .pi / 2)
-        } else {
-            return 0.0
-        }
-    }
-
-    private func gainForClarity(_ freq: Double) -> Double {
-        if freq >= 1000 && freq <= 8000 {
-            return 6.0 * sin((log10(freq) - log10(1000)) / (log10(8000) - log10(1000)) * .pi / 2)
-        } else if freq > 8000 && freq <= 16000 {
-            return 4.0 * sin((log10(16000) - log10(freq)) / (log10(16000) - log10(8000)) * .pi / 2)
-        } else {
-            return 0.0
-        }
-    }
-
-    private func gainForWarm(_ freq: Double) -> Double {
-        if freq >= 20 && freq <= 500 {
-            return 12.0 * (1.0 - exp(-log10(freq) / 1.5))
-        } else if freq > 500 && freq <= 2000 {
-            return 8.0 * exp(-(freq - 500) / 1500)
-        } else {
-            return 0.0
+            Picker("Interpolation", selection: $isUsingDiscreteSteps) {
+                Text("Smooth Curve").tag(false)
+                Text("Discrete Steps").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Interpolation mode")
         }
     }
 }
@@ -139,15 +97,8 @@ struct EQTabView: View {
 // MARK: - Frequency Response Canvas
 
 struct FrequencyResponseCanvas: View {
-    let currentPreset: EQPreset
-    @Binding var bandGains: [Double]
-    @Binding var isCustomized: Bool
+    let eqViewModel: EQViewModel
     let isUsingDiscreteSteps: Bool
-
-    /// Captured layout size — must match drawing bounds exactly.
-    @Binding var canvasSize: CGSize
-    /// Tracks the last touched band within a single drag stroke for gap-fill.
-    @Binding var lastBandIndex: Int?
 
     // Plot-margin constants — single source of truth for drawing and gesture handler.
     private let plotLeftInset: CGFloat = 50
@@ -155,21 +106,28 @@ struct FrequencyResponseCanvas: View {
     private let plotTopInset: CGFloat = 20
     private let plotBottomInset: CGFloat = 40
 
+    /// Captured layout size for gesture coordinate mapping.
+    /// GeometryReader is intentionally used here: we need the exact rendered
+    /// CGSize inside the Canvas draw pass and for gesture hit-testing. There
+    /// is no containerRelativeFrame equivalent that surfaces a CGSize at draw
+    /// time, so GeometryReader is the correct tool for this specific case.
+    @State private var canvasSize: CGSize = .zero
+
+    /// Tracks the last touched band within a drag stroke for gap-fill interpolation.
+    @State private var lastBandIndex: Int?
+
     var body: some View {
         GeometryReader { geometry in
             Canvas { context, size in
                 let width = size.width
                 let height = size.height
 
-                // Draw background
                 let bgPath = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 9)
                 context.fill(bgPath, with: .color(Color.asCard))
 
-                // Draw border
                 let borderPath = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 9)
                 context.stroke(borderPath, with: .color(Color.asHairline), lineWidth: 0.5)
 
-                // Define plot area with margins
                 let plotLeft: CGFloat = plotLeftInset
                 let plotRight: CGFloat = width - plotRightInset
                 let plotTop: CGFloat = plotTopInset
@@ -187,17 +145,14 @@ struct FrequencyResponseCanvas: View {
                     plotHeight: plotHeight
                 )
 
-                let isoFreqs = getISO31Frequencies()
-                let eqValues = isCustomized
-                    ? zip(isoFreqs, bandGains).map { ($0, $1) }
-                    : getEQValuesForPreset(currentPreset)
+                let eqValues: [(freq: Double, gain: Double)] = EQPreset.isoFrequencies
+                    .enumerated()
+                    .map { index, freq in (freq, Double(eqViewModel.bandGains[index])) }
 
                 drawFrequencyResponseCurve(
                     context: &context,
                     eqValues: eqValues,
                     plotLeft: plotLeft,
-                    plotRight: plotRight,
-                    plotTop: plotTop,
                     plotBottom: plotBottom,
                     plotWidth: plotWidth,
                     plotHeight: plotHeight
@@ -207,25 +162,17 @@ struct FrequencyResponseCanvas: View {
                     context: &context,
                     eqValues: eqValues,
                     plotLeft: plotLeft,
-                    plotRight: plotRight,
-                    plotTop: plotTop,
                     plotBottom: plotBottom,
                     plotWidth: plotWidth,
                     plotHeight: plotHeight
                 )
             }
-            // Keep canvasSize in sync with the GeometryReader's reported frame.
             .onAppear { canvasSize = geometry.size }
             .onChange(of: geometry.size) { _, newSize in canvasSize = newSize }
-            // coordinateSpace: .local matches the local frame GeometryReader measures.
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in
-                        updateEQFromDrag(location: value.location)
-                    }
-                    .onEnded { _ in
-                        lastBandIndex = nil
-                    }
+                    .onChanged { value in updateEQFromDrag(location: value.location) }
+                    .onEnded { _ in lastBandIndex = nil }
             )
         }
         .background(Color.asCard)
@@ -235,7 +182,7 @@ struct FrequencyResponseCanvas: View {
         }
         .accessibilityLabel("Frequency Response Curve")
         .accessibilityValue(
-            "EQ Preset: \(isCustomized ? "Custom" : currentPreset.displayName), "
+            "EQ Preset: \(eqViewModel.selectedPresetName), "
                 + "Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")"
         )
         .accessibilityHint(
@@ -251,78 +198,69 @@ struct FrequencyResponseCanvas: View {
 
         let plotLeft = plotLeftInset
         let plotRight = canvasSize.width - plotRightInset
-        let plotTop = plotTopInset
         let plotBottom = canvasSize.height - plotBottomInset
         let plotWidth = plotRight - plotLeft
-        let plotHeight = plotBottom - plotTop
+        let plotHeight = plotBottom - plotTopInset
         guard plotWidth > 0, plotHeight > 0 else { return }
 
-        // Map x → band index (0…30); rounded() avoids left-bias from truncation.
         let relativeX = max(0.0, min(1.0, (location.x - plotLeft) / plotWidth))
         let bandIndex = max(0, min(30, Int((relativeX * 30.0).rounded())))
 
-        // Map y → dB gain (-20…+20 dB); y increases downward so invert.
         let relativeY = max(0.0, min(1.0, (plotBottom - location.y) / plotHeight))
-        let cursorGain = max(-20.0, min(20.0, relativeY * 40.0 - 20.0))
+        let cursorGain = Float(max(-20.0, min(20.0, relativeY * 40.0 - 20.0)))
 
         if let previousIndex = lastBandIndex, abs(bandIndex - previousIndex) > 1 {
-            // Gap-fill: interpolate across skipped bands so fast drags leave no holes.
             fillGapBetweenBands(
                 from: previousIndex,
                 to: bandIndex,
-                startGain: bandGains[previousIndex],
+                startGain: eqViewModel.bandGains[previousIndex],
                 endGain: cursorGain
             )
         } else {
-            bandGains[bandIndex] = cursorGain
+            eqViewModel.bandGains[bandIndex] = cursorGain
         }
 
-        // Smooth shoulder only in smooth-curve mode; discrete leaves sharp edits.
         if !isUsingDiscreteSteps {
             applySmoothShoulder(centerIndex: bandIndex, targetGain: cursorGain)
         }
 
         lastBandIndex = bandIndex
-        isCustomized = true
+
+        // Mark selectedPreset as nil (custom) and dispatch all 31 bands to the
+        // DSP kernel. This is intentionally called once per drag sample —
+        // the kernel requires a full band update, not a partial one.
+        eqViewModel.selectedPreset = nil
+        eqViewModel.dispatchAllBands()
     }
 
-    /// Linearly interpolates gain between `from` and `to` band indices, inclusive
-    /// of `to` and exclusive of `from`, so fast drags leave no unedited gaps.
+    /// Linearly interpolates gain between `from` and `to` band indices.
     private func fillGapBetweenBands(from startIndex: Int, to endIndex: Int,
-                                     startGain: Double, endGain: Double)
+                                     startGain: Float, endGain: Float)
     {
         let steps = abs(endIndex - startIndex)
         let direction = endIndex > startIndex ? 1 : -1
         for step in 1 ... steps {
-            let progress = Double(step) / Double(steps)
+            let progress = Float(step) / Float(steps)
             let interpolatedGain = startGain + (endGain - startGain) * progress
             let targetIndex = startIndex + step * direction
-            bandGains[targetIndex] = max(-20.0, min(20.0, interpolatedGain))
+            eqViewModel.bandGains[targetIndex] = max(-20.0, min(20.0, interpolatedGain))
         }
     }
 
-    /// Blends the ±1 and ±2 neighbors of `centerIndex` toward `targetGain` with
-    /// raised-cosine weights (d=1 → 0.75, d=2 → 0.25), composing well across
-    /// repeated drag samples without overshooting.
-    private func applySmoothShoulder(centerIndex: Int, targetGain: Double) {
-        let neighborWeights: [(offset: Int, weight: Double)] = [(1, 0.75), (2, 0.25)]
+    /// Blends ±1 and ±2 neighbours of `centerIndex` toward `targetGain`.
+    private func applySmoothShoulder(centerIndex: Int, targetGain: Float) {
+        let neighborWeights: [(offset: Int, weight: Float)] = [(1, 0.75), (2, 0.25)]
         for (offset, weight) in neighborWeights {
             for sign in [-1, 1] {
                 let neighborIndex = centerIndex + offset * sign
                 guard neighborIndex >= 0, neighborIndex <= 30 else { continue }
-                let existing = bandGains[neighborIndex]
-                bandGains[neighborIndex] = existing + (targetGain - existing) * weight
+                let existing = eqViewModel.bandGains[neighborIndex]
+                eqViewModel.bandGains[neighborIndex] = existing + (targetGain - existing) * weight
             }
         }
     }
 
     // MARK: - Drawing Helpers
-
-    private func getISO31Frequencies() -> [Double] {
-        [20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-         630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
-         10000, 12500, 16000, 20000]
-    }
 
     private func drawGridAndLabels(
         context: inout GraphicsContext,
@@ -370,13 +308,10 @@ struct FrequencyResponseCanvas: View {
         context: inout GraphicsContext,
         eqValues: [(freq: Double, gain: Double)],
         plotLeft: CGFloat,
-        plotRight _: CGFloat,
-        plotTop _: CGFloat,
         plotBottom: CGFloat,
         plotWidth: CGFloat,
         plotHeight: CGFloat
     ) {
-        // Interpolate gains at finer frequency intervals for smooth visual curve
         let interpolatedPoints = interpolateFrequencyResponse(eqValues)
 
         var curvePath = Path()
@@ -402,8 +337,6 @@ struct FrequencyResponseCanvas: View {
         context: inout GraphicsContext,
         eqValues: [(freq: Double, gain: Double)],
         plotLeft: CGFloat,
-        plotRight _: CGFloat,
-        plotTop _: CGFloat,
         plotBottom: CGFloat,
         plotWidth: CGFloat,
         plotHeight: CGFloat
@@ -427,18 +360,15 @@ struct FrequencyResponseCanvas: View {
 
     // MARK: - Interpolation & Smoothing
 
-    /// Generate smooth curve with interpolated points at ~1/6 octave intervals (~60 points)
-    /// Apply 3-tap smoothing for subtle processing smoothing (avoids harsh peaks)
     private func interpolateFrequencyResponse(
         _ isoPoints: [(freq: Double, gain: Double)]
     ) -> [(freq: Double, gain: Double)] {
         guard !isoPoints.isEmpty else { return isoPoints }
 
-        // Generate finer frequency grid: every ~1/6 octave (6 points per octave)
         var interpolatedFreqs: [Double] = []
         let logFreqMin = log10(20.0)
         let logFreqMax = log10(20000.0)
-        let numSteps = 120 // ~6 points per octave across 20Hz-20kHz
+        let numSteps = 120
 
         for i in 0 ... numSteps {
             let t = Double(i) / Double(numSteps)
@@ -446,18 +376,15 @@ struct FrequencyResponseCanvas: View {
             interpolatedFreqs.append(pow(10.0, logFreq))
         }
 
-        // Interpolate gains at these finer frequencies (log-linear)
         var interpolatedGains: [Double] = interpolatedFreqs.map { freq in
             gainAtFrequency(freq, from: isoPoints)
         }
 
-        // Apply 3-tap moving average smoothing (subtle, prevents harsh peaks)
         interpolatedGains = smoothGains(interpolatedGains, tapCount: 3)
 
         return zip(interpolatedFreqs, interpolatedGains).map { ($0, $1) }
     }
 
-    /// Linear interpolation on log frequency scale for smooth curve
     private func gainAtFrequency(
         _ freq: Double,
         from isoPoints: [(freq: Double, gain: Double)]
@@ -465,8 +392,6 @@ struct FrequencyResponseCanvas: View {
         guard freq >= 20 && freq <= 20000 else { return 0 }
 
         let logFreq = log10(freq)
-
-        // Find bounding ISO points
         var lower = isoPoints[0]
         var upper = isoPoints.last ?? isoPoints[0]
 
@@ -478,7 +403,6 @@ struct FrequencyResponseCanvas: View {
             }
         }
 
-        // Linear interpolation on log-frequency scale
         let logLower = log10(lower.freq)
         let logUpper = log10(upper.freq)
         let t = (logFreq - logLower) / (logUpper - logLower)
@@ -487,7 +411,6 @@ struct FrequencyResponseCanvas: View {
         return lower.gain + clampedT * (upper.gain - lower.gain)
     }
 
-    /// Apply N-tap moving average smoothing to prevent harsh peaks
     private func smoothGains(_ gains: [Double], tapCount: Int) -> [Double] {
         guard gains.count >= tapCount else { return gains }
 
@@ -507,76 +430,5 @@ struct FrequencyResponseCanvas: View {
         }
 
         return smoothed
-    }
-
-    private func getEQValuesForPreset(_ preset: EQPreset) -> [(freq: Double, gain: Double)] {
-        let iso31Frequencies: [Double] = [
-            20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-            630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
-            10000, 12500, 16000, 20000,
-        ]
-
-        switch preset {
-        case .flat:
-            return iso31Frequencies.map { ($0, 0.0) }
-        case .presence:
-            return iso31Frequencies.map { freq in (freq, gainForPresence(freq)) }
-        case .clarity:
-            return iso31Frequencies.map { freq in (freq, gainForClarity(freq)) }
-        case .warm:
-            return iso31Frequencies.map { freq in (freq, gainForWarm(freq)) }
-        }
-    }
-
-    private func gainForPresence(_ freq: Double) -> Double {
-        if freq >= 1000 && freq <= 4000 {
-            return 8.0 * sin((log10(freq) - log10(1000)) / (log10(4000) - log10(1000)) * .pi)
-        } else if freq > 4000 && freq <= 8000 {
-            return 4.0 * sin((log10(8000) - log10(freq)) / (log10(8000) - log10(4000)) * .pi / 2)
-        } else {
-            return 0.0
-        }
-    }
-
-    private func gainForClarity(_ freq: Double) -> Double {
-        if freq >= 1000 && freq <= 8000 {
-            return 6.0 * sin((log10(freq) - log10(1000)) / (log10(8000) - log10(1000)) * .pi / 2)
-        } else if freq > 8000 && freq <= 16000 {
-            return 4.0 * sin((log10(16000) - log10(freq)) / (log10(16000) - log10(8000)) * .pi / 2)
-        } else {
-            return 0.0
-        }
-    }
-
-    private func gainForWarm(_ freq: Double) -> Double {
-        if freq >= 20 && freq <= 500 {
-            return 12.0 * (1.0 - exp(-log10(freq) / 1.5))
-        } else if freq > 500 && freq <= 2000 {
-            return 8.0 * exp(-(freq - 500) / 1500)
-        } else {
-            return 0.0
-        }
-    }
-}
-
-// MARK: - EQ Preset Enum
-
-enum EQPreset: String, CaseIterable {
-    case flat
-    case presence
-    case clarity
-    case warm
-
-    var displayName: String {
-        switch self {
-        case .flat:
-            return "Flat"
-        case .presence:
-            return "Presence"
-        case .clarity:
-            return "Clarity"
-        case .warm:
-            return "Warm"
-        }
     }
 }

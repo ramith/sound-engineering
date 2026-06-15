@@ -22,3 +22,6 @@ Thumbs.db
 *.flac
 *.mp3
 *.tmp
+
+# Compiled test binaries (built locally by Scripts/build-null-test.sh)
+Tests/DSPKernelNullTest

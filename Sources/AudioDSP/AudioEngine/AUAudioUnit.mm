@@ -13,6 +13,20 @@ namespace
     // Placeholder AudioComponent identifiers for the (not-yet-registered) in-process AU.
     constexpr OSType kComponentSubType = 0x61647364U;      // 'adsd' (AdaptiveSound)
     constexpr OSType kComponentManufacturer = 0x41647364U; // 'Adsd'
+
+    // Enable flush-to-zero on the calling thread (must be called at render-block entry).
+    // See DSPKernel.mm::enableFlushToZero() for the full rationale.
+    // FPCR is a per-thread register; this sets it on the render thread independently
+    // of the control-thread call in DSPKernel::initialize().
+    inline void setRenderThreadFTZ() noexcept
+    {
+#if defined(__aarch64__)
+        uint64_t fpcr = 0;
+        __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+        fpcr |= (1ULL << 24U); // FZ bit
+        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
+#endif
+    }
 } // namespace
 
 @interface AdaptiveSoundAU : AUAudioUnit {
@@ -56,6 +70,10 @@ namespace
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
         if (kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
+
+        // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
+        // Called once per render callback; the register write is ~1 cycle on M1.
+        setRenderThreadFTZ();
 
         // Fix #11 + #4: pull input directly into the output buffers (in-place effect),
         // then process in place. This removes the stack-declared AudioBufferList (which

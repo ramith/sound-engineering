@@ -49,6 +49,15 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     vDSP_biquad_Setup setup =
         vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
     activeSetup_.store(static_cast<void*>(setup), std::memory_order_release);
+
+    // Initialize the master-gain ramp with a 32 ms time constant and snap it to
+    // unity so the first buffer plays at full gain rather than ramping up from 0.
+    masterGainRamp_.initialize(0.032F, static_cast<float>(sampleRate));
+    masterGainRamp_.target = 1.0F;
+    masterGainRamp_.snap();
+
+    // Zero the ramp scratch buffer (pre-allocated, no heap on the RT path).
+    rampBuf_.fill(0.0F);
 }
 
 void EQModule::publishCoefficients(const EQParams& params) noexcept
@@ -146,14 +155,38 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
                     static_cast<vDSP_Length>(frameCount));
     }
 
-    // Apply master gain scaling (linear amplitude).
-    if (params.masterGainLinear != 1.0F) {
-        float gain = params.masterGainLinear;
+    // Apply master gain with per-sample ramping to eliminate zipper noise.
+    //
+    // Update the ramp target from the current params. The target is set here (on the
+    // RT thread) immediately before tick() — this is safe because publishTargetState()
+    // (the sole off-RT writer of params.masterGainLinear) completes its store before
+    // the render thread reads the TargetState snapshot, so there is no concurrent write
+    // to params.masterGainLinear while process() runs.
+    //
+    // Fast path: if the ramp has fully settled at unity, skip the multiply entirely.
+    // The settled check uses an epsilon so floating-point drift does not prevent exit.
+    masterGainRamp_.target = params.masterGainLinear;
+    const bool settled = (std::abs(masterGainRamp_.current - masterGainRamp_.target) < 1e-6F);
+
+    if (!settled || params.masterGainLinear != 1.0F) {
+        // Generate the per-sample gain envelope into rampBuf_.
+        // tick() advances current toward target by α each sample — this IS the
+        // one-pole smoother; no secondary vDSP_vramp interpolation needed.
+        //
+        // rampBuf_ is sized to kMaxFramesCeil (= kDefaultMaxFrames = 512). Clamp
+        // frameCount defensively so a misconfigured caller cannot overrun the buffer.
+        const uint32_t safeCount = std::min(frameCount, kMaxFramesCeil);
+        const vDSP_Length n = static_cast<vDSP_Length>(safeCount);
+        for (uint32_t i = 0; i < safeCount; ++i) {
+            rampBuf_[i] = masterGainRamp_.tick();
+        }
+
+        // vDSP_vmul: element-wise multiply (signal × per-sample gain).
         if (leftBuffer != nullptr) {
-            vDSP_vsmul(leftBuffer, 1, &gain, leftBuffer, 1, static_cast<vDSP_Length>(frameCount));
+            vDSP_vmul(leftBuffer, 1, rampBuf_.data(), 1, leftBuffer, 1, n);
         }
         if (rightBuffer != nullptr) {
-            vDSP_vsmul(rightBuffer, 1, &gain, rightBuffer, 1, static_cast<vDSP_Length>(frameCount));
+            vDSP_vmul(rightBuffer, 1, rampBuf_.data(), 1, rightBuffer, 1, n);
         }
     }
 }
