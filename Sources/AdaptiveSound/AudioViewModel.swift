@@ -296,7 +296,6 @@ final class AudioViewModel {
 
     /// Enumerate all audio files under `folderURL` recursively and update `playlist`.
     func loadMusicFolder(_ folderURL: URL) async {
-        musicFolderURL = folderURL
         folderPathDisplay = Self.makeDisplayPath(folderURL)
         playlist = []
 

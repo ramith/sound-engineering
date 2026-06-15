@@ -36,6 +36,7 @@ struct PlaylistView: View {
             if case let .success(urls) = result, let folderURL = urls.first {
                 let didAccess = folderURL.startAccessingSecurityScopedResource()
                 defer { if didAccess { folderURL.stopAccessingSecurityScopedResource() } }
+                viewModel.musicFolderURL = folderURL
                 Task {
                     await viewModel.loadMusicFolder(folderURL)
                 }
