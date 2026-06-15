@@ -18,14 +18,11 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     sampleRate_ = sampleRate;
     maxFrames_ = maxFrames;
 
-    // Pre-allocate delay state arrays for all cascade stages.
-    // vDSP_biquad requires 4 floats of delay state per biquad stage for stereo:
-    // [z1_left, z2_left, z1_right, z2_right]
-    // We allocate once and reuse to avoid allocations on the RT audio thread.
-    // TODO(#2): vDSP delay-state undersized (OOB); fix in dedicated session
-    for (size_t i = 0; i < static_cast<size_t>(kMaxBiquads); ++i) {
-        biquadDelay_[i].resize(4, 0.0F);
-    }
+    // Reset per-channel delay state (also zero-initialized in the header; re-zero
+    // here so a second initialize() — e.g. on sample-rate change — starts clean).
+    leftDelay_.fill(0.0F);
+    rightDelay_.fill(0.0F);
+    cachedNumBiquads_ = 0;
 
     // Pre-allocate coefficient array for cascade (5 coeffs per stage)
     cascadeCoeffs_.resize(static_cast<size_t>(kMaxBiquads) * kCoeffsPerBiquad, 0.0);
@@ -52,6 +49,14 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
     }
     if (numChannels >= 2) {
         rightBuffer = static_cast<float*>(ioData->mBuffers[1].mData);
+    }
+
+    // If the cascade section count changed, the persisted delay state belongs to a
+    // different cascade and is structurally mismatched — re-zero it to avoid a click.
+    if (params.numBiquads != cachedNumBiquads_) {
+        leftDelay_.fill(0.0F);
+        rightDelay_.fill(0.0F);
+        cachedNumBiquads_ = params.numBiquads;
     }
 
     // Pack coefficients for all active stages into cascadeCoeffs_
@@ -81,17 +86,16 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
     }
     cascadeSetup_ = setup;
 
-    // Process left channel through entire cascade
+    // Process each channel through the cascade with its own independent delay state.
     if (leftBuffer != nullptr) {
-        vDSP_biquad(setup, biquadDelay_[0].data(),
+        vDSP_biquad(setup, leftDelay_.data(),
                     leftBuffer, 1,
                     leftBuffer, 1,
                     frameCount);
     }
 
-    // Process right channel through entire cascade
     if (rightBuffer != nullptr) {
-        vDSP_biquad(setup, biquadDelay_[0].data() + 2,
+        vDSP_biquad(setup, rightDelay_.data(),
                     rightBuffer, 1,
                     rightBuffer, 1,
                     frameCount);

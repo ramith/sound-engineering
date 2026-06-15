@@ -24,9 +24,18 @@ namespace AdaptiveSound
         void process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept;
 
       private:
-        // Pre-allocated delay state for vDSP_biquad processing
-        // For each biquad stage, we need [z1_L, z2_L, z1_R, z2_R]
-        std::array<std::vector<float>, kMaxBiquads> biquadDelay_;
+        // Per-channel delay state for the vDSP_biquad cascade.
+        // vDSP requires 2*M + 2 floats for an M-section cascade; size for the max
+        // cascade (kMaxBiquads). One independent, non-overlapping buffer per channel
+        // (L/R must not share state). Zero-initialized, persists across process()
+        // calls (this IS the filter memory). std::array => no heap, RT-safe.
+        static constexpr size_t kDelayStateSize = (2 * static_cast<size_t>(kMaxBiquads)) + 2;
+        std::array<float, kDelayStateSize> leftDelay_{};
+        std::array<float, kDelayStateSize> rightDelay_{};
+
+        // Section count of the last processed cascade; when it changes, the delay
+        // state is structurally mismatched and must be re-zeroed.
+        uint8_t cachedNumBiquads_ = 0;
 
         // vDSP_biquad_Setup opaque pointer (defined in Accelerate framework)
         void* cascadeSetup_ = nullptr;
