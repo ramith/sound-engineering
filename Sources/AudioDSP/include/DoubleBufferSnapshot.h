@@ -19,7 +19,7 @@ namespace AdaptiveSound
         // Off-RT writer: publish new parameter state
         void publish(const T& newState) noexcept
         {
-            const uint32_t inactive = 1U - activeIndex_.load(std::memory_order_acquire);
+            const uint32_t inactive = 1U - activeIndex_.load(std::memory_order_relaxed);
             slots_[inactive] = newState; // Plain struct copy (T is trivially copyable)
             activeIndex_.store(inactive, std::memory_order_release);
         }

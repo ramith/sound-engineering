@@ -1,5 +1,7 @@
 #include "EQModule.h"
 #include <Accelerate/Accelerate.h>
+#include <format>
+#include <iostream>
 
 namespace AdaptiveSound
 {
@@ -88,7 +90,11 @@ void EQModule::publishCoefficients(const EQParams& params) noexcept
     vDSP_biquad_Setup newSetup =
         vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
     if (newSetup == nullptr) {
-        return; // Accelerate failure — keep the existing setup running.
+        std::cerr << std::format(
+            "[EQModule] WARNING: vDSP_biquad_CreateSetup failed for {} biquads; "
+            "keeping existing setup running\n",
+            static_cast<uint32_t>(numActive));
+        return;
     }
 
     // Publish. If a prior pending setup was never consumed by the RT thread

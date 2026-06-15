@@ -7,9 +7,45 @@
 
 namespace AdaptiveSound {
 
-// control-plane logging only (init/shutdown/device-change); never on the RT audio
-// thread; fprintf varargs acceptable here. RT TUs keep the check.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
+// Opaque implementation class (definition only in .mm)
+class AVAudioEngineImpl {
+ public:
+  explicit AVAudioEngineImpl(AVAudioEngine* engine) : engine_(engine) {}
+
+  ~AVAudioEngineImpl() noexcept {
+    if (engine_ != nullptr) {
+      [engine_ stop];
+      engine_ = nil;
+    }
+  }
+
+  AVAudioEngineImpl(const AVAudioEngineImpl&) = delete;
+  auto operator=(const AVAudioEngineImpl&) -> AVAudioEngineImpl& = delete;
+  AVAudioEngineImpl(AVAudioEngineImpl&&) = delete;
+  auto operator=(AVAudioEngineImpl&&) -> AVAudioEngineImpl& = delete;
+
+  [[nodiscard]] auto get() const noexcept -> AVAudioEngine* { return engine_; }
+
+ private:
+  AVAudioEngine* engine_;
+};
+
+
+// Helper: Create AudioStreamBasicDescription for linear PCM float audio
+static auto makeStreamFormat(uint32_t sampleRate, uint32_t channels) noexcept
+    -> AudioStreamBasicDescription {
+  AudioStreamBasicDescription asbd{};
+  asbd.mSampleRate = sampleRate;
+  asbd.mFormatID = kAudioFormatLinearPCM;
+  asbd.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+  asbd.mBitsPerChannel = 32;
+  asbd.mChannelsPerFrame = channels;
+  asbd.mBytesPerFrame = channels * 4;
+  asbd.mBytesPerPacket = channels * 4;
+  asbd.mFramesPerPacket = 1;
+  asbd.mReserved = 0;
+  return asbd;
+}
 
 // MARK: - ControlMessageRing Implementation
 
@@ -47,7 +83,7 @@ bool ControlMessageRing::tryPop(DeviceChangeMessage& msg) {
 // MARK: - AudioEngine Implementation
 
 AudioEngine::AudioEngine()
-    : deviceChangeRing_(std::make_unique<ControlMessageRing>()) {
+    : outputUnit_(nullptr), deviceChangeRing_(std::make_unique<ControlMessageRing>()) {
     // All other members use in-class default member initializers.
 }
 
@@ -85,24 +121,11 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
             return false;
         }
 
-        // Store the engine pointer (as void* to keep C++ header clean)
-        outputUnit_ = (__bridge_retained void*)engine;
+        // Store the engine in the opaque implementation wrapper
+        outputUnit_ = std::make_unique<AVAudioEngineImpl>(engine);
 
-        // Set up audio format
-        static constexpr UInt32 kBitsPerFloatSample = 32;
-        static constexpr UInt32 kBitsPerByte = 8;
-        AudioStreamBasicDescription asbd;
-        asbd.mSampleRate = sampleRate_;
-        asbd.mFormatID = kAudioFormatLinearPCM;
-        asbd.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-        asbd.mBitsPerChannel = kBitsPerFloatSample;
-        asbd.mChannelsPerFrame = kMaxChannels;
-        asbd.mBytesPerFrame = asbd.mChannelsPerFrame * asbd.mBitsPerChannel / kBitsPerByte;
-        asbd.mBytesPerPacket = asbd.mBytesPerFrame;
-        asbd.mFramesPerPacket = 1;
-        asbd.mReserved = 0;
-
-        streamFormat_ = asbd;
+        // Set up audio format (linear PCM float, 32-bit)
+        streamFormat_ = makeStreamFormat(sampleRate_, kMaxChannels);
 
         // Start the audio engine
         NSError* error = nil;
@@ -110,9 +133,8 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
         if (error != nil) {
             fprintf(stderr, "[AudioEngine] Failed to start audio engine: %s\n",
                     error.description.UTF8String);
-            // Release the engine via bridge transfer (cleanup on error)
-            (void)(__bridge_transfer AVAudioEngine*)outputUnit_;
-            outputUnit_ = nullptr;
+            // unique_ptr destructor will clean up on error
+            outputUnit_.reset();
             return false;
         }
 
@@ -143,14 +165,8 @@ void AudioEngine::shutdown() {
     // Remove device listener
     CoreAudioDevice::removeDefaultDeviceListener();
 
-    @autoreleasepool {
-        if (outputUnit_ != nullptr) {
-            AVAudioEngine* engine = (__bridge_transfer AVAudioEngine*)outputUnit_;
-            [engine stop];
-            engine = nil;  // Bridge transfer releases it
-            outputUnit_ = nullptr;
-        }
-    }
+    // unique_ptr will call AVAudioEngineImpl destructor which handles cleanup
+    outputUnit_.reset();
 
     outputBus_ = nullptr;
     workBuffer_.clear();

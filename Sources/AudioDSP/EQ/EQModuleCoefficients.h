@@ -100,8 +100,9 @@ namespace AdaptiveSound
         // RBJ Audio EQ Cookbook coefficient-design constants (peaking-filter details).
         static constexpr EQParams::BiquadCoeffs kIdentityBiquad = {1.0F, 0.0F, 0.0F, 0.0F, 0.0F};
         static constexpr float kDecibelBase = 10.0F; // dB->linear base for pow(10, ...)
-        static constexpr float kRbjAmplitudeExp =
-            40.0F; // A = pow(kDecibelBase, gainDb/kRbjAmplitudeExp)
+        // RBJ peaking EQ: A = 10^(gainDb / 40) for peaking filters
+        // (Different from shelving: A = 10^(gainDb / 6))
+        static constexpr float kRbjAmplitudeExp = 40.0F;
         static constexpr float kQHeuristicBase =
             0.5F; // Q = 1/(kQHeuristicBase + |gainDb|*kQHeuristicSlope)
         static constexpr float kQHeuristicSlope = 0.1F;
