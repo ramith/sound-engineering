@@ -99,7 +99,7 @@ enum TabSelection: String, CaseIterable {
         case .eq:
             return "EQ Editing"
         case .settings:
-            return "Settings"
+            return "Preferences"
         }
     }
 
