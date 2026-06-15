@@ -44,6 +44,10 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.ConstexprVariablePrefix
     value: k
+  # RBJ Audio EQ Cookbook canonical single-letter amplitude (A) and Q-factor (Q)
+  # locals: keep the cookbook notation rather than forcing camelBack renames.
+  - key: readability-identifier-naming.LocalVariableIgnoredRegexp
+    value: '^(A|Q)$'
   # DSP process() functions legitimately branch on channel/biquad/gain state.
   # 10 is unrealistically low; 25 still catches genuinely unmaintainable code.
   - key: readability-function-cognitive-complexity.Threshold
@@ -52,6 +56,19 @@ CheckOptions:
     value: false
   - key: bugprone-narrowing-conversions.PedanticMode
     value: true
+  # RBJ Audio EQ Cookbook uses canonical single-letter DSP notation:
+  #   A = amplitude (sqrt of linear gain), Q = quality factor, w0 = angular freq.
+  # Allow these specific names rather than obscuring them with verbose renames.
+  - key: readability-identifier-length.MinimumVariableNameLength
+    value: 2
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: '^(A|Q|b|i|j|w0)$'
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: '^(A|Q|b|i|j)$'
+  # Structural 0/1/2 and -2.0 in RBJ biquad formulas are intrinsic, not magic;
+  # keep clang-tidy defaults 1.0/100.0 too. DSP-semantic literals are named.
+  - key: cppcoreguidelines-avoid-magic-numbers.IgnoredFloatingPointValues
+    value: '0.0;1.0;2.0;100.0'
   # NOTE: no GSL dependency exists and the pro-bounds-* checks above are
   # disabled (incompatible with -fno-exceptions RT audio: .at() throws,
   # raw float* buffer arithmetic is intrinsic). GslHeader option removed.

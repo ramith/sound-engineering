@@ -1,6 +1,7 @@
 #ifndef EQ_MODULE_COEFFICIENTS_H
 #define EQ_MODULE_COEFFICIENTS_H
 
+#include "../include/AudioConstants.h"
 #include "../include/TargetState.h"
 #include <algorithm> // std::min / std::max
 #include <array>
@@ -20,7 +21,15 @@ namespace AdaptiveSound
         // Helper: clamp value to range [min, max]
         static constexpr float clamp(float value, float minVal, float maxVal) noexcept
         {
-            return value < minVal ? minVal : (value > maxVal ? maxVal : value);
+            if (value < minVal)
+            {
+                return minVal;
+            }
+            if (value > maxVal)
+            {
+                return maxVal;
+            }
+            return value;
         }
 
       public:
@@ -29,10 +38,10 @@ namespace AdaptiveSound
 
         // Standard 31-band ISO 3-octave center frequencies (Hz)
         static constexpr std::array<float, kNumBands> kCenterFrequencies = {
-            20.f,   25.f,   31.5f,  40.f,    50.f,    63.f,    80.f,   100.f,
-            125.f,  160.f,  200.f,  250.f,   315.f,   400.f,   500.f,  630.f,
-            800.f,  1000.f, 1250.f, 1600.f,  2000.f,  2500.f,  3150.f, 4000.f,
-            5000.f, 6300.f, 8000.f, 10000.f, 12500.f, 16000.f, 20000.f};
+            20.F,   25.F,   31.5F,  40.F,    50.F,    63.F,    80.F,   100.F,
+            125.F,  160.F,  200.F,  250.F,   315.F,   400.F,   500.F,  630.F,
+            800.F,  1000.F, 1250.F, 1600.F,  2000.F,  2500.F,  3150.F, 4000.F,
+            5000.F, 6300.F, 8000.F, 10000.F, 12500.F, 16000.F, 20000.F};
 
         // Compute biquad cascade from 31-band gains
         // @param gains: 31-element array of gain in dB (typically ±12 dB range)
@@ -47,7 +56,7 @@ namespace AdaptiveSound
             bool allZero = true;
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > 1e-6f)
+                if (std::abs(gains[i]) > kFlatGainThresholdDb)
                 {
                     allZero = false;
                     break;
@@ -57,22 +66,22 @@ namespace AdaptiveSound
             if (allZero)
             {
                 // Pass-through: single unity gain biquad
-                result.biquads[0] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                result.biquads[0] = kIdentityBiquad;
                 result.numBiquads = 1;
-                result.masterGainLinear = 1.0f;
+                result.masterGainLinear = 1.0F;
                 return result;
             }
 
             // Realizer-style biquad fitting: fit 31-band response with cascade of up to 10 biquads
             // Phase 1b uses pre-computed coefficients; dynamic Realizer fitting deferred to Phase 2
-            std::array<EQParams::BiquadCoeffs, kMaxBiquads> biquads;
+            std::array<EQParams::BiquadCoeffs, kMaxBiquads> biquads{};
             int numBiquads = fitBiquadCascade(gains, sampleRate, biquads);
 
             // Validate minimum-phase property (group delay check)
             if (!validateMinimumPhase(biquads, numBiquads, sampleRate))
             {
                 // Fall back to identity if validation fails
-                biquads[0] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                biquads[0] = kIdentityBiquad;
                 numBiquads = 1;
             }
 
@@ -82,12 +91,31 @@ namespace AdaptiveSound
             {
                 result.biquads[i] = biquads[i];
             }
-            result.masterGainLinear = 1.0f;
+            result.masterGainLinear = 1.0F;
 
             return result;
         }
 
       private:
+        // RBJ Audio EQ Cookbook coefficient-design constants (peaking-filter details).
+        static constexpr EQParams::BiquadCoeffs kIdentityBiquad = {1.0F, 0.0F, 0.0F, 0.0F, 0.0F};
+        static constexpr float kDecibelBase = 10.0F; // dB->linear base for pow(10, ...)
+        static constexpr float kRbjAmplitudeExp =
+            40.0F; // A = pow(kDecibelBase, gainDb/kRbjAmplitudeExp)
+        static constexpr float kQHeuristicBase =
+            0.5F; // Q = 1/(kQHeuristicBase + |gainDb|*kQHeuristicSlope)
+        static constexpr float kQHeuristicSlope = 0.1F;
+        static constexpr float kPeakingFilterGainThresholdDb =
+            0.001F; // |gainDb| below this -> identity
+        static constexpr float kActiveRegionThresholdDb =
+            0.5F; // band participates in the fit above this
+        static constexpr float kFlatGainThresholdDb =
+            1e-6F; // below this |gain|, the whole curve is treated as flat (pass-through)
+        // Schur-Cohn stability tolerance. Reused for the |b0|<tol degenerate-numerator
+        // guard too; the two roles are distinct (pole/zero stability margin vs.
+        // monic-normalize safety) but share the same small epsilon.
+        static constexpr float kSchurCohnTolerance = 1e-6F;
+
         // Fit 31-band gains to cascaded biquads
         // This uses a simplified fitting approach for Phase 1b:
         // - Group consecutive bands with similar gains
@@ -104,7 +132,7 @@ namespace AdaptiveSound
 
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > 0.5f)
+                if (std::abs(gains[i]) > kActiveRegionThresholdDb)
                 {
                     activeRegions[i] = true;
                     numActiveRegions++;
@@ -114,7 +142,7 @@ namespace AdaptiveSound
             if (numActiveRegions == 0)
             {
                 // All gains below threshold: pass-through
-                outBiquads[0] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                outBiquads[0] = kIdentityBiquad;
                 return 1;
             }
 
@@ -146,7 +174,7 @@ namespace AdaptiveSound
                     float gainDb = peakGain;
 
                     // Clamp to safe range (±12 dB as per spec)
-                    gainDb = clamp(gainDb, -12.0f, 12.0f);
+                    gainDb = clamp(gainDb, -kEQMaxGainDb, kEQMaxGainDb);
 
                     // Create peaking filter
                     EQParams::BiquadCoeffs biquad =
@@ -170,23 +198,19 @@ namespace AdaptiveSound
             EQParams::BiquadCoeffs coeff{};
 
             // Clamp to safe range
-            gainDb = clamp(gainDb, -12.0f, 12.0f);
-            centerFreqHz = clamp(centerFreqHz, 20.0f, 20000.0f);
+            gainDb = clamp(gainDb, -kEQMaxGainDb, kEQMaxGainDb);
+            centerFreqHz = clamp(centerFreqHz, kAudibleBandMinHz, kAudibleBandMaxHz);
 
-            if (std::abs(gainDb) < 0.001f)
+            if (std::abs(gainDb) < kPeakingFilterGainThresholdDb)
             {
                 // No gain: identity
-                coeff.b0 = 1.0f;
-                coeff.b1 = 0.0f;
-                coeff.b2 = 0.0f;
-                coeff.a1 = 0.0f;
-                coeff.a2 = 0.0f;
+                coeff = kIdentityBiquad;
                 return coeff;
             }
 
             // RBJ peaking EQ filter (Audio EQ Cookbook)
-            float A = std::pow(10.0f, gainDb / 40.0f); // Amplitude
-            float w0 = 2.0f * std::numbers::pi_v<float> * centerFreqHz / sampleRate;
+            float A = std::pow(kDecibelBase, gainDb / kRbjAmplitudeExp); // Amplitude
+            float w0 = (2.0F * std::numbers::pi_v<float> * centerFreqHz) / sampleRate;
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
@@ -194,19 +218,19 @@ namespace AdaptiveSound
             // 6 dB, ~2.2 oct at 12 dB). Not Nyquist-aware — wide filters near 20 kHz at
             // 44.1 kHz skew their lower skirt into the audible band. Acceptable for the
             // greedy fitter; the Realizer's ERB-weighted L-M optimizer will supersede it.
-            float Q = 1.0f / (0.5f + std::abs(gainDb) * 0.1f);
+            float Q = 1.0F / (kQHeuristicBase + (std::abs(gainDb) * kQHeuristicSlope));
 
-            float alpha = sinw0 / (2.0f * Q);
+            float alpha = sinw0 / (2.0F * Q);
 
             // Peaking filter coefficients
-            coeff.b0 = 1.0f + alpha * A;
-            coeff.b1 = -2.0f * cosw0;
-            coeff.b2 = 1.0f - alpha * A;
-            coeff.a1 = -2.0f * cosw0;
-            coeff.a2 = 1.0f - alpha / A; // RBJ peaking: a2 = 1 - alpha/A (matched with a0)
+            coeff.b0 = 1.0F + (alpha * A);
+            coeff.b1 = -2.0F * cosw0;
+            coeff.b2 = 1.0F - (alpha * A);
+            coeff.a1 = -2.0F * cosw0;
+            coeff.a2 = 1.0F - (alpha / A); // RBJ peaking: a2 = 1 - alpha/A (matched with a0)
 
             // Normalize by a0
-            float a0 = 1.0f + alpha / A;
+            float a0 = 1.0F + (alpha / A);
             coeff.b0 /= a0;
             coeff.b1 /= a0;
             coeff.b2 /= a0;
@@ -237,12 +261,12 @@ namespace AdaptiveSound
                 // Poles are roots of A(z)
                 // Simple check: |a2| < 1 and |a1| < 1 + a2
 
-                if (std::abs(b.a2) >= 1.0f)
+                if (std::abs(b.a2) >= 1.0F)
                 {
                     return false; // Pole on or outside unit circle
                 }
 
-                if (std::abs(b.a1) > (1.0f + b.a2 + 1e-6f))
+                if (std::abs(b.a1) > (1.0F + b.a2 + kSchurCohnTolerance))
                 {
                     return false; // Poles outside unit circle (Schur-Cohn condition)
                 }
@@ -259,17 +283,17 @@ namespace AdaptiveSound
                 // |b1/b0|<1+(b2/b0). A correctly designed RBJ peaking filter always
                 // satisfies this in exact arithmetic; failure indicates float precision
                 // degradation (extreme Q near Nyquist or high gain).
-                if (std::abs(b.b0) < 1e-6f)
+                if (std::abs(b.b0) < kSchurCohnTolerance)
                 {
                     return false; // degenerate numerator — cannot monic-normalize
                 }
                 const float nb1 = b.b1 / b.b0; // monic-normalized numerator coefficients
                 const float nb2 = b.b2 / b.b0;
-                if (std::abs(nb2) >= 1.0f)
+                if (std::abs(nb2) >= 1.0F)
                 {
                     return false; // numerator zero on or outside unit circle
                 }
-                if (std::abs(nb1) > (1.0f + nb2 + 1e-6f))
+                if (std::abs(nb1) > (1.0F + nb2 + kSchurCohnTolerance))
                 {
                     return false; // numerator zeros outside unit circle (Schur-Cohn on numerator)
                 }
