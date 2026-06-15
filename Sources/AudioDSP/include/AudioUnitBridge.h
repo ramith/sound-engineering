@@ -26,6 +26,9 @@ namespace AdaptiveSound
 
 /// C interface for Audio Unit creation and parameter control.
 /// Exposed to Swift via module map or bridging header.
+///
+/// Device enumeration functions (CDeviceInfo, enumerateOutputDevicesC, etc.)
+/// live in DeviceBridge.h — a pure-C header safe for Swift bridging.
 
 #ifdef __cplusplus
 extern "C"

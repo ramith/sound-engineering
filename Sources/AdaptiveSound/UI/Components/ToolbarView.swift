@@ -88,7 +88,7 @@ private struct DevicePillView: View {
             .padding(.vertical, 6)
             .frame(minWidth: 160, minHeight: 32, alignment: .leading)
             .background(Color.asCard)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(.rect(cornerRadius: 8, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.asHairline, lineWidth: 0.5)
@@ -152,7 +152,7 @@ private struct VolumeControlView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Color.asCard)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(.rect(cornerRadius: 8, style: .continuous))
         .frame(minHeight: 44)
     }
 }

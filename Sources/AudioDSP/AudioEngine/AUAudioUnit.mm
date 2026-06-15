@@ -1,9 +1,12 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AudioConstants.h"
-#include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement
+#include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement for AU functions
+#include "../include/CoreAudioDevice.h"
+#include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
+#include <cstring>
 #include <memory>
 
 using namespace AdaptiveSound;
@@ -69,6 +72,8 @@ namespace
                                       AudioBufferList* out,
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
+        (void)busNum;   // required by AURenderBlock typedef; not used by this in-process AU
+        (void)events;   // MIDI events deferred to Phase 2 MIDI implementation
         if (kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
@@ -118,7 +123,60 @@ namespace
 
 // MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
 
+// Helper: map C++ AudioDevice::Type to the uint8_t used in CDeviceInfo
+static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type t) {
+    switch (t) {
+    case AdaptiveSound::AudioDevice::Type::Builtin:  return 1U;
+    case AdaptiveSound::AudioDevice::Type::USB:       return 2U;
+    case AdaptiveSound::AudioDevice::Type::Wireless:  return 3U;
+    default:                                           return 0U;
+    }
+}
+
 extern "C" {
+
+// MARK: Device enumeration
+
+uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) {
+    if (outDevices == nullptr || maxCount == 0) {
+        return 0;
+    }
+
+    auto devices = AdaptiveSound::CoreAudioDevice::enumerateOutputDevices();
+    uint32_t written = 0;
+
+    for (const auto& dev : devices) {
+        if (written >= maxCount) { break; }
+
+        CDeviceInfo& out = outDevices[written];
+        out.deviceID        = dev.id;
+        out.sampleRate      = dev.sampleRate;
+        out.bufferFrameSize = dev.bufferFrameSize;
+        out.deviceType      = deviceTypeToByte(dev.type);
+
+        // Safe copy: ensure null-termination even if name is too long.
+        constexpr size_t kNameBufSize = sizeof(out.name);
+        std::strncpy(out.name, dev.name.c_str(), kNameBufSize - 1U);
+        out.name[kNameBufSize - 1U] = '\0';
+
+        ++written;
+    }
+
+    return written;
+}
+
+uint32_t getDefaultOutputDeviceID() {
+    AudioDeviceID id = AdaptiveSound::CoreAudioDevice::getDefaultOutputDevice();
+    // kAudioObjectUnknown == 0 on all Apple platforms; return 0 to signal "none".
+    return (id == kAudioObjectUnknown) ? 0U : static_cast<uint32_t>(id);
+}
+
+int selectOutputDeviceC(uint32_t deviceID) {
+    if (deviceID == 0) { return 0; }
+    // Verify the device ID resolves to a real device before accepting it.
+    std::string name = AdaptiveSound::CoreAudioDevice::getDeviceName(static_cast<AudioDeviceID>(deviceID));
+    return (name != "Unknown Device" && !name.empty()) ? 1 : 0;
+}
 
 void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) {
     // TODO(future sprint): attach to the provided AVAudioEngine graph (bus/format
