@@ -4,7 +4,6 @@
 #include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
-#include <cstring>
 #include <memory>
 
 using namespace AdaptiveSound;
@@ -58,14 +57,16 @@ namespace
                                       AURenderPullInputBlock pull) {
         if (kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
 
-        AudioBufferList input;
-        if (pull(flags, timestamp, frames, 0, &input) == noErr) {
-            // TODO(#4): memcpy uses input byte size into output buffer; clamp to min in fix
-            for (UInt32 i = 0; i < out->mNumberBuffers && i < input.mNumberBuffers; ++i) {
-                memcpy(out->mBuffers[i].mData, input.mBuffers[i].mData,
-                       input.mBuffers[i].mDataByteSize);
-            }
-        }
+        // Fix #11 + #4: pull input directly into the output buffers (in-place effect),
+        // then process in place. This removes the stack-declared AudioBufferList (which
+        // had storage for only one AudioBuffer — stack corruption for planar/multi-buffer
+        // input, #11) and the memcpy that wrote input-sized bytes into possibly-smaller
+        // output buffers (#4). Assumes the host (AVAudioEngine) provides non-null output
+        // buffer pointers; the null-mData fallback for other hosts/auval belongs with the
+        // deferred AU host integration (#6).
+        OSStatus pullStatus = pull(flags, timestamp, frames, 0, out);
+        if (pullStatus != noErr) { return pullStatus; }
+
         kernel->process(out, frames);
         return noErr;
     };
