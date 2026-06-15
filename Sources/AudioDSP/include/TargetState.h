@@ -55,7 +55,7 @@ namespace AdaptiveSound
     struct LimiterParams
     {
         float truePeakCeilingLinear = kTruePeakCeilingLinear;
-        float lookaheadFrames = kLimiterLookaheadFrames;
+        uint32_t lookaheadFrames = kLimiterLookaheadFrames; // frame count (integer)
         float attackCoeff = 0.F;
         float releaseCoeff = 0.F;
     };
