@@ -244,7 +244,7 @@ OSStatus render(...) {
 }
 ```
 
-✅ **GOOD — pure C++17**
+✅ **GOOD — pure C++23**
 ```cpp
 // Pure C++ only on RT thread
 OSStatus render(const AudioBufferList *buf, ...) {
@@ -352,7 +352,7 @@ Runs automatically on pre-commit. Catches:
 
 **Run manually:**
 ```bash
-clang-tidy Sources/AudioDSP/AudioEngine.cpp -- -std=c++17 -I Sources/AudioDSP/include
+clang-tidy Sources/AudioDSP/EQ/EQModule.mm -- -x objective-c++ -std=gnu++2b -fobjc-arc -fblocks -I Sources/AudioDSP/include
 ```
 
 **Configure rules** in `.clang-tidy` (already set up with audio-safe subset).

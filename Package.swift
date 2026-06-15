@@ -52,8 +52,9 @@ let package = Package(
             ]
         ),
     ],
-    // The C++/Obj-C++ sources use C++17 features (std::array, [[maybe_unused]]);
-    // declare the standard explicitly so the build matches the code (and the
-    // clang-tidy gate, which already runs at gnu++17).
-    cxxLanguageStandard: .gnucxx17
+    // C++23 (GNU dialect, for Apple ObjC++ extensions). Verified on Apple
+    // clang 21 / libc++: std::span, std::mdspan, std::expected, ranges all
+    // available; std::float32_t and std::generator are not yet in Apple libc++.
+    // Kept in sync with the clang-tidy gate (.githooks/pre-commit runs gnu++2b).
+    cxxLanguageStandard: .gnucxx2b
 )
