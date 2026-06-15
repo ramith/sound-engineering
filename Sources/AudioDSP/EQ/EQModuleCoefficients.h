@@ -190,8 +190,10 @@ namespace AdaptiveSound
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
-            // Q factor: wider for larger gains (simple approach)
-            // Q = 1 / (2 * fractional_bandwidth)
+            // Q factor: wider for larger gains (simple Phase-1b heuristic; ~1.4 oct at
+            // 6 dB, ~2.2 oct at 12 dB). Not Nyquist-aware — wide filters near 20 kHz at
+            // 44.1 kHz skew their lower skirt into the audible band. Acceptable for the
+            // greedy fitter; the Realizer's ERB-weighted L-M optimizer will supersede it.
             float Q = 1.0f / (0.5f + std::abs(gainDb) * 0.1f);
 
             float alpha = sinw0 / (2.0f * Q);
@@ -201,7 +203,7 @@ namespace AdaptiveSound
             coeff.b1 = -2.0f * cosw0;
             coeff.b2 = 1.0f - alpha * A;
             coeff.a1 = -2.0f * cosw0;
-            coeff.a2 = 1.0f - alpha;
+            coeff.a2 = 1.0f - alpha / A; // RBJ peaking: a2 = 1 - alpha/A (matched with a0)
 
             // Normalize by a0
             float a0 = 1.0f + alpha / A;
