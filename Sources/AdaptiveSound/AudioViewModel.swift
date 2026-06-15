@@ -132,11 +132,7 @@ final class AudioViewModel {
     var shuffleEnabled = false
 
     /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
-    var repeatMode: Int = 0 {
-        didSet {
-            repeatMode = repeatMode % 3 // Cycle 0 → 1 → 2 → 0
-        }
-    }
+    var repeatMode: Int = 0
 
     let engine: any AudioPlaybackEngine
     private let masterGainParameterID: UInt32 = 0
@@ -393,7 +389,7 @@ final class AudioViewModel {
 
     /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
     func cycleRepeatMode() {
-        repeatMode = (repeatMode + 1) % 3
+        repeatMode = (repeatMode + 1) % 3 // Modulo here, not in didSet (avoids recursive trigger)
     }
 
     // MARK: - Playback
