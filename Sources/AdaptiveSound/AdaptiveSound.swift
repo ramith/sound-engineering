@@ -18,52 +18,21 @@ struct AdaptiveSound: App {
 struct ContentView: View {
     @EnvironmentObject var viewModel: AudioViewModel
     @State private var selectedTab: TabSelection = .nowPlaying
+    @State private var volume: Float = 0.75
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            // Fixed Header (44pt)
-            FixedHeaderView()
+            // Primary Toolbar (60pt): Logo | Device | Tabs | Volume
+            ToolbarView(selectedTab: $selectedTab, volume: $volume)
                 .environmentObject(viewModel)
 
-            // Tab Navigation
-            VStack(spacing: 12) {
-                Picker("Tab Selection", selection: $selectedTab.animation(reduceMotion ? nil : .easeInOut(duration: 0.2))) {
-                    ForEach(TabSelection.allCases, id: \.id) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon)
-                            .tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Tab Navigation")
-                .accessibilityValue(selectedTab.rawValue)
-
-                // Breadcrumb subtitle
-                HStack {
-                    Text(selectedTab.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Color.asLabelSecond)
-                        .transition(.opacity)
-                        .id(selectedTab.id)
-                    Spacer()
-                }
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            // Minimal section header (44pt)
+            FixedHeaderView()
 
             // Tab Content
-            Group {
-                switch selectedTab {
-                case .nowPlaying:
-                    NowPlayingTabView()
-                case .eq:
-                    EQTabView()
-                case .settings:
-                    SettingsTabView()
-                }
-            }
-            .transition(.opacity)
+            tabContent
+                .transition(.opacity)
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(Color.asWindow)
@@ -72,6 +41,18 @@ struct ContentView: View {
         }
         .onDisappear {
             viewModel.shutdown()
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .nowPlaying:
+            NowPlayingTabView()
+        case .eq:
+            EQTabView()
+        case .settings:
+            SettingsTabView()
         }
     }
 }
