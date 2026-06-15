@@ -214,9 +214,13 @@ namespace AdaptiveSound
             return coeff;
         }
 
-        // Validate minimum-phase property by checking group delay
-        // Group delay = -d(phase)/d(omega) should be ≤ 0 for minimum-phase filters
-        // Simplified check: verify poles are inside unit circle and zeros outside
+        // Validate the minimum-phase property.
+        // Minimum-phase: both poles AND zeros must be strictly inside the open unit circle.
+        // Poles: roots of A(z) = 1 + a1*z^-1 + a2*z^-2.  Schur-Cohn: |a2|<1 and |a1|<1+a2.
+        // Zeros: roots of B(z) = b0 + b1*z^-1 + b2*z^-2.  Monic-normalize by b0, then
+        //        Schur-Cohn: |b2/b0|<1 and |b1/b0|<1+(b2/b0).
+        // A correctly computed RBJ peaking filter always passes; a failure indicates
+        // numerical precision degradation (extreme Q near Nyquist or very high gain).
         static bool
         validateMinimumPhase(const std::array<EQParams::BiquadCoeffs, kMaxBiquads>& biquads,
                              int numBiquads,
@@ -246,6 +250,26 @@ namespace AdaptiveSound
                     !std::isfinite(b.a1) || !std::isfinite(b.a2))
                 {
                     return false;
+                }
+
+                // Minimum-phase: numerator zeros must also be inside the unit circle.
+                // Apply Schur-Cohn to monic B(z): divide by b0, test |b2/b0|<1 and
+                // |b1/b0|<1+(b2/b0). A correctly designed RBJ peaking filter always
+                // satisfies this in exact arithmetic; failure indicates float precision
+                // degradation (extreme Q near Nyquist or high gain).
+                if (std::abs(b.b0) < 1e-6f)
+                {
+                    return false; // degenerate numerator — cannot monic-normalize
+                }
+                const float nb1 = b.b1 / b.b0; // monic-normalized numerator coefficients
+                const float nb2 = b.b2 / b.b0;
+                if (std::abs(nb2) >= 1.0f)
+                {
+                    return false; // numerator zero on or outside unit circle
+                }
+                if (std::abs(nb1) > (1.0f + nb2 + 1e-6f))
+                {
+                    return false; // numerator zeros outside unit circle (Schur-Cohn on numerator)
                 }
             }
 
