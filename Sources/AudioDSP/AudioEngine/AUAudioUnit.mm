@@ -17,7 +17,7 @@ namespace
 } // namespace
 
 @interface AdaptiveSoundAU : AUAudioUnit {
-    std::unique_ptr<DSPKernel> _kernel;
+    std::shared_ptr<DSPKernel> _kernel;
     AUInternalRenderBlock _renderBlock;
     uint32_t _sampleRate;   // captured at creation, applied in initialize
     uint32_t _bufferFrames; // captured at creation, applied in initialize
@@ -40,10 +40,15 @@ namespace
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
     if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
 
-    _kernel = std::make_unique<DSPKernel>();
+    _kernel = std::make_shared<DSPKernel>();
     _kernel->initialize(_sampleRate, _bufferFrames);
 
-    AdaptiveSoundAU *__weak weakSelf = self;
+    // Capture the kernel by value (shared_ptr copy) so the render block never touches
+    // `self` nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime
+    // calls (objc_loadWeakRetained) on the RT path (issue #7). The block co-owns the
+    // kernel, so it stays alive for the block's lifetime; the shared_ptr copy and destroy
+    // happen off-RT (at block creation / teardown), never during render.
+    std::shared_ptr<DSPKernel> kernel = _kernel;
     _renderBlock = ^AUAudioUnitStatus(AudioUnitRenderActionFlags* flags,
                                       const AudioTimeStamp* timestamp,
                                       AUAudioFrameCount frames,
@@ -51,8 +56,7 @@ namespace
                                       AudioBufferList* out,
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
-        AdaptiveSoundAU *strongSelf = weakSelf;
-        if (strongSelf == nil || strongSelf->_kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
+        if (kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
 
         AudioBufferList input;
         if (pull(flags, timestamp, frames, 0, &input) == noErr) {
@@ -62,7 +66,7 @@ namespace
                        input.mBuffers[i].mDataByteSize);
             }
         }
-        strongSelf->_kernel->process(out, frames);
+        kernel->process(out, frames);
         return noErr;
     };
     return YES;
