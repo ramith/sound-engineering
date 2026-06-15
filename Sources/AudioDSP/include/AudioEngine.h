@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AudioConstants.h"
+#include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
@@ -21,10 +23,14 @@ namespace AdaptiveSound
     class ControlMessageRing
     {
       public:
-        static constexpr size_t CAPACITY = 16;
+        static constexpr size_t kCapacity = 16;
 
         explicit ControlMessageRing();
-        ~ControlMessageRing();
+        ~ControlMessageRing() = default;
+        ControlMessageRing(const ControlMessageRing&) = delete;
+        ControlMessageRing& operator=(const ControlMessageRing&) = delete;
+        ControlMessageRing(ControlMessageRing&&) = delete;
+        ControlMessageRing& operator=(ControlMessageRing&&) = delete;
 
         bool tryPush(const DeviceChangeMessage& msg);
         bool tryPop(DeviceChangeMessage& msg);
@@ -32,7 +38,7 @@ namespace AdaptiveSound
       private:
         struct
         {
-            DeviceChangeMessage messages[CAPACITY];
+            std::array<DeviceChangeMessage, kCapacity> messages{};
             std::atomic<size_t> writeIndex{0};
             std::atomic<size_t> readIndex{0};
         } ring_;
@@ -42,16 +48,20 @@ namespace AdaptiveSound
     class AudioEngine
     {
       public:
-        static constexpr uint32_t DEFAULT_SAMPLE_RATE = 48000;
-        static constexpr uint32_t DEFAULT_BUFFER_FRAMES = 512;
-        static constexpr uint32_t MAX_BUFFER_FRAMES = 4096;
-        static constexpr uint32_t MAX_CHANNELS = 2;
+        static constexpr uint32_t kDefaultSampleRate = AdaptiveSound::kDefaultSampleRate;
+        static constexpr uint32_t kDefaultBufferFrames = AdaptiveSound::kDefaultMaxFrames;
+        static constexpr uint32_t kMaxBufferFrames = 4096;
+        static constexpr uint32_t kMaxChannels = 2;
 
         AudioEngine();
         ~AudioEngine();
+        AudioEngine(const AudioEngine&) = delete;
+        AudioEngine& operator=(const AudioEngine&) = delete;
+        AudioEngine(AudioEngine&&) = delete;
+        AudioEngine& operator=(AudioEngine&&) = delete;
 
         // Lifecycle
-        bool initialize(uint32_t preferredBufferFrames = DEFAULT_BUFFER_FRAMES);
+        bool initialize(uint32_t preferredBufferFrames = kDefaultBufferFrames);
         void shutdown();
         bool isRunning() const;
 
@@ -75,27 +85,23 @@ namespace AdaptiveSound
         static void onDeviceChanged(AudioDeviceID deviceID, void* context);
 
         // State
-        void* outputUnit_; // AVAudioEngine* (opaque to C++ header)
-        void* outputBus_;  // AUAudioUnitBus* (opaque to C++ header)
-        AudioStreamBasicDescription streamFormat_;
+        void* outputUnit_ = nullptr; // AVAudioEngine* (opaque to C++ header)
+        void* outputBus_ = nullptr;  // AUAudioUnitBus* (opaque to C++ header)
+        AudioStreamBasicDescription streamFormat_{};
         std::atomic<bool> isRunning_{false};
 
         // Device state
         std::atomic<AudioDeviceID> currentDeviceID_{kAudioObjectUnknown};
         std::atomic<AudioDeviceID> pendingDeviceID_{kAudioObjectUnknown};
-        uint32_t sampleRate_;
-        uint32_t bufferFrameSize_;
+        uint32_t sampleRate_ = kDefaultSampleRate;
+        uint32_t bufferFrameSize_ = kDefaultBufferFrames;
 
         // Pre-allocated RT buffers
-        std::vector<float> workBuffer_; // Sized to MAX_BUFFER_FRAMES × MAX_CHANNELS
+        std::vector<float> workBuffer_; // Sized to kMaxBufferFrames × kMaxChannels
         std::vector<float> filterState_;
 
         // Control messaging (lock-free)
         std::unique_ptr<ControlMessageRing> deviceChangeRing_;
-
-        // Non-copyable
-        AudioEngine(const AudioEngine&) = delete;
-        AudioEngine& operator=(const AudioEngine&) = delete;
     };
 
 } // namespace AdaptiveSound

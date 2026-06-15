@@ -1,23 +1,25 @@
 #include "AudioEngine.h"
 #include "CoreAudioDevice.h"
-#include <cstring>
+#include <cstdint>
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 #include <dispatch/dispatch.h>
 
 namespace AdaptiveSound {
 
+// control-plane logging only (init/shutdown/device-change); never on the RT audio
+// thread; fprintf varargs acceptable here. RT TUs keep the check.
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
+
 // MARK: - ControlMessageRing Implementation
 
 ControlMessageRing::ControlMessageRing() {
-    // Already zero-initialized via in-class initializer
+    // Already zero-initialized via in-class initializers
 }
-
-ControlMessageRing::~ControlMessageRing() = default;
 
 bool ControlMessageRing::tryPush(const DeviceChangeMessage& msg) {
     size_t writeIdx = ring_.writeIndex.load(std::memory_order_acquire);
-    size_t nextIdx = (writeIdx + 1) % CAPACITY;
+    size_t nextIdx = (writeIdx + 1) % kCapacity;
     size_t readIdx = ring_.readIndex.load(std::memory_order_acquire);
 
     if (nextIdx == readIdx) {
@@ -38,19 +40,15 @@ bool ControlMessageRing::tryPop(DeviceChangeMessage& msg) {
     }
 
     msg = ring_.messages[readIdx];
-    ring_.readIndex.store((readIdx + 1) % CAPACITY, std::memory_order_release);
+    ring_.readIndex.store((readIdx + 1) % kCapacity, std::memory_order_release);
     return true;
 }
 
 // MARK: - AudioEngine Implementation
 
 AudioEngine::AudioEngine()
-    : outputUnit_(nullptr),
-      outputBus_(nullptr),
-      sampleRate_(DEFAULT_SAMPLE_RATE),
-      bufferFrameSize_(DEFAULT_BUFFER_FRAMES),
-      deviceChangeRing_(std::make_unique<ControlMessageRing>()) {
-    std::memset(&streamFormat_, 0, sizeof(streamFormat_));
+    : deviceChangeRing_(std::make_unique<ControlMessageRing>()) {
+    // All other members use in-class default member initializers.
 }
 
 AudioEngine::~AudioEngine() {
@@ -67,7 +65,7 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
     @autoreleasepool {
         // Create AVAudioEngine
         AVAudioEngine* engine = [[AVAudioEngine alloc] init];
-        if (!engine) {
+        if (engine == nullptr) {
             fprintf(stderr, "[AudioEngine] Failed to create AVAudioEngine\n");
             return false;
         }
@@ -91,13 +89,15 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
         outputUnit_ = (__bridge_retained void*)engine;
 
         // Set up audio format
+        static constexpr UInt32 kBitsPerFloatSample = 32;
+        static constexpr UInt32 kBitsPerByte = 8;
         AudioStreamBasicDescription asbd;
         asbd.mSampleRate = sampleRate_;
         asbd.mFormatID = kAudioFormatLinearPCM;
         asbd.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-        asbd.mBitsPerChannel = 32;
-        asbd.mChannelsPerFrame = 2;
-        asbd.mBytesPerFrame = asbd.mChannelsPerFrame * asbd.mBitsPerChannel / 8;
+        asbd.mBitsPerChannel = kBitsPerFloatSample;
+        asbd.mChannelsPerFrame = kMaxChannels;
+        asbd.mBytesPerFrame = asbd.mChannelsPerFrame * asbd.mBitsPerChannel / kBitsPerByte;
         asbd.mBytesPerPacket = asbd.mBytesPerFrame;
         asbd.mFramesPerPacket = 1;
         asbd.mReserved = 0;
@@ -107,7 +107,7 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
         // Start the audio engine
         NSError* error = nil;
         [engine startAndReturnError:&error];
-        if (error) {
+        if (error != nil) {
             fprintf(stderr, "[AudioEngine] Failed to start audio engine: %s\n",
                     error.description.UTF8String);
             // Release the engine via bridge transfer (cleanup on error)
@@ -117,9 +117,9 @@ bool AudioEngine::initialize(uint32_t preferredBufferFrames) {
         }
 
         // Pre-allocate buffers (RT-safe)
-        size_t bufferSamples = MAX_BUFFER_FRAMES * MAX_CHANNELS;
-        workBuffer_.resize(bufferSamples, 0.0f);
-        filterState_.resize(MAX_CHANNELS * 2, 0.0f);  // bi-quad state per channel
+        size_t bufferSamples = static_cast<size_t>(kMaxBufferFrames) * kMaxChannels;
+        workBuffer_.resize(bufferSamples, 0.0F);
+        filterState_.resize(static_cast<size_t>(kMaxChannels) * 2, 0.0F);  // bi-quad state per channel
 
         // Register device change listener (called off-RT)
         CoreAudioDevice::addDefaultDeviceListener(AudioEngine::onDeviceChanged, this);
@@ -144,7 +144,7 @@ void AudioEngine::shutdown() {
     CoreAudioDevice::removeDefaultDeviceListener();
 
     @autoreleasepool {
-        if (outputUnit_) {
+        if (outputUnit_ != nullptr) {
             AVAudioEngine* engine = (__bridge_transfer AVAudioEngine*)outputUnit_;
             [engine stop];
             engine = nil;  // Bridge transfer releases it
@@ -161,9 +161,11 @@ bool AudioEngine::isRunning() const {
     return isRunning_.load(std::memory_order_acquire);
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static) -- instance API; future impls will read member device state.
 std::vector<std::string> AudioEngine::getOutputDeviceNames() const {
     std::vector<std::string> names;
     auto devices = CoreAudioDevice::enumerateOutputDevices();
+    names.reserve(devices.size());
     for (const auto& device : devices) {
         names.push_back(device.name);
     }
@@ -181,7 +183,7 @@ bool AudioEngine::selectOutputDevice(AudioDeviceID deviceID) {
     }
 
     // Enqueue device change for RT thread to apply
-    DeviceChangeMessage msg;
+    DeviceChangeMessage msg{};
     msg.deviceID = deviceID;
     msg.timestamp = 0;
 
@@ -214,14 +216,14 @@ bool AudioEngine::queryDeviceProperties(AudioDeviceID deviceID) {
 // MARK: - Device Listener Callback
 
 void AudioEngine::onDeviceChanged(AudioDeviceID deviceID, void* context) {
-    if (!context) {
+    if (context == nullptr) {
         return;
     }
 
     AudioEngine* self = static_cast<AudioEngine*>(context);
 
     // Enqueue device change for RT thread to process
-    DeviceChangeMessage msg;
+    DeviceChangeMessage msg{};
     msg.deviceID = deviceID;
     msg.timestamp = 0;
 
@@ -231,5 +233,7 @@ void AudioEngine::onDeviceChanged(AudioDeviceID deviceID, void* context) {
         fprintf(stderr, "[AudioEngine] Device change enqueued: %u\n", deviceID);
     }
 }
+
+// NOLINTEND(cppcoreguidelines-pro-type-vararg)
 
 }  // namespace AdaptiveSound
