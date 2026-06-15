@@ -2,8 +2,8 @@
 
 disabled_rules:
   - trailing_comma
-  - operator_whitespace
-  - redundant_optional_initialization
+  - function_name_whitespace
+  - implicit_optional_initialization
 
 opt_in_rules:
   - force_unwrapping

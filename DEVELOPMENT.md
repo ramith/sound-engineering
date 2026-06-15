@@ -56,12 +56,18 @@ Both formatters run automatically on save in VS Code and are enforced via pre-co
 
 ### Pre-Commit Hooks
 
-Git hooks automatically:
-1. **Format** staged C++/Swift files before commit
-2. **Lint** C++ files with clang-tidy (failures block commit)
-3. **Validate** no obvious errors slip through
+The hook lives in version control at `.githooks/pre-commit`. Activate it once per clone:
 
-All checks run on `git commit`. No need to run manually unless debugging.
+```bash
+git config core.hooksPath .githooks
+```
+
+It then runs automatically on `git commit` and:
+1. **Formats** staged Swift/C++/Obj-C++ files (swiftformat, clang-format) and re-stages them
+2. **Lints** staged Swift with swiftlint — error-severity violations block the commit
+3. **Static-analyses** staged C++ with clang-tidy — failures block the commit (gracefully skipped with a warning if clang-tidy is not installed)
+
+Bypass once (not recommended): `git commit --no-verify`. No need to run manually unless debugging.
 
 ---
 

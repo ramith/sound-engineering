@@ -1,6 +1,7 @@
 #ifndef DSP_KERNEL_H
 #define DSP_KERNEL_H
 
+#include "AudioConstants.h"
 #include "DoubleBufferSnapshot.h"
 #include "TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
@@ -23,6 +24,11 @@ namespace AdaptiveSound
         DSPKernel();
         ~DSPKernel();
 
+        DSPKernel(const DSPKernel&) = delete;
+        DSPKernel& operator=(const DSPKernel&) = delete;
+        DSPKernel(DSPKernel&&) = delete;
+        DSPKernel& operator=(DSPKernel&&) = delete;
+
         // Initialize with sample rate and buffer frame size
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
 
@@ -36,8 +42,8 @@ namespace AdaptiveSound
         }
 
       private:
-        uint32_t sampleRate_ = 48000;
-        uint32_t maxFrames_ = 512;
+        uint32_t sampleRate_ = kDefaultSampleRate;
+        uint32_t maxFrames_ = kDefaultMaxFrames;
 
         // 5-module signal chain
         std::unique_ptr<EQModule> eqModule_;

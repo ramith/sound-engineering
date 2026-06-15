@@ -56,8 +56,8 @@ struct FrequencyResponseGraphView: View {
 
                     // Draw grid lines (log frequency scale)
                     var gridPath = Path()
-                    for i in 0 ..< bandGains.count {
-                        let xPos = graphInsetX + (Double(i) / Double(bandGains.count - 1)) * graphWidth
+                    for index in 0 ..< bandGains.count {
+                        let xPos = graphInsetX + (Double(index) / Double(bandGains.count - 1)) * graphWidth
                         gridPath.move(to: CGPoint(x: xPos, y: graphInsetY))
                         gridPath.addLine(to: CGPoint(x: xPos, y: graphInsetY + graphHeight))
                     }
@@ -75,13 +75,13 @@ struct FrequencyResponseGraphView: View {
 
                     // Draw curve
                     var curvePath = Path()
-                    for i in 0 ..< bandGains.count {
-                        let xPos = graphInsetX + (Double(i) / Double(bandGains.count - 1)) * graphWidth
+                    for index in 0 ..< bandGains.count {
+                        let xPos = graphInsetX + (Double(index) / Double(bandGains.count - 1)) * graphWidth
                         // Map dB value (-20 to +12) to vertical position
-                        let gainNormalized = Double(bandGains[i]) / 16.0 // Use 16 as mid-range
+                        let gainNormalized = Double(bandGains[index]) / 16.0 // Use 16 as mid-range
                         let yPos = centerY - gainNormalized * (graphHeight / 2.0)
 
-                        if i == 0 {
+                        if index == 0 {
                             curvePath.move(to: CGPoint(x: xPos, y: yPos))
                         } else {
                             curvePath.addLine(to: CGPoint(x: xPos, y: yPos))
@@ -97,11 +97,16 @@ struct FrequencyResponseGraphView: View {
                     // Draw circle indicators
                     let circleRadius = 2.0
                     var circlePath = Path()
-                    for i in 0 ..< bandGains.count {
-                        let xPos = graphInsetX + (Double(i) / Double(bandGains.count - 1)) * graphWidth
-                        let gainNormalized = Double(bandGains[i]) / 16.0
+                    for index in 0 ..< bandGains.count {
+                        let xPos = graphInsetX + (Double(index) / Double(bandGains.count - 1)) * graphWidth
+                        let gainNormalized = Double(bandGains[index]) / 16.0
                         let yPos = centerY - gainNormalized * (graphHeight / 2.0)
-                        circlePath.addEllipse(in: CGRect(x: xPos - circleRadius / 2.0, y: yPos - circleRadius / 2.0, width: circleRadius, height: circleRadius))
+                        circlePath.addEllipse(in: CGRect(
+                            x: xPos - circleRadius / 2.0,
+                            y: yPos - circleRadius / 2.0,
+                            width: circleRadius,
+                            height: circleRadius
+                        ))
                     }
                     context.fill(circlePath, with: .color(.asAccent))
                 }

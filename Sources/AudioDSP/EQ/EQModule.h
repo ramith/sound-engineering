@@ -1,5 +1,6 @@
 #ifndef EQ_MODULE_H
 #define EQ_MODULE_H
+#include "../include/AudioConstants.h"
 #include "../include/TargetState.h"
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
@@ -14,8 +15,13 @@ namespace AdaptiveSound
         EQModule() = default;
         ~EQModule();
 
+        EQModule(const EQModule&) = delete;
+        EQModule& operator=(const EQModule&) = delete;
+        EQModule(EQModule&&) = delete;
+        EQModule& operator=(EQModule&&) = delete;
+
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
-        void process(const EQParams&, AudioBufferList*, uint32_t) noexcept;
+        void process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept;
 
       private:
         // Pre-allocated delay state for vDSP_biquad processing
@@ -28,8 +34,8 @@ namespace AdaptiveSound
         // Cached coefficient array for vDSP (5 coeffs per stage × kMaxBiquads)
         std::vector<double> cascadeCoeffs_;
 
-        uint32_t sampleRate_ = 48000;
-        uint32_t maxFrames_ = 512;
+        uint32_t sampleRate_ = kDefaultSampleRate;
+        uint32_t maxFrames_ = kDefaultMaxFrames;
     };
 
 } // namespace AdaptiveSound

@@ -358,7 +358,10 @@ struct FrequencyResponseCanvas: View {
                 }
         )
         .accessibilityLabel("Frequency Response Curve")
-        .accessibilityValue("EQ Preset: \(isCustomized ? "Custom" : currentPreset.displayName), Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")")
+        .accessibilityValue(
+            "EQ Preset: \(isCustomized ? "Custom" : currentPreset.displayName), "
+                + "Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")"
+        )
         .accessibilityHint("Interactive frequency response visualization with 31 ISO 1/3-octave bands from 20Hz to 20kHz. Click or drag to adjust.")
     }
 

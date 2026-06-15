@@ -364,17 +364,18 @@ class AudioEngineBridge {
 
         // Build angle array: angle[i] = phaseIncrement * i
         var angles = [Float](repeating: 0, count: Int(frameCount))
-        for i in 0 ..< Int(frameCount) {
-            angles[i] = phaseIncrement * Float(i)
+        for sampleIndex in 0 ..< Int(frameCount) {
+            angles[sampleIndex] = phaseIncrement * Float(sampleIndex)
         }
 
         // Compute sine using vForce.sin (Accelerate, vectorised single-precision)
         let sineValues = vForce.sin(angles)
         sineValues.withUnsafeBufferPointer { src in
+            guard let srcBase = src.baseAddress else { return }
             UnsafeMutableBufferPointer(start: floatData, count: Int(frameCount))
                 .baseAddress
                 .map { dst in
-                    cblas_scopy(Int32(frameCount), src.baseAddress!, 1, dst, 1)
+                    cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
                 }
         }
 
