@@ -3,8 +3,8 @@
 #include "../include/AudioConstants.h"
 #include "../include/TargetState.h"
 #include <array>
+#include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
-#include <vector>
 
 namespace AdaptiveSound
 {
@@ -21,27 +21,48 @@ namespace AdaptiveSound
         EQModule& operator=(EQModule&&) = delete;
 
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
+
+        // Off-RT: pack coefficients and build a new vDSP setup, published to the RT
+        // thread via the lock-free setup double-buffer. Call when EQParams change.
+        //
+        // PRECONDITION (load-bearing): SINGLE producer. This must be called from exactly
+        // one control thread (today: only DSPKernel::publishTargetState, driven by the
+        // single Realizer/control path) and NEVER from the render thread. It is not
+        // safe for concurrent callers: cascadeCoeffs_ and the publish handoff are
+        // unsynchronized on the producer side. If a second publisher is ever introduced,
+        // serialize this with an off-RT mutex around the pack+publish (off-RT only).
+        // (issue #3)
+        void publishCoefficients(const EQParams& params) noexcept;
+
+        // RT: adopt any pending setup (atomic swap, no alloc) and run the cascade.
         void process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept;
 
       private:
-        // Per-channel delay state for the vDSP_biquad cascade.
-        // vDSP requires 2*M + 2 floats for an M-section cascade; size for the max
-        // cascade (kMaxBiquads). One independent, non-overlapping buffer per channel
-        // (L/R must not share state). Zero-initialized, persists across process()
-        // calls (this IS the filter memory). std::array => no heap, RT-safe.
+        // Per-channel delay state for the vDSP_biquad cascade (issue #2).
+        // vDSP needs 2*M + 2 floats for an M-section cascade; the cascade is a fixed
+        // kMaxBiquads sections (inactive sections are identity-padded), so size for that.
+        // Independent, non-overlapping per channel; zero-initialized; persists across
+        // process() calls (this IS the filter memory). std::array => no heap, RT-safe.
         static constexpr size_t kDelayStateSize = (2 * static_cast<size_t>(kMaxBiquads)) + 2;
         std::array<float, kDelayStateSize> leftDelay_{};
         std::array<float, kDelayStateSize> rightDelay_{};
 
-        // Section count of the last processed cascade; when it changes, the delay
-        // state is structurally mismatched and must be re-zeroed.
-        uint8_t cachedNumBiquads_ = 0;
+        // Double-buffered vDSP_biquad_Setup (opaque void*) for RT-safe coefficient
+        // updates without create/destroy on the audio thread (issue #3):
+        //  - publishCoefficients() (off-RT) creates a new setup into pendingSetup_.
+        //  - process() (RT) atomically swaps pendingSetup_ -> activeSetup_ and deposits
+        //    the displaced setup into toReleaseSetup_ (no free on the RT thread).
+        //  - publishCoefficients() / the destructor (off-RT) destroy released setups.
+        // Pointer-width atomics are lock-free on arm64 (asserted in the .mm).
+        std::atomic<void*> activeSetup_{nullptr};    // RT runs this
+        std::atomic<void*> pendingSetup_{nullptr};   // off-RT publishes, RT adopts
+        std::atomic<void*> toReleaseSetup_{nullptr}; // RT deposits old, off-RT destroys
 
-        // vDSP_biquad_Setup opaque pointer (defined in Accelerate framework)
-        void* cascadeSetup_ = nullptr;
-
-        // Cached coefficient array for vDSP (5 coeffs per stage × kMaxBiquads)
-        std::vector<double> cascadeCoeffs_;
+        // Coefficient scratch (kCoeffsPerBiquad per section x kMaxBiquads).
+        // Off-RT use only (initialize / publishCoefficients).
+        static constexpr size_t kSetupCoeffCount =
+            static_cast<size_t>(kMaxBiquads) * static_cast<size_t>(kCoeffsPerBiquad);
+        std::array<double, kSetupCoeffCount> cascadeCoeffs_{};
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;

@@ -35,11 +35,9 @@ namespace AdaptiveSound
         // Process audio buffer with current parameter snapshot
         void process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept;
 
-        // Publish new parameter state from off-RT thread
-        void publishTargetState(const TargetState& newState) noexcept
-        {
-            targetStateSnapshot_.publish(newState);
-        }
+        // Publish new parameter state from the off-RT (control/Realizer) thread.
+        // Builds the EQ vDSP setup off-RT (issue #3) before publishing the snapshot.
+        void publishTargetState(const TargetState& newState) noexcept;
 
       private:
         uint32_t sampleRate_ = kDefaultSampleRate;

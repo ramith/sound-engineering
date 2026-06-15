@@ -1,16 +1,31 @@
 #include "EQModule.h"
 #include <Accelerate/Accelerate.h>
-#include <cstring>
 
 namespace AdaptiveSound
 {
 
+// Pointer-width atomics must be lock-free for the RT setup swap to be wait-free.
+static_assert(std::atomic<void*>::is_always_lock_free,
+              "EQModule requires lock-free pointer atomics for RT-safe setup swaps");
+
+namespace
+{
+    // Destroy a setup held in an atomic slot, if any (off-RT only).
+    void destroySlot(std::atomic<void*>& slot) noexcept
+    {
+        void* setupPtr = slot.exchange(nullptr, std::memory_order_acq_rel);
+        if (setupPtr != nullptr) {
+            vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(setupPtr));
+        }
+    }
+} // namespace
+
 EQModule::~EQModule()
 {
-    // Destroy the cascade setup if it exists
-    if (cascadeSetup_ != nullptr) {
-        vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(cascadeSetup_));
-    }
+    // Destructor runs off-RT; drain every slot and free any live setup.
+    destroySlot(activeSetup_);
+    destroySlot(pendingSetup_);
+    destroySlot(toReleaseSetup_);
 }
 
 void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
@@ -18,32 +33,101 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     sampleRate_ = sampleRate;
     maxFrames_ = maxFrames;
 
-    // Reset per-channel delay state (also zero-initialized in the header; re-zero
-    // here so a second initialize() — e.g. on sample-rate change — starts clean).
+    // Reset per-channel delay state (issue #2).
     leftDelay_.fill(0.0F);
     rightDelay_.fill(0.0F);
-    cachedNumBiquads_ = 0;
 
-    // Pre-allocate coefficient array for cascade (5 coeffs per stage)
-    cascadeCoeffs_.resize(static_cast<size_t>(kMaxBiquads) * kCoeffsPerBiquad, 0.0);
+    // Seed coefficients to an all-identity cascade (b0=1, rest 0 per section).
+    cascadeCoeffs_.fill(0.0);
+    for (size_t i = 0; i < static_cast<size_t>(kMaxBiquads); ++i) {
+        cascadeCoeffs_[i * kCoeffsPerBiquad] = 1.0; // b0
+    }
+
+    // Create the initial (identity) setup once, off-RT. Until publishCoefficients()
+    // supplies real coefficients, the cascade passes audio through unchanged.
+    destroySlot(activeSetup_);
+    vDSP_biquad_Setup setup =
+        vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
+    activeSetup_.store(static_cast<void*>(setup), std::memory_order_release);
+}
+
+void EQModule::publishCoefficients(const EQParams& params) noexcept
+{
+    // OFF-RT ONLY. Pack the active sections, identity-pad the rest, build a new
+    // fixed-size (kMaxBiquads) setup, and hand it to the RT thread via pendingSetup_.
+    const size_t numActive =
+        std::min(static_cast<size_t>(params.numBiquads), static_cast<size_t>(kMaxBiquads));
+
+    for (size_t i = 0; i < numActive; ++i) {
+        const auto& coeffs = params.biquads[i];
+        const size_t offset = i * kCoeffsPerBiquad;
+        cascadeCoeffs_[offset + 0] = static_cast<double>(coeffs.b0);
+        cascadeCoeffs_[offset + 1] = static_cast<double>(coeffs.b1);
+        cascadeCoeffs_[offset + 2] = static_cast<double>(coeffs.b2);
+        cascadeCoeffs_[offset + 3] = static_cast<double>(coeffs.a1);
+        cascadeCoeffs_[offset + 4] = static_cast<double>(coeffs.a2);
+    }
+    for (size_t i = numActive; i < static_cast<size_t>(kMaxBiquads); ++i) {
+        const size_t offset = i * kCoeffsPerBiquad;
+        cascadeCoeffs_[offset + 0] = 1.0; // identity: b0=1
+        cascadeCoeffs_[offset + 1] = 0.0;
+        cascadeCoeffs_[offset + 2] = 0.0;
+        cascadeCoeffs_[offset + 3] = 0.0;
+        cascadeCoeffs_[offset + 4] = 0.0;
+    }
+
+    vDSP_biquad_Setup newSetup =
+        vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
+    if (newSetup == nullptr) {
+        return; // Accelerate failure — keep the existing setup running.
+    }
+
+    // Publish. If a prior pending setup was never consumed by the RT thread
+    // (two updates before one render), destroy the unclaimed one here (off-RT).
+    void* unclaimed = pendingSetup_.exchange(static_cast<void*>(newSetup), std::memory_order_acq_rel);
+    if (unclaimed != nullptr) {
+        vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(unclaimed));
+    }
+
+    // Drain any setup the RT thread retired into toReleaseSetup_ and free it here.
+    destroySlot(toReleaseSetup_);
 }
 
 void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
 {
-    if (ioData == nullptr || frameCount == 0 || params.numBiquads == 0) {
+    if (ioData == nullptr || frameCount == 0) {
         return;
     }
 
-    // Only process first 2 channels (stereo)
+    // RT-safe setup adoption: if a new setup was published, swap it in and retire the
+    // old one for off-RT destruction. All operations are lock-free atomics — no alloc,
+    // no free, no lock on the render thread.
+    void* pending = pendingSetup_.exchange(nullptr, std::memory_order_acq_rel);
+    if (pending != nullptr) {
+        void* old = activeSetup_.exchange(pending, std::memory_order_acq_rel);
+        void* orphan = toReleaseSetup_.exchange(old, std::memory_order_acq_rel);
+        // Pathological only (off-RT severely behind): we cannot DestroySetup on the
+        // RT thread, so intentionally leak the orphan rather than free/block here.
+        (void)orphan;
+
+        // Delay state is intentionally PRESERVED across swaps. The cascade is a fixed
+        // kMaxBiquads topology, so the 2*kMaxBiquads+2 delay layout is invariant and the
+        // existing state is valid input to the new coefficients — continuous filter
+        // memory is click-free, whereas re-zeroing would inject a discontinuity on every
+        // EQ change. (Confirmed by audio-dsp-agent + cpp-pro; obsoletes the #2 re-zero,
+        // which only existed because the section count — and thus the layout — varied.)
+    }
+
+    vDSP_biquad_Setup setup = static_cast<vDSP_biquad_Setup>(activeSetup_.load(std::memory_order_acquire));
+    if (setup == nullptr) {
+        return;
+    }
+
+    // Only process the first 2 channels (stereo).
     uint32_t numChannels = ioData->mNumberBuffers > 2 ? 2 : ioData->mNumberBuffers;
-    if (numChannels == 0) {
-        return;
-    }
 
-    // Get pointers to audio data
     float* leftBuffer = nullptr;
     float* rightBuffer = nullptr;
-
     if (numChannels >= 1) {
         leftBuffer = static_cast<float*>(ioData->mBuffers[0].mData);
     }
@@ -51,66 +135,25 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
         rightBuffer = static_cast<float*>(ioData->mBuffers[1].mData);
     }
 
-    // If the cascade section count changed, the persisted delay state belongs to a
-    // different cascade and is structurally mismatched — re-zero it to avoid a click.
-    if (params.numBiquads != cachedNumBiquads_) {
-        leftDelay_.fill(0.0F);
-        rightDelay_.fill(0.0F);
-        cachedNumBiquads_ = params.numBiquads;
-    }
-
-    // Pack coefficients for all active stages into cascadeCoeffs_
-    // vDSP expects: [b0_0, b1_0, b2_0, a1_0, a2_0, b0_1, b1_1, ...]
-    for (size_t i = 0; i < static_cast<size_t>(params.numBiquads) && i < static_cast<size_t>(kMaxBiquads); ++i) {
-        const auto& coeffs = params.biquads[i];
-        size_t offset = i * kCoeffsPerBiquad;
-        cascadeCoeffs_[offset + 0] = coeffs.b0;
-        cascadeCoeffs_[offset + 1] = coeffs.b1;
-        cascadeCoeffs_[offset + 2] = coeffs.b2;
-        cascadeCoeffs_[offset + 3] = coeffs.a1;
-        cascadeCoeffs_[offset + 4] = coeffs.a2;
-    }
-
-    // Create or update cascade setup
-    // Destroy old setup if coefficients changed
-    // TODO(#3): vDSP setup create/destroy on RT thread (malloc/free); fix separately
-    if (cascadeSetup_ != nullptr) {
-        vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(cascadeSetup_));
-        cascadeSetup_ = nullptr;
-    }
-
-    // Create new setup with all active cascade stages
-    vDSP_biquad_Setup setup = vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(params.numBiquads));
-    if (setup == nullptr) {
-        return;  // Setup creation failed, skip processing
-    }
-    cascadeSetup_ = setup;
-
-    // Process each channel through the cascade with its own independent delay state.
+    // Run each channel through the fixed kMaxBiquads-section cascade (identity-padded)
+    // with its own independent delay state.
     if (leftBuffer != nullptr) {
-        vDSP_biquad(setup, leftDelay_.data(),
-                    leftBuffer, 1,
-                    leftBuffer, 1,
-                    frameCount);
+        vDSP_biquad(setup, leftDelay_.data(), leftBuffer, 1, leftBuffer, 1,
+                    static_cast<vDSP_Length>(frameCount));
     }
-
     if (rightBuffer != nullptr) {
-        vDSP_biquad(setup, rightDelay_.data(),
-                    rightBuffer, 1,
-                    rightBuffer, 1,
-                    frameCount);
+        vDSP_biquad(setup, rightDelay_.data(), rightBuffer, 1, rightBuffer, 1,
+                    static_cast<vDSP_Length>(frameCount));
     }
 
-    // Apply master gain scaling (linear amplitude)
+    // Apply master gain scaling (linear amplitude).
     if (params.masterGainLinear != 1.0F) {
         float gain = params.masterGainLinear;
-
         if (leftBuffer != nullptr) {
-            vDSP_vsmul(leftBuffer, 1, &gain, leftBuffer, 1, frameCount);
+            vDSP_vsmul(leftBuffer, 1, &gain, leftBuffer, 1, static_cast<vDSP_Length>(frameCount));
         }
-
         if (rightBuffer != nullptr) {
-            vDSP_vsmul(rightBuffer, 1, &gain, rightBuffer, 1, frameCount);
+            vDSP_vsmul(rightBuffer, 1, &gain, rightBuffer, 1, static_cast<vDSP_Length>(frameCount));
         }
     }
 }
