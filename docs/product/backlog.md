@@ -593,6 +593,27 @@ As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed
 
 ---
 
+#### US-DEVICE-08 — Bluetooth device sample-rate negotiation and auto-adaptation
+
+As a **Marcus** I want the app to detect my Bluetooth device's native sample rate (e.g., 44.1 kHz on AirPods) and automatically adapt to it, rather than forcing 48 kHz resampling on the device, so that I get better battery life and lower latency on wireless headphones.
+
+**Acceptance Criteria:**
+- See FR-DEVICE-01 + new AC: device enumerated; native sample rate detected via CoreAudio property API (kAudioDevicePropertyNominalSampleRate).
+- App offers two options (UI setting or auto-detect default):
+  - **Auto-detect (default):** Use device's native sample rate if available; fallback to 48 kHz if detection fails.
+  - **Force 48 kHz:** User override for devices where native rate causes issues.
+- Status bar displays current sample rate (e.g., "48.0 kHz") and "Resampling" badge if OS is resampling.
+- Sample-rate choice persists per device profile (US-DEVICE-04).
+- Common Bluetooth rates supported: 44.1, 48, 96 kHz (future: 192 kHz in Phase 2).
+- Reference tone (1 kHz) generated at the negotiated sample rate with no audible artifacts.
+- No dropouts or latency increase compared to hardcoded 48 kHz.
+- Manual QA on ≥2 Bluetooth device types (Apple AirPods + one other, e.g., Bose, Beats) verified (NFR-REL-03).
+
+**Priority:** Could | **Phase:** 1.5 | **Estimate:** 3 sp | **Dependencies:** US-DEVICE-01, US-DEVICE-02, US-DEVICE-04
+**Traceability:** FR-DEVICE-01, FR-DEVICE-02, FR-DEVICE-06, NFR-REL-03, NFR-PERF-01
+
+---
+
 ### EP-UI — Now Playing View, Controls Panel, Onboarding, and Accessibility
 
 **Epic goal:** Deliver the full SwiftUI shell — Now Playing view with spectrum analyser, DSP controls panel, first-run onboarding wizard, dark/light mode, VoiceOver, keyboard navigation, and localisation-ready strings.
