@@ -38,7 +38,7 @@ struct FrequencyResponseGraphView: View {
                 .font(BrandFont.sectionLabel)
                 .textCase(.uppercase)
                 .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
+                .foregroundStyle(Color.asLabelTertiary)
 
             ZStack(alignment: .topLeading) {
                 // Background
@@ -115,21 +115,21 @@ struct FrequencyResponseGraphView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("+20 dB")
                         .font(.caption2)
-                        .foregroundColor(.asLabelTertiary)
+                        .foregroundStyle(Color.asLabelTertiary)
                         .frame(height: 20)
 
                     Spacer()
 
                     Text("0 dB")
                         .font(.caption2)
-                        .foregroundColor(.asLabelTertiary)
+                        .foregroundStyle(Color.asLabelTertiary)
                         .frame(height: 20)
 
                     Spacer()
 
                     Text("-20 dB")
                         .font(.caption2)
-                        .foregroundColor(.asLabelTertiary)
+                        .foregroundStyle(Color.asLabelTertiary)
                         .frame(height: 20)
                 }
                 .padding(.leading, 4)
@@ -142,7 +142,7 @@ struct FrequencyResponseGraphView: View {
                         if idx < isoDates.count {
                             Text(isoDates[idx])
                                 .font(.caption2)
-                                .foregroundColor(.asLabelTertiary)
+                                .foregroundStyle(Color.asLabelTertiary)
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
                     }
@@ -168,44 +168,28 @@ struct PresetSelectorView: View {
                 .font(BrandFont.sectionLabel)
                 .textCase(.uppercase)
                 .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
+                .foregroundStyle(Color.asLabelTertiary)
 
             HStack(spacing: 8) {
                 Menu {
                     ForEach(eqViewModel.availablePresets, id: \.self) { presetName in
-                        Button(action: {
-                            eqViewModel.selectPreset(presetName)
-                        }) {
-                            HStack {
+                        Button(action: { eqViewModel.selectPreset(presetName) }) {
+                            if presetName == eqViewModel.selectedPreset {
+                                Label(presetName, systemImage: "checkmark")
+                            } else {
                                 Text(presetName)
-                                if presetName == eqViewModel.selectedPreset {
-                                    Image(systemName: "checkmark")
-                                }
                             }
                         }
                     }
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "waveform.circle.fill")
-                            .foregroundColor(.asAccent)
-                        Text(eqViewModel.selectedPreset)
-                            .font(BrandFont.body)
-                            .foregroundColor(.asLabel)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .foregroundColor(.asLabelSecond)
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background(Color.asCard)
-                    .cornerRadius(8)
+                    Label(eqViewModel.selectedPreset, systemImage: "waveform.circle.fill")
                 }
-                .buttonStyle(.plain)
+                .accessibilityLabel("EQ Preset")
+                .accessibilityValue(eqViewModel.selectedPreset)
 
                 Text(presetDescription(eqViewModel.selectedPreset))
                     .font(.caption)
-                    .foregroundColor(.asLabelSecond)
+                    .foregroundStyle(Color.asLabelSecond)
                     .lineLimit(1)
             }
         }
@@ -242,15 +226,14 @@ struct BandSliderView: View {
             HStack(spacing: 6) {
                 Text(frequency)
                     .font(.caption2)
-                    .foregroundColor(.asLabelTertiary)
+                    .foregroundStyle(Color.asLabelTertiary)
                     .frame(width: 40, alignment: .leading)
 
                 Slider(value: $gain, in: -12 ... 12, step: 0.1)
-                    .tint(.asAccent)
 
                 Text(String(format: "%+.1f", gain))
                     .font(BrandFont.mono)
-                    .foregroundColor(.asLabel)
+                    .foregroundStyle(Color.asLabel)
                     .frame(width: 38, alignment: .trailing)
             }
             .padding(.vertical, 6)
@@ -278,7 +261,7 @@ struct BandSlidersView: View {
                 .font(BrandFont.sectionLabel)
                 .textCase(.uppercase)
                 .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
+                .foregroundStyle(Color.asLabelTertiary)
 
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
@@ -313,18 +296,17 @@ struct BandSliderCardView: View {
             HStack(spacing: 6) {
                 Text(frequency)
                     .font(.caption2)
-                    .foregroundColor(.asLabelTertiary)
+                    .foregroundStyle(Color.asLabelTertiary)
                     .frame(width: 40, alignment: .leading)
 
                 Slider(value: Binding(
                     get: { eqViewModel.bandGains[index] },
                     set: { newValue in eqViewModel.applyBandGain(index, newValue) }
                 ), in: -20 ... 12, step: 0.1)
-                    .tint(.asAccent)
 
                 Text(String(format: "%+.1f", eqViewModel.bandGains[index]))
                     .font(BrandFont.mono)
-                    .foregroundColor(.asLabel)
+                    .foregroundStyle(Color.asLabel)
                     .frame(width: 38, alignment: .trailing)
             }
             .padding(.vertical, 6)
@@ -356,11 +338,11 @@ struct ResponseLabelView: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "waveform.badge.magnifyingglass")
-                .foregroundColor(labelColor)
+                .foregroundStyle(labelColor)
 
             Text("Frequency Response: \(label.capitalized)")
                 .font(BrandFont.body)
-                .foregroundColor(.asLabel)
+                .foregroundStyle(Color.asLabel)
 
             Spacer()
         }

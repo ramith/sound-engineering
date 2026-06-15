@@ -37,26 +37,28 @@ struct AlbumArtAndPlaybackSection: View {
                     .aspectRatio(1, contentMode: .fit)
 
                 Image(systemName: "music.note")
-                    .font(.system(size: 60, weight: .light))
-                    .foregroundColor(.asLabelSecond)
+                    .font(.system(size: 60))
+                    .fontWeight(.light)
+                    .foregroundStyle(Color.asLabelSecond)
             }
             .frame(maxWidth: 400)
 
             // Song Info
             VStack(spacing: 8) {
                 Text("Untitled Track")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.asLabel)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.asLabel)
                     .lineLimit(1)
 
                 Text("Unknown Artist")
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(.asLabelSecond)
+                    .font(.body)
+                    .foregroundStyle(Color.asLabelSecond)
                     .lineLimit(1)
 
                 Text("Unknown Album")
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(.asLabelTertiary)
+                    .font(.body)
+                    .foregroundStyle(Color.asLabelTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .center)
@@ -76,14 +78,14 @@ struct AlbumArtAndPlaybackSection: View {
 
                 HStack {
                     Text("1:23")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(.asLabelSecond)
+                        .font(.callout)
+                        .foregroundStyle(Color.asLabelSecond)
 
                     Spacer()
 
                     Text("3:45")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(.asLabelSecond)
+                        .font(.callout)
+                        .foregroundStyle(Color.asLabelSecond)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -105,8 +107,9 @@ struct SpectrumAnalyzerView: View {
     var body: some View {
         VStack(spacing: 8) {
             Text("Spectrum")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.asLabelTertiary)
+                .font(.callout)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.asLabelTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(alignment: .bottom, spacing: 3) {
@@ -148,8 +151,9 @@ struct DSPDashboardSection: View {
             // Active Modules Section
             VStack(spacing: 12) {
                 Text("ACTIVE MODULES")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.asLabelTertiary)
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.asLabelTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(spacing: 10) {
@@ -168,14 +172,16 @@ struct DSPDashboardSection: View {
             VStack(spacing: 10) {
                 HStack {
                     Text("Master Gain")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.asLabel)
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.asLabel)
 
                     Spacer()
 
                     Text("\(Int(masterGain))%")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.asAccent)
+                        .font(.callout)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.asAccent)
                         .monospacedDigit()
                 }
 
@@ -190,18 +196,18 @@ struct DSPDashboardSection: View {
             // Output Device Info
             VStack(spacing: 8) {
                 Text("OUTPUT DEVICE")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundColor(.asLabelTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Built-in")
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.body)
                             .foregroundColor(.asLabel)
 
                         Text("48 kHz")
-                            .font(.system(size: 13, weight: .regular))
+                            .font(.footnote)
                             .foregroundColor(.asLabelSecond)
                     }
                     Spacer()
@@ -215,13 +221,13 @@ struct DSPDashboardSection: View {
             VStack(spacing: 10) {
                 HStack {
                     Text("Intensity")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(.asLabel)
 
                     Spacer()
 
                     Text("Phase 1.5")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.caption)
                         .foregroundColor(.asLabelTertiary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -236,11 +242,11 @@ struct DSPDashboardSection: View {
 
                     VStack(spacing: 4) {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.body)
                             .foregroundColor(.asLabelTertiary)
 
                         Text("Disabled")
-                            .font(.system(size: 11, weight: .regular))
+                            .font(.caption2)
                             .foregroundColor(.asLabelTertiary)
                     }
                 }
@@ -267,20 +273,20 @@ struct ModuleStatusRow: View {
     var body: some View {
         HStack {
             Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundColor(isActive ? .asAccent : .asLabelTertiary)
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.body)
                     .foregroundColor(.asLabel)
             }
 
             Spacer()
 
             Text(status)
-                .font(.system(size: 13, weight: .regular))
+                .font(.footnote)
                 .foregroundColor(.asLabelSecond)
         }
         .padding(.vertical, 8)
