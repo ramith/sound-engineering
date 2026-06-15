@@ -6,13 +6,15 @@ struct EQTabView: View {
     @State private var currentPreset: EQPreset = .flat
     @State private var isCustomized = false
     @State private var isUsingDiscreteSteps = false
+    @State private var bandGains: [Double] = Array(repeating: 0.0, count: 31)
 
     var body: some View {
         VStack(spacing: 20) {
-            // Frequency Response Canvas
+            // Frequency Response Canvas (Interactive)
             FrequencyResponseCanvas(
                 currentPreset: currentPreset,
-                isCustomized: isCustomized,
+                bandGains: $bandGains,
+                isCustomized: $isCustomized,
                 isUsingDiscreteSteps: isUsingDiscreteSteps
             )
             .frame(height: 400, alignment: .center)
@@ -31,7 +33,7 @@ struct EQTabView: View {
                         action: {
                             currentPreset = .flat
                             isCustomized = false
-                            print("Selected preset: Flat")
+                            bandGains = Array(repeating: 0.0, count: 31)
                         }
                     )
 
@@ -42,7 +44,7 @@ struct EQTabView: View {
                         action: {
                             currentPreset = .presence
                             isCustomized = false
-                            print("Selected preset: Presence")
+                            bandGains = getPresenceGains()
                         }
                     )
 
@@ -53,7 +55,7 @@ struct EQTabView: View {
                         action: {
                             currentPreset = .clarity
                             isCustomized = false
-                            print("Selected preset: Clarity")
+                            bandGains = getClarityGains()
                         }
                     )
 
@@ -64,7 +66,7 @@ struct EQTabView: View {
                         action: {
                             currentPreset = .warm
                             isCustomized = false
-                            print("Selected preset: Warm")
+                            bandGains = getWarmGains()
                         }
                     )
 
@@ -99,7 +101,7 @@ struct EQTabView: View {
                     Button(action: {
                         currentPreset = .flat
                         isCustomized = false
-                        print("Reset to flat preset")
+                        bandGains = Array(repeating: 0.0, count: 31)
                     }) {
                         Text("Reset to Flat")
                             .font(.system(size: 13, weight: .medium))
@@ -142,6 +144,54 @@ struct EQTabView: View {
             .padding(.bottom, 30)
         }
         .background(Color.asWindow)
+    }
+
+    private func getISO31Frequencies() -> [Double] {
+        [20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+         630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
+         10000, 12500, 16000, 20000]
+    }
+
+    private func getPresenceGains() -> [Double] {
+        getISO31Frequencies().map { gainForPresence($0) }
+    }
+
+    private func getClarityGains() -> [Double] {
+        getISO31Frequencies().map { gainForClarity($0) }
+    }
+
+    private func getWarmGains() -> [Double] {
+        getISO31Frequencies().map { gainForWarm($0) }
+    }
+
+    private func gainForPresence(_ freq: Double) -> Double {
+        if freq >= 1000 && freq <= 4000 {
+            return 8.0 * sin((log10(freq) - log10(1000)) / (log10(4000) - log10(1000)) * .pi)
+        } else if freq > 4000 && freq <= 8000 {
+            return 4.0 * sin((log10(8000) - log10(freq)) / (log10(8000) - log10(4000)) * .pi / 2)
+        } else {
+            return 0.0
+        }
+    }
+
+    private func gainForClarity(_ freq: Double) -> Double {
+        if freq >= 1000 && freq <= 8000 {
+            return 6.0 * sin((log10(freq) - log10(1000)) / (log10(8000) - log10(1000)) * .pi / 2)
+        } else if freq > 8000 && freq <= 16000 {
+            return 4.0 * sin((log10(16000) - log10(freq)) / (log10(16000) - log10(8000)) * .pi / 2)
+        } else {
+            return 0.0
+        }
+    }
+
+    private func gainForWarm(_ freq: Double) -> Double {
+        if freq >= 20 && freq <= 500 {
+            return 12.0 * (1.0 - exp(-log10(freq) / 1.5))
+        } else if freq > 500 && freq <= 2000 {
+            return 8.0 * exp(-(freq - 500) / 1500)
+        } else {
+            return 0.0
+        }
     }
 }
 
@@ -224,7 +274,8 @@ struct BlendingToggleButton: View {
 
 struct FrequencyResponseCanvas: View {
     let currentPreset: EQPreset
-    let isCustomized: Bool
+    @Binding var bandGains: [Double]
+    @Binding var isCustomized: Bool
     let isUsingDiscreteSteps: Bool
 
     var body: some View {
@@ -267,8 +318,11 @@ struct FrequencyResponseCanvas: View {
                 plotHeight: plotHeight
             )
 
-            // Get EQ values for the curve
-            let eqValues = getEQValuesForPreset(currentPreset)
+            // Get EQ values: use custom gains if customized, otherwise use preset
+            let isoFreqs = getISO31Frequencies()
+            let eqValues = isCustomized
+                ? zip(isoFreqs, bandGains).map { ($0, $1) }
+                : getEQValuesForPreset(currentPreset)
 
             // Draw frequency response curve (diagonal from -20dB @ 20Hz to +20dB @ 20kHz)
             drawFrequencyResponseCurve(
@@ -297,9 +351,60 @@ struct FrequencyResponseCanvas: View {
         .background(Color.asCard)
         .cornerRadius(9)
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    updateEQFromClick(value.location)
+                }
+        )
         .accessibilityLabel("Frequency Response Curve")
         .accessibilityValue("EQ Preset: \(isCustomized ? "Custom" : currentPreset.displayName), Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")")
-        .accessibilityHint("Interactive frequency response visualization with 31 ISO 1/3-octave bands from 20Hz to 20kHz")
+        .accessibilityHint("Interactive frequency response visualization with 31 ISO 1/3-octave bands from 20Hz to 20kHz. Click or drag to adjust.")
+    }
+
+    private func updateEQFromClick(_ location: CGPoint) {
+        let plotLeft: CGFloat = 50
+        let plotRight: CGFloat = 350 // Approximate based on typical canvas width
+        let plotBottom: CGFloat = 300 // Approximate based on typical canvas height
+        let plotTop: CGFloat = 20
+
+        let plotWidth = plotRight - plotLeft
+        let plotHeight = plotBottom - plotTop
+
+        // Convert pixel position to frequency
+        let relativeX = max(0, min(1, (location.x - plotLeft) / plotWidth))
+        let freqIndex = Int(relativeX * 30)
+        guard freqIndex >= 0, freqIndex < 31 else { return }
+
+        // Convert pixel position to dB gain
+        let relativeY = max(-1, min(1, (plotBottom - location.y) / plotHeight))
+        let gainValue = relativeY * 40 - 20 // Map to -20 to +20 dB range
+        let clampedGain = max(-20, min(20, gainValue))
+
+        // Update the band gain
+        bandGains[freqIndex] = clampedGain
+        isCustomized = true
+    }
+
+    private func getISO31Frequencies() -> [Double] {
+        [20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+         630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
+         10000, 12500, 16000, 20000]
+    }
+
+    private func getPresenceGains() -> [Double] {
+        let freqs = getISO31Frequencies()
+        return freqs.map { gainForPresence($0) }
+    }
+
+    private func getClarityGains() -> [Double] {
+        let freqs = getISO31Frequencies()
+        return freqs.map { gainForClarity($0) }
+    }
+
+    private func getWarmGains() -> [Double] {
+        let freqs = getISO31Frequencies()
+        return freqs.map { gainForWarm($0) }
     }
 
     private func drawGridAndLabels(
