@@ -14,10 +14,32 @@ Files are named with numeric prefixes (`00-`, `01-`, etc.) for sorting in editor
 - **01-engine-plan.md** — Sprint 1 implementation plan (US-ENG-01, AUHAL, device enumeration)
 - **01-engine-test-plan.md** — QA strategy (unit/integration tests, RT safety, manual checks)
 
+### Sprint 2: Phase 1a → Phase 1b Handoff
+- **02-phase-1a-kickoff.md** — Phase 1a architecture review + team sign-off
+- **02-phase-1b-ui-redesign.md** — UI spec for Phase 1b (design-driven architecture)
+- **02-mix-core-plan.md** — EQ + audio infrastructure
+- **02-mix-core-test-plan.md** — Audio testing strategy
+- **02-mix-core-briefing.md** — Team coordination
+- **02-blocker-resolutions.md** — Critical issue fixes
+
+### Sprint 3: Music Playback Implementation
+- **03-KICKOFF.md** — Sprint 3 launch plan (solo execution model)
+- **03-music-playback-implementation.md** — Full spec + breakdown (Parts 1–4)
+- **PHASE-1B-PART-A-POSTMORTEM.md** — Post-audit retrospective (2026-06-15)
+  - Scope delta analysis (planned vs. actual delivery)
+  - Root cause analysis (why Part B deferred)
+  - Time allocation breakdown
+  - Lessons learned for next sprint
+  - Quality assessment (code, testing, accessibility, design compliance)
+  - Recommendations (Phase 1b Part B scope, Phase 1c blockers)
+
 ### Future Sprints
-- **02-stem-separation-plan.md** *(Phase 1.5)*
-- **03-dsp-core-plan.md** *(Phase 1)*
-- etc.
+- **03-PHASE-1B-PART-B-PLAN.md** *(2026-06-18, 2 days, ~8 sp)*
+  - Seek implementation, progress bar, metadata, persistence
+- **04-PHASE-1C-PLAN.md** *(2026-06-22, 3 days, ~12 sp)*
+  - AU wiring, conversational tuning, real-time DSP validation
+- **05-PHASE-1.5-PLAN.md** *(2026-07-01, 5–7 days, ~20 sp)*
+  - Stem separation, spatial audio, per-stem processing
 
 ---
 

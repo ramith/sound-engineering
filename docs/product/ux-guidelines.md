@@ -1,1 +1,0 @@
-cat /tmp/ux-guidelines-draft.md
