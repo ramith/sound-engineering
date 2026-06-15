@@ -112,7 +112,7 @@ if ((${#cpp_files[@]})); then
 
         for f in "${cpp_files[@]}"; do
             if is_exempt "$f"; then
-                yellow "⏭️  clang-tidy: skipping exempted $f (see GH issue #5)"
+                yellow "⏭️  clang-tidy: skipping exempted $f (see CLANG_TIDY_EXEMPT in this hook)"
                 continue
             fi
             # Pick the language mode. Project headers may be Obj-C++, so analyse
