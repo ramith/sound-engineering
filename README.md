@@ -2,7 +2,7 @@
 
 A personal, open-source audio enhancement app for macOS that turns any good-quality song into a personal, perceptually-tuned, spatially-rendered mix steerable via plain language.
 
-**Status:** Sprint 1 — Audio engine + device management + branded UI ✅
+**Status:** Phase 1b Part A ✅ (shipped) → Phase 1b Part B (in progress) → Phase 1c Sprints 1-3 (DSP-first MVP)
 
 ---
 
@@ -25,6 +25,8 @@ A personal, open-source audio enhancement app for macOS that turns any good-qual
 - SVG vectors (mark, lockup, favicon, app-icon) — *source of truth*
 - PNG rasterized (512×512, 1024×1024 for macOS; favicons for web)
 - Full brand guidelines in `assets/README.md`
+
+**Brand Implementation Guide:** See [`docs/product/branding/BRAND-INTEGRATION-PLAN.md`](docs/product/branding/BRAND-INTEGRATION-PLAN.md) for SwiftUI integration (color constants, typography, app icon bundling) — scheduled for Phase 2 UI polish
 
 ---
 
@@ -111,54 +113,62 @@ make help           # Show all targets
 
 ## Development Workflow
 
-### Editing (VS Code)
+For detailed setup, coding standards, pre-commit hooks, and profiling guidance, see [`docs/development/DEVELOPMENT.md`](docs/development/DEVELOPMENT.md).
+
+Quick start:
 ```bash
-code .
+make xcode                # Open in Xcode (recommended for development)
+make run                  # Build and run from CLI
+make test                 # Run test suite
+make format               # Format code (Swift + C++)
+make profile              # Profile with Instruments
+make help                 # Show all build targets
 ```
 
-### Formatting
-
-C++ code:
-```bash
-clang-format -i Sources/AudioDSP/*.{h,cpp}
-```
-
-Swift code:
-```bash
-swiftformat Sources/AdaptiveSound/
-```
-
-### Debugging in VS Code
-
-1. Press `F5` or go to **Run > Start Debugging**
-2. Set breakpoints (left margin) and inspect variables
-3. Use the Debug Console for variable inspection
-
-### Profiling & Performance Analysis (Xcode)
-
-1. **Product > Profile** (`Cmd+I`)
-2. Select **System Trace** for real-time audio metrics
-3. Select **Time Profiler** for CPU usage per function
-4. Monitor XRuns and render thread latency
+**Pre-commit hooks** run automatically on `git commit` to enforce:
+- C++ formatting & static analysis (clang-format, clang-tidy)
+- Swift formatting & linting (swiftformat, swiftlint)
+- Audio thread safety checks (ASAN, TSan)
 
 ---
 
 ## Roadmap
 
-- **Phase 0** (Current): Player MVP — playback + audio thread safety ✅
-- **Phase 1**: Mix-based core — EQ, clarity, loudness, BRIR spatialization
-- **Phase 1.5**: Stem-based object engine — 6-stem separation, per-stem chains
-- **Phase 2**: System-wide enhancement via Core Audio process taps
+- **Phase 1a** ✅ SHIPPED: Audio engine core + reference tone
+- **Phase 1b Part A** ✅ SHIPPED: Music playback UI + real-time spectrum
+- **Phase 1b Part B** 🟡 IN PROGRESS: Progress bar, seek, auto-play, test suite
+- **Phase 1c** 🟡 BACKLOG (Sprints 1–3):
+  - **Sprint 1:** Loudness safety (true-peak limiter + LUFS normalization)
+  - **Sprint 2:** EQ foundation (31-band wiring + device profiles)
+  - **Sprint 3:** Adaptive clarity (masking-aware + conversational tuning)
+- **Phase 1.5** 🔄 PLANNING: Stem separation + per-stem processing chains
+- **Phase 2** 🔄 PLANNING: System-wide audio via Core Audio process taps
 
 ---
 
 ## Architecture & Planning
 
 See `docs/` for complete architecture, requirements, and design decisions:
-- `docs/architecture/architecture.md` — technical design
-- `docs/product/requirements.md` — functional requirements
-- `docs/sprints/00-sprint-model.md` — sprint model & methodology
-- `docs/sprints/01-engine-plan.md` — Sprint 1 implementation plan
+
+**Core Documents:**
+- [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — Complete system design (locked decisions, ADRs, §16 Sprint 1-3 overview)
+- [`docs/product/roadmap.md`](docs/product/roadmap.md) — Timeline, phases, milestones
+- [`docs/product/requirements.md`](docs/product/requirements.md) — Functional & non-functional requirements
+- [`docs/product/backlog.md`](docs/product/backlog.md) — Prioritized features (epics, user stories, spikes)
+
+**Current Sprint Execution:**
+- [`docs/sprints/07-phase-1b-part-b-kickoff.md`](docs/sprints/07-phase-1b-part-b-kickoff.md) — Phase 1b Part B critical path (progress, seek, auto-play, test suite)
+
+**Detailed DSP Sprint Specs (Phase 1c):**
+- [`docs/sprints/04-sprint-1-loudness-safety.md`](docs/sprints/04-sprint-1-loudness-safety.md) — Limiter + LUFS normalization
+- [`docs/sprints/05-sprint-2-eq-foundation.md`](docs/sprints/05-sprint-2-eq-foundation.md) — EQ wiring + device profiles
+- [`docs/sprints/06-sprint-3-adaptive-clarity.md`](docs/sprints/06-sprint-3-adaptive-clarity.md) — Conversational tuning + adaptive DSP
+
+**Quality & Validation:**
+- [`docs/architecture/validation-strategy.md`](docs/architecture/validation-strategy.md) — QA framework (per-merge gates, listening panel protocol)
+
+**Development:**
+- [`docs/development/DEVELOPMENT.md`](docs/development/DEVELOPMENT.md) — Coding standards, tooling setup, pre-commit hooks
 
 ---
 

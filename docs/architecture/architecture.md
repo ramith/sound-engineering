@@ -274,7 +274,7 @@ Core Audio **process taps** (macOS 14.2/14.4+): muted global tap + private aggre
 
 The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is the **chief feasibility risk**. Mitigations: heavy work is **off-RT** (separation, FIR/BRIR design, masking analysis — all pre-computed/cached); the RT kernel runs **fixed, partitioned convolutions** parallelized via **Audio Workgroups**; **QualityProfile** scales partition sizes / stem count / convolution length under battery/thermal. **The raised hardware floor + sole-occupancy posture (LD-18) materially reduce this risk** vs. an 8 GB fanless Air — an M1 Pro has more performance cores, a fan, and ample RAM, and the app need not share the machine. The **shared-late-reverb decomposition** (one room tail + cheap per-stem placement filters) is now the **planned approach** (v0.3, §6/§7) — it cuts the dominant convolution cost ~6× (turns "6 long convolutions" into "1 long + 6 cheap"). **Hardware context:** the shipping generation sits well above the floor — M4 (38-TOPS NE, ~120 GB/s) → M4 Pro/Max (10–12 P-cores, 273–546 GB/s, 64–128 GB) and M5 (per-GPU-core neural accelerators, ~4× M4 GPU-AI compute, 153 GB/s) — i.e. ~3–4× the floor for this AI/convolution work, so on shipping hardware the risk is **Low** and the spike is for tuning QualityProfile caps, not go/no-go. **Open:** measured per-stem RT cost, total memory for 6 cached stems + BRIR kernels, and the worst-case render budget on **the M1 Pro / 16 GB floor** (spike before Phase 1.5 — see backlog).
 
-## 16. Phasing
+## 16. Phasing & Sprint Implementation
 
 | Phase | Scope |
 |---|---|
@@ -282,6 +282,53 @@ The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is
 | **1 — Mix-based core** | Perceptual tonal/clarity, correction, loudness-comp, adaptive engine, **BRIR** immersion, NL (typed-macro, mix-level), **Reimagine knob (mix range)** |
 | **1.5 — Stem object engine** | Offline 6-stem separation + per-stem chains + spatial placement; between-stem masking; per-stem NL; **Reimagine knob (stem range)** |
 | **2 — System-wide** | Process-tap path (mix-level), libASPL fallback |
+
+### Phase 1 — Sprint-based breakdown (Mix-level DSP core)
+
+Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel:
+
+**Sprint 1: Loudness Safety & Transparent Dynamics**
+- **True-peak limiter** (≥4× oversampling, −1 dBTP ceiling, ~1 ms look-ahead) as the final safety stage
+- **LUFS normalization** (ITU-R BS.1770-5) with transparent makeup gain (no artifacts, fidelity-preserving)
+- **Hearing-safety numeric clamps** (cumulative ≤ +12 dB, proportional scaling)
+- **Validation:** Loudness accuracy ±0.1 LUFS, true-peak enforcement, 1-hour soak test, listening panel
+- **See:** [../sprints/04-sprint-1-loudness-safety.md](../sprints/04-sprint-1-loudness-safety.md) for detailed design, RT implementation, and acceptance criteria
+
+**Sprint 2: Minimum-Phase EQ Wiring & Spectral Correction**
+- **EQ module** wired into RT chain: 31-band ISO parametric, biquad cascade (min-phase, LD-13), real-time parameter automation
+- **Before/after spectrum taps** showing input + DSP effect (visual proof)
+- **AutoEq device-correction profiles** (5 common headphones: Sony WH-1000XM5, AirPods Pro, Sennheiser HD 600, Apple Studio, Generic)
+- **Master gain relocation** (post-DSP, after Limiter) so volume is independent of processing
+- **Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, perceptual listening panel
+- **See:** [../sprints/05-sprint-2-eq-foundation.md](../sprints/05-sprint-2-eq-foundation.md) for detailed design, EQ realization algorithm, and acceptance criteria
+
+**Sprint 3: Adaptive Clarity & Loudness Compensation**
+- **Clarity module** (masking-aware per-band gain, roex filter on ERB-rate grid, ≤ +3 dB/band phase-1 conservative)
+- **Loudness compensation** (fractional contour-difference, ISO 226, 40% per-band adjustment)
+- **Arbiter control plane** composes device + loudness + clarity + content + user intent into unified TargetState
+- **Conversational tuning basic** (text → Claude API → EQ curve, spline interpolation to 31 bands, no graphical curves in Phase 1)
+- **Content-aware adaptation** (spectral profile detection, smooth EQ transitions per genre, hysteresis to prevent hunting)
+- **Validation:** Masking model ±1 dB accuracy, clarity gains conservative, listening panel A/B, 2-hour adaptive soak test
+- **See:** [../sprints/06-sprint-3-adaptive-clarity.md](../sprints/06-sprint-3-adaptive-clarity.md) for detailed design, Arbiter composition, and acceptance criteria
+
+### Phase 1b Part B — Critical-path prerequisite
+
+Before Phase 1c (Sprints 1–3), the following enablers must ship:
+- **Progress bar + polling** (playback position display)
+- **Seek implementation** (drag to position, resume smoothly)
+- **Auto-play next track** (completion listener, respects repeat mode)
+- **Test suite fixed** (`swift test` passes, validates DSP coefficient math)
+
+**See:** [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md) for action items and acceptance criteria
+
+### Validation framework
+
+All three sprints follow the validation strategy outlined in [validation-strategy.md](validation-strategy.md):
+- **Per-merge gates** (automated, < 15 min): unit tests, null-test, frequency sweep, ASAN/TSan clean
+- **Nightly regression** (~30 min): biquad stress, 20-track corpus, parameter sweep, masking model
+- **Per-sprint final validation** (manual + listening panel): Acceptance criteria + listening panel (5–10 audio engineers, MUSHRA protocol)
+
+Cross-reference: [../product/roadmap.md](../product/roadmap.md) for timeline and phase milestones.
 
 ## 17. Open questions & risks
 

@@ -1211,9 +1211,11 @@ Traceability: FR-REIMAGINE-03, FR-STEM-06, LD-15, LD-16
 
 ---
 
-## Phase 2 Stories — System-Wide Enhancement
+## Phase 2 Stories — System-Wide Enhancement & UI Polish
 
 Phase 2 is far out and subject to change. Full story detail is deferred; epics and stubs provide engineering team visibility for architecture decisions made now.
+
+> **UI & Branding Note:** Phase 2 also includes UI polish and brand identity implementation (Flux mark, Sunset gradient, Space Grotesk typography). This is deferred from Phase 1c (DSP-first focus). See [branding/BRAND-INTEGRATION-PLAN.md](branding/BRAND-INTEGRATION-PLAN.md) for detailed guidance (app icon integration, color constants, typography, README branding section). Estimate: ~2–3 hours Phase 2 workstream.
 
 ### EP-VDEVICE — AudioServerPlugIn Virtual Device (FALLBACK PATH)
 
