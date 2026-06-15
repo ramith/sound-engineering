@@ -1,5 +1,6 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
+#include "../include/AudioConstants.h"
 #include "../include/DSPKernel.h"
 #include <memory>
 
@@ -15,30 +16,31 @@ using namespace AdaptiveSound;
 @implementation AdaptiveSoundAU
 
 - (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
-    if (![super allocateRenderResourcesAndReturnError:outError]) return NO;
-    
-    _kernel = std::make_unique<DSPKernel>();
-    _kernel->initialize(48000, 512);
+    if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
 
-    __weak typeof(self) weakSelf = self;
+    _kernel = std::make_unique<DSPKernel>();
+    _kernel->initialize(kDefaultSampleRate, kDefaultMaxFrames);
+
+    AdaptiveSoundAU *__weak weakSelf = self;
     _renderBlock = ^AUAudioUnitStatus(AudioUnitRenderActionFlags* flags,
-                                      const AudioTimeStamp* ts,
+                                      const AudioTimeStamp* timestamp,
                                       AUAudioFrameCount frames,
                                       NSInteger busNum,
                                       AudioBufferList* out,
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
-        typeof(self) self = weakSelf;
-        if (!self || !self->_kernel) return kAudioUnitErr_Uninitialized;
-        
+        AdaptiveSoundAU *strongSelf = weakSelf;
+        if (strongSelf == nil || strongSelf->_kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
+
         AudioBufferList input;
-        if (pull(flags, ts, frames, 0, &input) == noErr) {
+        if (pull(flags, timestamp, frames, 0, &input) == noErr) {
+            // TODO(#4): memcpy uses input byte size into output buffer; clamp to min in fix
             for (UInt32 i = 0; i < out->mNumberBuffers && i < input.mNumberBuffers; ++i) {
-                memcpy(out->mBuffers[i].mData, input.mBuffers[i].mData, 
+                memcpy(out->mBuffers[i].mData, input.mBuffers[i].mData,
                        input.mBuffers[i].mDataByteSize);
             }
         }
-        self->_kernel->process(out, frames);
+        strongSelf->_kernel->process(out, frames);
         return noErr;
     };
     return YES;
@@ -59,5 +61,5 @@ using namespace AdaptiveSound;
 extern "C" {
 void createAdaptiveAudioUnit(void* engine) { }
 void destroyAdaptiveAudioUnit(void* handle) { }
-void setAUParameter(void* handle, uint32_t id, float val) { }
+void setAUParameter(void* handle, uint32_t parameterId, float val) { }
 }

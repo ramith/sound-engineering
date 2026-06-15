@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# AdaptiveSound pre-commit hook.
+#
+# Enforces the flow documented in DEVELOPMENT.md:
+#   1. Format staged Swift / C++ / Obj-C++ files (clang-format, swiftformat)
+#   2. Lint staged Swift files (swiftlint)  -> errors block the commit
+#   3. Static-analyse staged C++ files (clang-tidy) -> errors block the commit
+#      (gracefully skipped with a warning if clang-tidy is not installed)
+#
+# Only STAGED files are processed. Reformatted files are re-staged so the
+# commit reflects the formatted result.
+#
+# Install: handled by `core.hooksPath=.githooks` (see scripts note / README).
+# Bypass once (not recommended): git commit --no-verify
+
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root" || exit 1
+
+# ANSI helpers
+red()    { printf '\033[31m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+
+# clang-tidy is keg-only under Homebrew LLVM; prefer that path, fall back to PATH.
+CLANG_TIDY=""
+if [[ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
+    CLANG_TIDY=/opt/homebrew/opt/llvm/bin/clang-tidy
+elif command -v clang-tidy >/dev/null 2>&1; then
+    CLANG_TIDY="$(command -v clang-tidy)"
+fi
+
+# Collect staged files (added/copied/modified), NUL-safe.
+# Uses a read loop (not mapfile) for macOS bash 3.2 compatibility.
+swift_files=()
+cpp_files=()
+while IFS= read -r -d '' f; do
+    [[ -f "$f" ]] || continue
+    case "$f" in
+        *.swift)            swift_files+=("$f") ;;
+        *.h|*.hpp|*.cpp|*.cc|*.mm) cpp_files+=("$f") ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACM -z)
+
+fail=0
+
+# ---------------------------------------------------------------------------
+# 1. Formatting (auto-fix + re-stage)
+# ---------------------------------------------------------------------------
+if ((${#cpp_files[@]})); then
+    if command -v clang-format >/dev/null 2>&1; then
+        # stderr suppressed: .clang-format declares Language: Cpp, so clang-format
+        # emits a benign "does not support Objective-C" notice on .mm files.
+        clang-format -i "${cpp_files[@]}" 2>/dev/null && git add -- "${cpp_files[@]}"
+    else
+        yellow "⚠️  clang-format not found — skipping C++ formatting."
+    fi
+fi
+
+if ((${#swift_files[@]})); then
+    if command -v swiftformat >/dev/null 2>&1; then
+        swiftformat "${swift_files[@]}" >/dev/null 2>&1 && git add -- "${swift_files[@]}"
+    else
+        yellow "⚠️  swiftformat not found — skipping Swift formatting."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2. SwiftLint (blocking)
+# ---------------------------------------------------------------------------
+if ((${#swift_files[@]})); then
+    if command -v swiftlint >/dev/null 2>&1; then
+        # Non-zero exit => error-severity violations (e.g. force_unwrapping). Warnings don't block.
+        if ! swiftlint lint --quiet "${swift_files[@]}"; then
+            red "❌ SwiftLint reported error-severity violations (these block the commit)."
+            fail=1
+        fi
+    else
+        yellow "⚠️  swiftlint not found — skipping Swift lint."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. clang-tidy (blocking; graceful skip if unavailable)
+# ---------------------------------------------------------------------------
+# Files temporarily exempted from clang-tidy. These need behavioral cleanup
+# (vararg logging, malloc/free, enum redesign) that is tracked separately and
+# must not be rushed. Remove entries here as that work lands. See GH issue #5.
+CLANG_TIDY_EXEMPT=(
+    "Sources/AudioDSP/AudioEngine.mm"     # issue #5
+    "Sources/AudioDSP/CoreAudioDevice.mm" # issue #5
+)
+is_exempt() {
+    local target="$1" e
+    for e in "${CLANG_TIDY_EXEMPT[@]}"; do [[ "$e" == "$target" ]] && return 0; done
+    return 1
+}
+
+if ((${#cpp_files[@]})); then
+    if [[ -n "$CLANG_TIDY" ]]; then
+        sdk="$(xcrun --show-sdk-path 2>/dev/null)"
+        # gnu++17 (not c++17) so Apple ObjC extensions like __typeof parse;
+        # all AudioDSP module dirs on the include path so quote-includes resolve.
+        compile_flags=(-std=gnu++17)
+        while IFS= read -r d; do compile_flags+=(-I "$d"); done \
+            < <(find Sources/AudioDSP -type d 2>/dev/null)
+        [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
+
+        for f in "${cpp_files[@]}"; do
+            if is_exempt "$f"; then
+                yellow "⏭️  clang-tidy: skipping exempted $f (see GH issue #5)"
+                continue
+            fi
+            # Pick the language mode. Project headers may be Obj-C++, so analyse
+            # .h/.hpp in objective-c++ mode too (a superset that also parses pure
+            # C++). lang_flags is always non-empty (bash 3.2 + set -u safe).
+            case "$f" in
+                *.mm|*.h|*.hpp) lang_flags=(-x objective-c++ -fobjc-arc -fblocks) ;;
+                *)              lang_flags=(-x c++) ;;
+            esac
+            # --quiet hides the "N warnings generated" summary. Capture output and
+            # only surface it when the file actually fails (WarningsAsErrors), so
+            # non-blocking style warnings don't spam every commit.
+            ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- "${lang_flags[@]}" "${compile_flags[@]}" 2>&1)"
+            if [[ $? -ne 0 ]]; then
+                red "❌ clang-tidy reported issues in $f"
+                printf '%s\n' "$ct_out"
+                fail=1
+            fi
+        done
+    else
+        yellow "⚠️  clang-tidy not found — skipping C++ static analysis."
+        yellow "    Install with: brew install llvm  (see DEVELOPMENT.md)"
+    fi
+fi
+
+if ((fail)); then
+    red "Commit aborted by pre-commit hook. Fix the issues above, or re-run with --no-verify to bypass."
+    exit 1
+fi
+
+green "✅ pre-commit checks passed."
+exit 0

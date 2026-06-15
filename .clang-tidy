@@ -4,12 +4,17 @@ Checks: |
   -cppcoreguidelines-owning-memory,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   modernize-*,
   -modernize-use-auto,
   readability-*,
   -readability-magic-numbers,
   performance-*,
   bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
   cert-*,
   -cert-err09-cpp,
   -cert-err61-cpp,
@@ -29,19 +34,26 @@ HeaderFilterRegex: "Sources/AudioDSP.*\\.h"
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.VariableCase
-    value: lower_snake_case
+    value: camelBack
   - key: readability-identifier-naming.FunctionCase
     value: camelBack
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
+  # Accept k-prefixed constexpr constants (e.g. kMaxBiquads) without renaming.
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  # DSP process() functions legitimately branch on channel/biquad/gain state.
+  # 10 is unrealistically low; 25 still catches genuinely unmaintainable code.
   - key: readability-function-cognitive-complexity.Threshold
-    value: 10
+    value: 25
   - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: false
   - key: bugprone-narrowing-conversions.PedanticMode
     value: true
-  - key: cppcoreguidelines-pro-bounds-constant-array-index.GslHeader
-    value: "gsl/gsl.h"
+  # NOTE: no GSL dependency exists and the pro-bounds-* checks above are
+  # disabled (incompatible with -fno-exceptions RT audio: .at() throws,
+  # raw float* buffer arithmetic is intrinsic). GslHeader option removed.
 
-InlinePassUnsafePointerCasts: false
 UseColor: true

@@ -13,7 +13,8 @@ namespace AdaptiveSound
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
         {
         }
-        void process(const ClarityParams&, AudioBufferList*, uint32_t) noexcept
+        void
+        process(const ClarityParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
         {
         }
     };

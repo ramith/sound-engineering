@@ -1,6 +1,7 @@
 #ifndef ADAPTIVE_SOUND_TARGET_STATE_H
 #define ADAPTIVE_SOUND_TARGET_STATE_H
 
+#include "AudioConstants.h"
 #include <array>
 #include <cstdint>
 #include <type_traits>
@@ -16,57 +17,57 @@ namespace AdaptiveSound
         {
             float b0, b1, b2, a1, a2;
         };
-        std::array<BiquadCoeffs, kMaxBiquads> biquads;
+        std::array<BiquadCoeffs, kMaxBiquads> biquads{};
         uint8_t numBiquads = 0;
-        float masterGainLinear = 1.0f;
-        uint8_t _pad[3] = {};
+        float masterGainLinear = 1.0F;
+        std::array<uint8_t, 3> _pad = {};
     };
 
     struct ClarityParams
     {
-        float thresholdLinear = 0.1f;
-        float attackCoeff = 0.f;
-        float releaseCoeff = 0.f;
-        float ratioRecip = 0.5f;
-        float kneeWidthLinear = 0.1f;
+        float thresholdLinear = kClarityDefaultThresholdLinear;
+        float attackCoeff = 0.F;
+        float releaseCoeff = 0.F;
+        float ratioRecip = kClarityDefaultRatioRecip;
+        float kneeWidthLinear = kClarityDefaultKneeWidthLinear;
         uint8_t enabled = 1;
-        uint8_t _pad[3] = {};
+        std::array<uint8_t, 3> _pad = {};
     };
 
     struct LoudnessParams
     {
-        float makeupGainLinear = 1.0f;
-        float lufsTarget = -16.f;
+        float makeupGainLinear = 1.0F;
+        float lufsTarget = kDefaultLufsTarget;
         uint8_t enabled = 1;
-        uint8_t _pad[3] = {};
+        std::array<uint8_t, 3> _pad = {};
     };
 
     struct BRIRParams
     {
         uint8_t activeSlotIndex = 0;
-        float azimuthDeg = 0.f;
-        float elevationDeg = 0.f;
-        float roomAmountLinear = 1.0f;
+        float azimuthDeg = 0.F;
+        float elevationDeg = 0.F;
+        float roomAmountLinear = 1.0F;
         uint8_t bassMonoGated = 1;
-        uint8_t _pad[3] = {};
+        std::array<uint8_t, 3> _pad = {};
     };
 
     struct LimiterParams
     {
-        float truePeakCeilingLinear = 0.891f;
-        float lookaheadFrames = 48.f;
-        float attackCoeff = 0.f;
-        float releaseCoeff = 0.f;
+        float truePeakCeilingLinear = kTruePeakCeilingLinear;
+        float lookaheadFrames = kLimiterLookaheadFrames;
+        float attackCoeff = 0.F;
+        float releaseCoeff = 0.F;
     };
 
-    struct alignas(64) TargetState
+    struct alignas(kCacheLineBytes) TargetState
     {
         EQParams eq;
         ClarityParams clarity;
         LoudnessParams loudness;
         BRIRParams brir;
         LimiterParams limiter;
-        float intensityLinear = 1.0f;
+        float intensityLinear = 1.0F;
         uint64_t sequenceNumber = 0;
     };
 
