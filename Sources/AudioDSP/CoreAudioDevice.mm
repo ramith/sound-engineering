@@ -1,17 +1,22 @@
 #include "CoreAudioDevice.h"
+#include "AudioConstants.h"
 #include <CoreFoundation/CoreFoundation.h>
-#include <cstring>
+#include <cstddef>
 
 namespace AdaptiveSound {
+
+// control-plane logging only (init/shutdown/device-change); never on the RT audio
+// thread; fprintf varargs acceptable here. RT TUs keep the check.
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
 
 // MARK: - Helper Functions
 
 static std::string cfStringToStdString(CFStringRef cfStr) {
-    if (!cfStr) {
+    if (cfStr == nullptr) {
         return "";
     }
     const char* cStr = CFStringGetCStringPtr(cfStr, kCFStringEncodingUTF8);
-    if (cStr) {
+    if (cStr != nullptr) {
         return std::string(cStr);
     }
 
@@ -28,13 +33,14 @@ void* CoreAudioDevice::gListenerContext = nullptr;
 
 // MARK: - Device Listener Implementation
 
+// The C-array parameter is mandated by the Core Audio listener ABI.
 void CoreAudioDevice::listenerCallback(
     AudioObjectID objectID [[maybe_unused]],
     UInt32 numberAddresses,
-    const AudioObjectPropertyAddress inAddresses[],
+    const AudioObjectPropertyAddress inAddresses[], // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
     void* clientData [[maybe_unused]]) {
     // Verify callback is registered
-    if (!gListenerCallback) {
+    if (gListenerCallback == nullptr) {
         return;
     }
 
@@ -42,7 +48,7 @@ void CoreAudioDevice::listenerCallback(
     for (UInt32 i = 0; i < numberAddresses; ++i) {
         if (inAddresses[i].mSelector == kAudioHardwarePropertyDefaultOutputDevice) {
             AudioDeviceID newDeviceID = getDefaultOutputDevice();
-            if (newDeviceID != kAudioObjectUnknown && gListenerCallback) {
+            if (newDeviceID != kAudioObjectUnknown && gListenerCallback != nullptr) {
                 gListenerCallback(newDeviceID, gListenerContext);
             }
             break;
@@ -51,7 +57,7 @@ void CoreAudioDevice::listenerCallback(
 }
 
 bool CoreAudioDevice::addDefaultDeviceListener(DeviceListenerCallback callback, void* context) {
-    if (!callback) {
+    if (callback == nullptr) {
         return false;
     }
 
@@ -69,7 +75,8 @@ bool CoreAudioDevice::addDefaultDeviceListener(DeviceListenerCallback callback, 
         kAudioObjectSystemObject,
         &defaultDeviceAddr,
         dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0),
-        ^(UInt32 inNumberAddresses, const AudioObjectPropertyAddress inAddresses[]) {
+        // Core Audio listener block ABI mandates the C-array parameter.
+        ^(UInt32 inNumberAddresses, const AudioObjectPropertyAddress inAddresses[]) { // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
           listenerCallback(kAudioObjectSystemObject, inNumberAddresses, inAddresses, context);
         });
 
@@ -85,7 +92,7 @@ bool CoreAudioDevice::addDefaultDeviceListener(DeviceListenerCallback callback, 
 }
 
 bool CoreAudioDevice::removeDefaultDeviceListener() {
-    if (!gListenerCallback) {
+    if (gListenerCallback == nullptr) {
         return true;  // Already removed
     }
 
@@ -145,7 +152,6 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
             kAudioObjectPropertyScopeOutput,
             kAudioObjectPropertyElementMain};
 
-        AudioBufferList* bufferList = nullptr;
         UInt32 bufferListSize = 0;
 
         status = AudioObjectGetPropertyDataSize(
@@ -156,7 +162,9 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
             &bufferListSize);
 
         if (status == noErr && bufferListSize > 0) {
-            bufferList = static_cast<AudioBufferList*>(malloc(bufferListSize));
+            // RAII-owned storage for the AudioBufferList (control-plane; size from API).
+            std::vector<std::byte> bufferStorage(bufferListSize);
+            auto* bufferList = reinterpret_cast<AudioBufferList*>(bufferStorage.data());
             status = AudioObjectGetPropertyData(
                 deviceID,
                 &outputChannelsAddr,
@@ -169,8 +177,6 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
                 AudioDevice device = queryDevice(deviceID);
                 devices.push_back(device);
             }
-
-            free(bufferList);
         }
     }
 
@@ -220,7 +226,7 @@ std::string CoreAudioDevice::getDeviceName(AudioDeviceID deviceID) {
         kAudioObjectPropertyElementMain};
 
     CFStringRef deviceName = nullptr;
-    UInt32 dataSize = sizeof(deviceName);
+    UInt32 dataSize = sizeof(CFStringRef);
 
     OSStatus status = AudioObjectGetPropertyData(
         deviceID,
@@ -228,9 +234,9 @@ std::string CoreAudioDevice::getDeviceName(AudioDeviceID deviceID) {
         0,
         nullptr,
         &dataSize,
-        &deviceName);
+        static_cast<void*>(&deviceName));
 
-    if (status != noErr || !deviceName) {
+    if (status != noErr || deviceName == nullptr) {
         return "Unknown Device";
     }
 
@@ -245,7 +251,7 @@ uint32_t CoreAudioDevice::getDeviceSampleRate(AudioDeviceID deviceID) {
         kAudioObjectPropertyScopeOutput,
         kAudioObjectPropertyElementMain};
 
-    Float64 sampleRate = 48000.0;
+    Float64 sampleRate = static_cast<Float64>(kDefaultSampleRate);
     UInt32 dataSize = sizeof(sampleRate);
 
     OSStatus status = AudioObjectGetPropertyData(
@@ -258,7 +264,7 @@ uint32_t CoreAudioDevice::getDeviceSampleRate(AudioDeviceID deviceID) {
 
     if (status != noErr) {
         fprintf(stderr, "[CoreAudioDevice] Failed to get sample rate, using default 48 kHz\n");
-        return 48000;
+        return kDefaultSampleRate;
     }
 
     return static_cast<uint32_t>(sampleRate);
@@ -270,7 +276,7 @@ uint32_t CoreAudioDevice::getDeviceBufferFrameSize(AudioDeviceID deviceID) {
         kAudioObjectPropertyScopeOutput,
         kAudioObjectPropertyElementMain};
 
-    UInt32 bufferSize = 512;
+    UInt32 bufferSize = kDefaultMaxFrames;
     UInt32 dataSize = sizeof(bufferSize);
 
     OSStatus status = AudioObjectGetPropertyData(
@@ -283,7 +289,7 @@ uint32_t CoreAudioDevice::getDeviceBufferFrameSize(AudioDeviceID deviceID) {
 
     if (status != noErr) {
         fprintf(stderr, "[CoreAudioDevice] Failed to get buffer size, using default 512 frames\n");
-        return 512;
+        return kDefaultMaxFrames;
     }
 
     return bufferSize;
@@ -293,21 +299,21 @@ AudioDevice::Type CoreAudioDevice::getDeviceType(AudioDeviceID deviceID) {
     std::string deviceName = getDeviceName(deviceID);
 
     // Simple heuristic based on device name
-    if (deviceName.find("AirPods") != std::string::npos ||
-        deviceName.find("Bluetooth") != std::string::npos ||
-        deviceName.find("wireless") != std::string::npos) {
-        return AudioDevice::Wireless;
+    if (deviceName.contains("AirPods") ||
+        deviceName.contains("Bluetooth") ||
+        deviceName.contains("wireless")) {
+        return AudioDevice::Type::Wireless;
     }
 
-    if (deviceName.find("USB") != std::string::npos) {
-        return AudioDevice::USB;
+    if (deviceName.contains("USB")) {
+        return AudioDevice::Type::USB;
     }
 
-    if (deviceName.find("Built-in") != std::string::npos) {
-        return AudioDevice::Builtin;
+    if (deviceName.contains("Built-in")) {
+        return AudioDevice::Type::Builtin;
     }
 
-    return AudioDevice::Unknown;
+    return AudioDevice::Type::Unknown;
 }
 
 std::string CoreAudioDevice::deviceNameFromID(AudioDeviceID deviceID) {
@@ -318,7 +324,7 @@ std::string CoreAudioDevice::getStringProperty(
     AudioObjectID objectID,
     const AudioObjectPropertyAddress& address) {
     CFStringRef stringValue = nullptr;
-    UInt32 dataSize = sizeof(stringValue);
+    UInt32 dataSize = sizeof(CFStringRef);
 
     OSStatus status = AudioObjectGetPropertyData(
         objectID,
@@ -326,9 +332,9 @@ std::string CoreAudioDevice::getStringProperty(
         0,
         nullptr,
         &dataSize,
-        &stringValue);
+        static_cast<void*>(&stringValue));
 
-    if (status != noErr || !stringValue) {
+    if (status != noErr || stringValue == nullptr) {
         return "";
     }
 
@@ -358,5 +364,7 @@ uint32_t CoreAudioDevice::getUInt32Property(
 
     return value;
 }
+
+// NOLINTEND(cppcoreguidelines-pro-type-vararg)
 
 }  // namespace AdaptiveSound

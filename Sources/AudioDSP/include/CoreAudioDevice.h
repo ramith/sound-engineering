@@ -1,6 +1,7 @@
 #pragma once
 
 #include <CoreAudio/CoreAudio.h>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -10,19 +11,19 @@ namespace AdaptiveSound
     // Audio device information
     struct AudioDevice
     {
-        AudioDeviceID id;
-        std::string name;
-        uint32_t sampleRate;
-        uint32_t bufferFrameSize;
-
-        enum Type
+        enum class Type : std::uint8_t
         {
             Builtin,
             USB,
             Wireless,
             Unknown
         };
-        Type type;
+
+        AudioDeviceID id = 0;
+        std::string name;
+        uint32_t sampleRate = 0;
+        uint32_t bufferFrameSize = 0;
+        Type type = Type::Unknown;
     };
 
     // Core Audio device enumeration and management
@@ -74,15 +75,22 @@ namespace AdaptiveSound
         static DeviceListenerCallback gListenerCallback;
         static void* gListenerContext;
 
-        // Core Audio listener callback trampoline
+        // Core Audio listener callback trampoline. The C-array parameter is
+        // mandated by the Core Audio listener ABI and cannot be changed.
+        // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
         static void listenerCallback(AudioObjectID objectID,
                                      UInt32 numberAddresses,
                                      const AudioObjectPropertyAddress inAddresses[],
                                      void* clientData);
+        // NOLINTEND(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
 
         // Non-instantiable
         CoreAudioDevice() = delete;
         ~CoreAudioDevice() = delete;
+        CoreAudioDevice(const CoreAudioDevice&) = delete;
+        CoreAudioDevice& operator=(const CoreAudioDevice&) = delete;
+        CoreAudioDevice(CoreAudioDevice&&) = delete;
+        CoreAudioDevice& operator=(CoreAudioDevice&&) = delete;
     };
 
 } // namespace AdaptiveSound

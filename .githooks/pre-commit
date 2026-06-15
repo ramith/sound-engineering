@@ -85,19 +85,6 @@ fi
 # ---------------------------------------------------------------------------
 # 3. clang-tidy (blocking; graceful skip if unavailable)
 # ---------------------------------------------------------------------------
-# Files temporarily exempted from clang-tidy. These need behavioral cleanup
-# (vararg logging, malloc/free, enum redesign) that is tracked separately and
-# must not be rushed. Remove entries here as that work lands. See GH issue #5.
-CLANG_TIDY_EXEMPT=(
-    "Sources/AudioDSP/AudioEngine.mm"     # issue #5
-    "Sources/AudioDSP/CoreAudioDevice.mm" # issue #5
-)
-is_exempt() {
-    local target="$1" e
-    for e in "${CLANG_TIDY_EXEMPT[@]}"; do [[ "$e" == "$target" ]] && return 0; done
-    return 1
-}
-
 if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
         sdk="$(xcrun --show-sdk-path 2>/dev/null)"
@@ -110,10 +97,6 @@ if ((${#cpp_files[@]})); then
         [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
 
         for f in "${cpp_files[@]}"; do
-            if is_exempt "$f"; then
-                yellow "⏭️  clang-tidy: skipping exempted $f (see CLANG_TIDY_EXEMPT in this hook)"
-                continue
-            fi
             # Pick the language mode. Project headers may be Obj-C++, so analyse
             # .h/.hpp in objective-c++ mode too (a superset that also parses pure
             # C++). lang_flags is always non-empty (bash 3.2 + set -u safe).
