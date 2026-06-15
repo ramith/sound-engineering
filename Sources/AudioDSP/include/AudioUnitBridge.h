@@ -12,6 +12,9 @@ namespace AdaptiveSound
 
     /// C++-exported AU parameter IDs.
     /// These correspond to AUAudioUnit parameter indexing.
+    /// Base type is uint64_t to match the C-ABI paramID width in setAUParameter/
+    /// getAUParameter (AudioUnitBridge.h); do not shrink it.
+    // NOLINTNEXTLINE(performance-enum-size)
     enum class AUParameterID : uint64_t
     {
         MasterGain = 0, // EQ master gain (dB)
