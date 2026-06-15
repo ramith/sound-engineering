@@ -12,6 +12,9 @@
 namespace AdaptiveSound
 {
 
+    // Opaque forward declarations for Objective-C++ implementation details
+    class AVAudioEngineImpl;
+
     // Device change message for lock-free parameter passing
     struct DeviceChangeMessage
     {
@@ -85,8 +88,8 @@ namespace AdaptiveSound
         static void onDeviceChanged(AudioDeviceID deviceID, void* context);
 
         // State
-        void* outputUnit_ = nullptr; // AVAudioEngine* (opaque to C++ header)
-        void* outputBus_ = nullptr;  // AUAudioUnitBus* (opaque to C++ header)
+        std::unique_ptr<AVAudioEngineImpl> outputUnit_;
+        void* outputBus_ = nullptr; // AUAudioUnitBus* (platform-specific detail)
         AudioStreamBasicDescription streamFormat_{};
         std::atomic<bool> isRunning_{false};
 
