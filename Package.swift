@@ -22,6 +22,31 @@ let package = Package(
                 .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug)),
             ]
         ),
+        // Pure-Swift ViewModel tests — no C++ dependency, builds independently.
+        // AudioViewModel lives in the AdaptiveSound executable target which
+        // cannot be @testable-imported; tests exercise a local mock that mirrors
+        // the exact playTrack(at:) logic.  Move to @testable import when
+        // AudioViewModel is extracted into a library target (Phase 1.5).
+        .testTarget(
+            name: "AudioViewModelTests",
+            dependencies: [],
+            path: "Tests/AudioViewModelTests",
+            swiftSettings: [
+                // CommandLineTools ships Testing.framework in a non-standard path.
+                // Xcode's full toolchain finds it automatically; CLT needs the hint.
+                .unsafeFlags([
+                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                ]),
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-framework", "Testing",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                ]),
+            ]
+        ),
         .target(
             name: "AudioDSP",
             dependencies: [],
