@@ -13,6 +13,8 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: ["AudioDSP"],
             path: "Sources/AdaptiveSound",
+            // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
+            exclude: ["Info.plist"],
             resources: [
                 .process("Assets.xcassets"),
             ],
@@ -49,5 +51,9 @@ let package = Package(
                 .linkedFramework("Foundation"),
             ]
         ),
-    ]
+    ],
+    // The C++/Obj-C++ sources use C++17 features (std::array, [[maybe_unused]]);
+    // declare the standard explicitly so the build matches the code (and the
+    // clang-tidy gate, which already runs at gnu++17).
+    cxxLanguageStandard: .gnucxx17
 )
