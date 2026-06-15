@@ -13,29 +13,65 @@ struct AdaptiveSound: App {
     }
 }
 
-// MARK: - Main Content View
+// MARK: - Main Content View (Phase 2: Tab-Based Layout)
 
 struct ContentView: View {
     @EnvironmentObject var viewModel: AudioViewModel
+    @State private var selectedTab: TabSelection = .nowPlaying
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                HeaderView()
-                StatusCardView()
-                PlaybackControlView()
-                VolumeControlView()
-                EQView()
-                DeviceInfoView()
-                DevicePickerView()
-                if viewModel.errorMessage != nil {
-                    ErrorBannerView()
+        VStack(spacing: 0) {
+            // Fixed Header (44pt)
+            FixedHeaderView()
+                .environmentObject(viewModel)
+
+            // Tab Navigation
+            VStack(spacing: 12) {
+                Picker("Tab Selection", selection: $selectedTab.animation(reduceMotion ? nil : .easeInOut(duration: 0.2))) {
+                    ForEach(TabSelection.allCases, id: \.id) { tab in
+                        HStack(spacing: 6) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(tab.rawValue)
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .tag(tab)
+                    }
                 }
-                Spacer()
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Tab Navigation")
+                .accessibilityValue(selectedTab.rawValue)
+
+                // Breadcrumb subtitle
+                HStack {
+                    Text(selectedTab.subtitle)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.asLabelSecond)
+                        .transition(.opacity)
+                        .id(selectedTab.id)
+                    Spacer()
+                }
             }
-            .frame(minWidth: 600)
+            .padding(.top, 8)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+
+            // Tab Content
+            Group {
+                switch selectedTab {
+                case .nowPlaying:
+                    NowPlayingTabView()
+                case .eq:
+                    EQTabView()
+                case .settings:
+                    SettingsTabView()
+                }
+            }
+            .transition(.opacity)
         }
-        .frame(minHeight: 500)
+        .frame(minWidth: 800, minHeight: 600)
+        .background(Color.asWindow)
         .onAppear {
             viewModel.initializeEngine()
         }
@@ -45,307 +81,36 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Header
+// MARK: - Tab Selection Enum
 
-struct HeaderView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "waveform")
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 76, height: 76)
-                .background(LinearGradient.asIconFill)
-                .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
-                .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
+enum TabSelection: String, CaseIterable {
+    case nowPlaying = "Now Playing"
+    case eq = "EQ"
+    case settings = "Settings"
 
-            Text("Adaptive Sound")
-                .font(BrandFont.heading)
-                .foregroundColor(.asLabel)
-
-            Text("Audio Enhancement Engine")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundColor(.asLabelSecond)
-        }
-        .padding()
+    var id: String {
+        rawValue
     }
-}
 
-// MARK: - Status Card
-
-struct StatusCardView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Engine Status")
-                .font(BrandFont.sectionLabel)
-                .textCase(.uppercase)
-                .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
-
-            HStack {
-                Image(
-                    systemName: viewModel.isEngineReady
-                        ? "circle.fill"
-                        : "circle"
-                )
-                .foregroundColor(
-                    viewModel.isEngineReady
-                        ? .asGreen
-                        : .orange
-                )
-                Text(
-                    viewModel.isEngineReady
-                        ? "Audio Engine Ready"
-                        : "Initializing..."
-                )
-                .font(BrandFont.mono)
-                .foregroundColor(.asLabel)
-                Spacer()
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(Color.asCard)
-            .cornerRadius(9)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
-        }
-        .padding()
-    }
-}
-
-// MARK: - Device Info
-
-struct DeviceInfoView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        if let device = viewModel.selectedDevice {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Output Device")
-                    .font(BrandFont.sectionLabel)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .foregroundColor(.asLabelTertiary)
-                Text(device.displayName)
-                    .font(.body)
-                    .foregroundColor(.asLabel)
-                HStack(spacing: 12) {
-                    Text("\(device.sampleRate) Hz")
-                        .font(.caption)
-                        .foregroundColor(.asLabelSecond)
-                    Text("\(device.bufferFrameSize) frames")
-                        .font(.caption)
-                        .foregroundColor(.asLabelSecond)
-                }
-            }
-            .padding(12)
-            .background(Color.asCard)
-            .cornerRadius(9)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
-            .padding(.horizontal)
+    var subtitle: String {
+        switch self {
+        case .nowPlaying:
+            return "Now Playing"
+        case .eq:
+            return "EQ Editing"
+        case .settings:
+            return "Settings"
         }
     }
-}
 
-// MARK: - Device Picker
-
-struct DevicePickerView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        if !viewModel.availableDevices.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Available Devices")
-                    .font(BrandFont.sectionLabel)
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .foregroundColor(.asLabelTertiary)
-                    .padding(.horizontal)
-
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(viewModel.availableDevices, id: \.id) { device in
-                            DeviceRowView(device: device)
-                        }
-                    }
-                    .padding(8)
-                }
-                .frame(maxHeight: 200)
-                .background(Color.asInset)
-                .cornerRadius(11)
-                .padding(.horizontal)
-            }
-        }
-    }
-}
-
-// MARK: - Device Row
-
-struct DeviceRowView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-    let device: AudioDeviceModel
-
-    var body: some View {
-        Button(action: { viewModel.selectDevice(device) }) {
-            HStack {
-                Image(systemName: device.systemIcon)
-                    .frame(width: 20)
-                    .foregroundStyle(
-                        device.id == viewModel.selectedDevice?.id
-                            ? Color.asAccent
-                            : Color.asLabelSecond
-                    )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.name)
-                        .font(.body)
-                        .foregroundColor(.asLabel)
-                    Text("\(device.sampleRate) Hz")
-                        .font(.caption)
-                        .foregroundColor(.asLabelSecond)
-                }
-                Spacer()
-                if device.id == viewModel.selectedDevice?.id {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.asAccent)
-                }
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(
-                device.id == viewModel.selectedDevice?.id
-                    ? Color.asSelection
-                    : Color.clear
-            )
-            .cornerRadius(6)
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Device: \(device.displayName)")
-        .accessibilityAddTraits(
-            device.id == viewModel.selectedDevice?.id
-                ? .isSelected
-                : []
-        )
-    }
-}
-
-// MARK: - Playback Control
-
-struct PlaybackControlView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Playback")
-                .font(BrandFont.sectionLabel)
-                .textCase(.uppercase)
-                .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
-
-            HStack(spacing: 12) {
-                Button(action: {
-                    if viewModel.isPlaying {
-                        viewModel.stopPlayback()
-                    } else {
-                        viewModel.startPlayback()
-                    }
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: viewModel.isPlaying ? "stop.fill" : "play.fill")
-                        Text(viewModel.isPlaying ? "Stop" : "Play 1 kHz Tone")
-                            .font(BrandFont.body)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background(viewModel.isPlaying ? Color.asAccent.opacity(0.2) : Color.asCard)
-                    .foregroundColor(.asLabel)
-                    .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .disabled(!viewModel.isEngineReady)
-
-                Text(viewModel.isPlaying ? "Playing" : "Ready")
-                    .font(BrandFont.mono)
-                    .foregroundColor(viewModel.isPlaying ? .asGreen : .asLabelSecond)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.asCard)
-            .cornerRadius(9)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
-        }
-        .padding()
-    }
-}
-
-// MARK: - Volume Control
-
-struct VolumeControlView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Master Gain")
-                .font(BrandFont.sectionLabel)
-                .textCase(.uppercase)
-                .tracking(0.6)
-                .foregroundColor(.asLabelTertiary)
-
-            HStack(spacing: 12) {
-                Image(systemName: "speaker.wave.1")
-                    .foregroundColor(.asLabelSecond)
-
-                Slider(value: $viewModel.masterGain, in: 0 ... 1, step: 0.01)
-                    .tint(.asAccent)
-
-                Image(systemName: "speaker.wave.3")
-                    .foregroundColor(.asAccent)
-
-                Text("\(Int(viewModel.masterGain * 100))%")
-                    .font(BrandFont.mono)
-                    .foregroundColor(.asLabel)
-                    .frame(width: 40, alignment: .trailing)
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(Color.asCard)
-            .cornerRadius(9)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5))
-        }
-        .padding()
-    }
-}
-
-// MARK: - Error Banner
-
-struct ErrorBannerView: View {
-    @EnvironmentObject var viewModel: AudioViewModel
-
-    var body: some View {
-        if let error = viewModel.errorMessage {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.asAccent)
-                    Text(error)
-                        .font(.body)
-                        .foregroundColor(.asLabel)
-                    Spacer()
-                }
-                Button(action: { viewModel.retryInitialization() }) {
-                    Text("Retry")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.asAccent)
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(12)
-            .background(Color.asAccent.opacity(0.10))
-            .cornerRadius(8)
-            .padding()
-            .accessibilityElement(children: .combine)
+    var icon: String {
+        switch self {
+        case .nowPlaying:
+            return "play.circle.fill"
+        case .eq:
+            return "slider.horizontal.3"
+        case .settings:
+            return "gearshape.fill"
         }
     }
 }
