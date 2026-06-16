@@ -33,6 +33,27 @@ extern "C"
     /// lifetime. Pass to AVAudioUnit.instantiate(with:options:).
     AudioComponentDescription adaptiveAudioUnitComponentDescription(void);
 
+    /// Register the SpatialRendererAU subclass (the device-boundary N->M render stage, subtype
+    /// 'aspz') with the AudioComponent registry so it can be instantiated in-process via
+    /// AVAudioUnit.instantiate(with:options:). Idempotent and thread-safe (dispatch_once). Call
+    /// during engine setup before instantiating. Separate registry entry from AdaptiveSoundAU.
+    void registerSpatialRendererAUSubclass(void);
+
+    /// The AudioComponentDescription the SpatialRendererAU subclass is registered under (subtype
+    /// 'aspz', same manufacturer as AdaptiveSoundAU). Stable for the process lifetime. Pass to
+    /// AVAudioUnit.instantiate(with:options:).
+    AudioComponentDescription spatialRendererComponentDescription(void);
+
+    /// Override the SpatialRendererAU's N->M channel routing explicitly (off-RT control plane).
+    /// Normally UNNECESSARY: allocateRenderResources derives N (input) and M (output) from the
+    /// connect-negotiated bus formats, so Swift just connects at the desired formats. Exposed for
+    /// callers that do not drive width via the bus formats.
+    ///
+    /// @param auHandle    Borrowed (passUnretained) AUAudioUnit*; no-op if null.
+    /// @param inChannels  Source channel count N (clamped to the DSP ceiling by the kernel).
+    /// @param outChannels Device channel count M (clamped to the DSP ceiling by the kernel).
+    void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels);
+
     /// Publish a full 31-band EQ gain vector (dB) to the live AdaptiveSoundAU (Sprint 5 M2).
     /// Off-RT control plane: computes the minimum-phase biquad cascade and atomically publishes
     /// an updated TargetState snapshot to the kernel. Does NOT touch the render thread. Must be
