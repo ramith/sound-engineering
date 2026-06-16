@@ -91,8 +91,15 @@ final class EQViewModel {
     /// Called exactly once per user action — never in a per-band loop. Used by
     /// `selectPreset` and `commitCustomBandEdits` (the canvas commits drags
     /// through the latter, never writing `bandGains`/dispatching directly).
+    ///
+    /// The published gains pass through `EQSafetyClamp` (Sprint 4 M5): if the
+    /// summed band gains exceed the cumulative hearing-safety ceiling, all bands
+    /// are proportionally scaled down before reaching the kernel. `bandGains`
+    /// itself is left untouched, so sliders/canvas keep showing the user's intent
+    /// while the kernel only ever receives a hearing-safe shape.
     func dispatchAllBands() {
-        for (index, gain) in bandGains.enumerated() {
+        let safeGains = EQSafetyClamp.clamped(bandGains)
+        for (index, gain) in safeGains.enumerated() {
             let paramID = eqBandBaseParameterID + UInt32(index)
             audioViewModel.setParameter(paramID, value: gain)
         }

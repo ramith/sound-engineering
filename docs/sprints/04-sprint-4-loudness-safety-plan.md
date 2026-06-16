@@ -39,8 +39,8 @@ Every SOTA finding from the online research is validated against this principle 
 |---|---|---|
 | **Limiter** | ✅ **M1 hardened & verified** (deque peak, linear-domain gain, +margin, 96-frame lookahead) | `LimiterModule.h`; harness 10/10. *M3 SOTA upgrade pending — see below.* |
 | **Loudness (LUFS)** | ✅ **M2 implemented & verified** (BS.1770-5 meter, SPSC ring, off-RT jthread) | `LufsMeter.h`, `LoudnessModule.{h,mm}`, `SpscRing.h`; harness 15/15; ffmpeg oracle ±0.037 LU; TSan clean |
-| **Metering UI** | ❌ Not started (M4) — `LoudnessModule` already exposes lock-free getters | — |
-| **Hearing-safety clamps** | ❌ Not started (M5; no Arbiter/control plane exists yet) | — |
+| **Metering UI** | ✅ **M4 implemented** (meters via the Swift mainMixer tap → C++ `LufsMeter`; integrated/short-term LUFS + sample-peak) | `UI/Loudness/`, `LoudnessMeterBridge.mm`, `AudioViewModel.tickSpectrum` |
+| **Hearing-safety clamps** | ✅ **M5 implemented & verified** (proportional cumulative-gain clamp in the EQ dispatch chokepoint) | `EQSafetyClamp.swift`, `EQViewModel.dispatchAllBands`; standalone harness 13/13 (`scripts/build-eq-clamp-test.sh`) |
 | **`swift test`** | ⚠️ Broken on Xcode-toolchain machines (swift-testing macro/framework skew) | `Package.swift:50–61, 109–120` link CLT `Testing.framework` while the active toolchain is Xcode 6.3.2 |
 
 Signal chain (verified in `DSPKernel.mm`): `EQ → Clarity → BRIR → Loudness → Limiter`.
