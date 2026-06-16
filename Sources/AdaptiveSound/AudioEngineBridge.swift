@@ -60,8 +60,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
 
     /// Top-level engine-graph state. Introduced in S0-M3; the `.reconfiguring` transition is now
-    /// driven by `reconfigureGraph(to:)` (Sprint 5b M2-c). The trigger that calls it (track/device
-    /// channel-count change) is wired in M2-d; nothing calls `reconfigureGraph` yet.
+    /// driven by `reconfigureGraph(to:)` (Sprint 5b M2-c). The trigger that calls it (track
+    /// channel-count change at file load) is wired in M2-d (`startAudio` -> `configureGraphForSource`).
     enum GraphState {
         case idle
         case running(channelCount: Int)
@@ -216,49 +216,20 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                         throw AudioBridgeError.engineNotInitialized
                     }
 
-                    // Start the engine first
+                    // Start the engine first.
                     if !engine.isRunning {
                         try engine.start()
                     }
 
-                    // Install the spectrum tap once the engine is running.
-                    // installSpectrumTap is idempotent (guarded by tapInstalled flag).
+                    // Install the spectrum tap once the engine is running. installSpectrumTap is
+                    // idempotent (guarded by tapInstalled). If the file path below re-widths the
+                    // graph, reconfigureGraph cycles the taps to the new width on its own.
                     self.installSpectrumTap()
 
                     if let fileURL = fileURL {
-                        // Establish security-scoped access for sandboxed macOS file access
-                        let didAccess = fileURL.startAccessingSecurityScopedResource()
-                        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
-
-                        // Load and schedule the audio file (AVAudioFile handles format conversion)
-                        do {
-                            // CRITICAL: Stop and reset the player before scheduling a new file.
-                            // If we don't stop, the new file queues AFTER the old one instead of replacing it.
-                            // This ensures track switching happens immediately, not after current track finishes.
-                            if playerNode.isPlaying {
-                                playerNode.stop()
-                            }
-
-                            let audioFile = try AVAudioFile(forReading: fileURL)
-                            playerNode.scheduleFile(audioFile, at: nil)
-                            playerNode.play()
-                        } catch {
-                            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
-                        }
+                        try self.playFile(at: fileURL, engine: engine, playerNode: playerNode)
                     } else {
-                        // Fallback to reference tone if no file provided
-                        self.referenceToneBuffer = self.generateReferenceTone(
-                            frequency: 1000.0,
-                            duration: 5.0,
-                            sampleRate: 48000.0
-                        )
-
-                        if let buffer = self.referenceToneBuffer {
-                            if !playerNode.isPlaying {
-                                playerNode.play()
-                            }
-                            playerNode.scheduleBuffer(buffer, at: nil)
-                        }
+                        self.playReferenceTone(on: playerNode)
                     }
 
                     continuation.resume(returning: ())
@@ -266,6 +237,59 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    /// Open `fileURL`, drive the M2-d multichannel load sequence, then schedule + play it.
+    ///
+    /// Sequence (the M2-d contract): read N + the source channel layout from the opened file,
+    /// `configureGraphForSource` (reconfigure the graph to N — a same-count no-op for stereo — THEN
+    /// publish the layout tag to the kernel for correct BS.1770-5 weights), and only AFTER that
+    /// stop the player + schedule + play. Reconfiguring before scheduling means the file is queued
+    /// onto the graph already settled at its width.
+    private func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode) throws {
+        // Establish security-scoped access for sandboxed macOS file access.
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(forReading: fileURL)
+        } catch {
+            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
+        }
+
+        // 1. Read the source width N and (optional) layout tag from the processing format.
+        let processingFormat = audioFile.processingFormat
+        let channelCount = processingFormat.channelCount
+        let channelLayout = processingFormat.channelLayout
+
+        // 2. Reconfigure the graph to N, THEN publish the layout to the kernel (M2-d). Stereo
+        //    sources hit the same-count no-op, so the existing stereo path is unchanged.
+        configureGraphForSource(channelCount: channelCount, channelLayout: channelLayout)
+
+        // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
+        //    the current one, then schedule + play onto the freshly settled graph.
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
+        playerNode.scheduleFile(audioFile, at: nil)
+        playerNode.play()
+    }
+
+    /// Fallback path when no file is supplied: schedule a 1 kHz reference tone on the player.
+    private func playReferenceTone(on playerNode: AVAudioPlayerNode) {
+        referenceToneBuffer = generateReferenceTone(
+            frequency: 1000.0,
+            duration: 5.0,
+            sampleRate: 48000.0
+        )
+
+        if let buffer = referenceToneBuffer {
+            if !playerNode.isPlaying {
+                playerNode.play()
+            }
+            playerNode.scheduleBuffer(buffer, at: nil)
         }
     }
 

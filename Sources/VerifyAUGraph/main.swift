@@ -25,6 +25,14 @@
 //     immutable while running), which is exactly the branch `reconfigureGraph` takes when it
 //     detects `engine.isInManualRenderingMode`.
 //
+//   M2-d (Sprint 5b M2-d, file-load device-width resolution) — the file-load trigger re-widths the
+//     graph to the SOURCE width N and resolves the device width M = min(N, deviceChannels). With a
+//     simulated STEREO device (offline manual-rendering width 2), reconfiguring to a synthetic 6ch
+//     source must leave the effects-AU input + spatial-AU input at N = 6 (process at full width)
+//     and the spatial-AU output + mixer + output at M = min(6, 2) = 2 (the device boundary). This
+//     mirrors `AudioEngineBridge.applyReconfigure` + `deviceWidthFormat` exactly: a 5.1 file on a
+//     stereo device processes at 6 and the spatial AU renders 6->2 (its S4 device<N stub).
+//
 //   M3-2 (Sprint 5b M3-2) — SpatialRendererAU register + instantiate smoke check.
 //
 //   M3-3 (Sprint 5b M3-3, TWO-AU graph) — the FULL device-boundary topology
@@ -535,7 +543,7 @@ print("ALL M3-2 CHECKS PASSED — SpatialRendererAU registers + instantiates wit
 // This mirrors the production chain built by `AudioEngineBridge.connectInitialGraph` /
 // `reconnectGraph`: the effects-AU edges (player->effects->spatial) at the source/processing
 // width N, and the spatial-AU output + mixer + output at the device width M. For M3 the device
-// width M == source width N (an identity spatial route — see the TODO(M3/S4) markers in the
+// width M == source width N (an identity spatial route — see the TODO(S4) markers in the
 // bridge), so with BOTH AUs in their default (bit-exact bypass) state the whole chain must be a
 // BIT-EXACT passthrough of the input, PER CHANNEL, at each width. That proves:
 //   1. the SpatialRendererAU is correctly inserted between the effects AU and the mixer,
@@ -833,7 +841,157 @@ if !verifyM3p3() {
 print("ALL M3-3 CHECKS PASSED — full player->effects->spatial->mixer->output graph carries N channels "
     + "end to end with the spatial AU correctly inserted as the device boundary, and the spatial AU is "
     + "a bit-exact identity route (M == N) at {2,6,8}ch")
+
+// =====================================================================================
+// M2-d — file-load device-width resolution: M = min(N, deviceChannels).
+//
+// The file-load trigger re-widths the graph to the SOURCE width N and (for the device-boundary
+// edges) resolves M = min(N, deviceChannels). This mirrors `AudioEngineBridge.deviceWidthFormat`
+// + `applyReconfigure`: a 5.1 file (N = 6) on a STEREO device (deviceChannels = 2) must process at
+// N = 6 (effects-AU input + spatial-AU input) and render N->M = 2 at the spatial-AU output (mixer
+// + output also at M = 2). We simulate the fixed stereo device with an offline manual-rendering
+// width of 2, then run the offline reconfigure dance (the branch `applyReconfigure` takes when
+// `isInManualRenderingMode`) to the 6ch source and assert the bus widths.
+// =====================================================================================
+
+/// Free-function mirror of `AudioEngineBridge.deviceWidthFormat`: M = min(N, deviceChannels),
+/// reusing the source format when M == N or when `multichannelFormat(for: M)` has no mapping.
+/// Kept in the harness (the bridge type isn't constructed here) and asserted to agree with the
+/// production resolution by construction.
+func resolvedDeviceFormat(sourceFormat: AVAudioFormat, deviceChannels: AVAudioChannelCount) -> AVAudioFormat {
+    let sourceChannels = sourceFormat.channelCount
+    guard deviceChannels > 0 else { return sourceFormat }
+    let deviceWidth = min(sourceChannels, deviceChannels)
+    if deviceWidth == sourceChannels { return sourceFormat }
+    if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
+        return format
+    }
+    return sourceFormat
+}
+
+/// Build the two-AU graph offline at the simulated `deviceChannels` width, then run the offline
+/// reconfigure dance to `sourceChannels` (effects edges at N; spatial output + mixer + output at
+/// M = min(N, deviceChannels)). Asserts the negotiated bus widths match the M2-d contract.
+func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
+                                 deviceChannels: AVAudioChannelCount) -> Bool
+{
+    let label = "[N=\(sourceChannels), device=\(deviceChannels)]"
+    print("--- M2-d device-width resolution \(label) (effects/spatial in = N; spatial out/device = min(N,device)) ---")
+
+    guard let deviceFmt = multichannelFormat(for: deviceChannels, sampleRate: sampleRate),
+          let sourceFmt = multichannelFormat(for: sourceChannels, sampleRate: sampleRate)
+    else {
+        print("M2-d FAIL \(label): could not build device/source formats")
+        return false
+    }
+    guard let effects = instantiateAU(), let spatial = instantiateSpatialAU() else {
+        print("M2-d FAIL \(label): AU instantiate returned nil")
+        return false
+    }
+
+    let dwEngine = AVAudioEngine()
+    let dwPlayer = AVAudioPlayerNode()
+    defer { dwEngine.stop() }
+    // 1. Build + start the graph at the simulated device width (the engine's fixed device width).
+    connectTwoAUGraph(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
+                      sourceFormat: deviceFmt, deviceFormat: deviceFmt)
+    do {
+        try dwEngine.enableManualRenderingMode(.offline, format: deviceFmt, maximumFrameCount: renderBlockSize)
+        try dwEngine.start()
+    } catch {
+        print("M2-d FAIL \(label): initial device-width engine setup threw: \(error)")
+        return false
+    }
+
+    // 2. Resolve M from the output node (the in-effect device width) BEFORE re-enabling, exactly as
+    //    `applyReconfigure` does, then reconfigure to the 6ch source via the offline dance.
+    let observedDeviceChannels = dwEngine.outputNode.outputFormat(forBus: 0).channelCount
+    let resolvedDevice = resolvedDeviceFormat(sourceFormat: sourceFmt, deviceChannels: observedDeviceChannels)
+    if !reconfigureToSource(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
+                            sourceFormat: sourceFmt, deviceFormat: resolvedDevice, label: label)
+    {
+        return false
+    }
+
+    return assertDeviceWidths(effects: effects, spatial: spatial, sourceChannels: sourceChannels,
+                              expectedDeviceChannels: resolvedDevice.channelCount, label: label)
+}
+
+/// The offline reconfigure dance (stop -> reconnect at N/M -> re-enable at M -> start), mirroring
+/// `applyReconfigure`'s manual-rendering branch. Effects edges at `sourceFormat` (N); spatial
+/// output + mixer + output at `deviceFormat` (M).
+func reconfigureToSource(
+    engine: AVAudioEngine,
+    player: AVAudioPlayerNode,
+    effects: AVAudioUnit,
+    spatial: AVAudioUnit,
+    sourceFormat: AVAudioFormat,
+    deviceFormat: AVAudioFormat,
+    label: String
+) -> Bool {
+    player.stop()
+    engine.stop()
+    engine.connect(player, to: effects, format: sourceFormat)
+    engine.connect(effects, to: spatial, format: sourceFormat)
+    engine.connect(spatial, to: engine.mainMixerNode, format: deviceFormat)
+    engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat)
+    do {
+        try engine.enableManualRenderingMode(.offline, format: deviceFormat, maximumFrameCount: renderBlockSize)
+        try engine.start()
+    } catch {
+        print("M2-d FAIL \(label): reconfigure to source width threw: \(error)")
+        return false
+    }
+    return true
+}
+
+/// Assert the negotiated bus widths after the reconfigure: effects-AU input + spatial-AU input at
+/// N, spatial-AU output + mixer + output at the expected device width M.
+func assertDeviceWidths(
+    effects: AVAudioUnit,
+    spatial: AVAudioUnit,
+    sourceChannels: AVAudioChannelCount,
+    expectedDeviceChannels: AVAudioChannelCount,
+    label: String
+) -> Bool {
+    let effectsIn = effects.inputFormat(forBus: 0).channelCount
+    let effectsOut = effects.outputFormat(forBus: 0).channelCount
+    let spatialIn = spatial.inputFormat(forBus: 0).channelCount
+    let spatialOut = spatial.outputFormat(forBus: 0).channelCount
+
+    if effectsIn != sourceChannels || effectsOut != sourceChannels || spatialIn != sourceChannels {
+        print("M2-d FAIL \(label): processing width != N (\(sourceChannels)) — "
+            + "effectsIn=\(effectsIn) effectsOut=\(effectsOut) spatialIn=\(spatialIn)")
+        return false
+    }
+    if spatialOut != expectedDeviceChannels {
+        print("M2-d FAIL \(label): spatial output width \(spatialOut) != device M \(expectedDeviceChannels)")
+        return false
+    }
+    print("M2-d PASS \(label): effects in/out = \(effectsIn)/\(effectsOut), spatial in = \(spatialIn) (= N), "
+        + "spatial out = \(spatialOut) (= M = min(N, device)); processes at N, renders at device width M")
+    return true
+}
+
+func verifyM2d() -> Bool {
+    // 5.1 source on a stereo device: N = 6, device = 2 -> M = min(6, 2) = 2.
+    guard verifyDeviceWidthResolution(sourceChannels: 6, deviceChannels: 2) else { return false }
+    // 5.1 source on a 7.1-capable device: N = 6, device = 8 -> M = min(6, 8) = 6 (M == N).
+    guard verifyDeviceWidthResolution(sourceChannels: 6, deviceChannels: 8) else { return false }
+    // Stereo source on a stereo device: N = 2, device = 2 -> M = 2 (the unchanged stereo path).
+    guard verifyDeviceWidthResolution(sourceChannels: 2, deviceChannels: 2) else { return false }
+    return true
+}
+
+if !verifyM2d() {
+    print("VERIFY FAIL: file-load device-width resolution (M2-d) check failed")
+    exit(1)
+}
+
+print("ALL M2-d CHECKS PASSED — file-load reconfigure processes at N and resolves device width "
+    + "M = min(N, deviceChannels): 5.1-on-stereo -> 6/2, 5.1-on-7.1 -> 6/6, stereo-on-stereo -> 2/2")
 print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
-    + "M2-c (live reconfigure stereo->6->stereo) PASS + M3-2 (SpatialRendererAU register) PASS + "
+    + "M2-c (live reconfigure stereo->6->stereo) PASS + M2-d (device width M=min(N,device)) PASS + "
+    + "M3-2 (SpatialRendererAU register) PASS + "
     + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS ===")
 exit(0)
