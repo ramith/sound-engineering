@@ -20,32 +20,42 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Owns the FFT state and the lock-free double-buffer.
     /// Created in `initialize()` (off the audio thread) so all buffers are
     /// pre-allocated before the tap fires.
-    private var spectrumAnalyzer: SpectrumAnalyzer?
+    var spectrumAnalyzer: SpectrumAnalyzer?
 
     /// Opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
     /// Created in `initialize()`, destroyed in `shutdown()`.
-    private var loudnessMeter: UnsafeMutableRawPointer?
+    var loudnessMeter: UnsafeMutableRawPointer?
 
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
-    private var tapInstalled = false
+    var tapInstalled = false
 
-    /// The custom DSP AU node, inserted as `player -> AU -> mainMixer` (Sprint 5 M1).
+    /// The custom DSP effects AU node (N->N), inserted as `player -> effectsAU -> spatialAU` (M1).
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     var dspAudioUnit: AVAudioUnit?
+
+    /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
+    /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3). It is the stage that maps the
+    /// source/processing width N to the device width M, so the mixer no longer naively downmixes
+    /// (it runs at the device width M). For M3 the device width M == source width N, making the
+    /// spatial AU a bit-exact identity route; S4 introduces the real M < N fold (binaural).
+    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
+    var spatialAudioUnit: AVAudioUnit?
 
     // MARK: - Monitoring analyzers (per-channel before/after spectra; Sprint 5 M3)
 
     /// One spectrum analyzer PER CHANNEL for each tap point: `beforeAnalyzers` from the pre-DSP
-    /// player-node tap, `afterAnalyzers` from the post-DSP mixer tap. Sized to the stream's
+    /// player-node tap, `afterAnalyzers` from the post-DSP effects-AU tap. Sized to the stream's
     /// channel count at init — N-channel by construction (stereo today; practical ceiling 7.1 / 8).
     /// Read by the Monitoring tab; never resized on the audio thread.
     var beforeAnalyzers: [SpectrumAnalyzer] = []
     var afterAnalyzers: [SpectrumAnalyzer] = []
-    /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the AU output bus —
-    /// NOT the mixer (which will carry the device channel count once the pipeline is multichannel).
-    private var beforeTapInstalled = false
-    private var afterTapInstalled = false
+    /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the EFFECTS AU output bus —
+    /// NOT the mixer (which carries the device width M once the spatial AU is in the graph), and
+    /// NOT the spatial AU (which renders the device-width signal; "after DSP" monitors the
+    /// N-channel processed signal). Both stay N-channel by construction.
+    var beforeTapInstalled = false
+    var afterTapInstalled = false
 
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
 
@@ -63,8 +73,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     // MARK: - Initialize
 
     func initialize() async throws -> Bool {
-        // Register the custom AU subclass once per process (idempotent on the C++ side).
+        // Register both custom AU subclasses once per process (idempotent on the C++ side).
         registerAdaptiveAudioUnitSubclass()
+        registerSpatialRendererAUSubclass()
 
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -78,157 +89,19 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     return
                 }
 
-                // Attach the player now, but DON'T connect it to the mixer here — the player is
-                // connected to the AU below. Connecting player -> mixer too would create a second
-                // (dry) signal path into the mixer.
+                // Attach the player now, but DON'T connect it to the mixer here — the player feeds
+                // the effects AU below. Connecting player -> mixer too would create a second (dry)
+                // signal path into the mixer.
                 let player = AVAudioPlayerNode()
                 self.playerNode = player
                 engine.attach(player)
 
-                // Instantiate the custom DSP AU and wire player -> AU -> mainMixer. The completion
-                // handler (delivered on an arbitrary queue; main thread not required for attach/
-                // connect) is the single place we resume the continuation for this path.
-                let description = adaptiveAudioUnitComponentDescription()
-                AVAudioUnit.instantiate(with: description, options: []) { [weak self] audioUnit, error in
-                    guard let self else {
-                        continuation.resume(returning: false)
-                        return
-                    }
-                    guard let audioUnit, error == nil else {
-                        continuation.resume(returning: false)
-                        return
-                    }
-
-                    self.dspAudioUnit = audioUnit
-                    engine.attach(audioUnit)
-                    engine.connect(player, to: audioUnit, format: format)
-                    engine.connect(audioUnit, to: engine.mainMixerNode, format: format)
-
-                    // Pre-allocate the spectrum analyzer + loudness meter off the audio thread
-                    // (vDSP_create_fftsetup allocates), keyed to the mixer's output sample rate
-                    // now that the graph is built. The mixer tap still feeds both (M3 will add a
-                    // second tap on the AU output bus for the after-DSP spectrum).
-                    let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
-                    let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
-                    self.spectrumAnalyzer = SpectrumAnalyzer(
-                        fftSize: SpectrumConstants.fftSize,
-                        sampleRate: sampleRate
-                    )
-                    self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
-
-                    // Per-channel monitoring analyzers (Sprint 5 M3) — one per channel of the
-                    // graph format, for the pre-DSP (player) and post-DSP (mixer) tap points.
-                    // N-channel by construction: stereo today, scales to 7.1 when the pipeline
-                    // goes multichannel. Allocated here, off the audio thread.
-                    let channelCount = Int(format.channelCount)
-                    self.beforeAnalyzers = (0 ..< channelCount).map { _ in
-                        SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-                    }
-                    self.afterAnalyzers = (0 ..< channelCount).map { _ in
-                        SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-                    }
-
-                    self.graphState = .running(channelCount: channelCount)
-                    continuation.resume(returning: true)
-                }
+                // Instantiate both AUs and build the two-AU graph; the (nested) completion handlers
+                // resume the continuation exactly once for this path.
+                self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
+                                              completion: continuation.resume(returning:))
             }
         }
-    }
-
-    // MARK: - Spectrum tap
-
-    /// Install the analysis taps: the Now-Playing spectrum + loudness meter on `mainMixerNode`,
-    /// the per-channel "before" spectra on the player node (pre-DSP), and the per-channel "after"
-    /// spectra on the AU output bus (post-DSP — NOT the mixer, so they stay N-channel once the
-    /// mixer downmixes to the device).
-    ///
-    /// The tap blocks run on the audio thread (or a CoreAudio I/O thread). They may NOT allocate,
-    /// lock, log, or call Obj-C/Swift runtime beyond indexed buffer access + Accelerate.
-    ///
-    /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the analyzer can process one
-    /// tap delivery per FFT frame. AVAudioEngine rounds up to a power-of-two multiple of the
-    /// hardware buffer size automatically if needed.
-    func installSpectrumTap() {
-        guard let engine = avEngine, !tapInstalled else { return }
-        let mixer = engine.mainMixerNode
-        let mixerFormat = mixer.outputFormat(forBus: 0)
-
-        mixer.installTap(onBus: 0,
-                         bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                         format: mixerFormat)
-        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-            // --- AUDIO THREAD ---
-            // Access only pre-allocated state through the analyzer pointer.
-            guard let analyzer = self?.spectrumAnalyzer else { return }
-            let abl = buffer.mutableAudioBufferList
-            analyzer.processTapBuffer(
-                abl,
-                frameCount: buffer.frameLength,
-                channelCount: buffer.format.channelCount
-            )
-
-            // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
-            if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
-                let left = channels[0]
-                let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
-                loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
-            }
-        }
-
-        // Pre-DSP (BEFORE) tap on the player node — a different node from the mixer, so the
-        // one-tap-per-bus rule holds. Feeds the per-channel before analyzers (N-channel).
-        if let player = playerNode {
-            let playerFormat = player.outputFormat(forBus: 0)
-            player.installTap(onBus: 0,
-                              bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                              format: playerFormat)
-            { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-                // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
-                guard let beforeAnalyzers = self?.beforeAnalyzers else { return }
-                let abl = buffer.mutableAudioBufferList
-                let channels = min(beforeAnalyzers.count, Int(buffer.format.channelCount))
-                for index in 0 ..< channels {
-                    beforeAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-                }
-            }
-            beforeTapInstalled = true
-        }
-
-        // Post-DSP (AFTER) tap on the AdaptiveSound AU output bus — deliberately NOT the mixer.
-        // Once the multichannel pipeline lands, the mixer carries the device channel count
-        // (post spatial-render), so "after DSP" monitoring must observe the AU's N-channel output.
-        if let dspUnit = dspAudioUnit {
-            let auFormat = dspUnit.outputFormat(forBus: 0)
-            dspUnit.installTap(onBus: 0,
-                               bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                               format: auFormat)
-            { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-                // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
-                guard let afterAnalyzers = self?.afterAnalyzers else { return }
-                let abl = buffer.mutableAudioBufferList
-                let channels = min(afterAnalyzers.count, Int(buffer.format.channelCount))
-                for index in 0 ..< channels {
-                    afterAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-                }
-            }
-            afterTapInstalled = true
-        }
-
-        tapInstalled = true
-    }
-
-    func removeSpectrumTap() {
-        guard let engine = avEngine, tapInstalled else { return }
-        engine.mainMixerNode.removeTap(onBus: 0)
-        if beforeTapInstalled {
-            playerNode?.removeTap(onBus: 0)
-            beforeTapInstalled = false
-        }
-        if afterTapInstalled {
-            dspAudioUnit?.removeTap(onBus: 0)
-            afterTapInstalled = false
-        }
-        tapInstalled = false
     }
 
     // MARK: - Public spectrum read (called from main thread via ViewModel)
@@ -307,11 +180,13 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 if let engine = self.avEngine, engine.isRunning {
                     engine.stop()
                 }
-                // Detach the DSP AU (graph is stopped; safe to mutate) and drop the strong ref.
-                if let engine = self.avEngine, let audioUnit = self.dspAudioUnit {
-                    engine.detach(audioUnit)
+                // Detach both AUs (graph is stopped; safe to mutate) and drop the strong refs.
+                if let engine = self.avEngine {
+                    if let effectsUnit = self.dspAudioUnit { engine.detach(effectsUnit) }
+                    if let spatialUnit = self.spatialAudioUnit { engine.detach(spatialUnit) }
                 }
                 self.dspAudioUnit = nil
+                self.spatialAudioUnit = nil
                 self.avEngine = nil
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
