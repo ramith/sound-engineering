@@ -13,9 +13,12 @@
 //
 // <AudioToolbox/AudioComponent.h> is the C (not Obj-C) home of AudioComponentDescription, so
 // including it here is safe for every translation unit that pulls in DeviceBridge.h.
+// <CoreAudioTypes/CoreAudioBaseTypes.h> is the C home of AudioChannelLayoutTag (a UInt32
+// typedef) — likewise pure C and safe for every includer (Swift bridging included).
 //
 
 #include <AudioToolbox/AudioComponent.h>
+#include <CoreAudioTypes/CoreAudioBaseTypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -66,6 +69,17 @@ extern "C"
     /// @return true if validated and published; false on any validation failure.
     bool
     publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate);
+
+    /// Publish the source file's channel layout tag to the live AdaptiveSoundAU (Sprint 5b M2).
+    /// Off-RT control plane: decodes `tag` into the per-channel BS.1770-5 loudness weights and
+    /// hands them to the kernel, which forwards them (lock-free) to the loudness worker. Does NOT
+    /// touch the render thread. Must be called from a single control thread; a cheap decode plus a
+    /// non-blocking publish (no allocation, no locks). No-op if `auHandle` is null.
+    ///
+    /// @param auHandle Borrowed (passUnretained) AUAudioUnit*; no-op if null.
+    /// @param tag      CoreAudio AudioChannelLayoutTag describing the source layout; unrecognised
+    ///                 tags decode to a neutral fallback (all weights 1.0).
+    void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag);
 
 #ifdef __cplusplus
 } // extern "C"
