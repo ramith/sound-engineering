@@ -1,4 +1,4 @@
-# SPRINT 1: Loudness Safety & Transparent Dynamics
+# SPRINT 4: Loudness Safety & Transparent Dynamics
 
 **Theme:** Establish the safety floor — true-peak limiter + LUFS normalization  
 **Effort:** 5–10 story points  
@@ -14,7 +14,7 @@
 **Why Industry-Best:**
 - True-peak limiting is non-negotiable (hearing safety, DAC headroom, platform spec)
 - LUFS normalization is transparent (no artifacts, no "program dynamics," no listening-level variation)
-- Fractional loudness compensation (Sprint 3) will layer on top; this sprint establishes the safe floor it builds on
+- Fractional loudness compensation (Sprint 6) will layer on top; this sprint establishes the safe floor it builds on
 
 ---
 
@@ -36,6 +36,31 @@
 ```
 [Clarity] → [Loudness] → [BRIR] → [Limiter] → [Master Gain] → Device Output
 ```
+
+> **Implementation reconciliation (Sprint 4 M6).** The chain *actually built and
+> verified* in `DSPKernel.mm` (`process()`, in order) is:
+> `EQ → Clarity → BRIR → Loudness → Limiter`. Two differences from the diagram above:
+> 1. **EQ leads the chain** — it is omitted from this limiter-section diagram but is the
+>    first module (the diagram was scoped to the limiter's neighbours, not the full graph).
+> 2. **BRIR precedes Loudness** (diagram shows the reverse). This is the intended order:
+>    loudness measurement / makeup should observe the *post-spatialization* program so the
+>    metered LUFS matches what reaches the limiter and the DAC. The diagram's
+>    `Loudness → BRIR` ordering is a spec-doc artifact, not the implemented behaviour.
+>
+> **True-peak ceiling margin (as implemented).** The −1 dBTP ceiling is enforced with an
+> additional **−0.27 dB inter-sample safety margin** (`kIspSafetyMargin ≈ 0.9694`, the
+> tightest reliably-achievable headroom at the shipped 8×/24-tap polyphase detector — the
+> spec's aspirational −0.1 dB is unreachable at this oversampling/tap count without false
+> overs). The detector is sidechain-only; the audio path stays at base rate. See the M3
+> survey in the plan doc for the derivation.
+
+> **Live-path caveat (Sprint 4).** The DSP kernel above is **not yet attached to the
+> `AVAudioEngine` playback graph** — playback is `AVAudioPlayerNode → mainMixerNode`, and the
+> loudness meters are fed by a Swift tap on the mixer (sample-peak + LUFS, not true-peak/GR).
+> The limiter, makeup gain, and EQ are fully built and unit-verified but do **not** process
+> live audio until the AU is wired into the graph (a future AU-integration task, out of
+> Sprint 4 scope). The 1-hour live-soak / founder A-B items below therefore exercise playback,
+> not the RT DSP; the DSP's soak coverage is the synthetic `Limiter_HotNoiseSoak` harness test.
 
 **RT Implementation Notes:**
 - Pre-allocate oversampling buffer at init (sized for max buffer length)
@@ -261,8 +286,8 @@ User NL: "Boost everything"
 - ✅ Limiter scaffold code (exists from Phase 1a)
 
 **Blocks:**
-- 🟡 Sprint 2 (EQ wiring assumes limiter is RT-safe)
-- 🟡 Sprint 3 (loudness compensation builds on LUFS measurement)
+- 🟡 Sprint 5 (EQ wiring assumes limiter is RT-safe)
+- 🟡 Sprint 6 (loudness compensation builds on LUFS measurement)
 
 ---
 
@@ -281,4 +306,4 @@ User NL: "Boost everything"
 ---
 
 **Status:** Ready for implementation  
-**Next:** Begin Sprint 1 coding after Phase 1b Part B ships
+**Next:** Begin Sprint 4 coding after Phase 1b Part B ships

@@ -287,33 +287,33 @@ The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is
 
 Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel:
 
-**Sprint 1: Loudness Safety & Transparent Dynamics**
+**Sprint 4: Loudness Safety & Transparent Dynamics**
 - **True-peak limiter** (≥4× oversampling, −1 dBTP ceiling, ~1 ms look-ahead) as the final safety stage
 - **LUFS normalization** (ITU-R BS.1770-5) with transparent makeup gain (no artifacts, fidelity-preserving)
 - **Hearing-safety numeric clamps** (cumulative ≤ +12 dB, proportional scaling)
 - **Validation:** Loudness accuracy ±0.1 LUFS, true-peak enforcement, 1-hour soak test, listening panel
-- **See:** [../sprints/04-sprint-1-loudness-safety.md](../sprints/04-sprint-1-loudness-safety.md) for detailed design, RT implementation, and acceptance criteria
+- **See:** [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md) for detailed design, RT implementation, and acceptance criteria
 
-**Sprint 2: Minimum-Phase EQ Wiring & Spectral Correction**
+**Sprint 5: Minimum-Phase EQ Wiring & Spectral Correction**
 - **EQ module** wired into RT chain: 31-band ISO parametric, biquad cascade (min-phase, LD-13), real-time parameter automation
 - **Before/after spectrum taps** showing input + DSP effect (visual proof)
 - **AutoEq device-correction profiles** (5 common headphones: Sony WH-1000XM5, AirPods Pro, Sennheiser HD 600, Apple Studio, Generic)
 - **Master gain relocation** (post-DSP, after Limiter) so volume is independent of processing
 - **Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, perceptual listening panel
-- **See:** [../sprints/05-sprint-2-eq-foundation.md](../sprints/05-sprint-2-eq-foundation.md) for detailed design, EQ realization algorithm, and acceptance criteria
+- **See:** [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md) for detailed design, EQ realization algorithm, and acceptance criteria
 
-**Sprint 3: Adaptive Clarity & Loudness Compensation**
+**Sprint 6: Adaptive Clarity & Loudness Compensation**
 - **Clarity module** (masking-aware per-band gain, roex filter on ERB-rate grid, ≤ +3 dB/band phase-1 conservative)
 - **Loudness compensation** (fractional contour-difference, ISO 226, 40% per-band adjustment)
 - **Arbiter control plane** composes device + loudness + clarity + content + user intent into unified TargetState
 - **Conversational tuning basic** (text → Claude API → EQ curve, spline interpolation to 31 bands, no graphical curves in Phase 1)
 - **Content-aware adaptation** (spectral profile detection, smooth EQ transitions per genre, hysteresis to prevent hunting)
 - **Validation:** Masking model ±1 dB accuracy, clarity gains conservative, listening panel A/B, 2-hour adaptive soak test
-- **See:** [../sprints/06-sprint-3-adaptive-clarity.md](../sprints/06-sprint-3-adaptive-clarity.md) for detailed design, Arbiter composition, and acceptance criteria
+- **See:** [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md) for detailed design, Arbiter composition, and acceptance criteria
 
 ### Phase 1b Part B — Critical-path prerequisite
 
-Before Phase 1c (Sprints 1–3), the following enablers must ship:
+Before Phase 1c (Sprints 4–6), the following enablers must ship:
 - **Progress bar + polling** (playback position display)
 - **Seek implementation** (drag to position, resume smoothly)
 - **Auto-play next track** (completion listener, respects repeat mode)

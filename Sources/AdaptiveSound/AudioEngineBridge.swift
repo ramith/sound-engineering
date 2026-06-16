@@ -21,6 +21,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// pre-allocated before the tap fires.
     private var spectrumAnalyzer: SpectrumAnalyzer?
 
+    /// Opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
+    /// Created in `initialize()`, destroyed in `shutdown()`.
+    private var loudnessMeter: UnsafeMutableRawPointer?
+
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
     private var tapInstalled = false
@@ -56,6 +60,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                         fftSize: SpectrumConstants.fftSize,
                         sampleRate: sampleRate
                     )
+
+                    // BS.1770-5 loudness meter, fed from the same mixer tap.
+                    self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
 
                     continuation.resume(returning: true)
                 } catch {
@@ -94,6 +101,13 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 frameCount: buffer.frameLength,
                 channelCount: buffer.format.channelCount
             )
+
+            // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
+            if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
+                let left = channels[0]
+                let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
+                loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
+            }
         }
         tapInstalled = true
     }
@@ -113,6 +127,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
     }
 
+    func currentLoudness() -> LoudnessSnapshot {
+        guard let meter = loudnessMeter else { return .unmeasured }
+        let readout = loudnessMeterRead(meter)
+        return LoudnessSnapshot(
+            integratedLufs: readout.integratedLufs,
+            shortTermLufs: readout.shortTermLufs,
+            momentaryLufs: readout.momentaryLufs,
+            peakDb: readout.peakDb
+        )
+    }
+
     // MARK: - Shutdown
 
     func shutdown() async throws {
@@ -129,6 +154,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
                 self.spectrumAnalyzer = nil
+                // Tap already removed above, so no callback can touch the meter now.
+                if let meter = self.loudnessMeter {
+                    loudnessMeterDestroy(meter)
+                    self.loudnessMeter = nil
+                }
                 continuation.resume()
             }
         }
@@ -148,11 +178,12 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 var models: [AudioDeviceModel] = []
                 models.reserveCapacity(Int(count))
 
-                for i in 0 ..< Int(count) {
-                    let info = buffer[i]
+                for index in 0 ..< Int(count) {
+                    let info = buffer[index]
                     let name = withUnsafeBytes(of: info.name) { rawPtr -> String in
                         let ptr = rawPtr.bindMemory(to: CChar.self)
-                        return String(cString: ptr.baseAddress!)
+                        guard let base = ptr.baseAddress else { return "" }
+                        return String(cString: base)
                     }
                     let deviceType = AudioDeviceModel.DeviceType(rawValue: info.deviceType)
                     models.append(AudioDeviceModel(
@@ -265,6 +296,20 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 continuation.resume()
             }
         }
+    }
+
+    func currentPlaybackPosition() -> Double? {
+        // Derive the playhead from the player node's render time. sampleTime counts
+        // from 0 at play() and accumulates while playing — divide by the rate to get
+        // seconds. AVAudioPlayerNode time queries are safe to call from any thread.
+        guard let playerNode, playerNode.isPlaying,
+              let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
+              playerTime.sampleRate > 0
+        else {
+            return nil
+        }
+        return Double(playerTime.sampleTime) / playerTime.sampleRate
     }
 
     func setParameter(_ id: UInt32, value: Float) async throws {

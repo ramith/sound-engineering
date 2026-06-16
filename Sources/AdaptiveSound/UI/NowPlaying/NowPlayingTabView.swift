@@ -11,8 +11,11 @@ struct NowPlayingTabView: View {
                 .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 0)
 
             RightPanelView()
-                .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 0)
+                // Pad BEFORE constraining to half-width so the inset stays inside
+                // the panel (padding after containerRelativeFrame overflowed the
+                // window edge and clipped the right-aligned LUFS readouts).
                 .padding(16)
+                .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 0)
                 .background(Color.asCard)
                 .overlay(alignment: .leading) {
                     Rectangle()

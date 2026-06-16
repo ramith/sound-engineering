@@ -9,12 +9,12 @@
 
 ## Overview
 
-**Vision shift:** Away from Phase-based terminology toward **Sprint 1-3 DSP-First Model**
+**Vision shift:** Away from Phase-based terminology toward **Sprint 4-6 DSP-First Model**
 
 - **Phase 1a (✅ Shipped):** Audio engine core + reference tone
 - **Phase 1b Part A (✅ Shipped):** Music playback UI + spectrum
 - **Phase 1b Part B (🟡 In Progress):** Critical path (progress, seek, auto-play, test suite)
-- **Phase 1c (Sprint 1-3, 🟡 Backlog):** Bundled DSP-first MVP (loudness → EQ → clarity)
+- **Phase 1c (Sprint 4-6, 🟡 Backlog):** Bundled DSP-first MVP (loudness → EQ → clarity)
 - **Phase 1.5 (🔄 Planning):** Stem separation + advanced DSP
 - **Phase 2 (🔄 Planning):** System-wide audio via virtual device
 
@@ -34,13 +34,13 @@
 
 ---
 
-## Phase 1c: Sprints 1-3 DSP Bundle (MVP Release)
+## Phase 1c: Sprints 4-6 DSP Bundle (MVP Release)
 
 **Timeline:** TBD (effort-driven, no calendar pressure)  
 **Scope:** Three integrated sprints, bundled into one Phase 1c MVP release  
 **Target Internal Demo:** ~2026-07-10
 
-### SPRINT 1: Loudness Safety & Transparent Dynamics
+### SPRINT 4: Loudness Safety & Transparent Dynamics
 **Effort:** 5–10 story points
 
 **High-level:** True-peak limiter (−1 dBTP, ≥4× OS) + LUFS normalization (ITU-R BS.1770-5) + hearing-safety clamps (≤ +12 dB cumulative)
@@ -50,12 +50,12 @@
 **Validation:** Loudness ±0.1 LUFS, true-peak enforcement, 1-hour soak, listening panel
 
 **Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 1](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/04-sprint-1-loudness-safety.md](../sprints/04-sprint-1-loudness-safety.md) (design, C++ implementation, acceptance criteria)
+- Architecture: [../architecture/architecture.md §16 — Sprint 4](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
+- Full spec: [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md) (design, C++ implementation, acceptance criteria)
 
 ---
 
-### SPRINT 2: Minimum-Phase EQ Wiring & Spectral Correction
+### SPRINT 5: Minimum-Phase EQ Wiring & Spectral Correction
 **Effort:** 5–10 story points
 
 **High-level:** 31-band EQ wired to RT chain + before/after spectrum taps + AutoEq device profiles (5 headphones) + master gain post-DSP
@@ -65,12 +65,12 @@
 **Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, device-profile accuracy, perceptual listening panel
 
 **Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 2](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/05-sprint-2-eq-foundation.md](../sprints/05-sprint-2-eq-foundation.md) (design, EQ realization, acceptance criteria)
+- Architecture: [../architecture/architecture.md §16 — Sprint 5](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
+- Full spec: [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md) (design, EQ realization, acceptance criteria)
 
 ---
 
-### SPRINT 3: Adaptive Clarity & Loudness Compensation
+### SPRINT 6: Adaptive Clarity & Loudness Compensation
 **Effort:** 5–10 story points
 
 **High-level:** Masking-aware clarity (ERB-rate roex model, ≤ +3 dB/band) + fractional loudness compensation (ISO 226, 40% contour-diff) + Arbiter (control-plane composition) + conversational tuning (text → Claude → EQ) + content-aware adaptation
@@ -80,8 +80,8 @@
 **Validation:** Masking model ±1 dB, clarity conservative, conversational tuning ≥75% phrase accuracy, listening panel A/B, 2-hour adaptive soak
 
 **Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 3](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/06-sprint-3-adaptive-clarity.md](../sprints/06-sprint-3-adaptive-clarity.md) (design, Arbiter composition, acceptance criteria)
+- Architecture: [../architecture/architecture.md §16 — Sprint 6](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
+- Full spec: [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md) (design, Arbiter composition, acceptance criteria)
 
 ---
 
@@ -117,9 +117,9 @@
 - RT-safety metrics (p99.9 ≤ 5 ms, xruns = 0)
 
 **Per-sprint final validation:**
-- Sprint 1: Loudness ±0.1 LUFS, true-peak ≤ −1 dBTP, listening panel
-- Sprint 2: EQ frequency response ±1 dB, null-test, device-profile accuracy, listening panel
-- Sprint 3: Masking model ±1 dB, clarity gains conservative, conversational tuning accuracy ≥75%, listening panel
+- Sprint 4: Loudness ±0.1 LUFS, true-peak ≤ −1 dBTP, listening panel
+- Sprint 5: EQ frequency response ±1 dB, null-test, device-profile accuracy, listening panel
+- Sprint 6: Masking model ±1 dB, clarity gains conservative, conversational tuning accuracy ≥75%, listening panel
 
 **Details:** [../architecture/validation-strategy.md](../architecture/validation-strategy.md) (full QA framework, listening panel protocol, lab setup)
 
@@ -131,10 +131,10 @@
 |-----------|--------|---------|--------|
 | **Phase 1b Part A Ship** | 2026-06-15 ✅ | Playback UI + spectrum | SHIPPED |
 | **Phase 1b Part B Complete** | 2026-06-21 | Progress, seek, auto-play, test suite | IN PROGRESS |
-| **Sprint 1 Complete** | TBD | Loudness safety | BACKLOG |
-| **Sprint 2 Complete** | TBD | EQ foundation | BACKLOG |
-| **Sprint 3 Complete** | TBD | Adaptive clarity | BACKLOG |
-| **Phase 1c MVP Ship** | ~2026-07-10 | Sprints 1–3 bundled (internal demo) | PLANNED |
+| **Sprint 4 Complete** | TBD | Loudness safety | BACKLOG |
+| **Sprint 5 Complete** | TBD | EQ foundation | BACKLOG |
+| **Sprint 6 Complete** | TBD | Adaptive clarity | BACKLOG |
+| **Phase 1c MVP Ship** | ~2026-07-10 | Sprints 4–6 bundled (internal demo) | PLANNED |
 | **Phase 1.5 Complete** | ~2026-08-01 | Stem separation + spatial audio | PLANNING |
 | **Phase 2 Complete** | ~2026-09-01 | System-wide via virtual device | PLANNING |
 
@@ -168,9 +168,9 @@
 **For detailed DSP design & architecture:** [../architecture/architecture.md](../architecture/architecture.md) (complete system design, locked decisions, ADRs)
 
 **For detailed sprint specs & implementation:** 
-- [../sprints/04-sprint-1-loudness-safety.md](../sprints/04-sprint-1-loudness-safety.md)
-- [../sprints/05-sprint-2-eq-foundation.md](../sprints/05-sprint-2-eq-foundation.md)
-- [../sprints/06-sprint-3-adaptive-clarity.md](../sprints/06-sprint-3-adaptive-clarity.md)
+- [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md)
+- [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md)
+- [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md)
 - [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md) (critical path action items)
 
 **For QA framework & validation procedures:** [../architecture/validation-strategy.md](../architecture/validation-strategy.md) (per-merge gates, nightly regression, listening panel protocol)
