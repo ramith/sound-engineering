@@ -43,6 +43,11 @@ protocol AudioPlaybackEngine: AnyObject {
     /// Set a DSP parameter by ID (e.g. master gain = 0).
     func setParameter(_ id: UInt32, value: Float) async throws
 
+    /// Publish a 31-band EQ gain vector (dB) to the live DSP AU. `gainsDb` must have 31
+    /// elements. Synchronous, off-RT, non-throwing: it computes the biquad cascade and
+    /// atomically hands it to the kernel. No-op if no live AU (e.g. engine not initialized).
+    func publishEQGains(_ gainsDb: [Float])
+
     // MARK: Device Enumeration
 
     /// Return the full list of available output devices with real CoreAudio data.

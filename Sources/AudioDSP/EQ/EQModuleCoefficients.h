@@ -56,7 +56,7 @@ namespace AdaptiveSound
             bool allZero = true;
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > kFlatGainThresholdDb)
+                if (std::abs(gains[static_cast<size_t>(i)]) > kFlatGainThresholdDb)
                 {
                     allZero = false;
                     break;
@@ -86,10 +86,10 @@ namespace AdaptiveSound
             }
 
             // Copy to result
-            result.numBiquads = std::min(numBiquads, kMaxBiquads);
+            result.numBiquads = static_cast<uint8_t>(std::min(numBiquads, kMaxBiquads));
             for (int i = 0; i < result.numBiquads; ++i)
             {
-                result.biquads[i] = biquads[i];
+                result.biquads[static_cast<size_t>(i)] = biquads[static_cast<size_t>(i)];
             }
             result.masterGainLinear = 1.0F;
 
@@ -133,9 +133,9 @@ namespace AdaptiveSound
 
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > kActiveRegionThresholdDb)
+                if (std::abs(gains[static_cast<size_t>(i)]) > kActiveRegionThresholdDb)
                 {
-                    activeRegions[i] = true;
+                    activeRegions[static_cast<size_t>(i)] = true;
                     numActiveRegions++;
                 }
             }
@@ -153,25 +153,25 @@ namespace AdaptiveSound
 
             while (i < kNumBands && numBiquads < kMaxBiquads)
             {
-                if (activeRegions[i])
+                if (activeRegions[static_cast<size_t>(i)])
                 {
                     // Find the peak of this gain region
                     int peakIdx = i;
-                    float peakGain = gains[i];
+                    float peakGain = gains[static_cast<size_t>(i)];
 
                     // Extend region forward
-                    while (i < kNumBands && activeRegions[i])
+                    while (i < kNumBands && activeRegions[static_cast<size_t>(i)])
                     {
-                        if (gains[i] > peakGain)
+                        if (gains[static_cast<size_t>(i)] > peakGain)
                         {
-                            peakGain = gains[i];
+                            peakGain = gains[static_cast<size_t>(i)];
                             peakIdx = i;
                         }
                         i++;
                     }
 
                     // Create peaking biquad at peak frequency with peak gain
-                    float centerFreq = kCenterFrequencies[peakIdx];
+                    float centerFreq = kCenterFrequencies[static_cast<size_t>(peakIdx)];
                     float gainDb = peakGain;
 
                     // Clamp to safe range (±12 dB as per spec)
@@ -180,7 +180,7 @@ namespace AdaptiveSound
                     // Create peaking filter
                     EQParams::BiquadCoeffs biquad =
                         designPeakingFilter(centerFreq, gainDb, sampleRate);
-                    outBiquads[numBiquads++] = biquad;
+                    outBiquads[static_cast<size_t>(numBiquads++)] = biquad;
                 }
                 else
                 {
@@ -255,7 +255,7 @@ namespace AdaptiveSound
         {
             for (int i = 0; i < numBiquads; ++i)
             {
-                const auto& b = biquads[i];
+                const auto& b = biquads[static_cast<size_t>(i)];
 
                 // Check stability: poles must be inside unit circle
                 // For biquad: A(z) = 1 + a1*z^-1 + a2*z^-2

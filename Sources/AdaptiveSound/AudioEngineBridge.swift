@@ -161,6 +161,23 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return Unmanaged.passUnretained(unit).toOpaque()
     }
 
+    /// Compute + publish the EQ biquad cascade for `gainsDb` (31 bands) to the live AU.
+    /// The coefficient design sample rate is read from the AU output bus (the negotiated rate),
+    /// falling back to the 48 kHz graph format. No-op if the AU isn't live.
+    func publishEQGains(_ gainsDb: [Float]) {
+        guard gainsDb.count == 31, let handle = dspAudioUnitHandle else { return }
+        // Design coefficients for the AU's negotiated output rate (graph is 48 kHz; fall back
+        // to that if the bus isn't queryable). AUAudioUnitBusArray is not a Swift collection.
+        var sampleRate = 48000.0
+        if let busArray = dspAudioUnit?.auAudioUnit.outputBusses, busArray.count > 0 {
+            sampleRate = busArray[0].format.sampleRate
+        }
+        _ = gainsDb.withUnsafeBufferPointer { buffer -> Bool in
+            guard let base = buffer.baseAddress else { return false }
+            return publishEQBandGains(handle, base, UInt32(gainsDb.count), sampleRate)
+        }
+    }
+
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter else { return .unmeasured }
         let readout = loudnessMeterRead(meter)

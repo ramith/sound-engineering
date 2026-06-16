@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "DSPKernel.h"
+#include "EQ/EQModuleCoefficients.h"
 #include "Loudness/LufsMeter.h"
 #include "TargetState.h"
 
@@ -1003,6 +1004,170 @@ static auto testLoudnessMakeupRoundTrip() -> void
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
+// EQ audibility tests (Sprint 5 — Milestone 2): the EQ is now in the live graph
+// and driven by computeBiquadCascade -> publishTargetState. These validate that a
+// band boost actually changes the signal by the right amount (FR accuracy) and
+// that a large coefficient change does not produce an audible boundary click
+// (the zipper measurement that the audio-dsp review flagged as make-or-break).
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    constexpr uint32_t kEqBands = 31U;
+    constexpr size_t kBand1kHzIndex = 17U; // kCenterFrequencies[17] == 1000 Hz
+    constexpr float kEqTestToneHz = 1000.0F;
+    constexpr float kEqTestAmplitude = 0.25F; // -12 dBFS
+    constexpr float kEqBoostDb = 6.0F;
+    constexpr float kEqFrToleranceDb = 1.0F; // generous vs spec ±0.5 (measurement at exact center)
+
+    // RMS of a slice [start, end) of a buffer.
+    auto sliceRms(const std::vector<float>& buf, size_t start, size_t end) -> double
+    {
+        double acc = 0.0;
+        for (size_t idx = start; idx < end; ++idx) { acc += static_cast<double>(buf[idx]) * buf[idx]; }
+        const size_t count = (end > start) ? (end - start) : 1U;
+        return std::sqrt(acc / static_cast<double>(count));
+    }
+
+    // Run a 1 kHz sine through the kernel with the given 31-band gains; return the captured
+    // mono (left) output. maxFrames sized to the whole buffer so it is one process() call.
+    auto runEqSine(const std::array<float, kEqBands>& gains, uint32_t totalFrames) -> std::vector<float>
+    {
+        DSPKernel kernel;
+        kernel.initialize(TestConstants::kSampleRate48k, totalFrames);
+
+        TargetState state = makeIdentityState();
+        state.eq = EQModuleCoefficients::computeBiquadCascade(
+            gains, static_cast<float>(TestConstants::kSampleRate48k));
+        kernel.publishTargetState(state);
+
+        TestABL abl(totalFrames);
+        for (uint32_t idx = 0U; idx < totalFrames; ++idx)
+        {
+            const float sample = kEqTestAmplitude *
+                                 std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                          static_cast<float>(idx) /
+                                          static_cast<float>(TestConstants::kSampleRate48k));
+            abl.left[idx] = sample;
+            abl.right[idx] = sample;
+        }
+        kernel.process(abl.abl(), totalFrames);
+        return abl.left;
+    }
+} // namespace
+
+static auto testEQFrequencyResponseAccuracy() -> void
+{
+    static const char* const kName = "EQ_FrequencyResponseAccuracy";
+    constexpr uint32_t kFrames = TestConstants::kTotalFrames1s;
+
+    std::array<float, kEqBands> flat{};
+    std::array<float, kEqBands> boosted{};
+    boosted[kBand1kHzIndex] = kEqBoostDb;
+
+    const std::vector<float> flatOut = runEqSine(flat, kFrames);
+    const std::vector<float> boostOut = runEqSine(boosted, kFrames);
+
+    // Measure over the settled second half (IIR settles in ms; this is a safe margin).
+    const size_t halfFrame = kFrames / 2U;
+    const double flatRms = sliceRms(flatOut, halfFrame, kFrames);
+    const double boostRms = sliceRms(boostOut, halfFrame, kFrames);
+
+    if (flatRms <= 0.0)
+    {
+        logFail(kName, "flat-EQ output was silent");
+        return;
+    }
+    const double measuredDb = 20.0 * std::log10(boostRms / flatRms);
+    if (std::abs(measuredDb - kEqBoostDb) > kEqFrToleranceDb)
+    {
+        std::ostringstream oss;
+        oss << "measured " << measuredDb << " dB at 1 kHz, expected " << kEqBoostDb << " ± "
+            << kEqFrToleranceDb;
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+static auto testEQCoefficientSwapNoClick() -> void
+{
+    static const char* const kName = "EQ_CoefficientSwapNoClick";
+    constexpr uint32_t kBlock = TestConstants::kFrames512;
+    constexpr uint32_t kBlocksBefore = 16U; // settle flat
+    constexpr uint32_t kBlocksAfter = 16U;  // settle boosted
+    constexpr float kBoostDbLarge = 12.0F;  // worst-case jump (preset-style)
+
+    DSPKernel kernel;
+    kernel.initialize(TestConstants::kSampleRate48k, kBlock);
+
+    std::array<float, kEqBands> flat{};
+    std::array<float, kEqBands> boosted{};
+    boosted[kBand1kHzIndex] = kBoostDbLarge;
+
+    TargetState flatState = makeIdentityState();
+    flatState.eq = EQModuleCoefficients::computeBiquadCascade(
+        flat, static_cast<float>(TestConstants::kSampleRate48k));
+    kernel.publishTargetState(flatState);
+
+    // Phase-continuous sine fed block by block; capture the full output.
+    std::vector<float> out;
+    out.reserve(static_cast<size_t>(kBlock) * (kBlocksBefore + kBlocksAfter));
+    uint32_t sampleIndex = 0U;
+    size_t swapSample = 0U;
+
+    const auto processBlocks = [&](uint32_t numBlocks) {
+        for (uint32_t blk = 0U; blk < numBlocks; ++blk)
+        {
+            TestABL abl(kBlock);
+            for (uint32_t idx = 0U; idx < kBlock; ++idx)
+            {
+                const float sample = kEqTestAmplitude *
+                                     std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                              static_cast<float>(sampleIndex) /
+                                              static_cast<float>(TestConstants::kSampleRate48k));
+                abl.left[idx] = sample;
+                abl.right[idx] = sample;
+                ++sampleIndex;
+            }
+            kernel.process(abl.abl(), kBlock);
+            for (uint32_t idx = 0U; idx < kBlock; ++idx) { out.push_back(abl.left[idx]); }
+        }
+    };
+
+    processBlocks(kBlocksBefore);
+    swapSample = out.size(); // the boundary: first sample rendered with the new coefficients
+    boosted[kBand1kHzIndex] = kBoostDbLarge;
+    TargetState boostState = makeIdentityState();
+    boostState.eq = EQModuleCoefficients::computeBiquadCascade(
+        boosted, static_cast<float>(TestConstants::kSampleRate48k));
+    kernel.publishTargetState(boostState);
+    processBlocks(kBlocksAfter);
+
+    // Max single-sample step in the fully-settled boosted tail (reference for "normal").
+    const size_t tailStart = out.size() - kBlock;
+    float settledMaxStep = 0.0F;
+    for (size_t idx = tailStart + 1U; idx < out.size(); ++idx)
+    {
+        settledMaxStep = std::max(settledMaxStep, std::abs(out[idx] - out[idx - 1U]));
+    }
+    // The exact swap-boundary step (a hard coefficient snap with preserved state shows here).
+    const float boundaryStep = std::abs(out[swapSample] - out[swapSample - 1U]);
+
+    std::ostringstream info;
+    info << "boundaryStep=" << boundaryStep << " settledBoostedMaxStep=" << settledMaxStep;
+    // A click would spike the boundary step well above the settled per-sample delta. Clean
+    // transitions keep it at/below the settled level (the amplitude has not yet ramped up).
+    if (boundaryStep > 3.0F * settledMaxStep)
+    {
+        logFail(kName, "audible coefficient-swap click: " + info.str());
+        return;
+    }
+    std::fputs(("  [info] " + std::string(kName) + ": " + info.str() + "\n").c_str(), stdout);
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
 
 auto main() -> int
 {
@@ -1032,6 +1197,10 @@ auto main() -> int
     testLoudnessAbsoluteGate();
     testLoudnessRelativeGate();
     testLoudnessMakeupRoundTrip();
+
+    // EQ audibility tests (Sprint 5 — Milestone 2)
+    testEQFrequencyResponseAccuracy();
+    testEQCoefficientSwapNoClick();
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed

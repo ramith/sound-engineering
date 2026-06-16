@@ -16,6 +16,8 @@
 //
 
 #include <AudioToolbox/AudioComponent.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -30,6 +32,18 @@ extern "C"
     /// The AudioComponentDescription the subclass is registered under. Stable for the process
     /// lifetime. Pass to AVAudioUnit.instantiate(with:options:).
     AudioComponentDescription adaptiveAudioUnitComponentDescription(void);
+
+    /// Publish a full 31-band EQ gain vector (dB) to the live AdaptiveSoundAU (Sprint 5 M2).
+    /// Off-RT control plane: computes the minimum-phase biquad cascade and atomically publishes
+    /// an updated TargetState snapshot to the kernel. Does NOT touch the render thread. Must be
+    /// called from a single control thread (the EQ view model on the main actor).
+    ///
+    /// @param auUnit       Borrowed (passUnretained) AUAudioUnit*; must be non-null.
+    /// @param bandGainsDb  Pointer to `count` floats, gains in dB. Must be non-null.
+    /// @param count        Must be exactly 31 (the ISO band count); any other value is rejected.
+    /// @param sampleRate   Coefficient design sample rate in Hz (must be > 0).
+    /// @return true if validated and published; false on any validation failure.
+    bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate);
 
 #ifdef __cplusplus
 } // extern "C"
