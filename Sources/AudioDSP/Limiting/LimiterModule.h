@@ -54,6 +54,7 @@
 // - jiixyj/libebur128, x42/dpl.lv2 (oversampled true-peak detection)
 
 #include "../include/AudioConstants.h"
+#include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
@@ -148,23 +149,22 @@ namespace AdaptiveSound
         //   Active: per sample → write ring, polyphase ISP, deque window-max,
         //   dB-domain dual-stage gain, then read delayed output and apply gain.
         // -----------------------------------------------------------------------
-        void
-        process(const LimiterParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
+        void process(const LimiterParams& params, const MultichannelView& block) noexcept
         {
-            if (ioData == nullptr || frameCount == 0U)
+            const uint32_t frameCount = block.frames();
+            if (frameCount == 0U)
             {
                 return;
             }
-            const uint32_t numChannels = ioData->mNumberBuffers >= kLimiterMaxChannels
-                                             ? kLimiterMaxChannels
-                                             : ioData->mNumberBuffers;
+            // Stereo today (N-channel linked-gain generalization lands in S1).
+            const uint32_t numChannels =
+                block.channels() >= kLimiterMaxChannels ? kLimiterMaxChannels : block.channels();
             if (numChannels == 0U)
             {
                 return;
             }
-            float* leftBuf = static_cast<float*>(ioData->mBuffers[0].mData);
-            float* rightBuf =
-                (numChannels >= 2U) ? static_cast<float*>(ioData->mBuffers[1].mData) : nullptr;
+            float* leftBuf = block.channel(0);
+            float* rightBuf = (numChannels >= 2U) ? block.channel(1) : nullptr;
             if (leftBuf == nullptr)
             {
                 return;
