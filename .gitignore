@@ -25,3 +25,5 @@ Thumbs.db
 
 # Compiled test binaries (built locally by Scripts/build-null-test.sh)
 Tests/DSPKernelNullTest
+Tests/lufs-tool
+Tests/EQSafetyClampTest
