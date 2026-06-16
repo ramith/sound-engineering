@@ -55,6 +55,7 @@
 
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
+#include "../include/PerChannel.h"
 #include "../include/TargetState.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
@@ -127,8 +128,7 @@ namespace AdaptiveSound
             releaseSlowCoeff_ = onePoleCoeff(kLimiterSlowReleaseMs, fs);
             holdFrames_ = static_cast<uint32_t>(std::lround(kLfHoldSeconds * fs));
 
-            leftRing_.fill(0.0F);
-            rightRing_.fill(0.0F);
+            rings_.reset();
             readHead_ = 0U;
             writeHead_ = kLimiterLookaheadFrames;
 
@@ -183,10 +183,10 @@ namespace AdaptiveSound
 
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
-                leftRing_[writeHead_] = leftBuf[i];
+                rings_[0][writeHead_] = leftBuf[i];
                 if (rightBuf != nullptr)
                 {
-                    rightRing_[writeHead_] = rightBuf[i];
+                    rings_[1][writeHead_] = rightBuf[i];
                 }
 
                 const double isp = polyphaseIspPeak(writeHead_);
@@ -198,10 +198,10 @@ namespace AdaptiveSound
                 writeHead_ = (writeHead_ + 1U) % kLimiterRingSize;
             }
 
-            fillOutputFromRing(leftBuf, leftRing_.data(), safeCount);
+            fillOutputFromRing(leftBuf, rings_[0].data(), safeCount);
             if (rightBuf != nullptr)
             {
-                fillOutputFromRing(rightBuf, rightRing_.data(), safeCount);
+                fillOutputFromRing(rightBuf, rings_[1].data(), safeCount);
             }
 
             const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
@@ -289,8 +289,8 @@ namespace AdaptiveSound
             for (uint32_t k = 0U; k < kIspNumTaps; ++k)
             {
                 const uint32_t idx = (writePos + kLimiterRingSize - k) % kLimiterRingSize;
-                histLeft[k] = static_cast<double>(leftRing_[idx]);
-                histRight[k] = static_cast<double>(rightRing_[idx]);
+                histLeft[k] = static_cast<double>(rings_[0][idx]);
+                histRight[k] = static_cast<double>(rings_[1][idx]);
             }
 
             double maxPeak = 0.0;
@@ -422,9 +422,9 @@ namespace AdaptiveSound
         // Polyphase coefficient table (flat phase-major; computed off-RT).
         std::array<double, static_cast<size_t>(kIspOversampling) * kIspNumTaps> ispCoeffs_{};
 
-        // Look-ahead ring buffers (96/144 + 512 = 656).
-        std::array<float, kLimiterRingSize> leftRing_{};
-        std::array<float, kLimiterRingSize> rightRing_{};
+        // Look-ahead ring buffers (96/144 + 512 = 656), one per channel.
+        using LimiterRing = std::array<float, kLimiterRingSize>;
+        PerChannel<LimiterRing> rings_{};
 
         // Per-sample gain envelope scratch (kDefaultMaxFrames = 512).
         std::array<float, kDefaultMaxFrames> grBuf_{};
