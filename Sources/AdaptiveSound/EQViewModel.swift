@@ -65,6 +65,19 @@ final class EQViewModel {
         dispatchAllBands()
     }
 
+    /// Commit canvas-drawn ("custom") edits. The `FrequencyResponseCanvas` mutates
+    /// `bandGains` in place during a drag, then calls this to **defensively clamp
+    /// every band to the DSP range [-20, +12] dB**, mark the preset custom, and
+    /// dispatch once. Centralizes the DSP-range guarantee that direct `bandGains`
+    /// writes would otherwise bypass.
+    func commitCustomBandEdits() {
+        for index in bandGains.indices {
+            bandGains[index] = max(-20.0, min(12.0, bandGains[index]))
+        }
+        selectedPreset = nil
+        dispatchAllBands()
+    }
+
     // MARK: - Reset
 
     /// Resets all bands to 0 dB and selects the Flat preset.
@@ -75,11 +88,9 @@ final class EQViewModel {
     // MARK: - Dispatch
 
     /// Sends each band gain to the audio engine via the parameter bus.
-    /// Called exactly once per user action — never in a per-band loop.
-    ///
-    /// Exposed as `internal` (not private) so `FrequencyResponseCanvas` can
-    /// call it after completing multi-band gap-fill edits, without going
-    /// through `applyBandGain` for every interpolated band individually.
+    /// Called exactly once per user action — never in a per-band loop. Used by
+    /// `selectPreset` and `commitCustomBandEdits` (the canvas commits drags
+    /// through the latter, never writing `bandGains`/dispatching directly).
     func dispatchAllBands() {
         for (index, gain) in bandGains.enumerated() {
             let paramID = eqBandBaseParameterID + UInt32(index)
