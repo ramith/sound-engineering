@@ -36,8 +36,7 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     maxFrames_ = maxFrames;
 
     // Reset per-channel delay state (issue #2).
-    leftDelay_.fill(0.0F);
-    rightDelay_.fill(0.0F);
+    delays_.reset();
 
     // Seed coefficients to an all-identity cascade (b0=1, rest 0 per section).
     cascadeCoeffs_.fill(0.0);
@@ -155,11 +154,11 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
     // Run each channel through the fixed kMaxBiquads-section cascade (identity-padded)
     // with its own independent delay state.
     if (leftBuffer != nullptr) {
-        vDSP_biquad(setup, leftDelay_.data(), leftBuffer, 1, leftBuffer, 1,
+        vDSP_biquad(setup, delays_[0].data(), leftBuffer, 1, leftBuffer, 1,
                     static_cast<vDSP_Length>(frameCount));
     }
     if (rightBuffer != nullptr) {
-        vDSP_biquad(setup, rightDelay_.data(), rightBuffer, 1, rightBuffer, 1,
+        vDSP_biquad(setup, delays_[1].data(), rightBuffer, 1, rightBuffer, 1,
                     static_cast<vDSP_Length>(frameCount));
     }
 
