@@ -2029,6 +2029,509 @@ static auto testReconfigurationContinuity() -> void
 }
 
 // ---------------------------------------------------------------------------
+// S1-C2a: Loudness_Multichannel_BS1770_Weights  (Gate C)
+//
+// Validates the N-channel ITU-R BS.1770-5 LufsMeter upgrade.
+//
+// BS.1770-5 channel weights used throughout (ITU-R BS.1770-5, Annex 1, Table 1):
+//   L  = slot 0  G = 1.0
+//   R  = slot 1  G = 1.0
+//   C  = slot 2  G = 1.0
+//   LFE= slot 3  G = 0.0  (EXCLUDED from loudness sum)
+//   Ls = slot 4  G = 1.41 (~+1.5 dB, exact value 10^(1.5/10))
+//   Rs = slot 5  G = 1.41
+//
+// ORACLE: an independent, straightforward second-path BS.1770-5 implementation
+// written inline, distinct from the production LufsMeter.  It applies the same
+// K-weighting coefficients (identical analytic bilinear-transform form) and the
+// same two-pass gated integration algorithm, but is a self-contained loop with
+// no shared code with LufsMeter.  This stands in for a libebur128 reference,
+// which is not available in this build environment.  Reference:
+//   ITU-R BS.1770-5 (2023), Annex 1.
+// The oracle has no histogram — it integrates a single continuous measurement
+// to keep the code small and auditable, suitable for the deterministic
+// calibrated-tone and calibrated-noise signals used here.
+//
+// Sub-cases:
+//   (a) Stereo-identity: 5.1 buffer with L/R active and C/LFE/Ls/Rs=0 reads
+//       the SAME integrated LUFS (within 1e-6) as the stereo meter fed only L/R.
+//   (b) Surround weight (+1.5 dB) and LFE exclusion (G=0): known tone on Ls+Rs
+//       reads ~+1.5 dB above the same tone on L+R; LFE-only signal reads silence.
+//   (c) Full 5.1 calibrated case against the independent oracle (±0.2 LU).
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    // BS.1770-5 channel weights for ITU 5.1 (L, R, C, LFE, Ls, Rs).
+    // Reference: ITU-R BS.1770-5, Annex 1, Table 1.
+    // kBs1770GSurround = 10^(1.5/10) ≈ 1.41253754…  (exactly +1.5 dB in power).
+    constexpr double kBs1770GLRC = 1.0;
+    constexpr double kBs1770GLFE = 0.0;
+    constexpr double kBs1770GSurround = 1.41253754462275643; // 10^(1.5/10)
+    constexpr uint32_t kNum51Channels = 6U;
+
+    // Build the weight array for 5.1 (L, R, C, LFE, Ls, Rs).
+    auto make51Weights() -> std::array<double, kMaxChannels>
+    {
+        std::array<double, kMaxChannels> w{};
+        w[0] = kBs1770GLRC;      // L
+        w[1] = kBs1770GLRC;      // R
+        w[2] = kBs1770GLRC;      // C
+        w[3] = kBs1770GLFE;      // LFE (excluded)
+        w[4] = kBs1770GSurround; // Ls
+        w[5] = kBs1770GSurround; // Rs
+        return w;
+    }
+
+    // Generate interleaved N-channel audio: one channel carries a 1 kHz sine at
+    // peakDbfs; all other channels are silent.  sampleRate at 48 kHz.
+    auto makeInterleavedNch(uint32_t numCh,
+                            uint32_t activeCh,
+                            double peakDbfs,
+                            double seconds,
+                            uint32_t sampleRate) -> std::vector<float>
+    {
+        const double amp = std::pow(10.0, peakDbfs / 20.0);
+        const auto frames = static_cast<size_t>(seconds * sampleRate);
+        std::vector<float> buf(frames * numCh, 0.0F);
+        for (size_t frm = 0U; frm < frames; ++frm)
+        {
+            const double s =
+                amp * std::sin(2.0 * std::numbers::pi * 1000.0 * static_cast<double>(frm) /
+                               static_cast<double>(sampleRate));
+            buf[(frm * numCh) + activeCh] = static_cast<float>(s);
+        }
+        return buf;
+    }
+
+    // Same as above but two channels active in phase (additive).
+    auto makeInterleavedNch2Active(uint32_t numCh,
+                                   uint32_t activeCh0,
+                                   uint32_t activeCh1,
+                                   double peakDbfs,
+                                   double seconds,
+                                   uint32_t sampleRate) -> std::vector<float>
+    {
+        const double amp = std::pow(10.0, peakDbfs / 20.0);
+        const auto frames = static_cast<size_t>(seconds * sampleRate);
+        std::vector<float> buf(frames * numCh, 0.0F);
+        for (size_t frm = 0U; frm < frames; ++frm)
+        {
+            const double s =
+                amp * std::sin(2.0 * std::numbers::pi * 1000.0 * static_cast<double>(frm) /
+                               static_cast<double>(sampleRate));
+            buf[(frm * numCh) + activeCh0] = static_cast<float>(s);
+            buf[(frm * numCh) + activeCh1] = static_cast<float>(s);
+        }
+        return buf;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Independent BS.1770-5 oracle (stands in for libebur128).
+    //
+    // This is a separate, self-contained implementation of the BS.1770-5
+    // integrated-loudness algorithm.  It shares NO code with the production
+    // LufsMeter — it recomputes K-weighting from scratch and performs its own
+    // gating.  It is deliberately simple (single-pass accumulation on gated
+    // blocks, no histogram) and appropriate only for the calibrated deterministic
+    // signals in this test.
+    //
+    // Reference: ITU-R BS.1770-5 (2023), Annex 1.
+    // ---------------------------------------------------------------------------
+
+    struct OracleBiquad
+    {
+        double b0{1.0}, b1{0.0}, b2{0.0}, a1{0.0}, a2{0.0};
+        double z1{0.0}, z2{0.0};
+
+        auto process(double x) noexcept -> double
+        {
+            const double y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            return y;
+        }
+    };
+
+    struct OracleKWeight
+    {
+        OracleBiquad shelf{};
+        OracleBiquad rlb{};
+
+        auto process(double x) noexcept -> double
+        {
+            return rlb.process(shelf.process(x));
+        }
+    };
+
+    // Build oracle K-weight filters at the given sample rate using the same
+    // analytic bilinear-transform form as LufsMeter (for consistency).
+    auto makeOracleKWeight(double sampleRate) -> OracleKWeight
+    {
+        OracleKWeight kw;
+        // Stage 1: high-shelf
+        {
+            const double warp = std::tan(M_PI * kKwShelfF0Hz / sampleRate);
+            const double Vh = std::pow(kDecibelBase, kKwShelfGainDb / kDbAmplitudeScale);
+            const double Vb = std::pow(Vh, kKwShelfVbExponent);
+            const double a0 = 1.0 + (warp / kKwShelfQ) + (warp * warp);
+            kw.shelf.b0 = (Vh + (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
+            kw.shelf.b1 = 2.0 * ((warp * warp) - Vh) / a0;
+            kw.shelf.b2 = (Vh - (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
+            kw.shelf.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
+            kw.shelf.a2 = (1.0 - (warp / kKwShelfQ) + (warp * warp)) / a0;
+        }
+        // Stage 2: RLB high-pass
+        {
+            const double warp = std::tan(M_PI * kKwRlbF0Hz / sampleRate);
+            const double a0 = 1.0 + (warp / kKwRlbQ) + (warp * warp);
+            kw.rlb.b0 = 1.0 / a0;
+            kw.rlb.b1 = -2.0 / a0;
+            kw.rlb.b2 = 1.0 / a0;
+            kw.rlb.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
+            kw.rlb.a2 = (1.0 - (warp / kKwRlbQ) + (warp * warp)) / a0;
+        }
+        return kw;
+    }
+
+    // Convert an energy value to LUFS (BS.1770-5 block loudness formula).
+    auto energyToLufs(double energy) -> double
+    {
+        return (energy > kTinyEnergy) ? (kLufsOffset + kDbPowerScale * std::log10(energy))
+                                      : kSilenceLufs;
+    }
+
+    // Two-pass gated integration over a vector of absolute-gated block energies.
+    // Returns integrated LUFS (BS.1770-5 §2.3).
+    auto oracleTwoPassGate(const std::vector<double>& blockEnergies) -> double
+    {
+        if (blockEnergies.empty())
+        {
+            return kSilenceLufs;
+        }
+        // Pass 1: absolute-gated mean → relative threshold.
+        double sumEnergy1 = 0.0;
+        for (const double e : blockEnergies)
+        {
+            sumEnergy1 += e;
+        }
+        const double meanEnergy1 = sumEnergy1 / static_cast<double>(blockEnergies.size());
+        const double relThresh = (meanEnergy1 > kTinyEnergy)
+                                     ? (energyToLufs(meanEnergy1) + kRelativeGateOffsetLu)
+                                     : kSilenceLufs;
+        // Pass 2: relative-gated mean → loudness.
+        double sumEnergy2 = 0.0;
+        size_t count2 = 0U;
+        for (const double e : blockEnergies)
+        {
+            if (energyToLufs(e) >= relThresh)
+            {
+                sumEnergy2 += e;
+                ++count2;
+            }
+        }
+        if (count2 == 0U)
+        {
+            return energyToLufs(meanEnergy1);
+        }
+        return energyToLufs(sumEnergy2 / static_cast<double>(count2));
+    }
+
+    // Compute BS.1770-5 integrated LUFS for an interleaved N-channel buffer using
+    // the independent oracle (NOT production LufsMeter).
+    auto oracleIntegratedLufs(const std::vector<float>& buf,
+                              uint32_t numCh,
+                              const std::array<double, kMaxChannels>& weights,
+                              uint32_t sampleRate) -> double
+    {
+        // Build one K-weight filter per channel (independent state).
+        std::vector<OracleKWeight> filters(numCh);
+        for (uint32_t ch = 0U; ch < numCh; ++ch)
+        {
+            filters[ch] = makeOracleKWeight(static_cast<double>(sampleRate));
+        }
+
+        const auto hopFrames =
+            static_cast<uint32_t>(std::lround(kHopSeconds * static_cast<double>(sampleRate)));
+        const double blockFrames = static_cast<double>(hopFrames) * kBlockHops;
+        const size_t totalFrames = buf.size() / numCh;
+
+        std::array<double, kShortTermHops> ring{};
+        uint32_t ringHead = 0U;
+        uint32_t ringFilled = 0U;
+        std::vector<double> hopAccum(numCh, 0.0);
+        uint32_t hopCount = 0U;
+
+        std::vector<double> blockEnergies;
+        blockEnergies.reserve(totalFrames / hopFrames + 10U);
+
+        for (size_t frm = 0U; frm < totalFrames; ++frm)
+        {
+            for (uint32_t ch = 0U; ch < numCh; ++ch)
+            {
+                const double ky = filters[ch].process(static_cast<double>(buf[(frm * numCh) + ch]));
+                hopAccum[ch] += ky * ky;
+            }
+            ++hopCount;
+            if (hopCount < hopFrames)
+            {
+                continue;
+            }
+            // Hop complete: weighted sum, reset.
+            double hopEnergy = 0.0;
+            for (uint32_t ch = 0U; ch < numCh; ++ch)
+            {
+                hopEnergy += weights[ch] * hopAccum[ch];
+                hopAccum[ch] = 0.0;
+            }
+            hopCount = 0U;
+            ring[ringHead] = hopEnergy;
+            ringHead = (ringHead + 1U) % static_cast<uint32_t>(kShortTermHops);
+            if (ringFilled < static_cast<uint32_t>(kShortTermHops))
+            {
+                ++ringFilled;
+            }
+            if (ringFilled < static_cast<uint32_t>(kBlockHops))
+            {
+                continue;
+            }
+            // Block complete: sum kBlockHops most-recent hops.
+            double blockSum = 0.0;
+            for (int hIdx = 0; hIdx < kBlockHops; ++hIdx)
+            {
+                const uint32_t pos = (ringHead + static_cast<uint32_t>(kShortTermHops) - 1U -
+                                      static_cast<uint32_t>(hIdx)) %
+                                     static_cast<uint32_t>(kShortTermHops);
+                blockSum += ring[pos];
+            }
+            const double energy = blockSum / blockFrames;
+            if (energyToLufs(energy) >= kAbsoluteGateLufs)
+            {
+                blockEnergies.push_back(energy);
+            }
+        }
+
+        return oracleTwoPassGate(blockEnergies);
+    }
+
+} // namespace
+
+static auto testLoudnessMultichannelBS1770Weights() -> void
+{
+    static const char* const kName = "Loudness_Multichannel_BS1770_Weights";
+    const uint32_t kSR = TestConstants::kSampleRate48k;
+    const double kDuration = 15.0;
+    const double kPeak = -23.0; // dBFS
+
+    // -----------------------------------------------------------------------
+    // Sub-case (a): Stereo-identity equivalence.
+    //
+    // A 5.1 buffer with only L (slot 0) and R (slot 1) active and the remaining
+    // four channels silent must read the SAME integrated LUFS (within 1e-6 LU)
+    // as a stereo meter fed only those L/R channels.
+    // This validates that the N=2 weights {1,1,...} path is bit-equivalent to
+    // the N=6 path when only the first two channels carry signal and all
+    // surround/LFE weights are effectively zero (or channels are silent).
+    // -----------------------------------------------------------------------
+
+    // Stereo reference meter: feed L and R as interleaved stereo.
+    LufsMeter stereoMeter;
+    stereoMeter.prepare(kSR);
+    {
+        const double amp = std::pow(10.0, kPeak / 20.0);
+        const auto frames = static_cast<size_t>(kDuration * kSR);
+        std::vector<float> stereoBuf(frames * 2U);
+        for (size_t frm = 0U; frm < frames; ++frm)
+        {
+            const double s = amp * std::sin(2.0 * std::numbers::pi * 1000.0 *
+                                            static_cast<double>(frm) / static_cast<double>(kSR));
+            stereoBuf[2U * frm] = static_cast<float>(s);
+            stereoBuf[(2U * frm) + 1U] = static_cast<float>(s);
+        }
+        stereoMeter.addInterleavedStereo(stereoBuf.data(), frames);
+    }
+    const double stereoLufs = stereoMeter.integratedLufs();
+
+    // 5.1 meter: same L/R signal, C/LFE/Ls/Rs are silent; use BS.1770-5 weights.
+    // With C=0, LFE=0, Ls=0, Rs=0 (all silent) the weighted energy collapses to
+    // G_L * accum[L] + G_R * accum[R] = accum[L] + accum[R], identical to stereo.
+    LufsMeter meter51;
+    meter51.prepare(kSR);
+    meter51.configureChannels(kNum51Channels, make51Weights());
+    {
+        const double amp = std::pow(10.0, kPeak / 20.0);
+        const auto frames = static_cast<size_t>(kDuration * kSR);
+        std::vector<float> buf51(frames * kNum51Channels, 0.0F);
+        for (size_t frm = 0U; frm < frames; ++frm)
+        {
+            const double s = amp * std::sin(2.0 * std::numbers::pi * 1000.0 *
+                                            static_cast<double>(frm) / static_cast<double>(kSR));
+            buf51[frm * kNum51Channels + 0U] = static_cast<float>(s); // L
+            buf51[frm * kNum51Channels + 1U] = static_cast<float>(s); // R
+        }
+        meter51.addInterleaved(buf51.data(), frames, kNum51Channels);
+    }
+    const double lufs51LROnly = meter51.integratedLufs();
+
+    const double deltaA = std::abs(lufs51LROnly - stereoLufs);
+    std::ostringstream infoA;
+    infoA << "  [info] " << kName << " (a): stereo=" << stereoLufs
+          << " 5.1_LR_only=" << lufs51LROnly << " delta=" << deltaA << "\n";
+    std::fputs(infoA.str().c_str(), stdout);
+
+    if (deltaA > 1e-6)
+    {
+        std::ostringstream oss;
+        oss << "(a) stereo-identity: expected delta < 1e-6, got " << deltaA
+            << " (stereo=" << stereoLufs << " 5.1_LR=" << lufs51LROnly << ")";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-case (b1): Surround weight (+1.5 dB, G=1.41) check.
+    //
+    // A 5.1 buffer with only Ls+Rs active at peakDbfs is measured by a 5.1 meter
+    // (weights: Ls=Rs=G_surround≈1.41).  The same signal on L+R (G=1.0 each)
+    // at the same peak amplitude should measure ~1.5 dB less.
+    //
+    // Expected delta = 10*log10(G_surround) ≈ +1.5 dB (ITU-R BS.1770-5, Table 1).
+    // Tolerance: ±0.05 dB (the weight is exact; any deviation is a code bug).
+    // -----------------------------------------------------------------------
+
+    // Ls+Rs only signal.
+    LufsMeter meterSurround;
+    meterSurround.prepare(kSR);
+    meterSurround.configureChannels(kNum51Channels, make51Weights());
+    {
+        const auto buf = makeInterleavedNch2Active(kNum51Channels, 4U, 5U, kPeak, kDuration, kSR);
+        meterSurround.addInterleaved(
+            buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
+    }
+    const double lufsSurround = meterSurround.integratedLufs();
+
+    // L+R only signal (G=1.0) at same peak.
+    LufsMeter meterLR;
+    meterLR.prepare(kSR);
+    meterLR.configureChannels(kNum51Channels, make51Weights());
+    {
+        const auto buf = makeInterleavedNch2Active(kNum51Channels, 0U, 1U, kPeak, kDuration, kSR);
+        meterLR.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
+    }
+    const double lufsLR = meterLR.integratedLufs();
+
+    const double expectedSurroundBoostDb = kDbPowerScale * std::log10(kBs1770GSurround);
+    const double measuredSurroundBoostDb = lufsSurround - lufsLR;
+    const double deltaB1 = std::abs(measuredSurroundBoostDb - expectedSurroundBoostDb);
+
+    std::ostringstream infoB1;
+    infoB1 << "  [info] " << kName << " (b1): LR=" << lufsLR << " Surround=" << lufsSurround
+           << " measuredBoost=" << measuredSurroundBoostDb
+           << " expectedBoost=" << expectedSurroundBoostDb << " delta=" << deltaB1 << "\n";
+    std::fputs(infoB1.str().c_str(), stdout);
+
+    if (deltaB1 > 0.05)
+    {
+        std::ostringstream oss;
+        oss << "(b1) surround +1.5 dB weight: measured boost=" << measuredSurroundBoostDb
+            << " expected=" << expectedSurroundBoostDb << " delta=" << deltaB1;
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-case (b2): LFE exclusion (G=0).
+    //
+    // A 5.1 buffer with only LFE (slot 3) active at peakDbfs must measure
+    // kSilenceLufs (no gated blocks pass the absolute gate, because the weighted
+    // energy is 0 × accum = 0).
+    // -----------------------------------------------------------------------
+
+    LufsMeter meterLFE;
+    meterLFE.prepare(kSR);
+    meterLFE.configureChannels(kNum51Channels, make51Weights());
+    {
+        const auto buf = makeInterleavedNch(kNum51Channels, 3U, kPeak, kDuration, kSR);
+        meterLFE.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
+    }
+    const double lufsLFE = meterLFE.integratedLufs();
+
+    std::ostringstream infoB2;
+    infoB2 << "  [info] " << kName << " (b2): LFE_only=" << lufsLFE
+           << " (expect kSilenceLufs=" << kSilenceLufs << ")\n";
+    std::fputs(infoB2.str().c_str(), stdout);
+
+    if (lufsLFE > kAbsoluteGateLufs)
+    {
+        std::ostringstream oss;
+        oss << "(b2) LFE exclusion: LFE-only signal must produce no gated blocks; got " << lufsLFE
+            << " LUFS (should be <= " << kAbsoluteGateLufs << ")";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-case (c): Full 5.1 calibrated case vs. independent oracle (±0.2 LU).
+    //
+    // Generate a 5.1 buffer with all six channels carrying distinct-level tones:
+    //   L  = -20 dBFS, R  = -22 dBFS, C  = -25 dBFS,
+    //   LFE= -10 dBFS  (excluded), Ls = -24 dBFS, Rs = -26 dBFS.
+    // Feed this to the production LufsMeter and to the independent oracle and
+    // assert they agree within ±0.2 LU.
+    // -----------------------------------------------------------------------
+
+    const double ampL = std::pow(10.0, -20.0 / 20.0);
+    const double ampR = std::pow(10.0, -22.0 / 20.0);
+    const double ampC = std::pow(10.0, -25.0 / 20.0);
+    const double ampLFE = std::pow(10.0, -10.0 / 20.0); // excluded by G=0
+    const double ampLs = std::pow(10.0, -24.0 / 20.0);
+    const double ampRs = std::pow(10.0, -26.0 / 20.0);
+
+    const double amps51[kNum51Channels] = {ampL, ampR, ampC, ampLFE, ampLs, ampRs};
+
+    const auto frames = static_cast<size_t>(kDuration * kSR);
+    std::vector<float> buf51full(frames * kNum51Channels);
+    for (size_t frm = 0U; frm < frames; ++frm)
+    {
+        const double phase =
+            2.0 * std::numbers::pi * 1000.0 * static_cast<double>(frm) / static_cast<double>(kSR);
+        for (uint32_t ch = 0U; ch < kNum51Channels; ++ch)
+        {
+            buf51full[(frm * kNum51Channels) + ch] =
+                static_cast<float>(amps51[ch] * std::sin(phase));
+        }
+    }
+
+    // Production meter.
+    LufsMeter meterFull;
+    meterFull.prepare(kSR);
+    meterFull.configureChannels(kNum51Channels, make51Weights());
+    meterFull.addInterleaved(buf51full.data(), frames, kNum51Channels);
+    const double lufsProduction = meterFull.integratedLufs();
+
+    // Independent BS.1770-5 oracle (separate code, not LufsMeter).
+    const double lufsOracle = oracleIntegratedLufs(buf51full, kNum51Channels, make51Weights(), kSR);
+
+    const double deltaC = std::abs(lufsProduction - lufsOracle);
+
+    std::ostringstream infoC;
+    infoC << "  [info] " << kName << " (c): production=" << lufsProduction
+          << " oracle=" << lufsOracle << " delta=" << deltaC << "\n";
+    std::fputs(infoC.str().c_str(), stdout);
+
+    if (deltaC > 0.2)
+    {
+        std::ostringstream oss;
+        oss << "(c) 5.1 full calibrated: production=" << lufsProduction << " oracle=" << lufsOracle
+            << " delta=" << deltaC << " (threshold 0.2 LU)";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
 
 auto main() -> int
 {
@@ -2072,6 +2575,9 @@ auto main() -> int
     testLimiterLinkedGainLockstep();     // T-C4: S1-B3 linked-gain lockstep (4-ch, GR < 0.01 dB)
     testLimiterHotNoiseSoakN8();         // T-C4b: S1-B3 N=8 hot-noise ceiling soak
     testReconfigurationContinuity();
+
+    // S1-C2a: N-channel BS.1770-5 LUFS meter (Gate C)
+    testLoudnessMultichannelBS1770Weights();
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
