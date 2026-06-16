@@ -1,4 +1,5 @@
 import Accelerate
+import AudioFormatKit
 import AVFoundation
 import Foundation
 
@@ -10,8 +11,8 @@ import Foundation
 /// exported from `AUAudioUnit.mm` (`enumerateOutputDevicesC`, `selectOutputDeviceC`).
 /// No mock data — every `AudioDeviceModel` reflects an actual system device.
 final class AudioEngineBridge: AudioPlaybackEngine {
-    private var avEngine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
+    var avEngine: AVAudioEngine?
+    var playerNode: AVAudioPlayerNode?
     private var referenceToneBuffer: AVAudioPCMBuffer?
 
     // MARK: - Spectrum Analyzer
@@ -31,7 +32,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     /// The custom DSP AU node, inserted as `player -> AU -> mainMixer` (Sprint 5 M1).
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
-    private var dspAudioUnit: AVAudioUnit?
+    var dspAudioUnit: AVAudioUnit?
 
     // MARK: - Monitoring analyzers (per-channel before/after spectra; Sprint 5 M3)
 
@@ -39,8 +40,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// player-node tap, `afterAnalyzers` from the post-DSP mixer tap. Sized to the stream's
     /// channel count at init — N-channel by construction (stereo today; practical ceiling 7.1 / 8).
     /// Read by the Monitoring tab; never resized on the audio thread.
-    private var beforeAnalyzers: [SpectrumAnalyzer] = []
-    private var afterAnalyzers: [SpectrumAnalyzer] = []
+    var beforeAnalyzers: [SpectrumAnalyzer] = []
+    var afterAnalyzers: [SpectrumAnalyzer] = []
     /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the AU output bus —
     /// NOT the mixer (which will carry the device channel count once the pipeline is multichannel).
     private var beforeTapInstalled = false
@@ -48,15 +49,16 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
 
-    /// Top-level engine-graph state. A scaffold introduced in S0-M3; the per-track/per-device
-    /// `reconfiguring` transition is driven in a later milestone (S2). No logic gates on it yet.
-    private enum GraphState {
+    /// Top-level engine-graph state. Introduced in S0-M3; the `.reconfiguring` transition is now
+    /// driven by `reconfigureGraph(to:)` (Sprint 5b M2-c). The trigger that calls it (track/device
+    /// channel-count change) is wired in M2-d; nothing calls `reconfigureGraph` yet.
+    enum GraphState {
         case idle
         case running(channelCount: Int)
         case reconfiguring
     }
 
-    private var graphState: GraphState = .idle
+    var graphState: GraphState = .idle
 
     // MARK: - Initialize
 
@@ -146,7 +148,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the analyzer can process one
     /// tap delivery per FFT frame. AVAudioEngine rounds up to a power-of-two multiple of the
     /// hardware buffer size automatically if needed.
-    private func installSpectrumTap() {
+    func installSpectrumTap() {
         guard let engine = avEngine, !tapInstalled else { return }
         let mixer = engine.mainMixerNode
         let mixerFormat = mixer.outputFormat(forBus: 0)
@@ -215,7 +217,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         tapInstalled = true
     }
 
-    private func removeSpectrumTap() {
+    func removeSpectrumTap() {
         guard let engine = avEngine, tapInstalled else { return }
         engine.mainMixerNode.removeTap(onBus: 0)
         if beforeTapInstalled {
@@ -434,59 +436,6 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 continuation.resume()
             }
         }
-    }
-
-    // MARK: - Reference Tone Generation (using vDSP)
-
-    func generateReferenceTone(
-        frequency: Float,
-        duration: Float,
-        sampleRate: Float
-    ) -> AVAudioPCMBuffer? {
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
-
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1) else {
-            return nil
-        }
-
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-            return nil
-        }
-
-        buffer.frameLength = frameCount
-
-        guard let floatChannelData = buffer.floatChannelData else {
-            return nil
-        }
-
-        let floatData = floatChannelData[0]
-
-        // Generate sine wave using vDSP
-        // Phase increment per sample: 2π * frequency / sampleRate
-        let phaseIncrement = 2.0 * Float.pi * frequency / sampleRate
-
-        // Build angle array: angle[i] = phaseIncrement * i
-        var angles = [Float](repeating: 0, count: Int(frameCount))
-        for sampleIndex in 0 ..< Int(frameCount) {
-            angles[sampleIndex] = phaseIncrement * Float(sampleIndex)
-        }
-
-        // Compute sine using vForce.sin (Accelerate, vectorised single-precision)
-        let sineValues = vForce.sin(angles)
-        sineValues.withUnsafeBufferPointer { src in
-            guard let srcBase = src.baseAddress else { return }
-            UnsafeMutableBufferPointer(start: floatData, count: Int(frameCount))
-                .baseAddress
-                .map { dst in
-                    cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
-                }
-        }
-
-        // Apply gain
-        var gain = Float(0.3)
-        vDSP_vsmul(floatData, 1, &gain, floatData, 1, vDSP_Length(frameCount))
-
-        return buffer
     }
 }
 
