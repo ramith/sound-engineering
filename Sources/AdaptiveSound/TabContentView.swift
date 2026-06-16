@@ -14,6 +14,8 @@ struct TabContentView: View {
             NowPlayingTabView()
         case .eq:
             EQTabView()
+        case .monitoring:
+            MonitoringTabView()
         case .settings:
             SettingsTabView()
         }

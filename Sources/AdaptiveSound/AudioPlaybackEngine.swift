@@ -63,4 +63,14 @@ protocol AudioPlaybackEngine: AnyObject {
     /// Returns `false` if no data has been published yet.
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool
+
+    // MARK: Monitoring (per-channel before/after spectra)
+
+    /// Number of channels being monitored (the graph's channel count). 0 until the engine is ready.
+    var monitorChannelCount: Int { get }
+
+    /// Read the latest per-channel band magnitudes for the given tap point + channel into `out`.
+    /// Returns `false` if unavailable (not ready, channel out of range, or no data yet).
+    @discardableResult
+    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool
 }
