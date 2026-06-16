@@ -3,11 +3,11 @@ import SwiftUI
 /// Primary application toolbar (60pt).
 ///
 /// Layout (left → right):
-///   App logo squircle | Device dropdown pill | Tab selector | Spacer | Volume control
+///   App logo squircle | Device dropdown pill | Tab selector | Spacer
 ///
-/// All interactive elements are ≥44pt tap targets. The tab picker gets
-/// `.layoutPriority(1)` to prevent compression before the device pill collapses.
-/// The device pill has a `minWidth` to stay readable at the 800pt window minimum.
+/// The tab picker gets `.layoutPriority(1)` to prevent compression. The device
+/// pill is width-bounded (minWidth…maxWidth) and truncates long names so an
+/// aggregate-device name can't blow out the toolbar.
 struct ToolbarView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -78,9 +78,11 @@ private struct DevicePillView: View {
             )
             .font(.callout.weight(.medium))
             .foregroundStyle(Color.asLabel)
+            .lineLimit(1)
+            .truncationMode(.tail)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(minWidth: 160, minHeight: 32, alignment: .leading)
+            .frame(minWidth: 160, maxWidth: 240, minHeight: 32, alignment: .leading)
             .background(Color.asCard)
             .clipShape(.rect(cornerRadius: 8, style: .continuous))
             .overlay {
@@ -88,10 +90,10 @@ private struct DevicePillView: View {
                     .stroke(Color.asHairline, lineWidth: 0.5)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel("Audio output device")
         .accessibilityValue(viewModel.selectedDevice?.displayName ?? "No device selected")
         .accessibilityHint("Click to choose from available audio output devices")
-        .fixedSize()
     }
 }
 
