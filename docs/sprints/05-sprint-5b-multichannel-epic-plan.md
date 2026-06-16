@@ -109,6 +109,27 @@ ships stereo working at its boundary. Owners in brackets.
 - **Exit:** T-C1/T-C2 bit-exact; T-C3/T-C4 + new N-channel tests pass; clang-tidy clean; stereo unchanged.
 
 ### S2 — Source-driven N input + graph at N (interim mixer fold)  (~8 sp)
+
+> **REVISION 2026-06-17 — supersedes the S2/S3 split below.** Founder decisions: (1) **no audible
+> naive downmix** → pull S3's device-boundary `SpatialRendererAU` FORWARD and merge it into this arc so
+> the `mainMixerNode` never folds; (2) **spike-first** on the reconfigure lifecycle (done — see verdict);
+> (3) **no multichannel output hardware** → M1–M4 verified OFFLINE (synthetic files + monitor rows +
+> `VerifyMultichannelGraph`). **S4 binaural stays the finale** (heaviest/highest-risk DSP, done with full
+> rigor); on stereo hardware the first *audible* multichannel arrives at S4.
+> **Spike-0 verdict:** stereo↔5.1↔stereo reconfigure works offline; the C++ AU/kernel are already
+> N-capable (`engine.connect(…format:)` widens the bus and re-inits the kernel at N); the ONE missing
+> line is `engine.connect(mainMixerNode, to: outputNode, format: Nch)` (mixer silently downmixes
+> otherwise). `>2`ch needs an explicit `AVAudioChannelLayout`; `AUAudioUnitBus.setFormat` -10868 is
+> benign (connect-driven path bypasses it); reconfigure targets `min(file, device)` width on hardware.
+> **Merged milestone order:** **M1** ChannelLayout decode off-RT + Gate D round-trip + wire real
+> BS.1770 weights into `LoudnessModule` (the C2b deferral). **M2** = [a: pure `multichannelFormat(for:)`
+> helper, stereo byte-identical · b: promote the spike into a PERMANENT multichannel `VerifyAUGraph`
+> gate (2/6/8) · c: `reconfigureGraph(to:)` lifecycle + analyzer-array resize (same-count guard) · d:
+> file-load trigger — the only user-visible commit]. **M3** `SpatialRendererAU` at the device boundary
+> (passthrough/route N→device, mixer becomes a no-op; binaural branch deferred to S4). **M4** Monitoring
+> UI N rows. Stereo stays golden-master bit-exact throughout; AU `channelCapabilities` hardening is
+> optional cleanup, not a blocker.
+
 **Objective:** A 5.1/7.1 file is scheduled at native channel count, processed at N through the AU,
 monitored at N. Mixer still folds to the device (documented interim). Stereo unaffected.
 - Derive formats from `AVAudioFile.processingFormat` (carries layout); **explicit
