@@ -130,6 +130,77 @@ swift run AdaptiveSound
 
 ---
 
+## 📖 File Reference Guide: Which Files to Read for Different Tasks
+
+### **To Understand Real-Time Audio Processing**
+1. **START HERE:** `Sources/AudioDSP/DSPKernel.h` (read header comments, ~80 lines)
+   - Explains real-time constraints, null-test requirement, module pipeline
+2. **THEN READ:** `Sources/AudioDSP/DSPKernel.mm` (process method, lines 1–150)
+   - See how modules are called in sequence
+   - Understand parameter passing via atomics
+3. **DEEP DIVE:** `Sources/AudioDSP/include/TargetState.h` (entire file)
+   - State struct that bridges Swift UI → C++ audio thread
+
+### **To Implement Phase 1 Modules (Limiter/Loudness/Clarity/BRIR)**
+1. **Reference template:** `Sources/AudioDSP/EQ/EQModule.h` + `.mm`
+   - Shows how to structure a DSP module
+   - Parameter handling, null-test pattern, vDSP usage
+2. **Add to TargetState:** `Sources/AudioDSP/include/TargetState.h` (add your LimiterParameters struct)
+3. **Wire into kernel:** `Sources/AudioDSP/DSPKernel.mm` (add module call in process method)
+4. **Test template:** `Tests/DSPKernelNullTest.cpp` (lines 754–761)
+   - Copy the Limiter test stub; implement your module's null test
+
+### **To Understand Swift/UI State Management**
+1. **Main controller:** `Sources/AdaptiveSound/AudioViewModel.swift` (lines 76–150)
+   - @MainActor @Observable pattern
+   - Property didSet patterns (see memory: [[didset-recursion-gotcha]])
+2. **View binding example:** `Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift`
+   - How fileImporter works (lines 31–43)
+   - How @Environment passes state to views
+3. **ViewModel pattern:** `Sources/AdaptiveSound/Models/EQPreset.swift`
+   - Canonical data source (single source of truth)
+
+### **To Debug Audio Issues**
+1. **Check state:** `Sources/AdaptiveSound/AudioViewModel.swift` (lines 79–140)
+   - `isEngineReady`, `selectedDevice`, `isPlaying`, `errorMessage`
+2. **Trace dispatch:** Search for `setParameter` in AudioViewModel
+   - Shows how parameter changes reach DSP kernel
+3. **Verify device:** `Sources/AudioDSP/AudioEngine/AUAudioUnit.mm` (render callback)
+   - Where audio actually flows; add logging here if silent playback
+
+### **To Fix UI Crashes**
+1. **First read:** HANDOFF.md section "How to Debug" (above)
+2. **Stack overflow?** → Check memory: [[didset-recursion-gotcha]]
+3. **View not updating?** → `Sources/AdaptiveSound/AudioViewModel.swift` (check @Observable)
+4. **Button not responsive?** → `Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift` (check action handlers)
+
+### **To Modify EQ**
+1. **Presets:** `Sources/AdaptiveSound/Models/EQPreset.swift` (canonical data)
+2. **UI controls:** `Sources/AdaptiveSound/UI/EQ/EQControlsSection.swift` (sliders)
+3. **Canvas display:** `Sources/AdaptiveSound/UI/EQ/FrequencyResponseCanvas.swift` (visual)
+4. **DSP implementation:** `Sources/AudioDSP/EQ/EQModule.h` + `.mm` (locked, don't change)
+
+### **To Run Tests**
+1. **Null test (C++):** `Tests/DSPKernelNullTest.cpp` (run: `./Tests/DSPKernelNullTest`)
+2. **Swift tests:** `Tests/AudioDSPTests/EQTests.swift` (run: `swift test`)
+3. **All tests:** `swift test` (runs everything)
+
+### **To Understand the Architecture**
+1. **Quick overview:** HANDOFF.md section "Key Architecture Decisions" (above)
+2. **Swift/C++ bridge:** `Sources/AdaptiveSound/AudioEngineBridge.swift` + `Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift`
+3. **Real-time rules:** `Sources/AudioDSP/DSPKernel.h` (header comments)
+
+### **For Phase 1 Implementation Checklist**
+1. Read: `Sources/AudioDSP/EQ/EQModule.h` (module template)
+2. Copy: Structure to `Sources/AudioDSP/Limiter/LimiterModule.h`
+3. Update: `Sources/AudioDSP/include/TargetState.h` (add LimiterParameters)
+4. Implement: `Sources/AudioDSP/Limiter/LimiterModule.mm` (process method)
+5. Wire: `Sources/AudioDSP/DSPKernel.mm` (call limiter in process)
+6. Test: `Tests/DSPKernelNullTest.cpp` (add null test, verify 8/8 pass)
+7. Commit: `git commit -m "..."` (pre-commit hook runs null test automatically)
+
+---
+
 ## 🔍 How to Debug
 
 ### Stack Overflow / Infinite Recursion
