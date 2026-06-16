@@ -162,12 +162,33 @@ stereo stays bit-exact across all of them. ~16 milestones total.
 | **S0-M2** | `kMaxChannels=8`; `MultichannelView`/`PerChannel`/`ChannelLayout` headers; module `process()` takes `MultichannelView`; `fromABL` = sole decode point (bodies unchanged at N=2) | c++ | 19/19 + T-C1/T-C2 bit-exact; `mNumberBuffers` grep = 1; ASAN clean |
 | **S0-M3** | Relocate "after" monitoring tap → AU output (`afterTapInstalled`); add `GraphState` enum (no behavior change) | swift | `VerifyAUGraph` 0; founder S0 checklist |
 
-### S1 — C++ modules N-channel (stereo-driven)
+Decomposed into **small, independently-committable chunks** on **three parallel tracks** (EQ /
+Limiter / Loudness — different files, no cross-dependencies). Within a track the chunks are
+sequential; the golden master (T-C1) stays bit-exact at N=2 after **every** chunk. No `initialize`
+signature change is needed — `PerChannel<T>` is sized to `kMaxChannels` at compile time; modules read
+`block.channels()` at runtime.
+
+**Track A — EQ** (independent)
 | MS | Chunk | Owner | Exit gate |
 |----|-------|-------|-----------|
-| **S1-M1** | EQ → `PerChannel<delay>` + per-channel `vDSP_biquad` loop (shared coeffs; click-free swap preserved) | c++/dsp | T-C1/T-C2 bit-exact; per-channel FR ±1 dB; **click-free at N=4 (Gate A)** |
-| **S1-M2** | Limiter → `PerChannel<ring>` + linked-max ISP fan-in → one shared gain; + T-C3/T-C4 | c++/dsp | **T-C4 lockstep <0.01 dB**; N=8 hot-noise soak ≤ ceiling; T-C3 independence |
-| **S1-M3** | Loudness N-channel gain; `LufsMeter` N-channel BS.1770 weights (LFE=0) | dsp | **BS.1770 weight test ±0.2 LU (Gate C)** |
+| **S1-A1** | EQ state `leftDelay_`/`rightDelay_` → `PerChannel<EqDelay>` (rename only; body still drives ch0/ch1) | c++ | golden master bit-exact at N=2 |
+| **S1-A2** | EQ `process` loops `0..<block.channels()` (drop the `>2?2` clamp); master-gain per channel. Add T-C3-EQ (per-channel independence N=4/6/8) + per-channel FR + click-free@N=4 (Gate A) | c++/dsp | golden master bit-exact; T-C3-EQ; FR ±1 dB; click-free@N=4 |
+
+**Track B — Limiter** (independent; linked-gain is the make-or-break)
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S1-B1** | Limiter rings `leftRing_`/`rightRing_` → `PerChannel<LimiterRing>` (rename; body still 2-ch) | c++ | golden master + limiter tests bit-exact |
+| **S1-B2** | `polyphaseIspPeak` → per-channel; caller takes **max ISP over all N** (detection fan-in). At N=2 reduces to today's `max(L,R)` | c++/dsp | golden master + ceiling tests bit-exact at N=2 |
+| **S1-B3** | Apply the **one shared `grBuf_`** to all N channels + drop `kLimiterMaxChannels=2`. Add T-C4 (linked lockstep <0.01 dB) + N=8 hot-noise ceiling soak | c++/dsp | **T-C4 lockstep**; N=8 soak ≤ ceiling+0.01; golden master |
+
+**Track C — Loudness** (independent)
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S1-C1** | Makeup gain applied to **all N channels** (loop) — gain fan-out only | dsp | golden master bit-exact at N=2 |
+| **S1-C2** | `LufsMeter` → N-channel BS.1770 weights (L/R/C=1, surround ≈1.41, **LFE=0**) + N-channel push API | dsp | **BS.1770 weight test ±0.2 LU vs libebur128 multichannel oracle (Gate C)** |
+
+Ordering: A1→A2, B1→B2→B3, C1→C2 (each track internal). Tracks A/B/C have no interdependency and can
+land in any interleaving. T-C3 lands in A2, T-C4 in B3.
 
 ### S2 — Source-driven N input
 | MS | Chunk | Owner | Exit gate |
