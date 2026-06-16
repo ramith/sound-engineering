@@ -39,6 +39,15 @@
 // process() is noexcept: no allocation, free, OS call, or lock. All buffers and the
 // polyphase coefficient table are pre-allocated/computed in initialize() (off-RT).
 //
+// Ring sizing
+// ===========
+// The look-ahead ring is sized ringSize_ = kLimiterLookaheadFrames + maxFrames_,
+// allocated in initialize() as a heap vector per channel (so it scales with the
+// host's maximumFramesToRender rather than being stuck at the compile-time
+// kDefaultMaxFrames=512). At maxFrames_=512 the geometry is identical to the
+// former compile-time kLimiterRingSize = lookahead + 512, preserving bit-exactness.
+// grBuf_ is likewise a heap vector sized to maxFrames_ in initialize().
+//
 // Parameters (LimiterParams, published via DoubleBufferSnapshot)
 // =============================================================
 //   truePeakCeilingLinear — linear ceiling; default 0.891 (−1 dBTP). ≥ 1.0 bypasses
@@ -55,15 +64,16 @@
 
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
-#include "../include/PerChannel.h"
 #include "../include/TargetState.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <vector>
 
 namespace AdaptiveSound
 {
@@ -91,10 +101,6 @@ namespace AdaptiveSound
     static constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
     static constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
 
-    // Ring: lookahead window + one full max-size block (96/144 + 512). Power-of-two
-    // not required (we use explicit modulo). kLimiterRingSize = 144 + 512 = 656.
-    static constexpr uint32_t kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames;
-
     // Monotonic-deque capacity: window of kLimiterLookaheadFrames pair-peaks plus one
     // transient slot between push-back and front-evict.
     static constexpr uint32_t kPeakDequeCapacity = kLimiterLookaheadFrames + 1U;
@@ -112,12 +118,18 @@ namespace AdaptiveSound
 
         // -----------------------------------------------------------------------
         // initialize() — control thread, off-RT. Computes ballistics + polyphase
-        // coefficients; call again on sample-rate change.
+        // coefficients; allocates ring buffers and grBuf_ to maxFrames_; call
+        // again on sample-rate or maxFrames change.
         // -----------------------------------------------------------------------
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
         {
             sampleRate_ = sampleRate;
             maxFrames_ = maxFrames;
+
+            // Ring size: lookahead window + one full host buffer.
+            // At maxFrames_=512 this equals the former kLimiterRingSize (656),
+            // preserving GoldenMaster_StereoN2_v1 bit-exactness.
+            ringSize_ = kLimiterLookaheadFrames + maxFrames_;
 
             const float fs = static_cast<float>(sampleRate);
             attackCoeff_ = onePoleCoeff(kLimiterAttackMs, fs);
@@ -125,14 +137,24 @@ namespace AdaptiveSound
             releaseSlowCoeff_ = onePoleCoeff(kLimiterSlowReleaseMs, fs);
             holdFrames_ = static_cast<uint32_t>(std::lround(kLfHoldSeconds * fs));
 
-            rings_.reset();
+            // Allocate and zero each channel's ring. Do NOT call rings_.reset() here:
+            // PerChannel<T>::reset() value-initialises slots, which for std::vector
+            // would empty them (resize to zero). Instead resize+fill each slot directly.
+            for (auto& ring : rings_)
+            {
+                ring.assign(ringSize_, 0.0F);
+            }
+
             readHead_ = 0U;
             writeHead_ = kLimiterLookaheadFrames;
 
             envFastDb_ = 0.0;
             envSlowDb_ = 0.0;
             lfHoldCounter_ = 0U;
-            grBuf_.fill(0.0F);
+
+            // grBuf_: heap-allocated to maxFrames_ (off-RT, the only allocation site).
+            grBuf_.assign(maxFrames_, 0.0F);
+
             dequeHead_ = 0U;
             dequeCount_ = 0U;
             sampleCounter_ = 0U;
@@ -176,7 +198,14 @@ namespace AdaptiveSound
                 return;
             }
 
-            const uint32_t safeCount = std::min(frameCount, kDefaultMaxFrames);
+            // frameCount must not exceed the buffer capacity established in initialize().
+            assert(frameCount <=
+                   maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+
+            // Process all frameCount samples — not just kDefaultMaxFrames.
+            // grBuf_ and each ring are sized to maxFrames_ (and ringSize_ respectively)
+            // so no bounds overrun is possible.
+            const uint32_t safeCount = std::min(frameCount, maxFrames_);
             const double workingCeiling =
                 static_cast<double>(params.truePeakCeilingLinear) * kIspSafetyMargin;
             const double ceilingDb = kLimiterDbScale * std::log10(workingCeiling);
@@ -207,7 +236,7 @@ namespace AdaptiveSound
                 const double grDb = advanceEnvelopeDb(targetDb);
                 grBuf_[i] = static_cast<float>(std::pow(kLimiterDbBase, grDb / kLimiterDbScale));
 
-                writeHead_ = (writeHead_ + 1U) % kLimiterRingSize;
+                writeHead_ = (writeHead_ + 1U) % ringSize_;
             }
 
             // Copy lookahead-delayed samples from ring to output buffer, then apply
@@ -229,7 +258,7 @@ namespace AdaptiveSound
                 }
             }
 
-            readHead_ = (readHead_ + safeCount) % kLimiterRingSize;
+            readHead_ = (readHead_ + safeCount) % ringSize_;
         }
 
       private:
@@ -299,15 +328,15 @@ namespace AdaptiveSound
 
         // 8× polyphase inter-sample true-peak of the sample just written at
         // `writePos`, for ONE channel. Reads that channel's 24-sample ring history
-        // (handles wrap), runs 8 dot-products, returns max |·| (double). The caller
-        // maxes this over all active channels to drive the linked gain.
+        // (handles wrap using ringSize_), runs 8 dot-products, returns max |·| (double).
+        // The caller maxes this over all active channels to drive the linked gain.
         [[nodiscard]] auto polyphaseIspPeak(uint32_t channel, uint32_t writePos) const noexcept
             -> double
         {
             std::array<double, kIspNumTaps> hist{};
             for (uint32_t k = 0U; k < kIspNumTaps; ++k)
             {
-                const uint32_t idx = (writePos + kLimiterRingSize - k) % kLimiterRingSize;
+                const uint32_t idx = (writePos + ringSize_ - k) % ringSize_;
                 hist[k] = static_cast<double>(rings_[channel][idx]);
             }
 
@@ -405,12 +434,13 @@ namespace AdaptiveSound
 
         // Copy safeCount delayed samples from the ring (at readHead_) into dst,
         // splitting at the wrap to avoid per-sample modular arithmetic.
-        void fillOutputFromRing(float* dst, const float* ring, uint32_t safeCount) const noexcept
+        // Uses ringSize_ (runtime) for the wrap calculation.
+        void fillOutputFromRing(float* dst, const float* ring, uint32_t count) const noexcept
         {
-            const uint32_t toEnd = kLimiterRingSize - readHead_;
-            if (safeCount <= toEnd)
+            const uint32_t toEnd = ringSize_ - readHead_;
+            if (count <= toEnd)
             {
-                for (uint32_t i = 0U; i < safeCount; ++i)
+                for (uint32_t i = 0U; i < count; ++i)
                 {
                     dst[i] = ring[readHead_ + i];
                 }
@@ -421,7 +451,7 @@ namespace AdaptiveSound
                 {
                     dst[i] = ring[readHead_ + i];
                 }
-                const uint32_t remaining = safeCount - toEnd;
+                const uint32_t remaining = count - toEnd;
                 for (uint32_t i = 0U; i < remaining; ++i)
                 {
                     dst[toEnd + i] = ring[i];
@@ -430,21 +460,24 @@ namespace AdaptiveSound
         }
 
         // -----------------------------------------------------------------------
-        // State — all pre-allocated; no heap in process(). Ordered by descending
-        // alignment to keep the layout padding-clean.
+        // State
         // -----------------------------------------------------------------------
 
         // Polyphase coefficient table (flat phase-major; computed off-RT).
         std::array<double, static_cast<size_t>(kIspOversampling) * kIspNumTaps> ispCoeffs_{};
 
-        // Look-ahead ring buffers (96/144 + 512 = 656), one per channel.
-        using LimiterRing = std::array<float, kLimiterRingSize>;
-        PerChannel<LimiterRing> rings_{};
+        // Look-ahead ring buffers: one std::vector<float> per channel, each sized to
+        // ringSize_ = kLimiterLookaheadFrames + maxFrames_ in initialize(). Heap-allocated
+        // off-RT so the ring scales with the host's maximumFramesToRender. process() never
+        // allocates. Using a std::array of vectors (kMaxChannels slots) avoids the
+        // PerChannel<T> reset() pitfall for vector elements (its reset() would empty them).
+        std::array<std::vector<float>, kMaxChannels> rings_;
 
-        // Per-sample gain envelope scratch (kDefaultMaxFrames = 512).
-        std::array<float, kDefaultMaxFrames> grBuf_{};
+        // Per-sample gain envelope scratch: heap-allocated to maxFrames_ in initialize().
+        std::vector<float> grBuf_;
 
-        // Sliding-window peak deque (circular).
+        // Sliding-window peak deque (circular). Fixed capacity — depends only on the
+        // lookahead window, not maxFrames_.
         std::array<PeakEntry, kPeakDequeCapacity> peakDeque_{};
 
         // dB-domain dual-stage envelope state (≤ 0 dB) and ballistics coefficients.
@@ -464,6 +497,7 @@ namespace AdaptiveSound
         uint32_t holdFrames_ = 0U;    // LF hold span (computed in initialize())
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
+        uint32_t ringSize_ = kLimiterLookaheadFrames + kDefaultMaxFrames; // set in initialize()
     };
 
 } // namespace AdaptiveSound

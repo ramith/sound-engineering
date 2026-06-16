@@ -2532,6 +2532,293 @@ static auto testLoudnessMultichannelBS1770Weights() -> void
 }
 
 // ---------------------------------------------------------------------------
+// Large-buffer regression fence (buffer-size desync bug fix verification).
+//
+// WHAT THIS TESTS:
+//   Before the fix: safeCount = min(frameCount, kDefaultMaxFrames=512) meant that
+//   buffers larger than 512 frames had their tail [512..N-1] left unprocessed by the
+//   Limiter ring, the EQ master-gain ramp, and the Loudness makeup-gain ramp.
+//   At bufSize=1024 with the Limiter active and a hot signal above the ceiling:
+//     - frames [0..511]: gain-reduced via ring path, output ≤ ceiling.
+//     - frames [512..1023]: raw undelayed input carried through untouched (above ceiling).
+//   The EQ ramp bug caused a -0.14 linear step discontinuity at frame 512 every buffer.
+//
+// After the fix: grBuf_, rampBuf_, and pushBuf_ are sized to maxFrames_ in
+// initialize(), and safeCount = min(frameCount, maxFrames_) == frameCount for all
+// correctly-configured callers. ALL frames in every buffer are processed.
+//
+// T-LB1: Kernel_LargeBuffer_LimiterTailCorrect
+//   Drive the full DSPKernel (active limiter, identity EQ) at bufSize=1024, then 4096.
+//   Feed a hot (above-ceiling) signal. Assert:
+//     (a) The ENTIRE output buffer (including frames [512..N-1]) respects the ceiling.
+//     (b) The output contains no NaN/Inf.
+//     (c) Per-buffer tail gain ≈ head gain (no safeCount boundary step in the limiter path).
+//
+// T-LB2: Kernel_LargeBuffer_EQGainNoCutoff
+//   Drive the kernel with masterGain=2.0 (ramp path active) at bufSize=1024.
+//   Assert the per-sample output is monotonically increasing (or at least non-zero) past
+//   frame 512 — i.e. the ramp continues to advance and the gain multiply was applied.
+//
+// T-LB3: Kernel_LargeBuffer_ConsecutiveBuffers
+//   Feed 6 consecutive 1024-frame buffers of a hot signal through the full chain.
+//   Assert that the last buffer is NOT more distorted than the first — i.e. the ring
+//   desync does not compound. Measure output peak in the tail of each buffer.
+// ---------------------------------------------------------------------------
+
+static auto testLargeBufferLimiterTailCorrect() -> void
+{
+    static const char* const kName = "Kernel_LargeBuffer_LimiterTailCorrect";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr float kCeiling = kTruePeakCeilingLinear; // 0.891
+    constexpr float kCeilingTol = 0.01F;
+    constexpr float kHotAmpl = 0.999F; // above ceiling
+
+    const uint32_t bufSizes[] = {1024U, 4096U};
+
+    for (const uint32_t bufSize : bufSizes)
+    {
+        DSPKernel kernel;
+        kernel.initialize(kSR, bufSize);
+
+        TargetState state{};
+        state.intensityLinear = 1.0F;
+        state.eq.numBiquads = 0U;
+        state.eq.masterGainLinear = 1.0F;
+        state.clarity.enabled = 0U;
+        state.loudness.enabled = 0U;
+        state.limiter.truePeakCeilingLinear = kCeiling;
+        kernel.publishTargetState(state);
+
+        // Prime the ring so the lookahead window starts with zeros.
+        TestABLN prime(2U, kLimiterLookaheadFrames);
+        kernel.process(prime.abl(), kLimiterLookaheadFrames);
+
+        // Hot DC burst for a full large buffer.
+        TestABLN abl(2U, bufSize);
+        for (uint32_t i = 0U; i < bufSize; ++i)
+        {
+            abl.channels[0][i] = kHotAmpl;
+            abl.channels[1][i] = kHotAmpl;
+        }
+        kernel.process(abl.abl(), bufSize);
+
+        // (a) + (b): every output sample must be finite and ≤ ceiling + tolerance.
+        uint32_t nanCount = 0U;
+        uint32_t aboveCeiling = 0U;
+        for (uint32_t i = 0U; i < bufSize; ++i)
+        {
+            const float s = abl.channels[0][i];
+            if (!std::isfinite(s))
+            {
+                ++nanCount;
+            }
+            else if (std::abs(s) > kCeiling + kCeilingTol)
+            {
+                ++aboveCeiling;
+            }
+        }
+
+        if (nanCount > 0U || aboveCeiling > 0U)
+        {
+            std::ostringstream oss;
+            oss << "bufSize=" << bufSize << " NaN/Inf=" << nanCount
+                << " samples_above_ceiling=" << aboveCeiling << " (ceiling=" << kCeiling
+                << " + tol=" << kCeilingTol << ")";
+            logFail(kName, oss.str());
+            return;
+        }
+
+        // (c) Tail gain must not be significantly higher than head gain (no safeCount
+        // boundary where the limiter stopped applying the ring path).
+        // Compute mean absolute gain (output/input) for head vs tail of safeCount.
+        constexpr uint32_t kBoundary = kDefaultMaxFrames; // the old 512 boundary
+        if (bufSize <= kBoundary)
+        {
+            continue; // not a large-buffer case; skip boundary check
+        }
+
+        double headGainSum = 0.0;
+        uint32_t headCnt = 0U;
+        double tailGainSum = 0.0;
+        uint32_t tailCnt = 0U;
+
+        for (uint32_t i = kLimiterLookaheadFrames; i < kBoundary; ++i)
+        {
+            headGainSum += static_cast<double>(std::abs(abl.channels[0][i])) / kHotAmpl;
+            ++headCnt;
+        }
+        for (uint32_t i = kBoundary; i < bufSize; ++i)
+        {
+            tailGainSum += static_cast<double>(std::abs(abl.channels[0][i])) / kHotAmpl;
+            ++tailCnt;
+        }
+
+        if (headCnt > 0U && tailCnt > 0U)
+        {
+            const double avgHeadGain = headGainSum / static_cast<double>(headCnt);
+            const double avgTailGain = tailGainSum / static_cast<double>(tailCnt);
+            // Before the fix: tailGain ≈ 1.0 (raw input), headGain ≈ 0.62 (limited).
+            // After the fix: tailGain ≈ headGain (both limited).
+            // Threshold: tail must not be more than 5% above head.
+            if (avgTailGain > avgHeadGain + 0.05)
+            {
+                std::ostringstream oss;
+                oss << "bufSize=" << bufSize << " tail avg gain (" << avgTailGain
+                    << ") >> head avg gain (" << avgHeadGain
+                    << ") — limiter tail-safeCount boundary still present";
+                logFail(kName, oss.str());
+                return;
+            }
+        }
+    }
+    logPass(kName);
+}
+
+static auto testLargeBufferEQGainNoCutoff() -> void
+{
+    static const char* const kName = "Kernel_LargeBuffer_EQGainNoCutoff";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kBufSize = 1024U;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kBufSize);
+
+    // masterGain=2.0 forces the ramp path; ramp starts at unity (snapped) and
+    // trends toward 2.0, so every output sample > input * 0.9 at minimum.
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 2.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    state.limiter.truePeakCeilingLinear = 10.0F; // bypass limiter
+    kernel.publishTargetState(state);
+
+    // DC signal at 0.5 — with masterGain=2.0 the ramp trend means all output > 0.4.
+    TestABLN abl(2U, kBufSize);
+    for (uint32_t i = 0U; i < kBufSize; ++i)
+    {
+        abl.channels[0][i] = 0.5F;
+        abl.channels[1][i] = 0.5F;
+    }
+    kernel.process(abl.abl(), kBufSize);
+
+    // Before the fix: samples [512..1023] were multiplied by stale rampBuf_[i-512]
+    // values from initialize()'s fill (0.0), so output[512..] ≈ 0.
+    // After the fix: the ramp continues through all 1024 samples; output > 0.4.
+    constexpr float kMinExpected = 0.4F; // ramp at unity * 0.5 input = 0.5 at minimum
+    constexpr uint32_t kBoundary = kDefaultMaxFrames;
+
+    bool tailSilent = false;
+    float minTailOutput = 1.0F;
+    for (uint32_t i = kBoundary; i < kBufSize; ++i)
+    {
+        const float s = abl.channels[0][i];
+        if (std::abs(s) < minTailOutput)
+        {
+            minTailOutput = std::abs(s);
+        }
+        if (std::abs(s) < kMinExpected)
+        {
+            tailSilent = true;
+        }
+    }
+
+    // Also assert no step at the 512 boundary.
+    const float stepAt512 = std::abs(abl.channels[0][kBoundary] - abl.channels[0][kBoundary - 1U]);
+    // The ramp is monotonically increasing toward 2.0; the per-sample gain step is tiny.
+    // Before the fix: a ~-0.14 linear discontinuity. After the fix: smooth ramp.
+    constexpr float kMaxAllowedStep = 0.05F; // generous: ramp changes < 0.001 per sample
+
+    if (tailSilent)
+    {
+        std::ostringstream oss;
+        oss << "tail [" << kBoundary << ".." << kBufSize - 1U << "] min output=" << minTailOutput
+            << " < " << kMinExpected << " — EQ master-gain ramp was not applied past frame "
+            << kBoundary;
+        logFail(kName, oss.str());
+        return;
+    }
+    if (stepAt512 > kMaxAllowedStep)
+    {
+        std::ostringstream oss;
+        oss << "step at frame " << kBoundary << ": " << stepAt512 << " linear (max allowed "
+            << kMaxAllowedStep << ") — EQ ramp discontinuity at safeCount boundary";
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+static auto testLargeBufferConsecutiveBuffers() -> void
+{
+    static const char* const kName = "Kernel_LargeBuffer_ConsecutiveBuffers";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kBufSize = 1024U;
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+    constexpr float kCeilingTol = 0.01F;
+    constexpr float kHotAmpl = 0.999F;
+    constexpr uint32_t kNumBlocks = 6U;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kBufSize);
+
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    state.limiter.truePeakCeilingLinear = kCeiling;
+    kernel.publishTargetState(state);
+
+    // Feed kNumBlocks 1024-frame buffers of a 1 kHz sine above the ceiling.
+    float worstTailPeak = 0.0F;
+    uint32_t failBlock = 0U;
+    bool failed = false;
+
+    for (uint32_t blk = 0U; blk < kNumBlocks; ++blk)
+    {
+        TestABLN abl(2U, kBufSize);
+        for (uint32_t i = 0U; i < kBufSize; ++i)
+        {
+            const float phase = 2.0F * std::numbers::pi_v<float> * 1000.0F *
+                                static_cast<float>((blk * kBufSize) + i) / static_cast<float>(kSR);
+            abl.channels[0][i] = kHotAmpl * std::sin(phase);
+            abl.channels[1][i] = abl.channels[0][i];
+        }
+        kernel.process(abl.abl(), kBufSize);
+
+        // Check tail: before the fix the ring desyncs progressively, so blocks 2+
+        // would show increasing corruption in the tail.
+        for (uint32_t i = kDefaultMaxFrames; i < kBufSize; ++i)
+        {
+            const float absS = std::abs(abl.channels[0][i]);
+            if (absS > worstTailPeak)
+            {
+                worstTailPeak = absS;
+            }
+            if (!failed && absS > kCeiling + kCeilingTol)
+            {
+                failed = true;
+                failBlock = blk;
+            }
+        }
+    }
+
+    if (failed)
+    {
+        std::ostringstream oss;
+        oss << "tail [" << kDefaultMaxFrames << ".." << kBufSize - 1U
+            << "] exceeded ceiling on block " << failBlock << ": worst_tail_peak=" << worstTailPeak
+            << " ceiling=" << kCeiling << " — ring desync or safeCount boundary not fixed";
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
 
 auto main() -> int
 {
@@ -2578,6 +2865,11 @@ auto main() -> int
 
     // S1-C2a: N-channel BS.1770-5 LUFS meter (Gate C)
     testLoudnessMultichannelBS1770Weights();
+
+    // Large-buffer regression fence (buffer-size desync / safeCount=512 fix)
+    testLargeBufferLimiterTailCorrect(); // T-LB1: limiter processes full bufSize tail
+    testLargeBufferEQGainNoCutoff();     // T-LB2: EQ master-gain ramp covers full buffer
+    testLargeBufferConsecutiveBuffers(); // T-LB3: no ring desync across consecutive buffers
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
