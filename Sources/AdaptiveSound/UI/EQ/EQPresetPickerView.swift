@@ -27,6 +27,7 @@ struct EQPresetPickerView: View {
             Text("Custom").tag(EQPreset?.none)
         }
         .pickerStyle(.segmented)
+        .labelsHidden()
         .accessibilityLabel("EQ Preset")
         .accessibilityValue(eqViewModel.selectedPresetName)
     }
