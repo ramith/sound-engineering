@@ -3,21 +3,17 @@ import SwiftUI
 /// Primary application toolbar (60pt).
 ///
 /// Layout (left → right):
-///   App logo squircle | Device dropdown pill | Tab selector | Spacer | Volume control
+///   App logo squircle | Device dropdown pill | Tab selector | Spacer
 ///
-/// All interactive elements are ≥44pt tap targets. The tab picker gets
-/// `.layoutPriority(1)` to prevent compression before the device pill collapses.
-/// The device pill has a `minWidth` to stay readable at the 800pt window minimum.
+/// The tab picker gets `.layoutPriority(1)` to prevent compression. The device
+/// pill is width-bounded (minWidth…maxWidth) and truncates long names so an
+/// aggregate-device name can't blow out the toolbar.
 struct ToolbarView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     /// Binding to the tab selection owned by ContentView so the toolbar
     /// controls navigation without owning state it does not produce.
     @Binding var selectedTab: TabSelection
-
-    /// Volume: 0.0 – 1.0. Owned by ContentView and bound here so the
-    /// value survives tab switches.
-    @Binding var volume: Float
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -30,8 +26,6 @@ struct ToolbarView: View {
             TabSelectorView(selectedTab: $selectedTab, reduceMotion: reduceMotion)
 
             Spacer(minLength: 8)
-
-            VolumeControlView(volume: $volume)
         }
         .padding(.horizontal, 16)
         .frame(height: 60)
@@ -84,9 +78,11 @@ private struct DevicePillView: View {
             )
             .font(.callout.weight(.medium))
             .foregroundStyle(Color.asLabel)
+            .lineLimit(1)
+            .truncationMode(.tail)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(minWidth: 160, minHeight: 32, alignment: .leading)
+            .frame(minWidth: 160, maxWidth: 240, minHeight: 32, alignment: .leading)
             .background(Color.asCard)
             .clipShape(.rect(cornerRadius: 8, style: .continuous))
             .overlay {
@@ -94,10 +90,10 @@ private struct DevicePillView: View {
                     .stroke(Color.asHairline, lineWidth: 0.5)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel("Audio output device")
         .accessibilityValue(viewModel.selectedDevice?.displayName ?? "No device selected")
         .accessibilityHint("Click to choose from available audio output devices")
-        .fixedSize()
     }
 }
 
@@ -121,38 +117,5 @@ private struct TabSelectorView: View {
         .layoutPriority(1)
         .accessibilityLabel("Tab Navigation")
         .accessibilityValue(selectedTab.rawValue)
-    }
-}
-
-// MARK: - Volume Control
-
-private struct VolumeControlView: View {
-    @Binding var volume: Float
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: volume < 0.01 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.callout)
-                .foregroundStyle(Color.asLabelSecond)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-
-            Slider(value: $volume, in: 0 ... 1)
-                .frame(minWidth: 80, maxWidth: 120)
-                .accessibilityLabel("Volume")
-                .accessibilityValue("\(Int(volume * 100))%")
-                .accessibilityHint("Adjust audio output volume from 0 to 100 percent")
-
-            Text("\(Int(volume * 100))%")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(Color.asLabelSecond)
-                .frame(minWidth: 36, alignment: .trailing)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.asCard)
-        .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        .frame(minHeight: 44)
     }
 }

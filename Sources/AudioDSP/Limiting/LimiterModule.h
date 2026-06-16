@@ -1,195 +1,152 @@
 #ifndef LIMITER_MODULE_H
 #define LIMITER_MODULE_H
 
-// LimiterModule — True-peak lookahead limiter
+// LimiterModule — True-peak lookahead limiter (Sprint 4, Milestone 3 = state of the art)
 //
 // Architecture
 // ============
-// This is the final stage of the signal chain (see DSPKernel.h):
+// Final stage of the signal chain (see DSPKernel.h):
 //   EQ → Clarity → BRIR → Loudness → [Limiter] → Device Output
 //
-// The limiter enforces a true-peak ceiling (default −1 dBTP) using three
-// mechanisms that together give transparent, zero-artifact peak control:
+// Enforces a true-peak ceiling (default −1 dBTP) transparently. Quality-first
+// design (CPU/RAM assumed abundant — see docs/sprints/04-sprint-4-loudness-safety-plan.md):
 //
-//   1. Lookahead delay (1 ms / 48 frames @ 48 kHz)
-//      Input samples are written into a per-channel ring buffer of size
-//      kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames.
-//      The ring is large enough that writing a full 512-frame block of new
-//      input never overlaps the 48-frame window of delayed output that is
-//      simultaneously being read back.  The write head always stays
-//      kLimiterLookaheadFrames ahead of the read head.
+//   1. Look-ahead delay (3 ms / 144 frames @ 48 kHz) via a per-channel ring,
+//      so the gain envelope reaches target before the transient arrives.
 //
-//      This gives the gain-reduction envelope time to ramp up BEFORE the
-//      transient peak arrives at the output — all audible clipping is
-//      eliminated even on hard transients.
+//   2. Inter-sample (true-peak) detection — **8× polyphase windowed-sinc FIR**
+//      (Kaiser β=8, 24 taps/phase), sidechain-only. For each new input sample
+//      the 8 polyphase phases reconstruct the 8 sub-sample magnitudes over the
+//      last 24 samples; the per-sample ISP estimate = max(|those|). This replaces
+//      the M1 4× linear interpolation (which under-read true peaks by ~0.5 dB):
+//      verified worst-case under-read < 0.17 dB, so the working-ceiling margin is
+//      −0.27 dB (was −0.5 dB). Audio path stays at base rate — only the detector
+//      is oversampled (x42/zita-dpl1 model). Ref: ITU-R BS.1770 Annex 2; libebur128.
 //
-//   2. Inter-sample (true-peak) detection with ≥4× oversampling
-//      After each new sample is written to the ring, the GR sidechain
-//      scans a kLimiterLookaheadFrames-sample lookahead window ahead of
-//      the write head at 4× upsampled resolution using linear interpolation
-//      between adjacent samples (3 midpoints per pair).  This catches
-//      inter-sample peaks that exceed the ceiling even though the sample
-//      values themselves are below it.
-//      Reference: ITU-R BS.1770-5 §3 true-peak measurement.
+//   3. Sliding-window peak (monotonic deque, amortized O(1)) → gain reduction in
+//      the **dB domain** with a **dual-stage release** (fast + slow, deeper wins)
+//      and **LF hold-extension** (don't release between bass-spaced peaks). Ref:
+//      Giannoulis/Massberg/Reiss, JAES 2012; x42 hold-extension. Gain applied via
+//      vDSP_vmul. All sidechain math is double; only the final gain is float.
 //
-//   3. Sample-accurate gain reduction with one-pole attack/release smoothing
-//      Gain reduction (GR) is maintained as a per-sample running value using
-//      an RC-exact one-pole smoother (JOS §1.3.1).  The per-sample GR
-//      envelope is materialized into grBuf_ then applied via vDSP_vmul.
-//      This eliminates zipper noise on buffer boundaries and prevents the
-//      "pumping/breathing" that a block-level gain scalar would cause.
-//
-// Ring Layout (per channel)
-// ========================
-//              [read head]                      [write head]
-//              |                                |
-//   ... old .. R .... kLimiterLookaheadFrames .. W ... new ...
-//
-//   writeHead = (readHead + kLimiterLookaheadFrames) % kLimiterRingSize
-//
-//   At initialize() the ring is zeroed and:
-//     readHead_  = 0
-//     writeHead_ = kLimiterLookaheadFrames   (pre-filled with zeros)
-//
-//   process() advances both heads by frameCount each call.
+// Why NOT a K-weighted/HP sidechain (the withdrawn "B5"): a true-peak ceiling must
+// catch low-frequency inter-sample peaks too — weighting the detector would make it
+// blind to them. Bass pumping is solved by hold-extension, not by deafening the
+// detector. (K-weighting belongs in the upstream LUFS module, which we have.)
 //
 // RT-Safety
 // =========
-// process() is fully noexcept: no allocation, no free, no OS calls, no locks.
-// All buffers (ring, GR ramp scratch) are pre-allocated in initialize().
-// Attack and release coefficients are computed off-RT in initialize() and are
-// never modified from the render thread.
+// process() is noexcept: no allocation, free, OS call, or lock. All buffers and the
+// polyphase coefficient table are pre-allocated/computed in initialize() (off-RT).
 //
-// Parameters (from LimiterParams, published via DoubleBufferSnapshot)
-// ===================================================================
-//   truePeakCeilingLinear  — ceiling in linear scale; default 0.891 (−1 dBTP).
-//                            Set to ≥ 1.0 to bypass gain reduction entirely.
-//                            process() returns immediately for a zero-latency
-//                            identity passthrough in that case.
-//
-// Math
-// ====
-// One-pole GR smoother (per sample):
-//   GR_target[n] = max(0, peakDbfs − ceilingDbfs)      [non-negative dB]
-//   if GR_target > GR_current:  GR[n] = GR[n-1] + α_a·(GR_target − GR[n-1])
-//   else:                        GR[n] = GR[n-1] + α_r·(GR_target − GR[n-1])
-//
-//   α = 1 − exp(−1 / (τ · fs))   (RC-exact discrete-time pole; JOS §1.3.1)
-//   τ_attack  = 0.5 ms  → α_a ≈ 0.064 @ 48 kHz
-//   τ_release = 100 ms  → α_r ≈ 0.000208 @ 48 kHz
-//
-// Output gain per sample:
-//   gain[n] = 10^(−GR[n] / 20)  = exp(−GR[n] · ln(10)/20)
+// Parameters (LimiterParams, published via DoubleBufferSnapshot)
+// =============================================================
+//   truePeakCeilingLinear — linear ceiling; default 0.891 (−1 dBTP). ≥ 1.0 bypasses
+//                           (zero-latency identity passthrough).
 //
 // References
 // ==========
-// - Julius O. Smith III, "Introduction to Digital Filters", §1.3.1 (one-pole RC)
-//   https://ccrma.stanford.edu/~jos/filters/
-// - ITU-R BS.1770-5 §3 (true-peak / inter-sample peak measurement)
-// - Reiss & McPherson, "Audio Effects: Theory, Implementation and Application",
-//   ch. 4 (dynamics processing)
-// - Zölzer (ed.), "DAFX: Digital Audio Effects", ch. 3 (limiting / companding)
+// - ITU-R BS.1770-4/-5 Annex 2 (true-peak / oversampled ISP measurement)
+// - Giannoulis, Massberg & Reiss, "Digital Dynamic Range Compressor Design",
+//   JAES 60(6), 2012 (dB-domain gain computer, dual-stage release)
+// - Julius O. Smith III, "Introduction to Digital Filters" §1.3.1 (one-pole RC)
+// - Oppenheim & Schafer §7.6 (Kaiser window); Schafer & Rabiner 1973 (polyphase)
+// - jiixyj/libebur128, x42/dpl.lv2 (oversampled true-peak detection)
 
 #include "../include/AudioConstants.h"
 #include "../include/TargetState.h"
 #include <Accelerate/Accelerate.h>
+#include <algorithm>
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cmath>
+#include <cstdint>
+#include <numbers>
 
 namespace AdaptiveSound
 {
 
-    // ---------------------------------------------------------------------------
-    // Module-local constants
-    // ---------------------------------------------------------------------------
+    // --- Polyphase ISP detector (replaces M1 4× linear interpolation) -----------
+    static constexpr uint32_t kIspOversampling = 8U; // 8× polyphase upsample
+    static constexpr uint32_t kIspNumTaps = 24U;     // taps per phase (windowed sinc)
+    static constexpr uint32_t kIspPrototypeN = kIspOversampling * kIspNumTaps; // 192
+    static constexpr double kIspKaiserBeta = 8.0;         // Kaiser β (≈ −98 dB stopband)
+    static constexpr double kIspProtoCutoffNorm = 0.0625; // 0.5/L: pass base band, reject images
+    static constexpr uint32_t kI0MaxTerms = 25U;          // I0 Bessel series term cap
+    static constexpr double kI0ConvergeEps = 1.0e-16;     // I0 series termination
 
-    // Attack: 0.5 ms — fast enough to catch transients without audible pre-emphasis
-    static constexpr float kLimiterAttackMs = 0.5F;
-    // Release: 100 ms — slow enough for transparency, fast enough for recovery
-    static constexpr float kLimiterReleaseMs = 100.0F;
+    // Working-ceiling margin: polyphase worst-case under-read < 0.17 dB + 0.10 guard
+    // → −0.27 dB = 10^(−0.27/20). (Was −0.5 dB / 0.94406 under M1 linear-interp.)
+    static constexpr double kIspSafetyMargin = 0.96939327;
 
-    // Inter-sample oversampling factor for peak detection (≥4 per spec).
-    // We use 4×: insert (kISPOversamplingFactor − 1) linearly interpolated midpoints
-    // between each pair of adjacent samples in the lookahead window.
-    // Fractions: k / kISPOversamplingFactor for k = 1…(factor-1) → 0.25, 0.50, 0.75
-    static constexpr uint32_t kISPOversamplingFactor = 4U;
-
-    // ln(10)/20 — used in the per-sample dB→linear conversion: gain = exp(−GR·kLn10Over20)
-    static constexpr float kLn10Over20 = 0.11512925464970228F;
+    // --- Ballistics (dB domain, dual-stage release + LF hold) -------------------
+    static constexpr float kLimiterAttackMs = 0.5F;        // attack τ
+    static constexpr float kLimiterFastReleaseMs = 100.0F; // fast release τ
+    static constexpr float kLimiterSlowReleaseMs = 500.0F; // slow release τ (sustained)
+    static constexpr float kMillisToSeconds = 0.001F;
+    static constexpr double kLimiterDbScale = 20.0;   // 20·log10 (amplitude ↔ dB)
+    static constexpr double kLimiterDbBase = 10.0;    // base for dB → linear
+    static constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
+    static constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
 
     // Maximum channels handled (stereo)
     static constexpr uint32_t kLimiterMaxChannels = 2U;
 
-    // Ring size: must hold the lookahead window PLUS a full maximum-size block so
-    // the write head never collides with the read head during a single process() call.
-    //   kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames
-    //                    = 48 + 512 = 560
+    // Ring: lookahead window + one full max-size block (96/144 + 512). Power-of-two
+    // not required (we use explicit modulo). kLimiterRingSize = 144 + 512 = 656.
     static constexpr uint32_t kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames;
+
+    // Monotonic-deque capacity: window of kLimiterLookaheadFrames pair-peaks plus one
+    // transient slot between push-back and front-evict.
+    static constexpr uint32_t kPeakDequeCapacity = kLimiterLookaheadFrames + 1U;
 
     class LimiterModule
     {
       public:
         LimiterModule() = default;
+        ~LimiterModule() = default;
 
-        // Non-copyable, non-movable (owns pre-allocated state arrays)
         LimiterModule(const LimiterModule&) = delete;
         LimiterModule& operator=(const LimiterModule&) = delete;
         LimiterModule(LimiterModule&&) = delete;
         LimiterModule& operator=(LimiterModule&&) = delete;
 
         // -----------------------------------------------------------------------
-        // initialize() — call from the control thread before the first process()
-        // call, and again whenever the sample rate changes.  Always off-RT.
+        // initialize() — control thread, off-RT. Computes ballistics + polyphase
+        // coefficients; call again on sample-rate change.
         // -----------------------------------------------------------------------
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
         {
             sampleRate_ = sampleRate;
             maxFrames_ = maxFrames;
 
-            // RC-exact one-pole coefficients: α = 1 − exp(−1/(τ·fs))  (JOS §1.3.1)
             const float fs = static_cast<float>(sampleRate);
-            attackCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterAttackMs * 0.001F) * fs));
-            releaseCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterReleaseMs * 0.001F) * fs));
+            attackCoeff_ = onePoleCoeff(kLimiterAttackMs, fs);
+            releaseFastCoeff_ = onePoleCoeff(kLimiterFastReleaseMs, fs);
+            releaseSlowCoeff_ = onePoleCoeff(kLimiterSlowReleaseMs, fs);
+            holdFrames_ = static_cast<uint32_t>(std::lround(kLfHoldSeconds * fs));
 
-            // Zero ring buffers
             leftRing_.fill(0.0F);
             rightRing_.fill(0.0F);
-
-            // Write head starts kLimiterLookaheadFrames ahead of read head.
-            // The gap of kLimiterLookaheadFrames zero-filled samples acts as the
-            // initial silence prefix — no separate prime step is needed.
             readHead_ = 0U;
             writeHead_ = kLimiterLookaheadFrames;
 
-            // Zero GR state and scratch
-            gainReductionDb_ = 0.0F;
+            envFastDb_ = 0.0;
+            envSlowDb_ = 0.0;
+            lfHoldCounter_ = 0U;
             grBuf_.fill(0.0F);
+            dequeHead_ = 0U;
+            dequeCount_ = 0U;
+            sampleCounter_ = 0U;
+
+            computePolyphaseCoeffs();
         }
 
         // -----------------------------------------------------------------------
-        // process() — RT-safe; noexcept; no allocation.
-        //
-        // Processes the AudioBufferList in-place.  Expects non-interleaved stereo
-        // (mBuffers[0] = left, mBuffers[1] = right); mono (mBuffers==1) works too.
-        //
-        // Bypass mode (truePeakCeilingLinear ≥ 1.0):
-        //   Returns immediately — zero-latency bit-exact passthrough.
-        //   Used by makeIdentityState() in the null tests (ceiling = 2.0).
-        //
-        // Active mode signal flow per call (safeCount = min(frameCount, kDefaultMaxFrames)):
-        //   For each sample i in [0, safeCount):
-        //     1. Write leftBuf[i] (and rightBuf[i]) into the ring at writeHead_
-        //     2. Scan a kLimiterLookaheadFrames window starting at writeHead_+1
-        //        (the lookahead window ahead of the current read position)
-        //        at 4× ISP resolution (linear-interpolated midpoints)
-        //     3. Compute GR target; advance one-pole smoother; store grBuf_[i]
-        //     4. Advance writeHead_
-        //   Then:
-        //     5. Read safeCount delayed samples starting at readHead_ into the
-        //        output buffers (one or two memcpy segments)
-        //     6. Apply grBuf_ via vDSP_vmul
-        //     7. Advance readHead_
+        // process() — RT-safe; noexcept; no allocation. In-place on ioData.
+        //   Bypass (ceiling ≥ 1.0): immediate zero-latency identity return.
+        //   Active: per sample → write ring, polyphase ISP, deque window-max,
+        //   dB-domain dual-stage gain, then read delayed output and apply gain.
         // -----------------------------------------------------------------------
         void
         process(const LimiterParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
@@ -198,7 +155,6 @@ namespace AdaptiveSound
             {
                 return;
             }
-
             const uint32_t numChannels = ioData->mNumberBuffers >= kLimiterMaxChannels
                                              ? kLimiterMaxChannels
                                              : ioData->mNumberBuffers;
@@ -206,7 +162,6 @@ namespace AdaptiveSound
             {
                 return;
             }
-
             float* leftBuf = static_cast<float*>(ioData->mBuffers[0].mData);
             float* rightBuf =
                 (numChannels >= 2U) ? static_cast<float*>(ioData->mBuffers[1].mData) : nullptr;
@@ -221,159 +176,225 @@ namespace AdaptiveSound
                 return;
             }
 
-            // Safety clamp: never overrun the pre-allocated scratch buffer.
-            // kLimiterRingSize is sized for kDefaultMaxFrames; enforce the same limit.
             const uint32_t safeCount = std::min(frameCount, kDefaultMaxFrames);
+            const double workingCeiling =
+                static_cast<double>(params.truePeakCeilingLinear) * kIspSafetyMargin;
+            const double ceilingDb = kLimiterDbScale * std::log10(workingCeiling);
 
-            // Pre-compute ceiling in dB once per buffer
-            const float ceilingDb = 20.0F * std::log10(params.truePeakCeilingLinear + 1e-30F);
-
-            // -----------------------------------------------------------------
-            // Per-sample GR loop
-            // -----------------------------------------------------------------
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
-                // 1. Write new input sample into ring
                 leftRing_[writeHead_] = leftBuf[i];
                 if (rightBuf != nullptr)
                 {
                     rightRing_[writeHead_] = rightBuf[i];
                 }
 
-                // 2. Scan lookahead window for true-peak (4× ISP oversampled).
-                //    The window is the kLimiterLookaheadFrames samples that were
-                //    just written into the ring ahead of the current read position —
-                //    i.e. positions [(writeHead_ - kLimiterLookaheadFrames + 1) ..
-                //    writeHead_] (wrapping).  We scan writeHead_ as the newest and
-                //    work kLimiterLookaheadFrames-1 steps back.
-                const float peakLinear = scanLookahead(rightBuf != nullptr);
+                const double isp = polyphaseIspPeak(writeHead_);
+                const double peak = updatePeakDeque(isp);
+                const double targetDb = targetGrDb(peak, workingCeiling, ceilingDb);
+                const double grDb = advanceEnvelopeDb(targetDb);
+                grBuf_[i] = static_cast<float>(std::pow(kLimiterDbBase, grDb / kLimiterDbScale));
 
-                // 3. Compute GR target and advance one-pole smoother
-                {
-                    const float peakDb = 20.0F * std::log10(peakLinear + 1e-30F);
-                    const float grTarget = (peakDb > ceilingDb) ? (peakDb - ceilingDb) : 0.0F;
-                    if (grTarget > gainReductionDb_)
-                    {
-                        gainReductionDb_ += attackCoeff_ * (grTarget - gainReductionDb_);
-                    }
-                    else
-                    {
-                        gainReductionDb_ += releaseCoeff_ * (grTarget - gainReductionDb_);
-                    }
-                }
-
-                // 4. Convert GR (dB) to linear gain: gain = exp(−GR · ln(10)/20)
-                grBuf_[i] = std::exp(-gainReductionDb_ * kLn10Over20);
-
-                // 5. Advance write head
                 writeHead_ = (writeHead_ + 1U) % kLimiterRingSize;
             }
 
-            // -----------------------------------------------------------------
-            // 6. Extract delayed output from ring (at readHead_) and overwrite
-            //    the input buffers.  readHead_ is kLimiterLookaheadFrames behind
-            //    writeHead_ — those samples were written kLimiterLookaheadFrames
-            //    calls (frames) ago and represent the audio to output NOW.
-            // -----------------------------------------------------------------
             fillOutputFromRing(leftBuf, leftRing_.data(), safeCount);
             if (rightBuf != nullptr)
             {
                 fillOutputFromRing(rightBuf, rightRing_.data(), safeCount);
             }
 
-            // 7. Apply per-sample gain envelope
-            const vDSP_Length n = static_cast<vDSP_Length>(safeCount);
-            vDSP_vmul(leftBuf, 1, grBuf_.data(), 1, leftBuf, 1, n);
+            const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
+            vDSP_vmul(leftBuf, 1, grBuf_.data(), 1, leftBuf, 1, count);
             if (rightBuf != nullptr)
             {
-                vDSP_vmul(rightBuf, 1, grBuf_.data(), 1, rightBuf, 1, n);
+                vDSP_vmul(rightBuf, 1, grBuf_.data(), 1, rightBuf, 1, count);
             }
 
-            // 8. Advance read head
             readHead_ = (readHead_ + safeCount) % kLimiterRingSize;
         }
 
       private:
-        // -----------------------------------------------------------------------
-        // ispPairPeak() — return the 4× ISP true-peak for a single adjacent
-        // sample pair (sampleA, sampleB) using linear interpolation.
-        //
-        // Evaluates: |sampleA|, |sampleB|, and (kISPOversamplingFactor − 1) = 3
-        // linearly interpolated midpoints at fractions derived from kISPOversamplingFactor
-        // (0.25, 0.50, 0.75 for 4×).  Returns the maximum absolute value found.
-        //
-        // Marked [[nodiscard]] and static — pure function, no side effects.
-        // Extracted from scanLookahead() to reduce its cognitive complexity.
-        //
-        // Reference: ITU-R BS.1770-5 Annex 1; Zölzer DAFX 3rd ed. §3.3.1.
-        // -----------------------------------------------------------------------
-        [[nodiscard]] static auto ispPairPeak(float sampleA, float sampleB) noexcept -> float
+        struct PeakEntry
         {
-            // kISPOversamplingFactor = 4 → 3 interior midpoints at fractions 1/4, 2/4, 3/4.
-            // Each fraction is k * kStep for k in [1, kISPOversamplingFactor − 1].
-            static constexpr float kStep = 1.0F / static_cast<float>(kISPOversamplingFactor);
-            static constexpr uint32_t kNumMidpoints = kISPOversamplingFactor - 1U;
+            uint64_t index = 0U;
+            double value = 0.0;
+        };
 
-            const float diff = sampleB - sampleA;
-            float peak = std::max(std::abs(sampleA), std::abs(sampleB));
-            for (uint32_t k = 1U; k <= kNumMidpoints; ++k)
-            {
-                const float fraction = static_cast<float>(k) * kStep;
-                peak = std::max(peak, std::abs(sampleA + (fraction * diff)));
-            }
-            return peak;
+        // RC-exact one-pole coefficient: α = 1 − exp(−1/(τ·fs))  (JOS §1.3.1).
+        [[nodiscard]] static auto onePoleCoeff(float timeConstantMs, float sampleRate) noexcept
+            -> double
+        {
+            const double tauSeconds = static_cast<double>(timeConstantMs * kMillisToSeconds);
+            return 1.0 - std::exp(-1.0 / (tauSeconds * static_cast<double>(sampleRate)));
         }
 
-        // -----------------------------------------------------------------------
-        // scanLookahead() — scan kLimiterLookaheadFrames samples ending at
-        // writeHead_ (inclusive) at 4× ISP resolution.
-        //
-        // Window: positions [(writeHead_ - kLimiterLookaheadFrames + 1) .. writeHead_]
-        // modulo kLimiterRingSize.  For each adjacent pair in the window,
-        // ispPairPeak() is called for each active channel; the running max is returned.
-        //
-        // Cognitive complexity is kept low by delegating per-pair logic to ispPairPeak().
-        // -----------------------------------------------------------------------
-        [[nodiscard]] auto scanLookahead(bool hasStereo) const noexcept -> float
+        // Modified Bessel I0(x) via series Σ ((x/2)^k / k!)² (libc++ lacks
+        // std::cyl_bessel_i). Pure, off-RT.
+        [[nodiscard]] static auto kaiserI0(double xValue) noexcept -> double
         {
-            float peak = 0.0F;
-
-            for (uint32_t k = 0U; k < kLimiterLookaheadFrames; ++k)
+            const double half = xValue / 2.0;
+            double term = 1.0;
+            double sum = 1.0;
+            for (uint32_t k = 1U; k <= kI0MaxTerms; ++k)
             {
-                const uint32_t posA = (writeHead_ + kLimiterRingSize - k) % kLimiterRingSize;
-                const uint32_t posB = (posA + kLimiterRingSize - 1U) % kLimiterRingSize;
-
-                const float lp = ispPairPeak(leftRing_[posA], leftRing_[posB]);
-                if (lp > peak)
+                const double ratio = half / static_cast<double>(k);
+                term *= ratio * ratio;
+                sum += term;
+                if (term < sum * kI0ConvergeEps)
                 {
-                    peak = lp;
+                    break;
                 }
+            }
+            return sum;
+        }
 
-                if (hasStereo)
+        // Build the 8×24 windowed-sinc polyphase upsampler into ispCoeffs_ (flat,
+        // phase-major: ispCoeffs_[phase*kIspNumTaps + tap] = h[phase + tap*L]).
+        // h[n] = L·(2·fc)·sinc(2·fc·(n−M))·kaiser(n,β),  M = (N−1)/2.  Off-RT.
+        void computePolyphaseCoeffs() noexcept
+        {
+            const double center = static_cast<double>(kIspPrototypeN - 1U) / 2.0; // 95.5
+            const double twoFc = 2.0 * kIspProtoCutoffNorm;                       // 0.125 = 1/L
+            const double scale = static_cast<double>(kIspOversampling) * twoFc;   // = 1.0
+            const double i0Beta = kaiserI0(kIspKaiserBeta);
+            const double denom = static_cast<double>(kIspPrototypeN - 1U);
+
+            for (uint32_t i = 0U; i < kIspPrototypeN; ++i)
+            {
+                // dist is half-integer (center = 95.5) → sincArg is never exactly 0.
+                const double dist = static_cast<double>(i) - center;
+                const double sincArg = twoFc * dist;
+                const double sincVal =
+                    std::sin(std::numbers::pi * sincArg) / (std::numbers::pi * sincArg);
+                const double ratio = (2.0 * dist) / denom;
+                const double winArg =
+                    kIspKaiserBeta * std::sqrt(std::max(0.0, 1.0 - (ratio * ratio)));
+                const double window = kaiserI0(winArg) / i0Beta;
+
+                const uint32_t phase = i % kIspOversampling;
+                const uint32_t tap = i / kIspOversampling;
+                ispCoeffs_[(static_cast<size_t>(phase) * kIspNumTaps) + tap] =
+                    scale * sincVal * window;
+            }
+        }
+
+        // 8× polyphase inter-sample true-peak of the sample just written at
+        // `writePos`, across both channels. Reads the 24-sample ring history
+        // (handles wrap), runs 8 dot-products, returns max |·| (double).
+        [[nodiscard]] auto polyphaseIspPeak(uint32_t writePos) const noexcept -> double
+        {
+            std::array<double, kIspNumTaps> histLeft{};
+            std::array<double, kIspNumTaps> histRight{};
+            for (uint32_t k = 0U; k < kIspNumTaps; ++k)
+            {
+                const uint32_t idx = (writePos + kLimiterRingSize - k) % kLimiterRingSize;
+                histLeft[k] = static_cast<double>(leftRing_[idx]);
+                histRight[k] = static_cast<double>(rightRing_[idx]);
+            }
+
+            double maxPeak = 0.0;
+            for (uint32_t phase = 0U; phase < kIspOversampling; ++phase)
+            {
+                const size_t base = static_cast<size_t>(phase) * kIspNumTaps;
+                double dotLeft = 0.0;
+                double dotRight = 0.0;
+                for (uint32_t k = 0U; k < kIspNumTaps; ++k)
                 {
-                    const float rp = ispPairPeak(rightRing_[posA], rightRing_[posB]);
-                    if (rp > peak)
-                    {
-                        peak = rp;
-                    }
+                    const double coeff = ispCoeffs_[base + k];
+                    dotLeft += coeff * histLeft[k];
+                    dotRight += coeff * histRight[k];
+                }
+                maxPeak = std::max({maxPeak, std::abs(dotLeft), std::abs(dotRight)});
+            }
+            return maxPeak;
+        }
+
+        // Required gain reduction (dB, ≤ 0) to bring `peak` down to the working
+        // ceiling. ceilingDb is precomputed once per buffer.
+        [[nodiscard]] static auto
+        targetGrDb(double peak, double workingCeiling, double ceilingDb) noexcept -> double
+        {
+            if (peak <= workingCeiling)
+            {
+                return 0.0;
+            }
+            return ceilingDb - (kLimiterDbScale * std::log10(peak));
+        }
+
+        // Advance the dual-stage dB envelope toward targetDb (≤ 0) with attack /
+        // dual release + LF hold-extension; returns the deeper (more-reduced) of the
+        // fast/slow branches in dB.
+        [[nodiscard]] auto advanceEnvelopeDb(double targetDb) noexcept -> double
+        {
+            const double effDb = std::min(envFastDb_, envSlowDb_);
+            if (targetDb < effDb)
+            {
+                // Attack: both branches track toward more reduction; arm LF hold.
+                envFastDb_ += attackCoeff_ * (targetDb - envFastDb_);
+                envSlowDb_ += attackCoeff_ * (targetDb - envSlowDb_);
+                if (-targetDb >= kLfHoldThresholdDb)
+                {
+                    lfHoldCounter_ = holdFrames_;
+                }
+            }
+            else if ((-effDb >= kLfHoldThresholdDb) && (lfHoldCounter_ > 0U))
+            {
+                // LF hold: freeze release between bass-spaced peaks.
+                --lfHoldCounter_;
+            }
+            else
+            {
+                envFastDb_ += releaseFastCoeff_ * (targetDb - envFastDb_);
+                envSlowDb_ += releaseSlowCoeff_ * (targetDb - envSlowDb_);
+                if (lfHoldCounter_ > 0U)
+                {
+                    --lfHoldCounter_;
+                }
+            }
+            return std::min(envFastDb_, envSlowDb_);
+        }
+
+        // Monotonic-deque sliding-window maximum over the lookahead window;
+        // amortized O(1) per sample. Backed by a fixed circular array.
+        [[nodiscard]] auto updatePeakDeque(double value) noexcept -> double
+        {
+            while (dequeCount_ > 0U)
+            {
+                const uint32_t backPos = (dequeHead_ + dequeCount_ - 1U) % kPeakDequeCapacity;
+                if (peakDeque_[backPos].value <= value)
+                {
+                    --dequeCount_;
+                }
+                else
+                {
+                    break;
                 }
             }
 
-            return peak;
+            const uint32_t pushPos = (dequeHead_ + dequeCount_) % kPeakDequeCapacity;
+            peakDeque_[pushPos] = {.index = sampleCounter_, .value = value};
+            ++dequeCount_;
+
+            while (dequeCount_ > 0U &&
+                   peakDeque_[dequeHead_].index + kLimiterLookaheadFrames <= sampleCounter_)
+            {
+                dequeHead_ = (dequeHead_ + 1U) % kPeakDequeCapacity;
+                --dequeCount_;
+            }
+
+            const double windowMax = peakDeque_[dequeHead_].value;
+            ++sampleCounter_;
+            return windowMax;
         }
 
-        // -----------------------------------------------------------------------
-        // fillOutputFromRing() — copy safeCount samples from the ring starting at
-        // readHead_ into dst[], overwriting it.  Uses one or two memcpy segments
-        // to handle the ring wrap without per-sample modular arithmetic.
-        // -----------------------------------------------------------------------
+        // Copy safeCount delayed samples from the ring (at readHead_) into dst,
+        // splitting at the wrap to avoid per-sample modular arithmetic.
         void fillOutputFromRing(float* dst, const float* ring, uint32_t safeCount) const noexcept
         {
             const uint32_t toEnd = kLimiterRingSize - readHead_;
-
             if (safeCount <= toEnd)
             {
-                // Single segment — no wrap needed
                 for (uint32_t i = 0U; i < safeCount; ++i)
                 {
                     dst[i] = ring[readHead_ + i];
@@ -381,7 +402,6 @@ namespace AdaptiveSound
             }
             else
             {
-                // Two segments: tail of ring then head
                 for (uint32_t i = 0U; i < toEnd; ++i)
                 {
                     dst[i] = ring[readHead_ + i];
@@ -395,30 +415,38 @@ namespace AdaptiveSound
         }
 
         // -----------------------------------------------------------------------
-        // State — all pre-allocated; no heap in process()
+        // State — all pre-allocated; no heap in process(). Ordered by descending
+        // alignment to keep the layout padding-clean.
         // -----------------------------------------------------------------------
 
-        // Ring buffers: sized to hold lookahead window + one full max-size block.
-        // kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames = 48 + 512 = 560.
+        // Polyphase coefficient table (flat phase-major; computed off-RT).
+        std::array<double, static_cast<size_t>(kIspOversampling) * kIspNumTaps> ispCoeffs_{};
+
+        // Look-ahead ring buffers (96/144 + 512 = 656).
         std::array<float, kLimiterRingSize> leftRing_{};
         std::array<float, kLimiterRingSize> rightRing_{};
 
-        // Read head: position of the oldest sample to output (lags writeHead_ by
-        // kLimiterLookaheadFrames).
-        uint32_t readHead_ = 0U;
-        // Write head: position where the next input sample will be written.
-        uint32_t writeHead_ = kLimiterLookaheadFrames;
-
-        // Running gain reduction state (dB, non-negative).  Persists across calls.
-        float gainReductionDb_ = 0.0F;
-
-        // One-pole smoother coefficients (computed in initialize(), never on RT thread)
-        float attackCoeff_ = 0.0F;
-        float releaseCoeff_ = 0.0F;
-
-        // Per-sample gain envelope scratch (pre-allocated to kDefaultMaxFrames = 512)
+        // Per-sample gain envelope scratch (kDefaultMaxFrames = 512).
         std::array<float, kDefaultMaxFrames> grBuf_{};
 
+        // Sliding-window peak deque (circular).
+        std::array<PeakEntry, kPeakDequeCapacity> peakDeque_{};
+
+        // dB-domain dual-stage envelope state (≤ 0 dB) and ballistics coefficients.
+        double envFastDb_ = 0.0;
+        double envSlowDb_ = 0.0;
+        double attackCoeff_ = 0.0;
+        double releaseFastCoeff_ = 0.0;
+        double releaseSlowCoeff_ = 0.0;
+
+        uint64_t sampleCounter_ = 0U; // monotonic sample index (deque window)
+
+        uint32_t readHead_ = 0U;
+        uint32_t writeHead_ = kLimiterLookaheadFrames;
+        uint32_t dequeHead_ = 0U;
+        uint32_t dequeCount_ = 0U;
+        uint32_t lfHoldCounter_ = 0U; // frames remaining in LF hold-extension
+        uint32_t holdFrames_ = 0U;    // LF hold span (computed in initialize())
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
     };

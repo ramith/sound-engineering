@@ -54,10 +54,11 @@ namespace AdaptiveSound
 
     struct LimiterParams
     {
+        // Only user/control-facing parameter. Set ≥ 1.0 to bypass (zero-latency identity).
+        // Attack/release time constants and the look-ahead window are fixed design
+        // constants of LimiterModule (computed off-RT in initialize()), not runtime
+        // parameters — a runtime look-ahead can't resize the module's fixed ring anyway.
         float truePeakCeilingLinear = kTruePeakCeilingLinear;
-        uint32_t lookaheadFrames = kLimiterLookaheadFrames; // frame count (integer)
-        float attackCoeff = 0.F;
-        float releaseCoeff = 0.F;
     };
 
     struct alignas(kCacheLineBytes) TargetState

@@ -1,9 +1,9 @@
-# SPRINT 3: Adaptive Clarity & Loudness Compensation
+# SPRINT 6: Adaptive Clarity & Loudness Compensation
 
 **Theme:** Intelligent, content-aware, conversationally-steerable DSP  
 **Effort:** 5–10 story points  
 **Owner:** Audio DSP Agent + SwiftUI Pro  
-**Prerequisite:** Sprint 1 (limiter) + Sprint 2 (EQ wiring)
+**Prerequisite:** Sprint 4 (limiter) + Sprint 5 (EQ wiring)
 
 ---
 
@@ -61,7 +61,7 @@ Input: Orchestral tutti (high masking in mid-range)
 
 **Specification:**
 - **Standard:** ISO 226 equal-loudness contour
-- **Mechanism:** Measure output LUFS (from Sprint 1) → compute delta to reference level
+- **Mechanism:** Measure output LUFS (from Sprint 4) → compute delta to reference level
 - **Compensation:** Apply 40% of contour diff as EQ curve (not full DRC)
 - **Clamp:** Hearing-safety limits (proportional scaling)
 
@@ -84,7 +84,7 @@ Input: Orchestral tutti (high masking in mid-range)
 - **Key:** Compensation is gentle, fractional, not a full dynamic range compressor
 
 **RT Implementation:**
-- LUFS measurement from Sprint 1 (off-RT)
+- LUFS measurement from Sprint 4 (off-RT)
 - Contour-diff lookup table (pre-computed for common LUFS values)
 - Apply ≤ 0.4× contour as EQ curve (publish to Arbiter)
 - Clamp by hearing-safety limits
@@ -438,8 +438,8 @@ Hysteresis: only apply if brightness increase > 3 dB threshold
 ## Dependencies & Blockers
 
 **Unblocked By:**
-- ✅ Sprint 1 (limiter + LUFS metering)
-- ✅ Sprint 2 (EQ wiring)
+- ✅ Sprint 4 (limiter + LUFS metering)
+- ✅ Sprint 5 (EQ wiring)
 
 **Blocks:**
 - 🟡 Phase 1c release (complete MVP)
@@ -466,4 +466,4 @@ Hysteresis: only apply if brightness increase > 3 dB threshold
 ---
 
 **Status:** Ready for implementation  
-**Next:** Begin Sprint 3 coding after Sprint 2 ships
+**Next:** Begin Sprint 6 coding after Sprint 5 ships

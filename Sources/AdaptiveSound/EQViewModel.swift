@@ -65,6 +65,19 @@ final class EQViewModel {
         dispatchAllBands()
     }
 
+    /// Commit canvas-drawn ("custom") edits. The `FrequencyResponseCanvas` mutates
+    /// `bandGains` in place during a drag, then calls this to **defensively clamp
+    /// every band to the DSP range [-20, +12] dB**, mark the preset custom, and
+    /// dispatch once. Centralizes the DSP-range guarantee that direct `bandGains`
+    /// writes would otherwise bypass.
+    func commitCustomBandEdits() {
+        for index in bandGains.indices {
+            bandGains[index] = max(-20.0, min(12.0, bandGains[index]))
+        }
+        selectedPreset = nil
+        dispatchAllBands()
+    }
+
     // MARK: - Reset
 
     /// Resets all bands to 0 dB and selects the Flat preset.
@@ -75,13 +88,18 @@ final class EQViewModel {
     // MARK: - Dispatch
 
     /// Sends each band gain to the audio engine via the parameter bus.
-    /// Called exactly once per user action — never in a per-band loop.
+    /// Called exactly once per user action — never in a per-band loop. Used by
+    /// `selectPreset` and `commitCustomBandEdits` (the canvas commits drags
+    /// through the latter, never writing `bandGains`/dispatching directly).
     ///
-    /// Exposed as `internal` (not private) so `FrequencyResponseCanvas` can
-    /// call it after completing multi-band gap-fill edits, without going
-    /// through `applyBandGain` for every interpolated band individually.
+    /// The published gains pass through `EQSafetyClamp` (Sprint 4 M5): if the
+    /// summed band gains exceed the cumulative hearing-safety ceiling, all bands
+    /// are proportionally scaled down before reaching the kernel. `bandGains`
+    /// itself is left untouched, so sliders/canvas keep showing the user's intent
+    /// while the kernel only ever receives a hearing-safe shape.
     func dispatchAllBands() {
-        for (index, gain) in bandGains.enumerated() {
+        let safeGains = EQSafetyClamp.clamped(bandGains)
+        for (index, gain) in safeGains.enumerated() {
             let paramID = eqBandBaseParameterID + UInt32(index)
             audioViewModel.setParameter(paramID, value: gain)
         }

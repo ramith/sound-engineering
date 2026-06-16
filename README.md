@@ -2,7 +2,7 @@
 
 A personal, open-source audio enhancement app for macOS that turns any good-quality song into a personal, perceptually-tuned, spatially-rendered mix steerable via plain language.
 
-**Status:** Phase 1b Part A ✅ (shipped) → Phase 1b Part B (in progress) → Phase 1c Sprints 1-3 (DSP-first MVP)
+**Status:** Phase 1b Part A ✅ (shipped) → Phase 1b Part B (in progress) → Phase 1c Sprints 4-6 (DSP-first MVP)
 
 ---
 
@@ -137,10 +137,10 @@ make help                 # Show all build targets
 - **Phase 1a** ✅ SHIPPED: Audio engine core + reference tone
 - **Phase 1b Part A** ✅ SHIPPED: Music playback UI + real-time spectrum
 - **Phase 1b Part B** 🟡 IN PROGRESS: Progress bar, seek, auto-play, test suite
-- **Phase 1c** 🟡 BACKLOG (Sprints 1–3):
-  - **Sprint 1:** Loudness safety (true-peak limiter + LUFS normalization)
-  - **Sprint 2:** EQ foundation (31-band wiring + device profiles)
-  - **Sprint 3:** Adaptive clarity (masking-aware + conversational tuning)
+- **Phase 1c** 🟡 BACKLOG (Sprints 4–6):
+  - **Sprint 4:** Loudness safety (true-peak limiter + LUFS normalization)
+  - **Sprint 5:** EQ foundation (31-band wiring + device profiles)
+  - **Sprint 6:** Adaptive clarity (masking-aware + conversational tuning)
 - **Phase 1.5** 🔄 PLANNING: Stem separation + per-stem processing chains
 - **Phase 2** 🔄 PLANNING: System-wide audio via Core Audio process taps
 
@@ -151,7 +151,7 @@ make help                 # Show all build targets
 See `docs/` for complete architecture, requirements, and design decisions:
 
 **Core Documents:**
-- [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — Complete system design (locked decisions, ADRs, §16 Sprint 1-3 overview)
+- [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — Complete system design (locked decisions, ADRs, §16 Sprint 4-6 overview)
 - [`docs/product/roadmap.md`](docs/product/roadmap.md) — Timeline, phases, milestones
 - [`docs/product/requirements.md`](docs/product/requirements.md) — Functional & non-functional requirements
 - [`docs/product/backlog.md`](docs/product/backlog.md) — Prioritized features (epics, user stories, spikes)
@@ -160,9 +160,9 @@ See `docs/` for complete architecture, requirements, and design decisions:
 - [`docs/sprints/07-phase-1b-part-b-kickoff.md`](docs/sprints/07-phase-1b-part-b-kickoff.md) — Phase 1b Part B critical path (progress, seek, auto-play, test suite)
 
 **Detailed DSP Sprint Specs (Phase 1c):**
-- [`docs/sprints/04-sprint-1-loudness-safety.md`](docs/sprints/04-sprint-1-loudness-safety.md) — Limiter + LUFS normalization
-- [`docs/sprints/05-sprint-2-eq-foundation.md`](docs/sprints/05-sprint-2-eq-foundation.md) — EQ wiring + device profiles
-- [`docs/sprints/06-sprint-3-adaptive-clarity.md`](docs/sprints/06-sprint-3-adaptive-clarity.md) — Conversational tuning + adaptive DSP
+- [`docs/sprints/04-sprint-4-loudness-safety.md`](docs/sprints/04-sprint-4-loudness-safety.md) — Limiter + LUFS normalization
+- [`docs/sprints/05-sprint-5-eq-foundation.md`](docs/sprints/05-sprint-5-eq-foundation.md) — EQ wiring + device profiles
+- [`docs/sprints/06-sprint-6-adaptive-clarity.md`](docs/sprints/06-sprint-6-adaptive-clarity.md) — Conversational tuning + adaptive DSP
 
 **Quality & Validation:**
 - [`docs/architecture/validation-strategy.md`](docs/architecture/validation-strategy.md) — QA framework (per-merge gates, listening panel protocol)

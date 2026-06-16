@@ -26,9 +26,24 @@ typedef struct
     uint32_t deviceID;        ///< Real CoreAudio AudioDeviceID
     uint32_t sampleRate;      ///< Nominal sample rate (Hz)
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
-    uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
-    char name[256];           ///< Device name (UTF-8, null-terminated)
+    uint8_t deviceType; ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
+    // C-ABI fixed-size name buffer: a plain C array is required for Swift bridging
+    // and the C ABI (std::array is neither C-compatible nor bridgeable here).
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+    char name[256]; ///< Device name (UTF-8, null-terminated)
 } CDeviceInfo;
+
+// MARK: - CLoudnessReadout
+
+/// Flat C struct: the latest BS.1770-5 loudness readout for the UI meters.
+/// Values are LUFS except peakDb (sample-peak dBFS). Unmeasured = very negative.
+typedef struct
+{
+    double integratedLufs;
+    double shortTermLufs;
+    double momentaryLufs;
+    double peakDb;
+} CLoudnessReadout;
 
 // MARK: - C-ABI device functions
 
@@ -36,6 +51,23 @@ typedef struct
 extern "C"
 {
 #endif
+
+    // MARK: - C-ABI loudness meter (BS.1770-5 LufsMeter, fed from the playback tap)
+
+    /// Create an opaque loudness-meter handle for the given sample rate.
+    /// Returns NULL on allocation failure. Destroy with loudnessMeterDestroy().
+    void* loudnessMeterCreate(double sampleRate);
+
+    /// Destroy a handle from loudnessMeterCreate(). NULL-safe.
+    void loudnessMeterDestroy(void* meter);
+
+    /// Feed non-interleaved stereo frames (audio-tap thread; no allocation/lock).
+    /// Pass right == left for mono.
+    void
+    loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames);
+
+    /// Read the latest measured loudness (any thread; lock-free).
+    CLoudnessReadout loudnessMeterRead(void* meter);
 
     /// Enumerate output devices and populate the caller-supplied array.
     ///
