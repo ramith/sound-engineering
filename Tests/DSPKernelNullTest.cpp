@@ -741,6 +741,113 @@ static auto testLimiterGRResponseTime() -> void
     logPass(kName);
 }
 
+// Test M3a: near-Nyquist true-peak — a 0.45·fs tone at 0.97 (above the −1 dBTP
+// ceiling) must be limited so the OUTPUT sample peak ≤ ceiling. The polyphase
+// detector catches the inter-sample energy a sample-only/linear detector misses.
+static auto testLimiterNearNyquistCeiling() -> void
+{
+    static const char* const kName = "Limiter_NearNyquistCeiling";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U; // default limiter ceiling (0.891)
+    kernel.publishTargetState(state);
+
+    TestABL prime(kLimiterLookaheadFrames);
+    kernel.process(prime.abl(), kLimiterLookaheadFrames);
+
+    const float freq = 0.45F * static_cast<float>(kSR);
+    const float ampl = 0.97F;
+    float outPeak = 0.0F;
+    for (uint32_t b = 0U; b < 8U; ++b)
+    {
+        TestABL abl(kFrames);
+        for (uint32_t i = 0U; i < kFrames; ++i)
+        {
+            const float phase = 2.0F * std::numbers::pi_v<float> * freq *
+                                static_cast<float>((b * kFrames) + i) / static_cast<float>(kSR);
+            abl.left[i] = ampl * std::sin(phase);
+            abl.right[i] = abl.left[i];
+        }
+        kernel.process(abl.abl(), kFrames);
+        if (b >= 4U) // measure after the limiter has settled
+        {
+            for (uint32_t i = 0U; i < kFrames; ++i)
+            {
+                outPeak = std::max({outPeak, std::abs(abl.left[i]), std::abs(abl.right[i])});
+            }
+        }
+    }
+
+    if (outPeak > kCeiling + 0.01F)
+    {
+        std::ostringstream oss;
+        oss << "near-Nyquist output peak " << outPeak << " exceeds ceiling " << kCeiling;
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+// Test M3b: hot-noise soak — 100 buffers of full-scale white noise; every output
+// sample (after lookahead warm-up) must stay ≤ ceiling. Stresses ring wrap across
+// many buffers + the dual-stage release.
+static auto testLimiterHotNoiseSoak() -> void
+{
+    static const char* const kName = "Limiter_HotNoiseSoak";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    kernel.publishTargetState(state);
+
+    std::mt19937 gen(0x515D7E57U);
+    std::uniform_real_distribution<float> dist(-0.999F, 0.999F);
+    float worst = 0.0F;
+    for (uint32_t b = 0U; b < 100U; ++b)
+    {
+        TestABL abl(kFrames);
+        for (uint32_t i = 0U; i < kFrames; ++i)
+        {
+            abl.left[i] = dist(gen);
+            abl.right[i] = dist(gen);
+        }
+        kernel.process(abl.abl(), kFrames);
+        if (b >= 1U) // skip the first buffer (lookahead warm-up / silence prefix)
+        {
+            for (uint32_t i = 0U; i < kFrames; ++i)
+            {
+                worst = std::max({worst, std::abs(abl.left[i]), std::abs(abl.right[i])});
+            }
+        }
+    }
+
+    if (worst > kCeiling + 0.01F)
+    {
+        std::ostringstream oss;
+        oss << "soak output peak " << worst << " exceeds ceiling " << kCeiling;
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
 // ===========================================================================
 // Loudness tests (Sprint 4 — BS.1770-5 LufsMeter). Driven synchronously; no
 // threading. Reference values per EBU Tech 3341. Tolerance 0.15 LU (the meter
@@ -916,6 +1023,8 @@ auto main() -> int
     testLimiterBypassIsIdentity();
     testLimiterCeilingEnforcement();
     testLimiterGRResponseTime();
+    testLimiterNearNyquistCeiling();
+    testLimiterHotNoiseSoak();
 
     // Loudness / BS.1770-5 tests (Sprint 4 — Milestone 2)
     testLoudnessKWeightingLowCut();
