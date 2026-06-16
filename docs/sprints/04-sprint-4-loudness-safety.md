@@ -1,4 +1,4 @@
-# SPRINT 1: Loudness Safety & Transparent Dynamics
+# SPRINT 4: Loudness Safety & Transparent Dynamics
 
 **Theme:** Establish the safety floor — true-peak limiter + LUFS normalization  
 **Effort:** 5–10 story points  
@@ -14,7 +14,7 @@
 **Why Industry-Best:**
 - True-peak limiting is non-negotiable (hearing safety, DAC headroom, platform spec)
 - LUFS normalization is transparent (no artifacts, no "program dynamics," no listening-level variation)
-- Fractional loudness compensation (Sprint 3) will layer on top; this sprint establishes the safe floor it builds on
+- Fractional loudness compensation (Sprint 6) will layer on top; this sprint establishes the safe floor it builds on
 
 ---
 
@@ -261,8 +261,8 @@ User NL: "Boost everything"
 - ✅ Limiter scaffold code (exists from Phase 1a)
 
 **Blocks:**
-- 🟡 Sprint 2 (EQ wiring assumes limiter is RT-safe)
-- 🟡 Sprint 3 (loudness compensation builds on LUFS measurement)
+- 🟡 Sprint 5 (EQ wiring assumes limiter is RT-safe)
+- 🟡 Sprint 6 (loudness compensation builds on LUFS measurement)
 
 ---
 
@@ -281,4 +281,4 @@ User NL: "Boost everything"
 ---
 
 **Status:** Ready for implementation  
-**Next:** Begin Sprint 1 coding after Phase 1b Part B ships
+**Next:** Begin Sprint 4 coding after Phase 1b Part B ships
