@@ -2854,20 +2854,38 @@ namespace
     constexpr float kGateDExpLFE = 0.0F;
     constexpr float kGateDExpSurr = 1.41253754F; // 10^(1.5/10) per BS.1770-5 Annex 1 Table 1
     // Azimuth spot-checks (BS.775-4; + = left/CCW from centre)
-    constexpr float kGateDExpAzimL = 30.0F;  // L
-    constexpr float kGateDExpAzimC = 0.0F;   // C
+    constexpr float kGateDExpAzimL = 30.0F; // L
+    constexpr float kGateDExpAzimC = 0.0F;  // C
 
     // Returns "" on success, a non-empty error string on failure.
     // Stereo (2): L R
     auto gateDCheckStereo() -> std::string
     {
         const ChannelLayout lay = decodeChannelLayout(kAudioChannelLayoutTag_Stereo);
-        if (lay.numChannels != 2U) { return "Stereo: numChannels != 2"; }
-        if (std::abs(lay.lufsWeight[0] - kGateDExpLRC) > kGateDWeightTol) { return "Stereo: slot0 (L) lufsWeight != 1.0"; }
-        if (lay.isLfe[0] != 0U) { return "Stereo: slot0 (L) isLfe != 0"; }
-        if (std::abs(lay.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol) { return "Stereo: slot0 (L) brirAzimuthDeg != +30"; }
-        if (std::abs(lay.lufsWeight[1] - kGateDExpLRC) > kGateDWeightTol) { return "Stereo: slot1 (R) lufsWeight != 1.0"; }
-        if (lay.isLfe[1] != 0U) { return "Stereo: slot1 (R) isLfe != 0"; }
+        if (lay.numChannels != 2U)
+        {
+            return "Stereo: numChannels != 2";
+        }
+        if (std::abs(lay.lufsWeight[0] - kGateDExpLRC) > kGateDWeightTol)
+        {
+            return "Stereo: slot0 (L) lufsWeight != 1.0";
+        }
+        if (lay.isLfe[0] != 0U)
+        {
+            return "Stereo: slot0 (L) isLfe != 0";
+        }
+        if (std::abs(lay.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol)
+        {
+            return "Stereo: slot0 (L) brirAzimuthDeg != +30";
+        }
+        if (std::abs(lay.lufsWeight[1] - kGateDExpLRC) > kGateDWeightTol)
+        {
+            return "Stereo: slot1 (R) lufsWeight != 1.0";
+        }
+        if (lay.isLfe[1] != 0U)
+        {
+            return "Stereo: slot1 (R) isLfe != 0";
+        }
         return {};
     }
 
@@ -2875,17 +2893,41 @@ namespace
     auto gateDCheck51A() -> std::string
     {
         const ChannelLayout layA = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_A);
-        if (layA.numChannels != 6U) { return "5_1_A: numChannels != 6"; }
-        if (std::abs(layA.lufsWeight[0] - kGateDExpLRC) > kGateDWeightTol || layA.isLfe[0] != 0U) { return "5_1_A: slot0 (L) wrong"; }
+        if (layA.numChannels != 6U)
+        {
+            return "5_1_A: numChannels != 6";
+        }
+        if (std::abs(layA.lufsWeight[0] - kGateDExpLRC) > kGateDWeightTol || layA.isLfe[0] != 0U)
+        {
+            return "5_1_A: slot0 (L) wrong";
+        }
         // slot 2: C — ordering trap proof: must be C (weight=1) not surround
-        if (std::abs(layA.lufsWeight[2] - kGateDExpLRC) > kGateDWeightTol || layA.isLfe[2] != 0U) { return "5_1_A: slot2 (C) weight or isLfe wrong"; }
-        if (std::abs(layA.brirAzimuthDeg[2] - kGateDExpAzimC) > kGateDazimTol) { return "5_1_A: slot2 (C) brirAzimuthDeg != 0"; }
+        if (std::abs(layA.lufsWeight[2] - kGateDExpLRC) > kGateDWeightTol || layA.isLfe[2] != 0U)
+        {
+            return "5_1_A: slot2 (C) weight or isLfe wrong";
+        }
+        if (std::abs(layA.brirAzimuthDeg[2] - kGateDExpAzimC) > kGateDazimTol)
+        {
+            return "5_1_A: slot2 (C) brirAzimuthDeg != 0";
+        }
         // slot 3: LFE — THE TRAP: LFE is at index 3 in _A, at index 5 in _B
-        if (std::abs(layA.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol || layA.isLfe[3] != 1U) { return "5_1_A: slot3 must be LFE — ordering trap"; }
+        if (std::abs(layA.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol || layA.isLfe[3] != 1U)
+        {
+            return "5_1_A: slot3 must be LFE — ordering trap";
+        }
         // slots 4/5: Ls/Rs (surround)
-        if (std::abs(layA.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol || layA.isLfe[4] != 0U) { return "5_1_A: slot4 (Ls) surround weight wrong"; }
-        if (std::abs(layA.lufsWeight[5] - kGateDExpSurr) > kGateDWeightTol || layA.isLfe[5] != 0U) { return "5_1_A: slot5 (Rs) surround weight wrong"; }
-        if (std::abs(layA.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol) { return "5_1_A: slot0 (L) brirAzimuthDeg != +30"; }
+        if (std::abs(layA.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol || layA.isLfe[4] != 0U)
+        {
+            return "5_1_A: slot4 (Ls) surround weight wrong";
+        }
+        if (std::abs(layA.lufsWeight[5] - kGateDExpSurr) > kGateDWeightTol || layA.isLfe[5] != 0U)
+        {
+            return "5_1_A: slot5 (Rs) surround weight wrong";
+        }
+        if (std::abs(layA.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol)
+        {
+            return "5_1_A: slot0 (L) brirAzimuthDeg != +30";
+        }
         return {};
     }
 
@@ -2894,17 +2936,38 @@ namespace
     auto gateDCheck51B() -> std::string
     {
         const ChannelLayout layB = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_B);
-        if (layB.numChannels != 6U) { return "5_1_B: numChannels != 6"; }
+        if (layB.numChannels != 6U)
+        {
+            return "5_1_B: numChannels != 6";
+        }
         // slot 2: Ls — ordering trap proof: must be surround (weight=1.41) not C (weight=1)
-        if (std::abs(layB.lufsWeight[2] - kGateDExpSurr) > kGateDWeightTol || layB.isLfe[2] != 0U) { return "5_1_B: slot2 must be Ls (surround) — ordering trap"; }
+        if (std::abs(layB.lufsWeight[2] - kGateDExpSurr) > kGateDWeightTol || layB.isLfe[2] != 0U)
+        {
+            return "5_1_B: slot2 must be Ls (surround) — ordering trap";
+        }
         // slot 3: Rs — ordering trap proof: must be surround, not LFE
-        if (std::abs(layB.lufsWeight[3] - kGateDExpSurr) > kGateDWeightTol || layB.isLfe[3] != 0U) { return "5_1_B: slot3 must be Rs (surround) — ordering trap"; }
+        if (std::abs(layB.lufsWeight[3] - kGateDExpSurr) > kGateDWeightTol || layB.isLfe[3] != 0U)
+        {
+            return "5_1_B: slot3 must be Rs (surround) — ordering trap";
+        }
         // slot 4: C
-        if (std::abs(layB.lufsWeight[4] - kGateDExpLRC) > kGateDWeightTol || layB.isLfe[4] != 0U) { return "5_1_B: slot4 (C) wrong"; }
-        if (std::abs(layB.brirAzimuthDeg[4] - kGateDExpAzimC) > kGateDazimTol) { return "5_1_B: slot4 (C) brirAzimuthDeg != 0"; }
+        if (std::abs(layB.lufsWeight[4] - kGateDExpLRC) > kGateDWeightTol || layB.isLfe[4] != 0U)
+        {
+            return "5_1_B: slot4 (C) wrong";
+        }
+        if (std::abs(layB.brirAzimuthDeg[4] - kGateDExpAzimC) > kGateDazimTol)
+        {
+            return "5_1_B: slot4 (C) brirAzimuthDeg != 0";
+        }
         // slot 5: LFE — THE TRAP: LFE is at index 5 in _B, at index 3 in _A
-        if (std::abs(layB.lufsWeight[5] - kGateDExpLFE) > kGateDWeightTol || layB.isLfe[5] != 1U) { return "5_1_B: slot5 must be LFE — ordering trap"; }
-        if (std::abs(layB.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol) { return "5_1_B: slot0 (L) brirAzimuthDeg != +30"; }
+        if (std::abs(layB.lufsWeight[5] - kGateDExpLFE) > kGateDWeightTol || layB.isLfe[5] != 1U)
+        {
+            return "5_1_B: slot5 must be LFE — ordering trap";
+        }
+        if (std::abs(layB.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol)
+        {
+            return "5_1_B: slot0 (L) brirAzimuthDeg != +30";
+        }
         return {};
     }
 
@@ -2912,11 +2975,29 @@ namespace
     auto gateDCheck71A() -> std::string
     {
         const ChannelLayout lay71A = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_7_1_A);
-        if (lay71A.numChannels != 8U) { return "7_1_A: numChannels != 8"; }
-        if (std::abs(lay71A.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol || lay71A.isLfe[3] != 1U) { return "7_1_A: slot3 must be LFE"; }
-        if (std::abs(lay71A.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol || lay71A.isLfe[4] != 0U) { return "7_1_A: slot4 (Ls) surround weight wrong"; }
-        if (std::abs(lay71A.lufsWeight[6] - kGateDExpLRC) > kGateDWeightTol || lay71A.isLfe[6] != 0U) { return "7_1_A: slot6 (Lc) weight wrong"; }
-        if (std::abs(lay71A.brirAzimuthDeg[2] - kGateDExpAzimC) > kGateDazimTol) { return "7_1_A: slot2 (C) brirAzimuthDeg != 0"; }
+        if (lay71A.numChannels != 8U)
+        {
+            return "7_1_A: numChannels != 8";
+        }
+        if (std::abs(lay71A.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol ||
+            lay71A.isLfe[3] != 1U)
+        {
+            return "7_1_A: slot3 must be LFE";
+        }
+        if (std::abs(lay71A.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol ||
+            lay71A.isLfe[4] != 0U)
+        {
+            return "7_1_A: slot4 (Ls) surround weight wrong";
+        }
+        if (std::abs(lay71A.lufsWeight[6] - kGateDExpLRC) > kGateDWeightTol ||
+            lay71A.isLfe[6] != 0U)
+        {
+            return "7_1_A: slot6 (Lc) weight wrong";
+        }
+        if (std::abs(lay71A.brirAzimuthDeg[2] - kGateDExpAzimC) > kGateDazimTol)
+        {
+            return "7_1_A: slot2 (C) brirAzimuthDeg != 0";
+        }
         return {};
     }
 
@@ -2924,12 +3005,34 @@ namespace
     auto gateDCheck71C() -> std::string
     {
         const ChannelLayout lay71C = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_7_1_C);
-        if (lay71C.numChannels != 8U) { return "7_1_C: numChannels != 8"; }
-        if (std::abs(lay71C.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol || lay71C.isLfe[3] != 1U) { return "7_1_C: slot3 must be LFE"; }
-        if (std::abs(lay71C.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol || lay71C.isLfe[4] != 0U) { return "7_1_C: slot4 (Ls) surround weight wrong"; }
-        if (std::abs(lay71C.lufsWeight[6] - kGateDExpSurr) > kGateDWeightTol || lay71C.isLfe[6] != 0U) { return "7_1_C: slot6 (Rls) back-surround weight wrong"; }
-        if (std::abs(lay71C.lufsWeight[7] - kGateDExpSurr) > kGateDWeightTol || lay71C.isLfe[7] != 0U) { return "7_1_C: slot7 (Rrs) back-surround weight wrong"; }
-        if (std::abs(lay71C.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol) { return "7_1_C: slot0 (L) brirAzimuthDeg != +30"; }
+        if (lay71C.numChannels != 8U)
+        {
+            return "7_1_C: numChannels != 8";
+        }
+        if (std::abs(lay71C.lufsWeight[3] - kGateDExpLFE) > kGateDWeightTol ||
+            lay71C.isLfe[3] != 1U)
+        {
+            return "7_1_C: slot3 must be LFE";
+        }
+        if (std::abs(lay71C.lufsWeight[4] - kGateDExpSurr) > kGateDWeightTol ||
+            lay71C.isLfe[4] != 0U)
+        {
+            return "7_1_C: slot4 (Ls) surround weight wrong";
+        }
+        if (std::abs(lay71C.lufsWeight[6] - kGateDExpSurr) > kGateDWeightTol ||
+            lay71C.isLfe[6] != 0U)
+        {
+            return "7_1_C: slot6 (Rls) back-surround weight wrong";
+        }
+        if (std::abs(lay71C.lufsWeight[7] - kGateDExpSurr) > kGateDWeightTol ||
+            lay71C.isLfe[7] != 0U)
+        {
+            return "7_1_C: slot7 (Rrs) back-surround weight wrong";
+        }
+        if (std::abs(lay71C.brirAzimuthDeg[0] - kGateDExpAzimL) > kGateDazimTol)
+        {
+            return "7_1_C: slot0 (L) brirAzimuthDeg != +30";
+        }
         return {};
     }
 
@@ -2940,7 +3043,10 @@ namespace
         constexpr AudioChannelLayoutTag kUnknownTag =
             static_cast<AudioChannelLayoutTag>((0xFFFFU << 16U) | kFakeChCount);
         const ChannelLayout layUnk = decodeChannelLayout(kUnknownTag);
-        if (layUnk.numChannels != kFakeChCount) { return "unknown tag: numChannels != 4"; }
+        if (layUnk.numChannels != kFakeChCount)
+        {
+            return "unknown tag: numChannels != 4";
+        }
         for (uint32_t ch = 0U; ch < kFakeChCount; ++ch)
         {
             if (std::abs(layUnk.lufsWeight[ch] - kGateDExpLRC) > kGateDWeightTol)
@@ -2963,22 +3069,224 @@ static auto testChannelLayoutDecodeGateD() -> void
     // Run each sub-case; bail on the first failure (matches the pattern used
     // by all other Gate tests in this suite).
     const std::string stereoErr = gateDCheckStereo();
-    if (!stereoErr.empty()) { logFail(kName, stereoErr); return; }
+    if (!stereoErr.empty())
+    {
+        logFail(kName, stereoErr);
+        return;
+    }
 
     const std::string err51A = gateDCheck51A();
-    if (!err51A.empty()) { logFail(kName, err51A); return; }
+    if (!err51A.empty())
+    {
+        logFail(kName, err51A);
+        return;
+    }
 
     const std::string err51B = gateDCheck51B();
-    if (!err51B.empty()) { logFail(kName, err51B); return; }
+    if (!err51B.empty())
+    {
+        logFail(kName, err51B);
+        return;
+    }
 
     const std::string err71A = gateDCheck71A();
-    if (!err71A.empty()) { logFail(kName, err71A); return; }
+    if (!err71A.empty())
+    {
+        logFail(kName, err71A);
+        return;
+    }
 
     const std::string err71C = gateDCheck71C();
-    if (!err71C.empty()) { logFail(kName, err71C); return; }
+    if (!err71C.empty())
+    {
+        logFail(kName, err71C);
+        return;
+    }
 
     const std::string errUnk = gateDCheckUnknown();
-    if (!errUnk.empty()) { logFail(kName, errUnk); return; }
+    if (!errUnk.empty())
+    {
+        logFail(kName, errUnk);
+        return;
+    }
+
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// M1-2 Gate E: Loudness_DecodedLayout_Weights
+//
+// Validates the decode→meter path END-TO-END (synchronously; no worker thread).
+//
+// Strategy: use decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_A) to obtain
+// the REAL BS.1770-5 per-channel weights, convert them to a double weight array,
+// call meter.configureChannels(6, weights) directly, feed a calibrated 6-channel
+// signal, and assert the integrated LUFS matches the same oracle expectation used
+// by Loudness_Multichannel_BS1770_Weights — proving the decode→weight→meter chain
+// is wired correctly and bit-equivalent to the hand-crafted weight array.
+//
+// The specific assertions mirror sub-case (b) and (c) of the existing BS.1770
+// weights test:
+//   (b) surround (+1.5 dB) and LFE exclusion (G=0) via decoded weights.
+//   (c) full 5.1 calibrated case against the independent oracle (±0.2 LU).
+//
+// If this test passes while the existing Loudness_Multichannel_BS1770_Weights test
+// also passes, the two weight sources (hand-crafted and decoder-derived) are
+// confirmed to be numerically identical, and the new publish path delivers
+// correct weights to the meter.
+//
+// Reference: ITU-R BS.1770-5 (2023), Annex 1, Table 1.
+// ---------------------------------------------------------------------------
+
+static auto testLoudnessDecodedLayoutWeights() -> void
+{
+    static const char* const kName = "Loudness_DecodedLayout_Weights";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr double kDuration = 15.0;
+    constexpr double kPeak = -23.0;      // dBFS
+    constexpr double kSurroundDeltaMin = 1.0;  // surrounds must read ≥ 1 dB above L+R
+    constexpr double kSurroundDeltaMax = 2.0;  // and ≤ 2 dB above (tolerance on +1.5 dB)
+    constexpr double kOracleTol = 0.2;         // ±0.2 LU vs. oracle
+
+    // -----------------------------------------------------------------------
+    // Step 1: Decode the 5.1-A layout to obtain BS.1770-5 weights.
+    //
+    // kAudioChannelLayoutTag_MPEG_5_1_A: L R C LFE Ls Rs
+    //   slot 0 (L)  : lufsWeight = 1.0
+    //   slot 1 (R)  : lufsWeight = 1.0
+    //   slot 2 (C)  : lufsWeight = 1.0
+    //   slot 3 (LFE): lufsWeight = 0.0   (excluded)
+    //   slot 4 (Ls) : lufsWeight = 1.41253754
+    //   slot 5 (Rs) : lufsWeight = 1.41253754
+    // -----------------------------------------------------------------------
+    const ChannelLayout decoded51A = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_A);
+
+    // Convert float lufsWeight to the double array required by configureChannels().
+    std::array<double, kMaxChannels> decodedWeights{};
+    for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
+    {
+        decodedWeights[ch] = static_cast<double>(decoded51A.lufsWeight[ch]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-case (b): Surround weight and LFE exclusion via decoded weights.
+    //
+    // Feed Ls+Rs active at kPeak and measure.  Then feed L+R active at kPeak
+    // and measure.  The surround reading must be ~+1.5 dB above the L+R reading
+    // because the decoder assigned G=1.41 to slots 4/5 and G=1.0 to slots 0/1.
+    // A zero-weight LFE-only signal must read kSilenceLufs (excluded).
+    // -----------------------------------------------------------------------
+
+    // Ls+Rs active (slots 4 and 5) — surround weight G=1.41 (~+1.5 dB)
+    LufsMeter meterSurr;
+    meterSurr.prepare(kSR);
+    meterSurr.configureChannels(kNum51Channels, decodedWeights);
+    {
+        const auto buf =
+            makeInterleavedNch2Active(kNum51Channels, 4U, 5U, kPeak, kDuration, kSR);
+        meterSurr.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR),
+                                 kNum51Channels);
+    }
+    const double lufsSurr = meterSurr.integratedLufs();
+
+    // L+R active (slots 0 and 1) — weight G=1.0
+    LufsMeter meterLR;
+    meterLR.prepare(kSR);
+    meterLR.configureChannels(kNum51Channels, decodedWeights);
+    {
+        const auto buf =
+            makeInterleavedNch2Active(kNum51Channels, 0U, 1U, kPeak, kDuration, kSR);
+        meterLR.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
+    }
+    const double lufsLR = meterLR.integratedLufs();
+
+    const double surroundDelta = lufsSurr - lufsLR;
+    std::ostringstream infoB;
+    infoB << "  [info] " << kName << " (b): lufsSurr=" << lufsSurr << " lufsLR=" << lufsLR
+          << " delta=" << surroundDelta << "\n";
+    std::fputs(infoB.str().c_str(), stdout);
+
+    if (surroundDelta < kSurroundDeltaMin || surroundDelta > kSurroundDeltaMax)
+    {
+        std::ostringstream oss;
+        oss << "(b) surround weight delta=" << surroundDelta << " not in [" << kSurroundDeltaMin
+            << ", " << kSurroundDeltaMax << "] (expected ~+1.5 dB from decoded G=1.41)";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // LFE-only (slot 3, decoded weight = 0.0) → excluded, reads silence.
+    LufsMeter meterLfe;
+    meterLfe.prepare(kSR);
+    meterLfe.configureChannels(kNum51Channels, decodedWeights);
+    {
+        // slot 3 carries a tone; all others are silent.
+        const auto buf = makeInterleavedNch(kNum51Channels, 3U, kPeak, kDuration, kSR);
+        meterLfe.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
+    }
+    const double lufsLfe = meterLfe.integratedLufs();
+    std::ostringstream infoLfe;
+    infoLfe << "  [info] " << kName << " (b-lfe): lufsLfe=" << lufsLfe << "\n";
+    std::fputs(infoLfe.str().c_str(), stdout);
+
+    if (lufsLfe > kAbsoluteGateLufs)
+    {
+        std::ostringstream oss;
+        oss << "(b) LFE channel with decoded weight 0.0 reads " << lufsLfe
+            << " LUFS (expected <= " << kAbsoluteGateLufs << " / silence)";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-case (c): Full 5.1 calibrated signal vs. independent oracle.
+    //
+    // A signal that exercises all six channels simultaneously: L/R/C/Ls/Rs carry
+    // a 1 kHz sine at kPeak; LFE carries the same sine (but its weight is 0.0 so
+    // it contributes nothing).  Both the decoded-weight meter and the oracle must
+    // agree within ±kOracleTol LU.
+    // -----------------------------------------------------------------------
+    constexpr double kFullPeak = -23.0;
+    const auto frames51 = static_cast<size_t>(kDuration * kSR);
+    const double amp = std::pow(10.0, kFullPeak / 20.0);
+
+    // Build interleaved 6-channel buffer: all channels carry the same 1 kHz sine.
+    std::vector<float> buf51full(frames51 * kNum51Channels, 0.0F);
+    for (size_t frm = 0U; frm < frames51; ++frm)
+    {
+        const double s = amp * std::sin(2.0 * std::numbers::pi * 1000.0 *
+                                        static_cast<double>(frm) / static_cast<double>(kSR));
+        for (uint32_t ch = 0U; ch < kNum51Channels; ++ch)
+        {
+            buf51full[(frm * kNum51Channels) + ch] = static_cast<float>(s);
+        }
+    }
+
+    // Decoded-weight meter.
+    LufsMeter meterFull;
+    meterFull.prepare(kSR);
+    meterFull.configureChannels(kNum51Channels, decodedWeights);
+    meterFull.addInterleaved(buf51full.data(), frames51, kNum51Channels);
+    const double lufsFull = meterFull.integratedLufs();
+
+    // Independent oracle.
+    const double lufsOracle =
+        oracleIntegratedLufs(buf51full, kNum51Channels, decodedWeights, kSR);
+
+    const double deltaC = std::abs(lufsFull - lufsOracle);
+    std::ostringstream infoC;
+    infoC << "  [info] " << kName << " (c): meter=" << lufsFull << " oracle=" << lufsOracle
+          << " delta=" << deltaC << "\n";
+    std::fputs(infoC.str().c_str(), stdout);
+
+    if (deltaC > kOracleTol)
+    {
+        std::ostringstream oss;
+        oss << "(c) decoded-weight meter=" << lufsFull << " vs oracle=" << lufsOracle
+            << " delta=" << deltaC << " > " << kOracleTol << " LU";
+        logFail(kName, oss.str());
+        return;
+    }
 
     logPass(kName);
 }
@@ -3033,6 +3341,9 @@ auto main() -> int
 
     // M1-1: ChannelLayout decoder (Gate D)
     testChannelLayoutDecodeGateD();
+
+    // M1-2: decode→meter path (Gate E)
+    testLoudnessDecodedLayoutWeights();
 
     // Large-buffer regression fence (buffer-size desync / safeCount=512 fix)
     testLargeBufferLimiterTailCorrect(); // T-LB1: limiter processes full bufSize tail

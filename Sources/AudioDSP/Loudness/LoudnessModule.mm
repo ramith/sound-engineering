@@ -1,9 +1,11 @@
 #include "LoudnessModule.h"
+#include "ChannelLayoutDecoder.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <limits>
 
 namespace AdaptiveSound
 {
@@ -42,6 +44,24 @@ namespace
 
 LoudnessModule::~LoudnessModule() = default; // jthread RAII: request_stop()+join()
 
+void LoudnessModule::publishChannelLayout(const ChannelLayout& layout) noexcept
+{
+    // Off-RT, control thread only (single producer invariant).
+    //
+    // Write new weights into the INACTIVE slot (the one the worker is NOT reading),
+    // then release-store the incremented generation counter.  The worker acquire-loads
+    // gen and reads layoutWeights_[gen & 1] — the parity flip atomically exposes the
+    // freshly written slot.  No lock needed: single producer, single consumer.
+    const uint32_t gen = layoutGen_.load(std::memory_order_relaxed);
+    const uint32_t writeSlot = (gen + 1U) & 1U;
+    auto& slot = layoutWeights_[writeSlot];
+    for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
+    {
+        slot[ch] = static_cast<double>(layout.lufsWeight[ch]);
+    }
+    layoutGen_.store(gen + 1U, std::memory_order_release);
+}
+
 void LoudnessModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
 {
     sampleRate_ = sampleRate;
@@ -60,6 +80,22 @@ void LoudnessModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcep
     rampBuf_.assign(maxFrames_, 0.0F);
     pushBuf_.assign(static_cast<std::size_t>(maxFrames_) * kMaxChannels, 0.0F);
     makeupGainLinear_.store(kUnityGainLinear, std::memory_order_release);
+
+    // Seed the layout double-buffer with stereo defaults (weights {1.0, 1.0, ...}).
+    // This ensures that the very first worker configure sees {1, 1} for N=2, which is
+    // bit-identical to the previous all-1.0 fill.  Both slots are written identically
+    // so gen=0 (slot 0) and gen=1 (slot 1) both hold valid stereo weights.
+    const ChannelLayout stereoLayout = decodeChannelLayout(kAudioChannelLayoutTag_Stereo);
+    for (uint32_t slot = 0U; slot < 2U; ++slot)
+    {
+        for (uint32_t ch = 0U; ch < kMaxChannels; ++ch)
+        {
+            layoutWeights_[slot][ch] = static_cast<double>(stereoLayout.lufsWeight[ch]);
+        }
+    }
+    // Gen=1: slot 1 is the "active" slot the worker will read on its first configure.
+    // Both slots are identical (all 1.0) so the value is correct regardless of parity.
+    layoutGen_.store(1U, std::memory_order_release);
 
     // Start the worker LAST, after all state it touches is initialized. jthread
     // move-assignment stops+joins any previous worker (safe to re-initialize).
@@ -161,9 +197,11 @@ void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexce
 {
     enableFlushToZeroOnThisThread();
 
-    // Track the channel count we last configured the meter for.
-    // Initialize to 0 so the first real count always triggers a configure.
+    // Track the channel count and layout generation we last configured the meter for.
+    // Use UINT32_MAX as the sentinel so the very first loop iteration always reconfigures
+    // (the real gen starts at 1 after initialize(), so 0xFFFFFFFF != 1 is guaranteed).
     uint32_t configuredCh = 0U;
+    uint32_t configuredGen = std::numeric_limits<uint32_t>::max();
 
     while (!stopToken.stop_requested())
     {
@@ -175,21 +213,23 @@ void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexce
             continue;
         }
 
-        // On channel-count change: drain the ring then reconfigure the meter so we
-        // never mix pre- and post-change interleave layouts in the same feed call.
-        if (nowCh != configuredCh)
+        // Acquire the current layout generation (pairs with the release-store in
+        // publishChannelLayout).  Reconfigure if either the channel count changed OR
+        // the layout was republished (new weights from a decoded ChannelLayout).
+        const uint32_t nowGen = layoutGen_.load(std::memory_order_acquire);
+        if (nowCh != configuredCh || nowGen != configuredGen)
         {
             // Drain: pop-and-discard until the ring reports empty.
             while (sampleRing_.popBlock(workerChunk_.data(), workerChunk_.size()) > 0U)
             {
             }
 
-            // S2 wires the real ChannelLayout BS.1770-5 weights (LFE=0, surround=1.41) here.
-            // For S1 all channels use the stereo-equivalent weight of 1.0.
-            std::array<double, kMaxChannels> weights{};
-            weights.fill(kBs1770WeightLRC);
+            // Read the active weight slot (gen & 1) — this is the slot that was fully
+            // written before the release-store in publishChannelLayout incremented gen.
+            const std::array<double, kMaxChannels>& weights = layoutWeights_[nowGen & 1U];
             meter_.configureChannels(nowCh, weights);
             configuredCh = nowCh;
+            configuredGen = nowGen;
         }
 
         // Frame-aligned pop: round the chunk capacity down to a whole number of frames

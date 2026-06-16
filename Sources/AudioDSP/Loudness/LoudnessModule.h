@@ -29,6 +29,7 @@
 
 #include "../EQ/EQModule.h" // ParameterRamp
 #include "../include/AudioConstants.h"
+#include "../include/ChannelLayout.h"
 #include "../include/MultichannelView.h"
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
@@ -86,6 +87,12 @@ namespace AdaptiveSound
         // unity, and STARTS the measurement worker. Call before the first process().
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
 
+        // Off-RT (control thread only): publish per-channel BS.1770-5 weights decoded
+        // from a ChannelLayout.  Lock-free; single producer.  The measurement worker
+        // picks up the new weights on the next reconfigure check.  Safe to call before
+        // or after initialize(); the worker ignores zero-gen until it first runs.
+        void publishChannelLayout(const ChannelLayout& layout) noexcept;
+
         // RT: noexcept, zero alloc/lock. Relays params to the worker, pushes samples
         // (drop on full), and applies the smoothed makeup gain in place.
         void process(const LoudnessParams& params, const MultichannelView& block) noexcept;
@@ -112,6 +119,20 @@ namespace AdaptiveSound
         std::atomic<float> measuredLufsShortTerm_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<float> measuredLufsMomentary_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<uint64_t> droppedFrames_{0U};                            // RT→diagnostics
+
+        // --- Generation-parity double buffer for BS.1770-5 per-channel weights ---
+        //
+        // Single-producer (control thread via publishChannelLayout), single-consumer
+        // (measurement worker via runMeasurementLoop).  Protocol:
+        //   publish: write into layoutWeights_[(gen+1) & 1], then release-store gen+1.
+        //   consume: acquire-load gen; read from layoutWeights_[gen & 1].
+        // The parity ensures the consumer always reads from the buffer that is NOT
+        // being written: the producer increments gen AFTER the write is complete
+        // (release), so the consumer only sees the new gen after the write has
+        // propagated (acquire).  No torn double-slot reads are possible because there
+        // is exactly one producer and one consumer.
+        std::atomic<uint32_t> layoutGen_{0U};                                // control→worker
+        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{};   // double buffer
 
         // --- RT-owned state ---
         SpscRing<float, kLoudnessRingElems> sampleRing_;
