@@ -29,6 +29,7 @@
 
 #include "../EQ/EQModule.h" // ParameterRamp
 #include "../include/AudioConstants.h"
+#include "../include/MultichannelView.h"
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
 #include "LufsMeter.h"
@@ -85,9 +86,7 @@ namespace AdaptiveSound
 
         // RT: noexcept, zero alloc/lock. Relays params to the worker, pushes samples
         // (drop on full), and applies the smoothed makeup gain in place.
-        void process(const LoudnessParams& params,
-                     AudioBufferList* ioData,
-                     uint32_t frameCount) noexcept;
+        void process(const LoudnessParams& params, const MultichannelView& block) noexcept;
 
         // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
         [[nodiscard]] auto measuredLufsIntegrated() const noexcept -> float;

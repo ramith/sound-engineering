@@ -27,6 +27,7 @@
 #include "DSPKernel.h"
 #include "EQ/EQModuleCoefficients.h"
 #include "Loudness/LufsMeter.h"
+#include "MultichannelView.h"
 #include "TargetState.h"
 
 using namespace AdaptiveSound;
@@ -1291,10 +1292,46 @@ static auto testGoldenMasterStereoN2() -> void
     logPass(kName);
 }
 
-static auto testGoldenMasterViaMultichannelView() -> void
+// T-C2: MultichannelView is the sole ABL-decode point — unit-test its semantics directly.
+// (Bit-exactness of the chain THROUGH the view is already covered by T-C1, which now runs the
+// kernel via the MultichannelView path.)
+static auto testMultichannelViewDecode() -> void
 {
-    logPending("GoldenMaster_N2_MultichannelView",
-               "S0-M2: assert N=2 bit-exact through the MultichannelView process() signature");
+    static const char* const kName = "MultichannelView_Decode";
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+
+    TestABL abl(kFrames);
+    const MultichannelView view = MultichannelView::fromABL(abl.abl(), kFrames);
+
+    if (view.channels() != 2U)
+    {
+        logFail(kName, "expected 2 channels from a stereo ABL");
+        return;
+    }
+    if (view.frames() != kFrames)
+    {
+        logFail(kName, "frames() did not echo the frame count");
+        return;
+    }
+    if (view.channel(0) != abl.left.data() || view.channel(1) != abl.right.data())
+    {
+        logFail(kName, "channel pointers do not match the ABL buffers");
+        return;
+    }
+    if (view.channel(2) != nullptr || view.channel(kMaxChannels) != nullptr)
+    {
+        logFail(kName, "out-of-range channel() must return nullptr");
+        return;
+    }
+
+    // Null ABL → empty view, no crash.
+    const MultichannelView nullView = MultichannelView::fromABL(nullptr, kFrames);
+    if (nullView.channels() != 0U || nullView.channel(0) != nullptr)
+    {
+        logFail(kName, "null ABL must yield an empty view");
+        return;
+    }
+    logPass(kName);
 }
 
 static auto testPerChannelIndependence() -> void
@@ -1354,7 +1391,7 @@ auto main() -> int
 
     // Multichannel epic safety net (Sprint 5b — S0-M1)
     testGoldenMasterStereoN2();
-    testGoldenMasterViaMultichannelView();
+    testMultichannelViewDecode();
     testPerChannelIndependence();
     testLimiterLinkedGain();
     testReconfigurationContinuity();

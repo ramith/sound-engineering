@@ -54,7 +54,8 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
 
     // Initialize the master-gain ramp with a 32 ms time constant and snap it to
     // unity so the first buffer plays at full gain rather than ramping up from 0.
-    masterGainRamp_.initialize(0.032F, static_cast<float>(sampleRate));
+    constexpr float kMasterGainRampSeconds = 0.032F; // 32 ms one-pole smoothing
+    masterGainRamp_.initialize(kMasterGainRampSeconds, static_cast<float>(sampleRate));
     masterGainRamp_.target = 1.0F;
     masterGainRamp_.snap();
 
@@ -108,9 +109,10 @@ void EQModule::publishCoefficients(const EQParams& params) noexcept
     destroySlot(toReleaseSetup_);
 }
 
-void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
+void EQModule::process(const EQParams& params, const MultichannelView& block) noexcept
 {
-    if (ioData == nullptr || frameCount == 0) {
+    const uint32_t frameCount = block.frames();
+    if (frameCount == 0) {
         return;
     }
 
@@ -138,16 +140,16 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
         return;
     }
 
-    // Only process the first 2 channels (stereo).
-    uint32_t numChannels = ioData->mNumberBuffers > 2 ? 2 : ioData->mNumberBuffers;
+    // Only process the first 2 channels (stereo) — N-channel generalization lands in S1.
+    const uint32_t numChannels = block.channels() > 2U ? 2U : block.channels();
 
     float* leftBuffer = nullptr;
     float* rightBuffer = nullptr;
     if (numChannels >= 1) {
-        leftBuffer = static_cast<float*>(ioData->mBuffers[0].mData);
+        leftBuffer = block.channel(0);
     }
     if (numChannels >= 2) {
-        rightBuffer = static_cast<float*>(ioData->mBuffers[1].mData);
+        rightBuffer = block.channel(1);
     }
 
     // Run each channel through the fixed kMaxBiquads-section cascade (identity-padded)
@@ -182,17 +184,17 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
         // rampBuf_ is sized to kMaxFramesCeil (= kDefaultMaxFrames = 512). Clamp
         // frameCount defensively so a misconfigured caller cannot overrun the buffer.
         const uint32_t safeCount = std::min(frameCount, kMaxFramesCeil);
-        const vDSP_Length n = static_cast<vDSP_Length>(safeCount);
+        const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
         for (uint32_t i = 0; i < safeCount; ++i) {
             rampBuf_[i] = masterGainRamp_.tick();
         }
 
         // vDSP_vmul: element-wise multiply (signal × per-sample gain).
         if (leftBuffer != nullptr) {
-            vDSP_vmul(leftBuffer, 1, rampBuf_.data(), 1, leftBuffer, 1, n);
+            vDSP_vmul(leftBuffer, 1, rampBuf_.data(), 1, leftBuffer, 1, len);
         }
         if (rightBuffer != nullptr) {
-            vDSP_vmul(rightBuffer, 1, rampBuf_.data(), 1, rightBuffer, 1, n);
+            vDSP_vmul(rightBuffer, 1, rampBuf_.data(), 1, rightBuffer, 1, len);
         }
     }
 }
