@@ -2,6 +2,7 @@
 #define EQ_MODULE_H
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
+#include "../include/PerChannel.h"
 #include "../include/TargetState.h"
 #include <array>
 #include <atomic>
@@ -90,8 +91,8 @@ namespace AdaptiveSound
         // Independent, non-overlapping per channel; zero-initialized; persists across
         // process() calls (this IS the filter memory). std::array => no heap, RT-safe.
         static constexpr size_t kDelayStateSize = (2 * static_cast<size_t>(kMaxBiquads)) + 2;
-        std::array<float, kDelayStateSize> leftDelay_{};
-        std::array<float, kDelayStateSize> rightDelay_{};
+        using EqDelay = std::array<float, kDelayStateSize>;
+        PerChannel<EqDelay> delays_{};
 
         // Double-buffered vDSP_biquad_Setup (opaque void*) for RT-safe coefficient
         // updates without create/destroy on the audio thread (issue #3):
