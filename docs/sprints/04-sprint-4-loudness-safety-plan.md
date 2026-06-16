@@ -207,12 +207,12 @@ Soak run · spec-doc fixes (note the BRIR-ordering discrepancy in §spec; docume
 
 - **Milestone 1:** ✅ Phase A + B — limiter hardened & RT-safe; harness 10/10.
 - **Milestone 2:** ✅ Phase C — Loudness DSP + off-RT thread; harness 15/15; ffmpeg oracle ±0.037 LU; TSan clean.
-- **Milestone 3:** Phase B′ — limiter SOTA upgrade (polyphase 8× ISP detector, dB-domain + hold-extension ballistics, dual-stage release); anti-pumping + near-Nyquist ISP tests. *(B5 withdrawn — quality-first validation above.)*
-- **Milestone 4:** Phase D — metering UI.
-- **Milestone 5:** Phase E — hearing-safety clamps.
-- **Milestone 6:** Phase F — soak, spec-doc fixes, retro.
+- **Milestone 3:** ✅ Phase B′ — limiter SOTA upgrade (polyphase 8× ISP detector, dB-domain + hold-extension ballistics, dual-stage release); anti-pumping + near-Nyquist ISP tests. *(B5 withdrawn — quality-first validation above.)*
+- **Milestone 4:** ✅ Phase D — metering UI (via the Swift mixer tap; sample-peak + LUFS).
+- **Milestone 5:** ✅ Phase E — hearing-safety clamp (`EQSafetyClamp`; harness 13/13).
+- **Milestone 6:** ✅ Phase F — soak (harness 17/17) + LUFS oracle re-run (±0.037 LU) + spec reconciliation + [retro](04-sprint-4-loudness-safety-retro.md).
 
 ---
 
-**Status:** Ready for Implementation
+**Status:** Engineering complete (M1–M6) on `feat/sprint-4-loudness-safety`; founder manual sign-off + merge to `main` pending.
 **Next:** Begin Milestone 1 (limiter hardening) after Phase 1b Part B ships
