@@ -33,6 +33,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     private var dspAudioUnit: AVAudioUnit?
 
+    // MARK: - Monitoring analyzers (per-channel before/after spectra; Sprint 5 M3)
+
+    /// One spectrum analyzer PER CHANNEL for each tap point: `beforeAnalyzers` from the pre-DSP
+    /// player-node tap, `afterAnalyzers` from the post-DSP mixer tap. Sized to the stream's
+    /// channel count at init — N-channel by construction (stereo today; practical ceiling 7.1 / 8).
+    /// Read by the Monitoring tab; never resized on the audio thread.
+    private var beforeAnalyzers: [SpectrumAnalyzer] = []
+    private var afterAnalyzers: [SpectrumAnalyzer] = []
+    /// Pre-DSP tap lives on the player node (the post-DSP tap is the existing mainMixer tap).
+    private var beforeTapInstalled = false
+
     // MARK: - Initialize
 
     func initialize() async throws -> Bool {
@@ -89,6 +100,18 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     )
                     self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
 
+                    // Per-channel monitoring analyzers (Sprint 5 M3) — one per channel of the
+                    // graph format, for the pre-DSP (player) and post-DSP (mixer) tap points.
+                    // N-channel by construction: stereo today, scales to 7.1 when the pipeline
+                    // goes multichannel. Allocated here, off the audio thread.
+                    let channelCount = Int(format.channelCount)
+                    self.beforeAnalyzers = (0 ..< channelCount).map { _ in
+                        SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
+                    }
+                    self.afterAnalyzers = (0 ..< channelCount).map { _ in
+                        SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
+                    }
+
                     continuation.resume(returning: true)
                 }
             }
@@ -131,13 +154,45 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
                 loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
             }
+
+            // Feed the per-channel AFTER analyzers (Monitoring tab; N-channel).
+            if let afterAnalyzers = self?.afterAnalyzers {
+                let channels = min(afterAnalyzers.count, Int(buffer.format.channelCount))
+                for index in 0 ..< channels {
+                    afterAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+                }
+            }
         }
+
+        // Pre-DSP (BEFORE) tap on the player node — a different node from the mixer, so the
+        // one-tap-per-bus rule holds. Feeds the per-channel before analyzers (N-channel).
+        if let player = playerNode {
+            let playerFormat = player.outputFormat(forBus: 0)
+            player.installTap(onBus: 0,
+                              bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                              format: playerFormat)
+            { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
+                guard let beforeAnalyzers = self?.beforeAnalyzers else { return }
+                let abl = buffer.mutableAudioBufferList
+                let channels = min(beforeAnalyzers.count, Int(buffer.format.channelCount))
+                for index in 0 ..< channels {
+                    beforeAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+                }
+            }
+            beforeTapInstalled = true
+        }
+
         tapInstalled = true
     }
 
     private func removeSpectrumTap() {
         guard let engine = avEngine, tapInstalled else { return }
         engine.mainMixerNode.removeTap(onBus: 0)
+        if beforeTapInstalled {
+            playerNode?.removeTap(onBus: 0)
+            beforeTapInstalled = false
+        }
         tapInstalled = false
     }
 
@@ -148,6 +203,22 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
+    }
+
+    // MARK: - Monitoring read (per-channel before/after; Sprint 5 M3)
+
+    /// Number of channels being monitored (the graph's channel count). 0 until the engine is ready.
+    var monitorChannelCount: Int {
+        afterAnalyzers.count
+    }
+
+    /// Copy the latest band magnitudes for one tap point + channel into `out`. Returns false if
+    /// unavailable (engine not ready, channel out of range, or no data published yet).
+    @discardableResult
+    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
+        let analyzers = (tap == .before) ? beforeAnalyzers : afterAnalyzers
+        guard channel >= 0, channel < analyzers.count else { return false }
+        return analyzers[channel].doubleBuffer.read(into: &out)
     }
 
     // MARK: - DSP AU access (Sprint 5 M2 control plane)
@@ -210,6 +281,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
                 self.spectrumAnalyzer = nil
+                self.beforeAnalyzers = []
+                self.afterAnalyzers = []
                 // Tap already removed above, so no callback can touch the meter now.
                 if let meter = self.loudnessMeter {
                     loudnessMeterDestroy(meter)

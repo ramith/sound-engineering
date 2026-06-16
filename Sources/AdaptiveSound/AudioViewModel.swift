@@ -78,6 +78,9 @@ struct AudioDeviceModel: Identifiable, Equatable, Hashable {
 final class AudioViewModel {
     var isEngineReady = false
     var isPlaying = false
+    /// Selected top-level tab. Owned here (not in `ContentView` `@State`) so deep views — e.g.
+    /// a double-click on the Now Playing spectrum — can navigate without binding-plumbing.
+    var selectedTab: TabSelection = .nowPlaying
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
     /// Live BS.1770-5 loudness readout for the meters (polled at the timer rate).
@@ -311,6 +314,20 @@ final class AudioViewModel {
     /// called once per EQ change by `EQViewModel.dispatchAllBands()`.
     func publishEQGains(_ gainsDb: [Float]) {
         engine.publishEQGains(gainsDb)
+    }
+
+    // MARK: - Monitoring (per-channel before/after; Sprint 5 M3)
+
+    /// Channels available to monitor (= the graph's channel count). 0 until the engine is ready.
+    var monitorChannelCount: Int {
+        engine.monitorChannelCount
+    }
+
+    /// Read one tap point + channel's latest band magnitudes into `out` (polled by the
+    /// Monitoring tab while it is visible).
+    @discardableResult
+    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
+        engine.readMonitorBands(tap, channel: channel, into: &out)
     }
 
     // MARK: - Folder Loading & Monitoring
