@@ -1,0 +1,25 @@
+# clang-tidy config for the AudioDSPTestBridge tree (test-support C-ABI bridge).
+#
+# Inherits the strict repo-root config (which gates the AudioDSP production tree),
+# then relaxes the same checks Tests/.clang-tidy relaxes for harness code — this is
+# test infrastructure (it wraps production modules behind a pure-C interface for the
+# Swift test targets), not shipping DSP. The production gate is unaffected.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-redundant-member-init,
+  -cppcoreguidelines-pro-type-vararg,
+  -hicpp-vararg,
+  -cppcoreguidelines-avoid-c-arrays,
+  -modernize-avoid-c-arrays,
+  -hicpp-avoid-c-arrays,
+  -cppcoreguidelines-macro-usage
+#
+# Rationale:
+#   - magic numbers / short names  -> ordinary test-fixture ergonomics (e.g. the 31-band
+#                                     gain array, loop index i)
+#   - C arrays / macro constants   -> the bridge header (EQTestBridge.h) is a pure-C ABI
+#                                     surface for Swift import; #define array-size constants
+#                                     and plain C arrays are the C-compatible idiom
