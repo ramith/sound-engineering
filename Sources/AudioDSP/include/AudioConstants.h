@@ -13,8 +13,8 @@ namespace AdaptiveSound
     constexpr size_t kCacheLineBytes = 64; // ARM64 / Apple Silicon cache line
     constexpr float kTruePeakCeilingLinear =
         0.891F; // approx -1 dBTP (10^(-1/20)=0.8913; literal is approximate)
-    constexpr uint32_t kLimiterLookaheadFrames = 48U;      // default look-ahead window in frames
-    constexpr float kDefaultLufsTarget = -16.F;            // integrated loudness target (dB LUFS)
+    constexpr uint32_t kLimiterLookaheadFrames = 96U; // look-ahead window in frames (2 ms @ 48 kHz)
+    constexpr float kDefaultLufsTarget = -16.F;       // integrated loudness target (dB LUFS)
     constexpr float kClarityDefaultThresholdLinear = 0.1F; // compressor threshold (linear)
     constexpr float kClarityDefaultKneeWidthLinear =
         0.1F; // soft-knee half-width (linear) -- DISTINCT from threshold

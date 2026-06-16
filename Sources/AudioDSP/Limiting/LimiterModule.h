@@ -11,33 +11,39 @@
 // The limiter enforces a true-peak ceiling (default −1 dBTP) using three
 // mechanisms that together give transparent, zero-artifact peak control:
 //
-//   1. Lookahead delay (1 ms / 48 frames @ 48 kHz)
+//   1. Lookahead delay (2 ms / 96 frames @ 48 kHz)
 //      Input samples are written into a per-channel ring buffer of size
 //      kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames.
-//      The ring is large enough that writing a full 512-frame block of new
-//      input never overlaps the 48-frame window of delayed output that is
-//      simultaneously being read back.  The write head always stays
-//      kLimiterLookaheadFrames ahead of the read head.
+//      The ring is large enough that writing a full block of new input never
+//      overlaps the lookahead window of delayed output that is simultaneously
+//      being read back.  The write head always stays kLimiterLookaheadFrames
+//      ahead of the read head.
 //
-//      This gives the gain-reduction envelope time to ramp up BEFORE the
-//      transient peak arrives at the output — all audible clipping is
-//      eliminated even on hard transients.
+//      This gives the gain envelope time to ramp up BEFORE the transient peak
+//      arrives at the output — all audible clipping is eliminated even on hard
+//      transients.  At a 0.5 ms attack (5τ ≈ 2.5 ms) a 2 ms lookahead lets the
+//      envelope reach ~98 % of target before the peak emerges.
 //
 //   2. Inter-sample (true-peak) detection with ≥4× oversampling
-//      After each new sample is written to the ring, the GR sidechain
-//      scans a kLimiterLookaheadFrames-sample lookahead window ahead of
-//      the write head at 4× upsampled resolution using linear interpolation
-//      between adjacent samples (3 midpoints per pair).  This catches
-//      inter-sample peaks that exceed the ceiling even though the sample
-//      values themselves are below it.
+//      For each newly written sample the GR sidechain evaluates the 4×
+//      upsampled (linear-interpolated) peak of the newest adjacent sample pair
+//      and feeds it into a sliding-window maximum (see #3).
 //      Reference: ITU-R BS.1770-5 §3 true-peak measurement.
 //
-//   3. Sample-accurate gain reduction with one-pole attack/release smoothing
-//      Gain reduction (GR) is maintained as a per-sample running value using
-//      an RC-exact one-pole smoother (JOS §1.3.1).  The per-sample GR
-//      envelope is materialized into grBuf_ then applied via vDSP_vmul.
-//      This eliminates zipper noise on buffer boundaries and prevents the
-//      "pumping/breathing" that a block-level gain scalar would cause.
+//      NOTE (MVP): linear interpolation under-reads the true inter-sample peak
+//      by up to ~0.5–0.8 dB vs a proper polyphase FIR upsampler.  To stay safe
+//      we apply an additional −0.5 dB margin (kIspSafetyMargin) to the working
+//      ceiling.  A polyphase FIR ISP detector is a planned follow-up.
+//
+//   3. Sliding-window peak + sample-accurate linear-gain smoothing
+//      The peak driving gain reduction is the maximum 4×-ISP pair-peak over the
+//      kLimiterLookaheadFrames-sample lookahead window.  It is maintained
+//      incrementally with a monotonic deque (amortized O(1) per sample) instead
+//      of rescanning the whole window every sample.  The per-sample gain is then
+//      smoothed with an RC-exact one-pole (JOS §1.3.1) directly in the LINEAR
+//      gain domain — no per-sample log10/exp — and applied via vDSP_vmul.  This
+//      eliminates zipper noise on buffer boundaries and the per-sample
+//      transcendentals of a dB-domain implementation.
 //
 // Ring Layout (per channel)
 // ========================
@@ -56,9 +62,9 @@
 // RT-Safety
 // =========
 // process() is fully noexcept: no allocation, no free, no OS calls, no locks.
-// All buffers (ring, GR ramp scratch) are pre-allocated in initialize().
-// Attack and release coefficients are computed off-RT in initialize() and are
-// never modified from the render thread.
+// All buffers (ring, GR ramp scratch, peak deque) are pre-allocated in
+// initialize().  Attack and release coefficients are computed off-RT in
+// initialize() and are never modified from the render thread.
 //
 // Parameters (from LimiterParams, published via DoubleBufferSnapshot)
 // ===================================================================
@@ -69,17 +75,17 @@
 //
 // Math
 // ====
-// One-pole GR smoother (per sample):
-//   GR_target[n] = max(0, peakDbfs − ceilingDbfs)      [non-negative dB]
-//   if GR_target > GR_current:  GR[n] = GR[n-1] + α_a·(GR_target − GR[n-1])
-//   else:                        GR[n] = GR[n-1] + α_r·(GR_target − GR[n-1])
+// One-pole gain smoother (per sample, LINEAR gain domain):
+//   ceiling_w   = truePeakCeilingLinear · kIspSafetyMargin       (−0.5 dB margin)
+//   g_target[n] = (peak[n] > ceiling_w) ? ceiling_w / peak[n] : 1   (≤ 1)
+//   if g_target < g[n-1]  (more reduction → attack):
+//        g[n] = g[n-1] + α_a·(g_target − g[n-1])
+//   else                  (release):
+//        g[n] = g[n-1] + α_r·(g_target − g[n-1])
 //
 //   α = 1 − exp(−1 / (τ · fs))   (RC-exact discrete-time pole; JOS §1.3.1)
-//   τ_attack  = 0.5 ms  → α_a ≈ 0.064 @ 48 kHz
+//   τ_attack  = 0.5 ms  → α_a ≈ 0.040 @ 48 kHz
 //   τ_release = 100 ms  → α_r ≈ 0.000208 @ 48 kHz
-//
-// Output gain per sample:
-//   gain[n] = 10^(−GR[n] / 20)  = exp(−GR[n] · ln(10)/20)
 //
 // References
 // ==========
@@ -96,6 +102,7 @@
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cmath>
+#include <cstdint>
 
 namespace AdaptiveSound
 {
@@ -108,29 +115,37 @@ namespace AdaptiveSound
     static constexpr float kLimiterAttackMs = 0.5F;
     // Release: 100 ms — slow enough for transparency, fast enough for recovery
     static constexpr float kLimiterReleaseMs = 100.0F;
+    // Milliseconds → seconds (one-pole τ is specified in ms; fs is in Hz).
+    static constexpr float kMillisToSeconds = 0.001F;
 
     // Inter-sample oversampling factor for peak detection (≥4 per spec).
     // We use 4×: insert (kISPOversamplingFactor − 1) linearly interpolated midpoints
-    // between each pair of adjacent samples in the lookahead window.
-    // Fractions: k / kISPOversamplingFactor for k = 1…(factor-1) → 0.25, 0.50, 0.75
+    // between each pair of adjacent samples → fractions 0.25, 0.50, 0.75.
     static constexpr uint32_t kISPOversamplingFactor = 4U;
 
-    // ln(10)/20 — used in the per-sample dB→linear conversion: gain = exp(−GR·kLn10Over20)
-    static constexpr float kLn10Over20 = 0.11512925464970228F;
+    // Extra headroom on the working ceiling to cover linear-interpolation ISP
+    // underestimation (~0.5–0.8 dB worst case).  −0.5 dB = 10^(−0.5/20) ≈ 0.94406.
+    // The user still sees/sets the nominal ceiling; this margin is applied internally.
+    static constexpr float kIspSafetyMargin = 0.94406087F;
 
     // Maximum channels handled (stereo)
     static constexpr uint32_t kLimiterMaxChannels = 2U;
 
     // Ring size: must hold the lookahead window PLUS a full maximum-size block so
     // the write head never collides with the read head during a single process() call.
-    //   kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames
-    //                    = 48 + 512 = 560
+    //   kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames = 96 + 512 = 608
     static constexpr uint32_t kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames;
+
+    // Monotonic-deque capacity for the sliding-window peak.  The window spans
+    // kLimiterLookaheadFrames pair-peaks; the deque holds at most that many
+    // entries, plus one transient slot needed between push-back and front-evict.
+    static constexpr uint32_t kPeakDequeCapacity = kLimiterLookaheadFrames + 1U;
 
     class LimiterModule
     {
       public:
         LimiterModule() = default;
+        ~LimiterModule() = default;
 
         // Non-copyable, non-movable (owns pre-allocated state arrays)
         LimiterModule(const LimiterModule&) = delete;
@@ -149,8 +164,8 @@ namespace AdaptiveSound
 
             // RC-exact one-pole coefficients: α = 1 − exp(−1/(τ·fs))  (JOS §1.3.1)
             const float fs = static_cast<float>(sampleRate);
-            attackCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterAttackMs * 0.001F) * fs));
-            releaseCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterReleaseMs * 0.001F) * fs));
+            attackCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterAttackMs * kMillisToSeconds) * fs));
+            releaseCoeff_ = 1.0F - std::exp(-1.0F / ((kLimiterReleaseMs * kMillisToSeconds) * fs));
 
             // Zero ring buffers
             leftRing_.fill(0.0F);
@@ -162,9 +177,12 @@ namespace AdaptiveSound
             readHead_ = 0U;
             writeHead_ = kLimiterLookaheadFrames;
 
-            // Zero GR state and scratch
-            gainReductionDb_ = 0.0F;
+            // Reset gain state, scratch, and the sliding-window peak deque
+            gainLinear_ = 1.0F;
             grBuf_.fill(0.0F);
+            dequeHead_ = 0U;
+            dequeCount_ = 0U;
+            sampleCounter_ = 0U;
         }
 
         // -----------------------------------------------------------------------
@@ -180,14 +198,14 @@ namespace AdaptiveSound
         // Active mode signal flow per call (safeCount = min(frameCount, kDefaultMaxFrames)):
         //   For each sample i in [0, safeCount):
         //     1. Write leftBuf[i] (and rightBuf[i]) into the ring at writeHead_
-        //     2. Scan a kLimiterLookaheadFrames window starting at writeHead_+1
-        //        (the lookahead window ahead of the current read position)
-        //        at 4× ISP resolution (linear-interpolated midpoints)
-        //     3. Compute GR target; advance one-pole smoother; store grBuf_[i]
+        //     2. Compute the 4×-ISP peak of the newest adjacent sample pair and
+        //        push it into the monotonic deque; the deque front is the max over
+        //        the kLimiterLookaheadFrames-sample lookahead window
+        //     3. Compute linear gain target; advance one-pole smoother; store grBuf_[i]
         //     4. Advance writeHead_
         //   Then:
         //     5. Read safeCount delayed samples starting at readHead_ into the
-        //        output buffers (one or two memcpy segments)
+        //        output buffers (one or two memcpy-style segments)
         //     6. Apply grBuf_ via vDSP_vmul
         //     7. Advance readHead_
         // -----------------------------------------------------------------------
@@ -221,15 +239,15 @@ namespace AdaptiveSound
                 return;
             }
 
-            // Safety clamp: never overrun the pre-allocated scratch buffer.
-            // kLimiterRingSize is sized for kDefaultMaxFrames; enforce the same limit.
+            // Safety clamp: never overrun the pre-allocated scratch/ring buffers.
+            // kLimiterRingSize and grBuf_ are sized for kDefaultMaxFrames; enforce it.
             const uint32_t safeCount = std::min(frameCount, kDefaultMaxFrames);
 
-            // Pre-compute ceiling in dB once per buffer
-            const float ceilingDb = 20.0F * std::log10(params.truePeakCeilingLinear + 1e-30F);
+            // Working ceiling with the inter-sample safety margin applied.
+            const float workingCeiling = params.truePeakCeilingLinear * kIspSafetyMargin;
 
             // -----------------------------------------------------------------
-            // Per-sample GR loop
+            // Per-sample loop: write input, update sliding-window peak, smooth gain
             // -----------------------------------------------------------------
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
@@ -240,40 +258,32 @@ namespace AdaptiveSound
                     rightRing_[writeHead_] = rightBuf[i];
                 }
 
-                // 2. Scan lookahead window for true-peak (4× ISP oversampled).
-                //    The window is the kLimiterLookaheadFrames samples that were
-                //    just written into the ring ahead of the current read position —
-                //    i.e. positions [(writeHead_ - kLimiterLookaheadFrames + 1) ..
-                //    writeHead_] (wrapping).  We scan writeHead_ as the newest and
-                //    work kLimiterLookaheadFrames-1 steps back.
-                const float peakLinear = scanLookahead(rightBuf != nullptr);
-
-                // 3. Compute GR target and advance one-pole smoother
+                // 2. 4×-ISP peak of the newest adjacent pair (current, previous),
+                //    combined across channels, fed into the sliding-window max.
+                const uint32_t prev = (writeHead_ + kLimiterRingSize - 1U) % kLimiterRingSize;
+                float pairPeak = ispPairPeak(leftRing_[writeHead_], leftRing_[prev]);
+                if (rightBuf != nullptr)
                 {
-                    const float peakDb = 20.0F * std::log10(peakLinear + 1e-30F);
-                    const float grTarget = (peakDb > ceilingDb) ? (peakDb - ceilingDb) : 0.0F;
-                    if (grTarget > gainReductionDb_)
-                    {
-                        gainReductionDb_ += attackCoeff_ * (grTarget - gainReductionDb_);
-                    }
-                    else
-                    {
-                        gainReductionDb_ += releaseCoeff_ * (grTarget - gainReductionDb_);
-                    }
+                    pairPeak =
+                        std::max(pairPeak, ispPairPeak(rightRing_[writeHead_], rightRing_[prev]));
                 }
+                const float peak = updatePeakDeque(pairPeak);
 
-                // 4. Convert GR (dB) to linear gain: gain = exp(−GR · ln(10)/20)
-                grBuf_[i] = std::exp(-gainReductionDb_ * kLn10Over20);
+                // 3. Linear gain target + one-pole smoothing (attack when reducing).
+                const float gainTarget = (peak > workingCeiling) ? (workingCeiling / peak) : 1.0F;
+                const float coeff = (gainTarget < gainLinear_) ? attackCoeff_ : releaseCoeff_;
+                gainLinear_ += coeff * (gainTarget - gainLinear_);
+                grBuf_[i] = gainLinear_;
 
-                // 5. Advance write head
+                // 4. Advance write head
                 writeHead_ = (writeHead_ + 1U) % kLimiterRingSize;
             }
 
             // -----------------------------------------------------------------
-            // 6. Extract delayed output from ring (at readHead_) and overwrite
+            // 5. Extract delayed output from ring (at readHead_) and overwrite
             //    the input buffers.  readHead_ is kLimiterLookaheadFrames behind
             //    writeHead_ — those samples were written kLimiterLookaheadFrames
-            //    calls (frames) ago and represent the audio to output NOW.
+            //    frames ago and represent the audio to output NOW.
             // -----------------------------------------------------------------
             fillOutputFromRing(leftBuf, leftRing_.data(), safeCount);
             if (rightBuf != nullptr)
@@ -281,15 +291,15 @@ namespace AdaptiveSound
                 fillOutputFromRing(rightBuf, rightRing_.data(), safeCount);
             }
 
-            // 7. Apply per-sample gain envelope
-            const vDSP_Length n = static_cast<vDSP_Length>(safeCount);
-            vDSP_vmul(leftBuf, 1, grBuf_.data(), 1, leftBuf, 1, n);
+            // 6. Apply per-sample gain envelope
+            const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
+            vDSP_vmul(leftBuf, 1, grBuf_.data(), 1, leftBuf, 1, count);
             if (rightBuf != nullptr)
             {
-                vDSP_vmul(rightBuf, 1, grBuf_.data(), 1, rightBuf, 1, n);
+                vDSP_vmul(rightBuf, 1, grBuf_.data(), 1, rightBuf, 1, count);
             }
 
-            // 8. Advance read head
+            // 7. Advance read head
             readHead_ = (readHead_ + safeCount) % kLimiterRingSize;
         }
 
@@ -299,18 +309,13 @@ namespace AdaptiveSound
         // sample pair (sampleA, sampleB) using linear interpolation.
         //
         // Evaluates: |sampleA|, |sampleB|, and (kISPOversamplingFactor − 1) = 3
-        // linearly interpolated midpoints at fractions derived from kISPOversamplingFactor
-        // (0.25, 0.50, 0.75 for 4×).  Returns the maximum absolute value found.
-        //
-        // Marked [[nodiscard]] and static — pure function, no side effects.
-        // Extracted from scanLookahead() to reduce its cognitive complexity.
+        // linearly interpolated midpoints at fractions 0.25/0.50/0.75.  Returns
+        // the maximum absolute value found.  Pure function, no side effects.
         //
         // Reference: ITU-R BS.1770-5 Annex 1; Zölzer DAFX 3rd ed. §3.3.1.
         // -----------------------------------------------------------------------
         [[nodiscard]] static auto ispPairPeak(float sampleA, float sampleB) noexcept -> float
         {
-            // kISPOversamplingFactor = 4 → 3 interior midpoints at fractions 1/4, 2/4, 3/4.
-            // Each fraction is k * kStep for k in [1, kISPOversamplingFactor − 1].
             static constexpr float kStep = 1.0F / static_cast<float>(kISPOversamplingFactor);
             static constexpr uint32_t kNumMidpoints = kISPOversamplingFactor - 1U;
 
@@ -325,46 +330,54 @@ namespace AdaptiveSound
         }
 
         // -----------------------------------------------------------------------
-        // scanLookahead() — scan kLimiterLookaheadFrames samples ending at
-        // writeHead_ (inclusive) at 4× ISP resolution.
+        // updatePeakDeque() — push one pair-peak for the current sample and return
+        // the maximum over the trailing kLimiterLookaheadFrames-sample window.
         //
-        // Window: positions [(writeHead_ - kLimiterLookaheadFrames + 1) .. writeHead_]
-        // modulo kLimiterRingSize.  For each adjacent pair in the window,
-        // ispPairPeak() is called for each active channel; the running max is returned.
+        // Classic monotonic-deque sliding-window maximum: amortized O(1) per sample.
+        // The deque holds (index, value) entries with strictly decreasing values;
+        // the front is always the window maximum.  Backed by a fixed circular
+        // array (kPeakDequeCapacity) — no allocation.
         //
-        // Cognitive complexity is kept low by delegating per-pair logic to ispPairPeak().
+        // Index arithmetic uses the additive form (front.index + window <= counter)
+        // to avoid unsigned underflow during the warm-up phase.
         // -----------------------------------------------------------------------
-        [[nodiscard]] auto scanLookahead(bool hasStereo) const noexcept -> float
+        [[nodiscard]] auto updatePeakDeque(float value) noexcept -> float
         {
-            float peak = 0.0F;
-
-            for (uint32_t k = 0U; k < kLimiterLookaheadFrames; ++k)
+            // Evict smaller-or-equal entries from the back (maintain monotonicity).
+            while (dequeCount_ > 0U)
             {
-                const uint32_t posA = (writeHead_ + kLimiterRingSize - k) % kLimiterRingSize;
-                const uint32_t posB = (posA + kLimiterRingSize - 1U) % kLimiterRingSize;
-
-                const float lp = ispPairPeak(leftRing_[posA], leftRing_[posB]);
-                if (lp > peak)
+                const uint32_t backPos = (dequeHead_ + dequeCount_ - 1U) % kPeakDequeCapacity;
+                if (peakDeque_[backPos].value <= value)
                 {
-                    peak = lp;
+                    --dequeCount_;
                 }
-
-                if (hasStereo)
+                else
                 {
-                    const float rp = ispPairPeak(rightRing_[posA], rightRing_[posB]);
-                    if (rp > peak)
-                    {
-                        peak = rp;
-                    }
+                    break;
                 }
             }
 
-            return peak;
+            // Push the new (index, value) at the back.
+            const uint32_t pushPos = (dequeHead_ + dequeCount_) % kPeakDequeCapacity;
+            peakDeque_[pushPos] = {.index = sampleCounter_, .value = value};
+            ++dequeCount_;
+
+            // Evict the front while it has fallen out of the trailing window.
+            while (dequeCount_ > 0U &&
+                   peakDeque_[dequeHead_].index + kLimiterLookaheadFrames <= sampleCounter_)
+            {
+                dequeHead_ = (dequeHead_ + 1U) % kPeakDequeCapacity;
+                --dequeCount_;
+            }
+
+            const float windowMax = peakDeque_[dequeHead_].value;
+            ++sampleCounter_;
+            return windowMax;
         }
 
         // -----------------------------------------------------------------------
         // fillOutputFromRing() — copy safeCount samples from the ring starting at
-        // readHead_ into dst[], overwriting it.  Uses one or two memcpy segments
+        // readHead_ into dst[], overwriting it.  Splits into one or two segments
         // to handle the ring wrap without per-sample modular arithmetic.
         // -----------------------------------------------------------------------
         void fillOutputFromRing(float* dst, const float* ring, uint32_t safeCount) const noexcept
@@ -373,7 +386,6 @@ namespace AdaptiveSound
 
             if (safeCount <= toEnd)
             {
-                // Single segment — no wrap needed
                 for (uint32_t i = 0U; i < safeCount; ++i)
                 {
                     dst[i] = ring[readHead_ + i];
@@ -381,7 +393,6 @@ namespace AdaptiveSound
             }
             else
             {
-                // Two segments: tail of ring then head
                 for (uint32_t i = 0U; i < toEnd; ++i)
                 {
                     dst[i] = ring[readHead_ + i];
@@ -398,8 +409,15 @@ namespace AdaptiveSound
         // State — all pre-allocated; no heap in process()
         // -----------------------------------------------------------------------
 
-        // Ring buffers: sized to hold lookahead window + one full max-size block.
-        // kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames = 48 + 512 = 560.
+        // Sliding-window peak deque entry: (sample index, ISP pair-peak value).
+        struct PeakEntry
+        {
+            uint64_t index = 0U;
+            float value = 0.0F;
+        };
+
+        // Ring buffers: lookahead window + one full max-size block.
+        // kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames = 96 + 512 = 608.
         std::array<float, kLimiterRingSize> leftRing_{};
         std::array<float, kLimiterRingSize> rightRing_{};
 
@@ -409,8 +427,8 @@ namespace AdaptiveSound
         // Write head: position where the next input sample will be written.
         uint32_t writeHead_ = kLimiterLookaheadFrames;
 
-        // Running gain reduction state (dB, non-negative).  Persists across calls.
-        float gainReductionDb_ = 0.0F;
+        // Running linear gain (≤ 1.0). Persists across calls. 1.0 = no reduction.
+        float gainLinear_ = 1.0F;
 
         // One-pole smoother coefficients (computed in initialize(), never on RT thread)
         float attackCoeff_ = 0.0F;
@@ -418,6 +436,12 @@ namespace AdaptiveSound
 
         // Per-sample gain envelope scratch (pre-allocated to kDefaultMaxFrames = 512)
         std::array<float, kDefaultMaxFrames> grBuf_{};
+
+        // Monotonic-deque sliding-window peak state (circular buffer).
+        std::array<PeakEntry, kPeakDequeCapacity> peakDeque_{};
+        uint32_t dequeHead_ = 0U;     // index of the front entry
+        uint32_t dequeCount_ = 0U;    // number of live entries
+        uint64_t sampleCounter_ = 0U; // monotonically increasing sample index
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;

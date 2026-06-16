@@ -759,10 +759,10 @@ auto main() -> int
     testZeroInputProducesZeroOutput();
     testMultiChunkStatePreservation();
 
-    // Limiter tests (Sprint 1)
+    // Limiter tests (Sprint 4 — loudness safety)
     testLimiterBypassIsIdentity();
-    // testLimiterCeilingEnforcement and testLimiterGRResponseTime deferred to Phase 1 (incomplete
-    // implementation)
+    testLimiterCeilingEnforcement();
+    testLimiterGRResponseTime();
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
