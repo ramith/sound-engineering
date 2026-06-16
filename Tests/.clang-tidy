@@ -16,7 +16,14 @@ Checks: >
   -readability-identifier-length,
   -readability-redundant-member-init,
   -readability-math-missing-parentheses,
-  -readability-use-std-min-max
+  -readability-use-std-min-max,
+  -cppcoreguidelines-pro-type-vararg,
+  -hicpp-vararg,
+  -cppcoreguidelines-avoid-c-arrays,
+  -modernize-avoid-c-arrays,
+  -hicpp-avoid-c-arrays,
+  -bugprone-unchecked-string-to-number-conversion,
+  -cert-err34-c
 #
 # Rationale (all standard, intentional null-test patterns):
 #   - memcmp on float arrays  -> bit-exact null-test comparison is the whole point
