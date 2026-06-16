@@ -1,4 +1,5 @@
 import Accelerate
+import AudioFormatKit
 import AVFoundation
 import Foundation
 
@@ -46,12 +47,12 @@ extension AudioEngineBridge {
     ///
     /// Chain: `player -> effectsAU -> spatialAU -> mainMixer -> output`.
     /// - `player -> effectsAU -> spatialAU` is connected at the SOURCE/processing width N.
-    /// - `spatialAU -> mainMixer -> output` is connected at the DEVICE width M.
+    /// - `spatialAU -> mainMixer -> output` is connected at the DEVICE width M = min(N, deviceCh).
     ///
-    /// For M3 the device width M == source width N (`format`), so the spatial AU is a bit-exact
-    /// identity route and the mixer runs at the device width (a no-op fold). The mixer->output
-    /// reconnect is the spike's mandatory line (otherwise the mixer silently downmixes to its own
-    /// output width). Stereo (N == 2) is byte-identical to the pre-M3-3 single-AU path.
+    /// The device width M is resolved by `deviceWidthFormat` (M3/S4 resolution): M = min(N,
+    /// `engine.outputNode` channel count). At init N == 2 and the device is ≥ stereo, so M == N == 2
+    /// — byte-identical to the pre-M3-3 single-AU path. The mixer->output reconnect is the spike's
+    /// mandatory line (otherwise the mixer silently downmixes to its own output width).
     private func connectInitialGraph(
         engine: AVAudioEngine,
         player: AVAudioPlayerNode,
@@ -63,13 +64,38 @@ extension AudioEngineBridge {
         engine.connect(player, to: effects, format: format)
         engine.connect(effects, to: spatial, format: format)
 
-        // Device width M (the spatial AU output, mixer, and output). The spatial AU derives its
-        // in/out counts from these negotiated bus formats in allocateRenderResources.
-        // TODO(M3/S4): M = min(sourceN, deviceChannels); device<N -> binaural (S4). For M3,
-        // M = N (= `format`) so the spatial AU is an identity route and the chain is bit-exact.
-        let deviceFormat = format
+        // Device width M = min(N, deviceChannels) (the spatial AU output, mixer, and output). The
+        // spatial AU derives its in/out counts from these negotiated bus formats. When M < N the
+        // spatial AU's S4 stub renders N->M; for M == N it is a bit-exact identity route.
+        // TODO(S4): device<N -> binaural (the real fold lives on the spatial AU side).
+        let deviceFormat = deviceWidthFormat(engine: engine, sourceFormat: format)
         engine.connect(spatial, to: engine.mainMixerNode, format: deviceFormat)
         engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat)
+    }
+
+    /// Resolve the device-boundary format (width M) for a source/processing format `sourceFormat`
+    /// (width N): M = min(N, deviceChannels) where deviceChannels is the engine output node's
+    /// negotiated channel count. This is the M3/S4 device-width choice that lets a 5.1 file on a
+    /// stereo device process at N=6 and render N->M=2 at the spatial AU (its S4 device<N stub),
+    /// instead of letting the mixer naively downmix.
+    ///
+    /// Falls back to `sourceFormat` (M == N) if the output node reports 0 channels (not yet
+    /// negotiated) or if `multichannelFormat(for: M)` has no mapping for the resolved M — never
+    /// returns a format wider than the source.
+    func deviceWidthFormat(engine: AVAudioEngine, sourceFormat: AVAudioFormat) -> AVAudioFormat {
+        let sourceChannels = sourceFormat.channelCount
+        let deviceChannels = engine.outputNode.outputFormat(forBus: 0).channelCount
+        guard deviceChannels > 0 else { return sourceFormat }
+
+        let deviceWidth = min(sourceChannels, deviceChannels)
+        if deviceWidth == sourceChannels { return sourceFormat } // M == N: reuse the source format.
+
+        if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
+            return format
+        }
+        // No mapped format for the resolved M (e.g. an odd device width): stay at N rather than
+        // produce an invalid narrower format. The mixer-output line still runs at a valid width.
+        return sourceFormat
     }
 
     /// Pre-allocate the spectrum analyzer, loudness meter, and per-channel monitoring analyzers off
