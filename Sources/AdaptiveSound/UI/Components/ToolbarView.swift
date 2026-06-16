@@ -15,10 +15,6 @@ struct ToolbarView: View {
     /// controls navigation without owning state it does not produce.
     @Binding var selectedTab: TabSelection
 
-    /// Volume: 0.0 – 1.0. Owned by ContentView and bound here so the
-    /// value survives tab switches.
-    @Binding var volume: Float
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -30,8 +26,6 @@ struct ToolbarView: View {
             TabSelectorView(selectedTab: $selectedTab, reduceMotion: reduceMotion)
 
             Spacer(minLength: 8)
-
-            VolumeControlView(volume: $volume)
         }
         .padding(.horizontal, 16)
         .frame(height: 60)
@@ -121,38 +115,5 @@ private struct TabSelectorView: View {
         .layoutPriority(1)
         .accessibilityLabel("Tab Navigation")
         .accessibilityValue(selectedTab.rawValue)
-    }
-}
-
-// MARK: - Volume Control
-
-private struct VolumeControlView: View {
-    @Binding var volume: Float
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: volume < 0.01 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.callout)
-                .foregroundStyle(Color.asLabelSecond)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-
-            Slider(value: $volume, in: 0 ... 1)
-                .frame(minWidth: 80, maxWidth: 120)
-                .accessibilityLabel("Volume")
-                .accessibilityValue("\(Int(volume * 100))%")
-                .accessibilityHint("Adjust audio output volume from 0 to 100 percent")
-
-            Text("\(Int(volume * 100))%")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(Color.asLabelSecond)
-                .frame(minWidth: 36, alignment: .trailing)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.asCard)
-        .clipShape(.rect(cornerRadius: 8, style: .continuous))
-        .frame(minHeight: 44)
     }
 }
