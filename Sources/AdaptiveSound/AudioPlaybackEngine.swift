@@ -34,6 +34,10 @@ protocol AudioPlaybackEngine: AnyObject {
     /// not playing / unavailable. A fast, lock-free query safe to poll from the UI.
     func currentPlaybackPosition() -> Double?
 
+    /// Latest BS.1770-5 loudness measurement (LUFS + sample-peak), measured on the
+    /// playback tap. Lock-free; safe to poll from the UI. `.unmeasured` if unavailable.
+    func currentLoudness() -> LoudnessSnapshot
+
     // MARK: DSP Parameters
 
     /// Set a DSP parameter by ID (e.g. master gain = 0).
