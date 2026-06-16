@@ -30,6 +30,7 @@ xcrun clang++ \
     -I"$REPO_ROOT/Sources/AudioDSP" \
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.mm" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.mm" \
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.mm" \
     "$REPO_ROOT/Tests/DSPKernelNullTest.cpp" \
     -framework AudioToolbox \
     -framework Accelerate \
