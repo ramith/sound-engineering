@@ -106,7 +106,9 @@ struct FrequencyResponseCanvas: View {
         let bandIndex = max(0, min(30, Int((relativeX * 30.0).rounded())))
 
         let relativeY = max(0.0, min(1.0, (plotBottom - location.y) / plotHeight))
-        let cursorGain = Float(max(-20.0, min(20.0, relativeY * 40.0 - 20.0)))
+        // Clamp to the DSP range [-20, +12] dB (the kernel's hard limit), not the
+        // ±20 visual span — the canvas must never write out-of-range gains.
+        let cursorGain = Float(max(-20.0, min(12.0, relativeY * 40.0 - 20.0)))
 
         if let previousIndex = lastBandIndex, abs(bandIndex - previousIndex) > 1 {
             fillGapBetweenBands(
@@ -125,11 +127,9 @@ struct FrequencyResponseCanvas: View {
 
         lastBandIndex = bandIndex
 
-        // Mark selectedPreset as nil (custom) and dispatch all 31 bands to the
-        // DSP kernel. This is intentionally called once per drag sample —
-        // the kernel requires a full band update, not a partial one.
-        eqViewModel.selectedPreset = nil
-        eqViewModel.dispatchAllBands()
+        // Clamp every band to the DSP range, mark custom, and dispatch once.
+        // Called once per drag sample — the kernel requires a full band update.
+        eqViewModel.commitCustomBandEdits()
     }
 
     /// Linearly interpolates gain between `from` and `to` band indices.
@@ -145,7 +145,7 @@ struct FrequencyResponseCanvas: View {
             let progress = Float(step) / Float(steps)
             let interpolatedGain = startGain + (endGain - startGain) * progress
             let targetIndex = startIndex + step * direction
-            eqViewModel.bandGains[targetIndex] = max(-20.0, min(20.0, interpolatedGain))
+            eqViewModel.bandGains[targetIndex] = max(-20.0, min(12.0, interpolatedGain))
         }
     }
 
@@ -157,7 +157,8 @@ struct FrequencyResponseCanvas: View {
                 let neighborIndex = centerIndex + offset * sign
                 guard neighborIndex >= 0, neighborIndex <= 30 else { continue }
                 let existing = eqViewModel.bandGains[neighborIndex]
-                eqViewModel.bandGains[neighborIndex] = existing + (targetGain - existing) * weight
+                let blended = existing + (targetGain - existing) * weight
+                eqViewModel.bandGains[neighborIndex] = max(-20.0, min(12.0, blended))
             }
         }
     }
@@ -272,9 +273,9 @@ struct FrequencyResponseCanvas: View {
         let logFreqMax = log10(20000.0)
         let numSteps = 120
 
-        for i in 0 ... numSteps {
-            let t = Double(i) / Double(numSteps)
-            let logFreq = logFreqMin + t * (logFreqMax - logFreqMin)
+        for step in 0 ... numSteps {
+            let ratio = Double(step) / Double(numSteps)
+            let logFreq = logFreqMin + ratio * (logFreqMax - logFreqMin)
             interpolatedFreqs.append(pow(10.0, logFreq))
         }
 
@@ -297,20 +298,20 @@ struct FrequencyResponseCanvas: View {
         var lower = isoPoints[0]
         var upper = isoPoints.last ?? isoPoints[0]
 
-        for i in 0 ..< (isoPoints.count - 1) {
-            if logFreq >= log10(isoPoints[i].freq) && logFreq <= log10(isoPoints[i + 1].freq) {
-                lower = isoPoints[i]
-                upper = isoPoints[i + 1]
+        for idx in 0 ..< (isoPoints.count - 1) {
+            if logFreq >= log10(isoPoints[idx].freq) && logFreq <= log10(isoPoints[idx + 1].freq) {
+                lower = isoPoints[idx]
+                upper = isoPoints[idx + 1]
                 break
             }
         }
 
         let logLower = log10(lower.freq)
         let logUpper = log10(upper.freq)
-        let t = (logFreq - logLower) / (logUpper - logLower)
-        let clampedT = max(0, min(1, t))
+        let position = (logFreq - logLower) / (logUpper - logLower)
+        let clamped = max(0, min(1, position))
 
-        return lower.gain + clampedT * (upper.gain - lower.gain)
+        return lower.gain + clamped * (upper.gain - lower.gain)
     }
 
     private func smoothGains(_ gains: [Double], tapCount: Int) -> [Double] {
@@ -319,16 +320,16 @@ struct FrequencyResponseCanvas: View {
         let halfTap = tapCount / 2
         var smoothed = gains
 
-        for i in 0 ..< gains.count {
+        for idx in 0 ..< gains.count {
             var sum = 0.0
             var count = 0
 
-            for j in max(0, i - halfTap) ... min(gains.count - 1, i + halfTap) {
-                sum += gains[j]
+            for tap in max(0, idx - halfTap) ... min(gains.count - 1, idx + halfTap) {
+                sum += gains[tap]
                 count += 1
             }
 
-            smoothed[i] = sum / Double(count)
+            smoothed[idx] = sum / Double(count)
         }
 
         return smoothed
