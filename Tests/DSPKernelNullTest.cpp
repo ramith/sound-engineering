@@ -1024,14 +1024,18 @@ namespace
     auto sliceRms(const std::vector<float>& buf, size_t start, size_t end) -> double
     {
         double acc = 0.0;
-        for (size_t idx = start; idx < end; ++idx) { acc += static_cast<double>(buf[idx]) * buf[idx]; }
+        for (size_t idx = start; idx < end; ++idx)
+        {
+            acc += static_cast<double>(buf[idx]) * buf[idx];
+        }
         const size_t count = (end > start) ? (end - start) : 1U;
         return std::sqrt(acc / static_cast<double>(count));
     }
 
     // Run a 1 kHz sine through the kernel with the given 31-band gains; return the captured
     // mono (left) output. maxFrames sized to the whole buffer so it is one process() call.
-    auto runEqSine(const std::array<float, kEqBands>& gains, uint32_t totalFrames) -> std::vector<float>
+    auto runEqSine(const std::array<float, kEqBands>& gains, uint32_t totalFrames)
+        -> std::vector<float>
     {
         DSPKernel kernel;
         kernel.initialize(TestConstants::kSampleRate48k, totalFrames);
@@ -1044,10 +1048,10 @@ namespace
         TestABL abl(totalFrames);
         for (uint32_t idx = 0U; idx < totalFrames; ++idx)
         {
-            const float sample = kEqTestAmplitude *
-                                 std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
-                                          static_cast<float>(idx) /
-                                          static_cast<float>(TestConstants::kSampleRate48k));
+            const float sample =
+                kEqTestAmplitude * std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                            static_cast<float>(idx) /
+                                            static_cast<float>(TestConstants::kSampleRate48k));
             abl.left[idx] = sample;
             abl.right[idx] = sample;
         }
@@ -1116,22 +1120,26 @@ static auto testEQCoefficientSwapNoClick() -> void
     uint32_t sampleIndex = 0U;
     size_t swapSample = 0U;
 
-    const auto processBlocks = [&](uint32_t numBlocks) {
+    const auto processBlocks = [&](uint32_t numBlocks)
+    {
         for (uint32_t blk = 0U; blk < numBlocks; ++blk)
         {
             TestABL abl(kBlock);
             for (uint32_t idx = 0U; idx < kBlock; ++idx)
             {
-                const float sample = kEqTestAmplitude *
-                                     std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
-                                              static_cast<float>(sampleIndex) /
-                                              static_cast<float>(TestConstants::kSampleRate48k));
+                const float sample =
+                    kEqTestAmplitude * std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                                static_cast<float>(sampleIndex) /
+                                                static_cast<float>(TestConstants::kSampleRate48k));
                 abl.left[idx] = sample;
                 abl.right[idx] = sample;
                 ++sampleIndex;
             }
             kernel.process(abl.abl(), kBlock);
-            for (uint32_t idx = 0U; idx < kBlock; ++idx) { out.push_back(abl.left[idx]); }
+            for (uint32_t idx = 0U; idx < kBlock; ++idx)
+            {
+                out.push_back(abl.left[idx]);
+            }
         }
     };
 

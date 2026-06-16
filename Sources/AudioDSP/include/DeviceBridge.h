@@ -31,7 +31,7 @@ typedef struct
     uint32_t deviceID;        ///< Real CoreAudio AudioDeviceID
     uint32_t sampleRate;      ///< Nominal sample rate (Hz)
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
-    uint8_t deviceType; ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
+    uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
     // C-ABI fixed-size name buffer: a plain C array is required for Swift bridging
     // and the C ABI (std::array is neither C-compatible nor bridgeable here).
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
