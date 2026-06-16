@@ -33,9 +33,6 @@ final class EQViewModel {
 
     private let audioViewModel: AudioViewModel
 
-    /// Parameter IDs 100–130 are reserved for EQ bands.
-    private let eqBandBaseParameterID: UInt32 = 100
-
     // MARK: - Init
 
     init(audioViewModel: AudioViewModel) {
@@ -87,21 +84,21 @@ final class EQViewModel {
 
     // MARK: - Dispatch
 
-    /// Sends each band gain to the audio engine via the parameter bus.
-    /// Called exactly once per user action — never in a per-band loop. Used by
-    /// `selectPreset` and `commitCustomBandEdits` (the canvas commits drags
-    /// through the latter, never writing `bandGains`/dispatching directly).
+    /// Publish the full 31-band gain vector to the live DSP AU (Sprint 5 M2). Called exactly
+    /// once per user action — never in a per-band loop. Used by `selectPreset`, `applyBandGain`,
+    /// and `commitCustomBandEdits` (the canvas commits drags through the latter, never writing
+    /// `bandGains`/dispatching directly).
     ///
-    /// The published gains pass through `EQSafetyClamp` (Sprint 4 M5): if the
-    /// summed band gains exceed the cumulative hearing-safety ceiling, all bands
-    /// are proportionally scaled down before reaching the kernel. `bandGains`
-    /// itself is left untouched, so sliders/canvas keep showing the user's intent
-    /// while the kernel only ever receives a hearing-safe shape.
+    /// The published gains pass through `EQSafetyClamp` (Sprint 4 M5): if the summed band gains
+    /// exceed the cumulative hearing-safety ceiling, all bands are proportionally scaled down
+    /// before reaching the kernel. `bandGains` itself is left untouched, so sliders/canvas keep
+    /// showing the user's intent while the kernel only ever receives a hearing-safe shape.
+    ///
+    /// Guarded on engine readiness: a no-op until the AU is live, which also closes the
+    /// (very narrow) teardown race against `shutdown()`.
     func dispatchAllBands() {
+        guard audioViewModel.isEngineReady else { return }
         let safeGains = EQSafetyClamp.clamped(bandGains)
-        for (index, gain) in safeGains.enumerated() {
-            let paramID = eqBandBaseParameterID + UInt32(index)
-            audioViewModel.setParameter(paramID, value: gain)
-        }
+        audioViewModel.publishEQGains(safeGains)
     }
 }

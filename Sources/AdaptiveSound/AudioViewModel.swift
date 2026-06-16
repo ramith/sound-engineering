@@ -307,6 +307,12 @@ final class AudioViewModel {
         }
     }
 
+    /// Publish the 31-band EQ gain vector (dB) to the live DSP AU. Synchronous + off-RT;
+    /// called once per EQ change by `EQViewModel.dispatchAllBands()`.
+    func publishEQGains(_ gainsDb: [Float]) {
+        engine.publishEQGains(gainsDb)
+    }
+
     // MARK: - Folder Loading & Monitoring
 
     /// Enumerate all audio files under `folderURL` recursively and update `playlist`.

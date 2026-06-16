@@ -7,6 +7,8 @@
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
+#include "../EQ/EQModuleCoefficients.h" // EQ Realizer (31 gains -> biquad cascade)
+#include <array>
 #include <cstring>
 #include <memory>
 
@@ -49,6 +51,10 @@ namespace
     AUAudioUnitBusArray* _outputBusArray;
     uint32_t _sampleRate;   // single source of truth; re-synced in allocateRenderResources
     uint32_t _bufferFrames; // host max frames; applied in allocateRenderResources
+    // Retained authoritative control-plane state. Control-thread-only (the EQ view model on the
+    // main actor). EQ updates mutate only .eq and re-publish the whole state, so other modules
+    // keep their last-set values rather than reverting to defaults on each slider move.
+    TargetState _currentState;
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 @end
@@ -197,6 +203,15 @@ namespace
     if (_kernel != nullptr) { _kernel->publishTargetState(state); }
 }
 
+// Off-RT control plane. Composes new EQ coefficients into the retained current state (so
+// clarity/loudness/brir/limiter keep their last-set values) and re-publishes the whole state.
+// Single-producer: control thread only, never the render thread.
+- (void)publishEQParams:(const AdaptiveSound::EQParams&)eqParams {
+    _currentState.eq = eqParams;
+    _currentState.sequenceNumber += 1;
+    [self publishState:_currentState];
+}
+
 @end
 
 // MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
@@ -333,6 +348,27 @@ bool publishTargetState(void* auUnit, const void* state) {
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     const TargetState* targetState = static_cast<const TargetState*>(state);
     [audioUnit publishState:*targetState];
+    return true;
+}
+
+bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) {
+    // Control-plane contract: 31-band ISO grid, valid SR, non-null pointers. Reject mismatches
+    // rather than partially filling (which would silently zero the missing bands).
+    if (auUnit == nullptr || bandGainsDb == nullptr) { return false; }
+    if (count != static_cast<uint32_t>(EQModuleCoefficients::kNumBands)) { return false; }
+    if (!(sampleRate > 0.0)) { return false; } // also rejects NaN
+
+    // Copy caller-owned floats into the value type the designer expects; bandGainsDb need not
+    // outlive this call.
+    std::array<float, EQModuleCoefficients::kNumBands> gains{};
+    std::memcpy(gains.data(), bandGainsDb, sizeof(gains));
+
+    // Off-RT minimum-phase cascade design, then compose into retained state + atomic publish.
+    // computeBiquadCascade is allocation-free; the vDSP setup alloc happens inside
+    // publishCoefficients, still off the render thread.
+    const EQParams eqParams = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(sampleRate));
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    [audioUnit publishEQParams:eqParams];
     return true;
 }
 
