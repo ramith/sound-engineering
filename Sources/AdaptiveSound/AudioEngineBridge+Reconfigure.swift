@@ -7,11 +7,11 @@ import Foundation
 /// The live-graph re-width lifecycle, factored out of `AudioEngineBridge.swift` into a same-module
 /// extension to keep the core class body focused (SwiftLint `type_body_length`). The public entry
 /// point is `reconfigureGraph(to:)`; the helpers below are `private` so they stay scoped to this
-/// file. The members it touches (`avEngine`, `playerNode`, `dspAudioUnit`, the analyzer arrays,
-/// `graphState`, the tap install/remove) are module-internal on the base class so this extension —
-/// in a separate file — can reach them.
+/// file. The members it touches (`avEngine`, `playerNode`, `dspAudioUnit`, `spatialAudioUnit`, the
+/// analyzer arrays, `graphState`, the tap install/remove) are module-internal on the base class so
+/// this extension — in a separate file — can reach them.
 extension AudioEngineBridge {
-    // MARK: - Multichannel reconfigure lifecycle (Sprint 5b, M2-c)
+    // MARK: - Multichannel reconfigure lifecycle (Sprint 5b, M2-c / M3-3)
 
     /// Reconfigure the live graph to carry `channels` channels end-to-end.
     ///
@@ -21,9 +21,14 @@ extension AudioEngineBridge {
     /// when `channels` already matches the current graph width, so the stereo path is byte-for-byte
     /// unchanged until a real reconfigure is requested.
     ///
+    /// Both custom AU nodes are re-widthed together (Sprint 5b M3-3): the chain
+    /// `player -> effectsAU -> spatialAU -> mainMixer -> output` is reconnected with the effects-AU
+    /// edges at the source/processing width N and the spatial-AU output + mixer + output at the
+    /// device width M (M == N for M3 — an identity route).
+    ///
     /// The hard-won findings from the spike are baked in here:
-    /// - The `mainMixerNode -> outputNode` reconnect (`reconnectGraph(at:)`) is MANDATORY: without it
-    ///   the mixer silently downmixes to its own output width and only L/R carry signal for > 2ch.
+    /// - The `mainMixerNode -> outputNode` reconnect (`reconnectGraph`) is MANDATORY: without it the
+    ///   mixer silently downmixes to its own output width and only L/R carry signal for > 2ch.
     /// - Analyzer arrays are resized only while the taps are removed — never on the audio thread.
     /// - Production uses `engine.pause()` (device width is fixed; pause keeps attachments and is
     ///   lighter than stop). The offline harness can only change WIDTH via stop -> re-enable manual
@@ -34,7 +39,8 @@ extension AudioEngineBridge {
     func reconfigureGraph(to channels: AVAudioChannelCount) {
         // 1. Same-count guard — keep the existing path 100% untouched until a real reconfigure.
         guard channels != currentGraphWidth else { return }
-        guard let engine = avEngine, let player = playerNode, let unit = dspAudioUnit else { return }
+        guard let engine = avEngine, let player = playerNode,
+              let effects = dspAudioUnit, let spatial = spatialAudioUnit else { return }
 
         // 2. Enter the reconfiguring state for the duration of the teardown/rebuild.
         graphState = .reconfiguring
@@ -57,10 +63,10 @@ extension AudioEngineBridge {
         // 7. Resize analyzers while taps are removed (off the audio thread) — done inside the helper.
         // 9 + 10: reinstall taps + publish the new running state — done inside the helper.
         do {
-            try applyReconfigure(engine: engine, player: player, unit: unit,
+            try applyReconfigure(engine: engine, player: player, effects: effects, spatial: spatial,
                                  format: format, channels: resolvedChannels)
         } catch {
-            // 8. engine.start() threw (AU could not re-allocate render resources at this width):
+            // 8. engine.start() threw (an AU could not re-allocate render resources at this width):
             // transition to a safe state and log — never crash the app.
             abortReconfigure(reason: "engine.start() failed at \(resolvedChannels)ch: \(error)")
         }
@@ -97,17 +103,27 @@ extension AudioEngineBridge {
         return multichannelFormat(for: 2, sampleRate: sampleRate)
     }
 
-    /// Reconnect every edge of the graph at `format`. The `mainMixerNode -> outputNode` line is the
-    /// spike's critical finding: without it the mixer silently downmixes to its own output width.
+    /// Reconnect every edge of the two-AU graph at the new width:
+    /// `player -> effectsAU -> spatialAU -> mainMixer -> output`.
+    ///
+    /// - `player -> effectsAU -> spatialAU` connect at the SOURCE/processing width N (`sourceFormat`).
+    /// - `spatialAU -> mainMixer -> output` connect at the DEVICE width M (`deviceFormat`).
+    ///
+    /// The spatial AU derives its in/out channel counts from these negotiated bus formats. The
+    /// `mainMixerNode -> outputNode` line is the spike's critical finding: without it the mixer
+    /// silently downmixes to its own output width.
     private func reconnectGraph(
         engine: AVAudioEngine,
         player: AVAudioPlayerNode,
-        unit: AVAudioUnit,
-        format: AVAudioFormat
+        effects: AVAudioUnit,
+        spatial: AVAudioUnit,
+        sourceFormat: AVAudioFormat,
+        deviceFormat: AVAudioFormat
     ) {
-        engine.connect(player, to: unit, format: format)
-        engine.connect(unit, to: engine.mainMixerNode, format: format)
-        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
+        engine.connect(player, to: effects, format: sourceFormat)
+        engine.connect(effects, to: spatial, format: sourceFormat)
+        engine.connect(spatial, to: engine.mainMixerNode, format: deviceFormat)
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat)
     }
 
     /// Resize the per-channel before/after analyzer arrays to `channels`, off the audio thread.
@@ -122,35 +138,45 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Pause (or, offline, stop) the engine, reconnect at `format`, resize analyzers, restart, then
-    /// reinstall taps and publish `.running`. Throws if `engine.start()` fails so the caller can
-    /// land in a safe state.
+    /// Pause (or, offline, stop) the engine, reconnect the two-AU chain at `format`, resize
+    /// analyzers, restart, then reinstall taps and publish `.running`. Throws if `engine.start()`
+    /// fails so the caller can land in a safe state.
+    ///
+    /// The device width M is chosen here. TODO(M3/S4): M = min(sourceN, deviceChannels);
+    /// device<N -> binaural (S4). For M3, M == N (`format`), so the spatial AU is an identity route
+    /// and the reconfigured chain is a bit-exact passthrough at the new width.
     private func applyReconfigure(
         engine: AVAudioEngine,
         player: AVAudioPlayerNode,
-        unit: AVAudioUnit,
+        effects: AVAudioUnit,
+        spatial: AVAudioUnit,
         format: AVAudioFormat,
         channels: AVAudioChannelCount
     ) throws {
+        // Device width M == source width N for M3 (identity spatial route — see TODO above).
+        let deviceFormat = format
         if engine.isInManualRenderingMode {
             // Offline: the manual-rendering format is immutable while running, so changing WIDTH
             // requires stop -> re-enable manual rendering at the new format -> start.
             engine.stop()
-            reconnectGraph(engine: engine, player: player, unit: unit, format: format)
+            reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
+                           sourceFormat: format, deviceFormat: deviceFormat)
             resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
-            try engine.enableManualRenderingMode(.offline, format: format,
+            try engine.enableManualRenderingMode(.offline, format: deviceFormat,
                                                  maximumFrameCount: manualRenderingBlockSize)
             try engine.start()
         } else {
             // Live device: pause keeps attachments and is lighter than stop. The device width is
-            // fixed, so reconnecting at `format` + restart re-allocates the AU's render resources.
+            // fixed, so reconnecting at `format` + restart re-allocates both AUs' render resources.
             engine.pause()
-            reconnectGraph(engine: engine, player: player, unit: unit, format: format)
+            reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
+                           sourceFormat: format, deviceFormat: deviceFormat)
             resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
             try engine.start()
         }
 
-        // 9. Reinstall taps using each node's freshly negotiated outputFormat(forBus: 0).
+        // 9. Reinstall taps using each node's freshly negotiated outputFormat(forBus: 0). The
+        // "after" tap stays on the EFFECTS AU output (the N-channel processed signal).
         installSpectrumTap()
 
         // TODO(M2-d): publish ChannelLayout to kernel (Swift->kernel C-ABI for BS.1770 weights).
