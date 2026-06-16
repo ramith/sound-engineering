@@ -8,6 +8,7 @@
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
 #include "../EQ/EQModuleCoefficients.h" // EQ Realizer (31 gains -> biquad cascade)
+#include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
 #include <array>
 #include <cstring>
 #include <memory>
@@ -212,6 +213,16 @@ namespace
     [self publishState:_currentState];
 }
 
+// Off-RT control plane. Decodes the source layout tag (off-RT, allocation-free) and forwards the
+// resulting per-channel BS.1770-5 weights to the kernel, which publishes them lock-free to the
+// loudness worker. Single-producer: control thread only, never the render thread.
+- (void)publishChannelLayoutTag:(AudioChannelLayoutTag)tag {
+    if (_kernel != nullptr) {
+        const ChannelLayout layout = decodeChannelLayout(tag);
+        _kernel->publishChannelLayout(layout);
+    }
+}
+
 @end
 
 // MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
@@ -370,6 +381,14 @@ bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, 
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     [audioUnit publishEQParams:eqParams];
     return true;
+}
+
+void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) {
+    if (auHandle == nullptr) { return; }
+    // Resolve the AU from the borrowed handle exactly as publishEQBandGains does (non-owning
+    // __bridge borrow; no retain/release). The method decodes off-RT and publishes lock-free.
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auHandle;
+    [audioUnit publishChannelLayoutTag:tag];
 }
 
 } // extern "C"
