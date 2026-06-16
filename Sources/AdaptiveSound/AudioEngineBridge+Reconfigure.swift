@@ -24,7 +24,7 @@ extension AudioEngineBridge {
     /// Both custom AU nodes are re-widthed together (Sprint 5b M3-3): the chain
     /// `player -> effectsAU -> spatialAU -> mainMixer -> output` is reconnected with the effects-AU
     /// edges at the source/processing width N and the spatial-AU output + mixer + output at the
-    /// device width M (M == N for M3 — an identity route).
+    /// device width M = min(N, deviceChannels) (M2-d).
     ///
     /// The hard-won findings from the spike are baked in here:
     /// - The `mainMixerNode -> outputNode` reconnect (`reconnectGraph`) is MANDATORY: without it the
@@ -142,9 +142,12 @@ extension AudioEngineBridge {
     /// analyzers, restart, then reinstall taps and publish `.running`. Throws if `engine.start()`
     /// fails so the caller can land in a safe state.
     ///
-    /// The device width M is chosen here. TODO(M3/S4): M = min(sourceN, deviceChannels);
-    /// device<N -> binaural (S4). For M3, M == N (`format`), so the spatial AU is an identity route
-    /// and the reconfigured chain is a bit-exact passthrough at the new width.
+    /// The device width M is resolved by `deviceWidthFormat` (M2-d): M = min(N, deviceChannels)
+    /// where deviceChannels is the engine output node's negotiated width. So a 5.1 source (N=6) on a
+    /// stereo device reconnects the effects edges at N=6 and the spatial output + mixer + output at
+    /// M=2 — the spatial AU renders 6->2 via its S4 `device<N` stub (no naive mixer downmix). For
+    /// M == N the spatial AU is a bit-exact identity route. The real binaural fold is S4, on the
+    /// spatial AU side — see the `TODO(S4)` marker in `connectInitialGraph`.
     private func applyReconfigure(
         engine: AVAudioEngine,
         player: AVAudioPlayerNode,
@@ -153,11 +156,12 @@ extension AudioEngineBridge {
         format: AVAudioFormat,
         channels: AVAudioChannelCount
     ) throws {
-        // Device width M == source width N for M3 (identity spatial route — see TODO above).
-        let deviceFormat = format
+        // Device width M = min(N, deviceChannels). Resolved BEFORE any stop/re-enable so the output
+        // node still reports the in-effect device width (the manual-rendering width when offline).
+        let deviceFormat = deviceWidthFormat(engine: engine, sourceFormat: format)
         if engine.isInManualRenderingMode {
             // Offline: the manual-rendering format is immutable while running, so changing WIDTH
-            // requires stop -> re-enable manual rendering at the new format -> start.
+            // requires stop -> re-enable manual rendering at the new (device-width) format -> start.
             engine.stop()
             reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
                            sourceFormat: format, deviceFormat: deviceFormat)
@@ -167,7 +171,7 @@ extension AudioEngineBridge {
             try engine.start()
         } else {
             // Live device: pause keeps attachments and is lighter than stop. The device width is
-            // fixed, so reconnecting at `format` + restart re-allocates both AUs' render resources.
+            // fixed, so reconnecting at the resolved formats + restart re-allocates both AUs.
             engine.pause()
             reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
                            sourceFormat: format, deviceFormat: deviceFormat)
@@ -179,9 +183,9 @@ extension AudioEngineBridge {
         // "after" tap stays on the EFFECTS AU output (the N-channel processed signal).
         installSpectrumTap()
 
-        // TODO(M2-d): publish ChannelLayout to kernel (Swift->kernel C-ABI for BS.1770 weights).
-
-        // 10. Publish the new running state.
+        // 10. Publish the new running state. The source layout tag is published separately by
+        // `configureGraphForSource` (M2-d) AFTER this returns, so the kernel sees the tag for the
+        // width the graph just settled on.
         graphState = .running(channelCount: Int(channels))
     }
 
