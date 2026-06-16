@@ -5,13 +5,12 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AudioViewModel.self) var viewModel
     @State private var selectedTab: TabSelection = .nowPlaying
-    @State private var volume: Float = 0.75
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            // Primary Toolbar (60pt): Logo | Device | Tabs | Volume
-            ToolbarView(selectedTab: $selectedTab, volume: $volume)
+            // Primary Toolbar (60pt): Logo | Device | Tabs
+            ToolbarView(selectedTab: $selectedTab)
                 .environment(viewModel)
 
             // Tab Content

@@ -78,6 +78,10 @@ struct AudioDeviceModel: Identifiable, Equatable, Hashable {
 final class AudioViewModel {
     var isEngineReady = false
     var isPlaying = false
+    /// Live playhead position in seconds (polled at the spectrum-timer rate).
+    var playbackPosition: Double = 0
+    /// Live BS.1770-5 loudness readout for the meters (polled at the timer rate).
+    var loudness: LoudnessSnapshot = .unmeasured
     var errorMessage: String?
     var selectedDevice: AudioDeviceModel?
     var availableDevices: [AudioDeviceModel] = []
@@ -173,7 +177,11 @@ final class AudioViewModel {
         stopFolderMonitoring()
         stopPlayback()
         Task {
-            try await engine.shutdown()
+            do {
+                try await engine.shutdown()
+            } catch {
+                errorMessage = "Engine shutdown failed: \(error.localizedDescription)"
+            }
             isEngineReady = false
         }
     }
@@ -184,11 +192,12 @@ final class AudioViewModel {
     /// Safe to call multiple times — guards against duplicate timers.
     func startSpectrumTimer() {
         guard spectrumTimer == nil else { return }
-        spectrumTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             self?.tickSpectrum()
         }
+        spectrumTimer = timer
         // Include in common run-loop modes so the timer fires during tracking
-        RunLoop.main.add(spectrumTimer!, forMode: .common)
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     func stopSpectrumTimer() {
@@ -201,6 +210,10 @@ final class AudioViewModel {
     /// writes into `spectrumBars` to trigger SwiftUI observation.
     @MainActor
     private func tickSpectrum() {
+        // Poll the playhead + loudness every tick (independent of spectrum availability).
+        playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+        loudness = engine.currentLoudness()
+
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
         // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
@@ -210,8 +223,8 @@ final class AudioViewModel {
             let frac = Float(bar) / Float(barCount - 1) * Float(bandCount - 1)
             let lower = Int(frac)
             let upper = min(lower + 1, bandCount - 1)
-            let t = frac - Float(lower)
-            spectrumBars[bar] = spectrumScratch[lower] * (1 - t) + spectrumScratch[upper] * t
+            let weight = frac - Float(lower)
+            spectrumBars[bar] = spectrumScratch[lower] * (1 - weight) + spectrumScratch[upper] * weight
         }
     }
 
@@ -256,6 +269,7 @@ final class AudioViewModel {
         }
 
         let fileURL = playlist[selectedIndex].absoluteURL
+        playbackPosition = 0
 
         Task {
             do {
@@ -274,6 +288,7 @@ final class AudioViewModel {
             do {
                 try await engine.stopAudio()
                 isPlaying = false
+                playbackPosition = 0
             } catch {
                 errorMessage = "Stop playback failed: \(error.localizedDescription)"
             }
@@ -284,7 +299,11 @@ final class AudioViewModel {
 
     func setParameter(_ id: UInt32, value: Float) {
         Task {
-            try await engine.setParameter(id, value: value)
+            do {
+                try await engine.setParameter(id, value: value)
+            } catch {
+                errorMessage = "Parameter update failed: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -346,12 +365,14 @@ final class AudioViewModel {
     /// Reorder playlist items via drag-and-drop.
     /// Called when user drags items in the playlist.
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
+        // Capture the moved track's identity BEFORE the move; `destination` is the
+        // pre-insertion offset and no longer points at the moved item afterward.
+        let movedID = selectedTrackIndex.flatMap { current in
+            source.contains(current) ? playlist[current].id : nil
+        }
         playlist.move(fromOffsets: source, toOffset: destination)
-        // If the currently selected track was moved, update its index
-        if let current = selectedTrackIndex, source.contains(current) {
-            if let newIndex = playlist.firstIndex(where: { $0.id == self.playlist[destination].id }) {
-                selectedTrackIndex = newIndex
-            }
+        if let movedID {
+            selectedTrackIndex = playlist.firstIndex(where: { $0.id == movedID })
         }
     }
 

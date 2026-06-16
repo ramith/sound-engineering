@@ -41,10 +41,12 @@ struct LeftPanelView: View {
                 .fill(Color.asHairline)
                 .frame(height: 0.5)
 
-            PlaylistView()
+            NowPlayingInfoView()
                 .padding(.leading, Layout.leadingPad)
                 .padding(.trailing, Layout.trailingPad)
                 .padding(.vertical, Layout.sectionVPad)
+
+            Spacer(minLength: 0)
         }
     }
 }

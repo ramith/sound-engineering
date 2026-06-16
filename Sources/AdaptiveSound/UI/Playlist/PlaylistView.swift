@@ -34,10 +34,13 @@ struct PlaylistView: View {
             allowsMultipleSelection: false
         ) { result in
             if case let .success(urls) = result, let folderURL = urls.first {
-                let didAccess = folderURL.startAccessingSecurityScopedResource()
-                defer { if didAccess { folderURL.stopAccessingSecurityScopedResource() } }
                 viewModel.musicFolderURL = folderURL
                 Task {
+                    // Hold the security-scoped access across the async enumeration —
+                    // the previous `defer` released it before this Task ran, leaving
+                    // a sandboxed build with an empty playlist.
+                    let didAccess = folderURL.startAccessingSecurityScopedResource()
+                    defer { if didAccess { folderURL.stopAccessingSecurityScopedResource() } }
                     await viewModel.loadMusicFolder(folderURL)
                 }
             }

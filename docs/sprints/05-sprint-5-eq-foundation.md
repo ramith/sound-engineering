@@ -1,9 +1,9 @@
-# SPRINT 2: Minimum-Phase EQ Wiring & Spectral Correction
+# SPRINT 5: Minimum-Phase EQ Wiring & Spectral Correction
 
 **Theme:** Professional-grade EQ foundation with device correction profiles  
 **Effort:** 5–10 story points  
 **Owner:** Audio DSP Agent + SwiftUI Pro  
-**Prerequisite:** Sprint 1 (limiter + LUFS normalization wired)
+**Prerequisite:** Sprint 4 (limiter + LUFS normalization wired)
 
 ---
 
@@ -329,11 +329,11 @@ Spectrum L (EQ)  |  Spectrum R (EQ)
 ## Dependencies & Blockers
 
 **Unblocked By:**
-- ✅ Sprint 1 (limiter wired, safe floor established)
+- ✅ Sprint 4 (limiter wired, safe floor established)
 - ✅ EQModuleCoefficients unit-tested code (exists from Phase 1a)
 
 **Blocks:**
-- 🟡 Sprint 3 (clarity module builds on EQ foundation)
+- 🟡 Sprint 6 (clarity module builds on EQ foundation)
 - 🟡 Phase 1c release (EQ is headline feature)
 
 ---
@@ -355,4 +355,4 @@ Spectrum L (EQ)  |  Spectrum R (EQ)
 ---
 
 **Status:** Ready for implementation  
-**Next:** Begin Sprint 2 coding after Sprint 1 ships
+**Next:** Begin Sprint 5 coding after Sprint 4 ships
