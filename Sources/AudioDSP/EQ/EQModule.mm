@@ -139,27 +139,18 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
         return;
     }
 
-    // Only process the first 2 channels (stereo) — N-channel generalization lands in S1.
-    const uint32_t numChannels = block.channels() > 2U ? 2U : block.channels();
-
-    float* leftBuffer = nullptr;
-    float* rightBuffer = nullptr;
-    if (numChannels >= 1) {
-        leftBuffer = block.channel(0);
-    }
-    if (numChannels >= 2) {
-        rightBuffer = block.channel(1);
-    }
-
-    // Run each channel through the fixed kMaxBiquads-section cascade (identity-padded)
-    // with its own independent delay state.
-    if (leftBuffer != nullptr) {
-        vDSP_biquad(setup, delays_[0].data(), leftBuffer, 1, leftBuffer, 1,
-                    static_cast<vDSP_Length>(frameCount));
-    }
-    if (rightBuffer != nullptr) {
-        vDSP_biquad(setup, delays_[1].data(), rightBuffer, 1, rightBuffer, 1,
-                    static_cast<vDSP_Length>(frameCount));
+    // Run every channel through the fixed kMaxBiquads-section cascade (identity-padded).
+    // Each channel has its own independent delay state in delays_[ch]; the SAME setup
+    // (coefficient cascade) is applied to all channels — identical tonal curve, independent
+    // filter memory. delays_ is sized kMaxChannels; block.channels() ≤ kMaxChannels (enforced
+    // by MultichannelView::fromABL). No alloc, no lock — RT-safe.
+    const uint32_t numChannels = block.channels();
+    const vDSP_Length vDspFrames = static_cast<vDSP_Length>(frameCount);
+    for (uint32_t ch = 0U; ch < numChannels; ++ch) {
+        float* buf = block.channel(ch);
+        if (buf != nullptr) {
+            vDSP_biquad(setup, delays_[ch].data(), buf, 1, buf, 1, vDspFrames);
+        }
     }
 
     // Apply master gain with per-sample ramping to eliminate zipper noise.
@@ -176,7 +167,8 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
     const bool settled = (std::abs(masterGainRamp_.current - masterGainRamp_.target) < 1e-6F);
 
     if (!settled || params.masterGainLinear != 1.0F) {
-        // Generate the per-sample gain envelope into rampBuf_.
+        // Generate the per-sample gain envelope into rampBuf_ ONCE (shared across all
+        // channels — one ramp for all; the envelope is channel-independent).
         // tick() advances current toward target by α each sample — this IS the
         // one-pole smoother; no secondary vDSP_vramp interpolation needed.
         //
@@ -184,16 +176,16 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
         // frameCount defensively so a misconfigured caller cannot overrun the buffer.
         const uint32_t safeCount = std::min(frameCount, kMaxFramesCeil);
         const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
-        for (uint32_t i = 0; i < safeCount; ++i) {
+        for (uint32_t i = 0U; i < safeCount; ++i) {
             rampBuf_[i] = masterGainRamp_.tick();
         }
 
-        // vDSP_vmul: element-wise multiply (signal × per-sample gain).
-        if (leftBuffer != nullptr) {
-            vDSP_vmul(leftBuffer, 1, rampBuf_.data(), 1, leftBuffer, 1, len);
-        }
-        if (rightBuffer != nullptr) {
-            vDSP_vmul(rightBuffer, 1, rampBuf_.data(), 1, rightBuffer, 1, len);
+        // vDSP_vmul: element-wise multiply (signal × per-sample gain), per channel.
+        for (uint32_t ch = 0U; ch < numChannels; ++ch) {
+            float* buf = block.channel(ch);
+            if (buf != nullptr) {
+                vDSP_vmul(buf, 1, rampBuf_.data(), 1, buf, 1, len);
+            }
         }
     }
 }
