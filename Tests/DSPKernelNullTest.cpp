@@ -3340,7 +3340,8 @@ static void spatialFillNoise(TestABLN& abl, uint32_t numCh, uint32_t seed)
 }
 
 // Assert output channels [inCh, outCh) are all exactly 0.0f (zero-fill). "" on pass.
-static auto spatialCheckZeroFill(const TestABLN& outAbl, uint32_t inCh, uint32_t outCh) -> std::string
+static auto spatialCheckZeroFill(const TestABLN& outAbl, uint32_t inCh, uint32_t outCh)
+    -> std::string
 {
     for (uint32_t ch = inCh; ch < outCh; ++ch)
     {
@@ -3359,7 +3360,9 @@ static auto spatialCheckZeroFill(const TestABLN& outAbl, uint32_t inCh, uint32_t
 }
 
 // Assert every sample of an identity-route output buffer is finite + bit-exact. "" on pass.
-static auto spatialCheckSoakBuffer(const TestABLN& inAbl, const TestABLN& outAbl, uint32_t numCh,
+static auto spatialCheckSoakBuffer(const TestABLN& inAbl,
+                                   const TestABLN& outAbl,
+                                   uint32_t numCh,
                                    uint32_t bufIdx) -> std::string
 {
     for (uint32_t ch = 0U; ch < numCh; ++ch)
@@ -3408,7 +3411,8 @@ static auto spatialCheckIdentityRoute() -> std::string
 
         for (uint32_t ch = 0U; ch < numCh; ++ch)
         {
-            if (std::memcmp(inAbl.channels[ch].data(), outAbl.channels[ch].data(),
+            if (std::memcmp(inAbl.channels[ch].data(),
+                            outAbl.channels[ch].data(),
                             kSpatialMaxFrames * sizeof(float)) != 0)
             {
                 std::ostringstream oss;
@@ -3454,7 +3458,8 @@ static auto spatialCheckNarrowerSourceRoute() -> std::string
 
         for (uint32_t ch = 0U; ch < rc.inCh; ++ch)
         {
-            if (std::memcmp(inAbl.channels[ch].data(), outAbl.channels[ch].data(),
+            if (std::memcmp(inAbl.channels[ch].data(),
+                            outAbl.channels[ch].data(),
                             kSpatialMaxFrames * sizeof(float)) != 0)
             {
                 std::ostringstream oss;
