@@ -31,6 +31,20 @@ let package = Package(
                 ]),
             ]
         ),
+        // Headless M1 acceptance gate: proves the custom v3 AU registers, instantiates, sits
+        // in the AVAudioEngine graph, and renders. `swift run VerifyAUGraph`. (swift test is
+        // broken here; this is the runnable integration check for the AU-graph path.)
+        .executableTarget(
+            name: "VerifyAUGraph",
+            dependencies: ["AudioDSP"],
+            path: "Sources/VerifyAUGraph",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-import-objc-header",
+                    "Sources/AudioDSP/include/DeviceBridge.h",
+                ]),
+            ]
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
