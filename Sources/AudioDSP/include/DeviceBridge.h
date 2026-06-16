@@ -10,6 +10,11 @@
 
 #include <stdint.h>
 
+// Re-export the pure-C AU registration surface so the single Swift bridging header
+// (this file) also exposes registerAdaptiveAudioUnitSubclass() +
+// adaptiveAudioUnitComponentDescription() to Swift. Pure C; safe for all includers.
+#include "AudioUnitRegistrationBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.

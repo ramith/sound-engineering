@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AudioConstants.h"
 #include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement for AU functions
+#include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
 #include "../include/CoreAudioDevice.h"
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
@@ -13,9 +14,16 @@ using namespace AdaptiveSound;
 
 namespace
 {
-    // Placeholder AudioComponent identifiers for the (not-yet-registered) in-process AU.
-    constexpr OSType kComponentSubType = 0x61647364U;      // 'adsd' (AdaptiveSound)
-    constexpr OSType kComponentManufacturer = 0x41647364U; // 'Adsd'
+    // AudioComponent identity the in-process effect AU is registered under.
+    constexpr OSType kComponentType = kAudioUnitType_Effect;  // 'aufx'
+    constexpr OSType kComponentSubType = 0x61647364U;         // 'adsd' (AdaptiveSound)
+    constexpr OSType kComponentManufacturer = 0x41647364U;    // 'Adsd'
+    constexpr uint32_t kComponentVersion = 0x00010000U;       // 1.0.0 (major.minor.patch)
+
+    constexpr AVAudioChannelCount kStereoChannelCount = 2U;
+
+    // FPCR flush-to-zero (FZ) bit on AArch64.
+    constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U;
 
     // Enable flush-to-zero on the calling thread (must be called at render-block entry).
     // See DSPKernel.mm::enableFlushToZero() for the full rationale.
@@ -23,20 +31,24 @@ namespace
     // of the control-thread call in DSPKernel::initialize().
     inline void setRenderThreadFTZ() noexcept
     {
-#if defined(__aarch64__)
+#ifdef __aarch64__
         uint64_t fpcr = 0;
         __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        fpcr |= (1ULL << 24U); // FZ bit
+        fpcr |= kFpcrFlushToZeroBit;
         __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
 #endif
     }
 } // namespace
 
 @interface AdaptiveSoundAU : AUAudioUnit {
-    std::shared_ptr<DSPKernel> _kernel;
-    AUInternalRenderBlock _renderBlock;
-    uint32_t _sampleRate;   // captured at creation, applied in initialize
-    uint32_t _bufferFrames; // captured at creation, applied in initialize
+    std::shared_ptr<DSPKernel> _kernel; // created ONCE in -init; never reset until -dealloc
+    AUInternalRenderBlock _renderBlock; // created ONCE in -init; co-owns _kernel by value
+    AUAudioUnitBus* _inputBus;
+    AUAudioUnitBus* _outputBus;
+    AUAudioUnitBusArray* _inputBusArray;
+    AUAudioUnitBusArray* _outputBusArray;
+    uint32_t _sampleRate;   // single source of truth; re-synced in allocateRenderResources
+    uint32_t _bufferFrames; // host max frames; applied in allocateRenderResources
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 @end
@@ -48,22 +60,23 @@ namespace
                                        error:(NSError**)outError {
     self = [super initWithComponentDescription:componentDescription options:options error:outError];
     if (self == nil) { return nil; }
+
     _sampleRate = kDefaultSampleRate;
     _bufferFrames = kDefaultMaxFrames;
-    return self;
-}
 
-- (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
-    if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
-
+    // Kernel: created exactly ONCE, here. allocate/deallocate only re-initialize() it; they
+    // never construct or reset it. The render block (below) co-owns this same instance by
+    // value for the AU's whole lifetime, so the kernel can never be freed out from under a
+    // live render block, nor freed on the RT thread. (Apple v3 contract: internalRenderBlock
+    // must be non-nil at attach — that is why this is in -init, not allocateRenderResources.)
     _kernel = std::make_shared<DSPKernel>();
     _kernel->initialize(_sampleRate, _bufferFrames);
 
-    // Capture the kernel by value (shared_ptr copy) so the render block never touches
-    // `self` nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime
-    // calls (objc_loadWeakRetained) on the RT path (issue #7). The block co-owns the
-    // kernel, so it stays alive for the block's lifetime; the shared_ptr copy and destroy
-    // happen off-RT (at block creation / teardown), never during render.
+    // Capture the kernel by value (shared_ptr copy) so the render block never touches `self`
+    // nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime calls
+    // (objc_loadWeakRetained) on the RT path (issue #7). The copy here is the block's strong
+    // co-owner; the copy/destroy happen off-RT (block creation in -init / teardown in
+    // -dealloc), never during render. `kernel` is non-null for the block's entire lifetime.
     std::shared_ptr<DSPKernel> kernel = _kernel;
     _renderBlock = ^AUAudioUnitStatus(AudioUnitRenderActionFlags* flags,
                                       const AudioTimeStamp* timestamp,
@@ -72,9 +85,8 @@ namespace
                                       AudioBufferList* out,
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
-        (void)busNum;   // required by AURenderBlock typedef; not used by this in-process AU
+        (void)busNum;   // single output bus; index unused by this in-process AU
         (void)events;   // MIDI events deferred to Phase 2 MIDI implementation
-        if (kernel == nullptr) { return kAudioUnitErr_Uninitialized; }
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
         // Called once per render callback; the register write is ~1 cycle on M1.
@@ -84,22 +96,88 @@ namespace
         // then process in place. This removes the stack-declared AudioBufferList (which
         // had storage for only one AudioBuffer — stack corruption for planar/multi-buffer
         // input, #11) and the memcpy that wrote input-sized bytes into possibly-smaller
-        // output buffers (#4). Assumes the host (AVAudioEngine) provides non-null output
-        // buffer pointers; the null-mData fallback for other hosts/auval belongs with the
-        // deferred AU host integration (#6).
+        // output buffers (#4). AVAudioEngine provides non-null output buffer pointers.
         OSStatus pullStatus = pull(flags, timestamp, frames, 0, out);
         if (pullStatus != noErr) { return pullStatus; }
 
         kernel->process(out, frames);
         return noErr;
     };
+
+    // Busses: one stereo input + one stereo output so AVAudioEngine can connect upstream and
+    // downstream nodes. A v3 effect AU with no bus arrays fails engine.connect() (Gap 2).
+    if (![self setupBussesWithSampleRate:_sampleRate error:outError]) { return nil; }
+
+    return self;
+}
+
+// Build the published input/output busses from a canonical non-interleaved float32 stereo
+// format at `sampleRate`. The bus sample rate and DSPKernel both read `_sampleRate`, so there
+// is a single source of truth keeping them consistent.
+- (BOOL)setupBussesWithSampleRate:(uint32_t)sampleRate error:(NSError**)outError {
+    AVAudioFormat* format =
+        [[AVAudioFormat alloc] initStandardFormatWithSampleRate:static_cast<double>(sampleRate)
+                                                       channels:kStereoChannelCount];
+    if (format == nil) { return NO; }
+
+    _inputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
+    if (_inputBus == nil) { return NO; }
+    _outputBus = [[AUAudioUnitBus alloc] initWithFormat:format error:outError];
+    if (_outputBus == nil) { return NO; }
+
+    _inputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
+                                                            busType:AUAudioUnitBusTypeInput
+                                                             busses:@[ _inputBus ]];
+    _outputBusArray = [[AUAudioUnitBusArray alloc] initWithAudioUnit:self
+                                                             busType:AUAudioUnitBusTypeOutput
+                                                              busses:@[ _outputBus ]];
+    return (_inputBusArray != nil && _outputBusArray != nil) ? YES : NO;
+}
+
+- (AUAudioUnitBusArray*)inputBusses {
+    return _inputBusArray;
+}
+
+- (AUAudioUnitBusArray*)outputBusses {
+    return _outputBusArray;
+}
+
+- (BOOL)allocateRenderResourcesAndReturnError:(NSError**)outError {
+    if (![super allocateRenderResourcesAndReturnError:outError]) { return NO; }
+
+    // Adopt the host-negotiated output sample rate (device SR can change since -init) and the
+    // host's per-call frame ceiling as the single source of truth, then re-prepare the SAME
+    // kernel. DSPKernel::initialize() rebuilds its modules in place (RAII frees the old ones)
+    // and is noexcept; the v3 contract guarantees allocate runs while the AU is not rendering,
+    // so this never races process(). The render block is untouched and stays valid because it
+    // co-owns this same kernel instance.
+    const double negotiatedSampleRate = self.outputBusses[0].format.sampleRate;
+    if (negotiatedSampleRate > 0.0) {
+        _sampleRate = static_cast<uint32_t>(negotiatedSampleRate);
+    }
+    const AUAudioFrameCount hostMaxFrames = self.maximumFramesToRender;
+    if (hostMaxFrames > 0U) {
+        _bufferFrames = static_cast<uint32_t>(hostMaxFrames);
+    }
+    _kernel->initialize(_sampleRate, _bufferFrames);
     return YES;
 }
 
 - (void)deallocateRenderResources {
-    _kernel.reset();
-    _renderBlock = nullptr;
+    // Intentionally does NOT reset _kernel or _renderBlock. The kernel is owned for the AU's
+    // whole lifetime (created in -init, released in -dealloc) and is co-owned by the render
+    // block; resetting here would leave the block pointing at a dead kernel on the next
+    // allocate (the block is never re-created) and risk freeing a kernel the engine could
+    // still hold a render-block reference to. Re-allocation re-initialize()s this same kernel.
     [super deallocateRenderResources];
+}
+
+- (void)dealloc {
+    // The single, off-RT teardown point (runs when the last reference drops via
+    // __bridge_transfer in destroyAdaptiveAudioUnit / ARC). Drop the block first (releasing its
+    // captured shared_ptr copy), then the member — the DSPKernel destructor runs here, off-RT.
+    _renderBlock = nil;
+    _kernel.reset();
 }
 
 - (AUInternalRenderBlock)internalRenderBlock {
@@ -124,8 +202,8 @@ namespace
 // MARK: - C ABI (off-RT control plane). Signatures MUST match AudioUnitBridge.h exactly.
 
 // Helper: map C++ AudioDevice::Type to the uint8_t used in CDeviceInfo
-static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type t) {
-    switch (t) {
+static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type type) {
+    switch (type) {
     case AdaptiveSound::AudioDevice::Type::Builtin:  return 1U;
     case AdaptiveSound::AudioDevice::Type::USB:       return 2U;
     case AdaptiveSound::AudioDevice::Type::Wireless:  return 3U;
@@ -134,6 +212,30 @@ static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type t) {
 }
 
 extern "C" {
+
+// MARK: AU registration (in-process v3 instantiation; off-RT, main-thread during setup)
+
+AudioComponentDescription adaptiveAudioUnitComponentDescription(void) {
+    AudioComponentDescription desc = {};
+    desc.componentType = kComponentType;
+    desc.componentSubType = kComponentSubType;
+    desc.componentManufacturer = kComponentManufacturer;
+    desc.componentFlags = 0;
+    desc.componentFlagsMask = 0;
+    return desc;
+}
+
+void registerAdaptiveAudioUnitSubclass(void) {
+    // registerSubclass: must run exactly once per process; dispatch_once guards against
+    // double registration when engine setup repeats (e.g. device re-init).
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        [AUAudioUnit registerSubclass:[AdaptiveSoundAU class]
+               asComponentDescription:adaptiveAudioUnitComponentDescription()
+                                 name:@"AdaptiveSound: AdaptiveSoundAU"
+                              version:kComponentVersion];
+    });
+}
 
 // MARK: Device enumeration
 
@@ -179,21 +281,17 @@ int selectOutputDeviceC(uint32_t deviceID) {
 }
 
 void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) {
-    // TODO(future sprint): attach to the provided AVAudioEngine graph (bus/format
-    // negotiation). The pointer is accepted but not yet wired into a live engine.
+    // Attach into the AVAudioEngine graph is driven Swift-side via AVAudioUnit.instantiate()
+    // using adaptiveAudioUnitComponentDescription(); this direct-alloc path remains for callers
+    // that want the subclass instance directly.
     (void)audioEngine;
-
-    AudioComponentDescription desc = {};
-    desc.componentType = kAudioUnitType_Effect;
-    desc.componentSubType = kComponentSubType;
-    desc.componentManufacturer = kComponentManufacturer;
-    desc.componentFlags = 0;
-    desc.componentFlagsMask = 0;
+    registerAdaptiveAudioUnitSubclass();
 
     NSError* error = nil;
-    AdaptiveSoundAU* audioUnit = [[AdaptiveSoundAU alloc] initWithComponentDescription:desc
-                                                                              options:0
-                                                                                error:&error];
+    AdaptiveSoundAU* audioUnit =
+        [[AdaptiveSoundAU alloc] initWithComponentDescription:adaptiveAudioUnitComponentDescription()
+                                                      options:0
+                                                        error:&error];
     if (audioUnit == nil) { return nullptr; }
 
     [audioUnit setRequestedSampleRate:sampleRate bufferFrames:bufferFrames];
