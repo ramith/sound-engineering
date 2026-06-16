@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP"],
+            dependencies: ["AudioDSP", "AudioFormatKit"],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -36,7 +36,7 @@ let package = Package(
         // broken here; this is the runnable integration check for the AU-graph path.)
         .executableTarget(
             name: "VerifyAUGraph",
-            dependencies: ["AudioDSP"],
+            dependencies: ["AudioDSP", "AudioFormatKit"],
             path: "Sources/VerifyAUGraph",
             swiftSettings: [
                 .unsafeFlags([
@@ -133,6 +133,16 @@ let package = Package(
                     "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
                 ]),
             ]
+        ),
+        // Pure-Swift format helper (Sprint 5b, M2-a): maps a channel count to the
+        // AVAudioFormat the engine graph is connected at (stereo standard-format path;
+        // 5.1 / 7.1 via CoreAudio layout tags). Its own library target so BOTH the app
+        // (AdaptiveSound) and the offline gate (VerifyAUGraph) link the identical
+        // implementation — no drift in the format logic between them.
+        .target(
+            name: "AudioFormatKit",
+            dependencies: [],
+            path: "Sources/AudioFormatKit"
         ),
         .target(
             name: "AudioDSP",
