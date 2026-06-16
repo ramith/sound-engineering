@@ -22,6 +22,7 @@ protocol AudioPlaybackEngineMirror: AnyObject {
     func shutdown() async throws
     func startAudio(fileURL: URL?) async throws
     func stopAudio() async throws
+    func currentPlaybackPosition() -> Double?
     func setParameter(_ id: UInt32, value: Float) async throws
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror]
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
@@ -105,6 +106,11 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
 
     func stopAudio() async throws {
         stopAudioCallCount += 1
+    }
+
+    var mockPlaybackPosition: Double?
+    func currentPlaybackPosition() -> Double? {
+        mockPlaybackPosition
     }
 
     func setParameter(_ id: UInt32, value: Float) async throws {

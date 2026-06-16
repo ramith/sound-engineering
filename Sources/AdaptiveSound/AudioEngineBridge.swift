@@ -148,11 +148,12 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 var models: [AudioDeviceModel] = []
                 models.reserveCapacity(Int(count))
 
-                for i in 0 ..< Int(count) {
-                    let info = buffer[i]
+                for index in 0 ..< Int(count) {
+                    let info = buffer[index]
                     let name = withUnsafeBytes(of: info.name) { rawPtr -> String in
                         let ptr = rawPtr.bindMemory(to: CChar.self)
-                        return String(cString: ptr.baseAddress!)
+                        guard let base = ptr.baseAddress else { return "" }
+                        return String(cString: base)
                     }
                     let deviceType = AudioDeviceModel.DeviceType(rawValue: info.deviceType)
                     models.append(AudioDeviceModel(
@@ -265,6 +266,20 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 continuation.resume()
             }
         }
+    }
+
+    func currentPlaybackPosition() -> Double? {
+        // Derive the playhead from the player node's render time. sampleTime counts
+        // from 0 at play() and accumulates while playing — divide by the rate to get
+        // seconds. AVAudioPlayerNode time queries are safe to call from any thread.
+        guard let playerNode, playerNode.isPlaying,
+              let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
+              playerTime.sampleRate > 0
+        else {
+            return nil
+        }
+        return Double(playerTime.sampleTime) / playerTime.sampleRate
     }
 
     func setParameter(_ id: UInt32, value: Float) async throws {

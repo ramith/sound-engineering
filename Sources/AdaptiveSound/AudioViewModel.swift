@@ -78,6 +78,8 @@ struct AudioDeviceModel: Identifiable, Equatable, Hashable {
 final class AudioViewModel {
     var isEngineReady = false
     var isPlaying = false
+    /// Live playhead position in seconds (polled at the spectrum-timer rate).
+    var playbackPosition: Double = 0
     var errorMessage: String?
     var selectedDevice: AudioDeviceModel?
     var availableDevices: [AudioDeviceModel] = []
@@ -206,6 +208,9 @@ final class AudioViewModel {
     /// writes into `spectrumBars` to trigger SwiftUI observation.
     @MainActor
     private func tickSpectrum() {
+        // Poll the playhead every tick (independent of spectrum availability).
+        playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
         // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
@@ -261,6 +266,7 @@ final class AudioViewModel {
         }
 
         let fileURL = playlist[selectedIndex].absoluteURL
+        playbackPosition = 0
 
         Task {
             do {
@@ -279,6 +285,7 @@ final class AudioViewModel {
             do {
                 try await engine.stopAudio()
                 isPlaying = false
+                playbackPosition = 0
             } catch {
                 errorMessage = "Stop playback failed: \(error.localizedDescription)"
             }
