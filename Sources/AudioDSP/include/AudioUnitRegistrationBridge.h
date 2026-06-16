@@ -43,7 +43,8 @@ extern "C"
     /// @param count        Must be exactly 31 (the ISO band count); any other value is rejected.
     /// @param sampleRate   Coefficient design sample rate in Hz (must be > 0).
     /// @return true if validated and published; false on any validation failure.
-    bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate);
+    bool
+    publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate);
 
 #ifdef __cplusplus
 } // extern "C"
