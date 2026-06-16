@@ -2,7 +2,7 @@
 //
 // `swift test` is unusable here (swift-testing macro skew), so this is a runnable
 // executable (`swift run VerifyAUGraph`) that asserts, via AVAudioEngine OFFLINE manual
-// rendering, two things:
+// rendering, three things:
 //
 //   M1 (Sprint 5 M1, stereo) — the custom AdaptiveSoundAU:
 //     1. registers + instantiates as an AVAudioUnit (class identity),
@@ -10,14 +10,22 @@
 //     3. renders every block .success with finite, non-silent, ~passthrough output
 //        (default DSP state is bit-exact bypass, so a -12 dBFS sine survives intact).
 //
-//   M2 (Sprint 5b M2-b, multichannel) — for each of {2, 6, 8} channels, the graph
+//   M2-b (Sprint 5b M2-b, multichannel) — for each of {2, 6, 8} channels, the graph
 //     player -> AdaptiveSoundAU -> mainMixer -> output connected at the N-channel format
 //     (built by AudioFormatKit.multichannelFormat) genuinely carries N independent channels:
 //     render/output width == N, and EVERY channel carries its own non-silent, finite signal
 //     (proving real N-channel flow — NOT 2ch-padded-with-silence and NOT a downmix). This is
 //     the offline safety net guarding the live-graph multichannel reconfigure.
 //
-// Keep BOTH gates green. Exit non-zero on any failure so this can gate commits/CI.
+//   M2-c (Sprint 5b M2-c, LIVE reconfigure) — the T-C5 equivalent. A SINGLE running engine is
+//     re-widthed in place: stereo -> 6ch -> stereo. After each step the graph renders at the new
+//     width with genuine per-channel signal and no crash/discontinuity. This mirrors the
+//     `AudioEngineBridge.reconfigureGraph(to:)` lifecycle. Offline, WIDTH can only change via
+//     stop -> re-enable manual rendering at the new format -> start (the manual-rendering format is
+//     immutable while running), which is exactly the branch `reconfigureGraph` takes when it
+//     detects `engine.isInManualRenderingMode`.
+//
+// Keep ALL gates green. Exit non-zero on any failure so this can gate commits/CI.
 
 import AudioFormatKit
 import AVFoundation
@@ -351,5 +359,113 @@ if !allMultichannelPassed {
 }
 
 print("ALL M2 CHECKS PASSED — {2,6,8}ch each render at full width with genuine per-channel signal")
-print("=== SUMMARY: M1 (stereo passthrough) PASS + M2 (multichannel 2/6/8) PASS ===")
+
+// =====================================================================================
+// M2-c — LIVE reconfigure of a SINGLE running engine (the T-C5 equivalent).
+//
+// Unlike M2-b (a fresh engine per width), here ONE engine is re-widthed in place:
+// stereo -> 6ch -> stereo. After each step the graph must render at the new width with genuine
+// per-channel signal — proving the reconfigure lifecycle (stop player, remove taps, reconnect at
+// the new format INCLUDING mixer->output, resize analyzers, restart) is crash-free and continuous.
+//
+// Offline caveat (from the spike): the manual-rendering format is immutable while the engine runs,
+// so to change WIDTH offline the harness does stop -> enableManualRenderingMode(.offline, format:)
+// -> start. This is exactly the branch `AudioEngineBridge.reconfigureGraph` takes when it detects
+// `engine.isInManualRenderingMode`; production on real hardware uses `engine.pause()` instead
+// (device width is fixed). The reconnect (player->AU, AU->mixer, mixer->output) and the synthetic
+// per-channel-distinct input are shared with M2-b so the two checks exercise the same wiring.
+// =====================================================================================
+
+/// One step of the live reconfigure: re-enable manual rendering at `format` on the SAME running
+/// `engine` (stop -> re-enable -> start, the offline width-change dance), re-feed a synthetic
+/// per-channel input, render, and assert genuine N-channel flow. Returns true on PASS.
+///
+/// This is the offline analogue of `reconfigureGraph`'s manual-rendering branch: the existing
+/// connections are rebuilt at the new format (mixer->output included) before re-enabling.
+func reconfigureStep(
+    engine: AVAudioEngine,
+    player: AVAudioPlayerNode,
+    unit: AVAudioUnit,
+    channelCount: AVAudioChannelCount
+) -> Bool {
+    let label = "[reconfig->\(channelCount)ch]"
+
+    guard let stepFormat = multichannelFormat(for: channelCount, sampleRate: sampleRate),
+          stepFormat.channelCount == channelCount
+    else {
+        print("M2-c FAIL \(label): multichannelFormat returned nil or wrong width")
+        return false
+    }
+
+    // Teardown for an offline WIDTH change: stop (player + engine), reconnect every edge at the
+    // new format (mixer->output is the critical line), then re-enable manual rendering + start.
+    player.stop()
+    engine.stop()
+    engine.connect(player, to: unit, format: stepFormat)
+    engine.connect(unit, to: engine.mainMixerNode, format: stepFormat)
+    engine.connect(engine.mainMixerNode, to: engine.outputNode, format: stepFormat)
+
+    do {
+        try engine.enableManualRenderingMode(.offline, format: stepFormat, maximumFrameCount: renderBlockSize)
+        try engine.start()
+    } catch {
+        print("M2-c FAIL \(label): re-enable manual rendering / start threw: \(error)")
+        return false
+    }
+
+    let renderWidth = engine.manualRenderingFormat.channelCount
+    if renderWidth != channelCount {
+        print("M2-c FAIL \(label): post-reconfigure render width \(renderWidth) != \(channelCount)")
+        return false
+    }
+
+    guard let input = makeSyntheticInput(format: stepFormat, channelCount: channelCount) else {
+        print("M2-c FAIL \(label): could not build synthetic input buffer")
+        return false
+    }
+    player.scheduleBuffer(input, at: nil, options: [], completionHandler: nil)
+    player.play()
+
+    guard let captured = renderMultichannel(engine: engine, channelCount: channelCount, label: label) else {
+        return false
+    }
+    if !assertGenuineMultichannel(captured, channelCount: channelCount, label: label) {
+        return false
+    }
+    print("M2-c PASS \(label): live reconfigure to \(channelCount)ch — width + per-channel signal OK")
+    return true
+}
+
+/// Drive a single running engine through stereo -> 6ch -> stereo, asserting at each width. Returns
+/// true only if every step passes (no crash, finite + non-silent per channel, correct width).
+func verifyLiveReconfigure() -> Bool {
+    print("--- M2-c live reconfigure: stereo -> 6 -> stereo (single running engine) ---")
+
+    guard let unit = instantiateAU() else {
+        print("M2-c FAIL: AU instantiate returned nil")
+        return false
+    }
+    let rcEngine = AVAudioEngine()
+    let rcPlayer = AVAudioPlayerNode()
+    rcEngine.attach(rcPlayer)
+    rcEngine.attach(unit)
+    defer { rcEngine.stop() }
+
+    // The reconfigure sequence (stereo -> 6 -> stereo) on ONE engine instance.
+    let widths: [AVAudioChannelCount] = [2, 6, 2]
+    for width in widths where !reconfigureStep(engine: rcEngine, player: rcPlayer, unit: unit, channelCount: width) {
+        return false
+    }
+    print("M2-c PASS: stereo -> 6 -> stereo completed on one running engine, crash-free + continuous")
+    return true
+}
+
+if !verifyLiveReconfigure() {
+    print("VERIFY FAIL: live reconfigure (M2-c) check failed")
+    exit(1)
+}
+
+print("ALL M2-c CHECKS PASSED — single-engine stereo->6->stereo reconfigure renders at each width")
+print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
+    + "M2-c (live reconfigure stereo->6->stereo) PASS ===")
 exit(0)
