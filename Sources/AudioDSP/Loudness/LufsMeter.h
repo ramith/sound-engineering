@@ -261,7 +261,8 @@ namespace AdaptiveSound
 
         void addBlockToHistogram(double loudness, double energy) noexcept
         {
-            const int rawIdx = static_cast<int>(std::floor((loudness - kHistMinLufs) / kHistStepLu));
+            const int rawIdx =
+                static_cast<int>(std::floor((loudness - kHistMinLufs) / kHistStepLu));
             const int idx = std::clamp(rawIdx, 0, kHistBins - 1);
             const auto bin = static_cast<size_t>(idx);
             histCount_[bin] += 1U;
