@@ -62,20 +62,20 @@ void LoudnessModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcep
         std::jthread([this](const std::stop_token& stopToken) { runMeasurementLoop(stopToken); });
 }
 
-void LoudnessModule::process(const LoudnessParams& params, AudioBufferList* ioData,
-                             uint32_t frameCount) noexcept
+void LoudnessModule::process(const LoudnessParams& params, const MultichannelView& block) noexcept
 {
-    if (ioData == nullptr || frameCount == 0U)
+    const uint32_t frameCount = block.frames();
+    if (frameCount == 0U)
     {
         return;
     }
-    const uint32_t numChannels = (ioData->mNumberBuffers >= 2U) ? 2U : ioData->mNumberBuffers;
+    const uint32_t numChannels = (block.channels() >= 2U) ? 2U : block.channels();
     if (numChannels == 0U)
     {
         return;
     }
-    float* leftBuf = static_cast<float*>(ioData->mBuffers[0].mData);
-    float* rightBuf = (numChannels >= 2U) ? static_cast<float*>(ioData->mBuffers[1].mData) : nullptr;
+    float* leftBuf = block.channel(0);
+    float* rightBuf = (numChannels >= 2U) ? block.channel(1) : nullptr;
     if (leftBuf == nullptr)
     {
         return;

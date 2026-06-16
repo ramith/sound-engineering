@@ -1,6 +1,7 @@
 #ifndef EQ_MODULE_H
 #define EQ_MODULE_H
 #include "../include/AudioConstants.h"
+#include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
 #include <array>
 #include <atomic>
@@ -80,7 +81,7 @@ namespace AdaptiveSound
         void publishCoefficients(const EQParams& params) noexcept;
 
         // RT: adopt any pending setup (atomic swap, no alloc) and run the cascade.
-        void process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept;
+        void process(const EQParams& params, const MultichannelView& block) noexcept;
 
       private:
         // Per-channel delay state for the vDSP_biquad cascade (issue #2).

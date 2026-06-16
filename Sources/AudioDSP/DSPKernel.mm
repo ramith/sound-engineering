@@ -1,4 +1,5 @@
 #include "include/DSPKernel.h"
+#include "include/MultichannelView.h"
 #include "EQ/EQModule.h"
 #include "Clarity/ClarityModule.h"
 #include "Loudness/LoudnessModule.h"
@@ -25,12 +26,13 @@ DSPKernel::~DSPKernel() = default;
 // the render thread at entry (see AUAudioUnit.mm).
 //
 // Reference: ARM DDI 0487, §A1.4.3 (FPCR); Apple Silicon LLVM inline-asm guide.
+static constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U; // FPCR.FZ
 static void enableFlushToZero() noexcept
 {
-#if defined(__aarch64__)
+#ifdef __aarch64__
     uint64_t fpcr = 0;
     __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= (1ULL << 24U); // FZ: flush subnormal inputs and outputs to zero
+    fpcr |= kFpcrFlushToZeroBit; // flush subnormal inputs and outputs to zero
     __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
 #endif
     // On x86_64 (CI / simulator) Accelerate/vDSP already sets FTZ/DAZ internally;
@@ -93,12 +95,16 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
         return;
     }
 
+    // Decode the AudioBufferList ONCE into a non-owning planar view (the single ABL-decode
+    // point); every module operates on the MultichannelView and never touches the raw ABL.
+    const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);
+
     // Signal chain: EQ → Clarity → BRIR → Loudness → Limiter
-    eqModule_->process(state.eq, ioData, inNumberFrames);
-    clarityModule_->process(state.clarity, ioData, inNumberFrames);
-    brirModule_->process(state.brir, ioData, inNumberFrames);
-    loudnessModule_->process(state.loudness, ioData, inNumberFrames);
-    limiterModule_->process(state.limiter, ioData, inNumberFrames);
+    eqModule_->process(state.eq, block);
+    clarityModule_->process(state.clarity, block);
+    brirModule_->process(state.brir, block);
+    loudnessModule_->process(state.loudness, block);
+    limiterModule_->process(state.limiter, block);
 }
 
 } // namespace AdaptiveSound
