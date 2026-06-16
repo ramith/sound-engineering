@@ -114,5 +114,5 @@ extern "C" void eqModuleProcessC(float* ioBuffer,
 
     // Give the RT thread a chance to adopt the pending setup.
     // process() performs the atomic swap internally on its first call.
-    module.process(eqParams, &abl2.head, safeFrames);
+    module.process(eqParams, AdaptiveSound::MultichannelView::fromABL(&abl2.head, safeFrames));
 }
