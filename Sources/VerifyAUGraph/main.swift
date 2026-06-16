@@ -1,15 +1,25 @@
-// VerifyAUGraph — headless integration check for Sprint 5 M1 (AU in the live graph).
+// VerifyAUGraph — headless integration check for the AU-in-the-live-graph path.
 //
 // `swift test` is unusable here (swift-testing macro skew), so this is a runnable
 // executable (`swift run VerifyAUGraph`) that asserts, via AVAudioEngine OFFLINE manual
-// rendering, that the custom AdaptiveSoundAU:
-//   1. registers + instantiates as an AVAudioUnit (class identity),
-//   2. is actually IN the path (player's output connects to the AU, not the mixer),
-//   3. renders every block .success with finite, non-silent, ~passthrough output
-//      (default DSP state is bit-exact bypass, so a -12 dBFS sine survives intact).
+// rendering, two things:
 //
-// This is the M1 acceptance gate. Keep it green.
+//   M1 (Sprint 5 M1, stereo) — the custom AdaptiveSoundAU:
+//     1. registers + instantiates as an AVAudioUnit (class identity),
+//     2. is actually IN the path (player's output connects to the AU, not the mixer),
+//     3. renders every block .success with finite, non-silent, ~passthrough output
+//        (default DSP state is bit-exact bypass, so a -12 dBFS sine survives intact).
+//
+//   M2 (Sprint 5b M2-b, multichannel) — for each of {2, 6, 8} channels, the graph
+//     player -> AdaptiveSoundAU -> mainMixer -> output connected at the N-channel format
+//     (built by AudioFormatKit.multichannelFormat) genuinely carries N independent channels:
+//     render/output width == N, and EVERY channel carries its own non-silent, finite signal
+//     (proving real N-channel flow — NOT 2ch-padded-with-silence and NOT a downmix). This is
+//     the offline safety net guarding the live-graph multichannel reconfigure.
+//
+// Keep BOTH gates green. Exit non-zero on any failure so this can gate commits/CI.
 
+import AudioFormatKit
 import AVFoundation
 import Foundation
 
@@ -19,11 +29,16 @@ func fail(_ message: String) -> Never {
 }
 
 let sampleRate = 48000.0
-let channels: AVAudioChannelCount = 2
 let renderBlockSize: AVAudioFrameCount = 512
 let totalFrames: AVAudioFrameCount = 48000 // 1 second
 let toneHz = 1000.0
 let toneAmplitude: Float = 0.25 // -12 dBFS — below any limiter ceiling
+
+// =====================================================================================
+// M1 — stereo: register, instantiate, confirm AU is in the path, passthrough integrity.
+// =====================================================================================
+
+let channels: AVAudioChannelCount = 2
 
 guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels) else {
     fail("could not create AVAudioFormat")
@@ -141,4 +156,200 @@ if outputPeak > toneAmplitude * 2.0 { fail("output peak \(outputPeak) >> input �
 
 engine.stop()
 print("ALL M1 CHECKS PASSED — custom AU registers, instantiates, sits in the live graph, and renders")
+
+// =====================================================================================
+// M2-b — multichannel: per-channel non-silent flow at {2, 6, 8} channels (the safety net).
+//
+// One fresh engine + AU per width (keeps each graph's state trivially clean). The format the
+// graph is connected at drives the channel count; the offline manual-rendering format is
+// immutable while running, so each width does enableManualRenderingMode(.offline, format: N) ->
+// start (per the spike's stop->re-enable->start note for width changes) on its own engine.
+// =====================================================================================
+
+/// Per-channel RMS for a captured [channel][frame] signal. Distinct, non-silent per channel
+/// proves genuine N-channel flow (not 2ch padded with silence, not a downmix).
+func perChannelRMS(_ captured: [[Float]]) -> [Float] {
+    captured.map { samples in
+        guard !samples.isEmpty else { return 0 }
+        let sumSquares = samples.reduce(Float(0)) { $0 + $1 * $1 }
+        return sqrt(sumSquares / Float(samples.count))
+    }
+}
+
+/// Synchronously instantiate a fresh AdaptiveSound AU (same component description as M1).
+func instantiateAU() -> AVAudioUnit? {
+    let gate = DispatchSemaphore(value: 0)
+    var unit: AVAudioUnit?
+    AVAudioUnit.instantiate(with: description, options: []) { instance, _ in
+        unit = instance
+        gate.signal()
+    }
+    gate.wait()
+    return unit
+}
+
+/// Wire player -> AU -> mainMixer -> output, all connected at `format`.
+///
+/// The connect format drives the channel count (no AUAudioUnitBus.setFormat needed — it returns
+/// -10868 and is unnecessary; the connect format is authoritative). The mixer->output connect is
+/// THE CRITICAL LINE: mainMixerNode SILENTLY downmixes to its own output width unless we
+/// explicitly reconnect it at the N-channel format; without it only L/R carry signal for >2ch.
+func connectMultichannelGraph(
+    engine: AVAudioEngine,
+    player: AVAudioPlayerNode,
+    unit: AVAudioUnit,
+    format: AVAudioFormat
+) {
+    engine.attach(player)
+    engine.attach(unit)
+    engine.connect(player, to: unit, format: format)
+    engine.connect(unit, to: engine.mainMixerNode, format: format)
+    engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
+}
+
+/// Allocate + fill an input buffer where each channel carries a DISTINCT non-silent tone
+/// (frequency rises per channel), so genuine per-channel flow is distinguishable from a copy
+/// or silence. Returns nil if allocation or channel access fails.
+func makeSyntheticInput(format: AVAudioFormat, channelCount: AVAudioChannelCount) -> AVAudioPCMBuffer? {
+    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: totalFrames) else { return nil }
+    buffer.frameLength = totalFrames
+    for channel in 0 ..< Int(channelCount) {
+        guard let data = buffer.floatChannelData?[channel] else { return nil }
+        let channelHz = toneHz + Double(channel) * 250.0 // 1000, 1250, 1500, ... Hz per channel
+        for frame in 0 ..< Int(totalFrames) {
+            data[frame] = toneAmplitude * Float(sin(2.0 * Double.pi * channelHz * Double(frame) / sampleRate))
+        }
+    }
+    return buffer
+}
+
+/// Offline-render the running `engine` and capture per-channel output. Returns the captured
+/// [channel][frame] arrays, or nil on any render failure (message already printed).
+func renderMultichannel(
+    engine: AVAudioEngine,
+    channelCount: AVAudioChannelCount,
+    label: String
+) -> [[Float]]? {
+    guard let render = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat,
+                                        frameCapacity: renderBlockSize)
+    else {
+        print("M2 FAIL \(label): could not allocate render buffer")
+        return nil
+    }
+
+    var captured = [[Float]](repeating: [], count: Int(channelCount))
+    for channel in 0 ..< Int(channelCount) {
+        captured[channel].reserveCapacity(Int(totalFrames))
+    }
+
+    var rendered: AVAudioFrameCount = 0
+    while rendered < totalFrames {
+        let toRender = min(renderBlockSize, totalFrames - rendered)
+        let status: AVAudioEngineManualRenderingStatus
+        do {
+            status = try engine.renderOffline(toRender, to: render)
+        } catch {
+            print("M2 FAIL \(label): renderOffline threw: \(error)")
+            return nil
+        }
+        guard status == .success, let channelData = render.floatChannelData else {
+            print("M2 FAIL \(label): renderOffline non-success (\(status.rawValue)) or nil channel data")
+            return nil
+        }
+        for channel in 0 ..< Int(channelCount) {
+            let out = channelData[channel]
+            for frame in 0 ..< Int(render.frameLength) {
+                captured[channel].append(out[frame])
+            }
+        }
+        rendered += render.frameLength
+    }
+    return captured
+}
+
+/// Assert genuine N-channel flow: all samples finite + every channel non-silent. Prints a
+/// PASS/FAIL line and returns the verdict.
+func assertGenuineMultichannel(_ captured: [[Float]], channelCount: AVAudioChannelCount, label: String) -> Bool {
+    if !captured.allSatisfy({ $0.allSatisfy(\.isFinite) }) {
+        print("M2 FAIL \(label): output contains NaN/Inf — render instability")
+        return false
+    }
+    let rms = perChannelRMS(captured)
+    let rmsText = rms.map { String(format: "%.4f", $0) }.joined(separator: ", ")
+    let silenceFloor: Float = 0.01
+    let silentChannels = rms.enumerated().filter { $0.element < silenceFloor }.map(\.offset)
+    if !silentChannels.isEmpty {
+        print("M2 FAIL \(label): silent channel(s) \(silentChannels) — "
+            + "not genuine N-channel flow (downmix or padding). per-channel RMS = [\(rmsText)]")
+        return false
+    }
+    let minRMS = rms.min() ?? 0
+    print("M2 PASS \(label): mixer->output reconnect in place; all \(channelCount) channels non-silent + "
+        + "finite (min RMS \(String(format: "%.4f", minRMS))); per-channel RMS = [\(rmsText)]")
+    return true
+}
+
+/// Build the graph at `channelCount`, offline-render a synthetic per-channel-distinct buffer,
+/// and assert genuine N-channel throughput end to end. Returns true on PASS.
+func verifyMultichannel(channelCount: AVAudioChannelCount) -> Bool {
+    print("--- M2 channels = \(channelCount) ---")
+    let label = "[\(channelCount)ch]"
+
+    guard let mcFormat = multichannelFormat(for: channelCount, sampleRate: sampleRate),
+          mcFormat.channelCount == channelCount
+    else {
+        print("M2 FAIL \(label): multichannelFormat returned nil or wrong width (unsupported count)")
+        return false
+    }
+    guard let mcAU = instantiateAU() else {
+        print("M2 FAIL \(label): AU instantiate returned nil")
+        return false
+    }
+
+    let mcEngine = AVAudioEngine()
+    let mcPlayer = AVAudioPlayerNode()
+    connectMultichannelGraph(engine: mcEngine, player: mcPlayer, unit: mcAU, format: mcFormat)
+
+    do {
+        try mcEngine.enableManualRenderingMode(.offline, format: mcFormat, maximumFrameCount: renderBlockSize)
+        try mcEngine.start()
+    } catch {
+        print("M2 FAIL \(label): engine setup threw: \(error)")
+        return false
+    }
+    defer { mcEngine.stop() }
+
+    // Render width must equal the requested width (proves the connect drove the channel count).
+    let renderWidth = mcEngine.manualRenderingFormat.channelCount
+    if renderWidth != channelCount {
+        print("M2 FAIL \(label): render/output width \(renderWidth) != \(channelCount)")
+        return false
+    }
+
+    guard let mcInput = makeSyntheticInput(format: mcFormat, channelCount: channelCount) else {
+        print("M2 FAIL \(label): could not build synthetic input buffer")
+        return false
+    }
+    mcPlayer.scheduleBuffer(mcInput, at: nil, options: [], completionHandler: nil)
+    mcPlayer.play()
+
+    guard let captured = renderMultichannel(engine: mcEngine, channelCount: channelCount, label: label) else {
+        return false
+    }
+    return assertGenuineMultichannel(captured, channelCount: channelCount, label: label)
+}
+
+let multichannelCounts: [AVAudioChannelCount] = [2, 6, 8]
+var allMultichannelPassed = true
+for count in multichannelCounts where !verifyMultichannel(channelCount: count) {
+    allMultichannelPassed = false
+}
+
+if !allMultichannelPassed {
+    print("VERIFY FAIL: one or more multichannel (M2) checks failed")
+    exit(1)
+}
+
+print("ALL M2 CHECKS PASSED — {2,6,8}ch each render at full width with genuine per-channel signal")
+print("=== SUMMARY: M1 (stereo passthrough) PASS + M2 (multichannel 2/6/8) PASS ===")
 exit(0)
