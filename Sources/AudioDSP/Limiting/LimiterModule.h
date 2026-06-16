@@ -189,7 +189,15 @@ namespace AdaptiveSound
                     rings_[1][writeHead_] = rightBuf[i];
                 }
 
-                const double isp = polyphaseIspPeak(writeHead_);
+                // Detection fan-in: the linked gain reacts to the loudest inter-sample
+                // true peak across ALL active channels. max() over channels is
+                // order-independent, so at N=2 this is bit-identical to the prior
+                // interleaved max(|L|,|R|). (numChannels is the <=2 clamp until S1-B3.)
+                double isp = 0.0;
+                for (uint32_t ch = 0U; ch < numChannels; ++ch)
+                {
+                    isp = std::max(isp, polyphaseIspPeak(ch, writeHead_));
+                }
                 const double peak = updatePeakDeque(isp);
                 const double targetDb = targetGrDb(peak, workingCeiling, ceilingDb);
                 const double grDb = advanceEnvelopeDb(targetDb);
@@ -280,32 +288,29 @@ namespace AdaptiveSound
         }
 
         // 8× polyphase inter-sample true-peak of the sample just written at
-        // `writePos`, across both channels. Reads the 24-sample ring history
-        // (handles wrap), runs 8 dot-products, returns max |·| (double).
-        [[nodiscard]] auto polyphaseIspPeak(uint32_t writePos) const noexcept -> double
+        // `writePos`, for ONE channel. Reads that channel's 24-sample ring history
+        // (handles wrap), runs 8 dot-products, returns max |·| (double). The caller
+        // maxes this over all active channels to drive the linked gain.
+        [[nodiscard]] auto polyphaseIspPeak(uint32_t channel, uint32_t writePos) const noexcept
+            -> double
         {
-            std::array<double, kIspNumTaps> histLeft{};
-            std::array<double, kIspNumTaps> histRight{};
+            std::array<double, kIspNumTaps> hist{};
             for (uint32_t k = 0U; k < kIspNumTaps; ++k)
             {
                 const uint32_t idx = (writePos + kLimiterRingSize - k) % kLimiterRingSize;
-                histLeft[k] = static_cast<double>(rings_[0][idx]);
-                histRight[k] = static_cast<double>(rings_[1][idx]);
+                hist[k] = static_cast<double>(rings_[channel][idx]);
             }
 
             double maxPeak = 0.0;
             for (uint32_t phase = 0U; phase < kIspOversampling; ++phase)
             {
                 const size_t base = static_cast<size_t>(phase) * kIspNumTaps;
-                double dotLeft = 0.0;
-                double dotRight = 0.0;
+                double dot = 0.0;
                 for (uint32_t k = 0U; k < kIspNumTaps; ++k)
                 {
-                    const double coeff = ispCoeffs_[base + k];
-                    dotLeft += coeff * histLeft[k];
-                    dotRight += coeff * histRight[k];
+                    dot += ispCoeffs_[base + k] * hist[k];
                 }
-                maxPeak = std::max({maxPeak, std::abs(dotLeft), std::abs(dotRight)});
+                maxPeak = std::max(maxPeak, std::abs(dot));
             }
             return maxPeak;
         }
