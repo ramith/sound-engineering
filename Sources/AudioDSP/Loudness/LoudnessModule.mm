@@ -15,6 +15,8 @@ static_assert(std::atomic<uint8_t>::is_always_lock_free,
               "LoudnessModule requires lock-free uint8 atomics for RT safety");
 static_assert(std::atomic<uint64_t>::is_always_lock_free,
               "LoudnessModule requires lock-free uint64 atomics for RT safety");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "LoudnessModule requires lock-free uint32 atomics for RT safety");
 
 namespace
 {
@@ -69,14 +71,19 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
     {
         return;
     }
-    const uint32_t numChannels = (block.channels() >= 2U) ? 2U : block.channels();
+    const uint32_t numChannels = block.channels();
     if (numChannels == 0U)
     {
         return;
     }
-    float* leftBuf = block.channel(0);
-    float* rightBuf = (numChannels >= 2U) ? block.channel(1) : nullptr;
-    if (leftBuf == nullptr)
+
+    // Gather channel pointers once (RT-safe: no alloc, stack array only).
+    std::array<float*, kMaxChannels> bufs{};
+    for (uint32_t ch = 0U; ch < numChannels; ++ch)
+    {
+        bufs[ch] = block.channel(ch);
+    }
+    if (bufs[0] == nullptr)
     {
         return;
     }
@@ -84,6 +91,7 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
     // Relay control to the worker (cheap atomics — never blocks).
     enabled_.store(params.enabled, std::memory_order_relaxed);
     targetLufs_.store(params.lufsTarget, std::memory_order_relaxed);
+    channelCount_.store(numChannels, std::memory_order_release);
 
     const uint32_t safeCount = std::min(frameCount, kDefaultMaxFrames);
 
@@ -94,18 +102,21 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
     }
     else
     {
-        // Push interleaved stereo to the worker (drop on full — never blocks).
-        for (uint32_t i = 0U; i < safeCount; ++i)
+        // Interleave N channels into pushBuf_ and push to the ring (drop on full — never blocks).
+        for (uint32_t frm = 0U; frm < safeCount; ++frm)
         {
-            const std::size_t pair = static_cast<std::size_t>(i) * 2U;
-            pushBuf_[pair] = leftBuf[i];
-            pushBuf_[pair + 1U] = (rightBuf != nullptr) ? rightBuf[i] : leftBuf[i];
+            for (uint32_t ch = 0U; ch < numChannels; ++ch)
+            {
+                pushBuf_[(static_cast<std::size_t>(frm) * numChannels) +
+                         static_cast<std::size_t>(ch)] =
+                    (bufs[ch] != nullptr) ? bufs[ch][frm] : 0.0F;
+            }
         }
-        const std::size_t want = static_cast<std::size_t>(safeCount) * 2U;
+        const std::size_t want = static_cast<std::size_t>(safeCount) * numChannels;
         const std::size_t pushed = sampleRing_.tryPushBlock(pushBuf_.data(), want);
         if (pushed < want)
         {
-            droppedFrames_.fetch_add((want - pushed) / 2U, std::memory_order_relaxed);
+            droppedFrames_.fetch_add((want - pushed) / numChannels, std::memory_order_relaxed);
         }
 
         makeupGainRamp_.target = makeupGainLinear_.load(std::memory_order_acquire);
@@ -127,8 +138,7 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
 
     // Fan the single makeup-gain envelope out to ALL channels (one ramp for all —
     // the makeup gain is a broadband, channel-independent scalar). At N=2 this
-    // applies to ch0/ch1 exactly as the prior left/right pair (bit-exact). The
-    // meter push above stays stereo until S1-C2 upgrades LufsMeter to N-channel.
+    // applies to ch0/ch1 exactly as the prior left/right pair (bit-exact).
     for (uint32_t ch = 0U; ch < block.channels(); ++ch)
     {
         float* buf = block.channel(ch);
@@ -143,17 +153,55 @@ void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexce
 {
     enableFlushToZeroOnThisThread();
 
+    // Track the channel count we last configured the meter for.
+    // Initialize to 0 so the first real count always triggers a configure.
+    uint32_t configuredCh = 0U;
+
     while (!stopToken.stop_requested())
     {
-        const std::size_t got = sampleRing_.popBlock(workerChunk_.data(), workerChunk_.size());
+        // Read the channel count published by process() (acquire pairs with release store).
+        const uint32_t nowCh = channelCount_.load(std::memory_order_acquire);
+        if (nowCh == 0U)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
+            continue;
+        }
+
+        // On channel-count change: drain the ring then reconfigure the meter so we
+        // never mix pre- and post-change interleave layouts in the same feed call.
+        if (nowCh != configuredCh)
+        {
+            // Drain: pop-and-discard until the ring reports empty.
+            while (sampleRing_.popBlock(workerChunk_.data(), workerChunk_.size()) > 0U)
+            {
+            }
+
+            // S2 wires the real ChannelLayout BS.1770-5 weights (LFE=0, surround=1.41) here.
+            // For S1 all channels use the stereo-equivalent weight of 1.0.
+            std::array<double, kMaxChannels> weights{};
+            weights.fill(kBs1770WeightLRC);
+            meter_.configureChannels(nowCh, weights);
+            configuredCh = nowCh;
+        }
+
+        // Frame-aligned pop: round the chunk capacity down to a whole number of frames
+        // so we never feed a partial frame to the meter.
+        const std::size_t cap = (workerChunk_.size() / configuredCh) * configuredCh;
+        const std::size_t got = sampleRing_.popBlock(workerChunk_.data(), cap);
         if (got == 0U)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
             continue;
         }
 
+        // got is always a multiple of configuredCh because:
+        //   - process() only ever pushes multiples of numChannels, and
+        //   - cap is frame-aligned, so popBlock returns at most cap elements;
+        //   - any partial-frame remainder is left in the ring for the next iteration.
+        const std::size_t frames = got / configuredCh;
+
         const uint32_t prevGated = meter_.gatedBlockCount();
-        meter_.addInterleavedStereo(workerChunk_.data(), got / 2U);
+        meter_.addInterleaved(workerChunk_.data(), frames, configuredCh);
         const uint32_t nowGated = meter_.gatedBlockCount();
 
         publishTelemetry();

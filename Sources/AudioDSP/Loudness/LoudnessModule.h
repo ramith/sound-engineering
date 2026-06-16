@@ -51,13 +51,13 @@ namespace AdaptiveSound
 
     // SPSC ring: per-channel frames buffered (~683 ms @ 48 k) so the worker can fall
     // a full integration block behind without forcing the RT side to drop. Power of
-    // two. Stereo is pushed interleaved → backing element count is 2×.
+    // two. Element count is frames × kMaxChannels so the same ring holds up to 7.1.
     inline constexpr std::size_t kLoudnessRingFrames = 32768U;
-    inline constexpr std::size_t kLoudnessRingElems = kLoudnessRingFrames * 2U;
+    inline constexpr std::size_t kLoudnessRingElems = kLoudnessRingFrames * kMaxChannels;
 
     // Worker drain chunk (interleaved elements per popBlock).
     inline constexpr std::size_t kWorkerChunkFrames = 1024U;
-    inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * 2U;
+    inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * kMaxChannels;
 
     inline constexpr int kWorkerIdleSleepMs = 5; // off-RT sleep when ring empty
     inline constexpr float kUnityGainLinear = 1.0F;
@@ -105,6 +105,7 @@ namespace AdaptiveSound
         std::atomic<float> makeupGainLinear_{kUnityGainLinear};              // worker→RT (audible)
         std::atomic<float> targetLufs_{kDefaultLufsTarget};                  // RT→worker (control)
         std::atomic<uint8_t> enabled_{1U};                                   // RT→worker (control)
+        std::atomic<uint32_t> channelCount_{2U};                             // RT→worker (channel N)
         std::atomic<float> measuredLufsIntegrated_{kLoudnessUnmeasuredLufs}; // worker→UI
         std::atomic<float> measuredLufsShortTerm_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<float> measuredLufsMomentary_{kLoudnessUnmeasuredLufs};  // worker→UI
@@ -114,8 +115,8 @@ namespace AdaptiveSound
         SpscRing<float, kLoudnessRingElems> sampleRing_;
         ParameterRamp makeupGainRamp_{};
         std::array<float, kDefaultMaxFrames> rampBuf_{}; // per-sample gain scratch
-        std::array<float, static_cast<std::size_t>(kDefaultMaxFrames) * 2U>
-            pushBuf_{}; // interleave scratch
+        std::array<float, static_cast<std::size_t>(kDefaultMaxFrames) * kMaxChannels>
+            pushBuf_{}; // interleave scratch (N channels × max frames)
 
         // --- Worker-owned state (touched only on measurementThread_) ---
         LufsMeter meter_;
