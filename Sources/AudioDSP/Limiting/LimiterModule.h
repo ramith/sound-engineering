@@ -91,9 +91,6 @@ namespace AdaptiveSound
     static constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
     static constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
 
-    // Maximum channels handled (stereo)
-    static constexpr uint32_t kLimiterMaxChannels = 2U;
-
     // Ring: lookahead window + one full max-size block (96/144 + 512). Power-of-two
     // not required (we use explicit modulo). kLimiterRingSize = 144 + 512 = 656.
     static constexpr uint32_t kLimiterRingSize = kLimiterLookaheadFrames + kDefaultMaxFrames;
@@ -156,16 +153,19 @@ namespace AdaptiveSound
             {
                 return;
             }
-            // Stereo today (N-channel linked-gain generalization lands in S1).
-            const uint32_t numChannels =
-                block.channels() >= kLimiterMaxChannels ? kLimiterMaxChannels : block.channels();
+            const uint32_t numChannels = block.channels();
             if (numChannels == 0U)
             {
                 return;
             }
-            float* leftBuf = block.channel(0);
-            float* rightBuf = (numChannels >= 2U) ? block.channel(1) : nullptr;
-            if (leftBuf == nullptr)
+
+            // Gather channel pointers once — RT-safe stack array, no heap.
+            std::array<float*, kMaxChannels> bufs{};
+            for (uint32_t ch = 0U; ch < numChannels; ++ch)
+            {
+                bufs[ch] = block.channel(ch);
+            }
+            if (bufs[0] == nullptr)
             {
                 return;
             }
@@ -183,16 +183,20 @@ namespace AdaptiveSound
 
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
-                rings_[0][writeHead_] = leftBuf[i];
-                if (rightBuf != nullptr)
+                // Write all active channels into their rings for this sample.
+                for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
-                    rings_[1][writeHead_] = rightBuf[i];
+                    if (bufs[ch] != nullptr)
+                    {
+                        rings_[ch][writeHead_] = bufs[ch][i];
+                    }
                 }
 
                 // Detection fan-in: the linked gain reacts to the loudest inter-sample
                 // true peak across ALL active channels. max() over channels is
-                // order-independent, so at N=2 this is bit-identical to the prior
-                // interleaved max(|L|,|R|). (numChannels is the <=2 clamp until S1-B3.)
+                // order-independent — at N=2 (ch=0 then ch=1, both non-null) this
+                // reproduces the prior left-then-right order exactly, preserving
+                // GoldenMaster_StereoN2_v1 bit-exactness.
                 double isp = 0.0;
                 for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
@@ -206,17 +210,23 @@ namespace AdaptiveSound
                 writeHead_ = (writeHead_ + 1U) % kLimiterRingSize;
             }
 
-            fillOutputFromRing(leftBuf, rings_[0].data(), safeCount);
-            if (rightBuf != nullptr)
+            // Copy lookahead-delayed samples from ring to output buffer, then apply
+            // the shared gain envelope via vDSP_vmul. All channels receive the same
+            // GR trajectory (linked gain).
+            for (uint32_t ch = 0U; ch < numChannels; ++ch)
             {
-                fillOutputFromRing(rightBuf, rings_[1].data(), safeCount);
+                if (bufs[ch] != nullptr)
+                {
+                    fillOutputFromRing(bufs[ch], rings_[ch].data(), safeCount);
+                }
             }
-
             const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
-            vDSP_vmul(leftBuf, 1, grBuf_.data(), 1, leftBuf, 1, count);
-            if (rightBuf != nullptr)
+            for (uint32_t ch = 0U; ch < numChannels; ++ch)
             {
-                vDSP_vmul(rightBuf, 1, grBuf_.data(), 1, rightBuf, 1, count);
+                if (bufs[ch] != nullptr)
+                {
+                    vDSP_vmul(bufs[ch], 1, grBuf_.data(), 1, bufs[ch], 1, count);
+                }
             }
 
             readHead_ = (readHead_ + safeCount) % kLimiterRingSize;

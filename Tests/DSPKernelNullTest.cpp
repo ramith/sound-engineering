@@ -64,14 +64,14 @@ namespace TestConstants
     constexpr uint32_t kNChannels4 = 4U;
     constexpr uint32_t kNChannels6 = 6U;
     constexpr uint32_t kNChannels8 = 8U;
-    constexpr float kPerChAmplitude = 0.25F;    // -12 dBFS per channel
+    constexpr float kPerChAmplitude = 0.25F;        // -12 dBFS per channel
     constexpr double kCrosstalkThresholdDb = -60.0; // inter-channel isolation target (dB)
     // DFT-bin-aligned test: N=8192 frames at 48 kHz → bin spacing = 48000/8192 Hz.
     // The sine for channel k is generated at exactly bin[k] × (fs/N) so the Goertzel
     // measurement at that bin captures a full integer number of cycles, making cross-bin
     // leakage ≈ 0 (rectangular-window DFT orthogonality). Bins chosen to be non-harmonic,
     // all well within the audible band: 34,59,89,116,149,173,211,251 × (48000/8192).
-    constexpr uint32_t kPerChTestFrames = 8192U;    // ~170 ms @ 48 kHz — must be power-of-2
+    constexpr uint32_t kPerChTestFrames = 8192U; // ~170 ms @ 48 kHz — must be power-of-2
     // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
     constexpr uint32_t kPerChBins[] = {34U, 59U, 89U, 116U, 149U, 173U, 211U, 251U};
     // NOLINTEND(cppcoreguidelines-avoid-c-arrays)
@@ -1115,8 +1115,8 @@ namespace
     auto goertzelPower(const float* buf, uint32_t numFrames, float freqHz, float sampleRate)
         -> double
     {
-        const double omega = 2.0 * std::numbers::pi * static_cast<double>(freqHz) /
-                             static_cast<double>(sampleRate);
+        const double omega =
+            2.0 * std::numbers::pi * static_cast<double>(freqHz) / static_cast<double>(sampleRate);
         const double coeff = 2.0 * std::cos(omega);
         double sprev = 0.0;
         double sprev2 = 0.0;
@@ -1467,14 +1467,12 @@ static auto testPerChannelIndependence() -> void
         {
             // Frequency is exactly bin × (fs/N) so the sine completes an integer number
             // of cycles in kFrames samples — Goertzel bins are then orthogonal.
-            const float freq =
-                static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
-                static_cast<float>(kFrames);
+            const float freq = static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
+                               static_cast<float>(kFrames);
             for (uint32_t idx = 0U; idx < kFrames; ++idx)
             {
-                abl.channels[ch][idx] =
-                    kAmp * std::sin(2.0F * std::numbers::pi_v<float> * freq *
-                                    static_cast<float>(idx) / kSR);
+                abl.channels[ch][idx] = kAmp * std::sin(2.0F * std::numbers::pi_v<float> * freq *
+                                                        static_cast<float>(idx) / kSR);
             }
         }
 
@@ -1483,9 +1481,8 @@ static auto testPerChannelIndependence() -> void
         // Check isolation: each output channel must carry its own tone and not others.
         for (uint32_t ch = 0U; ch < numCh; ++ch)
         {
-            const float selfFreq =
-                static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
-                static_cast<float>(kFrames);
+            const float selfFreq = static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
+                                   static_cast<float>(kFrames);
             const float* outBuf = abl.channels[ch].data();
 
             const double selfPower = goertzelPower(outBuf, kFrames, selfFreq, kSR);
@@ -1504,20 +1501,17 @@ static auto testPerChannelIndependence() -> void
                 {
                     continue;
                 }
-                const float otherFreq =
-                    static_cast<float>(TestConstants::kPerChBins[otherCh]) * kSR /
-                    static_cast<float>(kFrames);
-                const double crosstalkPower =
-                    goertzelPower(outBuf, kFrames, otherFreq, kSR);
+                const float otherFreq = static_cast<float>(TestConstants::kPerChBins[otherCh]) *
+                                        kSR / static_cast<float>(kFrames);
+                const double crosstalkPower = goertzelPower(outBuf, kFrames, otherFreq, kSR);
                 // Ratio in dB: 10·log10(crosstalk / self).
-                const double ratioDb =
-                    10.0 * std::log10(crosstalkPower / selfPower + 1e-300);
+                const double ratioDb = 10.0 * std::log10(crosstalkPower / selfPower + 1e-300);
                 if (ratioDb > kXtalkThreshDb)
                 {
                     std::ostringstream oss;
-                    oss << "N=" << numCh << " ch" << ch << ": crosstalk from ch" << otherCh
-                        << " (" << otherFreq << " Hz) at " << ratioDb << " dB (threshold "
-                        << kXtalkThreshDb << " dB)";
+                    oss << "N=" << numCh << " ch" << ch << ": crosstalk from ch" << otherCh << " ("
+                        << otherFreq << " Hz) at " << ratioDb << " dB (threshold " << kXtalkThreshDb
+                        << " dB)";
                     logFail(kName, oss.str());
                     return;
                 }
@@ -1556,9 +1550,8 @@ static auto testEQFrequencyResponseAccuracyN4() -> void
             for (uint32_t idx = 0U; idx < kFrames; ++idx)
             {
                 abl.channels[ch][idx] =
-                    kEqTestAmplitude *
-                    std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
-                             static_cast<float>(idx) / kSR);
+                    kEqTestAmplitude * std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                                static_cast<float>(idx) / kSR);
             }
         }
         kernel.process(abl.abl(), kFrames);
@@ -1583,12 +1576,10 @@ static auto testEQFrequencyResponseAccuracyN4() -> void
     {
         if (flatRms[ch] <= 0.0)
         {
-            logFail(kName,
-                    "flat-EQ output was silent on ch" + std::to_string(ch));
+            logFail(kName, "flat-EQ output was silent on ch" + std::to_string(ch));
             return;
         }
-        const double measuredDb =
-            20.0 * std::log10(boostRms[ch] / flatRms[ch]);
+        const double measuredDb = 20.0 * std::log10(boostRms[ch] / flatRms[ch]);
         if (std::abs(measuredDb - static_cast<double>(kEqBoostDb)) >
             static_cast<double>(kEqFrToleranceDb))
         {
@@ -1681,17 +1672,14 @@ static auto testEQCoefficientSwapNoClickN4() -> void
         float settledMaxStep = 0.0F;
         for (size_t idx = tailStart + 1U; idx < chOut.size(); ++idx)
         {
-            settledMaxStep =
-                std::max(settledMaxStep, std::abs(chOut[idx] - chOut[idx - 1U]));
+            settledMaxStep = std::max(settledMaxStep, std::abs(chOut[idx] - chOut[idx - 1U]));
         }
-        const float boundaryStep =
-            std::abs(chOut[swapSample] - chOut[swapSample - 1U]);
+        const float boundaryStep = std::abs(chOut[swapSample] - chOut[swapSample - 1U]);
 
         std::ostringstream info;
         info << "ch" << ch << " boundaryStep=" << boundaryStep
              << " settledMaxStep=" << settledMaxStep;
-        std::fputs(("  [info] " + std::string(kName) + ": " + info.str() + "\n").c_str(),
-                   stdout);
+        std::fputs(("  [info] " + std::string(kName) + ": " + info.str() + "\n").c_str(), stdout);
 
         if (boundaryStep > 3.0F * settledMaxStep)
         {
@@ -1702,10 +1690,335 @@ static auto testEQCoefficientSwapNoClickN4() -> void
     logPass(kName);
 }
 
-static auto testLimiterLinkedGain() -> void
+// T-C4: Limiter_LinkedGainLockstep — S1-B3 linked-gain correctness test.
+//
+// Build a 4-channel buffer where:
+//   ch0: a HOT 1 kHz sine at amplitude 0.999 (above the −1 dBTP ceiling of 0.891) → forces GR.
+//   ch1/ch2/ch3: moderate steady sines at distinct DFT-bin-aligned frequencies,
+//                amplitude 0.30 (below ceiling on their own, ≈ −10 dBFS).
+//
+// Process through the kernel with the active true-peak ceiling.  The single shared
+// grBuf_ is driven solely by ch0's peak; all channels are attenuated by the SAME
+// envelope.  This is the "linked gain" invariant: every channel duck by the same GR.
+//
+// Proof method:
+//   1. Prime the limiter ring with kLimiterLookaheadFrames silence frames so the
+//      look-ahead ring starts with zeros (avoids a half-full-ring bias on the first GR).
+//   2. Save a copy of the tone channels' input before processing.
+//   3. Feed the 4-channel block through the kernel.
+//   4. After processing, for each tone channel (1..3) and each output sample index
+//      where the DELAYED input is non-trivially non-zero (|delayed_input| > 0.1):
+//        applied_gain[ch][i] = output[ch][i] / delayed_input[ch][i]
+//      where delayed_input[ch][i] = saved_input[ch][i] (the primed-silence + current
+//      block means output[i] = grBuf_[i] * input[i] for ALL i in the block, because
+//      the ring was pre-loaded with zeros for the entire lookahead window — the ring
+//      readHead is at kLimiterLookaheadFrames at entry to the test block, so
+//      output[i] reads ring[kLimiterLookaheadFrames + i mod kLimiterRingSize] which
+//      was written at sample i of the current block, exactly kLimiterLookaheadFrames
+//      in advance).
+//   5. Compute the inter-channel GR difference (in dB) between tone channels at every
+//      active sample and assert it is < 0.01 dB.
+//
+// "Active limiting" guard: confirm that at least one output sample on ch0 is
+// measurably below the input amplitude (i.e. GR > 0 dB), so the test actually
+// exercises the linked path and is not vacuously passing on a silent signal.
+//
+// Reference: linked-gain limiter design — Giannoulis/Massberg/Reiss JAES 2012;
+//            the look-ahead ring mechanic — LimiterModule.h initialize() comments.
+static auto testLimiterLinkedGainLockstep() -> void
 {
-    logPending("Limiter_LinkedGainLockstep",
-               "S1: hot signal on ch0 ducks ALL channels in lockstep (inter-channel GR < 0.01 dB)");
+    static const char* const kName = "Limiter_LinkedGainLockstep";
+    constexpr uint32_t kNumCh = 4U;
+    constexpr uint32_t kFrames = 512U;
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr float kSRf = static_cast<float>(kSR);
+
+    // Hot signal on ch0: 1 kHz at 0.999 — well above the −1 dBTP ceiling.
+    constexpr float kHotFreq = 1000.0F;
+    constexpr float kHotAmpl = 0.999F;
+
+    // Tone channels: DFT-bin-aligned frequencies for clean division (no
+    // phase-wrap ambiguity during the lookahead window).  Amplitude 0.30 keeps
+    // them below the ceiling but large enough for a reliable gain ratio.
+    // Bins chosen to be non-harmonic of each other and of the hot tone.
+    constexpr float kToneAmpl = 0.30F;
+    constexpr float kToneFreq1 = static_cast<float>(TestConstants::kPerChBins[1]) * kSRf /
+                                 static_cast<float>(TestConstants::kPerChTestFrames);
+    constexpr float kToneFreq2 = static_cast<float>(TestConstants::kPerChBins[2]) * kSRf /
+                                 static_cast<float>(TestConstants::kPerChTestFrames);
+    constexpr float kToneFreq3 = static_cast<float>(TestConstants::kPerChBins[3]) * kSRf /
+                                 static_cast<float>(TestConstants::kPerChTestFrames);
+
+    // Active ceiling: the default −1 dBTP.
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+
+    // Inter-channel GR difference threshold: < 0.01 dB (a truly linked gain bus
+    // produces a difference of exactly 0 dB; 0.01 dB guards only float rounding).
+    constexpr double kGrDiffThreshDb = 0.01;
+
+    // The applied-gain ratio measurement requires non-trivial input amplitude.
+    // Skip samples where the delayed input is too close to zero (node of a sine).
+    constexpr float kMinInputForRatio = 0.05F;
+
+    // ------------------------------------------------------------------
+    // Build a fresh DSPKernel with the active ceiling.
+    // ------------------------------------------------------------------
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    state.limiter.truePeakCeilingLinear = kCeiling;
+    kernel.publishTargetState(state);
+
+    // ------------------------------------------------------------------
+    // Step 1: Prime the ring with kLimiterLookaheadFrames silence frames.
+    // After this call: readHead_ = kLimiterLookaheadFrames, the ring
+    // positions [0..kLimiterLookaheadFrames-1] hold zeros in all channels.
+    // ------------------------------------------------------------------
+    TestABLN prime(kNumCh, kLimiterLookaheadFrames);
+    // All channels already zero-initialised by TestABLN constructor.
+    kernel.process(prime.abl(), kLimiterLookaheadFrames);
+
+    // ------------------------------------------------------------------
+    // Step 2: Fill the 4-channel test block.  Save a copy for ratio check.
+    // ------------------------------------------------------------------
+    TestABLN abl(kNumCh, kFrames);
+
+    // ch0: hot 1 kHz sine
+    for (uint32_t i = 0U; i < kFrames; ++i)
+    {
+        abl.channels[0][i] = kHotAmpl * std::sin(2.0F * std::numbers::pi_v<float> * kHotFreq *
+                                                 static_cast<float>(i) / kSRf);
+    }
+    // ch1/ch2/ch3: moderate tones
+    const float toneFreqs[3] = {kToneFreq1, kToneFreq2, kToneFreq3};
+    for (uint32_t ch = 1U; ch < kNumCh; ++ch)
+    {
+        for (uint32_t i = 0U; i < kFrames; ++i)
+        {
+            abl.channels[ch][i] =
+                kToneAmpl * std::sin(2.0F * std::numbers::pi_v<float> * toneFreqs[ch - 1U] *
+                                     static_cast<float>(i) / kSRf);
+        }
+    }
+
+    // Save tone inputs for the delayed-input ratio computation.
+    //
+    // Ring timing after the prime call (kLimiterLookaheadFrames silence frames):
+    //   readHead_ = kLimiterLookaheadFrames,  writeHead_ = 2 * kLimiterLookaheadFrames.
+    //
+    // During this block call, fillOutputFromRing reads ring[(readHead_ + i) % ringSize],
+    // which was written during the PRIME block at prime-step i (positions
+    // kLimiterLookaheadFrames .. 2*kLimiterLookaheadFrames-1, all zeros) for i in
+    // [0 .. kLimiterLookaheadFrames-1], and written during THIS block at test-step
+    // (i - kLimiterLookaheadFrames) for i in [kLimiterLookaheadFrames .. kFrames-1].
+    //
+    // Therefore:
+    //   output[i] = 0                          for i < kLimiterLookaheadFrames
+    //   output[i] = grBuf_[i] * input[i - kLimiterLookaheadFrames]
+    //                                           for i >= kLimiterLookaheadFrames
+    //
+    // The grBuf_[i] at every index is driven by the ISP of the CURRENT write position
+    // (the hot+tone signal), so limiting is active throughout.  We measure the ratio
+    // only for i >= kLimiterLookaheadFrames, using savedInput[ch][i - kLookahead] as
+    // the denominator.
+    std::vector<std::vector<float>> savedInput(kNumCh, std::vector<float>(kFrames));
+    for (uint32_t ch = 1U; ch < kNumCh; ++ch)
+    {
+        savedInput[ch] = abl.channels[ch];
+    }
+
+    // ------------------------------------------------------------------
+    // Step 3: Process through the kernel.
+    // ------------------------------------------------------------------
+    kernel.process(abl.abl(), kFrames);
+
+    // ------------------------------------------------------------------
+    // Step 4: Verify the limiter actually engaged on ch0.
+    // ------------------------------------------------------------------
+    float ch0MaxOut = 0.0F;
+    for (uint32_t i = 0U; i < kFrames; ++i)
+    {
+        ch0MaxOut = std::max(ch0MaxOut, std::abs(abl.channels[0][i]));
+    }
+    if (ch0MaxOut >= kHotAmpl - 0.01F)
+    {
+        logFail(kName, "ch0 output peak not reduced — limiter did not engage; GR path not tested");
+        return;
+    }
+
+    // ------------------------------------------------------------------
+    // Step 5: Recover per-channel applied gain and compare across tone channels.
+    // For every sample where the delayed tone input is large enough for a stable
+    // ratio, compute gain[ch][i] = output[ch][i] / savedInput[ch][i].  Then
+    // assert |gain_dB[ch1][i] - gain_dB[ch2][i]| < kGrDiffThreshDb for all ch pairs.
+    // ------------------------------------------------------------------
+    // Only examine samples where the delayed input is available:
+    // output[i] = grBuf_[i] * savedInput[ch][i - kLimiterLookaheadFrames]
+    // for i in [kLimiterLookaheadFrames .. kFrames - 1].
+    uint32_t activeSamples = 0U;
+    for (uint32_t i = kLimiterLookaheadFrames; i < kFrames; ++i)
+    {
+        const uint32_t delayedIdx = i - kLimiterLookaheadFrames;
+
+        // Collect gain estimates for tone channels 1..3 where delayed input is non-trivial.
+        double gainDb[3] = {0.0, 0.0, 0.0};
+        bool valid[3] = {false, false, false};
+
+        for (uint32_t ch = 1U; ch < kNumCh; ++ch)
+        {
+            const float inSample = savedInput[ch][delayedIdx];
+            if (std::abs(inSample) >= kMinInputForRatio)
+            {
+                const float outSample = abl.channels[ch][i];
+                const double ratio = static_cast<double>(outSample) / static_cast<double>(inSample);
+                // Clamp ratio to (0, 1] for the dB conversion — the limiter only attenuates.
+                const double clampedRatio = std::max(1e-12, std::min(1.0, std::abs(ratio)));
+                gainDb[ch - 1U] = 20.0 * std::log10(clampedRatio);
+                valid[ch - 1U] = true;
+            }
+        }
+
+        // Only compare frames where all three tone channels have a valid ratio.
+        if (!valid[0] || !valid[1] || !valid[2])
+        {
+            continue;
+        }
+
+        ++activeSamples;
+
+        // Inter-channel GR must be identical (same grBuf_ applied to all).
+        for (uint32_t pair = 1U; pair < 3U; ++pair)
+        {
+            const double diffDb = std::abs(gainDb[0] - gainDb[pair]);
+            if (diffDb >= kGrDiffThreshDb)
+            {
+                std::ostringstream oss;
+                oss << "sample " << i << " (delayed=" << delayedIdx << "): ch1 GR=" << gainDb[0]
+                    << " dB, ch" << (pair + 1U) << " GR=" << gainDb[pair] << " dB, diff=" << diffDb
+                    << " dB (threshold " << kGrDiffThreshDb << " dB) — gain is NOT linked";
+                logFail(kName, oss.str());
+                return;
+            }
+        }
+    }
+
+    if (activeSamples == 0U)
+    {
+        logFail(kName,
+                "no samples with sufficient input amplitude for ratio measurement — "
+                "test configuration error");
+        return;
+    }
+
+    std::ostringstream info;
+    info << "  [info] " << kName << ": ch0_maxOut=" << ch0MaxOut << " ceiling=" << kCeiling
+         << " activeSamples=" << activeSamples << "\n";
+    std::fputs(info.str().c_str(), stdout);
+
+    logPass(kName);
+}
+
+// T-C4b: Limiter N=8 hot-noise ceiling soak — S1-B3 N>2 safety net.
+//
+// Drive all 8 channels with full-scale-ish hot white noise (distinct per-channel
+// RNG seeds) for 50 buffers.  After the first buffer (lookahead warm-up), assert:
+//   (a) Every output sample on every channel is <= ceiling + 0.01 dB in linear.
+//   (b) No NaN or Inf appears in any channel.
+// This exercises the N=8 path through the new per-channel ring loops and confirms
+// the linked-gain bus handles 8 independent peaks without overflow or NaN.
+static auto testLimiterHotNoiseSoakN8() -> void
+{
+    static const char* const kName = "Limiter_HotNoiseSoak_N8";
+    constexpr uint32_t kNumCh = 8U;
+    constexpr uint32_t kFrames = 512U;
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr float kCeiling = kTruePeakCeilingLinear;
+    constexpr float kCeilingTolerance = 0.01F;
+
+    DSPKernel kernel;
+    kernel.initialize(kSR, kFrames);
+
+    TargetState state{};
+    state.intensityLinear = 1.0F;
+    state.eq.numBiquads = 0U;
+    state.eq.masterGainLinear = 1.0F;
+    state.clarity.enabled = 0U;
+    state.loudness.enabled = 0U;
+    state.limiter.truePeakCeilingLinear = kCeiling;
+    kernel.publishTargetState(state);
+
+    // Use 8 distinct seeds so each channel carries a different noise sequence,
+    // maximising the chance of independent inter-sample peaks that stress the
+    // fan-in max() and the ring wrap across 8 slots.
+    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
+    const uint32_t seeds[kNumCh] = {0xA1B2C3D4U,
+                                    0xE5F60718U,
+                                    0x29304152U,
+                                    0x63748596U,
+                                    0xA7B8C9DAU,
+                                    0xEBFC0D1EU,
+                                    0x2F304152U,
+                                    0x73849506U};
+    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
+
+    float worst = 0.0F;
+    for (uint32_t blk = 0U; blk < 50U; ++blk)
+    {
+        TestABLN abl(kNumCh, kFrames);
+        for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+        {
+            std::mt19937 gen(seeds[ch] + blk); // shift seed per block for variety
+            std::uniform_real_distribution<float> dist(-0.999F, 0.999F);
+            for (uint32_t i = 0U; i < kFrames; ++i)
+            {
+                abl.channels[ch][i] = dist(gen);
+            }
+        }
+        kernel.process(abl.abl(), kFrames);
+
+        if (blk >= 1U) // skip first buffer (lookahead warm-up, ring may output silence)
+        {
+            for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+            {
+                for (uint32_t i = 0U; i < kFrames; ++i)
+                {
+                    const float sample = abl.channels[ch][i];
+
+                    // NaN/Inf check
+                    if (!std::isfinite(sample))
+                    {
+                        std::ostringstream oss;
+                        oss << "NaN/Inf on ch" << ch << " sample " << i << " block " << blk;
+                        logFail(kName, oss.str());
+                        return;
+                    }
+
+                    worst = std::max(worst, std::abs(sample));
+                }
+            }
+        }
+    }
+
+    if (worst > kCeiling + kCeilingTolerance)
+    {
+        std::ostringstream oss;
+        oss << "N=8 soak: worst output peak " << worst << " exceeds ceiling " << kCeiling
+            << " + tolerance " << kCeilingTolerance;
+        logFail(kName, oss.str());
+        return;
+    }
+
+    std::ostringstream info;
+    info << "  [info] " << kName << ": N=8 worst_peak=" << worst << " ceiling=" << kCeiling << "\n";
+    std::fputs(info.str().c_str(), stdout);
+
+    logPass(kName);
 }
 
 static auto testReconfigurationContinuity() -> void
@@ -1753,10 +2066,11 @@ auto main() -> int
     // Multichannel epic safety net (Sprint 5b — S0-M1)
     testGoldenMasterStereoN2();
     testMultichannelViewDecode();
-    testPerChannelIndependence();       // T-C3: per-channel isolation N=4,6,8
+    testPerChannelIndependence();        // T-C3: per-channel isolation N=4,6,8
     testEQFrequencyResponseAccuracyN4(); // T-C3b: FR accuracy at N=4
-    testEQCoefficientSwapNoClickN4();   // T-C3c: click-free swap at N=4
-    testLimiterLinkedGain();
+    testEQCoefficientSwapNoClickN4();    // T-C3c: click-free swap at N=4
+    testLimiterLinkedGainLockstep();     // T-C4: S1-B3 linked-gain lockstep (4-ch, GR < 0.01 dB)
+    testLimiterHotNoiseSoakN8();         // T-C4b: S1-B3 N=8 hot-noise ceiling soak
     testReconfigurationContinuity();
 
     std::ostringstream summary;
