@@ -2,6 +2,7 @@
 #define DSP_KERNEL_H
 
 #include "AudioConstants.h"
+#include "ChannelLayout.h"
 #include "DoubleBufferSnapshot.h"
 #include "TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
@@ -38,6 +39,11 @@ namespace AdaptiveSound
         // Publish new parameter state from the off-RT (control/Realizer) thread.
         // Builds the EQ vDSP setup off-RT (issue #3) before publishing the snapshot.
         void publishTargetState(const TargetState& newState) noexcept;
+
+        // Off-RT (control thread): forward decoded BS.1770-5 per-channel weights to
+        // the loudness measurement worker.  S2 calls this when the source file's layout
+        // tag changes.  Harmless no-op if loudnessModule_ is not yet initialised.
+        void publishChannelLayout(const ChannelLayout& layout) noexcept;
 
       private:
         uint32_t sampleRate_ = kDefaultSampleRate;

@@ -75,6 +75,18 @@ void DSPKernel::publishTargetState(const TargetState& newState) noexcept {
     targetStateSnapshot_.publish(newState);
 }
 
+void DSPKernel::publishChannelLayout(const ChannelLayout& layout) noexcept {
+    // Off-RT (control thread) entry point for M1-2.  S2 will call this when the
+    // source file's AudioChannelLayoutTag changes.  Forwarded lock-free to the
+    // loudness measurement worker via the generation-parity double buffer in
+    // LoudnessModule.  Harmless no-op if loudnessModule_ has not been initialised
+    // (i.e. initialize() has not been called yet — the worker does not exist).
+    if (loudnessModule_ != nullptr)
+    {
+        loudnessModule_->publishChannelLayout(layout);
+    }
+}
+
 void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept {
     // Acquire current parameter snapshot (one acquire-load, held for entire buffer)
     const TargetState& state = targetStateSnapshot_.acquireSnapshot();
