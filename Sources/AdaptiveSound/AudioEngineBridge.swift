@@ -21,6 +21,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// pre-allocated before the tap fires.
     private var spectrumAnalyzer: SpectrumAnalyzer?
 
+    /// Opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
+    /// Created in `initialize()`, destroyed in `shutdown()`.
+    private var loudnessMeter: UnsafeMutableRawPointer?
+
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
     private var tapInstalled = false
@@ -56,6 +60,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                         fftSize: SpectrumConstants.fftSize,
                         sampleRate: sampleRate
                     )
+
+                    // BS.1770-5 loudness meter, fed from the same mixer tap.
+                    self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
 
                     continuation.resume(returning: true)
                 } catch {
@@ -94,6 +101,13 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 frameCount: buffer.frameLength,
                 channelCount: buffer.format.channelCount
             )
+
+            // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
+            if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
+                let left = channels[0]
+                let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
+                loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
+            }
         }
         tapInstalled = true
     }
@@ -113,6 +127,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
     }
 
+    func currentLoudness() -> LoudnessSnapshot {
+        guard let meter = loudnessMeter else { return .unmeasured }
+        let readout = loudnessMeterRead(meter)
+        return LoudnessSnapshot(
+            integratedLufs: readout.integratedLufs,
+            shortTermLufs: readout.shortTermLufs,
+            momentaryLufs: readout.momentaryLufs,
+            peakDb: readout.peakDb
+        )
+    }
+
     // MARK: - Shutdown
 
     func shutdown() async throws {
@@ -129,6 +154,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
                 self.spectrumAnalyzer = nil
+                // Tap already removed above, so no callback can touch the meter now.
+                if let meter = self.loudnessMeter {
+                    loudnessMeterDestroy(meter)
+                    self.loudnessMeter = nil
+                }
                 continuation.resume()
             }
         }

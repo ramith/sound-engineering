@@ -172,6 +172,23 @@ namespace AdaptiveSound
             }
         }
 
+        // Feed non-interleaved stereo (separate L/R buffers — the AVAudioEngine tap
+        // layout). Pass `right == left` for mono.
+        void addNonInterleavedStereo(const float* left, const float* right, size_t frames) noexcept
+        {
+            for (size_t i = 0U; i < frames; ++i)
+            {
+                const double leftK = leftK_.processSample(static_cast<double>(left[i]));
+                const double rightK = rightK_.processSample(static_cast<double>(right[i]));
+                accumLeft_ += leftK * leftK;
+                accumRight_ += rightK * rightK;
+                if (++hopSampleCount_ >= hopFrames_)
+                {
+                    finishHop();
+                }
+            }
+        }
+
         [[nodiscard]] auto integratedLufs() const noexcept -> double
         {
             return integratedLufs_;

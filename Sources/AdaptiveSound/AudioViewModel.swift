@@ -80,6 +80,8 @@ final class AudioViewModel {
     var isPlaying = false
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
+    /// Live BS.1770-5 loudness readout for the meters (polled at the timer rate).
+    var loudness: LoudnessSnapshot = .unmeasured
     var errorMessage: String?
     var selectedDevice: AudioDeviceModel?
     var availableDevices: [AudioDeviceModel] = []
@@ -208,8 +210,9 @@ final class AudioViewModel {
     /// writes into `spectrumBars` to trigger SwiftUI observation.
     @MainActor
     private func tickSpectrum() {
-        // Poll the playhead every tick (independent of spectrum availability).
+        // Poll the playhead + loudness every tick (independent of spectrum availability).
         playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+        loudness = engine.currentLoudness()
 
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
