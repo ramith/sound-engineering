@@ -14,7 +14,9 @@
 
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <numbers>
 #include <random>
@@ -89,6 +91,32 @@ static auto logFail(const char* testName, const std::string& reason) -> void
     std::string line = std::string("[FAIL] ") + testName + " -- " + reason + "\n";
     std::fputs(line.c_str(), stderr);
     ++gResults.failed;
+}
+
+// A test that is intentionally not yet implemented (lands in a later epic milestone). Prints a
+// PENDING line but does NOT count as pass or fail, so the suite gate stays green.
+static auto logPending(const char* testName, const char* note) -> void
+{
+    std::string line = std::string("[PENDING] ") + testName + " -- " + note + "\n";
+    std::fputs(line.c_str(), stdout);
+}
+
+// FNV-1a 64-bit over the raw float bytes of a buffer — a compact bit-exact signature. bit_cast
+// avoids reinterpret_cast (clang-tidy clean). Used by the golden-master regression fence.
+static auto fnv1aFloats(const std::vector<float>& data, uint64_t seed) -> uint64_t
+{
+    constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
+    uint64_t hash = seed;
+    for (const float sample : data)
+    {
+        const auto bits = std::bit_cast<uint32_t>(sample);
+        for (int shift = 0; shift < 32; shift += 8)
+        {
+            hash ^= static_cast<uint64_t>((bits >> static_cast<uint32_t>(shift)) & 0xFFU);
+            hash *= kFnvPrime;
+        }
+    }
+    return hash;
 }
 
 // Build a mismatch message without snprintf.
@@ -1176,6 +1204,120 @@ static auto testEQCoefficientSwapNoClick() -> void
 }
 
 // ---------------------------------------------------------------------------
+// Multichannel epic safety net (Sprint 5b, S0-M1).
+//
+// T-C1 GOLDEN MASTER: a bit-exact regression fence for the current STEREO DSP output. A
+// deterministic 1 s chirp is processed through a non-trivial state (+6 dB @ 1 kHz EQ boost +
+// ACTIVE true-peak limiter), and a 64-bit FNV-1a signature of the L+R output is asserted against
+// a committed constant. Any refactor that changes the stereo output (even one ULP) flips the hash.
+// This is the fence the whole N-channel migration must never break at N=2. Re-baseline ONLY on a
+// deliberate, founder-approved DSP change (see the QA plan). Same-toolchain/arch fence.
+//
+// T-C2..T-C5 are PENDING placeholders for later milestones (they keep the plan visible without
+// failing the gate). They are filled in their target sprint.
+// ---------------------------------------------------------------------------
+
+static auto testGoldenMasterStereoN2() -> void
+{
+    static const char* const kName = "GoldenMaster_StereoN2_v1";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kChunk = TestConstants::kFrames512;
+    constexpr uint32_t kTotal = TestConstants::kTotalFrames1s;
+    constexpr float kBoostDb = 6.0F;
+    // Committed bit-exact signature of the current stereo output. See header note for re-baseline.
+    constexpr uint64_t kGoldenHash = 0xE7267654BA01D315ULL;
+    constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
+
+    // Deterministic 1 s linear chirp 20 Hz -> 20 kHz, amplitude 0.5 (no RNG).
+    std::vector<float> chirp(kTotal);
+    for (uint32_t idx = 0U; idx < kTotal; ++idx)
+    {
+        const float timeSec = static_cast<float>(idx) / static_cast<float>(kSR);
+        const float freq =
+            TestConstants::kChirpF0 + (TestConstants::kChirpF1 - TestConstants::kChirpF0) *
+                                          (timeSec / TestConstants::kChirpDuration);
+        chirp[idx] =
+            std::sin(2.0F * std::numbers::pi_v<float> * freq * timeSec) * TestConstants::kChirpAmpl;
+    }
+
+    // Non-trivial state: +6 dB @ 1 kHz EQ + ACTIVE true-peak limiter (default ceiling < 1.0).
+    DSPKernel kernel;
+    kernel.initialize(kSR, kChunk);
+    TargetState state = makeIdentityState();
+    std::array<float, kEqBands> gains{};
+    gains[kBand1kHzIndex] = kBoostDb;
+    state.eq = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(kSR));
+    state.limiter.truePeakCeilingLinear =
+        kTruePeakCeilingLinear; // active (overrides identity bypass)
+    kernel.publishTargetState(state);
+
+    // Process in 512-frame chunks; capture L and R output.
+    std::vector<float> outLeft;
+    std::vector<float> outRight;
+    outLeft.reserve(kTotal);
+    outRight.reserve(kTotal);
+    TestABL abl(kChunk);
+    uint32_t offset = 0U;
+    while (offset < kTotal)
+    {
+        const uint32_t chunk = std::min(kChunk, kTotal - offset);
+        std::memcpy(abl.left.data(), chirp.data() + offset, chunk * sizeof(float));
+        std::memcpy(abl.right.data(), chirp.data() + offset, chunk * sizeof(float));
+        abl.setFrameCount(chunk);
+        kernel.process(abl.abl(), chunk);
+        for (uint32_t idx = 0U; idx < chunk; ++idx)
+        {
+            outLeft.push_back(abl.left[idx]);
+            outRight.push_back(abl.right[idx]);
+        }
+        offset += chunk;
+    }
+
+    const uint64_t hash = fnv1aFloats(outRight, fnv1aFloats(outLeft, kFnvOffsetBasis));
+
+    std::ostringstream info;
+    info << "  [info] " << kName << ": output hash = 0x" << std::hex << hash << "\n";
+    std::fputs(info.str().c_str(), stdout);
+
+    if (hash != kGoldenHash)
+    {
+        std::ostringstream oss;
+        oss << "golden-master hash mismatch: got 0x" << std::hex << hash << ", expected 0x"
+            << kGoldenHash
+            << " (stereo DSP output changed — intended? then re-baseline per QA plan)";
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}
+
+static auto testGoldenMasterViaMultichannelView() -> void
+{
+    logPending("GoldenMaster_N2_MultichannelView",
+               "S0-M2: assert N=2 bit-exact through the MultichannelView process() signature");
+}
+
+static auto testPerChannelIndependence() -> void
+{
+    logPending("PerChannelIndependence_N4_6_8",
+               "S1: distinct per-channel tones f0*(k+1); each channel only its own freq (crosstalk "
+               "< -60 dB)");
+}
+
+static auto testLimiterLinkedGain() -> void
+{
+    logPending("Limiter_LinkedGainLockstep",
+               "S1: hot signal on ch0 ducks ALL channels in lockstep (inter-channel GR < 0.01 dB)");
+}
+
+static auto testReconfigurationContinuity() -> void
+{
+    logPending(
+        "Reconfiguration_Stereo_5p1_Stereo",
+        "S2: stereo -> 5.1 -> stereo in one kernel instance: no NaN, no crash, ceiling held");
+}
+
+// ---------------------------------------------------------------------------
 
 auto main() -> int
 {
@@ -1209,6 +1351,13 @@ auto main() -> int
     // EQ audibility tests (Sprint 5 — Milestone 2)
     testEQFrequencyResponseAccuracy();
     testEQCoefficientSwapNoClick();
+
+    // Multichannel epic safety net (Sprint 5b — S0-M1)
+    testGoldenMasterStereoN2();
+    testGoldenMasterViaMultichannelView();
+    testPerChannelIndependence();
+    testLimiterLinkedGain();
+    testReconfigurationContinuity();
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
