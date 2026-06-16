@@ -124,10 +124,18 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
         rampBuf_[i] = makeupGainRamp_.tick();
     }
     const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
-    vDSP_vmul(leftBuf, 1, rampBuf_.data(), 1, leftBuf, 1, count);
-    if (rightBuf != nullptr)
+
+    // Fan the single makeup-gain envelope out to ALL channels (one ramp for all —
+    // the makeup gain is a broadband, channel-independent scalar). At N=2 this
+    // applies to ch0/ch1 exactly as the prior left/right pair (bit-exact). The
+    // meter push above stays stereo until S1-C2 upgrades LufsMeter to N-channel.
+    for (uint32_t ch = 0U; ch < block.channels(); ++ch)
     {
-        vDSP_vmul(rightBuf, 1, rampBuf_.data(), 1, rightBuf, 1, count);
+        float* buf = block.channel(ch);
+        if (buf != nullptr)
+        {
+            vDSP_vmul(buf, 1, rampBuf_.data(), 1, buf, 1, count);
+        }
     }
 }
 
