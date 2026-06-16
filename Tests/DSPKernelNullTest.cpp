@@ -3143,10 +3143,10 @@ static auto testLoudnessDecodedLayoutWeights() -> void
     static const char* const kName = "Loudness_DecodedLayout_Weights";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
     constexpr double kDuration = 15.0;
-    constexpr double kPeak = -23.0;      // dBFS
-    constexpr double kSurroundDeltaMin = 1.0;  // surrounds must read ≥ 1 dB above L+R
-    constexpr double kSurroundDeltaMax = 2.0;  // and ≤ 2 dB above (tolerance on +1.5 dB)
-    constexpr double kOracleTol = 0.2;         // ±0.2 LU vs. oracle
+    constexpr double kPeak = -23.0;           // dBFS
+    constexpr double kSurroundDeltaMin = 1.0; // surrounds must read ≥ 1 dB above L+R
+    constexpr double kSurroundDeltaMax = 2.0; // and ≤ 2 dB above (tolerance on +1.5 dB)
+    constexpr double kOracleTol = 0.2;        // ±0.2 LU vs. oracle
 
     // -----------------------------------------------------------------------
     // Step 1: Decode the 5.1-A layout to obtain BS.1770-5 weights.
@@ -3182,10 +3182,8 @@ static auto testLoudnessDecodedLayoutWeights() -> void
     meterSurr.prepare(kSR);
     meterSurr.configureChannels(kNum51Channels, decodedWeights);
     {
-        const auto buf =
-            makeInterleavedNch2Active(kNum51Channels, 4U, 5U, kPeak, kDuration, kSR);
-        meterSurr.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR),
-                                 kNum51Channels);
+        const auto buf = makeInterleavedNch2Active(kNum51Channels, 4U, 5U, kPeak, kDuration, kSR);
+        meterSurr.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
     }
     const double lufsSurr = meterSurr.integratedLufs();
 
@@ -3194,8 +3192,7 @@ static auto testLoudnessDecodedLayoutWeights() -> void
     meterLR.prepare(kSR);
     meterLR.configureChannels(kNum51Channels, decodedWeights);
     {
-        const auto buf =
-            makeInterleavedNch2Active(kNum51Channels, 0U, 1U, kPeak, kDuration, kSR);
+        const auto buf = makeInterleavedNch2Active(kNum51Channels, 0U, 1U, kPeak, kDuration, kSR);
         meterLR.addInterleaved(buf.data(), static_cast<size_t>(kDuration * kSR), kNum51Channels);
     }
     const double lufsLR = meterLR.integratedLufs();
@@ -3254,8 +3251,8 @@ static auto testLoudnessDecodedLayoutWeights() -> void
     std::vector<float> buf51full(frames51 * kNum51Channels, 0.0F);
     for (size_t frm = 0U; frm < frames51; ++frm)
     {
-        const double s = amp * std::sin(2.0 * std::numbers::pi * 1000.0 *
-                                        static_cast<double>(frm) / static_cast<double>(kSR));
+        const double s = amp * std::sin(2.0 * std::numbers::pi * 1000.0 * static_cast<double>(frm) /
+                                        static_cast<double>(kSR));
         for (uint32_t ch = 0U; ch < kNum51Channels; ++ch)
         {
             buf51full[(frm * kNum51Channels) + ch] = static_cast<float>(s);
@@ -3270,8 +3267,7 @@ static auto testLoudnessDecodedLayoutWeights() -> void
     const double lufsFull = meterFull.integratedLufs();
 
     // Independent oracle.
-    const double lufsOracle =
-        oracleIntegratedLufs(buf51full, kNum51Channels, decodedWeights, kSR);
+    const double lufsOracle = oracleIntegratedLufs(buf51full, kNum51Channels, decodedWeights, kSR);
 
     const double deltaC = std::abs(lufsFull - lufsOracle);
     std::ostringstream infoC;

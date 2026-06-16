@@ -131,8 +131,8 @@ namespace AdaptiveSound
         // (release), so the consumer only sees the new gen after the write has
         // propagated (acquire).  No torn double-slot reads are possible because there
         // is exactly one producer and one consumer.
-        std::atomic<uint32_t> layoutGen_{0U};                                // control→worker
-        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{};   // double buffer
+        std::atomic<uint32_t> layoutGen_{0U};                              // control→worker
+        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{}; // double buffer
 
         // --- RT-owned state ---
         SpscRing<float, kLoudnessRingElems> sampleRing_;
