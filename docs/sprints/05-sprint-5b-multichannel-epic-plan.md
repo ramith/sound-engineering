@@ -149,6 +149,53 @@ then a 2-ch post-binaural −1 dBTP limiter.
 
 ---
 
+## Milestone breakdown (manageable splits)
+
+Each sprint decomposes into small, **single-owner, independently-committable milestones** (the
+project's M-level granularity, à la Sprint 4 M1–M6). Each milestone is one PR with its own exit gate;
+stereo stays bit-exact across all of them. ~16 milestones total.
+
+### S0 — Safety net + foundation
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S0-M1** | Capture T-C1 golden master (chirp→EQ→limiter, N=2, `constexpr` ref); add T-C2..T-C5 as compiling stubs | dsp | T-C1/T-C2 bit-exact on current stereo; stubs compile |
+| **S0-M2** | `kMaxChannels=8`; `MultichannelView`/`PerChannel`/`ChannelLayout` headers; module `process()` takes `MultichannelView`; `fromABL` = sole decode point (bodies unchanged at N=2) | c++ | 19/19 + T-C1/T-C2 bit-exact; `mNumberBuffers` grep = 1; ASAN clean |
+| **S0-M3** | Relocate "after" monitoring tap → AU output (`afterTapInstalled`); add `GraphState` enum (no behavior change) | swift | `VerifyAUGraph` 0; founder S0 checklist |
+
+### S1 — C++ modules N-channel (stereo-driven)
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S1-M1** | EQ → `PerChannel<delay>` + per-channel `vDSP_biquad` loop (shared coeffs; click-free swap preserved) | c++/dsp | T-C1/T-C2 bit-exact; per-channel FR ±1 dB; **click-free at N=4 (Gate A)** |
+| **S1-M2** | Limiter → `PerChannel<ring>` + linked-max ISP fan-in → one shared gain; + T-C3/T-C4 | c++/dsp | **T-C4 lockstep <0.01 dB**; N=8 hot-noise soak ≤ ceiling; T-C3 independence |
+| **S1-M3** | Loudness N-channel gain; `LufsMeter` N-channel BS.1770 weights (LFE=0) | dsp | **BS.1770 weight test ±0.2 LU (Gate C)** |
+
+### S2 — Source-driven N input
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S2-M1** | `ChannelLayout` decode off-RT from layout tag + own snapshot; tag round-trip test | dsp/c++ | **Round-trip MPEG_5_1_A/_B/7_1 + custom (Gate D)** |
+| **S2-M2** | Source-driven format (`processingFormat` + explicit `AVAudioChannelLayout`); `reconfigureGraph(to:)` lifecycle; AU bus count param; kernel re-init at N | swift/c++ | **T-C5** continuity; `VerifyMultichannelGraph`; stereo no-regression |
+| **S2-M3** | Finish Monitoring UI (per-channel rows, `Canvas` `SpectrumMiniView`, tab-gated poll) | swift | Founder S2 checklist (6 rows for a 5.1 file) |
+
+### S3 — SpatialRendererAU passthrough
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S3-M1** | `SpatialRendererAU`+`SpatialRenderKernel` (non-in-place, `_inputScratch`, identity route); C-ABI register/configure | c++ | `VerifyDeviceBoundary` passthrough bit-exact (deviceCh=N) |
+| **S3-M2** | Swift wiring `player→AU→renderer→mixer`; device-channel discovery; `AVAudioEngineConfigurationChange` handler | swift | Device hot-plug reconfigures; stereo bit-exact through two-AU graph |
+| **S3-M3** | Zero-XRun soak N=6/8 `[HW]`; ASAN/TSan during soak | dsp/qa | 0 XRuns (or documented HW deferral) |
+
+### S4 — BRIR binaural path (headline DSP)
+| MS | Chunk | Owner | Exit gate |
+|----|-------|-------|-----------|
+| **S4-M1** | BRIR convolution infra (partitioned conv; HRIR/SOFA load via `libmysofa`; per-channel azimuth from `ChannelLayout`; late-tail split spec) | c++/dsp | BRIR finite/non-silent/energy ±3 dB (synthetic HRIRs) |
+| **S4-M2** | N→2 binaural sum + 2-slot click-free hot-swap + LFE exclusion | c++/dsp | Hot-swap no-click; LFE-exclusion test; ITD/ILD sanity |
+| **S4-M3** | Pre-binaural headroom **measured on SADIE II** → const; post-binaural 2-ch limiter; true-peak compliance | dsp | **≤ −1 dBTP (Gate B)**; libebur128 multichannel oracle ±0.2 LU |
+| **S4-M4** | Mode switch (passthrough vs binaural by deviceCh<N); founder binaural listen + 30-min soak | swift/qa | Founder S4 checklist; soak 0 XRuns |
+
+Critical-path order is strict (S0→S1→S2→S3→S4); within a sprint, M1/M2 of S0 (C++ types) and S1 (EQ
+vs Limiter) can run in parallel, and S4-M1 HRIR prep can begin during S3 review.
+
+---
+
 ## Verification matrix (per step)
 
 | Test | S0 | S1 | S2 | S3 | S4 |
