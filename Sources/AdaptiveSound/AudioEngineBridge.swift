@@ -29,44 +29,67 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
     private var tapInstalled = false
 
+    /// The custom DSP AU node, inserted as `player -> AU -> mainMixer` (Sprint 5 M1).
+    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
+    private var dspAudioUnit: AVAudioUnit?
+
     // MARK: - Initialize
 
     func initialize() async throws -> Bool {
+        // Register the custom AU subclass once per process (idempotent on the C++ side).
+        registerAdaptiveAudioUnitSubclass()
+
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                do {
-                    self.avEngine = AVAudioEngine()
-                    guard let engine = self.avEngine else {
+                let engine = AVAudioEngine()
+                self.avEngine = engine
+
+                // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
+                // AVAudio converts any file format to match this; it is also the AU bus format.
+                guard let format = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                // Attach the player now, but DON'T connect it to the mixer here — the player is
+                // connected to the AU below. Connecting player -> mixer too would create a second
+                // (dry) signal path into the mixer.
+                let player = AVAudioPlayerNode()
+                self.playerNode = player
+                engine.attach(player)
+
+                // Instantiate the custom DSP AU and wire player -> AU -> mainMixer. The completion
+                // handler (delivered on an arbitrary queue; main thread not required for attach/
+                // connect) is the single place we resume the continuation for this path.
+                let description = adaptiveAudioUnitComponentDescription()
+                AVAudioUnit.instantiate(with: description, options: []) { [weak self] audioUnit, error in
+                    guard let self else {
+                        continuation.resume(returning: false)
+                        return
+                    }
+                    guard let audioUnit, error == nil else {
                         continuation.resume(returning: false)
                         return
                     }
 
-                    // Use stereo 48 kHz format to support any input file (mono, stereo, WebM, etc).
-                    // AVAudio will automatically convert any file format to match this.
-                    let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2) ??
-                        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000.0, channels: 2, interleaved: false)
+                    self.dspAudioUnit = audioUnit
+                    engine.attach(audioUnit)
+                    engine.connect(player, to: audioUnit, format: format)
+                    engine.connect(audioUnit, to: engine.mainMixerNode, format: format)
 
-                    self.playerNode = AVAudioPlayerNode()
-                    if let playerNode = self.playerNode, let format = audioFormat {
-                        engine.attach(playerNode)
-                        engine.connect(playerNode, to: engine.mainMixerNode, format: format)
-                    }
-
-                    // Pre-allocate the spectrum analyzer using the mixer's output sample rate.
-                    // This MUST happen off the audio thread (vDSP_create_fftsetup allocates).
+                    // Pre-allocate the spectrum analyzer + loudness meter off the audio thread
+                    // (vDSP_create_fftsetup allocates), keyed to the mixer's output sample rate
+                    // now that the graph is built. The mixer tap still feeds both (M3 will add a
+                    // second tap on the AU output bus for the after-DSP spectrum).
                     let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
                     let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
                     self.spectrumAnalyzer = SpectrumAnalyzer(
                         fftSize: SpectrumConstants.fftSize,
                         sampleRate: sampleRate
                     )
-
-                    // BS.1770-5 loudness meter, fed from the same mixer tap.
                     self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
 
                     continuation.resume(returning: true)
-                } catch {
-                    continuation.resume(returning: false)
                 }
             }
         }
@@ -127,6 +150,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
     }
 
+    // MARK: - DSP AU access (Sprint 5 M2 control plane)
+
+    /// Opaque pointer to the underlying `AUAudioUnit`, for the C-ABI `publishTargetState` /
+    /// `setAUParameter` bridge that the EQ Realizer (M2) will drive. `nil` until `initialize()`
+    /// has instantiated the AU. Borrowed (passUnretained) — callers must not retain it past
+    /// `shutdown()`; the `AVAudioUnit` owns the underlying instance.
+    var dspAudioUnitHandle: UnsafeMutableRawPointer? {
+        guard let unit = dspAudioUnit?.auAudioUnit else { return nil }
+        return Unmanaged.passUnretained(unit).toOpaque()
+    }
+
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter else { return .unmeasured }
         let readout = loudnessMeterRead(meter)
@@ -150,6 +184,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 if let engine = self.avEngine, engine.isRunning {
                     engine.stop()
                 }
+                // Detach the DSP AU (graph is stopped; safe to mutate) and drop the strong ref.
+                if let engine = self.avEngine, let audioUnit = self.dspAudioUnit {
+                    engine.detach(audioUnit)
+                }
+                self.dspAudioUnit = nil
                 self.avEngine = nil
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
