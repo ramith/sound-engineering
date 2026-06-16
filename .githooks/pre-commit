@@ -89,11 +89,12 @@ if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
         sdk="$(xcrun --show-sdk-path 2>/dev/null)"
         # gnu++2b matches Package.swift's cxxLanguageStandard (C++23, GNU dialect
-        # so Apple ObjC extensions like __typeof parse); all AudioDSP module dirs
-        # on the include path so quote-includes resolve.
+        # so Apple ObjC extensions like __typeof parse); all AudioDSP + test-bridge
+        # module dirs on the include path so quote-includes resolve (the test bridge
+        # includes its own EQTestBridge.h and the AudioDSP headers).
         compile_flags=(-std=gnu++2b)
         while IFS= read -r d; do compile_flags+=(-I "$d"); done \
-            < <(find Sources/AudioDSP -type d 2>/dev/null)
+            < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type d 2>/dev/null)
         [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
 
         for f in "${cpp_files[@]}"; do

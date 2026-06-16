@@ -41,8 +41,22 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Read by the Monitoring tab; never resized on the audio thread.
     private var beforeAnalyzers: [SpectrumAnalyzer] = []
     private var afterAnalyzers: [SpectrumAnalyzer] = []
-    /// Pre-DSP tap lives on the player node (the post-DSP tap is the existing mainMixer tap).
+    /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the AU output bus —
+    /// NOT the mixer (which will carry the device channel count once the pipeline is multichannel).
     private var beforeTapInstalled = false
+    private var afterTapInstalled = false
+
+    // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
+
+    /// Top-level engine-graph state. A scaffold introduced in S0-M3; the per-track/per-device
+    /// `reconfiguring` transition is driven in a later milestone (S2). No logic gates on it yet.
+    private enum GraphState {
+        case idle
+        case running(channelCount: Int)
+        case reconfiguring
+    }
+
+    private var graphState: GraphState = .idle
 
     // MARK: - Initialize
 
@@ -112,6 +126,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                         SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
                     }
 
+                    self.graphState = .running(channelCount: channelCount)
                     continuation.resume(returning: true)
                 }
             }
@@ -120,15 +135,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     // MARK: - Spectrum tap
 
-    /// Install a single output tap on `mainMixerNode`.
+    /// Install the analysis taps: the Now-Playing spectrum + loudness meter on `mainMixerNode`,
+    /// the per-channel "before" spectra on the player node (pre-DSP), and the per-channel "after"
+    /// spectra on the AU output bus (post-DSP — NOT the mixer, so they stay N-channel once the
+    /// mixer downmixes to the device).
     ///
-    /// The tap block runs on the audio thread (or a CoreAudio I/O thread).
-    /// It may NOT allocate, lock, log, or call Obj-C/Swift runtime.
+    /// The tap blocks run on the audio thread (or a CoreAudio I/O thread). They may NOT allocate,
+    /// lock, log, or call Obj-C/Swift runtime beyond indexed buffer access + Accelerate.
     ///
-    /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the
-    /// analyzer can process one tap delivery per FFT frame. AVAudioEngine
-    /// will round up to a power-of-two multiple of the hardware buffer size
-    /// automatically if needed.
+    /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the analyzer can process one
+    /// tap delivery per FFT frame. AVAudioEngine rounds up to a power-of-two multiple of the
+    /// hardware buffer size automatically if needed.
     private func installSpectrumTap() {
         guard let engine = avEngine, !tapInstalled else { return }
         let mixer = engine.mainMixerNode
@@ -154,14 +171,6 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
                 loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
             }
-
-            // Feed the per-channel AFTER analyzers (Monitoring tab; N-channel).
-            if let afterAnalyzers = self?.afterAnalyzers {
-                let channels = min(afterAnalyzers.count, Int(buffer.format.channelCount))
-                for index in 0 ..< channels {
-                    afterAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-                }
-            }
         }
 
         // Pre-DSP (BEFORE) tap on the player node — a different node from the mixer, so the
@@ -183,6 +192,26 @@ final class AudioEngineBridge: AudioPlaybackEngine {
             beforeTapInstalled = true
         }
 
+        // Post-DSP (AFTER) tap on the AdaptiveSound AU output bus — deliberately NOT the mixer.
+        // Once the multichannel pipeline lands, the mixer carries the device channel count
+        // (post spatial-render), so "after DSP" monitoring must observe the AU's N-channel output.
+        if let dspUnit = dspAudioUnit {
+            let auFormat = dspUnit.outputFormat(forBus: 0)
+            dspUnit.installTap(onBus: 0,
+                               bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
+                               format: auFormat)
+            { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
+                guard let afterAnalyzers = self?.afterAnalyzers else { return }
+                let abl = buffer.mutableAudioBufferList
+                let channels = min(afterAnalyzers.count, Int(buffer.format.channelCount))
+                for index in 0 ..< channels {
+                    afterAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+                }
+            }
+            afterTapInstalled = true
+        }
+
         tapInstalled = true
     }
 
@@ -192,6 +221,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         if beforeTapInstalled {
             playerNode?.removeTap(onBus: 0)
             beforeTapInstalled = false
+        }
+        if afterTapInstalled {
+            dspAudioUnit?.removeTap(onBus: 0)
+            afterTapInstalled = false
         }
         tapInstalled = false
     }
@@ -281,6 +314,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.playerNode = nil
                 self.referenceToneBuffer = nil
                 self.spectrumAnalyzer = nil
+                self.graphState = .idle
                 self.beforeAnalyzers = []
                 self.afterAnalyzers = []
                 // Tap already removed above, so no callback can touch the meter now.
@@ -293,60 +327,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         }
     }
 
-    // MARK: - Device Enumeration (real CoreAudio data)
-
-    /// Enumerate output devices using the C-ABI bridge to CoreAudio.
-    /// Returns real device IDs, names, sample rates, and types — no mock data.
-    func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                let maxDevices = 32
-                var buffer = [CDeviceInfo](repeating: CDeviceInfo(), count: maxDevices)
-                let count = enumerateOutputDevicesC(&buffer, UInt32(maxDevices))
-
-                var models: [AudioDeviceModel] = []
-                models.reserveCapacity(Int(count))
-
-                for index in 0 ..< Int(count) {
-                    let info = buffer[index]
-                    let name = withUnsafeBytes(of: info.name) { rawPtr -> String in
-                        let ptr = rawPtr.bindMemory(to: CChar.self)
-                        guard let base = ptr.baseAddress else { return "" }
-                        return String(cString: base)
-                    }
-                    let deviceType = AudioDeviceModel.DeviceType(rawValue: info.deviceType)
-                    models.append(AudioDeviceModel(
-                        id: info.deviceID,
-                        name: name,
-                        sampleRate: info.sampleRate,
-                        bufferFrameSize: info.bufferFrameSize,
-                        type: deviceType
-                    ))
-                }
-
-                // Sort: built-in first, then wireless, then USB, then unknown.
-                // Within each type, sort alphabetically by name.
-                models.sort { lhs, rhs in
-                    let lhsOrder = lhs.type.sortOrder
-                    let rhsOrder = rhs.type.sortOrder
-                    if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
-                    return lhs.name < rhs.name
-                }
-
-                continuation.resume(returning: models)
-            }
-        }
-    }
-
-    func selectDevice(_ deviceID: UInt32) async throws -> Bool {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
-                let result = selectOutputDeviceC(deviceID)
-                continuation.resume(returning: result != 0)
-            }
-        }
-    }
+    // Device enumeration + selection live in AudioEngineBridge+Devices.swift (extension).
 
     // MARK: - Playback
 
@@ -509,15 +490,5 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     }
 }
 
-// MARK: - AudioDeviceModel.DeviceType sort order
-
-private extension AudioDeviceModel.DeviceType {
-    var sortOrder: Int {
-        switch self {
-        case .builtin: return 0
-        case .wireless: return 1
-        case .usb: return 2
-        case .unknown: return 3
-        }
-    }
-}
+// AudioDeviceModel.DeviceType.sortOrder lives in AudioEngineBridge+Devices.swift (used by the
+// device-enumeration sort there).
