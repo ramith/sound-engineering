@@ -7,7 +7,9 @@
 #include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
+#include <cassert>
 #include <cmath>
+#include <vector>
 
 namespace AdaptiveSound
 {
@@ -115,11 +117,11 @@ namespace AdaptiveSound
         // process() writes rampBuf_[i] = masterGainRamp_.tick() then calls vDSP_vmul.
         ParameterRamp masterGainRamp_{};
 
-        // Per-sample gain ramp scratch buffer. Pre-allocated in initialize() to
-        // maxFrames_ capacity so process() never touches the heap. RT-safe std::array
-        // sized to the compile-time ceiling; only [0, frameCount) is populated per call.
-        static constexpr uint32_t kMaxFramesCeil = kDefaultMaxFrames; // 512 frames
-        std::array<float, kMaxFramesCeil> rampBuf_{};
+        // Per-sample gain ramp scratch buffer. Heap-allocated in initialize() to
+        // maxFrames_ capacity so process() never touches the heap. Only
+        // [0, frameCount) is populated per call. frameCount <= maxFrames_ is
+        // asserted at process() entry.
+        std::vector<float> rampBuf_;
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;

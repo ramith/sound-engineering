@@ -1,6 +1,7 @@
 #include "LoudnessModule.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 
@@ -54,8 +55,10 @@ void LoudnessModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcep
 
     currentMakeupDb_ = 0.0;
     lastGatedBlocks_ = 0U;
-    rampBuf_.fill(0.0F);
-    pushBuf_.fill(0.0F);
+    // Size scratch buffers to maxFrames_ (off-RT; the only allocation site).
+    // process() asserts frameCount <= maxFrames_ so these are the tight upper bounds.
+    rampBuf_.assign(maxFrames_, 0.0F);
+    pushBuf_.assign(static_cast<std::size_t>(maxFrames_) * kMaxChannels, 0.0F);
     makeupGainLinear_.store(kUnityGainLinear, std::memory_order_release);
 
     // Start the worker LAST, after all state it touches is initialized. jthread
@@ -88,12 +91,17 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
         return;
     }
 
+    // frameCount must not exceed the buffer capacity established in initialize().
+    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+
     // Relay control to the worker (cheap atomics — never blocks).
     enabled_.store(params.enabled, std::memory_order_relaxed);
     targetLufs_.store(params.lufsTarget, std::memory_order_relaxed);
     channelCount_.store(numChannels, std::memory_order_release);
 
-    const uint32_t safeCount = std::min(frameCount, kDefaultMaxFrames);
+    // Process the full frameCount — rampBuf_ and pushBuf_ are sized to maxFrames_
+    // (and maxFrames_*kMaxChannels) in initialize(), so no overrun is possible.
+    const uint32_t safeCount = std::min(frameCount, maxFrames_);
 
     if (params.enabled == 0U)
     {

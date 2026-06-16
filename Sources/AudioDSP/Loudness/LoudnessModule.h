@@ -36,8 +36,10 @@
 #include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
+#include <cassert>
 #include <cstdint>
 #include <thread>
+#include <vector>
 
 namespace AdaptiveSound
 {
@@ -102,10 +104,10 @@ namespace AdaptiveSound
         void publishTelemetry() noexcept;
 
         // --- Atomic hand-offs (asserted is_always_lock_free in the .mm) ---
-        std::atomic<float> makeupGainLinear_{kUnityGainLinear};              // worker→RT (audible)
-        std::atomic<float> targetLufs_{kDefaultLufsTarget};                  // RT→worker (control)
-        std::atomic<uint8_t> enabled_{1U};                                   // RT→worker (control)
-        std::atomic<uint32_t> channelCount_{2U};                             // RT→worker (channel N)
+        std::atomic<float> makeupGainLinear_{kUnityGainLinear}; // worker→RT (audible)
+        std::atomic<float> targetLufs_{kDefaultLufsTarget};     // RT→worker (control)
+        std::atomic<uint8_t> enabled_{1U};                      // RT→worker (control)
+        std::atomic<uint32_t> channelCount_{2U};                // RT→worker (channel N)
         std::atomic<float> measuredLufsIntegrated_{kLoudnessUnmeasuredLufs}; // worker→UI
         std::atomic<float> measuredLufsShortTerm_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<float> measuredLufsMomentary_{kLoudnessUnmeasuredLufs};  // worker→UI
@@ -114,9 +116,14 @@ namespace AdaptiveSound
         // --- RT-owned state ---
         SpscRing<float, kLoudnessRingElems> sampleRing_;
         ParameterRamp makeupGainRamp_{};
-        std::array<float, kDefaultMaxFrames> rampBuf_{}; // per-sample gain scratch
-        std::array<float, static_cast<std::size_t>(kDefaultMaxFrames) * kMaxChannels>
-            pushBuf_{}; // interleave scratch (N channels × max frames)
+        // Per-sample gain scratch and interleave scratch: heap-allocated to
+        // maxFrames_ (and maxFrames_*kMaxChannels) in initialize() so they scale
+        // with the host's maximumFramesToRender. process() asserts frameCount <=
+        // maxFrames_ and never allocates. The SPSC ring and workerChunk_ are sized
+        // independently of maxFrames_ and are not affected by this change.
+        std::vector<float> rampBuf_; // maxFrames_ elements, heap-allocated in initialize()
+        std::vector<float>
+            pushBuf_; // maxFrames_ * kMaxChannels elements, heap-allocated in initialize()
 
         // --- Worker-owned state (touched only on measurementThread_) ---
         LufsMeter meter_;

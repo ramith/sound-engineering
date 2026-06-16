@@ -1,5 +1,6 @@
 #include "EQModule.h"
 #include <Accelerate/Accelerate.h>
+#include <cassert>
 #include <format>
 #include <iostream>
 
@@ -58,8 +59,9 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     masterGainRamp_.target = 1.0F;
     masterGainRamp_.snap();
 
-    // Zero the ramp scratch buffer (pre-allocated, no heap on the RT path).
-    rampBuf_.fill(0.0F);
+    // Size the ramp scratch buffer to maxFrames_ (off-RT; the only allocation site).
+    // process() asserts frameCount <= maxFrames_ so this is the tight upper bound.
+    rampBuf_.assign(maxFrames_, 0.0F);
 }
 
 void EQModule::publishCoefficients(const EQParams& params) noexcept
@@ -114,6 +116,9 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
     if (frameCount == 0) {
         return;
     }
+    // frameCount must never exceed the buffer capacity established in initialize().
+    // Violating this would overrun rampBuf_ (sized to maxFrames_ off-RT).
+    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 
     // RT-safe setup adoption: if a new setup was published, swap it in and retire the
     // old one for off-RT destruction. All operations are lock-free atomics — no alloc,
@@ -172,9 +177,9 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
         // tick() advances current toward target by α each sample — this IS the
         // one-pole smoother; no secondary vDSP_vramp interpolation needed.
         //
-        // rampBuf_ is sized to kMaxFramesCeil (= kDefaultMaxFrames = 512). Clamp
-        // frameCount defensively so a misconfigured caller cannot overrun the buffer.
-        const uint32_t safeCount = std::min(frameCount, kMaxFramesCeil);
+        // rampBuf_ is sized to maxFrames_ in initialize(). The assert above
+        // guarantees frameCount <= maxFrames_, so the full frameCount is safe.
+        const uint32_t safeCount = std::min(frameCount, maxFrames_);
         const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
         for (uint32_t i = 0U; i < safeCount; ++i) {
             rampBuf_[i] = masterGainRamp_.tick();
