@@ -59,6 +59,22 @@ namespace TestConstants
     constexpr float kChirpF1 = 20000.0F; // chirp end frequency (Hz)
     constexpr float kChirpAmpl = 0.5F;   // chirp amplitude
     constexpr float kChirpDuration = 1.0F;
+
+    // Multichannel per-channel independence test constants (S1-A2 T-C3).
+    constexpr uint32_t kNChannels4 = 4U;
+    constexpr uint32_t kNChannels6 = 6U;
+    constexpr uint32_t kNChannels8 = 8U;
+    constexpr float kPerChAmplitude = 0.25F;    // -12 dBFS per channel
+    constexpr double kCrosstalkThresholdDb = -60.0; // inter-channel isolation target (dB)
+    // DFT-bin-aligned test: N=8192 frames at 48 kHz → bin spacing = 48000/8192 Hz.
+    // The sine for channel k is generated at exactly bin[k] × (fs/N) so the Goertzel
+    // measurement at that bin captures a full integer number of cycles, making cross-bin
+    // leakage ≈ 0 (rectangular-window DFT orthogonality). Bins chosen to be non-harmonic,
+    // all well within the audible band: 34,59,89,116,149,173,211,251 × (48000/8192).
+    constexpr uint32_t kPerChTestFrames = 8192U;    // ~170 ms @ 48 kHz — must be power-of-2
+    // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
+    constexpr uint32_t kPerChBins[] = {34U, 59U, 89U, 116U, 149U, 173U, 211U, 251U};
+    // NOLINTEND(cppcoreguidelines-avoid-c-arrays)
 } // namespace TestConstants
 
 // ---------------------------------------------------------------------------
@@ -157,6 +173,56 @@ struct AudioBufferList2
     {
         return &head;
     }
+};
+
+// N-channel (non-interleaved) AudioBufferList with statically correct storage for up to
+// kMaxChannels channels. AudioBufferList has a flexible-array-style tail (mBuffers[1]);
+// we extend it by embedding (kMaxChannels-1) extra AudioBuffer slots immediately after,
+// giving a contiguous layout that CoreAudio expects. mNumberBuffers is set to `numCh`
+// at construction time; only those buffers are wired to channel vectors.
+struct AudioBufferListN
+{
+    AudioBufferList head; // mNumberBuffers + mBuffers[0]
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays) -- CoreAudio flexible-array layout
+    std::array<AudioBuffer, kMaxChannels - 1U> extra{}; // mBuffers[1..kMaxChannels-1]
+
+    explicit AudioBufferListN(uint32_t numCh) : head{}, extra{}
+    {
+        head.mNumberBuffers = numCh;
+    }
+
+    auto abl() -> AudioBufferList*
+    {
+        return &head;
+    }
+};
+
+// N-channel test fixture: owns per-channel float vectors, wires them into an N-channel ABL.
+struct TestABLN
+{
+    explicit TestABLN(uint32_t numCh, uint32_t numFrames)
+        : numChannels(numCh), frames(numFrames), storage(numCh)
+    {
+        channels.resize(numCh, std::vector<float>(numFrames, 0.0F));
+        for (uint32_t ch = 0U; ch < numCh; ++ch)
+        {
+            // mBuffers[0] lives in head; mBuffers[1..] live in extra[0..].
+            AudioBuffer& buf = (ch == 0U) ? storage.head.mBuffers[0] : storage.extra[ch - 1U];
+            buf.mNumberChannels = 1U;
+            buf.mDataByteSize = numFrames * static_cast<uint32_t>(sizeof(float));
+            buf.mData = channels[ch].data();
+        }
+    }
+
+    auto abl() -> AudioBufferList*
+    {
+        return storage.abl();
+    }
+
+    uint32_t numChannels;
+    uint32_t frames;
+    std::vector<std::vector<float>> channels; // channels[ch][frame]
+    AudioBufferListN storage;
 };
 
 struct TestABL
@@ -1042,6 +1108,28 @@ static auto testLoudnessMakeupRoundTrip() -> void
 
 namespace
 {
+    // Goertzel algorithm: energy at a single frequency bin.
+    // Returns the squared magnitude (linear power) of the DFT at `freqHz` over `numFrames`
+    // samples from `buf` at sample rate `sampleRate`. O(N), no FFT allocation.
+    // Reference: Proakis & Manolakis, "Digital Signal Processing", §8.3 (Goertzel algorithm).
+    auto goertzelPower(const float* buf, uint32_t numFrames, float freqHz, float sampleRate)
+        -> double
+    {
+        const double omega = 2.0 * std::numbers::pi * static_cast<double>(freqHz) /
+                             static_cast<double>(sampleRate);
+        const double coeff = 2.0 * std::cos(omega);
+        double sprev = 0.0;
+        double sprev2 = 0.0;
+        for (uint32_t idx = 0U; idx < numFrames; ++idx)
+        {
+            const double sval = static_cast<double>(buf[idx]) + coeff * sprev - sprev2;
+            sprev2 = sprev;
+            sprev = sval;
+        }
+        // Power: |X[k]|^2 = sprev2^2 + sprev^2 - coeff * sprev * sprev2
+        return (sprev2 * sprev2) + (sprev * sprev) - (coeff * sprev * sprev2);
+    }
+
     constexpr uint32_t kEqBands = 31U;
     constexpr size_t kBand1kHzIndex = 17U; // kCenterFrequencies[17] == 1000 Hz
     constexpr float kEqTestToneHz = 1000.0F;
@@ -1334,11 +1422,284 @@ static auto testMultichannelViewDecode() -> void
     logPass(kName);
 }
 
+// T-C3: Per-channel independence — N-channel EQ does not mix channels.
+//
+// For each N in {4, 6, 8}: feed channel k a pure sine at a distinct DFT-bin-aligned
+// frequency through the kernel with an identity EQ (numBiquads=0, masterGain=1).
+// After processing, assert:
+//   - The OUTPUT channel k contains energy at its OWN frequency (power > noise floor).
+//   - The OUTPUT channel k contains NO energy at any OTHER channel's frequency
+//     (cross-channel power ratio < −60 dB relative to the self-channel power).
+// This catches channel-swap, crosstalk, and accidental delay-state sharing.
+//
+// Frequencies are chosen as exact DFT bins at N=kPerChTestFrames samples (bin k has
+// frequency k × fs/N), so the Goertzel measurement at each bin captures an integer
+// number of cycles — rectangular-window orthogonality makes cross-bin leakage ≈ 0
+// (numerical noise floor ~−120 dB), well below the −60 dB threshold. Using non-harmonic
+// bins avoids the harmonic-aliasing leakage that would occur at f0, 2f0, 3f0… bins.
+//
+// Energy is measured with the Goertzel algorithm — O(N) per bin, no heap allocation.
+// Reference: Proakis & Manolakis, "Digital Signal Processing", §8.3.
 static auto testPerChannelIndependence() -> void
 {
-    logPending("PerChannelIndependence_N4_6_8",
-               "S1: distinct per-channel tones f0*(k+1); each channel only its own freq (crosstalk "
-               "< -60 dB)");
+    static const char* const kName = "PerChannelIndependence_N4_6_8";
+    constexpr uint32_t kFrames = TestConstants::kPerChTestFrames;
+    constexpr float kSR = static_cast<float>(TestConstants::kSampleRate48k);
+    constexpr float kAmp = TestConstants::kPerChAmplitude;
+    constexpr double kXtalkThreshDb = TestConstants::kCrosstalkThresholdDb;
+
+    const uint32_t nValues[] = {
+        TestConstants::kNChannels4, TestConstants::kNChannels6, TestConstants::kNChannels8};
+
+    for (const uint32_t numCh : nValues)
+    {
+        DSPKernel kernel;
+        kernel.initialize(TestConstants::kSampleRate48k, kFrames);
+
+        const TargetState state = makeIdentityState();
+        kernel.publishTargetState(state);
+
+        TestABLN abl(numCh, kFrames);
+
+        // Fill each channel with a sine at its DFT-bin-aligned frequency.
+        // freq[ch] = kPerChBins[ch] × (fs / kFrames) — exact integer cycles, no leakage.
+        for (uint32_t ch = 0U; ch < numCh; ++ch)
+        {
+            // Frequency is exactly bin × (fs/N) so the sine completes an integer number
+            // of cycles in kFrames samples — Goertzel bins are then orthogonal.
+            const float freq =
+                static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
+                static_cast<float>(kFrames);
+            for (uint32_t idx = 0U; idx < kFrames; ++idx)
+            {
+                abl.channels[ch][idx] =
+                    kAmp * std::sin(2.0F * std::numbers::pi_v<float> * freq *
+                                    static_cast<float>(idx) / kSR);
+            }
+        }
+
+        kernel.process(abl.abl(), kFrames);
+
+        // Check isolation: each output channel must carry its own tone and not others.
+        for (uint32_t ch = 0U; ch < numCh; ++ch)
+        {
+            const float selfFreq =
+                static_cast<float>(TestConstants::kPerChBins[ch]) * kSR /
+                static_cast<float>(kFrames);
+            const float* outBuf = abl.channels[ch].data();
+
+            const double selfPower = goertzelPower(outBuf, kFrames, selfFreq, kSR);
+            if (selfPower <= 0.0)
+            {
+                std::ostringstream oss;
+                oss << "N=" << numCh << " ch" << ch << ": self tone (" << selfFreq
+                    << " Hz) has zero power after identity EQ";
+                logFail(kName, oss.str());
+                return;
+            }
+
+            for (uint32_t otherCh = 0U; otherCh < numCh; ++otherCh)
+            {
+                if (otherCh == ch)
+                {
+                    continue;
+                }
+                const float otherFreq =
+                    static_cast<float>(TestConstants::kPerChBins[otherCh]) * kSR /
+                    static_cast<float>(kFrames);
+                const double crosstalkPower =
+                    goertzelPower(outBuf, kFrames, otherFreq, kSR);
+                // Ratio in dB: 10·log10(crosstalk / self).
+                const double ratioDb =
+                    10.0 * std::log10(crosstalkPower / selfPower + 1e-300);
+                if (ratioDb > kXtalkThreshDb)
+                {
+                    std::ostringstream oss;
+                    oss << "N=" << numCh << " ch" << ch << ": crosstalk from ch" << otherCh
+                        << " (" << otherFreq << " Hz) at " << ratioDb << " dB (threshold "
+                        << kXtalkThreshDb << " dB)";
+                    logFail(kName, oss.str());
+                    return;
+                }
+            }
+        }
+    }
+    logPass(kName);
+}
+
+// T-C3b: EQ frequency-response accuracy at N=4.
+//
+// Boost one band (+6 dB @ 1 kHz) applied identically to all channels. Feed each
+// channel the same 1 kHz sine, process through the kernel with the boosted EQ, and
+// assert that every channel's output RMS (over the settled second half) is +6 dB ±1 dB
+// relative to the flat-EQ baseline. This confirms the SAME coefficient cascade is
+// applied to all N channels and that no channel is dropped or misrouted.
+static auto testEQFrequencyResponseAccuracyN4() -> void
+{
+    static const char* const kName = "EQ_FrequencyResponseAccuracy_N4";
+    constexpr uint32_t kNumCh = TestConstants::kNChannels4;
+    constexpr uint32_t kFrames = TestConstants::kTotalFrames1s;
+    constexpr float kSR = static_cast<float>(TestConstants::kSampleRate48k);
+
+    const auto runN4 = [&](const std::array<float, kEqBands>& gains) -> std::vector<double>
+    {
+        DSPKernel kernel;
+        kernel.initialize(TestConstants::kSampleRate48k, kFrames);
+
+        TargetState state = makeIdentityState();
+        state.eq = EQModuleCoefficients::computeBiquadCascade(gains, kSR);
+        kernel.publishTargetState(state);
+
+        TestABLN abl(kNumCh, kFrames);
+        for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+        {
+            for (uint32_t idx = 0U; idx < kFrames; ++idx)
+            {
+                abl.channels[ch][idx] =
+                    kEqTestAmplitude *
+                    std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                             static_cast<float>(idx) / kSR);
+            }
+        }
+        kernel.process(abl.abl(), kFrames);
+
+        std::vector<double> rmsVals(kNumCh);
+        const size_t halfFrame = static_cast<size_t>(kFrames) / 2U;
+        for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+        {
+            rmsVals[ch] = sliceRms(abl.channels[ch], halfFrame, static_cast<size_t>(kFrames));
+        }
+        return rmsVals;
+    };
+
+    std::array<float, kEqBands> flatGains{};
+    std::array<float, kEqBands> boostedGains{};
+    boostedGains[kBand1kHzIndex] = kEqBoostDb;
+
+    const std::vector<double> flatRms = runN4(flatGains);
+    const std::vector<double> boostRms = runN4(boostedGains);
+
+    for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+    {
+        if (flatRms[ch] <= 0.0)
+        {
+            logFail(kName,
+                    "flat-EQ output was silent on ch" + std::to_string(ch));
+            return;
+        }
+        const double measuredDb =
+            20.0 * std::log10(boostRms[ch] / flatRms[ch]);
+        if (std::abs(measuredDb - static_cast<double>(kEqBoostDb)) >
+            static_cast<double>(kEqFrToleranceDb))
+        {
+            std::ostringstream oss;
+            oss << "ch" << ch << ": measured " << measuredDb << " dB at 1 kHz, expected "
+                << kEqBoostDb << " ± " << kEqFrToleranceDb;
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// T-C3c: Click-free coefficient swap at N=4.
+//
+// N=4 variant of testEQCoefficientSwapNoClick. Flat -> +12 dB @ 1 kHz mid-stream.
+// For each channel the boundary step must be ≤ 3× the settled-tail max per-sample step.
+static auto testEQCoefficientSwapNoClickN4() -> void
+{
+    static const char* const kName = "EQ_CoefficientSwapNoClick_N4";
+    constexpr uint32_t kNumCh = TestConstants::kNChannels4;
+    constexpr uint32_t kBlock = TestConstants::kFrames512;
+    constexpr uint32_t kBlocksBefore = 16U;
+    constexpr uint32_t kBlocksAfter = 16U;
+    constexpr float kBoostDbLarge = 12.0F;
+    constexpr float kSR = static_cast<float>(TestConstants::kSampleRate48k);
+
+    DSPKernel kernel;
+    kernel.initialize(TestConstants::kSampleRate48k, kBlock);
+
+    std::array<float, kEqBands> flatGains{};
+    std::array<float, kEqBands> boostedGains{};
+    boostedGains[kBand1kHzIndex] = kBoostDbLarge;
+
+    TargetState flatState = makeIdentityState();
+    flatState.eq = EQModuleCoefficients::computeBiquadCascade(flatGains, kSR);
+    kernel.publishTargetState(flatState);
+
+    // Capture per-channel output across the full run.
+    std::vector<std::vector<float>> out(kNumCh);
+    for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+    {
+        out[ch].reserve(static_cast<size_t>(kBlock) * (kBlocksBefore + kBlocksAfter));
+    }
+    uint32_t sampleIdx = 0U;
+    size_t swapSample = 0U;
+
+    const auto processBlocks = [&](uint32_t numBlocks)
+    {
+        for (uint32_t blk = 0U; blk < numBlocks; ++blk)
+        {
+            TestABLN abl(kNumCh, kBlock);
+            // All channels carry the same 1 kHz sine (phase-continuous).
+            for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+            {
+                for (uint32_t idx = 0U; idx < kBlock; ++idx)
+                {
+                    abl.channels[ch][idx] =
+                        kEqTestAmplitude *
+                        std::sin(2.0F * std::numbers::pi_v<float> * kEqTestToneHz *
+                                 static_cast<float>(sampleIdx + idx) / kSR);
+                }
+            }
+            sampleIdx += kBlock;
+            kernel.process(abl.abl(), kBlock);
+            for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+            {
+                for (uint32_t idx = 0U; idx < kBlock; ++idx)
+                {
+                    out[ch].push_back(abl.channels[ch][idx]);
+                }
+            }
+        }
+    };
+
+    processBlocks(kBlocksBefore);
+    swapSample = out[0].size();
+
+    TargetState boostState = makeIdentityState();
+    boostState.eq = EQModuleCoefficients::computeBiquadCascade(boostedGains, kSR);
+    kernel.publishTargetState(boostState);
+
+    processBlocks(kBlocksAfter);
+
+    // Per-channel click check: boundary step ≤ 3× settled tail max-step.
+    for (uint32_t ch = 0U; ch < kNumCh; ++ch)
+    {
+        const std::vector<float>& chOut = out[ch];
+        const size_t tailStart = chOut.size() - kBlock;
+        float settledMaxStep = 0.0F;
+        for (size_t idx = tailStart + 1U; idx < chOut.size(); ++idx)
+        {
+            settledMaxStep =
+                std::max(settledMaxStep, std::abs(chOut[idx] - chOut[idx - 1U]));
+        }
+        const float boundaryStep =
+            std::abs(chOut[swapSample] - chOut[swapSample - 1U]);
+
+        std::ostringstream info;
+        info << "ch" << ch << " boundaryStep=" << boundaryStep
+             << " settledMaxStep=" << settledMaxStep;
+        std::fputs(("  [info] " + std::string(kName) + ": " + info.str() + "\n").c_str(),
+                   stdout);
+
+        if (boundaryStep > 3.0F * settledMaxStep)
+        {
+            logFail(kName, "audible coefficient-swap click: " + info.str());
+            return;
+        }
+    }
+    logPass(kName);
 }
 
 static auto testLimiterLinkedGain() -> void
@@ -1392,7 +1753,9 @@ auto main() -> int
     // Multichannel epic safety net (Sprint 5b — S0-M1)
     testGoldenMasterStereoN2();
     testMultichannelViewDecode();
-    testPerChannelIndependence();
+    testPerChannelIndependence();       // T-C3: per-channel isolation N=4,6,8
+    testEQFrequencyResponseAccuracyN4(); // T-C3b: FR accuracy at N=4
+    testEQCoefficientSwapNoClickN4();   // T-C3c: click-free swap at N=4
     testLimiterLinkedGain();
     testReconfigurationContinuity();
 
