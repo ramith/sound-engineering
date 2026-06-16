@@ -466,6 +466,59 @@ if !verifyLiveReconfigure() {
 }
 
 print("ALL M2-c CHECKS PASSED — single-engine stereo->6->stereo reconfigure renders at each width")
+
+// =====================================================================================
+// M3-2 — SpatialRendererAU smoke check: register + instantiate the NEW device-boundary
+// N->M render-stage AU (subtype 'aspz') via its own component description, and assert it
+// is non-nil and its auAudioUnit class is SpatialRendererAU. This is the wrapper/C-ABI
+// smoke test only — full in-graph N->M render wiring is M3-3 and is NOT exercised here.
+// =====================================================================================
+
+func verifySpatialRendererRegistration() -> Bool {
+    print("--- M3-2 SpatialRendererAU register + instantiate smoke check ---")
+
+    registerSpatialRendererAUSubclass()
+    let spatialDescription = spatialRendererComponentDescription()
+
+    let gate = DispatchSemaphore(value: 0)
+    var instance: AVAudioUnit?
+    var instantiateErr: Error?
+    AVAudioUnit.instantiate(with: spatialDescription, options: []) { unit, error in
+        instance = unit
+        instantiateErr = error
+        gate.signal()
+    }
+    gate.wait()
+
+    if let error = instantiateErr {
+        print("M3-2 FAIL: AVAudioUnit.instantiate errored: \(error)")
+        return false
+    }
+    guard let spatialNode = instance else {
+        print("M3-2 FAIL: AVAudioUnit.instantiate returned nil for SpatialRendererAU")
+        return false
+    }
+
+    let className = String(describing: type(of: spatialNode.auAudioUnit))
+    if !className.contains("SpatialRenderer") {
+        print("M3-2 FAIL: instantiated AU is not SpatialRendererAU (got \(className))")
+        return false
+    }
+    if spatialNode.auAudioUnit.internalRenderBlock == nil {
+        print("M3-2 FAIL: SpatialRendererAU internalRenderBlock is nil at attach")
+        return false
+    }
+
+    print("M3-2 PASS: SpatialRendererAU registered + instantiated; auAudioUnit class = \(className)")
+    return true
+}
+
+if !verifySpatialRendererRegistration() {
+    print("VERIFY FAIL: SpatialRendererAU (M3-2) smoke check failed")
+    exit(1)
+}
+
+print("ALL M3-2 CHECKS PASSED — SpatialRendererAU registers + instantiates with a non-nil render block")
 print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
-    + "M2-c (live reconfigure stereo->6->stereo) PASS ===")
+    + "M2-c (live reconfigure stereo->6->stereo) PASS + M3-2 (SpatialRendererAU register) PASS ===")
 exit(0)
