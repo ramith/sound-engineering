@@ -331,6 +331,48 @@ git log --oneline -10
 
 ---
 
+## 📚 Project Documentation (Markdown Files)
+
+### **Read These (Active)**
+
+| File | Purpose | Status | For Whom |
+|------|---------|--------|----------|
+| **HANDOFF.md** (you are here) | Multi-device handoff guide | ✅ Current | Everyone switching laptops |
+| **README.md** | Project overview + feature list | ✅ Current | New team members |
+| **PHASE0-DSP-ENGINEER-SPRINT.md** | Phase 0 DSP implementation plan (bypass + ramping) | ✅ Complete | Understanding audio pipeline |
+| **PHASE0-SWIFTUI-SPRINT.md** | EQ consolidation plan | ✅ Complete | EQ module architecture |
+| **PHASE0-QA-SPRINT.md** | Null test framework creation | ✅ Complete | Test infrastructure |
+| **PHASE0-REFACTOR-SPRINT.md** | playTrack() bug fix | ✅ Complete | Understanding bug fixes |
+
+### **Reference (Archived, for context only)**
+
+| File | Purpose | Status | Notes |
+|------|---------|--------|-------|
+| **KICKOFF-AGENDA.md** | Initial project kickoff notes | 📦 Archived | Phase 0 kickoff context |
+| **CODE-REVIEW-FIXING-PLAN.md** | Comprehensive code review findings | 📦 Archived | All issues fixed in commit a2fb92a |
+| **TEAM-FIXING-PLAN.md** | Agent-based fixing execution | 📦 Archived | Orchestration details |
+| **TEAM-FIXING-PLAN-SYNTHESIS.md** | Team execution synthesis | 📦 Archived | Parallel work coordination |
+| **docs/README.md** | Documentation directory placeholder | 📦 Empty | Potential future use |
+| **assets/README.md** | Assets directory placeholder | 📦 Empty | Images/resources (future) |
+
+### **Quick Navigation**
+
+**If you're on Laptop 2 and need to...**
+
+- Understand Phase 0 status → Read `PHASE0-DSP-ENGINEER-SPRINT.md` (what was built)
+- Understand EQ architecture → Read `PHASE0-SWIFTUI-SPRINT.md`
+- Understand test framework → Read `PHASE0-QA-SPRINT.md`
+- Start Phase 1 DSP → Skip these, go straight to HANDOFF.md section "Next Steps for Phase 1"
+- Debug a bug → Check this HANDOFF.md "How to Debug" section
+- Find a specific file → Use HANDOFF.md section "File Reference Guide" (above)
+
+**Files to IGNORE (obsolete):**
+- KICKOFF-AGENDA.md (kickoff notes from May)
+- CODE-REVIEW-FIXING-PLAN.md (all findings fixed)
+- TEAM-FIXING-PLAN*.md (orchestration is done)
+
+---
+
 ## 🏁 Handoff Checklist
 
 - [ ] Clone repo on new laptop
