@@ -11,7 +11,7 @@ struct NowPlayingWidget: View {
            selectedIndex < viewModel.playlist.count
         {
             let currentTrack = viewModel.playlist[selectedIndex]
-            TrackCard(track: currentTrack)
+            TrackCard(track: currentTrack, position: viewModel.playbackPosition)
         } else {
             EmptyTrackCard()
         }
@@ -22,6 +22,13 @@ struct NowPlayingWidget: View {
 
 private struct TrackCard: View {
     let track: AudioFile
+    let position: Double
+
+    /// Fraction of the track elapsed, clamped to [0, 1].
+    private var progressFraction: Double {
+        guard track.durationSeconds > 0 else { return 0 }
+        return min(max(position / track.durationSeconds, 0), 1)
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -49,12 +56,13 @@ private struct TrackCard: View {
             }
 
             HStack(spacing: 8) {
-                Text("0:00")
+                Text(formatDuration(position))
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(Color.asLabelTertiary)
+                    .monospacedDigit()
 
-                // Progress bar — GeometryReader is used here to scale the fill
-                // proportionally to the container width, which is a legitimate use case.
+                // Progress bar — GeometryReader scales the fill proportionally to
+                // the container width, which is a legitimate use case.
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
@@ -62,10 +70,7 @@ private struct TrackCard: View {
 
                         Capsule()
                             .fill(Color.asAccent)
-                            .frame(
-                                width: track.durationSeconds > 0
-                                    ? geo.size.width * CGFloat(0.0 / track.durationSeconds) : 0
-                            )
+                            .frame(width: geo.size.width * CGFloat(progressFraction))
                     }
                 }
                 .frame(height: 3)
