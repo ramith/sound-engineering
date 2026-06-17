@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DeviceCapability.h" // CoreAudio-free; safe to include here
 #include <CoreAudio/CoreAudio.h>
 #include <cstdint>
 #include <string>
@@ -50,6 +51,20 @@ namespace AdaptiveSound
 
         // Determine device type (builtin, USB, wireless, etc.)
         static AudioDevice::Type getDeviceType(AudioDeviceID deviceID);
+
+        // MARK: - Pure-Mode capability querying (Phase B — B1)
+
+        // Discrete set of nominal sample rates the device advertises (Hz), output scope.
+        // For a discrete range (mMinimum == mMaximum) the single rate is reported; for a
+        // continuous range (mMinimum != mMaximum) both endpoints are reported.
+        static std::vector<double> getAvailableSampleRates(AudioDeviceID deviceID);
+
+        // Decode the first OUTPUT stream's virtual (physical == false) or physical
+        // (physical == true) format into a StreamFormatInfo. Returns a zeroed struct on failure.
+        static StreamFormatInfo getStreamFormat(AudioDeviceID deviceID, bool physical);
+
+        // Fully populate a DeviceCapability for the given device (Pure-Mode model).
+        static DeviceCapability queryCapability(AudioDeviceID deviceID);
 
         // Device listener callback type (called off-RT, safe for light work)
         using DeviceListenerCallback = void (*)(AudioDeviceID deviceID, void* context);
