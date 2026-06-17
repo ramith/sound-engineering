@@ -11,5 +11,6 @@
 #define ADAPTIVESOUND_BRIDGING_HEADER_H
 
 #include "../AudioDSP/include/DeviceBridge.h"
+#include "../AudioDSP/include/PureModeBridge.h"
 
 #endif // ADAPTIVESOUND_BRIDGING_HEADER_H

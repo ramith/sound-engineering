@@ -26,6 +26,15 @@
 
 namespace AdaptiveSound
 {
+    // Which decode backend a FileDecodeSource selected at open(). Values match the
+    // CAchievedOutputState.decoderBackend C-ABI convention (0 = Apple, 1 = FFmpeg) so the
+    // signal-path UI can report the real decoder honestly.
+    enum class DecoderKind : uint8_t
+    {
+        Apple = 0,
+        FFmpeg = 1
+    };
+
     class FileDecodeSource final : public PureModeSource
     {
       public:
@@ -44,6 +53,16 @@ namespace AdaptiveSound
         // Off-RT: stop + join the decode thread and close the file. Idempotent; called by the dtor.
         void close() noexcept;
 
+        // Off-RT control-plane: reposition decoding to `seconds` from the start (clamped to >= 0).
+        // Joins the decode thread, repositions the backend SAMPLE-ACCURATELY, discards buffered
+        // pre-seek audio, and restarts decoding. Returns false if the backend reposition failed
+        // (playback still resumes from the prior position so the source is never left dead).
+        //
+        // PRECONDITION: pullFloat() MUST NOT run concurrently. The HAL engine satisfies this by
+        // stopping render around a seek (control-plane). NOT RT-safe; never call from the audio
+        // thread.
+        [[nodiscard]] bool seek(double seconds);
+
         // RT thread: drain interleaved float from the ring, zero-padding any short fill. noexcept,
         // allocation-free, lock-free. `channels` MUST equal channels() — the engine renders at the
         // file's channel count; a mismatch yields silence rather than misaligned audio.
@@ -54,6 +73,9 @@ namespace AdaptiveSound
         [[nodiscard]] uint32_t channels() const noexcept;
         [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept;
         [[nodiscard]] bool sourceIsFloat() const noexcept;
+
+        // Which decode backend was selected at open(). Valid after a successful open().
+        [[nodiscard]] DecoderKind decoderKind() const noexcept;
 
         // True once the decoder has read the entire file. The ring may still hold a tail, so a
         // consumer should keep pulling until pullFloat() also returns 0 to know playback truly
