@@ -68,6 +68,18 @@ namespace
 
     auto clearBackend() -> void { unsetenv("ADAPTIVESOUND_DECODER"); }
 
+    // BackendGuard: RAII wrapper that forces a backend on construction and clears it on
+    // destruction. Copy and move are deleted so an early return cannot leave the env set.
+    struct BackendGuard
+    {
+        explicit BackendGuard(Backend backend) { forceBackend(backend); }
+        ~BackendGuard() { clearBackend(); }
+        BackendGuard(const BackendGuard&) = delete;
+        BackendGuard(BackendGuard&&) = delete;
+        auto operator=(const BackendGuard&) -> BackendGuard& = delete;
+        auto operator=(BackendGuard&&) -> BackendGuard& = delete;
+    };
+
     // Write `interleaved` int16 samples as a 16-bit PCM WAV at `path` via ExtAudioFile.
     // Wraps the existing writeKnownWav (which takes a non-const ref but does not mutate content).
     auto writeWav16(const char* path,
@@ -256,11 +268,10 @@ namespace
     // the "both backends" tests to skip the FFmpeg leg gracefully.
     auto ffmpegLegUnavailable(const char* path) -> bool
     {
-        forceBackend(Backend::FFmpeg);
+        BackendGuard guard(Backend::FFmpeg);
         FileDecodeSource probe;
         const bool opened = probe.open(path);
         probe.close();
-        clearBackend();
         return !opened;
     }
 
@@ -286,7 +297,11 @@ namespace
     constexpr const char* kPathNativeRate = "/tmp/adaptivesound_b2b_nativerate.wav";
     constexpr const char* kPathMono = "/tmp/adaptivesound_b2b_mono.wav";
     constexpr const char* kPath4ch = "/tmp/adaptivesound_b2b_4ch.wav";
-    constexpr const char* kPathMismatch = "/tmp/adaptivesound_b2b_mismatch.wav";
+    // Each test that previously shared kPathMismatch now has its own unique path
+    // to prevent cross-test collisions if tests are ever reordered.
+    constexpr const char* kPathOpenFailure  = "/tmp/adaptivesound_b2b_openfailure.wav";
+    constexpr const char* kPathCloseIdemp   = "/tmp/adaptivesound_b2b_closeidemp.wav";
+    constexpr const char* kPathChanMismatch = "/tmp/adaptivesound_b2b_chanmismatch.wav";
     constexpr const char* kPathEof = "/tmp/adaptivesound_b2b_eof.wav";
     constexpr const char* kPathRingTail = "/tmp/adaptivesound_b2b_ringtail.wav";
     constexpr const char* kPathUnderrun = "/tmp/adaptivesound_b2b_underrun.wav";
@@ -360,22 +375,22 @@ static auto testFileDecodeOpenFailurePaths() -> void
     // (d) double-open: a valid WAV opens; a second open() without close() must fail.
     {
         const std::vector<int16_t> known = {0, 0, 4096, -4096};
-        if (!writeWav16(kPathMismatch, known, kB2bChannels2, kB2bRate48k))
+        if (!writeWav16(kPathOpenFailure, known, kB2bChannels2, kB2bRate48k))
         {
             logFail(kName, "could not write the double-open fixture");
             return;
         }
         FileDecodeSource src;
-        if (!src.open(kPathMismatch))
+        if (!src.open(kPathOpenFailure))
         {
             src.close();
-            std::remove(kPathMismatch);
+            std::remove(kPathOpenFailure);
             logFail(kName, "first open() of a valid WAV failed");
             return;
         }
-        const bool secondOpen = src.open(kPathMismatch);
+        const bool secondOpen = src.open(kPathOpenFailure);
         src.close();
-        std::remove(kPathMismatch);
+        std::remove(kPathOpenFailure);
         if (secondOpen)
         {
             logFail(kName, "second open() without close() returned true");
@@ -400,22 +415,22 @@ static auto testFileDecodeCloseIdempotent() -> void
     // (b) open valid, then close() twice.
     {
         const std::vector<int16_t> known = {0, 0, 8192, -8192};
-        if (!writeWav16(kPathMismatch, known, kB2bChannels2, kB2bRate48k))
+        if (!writeWav16(kPathCloseIdemp, known, kB2bChannels2, kB2bRate48k))
         {
             logFail(kName, "could not write the idempotency fixture");
             return;
         }
         FileDecodeSource src;
-        if (!src.open(kPathMismatch))
+        if (!src.open(kPathCloseIdemp))
         {
             src.close();
-            std::remove(kPathMismatch);
+            std::remove(kPathCloseIdemp);
             logFail(kName, "open() failed");
             return;
         }
         src.close();
         src.close();
-        std::remove(kPathMismatch);
+        std::remove(kPathCloseIdemp);
     }
 
     // (c) default-construct + let the dtor run (scope exit).
@@ -571,22 +586,22 @@ static auto testFileDecodeBitExact24bit() -> void
         return;
     }
 
-    forceBackend(Backend::Apple);
-    const std::string appleErr = bitExact24Body(samples);
-    clearBackend();
-    if (!appleErr.empty())
     {
-        std::remove(kPathBitExact24);
-        logFail(kName, "Apple: " + appleErr);
-        return;
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = bitExact24Body(samples);
+        if (!appleErr.empty())
+        {
+            std::remove(kPathBitExact24);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
     }
 
     const bool skipFfmpeg = ffmpegLegUnavailable(kPathBitExact24);
     if (!skipFfmpeg)
     {
-        forceBackend(Backend::FFmpeg);
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
         const std::string ffmpegErr = bitExact24Body(samples);
-        clearBackend();
         if (!ffmpegErr.empty())
         {
             std::remove(kPathBitExact24);
@@ -598,8 +613,7 @@ static auto testFileDecodeBitExact24bit() -> void
 
     if (skipFfmpeg)
     {
-        std::fputs("  [info] FileDecode_BitExact_24bit: FFmpeg not present (Apple leg only)\n",
-                   stdout);
+        logInfo("  [info] FileDecode_BitExact_24bit: FFmpeg not present (Apple leg only)\n");
     }
     logPass(kName);
 }
@@ -651,22 +665,22 @@ static auto testFileDecodeBitExactFloat32() -> void
         return;
     }
 
-    forceBackend(Backend::Apple);
-    const std::string appleErr = bitExactFloat32Body(samples);
-    clearBackend();
-    if (!appleErr.empty())
     {
-        std::remove(kPathBitExactF32);
-        logFail(kName, "Apple: " + appleErr);
-        return;
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = bitExactFloat32Body(samples);
+        if (!appleErr.empty())
+        {
+            std::remove(kPathBitExactF32);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
     }
 
     const bool skipFfmpeg = ffmpegLegUnavailable(kPathBitExactF32);
     if (!skipFfmpeg)
     {
-        forceBackend(Backend::FFmpeg);
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
         const std::string ffmpegErr = bitExactFloat32Body(samples);
-        clearBackend();
         if (!ffmpegErr.empty())
         {
             std::remove(kPathBitExactF32);
@@ -678,8 +692,7 @@ static auto testFileDecodeBitExactFloat32() -> void
 
     if (skipFfmpeg)
     {
-        std::fputs("  [info] FileDecode_BitExact_Float32: FFmpeg not present (Apple leg only)\n",
-                   stdout);
+        logInfo("  [info] FileDecode_BitExact_Float32: FFmpeg not present (Apple leg only)\n");
     }
     logPass(kName);
 }
@@ -740,22 +753,22 @@ static auto testFileDecodeNativeRates() -> void
             return;
         }
 
-        forceBackend(Backend::Apple);
-        const std::string appleErr = nativeRateBody(rate, kFrames64);
-        clearBackend();
-        if (!appleErr.empty())
         {
-            std::remove(kPathNativeRate);
-            logFail(kName, "Apple: " + appleErr);
-            return;
+            BackendGuard appleGuard(Backend::Apple);
+            const std::string appleErr = nativeRateBody(rate, kFrames64);
+            if (!appleErr.empty())
+            {
+                std::remove(kPathNativeRate);
+                logFail(kName, "Apple: " + appleErr);
+                return;
+            }
         }
 
         const bool skipFfmpeg = ffmpegLegUnavailable(kPathNativeRate);
         if (!skipFfmpeg)
         {
-            forceBackend(Backend::FFmpeg);
+            BackendGuard ffmpegGuard(Backend::FFmpeg);
             const std::string ffmpegErr = nativeRateBody(rate, kFrames64);
-            clearBackend();
             if (!ffmpegErr.empty())
             {
                 std::remove(kPathNativeRate);
@@ -820,22 +833,22 @@ static auto testFileDecodeMonoBitExact() -> void
         return;
     }
 
-    forceBackend(Backend::Apple);
-    const std::string appleErr = monoBody(samples);
-    clearBackend();
-    if (!appleErr.empty())
     {
-        std::remove(kPathMono);
-        logFail(kName, "Apple: " + appleErr);
-        return;
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = monoBody(samples);
+        if (!appleErr.empty())
+        {
+            std::remove(kPathMono);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
     }
 
     const bool skipFfmpeg = ffmpegLegUnavailable(kPathMono);
     if (!skipFfmpeg)
     {
-        forceBackend(Backend::FFmpeg);
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
         const std::string ffmpegErr = monoBody(samples);
-        clearBackend();
         if (!ffmpegErr.empty())
         {
             std::remove(kPathMono);
@@ -917,22 +930,22 @@ static auto testFileDecodeMultichannel4ch() -> void
         return;
     }
 
-    forceBackend(Backend::Apple);
-    const std::string appleErr = multichannel4Body(interleaved, kFrames);
-    clearBackend();
-    if (!appleErr.empty())
     {
-        std::remove(kPath4ch);
-        logFail(kName, "Apple: " + appleErr);
-        return;
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = multichannel4Body(interleaved, kFrames);
+        if (!appleErr.empty())
+        {
+            std::remove(kPath4ch);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
     }
 
     const bool skipFfmpeg = ffmpegLegUnavailable(kPath4ch);
     if (!skipFfmpeg)
     {
-        forceBackend(Backend::FFmpeg);
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
         const std::string ffmpegErr = multichannel4Body(interleaved, kFrames);
-        clearBackend();
         if (!ffmpegErr.empty())
         {
             std::remove(kPath4ch);
@@ -951,16 +964,16 @@ static auto testFileDecodePullChannelMismatchSilence() -> void
     static const char* const kName = "FileDecode_PullChannelMismatchSilence";
     const std::vector<int16_t> samples = {4096, -4096, 8192, -8192, 12345, -12345, 100, -100};
 
-    if (!writeWav16(kPathMismatch, samples, kB2bChannels2, kB2bRate48k))
+    if (!writeWav16(kPathChanMismatch, samples, kB2bChannels2, kB2bRate48k))
     {
         logFail(kName, "could not write the mismatch fixture");
         return;
     }
     FileDecodeSource src;
-    if (!src.open(kPathMismatch))
+    if (!src.open(kPathChanMismatch))
     {
         src.close();
-        std::remove(kPathMismatch);
+        std::remove(kPathChanMismatch);
         logFail(kName, "open() failed");
         return;
     }
@@ -992,7 +1005,7 @@ static auto testFileDecodePullChannelMismatchSilence() -> void
     if (!errTooFew.empty())
     {
         src.close();
-        std::remove(kPathMismatch);
+        std::remove(kPathChanMismatch);
         logFail(kName, errTooFew);
         return;
     }
@@ -1000,7 +1013,7 @@ static auto testFileDecodePullChannelMismatchSilence() -> void
     if (!errTooMany.empty())
     {
         src.close();
-        std::remove(kPathMismatch);
+        std::remove(kPathChanMismatch);
         logFail(kName, errTooMany);
         return;
     }
@@ -1010,7 +1023,7 @@ static auto testFileDecodePullChannelMismatchSilence() -> void
     std::vector<float> got(static_cast<std::size_t>(frameCount) * kB2bChannels2, 0.0F);
     const uint32_t total = drainFrames(src, got, frameCount, kB2bChannels2);
     src.close();
-    std::remove(kPathMismatch);
+    std::remove(kPathChanMismatch);
     if (total != frameCount)
     {
         std::ostringstream oss;
@@ -1228,15 +1241,14 @@ static auto testFileDecodeBackendEquivalence() -> void
     }
 
     // Apple leg.
-    forceBackend(Backend::Apple);
     std::vector<float> vecA(static_cast<std::size_t>(kFrames) * kB2bChannels2, 0.0F);
     uint32_t totalA = 0U;
     {
+        BackendGuard appleGuard(Backend::Apple);
         FileDecodeSource src;
         if (!src.open(kPathEquiv))
         {
             src.close();
-            clearBackend();
             std::remove(kPathEquiv);
             logFail(kName, "Apple open() failed");
             return;
@@ -1244,7 +1256,6 @@ static auto testFileDecodeBackendEquivalence() -> void
         totalA = drainFrames(src, vecA, kFrames, kB2bChannels2);
         src.close();
     }
-    clearBackend();
     if (totalA != kFrames)
     {
         std::remove(kPathEquiv);
@@ -1257,21 +1268,20 @@ static auto testFileDecodeBackendEquivalence() -> void
     if (ffmpegLegUnavailable(kPathEquiv))
     {
         std::remove(kPathEquiv);
-        std::fputs("  [info] FileDecode_BackendEquivalence: FFmpeg not present\n", stdout);
+        logInfo("  [info] FileDecode_BackendEquivalence: FFmpeg not present\n");
         logPass(kName);
         return;
     }
 
     // FFmpeg leg.
-    forceBackend(Backend::FFmpeg);
     std::vector<float> vecB(static_cast<std::size_t>(kFrames) * kB2bChannels2, 0.0F);
     uint32_t totalB = 0U;
     {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
         FileDecodeSource src;
         if (!src.open(kPathEquiv))
         {
             src.close();
-            clearBackend();
             std::remove(kPathEquiv);
             logFail(kName, "FFmpeg open() failed unexpectedly");
             return;
@@ -1279,7 +1289,6 @@ static auto testFileDecodeBackendEquivalence() -> void
         totalB = drainFrames(src, vecB, kFrames, kB2bChannels2);
         src.close();
     }
-    clearBackend();
     std::remove(kPathEquiv);
     if (totalB != kFrames)
     {
