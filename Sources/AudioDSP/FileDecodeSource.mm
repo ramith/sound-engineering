@@ -467,8 +467,14 @@ namespace AdaptiveSound
                 sampleRate_ = static_cast<double>(codecCtx_->sample_rate);
                 channels_ = static_cast<uint32_t>(codecCtx_->ch_layout.nb_channels);
                 const AVSampleFormat sfmt = codecCtx_->sample_fmt;
+                // Report the SOURCE bit depth (e.g. 24 for a 24-bit file), not the decoded
+                // sample-format width: FFmpeg decodes 24-bit PCM into S32, so bits_per_raw_sample
+                // carries the true source depth and matches the Apple backend.
+                const int rawBits = codecCtx_->bits_per_raw_sample;
                 sourceBits_ =
-                    static_cast<uint32_t>(api.av_get_bytes_per_sample(sfmt)) * kBitsPerByte;
+                    (rawBits > 0)
+                        ? static_cast<uint32_t>(rawBits)
+                        : static_cast<uint32_t>(api.av_get_bytes_per_sample(sfmt)) * kBitsPerByte;
                 sourceIsFloat_ = (sfmt == AV_SAMPLE_FMT_FLT || sfmt == AV_SAMPLE_FMT_FLTP ||
                                   sfmt == AV_SAMPLE_FMT_DBL || sfmt == AV_SAMPLE_FMT_DBLP);
                 if (sampleRate_ <= 0.0 || channels_ == 0U || channels_ > kMaxSourceChannels)
@@ -520,6 +526,7 @@ namespace AdaptiveSound
                     api.avformat_close_input(&fmt_);
                 }
                 drained_ = false;
+                swrFlushed_ = false;
             }
 
             Status readChunk(std::vector<float>& out, uint32_t& framesOut) override
@@ -540,7 +547,7 @@ namespace AdaptiveSound
                     }
                     if (ret == AVERROR_EOF)
                     {
-                        return Status::Eof;
+                        return flushSwr(api, out, framesOut);
                     }
                     if (ret != AVERROR(EAGAIN))
                     {
@@ -573,6 +580,27 @@ namespace AdaptiveSound
             [[nodiscard]] bool sourceIsFloat() const noexcept override { return sourceIsFloat_; }
 
           private:
+            // Drain samples buffered inside swresample once the decoder reaches EOF (swr can hold a
+            // small delay even at a matched rate). Returns the flushed frames once, then Eof.
+            Status flushSwr(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut)
+            {
+                if (swrFlushed_)
+                {
+                    return Status::Eof;
+                }
+                swrFlushed_ = true;
+                out.assign(static_cast<std::size_t>(kDecodeReadFrames) * channels_, 0.0F);
+                auto* outPtr = reinterpret_cast<uint8_t*>(out.data());
+                const int converted =
+                    api.swr_convert(swr_, &outPtr, static_cast<int>(kDecodeReadFrames), nullptr, 0);
+                if (converted <= 0)
+                {
+                    return Status::Eof;
+                }
+                framesOut = static_cast<uint32_t>(converted);
+                return Status::Ok;
+            }
+
             Status convertFrame(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut)
             {
                 const int inSamples = frame_->nb_samples;
@@ -606,6 +634,7 @@ namespace AdaptiveSound
             uint32_t channels_ = 0U;
             uint32_t sourceBits_ = 0U;
             bool drained_ = false;
+            bool swrFlushed_ = false;
             bool sourceIsFloat_ = false;
         };
         // NOLINTEND(clang-analyzer-core.CallAndMessage)
@@ -661,6 +690,7 @@ namespace AdaptiveSound
             sourceBits_ = backend_->sourceBitsPerChannel();
             sourceIsFloat_ = backend_->sourceIsFloat();
 
+            carryCount_ = 0U; // reset the consumer-side frame-carry for this session
             stop_.store(false, std::memory_order_release);
             finished_.store(false, std::memory_order_release);
             decodeThread_ = std::thread([this] { decodeLoop(); });
@@ -694,12 +724,33 @@ namespace AdaptiveSound
                 std::memset(out, 0, want * sizeof(float));
                 return 0U;
             }
-            const std::size_t got = ring_.popBlock(out, want);
-            if (got < want)
+
+            // Prepend any partial frame carried from the previous pull. The producer pushes whole
+            // frames, but tryPushBlock fills float-by-float, so the RT consumer can observe a
+            // mid-push (non-frame-aligned) `available` count and pop a partial frame; carrying its
+            // straggler samples across pulls avoids dropping them (sample-loss).
+            std::size_t filled = 0U;
+            if (carryCount_ > 0U)
             {
-                std::memset(out + got, 0, (want - got) * sizeof(float));
+                std::memcpy(out, carry_.data(), carryCount_ * sizeof(float));
+                filled = carryCount_;
+                carryCount_ = 0U;
             }
-            return static_cast<uint32_t>(got / channels);
+            filled += ring_.popBlock(out + filled, want - filled);
+
+            // Keep only whole frames; stash any trailing partial frame for the next pull.
+            const std::size_t wholeFloats = (filled / channels) * channels;
+            const std::size_t remainder = filled - wholeFloats;
+            if (remainder > 0U)
+            {
+                std::memcpy(carry_.data(), out + wholeFloats, remainder * sizeof(float));
+                carryCount_ = static_cast<uint32_t>(remainder);
+            }
+            if (wholeFloats < want)
+            {
+                std::memset(out + wholeFloats, 0, (want - wholeFloats) * sizeof(float));
+            }
+            return static_cast<uint32_t>(wholeFloats / channels);
         }
 
         [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
@@ -749,8 +800,10 @@ namespace AdaptiveSound
         std::unique_ptr<DecodeBackend> backend_;
         std::thread decodeThread_;
         double sampleRate_ = 0.0;
+        std::array<float, kMaxSourceChannels> carry_{}; // trailing partial frame (< channels floats)
         uint32_t channels_ = 0U;
         uint32_t sourceBits_ = 0U;
+        uint32_t carryCount_ = 0U;
         std::atomic<bool> stop_{false};
         std::atomic<bool> finished_{false};
         bool sourceIsFloat_ = false;

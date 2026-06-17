@@ -12,6 +12,7 @@
 // Build: ./Scripts/build-null-test.sh
 // Run:   ./Tests/DSPKernelNullTest
 
+#include <algorithm>
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
 #include <bit>
@@ -4375,6 +4376,9 @@ static auto testFileDecodeBitExactApple() -> void
     unsetenv("ADAPTIVESOUND_DECODER");
 }
 
+// Expanded B2b decode coverage (QA audit): 14 FileDecode_* tests + fixture helpers.
+#include "FileDecodeB2bTests.inc"
+
 // ---------------------------------------------------------------------------
 
 auto main() -> int
@@ -4457,6 +4461,22 @@ auto main() -> int
     // Pure-Mode file decode (Phase B — B2b)
     testFileDecodeBitExactAuto();  // decode bit-exact via FFmpeg-if-present, else Apple
     testFileDecodeBitExactApple(); // decode bit-exact via the Apple fallback (forced)
+
+    // Pure-Mode decode — expanded coverage (QA audit; FileDecodeB2bTests.inc)
+    testFileDecodeOpenFailurePaths();
+    testFileDecodeCloseIdempotent();
+    testFileDecodeFormatGetters();
+    testFileDecodeBitExact24bit();
+    testFileDecodeBitExactFloat32();
+    testFileDecodeNativeRates();
+    testFileDecodeMonoBitExact();
+    testFileDecodeMultichannel4ch();
+    testFileDecodePullChannelMismatchSilence();
+    testFileDecodeEofAndFinishedFlag();
+    testFileDecodeFinishedFlagRingTail();
+    testFileDecodePullBeforeDecodeZeroPads();
+    testFileDecodeBackendEquivalence();
+    testFileDecodeRingWraparound();
 
     std::ostringstream summary;
     summary << "\n=== Results: " << gResults.passed << " passed, " << gResults.failed
