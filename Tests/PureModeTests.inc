@@ -10,11 +10,17 @@
 //        PureMode_RateEpsilonAndMax, Convert_Int16Saturation,
 //        Convert_Int32Saturation, Convert_24In32Alignment,
 //        Convert_FloatPassthrough, Convert_UnsupportedWritesSilence,
-//        ToneSource_FillsBuffer.
+//        ToneSource_FillsBuffer, PureModeBridge_TranslatesAllDecisionBranches,
+//        PureModeBridge_NullArgsAreNoOp, PureModeBridge_RateArrayCopiedFaithfully.
 // Helpers (area-local): makeHdmiCapability, makeBluetoothCapability,
 //   makeBuiltInCapability, makeVirtualCapability, makeFile, checkEval,
 //   readLeInt16, readLeWord32, kBitsXx, kMonoCh, kI16PosFull, kI16NegFull,
-//   kI32PosFull, kI32NegFullBits.
+//   kI32PosFull, kI32NegFullBits, toFlat (DeviceCapability → CDeviceCapability + rates).
+
+// The flat C-ABI Pure-Mode policy bridge (pureModeEvaluate). TestSupport.h already pulls in
+// DeviceCapability.h (the C++ evaluatePureMode); this adds the C struct + function declarations.
+// Reachable via the harness -Iinclude flag.
+#include "PureModeBridge.h"
 
 // ===========================================================================
 // Pure-Mode policy (Phase B — B1). Pure-unit tests of evaluatePureMode(): hand-built
@@ -160,6 +166,35 @@ namespace
             oss << "requiresHog: expected " << requiresHog << ", got " << eval.requiresHog << "; ";
         }
         return oss.str();
+    }
+
+    // Marshal a C++ DeviceCapability into the flat C-ABI CDeviceCapability. The flat struct carries
+    // NO physicalIsFloat field — the policy .cpp derives physicalFormat.isFloat = (integerCapable ==
+    // 0). The advertised rates are returned SEPARATELY (the flat ABI passes them as ptr + count).
+    auto toFlat(const DeviceCapability& cap, std::vector<double>& outRates) -> CDeviceCapability
+    {
+        CDeviceCapability flat{};
+        flat.deviceID = cap.id;
+        flat.transportType = cap.transportType;
+        flat.currentRate = cap.currentRate;
+        flat.physicalBitsPerChannel = cap.physicalFormat.bitsPerChannel;
+        flat.physicalChannels = cap.physicalFormat.channels;
+        flat.integerCapable = cap.integerCapable ? 1U : 0U;
+        flat.exclusiveCapable = cap.exclusiveCapable ? 1U : 0U;
+        flat.isLossyWireless = cap.isLossyWireless ? 1U : 0U;
+        flat.isVirtualOrAggregate = cap.isVirtualOrAggregate ? 1U : 0U;
+        outRates = cap.availableRates;
+        return flat;
+    }
+
+    auto toFlatFile(const FileFormat& file) -> CFileFormat
+    {
+        CFileFormat flat{};
+        flat.sampleRate = file.sampleRate;
+        flat.bitsPerChannel = file.bitsPerChannel;
+        flat.channels = file.channels;
+        flat.isFloat = file.isFloat ? 1U : 0U;
+        return flat;
     }
 } // namespace
 
@@ -653,5 +688,280 @@ static auto testToneSourceFillsBuffer() -> void
             return;
         }
     }
+    logPass(kName);
+}
+
+// ===========================================================================
+// Pure-Mode C-ABI bridge (pureModeEvaluate). These tests pin the flat-ABI marshalling + the
+// enum→uint8 ordering contract between the C++ policy and the Swift-facing C struct. They do NOT
+// re-test the policy table itself (that is PureMode_* above) — instead they cross-check the bridge
+// against the C++ evaluatePureMode() for the same inputs.
+// ===========================================================================
+
+// Bridge T1: every decision/reason branch translates faithfully. For each (device, file) the flat
+// pureModeEvaluate() result must match the C++ evaluatePureMode() result field-for-field (decision
+// + reason as uint8 of the enum, target rate within 1 Hz, the two boolean flags). The cases below
+// cover all five (decision, reason) pairs so the enum→uint8 ordering is fully pinned.
+static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
+{
+    static const char* const kName = "PureModeBridge_TranslatesAllDecisionBranches";
+
+    // One (device, file) case: run both the flat bridge and the C++ policy; compare. The device
+    // fixtures satisfy physicalFormat.isFloat == !integerCapable, matching the bridge's derivation.
+    const auto checkCase = [&](const char* label,
+                               const DeviceCapability& cap,
+                               const FileFormat& file) -> std::string
+    {
+        std::vector<double> rates;
+        const CDeviceCapability flatCap = toFlat(cap, rates);
+        const CFileFormat flatFile = toFlatFile(file);
+        const auto rateCount = static_cast<uint32_t>(rates.size());
+
+        CPureModeEvaluation out{};
+        pureModeEvaluate(&flatCap, rates.data(), rateCount, &flatFile, &out);
+
+        const PureModeEvaluation eval = evaluatePureMode(cap, file);
+
+        std::ostringstream oss;
+        if (out.decision != static_cast<uint8_t>(eval.decision))
+        {
+            oss << label << " decision: bridge " << static_cast<int>(out.decision) << " vs C++ "
+                << static_cast<int>(eval.decision) << "; ";
+        }
+        if (out.reason != static_cast<uint8_t>(eval.reason))
+        {
+            oss << label << " reason: bridge " << static_cast<int>(out.reason) << " vs C++ "
+                << static_cast<int>(eval.reason) << "; ";
+        }
+        if (std::abs(out.targetDeviceRate - eval.targetDeviceRate) > 1.0)
+        {
+            oss << label << " targetDeviceRate: bridge " << out.targetDeviceRate << " vs C++ "
+                << eval.targetDeviceRate << "; ";
+        }
+        if (out.requiresRateChange != (eval.requiresRateChange ? 1U : 0U))
+        {
+            oss << label << " requiresRateChange: bridge "
+                << static_cast<int>(out.requiresRateChange) << " vs C++ " << eval.requiresRateChange
+                << "; ";
+        }
+        if (out.requiresHog != (eval.requiresHog ? 1U : 0U))
+        {
+            oss << label << " requiresHog: bridge " << static_cast<int>(out.requiresHog)
+                << " vs C++ " << eval.requiresHog << "; ";
+        }
+        return oss.str();
+    };
+
+    // Each case also documents the (decision, reason) pair it exercises (all five are covered).
+    struct BranchCase
+    {
+        const char* label = "";
+        DeviceCapability cap;
+        FileFormat file;
+        uint8_t expectDecision = 0U; // documented expectation, also asserted directly below
+        uint8_t expectReason = 0U;
+    };
+    const std::array<BranchCase, 5> cases = {{
+        // HDMI + 44.1k → FullBitPerfect / BitPerfectInteger.
+        {"hdmi+44.1k", makeHdmiCapability(), makeFile(TestConstants::kRate44k), 0U, 0U},
+        // built-in + 96k → RateMatchedFloat / RateMatchedFloatNoSRC.
+        {"builtin+96k", makeBuiltInCapability(), makeFile(TestConstants::kRate96k), 1U, 1U},
+        // Bluetooth + 44.1k → FallbackEnhanced / LossyWirelessCodec.
+        {"bt+44.1k", makeBluetoothCapability(), makeFile(TestConstants::kRate44k), 2U, 2U},
+        // Virtual + 48k → FallbackEnhanced / VirtualDevice.
+        {"virtual+48k", makeVirtualCapability(), makeFile(TestConstants::kRate48k), 2U, 3U},
+        // HDMI + 96k (unsupported) → FallbackEnhanced / RateUnsupportedResample.
+        {"hdmi+96k", makeHdmiCapability(), makeFile(TestConstants::kRate96k), 2U, 4U},
+    }};
+
+    for (const BranchCase& bc : cases)
+    {
+        // First, cross-check the bridge against the C++ policy.
+        const std::string err = checkCase(bc.label, bc.cap, bc.file);
+        if (!err.empty())
+        {
+            logFail(kName, err);
+            return;
+        }
+        // Then pin the absolute (decision, reason) uint8 values the contract promises.
+        std::vector<double> rates;
+        const CDeviceCapability flatCap = toFlat(bc.cap, rates);
+        const CFileFormat flatFile = toFlatFile(bc.file);
+        CPureModeEvaluation out{};
+        pureModeEvaluate(
+            &flatCap, rates.data(), static_cast<uint32_t>(rates.size()), &flatFile, &out);
+        if (out.decision != bc.expectDecision || out.reason != bc.expectReason)
+        {
+            std::ostringstream oss;
+            oss << bc.label << ": expected (decision " << static_cast<int>(bc.expectDecision)
+                << ", reason " << static_cast<int>(bc.expectReason) << "), got (decision "
+                << static_cast<int>(out.decision) << ", reason " << static_cast<int>(out.reason)
+                << ")";
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// Bridge T2: NULL args are a safe no-op. pureModeEvaluate with cap/file/out NULL must not crash and
+// must leave a non-null `out` untouched. Also: a rate-independent fallback device with NULL rates
+// (rateCount 0) still resolves to the correct decision.
+static auto testPureModeBridgeNullArgsAreNoOp() -> void
+{
+    static const char* const kName = "PureModeBridge_NullArgsAreNoOp";
+
+    const DeviceCapability hdmi = makeHdmiCapability();
+    std::vector<double> rates;
+    const CDeviceCapability flatCap = toFlat(hdmi, rates);
+    const CFileFormat flatFile = toFlatFile(makeFile(TestConstants::kRate48k));
+    const auto rateCount = static_cast<uint32_t>(rates.size());
+
+    // Pre-poison `out` with a sentinel; a no-op call must leave every field unchanged.
+    constexpr uint8_t kSentinelDecision = 0xEEU;
+    constexpr double kSentinelRate = -12345.0;
+    constexpr uint8_t kSentinelRateChange = 0xCCU;
+    constexpr uint8_t kSentinelHog = 0xDDU;
+    constexpr uint8_t kSentinelReason = 0xBBU;
+    const auto makeSentinel = []() -> CPureModeEvaluation
+    {
+        CPureModeEvaluation out{};
+        out.decision = kSentinelDecision;
+        out.targetDeviceRate = kSentinelRate;
+        out.requiresRateChange = kSentinelRateChange;
+        out.requiresHog = kSentinelHog;
+        out.reason = kSentinelReason;
+        return out;
+    };
+
+    const auto isSentinel = [&](const CPureModeEvaluation& out) -> bool
+    {
+        return out.decision == kSentinelDecision && out.targetDeviceRate == kSentinelRate &&
+               out.requiresRateChange == kSentinelRateChange && out.requiresHog == kSentinelHog &&
+               out.reason == kSentinelReason;
+    };
+
+    // (a) cap == NULL → no-op (must not touch `out`, must not crash).
+    {
+        CPureModeEvaluation out = makeSentinel();
+        pureModeEvaluate(nullptr, rates.data(), rateCount, &flatFile, &out);
+        if (!isSentinel(out))
+        {
+            logFail(kName, "cap==NULL: out was modified");
+            return;
+        }
+    }
+
+    // (b) file == NULL → no-op.
+    {
+        CPureModeEvaluation out = makeSentinel();
+        pureModeEvaluate(&flatCap, rates.data(), rateCount, nullptr, &out);
+        if (!isSentinel(out))
+        {
+            logFail(kName, "file==NULL: out was modified");
+            return;
+        }
+    }
+
+    // (c) out == NULL → no-op (just must not crash; nothing to inspect).
+    pureModeEvaluate(&flatCap, rates.data(), rateCount, &flatFile, nullptr);
+
+    // (d) availableRates == NULL with rateCount == 0 on a rate-INDEPENDENT device (Bluetooth: lossy
+    //     wireless gates out before any rate lookup) → the correct fallback decision still results.
+    {
+        const DeviceCapability bt = makeBluetoothCapability();
+        std::vector<double> btRates;
+        const CDeviceCapability flatBt = toFlat(bt, btRates);
+        const CFileFormat btFile = toFlatFile(makeFile(TestConstants::kRate44k));
+        CPureModeEvaluation out{};
+        pureModeEvaluate(&flatBt, nullptr, 0U, &btFile, &out);
+
+        const PureModeEvaluation eval = evaluatePureMode(bt, makeFile(TestConstants::kRate44k));
+        // Lossy wireless → FallbackEnhanced (2) / LossyWirelessCodec (2); rate list is irrelevant.
+        if (out.decision != static_cast<uint8_t>(eval.decision) ||
+            out.reason != static_cast<uint8_t>(eval.reason))
+        {
+            std::ostringstream oss;
+            oss << "NULL rates fallback: bridge (decision " << static_cast<int>(out.decision)
+                << ", reason " << static_cast<int>(out.reason) << ") vs C++ (decision "
+                << static_cast<int>(eval.decision) << ", reason "
+                << static_cast<int>(eval.reason) << ")";
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
+    logPass(kName);
+}
+
+// Bridge T3: the rate array is copied faithfully across the flat ABI. A built-in-like device with
+// explicit rates {44100, 48000, 88200, 96000} passed by ptr+count: an 88200 file resolves to
+// RateMatchedFloat at 88200; a 192000 file (unsupported) resolves to RateUnsupportedResample at
+// the copied maximum (96000). Cross-checked against C++ evaluatePureMode() with the same rates.
+static auto testPureModeBridgeRateArrayCopiedFaithfully() -> void
+{
+    static const char* const kName = "PureModeBridge_RateArrayCopiedFaithfully";
+
+    // Built-in-like (float, not integer-capable) device with an EXPLICIT advertised-rate list.
+    DeviceCapability cap = makeBuiltInCapability();
+    cap.availableRates = {TestConstants::kRate44k,
+                          TestConstants::kRate48k,
+                          TestConstants::kRate88k,
+                          TestConstants::kRate96k};
+
+    std::vector<double> rates;
+    const CDeviceCapability flatCap = toFlat(cap, rates);
+    const auto rateCount = static_cast<uint32_t>(rates.size());
+
+    // (a) 88200 file → RateMatchedFloat (1) / RateMatchedFloatNoSRC (1), target 88200.
+    {
+        const FileFormat file = makeFile(TestConstants::kRate88k);
+        const CFileFormat flatFile = toFlatFile(file);
+        CPureModeEvaluation out{};
+        pureModeEvaluate(&flatCap, rates.data(), rateCount, &flatFile, &out);
+
+        const PureModeEvaluation eval = evaluatePureMode(cap, file);
+        if (out.decision != static_cast<uint8_t>(PureModeDecision::RateMatchedFloat) ||
+            out.reason != static_cast<uint8_t>(PureModeReason::RateMatchedFloatNoSRC) ||
+            std::abs(out.targetDeviceRate - TestConstants::kRate88k) > 1.0 ||
+            out.decision != static_cast<uint8_t>(eval.decision) ||
+            out.reason != static_cast<uint8_t>(eval.reason) ||
+            std::abs(out.targetDeviceRate - eval.targetDeviceRate) > 1.0)
+        {
+            std::ostringstream oss;
+            oss << "88200 file: bridge (decision " << static_cast<int>(out.decision) << ", reason "
+                << static_cast<int>(out.reason) << ", target " << out.targetDeviceRate
+                << ") vs C++ (decision " << static_cast<int>(eval.decision) << ", reason "
+                << static_cast<int>(eval.reason) << ", target " << eval.targetDeviceRate << ")";
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
+    // (b) 192000 file (unsupported) → RateUnsupportedResample (4), target = copied max (96000).
+    {
+        const FileFormat file = makeFile(TestConstants::kRate192k);
+        const CFileFormat flatFile = toFlatFile(file);
+        CPureModeEvaluation out{};
+        pureModeEvaluate(&flatCap, rates.data(), rateCount, &flatFile, &out);
+
+        const PureModeEvaluation eval = evaluatePureMode(cap, file);
+        if (out.decision != static_cast<uint8_t>(PureModeDecision::FallbackEnhanced) ||
+            out.reason != static_cast<uint8_t>(PureModeReason::RateUnsupportedResample) ||
+            std::abs(out.targetDeviceRate - TestConstants::kRate96k) > 1.0 ||
+            out.decision != static_cast<uint8_t>(eval.decision) ||
+            out.reason != static_cast<uint8_t>(eval.reason) ||
+            std::abs(out.targetDeviceRate - eval.targetDeviceRate) > 1.0)
+        {
+            std::ostringstream oss;
+            oss << "192000 file: bridge (decision " << static_cast<int>(out.decision) << ", reason "
+                << static_cast<int>(out.reason) << ", target " << out.targetDeviceRate
+                << ") vs C++ (decision " << static_cast<int>(eval.decision) << ", reason "
+                << static_cast<int>(eval.reason) << ", target " << eval.targetDeviceRate << ")";
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
     logPass(kName);
 }

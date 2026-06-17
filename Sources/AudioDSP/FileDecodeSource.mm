@@ -28,6 +28,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -104,6 +105,11 @@ namespace AdaptiveSound
             virtual bool open(const char* path) = 0;
             virtual void close() noexcept = 0;
 
+            // Off-RT: reposition decoding to absolute file-frame `frame` (sample-accurate).
+            // The decode thread MUST be joined before this is called (no concurrent readChunk).
+            // Returns false if the underlying reposition failed.
+            virtual bool seekToFrame(int64_t frame) noexcept = 0;
+
             // Decode the next chunk into `out` (resized to framesOut*channels interleaved floats).
             // framesOut == 0 with Status::Eof signals end of stream.
             virtual Status readChunk(std::vector<float>& out, uint32_t& framesOut) = 0;
@@ -112,6 +118,7 @@ namespace AdaptiveSound
             [[nodiscard]] virtual uint32_t channels() const noexcept = 0;
             [[nodiscard]] virtual uint32_t sourceBitsPerChannel() const noexcept = 0;
             [[nodiscard]] virtual bool sourceIsFloat() const noexcept = 0;
+            [[nodiscard]] virtual DecoderKind kind() const noexcept = 0;
         };
 
         // -------------------------------------------------------------------
@@ -166,6 +173,23 @@ namespace AdaptiveSound
                 }
             }
 
+            // The client (float) data rate equals the file data rate (no SRC), so client-frame
+            // indices and file-frame indices coincide => ExtAudioFileSeek is sample-accurate here.
+            bool seekToFrame(int64_t frame) noexcept override
+            {
+                if (file_ == nullptr)
+                {
+                    return false;
+                }
+                const OSStatus status = ExtAudioFileSeek(file_, static_cast<SInt64>(frame));
+                if (status != noErr)
+                {
+                    std::fprintf(stderr, "[FileDecodeSource] ExtAudioFileSeek failed (%d)\n",
+                                 static_cast<int>(status));
+                }
+                return status == noErr;
+            }
+
             Status readChunk(std::vector<float>& out, uint32_t& framesOut) override
             {
                 framesOut = 0U;
@@ -196,6 +220,7 @@ namespace AdaptiveSound
                 return sourceBits_;
             }
             [[nodiscard]] bool sourceIsFloat() const noexcept override { return sourceIsFloat_; }
+            [[nodiscard]] DecoderKind kind() const noexcept override { return DecoderKind::Apple; }
 
           private:
             bool readFileFormat()
@@ -274,6 +299,9 @@ namespace AdaptiveSound
         constexpr int kFindStreamAuto = -1; // av_find_best_stream: any / no related stream
         constexpr int kNoFlags = 0;
 
+        // Sentinel for "no usable timestamp / no pending seek discard" (targetFrame_).
+        constexpr int64_t kUnknownFrame = -1;
+
         // Resolved libav* entry points (types from the headers, addresses from dlsym).
         struct FFmpegApi
         {
@@ -283,12 +311,14 @@ namespace AdaptiveSound
             decltype(&::avformat_close_input) avformat_close_input = nullptr;
             decltype(&::av_read_frame) av_read_frame = nullptr;
             decltype(&::av_find_best_stream) av_find_best_stream = nullptr;
+            decltype(&::av_seek_frame) av_seek_frame = nullptr;
             decltype(&::avformat_version) avformat_version = nullptr;
             decltype(&::avcodec_alloc_context3) avcodec_alloc_context3 = nullptr;
             decltype(&::avcodec_parameters_to_context) avcodec_parameters_to_context = nullptr;
             decltype(&::avcodec_open2) avcodec_open2 = nullptr;
             decltype(&::avcodec_send_packet) avcodec_send_packet = nullptr;
             decltype(&::avcodec_receive_frame) avcodec_receive_frame = nullptr;
+            decltype(&::avcodec_flush_buffers) avcodec_flush_buffers = nullptr;
             decltype(&::avcodec_free_context) avcodec_free_context = nullptr;
             decltype(&::avcodec_version) avcodec_version = nullptr;
             decltype(&::av_packet_alloc) av_packet_alloc = nullptr;
@@ -351,6 +381,7 @@ namespace AdaptiveSound
                 resolveSym(hfmt, "avformat_close_input", api.avformat_close_input) &&
                 resolveSym(hfmt, "av_read_frame", api.av_read_frame) &&
                 resolveSym(hfmt, "av_find_best_stream", api.av_find_best_stream) &&
+                resolveSym(hfmt, "av_seek_frame", api.av_seek_frame) &&
                 resolveSym(hfmt, "avformat_version", api.avformat_version) &&
                 resolveSym(hcodec, "avcodec_alloc_context3", api.avcodec_alloc_context3) &&
                 resolveSym(hcodec, "avcodec_parameters_to_context",
@@ -358,6 +389,7 @@ namespace AdaptiveSound
                 resolveSym(hcodec, "avcodec_open2", api.avcodec_open2) &&
                 resolveSym(hcodec, "avcodec_send_packet", api.avcodec_send_packet) &&
                 resolveSym(hcodec, "avcodec_receive_frame", api.avcodec_receive_frame) &&
+                resolveSym(hcodec, "avcodec_flush_buffers", api.avcodec_flush_buffers) &&
                 resolveSym(hcodec, "avcodec_free_context", api.avcodec_free_context) &&
                 resolveSym(hcodec, "avcodec_version", api.avcodec_version) &&
                 resolveSym(hcodec, "av_packet_alloc", api.av_packet_alloc) &&
@@ -529,6 +561,42 @@ namespace AdaptiveSound
                 swrFlushed_ = false;
             }
 
+            // Reposition to absolute file-frame `frame`, sample-accurately. av_seek_frame with
+            // AVSEEK_FLAG_BACKWARD lands at or before `frame` (typically a packet/keyframe
+            // boundary); the readChunk discard logic then drops the surplus head samples so the
+            // first frame handed to the ring starts exactly at `frame`.
+            bool seekToFrame(int64_t frame) noexcept override
+            {
+                const FFmpegApi& api = ffmpegApi();
+                if (!api.loaded || fmt_ == nullptr || codecCtx_ == nullptr || swr_ == nullptr ||
+                    audioStream_ < 0)
+                {
+                    return false;
+                }
+                const AVStream* stream = fmt_->streams[audioStream_];
+                const double timeBase = av_q2d(stream->time_base);
+                int64_t ts = 0;
+                if (timeBase > 0.0)
+                {
+                    ts = std::llround(static_cast<double>(frame) / sampleRate_ / timeBase);
+                }
+                if (api.av_seek_frame(fmt_, audioStream_, ts, AVSEEK_FLAG_BACKWARD) < 0)
+                {
+                    std::fprintf(stderr, "[FileDecodeSource] av_seek_frame failed\n");
+                    return false;
+                }
+                // Discard decoder + swresample state carried over from the pre-seek position.
+                api.avcodec_flush_buffers(codecCtx_);
+                drainSwr(api);
+                // The stream is no longer at EOF after a backward/forward seek.
+                drained_ = false;
+                swrFlushed_ = false;
+                // Drive sample-accurate front-drop of the surplus head samples in readChunk.
+                targetFrame_ = frame;
+                needDiscard_ = true;
+                return true;
+            }
+
             Status readChunk(std::vector<float>& out, uint32_t& framesOut) override
             {
                 framesOut = 0U;
@@ -543,7 +611,23 @@ namespace AdaptiveSound
                             api.av_frame_unref(frame_);
                             continue;
                         }
-                        return convertFrame(api, out, framesOut);
+                        // Sample-accurate seek discard: skip frames wholly before the target, and
+                        // compute the per-frame front-drop for the frame that straddles it.
+                        uint32_t frontDrop = 0U;
+                        const bool wasDiscarding = needDiscard_;
+                        if (wasDiscarding && !computeSeekDiscard(frontDrop))
+                        {
+                            api.av_frame_unref(frame_);
+                            continue; // whole frame precedes target — skip (NOT framesOut==0).
+                        }
+                        const Status convStatus = convertFrame(api, out, framesOut, frontDrop);
+                        // If the front-drop consumed the entire converted output, keep decoding:
+                        // returning framesOut==0 here would make decodeLoop stop mid-seek.
+                        if (convStatus == Status::Ok && framesOut == 0U && wasDiscarding)
+                        {
+                            continue;
+                        }
+                        return convStatus;
                     }
                     if (ret == AVERROR_EOF)
                     {
@@ -578,8 +662,65 @@ namespace AdaptiveSound
                 return sourceBits_;
             }
             [[nodiscard]] bool sourceIsFloat() const noexcept override { return sourceIsFloat_; }
+            [[nodiscard]] DecoderKind kind() const noexcept override { return DecoderKind::FFmpeg; }
 
           private:
+            // Empty swresample's internal buffer (feed null input until it yields nothing) so no
+            // pre-seek tail leaks into the post-seek output. Called from seekToFrame, off-RT
+            // (allocation permitted); never on the RT pull path.
+            void drainSwr(const FFmpegApi& api)
+            {
+                std::vector<float> discard(static_cast<std::size_t>(kDecodeReadFrames) * channels_,
+                                           0.0F);
+                auto* discardPtr = reinterpret_cast<uint8_t*>(discard.data());
+                for (;;)
+                {
+                    const int converted = api.swr_convert(swr_, &discardPtr,
+                                                          static_cast<int>(kDecodeReadFrames),
+                                                          nullptr, 0);
+                    if (converted <= 0)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            // For a pending seek, derive this frame's front-drop from its presentation timestamp.
+            // Returns false when the WHOLE frame precedes targetFrame_ (caller skips the frame).
+            // Returns true (with frontDrop set, and needDiscard_ cleared) otherwise; an unusable
+            // timestamp abandons precise discard (frontDrop 0) rather than mis-trimming.
+            bool computeSeekDiscard(uint32_t& frontDrop) noexcept
+            {
+                frontDrop = 0U;
+                int64_t pts = frame_->best_effort_timestamp;
+                if (pts == AV_NOPTS_VALUE)
+                {
+                    pts = frame_->pts;
+                }
+                if (pts == AV_NOPTS_VALUE)
+                {
+                    needDiscard_ = false; // no timestamp — give up on precise discard
+                    return true;
+                }
+                const AVStream* stream = fmt_->streams[audioStream_];
+                const double timeBase = av_q2d(stream->time_base);
+                const int64_t startFrame =
+                    std::llround(static_cast<double>(pts) * timeBase * sampleRate_);
+                const int64_t frameEnd = startFrame + frame_->nb_samples;
+                if (frameEnd <= targetFrame_)
+                {
+                    return false; // entire frame is before the target — skip it
+                }
+                // BACKWARD lands at/before the target; front-drop the surplus head. If the demuxer
+                // overshot (startFrame > targetFrame_), there is nothing to drop (clamp to 0).
+                if (startFrame < targetFrame_)
+                {
+                    frontDrop = static_cast<uint32_t>(targetFrame_ - startFrame);
+                }
+                needDiscard_ = false;
+                return true;
+            }
+
             // Drain samples buffered inside swresample once the decoder reaches EOF (swr can hold a
             // small delay even at a matched rate). Returns the flushed frames once, then Eof.
             Status flushSwr(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut)
@@ -601,7 +742,8 @@ namespace AdaptiveSound
                 return Status::Ok;
             }
 
-            Status convertFrame(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut)
+            Status convertFrame(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut,
+                                uint32_t frontDrop)
             {
                 const int inSamples = frame_->nb_samples;
                 out.assign(static_cast<std::size_t>(inSamples) * channels_, 0.0F);
@@ -620,7 +762,23 @@ namespace AdaptiveSound
                 {
                     return Status::Error;
                 }
-                framesOut = static_cast<uint32_t>(converted);
+                uint32_t producedFrames = static_cast<uint32_t>(converted);
+                // Sample-accurate seek: front-drop the surplus head samples so the first frame
+                // handed to the ring starts exactly at the seek target. Clamp to what we produced.
+                if (frontDrop > 0U && producedFrames > 0U)
+                {
+                    const uint32_t drop = frontDrop < producedFrames ? frontDrop : producedFrames;
+                    const uint32_t keptFrames = producedFrames - drop;
+                    if (keptFrames > 0U)
+                    {
+                        const std::size_t dropFloats = static_cast<std::size_t>(drop) * channels_;
+                        const std::size_t keptFloats =
+                            static_cast<std::size_t>(keptFrames) * channels_;
+                        std::memmove(out.data(), out.data() + dropFloats, keptFloats * sizeof(float));
+                    }
+                    producedFrames = keptFrames;
+                }
+                framesOut = producedFrames;
                 return Status::Ok;
             }
 
@@ -630,12 +788,14 @@ namespace AdaptiveSound
             AVPacket* pkt_ = nullptr;
             AVFrame* frame_ = nullptr;
             double sampleRate_ = 0.0;
+            int64_t targetFrame_ = kUnknownFrame; // absolute target file-frame of a pending seek
             int audioStream_ = -1;
             uint32_t channels_ = 0U;
             uint32_t sourceBits_ = 0U;
             bool drained_ = false;
             bool swrFlushed_ = false;
             bool sourceIsFloat_ = false;
+            bool needDiscard_ = false; // a seek is pending sample-accurate front-drop
         };
         // NOLINTEND(clang-analyzer-core.CallAndMessage)
 #endif // __has_include(<libavformat/avformat.h>)
@@ -689,26 +849,41 @@ namespace AdaptiveSound
             channels_ = backend_->channels();
             sourceBits_ = backend_->sourceBitsPerChannel();
             sourceIsFloat_ = backend_->sourceIsFloat();
+            decoderKind_ = backend_->kind();
 
             carryCount_ = 0U; // reset the consumer-side frame-carry for this session
-            stop_.store(false, std::memory_order_release);
-            finished_.store(false, std::memory_order_release);
-            decodeThread_ = std::thread([this] { decodeLoop(); });
+            startDecodeThread();
             return true;
         }
 
         void close() noexcept
         {
-            stop_.store(true, std::memory_order_release);
-            if (decodeThread_.joinable())
-            {
-                decodeThread_.join();
-            }
+            joinDecodeThread();
             if (backend_ != nullptr)
             {
                 backend_->close();
                 backend_.reset();
             }
+        }
+
+        // Off-RT control plane. PRECONDITION: pullFloat() (the RT consumer) is NOT running — the
+        // HAL engine stops render around a seek. We then quiesce the producer (join the decode
+        // thread), reposition the backend, discard the buffered pre-seek audio while we are the
+        // ring's sole accessor, and restart decoding from the new position.
+        bool seek(double seconds) noexcept
+        {
+            if (backend_ == nullptr)
+            {
+                return false;
+            }
+            const double clamped = seconds > 0.0 ? seconds : 0.0;
+            const int64_t targetFrame = std::llround(clamped * sampleRate_);
+            joinDecodeThread();                  // producer quiesced; consumer absent by precondition
+            const bool ok = backend_->seekToFrame(targetFrame);
+            ring_.reset();                        // sole owner: discard buffered pre-seek audio
+            carryCount_ = 0U;                     // consumer-side straggler reset (consumer stopped)
+            startDecodeThread();
+            return ok;
         }
 
         uint32_t pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
@@ -757,6 +932,7 @@ namespace AdaptiveSound
         [[nodiscard]] uint32_t channels() const noexcept { return channels_; }
         [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept { return sourceBits_; }
         [[nodiscard]] bool sourceIsFloat() const noexcept { return sourceIsFloat_; }
+        [[nodiscard]] DecoderKind decoderKind() const noexcept { return decoderKind_; }
 
         [[nodiscard]] bool decoderFinished() const noexcept
         {
@@ -764,6 +940,25 @@ namespace AdaptiveSound
         }
 
       private:
+        // Spawn the background producer. Caller guarantees no decode thread is currently running
+        // (open() after construction, or seek() right after joinDecodeThread()).
+        void startDecodeThread() noexcept
+        {
+            stop_.store(false, std::memory_order_release);
+            finished_.store(false, std::memory_order_release);
+            decodeThread_ = std::thread([this] { decodeLoop(); });
+        }
+
+        // Signal stop and join the producer if running. Idempotent.
+        void joinDecodeThread() noexcept
+        {
+            stop_.store(true, std::memory_order_release);
+            if (decodeThread_.joinable())
+            {
+                decodeThread_.join();
+            }
+        }
+
         void decodeLoop() noexcept
         {
             std::vector<float> scratch;
@@ -807,6 +1002,7 @@ namespace AdaptiveSound
         std::atomic<bool> stop_{false};
         std::atomic<bool> finished_{false};
         bool sourceIsFloat_ = false;
+        DecoderKind decoderKind_ = DecoderKind::Apple; // backend selected at open()
     };
 
     // =======================================================================
@@ -817,6 +1013,7 @@ namespace AdaptiveSound
 
     bool FileDecodeSource::open(const char* path) { return impl_->open(path); }
     void FileDecodeSource::close() noexcept { impl_->close(); }
+    bool FileDecodeSource::seek(double seconds) { return impl_->seek(seconds); }
 
     uint32_t FileDecodeSource::pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
     {
@@ -830,6 +1027,7 @@ namespace AdaptiveSound
         return impl_->sourceBitsPerChannel();
     }
     bool FileDecodeSource::sourceIsFloat() const noexcept { return impl_->sourceIsFloat(); }
+    DecoderKind FileDecodeSource::decoderKind() const noexcept { return impl_->decoderKind(); }
     bool FileDecodeSource::decoderFinished() const noexcept { return impl_->decoderFinished(); }
 
 } // namespace AdaptiveSound

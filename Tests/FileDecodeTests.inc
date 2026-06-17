@@ -10,12 +10,17 @@
 //        FileDecode_Mono_BitExact, FileDecode_Multichannel_4ch,
 //        FileDecode_PullChannelMismatchSilence, FileDecode_EofAndFinishedFlag,
 //        FileDecode_FinishedFlagRingTail, FileDecode_PullBeforeDecodeZeroPads,
-//        FileDecode_BackendEquivalence, FileDecode_RingWraparound.
+//        FileDecode_BackendEquivalence, FileDecode_RingWraparound,
+//        FileDecode_Seek_SampleAccurateWav16, FileDecode_Seek_ToZeroReproducesFromOpen,
+//        FileDecode_Seek_PastEofLandsAtEnd, FileDecode_Seek_BackendEquivalenceAfterSeek,
+//        FileDecode_Seek_RepeatedRapidNoStaleNoLeak,
+//        FileDecode_Seek_MidStreamDistinctChannels.
 // Helpers (area-local): writeKnownWav (16-bit WAV fixture writer),
 //   decodeBitExactCase (core bit-exact decode logic),
 //   plus all helpers from FileDecodeB2bTests.inc (BackendGuard, writeWav16,
 //   writeWavFloat32, writeWav24, drainFrames, pollFinished, ffmpegLegUnavailable,
-//   makeStereoRamp, fixture paths, format-check helpers, test bodies).
+//   makeStereoRamp, fixture paths, format-check helpers, test bodies);
+//   makeDistinctStereoRamp + seekExpectedLeft/Right + leftSampleToFrame for the seek tests.
 
 // ============================================================================
 // Pure-Mode file decode (Phase B — B2b): ExtAudioFile-backed FileDecodeSource.
@@ -493,6 +498,58 @@ namespace
     constexpr const char* kPathEquiv = "/tmp/adaptivesound_b2b_equiv.wav";
     constexpr const char* kPathWrap = "/tmp/adaptivesound_b2b_wrap.wav";
     constexpr const char* kPathGarbage = "/tmp/adaptivesound_b2b_garbage.bin";
+
+    // Seek-test fixture paths (unique per test to avoid cross-test collisions).
+    constexpr const char* kPathSeekSampleAcc = "/tmp/adaptivesound_b2b_seek_sampleacc.wav";
+    constexpr const char* kPathSeekZero = "/tmp/adaptivesound_b2b_seek_zero.wav";
+    constexpr const char* kPathSeekPastEof = "/tmp/adaptivesound_b2b_seek_pasteof.wav";
+    constexpr const char* kPathSeekEquiv = "/tmp/adaptivesound_b2b_seek_equiv.wav";
+    constexpr const char* kPathSeekRapid = "/tmp/adaptivesound_b2b_seek_rapid.wav";
+    constexpr const char* kPathSeekMidStream = "/tmp/adaptivesound_b2b_seek_midstream.wav";
+
+    // Distinct-per-channel 16-bit stereo ramp: L = (frame % period) - bias, R a DIFFERENT function
+    // of frame (so a channel swap or off-by-one is caught). Both encode the absolute file-frame
+    // index — decode is bit-exact, so post-seek the recovered sample maps straight back to a frame.
+    constexpr int kSeekRightBase = 8192;          // R-channel ramp offset (distinct from L)
+    constexpr int kSeekRightStep = 3;             // R-channel per-frame step (distinct from L's +1)
+
+    // Expected LEFT value at landed file-frame `frame` (frame kept < kI16Period so modulo == frame).
+    auto seekExpectedLeft(uint32_t frame) -> float
+    {
+        const auto value = static_cast<int16_t>(static_cast<int>(frame % kI16Period) - kI16Bias);
+        return static_cast<float>(value) / static_cast<float>(kB2bI16Scale);
+    }
+
+    // Expected RIGHT value at landed file-frame `frame` (distinct ramp catches channel swap).
+    auto seekExpectedRight(uint32_t frame) -> float
+    {
+        const auto value = static_cast<int16_t>(kSeekRightBase + (static_cast<int>(frame) *
+                                                                  kSeekRightStep));
+        return static_cast<float>(value) / static_cast<float>(kB2bI16Scale);
+    }
+
+    // Build the distinct-per-channel stereo ramp used by the seek tests.
+    auto makeDistinctStereoRamp(uint32_t frameCount) -> std::vector<int16_t>
+    {
+        std::vector<int16_t> interleaved(static_cast<std::size_t>(frameCount) * kB2bChannels2);
+        for (uint32_t frame = 0U; frame < frameCount; ++frame)
+        {
+            const auto left =
+                static_cast<int16_t>(static_cast<int>(frame % kI16Period) - kI16Bias);
+            const auto right = static_cast<int16_t>(kSeekRightBase +
+                                                    (static_cast<int>(frame) * kSeekRightStep));
+            interleaved[static_cast<std::size_t>(frame) * kB2bChannels2] = left;
+            interleaved[(static_cast<std::size_t>(frame) * kB2bChannels2) + 1U] = right;
+        }
+        return interleaved;
+    }
+
+    // Recover the absolute file-frame index from a landed LEFT sample (inverse of seekExpectedLeft;
+    // valid while the landed frame is < kI16Period so the ramp is the identity within int16 range).
+    auto leftSampleToFrame(float left) -> int
+    {
+        return static_cast<int>(std::lround(static_cast<double>(left) * kB2bI16Scale)) + kI16Bias;
+    }
 } // namespace
 
 // Spec 1: open-failure paths. nullptr, missing file, garbage bytes, and a double-open all
@@ -1563,6 +1620,635 @@ static auto testFileDecodeRingWraparound() -> void
             logFail(kName, oss.str());
             return;
         }
+    }
+    logPass(kName);
+}
+
+// ============================================================================
+// Seek coverage (FileDecodeSource::seek — sample-accurate reposition).
+//
+// Decode is bit-exact, so each fixture encodes the absolute file-frame index into the sample
+// value (distinct-per-channel ramp). After a seek the recovered LEFT sample maps straight back
+// to a file-frame, letting us assert sample-accurate landing. Seek-target frames are kept below
+// kI16Period (32768) so the ramp modulo is the identity within int16 range. Both backends run;
+// the FFmpeg leg is skipped gracefully (info note + still pass) when FFmpeg is absent.
+//
+// NOTE: these tests use lossless PCM WAV fixtures. AAC/MP4 priming-delay seek accuracy is a
+// separate concern, covered by the B5 manual smoke test, not this harness.
+// ============================================================================
+
+// Seek S1: sample-accurate WAV16. seek(frame 1000) BEFORE any pull, drain 8, assert each landed
+// frame recovers its exact L+R ramp value (so an off-by-one or channel swap is caught).
+static auto testFileDecodeSeekSampleAccurateWav16() -> void
+{
+    static const char* const kName = "FileDecode_Seek_SampleAccurateWav16";
+    constexpr uint32_t kFrames = 2048U;
+    constexpr uint32_t kSeekFrame = 1000U;
+    constexpr uint32_t kDrain = 8U;
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekSampleAcc, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the sample-accurate seek fixture");
+        return;
+    }
+
+    // One forced-backend leg: seek to frame 1000 before any pull, drain 8, assert exact L+R ramp.
+    const auto runLeg = [&]() -> std::string
+    {
+        FileDecodeSource src;
+        if (!src.open(kPathSeekSampleAcc))
+        {
+            src.close();
+            return "open() failed";
+        }
+        if (!src.seek(static_cast<double>(kSeekFrame) / kB2bRate48k))
+        {
+            src.close();
+            return "seek() returned false";
+        }
+        std::vector<float> got(static_cast<std::size_t>(kDrain) * kB2bChannels2, 0.0F);
+        const uint32_t total = drainFrames(src, got, kDrain, kB2bChannels2);
+        src.close();
+        if (total != kDrain)
+        {
+            std::ostringstream oss;
+            oss << "post-seek drained " << total << " of " << kDrain << " frames";
+            return oss.str();
+        }
+        for (uint32_t idx = 0U; idx < kDrain; ++idx)
+        {
+            const uint32_t frame = kSeekFrame + idx;
+            const float gotLeft = got[static_cast<std::size_t>(idx) * kB2bChannels2];
+            const float gotRight = got[(static_cast<std::size_t>(idx) * kB2bChannels2) + 1U];
+            if (std::abs(gotLeft - seekExpectedLeft(frame)) > kB2bTol16)
+            {
+                std::ostringstream oss;
+                oss << "L at landed frame " << idx << ": expected " << seekExpectedLeft(frame)
+                    << " (file-frame " << frame << "), got " << gotLeft;
+                return oss.str();
+            }
+            if (std::abs(gotRight - seekExpectedRight(frame)) > kB2bTol16)
+            {
+                std::ostringstream oss;
+                oss << "R at landed frame " << idx << ": expected " << seekExpectedRight(frame)
+                    << " (file-frame " << frame << "), got " << gotRight << " (channel swap?)";
+                return oss.str();
+            }
+        }
+        return {};
+    };
+
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = runLeg();
+        if (!appleErr.empty())
+        {
+            std::remove(kPathSeekSampleAcc);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
+    }
+
+    const bool skipFfmpeg = ffmpegLegUnavailable(kPathSeekSampleAcc);
+    if (!skipFfmpeg)
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        const std::string ffmpegErr = runLeg();
+        if (!ffmpegErr.empty())
+        {
+            std::remove(kPathSeekSampleAcc);
+            logFail(kName, "FFmpeg: " + ffmpegErr);
+            return;
+        }
+    }
+    std::remove(kPathSeekSampleAcc);
+
+    if (skipFfmpeg)
+    {
+        logInfo("  [info] FileDecode_Seek_SampleAccurateWav16: FFmpeg not present (Apple leg "
+                "only)\n");
+    }
+    logInfo("  [info] FileDecode_Seek_SampleAccurateWav16: AAC/MP4 priming-delay seek accuracy is "
+            "covered by B5 manual smoke, not this harness.\n");
+    logPass(kName);
+}
+
+// Seek S2: seek(0) reproduces the from-open decode. Baseline = full drain from open. Then open,
+// drain a 256-frame prefix, seek(0), drain all → must be BIT-IDENTICAL to baseline (exact memcmp).
+static auto testFileDecodeSeekToZeroReproducesFromOpen() -> void
+{
+    static const char* const kName = "FileDecode_Seek_ToZeroReproducesFromOpen";
+    constexpr uint32_t kFrames = 4096U;
+    constexpr uint32_t kPrefix = 256U;
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekZero, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the seek-to-zero fixture");
+        return;
+    }
+
+    // (a) baseline from open; (b) drain a prefix, seek(0), drain all; compare bit-identical.
+    const auto runLeg = [&]() -> std::string
+    {
+        std::vector<float> baseline(static_cast<std::size_t>(kFrames) * kB2bChannels2, 0.0F);
+        {
+            FileDecodeSource src;
+            if (!src.open(kPathSeekZero))
+            {
+                src.close();
+                return "baseline open() failed";
+            }
+            const uint32_t total = drainFrames(src, baseline, kFrames, kB2bChannels2);
+            src.close();
+            if (total != kFrames)
+            {
+                std::ostringstream oss;
+                oss << "baseline drained " << total << " of " << kFrames << " frames";
+                return oss.str();
+            }
+        }
+
+        std::vector<float> afterSeek(static_cast<std::size_t>(kFrames) * kB2bChannels2, 0.0F);
+        {
+            FileDecodeSource src;
+            if (!src.open(kPathSeekZero))
+            {
+                src.close();
+                return "after-seek open() failed";
+            }
+            std::vector<float> prefix(static_cast<std::size_t>(kPrefix) * kB2bChannels2, 0.0F);
+            const uint32_t prefixDrained = drainFrames(src, prefix, kPrefix, kB2bChannels2);
+            if (prefixDrained != kPrefix)
+            {
+                src.close();
+                std::ostringstream oss;
+                oss << "prefix drained " << prefixDrained << " of " << kPrefix << " frames";
+                return oss.str();
+            }
+            if (!src.seek(0.0))
+            {
+                src.close();
+                return "seek(0.0) returned false";
+            }
+            const uint32_t total = drainFrames(src, afterSeek, kFrames, kB2bChannels2);
+            src.close();
+            if (total != kFrames)
+            {
+                std::ostringstream oss;
+                oss << "after-seek drained " << total << " of " << kFrames << " frames";
+                return oss.str();
+            }
+        }
+
+        if (std::memcmp(afterSeek.data(),
+                        baseline.data(),
+                        baseline.size() * sizeof(float)) != 0)
+        {
+            return "after-seek decode is not bit-identical to the from-open baseline";
+        }
+        return {};
+    };
+
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = runLeg();
+        if (!appleErr.empty())
+        {
+            std::remove(kPathSeekZero);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
+    }
+
+    const bool skipFfmpeg = ffmpegLegUnavailable(kPathSeekZero);
+    if (!skipFfmpeg)
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        const std::string ffmpegErr = runLeg();
+        if (!ffmpegErr.empty())
+        {
+            std::remove(kPathSeekZero);
+            logFail(kName, "FFmpeg: " + ffmpegErr);
+            return;
+        }
+    }
+    std::remove(kPathSeekZero);
+
+    if (skipFfmpeg)
+    {
+        logInfo("  [info] FileDecode_Seek_ToZeroReproducesFromOpen: FFmpeg not present (Apple leg "
+                "only)\n");
+    }
+    logPass(kName);
+}
+
+// Seek S3: seek far past EOF lands at end. seek(10s) on a 512-frame file; decoderFinished() must
+// become true within budget (producer-liveness / hang canary); then one pull returns 0 + zero-fill.
+static auto testFileDecodeSeekPastEofLandsAtEnd() -> void
+{
+    static const char* const kName = "FileDecode_Seek_PastEofLandsAtEnd";
+    constexpr uint32_t kFrames = 512U;
+    constexpr double kSeekSecondsPastEof = 10.0; // far beyond the 512-frame (~10.7 ms) file
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekPastEof, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the seek-past-EOF fixture");
+        return;
+    }
+
+    const auto runLeg = [&]() -> std::string
+    {
+        FileDecodeSource src;
+        if (!src.open(kPathSeekPastEof))
+        {
+            src.close();
+            return "open() failed";
+        }
+        if (!src.seek(kSeekSecondsPastEof))
+        {
+            src.close();
+            return "seek(past EOF) returned false";
+        }
+        if (!pollFinished(src))
+        {
+            src.close();
+            return "decoderFinished() not true within ~120 ms after a past-EOF seek (hang canary)";
+        }
+        // One more pull: at end-of-file → returns 0 and zero-fills (post-EOF assertion).
+        std::vector<float> extra(static_cast<std::size_t>(kPullChunk32) * kB2bChannels2, -999.0F);
+        const uint32_t produced = src.pullFloat(extra.data(), kPullChunk32, kB2bChannels2);
+        bool zeroed = true;
+        for (const float sample : extra)
+        {
+            if (sample != 0.0F)
+            {
+                zeroed = false;
+                break;
+            }
+        }
+        src.close();
+        if (produced != 0U || !zeroed)
+        {
+            std::ostringstream oss;
+            oss << "post-seek-EOF pull returned " << produced << " (expected 0) zeroed=" << zeroed;
+            return oss.str();
+        }
+        return {};
+    };
+
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = runLeg();
+        if (!appleErr.empty())
+        {
+            std::remove(kPathSeekPastEof);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
+    }
+
+    const bool skipFfmpeg = ffmpegLegUnavailable(kPathSeekPastEof);
+    if (!skipFfmpeg)
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        const std::string ffmpegErr = runLeg();
+        if (!ffmpegErr.empty())
+        {
+            std::remove(kPathSeekPastEof);
+            logFail(kName, "FFmpeg: " + ffmpegErr);
+            return;
+        }
+    }
+    std::remove(kPathSeekPastEof);
+
+    if (skipFfmpeg)
+    {
+        logInfo("  [info] FileDecode_Seek_PastEofLandsAtEnd: FFmpeg not present (Apple leg "
+                "only)\n");
+    }
+    logPass(kName);
+}
+
+// Seek S4: backend equivalence after seek. Both backends seek to frame 777 and drain 512; the two
+// decoded buffers must agree element-wise (within 1/32768) and land on the same frame.
+static auto testFileDecodeSeekBackendEquivalenceAfterSeek() -> void
+{
+    static const char* const kName = "FileDecode_Seek_BackendEquivalenceAfterSeek";
+    constexpr uint32_t kFrames = 2048U;
+    constexpr uint32_t kSeekFrame = 777U;
+    constexpr uint32_t kDrain = 512U;
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekEquiv, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the seek-equivalence fixture");
+        return;
+    }
+
+    // Apple leg.
+    std::vector<float> vecA(static_cast<std::size_t>(kDrain) * kB2bChannels2, 0.0F);
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        FileDecodeSource src;
+        if (!src.open(kPathSeekEquiv))
+        {
+            src.close();
+            std::remove(kPathSeekEquiv);
+            logFail(kName, "Apple open() failed");
+            return;
+        }
+        if (!src.seek(static_cast<double>(kSeekFrame) / kB2bRate48k))
+        {
+            src.close();
+            std::remove(kPathSeekEquiv);
+            logFail(kName, "Apple seek() returned false");
+            return;
+        }
+        const uint32_t totalA = drainFrames(src, vecA, kDrain, kB2bChannels2);
+        src.close();
+        if (totalA != kDrain)
+        {
+            std::remove(kPathSeekEquiv);
+            std::ostringstream oss;
+            oss << "Apple post-seek drained " << totalA << " of " << kDrain;
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
+    // The Apple leg must land exactly on the seek frame (the landed-frame anchor for the compare).
+    const int landedFrameA = leftSampleToFrame(vecA[0]);
+    if (landedFrameA != static_cast<int>(kSeekFrame))
+    {
+        std::remove(kPathSeekEquiv);
+        std::ostringstream oss;
+        oss << "Apple landed on file-frame " << landedFrameA << ", expected " << kSeekFrame;
+        logFail(kName, oss.str());
+        return;
+    }
+
+    if (ffmpegLegUnavailable(kPathSeekEquiv))
+    {
+        std::remove(kPathSeekEquiv);
+        logInfo("  [info] FileDecode_Seek_BackendEquivalenceAfterSeek: FFmpeg not present\n");
+        logPass(kName);
+        return;
+    }
+
+    // FFmpeg leg.
+    std::vector<float> vecB(static_cast<std::size_t>(kDrain) * kB2bChannels2, 0.0F);
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        FileDecodeSource src;
+        if (!src.open(kPathSeekEquiv))
+        {
+            src.close();
+            std::remove(kPathSeekEquiv);
+            logFail(kName, "FFmpeg open() failed unexpectedly");
+            return;
+        }
+        if (!src.seek(static_cast<double>(kSeekFrame) / kB2bRate48k))
+        {
+            src.close();
+            std::remove(kPathSeekEquiv);
+            logFail(kName, "FFmpeg seek() returned false");
+            return;
+        }
+        const uint32_t totalB = drainFrames(src, vecB, kDrain, kB2bChannels2);
+        src.close();
+        if (totalB != kDrain)
+        {
+            std::remove(kPathSeekEquiv);
+            std::ostringstream oss;
+            oss << "FFmpeg post-seek drained " << totalB << " of " << kDrain;
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+    std::remove(kPathSeekEquiv);
+
+    const int landedFrameB = leftSampleToFrame(vecB[0]);
+    if (landedFrameB != landedFrameA)
+    {
+        std::ostringstream oss;
+        oss << "FFmpeg landed on file-frame " << landedFrameB << " vs Apple " << landedFrameA;
+        logFail(kName, oss.str());
+        return;
+    }
+
+    for (std::size_t idx = 0U; idx < vecA.size(); ++idx)
+    {
+        if (std::abs(vecA[idx] - vecB[idx]) > kB2bTol16)
+        {
+            std::ostringstream oss;
+            oss << "post-seek backend mismatch at index " << idx << ": Apple " << vecA[idx]
+                << " vs FFmpeg " << vecB[idx];
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// Seek S5 (P1): repeated rapid seeks — no stale frames, no leak. ~20 seeks over varied targets;
+// after each, the first landed L must equal the target's ramp (smoke-level join/respawn + ring
+// reset check).
+static auto testFileDecodeSeekRepeatedRapidNoStaleNoLeak() -> void
+{
+    static const char* const kName = "FileDecode_Seek_RepeatedRapidNoStaleNoLeak";
+    constexpr uint32_t kFrames = 16384U;
+    constexpr uint32_t kDrain = 4U;
+    // Varied seek targets, all WITHIN the 16384-frame file AND < kI16Period so the ramp is the
+    // identity (landed L recovers the exact frame). Spans early / mid / late / repeated positions.
+    static constexpr std::array<uint32_t, 20> kTargets = {100U,   5000U,  250U,   12000U, 50U,
+                                                          8000U,  15999U, 1U,     9999U,  333U,
+                                                          15000U, 7U,     4096U,  11111U, 2048U,
+                                                          600U,   13000U, 42U,    8888U,  14321U};
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekRapid, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the rapid-seek fixture");
+        return;
+    }
+
+    const auto runLeg = [&]() -> std::string
+    {
+        FileDecodeSource src;
+        if (!src.open(kPathSeekRapid))
+        {
+            src.close();
+            return "open() failed";
+        }
+        for (const uint32_t target : kTargets)
+        {
+            if (!src.seek(static_cast<double>(target) / kB2bRate48k))
+            {
+                src.close();
+                std::ostringstream oss;
+                oss << "seek(target=" << target << ") returned false";
+                return oss.str();
+            }
+            std::vector<float> got(static_cast<std::size_t>(kDrain) * kB2bChannels2, 0.0F);
+            const uint32_t total = drainFrames(src, got, kDrain, kB2bChannels2);
+            if (total != kDrain)
+            {
+                src.close();
+                std::ostringstream oss;
+                oss << "target=" << target << ": drained " << total << " of " << kDrain;
+                return oss.str();
+            }
+            if (std::abs(got[0] - seekExpectedLeft(target)) > kB2bTol16)
+            {
+                src.close();
+                std::ostringstream oss;
+                oss << "target=" << target << ": first landed L expected "
+                    << seekExpectedLeft(target) << ", got " << got[0] << " (stale frame? landed-frame "
+                    << leftSampleToFrame(got[0]) << ")";
+                return oss.str();
+            }
+        }
+        src.close();
+        return {};
+    };
+
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = runLeg();
+        if (!appleErr.empty())
+        {
+            std::remove(kPathSeekRapid);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
+    }
+
+    const bool skipFfmpeg = ffmpegLegUnavailable(kPathSeekRapid);
+    if (!skipFfmpeg)
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        const std::string ffmpegErr = runLeg();
+        if (!ffmpegErr.empty())
+        {
+            std::remove(kPathSeekRapid);
+            logFail(kName, "FFmpeg: " + ffmpegErr);
+            return;
+        }
+    }
+    std::remove(kPathSeekRapid);
+
+    if (skipFfmpeg)
+    {
+        logInfo("  [info] FileDecode_Seek_RepeatedRapidNoStaleNoLeak: FFmpeg not present (Apple "
+                "leg only)\n");
+    }
+    logPass(kName);
+}
+
+// Seek S6 (P1): mid-stream seek with distinct channels. Drain 1000 frames mid-file, seek to frame
+// 3001, drain 16; assert exact L+R ramp landing and per-frame advance (targets the FFmpeg
+// per-frame front-drop memmove).
+static auto testFileDecodeSeekMidStreamDistinctChannels() -> void
+{
+    static const char* const kName = "FileDecode_Seek_MidStreamDistinctChannels";
+    constexpr uint32_t kFrames = 8192U;
+    constexpr uint32_t kMidDrain = 1000U;
+    constexpr uint32_t kSeekFrame = 3001U;
+    constexpr uint32_t kDrain = 16U;
+
+    const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
+    if (!writeWav16(kPathSeekMidStream, interleaved, kB2bChannels2, kB2bRate48k))
+    {
+        logFail(kName, "could not write the mid-stream seek fixture");
+        return;
+    }
+
+    const auto runLeg = [&]() -> std::string
+    {
+        FileDecodeSource src;
+        if (!src.open(kPathSeekMidStream))
+        {
+            src.close();
+            return "open() failed";
+        }
+        std::vector<float> mid(static_cast<std::size_t>(kMidDrain) * kB2bChannels2, 0.0F);
+        const uint32_t midTotal = drainFrames(src, mid, kMidDrain, kB2bChannels2);
+        if (midTotal != kMidDrain)
+        {
+            src.close();
+            std::ostringstream oss;
+            oss << "mid-file drained " << midTotal << " of " << kMidDrain << " frames";
+            return oss.str();
+        }
+        if (!src.seek(static_cast<double>(kSeekFrame) / kB2bRate48k))
+        {
+            src.close();
+            return "seek() returned false";
+        }
+        std::vector<float> got(static_cast<std::size_t>(kDrain) * kB2bChannels2, 0.0F);
+        const uint32_t total = drainFrames(src, got, kDrain, kB2bChannels2);
+        src.close();
+        if (total != kDrain)
+        {
+            std::ostringstream oss;
+            oss << "post-seek drained " << total << " of " << kDrain << " frames";
+            return oss.str();
+        }
+        for (uint32_t idx = 0U; idx < kDrain; ++idx)
+        {
+            const uint32_t frame = kSeekFrame + idx;
+            const float gotLeft = got[static_cast<std::size_t>(idx) * kB2bChannels2];
+            const float gotRight = got[(static_cast<std::size_t>(idx) * kB2bChannels2) + 1U];
+            if (std::abs(gotLeft - seekExpectedLeft(frame)) > kB2bTol16)
+            {
+                std::ostringstream oss;
+                oss << "L at landed frame " << idx << ": expected " << seekExpectedLeft(frame)
+                    << " (file-frame " << frame << "), got " << gotLeft;
+                return oss.str();
+            }
+            if (std::abs(gotRight - seekExpectedRight(frame)) > kB2bTol16)
+            {
+                std::ostringstream oss;
+                oss << "R at landed frame " << idx << ": expected " << seekExpectedRight(frame)
+                    << " (file-frame " << frame << "), got " << gotRight << " (channel swap?)";
+                return oss.str();
+            }
+        }
+        return {};
+    };
+
+    {
+        BackendGuard appleGuard(Backend::Apple);
+        const std::string appleErr = runLeg();
+        if (!appleErr.empty())
+        {
+            std::remove(kPathSeekMidStream);
+            logFail(kName, "Apple: " + appleErr);
+            return;
+        }
+    }
+
+    const bool skipFfmpeg = ffmpegLegUnavailable(kPathSeekMidStream);
+    if (!skipFfmpeg)
+    {
+        BackendGuard ffmpegGuard(Backend::FFmpeg);
+        const std::string ffmpegErr = runLeg();
+        if (!ffmpegErr.empty())
+        {
+            std::remove(kPathSeekMidStream);
+            logFail(kName, "FFmpeg: " + ffmpegErr);
+            return;
+        }
+    }
+    std::remove(kPathSeekMidStream);
+
+    if (skipFfmpeg)
+    {
+        logInfo("  [info] FileDecode_Seek_MidStreamDistinctChannels: FFmpeg not present (Apple leg "
+                "only)\n");
     }
     logPass(kName);
 }

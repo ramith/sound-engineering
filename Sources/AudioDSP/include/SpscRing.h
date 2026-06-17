@@ -99,6 +99,19 @@ namespace AdaptiveSound
             return read;
         }
 
+        // Reset the ring to empty. NOT thread-safe: the caller MUST guarantee that NEITHER the
+        // producer NOR the consumer is concurrently accessing the ring. Used by
+        // FileDecodeSource::seek, which joins the decode thread (producer) and runs only when the
+        // RT consumer is stopped, so it is the sole accessor when it discards buffered pre-seek
+        // audio.
+        void reset() noexcept
+        {
+            tail_.store(0U, std::memory_order_relaxed);
+            head_.store(0U, std::memory_order_relaxed);
+            cachedHead_ = 0U;
+            cachedTail_ = 0U;
+        }
+
       private:
         static constexpr std::size_t kMask = Capacity - 1U;
 

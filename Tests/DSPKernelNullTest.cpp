@@ -22,8 +22,9 @@
 //   MultichannelTests.inc — multichannel epic safety net, BS.1770 multichannel,
 //                           large-buffer fence (tests 20-34)
 //   SpatialTests.inc      — SpatialRenderKernel passthrough tests (test 35)
-//   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource (tests 36-48)
-//   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage (tests 49-63)
+//   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource,
+//                           + C-ABI bridge (pureModeEvaluate) tests (tests 36-51)
+//   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -51,7 +52,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 63U> kTests = {{
+    constexpr std::array<TestEntry, 72U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -112,6 +113,14 @@ namespace
         {"Convert_FloatPassthrough", testConvertFloatPassthrough, true},
         {"Convert_UnsupportedWritesSilence", testConvertUnsupportedWritesSilence, true},
         {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
+        // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
+        {"PureModeBridge_TranslatesAllDecisionBranches",
+         testPureModeBridgeTranslatesAllDecisionBranches,
+         true},
+        {"PureModeBridge_NullArgsAreNoOp", testPureModeBridgeNullArgsAreNoOp, true},
+        {"PureModeBridge_RateArrayCopiedFaithfully",
+         testPureModeBridgeRateArrayCopiedFaithfully,
+         true},
         // Pure-Mode file decode (Phase B — B2b) — SERIAL: mutate env + /tmp paths
         {"FileDecode_BitExact_Auto", testFileDecodeBitExactAuto, false},
         {"FileDecode_BitExact_Apple", testFileDecodeBitExactApple, false},
@@ -130,6 +139,21 @@ namespace
         {"FileDecode_PullBeforeDecodeZeroPads", testFileDecodePullBeforeDecodeZeroPads, false},
         {"FileDecode_BackendEquivalence", testFileDecodeBackendEquivalence, false},
         {"FileDecode_RingWraparound", testFileDecodeRingWraparound, false},
+        // Seek coverage (FileDecodeSource::seek) — SERIAL: mutate env + /tmp paths
+        {"FileDecode_Seek_SampleAccurateWav16", testFileDecodeSeekSampleAccurateWav16, false},
+        {"FileDecode_Seek_ToZeroReproducesFromOpen",
+         testFileDecodeSeekToZeroReproducesFromOpen,
+         false},
+        {"FileDecode_Seek_PastEofLandsAtEnd", testFileDecodeSeekPastEofLandsAtEnd, false},
+        {"FileDecode_Seek_BackendEquivalenceAfterSeek",
+         testFileDecodeSeekBackendEquivalenceAfterSeek,
+         false},
+        {"FileDecode_Seek_RepeatedRapidNoStaleNoLeak",
+         testFileDecodeSeekRepeatedRapidNoStaleNoLeak,
+         false},
+        {"FileDecode_Seek_MidStreamDistinctChannels",
+         testFileDecodeSeekMidStreamDistinctChannels,
+         false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
