@@ -35,6 +35,7 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.mm" \
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.mm" \
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.mm" \
