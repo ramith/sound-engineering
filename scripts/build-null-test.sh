@@ -28,6 +28,7 @@ xcrun clang++ \
     -D_LIBCPP_DISABLE_AVAILABILITY \
     -I"$REPO_ROOT/Sources/AudioDSP/include" \
     -I"$REPO_ROOT/Sources/AudioDSP" \
+    -isystem /opt/homebrew/include \
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.mm" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.mm" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.mm" \
@@ -36,8 +37,10 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.mm" \
     "$REPO_ROOT/Tests/DSPKernelNullTest.cpp" \
     -framework AudioToolbox \
+    -framework CoreFoundation \
     -framework Accelerate \
     -o "$OUTPUT"
 
