@@ -296,23 +296,47 @@ uint32_t CoreAudioDevice::getDeviceBufferFrameSize(AudioDeviceID deviceID) {
 }
 
 AudioDevice::Type CoreAudioDevice::getDeviceType(AudioDeviceID deviceID) {
-    std::string deviceName = getDeviceName(deviceID);
+    // Prefer the authoritative CoreAudio transport type (kAudioDevicePropertyTransportType);
+    // a USB DAC named "SomeDAC" or a non-Apple BT headset would be misclassified by a name
+    // heuristic. Fall back to the name only when the transport type is unavailable/unrecognized.
+    AudioObjectPropertyAddress transportAddr{
+        kAudioDevicePropertyTransportType,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
 
-    // Simple heuristic based on device name
+    UInt32 transportType = 0;
+    UInt32 dataSize = sizeof(transportType);
+    OSStatus status = AudioObjectGetPropertyData(
+        deviceID, &transportAddr, 0, nullptr, &dataSize, &transportType);
+
+    if (status == noErr) {
+        switch (transportType) {
+            case kAudioDeviceTransportTypeBluetooth:
+            case kAudioDeviceTransportTypeBluetoothLE:
+            case kAudioDeviceTransportTypeAirPlay:
+                return AudioDevice::Type::Wireless;
+            case kAudioDeviceTransportTypeUSB:
+                return AudioDevice::Type::USB;
+            case kAudioDeviceTransportTypeBuiltIn:
+                return AudioDevice::Type::Builtin;
+            default:
+                break;  // unrecognized transport — fall through to the name heuristic
+        }
+    }
+
+    // Fallback heuristic when the transport type is unknown.
+    std::string deviceName = getDeviceName(deviceID);
     if (deviceName.contains("AirPods") ||
         deviceName.contains("Bluetooth") ||
         deviceName.contains("wireless")) {
         return AudioDevice::Type::Wireless;
     }
-
     if (deviceName.contains("USB")) {
         return AudioDevice::Type::USB;
     }
-
     if (deviceName.contains("Built-in")) {
         return AudioDevice::Type::Builtin;
     }
-
     return AudioDevice::Type::Unknown;
 }
 
