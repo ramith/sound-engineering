@@ -70,6 +70,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     var graphState: GraphState = .idle
 
+    /// Observer for `AVAudioEngineConfigurationChange`. Without it, a hardware route change
+    /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
+    /// the app silently goes quiet. Registered in `initialize()`, removed in `shutdown()`.
+    private var configChangeObserver: NSObjectProtocol?
+
     // MARK: - Initialize
 
     func initialize() async throws -> Bool {
@@ -81,6 +86,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
             DispatchQueue.global().async {
                 let engine = AVAudioEngine()
                 self.avEngine = engine
+                self.observeConfigurationChanges(of: engine)
 
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
@@ -170,10 +176,40 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     // MARK: - Shutdown
 
+    /// Resume rendering after a hardware configuration change (route / default-device / format
+    /// change), which stops `AVAudioEngine` — otherwise the app silently goes quiet on a Bluetooth
+    /// or USB change. (Full device-width / exclusive re-evaluation is Phase B; here we resume the
+    /// existing graph so playback continues.)
+    private func observeConfigurationChanges(of engine: AVAudioEngine) {
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            DispatchQueue.global().async {
+                guard let self, let engine = self.avEngine else { return }
+                let wasPlaying = self.playerNode?.isPlaying ?? false
+                if !engine.isRunning {
+                    do {
+                        try engine.start()
+                    } catch {
+                        NSLog("[AudioEngineBridge] engine restart after configuration change failed: \(error)")
+                        return
+                    }
+                }
+                if wasPlaying, let player = self.playerNode, !player.isPlaying {
+                    player.play()
+                }
+            }
+        }
+    }
+
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 self.removeSpectrumTap()
+                if let observer = self.configChangeObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.configChangeObserver = nil
+                }
                 if let playerNode = self.playerNode, playerNode.isPlaying {
                     playerNode.stop()
                 }
