@@ -1,15 +1,200 @@
+// FileDecodeTests.inc
+//
+// Pure-Mode file decode (Phase B — B2b): ExtAudioFile-backed FileDecodeSource tests.
+// #included into Tests/DSPKernelNullTest.cpp after TestSupport.h.
+//
+// Tests: FileDecode_BitExact_Auto, FileDecode_BitExact_Apple,
+//        FileDecode_OpenFailurePaths, FileDecode_CloseIdempotent,
+//        FileDecode_FormatGetters, FileDecode_BitExact_24bit,
+//        FileDecode_BitExact_Float32, FileDecode_NativeRates,
+//        FileDecode_Mono_BitExact, FileDecode_Multichannel_4ch,
+//        FileDecode_PullChannelMismatchSilence, FileDecode_EofAndFinishedFlag,
+//        FileDecode_FinishedFlagRingTail, FileDecode_PullBeforeDecodeZeroPads,
+//        FileDecode_BackendEquivalence, FileDecode_RingWraparound.
+// Helpers (area-local): writeKnownWav (16-bit WAV fixture writer),
+//   decodeBitExactCase (core bit-exact decode logic),
+//   plus all helpers from FileDecodeB2bTests.inc (BackendGuard, writeWav16,
+//   writeWavFloat32, writeWav24, drainFrames, pollFinished, ffmpegLegUnavailable,
+//   makeStereoRamp, fixture paths, format-check helpers, test bodies).
+
 // ============================================================================
-// FileDecodeB2bTests.inc
+// Pure-Mode file decode (Phase B — B2b): ExtAudioFile-backed FileDecodeSource.
+// Writes a tiny known 16-bit stereo PCM WAV, decodes it through FileDecodeSource at the file's
+// native rate (no resampling), and asserts the returned floats recover the known int16 samples
+// (within one 16-bit LSB) with the correct rate, channel count, and frame count.
+// ============================================================================
+
+namespace
+{
+    constexpr uint32_t kWavBits16 = 16U;
+
+    // Write `interleaved` int16 samples as a 16-bit PCM WAV at `path` via ExtAudioFile.
+    auto writeKnownWav(const char* path,
+                       std::vector<int16_t>& interleaved,
+                       uint32_t channels,
+                       double rate) -> bool
+    {
+        AudioStreamBasicDescription fmt{};
+        fmt.mFormatID = kAudioFormatLinearPCM;
+        fmt.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+        fmt.mSampleRate = rate;
+        fmt.mChannelsPerFrame = channels;
+        fmt.mBitsPerChannel = kWavBits16;
+        fmt.mFramesPerPacket = 1U;
+        fmt.mBytesPerFrame = static_cast<UInt32>(sizeof(int16_t)) * channels;
+        fmt.mBytesPerPacket = fmt.mBytesPerFrame;
+
+        CFURLRef url =
+            CFURLCreateFromFileSystemRepresentation(nullptr,
+                                                    reinterpret_cast<const UInt8*>(path),
+                                                    static_cast<CFIndex>(std::strlen(path)),
+                                                    static_cast<Boolean>(false));
+        if (url == nullptr)
+        {
+            return false;
+        }
+        ExtAudioFileRef out = nullptr;
+        OSStatus status = ExtAudioFileCreateWithURL(
+            url, kAudioFileWAVEType, &fmt, nullptr, kAudioFileFlags_EraseFile, &out);
+        CFRelease(url);
+        if (status != noErr || out == nullptr)
+        {
+            return false;
+        }
+        status =
+            ExtAudioFileSetProperty(out, kExtAudioFileProperty_ClientDataFormat, sizeof(fmt), &fmt);
+        if (status == noErr)
+        {
+            AudioBufferList abl{};
+            abl.mNumberBuffers = 1U;
+            abl.mBuffers[0].mNumberChannels = channels;
+            abl.mBuffers[0].mDataByteSize =
+                static_cast<UInt32>(interleaved.size() * sizeof(int16_t));
+            abl.mBuffers[0].mData = interleaved.data();
+            const UInt32 frames = static_cast<UInt32>(interleaved.size()) / channels;
+            status = ExtAudioFileWrite(out, frames, &abl);
+        }
+        ExtAudioFileDispose(out);
+        return status == noErr;
+    }
+} // namespace
+
+// Core bit-exact decode check, run once per backend (selected by ADAPTIVESOUND_DECODER in callers).
+static auto decodeBitExactCase(const char* kName) -> void
+{
+    constexpr uint32_t kChannels = 2U;
+    constexpr double kRate = 48000.0;
+    constexpr double kI16Scale = 32768.0;
+    constexpr float kTolerance = 1.0F / 32768.0F; // within one 16-bit LSB
+    constexpr int kMaxPollAttempts = 100;
+    constexpr std::size_t kKnownCount = 16U; // 8 stereo frames
+
+    // Known mid-range samples (avoid full scale so the check is robust to ExtAudioFile's exact
+    // normalization). Literals live in this named constant's initializer.
+    static constexpr std::array<int16_t, kKnownCount> kKnownSamples = {0,
+                                                                       0,
+                                                                       16384,
+                                                                       -16384,
+                                                                       -8192,
+                                                                       8192,
+                                                                       12345,
+                                                                       -12345,
+                                                                       -1,
+                                                                       1,
+                                                                       4096,
+                                                                       -4096,
+                                                                       100,
+                                                                       -100,
+                                                                       -20000,
+                                                                       20000};
+
+    std::vector<int16_t> known(kKnownSamples.begin(), kKnownSamples.end());
+    const uint32_t frameCount = static_cast<uint32_t>(known.size()) / kChannels;
+
+    const char* const path = "/tmp/adaptivesound_b2b_decode.wav";
+    if (!writeKnownWav(path, known, kChannels, kRate))
+    {
+        logFail(kName, "could not write the test WAV fixture");
+        return;
+    }
+
+    FileDecodeSource src;
+    if (!src.open(path))
+    {
+        std::remove(path);
+        logFail(kName, "FileDecodeSource.open failed");
+        return;
+    }
+
+    if (std::abs(src.sampleRate() - kRate) > 1.0 || src.channels() != kChannels)
+    {
+        src.close();
+        std::remove(path);
+        std::ostringstream oss;
+        oss << "format mismatch: rate " << src.sampleRate() << " ch " << src.channels();
+        logFail(kName, oss.str());
+        return;
+    }
+
+    // Drain the decoded frames (decode runs on a background thread; poll briefly).
+    std::vector<float> got(static_cast<std::size_t>(frameCount) * kChannels, 0.0F);
+    uint32_t total = 0U;
+    for (int attempt = 0; attempt < kMaxPollAttempts && total < frameCount; ++attempt)
+    {
+        const uint32_t produced =
+            src.pullFloat(got.data() + (static_cast<std::size_t>(total) * kChannels),
+                          frameCount - total,
+                          kChannels);
+        total += produced;
+        if (produced == 0U)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+    src.close();
+    std::remove(path);
+
+    if (total != frameCount)
+    {
+        std::ostringstream oss;
+        oss << "decoded " << total << " of " << frameCount << " frames";
+        logFail(kName, oss.str());
+        return;
+    }
+
+    for (std::size_t idx = 0; idx < known.size(); ++idx)
+    {
+        const float expected = static_cast<float>(known[idx]) / static_cast<float>(kI16Scale);
+        if (std::abs(got[idx] - expected) > kTolerance)
+        {
+            std::ostringstream oss;
+            oss << "sample " << idx << ": expected " << expected << ", got " << got[idx];
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// FFmpeg path when present (auto-selected), else Apple. Default environment.
+static auto testFileDecodeBitExactAuto() -> void
+{
+    unsetenv("ADAPTIVESOUND_DECODER");
+    decodeBitExactCase("FileDecode_BitExact_Auto");
+}
+
+// Apple ExtAudioFile fallback, forced regardless of FFmpeg availability.
+static auto testFileDecodeBitExactApple() -> void
+{
+    setenv("ADAPTIVESOUND_DECODER", "apple", 1);
+    decodeBitExactCase("FileDecode_BitExact_Apple");
+    unsetenv("ADAPTIVESOUND_DECODER");
+}
+
+// ============================================================================
+// FileDecodeB2bTests: expanded B2b decode coverage (QA audit).
 //
-// Pure-Mode file decode (Phase B — B2b): expanded harness coverage (QA audit).
-//
-// This file is #included into Tests/DSPKernelNullTest.cpp AFTER the existing B2b
-// block (so it can use writeKnownWav, kWavBits16, FileDecodeSource, logPass/
-// logFail, TestConstants, etc.) and immediately BEFORE main(). It defines new
-// FileDecode_* test functions only; main() calls them (see the registration block
-// in DSPKernelNullTest.cpp).
-//
-// Coverage added: open-failure paths, close() idempotency, format getters across
+// Coverage: open-failure paths, close() idempotency, format getters across
 // bit depths, 24-bit + float32 + mono + 4-channel bit-exactness, channel-mismatch
 // silence, EOF/finished-flag semantics, finished-flag-vs-ring-tail, underrun
 // zero-pad, FFmpeg<->Apple equivalence, and ring wraparound.
@@ -1132,13 +1317,13 @@ static auto testFileDecodeFinishedFlagRingTail() -> void
 
     // Even though finished == true, the ring still holds the whole file: one big pull returns all.
     std::vector<float> got(static_cast<std::size_t>(kRingFitFrames) * kB2bChannels2, 0.0F);
-    const uint32_t produced = src.pullFloat(got.data(), kRingFitFrames, kB2bChannels2);
+    const uint32_t produced2 = src.pullFloat(got.data(), kRingFitFrames, kB2bChannels2);
     src.close();
     std::remove(kPathRingTail);
-    if (produced != kRingFitFrames)
+    if (produced2 != kRingFitFrames)
     {
         std::ostringstream oss;
-        oss << "after finished==true, single pull returned " << produced << " of "
+        oss << "after finished==true, single pull returned " << produced2 << " of "
             << kRingFitFrames << " (ring tail lost — push not happens-before the flag)";
         logFail(kName, oss.str());
         return;
