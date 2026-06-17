@@ -164,6 +164,12 @@ let package = Package(
                     "-Wall", "-Wextra",
                     "-fno-exceptions", "-fno-rtti",
                 ], .when(configuration: .release)),
+                // FFmpeg headers (Homebrew) for the OPTIONAL runtime decode backend (B2b). Headers
+                // only — functions resolve via dlopen/dlsym at runtime (no -l link, nothing to
+                // bundle). __has_include gates the backend, so a machine without FFmpeg still builds.
+                // -isystem (not -I): FFmpeg's third-party headers/macros are exempt from our strict
+                // warnings + clang-tidy.
+                .unsafeFlags(["-isystem", "/opt/homebrew/include"]),
             ],
             linkerSettings: [
                 .linkedFramework("CoreAudio"),
