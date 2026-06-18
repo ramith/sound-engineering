@@ -232,6 +232,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         ) { [weak self] _ in
             DispatchQueue.global().async {
                 guard let self, let engine = self.avEngine else { return }
+                // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
+                // those very changes fire this notification. The Enhanced AVAudioEngine is
+                // intentionally stopped and must NOT try to restart on the hogged device — doing so
+                // fails with -10875 (invalid output HW format) and contends for the device. The
+                // Pure path runs its own HAL engine; leave it alone. The device-change re-eval +
+                // fallback for the Pure path is handled by the CoreAudio listeners in
+                // AudioEngineBridge+PureModeDeviceMonitor.swift.
+                guard self.activePath != .pure else { return }
                 let wasPlaying = self.playerNode?.isPlaying ?? false
                 if !engine.isRunning {
                     do {
