@@ -29,6 +29,11 @@ struct LeftPanelView: View {
                 .onTapGesture(count: 2) { viewModel.selectedTab = .monitoring }
                 .help("Double-click to open Monitoring")
 
+            TransportScrubberView()
+                .padding(.leading, Layout.leadingPad)
+                .padding(.trailing, Layout.trailingPad)
+                .padding(.vertical, Layout.sectionVPad)
+
             PlayControlsView()
                 .padding(.leading, Layout.leadingPad)
                 .padding(.trailing, Layout.trailingPad)

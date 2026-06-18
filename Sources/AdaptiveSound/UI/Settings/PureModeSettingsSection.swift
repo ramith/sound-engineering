@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Minimal Pure-Mode (bit-perfect HAL output) control for hardware smoke-testing B3: a toggle for
-/// the user intent plus a LIVE signal-path readout (polled into `AudioViewModel.signalPath` at the
-/// spectrum-timer rate). This is an INTERIM affordance — the polished signal-path transparency UI is
-/// Phase A2. The toggle records intent only; it takes effect on the next track / play.
+/// Pure-Mode (bit-perfect HAL output) control: a toggle for user intent plus a live
+/// signal-path readout (polled into `AudioViewModel.signalPath` at the spectrum-timer
+/// rate). The toggle records intent only; it takes effect on the next track / play.
 struct PureModeSettingsSection: View {
     @Bindable var audioViewModel: AudioViewModel
 
@@ -19,7 +18,7 @@ struct PureModeSettingsSection: View {
                     Text("Bit-perfect HAL output")
                         .font(.body)
                         .foregroundStyle(Color.asLabel)
-                    Text("DSP/EQ bypassed, exclusive device access, per-track rate match. "
+                    Text("DSP/EQ bypassed, bit-perfect HAL output, per-track rate match. "
                         + "Applies on the next track / play.")
                         .font(.caption)
                         .foregroundStyle(Color.asLabelTertiary)
@@ -41,38 +40,32 @@ struct PureModeSettingsSection: View {
 
 // MARK: - Signal-path status card
 
-/// Compact live readout of the achieved signal path. Private to this file (interim test UI).
+/// Compact live readout of the achieved signal path. Private to this file.
+/// Shows: Active path, Format, Decoder — omits Exclusive (always false) and Decision.
 private struct SignalPathStatusCard: View {
     let info: SignalPathInfo
     let requested: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            statusRow(label: "Path", value: pathText, accent: info.path == .pure)
+            statusRow(label: "Active path", value: pathText, accent: info.path == .pure)
+            statusRow(label: "Format", value: formatText)
+            statusRow(label: "Decoder", value: decoderText)
 
-            if info.path == .pure {
-                statusRow(label: "Decision", value: decisionText)
-                statusRow(label: "Format", value: formatText)
-                statusRow(label: "Exclusive (hog)", value: info.exclusiveHog ? "Yes" : "No")
-                statusRow(label: "Rate matched", value: info.rateMatched ? "Yes" : "No")
-                statusRow(label: "Decoder", value: decoderText)
-            } else {
-                statusRow(label: "Engine", value: "AVAudioEngine graph (48 kHz float)")
-                if info.fellBackToEnhanced {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("Pure requested but not available on this device/track — using Enhanced.")
-                            .font(.caption)
-                            .foregroundStyle(Color.asLabelSecond)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.top, 2)
-                } else if requested {
-                    Text("Pure enabled — will engage when the next track starts.")
+            if info.fellBackToEnhanced {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DesignSystem.Color.statusWarning)
+                    Text("Pure requested but not available on this device/track — using Enhanced.")
                         .font(.caption)
-                        .foregroundStyle(Color.asLabelTertiary)
+                        .foregroundStyle(Color.asLabelSecond)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.top, 2)
+            } else if requested && info.path != .pure {
+                Text("Pure enabled — will engage when the next track starts.")
+                    .font(.caption)
+                    .foregroundStyle(Color.asLabelTertiary)
             }
         }
         .padding(.vertical, 10)
@@ -102,14 +95,6 @@ private struct SignalPathStatusCard: View {
         info.path == .pure ? "Pure (HAL-direct)" : "Enhanced (AVAudioEngine)"
     }
 
-    private var decisionText: String {
-        switch info.decision {
-        case .fullBitPerfect: return "Full bit-perfect (integer)"
-        case .rateMatchedFloat: return "Rate-matched float (no SRC)"
-        case .fallbackEnhanced: return "Fallback"
-        }
-    }
-
     private var decoderText: String {
         switch info.decoder {
         case .some(.ffmpeg): return "FFmpeg"
@@ -119,8 +104,10 @@ private struct SignalPathStatusCard: View {
     }
 
     private var formatText: String {
-        let rateHz = Int(info.achievedSampleRate.rounded())
-        let kind = info.isFloat ? "float" : "int"
-        return "\(rateHz) Hz • \(info.bitDepth)-bit \(kind)"
+        guard info.achievedSampleRate > 0 else { return "—" }
+        // Rate and bit-depth formatted via shared SignalPathInfo helpers — same output as the badge.
+        let rateStr = info.formattedRate
+        guard let bitsStr = info.formattedBits else { return rateStr }
+        return "\(rateStr) · \(bitsStr)"
     }
 }
