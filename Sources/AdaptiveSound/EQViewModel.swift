@@ -44,6 +44,7 @@ final class EQViewModel {
     /// Apply a named preset: updates `bandGains` and dispatches all 31 bands
     /// to the DSP kernel in a single pass.
     func selectPreset(_ preset: EQPreset) {
+        logUX("EQ preset → '\(preset.displayName)'")
         selectedPreset = preset
         bandGains = preset.gains
         dispatchAllBands()
@@ -79,6 +80,7 @@ final class EQViewModel {
 
     /// Resets all bands to 0 dB and selects the Flat preset.
     func resetToFlat() {
+        logUX("EQ reset → flat")
         selectPreset(.flat)
     }
 
@@ -99,6 +101,17 @@ final class EQViewModel {
     func dispatchAllBands() {
         guard audioViewModel.isEngineReady else { return }
         let safeGains = EQSafetyClamp.clamped(bandGains)
+        let maxBoost = safeGains.max() ?? 0
+        let maxCut = safeGains.min() ?? 0
+        logUX("EQ dispatch: preset='\(selectedPresetName)' "
+            + "maxBoost=\(String(format: "%+.1f", maxBoost))dB "
+            + "maxCut=\(String(format: "%+.1f", maxCut))dB")
         audioViewModel.publishEQGains(safeGains)
+    }
+
+    /// Log an interpolation-mode change. Called from the EQ tab view's onChange handler
+    /// so the log remains in the view model (which already imports Foundation).
+    func logInterpolationModeChange(_ discrete: Bool) {
+        logUX("EQ interpolation → \(discrete ? "discrete" : "smooth")")
     }
 }

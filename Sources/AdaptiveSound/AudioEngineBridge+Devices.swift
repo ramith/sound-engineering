@@ -60,6 +60,9 @@ extension AudioEngineBridge {
                 if result != 0 {
                     // Track the selected device so Pure Mode can open the HAL engine on it.
                     self.currentDeviceID = deviceID
+                    logUX("engine selectDevice: id=\(deviceID) result=ok")
+                } else {
+                    logUX("engine selectDevice: id=\(deviceID) result=failed")
                 }
                 continuation.resume(returning: result != 0)
             }
