@@ -19,6 +19,9 @@ SDK="$(xcrun --show-sdk-path)"
 OUTPUT="$REPO_ROOT/Tests/DSPKernelNullTest"
 
 echo "Building null test..."
+# Test fixtures are written + read here (never /tmp). The dir is tracked via test-data/README.md;
+# the generated WAV/bin fixtures inside are git-ignored.
+mkdir -p "$REPO_ROOT/test-data"
 xcrun clang++ \
     -std=gnu++2b \
     -isysroot "$SDK" \
@@ -26,6 +29,7 @@ xcrun clang++ \
     -fno-rtti \
     -Wall -Wextra \
     -D_LIBCPP_DISABLE_AVAILABILITY \
+    -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
     -I"$REPO_ROOT/Sources/AudioDSP/include" \
     -I"$REPO_ROOT/Sources/AudioDSP" \
     -isystem /opt/homebrew/include \
