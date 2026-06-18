@@ -2,80 +2,22 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-// MARK: - AudioEngineBridge Pure-Mode device monitoring (CoreAudio listeners + fallback)
+// MARK: - AudioEngineBridge Pure-Mode device monitoring (pause on output-device loss)
 
-/// CoreAudio property-listener registration and the device-change / device-alive handlers
-/// that implement Pure-Mode's runtime resilience. Extracted from `AudioEngineBridge+PureMode.swift`
-/// so that the orchestration (evaluation, engine lifecycle, transport) and the monitoring
-/// (listener setup + event handling + fallback) each occupy a focused, reviewable file.
+/// Model (founder decision): the app-selected device is authoritative (the picker sets the macOS
+/// default), so the app does NOT chase external default-device changes. The only runtime resilience
+/// we need is: if the device currently rendering disappears (e.g. a Bluetooth device disconnects),
+/// PAUSE — never auto-jump to another device. The user re-picks a device and resumes.
 ///
 /// Listener ordering invariant:
-///   - `registerDeviceAliveListener` is called from `startPure` AFTER `activePath` is set
-///     to `.pure`, so the alive callback's `fallBackToEnhanced` fires only while truly in
-///     Pure mode.
-///   - `tearDownPure` calls `unregisterDeviceAliveListener` BEFORE destroying the engine
-///     handle, so no callback references a dangling pointer.
+///   - `registerDeviceAliveListener` is called from `startPure` AFTER `activePath` is set to `.pure`.
+///   - `tearDownPure` calls `unregisterDeviceAliveListener` BEFORE destroying the engine handle,
+///     so no callback references a dangling pointer (it also clears `aliveListenerDeviceID`).
 extension AudioEngineBridge {
-    // MARK: - Default-output-device change listener
-
-    /// Register an `AudioObjectPropertyListenerBlock` on `kAudioObjectSystemObject` for
-    /// `kAudioHardwarePropertyDefaultOutputDevice`. When the default output device changes
-    /// while Pure mode is active the bridge re-evaluates capability and either:
-    ///   - falls back to Enhanced (capability lost), or
-    ///   - restarts Pure on the new device (capability retained).
-    ///
-    /// Registration happens at `initialize()` time and the listener is removed in `shutdown()`.
-    func registerDeviceChangeListener() {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        let listenerQueue = DispatchQueue.global(qos: .userInteractive)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            listenerQueue.async {
-                guard let self else { return }
-                self.handleDefaultDeviceChanged()
-            }
-        }
-
-        let status = AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            listenerQueue,
-            block
-        )
-        if status == noErr {
-            defaultDeviceListenerBlock = block
-        } else {
-            NSLog("[PureMode] Failed to register default-device listener: \(status)")
-        }
-    }
-
-    func unregisterDeviceChangeListener() {
-        guard let block = defaultDeviceListenerBlock else { return }
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectRemovePropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            DispatchQueue.global(qos: .userInteractive),
-            block
-        )
-        defaultDeviceListenerBlock = nil
-    }
-
     // MARK: - Device-alive listener
 
-    /// Register a `kAudioDevicePropertyDeviceIsAlive` listener for the currently hogged device.
-    /// If the device disappears while we hold hog mode, fall back to Enhanced immediately.
-    ///
-    /// Called by `startPure` immediately after the engine achieves its running state.
-    /// `unregisterDeviceAliveListener` must be called before the engine handle is destroyed.
+    /// Register a `kAudioDevicePropertyDeviceIsAlive` listener for the device Pure is rendering on.
+    /// If that device disappears, pause playback. Called by `startPure` once the engine is running.
     func registerDeviceAliveListener(deviceID: UInt32) {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceIsAlive,
@@ -87,8 +29,7 @@ extension AudioEngineBridge {
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             listenerQueue.async {
                 guard let self else { return }
-                NSLog("[PureMode] Hogged device disappeared — forcing Enhanced fallback")
-                self.fallBackToEnhanced(position: 0)
+                self.pauseForDeviceLoss()
             }
         }
 
@@ -108,10 +49,9 @@ extension AudioEngineBridge {
 
     func unregisterDeviceAliveListener() {
         guard let block = deviceAliveListenerBlock else { return }
-        // Unregister from the device the listener was REGISTERED on (aliveListenerDeviceID), NOT
-        // currentDeviceID — a default-device change updates currentDeviceID to the new device
-        // before teardown, so using it here would remove from the wrong device and leak the old
-        // listener. If the device is already gone the remove may return non-zero — harmless.
+        // Unregister from the device the listener was REGISTERED on (aliveListenerDeviceID), not
+        // currentDeviceID, which may have moved on. A non-zero status (device already gone) is
+        // harmless.
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceIsAlive,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -127,122 +67,25 @@ extension AudioEngineBridge {
         aliveListenerDeviceID = 0
     }
 
-    // MARK: - Default-device change handler
+    // MARK: - Pause on device loss
 
-    /// Called on a global queue when the CoreAudio default output device changes.
-    /// Never hard-fails: any failure produces an Enhanced fallback.
-    private func handleDefaultDeviceChanged() {
-        let newDeviceID = getDefaultOutputDeviceID()
-        guard newDeviceID != 0 else { return }
-
-        // Update the stored device ID regardless of the active path.
-        let previousDeviceID = currentDeviceID
-        currentDeviceID = newDeviceID
-
-        guard activePath == .pure, let url = lastFileURL else {
-            // Enhanced path or no file: nothing to re-route.
-            return
+    /// Pause playback because the active output device disappeared. Tears Pure down (releasing the
+    /// device), stops the Enhanced engine, and marks the signal path `interrupted` so the view model
+    /// clears `isPlaying` and prompts the user to pick a device. Never hard-fails; never auto-jumps.
+    func pauseForDeviceLoss() {
+        NSLog("[PureMode] Active output device disappeared — pausing playback")
+        tearDownPure() // stops + destroys the Pure engine, unregisters the alive listener
+        if let player = playerNode, player.isPlaying {
+            player.stop()
         }
-
-        // If the device didn't actually change (spurious notification), skip.
-        guard newDeviceID != previousDeviceID else { return }
-
-        NSLog("[PureMode] Default device changed \(previousDeviceID) → \(newDeviceID) while Pure is active")
-        logDeviceDiagnostics(newDeviceID, context: "new-default")
-
-        // Save position before tearing down.
-        let savedPosition: Double = pureEngine.map { pureModeEnginePositionSeconds($0) } ?? 0
-
-        // Re-evaluate capability for the new device.
-        let viable = evaluatePureViable(fileURL: url, deviceID: newDeviceID)
-        if viable {
-            // New device can run Pure: tear down the old engine, start on the new one.
-            tearDownPure()
-            let started = startPure(fileURL: url, deviceID: newDeviceID)
-            if started {
-                // Seek to the saved position on the new engine.
-                if savedPosition > 0, let engine = pureEngine {
-                    let result = pureModeEngineSeek(engine, savedPosition)
-                    if result != 1 {
-                        NSLog("[PureMode] Seek after device-change failed")
-                    }
-                }
-                NSLog("[PureMode] Re-routed to new device \(newDeviceID) — Pure maintained")
-                return
-            }
-            // Pure start failed on new device — fall through to Enhanced.
-            NSLog("[PureMode] Pure re-start on new device failed — falling back to Enhanced")
-        } else {
-            NSLog("[PureMode] New device \(newDeviceID) not Pure-capable — falling back to Enhanced")
+        if let engine = avEngine, engine.isRunning {
+            engine.stop()
         }
-
-        fallBackToEnhanced(position: savedPosition)
-    }
-
-    // MARK: - Enhanced fallback
-
-    /// Tear down Pure, start the Enhanced path, and seek to `position`.
-    /// Never hard-fails — any individual step failure is logged and skipped.
-    ///
-    /// Called from both `handleDefaultDeviceChanged` (device swap) and the
-    /// device-alive listener (device removal). After this returns, `activePath == .enhanced`
-    /// and `cachedSignalPath.fellBackToEnhanced == true`.
-    func fallBackToEnhanced(position: Double) {
-        tearDownPure()
-
-        guard let url = lastFileURL,
-              let engine = avEngine,
-              let player = playerNode
-        else {
-            NSLog("[PureMode] fallBackToEnhanced: engine/player not available")
-            return
-        }
-
-        do {
-            // The AVAudioEngine sat STOPPED while Pure owned the device, so it never re-acquired
-            // the output when the old (hogged) device vanished. Force a clean rebuild — stop +
-            // prepare + start — so `outputNode` binds to the CURRENT default output device rather
-            // than starting against the stale/gone device (the silent-fallback symptom).
-            if engine.isRunning {
-                engine.stop()
-            }
-            engine.prepare()
-            try engine.start()
-            let outFmt = engine.outputNode.outputFormat(forBus: 0)
-            NSLog("[PureMode] fallback engine started: running=\(engine.isRunning), "
-                + "out=\(outFmt.sampleRate) Hz / \(outFmt.channelCount) ch")
-            installSpectrumTap()
-            try playFile(at: url, engine: engine, playerNode: player)
-            activePath = .enhanced
-            cachedSignalPath = SignalPathInfo(
-                path: .enhanced,
-                decision: .fallbackEnhanced,
-                fellBackToEnhanced: true
-            )
-            // Best-effort seek to the saved position (Enhanced seek is best-effort per spec).
-            if position > 0 {
-                seekEnhancedBestEffort(url: url, player: player, to: position)
-            }
-            NSLog("[PureMode] Enhanced fallback active — seek=\(position)s, "
-                + "playerPlaying=\(player.isPlaying), engineRunning=\(engine.isRunning)")
-        } catch {
-            NSLog("[PureMode] fallBackToEnhanced error: \(error)")
-        }
-    }
-
-    // MARK: - Diagnostics
-
-    /// Log the Pure-Mode capability of `deviceID` (why it was/wasn't viable). Helps distinguish a
-    /// genuinely non-capable device from a transient one whose properties aren't readable yet
-    /// mid-transition (queryOK == 0).
-    private func logDeviceDiagnostics(_ deviceID: UInt32, context: String) {
-        var cap = CDeviceCapability()
-        let maxRates: UInt32 = 16
-        var rates = [Double](repeating: 0, count: Int(maxRates))
-        var rateCount: UInt32 = 0
-        let queryOK = pureModeQueryCapability(deviceID, &cap, &rates, maxRates, &rateCount)
-        NSLog("[PureMode] \(context) id=\(deviceID) queryOK=\(queryOK) rate=\(cap.currentRate) "
-            + "integer=\(cap.integerCapable) lossyWireless=\(cap.isLossyWireless) "
-            + "virtual=\(cap.isVirtualOrAggregate) exclusive=\(cap.exclusiveCapable) rates=\(rateCount)")
+        // activePath is .enhanced after tearDownPure; flag the interruption for the view model.
+        cachedSignalPath = SignalPathInfo(
+            path: .enhanced,
+            decision: .fallbackEnhanced,
+            interrupted: true
+        )
     }
 }
