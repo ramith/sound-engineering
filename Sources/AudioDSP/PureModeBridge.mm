@@ -169,15 +169,20 @@ extern "C"
             CoreAudioDevice::queryCapability(static_cast<AudioDeviceID>(deviceID));
         PureModeEvaluation eval = AdaptiveSound::evaluatePureMode(cap, fileFormat);
 
-        // Founder decision (B3 hardware smoke test): do NOT acquire exclusive hog mode. Hog locks
-        // out the macOS system volume control, which is unacceptable. We keep the rest of Pure's
-        // purity — per-track nominal-rate match, native-format render, DSP bypassed — but run the
-        // device SHARED so system volume keeps working. Bit-perfectness is therefore best-effort
-        // (the HAL mixer may sit in the path) rather than exclusively guaranteed; achievedState
-        // reports didHog == false honestly, and the signal-path UI reflects "shared". The policy
-        // (evaluatePureMode) still computes requiresHog for documentation / unit tests; we override
-        // only the engine action here.
-        eval.requiresHog = false;
+        // Hog policy (refined after the HDMI smoke test):
+        //   * FullBitPerfect (integer DAC — HDMI / USB): KEEP hog. Setting the device's INTEGER
+        //     physical stream format requires EXCLUSIVE access; in shared mode the HAL refuses the
+        //     format change ("set output StreamFormat failed") and the bit-perfect path can't start.
+        //     On these devices the Mac's system volume doesn't drive the output anyway (the DAC / TV
+        //     owns volume), so holding hog is the right, standard bit-perfect behaviour.
+        //   * RateMatchedFloat (built-in / Bluetooth / other float devices): run SHARED (no hog) so
+        //     the macOS system volume keeps working — these don't need an integer-format change, and
+        //     locking the system volume on the built-in output was unacceptable (the earlier
+        //     blanket no-hog fix). achievedState reports didHog honestly either way.
+        if (eval.decision == AdaptiveSound::PureModeDecision::RateMatchedFloat)
+        {
+            eval.requiresHog = false;
+        }
 
         auto adapter = std::make_unique<CountingSource>(source.get(), &session->renderedFrames);
 
