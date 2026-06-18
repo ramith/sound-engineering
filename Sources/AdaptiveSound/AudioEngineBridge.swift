@@ -552,18 +552,16 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     // the in-app slider controls volume even without exclusive hog mode. A device with
                     // no settable master volume returns 0 (volume then via the OS / device only).
                     if self.activePath == .pure {
+                        // Volume routing is logged once at the view-model layer (coalesced); not
+                        // here — setParameter fires per slider tick and would spam the log.
                         _ = pureModeSetDeviceVolume(self.currentDeviceID, value)
-                        logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=PureHWVol")
                         continuation.resume()
                         return
                     }
                     // Enhanced path: master gain parameter → player node volume.
                     if let playerNode = self.playerNode {
                         playerNode.volume = value
-                        logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=EnhancedVol")
                     }
-                } else {
-                    logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=no-op")
                 }
                 continuation.resume()
             }

@@ -114,9 +114,17 @@ final class AudioViewModel {
         signalPath.path == .pure
     }
 
+    /// Last volume value logged (formatted), so a slider DRAG coalesces to one line per distinct
+    /// displayed value instead of ~25 identical lines.
+    private var lastVolLogged: String = ""
+
     var masterGain: Float = 0.7 {
         didSet {
-            logUX("vol → \(secs(Double(masterGain)))")
+            let volStr = secs(Double(masterGain))
+            if volStr != lastVolLogged {
+                logUX("vol → \(volStr) (\(pureModeEngaged ? "Pure HW" : "Enhanced"))")
+                lastVolLogged = volStr
+            }
             setParameter(masterGainParameterID, value: masterGain)
         }
     }
