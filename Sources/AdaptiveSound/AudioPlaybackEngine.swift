@@ -77,6 +77,11 @@ protocol AudioPlaybackEngine: AnyObject {
     /// Returns `true` on success.
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
 
+    /// Invoked on the main thread when the set of available output devices changes (a device was
+    /// added or removed, e.g. Bluetooth connect/disconnect). The view model re-enumerates in
+    /// response so the picker stays current.
+    var onOutputDevicesChanged: (() -> Void)? { get set }
+
     // MARK: Spectrum
 
     /// Read the latest 44 spectrum band magnitudes into `out`.

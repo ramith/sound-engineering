@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
 // MARK: - AudioEngineBridge: Device Enumeration
@@ -63,6 +64,47 @@ extension AudioEngineBridge {
                 continuation.resume(returning: result != 0)
             }
         }
+    }
+
+    // MARK: - Device-list change listener (picker stays current on connect/disconnect)
+
+    /// Register a `kAudioHardwarePropertyDevices` listener so the output-device picker refreshes
+    /// when devices are added/removed (e.g. Bluetooth connect/disconnect). Fires
+    /// `onOutputDevicesChanged` on the main thread; the view model re-enumerates. Registered in
+    /// `initialize()`, removed in `shutdown()`.
+    func registerDeviceListListener() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listenerQueue = DispatchQueue.global(qos: .userInitiated)
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self else { return }
+            DispatchQueue.main.async { self.onOutputDevicesChanged?() }
+        }
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &address, listenerQueue, block
+        )
+        if status == noErr {
+            deviceListListenerBlock = block
+        } else {
+            NSLog("[AudioEngineBridge] failed to register device-list listener: \(status)")
+        }
+    }
+
+    func unregisterDeviceListListener() {
+        guard let block = deviceListListenerBlock else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &address,
+            DispatchQueue.global(qos: .userInitiated), block
+        )
+        deviceListListenerBlock = nil
     }
 }
 

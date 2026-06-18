@@ -88,6 +88,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// The device the alive-listener was registered on, so we UNregister from the SAME device.
     var aliveListenerDeviceID: UInt32 = 0
 
+    /// Invoked on the main thread when the available-output-device set changes. Set by the view
+    /// model; fired by the `kAudioHardwarePropertyDevices` listener (see AudioEngineBridge+Devices).
+    var onOutputDevicesChanged: (() -> Void)?
+
+    /// CoreAudio property-listener token for the device-list (add/remove) notification.
+    /// Registered in `initialize()`, removed in `shutdown()`.
+    var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
+
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
 
     /// Top-level engine-graph state. Introduced in S0-M3; the `.reconfiguring` transition is now
@@ -122,6 +130,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 let engine = AVAudioEngine()
                 self.avEngine = engine
                 self.observeConfigurationChanges(of: engine)
+
+                // Refresh the device picker when devices are added/removed (BT connect/disconnect).
+                self.registerDeviceListListener()
 
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
@@ -251,8 +262,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                // Remove the Pure-Mode device-alive listener before tearing down anything else.
+                // Remove CoreAudio property listeners before tearing down anything else.
                 self.unregisterDeviceAliveListener()
+                self.unregisterDeviceListListener()
 
                 self.removeSpectrumTap()
                 if let observer = self.configChangeObserver {
@@ -471,10 +483,12 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 if id == 0 {
-                    // In the Pure path, volume is device/OS-owned (bit-perfect stream must not be
-                    // touched by software gain). The master gain is stored in the ViewModel as a UI
-                    // value and applied only when the Enhanced path is active.
+                    // Pure path: never apply software gain to the bit-perfect stream. Instead drive
+                    // the device's HARDWARE master volume (analog/HW domain → stays bit-perfect), so
+                    // the in-app slider controls volume even without exclusive hog mode. A device with
+                    // no settable master volume returns 0 (volume then via the OS / device only).
                     if self.activePath == .pure {
+                        _ = pureModeSetDeviceVolume(self.currentDeviceID, value)
                         continuation.resume()
                         return
                     }

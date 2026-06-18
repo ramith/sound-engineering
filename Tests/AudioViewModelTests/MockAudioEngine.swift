@@ -45,6 +45,7 @@ protocol AudioPlaybackEngineMirror: AnyObject {
     func setParameter(_ id: UInt32, value: Float) async throws
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror]
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
+    var onOutputDevicesChanged: (() -> Void)? { get set }
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool
 }
@@ -96,6 +97,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
 
     var initializeResult: Bool = true
     var initializeError: Error?
+    var onOutputDevicesChanged: (() -> Void)?
     var mockSignalPath: SignalPathInfoMirror = .init()
     var enumerateResult: [AudioDeviceModelMirror] = [
         AudioDeviceModelMirror(
