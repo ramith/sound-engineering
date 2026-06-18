@@ -68,3 +68,44 @@ struct SignalPathInfo: Equatable {
     /// flag is cleared on the next `startAudio`.
     var interrupted: Bool = false
 }
+
+// MARK: - Display helpers
+
+extension SignalPathInfo {
+    /// Formats a sample rate in Hz as a kHz string, e.g. 48 000 → "48 kHz", 44 100 → "44.1 kHz".
+    /// Returns "-- kHz" when `rate` is zero (not yet started).
+    static func rateString(_ rate: Double) -> String {
+        guard rate > 0 else { return "-- kHz" }
+        // Integer division avoids floating-point noise: 48 000 % 1 000 == 0 → "48 kHz".
+        let rateHz = Int(rate.rounded())
+        if rateHz % 1000 == 0 {
+            return "\(rateHz / 1000) kHz"
+        }
+        return String(format: "%.1f kHz", Double(rateHz) / 1000.0)
+    }
+
+    /// Formats bit depth + float/int kind into a compact string, e.g. "32-bit float", "24-bit int".
+    /// Returns `nil` when neither `bitDepth` nor `isFloat` carries information (Enhanced path idle).
+    static func bitsString(bitDepth: UInt32, isFloat: Bool) -> String? {
+        if bitDepth > 0 {
+            let kind = isFloat ? "float" : "int"
+            return "\(bitDepth)-bit \(kind)"
+        }
+        if isFloat {
+            return "float"
+        }
+        return nil
+    }
+
+    // MARK: Convenience instance shortcuts
+
+    /// Sample rate formatted for display, using `achievedSampleRate`.
+    var formattedRate: String {
+        SignalPathInfo.rateString(achievedSampleRate)
+    }
+
+    /// Bit-depth + kind formatted for display, using `bitDepth` and `isFloat`.
+    var formattedBits: String? {
+        SignalPathInfo.bitsString(bitDepth: bitDepth, isFloat: isFloat)
+    }
+}

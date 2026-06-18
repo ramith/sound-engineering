@@ -83,6 +83,10 @@ final class AudioViewModel {
     var selectedTab: TabSelection = .nowPlaying
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
+    /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
+    /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
+    /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
+    var duration: Double = 0
     /// Live BS.1770-5 loudness readout for the meters (polled at the timer rate).
     var loudness: LoudnessSnapshot = .unmeasured
     var errorMessage: String?
@@ -313,6 +317,19 @@ final class AudioViewModel {
         let fileURL = playlist[selectedIndex].absoluteURL
         playbackPosition = 0
 
+        // Compute duration off-main from AVAudioFile; more reliable than the metadata
+        // scan's durationSeconds for M4A (which can read 0).
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var computedDuration: Double = 0
+            if let file = try? AVAudioFile(forReading: fileURL) {
+                let rate = file.processingFormat.sampleRate
+                if rate > 0 {
+                    computedDuration = Double(file.length) / rate
+                }
+            }
+            await MainActor.run { self?.duration = computedDuration }
+        }
+
         Task {
             do {
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeEnabled)
@@ -331,6 +348,7 @@ final class AudioViewModel {
                 try await engine.stopAudio()
                 isPlaying = false
                 playbackPosition = 0
+                duration = 0
             } catch {
                 errorMessage = "Stop playback failed: \(error.localizedDescription)"
             }
