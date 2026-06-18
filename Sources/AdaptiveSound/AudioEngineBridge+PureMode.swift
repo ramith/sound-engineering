@@ -173,12 +173,23 @@ extension AudioEngineBridge {
                     return
                 }
 
-                // The re-scheduled segment restarts the player's sampleTime at 0, so record the seek
+                // The re-scheduled stream restarts the player's sampleTime at 0, so record the seek
                 // target as the position base — currentPlaybackPosition adds it to report the true
                 // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
                 self.enhancedPositionBaseSeconds = max(seconds, 0)
-                self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
-                logUX("engine seek: path=Enhanced target=\(secs(seconds))s result=ok")
+
+                // If a streaming-resampler session is active (rate-mismatched file), restart the
+                // resampler from the target frame (bumps the generation → abandons in-flight buffers,
+                // resets the converter, re-primes + plays). Otherwise the 48 kHz `scheduleFile`
+                // session uses the existing best-effort segment re-schedule (UNCHANGED).
+                if self.resampleSession != nil {
+                    let restarted = self.seekEnhancedResampler(to: seconds, player: player)
+                    logUX("engine seek: path=Enhanced(resample) target=\(secs(seconds))s "
+                        + "result=\(restarted ? "ok" : "failed")")
+                } else {
+                    self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
+                    logUX("engine seek: path=Enhanced target=\(secs(seconds))s result=ok")
+                }
                 continuation.resume()
             }
         }
@@ -189,6 +200,9 @@ extension AudioEngineBridge {
     /// Stop the Enhanced player node and AVAudioEngine without destroying the graph.
     /// Used when transitioning from Enhanced to Pure (keep the graph for fast fallback).
     func stopEnhancedPlayback() {
+        // Bump the generation + drop the session FIRST so no in-flight resampler buffer schedules
+        // onto the player we're about to stop (or onto a graph we're about to hand to Pure mode).
+        stopEnhancedResampler()
         if let player = playerNode, player.isPlaying {
             player.stop()
         }

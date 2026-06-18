@@ -85,6 +85,25 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Whether the most recent `startAudio` call requested Pure mode.
     var pureModeRequested: Bool = false
 
+    // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
+
+    /// Live streaming-resampler session, non-nil only while an Enhanced rate-mismatched file is
+    /// being played through `AVAudioConverter` (file rate != 48 kHz graph rate). The 48 kHz
+    /// passthrough path (`scheduleFile`) leaves this `nil` and is byte-identical to before.
+    /// All access is serialized on `resampleQueue`; published/read off the audio thread only.
+    var resampleSession: EnhancedResampleSession?
+
+    /// Serial queue owning ALL converter access + buffer scheduling for the streaming-resampler
+    /// path. Read → convert → schedule and the completion-driven chaining all run here, so the
+    /// converter's internal rate-conversion state is touched from exactly one thread.
+    let resampleQueue = DispatchQueue(label: "com.adaptivesound.enhanced-resampler")
+
+    /// Generation/epoch counter for the streaming resampler. Bumped on every start / seek / stop /
+    /// teardown. Each in-flight read→convert→schedule iteration captures the generation it started
+    /// under and bails (schedules nothing more) the moment it no longer matches — so a seek, stop,
+    /// track change, or reconfigure cleanly abandons every queued-but-not-yet-played buffer.
+    var resampleGeneration: UInt64 = 0
+
     /// CoreAudio property-listener token for the device-is-alive notification on the device Pure is
     /// rendering on. Registered when Pure starts; removed on teardown. On the device disappearing,
     /// playback pauses (see AudioEngineBridge+PureModeDeviceMonitor.swift).
@@ -267,6 +286,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                // Stop the streaming-resampler loop FIRST (bump generation + drop session) so no
+                // in-flight buffer schedules onto the graph we're about to tear down.
+                self.stopEnhancedResampler()
+
                 // Remove CoreAudio property listeners before tearing down anything else.
                 self.unregisterDeviceAliveListener()
                 self.unregisterDeviceListListener()
@@ -371,9 +394,12 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     self.installSpectrumTap()
 
                     if let url = fileURL {
+                        // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
+                        // line. Append only the Pure-fallback note here so it isn't double-logged.
                         try self.playFile(at: url, engine: engine, playerNode: playerNode)
-                        logUX("Enhanced started '\(url.lastPathComponent)'"
-                            + (self.cachedSignalPath.fellBackToEnhanced ? " (fell back from Pure)" : ""))
+                        if self.cachedSignalPath.fellBackToEnhanced {
+                            logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
+                        }
                     } else {
                         self.playReferenceTone(on: playerNode)
                         logUX("Enhanced started reference tone")
@@ -423,15 +449,41 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         configureGraphForSource(channelCount: channelCount, channelLayout: channelLayout)
 
         // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
-        //    the current one, then schedule + play onto the freshly settled graph.
+        //    the current one. Also stop any prior streaming-resampler session (bumps the generation
+        //    so its in-flight buffers abandon themselves) before this new track supersedes it.
+        stopEnhancedResampler()
         if playerNode.isPlaying {
             playerNode.stop()
         }
         // Fresh play schedules the whole file from frame 0 → no position offset. (A later seek sets
         // this to the seek target; see currentPlaybackPosition.)
         enhancedPositionBaseSeconds = 0
-        playerNode.scheduleFile(audioFile, at: nil)
-        playerNode.play()
+
+        // 4. Branch on rate. When the file is already 48 kHz the existing `scheduleFile` path is an
+        //    exact passthrough (the engine performs no SRC), so keep it BYTE-IDENTICAL. Only when the
+        //    file rate differs from the 48 kHz graph rate do we engage the high-quality streaming
+        //    resampler — bounding the new code's blast radius to rate-mismatched files. If the
+        //    converter can't be created / primes nothing, fall back to `scheduleFile` (default SRC).
+        let fileRate = processingFormat.sampleRate
+        let graphRate = playerNode.outputFormat(forBus: 0).sampleRate
+        if fileRate == graphRate {
+            playerNode.scheduleFile(audioFile, at: nil)
+            playerNode.play()
+            logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")
+            return
+        }
+
+        let started = startEnhancedResampler(audioFile: audioFile, player: playerNode, startFrame: 0)
+        if started {
+            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
+                + "(resample \(Int(fileRate))→\(Int(graphRate)) max)")
+        } else {
+            // Converter unavailable / primed nothing → keep playback working via the proven path.
+            playerNode.scheduleFile(audioFile, at: nil)
+            playerNode.play()
+            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
+                + "(resample \(Int(fileRate))→\(Int(graphRate)) FELL BACK to default SRC)")
+        }
     }
 
     /// Fallback path when no file is supplied: schedule a 1 kHz reference tone on the player.
