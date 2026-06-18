@@ -77,6 +77,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// to restart playback on the new device without re-opening the file picker.
     var lastFileURL: URL?
 
+    /// Absolute position offset (seconds) for the Enhanced path. AVAudioPlayerNode's sampleTime
+    /// restarts at 0 on every play(), so after a seek (stop + scheduleSegment(from:) + play) we add
+    /// this (= the seek target) to report the true playhead. 0 on a fresh from-start play.
+    var enhancedPositionBaseSeconds: Double = 0
+
     /// Whether the most recent `startAudio` call requested Pure mode.
     var pureModeRequested: Bool = false
 
@@ -419,6 +424,9 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         if playerNode.isPlaying {
             playerNode.stop()
         }
+        // Fresh play schedules the whole file from frame 0 → no position offset. (A later seek sets
+        // this to the seek target; see currentPlaybackPosition.)
+        enhancedPositionBaseSeconds = 0
         playerNode.scheduleFile(audioFile, at: nil)
         playerNode.play()
     }
@@ -462,9 +470,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
             let pos = pureModeEnginePositionSeconds(engine)
             return pos > 0 ? pos : nil
         }
-        // Enhanced path: derive the playhead from the player node's render time.
-        // sampleTime counts from 0 at play() and accumulates while playing —
-        // divide by the rate to get seconds.
+        // Enhanced path: AVAudioPlayerNode's sampleTime counts from 0 at EACH play() — it is
+        // time-since-play, not absolute file position. A seek does stop()+scheduleSegment(from:)+
+        // play(), which restarts sampleTime at 0, so we add the seek target (enhancedPositionBaseSeconds,
+        // 0 on a fresh play) to report the true playhead.
         guard let playerNode, playerNode.isPlaying,
               let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
@@ -472,7 +481,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         else {
             return nil
         }
-        return Double(playerTime.sampleTime) / playerTime.sampleRate
+        return enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
     }
 
     func currentSignalPath() -> SignalPathInfo {
