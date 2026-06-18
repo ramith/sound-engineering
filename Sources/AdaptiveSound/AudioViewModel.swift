@@ -180,6 +180,8 @@ final class AudioViewModel {
 
                 availableDevices = devices
                 selectedDevice = devices.first
+                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
+                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
                 errorMessage = nil
                 startSpectrumTimer()
@@ -272,6 +274,19 @@ final class AudioViewModel {
                 errorMessage = nil
             } catch {
                 errorMessage = "Device selection failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Re-enumerate output devices after the device set changes (connect/disconnect), preserving the
+    /// current selection when it still exists. Invoked on the main actor via `onOutputDevicesChanged`.
+    func refreshDevices() {
+        Task {
+            guard let devices = try? await engine.enumerateOutputDevices() else { return }
+            availableDevices = devices
+            let stillPresent = selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false
+            if !stillPresent {
+                selectedDevice = devices.first
             }
         }
     }
