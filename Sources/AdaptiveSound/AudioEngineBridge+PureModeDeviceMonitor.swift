@@ -148,6 +148,7 @@ extension AudioEngineBridge {
         guard newDeviceID != previousDeviceID else { return }
 
         NSLog("[PureMode] Default device changed \(previousDeviceID) → \(newDeviceID) while Pure is active")
+        logDeviceDiagnostics(newDeviceID, context: "new-default")
 
         // Save position before tearing down.
         let savedPosition: Double = pureEngine.map { pureModeEnginePositionSeconds($0) } ?? 0
@@ -198,9 +199,18 @@ extension AudioEngineBridge {
         }
 
         do {
-            if !engine.isRunning {
-                try engine.start()
+            // The AVAudioEngine sat STOPPED while Pure owned the device, so it never re-acquired
+            // the output when the old (hogged) device vanished. Force a clean rebuild — stop +
+            // prepare + start — so `outputNode` binds to the CURRENT default output device rather
+            // than starting against the stale/gone device (the silent-fallback symptom).
+            if engine.isRunning {
+                engine.stop()
             }
+            engine.prepare()
+            try engine.start()
+            let outFmt = engine.outputNode.outputFormat(forBus: 0)
+            NSLog("[PureMode] fallback engine started: running=\(engine.isRunning), "
+                + "out=\(outFmt.sampleRate) Hz / \(outFmt.channelCount) ch")
             installSpectrumTap()
             try playFile(at: url, engine: engine, playerNode: player)
             activePath = .enhanced
@@ -209,13 +219,30 @@ extension AudioEngineBridge {
                 decision: .fallbackEnhanced,
                 fellBackToEnhanced: true
             )
-            NSLog("[PureMode] Enhanced fallback active — attempting seek to \(position)s")
             // Best-effort seek to the saved position (Enhanced seek is best-effort per spec).
             if position > 0 {
                 seekEnhancedBestEffort(url: url, player: player, to: position)
             }
+            NSLog("[PureMode] Enhanced fallback active — seek=\(position)s, "
+                + "playerPlaying=\(player.isPlaying), engineRunning=\(engine.isRunning)")
         } catch {
             NSLog("[PureMode] fallBackToEnhanced error: \(error)")
         }
+    }
+
+    // MARK: - Diagnostics
+
+    /// Log the Pure-Mode capability of `deviceID` (why it was/wasn't viable). Helps distinguish a
+    /// genuinely non-capable device from a transient one whose properties aren't readable yet
+    /// mid-transition (queryOK == 0).
+    private func logDeviceDiagnostics(_ deviceID: UInt32, context: String) {
+        var cap = CDeviceCapability()
+        let maxRates: UInt32 = 16
+        var rates = [Double](repeating: 0, count: Int(maxRates))
+        var rateCount: UInt32 = 0
+        let queryOK = pureModeQueryCapability(deviceID, &cap, &rates, maxRates, &rateCount)
+        NSLog("[PureMode] \(context) id=\(deviceID) queryOK=\(queryOK) rate=\(cap.currentRate) "
+            + "integer=\(cap.integerCapable) lossyWireless=\(cap.isLossyWireless) "
+            + "virtual=\(cap.isVirtualOrAggregate) exclusive=\(cap.exclusiveCapable) rates=\(rateCount)")
     }
 }
