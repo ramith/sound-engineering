@@ -45,7 +45,10 @@ extension AudioEngineBridge {
         // 2. Enter the reconfiguring state for the duration of the teardown/rebuild.
         graphState = .reconfiguring
 
-        // 3. Quiesce the audio thread: stop the player and remove every tap before touching nodes.
+        // 3. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
+        //    session so no in-flight buffer schedules onto the graph we're about to reconnect), then
+        //    stop the player and remove every tap before touching nodes.
+        stopEnhancedResampler()
         player.stop()
         removeSpectrumTap()
 
