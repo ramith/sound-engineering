@@ -55,6 +55,13 @@ struct SettingsTabView: View {
             Divider()
                 .padding(.horizontal, 16)
 
+            // MARK: Pure Mode (bit-perfect HAL) — interim B3 smoke-test control (A2 = polished UI)
+
+            PureModeSettingsSection(audioViewModel: audioViewModel)
+
+            Divider()
+                .padding(.horizontal, 16)
+
             // MARK: Future Settings (placeholder)
 
             VStack(spacing: 12) {
