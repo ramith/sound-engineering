@@ -45,6 +45,15 @@ let package = Package(
                 ]),
             ]
         ),
+        // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact
+        // converter the Enhanced (B4) resampler uses — by measuring imaging/aliasing on pure tones.
+        // Headless (AVAudioConverter is a pure DSP object, no device). REPLICATES the B4 setup; it
+        // imports no app-target code and changes no production audio path. `swift run SRCQualityMeasure`.
+        .executableTarget(
+            name: "SRCQualityMeasure",
+            dependencies: [],
+            path: "Sources/SRCQualityMeasure"
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(

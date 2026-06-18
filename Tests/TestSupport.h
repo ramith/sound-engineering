@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <numbers>
 #include <random>
@@ -42,6 +43,20 @@
 #include "TargetState.h"
 
 using namespace AdaptiveSound;
+
+// ---------------------------------------------------------------------------
+// Test-fixture directory. build-null-test.sh passes the absolute path of
+// <repo>/test-data via -DADAPTIVESOUND_TEST_DATA_DIR; fixtures are written + read THERE
+// (never /tmp). The fallback ("test-data", relative to the working dir) lets clang-tidy and
+// other compiles that don't set the macro still resolve a path. Tests build fixture paths as
+// `ADAPTIVESOUND_TEST_DATA_DIR "/<name>.wav"` (compile-time string-literal concatenation).
+// ---------------------------------------------------------------------------
+#ifndef ADAPTIVESOUND_TEST_DATA_DIR
+// A macro (not a constexpr) is REQUIRED: fixture paths use compile-time string-literal
+// concatenation — `ADAPTIVESOUND_TEST_DATA_DIR "/name.wav"` — which only works with literal tokens.
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ADAPTIVESOUND_TEST_DATA_DIR "test-data"
+#endif
 
 // ---------------------------------------------------------------------------
 // Named constants — no magic numbers per clang-tidy
@@ -649,7 +664,7 @@ static auto printSummary() -> int
 // Run all registered tests. parallelN<=1 → serial (default). parallelN>1 → parallel-safe
 // entries run on a pool of parallelN workers (atomic work-stealing), then serial-only entries run
 // sequentially in registration order.
-static auto runAllTests(int parallelN, const std::array<TestEntry, 72U>& kTests) -> void
+static auto runAllTests(int parallelN, const std::array<TestEntry, 74U>& kTests) -> void
 {
     if (parallelN <= 1)
     {

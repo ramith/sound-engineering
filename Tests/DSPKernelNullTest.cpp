@@ -25,6 +25,7 @@
 //   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource,
 //                           + C-ABI bridge (pureModeEvaluate) tests (tests 36-51)
 //   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
+//   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 73-74)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -42,6 +43,7 @@
 #include "SpatialTests.inc"
 #include "PureModeTests.inc"
 #include "FileDecodeTests.inc"
+#include "RoundTripTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 72U> kTests = {{
+    constexpr std::array<TestEntry, 74U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -154,6 +156,9 @@ namespace
         {"FileDecode_Seek_MidStreamDistinctChannels",
          testFileDecodeSeekMidStreamDistinctChannels,
          false},
+        // B5 / L1: Pure-Mode software-chain bit-exact round-trip — SERIAL: mutate env + /tmp paths.
+        {"RoundTrip_BitExact_16bit", testRoundTripBitExact16bit, false},
+        {"RoundTrip_BitExact_24bit", testRoundTripBitExact24bit, false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
