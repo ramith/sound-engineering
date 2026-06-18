@@ -1,4 +1,3 @@
-
 @_exported import Foundation // re-export so other files in this module see URL, etc.
 
 // MARK: - MockAudioEngine
@@ -15,19 +14,46 @@
 //   @testable import AdaptiveSoundCore
 // and delete the duplicated protocol + model declarations below.
 
+// MARK: - SignalPathInfo mirror (matches SignalPathInfo from the main target)
+
+enum OutputPathKindMirror { case enhanced, pure }
+enum PureModeDecisionUIMirror { case fullBitPerfect, rateMatchedFloat, fallbackEnhanced }
+enum DecoderKindUIMirror { case apple, ffmpeg }
+
+struct SignalPathInfoMirror: Equatable {
+    var path: OutputPathKindMirror = .enhanced
+    var decision: PureModeDecisionUIMirror = .fallbackEnhanced
+    var achievedSampleRate: Double = 0
+    var bitDepth: UInt32 = 0
+    var isFloat: Bool = false
+    var exclusiveHog: Bool = false
+    var rateMatched: Bool = false
+    var decoder: DecoderKindUIMirror?
+    var fellBackToEnhanced: Bool = false
+}
+
 // MARK: - Protocol mirror (matches AudioPlaybackEngine exactly)
 
 protocol AudioPlaybackEngineMirror: AnyObject {
     func initialize() async throws -> Bool
     func shutdown() async throws
-    func startAudio(fileURL: URL?) async throws
+    func startAudio(fileURL: URL?, pureMode: Bool) async throws
     func stopAudio() async throws
+    func seek(to seconds: Double) async
     func currentPlaybackPosition() -> Double?
+    func currentSignalPath() -> SignalPathInfoMirror
     func setParameter(_ id: UInt32, value: Float) async throws
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror]
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool
+}
+
+extension AudioPlaybackEngineMirror {
+    /// Backward-compatible convenience: start without Pure mode.
+    func startAudio(fileURL: URL?) async throws {
+        try await startAudio(fileURL: fileURL, pureMode: false)
+    }
 }
 
 // MARK: - AudioDeviceModel mirror
@@ -51,6 +77,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     private(set) var shutdownCallCount = 0
     private(set) var startAudioCallCount = 0
     private(set) var stopAudioCallCount = 0
+    private(set) var seekCallCount = 0
     private(set) var setParameterCallCount = 0
     private(set) var enumerateDevicesCallCount = 0
     private(set) var selectDeviceCallCount = 0
@@ -59,6 +86,8 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     // MARK: Captured arguments
 
     private(set) var lastStartedURL: URL?
+    private(set) var lastStartedPureMode: Bool = false
+    private(set) var lastSeekedSeconds: Double?
     private(set) var lastSetParameterID: UInt32?
     private(set) var lastSetParameterValue: Float?
     private(set) var lastSelectedDeviceID: UInt32?
@@ -67,6 +96,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
 
     var initializeResult: Bool = true
     var initializeError: Error?
+    var mockSignalPath: SignalPathInfoMirror = .init()
     var enumerateResult: [AudioDeviceModelMirror] = [
         AudioDeviceModelMirror(
             id: 73,
@@ -99,18 +129,28 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         shutdownCallCount += 1
     }
 
-    func startAudio(fileURL: URL?) async throws {
+    func startAudio(fileURL: URL?, pureMode: Bool) async throws {
         startAudioCallCount += 1
         lastStartedURL = fileURL
+        lastStartedPureMode = pureMode
     }
 
     func stopAudio() async throws {
         stopAudioCallCount += 1
     }
 
+    func seek(to seconds: Double) async {
+        seekCallCount += 1
+        lastSeekedSeconds = seconds
+    }
+
     var mockPlaybackPosition: Double?
     func currentPlaybackPosition() -> Double? {
         mockPlaybackPosition
+    }
+
+    func currentSignalPath() -> SignalPathInfoMirror {
+        mockSignalPath
     }
 
     func setParameter(_ id: UInt32, value: Float) async throws {

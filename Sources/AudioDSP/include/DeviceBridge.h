@@ -15,6 +15,11 @@
 // adaptiveAudioUnitComponentDescription() to Swift. Pure C; safe for all includers.
 #include "AudioUnitRegistrationBridge.h"
 
+// Re-export the pure-C Pure-Mode bridge so the same single SwiftPM bridging header
+// (Package.swift uses -import-objc-header DeviceBridge.h) exposes pureModeQueryCapability /
+// pureModeEngine* / pureModeEvaluate to Swift. Pure C11; #pragma once guards double-include.
+#include "PureModeBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.
