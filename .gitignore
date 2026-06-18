@@ -27,3 +27,8 @@ Thumbs.db
 Tests/DSPKernelNullTest
 Tests/lufs-tool
 Tests/EQSafetyClampTest
+
+# Generated test-harness fixtures (written at runtime into test-data/, never /tmp).
+# Keep the directory (README) tracked so the path resolves on a fresh clone.
+/test-data/*
+!/test-data/README.md

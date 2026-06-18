@@ -116,7 +116,7 @@ static auto decodeBitExactCase(const char* kName) -> void
     std::vector<int16_t> known(kKnownSamples.begin(), kKnownSamples.end());
     const uint32_t frameCount = static_cast<uint32_t>(known.size()) / kChannels;
 
-    const char* const path = "/tmp/adaptivesound_b2b_decode.wav";
+    const char* const path = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_decode.wav";
     if (!writeKnownWav(path, known, kChannels, kRate))
     {
         logFail(kName, "could not write the test WAV fixture");
@@ -481,31 +481,31 @@ namespace
     }
 
     // Unique fixture paths per test (avoids cross-test collisions; removed after each use).
-    constexpr const char* kPathFmtGetters = "/tmp/adaptivesound_b2b_fmtgetters.wav";
-    constexpr const char* kPathBitExact24 = "/tmp/adaptivesound_b2b_bitexact24.wav";
-    constexpr const char* kPathBitExactF32 = "/tmp/adaptivesound_b2b_bitexactf32.wav";
-    constexpr const char* kPathNativeRate = "/tmp/adaptivesound_b2b_nativerate.wav";
-    constexpr const char* kPathMono = "/tmp/adaptivesound_b2b_mono.wav";
-    constexpr const char* kPath4ch = "/tmp/adaptivesound_b2b_4ch.wav";
+    constexpr const char* kPathFmtGetters = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_fmtgetters.wav";
+    constexpr const char* kPathBitExact24 = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_bitexact24.wav";
+    constexpr const char* kPathBitExactF32 = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_bitexactf32.wav";
+    constexpr const char* kPathNativeRate = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_nativerate.wav";
+    constexpr const char* kPathMono = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_mono.wav";
+    constexpr const char* kPath4ch = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_4ch.wav";
     // Each test that previously shared kPathMismatch now has its own unique path
     // to prevent cross-test collisions if tests are ever reordered.
-    constexpr const char* kPathOpenFailure  = "/tmp/adaptivesound_b2b_openfailure.wav";
-    constexpr const char* kPathCloseIdemp   = "/tmp/adaptivesound_b2b_closeidemp.wav";
-    constexpr const char* kPathChanMismatch = "/tmp/adaptivesound_b2b_chanmismatch.wav";
-    constexpr const char* kPathEof = "/tmp/adaptivesound_b2b_eof.wav";
-    constexpr const char* kPathRingTail = "/tmp/adaptivesound_b2b_ringtail.wav";
-    constexpr const char* kPathUnderrun = "/tmp/adaptivesound_b2b_underrun.wav";
-    constexpr const char* kPathEquiv = "/tmp/adaptivesound_b2b_equiv.wav";
-    constexpr const char* kPathWrap = "/tmp/adaptivesound_b2b_wrap.wav";
-    constexpr const char* kPathGarbage = "/tmp/adaptivesound_b2b_garbage.bin";
+    constexpr const char* kPathOpenFailure  = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_openfailure.wav";
+    constexpr const char* kPathCloseIdemp   = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_closeidemp.wav";
+    constexpr const char* kPathChanMismatch = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_chanmismatch.wav";
+    constexpr const char* kPathEof = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_eof.wav";
+    constexpr const char* kPathRingTail = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_ringtail.wav";
+    constexpr const char* kPathUnderrun = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_underrun.wav";
+    constexpr const char* kPathEquiv = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_equiv.wav";
+    constexpr const char* kPathWrap = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_wrap.wav";
+    constexpr const char* kPathGarbage = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_garbage.bin";
 
     // Seek-test fixture paths (unique per test to avoid cross-test collisions).
-    constexpr const char* kPathSeekSampleAcc = "/tmp/adaptivesound_b2b_seek_sampleacc.wav";
-    constexpr const char* kPathSeekZero = "/tmp/adaptivesound_b2b_seek_zero.wav";
-    constexpr const char* kPathSeekPastEof = "/tmp/adaptivesound_b2b_seek_pasteof.wav";
-    constexpr const char* kPathSeekEquiv = "/tmp/adaptivesound_b2b_seek_equiv.wav";
-    constexpr const char* kPathSeekRapid = "/tmp/adaptivesound_b2b_seek_rapid.wav";
-    constexpr const char* kPathSeekMidStream = "/tmp/adaptivesound_b2b_seek_midstream.wav";
+    constexpr const char* kPathSeekSampleAcc = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_sampleacc.wav";
+    constexpr const char* kPathSeekZero = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_zero.wav";
+    constexpr const char* kPathSeekPastEof = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_pasteof.wav";
+    constexpr const char* kPathSeekEquiv = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_equiv.wav";
+    constexpr const char* kPathSeekRapid = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_rapid.wav";
+    constexpr const char* kPathSeekMidStream = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_seek_midstream.wav";
 
     // Distinct-per-channel 16-bit stereo ramp: L = (frame % period) - bias, R a DIFFERENT function
     // of frame (so a channel swap or off-by-one is caught). Both encode the absolute file-frame
@@ -572,7 +572,7 @@ static auto testFileDecodeOpenFailurePaths() -> void
     // (b) missing file.
     {
         FileDecodeSource src;
-        if (src.open("/tmp/adaptivesound_b2b_does_not_exist.wav"))
+        if (src.open(ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b2b_does_not_exist.wav"))
         {
             logFail(kName, "open(missing file) returned true");
             return;
