@@ -56,6 +56,10 @@ extension AudioEngineBridge {
             DispatchQueue.global().async {
                 // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
                 let result = selectOutputDeviceC(deviceID)
+                if result != 0 {
+                    // Track the selected device so Pure Mode can open the HAL engine on it.
+                    self.currentDeviceID = deviceID
+                }
                 continuation.resume(returning: result != 0)
             }
         }

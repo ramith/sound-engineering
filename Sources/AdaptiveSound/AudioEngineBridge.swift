@@ -57,6 +57,43 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     var beforeTapInstalled = false
     var afterTapInstalled = false
 
+    // MARK: - Pure-Mode stored state (methods live in AudioEngineBridge+PureMode.swift)
+
+    /// The device selected by `selectDevice(_:)`, or the system default selected at
+    /// `initialize()`. Pure Mode uses this to open the HAL engine on the right device.
+    var currentDeviceID: UInt32 = 0
+
+    /// Opaque Pure-Mode engine handle (created lazily in `startPure`).
+    /// Destroyed by `pureModeEngineDestroy` in `stopAudio` / `shutdown`.
+    var pureEngine: UnsafeMutableRawPointer?
+
+    /// Which output path is currently active.
+    var activePath: OutputPathKind = .enhanced
+
+    /// Latest signal-path snapshot; polled lock-free by `currentSignalPath()`.
+    var cachedSignalPath: SignalPathInfo = .init()
+
+    /// URL of the last successfully scheduled file, used by the device-change fallback
+    /// to restart playback on the new device without re-opening the file picker.
+    var lastFileURL: URL?
+
+    /// Whether the most recent `startAudio` call requested Pure mode.
+    var pureModeRequested: Bool = false
+
+    /// CoreAudio property-listener token for the default-output-device change notification.
+    /// Registered in `initialize()`, removed in `shutdown()`.
+    var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
+
+    /// CoreAudio property-listener token for device-is-alive notification on the
+    /// currently hogged device. Registered when Pure starts; removed on teardown.
+    var deviceAliveListenerBlock: AudioObjectPropertyListenerBlock?
+
+    /// The device the alive-listener was actually registered on. Used to UNregister from the
+    /// SAME device — `currentDeviceID` may already point at the new device by teardown time (a
+    /// default-device change updates it before `tearDownPure`), so removing from `currentDeviceID`
+    /// would target the wrong device and leak the old listener.
+    var aliveListenerDeviceID: UInt32 = 0
+
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
 
     /// Top-level engine-graph state. Introduced in S0-M3; the `.reconfiguring` transition is now
@@ -84,9 +121,18 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                // Capture the current default output device so Pure Mode can open the right
+                // HAL engine. Updated in selectDevice(_:) and by the device-change listener.
+                self.currentDeviceID = getDefaultOutputDeviceID()
+
                 let engine = AVAudioEngine()
                 self.avEngine = engine
                 self.observeConfigurationChanges(of: engine)
+
+                // Register the CoreAudio default-output-device change listener so the
+                // Pure-Mode path can fall back to Enhanced or re-route on device changes.
+                // Methods are defined in AudioEngineBridge+PureMode.swift.
+                self.registerDeviceChangeListener()
 
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
@@ -205,11 +251,24 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
+                // Remove CoreAudio property listeners before tearing down anything else.
+                self.unregisterDeviceChangeListener()
+
                 self.removeSpectrumTap()
                 if let observer = self.configChangeObserver {
                     NotificationCenter.default.removeObserver(observer)
                     self.configChangeObserver = nil
                 }
+
+                // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
+                if self.activePath == .pure {
+                    self.tearDownPure()
+                } else if let engine = self.pureEngine {
+                    // Orphaned handle (e.g. failed mid-start): always destroy to avoid a hog leak.
+                    pureModeEngineDestroy(engine)
+                    self.pureEngine = nil
+                }
+
                 if let playerNode = self.playerNode, playerNode.isPlaying {
                     playerNode.stop()
                 }
@@ -230,6 +289,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.graphState = .idle
                 self.beforeAnalyzers = []
                 self.afterAnalyzers = []
+                self.activePath = .enhanced
+                self.cachedSignalPath = .init()
                 // Tap already removed above, so no callback can touch the meter now.
                 if let meter = self.loudnessMeter {
                     loudnessMeterDestroy(meter)
@@ -244,29 +305,66 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     // MARK: - Playback
 
-    func startAudio(fileURL: URL? = nil) async throws {
+    func startAudio(fileURL: URL?, pureMode: Bool) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 do {
+                    // Record the intent for the device-change fallback restart path.
+                    self.lastFileURL = fileURL
+                    self.pureModeRequested = pureMode
+
+                    // Attempt Pure path when requested, a file is provided, and capability allows.
+                    if pureMode, let url = fileURL {
+                        let viable = self.evaluatePureViable(fileURL: url, deviceID: self.currentDeviceID)
+                        if viable {
+                            // Tear down any live Enhanced playback before entering Pure
+                            // (keep the graph intact for fast fallback — just stop the player).
+                            self.stopEnhancedPlayback()
+                            let started = self.startPure(fileURL: url, deviceID: self.currentDeviceID)
+                            if started {
+                                continuation.resume(returning: ())
+                                return
+                            }
+                            // Pure engine started but achievedState.running == 0 → fall through
+                            // to Enhanced. Record that we fell back.
+                            NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
+                            self.cachedSignalPath.fellBackToEnhanced = true
+                        } else {
+                            self.cachedSignalPath.fellBackToEnhanced = true
+                        }
+                    } else {
+                        self.cachedSignalPath.fellBackToEnhanced = false
+                    }
+
+                    // If Pure was active, stop+destroy it before entering Enhanced
+                    // (releases hog mode + restores device rate).
+                    if self.activePath == .pure {
+                        self.tearDownPure()
+                    }
+
+                    // Enhanced path (original startAudio body).
                     guard let engine = self.avEngine, let playerNode = self.playerNode else {
                         throw AudioBridgeError.engineNotInitialized
                     }
 
-                    // Start the engine first.
                     if !engine.isRunning {
                         try engine.start()
                     }
 
-                    // Install the spectrum tap once the engine is running. installSpectrumTap is
-                    // idempotent (guarded by tapInstalled). If the file path below re-widths the
-                    // graph, reconfigureGraph cycles the taps to the new width on its own.
                     self.installSpectrumTap()
 
-                    if let fileURL = fileURL {
-                        try self.playFile(at: fileURL, engine: engine, playerNode: playerNode)
+                    if let url = fileURL {
+                        try self.playFile(at: url, engine: engine, playerNode: playerNode)
                     } else {
                         self.playReferenceTone(on: playerNode)
                     }
+
+                    self.activePath = .enhanced
+                    self.cachedSignalPath = SignalPathInfo(
+                        path: .enhanced,
+                        decision: .fallbackEnhanced,
+                        fellBackToEnhanced: self.cachedSignalPath.fellBackToEnhanced
+                    )
 
                     continuation.resume(returning: ())
                 } catch {
@@ -283,7 +381,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// publish the layout tag to the kernel for correct BS.1770-5 weights), and only AFTER that
     /// stop the player + schedule + play. Reconfiguring before scheduling means the file is queued
     /// onto the graph already settled at its width.
-    private func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode) throws {
+    func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode) throws {
         // Establish security-scoped access for sandboxed macOS file access.
         let didAccess = fileURL.startAccessingSecurityScopedResource()
         defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
@@ -332,23 +430,29 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func stopAudio() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                if let playerNode = self.playerNode, playerNode.isPlaying {
-                    playerNode.stop()
-                }
-                if let engine = self.avEngine, engine.isRunning {
-                    engine.stop()
+                if self.activePath == .pure {
+                    self.tearDownPure()
+                } else {
+                    self.stopEnhancedPlayback()
                 }
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
+                self.activePath = .enhanced
+                self.cachedSignalPath = .init()
                 continuation.resume()
             }
         }
     }
 
     func currentPlaybackPosition() -> Double? {
-        // Derive the playhead from the player node's render time. sampleTime counts
-        // from 0 at play() and accumulates while playing — divide by the rate to get
-        // seconds. AVAudioPlayerNode time queries are safe to call from any thread.
+        // Route to the active path.
+        if activePath == .pure, let engine = pureEngine {
+            let pos = pureModeEnginePositionSeconds(engine)
+            return pos > 0 ? pos : nil
+        }
+        // Enhanced path: derive the playhead from the player node's render time.
+        // sampleTime counts from 0 at play() and accumulates while playing —
+        // divide by the rate to get seconds.
         guard let playerNode, playerNode.isPlaying,
               let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
@@ -359,11 +463,22 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return Double(playerTime.sampleTime) / playerTime.sampleRate
     }
 
+    func currentSignalPath() -> SignalPathInfo {
+        cachedSignalPath
+    }
+
     func setParameter(_ id: UInt32, value: Float) async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 if id == 0 {
-                    // Master gain parameter
+                    // In the Pure path, volume is device/OS-owned (bit-perfect stream must not be
+                    // touched by software gain). The master gain is stored in the ViewModel as a UI
+                    // value and applied only when the Enhanced path is active.
+                    if self.activePath == .pure {
+                        continuation.resume()
+                        return
+                    }
+                    // Enhanced path: master gain parameter → player node volume.
                     if let playerNode = self.playerNode {
                         playerNode.volume = value
                     }

@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-// MARK: - AudioPlaybackEngine Protocol
+// MARK: - AudioPlaybackEngine Protocol + Default Implementations
 
 /// Protocol boundary between AudioViewModel and the live audio engine.
 ///
@@ -12,6 +12,15 @@ import Foundation
 /// Concurrency contract: all methods may be called from a background Task.
 /// Implementations are responsible for dispatching UI-bound side-effects to
 /// the main actor if needed; the protocol itself is actor-agnostic.
+extension AudioPlaybackEngine {
+    /// Convenience overload: start playback without Pure-mode (Enhanced path).
+    /// Non-Pure callers — including legacy call sites — use this rather than the
+    /// full `startAudio(fileURL:pureMode:)` signature.
+    func startAudio(fileURL: URL?) async throws {
+        try await startAudio(fileURL: fileURL, pureMode: false)
+    }
+}
+
 protocol AudioPlaybackEngine: AnyObject {
     // MARK: Lifecycle
 
@@ -25,14 +34,25 @@ protocol AudioPlaybackEngine: AnyObject {
     // MARK: Playback
 
     /// Start playback of the audio file at `fileURL`, or a reference tone if nil.
-    func startAudio(fileURL: URL?) async throws
+    /// When `pureMode` is `true` and the device + file support it, the bit-perfect
+    /// HAL path is used; otherwise the Enhanced AVAudioEngine path is used.
+    func startAudio(fileURL: URL?, pureMode: Bool) async throws
 
     /// Stop all playback immediately.
     func stopAudio() async throws
 
+    /// Seek to `seconds` from the start of the current file.
+    /// In the Pure path this is handled natively by the HAL engine. In the
+    /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
+    func seek(to seconds: Double) async
+
     /// Current playhead position in seconds since playback started, or `nil` when
     /// not playing / unavailable. A fast, lock-free query safe to poll from the UI.
     func currentPlaybackPosition() -> Double?
+
+    /// Snapshot of the active signal path (path kind, achieved rate, bit depth, etc.).
+    /// Lock-free; safe to poll from the UI at 20 Hz.
+    func currentSignalPath() -> SignalPathInfo
 
     /// Latest BS.1770-5 loudness measurement (LUFS + sample-peak), measured on the
     /// playback tap. Lock-free; safe to poll from the UI. `.unmeasured` if unavailable.

@@ -1,0 +1,259 @@
+import AVFoundation
+import CoreAudio
+import Foundation
+
+// MARK: - AudioEngineBridge Pure-Mode methods (bit-perfect HAL path)
+
+/// Pure-Mode orchestration: capability evaluation, engine lifecycle, transport routing,
+/// and seek helpers. All stored properties (pureEngine, activePath,
+/// cachedSignalPath, lastFileURL, pureModeRequested, currentDeviceID,
+/// defaultDeviceListenerBlock, deviceAliveListenerBlock) live on the main class body
+/// in AudioEngineBridge.swift (Swift extensions cannot add stored properties).
+///
+/// Device-monitoring (CoreAudio listener registration + device-change/device-alive
+/// handlers + Enhanced fallback) lives in AudioEngineBridge+PureModeDeviceMonitor.swift.
+///
+/// Concurrency: all methods are called from `DispatchQueue.global()` continuations,
+/// matching the existing bridge pattern. The CoreAudio listener blocks dispatch
+/// additional work on a dedicated global queue and are never called on the audio thread.
+extension AudioEngineBridge {
+    // MARK: - Capability Evaluation
+
+    /// Returns `true` when the device + file combination can run in Pure mode
+    /// (decision is FullBitPerfect or RateMatchedFloat). When this returns false,
+    /// the caller falls back to the Enhanced path.
+    func evaluatePureViable(fileURL: URL, deviceID: UInt32) -> Bool {
+        // --- Query device capability ---
+        var cap = CDeviceCapability()
+        // Up to 16 advertised rates; USB DACs typically advertise ≤ 8.
+        let maxRates: UInt32 = 16
+        var rates = [Double](repeating: 0, count: Int(maxRates))
+        var rateCount: UInt32 = 0
+
+        let queryOK = pureModeQueryCapability(deviceID, &cap, &rates, maxRates, &rateCount)
+        guard queryOK == 1 else {
+            NSLog("[PureMode] pureModeQueryCapability failed for device \(deviceID)")
+            return false
+        }
+
+        // --- Build CFileFormat from AVAudioFile ---
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+        guard let audioFile = try? AVAudioFile(forReading: fileURL) else {
+            NSLog("[PureMode] Cannot open file for capability evaluation: \(fileURL.lastPathComponent)")
+            return false
+        }
+
+        let processingFormat = audioFile.processingFormat
+        let streamDesc = processingFormat.streamDescription.pointee
+
+        // Extract physical bit depth and float flag from the underlying stream description.
+        // These inform the policy's integer / float branch but are not mandatory —
+        // rate + device booleans drive the primary decision.
+        let fileBits: UInt32 = streamDesc.mBitsPerChannel
+        let fileIsFloat: UInt8 = (streamDesc.mFormatFlags & kAudioFormatFlagIsFloat) != 0 ? 1 : 0
+
+        var fileFormat = CFileFormat(
+            sampleRate: processingFormat.sampleRate,
+            bitsPerChannel: fileBits,
+            channels: processingFormat.channelCount,
+            isFloat: fileIsFloat
+        )
+
+        // --- Evaluate policy ---
+        var evaluation = CPureModeEvaluation()
+        withUnsafePointer(to: &cap) { capPtr in
+            rates.withUnsafeBufferPointer { ratesPtr in
+                withUnsafePointer(to: &fileFormat) { filePtr in
+                    pureModeEvaluate(capPtr, ratesPtr.baseAddress, rateCount, filePtr, &evaluation)
+                }
+            }
+        }
+
+        // 0 = FullBitPerfect, 1 = RateMatchedFloat are both viable. 2 = FallbackEnhanced → reject.
+        return evaluation.decision != 2
+    }
+
+    // MARK: - Pure Engine Start
+
+    /// Create (lazily) and start the Pure-Mode engine. Returns `true` when the
+    /// engine confirms `running == 1` in `pureModeEngineAchievedState`.
+    ///
+    /// - Parameters:
+    ///   - fileURL:  The file to play (security-scoped access is managed here).
+    ///   - deviceID: The CoreAudio device to open in exclusive / integer mode.
+    /// - Returns: `true` on success; `false` on any failure (caller falls back to Enhanced).
+    @discardableResult
+    func startPure(fileURL: URL, deviceID: UInt32) -> Bool {
+        // Lazily create the engine handle; destroy any stale handle first.
+        if pureEngine == nil {
+            pureEngine = pureModeEngineCreate()
+        }
+        guard let engine = pureEngine else {
+            NSLog("[PureMode] pureModeEngineCreate returned nil")
+            return false
+        }
+
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+
+        var startResult: Int32 = 0
+        fileURL.path.withCString { pathPtr in
+            startResult = pureModeEngineStart(engine, deviceID, pathPtr)
+        }
+
+        guard startResult == 1 else {
+            NSLog("[PureMode] pureModeEngineStart failed (result=\(startResult))")
+            pureModeEngineDestroy(engine)
+            pureEngine = nil
+            return false
+        }
+
+        let state = pureModeEngineAchievedState(engine)
+        guard state.running == 1 else {
+            NSLog("[PureMode] Engine started but running==0 — aborting Pure path")
+            pureModeEngineStop(engine)
+            pureModeEngineDestroy(engine)
+            pureEngine = nil
+            return false
+        }
+
+        activePath = .pure
+        cachedSignalPath = makeSignalPathInfo(from: state)
+
+        // Register a device-alive listener for the device we just hogged.
+        // Ordering invariant: register AFTER activePath is set to .pure so the
+        // alive-listener's fallback fires only while we are actually in Pure mode.
+        registerDeviceAliveListener(deviceID: deviceID)
+
+        let info = cachedSignalPath
+        NSLog(
+            "[PureMode] Started — decision=\(info.decision), " +
+                "rate=\(state.achievedRate) Hz, bits=\(state.achievedBitsPerChannel), " +
+                "hog=\(state.didHog), decoder=\(info.decoder as Any)"
+        )
+        return true
+    }
+
+    // MARK: - Seek
+
+    /// Seek to `seconds` in the current file.
+    ///
+    /// Pure path: `pureModeEngineSeek` stops render, seeks, restarts internally.
+    ///
+    /// Enhanced path: best-effort implementation — stops the player, seeks the
+    /// open `AVAudioFile` by scheduling a segment from the target frame to end.
+    /// Gapless crossfade and precise SRC alignment are a later phase (Phase 1b Part B).
+    func seek(to seconds: Double) async {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                if self.activePath == .pure, let engine = self.pureEngine {
+                    let result = pureModeEngineSeek(engine, seconds)
+                    if result != 1 {
+                        NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
+                    }
+                    continuation.resume()
+                    return
+                }
+
+                // Enhanced path: best-effort re-schedule.
+                // NOTE: This is a minimal implementation: no gapless crossfade, no SRC-sample-
+                // accurate alignment. Seek in the Enhanced path is a Phase 1b Part B feature;
+                // the body below keeps the app functional (stops + re-positions) without
+                // asserting bit-accuracy.
+                guard let player = self.playerNode,
+                      let url = self.lastFileURL
+                else {
+                    continuation.resume()
+                    return
+                }
+
+                self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
+                continuation.resume()
+            }
+        }
+    }
+
+    // MARK: - Internal helpers
+
+    /// Stop the Enhanced player node and AVAudioEngine without destroying the graph.
+    /// Used when transitioning from Enhanced to Pure (keep the graph for fast fallback).
+    func stopEnhancedPlayback() {
+        if let player = playerNode, player.isPlaying {
+            player.stop()
+        }
+        if let engine = avEngine, engine.isRunning {
+            engine.stop()
+        }
+    }
+
+    /// Stop and destroy the Pure-Mode engine. This releases hog mode and restores
+    /// the device's nominal sample rate. Safe to call when pureEngine is nil.
+    ///
+    /// Invariant: `unregisterDeviceAliveListener()` is called first so no alive-listener
+    /// callback fires after `pureEngine` is set to nil.
+    func tearDownPure() {
+        unregisterDeviceAliveListener()
+        if let engine = pureEngine {
+            pureModeEngineStop(engine)
+            pureModeEngineDestroy(engine)
+            pureEngine = nil
+        }
+        activePath = .enhanced
+    }
+
+    // MARK: - Private helpers
+
+    /// Build a `SignalPathInfo` snapshot from a `CAchievedOutputState`.
+    private func makeSignalPathInfo(from state: CAchievedOutputState) -> SignalPathInfo {
+        let decisionUI: PureModeDecisionUI
+        switch state.decision {
+        case 0: decisionUI = .fullBitPerfect
+        case 1: decisionUI = .rateMatchedFloat
+        default: decisionUI = .fallbackEnhanced
+        }
+        let decoderUI: DecoderKindUI = state.decoderBackend == 1 ? .ffmpeg : .apple
+        return SignalPathInfo(
+            path: .pure,
+            decision: decisionUI,
+            achievedSampleRate: state.achievedRate,
+            bitDepth: state.achievedBitsPerChannel,
+            isFloat: state.achievedIsFloat == 1,
+            exclusiveHog: state.didHog == 1,
+            rateMatched: state.rateChanged == 1,
+            decoder: decoderUI,
+            fellBackToEnhanced: false
+        )
+    }
+
+    /// Seek `player` to `seconds` by re-scheduling the remaining segment of `url`.
+    ///
+    /// Best-effort: no gapless crossfade or SRC-sample-accurate alignment (Phase 1b Part B).
+    /// Silently returns when the file cannot be opened or the target frame is out of range.
+    /// Called from both `seek(to:)` (Enhanced path) and `fallBackToEnhanced(position:)`.
+    func seekEnhancedBestEffort(url: URL, player: AVAudioPlayerNode, to seconds: Double) {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+
+        guard let audioFile = try? AVAudioFile(forReading: url) else { return }
+
+        let sampleRate = audioFile.processingFormat.sampleRate
+        guard sampleRate > 0 else { return }
+
+        let targetFrame = AVAudioFramePosition(seconds * sampleRate)
+        let totalFrames = audioFile.length
+        guard targetFrame >= 0, targetFrame < totalFrames else { return }
+
+        let frameCount = AVAudioFrameCount(totalFrames - targetFrame)
+        player.stop()
+        audioFile.framePosition = targetFrame
+        player.scheduleSegment(
+            audioFile,
+            startingFrame: targetFrame,
+            frameCount: frameCount,
+            at: nil
+        )
+        player.play()
+    }
+}
