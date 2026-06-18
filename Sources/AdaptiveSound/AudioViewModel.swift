@@ -90,6 +90,21 @@ final class AudioViewModel {
     var availableDevices: [AudioDeviceModel] = []
     var sampleRate: UInt32 = 0
     var bufferFrameSize: UInt32 = 0
+    /// User intent: whether to attempt the bit-perfect Pure HAL path on next playback start.
+    /// Pure is mutually exclusive with DSP/EQ by construction (the bit-perfect stream is
+    /// untouched). Setting this to `true` does NOT immediately affect running playback —
+    /// it takes effect on the next `startPlayback()` call.
+    var pureModeEnabled: Bool = false
+
+    /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
+    /// Updated at 20 Hz in `tickSpectrum()`.
+    var signalPath: SignalPathInfo = .init()
+
+    /// Convenience derived property: `true` when the Pure HAL path is actually rendering.
+    var pureModeEngaged: Bool {
+        signalPath.path == .pure
+    }
+
     var masterGain: Float = 0.7 {
         didSet {
             setParameter(masterGainParameterID, value: masterGain)
@@ -213,9 +228,10 @@ final class AudioViewModel {
     /// writes into `spectrumBars` to trigger SwiftUI observation.
     @MainActor
     private func tickSpectrum() {
-        // Poll the playhead + loudness every tick (independent of spectrum availability).
+        // Poll the playhead + loudness + signal path every tick (independent of spectrum).
         playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
         loudness = engine.currentLoudness()
+        signalPath = engine.currentSignalPath()
 
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
@@ -276,7 +292,7 @@ final class AudioViewModel {
 
         Task {
             do {
-                try await engine.startAudio(fileURL: fileURL)
+                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeEnabled)
                 isPlaying = true
                 errorMessage = nil
             } catch {
@@ -295,6 +311,15 @@ final class AudioViewModel {
             } catch {
                 errorMessage = "Stop playback failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// Seek to `seconds` from the start of the current file.
+    /// Updates `playbackPosition` immediately to avoid UI jitter while the engine seeks.
+    func seek(to seconds: Double) {
+        playbackPosition = seconds
+        Task {
+            await engine.seek(to: seconds)
         }
     }
 
