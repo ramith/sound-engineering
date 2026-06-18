@@ -7,11 +7,11 @@ import Foundation
 /// Pure-Mode orchestration: capability evaluation, engine lifecycle, transport routing,
 /// and seek helpers. All stored properties (pureEngine, activePath,
 /// cachedSignalPath, lastFileURL, pureModeRequested, currentDeviceID,
-/// defaultDeviceListenerBlock, deviceAliveListenerBlock) live on the main class body
+/// deviceAliveListenerBlock, aliveListenerDeviceID) live on the main class body
 /// in AudioEngineBridge.swift (Swift extensions cannot add stored properties).
 ///
-/// Device-monitoring (CoreAudio listener registration + device-change/device-alive
-/// handlers + Enhanced fallback) lives in AudioEngineBridge+PureModeDeviceMonitor.swift.
+/// Device-monitoring (the device-alive listener + pause-on-device-loss) lives in
+/// AudioEngineBridge+PureModeDeviceMonitor.swift.
 ///
 /// Concurrency: all methods are called from `DispatchQueue.global()` continuations,
 /// matching the existing bridge pattern. The CoreAudio listener blocks dispatch
@@ -231,7 +231,7 @@ extension AudioEngineBridge {
     ///
     /// Best-effort: no gapless crossfade or SRC-sample-accurate alignment (Phase 1b Part B).
     /// Silently returns when the file cannot be opened or the target frame is out of range.
-    /// Called from both `seek(to:)` (Enhanced path) and `fallBackToEnhanced(position:)`.
+    /// Called from `seek(to:)` on the Enhanced path.
     func seekEnhancedBestEffort(url: URL, player: AVAudioPlayerNode, to seconds: Double) {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }

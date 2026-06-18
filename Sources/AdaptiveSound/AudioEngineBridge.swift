@@ -80,18 +80,12 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Whether the most recent `startAudio` call requested Pure mode.
     var pureModeRequested: Bool = false
 
-    /// CoreAudio property-listener token for the default-output-device change notification.
-    /// Registered in `initialize()`, removed in `shutdown()`.
-    var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
-
-    /// CoreAudio property-listener token for device-is-alive notification on the
-    /// currently hogged device. Registered when Pure starts; removed on teardown.
+    /// CoreAudio property-listener token for the device-is-alive notification on the device Pure is
+    /// rendering on. Registered when Pure starts; removed on teardown. On the device disappearing,
+    /// playback pauses (see AudioEngineBridge+PureModeDeviceMonitor.swift).
     var deviceAliveListenerBlock: AudioObjectPropertyListenerBlock?
 
-    /// The device the alive-listener was actually registered on. Used to UNregister from the
-    /// SAME device — `currentDeviceID` may already point at the new device by teardown time (a
-    /// default-device change updates it before `tearDownPure`), so removing from `currentDeviceID`
-    /// would target the wrong device and leak the old listener.
+    /// The device the alive-listener was registered on, so we UNregister from the SAME device.
     var aliveListenerDeviceID: UInt32 = 0
 
     // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
@@ -128,11 +122,6 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 let engine = AVAudioEngine()
                 self.avEngine = engine
                 self.observeConfigurationChanges(of: engine)
-
-                // Register the CoreAudio default-output-device change listener so the
-                // Pure-Mode path can fall back to Enhanced or re-route on device changes.
-                // Methods are defined in AudioEngineBridge+PureMode.swift.
-                self.registerDeviceChangeListener()
 
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
@@ -236,10 +225,13 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 // those very changes fire this notification. The Enhanced AVAudioEngine is
                 // intentionally stopped and must NOT try to restart on the hogged device — doing so
                 // fails with -10875 (invalid output HW format) and contends for the device. The
-                // Pure path runs its own HAL engine; leave it alone. The device-change re-eval +
-                // fallback for the Pure path is handled by the CoreAudio listeners in
+                // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
+                // is handled (paused) by the CoreAudio device-alive listener in
                 // AudioEngineBridge+PureModeDeviceMonitor.swift.
                 guard self.activePath != .pure else { return }
+                // After a device-loss pause we are intentionally stopped — don't auto-restart on the
+                // config change that the disconnect itself fires. Cleared on the next startAudio.
+                guard !self.cachedSignalPath.interrupted else { return }
                 let wasPlaying = self.playerNode?.isPlaying ?? false
                 if !engine.isRunning {
                     do {
@@ -259,8 +251,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                // Remove CoreAudio property listeners before tearing down anything else.
-                self.unregisterDeviceChangeListener()
+                // Remove the Pure-Mode device-alive listener before tearing down anything else.
+                self.unregisterDeviceAliveListener()
 
                 self.removeSpectrumTap()
                 if let observer = self.configChangeObserver {
