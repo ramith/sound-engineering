@@ -372,8 +372,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
                     if let url = fileURL {
                         try self.playFile(at: url, engine: engine, playerNode: playerNode)
+                        logUX("Enhanced started '\(url.lastPathComponent)'"
+                            + (self.cachedSignalPath.fellBackToEnhanced ? " (fell back from Pure)" : ""))
                     } else {
                         self.playReferenceTone(on: playerNode)
+                        logUX("Enhanced started reference tone")
                     }
 
                     self.activePath = .enhanced
@@ -498,13 +501,17 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     // no settable master volume returns 0 (volume then via the OS / device only).
                     if self.activePath == .pure {
                         _ = pureModeSetDeviceVolume(self.currentDeviceID, value)
+                        logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=PureHWVol")
                         continuation.resume()
                         return
                     }
                     // Enhanced path: master gain parameter → player node volume.
                     if let playerNode = self.playerNode {
                         playerNode.volume = value
+                        logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=EnhancedVol")
                     }
+                } else {
+                    logUX("setParameter: id=\(id) val=\(String(format: "%.3f", value)) path=no-op")
                 }
                 continuation.resume()
             }

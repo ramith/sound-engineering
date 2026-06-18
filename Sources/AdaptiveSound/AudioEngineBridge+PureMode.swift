@@ -150,6 +150,8 @@ extension AudioEngineBridge {
             DispatchQueue.global().async {
                 if self.activePath == .pure, let engine = self.pureEngine {
                     let result = pureModeEngineSeek(engine, seconds)
+                    logUX("engine seek: path=Pure target=\(secs(seconds))s "
+                        + "result=\(result == 1 ? "ok" : "failed(\(result))")")
                     if result != 1 {
                         NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
                     }
@@ -165,6 +167,8 @@ extension AudioEngineBridge {
                 guard let player = self.playerNode,
                       let url = self.lastFileURL
                 else {
+                    logUX("engine seek: path=Enhanced "
+                        + "target=\(secs(seconds))s result=no-op (no player/url)")
                     continuation.resume()
                     return
                 }
@@ -174,6 +178,7 @@ extension AudioEngineBridge {
                 // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
                 self.enhancedPositionBaseSeconds = max(seconds, 0)
                 self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
+                logUX("engine seek: path=Enhanced target=\(secs(seconds))s result=ok")
                 continuation.resume()
             }
         }
