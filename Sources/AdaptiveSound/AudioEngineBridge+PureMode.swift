@@ -169,6 +169,10 @@ extension AudioEngineBridge {
                     return
                 }
 
+                // The re-scheduled segment restarts the player's sampleTime at 0, so record the seek
+                // target as the position base — currentPlaybackPosition adds it to report the true
+                // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
+                self.enhancedPositionBaseSeconds = max(seconds, 0)
                 self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
                 continuation.resume()
             }
