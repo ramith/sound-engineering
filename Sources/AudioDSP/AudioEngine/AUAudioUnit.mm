@@ -303,7 +303,25 @@ int selectOutputDeviceC(uint32_t deviceID) {
     if (deviceID == 0) { return 0; }
     // Verify the device ID resolves to a real device before accepting it.
     std::string name = AdaptiveSound::CoreAudioDevice::getDeviceName(static_cast<AudioDeviceID>(deviceID));
-    return (name != "Unknown Device" && !name.empty()) ? 1 : 0;
+    if (name == "Unknown Device" || name.empty()) { return 0; }
+
+    // "App-selected device is authoritative" (founder decision): make the picked device the macOS
+    // default output. Pure targets currentDeviceID directly; the Enhanced AVAudioEngine follows the
+    // system default — so setting the default here keeps BOTH paths on the device the user picked in
+    // the app (fixes the "OS says Bluetooth, app plays on built-in" mismatch). Best-effort: a set
+    // failure is logged but still returns success, since Pure uses currentDeviceID regardless.
+    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDefaultOutputDevice,
+                                    kAudioObjectPropertyScopeGlobal,
+                                    kAudioObjectPropertyElementMain};
+    AudioDeviceID dev = static_cast<AudioDeviceID>(deviceID);
+    const OSStatus status = AudioObjectSetPropertyData(
+        kAudioObjectSystemObject, &addr, 0, nullptr, sizeof(dev), &dev);
+    if (status != noErr) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        NSLog(@"[selectOutputDeviceC] could not set default output device %u (status %d)", deviceID,
+              static_cast<int>(status));
+    }
+    return 1;
 }
 
 void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) {

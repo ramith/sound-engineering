@@ -62,4 +62,9 @@ struct SignalPathInfo: Equatable {
     /// `true` when Pure mode was requested by the user but capability evaluation or engine
     /// startup forced a fallback to Enhanced. Cleared when Pure mode is not requested.
     var fellBackToEnhanced: Bool = false
+
+    /// `true` when playback was paused because the active output device disappeared (e.g. a
+    /// Bluetooth device disconnected). The view model surfaces this and clears `isPlaying`; the
+    /// flag is cleared on the next `startAudio`.
+    var interrupted: Bool = false
 }

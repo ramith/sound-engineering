@@ -233,6 +233,14 @@ final class AudioViewModel {
         loudness = engine.currentLoudness()
         signalPath = engine.currentSignalPath()
 
+        // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
+        // reflect it in the UI and prompt the user to pick a device.
+        if signalPath.interrupted, isPlaying {
+            isPlaying = false
+            playbackPosition = 0
+            errorMessage = "Output device disconnected — playback paused. Pick a device to resume."
+        }
+
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
         // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
