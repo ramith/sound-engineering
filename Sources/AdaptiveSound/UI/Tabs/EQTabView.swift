@@ -23,5 +23,8 @@ struct EQTabView: View {
             )
         }
         .background(Color.asWindow)
+        .onChange(of: isUsingDiscreteSteps) { _, newValue in
+            eqViewModel.logInterpolationModeChange(newValue)
+        }
     }
 }

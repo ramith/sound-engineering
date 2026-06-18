@@ -80,7 +80,10 @@ final class AudioViewModel {
     var isPlaying = false
     /// Selected top-level tab. Owned here (not in `ContentView` `@State`) so deep views — e.g.
     /// a double-click on the Now Playing spectrum — can navigate without binding-plumbing.
-    var selectedTab: TabSelection = .nowPlaying
+    var selectedTab: TabSelection = .nowPlaying {
+        didSet { logUX("tab → \(selectedTab.rawValue)") }
+    }
+
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
@@ -98,7 +101,9 @@ final class AudioViewModel {
     /// Pure is mutually exclusive with DSP/EQ by construction (the bit-perfect stream is
     /// untouched). Setting this to `true` does NOT immediately affect running playback —
     /// it takes effect on the next `startPlayback()` call.
-    var pureModeEnabled: Bool = false
+    var pureModeEnabled: Bool = false {
+        didSet { logUX("pureMode → \(pureModeEnabled)") }
+    }
 
     /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
     /// Updated at 20 Hz in `tickSpectrum()`.
@@ -111,6 +116,7 @@ final class AudioViewModel {
 
     var masterGain: Float = 0.7 {
         didSet {
+            logUX("vol → \(secs(Double(masterGain)))")
             setParameter(masterGainParameterID, value: masterGain)
         }
     }
@@ -174,6 +180,7 @@ final class AudioViewModel {
             do {
                 let success = try await engine.initialize()
                 if !success {
+                    logUX("initializeEngine: failed (engine returned false)")
                     errorMessage = "Failed to initialize audio engine"
                     isEngineReady = false
                     return
@@ -188,8 +195,11 @@ final class AudioViewModel {
                 engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
                 errorMessage = nil
+                logUX("initializeEngine: ready — \(devices.count) device(s), "
+                    + "selected='\(selectedDevice?.name ?? "none")'")
                 startSpectrumTimer()
             } catch {
+                logUX("initializeEngine: error — \(error.localizedDescription)")
                 errorMessage = "Engine initialization failed: \(error.localizedDescription)"
                 isEngineReady = false
             }
@@ -197,6 +207,7 @@ final class AudioViewModel {
     }
 
     func shutdown() {
+        logUX("shutdown — was playing=\(isPlaying)")
         stopSpectrumTimer()
         stopFolderMonitoring()
         stopPlayback()
@@ -242,6 +253,7 @@ final class AudioViewModel {
         // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
         // reflect it in the UI and prompt the user to pick a device.
         if signalPath.interrupted, isPlaying {
+            logUX("device-loss interrupt — stopping playback")
             isPlaying = false
             playbackPosition = 0
             errorMessage = "Output device disconnected — playback paused. Pick a device to resume."
@@ -264,10 +276,12 @@ final class AudioViewModel {
     // MARK: - Device Management
 
     func selectDevice(_ device: AudioDeviceModel) {
+        logUX("selectDevice: '\(device.name)' id=\(device.id)")
         Task {
             do {
                 let success = try await engine.selectDevice(device.id)
                 if !success {
+                    logUX("selectDevice: failed for '\(device.name)' id=\(device.id)")
                     errorMessage = "Failed to select device: \(device.name)"
                     return
                 }
@@ -276,7 +290,10 @@ final class AudioViewModel {
                 sampleRate = device.sampleRate
                 bufferFrameSize = device.bufferFrameSize
                 errorMessage = nil
+                logUX("selectDevice: ok '\(device.name)' id=\(device.id) "
+                    + "\(device.displayKHz) buf=\(device.bufferFrameSize)")
             } catch {
+                logUX("selectDevice: error '\(device.name)' — \(error.localizedDescription)")
                 errorMessage = "Device selection failed: \(error.localizedDescription)"
             }
         }
@@ -292,6 +309,8 @@ final class AudioViewModel {
             if !stillPresent {
                 selectedDevice = devices.first
             }
+            logUX("refreshDevices: \(devices.count) device(s), "
+                + "selected='\(selectedDevice?.name ?? "none")'")
         }
     }
 
@@ -316,6 +335,8 @@ final class AudioViewModel {
 
         let fileURL = playlist[selectedIndex].absoluteURL
         playbackPosition = 0
+        logUX("play: track[\(selectedIndex)] '\(playlist[selectedIndex].name)' "
+            + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'")
 
         // Compute duration off-main from AVAudioFile; more reliable than the metadata
         // scan's durationSeconds for M4A (which can read 0).
@@ -327,7 +348,10 @@ final class AudioViewModel {
                     computedDuration = Double(file.length) / rate
                 }
             }
-            await MainActor.run { self?.duration = computedDuration }
+            await MainActor.run {
+                self?.duration = computedDuration
+                logUX("duration = \(secs(computedDuration))s")
+            }
         }
 
         Task {
@@ -343,6 +367,7 @@ final class AudioViewModel {
     }
 
     func stopPlayback() {
+        logUX("stop (was at \(secs(playbackPosition))s)")
         Task {
             do {
                 try await engine.stopAudio()
@@ -358,6 +383,9 @@ final class AudioViewModel {
     /// Seek to `seconds` from the start of the current file.
     /// Updates `playbackPosition` immediately to avoid UI jitter while the engine seeks.
     func seek(to seconds: Double) {
+        logUX("seek → \(secs(seconds))s "
+            + "(from \(secs(playbackPosition))s, dur \(secs(duration))s, "
+            + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"))")
         playbackPosition = seconds
         Task {
             await engine.seek(to: seconds)
@@ -400,6 +428,7 @@ final class AudioViewModel {
 
     /// Enumerate all audio files under `folderURL` recursively and update `playlist`.
     func loadMusicFolder(_ folderURL: URL) async {
+        logUX("loadMusicFolder: '\(Self.makeDisplayPath(folderURL))'")
         folderPathDisplay = Self.makeDisplayPath(folderURL)
         playlist = []
 
@@ -408,6 +437,7 @@ final class AudioViewModel {
         }.value
 
         playlist = files
+        logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(folderPathDisplay)'")
     }
 
     /// Start monitoring the folder for changes using FSEvents-style notification.
@@ -454,6 +484,7 @@ final class AudioViewModel {
     /// Reorder playlist items via drag-and-drop.
     /// Called when user drags items in the playlist.
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
+        logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
         // Capture the moved track's identity BEFORE the move; `destination` is the
         // pre-insertion offset and no longer points at the moved item afterward.
         let movedID = selectedTrackIndex.flatMap { current in
@@ -468,6 +499,7 @@ final class AudioViewModel {
     /// Remove a track from the playlist.
     func removeTrack(at index: Int) {
         guard index >= 0, index < playlist.count else { return }
+        logUX("removeTrack: index=\(index) '\(playlist[index].name)'")
         playlist.remove(at: index)
 
         // If we removed the selected track, select the next one (or previous if it was the last)
@@ -487,6 +519,7 @@ final class AudioViewModel {
 
     /// Clear the entire playlist.
     func clearPlaylist() {
+        logUX("clearPlaylist: removing \(playlist.count) track(s)")
         playlist.removeAll()
         selectedTrackIndex = nil
         stopPlayback()
@@ -495,11 +528,14 @@ final class AudioViewModel {
     /// Toggle shuffle mode.
     func toggleShuffle() {
         shuffleEnabled.toggle()
+        logUX("shuffle → \(shuffleEnabled)")
     }
 
     /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
     func cycleRepeatMode() {
         repeatMode = (repeatMode + 1) % 3 // Modulo here, not in didSet (avoids recursive trigger)
+        let label = ["off", "all", "one"][repeatMode]
+        logUX("repeat → \(label) (\(repeatMode))")
     }
 
     // MARK: - Playback
