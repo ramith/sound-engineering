@@ -106,9 +106,9 @@ struct FrequencyResponseCanvas: View {
         let bandIndex = max(0, min(30, Int((relativeX * 30.0).rounded())))
 
         let relativeY = max(0.0, min(1.0, (plotBottom - location.y) / plotHeight))
-        // Clamp to the DSP range [-20, +12] dB (the kernel's hard limit), not the
+        // Clamp to the DSP range [-12, +12] dB (the kernel's hard limit), not the
         // ±20 visual span — the canvas must never write out-of-range gains.
-        let cursorGain = Float(max(-20.0, min(12.0, relativeY * 40.0 - 20.0)))
+        let cursorGain = Float(max(-12.0, min(12.0, relativeY * 40.0 - 20.0)))
 
         if let previousIndex = lastBandIndex, abs(bandIndex - previousIndex) > 1 {
             fillGapBetweenBands(
@@ -145,7 +145,7 @@ struct FrequencyResponseCanvas: View {
             let progress = Float(step) / Float(steps)
             let interpolatedGain = startGain + (endGain - startGain) * progress
             let targetIndex = startIndex + step * direction
-            eqViewModel.bandGains[targetIndex] = max(-20.0, min(12.0, interpolatedGain))
+            eqViewModel.bandGains[targetIndex] = max(-12.0, min(12.0, interpolatedGain))
         }
     }
 
@@ -158,7 +158,7 @@ struct FrequencyResponseCanvas: View {
                 guard neighborIndex >= 0, neighborIndex <= 30 else { continue }
                 let existing = eqViewModel.bandGains[neighborIndex]
                 let blended = existing + (targetGain - existing) * weight
-                eqViewModel.bandGains[neighborIndex] = max(-20.0, min(12.0, blended))
+                eqViewModel.bandGains[neighborIndex] = max(-12.0, min(12.0, blended))
             }
         }
     }

@@ -1,5 +1,7 @@
 # Sprint 2: Mix-Based Core — Test & QA Strategy
 
+> **⚠️ HISTORICAL / SUPERSEDED (Sprint 2 planning doc).** The Swift test files (`EQTests.swift`, `ClarityTests.swift`, `LoudnessTests.swift`, etc.) and `swift test` automation described below were **never built that way** — those areas are `.inc` fragments inside the **C++ null-test harness** (`bash scripts/build-null-test.sh`, golden master `0xE7267654BA01D315`); `swift test` is broken here. Retained for provenance only — do not use as live test guidance.
+
 **Document ID:** SPRINT-2-QA-001  
 **Version:** 1.1 (Blocker Resolutions Applied)
 **Date:** 2026-06-14  

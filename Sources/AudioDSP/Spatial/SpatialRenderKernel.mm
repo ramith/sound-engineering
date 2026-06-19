@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 
-// SpatialRenderKernel — M3 implementation.
+// SpatialRenderKernel — implementation.
 //
 // All real-time-safe (RT) code in process() satisfies the audio-thread contract:
 //   - No malloc / free / new / delete.
@@ -76,8 +76,8 @@ static void routePassthrough(const MultichannelView& input,
 // convolution via vDSP / FFTConvolver, SADIE II / SOFA loaded off-RT by a
 // new configureBIR() entry point in SpatialRenderKernel).
 //
-// THIS IS NOT THE SHIPPING BEHAVIOUR.  It is a temporary channel-truncation
-// stub so the chain is exercisable end-to-end in M3.  It is explicitly NOT a
+// THIS IS NOT THE FINAL BINAURAL BEHAVIOUR.  It is a temporary channel-truncation
+// stub so the chain is exercisable end-to-end.  It is explicitly NOT a
 // matrix downmix (which violates the no-naive-downmix mandate — architecture
 // §5b epic).  The comment is the guard; do not remove it before S4 ships.
 //
@@ -127,7 +127,7 @@ void SpatialRenderKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) no
     maxFrames_  = maxFrames;
 
     // FTZ on the control/init thread.  The AU render block sets it independently
-    // on the render thread (to be done in M3-2, matching DSPKernel's pattern).
+    // on the render thread (matching DSPKernel's pattern).
     enableFlushToZero();
 }
 
@@ -175,7 +175,7 @@ void SpatialRenderKernel::process(const MultichannelView& input,
 
     if (numOut >= numIn)
     {
-        // M3 identity / passthrough route: out >= in.
+        // Identity / passthrough route: out >= in.
         // Route each source channel to the same-indexed device channel;
         // extra device channels are zeroed.
         routePassthrough(input, output, numIn, numOut, vLen);

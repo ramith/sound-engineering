@@ -1,77 +1,9 @@
-import Accelerate
 import AVFoundation
-import Darwin
 import Foundation
 
-// MARK: - Audio Device Model
-
-struct AudioDeviceModel: Identifiable, Equatable, Hashable {
-    let id: UInt32
-    let name: String
-    let sampleRate: UInt32
-    let bufferFrameSize: UInt32
-
-    enum DeviceType: Hashable {
-        case builtin
-        case usb
-        case wireless
-        case unknown
-
-        /// Map from the uint8_t sent by `CDeviceInfo.deviceType`.
-        /// 0=Unknown, 1=Builtin, 2=USB, 3=Wireless (matches `AUAudioUnit.mm`).
-        init(rawValue: UInt8) {
-            switch rawValue {
-            case 1: self = .builtin
-            case 2: self = .usb
-            case 3: self = .wireless
-            default: self = .unknown
-            }
-        }
-    }
-
-    let type: DeviceType
-
-    /// Returns the sample rate as a human-readable kHz string.
-    /// Uses integer display when the rate is an exact multiple of 1000 Hz (e.g. "48 kHz"),
-    /// and one decimal place otherwise (e.g. "44.1 kHz").
-    var displayKHz: String {
-        let khz = Double(sampleRate) / 1000.0
-        if sampleRate % 1000 == 0 {
-            return "\(sampleRate / 1000) kHz"
-        }
-        return String(format: "%.1f kHz", khz)
-    }
-
-    var displayName: String {
-        let typeLabel: String
-        switch type {
-        case .builtin:
-            typeLabel = "Built-in"
-        case .usb:
-            typeLabel = "USB"
-        case .wireless:
-            typeLabel = "Wireless"
-        case .unknown:
-            typeLabel = "Unknown"
-        }
-        return "\(name) (\(typeLabel))"
-    }
-
-    var systemIcon: String {
-        switch type {
-        case .builtin:
-            return "speaker.wave.2.circle"
-        case .usb:
-            return "cable.connector"
-        case .wireless:
-            return "airpodspro"
-        case .unknown:
-            return "questionmark.circle"
-        }
-    }
-}
-
 // MARK: - AudioViewModel
+
+// AudioDeviceModel is defined in Models/AudioDeviceModel.swift.
 
 @MainActor
 @Observable
@@ -148,10 +80,12 @@ final class AudioViewModel {
     var spectrumBars: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
 
     /// Retained so we can invalidate on shutdown.
-    private var spectrumTimer: Timer?
+    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can read and invalidate it.
+    var spectrumTimer: Timer?
 
     /// Scratch array — reused each tick, never reallocated.
-    private var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
+    /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can write into it.
+    var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
 
     // MARK: - Playlist State
 
@@ -173,9 +107,10 @@ final class AudioViewModel {
 
     // MARK: - Directory Monitoring
 
-    private var folderMonitorSource: DispatchSourceFileSystemObject?
-    private var monitoringQueue = DispatchQueue(label: "com.adaptivesound.folder-monitor", qos: .default)
-    private var folderMonitorDebounceTask: Task<Void, Never>?
+    /// Internal (not private) so `AudioViewModel+FolderMonitor.swift` can access them.
+    var folderMonitorSource: DispatchSourceFileSystemObject?
+    var monitoringQueue = DispatchQueue(label: "com.adaptivesound.folder-monitor", qos: .default)
+    var folderMonitorDebounceTask: Task<Void, Never>?
 
     // MARK: - Playback Modes (WinAmp Style)
 
@@ -189,12 +124,14 @@ final class AudioViewModel {
 
     /// Last observed `trackTransitionCount()` value. An increase means the on-deck
     /// track has become the current track (a gapless seam just completed).
-    private var lastTransitionCount: UInt64 = 0
+    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    var lastTransitionCount: UInt64 = 0
 
     /// Playlist index of the track currently on deck (supplied via `setNextTrack`).
     /// `nil` means no track is queued (end of playlist, repeat-one handled inline,
     /// or playback has not started yet).
-    private var pendingNextIndex: Int?
+    /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
+    var pendingNextIndex: Int?
 
     let engine: any AudioPlaybackEngine
     private let masterGainParameterID: UInt32 = 0
@@ -266,148 +203,9 @@ final class AudioViewModel {
         }
     }
 
-    // MARK: - Spectrum Timer
+    // Spectrum timer + tickSpectrum live in AudioViewModel+SpectrumTimer.swift.
 
-    /// Start polling the spectrum double-buffer at 20 Hz.
-    /// Safe to call multiple times — guards against duplicate timers.
-    func startSpectrumTimer() {
-        guard spectrumTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            self?.tickSpectrum()
-        }
-        spectrumTimer = timer
-        // Include in common run-loop modes so the timer fires during tracking
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    func stopSpectrumTimer() {
-        spectrumTimer?.invalidate()
-        spectrumTimer = nil
-    }
-
-    /// Called at 20 Hz on the main thread. Reads the latest band magnitudes
-    /// from the double-buffer, interpolates 44 bands → 88 display bars, and
-    /// writes into `spectrumBars` to trigger SwiftUI observation.
-    @MainActor
-    private func tickSpectrum() {
-        // Poll the playhead + loudness + signal path every tick (independent of spectrum).
-        playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
-        loudness = engine.currentLoudness()
-        signalPath = engine.currentSignalPath()
-
-        // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
-        // reflect it in the UI and prompt the user to pick a device.
-        if signalPath.interrupted, isPlaying {
-            logUX("device-loss interrupt — stopping playback")
-            isPlaying = false
-            playbackPosition = 0
-            errorMessage = "Output device disconnected — playback paused. Pick a device to resume."
-            // Clear pending on-deck track; device loss invalidates the gapless queue.
-            pendingNextIndex = nil
-            Task { await engine.setNextTrack(nil) }
-        }
-
-        // --- Gapless auto-advance poll ---
-        if isPlaying {
-            let currentCount = engine.trackTransitionCount()
-            if currentCount > lastTransitionCount {
-                // A gapless seam completed: the on-deck track is now current.
-                // Intentional: we advance by exactly ONE track per tick even if the count
-                // jumped by more than one (e.g. two back-to-back very-short tracks in a
-                // single 50 ms interval). The VM records the new baseline and calls
-                // handleTrackTransition once; the next tick catches any remaining delta.
-                // This keeps selectedTrackIndex in sync with pendingNextIndex at all times.
-                lastTransitionCount = currentCount
-                handleTrackTransition()
-            } else if engine.playbackEnded() {
-                // Current track ended with no GAPLESS continuation. If a track is still queued
-                // (a Pure-path rate/format transition that couldn't be armed for a seamless seam),
-                // advance to it with a fresh start — a brief, honest reconfigure gap. Otherwise the
-                // queue is exhausted: stop. (Enhanced only reaches here with pendingNextIndex == nil,
-                // since its resampler arms any rate, so this advance is the Pure rate-change path.)
-                if let nextIdx = pendingNextIndex, nextIdx < playlist.count {
-                    logUX("playbackEnded — advancing to queued track[\(nextIdx)] (reconfigure gap)")
-                    selectedTrackIndex = nextIdx
-                    // Clear the trigger SYNCHRONOUSLY before the async startPlayback: `playbackEnded()`
-                    // stays true until startPlayback's Task runs `pureModeEngineStart` (≤ a few ticks
-                    // on a DAC reconfigure), so without this the next 20 Hz tick would re-enter and
-                    // launch a second `startAudio` that interrupts B mid-startup. startPlayback
-                    // re-derives pendingNextIndex inside its Task, so nothing is lost.
-                    pendingNextIndex = nil
-                    startPlayback()
-                } else {
-                    logUX("playbackEnded — no next track, stopping")
-                    isPlaying = false
-                    playbackPosition = 0
-                }
-            }
-        }
-
-        guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
-        // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
-        // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
-        let bandCount = SpectrumConstants.bandCount
-        let barCount = SpectrumConstants.displayBarCount
-        for bar in 0 ..< barCount {
-            let frac = Float(bar) / Float(barCount - 1) * Float(bandCount - 1)
-            let lower = Int(frac)
-            let upper = min(lower + 1, bandCount - 1)
-            let weight = frac - Float(lower)
-            spectrumBars[bar] = spectrumScratch[lower] * (1 - weight) + spectrumScratch[upper] * weight
-        }
-    }
-
-    // MARK: - Device Management
-
-    func selectDevice(_ device: AudioDeviceModel) {
-        logUX("selectDevice: '\(device.name)' id=\(device.id)")
-        Task {
-            do {
-                let success = try await engine.selectDevice(device.id)
-                if !success {
-                    logUX("selectDevice: failed for '\(device.name)' id=\(device.id)")
-                    errorMessage = "Failed to select device: \(device.name)"
-                    return
-                }
-
-                selectedDevice = device
-                sampleRate = device.sampleRate
-                bufferFrameSize = device.bufferFrameSize
-                errorMessage = nil
-                logUX("selectDevice: ok '\(device.name)' id=\(device.id) "
-                    + "\(device.displayKHz) buf=\(device.bufferFrameSize)")
-            } catch {
-                logUX("selectDevice: error '\(device.name)' — \(error.localizedDescription)")
-                errorMessage = "Device selection failed: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    /// Re-enumerate output devices after the device set changes (connect/disconnect), preserving the
-    /// current selection when it still exists. Invoked on the main actor via `onOutputDevicesChanged`.
-    func refreshDevices() {
-        Task {
-            guard let devices = try? await engine.enumerateOutputDevices() else { return }
-            availableDevices = devices
-            // Reflect the engine's ACTUAL target after the connect-behaviour handler ran: PIN mode
-            // re-pinned the selected device; FOLLOW mode adopted the newly-connected one. If that
-            // target isn't listed, keep the current selection when still present, else fall to first.
-            let engineDeviceID = engine.currentOutputDeviceID()
-            if let target = devices.first(where: { $0.id == engineDeviceID }) {
-                selectedDevice = target
-            } else if !(selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false) {
-                selectedDevice = devices.first
-            }
-            logUX("refreshDevices: \(devices.count) device(s), "
-                + "selected='\(selectedDevice?.name ?? "none")'")
-        }
-    }
-
-    func retryInitialization() {
-        errorMessage = nil
-        isEngineReady = false
-        initializeEngine()
-    }
+    // Device management (selectDevice, refreshDevices, retryInitialization) lives in AudioViewModel+Devices.swift.
 
     // MARK: - Playback Control
 
@@ -540,7 +338,7 @@ final class AudioViewModel {
         engine.publishEQGains(gainsDb)
     }
 
-    // MARK: - Monitoring (per-channel before/after; Sprint 5 M3)
+    // MARK: - Monitoring (per-channel before/after)
 
     /// Channels available to monitor (= the graph's channel count). 0 until the engine is ready.
     var monitorChannelCount: Int {
@@ -591,206 +389,7 @@ final class AudioViewModel {
     }
 }
 
-// MARK: - Folder Monitoring (private extension)
-
-private extension AudioViewModel {
-    func startFolderMonitoring(_ folderURL: URL) {
-        let fileDescriptor = open(folderURL.path, O_EVTONLY)
-        guard fileDescriptor >= 0 else { return }
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDescriptor,
-            eventMask: [.write, .delete, .rename, .extend],
-            queue: monitoringQueue
-        )
-
-        source.setEventHandler { [weak self] in
-            self?.folderMonitorDebounceTask?.cancel()
-            self?.folderMonitorDebounceTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled, let self else { return }
-                if let url = self.musicFolderURL {
-                    await self.loadMusicFolder(url)
-                }
-            }
-        }
-
-        source.setCancelHandler { close(fileDescriptor) }
-        folderMonitorSource = source
-        source.resume()
-    }
-
-    func stopFolderMonitoring() {
-        folderMonitorDebounceTask?.cancel()
-        folderMonitorSource?.cancel()
-        folderMonitorSource = nil
-    }
-}
-
-// MARK: - Playlist Editing (extension)
-
-extension AudioViewModel {
-    /// Reorder playlist items via drag-and-drop.
-    func movePlaylistItems(from source: IndexSet, to destination: Int) {
-        logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
-        let movedID = selectedTrackIndex.flatMap { current in
-            source.contains(current) ? playlist[current].id : nil
-        }
-        playlist.move(fromOffsets: source, toOffset: destination)
-        if let movedID {
-            selectedTrackIndex = playlist.firstIndex(where: { $0.id == movedID })
-        }
-    }
-
-    /// Remove a track from the playlist.
-    func removeTrack(at index: Int) {
-        guard index >= 0, index < playlist.count else { return }
-        logUX("removeTrack: index=\(index) '\(playlist[index].name)'")
-
-        let removingCurrent = (selectedTrackIndex == index)
-        playlist.remove(at: index)
-
-        if let pending = pendingNextIndex {
-            if pending == index {
-                // The on-deck track was removed. Re-compute the next index from the current
-                // playing track so the engine stays primed (rather than leaving it with nil).
-                // P2-2: playlist.remove(at:) above has already shifted indices — if the
-                // currently-playing track was AFTER the removed slot its index is now one lower.
-                let rawCurrent = selectedTrackIndex ?? 0
-                let currentIdx = rawCurrent > index ? rawCurrent - 1 : rawCurrent
-                let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
-                pendingNextIndex = newNextIdx
-                Task { [weak self] in
-                    guard let self else { return }
-                    if let newIdx = newNextIdx, newIdx < playlist.count {
-                        await engine.setNextTrack(playlist[newIdx].absoluteURL)
-                    } else {
-                        await engine.setNextTrack(nil)
-                    }
-                }
-            } else if pending > index {
-                pendingNextIndex = pending - 1
-            }
-        }
-
-        if removingCurrent, isPlaying {
-            logUX("removeTrack: removed currently-playing track, stopping")
-            pendingNextIndex = nil
-            stopPlayback()
-            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
-            return
-        }
-
-        if selectedTrackIndex == index {
-            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
-        } else if let cur = selectedTrackIndex, cur > index {
-            selectedTrackIndex = cur - 1
-        }
-    }
-
-    /// Clear the entire playlist. Stops playback and clears the on-deck track.
-    func clearPlaylist() {
-        logUX("clearPlaylist: removing \(playlist.count) track(s)")
-        playlist.removeAll()
-        selectedTrackIndex = nil
-        pendingNextIndex = nil
-        stopPlayback()
-    }
-
-    /// Toggle shuffle mode.
-    func toggleShuffle() {
-        shuffleEnabled.toggle()
-        logUX("shuffle → \(shuffleEnabled)")
-    }
-
-    /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
-    func cycleRepeatMode() {
-        repeatMode = (repeatMode + 1) % 3
-        let label = ["off", "all", "one"][repeatMode]
-        logUX("repeat → \(label) (\(repeatMode))")
-    }
-}
-
-// MARK: - Gapless / Auto-Advance (private extension)
-
-@MainActor
-private extension AudioViewModel {
-    /// Invoked when `trackTransitionCount()` increases (a gapless seam completed).
-    /// Advances the highlighted index, resets the scrubber, refreshes duration,
-    /// and queues the NEW next track on-deck.
-    func handleTrackTransition() {
-        guard let nextIdx = pendingNextIndex else {
-            logUX("trackTransition: pendingNextIndex is nil, ignoring")
-            return
-        }
-        guard nextIdx < playlist.count else {
-            logUX("trackTransition: pendingNextIndex \(nextIdx) out of range, stopping")
-            pendingNextIndex = nil
-            isPlaying = false
-            playbackPosition = 0
-            return
-        }
-
-        let advancedTrack = playlist[nextIdx]
-        logUX("trackTransition: advancing to index=\(nextIdx) '\(advancedTrack.name)'")
-
-        selectedTrackIndex = nextIdx
-        playbackPosition = 0
-        duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
-
-        let newNextIdx = computeNextIndex(current: nextIdx, playlistCount: playlist.count)
-        pendingNextIndex = newNextIdx
-
-        let fileURL = advancedTrack.absoluteURL
-        let pureModeSnap = pureModeEnabled
-
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var computedDuration: Double = 0
-            if let file = try? AVAudioFile(forReading: fileURL) {
-                let rate = file.processingFormat.sampleRate
-                if rate > 0 { computedDuration = Double(file.length) / rate }
-            }
-            await MainActor.run {
-                self?.duration = computedDuration
-                logUX("trackTransition: duration = \(secs(computedDuration))s")
-            }
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            if let newIdx = newNextIdx, newIdx < playlist.count {
-                let nextURL = playlist[newIdx].absoluteURL
-                await engine.setNextTrack(nextURL)
-                logUX("trackTransition: primed next index=\(newIdx) pureMode=\(pureModeSnap)")
-            } else {
-                await engine.setNextTrack(nil)
-                logUX("trackTransition: no further track to queue")
-            }
-        }
-    }
-}
-
-// MARK: - Next-Index Computation (internal — consumed by tests via local mirror)
-
-extension AudioViewModel {
-    /// Compute the playlist index that should play after `current`, honouring
-    /// `shuffleEnabled` and `repeatMode`.
-    ///
-    /// - Returns: the next index, or `nil` when playback should stop after `current`.
-    func computeNextIndex(current: Int, playlistCount: Int) -> Int? {
-        guard playlistCount > 0 else { return nil }
-        if repeatMode == 2 { return current } // repeat-one
-
-        if shuffleEnabled, playlistCount > 1 {
-            var candidate = Int.random(in: 0 ..< playlistCount)
-            while candidate == current {
-                candidate = Int.random(in: 0 ..< playlistCount)
-            }
-            return candidate
-        }
-
-        let nextLinear = current + 1
-        if nextLinear < playlistCount { return nextLinear }
-        return repeatMode == 1 ? 0 : nil
-    }
-}
+// Folder monitoring lives in AudioViewModel+FolderMonitor.swift.
+// Playlist editing (movePlaylistItems, removeTrack, clearPlaylist, toggleShuffle, cycleRepeatMode)
+// lives in AudioViewModel+Playlist.swift.
+// Gapless/auto-advance (handleTrackTransition, computeNextIndex) lives in AudioViewModel+AutoAdvance.swift.

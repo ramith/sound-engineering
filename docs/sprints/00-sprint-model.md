@@ -139,9 +139,9 @@ Use velocity data to refine estimates for future sprints. Typical velocity: 8–
 
 ## Related Documents
 
-- [Sprint 0: Project Bootstrap](00-bootstrap-plan.md)
-- [Sprint 1: Real Audio Engine](01-engine-plan.md)
-- [Sprint 1: Test Strategy](01-engine-test-plan.md)
+- [Sprint 0: Project Bootstrap](../session-notes/00-bootstrap-plan.md) *(historical)*
+- [Sprint 1: Real Audio Engine](../session-notes/01-engine-plan.md) *(historical)*
+- [Sprint 1: Test Strategy](../session-notes/01-engine-test-plan.md) *(historical)*
 
 For current backlog and story details, see `docs/product/backlog.md`.
 

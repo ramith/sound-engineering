@@ -60,15 +60,26 @@ let package = Package(
             name: "AudioViewModelTests",
             dependencies: [],
             path: "Tests/AudioViewModelTests",
-            // All three source files build together:
-            //   AudioViewModelTests.swift     — original playlist logic tests
-            //   MockAudioEngine.swift         — MockAudioEngine (AudioPlaybackEngineMirror)
-            //   AudioEngineProtocolTests.swift — protocol contract + sort order tests
+            // Source files build together:
+            //   AudioViewModelTests.swift                   — original playlist logic tests
+            //   MockAudioEngine.swift                       — MockAudioEngine (AudioPlaybackEngineMirror)
+            //   AudioEngineProtocolTests.swift              — protocol contract + sort order tests
+            //   AutoAdvanceTests.swift                      — redirect comment (split below)
+            //   MockAdvanceController.swift                 — state-machine mirror + helpers
+            //   AutoAdvanceLinearRepeatShuffleTests.swift   — VM-AA-01..12
+            //   AutoAdvanceGaplessSeamTests.swift           — VM-AA-14..19
+            //   AutoAdvanceReconfigureGapTests.swift        — VM-AA-RGAP-1, VM-AA-RTR-1
+            //   AutoAdvanceDeviceLossTests.swift            — VM-AA-06..07, VM-AA-13, VM-AA-18
             sources: [
                 "AudioViewModelTests.swift",
                 "MockAudioEngine.swift",
                 "AudioEngineProtocolTests.swift",
                 "AutoAdvanceTests.swift",
+                "MockAdvanceController.swift",
+                "AutoAdvanceLinearRepeatShuffleTests.swift",
+                "AutoAdvanceGaplessSeamTests.swift",
+                "AutoAdvanceReconfigureGapTests.swift",
+                "AutoAdvanceDeviceLossTests.swift",
             ],
             swiftSettings: [
                 // CommandLineTools ships Testing.framework in a non-standard path.

@@ -1,6 +1,6 @@
 # Audio Pipeline — Per-Stage Technology Choices (Expert Panel Review)
 
-**Status:** For review · **Date:** 2026-06-17 · **Source:** founder-provided matrix
+**Status:** Reconciled with shipped code (panel review not run) · **Date:** 2026-06-17, reconciled 2026-06-19 · **Source:** founder-provided matrix
 
 ## Purpose
 
@@ -77,18 +77,36 @@ each stage, return a verdict — **Confirm / Adjust / Reject** — with rational
 ### Reconciliation with the current implementation (so the panel grounds its verdicts)
 
 - **Equalizer → Custom C++/Accelerate:** ✅ implemented (31-band, off-RT biquad cascade, `vDSP_biquad`,
-  ramped). Matches the matrix.
+  ramped) and the effects AU is in the live graph. ⚠️ Caveat: **no live UI publishes EQ gains yet**
+  (`publishEQGains` is exercised by the C++ harness, not by a slider/profile during playback) — see
+  architecture.md §2.5.
 - **Limiter → Custom C++:** ✅ implemented (true-peak/ISP lookahead, dual-stage release, −1 dBTP). Matches.
 - **Loudness normalization → libebur128 or custom:** ⚠️ we hand-rolled `LufsMeter` (BS.1770-5) + an
   independent in-test oracle. Matrix lists **libebur128**. Open question: adopt libebur128 (at least as
   the verification oracle; possibly the runtime meter) vs keep the custom meter.
 - **Internal format → Float32 RT / Float64 offline:** ✅ matches (RT kernel is Float32).
-- **Audio graph / mixing / output / SRC / bit-depth → Apple-native:** ✅ AVAudioEngine + AVAudioFile +
-  AVAudioConverter. SRC `soxr` for offline export is not yet adopted.
-- **Spectrum analyzer → Accelerate, outside RT, lock-free ring:** ✅ matches (Swift tap on mixer).
-- **Bit-perfect "Pure Mode" → Apple-native + DSP bypass:** partially — the kernel has an intensity-0
-  bit-exact passthrough (golden-master `0xE7267654BA01D315`); a user-visible "Pure Mode" toggle is not
-  yet surfaced.
+- **Audio graph / mixing / output / bit-depth → Apple-native:** ✅ AVAudioEngine + AVAudioFile +
+  AVAudioConverter, in the two-AU N-channel graph `player → effectsAU → spatialAU('aspz') → mixer`.
+- **Sample-rate conversion → decided: Apple `AVAudioConverter(.max)`.** ✅ The shipped runtime SRC is an
+  explicit streaming `AVAudioConverter` at **`.max` quality** (the default Normal algorithm — *not*
+  `.mastering`, which is offline/high-latency), engaged only for rate-mismatched files; 48 kHz files take
+  a byte-identical passthrough. `.max` was **chosen over soxr-VHQ** for the runtime path and is
+  characterised by `swift run SRCQualityMeasure` (imaging/aliasing on pure tones). **soxr remains only a
+  possible *offline-export* tool**, not adopted in the live path.
+- **Spectrum analyzer → Accelerate, outside RT, lock-free ring:** ✅ matches (Swift tap on `mainMixerNode`;
+  this is also where meters/BS.1770 loudness come from — **not** the C++ kernel).
+- **Binaural / spatial render (device boundary) → Apple-native intent:** ⚠️ the spatial render AU
+  (`'aspz'`, N→M) **ships as a bit-exact identity route** for the shipped case (device width M == source
+  width N). The real M < N **binaural fold (S4) is DEFERRED** behind the bit-perfect Pure-Mode pivot; the
+  S4 design (Apple-native `AVAudioEnvironmentNode`/`AUSpatialMixer`) is in
+  [../sprints/05-sprint-5b-s4-binaural-design.md](../sprints/05-sprint-5b-s4-binaural-design.md).
+- **Bit-perfect "Pure Mode" → Apple-native + DSP bypass:** ✅ shipped. A user-visible **Pure Mode toggle
+  is surfaced** (Settings → `AudioViewModel.pureModeEnabled`). It engages a HAL-direct output engine
+  (`HALOutputEngine`, `kAudioUnitSubType_HALOutput`) that **bypasses the whole AVAudioEngine graph + DSP**
+  at the device boundary (exclusive/integer where the device allows), with runtime FFmpeg-or-Apple decode
+  (`FileDecodeSource`). This is **distinct from** the kernel's intensity-0 bit-exact passthrough
+  (golden-master `0xE7267654BA01D315`), which is a *kernel bypass within* the Enhanced graph. See
+  architecture.md §2.5.
 - **Convolution / room correction / crossfeed / stereo widening / compressor / dither / oversampling /
   ReplayGain / clipping detection:** not yet implemented — future scope; validate the recommended
   approach + the M1→M5 gating.
@@ -115,4 +133,10 @@ corrections, any missing stages, and a **prioritized list of deltas vs the curre
 
 ## Panel findings
 
-_(to be completed by the expert panel review)_
+**Status: the formal multi-discipline panel review was NOT run.** This document remains a *review brief* plus the **interim reconciliation** above (the "Reconciliation with the current implementation" section), which captures the verdicts that have actually been decided against shipped code. Rather than leave an empty placeholder, the load-bearing conclusions are summarised here and the authoritative versions are recorded in `architecture.md`:
+
+- **Decided & shipped (see architecture.md §2.5 and ADRs):** EQ + Limiter as custom C++/Accelerate; internal format Float32 RT / Float64 offline; Apple-native graph/mixing/output; **runtime SRC = `AVAudioConverter(.max)`** (soxr offline-export only); spectrum/meters via a Swift tap on `mainMixerNode`; **Pure Mode** HAL bit-perfect path; the spatial AU as an identity route with **S4 binaural deferred**.
+- **Open decisions tracked elsewhere:** libebur128 vs. the custom `LufsMeter` (adopt as oracle and/or runtime meter?) — keep in the architecture OQ list.
+- **Future scope, approach pre-validated by the matrix:** convolution (partitioned), room correction, crossfeed, stereo widening, compressor, dither, oversampling, ReplayGain, clipping detection, AI denoise / stem separation (offline-only RT boundary).
+
+If a future formal panel review is run, append its verdict table below; otherwise treat the matrix + reconciliation as the standing record.
