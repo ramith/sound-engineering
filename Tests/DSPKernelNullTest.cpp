@@ -57,6 +57,7 @@
 #include "GaplessContractTests.inc"
 #include "RealizerTests.inc"
 #include "IntensityTests.inc"
+#include "CrossfeedTests.inc"
 #include "LoudnessOracleTests.inc"
 #include "LimiterTruePeakTests.inc"
 #include "EqFrequencyResponseSweepTests.inc"
@@ -71,7 +72,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 106U> kTests = {{
+    constexpr std::array<TestEntry, 118U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -203,6 +204,8 @@ namespace
          false},
         // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
         {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
+        // QW1 CF-11: the 4th Realizer surface — crossfeed RMW + clamp (parallel-safe).
+        {"Realizer_Crossfeed_4SurfaceRMW_Clamp", testRealizerCrossfeedSurfaceRMW, true},
         // S6 Tier-3 (3b) steerable wet/dry intensity (parallel-safe: no env/tmp).
         {"Intensity_EndpointsBitExact_Settled", testIntensityEndpointsBitExact, true},
         {"Intensity_SettledRampConvergesToHardBranch",
@@ -211,9 +214,21 @@ namespace
         {"Intensity_EqualPowerAtHalf", testIntensityEqualPowerAtHalf, true},
         {"Intensity_LevelPeakSafetyIntermediate", testIntensityLevelPeakSafetyIntermediate, true},
         {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
+        // QW1 — crossfeed DSP conformance CF-1..CF-9 (parallel-safe: pure DSP, no env/tmp).
+        {"Crossfeed_Bypass_BitExact_GoldenMaster", testCrossfeedBypassBitExactGoldenMaster, true},
+        {"Crossfeed_NonStereo_PassThrough", testCrossfeedNonStereoPassThrough, true},
+        {"Crossfeed_Mono_LevelNeutral", testCrossfeedMonoLevelNeutral, true},
+        {"Crossfeed_ChannelSeparation", testCrossfeedChannelSeparation, true},
+        {"Crossfeed_LpfCharacteristic", testCrossfeedLpfCharacteristic, true},
+        {"Crossfeed_NoNaNInf", testCrossfeedNoNaNInf, true},
+        {"Crossfeed_ClickFreeEnableDisable", testCrossfeedClickFreeEnableDisable, true},
+        {"Crossfeed_CoeffRecomputeAcrossRates", testCrossfeedCoeffRecomputeAcrossRates, true},
+        {"Crossfeed_ReadBothWriteBoth", testCrossfeedReadBothWriteBoth, true},
         // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
         {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
         {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
+        // QW1 CF-10: crossfeed ebur128 loudness-neutrality (real decorrelated stereo).
+        {"Crossfeed_ebur128_LevelNeutral", testCrossfeedLoudnessNeutral, true},
         // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
         // (parallel-safe: pure DSP, no env/tmp).
         {"Limiter_TruePeak_CeilingGuarantee_vs_ebur128", testLimiterTruePeakCeilingGuarantee, true},
@@ -232,6 +247,9 @@ namespace
         // threads and the DSPKernel soaks are long, so keep them serial to avoid skewing the pool.
         {"Soak_DSPKernel_ZeroRtAlloc_FullChain", testSoakDspKernelZeroRtAllocFullChain, false},
         {"Soak_DSPKernel_ZeroRtAlloc_Blend", testSoakDspKernelZeroRtAllocBlend, false},
+        // QW1 CF-12: crossfeed-on blend soak (rtAllocs==0).
+        {"Soak_DSPKernel_ZeroRtAlloc_CrossfeedBlend",
+         testSoakDspKernelZeroRtAllocCrossfeedBlend, false},
         {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
