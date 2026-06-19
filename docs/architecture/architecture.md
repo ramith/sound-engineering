@@ -68,7 +68,7 @@ graph TB
 
 **RT rules (every kernel line):** no heap alloc, no locks, no Obj-C/Swift runtime, no I/O; pre-allocate; bounded deterministic work per buffer; cross-thread state via atomic snapshot + ramping; the **Realizer does all design/fitting off-RT** — the kernel only ramps & runs finished coefficients.
 
-> **Status note (built vs. target).** The diagram above is the **target** control-plane/data-plane architecture (the stem object engine is its full-fat form). The **shipped** pipeline is narrower — see **§2.5 Shipped pipeline** for what actually runs today. In short: the per-stem chain + Arbiter/Realizer + masking/BRIR are **design, not yet implemented**; what ships is a stereo/N-channel two-AU graph with the EQ/Clarity/BRIR/Loudness/Limiter kernel present (mostly at unity), plus a parallel bit-perfect HAL output path.
+> **Status note (built vs. target).** The diagram above is the **target** control-plane/data-plane architecture (the stem object engine is its full-fat form). The **shipped** pipeline is narrower — see **§2.5 Shipped pipeline** for what actually runs today. In short: the per-stem chain + the **perceptual** Arbiter + the **masking-driven** Realizer + masking/BRIR are **design, not yet implemented**; what ships is a stereo/N-channel two-AU graph with the EQ/Clarity/BRIR/Loudness/Limiter kernel present (EQ live; Clarity/BRIR no-op stubs; Loudness/Limiter real), a live UI-driven EQ path, a steerable equal-power intensity blend, and a **control-plane `Realizer`** (off-RT, coalesces EQ + intensity intents, sole publisher) — plus a parallel bit-perfect HAL output path. The control-plane `Realizer` is **distinct from** the perceptual Arbiter + masking-driven Realizer of §4 / ADR-006, which remain design.
 
 ---
 
@@ -89,14 +89,15 @@ The engine (`AudioEngineBridge`) drives **two** parallel output paths; the activ
 player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
 ```
 
-- **effectsAU** (`dspAudioUnit`) hosts the C++ `DSPKernel` (EQ → Clarity → BRIR → Loudness → Limiter). It is **in the live graph** but runs at unity / intensity-0 today (see "Live-graph reality" below).
+- **effectsAU** (`dspAudioUnit`) hosts the C++ `DSPKernel` (EQ → Clarity → BRIR → Loudness → Limiter). It is **in the live graph**; the EQ stage is driven by the UI and the Loudness/Limiter stages are real, while Clarity/BRIR are no-op stubs (see "Live-graph reality" below). Intensity is a **continuous equal-power wet/dry blend** (intensity-0 = bit-exact bypass anchor; intensity-1 = full in-place chain) applied before Loudness+Limiter (`DSPKernel::process`, `DSPKernel.mm:131-235`).
 - **spatialAU** (`spatialAudioUnit`, subtype `'aspz'`) is the **device-boundary render stage** that maps processing width N to device width M so the mixer no longer naively downmixes. For the shipped case **M == N**, so it is a **bit-exact identity route**; the real M < N binaural fold (S4) is **deferred**.
 - The graph reconfigures to the source channel count on file load (`configureGraphForSource`; a same-count no-op for stereo) — the N-channel (≤7.1) two-AU pipeline, no naive downmix.
 
 ### Live-graph reality (read this before assuming the kernel is "the sound")
 
-- The custom **effects AU is wired into the Enhanced graph**, but **no live UI caller publishes EQ gains** — `publishEQGains(_:)` exists on the bridge and is exercised by the C++ test harness, but no EQ slider / AutoEq-profile UI drives it during playback on this branch. The EQ Realizer + Arbiter are **not yet wired**.
-- **Clarity, BRIR, and Loudness modules are instantiated stubs** in `DSPKernel` with no control plane (Arbiter/Realizer) driving them; only the **Limiter** and the **EQ identity/bypass** paths are meaningfully active.
+- The custom **effects AU is wired into the Enhanced graph**, and **EQ is driven live from the UI**: the drag-the-curve `FrequencyResponseCanvas` (`FrequencyResponseCanvas.swift`) commits edits to `EQViewModel` (`commitCustomBandEdits` / `applyBandGain` / `selectPreset` → `dispatchAllBands`, `EQViewModel.swift:101-110`) which calls `AudioViewModel.publishEQGains` (`AudioViewModel.swift:255`) → `engine.publishEQGains` (`AudioEngineBridge+EQControl.swift:19`) → the `publishEQBandGains` C-ABI (`AUAudioUnit.mm:409`) → `Realizer::setPendingEqGains` (`Realizer.mm:40`). Gains are hearing-safety-clamped (`EQSafetyClamp`) before reaching the kernel.
+- A **control-plane `Realizer` SHIPPED** (`AudioEngine/Realizer.h` / `.mm`): a `shared_ptr`-owned, off-RT C++ object that owns the canonical `TargetState`, recomputes the EQ biquad cascade off-main, coalesces EQ + intensity intents into per-kind slots, is the **sole caller** of `publishTargetState`, and has a queue-draining teardown. This is the *plumbing* control plane only — the **perceptual Arbiter and the masking-driven Realizer of §4 / ADR-006 (typed-contributor composition, roex masking, L-M biquad fitter) remain design, not yet wired.**
+- **Clarity and BRIR modules are instantiated no-op stubs** in `DSPKernel` (`ClarityModule.h` / `BRIRModule.h` — empty `process`). **Loudness is NOT a stub**: `LoudnessModule` (`Loudness/LoudnessModule.h` / `.mm`) is a real ITU-R BS.1770-5 gated-loudness worker (off-RT measurement jthread + SPSC ring) with a smoothed makeup-gain feedback path, enabled by default (`LoudnessParams.enabled = 1`, `TargetState.h:41`) and applied in `DSPKernel::process`. The **Limiter** (`LimiterModule`) is likewise real and active. (Caveat: Loudness/Limiter are wired and run in the chain, but their live audible effect is bounded by the conservative makeup law and the −1 dBTP true-peak ceiling; full perceptual tuning is later sprints.)
 - **Meters / spectrum / BS.1770-5 loudness come from a Swift tap on `mainMixerNode`** (`SpectrumAnalyzer` + `LufsMeter`, `AudioEngineBridge.swift`), **not** from the C++ kernel. The Monitoring tab's per-channel before/after spectra are separate taps on the player node (before) and the effects-AU output (after).
 
 ### Gapless / continuous playback + auto-advance
@@ -114,24 +115,26 @@ player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
 
 | Concept | Mechanism | Scope |
 |---|---|---|
-| **Intensity-0 kernel bypass** | `DSPKernel::process` early-returns when `intensityLinear == 0` → output already equals input (in-place AU) | The "hear exactly what's played" anchor *within the Enhanced DSP graph* (LD-16). Verified by the C++ null test. |
+| **Intensity-0 kernel bypass** | Intensity is now a **continuous equal-power wet/dry blend** (`DSPKernel::process`, `DSPKernel.mm:131-235`): the settled `intensityLinear == 0` endpoint takes a hard early-return branch → output equals input (in-place AU); intermediate `x ∈ (0,1)` blends `cos(x·π/2)·dry + sin(x·π/2)·wet`; settled `x == 1` is the full in-place chain. | Intensity-0 is the **bit-exact** "hear exactly what's played" anchor *within the Enhanced DSP graph* (LD-16); verified by the C++ null test + golden master `0xE7267654BA01D315`. |
 | **Pure Mode HAL path** | A separate `HALOutputEngine` that bypasses the whole `AVAudioEngine` graph + DSP and renders the decoded stream to the device unchanged | A user-facing, device-level bit-perfect playback mode (exclusive/integer where the device allows). Verified by `RoundTripTests` (software-chain) + on-device by ear. |
 
 ### Validation gate (the real one)
 
-The DSP gate is the **C++ null-test harness** — `bash scripts/build-null-test.sh` (~83 tests; stereo golden master `0xE7267654BA01D315`; fixtures in `<repo>/test-data/`) — plus `swift run VerifyAUGraph` (AU-graph integration) and `swift run SRCQualityMeasure` (characterises the `.max` SRC). **`swift test` is broken** (toolchain macro skew); the Swift mock tests run in Xcode only. See [validation-strategy.md](validation-strategy.md).
+The DSP gate is the **C++ null-test harness** — `bash scripts/build-null-test.sh` (93 tests after S6, including new `RealizerTests`, `IntensityTests`, and `GaplessContractTests` suites; stereo golden master `0xE7267654BA01D315` unchanged through S6; fixtures in `<repo>/test-data/`) — plus `swift run VerifyAUGraph` (AU-graph integration) and `swift run SRCQualityMeasure` (characterises the `.max` SRC). **`swift test` is broken** (toolchain macro skew); the Swift mock tests run in Xcode only. See [validation-strategy.md](validation-strategy.md).
+
+> **S6 architecture-review gate (2026-06-19):** the shipped pipeline above was hardened under the S6 review. See [../sprints/s6-architecture-review-findings.md](../sprints/s6-architecture-review-findings.md) (findings + prioritized fix list) and [../sprints/s6-tier3-spine-design.md](../sprints/s6-tier3-spine-design.md) (the Tier-3 spine: `RtSwappableResource` extraction, control-plane `Realizer`, steerable intensity, `GaplessController` conformance).
 
 ---
 
 ## 3. Foundation (ADR-001)
 
-> **Built vs. design.** ADR-001 is **shipped** (AVAudioEngine + custom v3 AU + C++ kernel) — but see §2.5: the effects AU is in the graph at unity, there is now a **second** bit-perfect HAL output path that bypasses AVAudioEngine, and the kernel's higher modules (Clarity/BRIR/Loudness) + the Arbiter/Realizer control plane are **design, not yet implemented**.
+> **Built vs. design.** ADR-001 is **shipped** (AVAudioEngine + custom v3 AU + C++ kernel) — but see §2.5: the effects AU is in the graph with EQ driven live and a steerable intensity blend, there is now a **second** bit-perfect HAL output path that bypasses AVAudioEngine, and an off-RT **control-plane `Realizer`** owns/publishes the `TargetState`. Still design: the kernel's Clarity/BRIR modules (no-op stubs) and the **perceptual** Arbiter + masking-driven Realizer of §4 (Loudness/Limiter, by contrast, are real and active).
 
 AVAudioEngine host + **one custom `AUAudioUnit` (v3)** whose render block calls a **C++ DSP kernel**; Swift↔C++ via **Swift/C++ interop** + small facade. AVAudioEngine owns decode, format/SR conversion, device routing, the render thread. Reference: `bradhowes/LPF` (MIT); Apple `AudioUnitSDK` (Apache-2.0). *(Shipped reality: a parallel Pure Mode HAL path bypasses this graph — §2.5.)*
 
 ## 4. The signal model — typed contributors, perceptual decisions (LD-12)
 
-> **DESIGN — NOT YET SHIPPED.** Everything in §4 (the typed-contributor model, the **Arbiter**, the **roex / excitation-pattern masking model**, the **greedy-add + Levenberg-Marquardt biquad-cascade fitter**, the off-RT Realizer) is **design intent for Sprint 6**, not implemented on the current branch. What ships today: the EQ coefficient design is `computeBiquadCascade` / `EQModuleCoefficients` (not the L-M fitter described below), `ClarityModule` is an instantiated stub with no masking model, and there is **no Arbiter and no Realizer**. The design content below is retained as the target. See §2.5 for shipped reality.
+> **DESIGN — NOT YET SHIPPED.** Everything in §4 (the typed-contributor model, the **perceptual Arbiter**, the **roex / excitation-pattern masking model**, the **greedy-add + Levenberg-Marquardt biquad-cascade fitter**, the masking-driven Realizer) is **design intent**, not implemented on the current branch. What ships today: the EQ coefficient design is `computeBiquadCascade` / `EQModuleCoefficients` (not the L-M fitter described below), `ClarityModule` is a no-op stub with no masking model, and there is **no perceptual Arbiter**. **Note (do not conflate):** a *control-plane* `Realizer` SHIPPED in S6 (`AudioEngine/Realizer.h` / `.mm`) — but it is only the plumbing that owns the `TargetState`, designs the EQ cascade off-main, coalesces intents, and is the sole publisher. It is **not** the masking-driven, typed-contributor Realizer described below. The design content here is retained as the target. See §2.5 for shipped reality and [../sprints/s6-tier3-spine-design.md](../sprints/s6-tier3-spine-design.md) for the control-plane Realizer.
 
 The tonal/spatial/dynamic state is **not** a single dB curve. Each source contributes a **typed contribution**:
 
@@ -348,7 +351,7 @@ The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is
 
 ### Phase 1 — Sprint-based breakdown (Mix-level DSP core)
 
-Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel. **Status:** Sprint 4 **DONE + merged**; Sprint 5 / 5b **DONE + merged** (EQ wiring + multichannel two-AU pipeline + Monitoring tab) — though "EQ wired" means the AU + coefficient design ship and pass the harness; **no live UI publishes EQ gains yet** (§2.5). Sprint 6 (Arbiter / clarity / loudness-comp) is **not yet shipped**.
+Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel. **Status:** Sprint 4 **DONE + merged**; Sprint 5 / 5b **DONE + merged** (EQ wiring + multichannel two-AU pipeline + Monitoring tab) — and **EQ is now driven live from the UI** (drag-the-curve canvas → `EQViewModel` → `publishEQGains` → `Realizer`, §2.5). The S6 architecture-review gate also shipped (review + three tiers of fixes; see [../sprints/sprint-plan.md](../sprints/sprint-plan.md) S6). The **perceptual** Arbiter / clarity / loudness-compensation work (the original "Sprint 6" content) is **not yet shipped** and now sits in Phase 2 (S15–S17 of the sprint plan).
 
 **Sprint 4: Loudness Safety & Transparent Dynamics — DONE (merged)**
 - **True-peak limiter** (≥4× oversampling, −1 dBTP ceiling, ~1 ms look-ahead) as the final safety stage
@@ -359,7 +362,7 @@ Phase 1 is implemented as three integrated sprints, each shipping a complete fea
 
 **Sprint 5 / 5b: Minimum-Phase EQ Wiring & Spectral Correction — DONE (merged)**
 
-> Shipped reality: the EQ module + biquad-cascade design + the two-AU N-channel graph + Monitoring tab ship and pass the C++ harness, but **EQ gains are not driven from any live UI** on this branch (`publishEQGains` has no live caller). See §2.5.
+> Shipped reality: the EQ module + biquad-cascade design + the two-AU N-channel graph + Monitoring tab ship and pass the C++ harness, and **EQ gains ARE driven from a live UI** — the drag-the-curve `FrequencyResponseCanvas` → `EQViewModel.dispatchAllBands` → `AudioViewModel.publishEQGains` → `publishEQBandGains` C-ABI → the control-plane `Realizer`. See §2.5.
 
 - **EQ module** wired into RT chain: 31-band ISO parametric, biquad cascade (min-phase, LD-13), real-time parameter automation
 - **Before/after spectrum taps** showing input + DSP effect (visual proof)
