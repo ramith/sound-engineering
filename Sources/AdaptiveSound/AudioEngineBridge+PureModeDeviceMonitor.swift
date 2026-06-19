@@ -74,6 +74,8 @@ extension AudioEngineBridge {
     /// clears `isPlaying` and prompts the user to pick a device. Never hard-fails; never auto-jumps.
     func pauseForDeviceLoss() {
         NSLog("[PureMode] Active output device disappeared — pausing playback")
+        // Paused on purpose — a config change that the disconnect fires must not auto-resume.
+        enhancedPlayIntent = false
         tearDownPure() // stops + destroys the Pure engine, unregisters the alive listener
         if let player = playerNode, player.isPlaying {
             player.stop()

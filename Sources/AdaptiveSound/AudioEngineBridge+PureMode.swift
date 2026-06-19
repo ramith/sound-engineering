@@ -200,8 +200,13 @@ extension AudioEngineBridge {
     /// Stop the Enhanced player node and AVAudioEngine without destroying the graph.
     /// Used when transitioning from Enhanced to Pure (keep the graph for fast fallback).
     func stopEnhancedPlayback() {
+        // No longer intending to play the Enhanced path (deliberate stop, or handing the device to
+        // Pure) — so a config/device change must not auto-resume it.
+        enhancedPlayIntent = false
         // Bump the generation + drop the session FIRST so no in-flight resampler buffer schedules
         // onto the player we're about to stop (or onto a graph we're about to hand to Pure mode).
+        // stopEnhancedResampler also clears onResamplerEOF and onPassthroughEOF so no stale
+        // gapless handlers can fire on the stopped / handed-off player.
         stopEnhancedResampler()
         if let player = playerNode, player.isPlaying {
             player.stop()
@@ -254,7 +259,15 @@ extension AudioEngineBridge {
     ///
     /// Best-effort: no gapless crossfade or SRC-sample-accurate alignment (Phase 1b Part B).
     /// Silently returns when the file cannot be opened or the target frame is out of range.
-    /// Called from `seek(to:)` on the Enhanced path.
+    /// Called from `seek(to:)` and `reestablishEnhancedAfterConfigChange` on the Enhanced path.
+    ///
+    /// S-2 / S-3 fix: the segment is scheduled with `completionCallbackType: .dataPlayedBack` so
+    /// `onPassthroughEOF` fires at the end of the remaining content. Without this the armed
+    /// on-deck track is never triggered after a seek or a device reconnect, silently killing the
+    /// gapless chain. `onDeckURL` is intentionally NOT cleared here — a seek must NOT consume
+    /// the armed next track. The hook is re-armed by whichever path set it (`setNextTrack`
+    /// re-arms on the next call; the config-change path leaves the existing hook intact because
+    /// `stopEnhancedResampler` is not called on the passthrough config-change branch).
     func seekEnhancedBestEffort(url: URL, player: AVAudioPlayerNode, to seconds: Double) {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
@@ -271,12 +284,11 @@ extension AudioEngineBridge {
         let frameCount = AVAudioFrameCount(totalFrames - targetFrame)
         player.stop()
         audioFile.framePosition = targetFrame
-        player.scheduleSegment(
-            audioFile,
-            startingFrame: targetFrame,
-            frameCount: frameCount,
-            at: nil
-        )
+        // swiftlint:disable:next line_length
+        player.scheduleSegment(audioFile, startingFrame: targetFrame, frameCount: frameCount, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
+            guard let self, let livePlayer = player else { return }
+            self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+        }
         player.play()
     }
 }

@@ -105,6 +105,17 @@ final class AudioViewModel {
         didSet { logUX("pureMode → \(pureModeEnabled)") }
     }
 
+    /// When a new output device connects mid-playback: `true` (default) keeps playback on the
+    /// currently-selected device (app-authoritative — you switch deliberately in the picker);
+    /// `false` follows the newly-connected device. Pushed to the engine, which acts on it when the
+    /// device set changes.
+    var pinPlaybackToSelectedDevice: Bool = true {
+        didSet {
+            engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
+            logUX("pinPlaybackToSelectedDevice → \(pinPlaybackToSelectedDevice)")
+        }
+    }
+
     /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
     /// Updated at 20 Hz in `tickSpectrum()`.
     var signalPath: SignalPathInfo = .init()
@@ -174,6 +185,17 @@ final class AudioViewModel {
     /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
     var repeatMode: Int = 0
 
+    // MARK: - Gapless / Auto-Advance State
+
+    /// Last observed `trackTransitionCount()` value. An increase means the on-deck
+    /// track has become the current track (a gapless seam just completed).
+    private var lastTransitionCount: UInt64 = 0
+
+    /// Playlist index of the track currently on deck (supplied via `setNextTrack`).
+    /// `nil` means no track is queued (end of playlist, repeat-one handled inline,
+    /// or playback has not started yet).
+    private var pendingNextIndex: Int?
+
     let engine: any AudioPlaybackEngine
     private let masterGainParameterID: UInt32 = 0
 
@@ -198,7 +220,22 @@ final class AudioViewModel {
                 let devices = try await engine.enumerateOutputDevices()
 
                 availableDevices = devices
-                selectedDevice = devices.first
+                // Select the device that is ACTUALLY the engine's current target (the system default
+                // captured at init), not blindly "first" — otherwise the UI selection and the
+                // engine's currentDeviceID diverge, and the app-authority re-assert later tries to
+                // re-pin a stale id ("device gone"). Fall back to first if the default isn't listed.
+                let engineDeviceID = engine.currentOutputDeviceID()
+                let chosen = devices.first { $0.id == engineDeviceID } ?? devices.first
+                selectedDevice = chosen
+                // Assert the chosen device so currentDeviceID == selectedDevice == system default
+                // from the start. A valid default re-asserts to itself (no change); a stale/phantom
+                // default is corrected to the chosen device.
+                if let chosen {
+                    _ = try? await engine.selectDevice(chosen.id)
+                }
+                // Push the connect-behaviour preference so the engine acts on it from the first
+                // device change (its default matches, but this keeps them explicitly in step).
+                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
                 // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
                 engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
@@ -265,6 +302,29 @@ final class AudioViewModel {
             isPlaying = false
             playbackPosition = 0
             errorMessage = "Output device disconnected — playback paused. Pick a device to resume."
+            // Clear pending on-deck track; device loss invalidates the gapless queue.
+            pendingNextIndex = nil
+            Task { await engine.setNextTrack(nil) }
+        }
+
+        // --- Gapless auto-advance poll ---
+        if isPlaying {
+            let currentCount = engine.trackTransitionCount()
+            if currentCount > lastTransitionCount {
+                // A gapless seam completed: the on-deck track is now current.
+                // Intentional: we advance by exactly ONE track per tick even if the count
+                // jumped by more than one (e.g. two back-to-back very-short tracks in a
+                // single 50 ms interval). The VM records the new baseline and calls
+                // handleTrackTransition once; the next tick catches any remaining delta.
+                // This keeps selectedTrackIndex in sync with pendingNextIndex at all times.
+                lastTransitionCount = currentCount
+                handleTrackTransition()
+            } else if engine.playbackEnded() {
+                // Current track ended with no next track — stop the transport.
+                logUX("playbackEnded — no next track, stopping")
+                isPlaying = false
+                playbackPosition = 0
+            }
         }
 
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
@@ -313,8 +373,13 @@ final class AudioViewModel {
         Task {
             guard let devices = try? await engine.enumerateOutputDevices() else { return }
             availableDevices = devices
-            let stillPresent = selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false
-            if !stillPresent {
+            // Reflect the engine's ACTUAL target after the connect-behaviour handler ran: PIN mode
+            // re-pinned the selected device; FOLLOW mode adopted the newly-connected one. If that
+            // target isn't listed, keep the current selection when still present, else fall to first.
+            let engineDeviceID = engine.currentOutputDeviceID()
+            if let target = devices.first(where: { $0.id == engineDeviceID }) {
+                selectedDevice = target
+            } else if !(selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false) {
                 selectedDevice = devices.first
             }
             logUX("refreshDevices: \(devices.count) device(s), "
@@ -362,22 +427,63 @@ final class AudioViewModel {
             }
         }
 
+        // Snapshot index and mode for use inside the Task (avoids capturing `self` for
+        // values that could change between now and when the Task body runs).
+        let startIndex = selectedTrackIndex
+        let pureModeSnapshot = pureModeEnabled
+
         Task {
             do {
-                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeEnabled)
-                isPlaying = true
-                errorMessage = nil
+                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot)
+
+                // Prime the gapless pipeline: reset the transition counter baseline
+                // and supply the on-deck track so the engine can pre-schedule it.
+                let freshCount = engine.trackTransitionCount()
+                await MainActor.run {
+                    lastTransitionCount = freshCount
+                }
+
+                let currentIdx = await MainActor.run { startIndex ?? self.selectedTrackIndex }
+                let count = await MainActor.run { self.playlist.count }
+                let nextIdx = await MainActor.run { [weak self] () -> Int? in
+                    guard let self else { return nil }
+                    return self.computeNextIndex(
+                        current: currentIdx ?? 0,
+                        playlistCount: count
+                    )
+                }
+                await MainActor.run { pendingNextIndex = nextIdx }
+
+                if let idx = nextIdx, idx < (await MainActor.run { playlist.count }) {
+                    let nextURL = await MainActor.run { playlist[idx].absoluteURL }
+                    await engine.setNextTrack(nextURL)
+                    logUX("startPlayback: primed next index=\(idx) pureMode=\(pureModeSnapshot)")
+                } else {
+                    await engine.setNextTrack(nil)
+                    logUX("startPlayback: no next track to prime (single-track or end of playlist)")
+                }
+
+                await MainActor.run {
+                    isPlaying = true
+                    errorMessage = nil
+                }
             } catch {
-                errorMessage = "Playback failed: \(error.localizedDescription)"
-                isPlaying = false
+                await MainActor.run {
+                    errorMessage = "Playback failed: \(error.localizedDescription)"
+                    isPlaying = false
+                    pendingNextIndex = nil
+                }
             }
         }
     }
 
     func stopPlayback() {
         logUX("stop (was at \(secs(playbackPosition))s)")
+        // Clear the on-deck state synchronously so `tickSpectrum` won't react after stop.
+        pendingNextIndex = nil
         Task {
             do {
+                await engine.setNextTrack(nil)
                 try await engine.stopAudio()
                 isPlaying = false
                 playbackPosition = 0
@@ -448,9 +554,31 @@ final class AudioViewModel {
         logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(folderPathDisplay)'")
     }
 
-    /// Start monitoring the folder for changes using FSEvents-style notification.
-    /// When files are added/removed/modified, automatically reload the playlist.
-    private func startFolderMonitoring(_ folderURL: URL) {
+    // MARK: - Playback
+
+    /// Play the track at the given playlist index.
+    func playTrack(at index: Int) {
+        guard index < playlist.count else { return }
+        selectedTrackIndex = index
+        startPlayback()
+    }
+
+    // MARK: - Helpers
+
+    static func makeDisplayPath(_ url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let raw = url.path
+        if raw.hasPrefix(home) {
+            return "~" + raw.dropFirst(home.count)
+        }
+        return raw
+    }
+}
+
+// MARK: - Folder Monitoring (private extension)
+
+private extension AudioViewModel {
+    func startFolderMonitoring(_ folderURL: URL) {
         let fileDescriptor = open(folderURL.path, O_EVTONLY)
         guard fileDescriptor >= 0 else { return }
 
@@ -461,40 +589,34 @@ final class AudioViewModel {
         )
 
         source.setEventHandler { [weak self] in
-            // Debounce rapid file system changes (100ms)
             self?.folderMonitorDebounceTask?.cancel()
             self?.folderMonitorDebounceTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled, let self else { return }
-                if let folderURL = self.musicFolderURL {
-                    await self.loadMusicFolder(folderURL)
+                if let url = self.musicFolderURL {
+                    await self.loadMusicFolder(url)
                 }
             }
         }
 
-        source.setCancelHandler {
-            close(fileDescriptor)
-        }
-
+        source.setCancelHandler { close(fileDescriptor) }
         folderMonitorSource = source
         source.resume()
     }
 
-    /// Stop monitoring the folder for changes.
-    private func stopFolderMonitoring() {
+    func stopFolderMonitoring() {
         folderMonitorDebounceTask?.cancel()
         folderMonitorSource?.cancel()
         folderMonitorSource = nil
     }
+}
 
-    // MARK: - Playlist Reordering & Editing
+// MARK: - Playlist Editing (extension)
 
+extension AudioViewModel {
     /// Reorder playlist items via drag-and-drop.
-    /// Called when user drags items in the playlist.
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
         logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
-        // Capture the moved track's identity BEFORE the move; `destination` is the
-        // pre-insertion offset and no longer points at the moved item afterward.
         let movedID = selectedTrackIndex.flatMap { current in
             source.contains(current) ? playlist[current].id : nil
         }
@@ -508,28 +630,51 @@ final class AudioViewModel {
     func removeTrack(at index: Int) {
         guard index >= 0, index < playlist.count else { return }
         logUX("removeTrack: index=\(index) '\(playlist[index].name)'")
+
+        let removingCurrent = (selectedTrackIndex == index)
         playlist.remove(at: index)
 
-        // If we removed the selected track, select the next one (or previous if it was the last)
-        if selectedTrackIndex == index {
-            if index < playlist.count {
-                selectedTrackIndex = index // Next track shifts into this position
-            } else if index > 0 {
-                selectedTrackIndex = index - 1
-            } else {
-                selectedTrackIndex = nil
+        if let pending = pendingNextIndex {
+            if pending == index {
+                // The on-deck track was removed. Re-compute the next index from the current
+                // playing track so the engine stays primed (rather than leaving it with nil).
+                let currentIdx = selectedTrackIndex ?? 0
+                let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
+                pendingNextIndex = newNextIdx
+                Task { [weak self] in
+                    guard let self else { return }
+                    if let newIdx = newNextIdx, newIdx < playlist.count {
+                        await engine.setNextTrack(playlist[newIdx].absoluteURL)
+                    } else {
+                        await engine.setNextTrack(nil)
+                    }
+                }
+            } else if pending > index {
+                pendingNextIndex = pending - 1
             }
-        } else if let current = selectedTrackIndex, current > index {
-            // Shift index if a track before the selected one was removed
-            selectedTrackIndex = current - 1
+        }
+
+        if removingCurrent, isPlaying {
+            logUX("removeTrack: removed currently-playing track, stopping")
+            pendingNextIndex = nil
+            stopPlayback()
+            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
+            return
+        }
+
+        if selectedTrackIndex == index {
+            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
+        } else if let cur = selectedTrackIndex, cur > index {
+            selectedTrackIndex = cur - 1
         }
     }
 
-    /// Clear the entire playlist.
+    /// Clear the entire playlist. Stops playback and clears the on-deck track.
     func clearPlaylist() {
         logUX("clearPlaylist: removing \(playlist.count) track(s)")
         playlist.removeAll()
         selectedTrackIndex = nil
+        pendingNextIndex = nil
         stopPlayback()
     }
 
@@ -541,28 +686,92 @@ final class AudioViewModel {
 
     /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
     func cycleRepeatMode() {
-        repeatMode = (repeatMode + 1) % 3 // Modulo here, not in didSet (avoids recursive trigger)
+        repeatMode = (repeatMode + 1) % 3
         let label = ["off", "all", "one"][repeatMode]
         logUX("repeat → \(label) (\(repeatMode))")
     }
+}
 
-    // MARK: - Playback
+// MARK: - Gapless / Auto-Advance (private extension)
 
-    /// Play the track at the given playlist index.
-    func playTrack(at index: Int) {
-        guard index < playlist.count else { return }
-        selectedTrackIndex = index
-        startPlayback()
-    }
-
-    // MARK: - Helpers
-
-    private static func makeDisplayPath(_ url: URL) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let raw = url.path
-        if raw.hasPrefix(home) {
-            return "~" + raw.dropFirst(home.count)
+@MainActor
+private extension AudioViewModel {
+    /// Invoked when `trackTransitionCount()` increases (a gapless seam completed).
+    /// Advances the highlighted index, resets the scrubber, refreshes duration,
+    /// and queues the NEW next track on-deck.
+    func handleTrackTransition() {
+        guard let nextIdx = pendingNextIndex else {
+            logUX("trackTransition: pendingNextIndex is nil, ignoring")
+            return
         }
-        return raw
+        guard nextIdx < playlist.count else {
+            logUX("trackTransition: pendingNextIndex \(nextIdx) out of range, stopping")
+            pendingNextIndex = nil
+            isPlaying = false
+            playbackPosition = 0
+            return
+        }
+
+        let advancedTrack = playlist[nextIdx]
+        logUX("trackTransition: advancing to index=\(nextIdx) '\(advancedTrack.name)'")
+
+        selectedTrackIndex = nextIdx
+        playbackPosition = 0
+        duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
+
+        let newNextIdx = computeNextIndex(current: nextIdx, playlistCount: playlist.count)
+        pendingNextIndex = newNextIdx
+
+        let fileURL = advancedTrack.absoluteURL
+        let pureModeSnap = pureModeEnabled
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var computedDuration: Double = 0
+            if let file = try? AVAudioFile(forReading: fileURL) {
+                let rate = file.processingFormat.sampleRate
+                if rate > 0 { computedDuration = Double(file.length) / rate }
+            }
+            await MainActor.run {
+                self?.duration = computedDuration
+                logUX("trackTransition: duration = \(secs(computedDuration))s")
+            }
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            if let newIdx = newNextIdx, newIdx < playlist.count {
+                let nextURL = playlist[newIdx].absoluteURL
+                await engine.setNextTrack(nextURL)
+                logUX("trackTransition: primed next index=\(newIdx) pureMode=\(pureModeSnap)")
+            } else {
+                await engine.setNextTrack(nil)
+                logUX("trackTransition: no further track to queue")
+            }
+        }
+    }
+}
+
+// MARK: - Next-Index Computation (internal — consumed by tests via local mirror)
+
+extension AudioViewModel {
+    /// Compute the playlist index that should play after `current`, honouring
+    /// `shuffleEnabled` and `repeatMode`.
+    ///
+    /// - Returns: the next index, or `nil` when playback should stop after `current`.
+    func computeNextIndex(current: Int, playlistCount: Int) -> Int? {
+        guard playlistCount > 0 else { return nil }
+        if repeatMode == 2 { return current } // repeat-one
+
+        if shuffleEnabled, playlistCount > 1 {
+            var candidate = Int.random(in: 0 ..< playlistCount)
+            while candidate == current {
+                candidate = Int.random(in: 0 ..< playlistCount)
+            }
+            return candidate
+        }
+
+        let nextLinear = current + 1
+        if nextLinear < playlistCount { return nextLinear }
+        return repeatMode == 1 ? 0 : nil
     }
 }

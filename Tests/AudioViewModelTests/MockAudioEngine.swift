@@ -48,12 +48,27 @@ protocol AudioPlaybackEngineMirror: AnyObject {
     var onOutputDevicesChanged: (() -> Void)? { get set }
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool
+
+    // Gapless / continuous playback
+    func setNextTrack(_ fileURL: URL?) async
+    func trackTransitionCount() -> UInt64
+    func playbackEnded() -> Bool
 }
 
 extension AudioPlaybackEngineMirror {
     /// Backward-compatible convenience: start without Pure mode.
     func startAudio(fileURL: URL?) async throws {
         try await startAudio(fileURL: fileURL, pureMode: false)
+    }
+
+    /// Default no-op so existing conformers that do not need gapless still build.
+    func setNextTrack(_: URL?) async {}
+    func trackTransitionCount() -> UInt64 {
+        0
+    }
+
+    func playbackEnded() -> Bool {
+        false
     }
 }
 
@@ -83,6 +98,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     private(set) var enumerateDevicesCallCount = 0
     private(set) var selectDeviceCallCount = 0
     private(set) var readSpectrumCallCount = 0
+    private(set) var setNextTrackCallCount = 0
 
     // MARK: Captured arguments
 
@@ -92,11 +108,15 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     private(set) var lastSetParameterID: UInt32?
     private(set) var lastSetParameterValue: Float?
     private(set) var lastSelectedDeviceID: UInt32?
+    /// Most-recently supplied on-deck URL (nil = cleared).
+    private(set) var nextTrackURL: URL?
 
     // MARK: Configurable stubs
 
     var initializeResult: Bool = true
     var initializeError: Error?
+    /// When set to a non-nil error, `startAudio` throws that error on the next call.
+    var startAudioThrowsError: Error?
     var onOutputDevicesChanged: (() -> Void)?
     var mockSignalPath: SignalPathInfoMirror = .init()
     var enumerateResult: [AudioDeviceModelMirror] = [
@@ -119,6 +139,37 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     var spectrumData: [Float] = .init(repeating: 0, count: 44)
     var hasSpectrumData: Bool = false
 
+    // MARK: Gapless state
+
+    /// Monotonic count of completed gapless seams. Incremented by `simulateTrackEnd()`.
+    private(set) var transitionCount: UInt64 = 0
+    /// True when the current track ended with no next track on deck.
+    private(set) var endedFlag: Bool = false
+
+    // MARK: Test helpers
+
+    /// Simulate the current track reaching its end.
+    ///
+    /// - If `nextTrackURL` is set: increments `transitionCount` (models a gapless seam),
+    ///   clears `nextTrackURL` (the on-deck slot is now empty until the VM queues the next).
+    /// - If `nextTrackURL` is nil: sets `endedFlag = true` (models playback ending with an
+    ///   empty queue).
+    func simulateTrackEnd() {
+        if nextTrackURL != nil {
+            transitionCount += 1
+            nextTrackURL = nil
+        } else {
+            endedFlag = true
+        }
+    }
+
+    /// Reset all gapless state (useful between test cases).
+    func resetGaplessState() {
+        transitionCount = 0
+        endedFlag = false
+        nextTrackURL = nil
+    }
+
     // MARK: Protocol conformance
 
     func initialize() async throws -> Bool {
@@ -135,6 +186,9 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         startAudioCallCount += 1
         lastStartedURL = fileURL
         lastStartedPureMode = pureMode
+        if let err = startAudioThrowsError { throw err }
+        // A fresh startAudio clears the ended flag (new playback session).
+        endedFlag = false
     }
 
     func stopAudio() async throws {
@@ -179,5 +233,20 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         let count = min(out.count, spectrumData.count)
         out[0 ..< count] = spectrumData[0 ..< count]
         return true
+    }
+
+    // MARK: Gapless protocol methods
+
+    func setNextTrack(_ fileURL: URL?) async {
+        setNextTrackCallCount += 1
+        nextTrackURL = fileURL
+    }
+
+    func trackTransitionCount() -> UInt64 {
+        transitionCount
+    }
+
+    func playbackEnded() -> Bool {
+        endedFlag
     }
 }

@@ -36,7 +36,9 @@ extension AudioEngineBridge {
     /// Input frames read from the file per chunk before conversion. 8192 input frames at 44.1 kHz is
     /// ~186 ms — large enough to keep the converter fed cheaply, small enough that a seek/stop is
     /// abandoned promptly. The matching output capacity is computed from the rate ratio + slack.
-    private static let resampleInputChunkFrames: AVAudioFrameCount = 8192
+    /// Internal (not private) so the gapless seam handlers can construct `EnhancedResampleSession`
+    /// with the same chunk size without duplicating the constant.
+    static let resampleInputChunkFrames: AVAudioFrameCount = 8192
 
     /// Number of buffers primed (scheduled) BEFORE `player.play()` so the player never underruns at
     /// start and there is no startup delay. Three ~186 ms chunks ≈ half a second of lead.
@@ -62,14 +64,14 @@ extension AudioEngineBridge {
 
     /// Start streaming `audioFile` through the high-quality resampler from `startFrame`.
     ///
-    /// Returns `true` if the converter was created and the loop primed + started (the caller must
-    /// NOT then call the `scheduleFile` path); returns `false` if the converter could not be created
-    /// (the caller MUST fall back to `scheduleFile`, accepting the engine's default SRC, and log it).
+    /// MUST be called OFF `resampleQueue` (it creates a converter, then calls
+    /// `resampleQueue.sync { primeEnhancedResamplerLocked(...) }`). Callers: `playFile` (frame 0)
+    /// and `seekEnhancedResampler` (seek-target frame). Seam handlers that are already on
+    /// `resampleQueue` must call `primeEnhancedResamplerLocked` directly to avoid a deadlock.
     ///
-    /// Must be called OFF the audio thread (it allocates buffers + creates the converter). Callers:
-    /// `playFile` (from frame 0) and the Enhanced resampled-seek branch (from the seek target frame).
-    /// All converter access + scheduling here happens on `resampleQueue` (via `sync`) so the
-    /// converter is only ever touched from that one serial queue.
+    /// Returns `true` if the converter was created and the prime loop scheduled at least one buffer
+    /// (the caller must NOT then schedule via `scheduleFile`); returns `false` if the converter
+    /// could not be created (the caller MUST fall back to `scheduleFile`).
     @discardableResult
     func startEnhancedResampler(
         audioFile: AVAudioFile,
@@ -96,29 +98,15 @@ extension AudioEngineBridge {
             inputChunkFrames: Self.resampleInputChunkFrames
         )
 
-        // Prime + start synchronously on the serial queue: this serializes all converter access and
-        // gives the caller a definite success/failure result for the fallback decision. Priming
-        // before play() gives the player a cushion (no underrun, no startup delay).
+        // Prime synchronously on the serial queue so the caller gets a definite success/failure
+        // result for the fallback decision. Priming before play() gives the player a cushion.
+        // This is an OFF-queue entry point — the sync here is safe. Seam handlers that are
+        // already on resampleQueue call primeEnhancedResamplerLocked directly (no sync).
         var primed = 0
         resampleQueue.sync {
-            // Position the file read head (0 for a fresh play; the seek target for a resampled seek).
-            let totalFrames = audioFile.length
-            let clampedStart = max(0, min(startFrame, totalFrames))
-            audioFile.framePosition = clampedStart
-
-            // Bump the generation so any prior session's in-flight iterations abandon themselves,
-            // then capture THIS session's generation for the loop to compare against.
-            resampleGeneration &+= 1
-            let generation = resampleGeneration
-            resampleSession = session
-
-            for _ in 0 ..< Self.resamplePrimeCount {
-                let scheduled = readConvertSchedule(
-                    session: session, player: player, generation: generation
-                )
-                if !scheduled { break }
-                primed += 1
-            }
+            primed = self.primeEnhancedResamplerLocked(
+                session: session, audioFile: audioFile, player: player, startFrame: startFrame
+            )
         }
 
         // If the very first read produced nothing (e.g. empty/zero-length file), fall back so the
@@ -129,8 +117,56 @@ extension AudioEngineBridge {
             return false
         }
 
-        player.play()
+        // Start the player only when it is not already running. On a gapless roll into a new
+        // resampler session the player is still playing the tail of the previous session — calling
+        // play() again would reset the hardware clock and introduce a gap. On a fresh startAudio
+        // or a seek-triggered re-prime the player will be stopped so this still starts it.
+        if !player.isPlaying {
+            player.play()
+        }
         return true
+    }
+
+    /// Prime-loop body for the resampler. MUST be called on `resampleQueue`; enforced by
+    /// `dispatchPrecondition`. Positions the file read-head, bumps the generation, installs the
+    /// session, and schedules up to `resamplePrimeCount` initial buffers.
+    ///
+    /// Returns the number of buffers successfully scheduled (0 means the file is empty / unusable;
+    /// the caller should fall back to `scheduleFile`).
+    ///
+    /// Called from:
+    /// - `startEnhancedResampler` (off-queue entry point) via `resampleQueue.sync`
+    /// - `rollResamplerToNext` / `rollPassthroughToNext` (seam handlers, already on `resampleQueue`)
+    ///   — these call this method directly to avoid a deadlock from a sync-on-self.
+    @discardableResult
+    func primeEnhancedResamplerLocked(
+        session: EnhancedResampleSession,
+        audioFile: AVAudioFile,
+        player: AVAudioPlayerNode,
+        startFrame: AVAudioFramePosition
+    ) -> Int {
+        dispatchPrecondition(condition: .onQueue(resampleQueue))
+
+        // Position the file read head (0 for a fresh play; the seek target for a resampled seek).
+        let totalFrames = audioFile.length
+        let clampedStart = max(0, min(startFrame, totalFrames))
+        audioFile.framePosition = clampedStart
+
+        // Bump the generation so any prior session's in-flight iterations abandon themselves,
+        // then capture THIS session's generation for the loop to compare against.
+        resampleGeneration &+= 1
+        let generation = resampleGeneration
+        resampleSession = session
+
+        var primed = 0
+        for _ in 0 ..< Self.resamplePrimeCount {
+            let scheduled = readConvertSchedule(
+                session: session, player: player, generation: generation
+            )
+            if !scheduled { break }
+            primed += 1
+        }
+        return primed
     }
 
     // MARK: - Read → convert → schedule (one iteration)
@@ -142,6 +178,8 @@ extension AudioEngineBridge {
     ///
     /// Returns `true` if a buffer was scheduled (more may follow); `false` at EOF / on error / when
     /// the generation no longer matches (the loop then stops chaining — no buffer is scheduled).
+    /// When returning `false` due to EOF on the current session, fires `onResamplerEOF` (if set)
+    /// so the gapless extension can roll into the next track without a gap.
     @discardableResult
     private func readConvertSchedule(
         session: EnhancedResampleSession,
@@ -151,7 +189,13 @@ extension AudioEngineBridge {
         // Cancellation / supersession check (pre-read): a seek/stop/track-change bumped the
         // generation, so this session is stale — schedule nothing more (cleanly abandons chaining).
         guard isCurrent(generation: generation, session: session) else { return false }
-        guard !session.reachedEnd else { return false }
+        if session.reachedEnd {
+            // Current session is exhausted. Fire the gapless EOF hook (if armed by the gapless
+            // extension) so the next track can be scheduled without stopping the player. The hook
+            // runs here on resampleQueue, which is where all session state is serialized.
+            onResamplerEOF?(session, player)
+            return false
+        }
 
         guard let inputBuffer = readChunk(session: session),
               let outputBuffer = convertChunk(session: session, inputBuffer: inputBuffer)
@@ -301,12 +345,20 @@ extension AudioEngineBridge {
     // MARK: - Stop / teardown
 
     /// Stop the streaming-resampler loop: bump the generation so every in-flight read→convert→
-    /// schedule iteration (and every pending completion) abandons itself, then drop the session.
-    /// Safe to call when no session is active. Call BEFORE mutating shared graph state (stop,
-    /// shutdown, reconfigure, track change) so no buffer schedules onto a torn-down graph.
+    /// schedule iteration (and every pending completion) abandons itself, then drop the session
+    /// and clear both gapless EOF hooks. Safe to call when no session is active. Call BEFORE
+    /// mutating shared graph state (stop, shutdown, reconfigure, track change) so no buffer
+    /// schedules onto a torn-down graph. Both EOF hooks are cleared so stale handlers cannot fire
+    /// on a new session after a seek, stop, or new-track interrupt.
+    ///
+    /// NOTE: `stopEnhancedPlayback` calls this first, so it also sees `onPassthroughEOF` cleared.
+    /// The explicit `resampleQueue.async` clear in `stopEnhancedPlayback` is a belt-and-suspenders
+    /// guard for the rare path where only the passthrough hook is live (no resampler session).
     func stopEnhancedResampler() {
         resampleGeneration &+= 1
         resampleSession = nil
+        onResamplerEOF = nil
+        onPassthroughEOF = nil
     }
 }
 

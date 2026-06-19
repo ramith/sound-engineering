@@ -68,6 +68,7 @@ let package = Package(
                 "AudioViewModelTests.swift",
                 "MockAudioEngine.swift",
                 "AudioEngineProtocolTests.swift",
+                "AutoAdvanceTests.swift",
             ],
             swiftSettings: [
                 // CommandLineTools ships Testing.framework in a non-standard path.
