@@ -6,6 +6,9 @@ DerivedData/
 *.playground
 xcuserdata/
 
+# Claude Code agent worktree scratch (local; was accidentally committed as stray gitlinks)
+.claude/worktrees/
+
 # CLion/IDE
 .idea/
 cmake-build-*/
@@ -27,6 +30,8 @@ Thumbs.db
 Tests/DSPKernelNullTest
 Tests/lufs-tool
 Tests/EQSafetyClampTest
+# TEST-ONLY libebur128 oracle object (compiled into the harness; never committed)
+Tests/.ebur128.o
 
 # Generated test-harness fixtures (written at runtime into test-data/, never /tmp).
 # Keep the directory (README) tracked so the path resolves on a fresh clone.
