@@ -28,6 +28,7 @@
 //   GaplessTests.inc      — gapless DECODE-LAYER decode->concatenate contract (tests 73-77)
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
+//   GaplessContractTests.inc — S6 Tier-3 (3d) Pure gapless behavioral-contract conformance suite
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -48,6 +49,7 @@
 #include "GaplessTests.inc"
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
+#include "GaplessContractTests.inc"
 #include "RealizerTests.inc"
 #include "IntensityTests.inc"
 // clang-format on
@@ -60,7 +62,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 89U> kTests = {{
+    constexpr std::array<TestEntry, 94U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -178,6 +180,18 @@ namespace
         {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
         {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
         {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
+        // S6 Tier-3 (3d) Pure gapless behavioral-contract conformance — SERIAL: write fixtures.
+        {"GaplessContract_TransitionCountPerSeam",
+         testGaplessContractTransitionCountPerSeam,
+         false},
+        {"GaplessContract_ClearCancelsOnDeck", testGaplessContractClearCancelsOnDeck, false},
+        {"GaplessContract_EndOfQueueSignals", testGaplessContractEndOfQueueSignals, false},
+        {"GaplessContract_PositionRezeroesAtSeam",
+         testGaplessContractPositionRezeroesAtSeam,
+         false},
+        {"GaplessContract_PollReapsRetiredSource",
+         testGaplessContractPollReapsRetiredSource,
+         false},
         // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
         {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
         // S6 Tier-3 (3b) steerable wet/dry intensity (parallel-safe: no env/tmp).

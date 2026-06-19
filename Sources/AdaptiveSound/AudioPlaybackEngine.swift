@@ -71,15 +71,57 @@ protocol AudioPlaybackEngine: AnyObject {
 
     // MARK: Gapless / continuous playback (poll-based — the view model already polls at 20 Hz)
 
+    //
+    // # GaplessController contract (S6 Tier-3 §4)
+    //
+    // The three gapless requirements below (`setNextTrack`, `trackTransitionCount`, `playbackEnded`)
+    // plus `currentPlaybackPosition()` form the GaplessController behavioural contract that BOTH live
+    // paths — the Enhanced bridge (`AudioEngineBridge+Gapless.swift` / `+GaplessRoll.swift`) and the
+    // Pure HAL C-ABI (`PureModeBridge.h` → `GaplessSource`) — must satisfy identically. The contract
+    // is intentionally poll-based: the view model already polls at 20 Hz and drives every transition
+    // off the polled counter (`trackTransitionCount()`).
+    //
+    // Invariants (asserted by the shared conformance suite):
+    //   1. Arm → seam → `trackTransitionCount()` increments by EXACTLY ONE per seam.
+    //   2. `setNextTrack(nil)` cancels the on-deck track (no seam occurs from a cleared deck).
+    //   3. End-of-queue (a seam with nothing on deck) signals `playbackEnded()`.
+    //   4. Position RE-ZEROES at the seam (see `currentPlaybackPosition()` below): the first sample of
+    //      the new track reports ~0.0, NOT cumulative time across the seam. VERIFIED PARITY: both
+    //      paths comply — Pure re-zeroes per track natively (`PureModeBridge.h` `pureModeEnginePosition`
+    //      `Seconds`: "RESTARTS at 0 at each gapless seam"); Enhanced re-bases its position at every
+    //      seam in `bumpTransitionCount` (sets `enhancedPositionBaseSeconds = -(sampleTime/rate)`),
+    //      which is called from EVERY seam path in `+GaplessRoll.swift`.
+    //
+    // ## Path asymmetry — polling side effect (S6 Tier-3 §4.4)
+    //
+    // `trackTransitionCount()` MUST be polled regularly on the PURE path: each call to the underlying
+    // `pureModeEnginePollTrackAdvance` ALSO reaps the seam-retired decode source off-RT (joins its
+    // decode thread). If the caller stops polling, retired decode threads leak — so the counter is NOT
+    // a pure observer on Pure. The ENHANCED path has NO such coupling (its counter is a plain read of
+    // `gaplessTransitionCount` on `resampleQueue`; the retired resampler session is torn down inline at
+    // the seam, not on the next poll). The view model satisfies both by polling every 20 Hz tick.
+    // Treat regular polling as a contract REQUIREMENT, not an optimization, because of the Pure path.
+
     /// Supply the track to play gaplessly after the current one finishes, or `nil` to clear the
     /// on-deck track. The engine pre-schedules (Enhanced) / arms (Pure) it so the transition is
     /// seamless — no `stop()`, no inserted silence. Re-supply after each transition to keep one
     /// track on deck. Reuses the current path (Enhanced/Pure) and mode. Default impl: no-op.
+    ///
+    /// Contract: `setNextTrack(nil)` CANCELS the on-deck track — it clears the armed slot and disarms
+    /// any seam hook so no queued track silently begins later. A subsequent end-of-current-track with
+    /// an empty deck signals `playbackEnded()` rather than seaming. (Enhanced: clears `onDeckURL` +
+    /// the EOF hooks on `resampleQueue`; Pure: `pureModeEngineClearNextTrack`, which joins the dropped
+    /// source off-RT.)
     func setNextTrack(_ fileURL: URL?) async
 
     /// Monotonic count of completed gapless track transitions (seams). The view model polls this;
     /// an increase means the on-deck track is now current → advance the highlighted index, re-zero
     /// the scrubber, refresh duration, and supply the next on-deck track. Default impl: 0.
+    ///
+    /// Contract: increments by EXACTLY ONE per completed seam. MUST be polled regularly: on the PURE
+    /// path the poll also reaps the seam-retired decode source off-RT — stop polling and decode
+    /// threads leak (it is not a pure observer there). The ENHANCED path has no such coupling (see the
+    /// "Path asymmetry" note above). Treat regular polling as a requirement of the contract.
     func trackTransitionCount() -> UInt64
 
     /// `true` once playback reached the end of the current track with NO next track on deck (queue
@@ -94,6 +136,15 @@ protocol AudioPlaybackEngine: AnyObject {
 
     /// Current playhead position in seconds since playback started, or `nil` when
     /// not playing / unavailable. A fast, lock-free query safe to poll from the UI.
+    ///
+    /// Contract — position RE-ZEROES PER TRACK at the gapless seam (VERIFIED PARITY, both paths): the
+    /// returned value is position WITHIN the current track, not cumulative across seams. At a seam the
+    /// first sample of the new track reports ~0.0 and grows from there. Pure re-zeroes natively
+    /// (`PureModeBridge.h` `pureModeEnginePositionSeconds`); Enhanced re-bases at every seam in
+    /// `bumpTransitionCount` (`enhancedPositionBaseSeconds = -(sampleTime/rate)`, so
+    /// `base + sampleTime/rate ≈ 0` for the new track even though the gapless player node is never
+    /// stopped and its `sampleTime` keeps accumulating). A seek jumps within the current track and
+    /// does NOT count as a seam.
     func currentPlaybackPosition() -> Double?
 
     /// Snapshot of the active signal path (path kind, achieved rate, bit depth, etc.).

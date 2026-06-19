@@ -83,6 +83,7 @@ namespace AdaptiveSound
         retired_.store(nullptr, std::memory_order_relaxed);
         transitions_.store(0U, std::memory_order_relaxed);
         ended_.store(false, std::memory_order_relaxed);
+        reapCount_.store(0U, std::memory_order_relaxed);
 
         for (Track& track : tracks_)
         {
@@ -168,6 +169,10 @@ namespace AdaptiveSound
             slot->source.reset(); // joins the retired source's decode thread off-RT
             slot->renderedFrames.store(0U, std::memory_order_relaxed);
             slot->seekBaseFrames = 0U;
+            // Observability (off-RT only): record that a parked source was actually reaped, so the
+            // conformance suite can pin the poll-reaps-source contract (a future change that stops
+            // polling would freeze this even as transitions_ climbs → leaked decode threads).
+            reapCount_.fetch_add(1U, std::memory_order_release);
         }
     }
 
@@ -212,6 +217,16 @@ namespace AdaptiveSound
     bool GaplessSource::ended() const noexcept
     {
         return ended_.load(std::memory_order_acquire);
+    }
+
+    bool GaplessSource::hasPendingReap() const noexcept
+    {
+        return retired_.load(std::memory_order_acquire) != nullptr;
+    }
+
+    uint64_t GaplessSource::reapCount() const noexcept
+    {
+        return reapCount_.load(std::memory_order_acquire);
     }
 
     uint32_t GaplessSource::pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept

@@ -107,6 +107,24 @@ namespace AdaptiveSound
         // True once the active track hit its true EOF with no armed next (playlist exhausted).
         [[nodiscard]] bool ended() const noexcept;
 
+        // --- Observability (off-RT; conformance-test surface) ---
+        //
+        // These exist so the Pure gapless conformance suite can PIN the poll-reaps-source contract:
+        // pureModeEnginePollTrackAdvance() must keep reaping retired sources off-RT or decode
+        // threads leak. They are plain off-RT atomic reads — never touched on the RT thread — so
+        // they add nothing to the seam-straddle hot path.
+
+        // True while a source is parked in the retired slot awaiting reapRetired() (i.e. a seam has
+        // fired but the poll plane has not yet joined+freed the old source's decode thread). Goes
+        // false once reapRetired() (called by pureModeEnginePollTrackAdvance) frees it.
+        [[nodiscard]] bool hasPendingReap() const noexcept;
+
+        // Monotonic count of sources actually reaped (freed off-RT) by reapRetired(). Increments by
+        // exactly one each time a parked retired source is joined+freed; a no-op reap (nothing
+        // parked) does not bump it. A future change that stops polling would freeze this count even
+        // as transitionCount() climbs — that is the leak the conformance test guards against.
+        [[nodiscard]] uint64_t reapCount() const noexcept;
+
         // --- RT plane ---
 
         // RT render thread: drain interleaved float, straddling the A→B seam within this one call.
@@ -135,6 +153,7 @@ namespace AdaptiveSound
         std::atomic<Track*> retired_{nullptr};   // a track parked at the last seam, awaiting reap
         std::atomic<uint64_t> transitions_{0U};  // completed seam count
         std::atomic<bool> ended_{false};         // playlist exhausted (true EOF, no armed next)
+        std::atomic<uint64_t> reapCount_{0U};    // off-RT: sources actually reaped by reapRetired
 
         // Pick the free slot for arming the next track: the one that is neither active nor retired.
         // Returns nullptr if both non-active slots are occupied (should not happen — armNext
