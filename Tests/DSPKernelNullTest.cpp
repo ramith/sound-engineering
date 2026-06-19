@@ -32,6 +32,8 @@
 //   LoudnessOracleTests.inc  — S7/US-QA-01 TEST-ONLY libebur128 conformance oracle (LUFS + TP)
 //   LimiterTruePeakTests.inc — S7/US-QA-02 TEST-ONLY limiter −1 dBTP ceiling guarantee +
 //                              ISP-detector accuracy vs the libebur128 true-peak oracle
+//   EqFrequencyResponseSweepTests.inc — S7/US-QA-03 31-band FR sweep (±6/±12 dB, 48 &
+//                              44.1 kHz) + near-Nyquist gain guard + flat bit-transparency
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -57,6 +59,7 @@
 #include "IntensityTests.inc"
 #include "LoudnessOracleTests.inc"
 #include "LimiterTruePeakTests.inc"
+#include "EqFrequencyResponseSweepTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -67,7 +70,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 98U> kTests = {{
+    constexpr std::array<TestEntry, 103U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -214,6 +217,13 @@ namespace
         // (parallel-safe: pure DSP, no env/tmp).
         {"Limiter_TruePeak_CeilingGuarantee_vs_ebur128", testLimiterTruePeakCeilingGuarantee, true},
         {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
+        // S7 / US-QA-03: 31-band EQ frequency-response sweep + bit-transparent bypass.
+        // Parallel-safe: pure DSP, no env/tmp, fresh kernel per run.
+        {"EQ_Sweep31Bands_48k", testEqSweep31Bands48k, true},
+        {"EQ_Sweep31Bands_44k", testEqSweep31Bands44k, true},
+        {"EQ_SweepExtremes_PlusMinus12", testEqSweepExtremesPlusMinus12, true},
+        {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
+        {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
