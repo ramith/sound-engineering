@@ -50,6 +50,30 @@ extension AudioEngineBridge {
     /// - A seek must NOT consume the on-deck track; user stop clears it (done in `stopAudio`).
     /// - Safe to call from any thread; all state is marshalled onto `resampleQueue`.
     func setNextTrack(_ fileURL: URL?) async {
+        // Pure path: route to the HAL GaplessSource C-ABI. A same-format next track arms a
+        // sample-accurate seam (result 2); a rate/format mismatch (result 1) is NOT armed — the
+        // track still plays, but via a fresh start (the brief reconfigure gap) when the VM sees
+        // playbackEnded with a track still queued. result 0 = error (unreadable/unsupported).
+        if activePath == .pure {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().async {
+                    guard let engine = self.pureEngine else { continuation.resume(); return }
+                    if let url = fileURL {
+                        let didAccess = url.startAccessingSecurityScopedResource()
+                        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                        let result = url.path.withCString { pureModeEngineSetNextTrack(engine, $0) }
+                        logUX("pure setNextTrack '\(url.lastPathComponent)' → "
+                            + (result == 2 ? "armed (gapless)"
+                                : result == 1 ? "needs-reconfigure (gap on advance)" : "error"))
+                    } else {
+                        pureModeEngineClearNextTrack(engine)
+                    }
+                    continuation.resume()
+                }
+            }
+            return
+        }
+
         guard activePath == .enhanced else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             resampleQueue.async {
@@ -77,13 +101,21 @@ extension AudioEngineBridge {
     /// Monotonic count of completed gapless seams. The view model polls this at 20 Hz;
     /// an increase signals that `onDeckURL` became the current track.
     func trackTransitionCount() -> UInt64 {
-        resampleQueue.sync { gaplessTransitionCount }
+        // Pure path: the HAL GaplessSource owns the seam counter (polling it also reaps a retired
+        // source off-RT — that's why the VM polls every tick). Enhanced path: the resampler counter.
+        if activePath == .pure, let engine = pureEngine {
+            return pureModeEnginePollTrackAdvance(engine)
+        }
+        return resampleQueue.sync { gaplessTransitionCount }
     }
 
     /// `true` once the current track ended with no next track on deck (queue exhausted).
     /// Cleared on the next `startAudio`.
     func playbackEnded() -> Bool {
-        resampleQueue.sync { gaplessPlaybackEnded }
+        if activePath == .pure, let engine = pureEngine {
+            return pureModeEnginePlaybackEnded(engine) == 1
+        }
+        return resampleQueue.sync { gaplessPlaybackEnded }
     }
 
     // MARK: - Arm helpers (called on resampleQueue)
@@ -208,6 +240,10 @@ extension AudioEngineBridge {
                 + "(\(Int(nextRate))→\(Int(graphRate)))")
         } else {
             // primeEnhancedResamplerLocked scheduled nothing (empty file). Fall back to scheduleFile.
+            // P1-2: clear resampleSession so a later seek/reestablish takes the passthrough branch
+            // rather than the (now-stale) resampler branch. primeEnhancedResamplerLocked sets it
+            // non-nil at the top of its prime even when 0 buffers are produced.
+            resampleSession = nil
             // S-1: completion preserves the chain.
             bumpTransitionCount(player: player)
             armPassthroughNextTrack(player: player)
@@ -304,6 +340,10 @@ extension AudioEngineBridge {
                     + "(\(Int(nextRate))→\(Int(graphRate)))")
             } else {
                 // primeEnhancedResamplerLocked scheduled nothing (empty file). S-1: completion.
+                // P1-2: clear resampleSession so a later seek/reestablish takes the passthrough
+                // branch rather than the stale resampler branch (mirrors the
+                // startEnhancedResampler guard for the primed == 0 case).
+                resampleSession = nil
                 armPassthroughNextTrack(player: player)
                 // swiftlint:disable:next line_length
                 player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in

@@ -34,6 +34,7 @@
 #include "DSPKernel.h"
 #include "EQ/EQModuleCoefficients.h"
 #include "FileDecodeSource.h"
+#include "GaplessSource.h"
 #include "Loudness/ChannelLayoutDecoder.h"
 #include "Loudness/LufsMeter.h"
 #include "MultichannelView.h"
@@ -664,7 +665,7 @@ static auto printSummary() -> int
 // Run all registered tests. parallelN<=1 → serial (default). parallelN>1 → parallel-safe
 // entries run on a pool of parallelN workers (atomic work-stealing), then serial-only entries run
 // sequentially in registration order.
-static auto runAllTests(int parallelN, const std::array<TestEntry, 79U>& kTests) -> void
+static auto runAllTests(int parallelN, const std::array<TestEntry, 83U>& kTests) -> void
 {
     if (parallelN <= 1)
     {

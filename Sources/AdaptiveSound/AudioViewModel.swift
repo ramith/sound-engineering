@@ -320,10 +320,26 @@ final class AudioViewModel {
                 lastTransitionCount = currentCount
                 handleTrackTransition()
             } else if engine.playbackEnded() {
-                // Current track ended with no next track — stop the transport.
-                logUX("playbackEnded — no next track, stopping")
-                isPlaying = false
-                playbackPosition = 0
+                // Current track ended with no GAPLESS continuation. If a track is still queued
+                // (a Pure-path rate/format transition that couldn't be armed for a seamless seam),
+                // advance to it with a fresh start — a brief, honest reconfigure gap. Otherwise the
+                // queue is exhausted: stop. (Enhanced only reaches here with pendingNextIndex == nil,
+                // since its resampler arms any rate, so this advance is the Pure rate-change path.)
+                if let nextIdx = pendingNextIndex, nextIdx < playlist.count {
+                    logUX("playbackEnded — advancing to queued track[\(nextIdx)] (reconfigure gap)")
+                    selectedTrackIndex = nextIdx
+                    // Clear the trigger SYNCHRONOUSLY before the async startPlayback: `playbackEnded()`
+                    // stays true until startPlayback's Task runs `pureModeEngineStart` (≤ a few ticks
+                    // on a DAC reconfigure), so without this the next 20 Hz tick would re-enter and
+                    // launch a second `startAudio` that interrupts B mid-startup. startPlayback
+                    // re-derives pendingNextIndex inside its Task, so nothing is lost.
+                    pendingNextIndex = nil
+                    startPlayback()
+                } else {
+                    logUX("playbackEnded — no next track, stopping")
+                    isPlaying = false
+                    playbackPosition = 0
+                }
             }
         }
 
@@ -638,7 +654,10 @@ extension AudioViewModel {
             if pending == index {
                 // The on-deck track was removed. Re-compute the next index from the current
                 // playing track so the engine stays primed (rather than leaving it with nil).
-                let currentIdx = selectedTrackIndex ?? 0
+                // P2-2: playlist.remove(at:) above has already shifted indices — if the
+                // currently-playing track was AFTER the removed slot its index is now one lower.
+                let rawCurrent = selectedTrackIndex ?? 0
+                let currentIdx = rawCurrent > index ? rawCurrent - 1 : rawCurrent
                 let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
                 pendingNextIndex = newNextIdx
                 Task { [weak self] in

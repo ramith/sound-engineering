@@ -27,6 +27,7 @@
 //   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
 //   GaplessTests.inc      — gapless DECODE-LAYER decode->concatenate contract (tests 73-77)
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
+//   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -46,6 +47,7 @@
 #include "FileDecodeTests.inc"
 #include "GaplessTests.inc"
 #include "RoundTripTests.inc"
+#include "PureGaplessTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -56,7 +58,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 79U> kTests = {{
+    constexpr std::array<TestEntry, 83U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -169,6 +171,11 @@ namespace
         // B5 / L1: Pure-Mode software-chain bit-exact round-trip — SERIAL: mutate env + /tmp paths.
         {"RoundTrip_BitExact_16bit", testRoundTripBitExact16bit, false},
         {"RoundTrip_BitExact_24bit", testRoundTripBitExact24bit, false},
+        // Pure-path gapless STAGE 2 (GaplessSource) — SERIAL: write fixtures to test-data/.
+        {"PureGapless_SeamSampleAccurate", testPureGaplessSeamSampleAccurate, false},
+        {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
+        {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
+        {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace

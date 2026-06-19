@@ -310,33 +310,57 @@ extension AudioEngineBridge {
     // MARK: - Seek (resampled session)
 
     /// Restart the streaming resampler at `seconds` for an active resampled session. MUST run off
-    /// the audio thread (it stops the player, resets the converter, and re-primes). Bumps the
-    /// generation so every in-flight buffer from before the seek is abandoned, then re-primes +
-    /// plays from the target frame. No-op (returns false) if no resampled session is active.
+    /// `resampleQueue` (it stops the player, resets the converter, and re-primes via
+    /// `startEnhancedResampler`, which does its own `resampleQueue.sync` for the prime).
+    /// Bumps the generation so every in-flight buffer from before the seek is abandoned, then
+    /// re-primes + plays from the target frame. No-op (returns false) if no resampled session is
+    /// active.
+    ///
+    /// Concurrency: callers are `seek()` (DispatchQueue.global()) and
+    /// `reestablishEnhancedAfterConfigChange` (configChangeQueue) — both off resampleQueue,
+    /// so the resampleQueue.sync here is deadlock-safe.
     @discardableResult
     func seekEnhancedResampler(to seconds: Double, player: AVAudioPlayerNode) -> Bool {
-        guard let session = resampleSession else { return false }
+        // Capture the session and perform all mutations under the queue's lock to avoid
+        // races with in-flight read→convert→schedule iterations on resampleQueue.
+        var capturedSession: EnhancedResampleSession?
+        var targetFrame: AVAudioFramePosition = 0
 
-        // Bump generation FIRST so any completion that fires mid-seek schedules nothing onto the
-        // about-to-be-restarted player. Stop the player to flush its queued (now-stale) buffers.
-        resampleGeneration &+= 1
+        resampleQueue.sync {
+            guard let session = resampleSession else { return }
+            capturedSession = session
+
+            // Bump generation FIRST so any completion that fires mid-seek schedules nothing onto
+            // the about-to-be-restarted player.
+            resampleGeneration &+= 1
+
+            let fileRate = session.inputFormat.sampleRate
+            guard fileRate > 0 else { capturedSession = nil; return }
+
+            let target = max(seconds, 0)
+            let frame = AVAudioFramePosition(target * fileRate)
+            let totalFrames = session.audioFile.length
+            guard frame >= 0, frame < totalFrames else { capturedSession = nil; return }
+            targetFrame = frame
+
+            // Reset the converter's internal rate-conversion state so the post-seek stream does
+            // not inherit pre-seek interpolation history (which would smear the join).
+            session.converter.reset()
+            session.reachedEnd = false
+        }
+
+        guard let session = capturedSession else { return false }
+
+        // Stop the player AFTER the generation bump (generation bump is inside the sync above).
+        // The stop flushes the player's queued stale buffers. Done outside the sync so the
+        // hardware callback isn't stalled while we hold resampleQueue.
         player.stop()
 
-        let fileRate = session.inputFormat.sampleRate
-        guard fileRate > 0 else { return false }
-
-        let target = max(seconds, 0)
-        let targetFrame = AVAudioFramePosition(target * fileRate)
-        let totalFrames = session.audioFile.length
-        guard targetFrame >= 0, targetFrame < totalFrames else { return false }
-
-        // Reset the converter's internal rate-conversion state so the post-seek stream does not
-        // inherit pre-seek interpolation history (which would smear the join).
-        session.converter.reset()
-        session.reachedEnd = false
-
-        // Restart the loop from the target frame. startEnhancedResampler bumps the generation again
-        // (harmless) and re-primes + plays. It re-uses the same open AVAudioFile via a fresh session.
+        // Restart the loop from the target frame. startEnhancedResampler bumps the generation
+        // again (harmless — the old session's completions were already abandoned by the bump
+        // above) and re-primes + plays. It does its own resampleQueue.sync for the prime, which
+        // is safe because we are NOT currently holding resampleQueue here (we exited the sync
+        // block above before calling this).
         return startEnhancedResampler(
             audioFile: session.audioFile, player: player, startFrame: targetFrame
         )
@@ -354,11 +378,16 @@ extension AudioEngineBridge {
     /// NOTE: `stopEnhancedPlayback` calls this first, so it also sees `onPassthroughEOF` cleared.
     /// The explicit `resampleQueue.async` clear in `stopEnhancedPlayback` is a belt-and-suspenders
     /// guard for the rare path where only the passthrough hook is live (no resampler session).
+    ///
+    /// Concurrency: ALL callers (stopAudio, stopEnhancedPlayback, playFile, shutdown) run on
+    /// DispatchQueue.global() — never on resampleQueue — so the sync here is deadlock-safe.
     func stopEnhancedResampler() {
-        resampleGeneration &+= 1
-        resampleSession = nil
-        onResamplerEOF = nil
-        onPassthroughEOF = nil
+        resampleQueue.sync {
+            resampleGeneration &+= 1
+            resampleSession = nil
+            onResamplerEOF = nil
+            onPassthroughEOF = nil
+        }
     }
 }
 

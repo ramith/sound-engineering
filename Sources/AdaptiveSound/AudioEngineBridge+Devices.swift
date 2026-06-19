@@ -121,7 +121,11 @@ extension AudioEngineBridge {
     /// re-establish for FOLLOW, since some devices don't post it). Skipped under Pure (its hogged
     /// device + alive-listener own routing) and when idle. Runs on the device-list listener queue.
     func handleDeviceSetChange() {
-        guard activePath != .pure, enhancedPlayIntent, currentDeviceID != 0 else { return }
+        // Read enhancedPlayIntent under its owning queue (resampleQueue) for a consistent snapshot.
+        // This method runs on the device-list listener queue — off resampleQueue — so the sync is
+        // deadlock-safe.
+        let intent = resampleQueue.sync { enhancedPlayIntent }
+        guard activePath != .pure, intent, currentDeviceID != 0 else { return }
         let currentDefault = getDefaultOutputDeviceID()
         guard currentDeviceID != currentDefault else { return } // already targeting the default
 
