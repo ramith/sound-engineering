@@ -28,11 +28,14 @@ namespace AdaptiveSound
     {
       public:
         VDSPBiquadSetup() = default;
-        explicit VDSPBiquadSetup(vDSP_biquad_Setup setup) noexcept : setup_(setup) {}
+        explicit VDSPBiquadSetup(vDSP_biquad_Setup setup) noexcept : setup_(setup)
+        {
+        }
 
         ~VDSPBiquadSetup()
         {
-            if (setup_ != nullptr) {
+            if (setup_ != nullptr)
+            {
                 vDSP_biquad_DestroySetup(setup_);
             }
         }
@@ -46,8 +49,10 @@ namespace AdaptiveSound
         }
         VDSPBiquadSetup& operator=(VDSPBiquadSetup&& other) noexcept
         {
-            if (this != &other) {
-                if (setup_ != nullptr) {
+            if (this != &other)
+            {
+                if (setup_ != nullptr)
+                {
                     vDSP_biquad_DestroySetup(setup_);
                 }
                 setup_ = std::exchange(other.setup_, nullptr);
@@ -55,7 +60,10 @@ namespace AdaptiveSound
             return *this;
         }
 
-        [[nodiscard]] vDSP_biquad_Setup get() const noexcept { return setup_; }
+        [[nodiscard]] vDSP_biquad_Setup get() const noexcept
+        {
+            return setup_;
+        }
 
       private:
         vDSP_biquad_Setup setup_ = nullptr;

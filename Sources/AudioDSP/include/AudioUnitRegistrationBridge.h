@@ -81,6 +81,18 @@ extern "C"
     ///                 tags decode to a neutral fallback (all weights 1.0).
     void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag);
 
+    /// Publish a new intensity value (the spatial/clarity coloration wet/dry mix) to the live
+    /// AdaptiveSoundAU (S6 Tier-3 3a). This is the SINGLE intensity control surface (design
+    /// §1.5): setAUParameter(Intensity, ...) is a dead stub. Off-RT control plane: sets the
+    /// Realizer's pending-intensity slot (clamped to [0,1]) and posts a drain block on a
+    /// clean->dirty transition; the canonical read-modify-write and the atomic publish happen
+    /// off-main in the Realizer's serial queue. Must be called from a single control thread
+    /// (the @MainActor). No-op if auUnit is null.
+    ///
+    /// @param auUnit    Borrowed (passUnretained) AUAudioUnit*; no-op if null.
+    /// @param intensity Intensity in [0,1]; values outside the range are clamped.
+    void publishIntensity(void* auUnit, float intensity);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
