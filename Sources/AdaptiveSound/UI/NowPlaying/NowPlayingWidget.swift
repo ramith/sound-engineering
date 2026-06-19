@@ -206,6 +206,17 @@ private struct SignalPathBadge: View {
             segments.append(.init(text: decText, color: Color.asLabelSecond))
         }
 
+        // 5. Reimagine intensity — Enhanced path only, when > 0
+        if info.path == .enhanced, info.intensityLinear > 0 {
+            let pct = Int((info.intensityLinear * 100).rounded())
+            segments.append(.init(text: "\(pct)%", color: Color.asLabelSecond))
+        }
+
+        // 6. Crossfeed badge — only when intensity > 0 (§9: don't show inaudible-chain badge)
+        if info.intensityLinear > 0, let xfStrength = info.crossfeedStrength {
+            segments.append(.init(text: "XF:\(xfStrength.badgeLabel)", color: Color.asLabelSecond))
+        }
+
         return segments
     }
 

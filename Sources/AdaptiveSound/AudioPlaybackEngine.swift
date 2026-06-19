@@ -47,6 +47,12 @@ extension AudioPlaybackEngine {
 
     /// Default: no-op. The live engine stores the preference and consults it on device changes.
     func setPinPlaybackToSelectedDevice(_: Bool) {}
+
+    /// Default: no-op. Conformers that host the DSP AU override this.
+    func publishIntensity(_: Float) {}
+
+    /// Default: no-op. Conformers that host the DSP AU override this.
+    func publishCrossfeed(enabled _: Bool, strength _: CrossfeedStrength) async {}
 }
 
 protocol AudioPlaybackEngine: AnyObject {
@@ -164,6 +170,14 @@ protocol AudioPlaybackEngine: AnyObject {
     /// elements. Synchronous, off-RT, non-throwing: it computes the biquad cascade and
     /// atomically hands it to the kernel. No-op if no live AU (e.g. engine not initialized).
     func publishEQGains(_ gainsDb: [Float])
+
+    /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
+    /// No-op if the AU is not yet instantiated. Default impl: no-op.
+    func publishIntensity(_ intensity: Float)
+
+    /// Publish a crossfeed state change to the live DSP AU (QW1 §3).
+    /// No-op if the AU is not yet instantiated. Default impl: no-op.
+    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) async
 
     // MARK: Device Enumeration
 
