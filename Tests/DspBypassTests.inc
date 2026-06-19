@@ -42,16 +42,28 @@ static auto testIntensityZeroIsBitExact() -> void
     TargetState state = makeIdentityState();
     state.intensityLinear = 0.0F;
     kernel.publishTargetState(state);
+
+    // S6 Tier-3 (3b): intensity is now RAMPED. The kernel snaps the ramp to the canonical
+    // default (1.0) in initialize(), so a 1.0→0.0 step ramps DOWN over ~5τ before reaching the
+    // settled-at-0 hard bypass branch. The bit-exact bypass contract is "settled at 0", so warm
+    // the ramp to settle first (run silent buffers), THEN assert byte-identical passthrough.
+    constexpr uint32_t kSettleBuffers = 200U; // ≫ 5τ (160 ms ≈ 16 buffers)
+    TestABL warm(kFrames);
+    for (uint32_t b = 0U; b < kSettleBuffers; ++b)
+    {
+        kernel.process(warm.abl(), kFrames); // zero input; ramps current → 0
+    }
+
     kernel.process(abl.abl(), kFrames);
 
     if (std::memcmp(abl.left.data(), refLeft.data(), kFrames * sizeof(float)) != 0)
     {
-        logFail(kName, "left channel was modified despite intensityLinear == 0");
+        logFail(kName, "left channel was modified despite settled intensityLinear == 0");
         return;
     }
     if (std::memcmp(abl.right.data(), refRight.data(), kFrames * sizeof(float)) != 0)
     {
-        logFail(kName, "right channel was modified despite intensityLinear == 0");
+        logFail(kName, "right channel was modified despite settled intensityLinear == 0");
         return;
     }
     logPass(kName);
@@ -76,6 +88,15 @@ static auto testIntensityZeroMultiChunk() -> void
     TargetState state = makeIdentityState();
     state.intensityLinear = 0.0F;
     kernel.publishTargetState(state);
+
+    // S6 Tier-3 (3b): intensity is ramped (snapped to 1.0 in initialize()). Settle the ramp at 0
+    // before asserting the bit-exact multi-chunk bypass (the contract is "settled at 0").
+    constexpr uint32_t kSettleBuffers = 200U;
+    TestABL warm(kFrames);
+    for (uint32_t b = 0U; b < kSettleBuffers; ++b)
+    {
+        kernel.process(warm.abl(), kFrames);
+    }
 
     // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(TestConstants::kSeedBypassMulti);
