@@ -12,11 +12,33 @@ import Foundation
 /// 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
 /// 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
 /// 10000, 12500, 16000, 20000 Hz
+///
+/// Menu order (F6): analytic group first (flat/presence/clarity/warm), then
+/// house curves (loudness/vocal/studio), then Custom (shown via a Divider in
+/// the picker — not a case here).
 enum EQPreset: String, CaseIterable, Identifiable {
+    // MARK: Analytic group
+
     case flat = "Flat"
     case presence = "Presence"
     case clarity = "Clarity"
     case warm = "Warm"
+
+    // MARK: House curves
+
+    /// Gentle bass + treble lift, inspired by the equal-loudness contours
+    /// (Fletcher-Munson). Compensates for reduced sensitivity at low and high
+    /// frequencies at moderate listening levels.
+    case loudness = "Loudness"
+
+    /// Upper-midrange presence push centred around 3 kHz. Brings vocal and
+    /// acoustic-instrument detail forward without harshness above 8 kHz.
+    case vocal = "Vocal"
+
+    /// Near-flat reference with a subtle high-frequency air shelf (above 8 kHz).
+    /// Emulates the slight top-end lift of flat-response studio monitors in
+    /// a treated room without colouring the midrange.
+    case studio = "Studio"
 
     var id: String {
         rawValue
@@ -39,8 +61,6 @@ enum EQPreset: String, CaseIterable, Identifiable {
         case .presence:
             // Bell centred around 2 kHz: peaks at ~8 dB at 2 kHz, decays to
             // ~4 dB at 8 kHz, 0 below 1 kHz.
-            // Formula: gainForPresence() from FrequencyResponseCanvas, evaluated
-            // at each ISO centre frequency.
             return Self.isoFrequencies.map { Float(gainForPresence($0)) }
 
         case .clarity:
@@ -51,6 +71,21 @@ enum EQPreset: String, CaseIterable, Identifiable {
         case .warm:
             // Bass shelf peaking below 500 Hz, decaying through 2 kHz.
             return Self.isoFrequencies.map { Float(gainForWarm($0)) }
+
+        case .loudness:
+            // Gentle bass lift (peaks ~+4 dB at 20–40 Hz, decays to 0 at 500 Hz)
+            // plus a moderate treble lift (+1.5 dB at 5 kHz, +3 dB at 12.5–20 kHz).
+            return Self.isoFrequencies.map { Float(gainForLoudness($0)) }
+
+        case .vocal:
+            // Bell centred at 3.15 kHz, +6 dB peak, 2.5-octave width.
+            // Tapers to 0 below 500 Hz and above 8 kHz.
+            return Self.isoFrequencies.map { Float(gainForVocal($0)) }
+
+        case .studio:
+            // Near-flat + air shelf: 0 dB below 8 kHz, gentle +2 dB shelf
+            // at 16 kHz and above, with a smooth transition.
+            return Self.isoFrequencies.map { Float(gainForStudio($0)) }
         }
     }
 
@@ -102,4 +137,54 @@ private func gainForWarm(_ freq: Double) -> Double {
     } else {
         0.0
     }
+}
+
+/// Loudness: equal-loudness-inspired bass + treble lift.
+/// Bass shelf: +4 dB peak at 20–40 Hz, decays to 0 dB at 500 Hz via a cosine ramp.
+/// Treble shelf: smooth rise from 0 dB at 3.15 kHz to +3 dB at 12.5 kHz and above.
+private func gainForLoudness(_ freq: Double) -> Double {
+    // Bass component (20–500 Hz): half-cosine from +4 dB at 20 Hz to 0 dB at 500 Hz
+    let bassGain: Double
+    if freq <= 500 {
+        let norm = (log10(freq) - log10(20)) / (log10(500) - log10(20))
+        bassGain = 4.0 * cos(norm * .pi / 2)
+    } else {
+        bassGain = 0.0
+    }
+
+    // Treble component (3.15 kHz–20 kHz): half-sine rise from 0 to +3 dB
+    let trebleGain: Double
+    if freq >= 3150 {
+        let norm = min(1.0, (log10(freq) - log10(3150)) / (log10(12500) - log10(3150)))
+        trebleGain = 3.0 * sin(norm * .pi / 2)
+    } else {
+        trebleGain = 0.0
+    }
+
+    return bassGain + trebleGain
+}
+
+/// Vocal: bell centred at 3.15 kHz (+6 dB), 2.5-octave width.
+/// Tapers to 0 below 500 Hz and above 8 kHz using half-sine ramps.
+private func gainForVocal(_ freq: Double) -> Double {
+    // Full bell region: 500 Hz to 8 kHz, peak at 3.15 kHz
+    if freq >= 500 && freq <= 3150 {
+        // Rising half-sine: 0 at 500 Hz, 1 at 3150 Hz
+        let norm = (log10(freq) - log10(500)) / (log10(3150) - log10(500))
+        return 6.0 * sin(norm * .pi / 2)
+    } else if freq > 3150 && freq <= 8000 {
+        // Falling half-sine: 1 at 3150 Hz, 0 at 8 kHz
+        let norm = (log10(8000) - log10(freq)) / (log10(8000) - log10(3150))
+        return 6.0 * sin(norm * .pi / 2)
+    } else {
+        return 0.0
+    }
+}
+
+/// Studio: near-flat reference + air shelf above 8 kHz.
+/// 0 dB at and below 8 kHz; rises to +2 dB at 16 kHz and above.
+private func gainForStudio(_ freq: Double) -> Double {
+    guard freq > 8000 else { return 0.0 }
+    let norm = min(1.0, (log10(freq) - log10(8000)) / (log10(16000) - log10(8000)))
+    return 2.0 * sin(norm * .pi / 2)
 }
