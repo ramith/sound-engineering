@@ -195,7 +195,7 @@ namespace
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
         (void)busNum; // single output bus; index unused by this in-process AU
-        (void)events; // MIDI events deferred to a future MIDI implementation
+        (void)events; // MIDI not used by this AU
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero (~1 cycle on M1).
         setRenderThreadFTZ();

@@ -93,7 +93,7 @@ namespace
                                       const AURenderEvent* events,
                                       AURenderPullInputBlock pull) {
         (void)busNum;   // single output bus; index unused by this in-process AU
-        (void)events;   // MIDI events deferred to Phase 2 MIDI implementation
+        (void)events;   // MIDI not used by this AU
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
         // Called once per render callback; the register write is ~1 cycle on M1.
@@ -358,17 +358,18 @@ bool setAUParameter(void* auUnit, uint64_t paramID, float value) {
     if (auUnit == nullptr) { return false; }
     (void)paramID;
     (void)value;
-    // TODO(future sprint): no parameter store / param->TargetState mapping exists yet.
-    // The kernel is driven by whole-TargetState publication (publishTargetState); per-
-    // parameter control belongs with the Realizer/param model. Returning false rather
-    // than caching values that would never reach the kernel.
+    // No per-parameter store yet: the live EQ control plane drives the kernel via
+    // whole-TargetState publication (publishTargetState / publishEQBandGains), not an
+    // AU parameter tree. This stub is part of the stable exported C-ABI surface; it
+    // returns false rather than caching values that would never reach the kernel.
     return false;
 }
 
 float getAUParameter(void* auUnit, uint64_t paramID) {
     if (auUnit == nullptr) { return 0.0F; }
     (void)paramID;
-    // TODO(future sprint): see setAUParameter — no readable parameter store yet.
+    // No readable parameter store yet — see setAUParameter. Part of the stable
+    // exported C-ABI surface.
     return 0.0F;
 }
 

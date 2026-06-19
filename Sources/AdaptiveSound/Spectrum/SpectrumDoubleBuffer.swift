@@ -24,7 +24,7 @@ final class SpectrumDoubleBuffer {
     /// we rely on the fact that Int writes are atomic on LP64 (arm64) for
     /// aligned 64-bit stores, and the audio thread is the sole writer.
     /// For a production-grade alternative, use AtomicRepresentable from
-    /// swift-atomics (SE-0282). This is a deliberate Phase 1b simplification.
+    /// swift-atomics (SE-0282).
     private var publishedGeneration: Int = -1 // read on main, written on audio thread
 
     init(count: Int) {
@@ -58,8 +58,8 @@ final class SpectrumDoubleBuffer {
         let slot = gen & 1
         out.withUnsafeMutableBufferPointer { dst in
             slots[slot].withUnsafeBufferPointer { src in
-                guard let d = dst.baseAddress, let s = src.baseAddress else { return }
-                cblas_scopy(Int32(count), s, 1, d, 1)
+                guard let dstBase = dst.baseAddress, let srcBase = src.baseAddress else { return }
+                cblas_scopy(Int32(count), srcBase, 1, dstBase, 1)
             }
         }
         return true

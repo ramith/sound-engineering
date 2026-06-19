@@ -142,9 +142,9 @@ extension AudioEngineBridge {
     ///
     /// Pure path: `pureModeEngineSeek` stops render, seeks, restarts internally.
     ///
-    /// Enhanced path: best-effort implementation — stops the player, seeks the
-    /// open `AVAudioFile` by scheduling a segment from the target frame to end.
-    /// Gapless crossfade and precise SRC alignment are a later phase (Phase 1b Part B).
+    /// Enhanced path: stops the player, reschedules the `AVAudioFile` from the
+    /// target frame to end. For rate-mismatched files the streaming resampler is
+    /// restarted from the target frame via `seekEnhancedResampler`.
     func seek(to seconds: Double) async {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -160,10 +160,8 @@ extension AudioEngineBridge {
                 }
 
                 // Enhanced path: best-effort re-schedule.
-                // NOTE: This is a minimal implementation: no gapless crossfade, no SRC-sample-
-                // accurate alignment. Seek in the Enhanced path is a Phase 1b Part B feature;
-                // the body below keeps the app functional (stops + re-positions) without
-                // asserting bit-accuracy.
+                // Stops the player and reschedules from the target frame. Rate-mismatched files
+                // use seekEnhancedResampler; 48 kHz passthrough files use seekEnhancedBestEffort.
                 guard let player = self.playerNode,
                       let url = self.lastFileURL
                 else {
@@ -263,7 +261,6 @@ extension AudioEngineBridge {
 
     /// Seek `player` to `seconds` by re-scheduling the remaining segment of `url`.
     ///
-    /// Best-effort: no gapless crossfade or SRC-sample-accurate alignment (Phase 1b Part B).
     /// Silently returns when the file cannot be opened or the target frame is out of range.
     /// Called from `seek(to:)` and `reestablishEnhancedAfterConfigChange` on the Enhanced path.
     ///

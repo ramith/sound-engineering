@@ -1,9 +1,13 @@
 # Audio Quality Validation Strategy
 
-**Purpose:** Define comprehensive validation gates for Sprints 1–3 (Phase 1c MVP)  
+**Purpose:** Define comprehensive validation gates for Sprints 4–6 (Phase 1c MVP — the loudness/EQ/clarity DSP core)  
 **Scope:** Unit tests, integration tests, listening panels, regression gates, soak tests  
 **Approval:** QA Expert + Audio DSP + Project Lead  
 **Maintenance:** Update per sprint
+
+> **Sprint numbering:** canonical sprints are **4 = loudness, 5 / 5b = EQ + multichannel, 6 = adaptive clarity** (see [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)). Older drafts of this doc used 1/2/3; those map to 4/5/6 respectively.
+>
+> **Test-harness reality (read first):** the DSP gate is the **C++ null-test harness** (`bash scripts/build-null-test.sh`), **not** `swift test` — which is **broken** on this toolchain (macro skew). The Swift mock/view-model tests build and run under **Xcode** only. The fictional `./AdaptiveSound --input … --intensity N` CLI does **not** exist; bit-exact and frequency-response checks are C++ harness tests. Sections below have been corrected to match.
 
 ---
 
@@ -22,74 +26,54 @@
 
 **Runs on every PR to `main`.** Must pass before merge.
 
-### Gate 1: Unit Test Suite
+### Gate 1: DSP Test Harness (C++ null-test) — the primary gate
+
 ```bash
-swift test --configuration release
+bash scripts/build-null-test.sh
 ```
+
+This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` + the `*.inc` area files). It is the **canonical DSP gate**.
 
 **Requirements:**
-- All unit tests pass (0 failures)
-- Code coverage ≥ 80% for signal-path code (EQ, clarity, limiter, loudness)
-- No timeouts (signal tests must complete < 5 sec each)
+- All harness tests pass (~83 tests, 0 failures) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams.
+- Stereo **golden master** signature `0xE7267654BA01D315` (FNV-1a over the processed L+R of a deterministic chirp through +6 dB @ 1 kHz EQ + active limiter) must match. Any one-ULP change to stereo output flips it; re-baseline only on a founder-approved DSP change.
+- Fixtures are written + read in `<repo>/test-data/` (never `/tmp`); generated WAV/bin are git-ignored.
 
-**Test Suites:**
-- `AudioDSPTests/EQTests.swift` — Biquad stability, frequency response, null-test
-- `AudioDSPTests/LimiterTests.swift` — Peak enforcement, GR response, oversampling
-- `AudioDSPTests/LoudnessTests.swift` — LUFS accuracy, makeup gain, gating
-- `AudioDSPTests/ClarityTests.swift` — Masking model, gain limits, intensity
-- `AudioDSPTests/ArbiterTests.swift` — Composition, lock-free handoff
-- `SwiftUITests/AudioEngineTests.swift` — Playback control, parameter automation
+**`swift test` is BROKEN** (toolchain macro skew) and is **not** a merge gate. The Swift test targets (`AudioViewModelTests`, `AudioDSPTests`) use the Swift Testing framework and run under **Xcode** only, not headless `swift test`.
 
-### Gate 2: Null-Test (Bit-Exact Bypass)
+**Companion offline checks (`swift run`, headless):**
+- `swift run VerifyAUGraph` — proves the custom v3 AU registers, instantiates, sits in the AVAudioEngine graph, and renders.
+- `swift run SRCQualityMeasure` — characterises the production `AVAudioConverter(.max)` SRC (imaging/aliasing on pure tones).
 
-**Purpose:** Verify that intensity 0% produces bit-identical output
+### Gate 2: Bit-Exact Bypass (intensity-0 null test)
 
-```bash
-# Generate test signal (1 sec white noise @ 48 kHz)
-sox -n -r 48000 -c 2 test_input.wav synth 1 white gain -n
+**Purpose:** Verify that intensity 0% produces bit-identical output.
 
-# Run through app @ intensity 0%
-./AdaptiveSound --input test_input.wav --output test_output.wav --intensity 0
+This is **not** a CLI invocation — it is the harness test `IntensityZero_BitExactPassthrough` (+ `IntensityZero_MultiChunkBitExact`) in `DspBypassTests.inc`: the kernel early-returns at `intensityLinear == 0`, and the output is compared byte-for-byte (`memcmp`) against the input. The Pure-Mode software-chain bit-exactness is covered by `RoundTripTests.inc` (decode → `convertFloatToNative`, zero tolerance, 16/24-bit).
 
-# Compare
-md5sum test_input.wav test_output.wav  # Should match OR...
-ffmpeg -i test_input.wav -i test_output.wav -af "spectraldiff" -f null - 2>&1 | grep "THD+N"
-# Assert: THD+N ≤ −120 dB
-```
+**Acceptance:** byte-identical (zero tolerance) for both the kernel bypass and the Pure software-chain round-trip. (Run via Gate 1.)
 
-**Acceptance:** MD5 match OR THD+N ≤ −120 dB
+### Gate 3: EQ Frequency Response (baseline regression)
 
-### Gate 3: Frequency Sweep (Baseline Regression)
+**Purpose:** Confirm a band boost changes the signal by the right amount, with no boundary click.
 
-**Purpose:** Quick sanity check that EQ response is reasonable
+Harness tests `EQ_FrequencyResponseAccuracy` and `EQ_CoefficientSwapNoClick` (`EqTests.inc`, plus the N-channel variants in `MultichannelTests.inc`): apply a known band boost, measure the settled-RMS delta vs. flat, assert within tolerance; and verify a large coefficient swap produces no audible boundary discontinuity (zipper).
+
+**Acceptance:** measured band gain within the harness tolerance; no zipper artifact. (Run via Gate 1.)
+
+### Gate 4: Sanitizers + clang-tidy (C++23)
+
+The C++ modules build under **`gnu++2b` / C++23** (see `Package.swift` `cxxLanguageStandard: .gnucxx2b` and `scripts/build-null-test.sh` `-std=gnu++2b`) — **not** C++17. Run the harness translation unit under ASan/UBSan, and clang-tidy with the C++23 standard:
 
 ```bash
-# Generate log-sweep (20 Hz–20 kHz)
-sox -n -r 48000 -c 1 sweep_input.wav synth 1 sine 20 20000 gain -n -10
-
-# Run through app @ flat EQ (0 dB all bands)
-./AdaptiveSound --input sweep_input.wav --output sweep_output.wav --intensity 50 --eq "flat"
-
-# Measure magnitude response
-ffmpeg -i sweep_output.wav -af "spectrogram" -f image2 spectrum.png
-
-# Assert: No 20+ dB spikes (indicates DSP bug)
+# ASan/UBSan: add the sanitizer flags to the build-null-test.sh clang++ invocation
+#   (-fsanitize=address,undefined) and run ./Tests/DSPKernelNullTest.
+# clang-tidy on the C++ modules (std must be gnu++2b / c++2b, matching production):
+clang-tidy --checks=readability-*,cppcoreguidelines-* \
+  Sources/AudioDSP/*.mm Sources/AudioDSP/**/*.cpp -- -std=gnu++2b -I Sources/AudioDSP/include
 ```
 
-**Acceptance:** Spectrum smooth, no anomalies
-
-### Gate 4: ASAN + TSan + clang-tidy
-
-```bash
-swiftc -sanitize=address -sanitize=undefined [sources] -o app
-./app --test-signal "1khz_sine" # Run for 10 sec
-
-# Assert: No address sanitizer errors, no undefined behavior
-# Also run clang-tidy for C++ modules
-clang-tidy --checks=readability-*,cppcore* [sources] -- -I... -std=c++17
-```
-
-**Acceptance:** Zero violations
+**Acceptance:** zero sanitizer errors, zero clang-tidy violations.
 
 ---
 
@@ -121,23 +105,15 @@ for (int i = 0; i < 1000; i++) {
 **Acceptance:** All 1000 curves stable, gains within tolerance
 
 ### Test 2: 20-Track Corpus End-to-End
-```bash
-# Play 20-track test corpus (varied genres, dynamic range)
-for track in corpus/*.wav; do
-  ./AdaptiveSound --input "$track" \
-                  --output "${track%.wav}_processed.wav" \
-                  --duration 30sec \
-                  --intensity 50 \
-                  --simulate-loudness-changes yes
-done
 
-# Measure:
-# - LUFS accuracy (vs. ffmpeg ebur128)
-# - BRIR convolution correctness (correlation to reference)
-# - RT-safety metrics (no xruns, p99.9 render ≤ 5 ms)
-```
+> **Aspirational — no batch CLI exists.** There is no `./AdaptiveSound --input … --intensity N` command; the app is GUI-only. This corpus pass would need a small offline driver (e.g. extend `VerifyAUGraph` / a dedicated harness) that decodes each track, runs the kernel/graph offline, and measures the metrics below against `ffmpeg ebur128`. Until that driver exists, corpus-level LUFS/BRIR/RT metrics are measured ad hoc or via the C++ harness's synthetic signals.
 
-**Acceptance:**
+Planned measurements over a 20-track corpus (varied genres, dynamic range):
+- LUFS accuracy (vs. `ffmpeg ebur128`)
+- BRIR convolution correctness (correlation to reference) — *pending the BRIR module (Sprint 6+; currently a stub)*
+- RT-safety metrics (no xruns, p99.9 render ≤ 5 ms)
+
+**Acceptance (when the driver exists):**
 - LUFS accuracy ±0.1 LUFS
 - BRIR correlation ≥ 0.95
 - p99.9 render ≤ 5 ms
@@ -177,9 +153,11 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 ## Per-Sprint Final Validation (Manual + Scripted)
 
-### SPRINT 1: Loudness Safety & Transparent Dynamics
+> **Listening-panel status: NOT YET EXECUTED.** The MUSHRA listening-panel rounds below are the planned acceptance protocol; no panel has been run and no `LISTENING-PANEL-*.md` reports exist yet. Automated harness tests (Gate 1–4) are the gate that has actually run. Sprint headings use the canonical 4/5/6 numbering (Sprint 4 + 5/5b DONE; Sprint 6 not yet shipped).
 
-#### Automated Tests (from SPRINT-1-LOUDNESS-SAFETY.md)
+### SPRINT 4: Loudness Safety & Transparent Dynamics
+
+#### Automated Tests (see [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md))
 - [ ] Limiter null-test: bypass = bit-identical
 - [ ] True-peak enforcement: output ≤ −1 dBTP
 - [ ] GR response: < 2 ms
@@ -190,25 +168,25 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 - [ ] Play 5 reference tracks (vocal, acoustic, electronic, classical, orchestral)
 - [ ] Listen for limiter artifacts (pumping, swelling, breathing)
 - [ ] Verify no audible artifacts
-- [ ] Log observations to `VALIDATION-SPRINT-1.log`
+- [ ] Log observations to `VALIDATION-SPRINT-4.log`
 
 #### Listening Panel
 - [ ] Recruit 5–10 audio engineers
 - [ ] MUSHRA protocol: original vs. limiter-processed (30 sec clips)
 - [ ] Record: "Inaudible" / "Subtle" / "Obvious" ratings + artifact reports
 - [ ] Pass: ≥80% rate "Inaudible" or "Subtle"
-- [ ] Generate report: `LISTENING-PANEL-SPRINT-1.md`
+- [ ] Generate report: `LISTENING-PANEL-SPRINT-4.md`
 
 #### Sign-Off
 - [ ] Audio DSP lead: ✅ DSP quality approved
 - [ ] QA lead: ✅ All acceptance criteria met
-- [ ] Project lead: ✅ Ready to proceed to Sprint 2
+- [ ] Project lead: ✅ Ready to proceed to Sprint 5
 
 ---
 
-### SPRINT 2: Minimum-Phase EQ Wiring & Spectral Correction
+### SPRINT 5 / 5b: Minimum-Phase EQ Wiring & Spectral Correction
 
-#### Automated Tests (from SPRINT-2-EQ-FOUNDATION.md)
+#### Automated Tests (see [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md))
 - [ ] Biquad stability: all random curves stable
 - [ ] Null-test: 0 dB = bit-identical
 - [ ] Frequency response: ±0.5 dB per band center
@@ -230,18 +208,18 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 - [ ] Blind A/B: original vs. EQ-processed
 - [ ] Record: "Identical" / "Prefers B" / "Artifacts" ratings
 - [ ] Pass: ≥70% detect intended EQ, ≤20% report artifacts
-- [ ] Generate report: `LISTENING-PANEL-SPRINT-2.md`
+- [ ] Generate report: `LISTENING-PANEL-SPRINT-5.md`
 
 #### Sign-Off
 - [ ] Audio DSP lead: ✅ EQ quality approved
 - [ ] QA lead: ✅ All acceptance criteria met
-- [ ] Project lead: ✅ Ready to proceed to Sprint 3
+- [ ] Project lead: ✅ Ready to proceed to Sprint 6
 
 ---
 
-### SPRINT 3: Adaptive Clarity & Loudness Compensation
+### SPRINT 6: Adaptive Clarity & Loudness Compensation
 
-#### Automated Tests (from SPRINT-3-ADAPTIVE-CLARITY.md)
+#### Automated Tests (see [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md))
 - [ ] Masking threshold: ±1 dB vs. reference
 - [ ] Clarity gain limits: ≤ +3 dB/band, < +2 dB cumulative
 - [ ] Loudness compensation: ±1 dB contour accuracy
@@ -267,7 +245,7 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
   - Test 5: Overall adaptive experience
 - [ ] Blind A/B + subjective ratings
 - [ ] Pass: ≥75% rate "Highly adaptive" or "Natural"
-- [ ] Generate report: `LISTENING-PANEL-SPRINT-3.md`
+- [ ] Generate report: `LISTENING-PANEL-SPRINT-6.md`
 
 #### Sign-Off
 - [ ] Audio DSP lead: ✅ Adaptive DSP quality approved
@@ -318,7 +296,7 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 ### Report Format
 ```markdown
-# Listening Panel Report: Sprint 3
+# Listening Panel Report: Sprint 6
 
 **Date:** 2026-06-XX  
 **Panelists:** 8 audio professionals (5 mixing engineers, 2 mastering, 1 researcher)  
@@ -365,7 +343,8 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Unit test pass rate | 100% | TBD |
+| C++ harness pass rate (~83 tests) | 100% (0 failures) | DONE — passing |
+| Stereo golden master | `0xE7267654BA01D315` match | DONE — matching |
 | Code coverage (signal path) | ≥80% | TBD |
 | Null-test accuracy (THD+N) | ≤ −120 dB | TBD |
 | LUFS measurement accuracy | ±0.1 LUFS | TBD |
@@ -378,5 +357,5 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 ---
 
-**Status:** Ready for execution  
-**Next:** Execute Sprint 1 validation, generate reports
+**Status:** Sprint 4 + 5/5b automated gates DONE (C++ harness passing, golden master matching); listening panels NOT YET EXECUTED.  
+**Next:** Run the Sprint 4/5 listening panels; build out Sprint 6 (clarity/loudness-comp) tests as that DSP lands.
