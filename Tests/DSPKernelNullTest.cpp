@@ -48,6 +48,7 @@
 #include "GaplessTests.inc"
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
+#include "RealizerTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 83U> kTests = {{
+    constexpr std::array<TestEntry, 84U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -176,6 +177,8 @@ namespace
         {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
         {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
         {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
+        // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
+        {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace

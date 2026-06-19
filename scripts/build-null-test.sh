@@ -44,6 +44,7 @@ xcrun clang++ \
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.mm" \
     "$REPO_ROOT/Sources/AudioDSP/GaplessSource.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/AudioEngine/Realizer.mm" \
     "$REPO_ROOT/Tests/DSPKernelNullTest.cpp" \
     -framework AudioToolbox \
     -framework CoreFoundation \

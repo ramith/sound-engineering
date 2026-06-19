@@ -81,6 +81,9 @@ extern "C"
     /// @return True on success.
     bool publishTargetState(void* auUnit, const void* state);
 
+    // publishIntensity(...) is declared in AudioUnitRegistrationBridge.h (sibling of
+    // publishEQBandGains, the other control-plane intent entry point) — declared once.
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
