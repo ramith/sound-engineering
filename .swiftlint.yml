@@ -4,6 +4,8 @@ disabled_rules:
   - trailing_comma
   - function_name_whitespace
   - implicit_optional_initialization
+  # "master" (master gain / master bus) is standard, intentional audio terminology here.
+  - inclusive_language
 
 opt_in_rules:
   - force_unwrapping

@@ -140,222 +140,6 @@ extension AudioEngineBridge {
         }
     }
 
-    // MARK: - Seam handlers (called on resampleQueue)
-
-    /// Gapless roll for the resampler sub-path.
-    ///
-    /// Called on `resampleQueue` after the current resampler session reaches EOF (its final buffer
-    /// has been consumed by the player's buffer queue). Opens the next file, creates a NEW
-    /// `AVAudioConverter` for it, and calls `startEnhancedResampler` WITHOUT stopping the player.
-    /// Because the player's queue already contains A's audio tail and we are scheduling B's first
-    /// buffers right behind it — with the player still running — the hardware clock is continuous
-    /// and no silence is inserted.
-    ///
-    /// If the next track cannot be opened or the converter fails, falls back to `playFile` (which
-    /// stops + restarts — a brief gap, but never silent).
-    private func rollResamplerToNext(player: AVAudioPlayerNode) {
-        guard let nextURL = onDeckURL else {
-            gaplessPlaybackEnded = true
-            enhancedPlayIntent = false // queue exhausted — don't auto-resume on a later config change
-            logUX("gapless: resampler EOF — no next track, playback ended")
-            return
-        }
-        onDeckURL = nil // consume the armed URL
-
-        let didAccess = nextURL.startAccessingSecurityScopedResource()
-
-        guard let nextFile = try? AVAudioFile(forReading: nextURL) else {
-            if didAccess { nextURL.stopAccessingSecurityScopedResource() }
-            logUX("gapless: resampler roll failed — cannot open '\(nextURL.lastPathComponent)'")
-            // Degradation: fall back to a clean start on the global queue (stops + restarts,
-            // brief gap). Sets playbackEnded if avEngine is gone (engine was shut down).
-            DispatchQueue.global().async { [weak self] in
-                guard let self, let engine = self.avEngine else {
-                    self?.resampleQueue.async { self?.gaplessPlaybackEnded = true }
-                    return
-                }
-                try? self.playFile(at: nextURL, engine: engine, playerNode: player)
-            }
-            return
-        }
-        // Security-scoped resource lifecycle: stop access after we open the file (AVAudioFile
-        // retains its own file handle; we no longer need the security scope).
-        if didAccess { nextURL.stopAccessingSecurityScopedResource() }
-
-        let graphRate = player.outputFormat(forBus: 0).sampleRate
-        let nextRate = nextFile.processingFormat.sampleRate
-
-        if nextRate == graphRate {
-            // Next file is 48 kHz — switch to the passthrough path for it.
-            // stopEnhancedResampler bumps the generation so the old session's completions abandon;
-            // we don't call player.stop() so the queue stays running.
-            stopEnhancedResampler()
-            bumpTransitionCount(player: player)
-            lastFileURL = nextURL
-            // Schedule the 48 kHz file directly; the player queue is still running.
-            nextFile.framePosition = 0
-            // swiftlint:disable:next line_length
-            player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                guard let self, let livePlayer = player else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-            }
-            // Arm the passthrough hook so the track after this one can also be gapless.
-            armPassthroughNextTrack(player: player)
-            logUX("gapless: resampler→passthrough seam '\(nextURL.lastPathComponent)'")
-            return
-        }
-
-        // Next file is also rate-mismatched: open a fresh converter and continue the resampler
-        // chain. We are already on resampleQueue, so call primeEnhancedResamplerLocked directly
-        // rather than startEnhancedResampler (which does resampleQueue.sync → deadlock C-1).
-        lastFileURL = nextURL
-        guard let converter = makeConverter(for: nextFile, player: player) else {
-            // Converter creation failed: fall back to scheduleFile (brief gap, chain preserved).
-            // S-1: add .dataPlayedBack completion so onPassthroughEOF fires and the chain continues.
-            bumpTransitionCount(player: player)
-            armPassthroughNextTrack(player: player)
-            // swiftlint:disable:next line_length
-            player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                guard let self, let livePlayer = player else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-            }
-            logUX("gapless: resampler→passthrough fallback seam "
-                + "'\(nextURL.lastPathComponent)' (converter failed)")
-            return
-        }
-        let nextSession = EnhancedResampleSession(
-            converter: converter,
-            audioFile: nextFile,
-            inputFormat: nextFile.processingFormat,
-            outputFormat: player.outputFormat(forBus: 0),
-            inputChunkFrames: AudioEngineBridge.resampleInputChunkFrames
-        )
-        let primed = primeEnhancedResamplerLocked(
-            session: nextSession, audioFile: nextFile, player: player, startFrame: 0
-        )
-        if primed > 0 {
-            bumpTransitionCount(player: player)
-            armResamplerNextTrack(player: player)
-            logUX("gapless: resampler→resampler seam '\(nextURL.lastPathComponent)' "
-                + "(\(Int(nextRate))→\(Int(graphRate)))")
-        } else {
-            // primeEnhancedResamplerLocked scheduled nothing (empty file). Fall back to scheduleFile.
-            // P1-2: clear resampleSession so a later seek/reestablish takes the passthrough branch
-            // rather than the (now-stale) resampler branch. primeEnhancedResamplerLocked sets it
-            // non-nil at the top of its prime even when 0 buffers are produced.
-            resampleSession = nil
-            // S-1: completion preserves the chain.
-            bumpTransitionCount(player: player)
-            armPassthroughNextTrack(player: player)
-            // swiftlint:disable:next line_length
-            player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                guard let self, let livePlayer = player else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-            }
-            logUX("gapless: resampler→passthrough fallback seam "
-                + "'\(nextURL.lastPathComponent)' (empty prime, scheduleFile)")
-        }
-    }
-
-    /// Gapless roll for the 48 kHz passthrough sub-path.
-    ///
-    /// Called on `resampleQueue` after the current `scheduleFile` session's `.dataPlayedBack`
-    /// callback fires (the hardware has played the last sample of the current track). Opens the
-    /// next file and either chains another `scheduleFile` (48 kHz next) or starts the resampler
-    /// (rate-mismatched next) — in both cases WITHOUT calling `player.stop()`.
-    private func rollPassthroughToNext(player: AVAudioPlayerNode) {
-        guard let nextURL = onDeckURL else {
-            gaplessPlaybackEnded = true
-            enhancedPlayIntent = false // queue exhausted — don't auto-resume on a later config change
-            logUX("gapless: passthrough EOF — no next track, playback ended")
-            return
-        }
-        onDeckURL = nil // consume the armed URL
-
-        let didAccess = nextURL.startAccessingSecurityScopedResource()
-
-        guard let nextFile = try? AVAudioFile(forReading: nextURL) else {
-            if didAccess { nextURL.stopAccessingSecurityScopedResource() }
-            logUX("gapless: passthrough roll failed — cannot open '\(nextURL.lastPathComponent)'")
-            DispatchQueue.global().async { [weak self] in
-                guard let self, let engine = self.avEngine else {
-                    self?.resampleQueue.async { self?.gaplessPlaybackEnded = true }
-                    return
-                }
-                try? self.playFile(at: nextURL, engine: engine, playerNode: player)
-            }
-            return
-        }
-        if didAccess { nextURL.stopAccessingSecurityScopedResource() }
-
-        let graphRate = player.outputFormat(forBus: 0).sampleRate
-        let nextRate = nextFile.processingFormat.sampleRate
-        lastFileURL = nextURL
-
-        if nextRate == graphRate {
-            // Both current and next are 48 kHz: consecutive scheduleFile calls play back-to-back,
-            // byte-exact. This is the spec's "consecutive scheduleFile" gapless path.
-            bumpTransitionCount(player: player)
-            nextFile.framePosition = 0
-            // swiftlint:disable:next line_length
-            player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                guard let self, let livePlayer = player else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-            }
-            armPassthroughNextTrack(player: player)
-            logUX("gapless: passthrough→passthrough seam '\(nextURL.lastPathComponent)'")
-        } else {
-            // Next track is rate-mismatched: start the resampler sub-path for it. The player is
-            // still running (no stop), so the primed buffers join the queue behind the last bytes
-            // of the passthrough track. We are already on resampleQueue, so call
-            // primeEnhancedResamplerLocked directly — calling startEnhancedResampler would
-            // resampleQueue.sync onto ourselves (C-1 deadlock).
-            guard let converter = makeConverter(for: nextFile, player: player) else {
-                // Converter failed: fall back to scheduleFile. S-1: add completion for chain.
-                bumpTransitionCount(player: player)
-                armPassthroughNextTrack(player: player)
-                // swiftlint:disable:next line_length
-                player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                    guard let self, let livePlayer = player else { return }
-                    self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-                }
-                logUX("gapless: passthrough→passthrough fallback seam "
-                    + "'\(nextURL.lastPathComponent)' (converter failed)")
-                return
-            }
-            let nextSession = EnhancedResampleSession(
-                converter: converter,
-                audioFile: nextFile,
-                inputFormat: nextFile.processingFormat,
-                outputFormat: player.outputFormat(forBus: 0),
-                inputChunkFrames: AudioEngineBridge.resampleInputChunkFrames
-            )
-            let primed = primeEnhancedResamplerLocked(
-                session: nextSession, audioFile: nextFile, player: player, startFrame: 0
-            )
-            bumpTransitionCount(player: player)
-            if primed > 0 {
-                armResamplerNextTrack(player: player)
-                logUX("gapless: passthrough→resampler seam '\(nextURL.lastPathComponent)' "
-                    + "(\(Int(nextRate))→\(Int(graphRate)))")
-            } else {
-                // primeEnhancedResamplerLocked scheduled nothing (empty file). S-1: completion.
-                // P1-2: clear resampleSession so a later seek/reestablish takes the passthrough
-                // branch rather than the stale resampler branch (mirrors the
-                // startEnhancedResampler guard for the primed == 0 case).
-                resampleSession = nil
-                armPassthroughNextTrack(player: player)
-                // swiftlint:disable:next line_length
-                player.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
-                    guard let self, let livePlayer = player else { return }
-                    self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-                }
-                logUX("gapless: passthrough→passthrough fallback seam "
-                    + "'\(nextURL.lastPathComponent)' (empty prime, scheduleFile)")
-            }
-        }
-    }
-
     // MARK: - Position continuity at seams
 
     /// Bump `gaplessTransitionCount` and reset the position base to re-zero the new track.
@@ -370,7 +154,7 @@ extension AudioEngineBridge {
     /// to track-A-duration and counting forward from there.
     ///
     /// MUST be called on `resampleQueue` (all gapless state lives there).
-    private func bumpTransitionCount(player: AVAudioPlayerNode) {
+    func bumpTransitionCount(player: AVAudioPlayerNode) {
         gaplessTransitionCount &+= 1
 
         // Capture the player's sampleTime off the audio thread (safe — CoreAudio property read).
@@ -397,7 +181,7 @@ extension AudioEngineBridge {
     /// Create a `.max`-quality `AVAudioConverter` from `file`'s processing format to the player's
     /// output format. Returns `nil` if the converter cannot be created (caller must fall back to
     /// `scheduleFile`). MUST be called on `resampleQueue`.
-    private func makeConverter(
+    func makeConverter(
         for audioFile: AVAudioFile,
         player: AVAudioPlayerNode
     ) -> AVAudioConverter? {
@@ -412,3 +196,6 @@ extension AudioEngineBridge {
         return converter
     }
 }
+
+// The seam handlers (rollResamplerToNext / rollPassthroughToNext) and their shared
+// sub-steps live in AudioEngineBridge+GaplessRoll.swift.
