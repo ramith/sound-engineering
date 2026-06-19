@@ -52,6 +52,8 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 > **Gate status (2026-06-19): S6 is ✅ DONE — the architecture-review gate is GREEN.** The 4-discipline review + all three tiers of fixes shipped (Tier 1 RT-safety/lifecycle; Tier 2 concurrency consolidation; Tier 3 DSP spine), gate-verified (null-test 93/0, golden master held). Feature work (S7+) is unblocked. See the S6 row below and [s6-architecture-review-findings.md](s6-architecture-review-findings.md).
 >
 > **S7 (DSP-gate hardening): ✅ DONE (2026-06-19).** All six QA stories shipped (null-test 105/0, golden master held): libebur128 loudness oracle, limiter true-peak, EQ 31-band FR sweep, SRC alias/imaging, gapless-seam regression, RT-allocation soak. Every shipped DSP stage now has an automated regression gate validated against an independent oracle where possible. See the S7 row.
+>
+> **QW1 — Quick-Win Differentiators (exception, before S8; 2026-06-19).** A founder-approved one-off differentiator burst leveraging the S6 spine, *before* resuming the maturity arc at S8: **Reimagine intensity knob** (UI wiring; kernel done) + **tonal presets** + a **crossfeed** DSP stage (knob-scaled). Team-designed + architect-reviewed (**GO-WITH-CHANGES**) → [qw1-quick-win-differentiators-design.md](qw1-quick-win-differentiators-design.md). Then resume S8.
 
 | Sprint | Title | SP | Scope | Depends on |
 |---|---|---|---|---|
