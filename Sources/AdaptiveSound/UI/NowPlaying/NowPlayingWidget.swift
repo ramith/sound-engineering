@@ -9,8 +9,7 @@ struct NowPlayingWidget: View {
 
     var body: some View {
         if let selectedIndex = viewModel.selectedTrackIndex,
-           selectedIndex < viewModel.playlist.count
-        {
+           selectedIndex < viewModel.playlist.count {
             let currentTrack = viewModel.playlist[selectedIndex]
             TrackCard(track: currentTrack)
         } else {
