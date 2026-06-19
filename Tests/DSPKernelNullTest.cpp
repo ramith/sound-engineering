@@ -49,6 +49,7 @@
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
 #include "RealizerTests.inc"
+#include "IntensityTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 84U> kTests = {{
+    constexpr std::array<TestEntry, 89U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -179,6 +180,14 @@ namespace
         {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
         // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
         {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
+        // S6 Tier-3 (3b) steerable wet/dry intensity (parallel-safe: no env/tmp).
+        {"Intensity_EndpointsBitExact_Settled", testIntensityEndpointsBitExact, true},
+        {"Intensity_SettledRampConvergesToHardBranch",
+         testIntensitySettledRampConvergesToHardBranch,
+         true},
+        {"Intensity_EqualPowerAtHalf", testIntensityEqualPowerAtHalf, true},
+        {"Intensity_LevelPeakSafetyIntermediate", testIntensityLevelPeakSafetyIntermediate, true},
+        {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
