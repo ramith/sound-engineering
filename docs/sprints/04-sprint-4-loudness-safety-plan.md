@@ -1,6 +1,8 @@
 # Sprint 4 (US-TONAL-LOUDNESS) Implementation Plan
 ## Loudness Safety & Transparent Dynamics — True-Peak Limiter + LUFS Normalization
 
+> **✅ SHIPPED — historical record (Sprint 4, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** SPRINT-4-PLAN-001
 **Version:** 1.2
 **Date:** 2026-06-16

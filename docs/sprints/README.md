@@ -1,19 +1,26 @@
 # Sprint Planning & Documentation
 
-This directory contains planning, test strategies, and retrospectives for each sprint of AdaptiveSound development.
+This directory contains the sprint methodology, the forward sprint schedule, and the historical per-sprint records (plans, test strategies, retrospectives) for AdaptiveSound development.
+
+## The two authoritative docs
+
+- **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S17).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
+- **[`00-sprint-model.md`](00-sprint-model.md) — the authoritative sprint / Kanban methodology** (5–10 SP sprints, done-done criteria, enabler-first ordering). The *how*, not the *what-next*.
+
+> **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (DSP-gate hardening). The old docs are historical records, not current plans.
 
 ## Organization
 
-Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. The authoritative sprint/Kanban model is **`00-sprint-model.md`**. The **early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-1b-Part-A postmortem) and the design reviews now live in [`../session-notes/`](../session-notes/)** as historical reference; this directory holds the current sprint execution docs.
+Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. Early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-1b-Part-A postmortem) lives in [`../session-notes/`](../session-notes/). This directory holds the methodology, the forward schedule, and the shipped-sprint records.
 
-### Current sprint docs (this directory)
-- **00-sprint-model.md** — authoritative sprint / Kanban model
+### Historical per-sprint records (this directory)
 - **04-sprint-4-loudness-safety{,-plan,-test-plan,-retro}.md** — Loudness safety (BS.1770-5 meter + true-peak limiter) — ✅ shipped (merged)
 - **05-sprint-5-eq-foundation{,-plan}.md**, **05-sprint-5-monitoring-tab-design.md**, **05-sprint-5-au-graph-spike-notes.md** — EQ foundation + Monitoring tab — ✅ shipped
-- **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md**, **05-sprint-5b-s4-binaural-design.md** — N-channel multichannel pipeline (S0–S3 + M4 shipped; S4 binaural deferred)
-- **06-sprint-6-adaptive-clarity.md** — adaptive clarity / perceptual Arbiter — 🟡 next
+- **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md** — N-channel multichannel pipeline (S0–S3 + M4 shipped) — ✅ shipped
+- **05-sprint-5b-s4-binaural-design.md** — Apple-native binaural design — ⏸ deferred; folded into `sprint-plan.md` Phase 2 (S17 BRIR)
+- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded by `sprint-plan.md` (loudness-comp → S13; clarity → S14–S15)
 - **07-phase-1b-part-b-kickoff.md** — critical-path kickoff — ✅ completed (historical)
-- **08-gui-design-review.md** — GUI design review
+- **08-gui-design-review.md** — GUI design review — ✅ historical
 - **09-phase-b-bit-perfect-pure-mode.md** — bit-perfect "Pure Mode" + gapless: status & learnings — ✅ shipped
 
 ### How tests actually run
@@ -142,5 +149,5 @@ Each sprint includes three documents:
 
 ---
 
-**Last Updated:** 2026-06-13  
+**Last Updated:** 2026-06-19  
 **Maintainer:** AdaptiveSound Team

@@ -1,6 +1,8 @@
 # Sprint 5 (US-TONAL-EQ) Implementation Plan
 ## Minimum-Phase EQ Wiring & Spectral Correction — DSP AU into the Live Graph
 
+> **✅ SHIPPED — historical record (Sprint 5, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** SPRINT-5-PLAN-001
 **Version:** 1.0
 **Date:** 2026-06-16

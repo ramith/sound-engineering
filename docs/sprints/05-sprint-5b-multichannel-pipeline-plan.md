@@ -1,5 +1,7 @@
 # Multichannel Pipeline — Architecture & Implementation Plan
 
+> **✅ SHIPPED — historical record (Sprint 5b, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** MULTICHANNEL-PIPELINE-001
 **Date:** 2026-06-16
 **Author:** Synthesized from a 3-discipline panel review (audio-DSP + research · modern-C++ · Swift)

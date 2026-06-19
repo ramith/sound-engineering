@@ -1,5 +1,7 @@
 # Multichannel Pipeline — Epic Master Plan & Sprint Breakdown
 
+> **✅ SHIPPED — historical record (Sprint 5b, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** MULTICHANNEL-EPIC-001
 **Date:** 2026-06-16
 **Authors:** 4-expert collaboration — refactoring-specialist (lead) · audio-dsp-agent · modern-cplus-plus-expert · swiftui-pro
