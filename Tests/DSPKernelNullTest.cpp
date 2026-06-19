@@ -60,6 +60,7 @@
 #include "LoudnessOracleTests.inc"
 #include "LimiterTruePeakTests.inc"
 #include "EqFrequencyResponseSweepTests.inc"
+#include "SoakRtAllocTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 103U> kTests = {{
+    constexpr std::array<TestEntry, 106U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -224,6 +225,14 @@ namespace
         {"EQ_SweepExtremes_PlusMinus12", testEqSweepExtremesPlusMinus12, true},
         {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
         {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
+        // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
+        // process-wide operator new/delete override scoped to the calling thread via a thread_local
+        // flag; running them in the parallel worker pool alongside other allocating tests is fine
+        // for correctness (the flag is thread_local) but the Gapless soak spins on real decode
+        // threads and the DSPKernel soaks are long, so keep them serial to avoid skewing the pool.
+        {"Soak_DSPKernel_ZeroRtAlloc_FullChain", testSoakDspKernelZeroRtAllocFullChain, false},
+        {"Soak_DSPKernel_ZeroRtAlloc_Blend", testSoakDspKernelZeroRtAllocBlend, false},
+        {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
