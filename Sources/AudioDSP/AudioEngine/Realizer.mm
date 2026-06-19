@@ -1,5 +1,7 @@
 #import "Realizer.h"
 
+#import <Foundation/Foundation.h> // NSLog (control-plane diagnostics, off-RT only)
+
 #include <algorithm> // std::clamp
 #include <cmath>     // std::exp, M_PI
 #include <cstring>   // std::memcpy
@@ -141,6 +143,10 @@ bool Realizer::setPendingEqGains(const float* gainsDb, uint32_t count, double sa
     pendingEqGains_.sampleRate = static_cast<float>(sampleRate);
     pendingEqGains_.dirty = true;
 
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    NSLog(@"[QW1] Realizer.setPendingEqGains count=%u sampleRate=%.1f -> %s", count, sampleRate,
+          wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
+
     // Post a drain ONLY on a clean->dirty transition. If a drain is already pending (slot was
     // still dirty), the in-flight drain will read the freshly-overwritten slot — true
     // "compute once per burst" coalescing.
@@ -162,6 +168,10 @@ void Realizer::setPendingIntensity(float value)
     const bool wasClean = !pendingIntensity_.dirty;
     pendingIntensity_.value = clamped;
     pendingIntensity_.dirty = true;
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    NSLog(@"[QW1] Realizer.setPendingIntensity value=%.4f (clamped=%.4f) -> %s", value, clamped,
+          wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
 
     // Separate slot from EQ -> an interleaved intensity intent is never dropped by an EQ
     // burst. Post a drain only on a clean->dirty transition (coalesces intensity bursts).
@@ -195,6 +205,11 @@ bool Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t prese
     pendingCrossfeed_.preset = clampedPreset;
     pendingCrossfeed_.sampleRate = static_cast<float>(sampleRate);
     pendingCrossfeed_.dirty = true;
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    NSLog(@"[QW1] Realizer.setPendingCrossfeed enabled=%u level=%.4f preset=%u sampleRate=%.1f -> %s",
+          enabled, clampedLevel, clampedPreset, sampleRate,
+          wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
 
     // Separate slot from EQ/intensity → an interleaved crossfeed intent is never dropped by another
     // burst. Post a drain only on a clean->dirty transition (coalesces crossfeed bursts).
@@ -250,6 +265,11 @@ void Realizer::drain()
     {
         return; // spurious wake (slot already drained by an earlier coalesced block)
     }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    NSLog(@"[QW1] Realizer.drain applying dirty slots: eq=%d intensity=%d crossfeed=%d",
+          static_cast<int>(eqDirty), static_cast<int>(intensityDirty),
+          static_cast<int>(crossfeedDirty));
 
     // Recompute ONLY what changed, RMW the canonical state field-by-field (so the other
     // modules keep their last-set values), bump sequenceNumber ONCE, publish ONCE.
@@ -307,6 +327,12 @@ void Realizer::publishCanonical()
     // The SOLE publishTargetState call site. Calls the kernel DIRECTLY (never captures the
     // ObjC AU). The kernel is guaranteed alive: blocks capture shared_from_this(), and
     // shutdown() drains before the owner releases the kernel.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    NSLog(@"[QW1] Realizer.publishCanonical seq=%llu intensity=%.4f crossfeed{enabled=%u preset=%u} "
+          @"eq{numBiquads=%u}",
+          static_cast<unsigned long long>(canonical_.sequenceNumber), canonical_.intensityLinear,
+          canonical_.crossfeed.enabled, canonical_.crossfeed.preset,
+          static_cast<unsigned>(canonical_.eq.numBiquads));
     if (kernel_ != nullptr)
     {
         kernel_->publishTargetState(canonical_);

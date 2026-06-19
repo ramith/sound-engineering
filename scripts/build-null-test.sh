@@ -75,6 +75,7 @@ xcrun clang++ \
     "$EBUR128_OBJ" \
     -framework AudioToolbox \
     -framework CoreFoundation \
+    -framework Foundation \
     -framework Accelerate \
     -o "$OUTPUT"
 

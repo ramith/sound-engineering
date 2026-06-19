@@ -14,7 +14,11 @@ extension AudioEngineBridge {
     /// the `publishIntensity` C-ABI (S6 §1.5). No-op when the AU is not yet instantiated.
     /// Must be called from a single control thread (the `@MainActor`).
     func publishIntensity(_ intensity: Float) {
-        guard let handle = dspAudioUnitHandle else { return }
+        guard let handle = dspAudioUnitHandle else {
+            logUX("[QW1] bridge.publishIntensity SKIP — no DSP AU handle (intensity=\(intensity))")
+            return
+        }
+        logUX("[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
         cPublishIntensity(handle, intensity)
     }
 }
