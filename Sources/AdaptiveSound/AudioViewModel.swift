@@ -61,12 +61,15 @@ final class AudioViewModel {
 
     /// Wet/dry blend for all DSP enhancement stages (EQ, clarity, crossfeed).
     /// 0.0 = bit-perfect bypass; 1.0 = full blend. Default 0.20.
-    /// Clamped to [0, 1] in `didSet`; ops dispatched via `+IntensityControl`.
+    /// The slider binds this in 0...1, so the stored value is always in range; the engine call
+    /// is clamped defensively with a LOCAL — NEVER re-assign `intensity` inside its own `didSet`
+    /// (under @Observable a self-assignment re-fires the setter → infinite recursion → crash).
+    /// Ops dispatched via `+IntensityControl`.
     var intensity: Float = 0.20 {
         didSet {
-            intensity = max(0, min(1, intensity))
-            logUX("intensity → \(Int(intensity * 100)) %")
-            Task { engine.publishIntensity(intensity) }
+            let clamped = max(0, min(1, intensity))
+            logUX("intensity → \(Int(clamped * 100)) %")
+            Task { engine.publishIntensity(clamped) }
         }
     }
 
