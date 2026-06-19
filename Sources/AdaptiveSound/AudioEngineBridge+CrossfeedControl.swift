@@ -19,8 +19,14 @@ extension AudioEngineBridge {
     ///   - enabled: `true` activates the crossfeed stage; `false` passes audio through bit-exactly.
     ///   - strength: The `CrossfeedStrength` preset, which resolves to a (level, presetIndex) pair.
     func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) async {
-        guard let handle = dspAudioUnitHandle else { return }
+        guard let handle = dspAudioUnitHandle else {
+            logUX("[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle "
+                + "(enabled=\(enabled) strength=\(strength))")
+            return
+        }
         let enabledFlag: UInt32 = enabled ? 1 : 0
+        logUX("[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
+            + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
         cPublishCrossfeed(handle, enabledFlag, strength.dspLevel, strength.presetIndex)
     }
 }
