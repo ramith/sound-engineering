@@ -141,8 +141,7 @@ extension AudioEngineBridge {
         let mixerFormat = mixer.outputFormat(forBus: 0)
         mixer.installTap(onBus: 0,
                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                         format: mixerFormat)
-        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                         format: mixerFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- Access only pre-allocated state through the analyzer pointer.
             guard let analyzer = self?.spectrumAnalyzer else { return }
             let abl = buffer.mutableAudioBufferList
@@ -168,8 +167,7 @@ extension AudioEngineBridge {
         let playerFormat = player.outputFormat(forBus: 0)
         player.installTap(onBus: 0,
                           bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                          format: playerFormat)
-        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                          format: playerFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
             guard let beforeAnalyzers = self?.beforeAnalyzers else { return }
             let abl = buffer.mutableAudioBufferList
@@ -189,8 +187,7 @@ extension AudioEngineBridge {
         let auFormat = effectsUnit.outputFormat(forBus: 0)
         effectsUnit.installTap(onBus: 0,
                                bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                               format: auFormat)
-        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                               format: auFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
             guard let afterAnalyzers = self?.afterAnalyzers else { return }
             let abl = buffer.mutableAudioBufferList

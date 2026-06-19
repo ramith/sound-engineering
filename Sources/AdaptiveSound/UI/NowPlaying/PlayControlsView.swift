@@ -57,8 +57,7 @@ struct PlayControlsView: View {
                 containerSize: Layout.skipButtonSize
             ) {
                 if let currentIndex = viewModel.selectedTrackIndex,
-                   currentIndex < viewModel.playlist.count - 1
-                {
+                   currentIndex < viewModel.playlist.count - 1 {
                     viewModel.selectedTrackIndex = currentIndex + 1
                 }
             }

@@ -227,8 +227,7 @@ private struct PlaylistItemList: View {
         }
         .onKeyPress(.downArrow) {
             if let current = viewModel.selectedTrackIndex,
-               current < viewModel.playlist.count - 1
-            {
+               current < viewModel.playlist.count - 1 {
                 viewModel.selectedTrackIndex = current + 1
                 return .handled
             }

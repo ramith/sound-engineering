@@ -683,8 +683,7 @@ func verifyTwoAUTopology(channelCount: AVAudioChannelCount) -> Bool {
     defer { twoEngine.stop() }
 
     if !assertTwoAUInsertion(engine: twoEngine, effects: effects, spatial: spatial,
-                             channelCount: channelCount, label: label)
-    {
+                             channelCount: channelCount, label: label) {
         return false
     }
 
@@ -873,8 +872,7 @@ func resolvedDeviceFormat(sourceFormat: AVAudioFormat, deviceChannels: AVAudioCh
 /// reconfigure dance to `sourceChannels` (effects edges at N; spatial output + mixer + output at
 /// M = min(N, deviceChannels)). Asserts the negotiated bus widths match the M2-d contract.
 func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
-                                 deviceChannels: AVAudioChannelCount) -> Bool
-{
+                                 deviceChannels: AVAudioChannelCount) -> Bool {
     let label = "[N=\(sourceChannels), device=\(deviceChannels)]"
     print("--- M2-d device-width resolution \(label) (effects/spatial in = N; spatial out/device = min(N,device)) ---")
 
@@ -908,8 +906,7 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
     let observedDeviceChannels = dwEngine.outputNode.outputFormat(forBus: 0).channelCount
     let resolvedDevice = resolvedDeviceFormat(sourceFormat: sourceFmt, deviceChannels: observedDeviceChannels)
     if !reconfigureToSource(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
-                            sourceFormat: sourceFmt, deviceFormat: resolvedDevice, label: label)
-    {
+                            sourceFormat: sourceFmt, deviceFormat: resolvedDevice, label: label) {
         return false
     }
 

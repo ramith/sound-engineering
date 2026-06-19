@@ -50,8 +50,7 @@ enum AudioFileEnumerator {
             let relativePath: String
             if let rel = relativeURL.path.dropFirst(folderURL.path.count)
                 .trimmingCharacters(in: .init(charactersIn: "/")) as String?,
-                !rel.isEmpty
-            {
+                !rel.isEmpty {
                 relativePath = rel + "/"
             } else {
                 relativePath = ""
