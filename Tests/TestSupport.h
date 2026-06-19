@@ -35,6 +35,7 @@
 #include "EQ/EQModuleCoefficients.h"
 #include "FileDecodeSource.h"
 #include "GaplessSource.h"
+#include "Limiting/LimiterModule.h"
 #include "Loudness/ChannelLayoutDecoder.h"
 #include "Loudness/LufsMeter.h"
 #include "MultichannelView.h"
