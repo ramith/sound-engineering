@@ -82,8 +82,56 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// this (= the seek target) to report the true playhead. 0 on a fresh from-start play.
     var enhancedPositionBaseSeconds: Double = 0
 
+    /// Last non-nil Enhanced playhead, cached every time `currentPlaybackPosition()` resolves a real
+    /// position (the view model polls it). Used to re-establish playback at the right point after an
+    /// `AVAudioEngineConfigurationChange` — at that instant the player may already report no render
+    /// time, so this cached value is the most recent reliable playhead. Also updated at gapless seams
+    /// so the new track's position re-zeroes correctly. Internal (not private) so the gapless
+    /// extension in `AudioEngineBridge+Gapless.swift` can update it.
+    var lastKnownEnhancedPositionSeconds: Double = 0
+
+    // MARK: - Gapless / on-deck state (methods in AudioEngineBridge+Gapless.swift)
+
+    /// The track armed to play gaplessly after the current one. `nil` means no next track is queued.
+    /// All access is serialized on `resampleQueue` (same queue that owns the resampler session + all
+    /// buffer scheduling). Written by `setNextTrack(_:)` (dispatched onto `resampleQueue`);
+    /// consumed at EOF by the seam handler.
+    var onDeckURL: URL?
+
+    /// Monotonic count of completed gapless seams (track transitions). Incremented on `resampleQueue`
+    /// at each real seam; read synchronously from `resampleQueue` by `trackTransitionCount()`.
+    var gaplessTransitionCount: UInt64 = 0
+
+    /// Set to `true` when the current track reaches EOF with no next track on deck. Cleared by the
+    /// next `startAudio`. Read synchronously from `resampleQueue` by `playbackEnded()`.
+    var gaplessPlaybackEnded: Bool = false
+
+    /// Called on `resampleQueue` when the 48 kHz passthrough `scheduleFile` reaches playback-end
+    /// (`.dataPlayedBack` fires). The gapless extension installs this to chain the next track or
+    /// set `gaplessPlaybackEnded`. Cleared on stop/seek so a stale handler cannot fire.
+    var onPassthroughEOF: ((AVAudioPlayerNode) -> Void)?
+
+    /// Called on `resampleQueue` when the streaming resampler reaches EOF and is about to stop
+    /// chaining. The gapless extension installs this to roll into the next track without a gap.
+    /// The handler receives the session that just ended and the live player node. Cleared on stop /
+    /// seek / track-change (via `stopEnhancedResampler`) so a stale handler cannot fire.
+    var onResamplerEOF: ((EnhancedResampleSession, AVAudioPlayerNode) -> Void)?
+
     /// Whether the most recent `startAudio` call requested Pure mode.
     var pureModeRequested: Bool = false
+
+    /// Whether the Enhanced path is INTENDED to be playing — set when Enhanced playback starts,
+    /// cleared on stop / device-loss / end-of-queue. The config-change + device-change re-establish
+    /// uses this instead of the transient `playerNode.isPlaying`, which a hardware reconfiguration
+    /// (a device connecting/disconnecting) can momentarily flip to `false` — causing the re-establish
+    /// to bail and leave playback silently dead. Intent is the durable truth; the node state is not.
+    var enhancedPlayIntent: Bool = false
+
+    /// User preference for what happens when a NEW output device connects mid-playback (set by the
+    /// view model from a Settings toggle). `true` (default) = "app-authoritative": re-pin the selected
+    /// device so playback stays put. `false` = "follow": adopt the newly-connected device as the
+    /// target. Consumed by `handleDeviceSetChange()`.
+    var pinPlaybackToSelectedDevice: Bool = true
 
     // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
 
@@ -137,6 +185,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
     /// the app silently goes quiet. Registered in `initialize()`, removed in `shutdown()`.
     private var configChangeObserver: NSObjectProtocol?
+
+    /// Serial queue on which the `AVAudioEngineConfigurationChange` handler runs. A single device
+    /// switch can post the notification more than once in quick succession; serializing keeps the
+    /// re-establish sequence (stop → re-prime → play) from interleaving across concurrent handlers.
+    let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
     // MARK: - Initialize
 
@@ -246,43 +299,6 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     // MARK: - Shutdown
 
-    /// Resume rendering after a hardware configuration change (route / default-device / format
-    /// change), which stops `AVAudioEngine` — otherwise the app silently goes quiet on a Bluetooth
-    /// or USB change. (Full device-width / exclusive re-evaluation is Phase B; here we resume the
-    /// existing graph so playback continues.)
-    private func observeConfigurationChanges(of engine: AVAudioEngine) {
-        configChangeObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-        ) { [weak self] _ in
-            DispatchQueue.global().async {
-                guard let self, let engine = self.avEngine else { return }
-                // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
-                // those very changes fire this notification. The Enhanced AVAudioEngine is
-                // intentionally stopped and must NOT try to restart on the hogged device — doing so
-                // fails with -10875 (invalid output HW format) and contends for the device. The
-                // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
-                // is handled (paused) by the CoreAudio device-alive listener in
-                // AudioEngineBridge+PureModeDeviceMonitor.swift.
-                guard self.activePath != .pure else { return }
-                // After a device-loss pause we are intentionally stopped — don't auto-restart on the
-                // config change that the disconnect itself fires. Cleared on the next startAudio.
-                guard !self.cachedSignalPath.interrupted else { return }
-                let wasPlaying = self.playerNode?.isPlaying ?? false
-                if !engine.isRunning {
-                    do {
-                        try engine.start()
-                    } catch {
-                        NSLog("[AudioEngineBridge] engine restart after configuration change failed: \(error)")
-                        return
-                    }
-                }
-                if wasPlaying, let player = self.playerNode, !player.isPlaying {
-                    player.play()
-                }
-            }
-        }
-    }
-
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -353,6 +369,15 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     self.lastFileURL = fileURL
                     self.pureModeRequested = pureMode
 
+                    // A fresh startAudio always begins a new playback context: clear the end-of-queue
+                    // sentinel and the on-deck slot so the new play starts clean (the caller must
+                    // re-arm on-deck after startAudio if it wants gapless from the first track).
+                    // Both values live on resampleQueue, but startAudio always runs before any
+                    // resampler loop is active (the prior session is stopped below), so writing them
+                    // here (on DispatchQueue.global) before the resampler is started is race-free.
+                    self.gaplessPlaybackEnded = false
+                    self.onDeckURL = nil
+
                     // Attempt Pure path when requested, a file is provided, and capability allows.
                     if pureMode, let url = fileURL {
                         let viable = self.evaluatePureViable(fileURL: url, deviceID: self.currentDeviceID)
@@ -406,6 +431,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     }
 
                     self.activePath = .enhanced
+                    self.enhancedPlayIntent = true
                     self.cachedSignalPath = SignalPathInfo(
                         path: .enhanced,
                         decision: .fallbackEnhanced,
@@ -467,7 +493,20 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         let fileRate = processingFormat.sampleRate
         let graphRate = playerNode.outputFormat(forBus: 0).sampleRate
         if fileRate == graphRate {
-            playerNode.scheduleFile(audioFile, at: nil)
+            // 48 kHz passthrough: byte-identical to the pre-gapless path. The completion callback
+            // type `.dataPlayedBack` fires after the hardware has played the last sample, which is
+            // the correct seam point for gapless. When no next track is armed the handler is nil and
+            // the player simply stops at end-of-file (pre-gapless behaviour, unchanged).
+            //
+            // NOTE: AVAudioFile / ExtAudioFile trims AAC priming silence and MP3 LAME
+            // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
+            // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
+            // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
+            // swiftlint:disable:next line_length
+            playerNode.scheduleFile(audioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak playerNode] _ in
+                guard let self, let livePlayer = playerNode else { return }
+                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+            }
             playerNode.play()
             logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")
             return
@@ -510,6 +549,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 } else {
                     self.stopEnhancedPlayback()
                 }
+                // Clear the on-deck slot on user stop: a stop is a deliberate abort, not an
+                // end-of-queue, so the armed next track must not silently begin playing later.
+                // Serialized on resampleQueue so it cannot race with an in-flight seam handler.
+                self.resampleQueue.async { self.onDeckURL = nil }
+                self.enhancedPlayIntent = false
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
                 self.activePath = .enhanced
@@ -536,7 +580,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         else {
             return nil
         }
-        return enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
+        let position = enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
+        // Cache the freshest reliable playhead for the config-change re-establish path.
+        lastKnownEnhancedPositionSeconds = position
+        return position
     }
 
     func currentSignalPath() -> SignalPathInfo {
@@ -566,6 +613,91 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 continuation.resume()
             }
         }
+    }
+}
+
+// MARK: - AudioEngineBridge configuration-change resilience
+
+///
+/// Kept in a same-file extension (not the class body) so it stays close to the engine while not
+/// counting toward the class's body length; `private` engine state is still reachable (file scope).
+extension AudioEngineBridge {
+    /// Resume rendering after a hardware configuration change (route / default-device / format
+    /// change), which stops `AVAudioEngine` — otherwise the app silently goes quiet on a Bluetooth
+    /// or USB change (incl. a device merely *connecting* and stealing the system default).
+    func observeConfigurationChanges(of engine: AVAudioEngine) {
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            self?.configChangeQueue.async {
+                guard let self, let engine = self.avEngine else { return }
+                logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
+                    + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "
+                    + "intent=\(self.enhancedPlayIntent) default=\(getDefaultOutputDeviceID()) "
+                    + "selected=\(self.currentDeviceID)")
+                // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
+                // those very changes fire this notification. The Enhanced AVAudioEngine is
+                // intentionally stopped and must NOT try to restart on the hogged device — doing so
+                // fails with -10875 (invalid output HW format) and contends for the device. The
+                // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
+                // is handled (paused) by the CoreAudio device-alive listener in
+                // AudioEngineBridge+PureModeDeviceMonitor.swift.
+                guard self.activePath != .pure else { return }
+                // After a device-loss pause we are intentionally stopped — don't auto-restart on the
+                // config change that the disconnect itself fires. Cleared on the next startAudio.
+                guard !self.cachedSignalPath.interrupted else { return }
+                self.reestablishEnhancedAfterConfigChange(engine: engine)
+            }
+        }
+    }
+
+    /// Re-establish the Enhanced path after a route / default-device / format change.
+    ///
+    /// A configuration change stops `AVAudioEngine` AND flushes every buffer queued on the player
+    /// node. Restarting the engine + calling `play()` is enough for the 48 kHz `scheduleFile`
+    /// passthrough, but it does NOT refill the streaming-resampler's `scheduleBuffer` chain (the
+    /// completion chain that was feeding the player is broken when its buffers are flushed) — which
+    /// is why a device switch on a rate-mismatched file went intermittently silent. So we re-drive
+    /// the scheduler from the current playhead, reusing the seek machinery, on the now-current
+    /// output device. Runs on `configChangeQueue` (serialized — see `observeConfigurationChanges`).
+    /// Internal (not private) so the device-set handler in `AudioEngineBridge+Devices.swift` can
+    /// drive a re-establish when "follow the newly-connected device" mode adopts a new default.
+    func reestablishEnhancedAfterConfigChange(engine: AVAudioEngine) {
+        // Use the durable play-INTENT, not `playerNode.isPlaying`: a reconfiguration (a device
+        // connecting/disconnecting) can momentarily report the node as not-playing, and gating on
+        // that left playback silently dead after e.g. a Bluetooth device connected mid-track.
+        let wasPlaying = enhancedPlayIntent
+
+        // Capture the playhead BEFORE restarting (the player may stop reporting a render time across
+        // the reconfiguration; `lastKnownEnhancedPositionSeconds` is the freshest reliable value).
+        let resumePos = currentPlaybackPosition() ?? lastKnownEnhancedPositionSeconds
+
+        if !engine.isRunning {
+            do {
+                try engine.start()
+            } catch {
+                NSLog("[AudioEngineBridge] engine restart after configuration change failed: \(error)")
+                return
+            }
+        }
+
+        guard wasPlaying, let player = playerNode else { return }
+
+        if resampleSession != nil {
+            // Rate-mismatched file: re-prime the streaming resampler from the playhead. (engine.start()
+            // + play() alone leave the flushed buffer queue empty → silence.)
+            if !seekEnhancedResampler(to: resumePos, player: player), !player.isPlaying {
+                player.play()
+            }
+        } else if let url = lastFileURL {
+            // 48 kHz passthrough: re-schedule the remaining segment from the playhead onto the new
+            // device, guaranteeing fresh buffers regardless of whether the old schedule survived.
+            seekEnhancedBestEffort(url: url, player: player, to: resumePos)
+        } else if !player.isPlaying {
+            player.play() // reference tone / no source file
+        }
+        enhancedPositionBaseSeconds = resumePos
+        logUX("Enhanced re-established after configuration change at \(secs(resumePos))s")
     }
 }
 

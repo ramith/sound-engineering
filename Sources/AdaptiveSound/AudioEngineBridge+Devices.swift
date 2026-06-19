@@ -52,6 +52,14 @@ extension AudioEngineBridge {
         }
     }
 
+    /// The device the engine currently targets — the app-selected device, or (at launch) the system
+    /// default captured in `initialize()`. The view model selects the matching `AudioDeviceModel` on
+    /// launch so the UI selection and the engine's `currentDeviceID` never diverge (a divergence broke
+    /// the app-authority re-assert: it tried to re-pin a stale id and failed with "device gone").
+    func currentOutputDeviceID() -> UInt32 {
+        currentDeviceID
+    }
+
     func selectDevice(_ deviceID: UInt32) async throws -> Bool {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
@@ -84,6 +92,9 @@ extension AudioEngineBridge {
         let listenerQueue = DispatchQueue.global(qos: .userInitiated)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
+            // Apply the connect-behaviour preference (pin vs follow) BEFORE refreshing the picker
+            // (a connecting device can steal the system default — see handleDeviceSetChange).
+            self.handleDeviceSetChange()
             DispatchQueue.main.async { self.onOutputDevicesChanged?() }
         }
         let status = AudioObjectAddPropertyListenerBlock(
@@ -93,6 +104,40 @@ extension AudioEngineBridge {
             deviceListListenerBlock = block
         } else {
             NSLog("[AudioEngineBridge] failed to register device-list listener: \(status)")
+        }
+    }
+
+    func setPinPlaybackToSelectedDevice(_ pin: Bool) {
+        pinPlaybackToSelectedDevice = pin
+    }
+
+    /// React to the available-device set changing while we are actively playing the Enhanced path
+    /// (e.g. a Bluetooth device connects and macOS makes IT the system default). Behaviour is the
+    /// user's `pinPlaybackToSelectedDevice` preference:
+    ///   • PIN (default): re-pin the app's selected device as the default so playback stays put —
+    ///     fixes the reported "connect BT → output goes silent / strands off my device" bug.
+    ///   • FOLLOW: adopt the newly-connected default as the target and re-establish playback on it.
+    /// Either way the resulting state fires `AVAudioEngineConfigurationChange` (and we also drive a
+    /// re-establish for FOLLOW, since some devices don't post it). Skipped under Pure (its hogged
+    /// device + alive-listener own routing) and when idle. Runs on the device-list listener queue.
+    func handleDeviceSetChange() {
+        guard activePath != .pure, enhancedPlayIntent, currentDeviceID != 0 else { return }
+        let currentDefault = getDefaultOutputDeviceID()
+        guard currentDeviceID != currentDefault else { return } // already targeting the default
+
+        if pinPlaybackToSelectedDevice {
+            let reasserted = selectOutputDeviceC(currentDeviceID) != 0
+            logUX("device change: PIN — selected=\(currentDeviceID) != default=\(currentDefault) → "
+                + "re-assert \(reasserted ? "ok" : "failed (selected device gone?)")")
+        } else {
+            // FOLLOW: target the newly-connected default and re-establish playback on it.
+            logUX("device change: FOLLOW — adopt default=\(currentDefault) (was \(currentDeviceID))")
+            currentDeviceID = currentDefault
+            if let engine = avEngine {
+                configChangeQueue.async { [weak self] in
+                    self?.reestablishEnhancedAfterConfigChange(engine: engine)
+                }
+            }
         }
     }
 

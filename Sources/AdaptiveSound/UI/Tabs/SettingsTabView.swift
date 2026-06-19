@@ -49,6 +49,21 @@ struct SettingsTabView: View {
                         DeviceDetailRow(device: device)
                             .padding(.horizontal, 16)
                     }
+
+                    Toggle(isOn: $vm.pinPlaybackToSelectedDevice) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Keep playback on this device")
+                                .font(.body)
+                                .foregroundStyle(Color.asLabel)
+                            Text(audioViewModel.pinPlaybackToSelectedDevice
+                                ? "Connecting headphones or a Bluetooth device won't move playback — switch to it here."
+                                : "Playback follows a newly-connected device.")
+                                .font(.caption)
+                                .foregroundStyle(Color.asLabelTertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.horizontal, 16)
                 }
             }
 
