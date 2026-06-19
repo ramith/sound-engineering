@@ -2,6 +2,7 @@
 #define ADAPTIVE_SOUND_REALIZER_H
 
 #include "../EQ/EQModuleCoefficients.h" // computeBiquadCascade (off-main EQ design)
+#include "../Spatial/CrossfeedModule.h" // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
 #include <array>
@@ -64,6 +65,26 @@ namespace AdaptiveSound
             bool dirty = false;
         };
 
+        // The pending-crossfeed coalescing slot (QW1 §3). POD; copied by value on the control
+        // thread. Holds the user INTENT (enabled/level/preset); the derived coefficients are
+        // computed off-RT inside drain()/applyCrossfeed() from {preset, level, fs}. level is
+        // clamped to [0,1] and preset to the valid enum range at the surface (setPendingCrossfeed).
+        struct PendingCrossfeed
+        {
+            uint32_t enabled = 0U;
+            float level = 0.0F;
+            uint32_t preset = 0U; // CrossfeedPreset value
+            float sampleRate = 0.0F;
+            bool dirty = false;
+        };
+
+        // TODO(QW1 F1 — refactoring-specialist): drain() now has FOUR near-verbatim per-intent
+        // read-and-clear blocks (EQ, intensity, crossfeed + the channel-layout side-channel is
+        // separate). Extract a `PendingSlot<T>` template IF a 5TH feed-forward surface is added,
+        // OR before the S8 maturity work next touches the Realizer — whichever comes first. NOT
+        // done in QW1: re-touching load-bearing concurrency code mid-burst is the wrong
+        // risk/reward (architect ruling §9.3); this keeps it scheduled debt, not rot.
+
         // Construct around the kernel the Realizer publishes through. `kernel` must outlive
         // the Realizer; AdaptiveSoundAU guarantees this by draining the queue (shutdown())
         // before releasing the kernel.
@@ -87,6 +108,13 @@ namespace AdaptiveSound
         // clean->dirty transition.
         void setPendingIntensity(float value);
 
+        // Set the pending-crossfeed slot (QW1 §3) and post a drain on a clean->dirty transition.
+        // `level` is clamped to [0,1] and `preset` to the valid CrossfeedPreset range via
+        // std::clamp at the surface; the off-RT coefficient derivation happens in drain().
+        // `sampleRate` must be > 0 (the coefficient design rate), else this is a no-op returning
+        // false.
+        bool setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset, double sampleRate);
+
         // Teardown / draining barrier (design §1, the review's BLOCKER). Quiesces the queue
         // with dispatch_sync(queue, ^{}) so no queued block runs after the caller drops its
         // shared_ptr<Realizer> and releases the kernel. Idempotent. Must be called by
@@ -108,6 +136,12 @@ namespace AdaptiveSound
         // Apply an intensity value (already clamped): RMW canonical_.intensityLinear, bump
         // sequenceNumber, publish once.
         void applyIntensity(float value);
+
+        // Synchronously-callable RMW (testability, design §1.7). Derives the crossfeed coefficients
+        // off-RT from {preset, level, sampleRate}, RMW canonical_.crossfeed (preserving all other
+        // fields), bump sequenceNumber, publish once. `enabled`/`level`/`preset` are taken as-is
+        // (setPendingCrossfeed clamps at the surface); sampleRate must be > 0.
+        void applyCrossfeed(uint32_t enabled, float level, uint32_t preset, double sampleRate);
 
         // Read-only canonical-state accessor for tests/diagnostics (control thread only).
         const TargetState& canonicalState() const noexcept
@@ -132,6 +166,7 @@ namespace AdaptiveSound
         // Coalescing slots, written on the control thread, read-and-cleared in drain().
         PendingEqGains pendingEqGains_{};
         PendingIntensity pendingIntensity_{};
+        PendingCrossfeed pendingCrossfeed_{};
         bool shutdown_ = false;
     };
 
@@ -141,6 +176,8 @@ namespace AdaptiveSound
                   "Realizer::PendingEqGains must be trivially copyable");
     static_assert(std::is_trivially_copyable<Realizer::PendingIntensity>::value,
                   "Realizer::PendingIntensity must be trivially copyable");
+    static_assert(std::is_trivially_copyable<Realizer::PendingCrossfeed>::value,
+                  "Realizer::PendingCrossfeed must be trivially copyable");
 
 } // namespace AdaptiveSound
 

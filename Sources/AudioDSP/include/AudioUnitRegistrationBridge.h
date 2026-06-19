@@ -93,6 +93,22 @@ extern "C"
     /// @param intensity Intensity in [0,1]; values outside the range are clamped.
     void publishIntensity(void* auUnit, float intensity);
 
+    /// Publish a new crossfeed state (the wet-region headphone-soundstage stage) to the live
+    /// AdaptiveSoundAU (QW1 §3). Off-RT control plane: sets the Realizer's pending-crossfeed slot
+    /// (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain block on
+    /// a clean->dirty transition; the off-RT coefficient derivation (from {preset, level, fs}),
+    /// the canonical read-modify-write, and the atomic publish all happen in the Realizer's serial
+    /// queue. Crossfeed is a WET-region stage, so its audible depth is `crossfeed × intensity`
+    /// (QW1 §4) — the Reimagine knob scales it. Must be called from a single control thread (the
+    /// @MainActor). No-op if auUnit is null.
+    ///
+    /// @param auUnit   Borrowed (passUnretained) AUAudioUnit*; no-op if null.
+    /// @param enabled  0 = bypass (bit-exact pass-through); non-zero = active.
+    /// @param level    Crossfeed level in [0,1]; values outside the range are clamped.
+    /// @param preset   CrossfeedPreset value (0 = Relaxed, 1 = Bauer/"Default", 2 = Strong);
+    ///                 out-of-range values are clamped to the nearest valid preset.
+    void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

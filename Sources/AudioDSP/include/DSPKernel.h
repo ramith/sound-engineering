@@ -17,10 +17,11 @@ namespace AdaptiveSound
     class ClarityModule;
     class LoudnessModule;
     class BRIRModule;
+    class CrossfeedModule;
     class LimiterModule;
 
-    // DSP Kernel: orchestrates 5-module signal chain
-    // EQ → Clarity → BRIR → Loudness → Limiter
+    // DSP Kernel: orchestrates the wet-region coloration + safety signal chain
+    // EQ → Clarity → BRIR → Crossfeed → [intensity blend] → Loudness → Limiter
     class DSPKernel
     {
       public:
@@ -51,10 +52,13 @@ namespace AdaptiveSound
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
 
-        // 5-module signal chain
+        // Signal chain modules. Crossfeed sits in the wet region, adjacent to BRIR's slot
+        // (QW1 §2): EQ → Clarity → BRIR → Crossfeed, then the intensity blend, then
+        // Loudness → Limiter.
         std::unique_ptr<EQModule> eqModule_;
         std::unique_ptr<ClarityModule> clarityModule_;
         std::unique_ptr<BRIRModule> brirModule_;
+        std::unique_ptr<CrossfeedModule> crossfeedModule_;
         std::unique_ptr<LoudnessModule> loudnessModule_;
         std::unique_ptr<LimiterModule> limiterModule_;
 
