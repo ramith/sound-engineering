@@ -28,7 +28,7 @@ extension AudioEngineBridge {
                 guard self.activePath != .pure else { return }
                 // After a device-loss pause we are intentionally stopped — don't auto-restart on the
                 // config change that the disconnect itself fires. Cleared on the next startAudio.
-                guard !self.cachedSignalPath.interrupted else { return }
+                guard !self.loadSignalPath().interrupted else { return }
                 self.reestablishEnhancedAfterConfigChange(engine: engine)
             }
         }
@@ -97,7 +97,7 @@ extension AudioEngineBridge {
         } else if !player.isPlaying {
             player.play() // reference tone / no source file
         }
-        enhancedPositionBaseSeconds = resumePos
+        setEnhancedPositionBaseSeconds(resumePos)
         logUX("Enhanced re-established after configuration change at \(secs(resumePos))s")
     }
 }
