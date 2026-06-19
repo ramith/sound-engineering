@@ -6,6 +6,11 @@ import SwiftUI
 struct PureModeSettingsSection: View {
     @Bindable var audioViewModel: AudioViewModel
 
+    /// The current EQ preset display name, threaded in from the parent view so the card
+    /// remains a pure value-snapshot read (consistent with the F4 pattern). The parent
+    /// reads this from `EQViewModel.selectedPresetName` via its own Environment access.
+    let eqPresetName: String
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Pure Mode (Bit-Perfect)")
@@ -31,7 +36,8 @@ struct PureModeSettingsSection: View {
 
             SignalPathStatusCard(
                 info: audioViewModel.signalPath,
-                requested: audioViewModel.pureModeEnabled
+                requested: audioViewModel.pureModeEnabled,
+                eqPresetName: eqPresetName
             )
             .padding(.horizontal, 16)
         }
@@ -41,16 +47,21 @@ struct PureModeSettingsSection: View {
 // MARK: - Signal-path status card
 
 /// Compact live readout of the achieved signal path. Private to this file.
-/// Shows: Active path, Format, Decoder — omits Exclusive (always false) and Decision.
+/// Shows: Active path, Format, Decoder, EQ Preset — omits Exclusive (always false)
+/// and Decision.
 private struct SignalPathStatusCard: View {
     let info: SignalPathInfo
     let requested: Bool
+    /// Current EQ preset display name ("Flat", "Custom", etc.). Passed in as a
+    /// value snapshot so the card remains a pure function of its inputs.
+    let eqPresetName: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             statusRow(label: "Active path", value: pathText, accent: info.path == .pure)
             statusRow(label: "Format", value: formatText)
             statusRow(label: "Decoder", value: decoderText)
+            statusRow(label: "EQ Preset", value: eqPresetDisplay)
 
             if info.fellBackToEnhanced {
                 HStack(spacing: 6) {
@@ -105,9 +116,13 @@ private struct SignalPathStatusCard: View {
 
     private var formatText: String {
         guard info.achievedSampleRate > 0 else { return "—" }
-        // Rate and bit-depth formatted via shared SignalPathInfo helpers — same output as the badge.
         let rateStr = info.formattedRate
         guard let bitsStr = info.formattedBits else { return rateStr }
         return "\(rateStr) · \(bitsStr)"
+    }
+
+    /// Show the preset name, or "—" when Pure mode is active (EQ bypassed).
+    private var eqPresetDisplay: String {
+        info.path == .pure ? "— (Pure bypassed)" : eqPresetName
     }
 }

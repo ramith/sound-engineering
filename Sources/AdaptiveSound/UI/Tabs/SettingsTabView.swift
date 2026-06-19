@@ -2,9 +2,10 @@ import SwiftUI
 
 struct SettingsTabView: View {
     @Environment(AudioViewModel.self) private var audioViewModel
+    @Environment(EQViewModel.self) private var eqViewModel
 
     var body: some View {
-        @Bindable var vm = audioViewModel
+        @Bindable var bindVM = audioViewModel
 
         VStack(spacing: 24) {
             // MARK: Output Device Section
@@ -25,7 +26,7 @@ struct SettingsTabView: View {
                     }
                     .padding(.horizontal, 16)
                 } else {
-                    Picker("Output Device", selection: $vm.selectedDevice) {
+                    Picker("Output Device", selection: $bindVM.selectedDevice) {
                         Text("None")
                             .tag(AudioDeviceModel?.none)
                         ForEach(audioViewModel.availableDevices) { device in
@@ -50,7 +51,7 @@ struct SettingsTabView: View {
                             .padding(.horizontal, 16)
                     }
 
-                    Toggle(isOn: $vm.pinPlaybackToSelectedDevice) {
+                    Toggle(isOn: $bindVM.pinPlaybackToSelectedDevice) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Keep playback on this device")
                                 .font(.body)
@@ -72,7 +73,10 @@ struct SettingsTabView: View {
 
             // MARK: Pure Mode (bit-perfect HAL)
 
-            PureModeSettingsSection(audioViewModel: audioViewModel)
+            PureModeSettingsSection(
+                audioViewModel: audioViewModel,
+                eqPresetName: eqViewModel.selectedPresetName
+            )
 
             Spacer()
         }
