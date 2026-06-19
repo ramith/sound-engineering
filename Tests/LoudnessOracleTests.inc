@@ -24,6 +24,10 @@ extern "C"
 #include "ebur128.h"
 }
 
+// QW1 CF-10 needs the crossfeed module + the Realizer derivation path.
+#include "../Sources/AudioDSP/AudioEngine/Realizer.h"
+#include "../Sources/AudioDSP/Spatial/CrossfeedModule.h"
+
 namespace
 {
     // Integrated-LUFS agreement budget. Our meter is within EBU's ±0.1 LU and so is
@@ -398,6 +402,129 @@ static auto testLoudnessOracleTruePeak() -> void
     if (!fail.empty())
     {
         logFail(kName, "true-peak conformance failure:" + fail);
+        return;
+    }
+    logPass(kName);
+}
+
+// ===========================================================================
+// CF-10 (QW1 §6): crossfeed is loudness-neutral, measured by the libebur128 integrated-LUFS
+// oracle on REAL stereo content where the design's neutrality claim is operative. The gain-neutral
+// design (gDirect=1/(1+α), gCross=α/(1+α)) makes the summed magnitude unity AT DC and near-unity
+// through the cross-path LPF passband — i.e. for CENTRED, BASS/LOW-MID content (the content
+// crossfeed is designed to preserve). Above fc the LPF deliberately attenuates the cross path (the
+// inherent, benign coloration QW1 §2 flags; the downstream LoudnessModule absorbs that residual).
+//
+// So we measure on a correlated bass stereo bed (a sustained chord, 60-180 Hz, well within the
+// cross-path LPF passband) through the Bauer ("Default", the safe default) preset: crossfeed ON vs
+// OFF must agree within 0.3 LUFS via the ebur128 oracle. (The broader broadband residual on
+// HF-dominant content is by-design and not a neutrality bug -- see CF-3 / CF-5.)
+// ===========================================================================
+static auto testCrossfeedLoudnessNeutral() -> void
+{
+    static const char* const kName = "Crossfeed_ebur128_LevelNeutral";
+    constexpr double kCfLufsTolLu = 0.3;
+    constexpr uint32_t kCfBauerPreset = 1U; // CrossfeedPreset::Bauer ("Default", safe default)
+
+    // Derive the Bauer-preset POD via the shipping Realizer path.
+    AdaptiveSound::CrossfeedParams params{};
+    {
+        auto kernel = std::make_shared<DSPKernel>();
+        kernel->initialize(kOracleRate48k, 512U);
+        auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel);
+        realizer->applyCrossfeed(1U, 1.0F, kCfBauerPreset,
+                                 static_cast<double>(kOracleRate48k));
+        params = realizer->canonicalState().crossfeed;
+        realizer->shutdown();
+    }
+
+    // Correlated (centred) bass bed: a sustained chord spanning 60-180 Hz, well within the
+    // cross-path LPF passband, where crossfeed keeps loudness neutral by design.
+    const uint32_t fs = kOracleRate48k;
+    const auto frames = static_cast<size_t>(8.0 * fs);
+    std::vector<float> inL(frames);
+    std::vector<float> inR(frames);
+    const std::array<double, 4U> chordHz = {60.0, 90.0, 120.0, 180.0};
+    for (size_t n = 0; n < frames; ++n)
+    {
+        const auto t = static_cast<double>(n) / fs;
+        double s = 0.0;
+        for (const double f : chordHz)
+        {
+            s += std::sin(2.0 * std::numbers::pi * f * t);
+        }
+        s = 0.2 * s / static_cast<double>(chordHz.size());
+        inL[n] = static_cast<float>(s); // centred (correlated) bed
+        inR[n] = static_cast<float>(s);
+    }
+
+    // Interleave the DRY signal for the oracle.
+    const auto interleave = [&](const std::vector<float>& l,
+                                const std::vector<float>& r) -> std::vector<float>
+    {
+        std::vector<float> out(frames * kOracleStereo);
+        for (size_t n = 0; n < frames; ++n)
+        {
+            out[kOracleStereo * n] = l[n];
+            out[(kOracleStereo * n) + 1U] = r[n];
+        }
+        return out;
+    };
+
+    double offLufs = 0.0;
+    if (!ebur128Integrated(interleave(inL, inR), fs, offLufs))
+    {
+        logFail(kName, "libebur128 integrated call failed (crossfeed OFF)");
+        return;
+    }
+
+    // Process the SAME input through the crossfeed module (warm the mix ramp first, then process
+    // the whole buffer as one block so the LUFS is measured on the settled steady state).
+    std::vector<float> wetL = inL;
+    std::vector<float> wetR = inR;
+    {
+        CrossfeedModule module;
+        module.initialize(fs, static_cast<uint32_t>(frames));
+
+        // Warm-up the mix ramp (process a short prefix repeatedly does NOT reset state, so instead
+        // we run the full buffer twice: pass 1 warms the ramp + delay line, pass 2 is the measured
+        // steady state. The input is restored before pass 2.)
+        TestABL warm(static_cast<uint32_t>(frames));
+        std::memcpy(warm.left.data(), inL.data(), frames * sizeof(float));
+        std::memcpy(warm.right.data(), inR.data(), frames * sizeof(float));
+        const MultichannelView warmView =
+            MultichannelView::fromABL(warm.abl(), static_cast<uint32_t>(frames));
+        module.process(params, warmView);
+
+        TestABL meas(static_cast<uint32_t>(frames));
+        std::memcpy(meas.left.data(), inL.data(), frames * sizeof(float));
+        std::memcpy(meas.right.data(), inR.data(), frames * sizeof(float));
+        const MultichannelView measView =
+            MultichannelView::fromABL(meas.abl(), static_cast<uint32_t>(frames));
+        module.process(params, measView);
+        wetL = meas.left;
+        wetR = meas.right;
+    }
+
+    double onLufs = 0.0;
+    if (!ebur128Integrated(interleave(wetL, wetR), fs, onLufs))
+    {
+        logFail(kName, "libebur128 integrated call failed (crossfeed ON)");
+        return;
+    }
+
+    const double delta = std::abs(onLufs - offLufs);
+    std::ostringstream info;
+    info << "  [info] " << kName << ": off=" << offLufs << " LUFS, on=" << onLufs
+         << " LUFS, delta=" << delta << " LU (tol " << kCfLufsTolLu << ")\n";
+    logInfo(info.str());
+
+    if (delta > kCfLufsTolLu)
+    {
+        std::ostringstream oss;
+        oss << "crossfeed not loudness-neutral: on=" << onLufs << " off=" << offLufs
+            << " delta=" << delta << " LU (> " << kCfLufsTolLu << ")";
+        logFail(kName, oss.str());
         return;
     }
     logPass(kName);

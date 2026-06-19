@@ -4,6 +4,7 @@
 #include "Clarity/ClarityModule.h"
 #include "Loudness/LoudnessModule.h"
 #include "Spatial/BRIRModule.h"
+#include "Spatial/CrossfeedModule.h"
 #include "Limiting/LimiterModule.h"
 #include <Accelerate/Accelerate.h>
 #include <cassert>
@@ -68,10 +69,11 @@ void DSPKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept {
     // independently at the top of the AU render block (AUAudioUnit.mm).
     enableFlushToZero();
 
-    // Create all 5 DSP modules
+    // Create all DSP modules (Crossfeed is wet-region, adjacent to BRIR's slot — QW1 §2).
     eqModule_ = std::make_unique<EQModule>();
     clarityModule_ = std::make_unique<ClarityModule>();
     brirModule_ = std::make_unique<BRIRModule>();
+    crossfeedModule_ = std::make_unique<CrossfeedModule>();
     loudnessModule_ = std::make_unique<LoudnessModule>();
     limiterModule_ = std::make_unique<LimiterModule>();
 
@@ -79,6 +81,7 @@ void DSPKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept {
     eqModule_->initialize(sampleRate, maxFrames);
     clarityModule_->initialize(sampleRate, maxFrames);
     brirModule_->initialize(sampleRate, maxFrames);
+    crossfeedModule_->initialize(sampleRate, maxFrames);
     loudnessModule_->initialize(sampleRate, maxFrames);
     limiterModule_->initialize(sampleRate, maxFrames);
 
@@ -180,6 +183,9 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
         eqModule_->process(state.eq, block);
         clarityModule_->process(state.clarity, block);
         brirModule_->process(state.brir, block);
+        // Crossfeed sits in the wet region after BRIR (QW1 §2). Default-off → bit-exact
+        // pass-through (the module early-returns on enabled==0), so the golden master holds.
+        crossfeedModule_->process(state.crossfeed, block);
         loudnessModule_->process(state.loudness, block);
         limiterModule_->process(state.limiter, block);
         return;
@@ -199,10 +205,14 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
         }
     }
 
-    // (b) Run the coloration chain in place → the block now holds the "wet" signal.
+    // (b) Run the coloration chain in place → the block now holds the "wet" signal. Crossfeed is
+    //     part of the wet region (after BRIR), so the equal-power blend below scales it by the
+    //     Reimagine intensity — at 0% (bypass) crossfeed is off too (QW1 §2). Default-off keeps
+    //     this byte-identical to the pre-QW1 chain.
     eqModule_->process(state.eq, block);
     clarityModule_->process(state.clarity, block);
     brirModule_->process(state.brir, block);
+    crossfeedModule_->process(state.crossfeed, block);
 
     // (c) Equal-power crossfade BEFORE Loudness+Limiter. The intensity ramp is advanced
     //     PER SAMPLE (one tick per frame) into a smoothed value r[i]; the gains are derived

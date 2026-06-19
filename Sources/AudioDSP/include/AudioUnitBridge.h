@@ -83,6 +83,10 @@ extern "C"
 
     // publishIntensity(...) is declared in AudioUnitRegistrationBridge.h (sibling of
     // publishEQBandGains, the other control-plane intent entry point) — declared once.
+    //
+    // publishCrossfeed(...) likewise lives ONLY in AudioUnitRegistrationBridge.h (the same
+    // control-plane intent surface) — declared once there, NOT here, to avoid a duplicate
+    // declaration.
 
 #ifdef __cplusplus
 } // extern "C"

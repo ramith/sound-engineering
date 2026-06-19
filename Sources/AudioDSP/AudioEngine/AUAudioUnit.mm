@@ -63,6 +63,9 @@ namespace
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 // Borrow the off-main control owner (used by the C-ABI to post EQ/intensity intents).
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer;
+// The kernel's current design sample rate (single source of truth, _sampleRate). Used by the
+// crossfeed C-ABI, whose signature omits the sample rate (the kernel already knows it).
+- (uint32_t)kernelSampleRate;
 @end
 
 @implementation AdaptiveSoundAU
@@ -224,6 +227,13 @@ namespace
 // feed-forward control now flows through it; the canonical TargetState lives inside it.
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer {
     return _realizer;
+}
+
+// Off-RT control plane. The kernel's current design sample rate (_sampleRate is the single source
+// of truth, re-synced in allocateRenderResources). The crossfeed C-ABI uses this so its signature
+// need not carry the sample rate.
+- (uint32_t)kernelSampleRate {
+    return _sampleRate;
 }
 
 // Off-RT control plane. Forwards a fully-formed TargetState directly to the RT kernel via the
@@ -428,6 +438,22 @@ void publishIntensity(void* auUnit, float intensity) {
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer != nullptr) { realizer->setPendingIntensity(intensity); }
+}
+
+void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) {
+    // QW1 §3: the single crossfeed control surface. Sets the Realizer's pending-crossfeed slot
+    // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain on a
+    // clean->dirty transition; the off-RT coefficient derivation, the canonical read-modify-write,
+    // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
+    // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
+    // The design coefficient sample rate is the kernel's current rate. Off-RT; no-op if null.
+    if (auUnit == nullptr) { return; }
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
+    if (realizer != nullptr) {
+        const double sampleRate = [audioUnit kernelSampleRate];
+        (void)realizer->setPendingCrossfeed(enabled, level, preset, sampleRate);
+    }
 }
 
 void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) {

@@ -35,6 +35,8 @@
 #include <cstdlib> // std::getenv (SOAK_FULL opt-in for the full 1 hr soak)
 #include <new> // std::nothrow_t, std::align_val_t (operator new/delete overload signatures)
 
+#include "../Sources/AudioDSP/AudioEngine/Realizer.h" // off-RT crossfeed coeff derivation (CF-12)
+
 namespace
 {
     // -----------------------------------------------------------------------------------------
@@ -223,7 +225,10 @@ namespace
     // Shared body: soak DSPKernel::process() at a given intensity for `buffers` buffers under the
     // RT-allocation guard, asserting zero allocations and bounded per-buffer timing. Returns "" on
     // pass, a non-empty failure string otherwise. `info` is populated with the report line.
-    auto dspKernelSoakBody(float intensity, uint64_t buffers, std::string& info) -> std::string
+    // `crossfeedOn` enables the wet-region crossfeed stage (its per-sample scalar path is the
+    // QW1 addition most at risk of an accidental allocation).
+    auto dspKernelSoakBody(float intensity, bool crossfeedOn, uint64_t buffers, std::string& info)
+        -> std::string
     {
         DSPKernel kernel;
         kernel.initialize(kSoakSampleRate, kSoakFrames);
@@ -238,6 +243,18 @@ namespace
             gains, static_cast<float>(kSoakSampleRate));
         state.intensityLinear = intensity;
         state.limiter.truePeakCeilingLinear = 0.89F; // < 1.0 → limiter ring path active (-1 dBTP-ish)
+        if (crossfeedOn)
+        {
+            // Derive a Strong-preset crossfeed POD off-RT (the shipping derivation path).
+            auto cfKernel = std::make_shared<DSPKernel>();
+            cfKernel->initialize(kSoakSampleRate, kSoakFrames);
+            auto cfRealizer = std::make_shared<AdaptiveSound::Realizer>(cfKernel);
+            constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Strong
+            cfRealizer->applyCrossfeed(1U, 1.0F, kStrongPreset,
+                                       static_cast<double>(kSoakSampleRate));
+            state.crossfeed = cfRealizer->canonicalState().crossfeed;
+            cfRealizer->shutdown();
+        }
         kernel.publishTargetState(state);
 
         TestABL abl(kSoakFrames);
@@ -323,7 +340,7 @@ static auto testSoakDspKernelZeroRtAllocFullChain() -> void
 {
     static const char* const kName = "Soak_DSPKernel_ZeroRtAlloc_FullChain";
     std::string info;
-    const std::string err = dspKernelSoakBody(1.0F, soakBuffers(), info);
+    const std::string err = dspKernelSoakBody(1.0F, false, soakBuffers(), info);
     logInfo(info);
     if (!err.empty())
     {
@@ -340,7 +357,24 @@ static auto testSoakDspKernelZeroRtAllocBlend() -> void
 {
     static const char* const kName = "Soak_DSPKernel_ZeroRtAlloc_Blend";
     std::string info;
-    const std::string err = dspKernelSoakBody(0.5F, soakBuffers(), info);
+    const std::string err = dspKernelSoakBody(0.5F, false, soakBuffers(), info);
+    logInfo(info);
+    if (!err.empty())
+    {
+        logFail(kName, err);
+        return;
+    }
+    logPass(kName);
+}
+
+// CF-12 (QW1 §6): crossfeed ON during the blend path. Intermediate intensity 0.5 exercises the
+// equal-power crossfade (BRANCH 3) AND the wet-region CrossfeedModule's per-sample scalar path
+// together — the combination most at risk of an accidental RT allocation. rtAllocs must be 0.
+static auto testSoakDspKernelZeroRtAllocCrossfeedBlend() -> void
+{
+    static const char* const kName = "Soak_DSPKernel_ZeroRtAlloc_CrossfeedBlend";
+    std::string info;
+    const std::string err = dspKernelSoakBody(0.5F, true, soakBuffers(), info);
     logInfo(info);
     if (!err.empty())
     {
