@@ -4,9 +4,11 @@
 #include "AudioConstants.h"
 #include "ChannelLayout.h"
 #include "DoubleBufferSnapshot.h"
+#include "ParameterRamp.h"
 #include "TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <memory>
+#include <vector>
 
 // Forward declarations of module classes
 namespace AdaptiveSound
@@ -58,6 +60,30 @@ namespace AdaptiveSound
 
         // Lock-free parameter transport
         DoubleBufferSnapshot<TargetState> targetStateSnapshot_;
+
+        // --- Steerable wet/dry intensity (S6 Tier-3 §3b) ---
+        //
+        // Intensity scales the COLORATION stages (EQ→Clarity→BRIR = "wet") against the
+        // unprocessed "dry" input via an equal-power crossfade, BEFORE Loudness+Limiter
+        // (so the limiter guards the final output and loudness measures what is heard).
+        //
+        // Ramped to avoid zipper noise; snapped to the initial intensity in initialize()
+        // so there is no launch fade-in. The endpoints are taken via HARD branches gated
+        // on "settled" (|current-target| < ε AND target ∈ {0,1}) — a ramped value only
+        // approaches 0/1 asymptotically and `dry + 1·(wet-dry)` is NOT bit-equal to wet,
+        // so the bit-exact paths must never run the crossfade math.
+        ParameterRamp intensityRamp_{};
+
+        // Planar dry-scratch: maxFrames_ × kMaxChannels, allocated in initialize().
+        // Channel ch lives at dryScratch_.data() + ch*maxFrames_. Holds a per-channel
+        // copy of the input taken BEFORE any module mutates the block. Never allocated
+        // on the RT path (process() asserts frames ≤ maxFrames_).
+        std::vector<float> dryScratch_;
+
+        // Per-sample crossfade-gain scratch (maxFrames_ each), allocated in initialize().
+        // wetGain[i] = sin(r[i]·π/2), dryGain[i] = cos(r[i]·π/2), r[i] = ramped intensity.
+        std::vector<float> wetGainBuf_;
+        std::vector<float> dryGainBuf_;
     };
 
 } // namespace AdaptiveSound
