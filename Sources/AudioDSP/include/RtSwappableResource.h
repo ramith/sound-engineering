@@ -92,7 +92,8 @@ namespace AdaptiveSound
         {
             // acquire: matches publish()'s release so we observe the new resource fully built.
             T* incoming = pending_.exchange(nullptr, std::memory_order_acquire);
-            if (incoming != nullptr) {
+            if (incoming != nullptr)
+            {
                 // Swap the incoming resource in as active. release: a subsequent active()
                 // (or another adopt()) on the RT thread, and any off-RT reader, must see the
                 // fully-published pointer.

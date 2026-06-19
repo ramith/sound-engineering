@@ -7,7 +7,7 @@
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
-#include "../EQ/EQModuleCoefficients.h" // EQ Realizer (31 gains -> biquad cascade)
+#include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
 #include <array>
 #include <cstring>
@@ -52,12 +52,17 @@ namespace
     AUAudioUnitBusArray* _outputBusArray;
     uint32_t _sampleRate;   // single source of truth; re-synced in allocateRenderResources
     uint32_t _bufferFrames; // host max frames; applied in allocateRenderResources
-    // Retained authoritative control-plane state. Control-thread-only (the EQ view model on the
-    // main actor). EQ updates mutate only .eq and re-publish the whole state, so other modules
-    // keep their last-set values rather than reverting to defaults on each slider move.
-    TargetState _currentState;
+    // The off-main single-producer control owner (S6 Tier-3 3a). It OWNS the canonical
+    // TargetState (formerly the `_currentState` ivar here) and is the sole caller of
+    // DSPKernel::publishTargetState. Moving the canonical state into the Realizer makes
+    // "only the Realizer touches it" STRUCTURAL, not conventional. Held by shared_ptr so
+    // queued drain blocks (capturing shared_from_this) keep it + the kernel alive until the
+    // queue is drained in -dealloc. Created ONCE in -init alongside _kernel.
+    std::shared_ptr<AdaptiveSound::Realizer> _realizer;
 }
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
+// Borrow the off-main control owner (used by the C-ABI to post EQ/intensity intents).
+- (std::shared_ptr<AdaptiveSound::Realizer>)realizer;
 @end
 
 @implementation AdaptiveSoundAU
@@ -78,6 +83,12 @@ namespace
     // must be non-nil at attach — that is why this is in -init, not allocateRenderResources.)
     _kernel = std::make_shared<DSPKernel>();
     _kernel->initialize(_sampleRate, _bufferFrames);
+
+    // Realizer: created ONCE here, around the same kernel. It owns the canonical TargetState
+    // and is the sole producer of feed-forward control through publishTargetState. It holds
+    // a shared_ptr<DSPKernel> copy, so the kernel cannot be freed while a drain is in flight;
+    // -dealloc drains the Realizer's queue BEFORE releasing the kernel (see below).
+    _realizer = std::make_shared<AdaptiveSound::Realizer>(_kernel);
 
     // Capture the kernel by value (shared_ptr copy) so the render block never touches `self`
     // nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime calls
@@ -181,8 +192,19 @@ namespace
 
 - (void)dealloc {
     // The single, off-RT teardown point (runs when the last reference drops via
-    // __bridge_transfer in destroyAdaptiveAudioUnit / ARC). Drop the block first (releasing its
-    // captured shared_ptr copy), then the member — the DSPKernel destructor runs here, off-RT.
+    // __bridge_transfer in destroyAdaptiveAudioUnit / ARC).
+    //
+    // Teardown ORDER is load-bearing (the review's BLOCKER, design §1):
+    //  1. Drain the Realizer's serial queue via a dispatch_sync barrier, so no queued drain
+    //     block runs after we release the kernel. shutdown() returns only once every enqueued
+    //     block has finished; queued blocks capture shared_from_this, so the Realizer + its
+    //     kernel co-owner stay alive through the last publish.
+    //  2. Drop the Realizer (releases its kernel co-owner copy).
+    //  3. Drop the render block (releases its kernel co-owner copy).
+    //  4. Drop our kernel member — the DSPKernel destructor runs here, off-RT, only after the
+    //     last publisher has quiesced (drain before releasing kernel).
+    if (_realizer != nullptr) { _realizer->shutdown(); }
+    _realizer.reset();
     _renderBlock = nil;
     _kernel.reset();
 }
@@ -198,19 +220,19 @@ namespace
     if (bufferFrames != 0) { _bufferFrames = bufferFrames; }
 }
 
-// Off-RT control plane. Forwards a fully-formed TargetState to the RT kernel via the
-// lock-free double-buffer (SPSC producer side; never called on the render thread).
-- (void)publishState:(const TargetState&)state {
-    if (_kernel != nullptr) { _kernel->publishTargetState(state); }
+// Off-RT control plane. Borrow the Realizer (the shared_ptr<Realizer> owner). All
+// feed-forward control now flows through it; the canonical TargetState lives inside it.
+- (std::shared_ptr<AdaptiveSound::Realizer>)realizer {
+    return _realizer;
 }
 
-// Off-RT control plane. Composes new EQ coefficients into the retained current state (so
-// clarity/loudness/brir/limiter keep their last-set values) and re-publishes the whole state.
-// Single-producer: control thread only, never the render thread.
-- (void)publishEQParams:(const AdaptiveSound::EQParams&)eqParams {
-    _currentState.eq = eqParams;
-    _currentState.sequenceNumber += 1;
-    [self publishState:_currentState];
+// Off-RT control plane. Forwards a fully-formed TargetState directly to the RT kernel via the
+// lock-free double-buffer (SPSC producer side; never called on the render thread). Retained
+// only for the publishTargetState C-ABI (tests). NOTE: this is a SECOND publish plane parallel
+// to the Realizer; the two are unordered w.r.t. each other (design §1.4). Production control
+// flows through the Realizer (publishEQBandGains/publishIntensity), not this.
+- (void)publishState:(const TargetState&)state {
+    if (_kernel != nullptr) { _kernel->publishTargetState(state); }
 }
 
 // Off-RT control plane. Decodes the source layout tag (off-RT, allocation-free) and forwards the
@@ -358,10 +380,13 @@ bool setAUParameter(void* auUnit, uint64_t paramID, float value) {
     if (auUnit == nullptr) { return false; }
     (void)paramID;
     (void)value;
-    // No per-parameter store yet: the live EQ control plane drives the kernel via
-    // whole-TargetState publication (publishTargetState / publishEQBandGains), not an
-    // AU parameter tree. This stub is part of the stable exported C-ABI surface; it
-    // returns false rather than caching values that would never reach the kernel.
+    // Intentionally a dead stub returning false. The intensity surface (AUParameterID::Intensity)
+    // is routed through the dedicated publishIntensity() C-ABI (design §1.5) — the single
+    // intensity surface that posts to the Realizer's pending-intensity slot. We deliberately do
+    // NOT also accept it here, to avoid two contradictory surfaces. EQ likewise drives the kernel
+    // via publishEQBandGains -> the Realizer, not an AU parameter tree. This stub stays part of
+    // the stable exported C-ABI; it returns false rather than caching values that never reach the
+    // kernel. See publishIntensity().
     return false;
 }
 
@@ -382,24 +407,27 @@ bool publishTargetState(void* auUnit, const void* state) {
 }
 
 bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) {
-    // Control-plane contract: 31-band ISO grid, valid SR, non-null pointers. Reject mismatches
-    // rather than partially filling (which would silently zero the missing bands).
-    if (auUnit == nullptr || bandGainsDb == nullptr) { return false; }
-    if (count != static_cast<uint32_t>(EQModuleCoefficients::kNumBands)) { return false; }
-    if (!(sampleRate > 0.0)) { return false; } // also rejects NaN
-
-    // Copy caller-owned floats into the value type the designer expects; bandGainsDb need not
-    // outlive this call.
-    std::array<float, EQModuleCoefficients::kNumBands> gains{};
-    std::memcpy(gains.data(), bandGainsDb, sizeof(gains));
-
-    // Off-RT minimum-phase cascade design, then compose into retained state + atomic publish.
-    // computeBiquadCascade is allocation-free; the vDSP setup alloc happens inside
-    // publishCoefficients, still off the render thread.
-    const EQParams eqParams = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(sampleRate));
+    // S6 Tier-3 (3a): re-pointed to set the Realizer's pending-EQ slot and post a drain,
+    // instead of synchronously computing the cascade + publishing here. The cascade design
+    // (computeBiquadCascade) now runs OFF-MAIN inside the Realizer's drain, bursts coalesce to
+    // a single publish, and the Realizer is the sole caller of publishTargetState. The slot
+    // setter validates the 31-band/SR/non-null contract and returns false on mismatch.
+    if (auUnit == nullptr) { return false; }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
-    [audioUnit publishEQParams:eqParams];
-    return true;
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
+    if (realizer == nullptr) { return false; }
+    return realizer->setPendingEqGains(bandGainsDb, count, sampleRate);
+}
+
+void publishIntensity(void* auUnit, float intensity) {
+    // S6 Tier-3 (3a): the single intensity control surface (design §1.5). Clamps to [0,1]
+    // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
+    // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
+    // interleaved intensity intent is never dropped by an EQ burst. Off-RT; no-op if null.
+    if (auUnit == nullptr) { return; }
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
+    if (realizer != nullptr) { realizer->setPendingIntensity(intensity); }
 }
 
 void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) {
