@@ -30,6 +30,8 @@
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
 //   GaplessContractTests.inc — S6 Tier-3 (3d) Pure gapless behavioral-contract conformance suite
 //   LoudnessOracleTests.inc  — S7/US-QA-01 TEST-ONLY libebur128 conformance oracle (LUFS + TP)
+//   LimiterTruePeakTests.inc — S7/US-QA-02 TEST-ONLY limiter −1 dBTP ceiling guarantee +
+//                              ISP-detector accuracy vs the libebur128 true-peak oracle
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -54,6 +56,7 @@
 #include "RealizerTests.inc"
 #include "IntensityTests.inc"
 #include "LoudnessOracleTests.inc"
+#include "LimiterTruePeakTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -64,7 +67,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 96U> kTests = {{
+    constexpr std::array<TestEntry, 98U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -207,6 +210,10 @@ namespace
         // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
         {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
         {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
+        // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
+        // (parallel-safe: pure DSP, no env/tmp).
+        {"Limiter_TruePeak_CeilingGuarantee_vs_ebur128", testLimiterTruePeakCeilingGuarantee, true},
+        {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
