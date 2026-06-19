@@ -171,8 +171,8 @@ extension AudioEngineBridge {
             // than jumping forward by the full accumulated sampleTime.
             baseSeconds = -lastKnownEnhancedPositionSeconds
         }
-        enhancedPositionBaseSeconds = baseSeconds
-        lastKnownEnhancedPositionSeconds = 0
+        setEnhancedPositionBaseSeconds(baseSeconds)
+        setLastKnownEnhancedPositionSeconds(0)
         logUX("gapless: seam #\(gaplessTransitionCount) — position reset")
     }
 

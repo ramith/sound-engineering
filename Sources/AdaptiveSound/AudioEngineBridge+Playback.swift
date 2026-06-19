@@ -6,10 +6,10 @@ import Foundation
 extension AudioEngineBridge {
     func startAudio(fileURL: URL?, pureMode: Bool) async throws {
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 do {
                     // Record the intent for the device-change fallback restart path.
-                    self.lastFileURL = fileURL
+                    self.setLastFileURL(fileURL)
                     self.pureModeRequested = pureMode
 
                     // A fresh startAudio always begins a new playback context: clear the end-of-queue
@@ -24,72 +24,94 @@ extension AudioEngineBridge {
                         self.onDeckURL = nil
                     }
 
-                    // Attempt Pure path when requested, a file is provided, and capability allows.
-                    if pureMode, let url = fileURL {
-                        let viable = self.evaluatePureViable(fileURL: url, deviceID: self.currentDeviceID)
-                        if viable {
-                            // Tear down any live Enhanced playback before entering Pure
-                            // (keep the graph intact for fast fallback — just stop the player).
-                            self.stopEnhancedPlayback()
-                            let started = self.startPure(fileURL: url, deviceID: self.currentDeviceID)
-                            if started {
-                                continuation.resume(returning: ())
-                                return
-                            }
-                            // Pure engine started but achievedState.running == 0 → fall through
-                            // to Enhanced. Record that we fell back.
-                            NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
-                            self.cachedSignalPath.fellBackToEnhanced = true
-                        } else {
-                            self.cachedSignalPath.fellBackToEnhanced = true
-                        }
-                    } else {
-                        self.cachedSignalPath.fellBackToEnhanced = false
+                    // Try the Pure path first; if it fully starts we're done. Otherwise it records
+                    // the fall-back flag and we continue to the Enhanced path below.
+                    if self.attemptPureStart(fileURL: fileURL, pureMode: pureMode) {
+                        continuation.resume(returning: ())
+                        return
                     }
 
-                    // If Pure was active, stop+destroy it before entering Enhanced
-                    // (releases hog mode + restores device rate).
-                    if self.activePath == .pure {
-                        self.tearDownPure()
-                    }
-
-                    // Enhanced path (original startAudio body).
-                    guard let engine = self.avEngine, let playerNode = self.playerNode else {
-                        throw AudioBridgeError.engineNotInitialized
-                    }
-
-                    if !engine.isRunning {
-                        try engine.start()
-                    }
-
-                    self.installSpectrumTap()
-
-                    if let url = fileURL {
-                        // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
-                        // line. Append only the Pure-fallback note here so it isn't double-logged.
-                        try self.playFile(at: url, engine: engine, playerNode: playerNode)
-                        if self.cachedSignalPath.fellBackToEnhanced {
-                            logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
-                        }
-                    } else {
-                        self.playReferenceTone(on: playerNode)
-                        logUX("Enhanced started reference tone")
-                    }
-
-                    self.activePath = .enhanced
-                    self.resampleQueue.sync { self.enhancedPlayIntent = true }
-                    self.cachedSignalPath = SignalPathInfo(
-                        path: .enhanced,
-                        decision: .fallbackEnhanced,
-                        fellBackToEnhanced: self.cachedSignalPath.fellBackToEnhanced
-                    )
-
+                    try self.startEnhancedPlayback(fileURL: fileURL)
                     continuation.resume(returning: ())
                 } catch {
                     continuation.resume(throwing: error)
                 }
             }
         }
+    }
+
+    /// Attempt the Pure (bit-perfect HAL) path. Returns `true` when Pure fully started (the caller
+    /// resumes its continuation and returns); `false` when the caller must continue to the Enhanced
+    /// path. In all non-started cases it records the `fellBackToEnhanced` flag exactly as before.
+    /// Runs on `engineQueue` (called directly from the `startAudio` body — no new dispatch, and the
+    /// `resampleQueue.sync` sequencing inside `startPure`/`stopEnhancedPlayback` is unchanged).
+    private func attemptPureStart(fileURL: URL?, pureMode: Bool) -> Bool {
+        // Attempt Pure path when requested, a file is provided, and capability allows.
+        if pureMode, let url = fileURL {
+            let viable = evaluatePureViable(fileURL: url, deviceID: currentDeviceID)
+            if viable {
+                // Tear down any live Enhanced playback before entering Pure
+                // (keep the graph intact for fast fallback — just stop the player).
+                stopEnhancedPlayback()
+                let started = startPure(fileURL: url, deviceID: currentDeviceID)
+                if started {
+                    return true
+                }
+                // Pure engine started but achievedState.running == 0 → fall through
+                // to Enhanced. Record that we fell back.
+                NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
+                mutateSignalPath { $0.fellBackToEnhanced = true }
+            } else {
+                mutateSignalPath { $0.fellBackToEnhanced = true }
+            }
+        } else {
+            mutateSignalPath { $0.fellBackToEnhanced = false }
+        }
+        return false
+    }
+
+    /// Start (or re-establish) the Enhanced path: tear down any live Pure engine, start the AV
+    /// engine + tap, schedule the file (or reference tone), and publish the Enhanced signal-path
+    /// snapshot + play-intent. Runs on `engineQueue` (called directly from the `startAudio` body);
+    /// the `resampleQueue.sync` for `enhancedPlayIntent` is unchanged.
+    private func startEnhancedPlayback(fileURL: URL?) throws {
+        // If Pure was active, stop+destroy it before entering Enhanced
+        // (releases hog mode + restores device rate).
+        if activePath == .pure {
+            tearDownPure()
+        }
+
+        // Enhanced path (original startAudio body).
+        guard let engine = avEngine, let playerNode else {
+            throw AudioBridgeError.engineNotInitialized
+        }
+
+        if !engine.isRunning {
+            try engine.start()
+        }
+
+        installSpectrumTap()
+
+        if let url = fileURL {
+            // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
+            // line. Append only the Pure-fallback note here so it isn't double-logged.
+            try playFile(at: url, engine: engine, playerNode: playerNode)
+            if loadSignalPath().fellBackToEnhanced {
+                logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
+            }
+        } else {
+            playReferenceTone(on: playerNode)
+            logUX("Enhanced started reference tone")
+        }
+
+        activePath = .enhanced
+        resampleQueue.sync { enhancedPlayIntent = true }
+        let fellBack = loadSignalPath().fellBackToEnhanced
+        storeSignalPath(SignalPathInfo(
+            path: .enhanced,
+            decision: .fallbackEnhanced,
+            fellBackToEnhanced: fellBack
+        ))
     }
 
     /// Open `fileURL`, drive the multichannel load sequence, then schedule + play it.
@@ -129,7 +151,7 @@ extension AudioEngineBridge {
         }
         // Fresh play schedules the whole file from frame 0 → no position offset. (A later seek sets
         // this to the seek target; see currentPlaybackPosition.)
-        enhancedPositionBaseSeconds = 0
+        setEnhancedPositionBaseSeconds(0)
 
         // 4. Branch on rate. When the file is already 48 kHz the existing `scheduleFile` path is an
         //    exact passthrough (the engine performs no SRC), so keep it BYTE-IDENTICAL. Only when the
@@ -173,7 +195,7 @@ extension AudioEngineBridge {
 
     func stopAudio() async throws {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 if self.activePath == .pure {
                     self.tearDownPure()
                 } else {
@@ -190,7 +212,7 @@ extension AudioEngineBridge {
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
                 self.activePath = .enhanced
-                self.cachedSignalPath = .init()
+                self.storeSignalPath(.init())
                 continuation.resume()
             }
         }
@@ -215,13 +237,13 @@ extension AudioEngineBridge {
         }
         let position = enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
         // Cache the freshest reliable playhead for the config-change re-establish path.
-        lastKnownEnhancedPositionSeconds = position
+        setLastKnownEnhancedPositionSeconds(position)
         return position
     }
 
     func setParameter(_ id: UInt32, value: Float) async throws {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 if id == 0 {
                     // Pure path: never apply software gain to the bit-perfect stream. Instead drive
                     // the device's HARDWARE master volume (analog/HW domain → stays bit-perfect), so

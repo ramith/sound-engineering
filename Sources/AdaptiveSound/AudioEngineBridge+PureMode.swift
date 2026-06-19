@@ -13,9 +13,10 @@ import Foundation
 /// Device-monitoring (the device-alive listener + pause-on-device-loss) lives in
 /// AudioEngineBridge+PureModeDeviceMonitor.swift.
 ///
-/// Concurrency: all methods are called from `DispatchQueue.global()` continuations,
-/// matching the existing bridge pattern. The CoreAudio listener blocks dispatch
-/// additional work on a dedicated global queue and are never called on the audio thread.
+/// Concurrency: the transport entry points (`seek`) run on the serial `engineQueue`; the
+/// internal helpers (`startPure`, `tearDownPure`, `stopEnhancedPlayback`) are called from there or
+/// from other serial transport bodies. The CoreAudio listener blocks re-dispatch their work onto
+/// `configChangeQueue` (device-loss) and are never called on the audio thread.
 extension AudioEngineBridge {
     // MARK: - Capability Evaluation
 
@@ -120,14 +121,15 @@ extension AudioEngineBridge {
         }
 
         activePath = .pure
-        cachedSignalPath = makeSignalPathInfo(from: state)
+        let pureInfo = makeSignalPathInfo(from: state)
+        storeSignalPath(pureInfo)
 
         // Register a device-alive listener for the device we just hogged.
         // Ordering invariant: register AFTER activePath is set to .pure so the
         // alive-listener's fallback fires only while we are actually in Pure mode.
         registerDeviceAliveListener(deviceID: deviceID)
 
-        let info = cachedSignalPath
+        let info = pureInfo
         NSLog(
             "[PureMode] Started — decision=\(info.decision), " +
                 "rate=\(state.achievedRate) Hz, bits=\(state.achievedBitsPerChannel), " +
@@ -147,7 +149,7 @@ extension AudioEngineBridge {
     /// restarted from the target frame via `seekEnhancedResampler`.
     func seek(to seconds: Double) async {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 if self.activePath == .pure, let engine = self.pureEngine {
                     let result = pureModeEngineSeek(engine, seconds)
                     logUX("engine seek: path=Pure target=\(secs(seconds))s "
@@ -174,7 +176,7 @@ extension AudioEngineBridge {
                 // The re-scheduled stream restarts the player's sampleTime at 0, so record the seek
                 // target as the position base — currentPlaybackPosition adds it to report the true
                 // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
-                self.enhancedPositionBaseSeconds = max(seconds, 0)
+                self.setEnhancedPositionBaseSeconds(max(seconds, 0))
 
                 // If a streaming-resampler session is active (rate-mismatched file), restart the
                 // resampler from the target frame (bumps the generation → abandons in-flight buffers,

@@ -27,9 +27,14 @@ extension AudioEngineBridge {
 
         let listenerQueue = DispatchQueue.global(qos: .userInteractive)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            listenerQueue.async {
-                guard let self else { return }
-                self.pauseForDeviceLoss()
+            // P1-B: run the pause body on configChangeQueue so it SERIALIZES against
+            // reestablishEnhancedAfterConfigChange (which also runs there). Routing both onto the
+            // one serial queue establishes a happens-before: the `interrupted` write below is
+            // visible to any later config-change reader on the same queue, so a disconnect cannot
+            // race the re-establish into auto-resuming on a dead device.
+            guard let self else { return }
+            self.configChangeQueue.async { [weak self] in
+                self?.pauseForDeviceLoss()
             }
         }
 
@@ -72,10 +77,15 @@ extension AudioEngineBridge {
     /// Pause playback because the active output device disappeared. Tears Pure down (releasing the
     /// device), stops the Enhanced engine, and marks the signal path `interrupted` so the view model
     /// clears `isPlaying` and prompts the user to pick a device. Never hard-fails; never auto-jumps.
+    /// Runs on `configChangeQueue` (re-dispatched from the alive-listener block) so it serializes
+    /// against `reestablishEnhancedAfterConfigChange` on the same queue (P1-B).
     func pauseForDeviceLoss() {
         NSLog("[PureMode] Active output device disappeared — pausing playback")
         // Paused on purpose — a config change that the disconnect fires must not auto-resume.
-        enhancedPlayIntent = false
+        // P1-B: write enhancedPlayIntent through its OWNER (resampleQueue) — the same path every
+        // other site uses — rather than directly off this queue. We are on configChangeQueue here
+        // (off resampleQueue), so the sync is deadlock-safe.
+        resampleQueue.sync { enhancedPlayIntent = false }
         tearDownPure() // stops + destroys the Pure engine, unregisters the alive listener
         if let player = playerNode, player.isPlaying {
             player.stop()
@@ -84,10 +94,12 @@ extension AudioEngineBridge {
             engine.stop()
         }
         // activePath is .enhanced after tearDownPure; flag the interruption for the view model.
-        cachedSignalPath = SignalPathInfo(
+        // Guarded write so the MainActor poll and the configChangeQueue config-change reader see a
+        // consistent snapshot; the leaf lock is released immediately (no call-out under it).
+        storeSignalPath(SignalPathInfo(
             path: .enhanced,
             decision: .fallbackEnhanced,
             interrupted: true
-        )
+        ))
     }
 }

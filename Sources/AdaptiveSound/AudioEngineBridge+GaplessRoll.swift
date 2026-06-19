@@ -45,7 +45,7 @@ extension AudioEngineBridge {
             // we don't call player.stop() so the queue stays running.
             stopEnhancedResampler()
             bumpTransitionCount(player: player)
-            lastFileURL = nextURL
+            setLastFileURL(nextURL)
             scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: true)
             // Arm the passthrough hook so the track after this one can also be gapless.
             armPassthroughNextTrack(player: player)
@@ -54,7 +54,7 @@ extension AudioEngineBridge {
         }
 
         // Next file is also rate-mismatched: continue the resampler chain.
-        lastFileURL = nextURL
+        setLastFileURL(nextURL)
         startResamplerChainOrFallback(
             nextFile: nextFile, player: player, nextURL: nextURL,
             nextRate: nextRate, graphRate: graphRate
@@ -74,7 +74,7 @@ extension AudioEngineBridge {
 
         let graphRate = player.outputFormat(forBus: 0).sampleRate
         let nextRate = nextFile.processingFormat.sampleRate
-        lastFileURL = nextURL
+        setLastFileURL(nextURL)
 
         if nextRate == graphRate {
             // Both current and next are 48 kHz: consecutive scheduleFile calls play back-to-back,
