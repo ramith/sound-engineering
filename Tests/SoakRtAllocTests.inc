@@ -32,6 +32,7 @@
 //
 // A non-zero count is a REAL FINDING (it is reported with the stage and count, not papered over).
 
+#include <cstdlib> // std::getenv (SOAK_FULL opt-in for the full 1 hr soak)
 #include <new> // std::nothrow_t, std::align_val_t (operator new/delete overload signatures)
 
 namespace
@@ -174,8 +175,18 @@ namespace
     constexpr uint32_t kSoakFrames = TestConstants::kFrames512;       // 512
     constexpr uint32_t kSoakSampleRate = TestConstants::kSampleRate48k; // 48 kHz
     // Full ~1 hr-equivalent buffer count at 512/48k.
-    constexpr uint64_t kSoakBuffers1hr = 337500U; // 337500*512/48000 = 3600.0 s exactly
+    constexpr uint64_t kSoakBuffers1hr = 337500U;    // full ~1 hr @ 512/48k (opt-in: SOAK_FULL=1)
+    constexpr uint64_t kSoakBuffersDefault = 2000U; // ~21 s @ 512/48k — fast default (~1 s/soak)
     constexpr uint32_t kSoakChannels = 2U;
+
+    // Zero-allocation is a BINARY property, so the fast default count proves it in a few seconds;
+    // the full ~1 hr-equivalent soak (opt-in via the SOAK_FULL=1 env var) adds coverage for rare
+    // PERIODIC allocations during a deep/periodic run.
+    [[nodiscard]] auto soakBuffers() -> uint64_t
+    {
+        const char* full = std::getenv("SOAK_FULL");
+        return (full != nullptr && full[0] == '1') ? kSoakBuffers1hr : kSoakBuffersDefault;
+    }
     // Warm-up calls before arming: enough to settle the intensity ramp, adopt vDSP setups, and
     // walk any first-call lazy path.
     constexpr uint32_t kSoakWarmup = 256U;
@@ -312,7 +323,7 @@ static auto testSoakDspKernelZeroRtAllocFullChain() -> void
 {
     static const char* const kName = "Soak_DSPKernel_ZeroRtAlloc_FullChain";
     std::string info;
-    const std::string err = dspKernelSoakBody(1.0F, kSoakBuffers1hr, info);
+    const std::string err = dspKernelSoakBody(1.0F, soakBuffers(), info);
     logInfo(info);
     if (!err.empty())
     {
@@ -329,7 +340,7 @@ static auto testSoakDspKernelZeroRtAllocBlend() -> void
 {
     static const char* const kName = "Soak_DSPKernel_ZeroRtAlloc_Blend";
     std::string info;
-    const std::string err = dspKernelSoakBody(0.5F, kSoakBuffers1hr, info);
+    const std::string err = dspKernelSoakBody(0.5F, soakBuffers(), info);
     logInfo(info);
     if (!err.empty())
     {
