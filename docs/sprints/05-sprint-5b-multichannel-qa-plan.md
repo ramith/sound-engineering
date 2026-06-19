@@ -3,7 +3,7 @@
 **Document ID:** MULTICHANNEL-QA-001
 **Date:** 2026-06-16
 **Author:** qa-expert
-**Status:** ✅ Multichannel epic SHIPPED (S0–S3 + M4 landed/merged). This document is the QA plan as written at planning time; it is retained for the test design + acceptance gates.
+**Status:** ✅ SHIPPED — historical record (Sprint 5b, shipped & merged). Multichannel epic SHIPPED (S0–S3 + M4 landed/merged). This document is the QA plan as written at planning time; it is retained for the test design + acceptance gates. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
 **Epic ref:** MULTICHANNEL-EPIC-001 / MULTICHANNEL-PIPELINE-001
 **Sprint model ref:** 00-sprint-model.md
 **Companion:** 05-sprint-5b-multichannel-epic-plan.md (the plan this document extends)

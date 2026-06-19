@@ -1,5 +1,7 @@
 # Sprint 5 M3 (re-scoped) — Monitoring Tab Design
 
+> **✅ SHIPPED — historical record (Sprint 5, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** SPRINT-5-M3-MONITORING-001
 **Date:** 2026-06-16
 **Author:** Synthesized from a 5-discipline panel review (PM · BA · UI/UX · SwiftUI · audio-DSP)
