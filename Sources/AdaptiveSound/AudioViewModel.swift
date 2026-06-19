@@ -140,68 +140,8 @@ final class AudioViewModel {
         self.engine = engine
     }
 
-    // MARK: - Engine Lifecycle
-
-    func initializeEngine() {
-        Task {
-            do {
-                let success = try await engine.initialize()
-                if !success {
-                    logUX("initializeEngine: failed (engine returned false)")
-                    errorMessage = "Failed to initialize audio engine"
-                    isEngineReady = false
-                    return
-                }
-
-                // Enumerate real output devices from CoreAudio
-                let devices = try await engine.enumerateOutputDevices()
-
-                availableDevices = devices
-                // Select the device that is ACTUALLY the engine's current target (the system default
-                // captured at init), not blindly "first" — otherwise the UI selection and the
-                // engine's currentDeviceID diverge, and the app-authority re-assert later tries to
-                // re-pin a stale id ("device gone"). Fall back to first if the default isn't listed.
-                let engineDeviceID = engine.currentOutputDeviceID()
-                let chosen = devices.first { $0.id == engineDeviceID } ?? devices.first
-                selectedDevice = chosen
-                // Assert the chosen device so currentDeviceID == selectedDevice == system default
-                // from the start. A valid default re-asserts to itself (no change); a stale/phantom
-                // default is corrected to the chosen device.
-                if let chosen {
-                    _ = try? await engine.selectDevice(chosen.id)
-                }
-                // Push the connect-behaviour preference so the engine acts on it from the first
-                // device change (its default matches, but this keeps them explicitly in step).
-                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
-                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
-                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
-                isEngineReady = true
-                errorMessage = nil
-                logUX("initializeEngine: ready — \(devices.count) device(s), "
-                    + "selected='\(selectedDevice?.name ?? "none")'")
-                startSpectrumTimer()
-            } catch {
-                logUX("initializeEngine: error — \(error.localizedDescription)")
-                errorMessage = "Engine initialization failed: \(error.localizedDescription)"
-                isEngineReady = false
-            }
-        }
-    }
-
-    func shutdown() {
-        logUX("shutdown — was playing=\(isPlaying)")
-        stopSpectrumTimer()
-        stopFolderMonitoring()
-        stopPlayback()
-        Task {
-            do {
-                try await engine.shutdown()
-            } catch {
-                errorMessage = "Engine shutdown failed: \(error.localizedDescription)"
-            }
-            isEngineReady = false
-        }
-    }
+    // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
+    // AudioViewModel+Lifecycle.swift.
 
     // Spectrum timer + tickSpectrum live in AudioViewModel+SpectrumTimer.swift.
 
@@ -225,8 +165,31 @@ final class AudioViewModel {
         logUX("play: track[\(selectedIndex)] '\(playlist[selectedIndex].name)' "
             + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'")
 
-        // Compute duration off-main from AVAudioFile; more reliable than the metadata
-        // scan's durationSeconds for M4A (which can read 0).
+        computeDurationAsync(for: fileURL)
+
+        // Snapshot index and mode for use inside the Task (avoids capturing `self` for
+        // values that could change between now and when the Task body runs).
+        let startIndex = selectedTrackIndex
+        let pureModeSnapshot = pureModeEnabled
+
+        Task {
+            do {
+                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot)
+                await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                isPlaying = true
+                errorMessage = nil
+            } catch {
+                errorMessage = "Playback failed: \(error.localizedDescription)"
+                isPlaying = false
+                pendingNextIndex = nil
+            }
+        }
+    }
+
+    /// Compute the current file's duration off-main from `AVAudioFile` (more reliable than the
+    /// metadata scan's `durationSeconds` for M4A, which can read 0) and publish it on the main
+    /// actor. Fire-and-forget; behaviour is identical to the previously-inlined block.
+    private func computeDurationAsync(for fileURL: URL) {
         Task.detached(priority: .userInitiated) { [weak self] in
             var computedDuration: Double = 0
             if let file = try? AVAudioFile(forReading: fileURL) {
@@ -240,71 +203,26 @@ final class AudioViewModel {
                 logUX("duration = \(secs(computedDuration))s")
             }
         }
-
-        // Snapshot index and mode for use inside the Task (avoids capturing `self` for
-        // values that could change between now and when the Task body runs).
-        let startIndex = selectedTrackIndex
-        let pureModeSnapshot = pureModeEnabled
-
-        Task {
-            do {
-                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot)
-
-                // Prime the gapless pipeline: reset the transition counter baseline
-                // and supply the on-deck track so the engine can pre-schedule it.
-                let freshCount = engine.trackTransitionCount()
-                await MainActor.run {
-                    lastTransitionCount = freshCount
-                }
-
-                let currentIdx = await MainActor.run { startIndex ?? self.selectedTrackIndex }
-                let count = await MainActor.run { self.playlist.count }
-                let nextIdx = await MainActor.run { [weak self] () -> Int? in
-                    guard let self else { return nil }
-                    return self.computeNextIndex(
-                        current: currentIdx ?? 0,
-                        playlistCount: count
-                    )
-                }
-                await MainActor.run { pendingNextIndex = nextIdx }
-
-                if let idx = nextIdx, idx < (await MainActor.run { playlist.count }) {
-                    let nextURL = await MainActor.run { playlist[idx].absoluteURL }
-                    await engine.setNextTrack(nextURL)
-                    logUX("startPlayback: primed next index=\(idx) pureMode=\(pureModeSnapshot)")
-                } else {
-                    await engine.setNextTrack(nil)
-                    logUX("startPlayback: no next track to prime (single-track or end of playlist)")
-                }
-
-                await MainActor.run {
-                    isPlaying = true
-                    errorMessage = nil
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = "Playback failed: \(error.localizedDescription)"
-                    isPlaying = false
-                    pendingNextIndex = nil
-                }
-            }
-        }
     }
 
-    func stopPlayback() {
-        logUX("stop (was at \(secs(playbackPosition))s)")
-        // Clear the on-deck state synchronously so `tickSpectrum` won't react after stop.
-        pendingNextIndex = nil
-        Task {
-            do {
-                await engine.setNextTrack(nil)
-                try await engine.stopAudio()
-                isPlaying = false
-                playbackPosition = 0
-                duration = 0
-            } catch {
-                errorMessage = "Stop playback failed: \(error.localizedDescription)"
-            }
+    /// Prime the gapless pipeline after `startAudio` succeeds: reset the transition-counter
+    /// baseline and arm the on-deck track so the engine can pre-schedule it. Runs on the main
+    /// actor (the VM's isolation); the `engine.setNextTrack`/`trackTransitionCount` calls hop to
+    /// the engine's own queues internally. Behaviour is identical to the previously-inlined block.
+    private func primeGaplessPipeline(startIndex: Int?, pureMode: Bool) async {
+        lastTransitionCount = engine.trackTransitionCount()
+
+        let currentIdx = startIndex ?? selectedTrackIndex
+        let nextIdx = computeNextIndex(current: currentIdx ?? 0, playlistCount: playlist.count)
+        pendingNextIndex = nextIdx
+
+        if let idx = nextIdx, idx < playlist.count {
+            let nextURL = playlist[idx].absoluteURL
+            await engine.setNextTrack(nextURL)
+            logUX("startPlayback: primed next index=\(idx) pureMode=\(pureMode)")
+        } else {
+            await engine.setNextTrack(nil)
+            logUX("startPlayback: no next track to prime (single-track or end of playlist)")
         }
     }
 
@@ -389,6 +307,8 @@ final class AudioViewModel {
     }
 }
 
+// Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
+// AudioViewModel+Lifecycle.swift.
 // Folder monitoring lives in AudioViewModel+FolderMonitor.swift.
 // Playlist editing (movePlaylistItems, removeTrack, clearPlaylist, toggleShuffle, cycleRepeatMode)
 // lives in AudioViewModel+Playlist.swift.

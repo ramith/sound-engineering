@@ -20,6 +20,7 @@
 #include "../include/PureModeFormat.h"
 #include "../include/PureModeSource.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -808,8 +809,23 @@ class HALOutputEngine::Impl
         {
             return noErr;
         }
-        convertFloatToNative(scratch_.data(), buf.mData, frames, channels, rfBits_, rfIsFloat_,
-                             rfIsSignedInt_, rfIsPacked_, rfIsAlignedHigh_, rfIsBigEndian_);
+
+        // Hard bound the write by the buffer's own capacity. convertFloatToNative writes into
+        // buf.mData without consulting buf.mDataByteSize; if the device renegotiated format
+        // mid-stream (bytes/frame shrank, or fewer frames requested than buffer claims) writing
+        // `frames` could overrun the heap on the RT thread. Clamp to what fits.
+        const uint32_t bytesPerSample = (rfBits_ + 7U) / 8U; // ceil to whole bytes
+        const uint32_t bytesPerFrame = bytesPerSample * channels;
+        uint32_t writableFrames = frames;
+        if (bytesPerFrame > 0U)
+        {
+            const uint32_t maxFramesWritable =
+                static_cast<uint32_t>(buf.mDataByteSize / bytesPerFrame);
+            writableFrames = std::min(writableFrames, maxFramesWritable);
+        }
+        convertFloatToNative(scratch_.data(), buf.mData, writableFrames, channels, rfBits_,
+                             rfIsFloat_, rfIsSignedInt_, rfIsPacked_, rfIsAlignedHigh_,
+                             rfIsBigEndian_);
         return noErr;
     }
 
@@ -909,6 +925,14 @@ class HALOutputEngine::Impl
     AchievedOutputState achieved_;
 
     // RT render format (decoded ASBD flags), read on the audio thread.
+    //
+    // Sole-accessor invariant: the rf* fields below are a non-atomic multi-word block written
+    // ONLY by cacheRenderFormat() on the configure/format path (while the engine is stopped, no
+    // render callback installed/running) and read ONLY by render() on the RT thread. They are
+    // frozen for the entire lifetime of a started session — start()/stop() bracket every mutation,
+    // so there is no concurrent reader during a write and no torn read on the RT thread. If the
+    // format ever needed to change mid-session these would have to be published atomically (e.g.
+    // packed into a POD behind DoubleBufferSnapshot<T>); today that path does not exist.
     std::atomic<PureModeSource*> source_{nullptr};
     uint32_t rfChannels_ = 0U;
     uint32_t rfBits_ = 0U;

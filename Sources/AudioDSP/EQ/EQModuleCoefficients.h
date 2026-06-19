@@ -73,7 +73,8 @@ namespace AdaptiveSound
             }
 
             // Greedy biquad fitting: fit 31-band response with cascade of up to 10 biquads.
-            // Coefficients are pre-computed off-RT; ML-based dynamic fitting is a future enhancement.
+            // Coefficients are pre-computed off-RT; ML-based dynamic fitting is a future
+            // enhancement.
             std::array<EQParams::BiquadCoeffs, kMaxBiquads> biquads{};
             int numBiquads = fitBiquadCascade(gains, sampleRate, biquads);
 
@@ -257,11 +258,14 @@ namespace AdaptiveSound
             {
                 const auto& b = biquads[static_cast<size_t>(i)];
 
-                // Check stability: poles must be inside unit circle
-                // For biquad: A(z) = 1 + a1*z^-1 + a2*z^-2
-                // Poles are roots of A(z)
-                // Simple check: |a2| < 1 and |a1| < 1 + a2
-
+                // Check stability: both poles must lie strictly inside the unit circle.
+                // For biquad: A(z) = 1 + a1*z^-1 + a2*z^-2 (poles are roots of A(z)).
+                // The stability triangle (necessary AND sufficient for both roots strictly
+                // inside the unit circle) reduces to exactly two inequalities:
+                //   |a2| < 1   AND   |a1| < 1 + a2.
+                // The second already encodes both edges of the triangle (a2 > a1 - 1 and
+                // a2 > -a1 - 1 combine to a2 > |a1| - 1). There is no separate "lower
+                // triangle" term for this 1+a1 z^-1+a2 z^-2 convention.
                 if (std::abs(b.a2) >= 1.0F)
                 {
                     return false; // Pole on or outside unit circle

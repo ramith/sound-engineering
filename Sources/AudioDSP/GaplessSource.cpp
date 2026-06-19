@@ -56,6 +56,7 @@
 #include "include/GaplessSource.h"
 
 #include <atomic>
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -100,6 +101,10 @@ namespace AdaptiveSound
 
     GaplessSource::Track* GaplessSource::freeSlotForArm() noexcept
     {
+        // Callable only while armedNext_ == nullptr: with no slot armed the RT thread cannot be
+        // mid-seam (the seam straddle only fires on a non-null armed pointer), so the slot this
+        // returns is free of any concurrent RT access.
+        assert(armedNext_.load(std::memory_order_acquire) == nullptr);
         const Track* active = active_.load(std::memory_order_acquire);
         const Track* retired = retired_.load(std::memory_order_acquire);
         for (Track& track : tracks_)
@@ -246,6 +251,15 @@ namespace AdaptiveSound
         // its head into the SAME host buffer right behind A's tail → sample-accurate concatenation.
         retired_.store(cur, std::memory_order_release);
         active_.store(nxt, std::memory_order_release);
+
+        // RT-path insurance: mirror the active-track guard. A slot with a null source can never be
+        // pulled; treat it as playlist end rather than dereferencing a null pointer on the RT
+        // thread.
+        if (nxt->source == nullptr)
+        {
+            ended_.store(true, std::memory_order_release);
+            return produced;
+        }
 
         float* const seamOut = out + (static_cast<std::size_t>(produced) * channels);
         const uint32_t more = nxt->source->pullFloat(seamOut, frames - produced, channels);

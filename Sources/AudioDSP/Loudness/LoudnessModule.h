@@ -27,10 +27,10 @@
 // References: ITU-R BS.1770-5; Timur Doumler (RT thread safety: scalars via atomic,
 // streams via lock-free SPSC FIFO, RT side drops); rigtorp/SPSCQueue; JOS one-pole.
 
-#include "../EQ/EQModule.h" // ParameterRamp
 #include "../include/AudioConstants.h"
 #include "../include/ChannelLayout.h"
 #include "../include/MultichannelView.h"
+#include "../include/ParameterRamp.h" // ParameterRamp (shared EQ/Loudness infra)
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
 #include "LufsMeter.h"
