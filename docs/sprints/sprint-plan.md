@@ -1,7 +1,7 @@
 # Sprint Plan — AdaptiveSound
 
 **Document ID:** SPRINT-PLAN-001
-**Version:** 0.2 — finalized for execution (2026-06-19); founder-reviewed.
+**Version:** 0.3 — added the architecture-review gate as the first sprint (2026-06-19); founder-reviewed.
 **Status:** Active sprint schedule. Governed by [00-sprint-model.md](00-sprint-model.md) (methodology, done-done, enabler-first).
 **Authored by:** AdaptiveSound team (PM + BA + architect + audio-DSP), synthesized and founder-reviewed.
 
@@ -47,39 +47,42 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 > **Exit criterion:** a listener can point us at their music folders and live in the app daily — browse, search, queue, play bit-perfect with art, tags, media keys, CUE albums, headphone correction, loudness compensation — on a QA gate we trust. **This is the GitHub release that earns the right to differentiate.**
 
-**Execution order (founder decision §8.2):** harden the QA gate first (cheap, pure safety, must precede any DSP-touching work), then build the library spine as one focused block (the credibility critical path), then the sound-parity sprints.
+**Execution order (founder decisions §8.2, §8.6):** **review and harden the architecture first** (gate — no implementation begins until it's green), then harden the QA gate (cheap, pure safety, must precede any DSP-touching work), then build the library spine as one focused block (the credibility critical path), then the sound-parity sprints.
 
 | Sprint | Title | SP | Scope | Depends on |
 |---|---|---|---|---|
-| **S6** | DSP-gate hardening | 8 | libebur128 LUFS/TP conformance oracle; EQ 31-band FR sweep + bit-transparent-bypass test; limiter −1 dBTP guarantee + ISP-detector accuracy; SRC alias/stopband test; gapless-seam regression (both paths); 1-hr XRun/allocation soak. (BA US-QA-01..06) | shipped DSP |
-| **S7** | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art extraction, incremental rescan, persistent store (GRDB/SQLite), art cache. Headless-testable via CLI/C++ harness before UI. | — (foundation) |
-| **S8** | Browse & search UI | 8 | Album-grid; Artist/Album/Genre/Year views; incremental search; cover-art rendering; click-to-queue. | S7 |
-| **S9** | Queue + playlists + macOS control | 8 | Queue reorder/save/play-next/history; playlist create/edit + **M3U/M3U8** import-export; **media keys + Now-Playing/Control Center** (`MPNowPlayingInfoCenter`); keyboard shortcuts; folder-browse mode. | S7, S8 |
-| **S10** | CUE sheets + format hardening | 7 | External + embedded **CUE** → virtual tracks (reuse gapless); FLAC seektable/fast-seek verification; enable WavPack/APE if free via FFmpeg; full metadata-display panel; close **gapless Stage 2b** (lossy AAC/MP3 encoder-delay trim — US-PLAY-07). | S7, gapless |
-| **S11** | Tonal parity + finish half-built | 9 | **Parametric EQ** bands alongside the 31-band graphic; **AutoEq/oratory1990 `ParametricEQ.txt` import**; preset save/load per-output; **wire the Reimagine intensity knob** (0 % ⇒ bit-transparent bypass — closes the NFR-QUAL-03 demonstrability gap); **A/B LUFS-matched bypass** toggle. | S6, EQ (have) |
-| **S12** | Headphone + device parity | 7 | **Crossfeed** (Bauer/Meier, established low-artifact algo); **device-correction EQ** auto-load by identified device; profile JSON import/export. | S6, S11 |
-| **S13** | Loudness compensation (ISO-226) | 8 | Equal-loudness contour tilt driven by playback level/target SPL; ramped, capped (+12 dB default), no zipper; wires to the existing param bus/TargetState. *Pulled into Phase 1 (founder decision §8.4): it's a parity feature ("the loudness button") AND the lowest-risk first taste of the adaptive thesis — proving the adaptive platform within the parity release.* | S6, loudness infra (have) |
+| **S6** | Technical architecture review & hardening *(gate — first & foremost; §8.6)* | 8† | Comprehensive multi-discipline review of the **shipped codebase before any feature work**: system architecture & module boundaries (the two-path Pure/Enhanced engine; the Swift↔C++ boundary; **whether the DSP spine — `TargetState` / lock-free param bus / off-RT worker — genuinely supports the Phase 2 adaptive vision**); C++ RT-safety & lock-free correctness (`DoubleBufferSnapshot`, `SpscRing`, `GaplessSource` atomics + memory ordering; no alloc/lock/syscall on the audio thread); Swift concurrency & engine lifecycle (dispatch queues, `@MainActor` isolation, data races, retain cycles, `AVAudioEngine` teardown); DSP correctness & gain staging (chain order, master-gain-vs-limiter, makeup-gain placement, headroom budget, gapless seam); and verification-coverage gaps. **Deliverable:** a findings doc + a prioritized fix list, then fix the issues. **No feature sprint (S7+) starts until this gate is green.** | shipped codebase |
+| **S7** | DSP-gate hardening | 8 | libebur128 LUFS/TP conformance oracle; EQ 31-band FR sweep + bit-transparent-bypass test; limiter −1 dBTP guarantee + ISP-detector accuracy; SRC alias/stopband test; gapless-seam regression (both paths); 1-hr XRun/allocation soak. (BA US-QA-01..06) | S6 |
+| **S8** | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art extraction, incremental rescan, persistent store (GRDB/SQLite), art cache. Headless-testable via CLI/C++ harness before UI. | S6 (foundation) |
+| **S9** | Browse & search UI | 8 | Album-grid; Artist/Album/Genre/Year views; incremental search; cover-art rendering; click-to-queue. | S8 |
+| **S10** | Queue + playlists + macOS control | 8 | Queue reorder/save/play-next/history; playlist create/edit + **M3U/M3U8** import-export; **media keys + Now-Playing/Control Center** (`MPNowPlayingInfoCenter`); keyboard shortcuts; folder-browse mode. | S8, S9 |
+| **S11** | CUE sheets + format hardening | 7 | External + embedded **CUE** → virtual tracks (reuse gapless); FLAC seektable/fast-seek verification; enable WavPack/APE if free via FFmpeg; full metadata-display panel; close **gapless Stage 2b** (lossy AAC/MP3 encoder-delay trim — US-PLAY-07). | S8, gapless |
+| **S12** | Tonal parity + finish half-built | 9 | **Parametric EQ** bands alongside the 31-band graphic; **AutoEq/oratory1990 `ParametricEQ.txt` import**; preset save/load per-output; **wire the Reimagine intensity knob** (0 % ⇒ bit-transparent bypass — closes the NFR-QUAL-03 demonstrability gap); **A/B LUFS-matched bypass** toggle. | S7, EQ (have) |
+| **S13** | Headphone + device parity | 7 | **Crossfeed** (Bauer/Meier, established low-artifact algo); **device-correction EQ** auto-load by identified device; profile JSON import/export. | S7, S12 |
+| **S14** | Loudness compensation (ISO-226) | 8 | Equal-loudness contour tilt driven by playback level/target SPL; ramped, capped (+12 dB default), no zipper; wires to the existing param bus/TargetState. *Pulled into Phase 1 (founder decision §8.4): it's a parity feature ("the loudness button") AND the lowest-risk first taste of the adaptive thesis — proving the adaptive platform within the parity release.* | S7, loudness infra (have) |
 
-*After **S9** we are already a credible daily-driver (minimum-credible release R1). S10–S13 add the audiophile-credible layer.*
+†S6 is review + fixes; it may spill beyond 8 SP if the review surfaces heavy structural issues — that's expected and acceptable, since the whole point is to fix the foundation before building on it.
 
-**Phase 1 total:** ~64 SP across 8 sprints. Realistic to release in two waves (R1 after S9, R2 after S13).
+*After **S10** we are already a credible daily-driver (minimum-credible release R1). S11–S14 add the audiophile-credible layer.*
 
-**Critical path:** S7 → S8 → S9 (library spine) — the highest-leverage and most-underestimated stretch in the plan; everything browse/queue hangs off S7.
+**Phase 1 total:** ~72 SP across 9 sprints. Realistic to release in two waves (R1 after S10, R2 after S14).
+
+**Critical path:** S6 (architecture gate) → S8 → S9 → S10 (library spine) — the architecture review gates everything; after it, the library spine is the highest-leverage and most-underestimated stretch.
 
 ---
 
 ## 4. Phase 2 — The strategic pivot (the Adaptive Sound thesis)
 
-> Loudness compensation (S13) already delivered the lowest-risk adaptive feature and proved the platform. Phase 2 builds the perceptual core, enabler-first (per the sprint-model dependency graph), lowest-artifact-risk first. S11's PEQ + AutoEq import planted the "device-aware correction" seed — Phase 2 makes it *adaptive*.
+> Loudness compensation (S14) already delivered the lowest-risk adaptive feature and proved the platform. Phase 2 builds the perceptual core, enabler-first (per the sprint-model dependency graph), lowest-artifact-risk first. S12's PEQ + AutoEq import planted the "device-aware correction" seed — Phase 2 makes it *adaptive*.
 
 | Sprint | Title | SP | Scope | Depends on |
 |---|---|---|---|---|
-| **S14** | SPIKE: masking model + arbitration | 7 | roex masking + Arbiter logic validation (enabler, not a shippable feature). De-risks the core thesis before building the Realizer. | DSP spine |
-| **S15** | Clarity (masking-aware) — Arbiter + Realizer v1 | 9 | Arbiter logic → Realizer biquad fitting; the core perceptual differentiator. Conservative defaults; A/B vs bypass. | S14 |
-| **S16** | Reimagine intensity (full mapping) | 6 | Map intensity 0→1 across loudness-comp + clarity (+ crossfeed) — the single steerable UX that ties the thesis together (beyond the on/off wiring done in S11). | S13, S15 |
-| **S17** | SPIKE-BRIR + BRIR spatial render v1 | 9 | Binaural impulse-response spatial rendering; highest complexity/artifact risk → sequenced last. Independent spike chain, can run parallel to S15/S16. | DSP spine; SPIKE-BRIR |
+| **S15** | SPIKE: masking model + arbitration | 7 | roex masking + Arbiter logic validation (enabler, not a shippable feature). De-risks the core thesis before building the Realizer. | DSP spine |
+| **S16** | Clarity (masking-aware) — Arbiter + Realizer v1 | 9 | Arbiter logic → Realizer biquad fitting; the core perceptual differentiator. Conservative defaults; A/B vs bypass. | S15 |
+| **S17** | Reimagine intensity (full mapping) | 6 | Map intensity 0→1 across loudness-comp + clarity (+ crossfeed) — the single steerable UX that ties the thesis together (beyond the on/off wiring done in S12). | S14, S16 |
+| **S18** | SPIKE-BRIR + BRIR spatial render v1 | 9 | Binaural impulse-response spatial rendering; highest complexity/artifact risk → sequenced last. Independent spike chain, can run parallel to S16/S17. | DSP spine; SPIKE-BRIR |
 
-**Phase 2 total:** ~31 SP across 4 sprints. **Critical path of the thesis:** S14 (spike) → S15 (Realizer); S16 ties it together.
+**Phase 2 total:** ~31 SP across 4 sprints. **Critical path of the thesis:** S15 (spike) → S16 (Realizer); S17 ties it together.
 
 ---
 
@@ -91,7 +94,7 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 **"Won't, this horizon"** — kept on the backlog as the future roadmap, out of this plan's window:
 
-- **Natural-language / conversational tuning (EP-NLT)** — the vision's endgame; needs the full adaptive stack (S13–S17) to have anything to steer. (Blocked on SPIKE-NLT-ARCH / OQ-11.)
+- **Natural-language / conversational tuning (EP-NLT)** — the vision's endgame; needs the full adaptive stack (S14–S18) to have anything to steer. (Blocked on SPIKE-NLT-ARCH / OQ-11.)
 - **Stem separation / object engine (EP-STEM, Phase 1.5)** — high compute/artifact risk; revisit only after the mix-based thesis is validated and loved.
 - **System-wide capture / virtual device (EP-SYSWIDE, EP-VDEVICE)** — different product surface; our story is *this Mac → this DAC, bit-perfect*.
 - **Off-thesis player features:** streaming integration (Qobuz/Tidal — licensing, off-limits for non-commercial solo dev), CD ripping, DLNA/UPnP/multi-zone, SACD ISO.
@@ -113,22 +116,24 @@ The backlog (v2.2) describes a single mix-level DSP graph; what shipped is the t
 
 ## 7. Release milestones & critical path
 
-- **Critical path:** S7 → S8 → S9 (library spine). Everything browse/queue hangs off S7, the highest-leverage and most-underestimated sprint in the plan.
-- **Release R1 ("a real player"):** after **S9** — daily-driver: library, browse, search, queue, media keys, bit-perfect playback.
-- **Release R2 ("audiophile-credible"):** after **S13** — CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green. **This is the parity milestone that unlocks Phase 2.**
-- **Release R3 ("differentiated"):** after **S16** — Clarity + steerable Reimagine. The Adaptive Sound thesis, demonstrable and comparable.
+- **Gate:** S6 (architecture review & hardening) — **no feature sprint starts until this is green.**
+- **Critical path:** S6 (gate) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8, the highest-leverage and most-underestimated feature sprint in the plan.
+- **Release R1 ("a real player"):** after **S10** — daily-driver: library, browse, search, queue, media keys, bit-perfect playback.
+- **Release R2 ("audiophile-credible"):** after **S14** — CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green. **This is the parity milestone that unlocks Phase 2.**
+- **Release R3 ("differentiated"):** after **S17** — Clarity + steerable Reimagine. The Adaptive Sound thesis, demonstrable and comparable.
 
-**One opinionated recommendation (PM + BA agree):** do **not** start Phase 2 until S7–S9 ship and you've lived on the app as your daily player for a week. The adaptive DSP is more fun than catalog plumbing — resist jumping early. The differentiators only earn attention once the table-stakes are invisible-because-they-just-work.
+**One opinionated recommendation (PM + BA agree):** do **not** start Phase 2 until S8–S10 ship and you've lived on the app as your daily player for a week. The adaptive DSP is more fun than catalog plumbing — resist jumping early. The differentiators only earn attention once the table-stakes are invisible-because-they-just-work.
 
 ---
 
 ## 8. Decisions (founder review, 2026-06-19)
 
 1. **Doc home & numbering** — keep this as `docs/sprints/sprint-plan.md`, continue sprint numbering at **S6**. (Closes the referenced-but-missing doc gap; `roadmap.md` stays the high-altitude view.)
-2. **Track sequencing** — **QA-gate first (S6), then library as a focused block (S7–S9), then sound-parity sprints (S10–S13).** Safety net before any DSP-touching work, without fragmenting the library critical path.
+2. **Track sequencing** — **architecture-review gate first (S6), then QA-gate (S7), then library as a focused block (S8–S10), then sound-parity sprints (S11–S14).** Foundation hardened and safety net in place before any feature/DSP work, without fragmenting the library critical path.
 3. **DSD** — **deferred past R2**, gated on acquiring a DSD DAC. Keeps every R2 feature by-ear verified.
 4. **Loudness compensation** — **pulled forward into Phase 1 (S13)** as a parity feature + lowest-risk taste of the adaptive thesis.
-5. **Competitor research** — **start S6 now**; commission feature-level teardowns per-sprint, the week each feature is built. (A separate positioning narrative can run in the background anytime.)
+5. **Competitor research** — commission feature-level teardowns per-sprint, the week each feature is built. (A separate positioning narrative can run in the background anytime.)
+6. **Architecture-review gate (added 2026-06-19)** — a **technical architecture review of the shipped codebase is the first & foremost sprint (S6)**, before any implementation; its findings are fixed before S7+ begins. Rationale: harden the foundation and confirm the DSP spine supports the Phase 2 adaptive vision before building eight sprints of features on it. This pushed the prior S6–S17 down by one to S7–S18.
 
 ---
 
