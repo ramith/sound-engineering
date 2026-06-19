@@ -29,7 +29,11 @@ extension AudioViewModel {
         // Poll the playhead + loudness + signal path every tick (independent of spectrum).
         playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
         loudness = engine.currentLoudness()
-        signalPath = engine.currentSignalPath()
+        var freshPath = engine.currentSignalPath()
+        // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
+        freshPath.intensityLinear = intensity
+        freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
+        signalPath = freshPath
 
         // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
         // reflect it in the UI and prompt the user to pick a device.

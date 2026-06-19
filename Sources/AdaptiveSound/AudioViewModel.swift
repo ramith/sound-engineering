@@ -57,6 +57,55 @@ final class AudioViewModel {
         signalPath.path == .pure
     }
 
+    // MARK: - Reimagine Intensity (QW-A)
+
+    /// Wet/dry blend for all DSP enhancement stages (EQ, clarity, crossfeed).
+    /// 0.0 = bit-perfect bypass; 1.0 = full blend. Default 0.20.
+    /// Clamped to [0, 1] in `didSet`; ops dispatched via `+IntensityControl`.
+    var intensity: Float = 0.20 {
+        didSet {
+            intensity = max(0, min(1, intensity))
+            logUX("intensity → \(Int(intensity * 100)) %")
+            Task { engine.publishIntensity(intensity) }
+        }
+    }
+
+    // MARK: - Crossfeed (QW-C)
+
+    /// Whether the headphone crossfeed stage is active. Auto-disabled on switch to
+    /// a non-headphone device (see `AudioViewModel+Devices.swift`).
+    var crossfeedEnabled: Bool = false {
+        didSet {
+            logUX("crossfeed → \(crossfeedEnabled ? "on" : "off") [\(crossfeedStrength.displayName)]")
+            Task { await engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength) }
+        }
+    }
+
+    /// Crossfeed strength preset. Changes take effect immediately when crossfeed is on.
+    var crossfeedStrength: CrossfeedStrength = .defaultStrength {
+        didSet {
+            guard crossfeedEnabled else { return }
+            logUX("crossfeed strength → \(crossfeedStrength.displayName)")
+            Task { await engine.publishCrossfeed(enabled: true, strength: crossfeedStrength) }
+        }
+    }
+
+    /// `true` when the selected output device is a headphone-class device (wireless or USB).
+    ///
+    /// Note: USB also matches USB audio interfaces connected to monitor speakers — a known
+    /// heuristic false-positive. Precise detection requires `kAudioDevicePropertyTransportType`
+    /// / DataSource queries (tracked for a future story). On a non-headphone device with
+    /// crossfeed accidentally enabled, the only audible consequence is a mild centre-image
+    /// change from the LPF cross path — benign and fully reversible by toggling crossfeed off.
+    var deviceIsHeadphones: Bool {
+        switch selectedDevice?.type {
+        case .wireless, .usb: true
+        default: false
+        }
+    }
+
+    // MARK: - Master Gain
+
     /// Last volume value logged (formatted), so a slider DRAG coalesces to one line per distinct
     /// displayed value instead of ~25 identical lines.
     private var lastVolLogged: String = ""
