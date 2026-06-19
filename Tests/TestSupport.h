@@ -67,6 +67,7 @@ using namespace AdaptiveSound;
 namespace TestConstants
 {
     constexpr uint32_t kSampleRate48k = 48000U;
+    constexpr uint32_t kSampleRate44k = 44100U; // CD rate; used by the EQ FR sweep (US-QA-03)
     constexpr uint32_t kFrames512 = 512U;
     constexpr uint32_t kTotalFrames1s = 48000U; // 1 second at 48 kHz
     constexpr uint32_t kChunks3 = 3U;
