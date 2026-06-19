@@ -20,6 +20,11 @@ extension AudioViewModel {
                 errorMessage = nil
                 logUX("selectDevice: ok '\(device.name)' id=\(device.id) "
                     + "\(device.displayKHz) buf=\(device.bufferFrameSize)")
+                // QW-C: auto-disable crossfeed when switching to a non-headphone device.
+                if crossfeedEnabled && !deviceIsHeadphones {
+                    crossfeedEnabled = false
+                    logUX("selectDevice: crossfeed auto-disabled (non-headphone device)")
+                }
             } catch {
                 logUX("selectDevice: error '\(device.name)' — \(error.localizedDescription)")
                 errorMessage = "Device selection failed: \(error.localizedDescription)"
@@ -41,6 +46,11 @@ extension AudioViewModel {
                 selectedDevice = target
             } else if !(selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false) {
                 selectedDevice = devices.first
+            }
+            // QW-C: auto-disable crossfeed if the new selected device is not a headphone type.
+            if crossfeedEnabled && !deviceIsHeadphones {
+                crossfeedEnabled = false
+                logUX("refreshDevices: crossfeed auto-disabled (non-headphone device)")
             }
             logUX("refreshDevices: \(devices.count) device(s), "
                 + "selected='\(selectedDevice?.name ?? "none")'")

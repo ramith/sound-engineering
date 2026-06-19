@@ -2,45 +2,147 @@ import SwiftUI
 
 // MARK: - Now Playing Info
 
-/// The now-playing card (+ seek/progress), live loudness meters, and the
-/// Intensity placeholder. Lives in the left panel beneath the transport/gain
-/// (the playlist now occupies the full right side).
+/// The now-playing card (+ seek/progress), live loudness meters, Reimagine intensity
+/// knob (QW-A), and headphone crossfeed controls (QW-C). Lives in the left panel
+/// beneath the transport/gain controls.
 struct NowPlayingInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             NowPlayingWidget()
-
-            // Live loudness meters (BS.1770-5, measured on the playback tap).
             LoudnessMetersView()
+            ReimagineSectionView()
+            HeadphonesSectionView()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
-            // Intensity (placeholder until a module is selectable).
-            VStack(alignment: .leading, spacing: 8) {
+// MARK: - Reimagine Intensity Section
+
+/// Horizontal slider for the global Reimagine intensity knob (QW-A).
+/// Matches the `MasterGainSliderView` layout pattern.
+private struct ReimagineSectionView: View {
+    @Environment(AudioViewModel.self) private var viewModel
+
+    var body: some View {
+        @Bindable var bvm = viewModel
+
+        let isPureBypassed = bvm.pureModeEngaged
+        let percentText = Text(
+            "\(Int((bvm.intensity * 100).rounded())) %"
+        )
+        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+        .foregroundStyle(isPureBypassed ? Color.asLabelTertiary : Color.asLabelSecond)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
                 Text("Intensity")
                     .font(.caption.weight(.semibold))
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundStyle(Color.asLabelSecond)
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [2]))
-                        .foregroundStyle(Color.asHairline)
+                Spacer()
 
-                    VStack(spacing: 6) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Color.asLabelTertiary)
-
-                        Text("No module selected")
-                            .font(.system(size: 12, weight: .regular, design: .monospaced))
-                            .foregroundStyle(Color.asLabelTertiary)
-                    }
+                if isPureBypassed {
+                    Text("Pure (bypassed)")
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .foregroundStyle(Color.asLabelTertiary)
+                } else {
+                    percentText
                 }
-                .frame(height: 80)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Intensity: no module selected")
+            }
+
+            Slider(value: $bvm.intensity, in: 0 ... 1, step: 0.01)
+                .tint(Color.asAccent)
+                .disabled(isPureBypassed)
+                .help(bvm.intensity == 0 ? "0 % = bit-perfect bypass" : "")
+                .accessibilityLabel("Reimagine Intensity")
+                .accessibilityValue("\(Int((bvm.intensity * 100).rounded())) percent")
+
+            HStack {
+                Text("Bypass")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(Color.asLabelTertiary)
+                Spacer()
+                Text("Full Blend")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(Color.asLabelTertiary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isPureBypassed ? 0.5 : 1)
+    }
+}
+
+// MARK: - Headphones Section
+
+/// Crossfeed toggle + strength picker shown when crossfeed is enabled (QW-C).
+/// Disabled and dimmed on non-headphone devices (wireless / USB heuristic).
+private struct HeadphonesSectionView: View {
+    @Environment(AudioViewModel.self) private var viewModel
+
+    var body: some View {
+        @Bindable var bvm = viewModel
+
+        let isEnabled = bvm.deviceIsHeadphones
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Headphones")
+                .font(.caption.weight(.semibold))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.asLabelSecond)
+
+            if !isEnabled {
+                Text("Connect headphones to enable. (On a speaker device the only consequence "
+                    + "of crossfeed is a mild, reversible centre-image change — crossfeed is "
+                    + "offered here, not auto-applied.)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(Color.asLabelTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
+
+            if bvm.crossfeedEnabled && isEnabled {
+                CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
+            }
+        }
+        .opacity(isEnabled ? 1 : 0.5)
+    }
+}
+
+// MARK: - Crossfeed Toggle Row
+
+private struct CrossfeedToggleRow: View {
+    @Binding var crossfeedEnabled: Bool
+    let deviceEnabled: Bool
+
+    var body: some View {
+        Toggle(isOn: $crossfeedEnabled) {
+            Label("Crossfeed", systemImage: "ear.and.waveform")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.asLabel)
+        }
+        .toggleStyle(.switch)
+        .tint(Color.asAccent)
+        .disabled(!deviceEnabled)
+    }
+}
+
+// MARK: - Crossfeed Strength Picker
+
+private struct CrossfeedStrengthPicker: View {
+    @Binding var strength: CrossfeedStrength
+
+    var body: some View {
+        Picker("Strength", selection: $strength) {
+            ForEach(CrossfeedStrength.allCases) { preset in
+                Text(preset.displayName).tag(preset)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .accessibilityLabel("Crossfeed Strength")
     }
 }

@@ -67,6 +67,17 @@ struct SignalPathInfo: Equatable {
     /// Bluetooth device disconnected). The view model surfaces this and clears `isPlaying`; the
     /// flag is cleared on the next `startAudio`.
     var interrupted: Bool = false
+
+    // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
+
+    /// Current Reimagine intensity in [0, 1], copied from `AudioViewModel.intensity` each tick.
+    /// Used by the signal-path badge to display "… · 23%". Default 0.
+    var intensityLinear: Float = 0
+
+    /// Active crossfeed strength, or `nil` when crossfeed is off.
+    /// Gated on `intensityLinear > 0` before being shown in the badge (§9 nice-to-have:
+    /// don't display an inaudible-chain badge at 0 % intensity).
+    var crossfeedStrength: CrossfeedStrength?
 }
 
 // MARK: - Display helpers
