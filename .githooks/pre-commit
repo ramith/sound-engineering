@@ -93,8 +93,13 @@ if ((${#cpp_files[@]})); then
         # module dirs on the include path so quote-includes resolve (the test bridge
         # includes its own EQTestBridge.h and the AudioDSP headers).
         compile_flags=(-std=gnu++2b)
+        # AudioDSP + test-bridge module dirs so quote-includes resolve; plus the
+        # test-only libebur128 oracle headers (third_party/libebur128, a submodule)
+        # so test files that include "ebur128.h" can be analysed. The find on a
+        # missing submodule dir is a harmless no-op (2>/dev/null), and ebur128's
+        # own headers are outside HeaderFilterRegex so they aren't linted.
         while IFS= read -r d; do compile_flags+=(-I "$d"); done \
-            < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type d 2>/dev/null)
+            < <(find Sources/AudioDSP Sources/AudioDSPTestBridge third_party/libebur128/ebur128 -type d 2>/dev/null)
         [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
 
         for f in "${cpp_files[@]}"; do

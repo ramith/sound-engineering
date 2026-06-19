@@ -29,6 +29,7 @@
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
 //   GaplessContractTests.inc — S6 Tier-3 (3d) Pure gapless behavioral-contract conformance suite
+//   LoudnessOracleTests.inc  — S7/US-QA-01 TEST-ONLY libebur128 conformance oracle (LUFS + TP)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -52,6 +53,7 @@
 #include "GaplessContractTests.inc"
 #include "RealizerTests.inc"
 #include "IntensityTests.inc"
+#include "LoudnessOracleTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 94U> kTests = {{
+    constexpr std::array<TestEntry, 96U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -202,6 +204,9 @@ namespace
         {"Intensity_EqualPowerAtHalf", testIntensityEqualPowerAtHalf, true},
         {"Intensity_LevelPeakSafetyIntermediate", testIntensityLevelPeakSafetyIntermediate, true},
         {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
+        // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
+        {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
+        {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
