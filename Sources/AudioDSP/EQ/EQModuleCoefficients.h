@@ -72,8 +72,8 @@ namespace AdaptiveSound
                 return result;
             }
 
-            // Realizer-style biquad fitting: fit 31-band response with cascade of up to 10 biquads
-            // Phase 1b uses pre-computed coefficients; dynamic Realizer fitting deferred to Phase 2
+            // Greedy biquad fitting: fit 31-band response with cascade of up to 10 biquads.
+            // Coefficients are pre-computed off-RT; ML-based dynamic fitting is a future enhancement.
             std::array<EQParams::BiquadCoeffs, kMaxBiquads> biquads{};
             int numBiquads = fitBiquadCascade(gains, sampleRate, biquads);
 
@@ -118,7 +118,7 @@ namespace AdaptiveSound
         static constexpr float kSchurCohnTolerance = 1e-6F;
 
         // Fit 31-band gains to cascaded biquads
-        // This uses a simplified fitting approach for Phase 1b:
+        // This uses a simplified fitting approach:
         // - Group consecutive bands with similar gains
         // - Create peaking filters at center frequencies with proportional Q and gain
         // Returns number of biquads used (1 to kMaxBiquads)
@@ -215,10 +215,10 @@ namespace AdaptiveSound
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
-            // Q factor: wider for larger gains (simple Phase-1b heuristic; ~1.4 oct at
+            // Q factor: wider for larger gains (simple heuristic; ~1.4 oct at
             // 6 dB, ~2.2 oct at 12 dB). Not Nyquist-aware — wide filters near 20 kHz at
             // 44.1 kHz skew their lower skirt into the audible band. Acceptable for the
-            // greedy fitter; the Realizer's ERB-weighted L-M optimizer will supersede it.
+            // greedy fitter; an ERB-weighted L-M optimizer is a possible future enhancement.
             float Q = 1.0F / (kQHeuristicBase + (std::abs(gainDb) * kQHeuristicSlope));
 
             float alpha = sinw0 / (2.0F * Q);

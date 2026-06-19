@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Monitoring Tab View
 
-/// Dedicated signal-monitoring tab (Sprint 5 M3/M4).
+/// Dedicated signal-monitoring tab.
 ///
 /// v1 layout: one full-width row per channel (N-channel aware — 1 row mono,
 /// 2 rows stereo, up to 8 rows for 7.1). Each row shows the per-channel BEFORE

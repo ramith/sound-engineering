@@ -92,7 +92,7 @@ plus the correctness/UX work around it.
 
 ## Verification
 
-- C++ harness **73/0** (golden master `0xE7267654BA01D315` unchanged), incl. the round-trip bit-exact
+- C++ harness **82/0** (83 registered, 1 pending; golden master `0xE7267654BA01D315` unchanged), incl. the round-trip bit-exact
   + sample-accurate-seek tests; runnable `--parallel`. Fixtures live in `<repo>/test-data/` (not
   `/tmp`).
 - `swift run SRCQualityMeasure` — re-runnable SRC characterization (see learning #5).

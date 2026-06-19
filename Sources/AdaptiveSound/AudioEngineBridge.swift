@@ -13,7 +13,8 @@ import Foundation
 final class AudioEngineBridge: AudioPlaybackEngine {
     var avEngine: AVAudioEngine?
     var playerNode: AVAudioPlayerNode?
-    private var referenceToneBuffer: AVAudioPCMBuffer?
+    /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
+    var referenceToneBuffer: AVAudioPCMBuffer?
 
     // MARK: - Spectrum Analyzer
 
@@ -42,7 +43,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     var spatialAudioUnit: AVAudioUnit?
 
-    // MARK: - Monitoring analyzers (per-channel before/after spectra; Sprint 5 M3)
+    // MARK: - Monitoring analyzers (per-channel before/after spectra)
 
     /// One spectrum analyzer PER CHANNEL for each tap point: `beforeAnalyzers` from the pre-DSP
     /// player-node tap, `afterAnalyzers` from the post-DSP effects-AU tap. Sized to the stream's
@@ -168,11 +169,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Registered in `initialize()`, removed in `shutdown()`.
     var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
 
-    // MARK: - Graph state (scaffold for the multichannel reconfigure lifecycle; Sprint 5b)
+    // MARK: - Graph state
 
-    /// Top-level engine-graph state. Introduced in S0-M3; the `.reconfiguring` transition is now
-    /// driven by `reconfigureGraph(to:)` (Sprint 5b M2-c). The trigger that calls it (track
-    /// channel-count change at file load) is wired in M2-d (`startAudio` -> `configureGraphForSource`).
+    /// Top-level engine-graph state. The `.reconfiguring` transition is driven by
+    /// `reconfigureGraph(to:)`. The trigger that calls it (track channel-count change at
+    /// file load) is wired in `startAudio` via `configureGraphForSource`.
     enum GraphState {
         case idle
         case running(channelCount: Int)
@@ -184,7 +185,8 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Observer for `AVAudioEngineConfigurationChange`. Without it, a hardware route change
     /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
     /// the app silently goes quiet. Registered in `initialize()`, removed in `shutdown()`.
-    private var configChangeObserver: NSObjectProtocol?
+    /// Internal (not private) so `AudioEngineBridge+ConfigChange.swift` can write it.
+    var configChangeObserver: NSObjectProtocol?
 
     /// Serial queue on which the `AVAudioEngineConfigurationChange` handler runs. A single device
     /// switch can post the notification more than once in quick succession; serializing keeps the
@@ -250,7 +252,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
     }
 
-    // MARK: - Monitoring read (per-channel before/after; Sprint 5 M3)
+    // MARK: - Monitoring read (per-channel before/after)
 
     /// Number of channels being monitored (the graph's channel count). 0 until the engine is ready.
     var monitorChannelCount: Int {
@@ -266,33 +268,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         return analyzers[channel].doubleBuffer.read(into: &out)
     }
 
-    // MARK: - DSP AU access (Sprint 5 M2 control plane)
-
-    /// Opaque pointer to the underlying `AUAudioUnit`, for the C-ABI `publishTargetState` /
-    /// `setAUParameter` bridge that the EQ Realizer (M2) will drive. `nil` until `initialize()`
-    /// has instantiated the AU. Borrowed (passUnretained) — callers must not retain it past
-    /// `shutdown()`; the `AVAudioUnit` owns the underlying instance.
-    var dspAudioUnitHandle: UnsafeMutableRawPointer? {
-        guard let unit = dspAudioUnit?.auAudioUnit else { return nil }
-        return Unmanaged.passUnretained(unit).toOpaque()
-    }
-
-    /// Compute + publish the EQ biquad cascade for `gainsDb` (31 bands) to the live AU.
-    /// The coefficient design sample rate is read from the AU output bus (the negotiated rate),
-    /// falling back to the 48 kHz graph format. No-op if the AU isn't live.
-    func publishEQGains(_ gainsDb: [Float]) {
-        guard gainsDb.count == 31, let handle = dspAudioUnitHandle else { return }
-        // Design coefficients for the AU's negotiated output rate (graph is 48 kHz; fall back
-        // to that if the bus isn't queryable). AUAudioUnitBusArray is not a Swift collection.
-        var sampleRate = 48000.0
-        if let busArray = dspAudioUnit?.auAudioUnit.outputBusses, busArray.count > 0 {
-            sampleRate = busArray[0].format.sampleRate
-        }
-        _ = gainsDb.withUnsafeBufferPointer { buffer -> Bool in
-            guard let base = buffer.baseAddress else { return false }
-            return publishEQBandGains(handle, base, UInt32(gainsDb.count), sampleRate)
-        }
-    }
+    // EQ control plane (dspAudioUnitHandle + publishEQGains) lives in AudioEngineBridge+EQControl.swift.
 
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter else { return .unmeasured }
@@ -365,374 +341,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         }
     }
 
-    // Device enumeration + selection live in AudioEngineBridge+Devices.swift (extension).
-
-    // MARK: - Playback
-
-    func startAudio(fileURL: URL?, pureMode: Bool) async throws {
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    // Record the intent for the device-change fallback restart path.
-                    self.lastFileURL = fileURL
-                    self.pureModeRequested = pureMode
-
-                    // A fresh startAudio always begins a new playback context: clear the end-of-queue
-                    // sentinel and the on-deck slot so the new play starts clean (the caller must
-                    // re-arm on-deck after startAudio if it wants gapless from the first track).
-                    // P2-3: the 20 Hz VM timer can call playbackEnded() (which reads gaplessPlaybackEnded
-                    // via resampleQueue.sync) concurrently with this startAudio body — write under
-                    // resampleQueue to prevent a race. stopEnhancedResampler() below also acquires
-                    // resampleQueue.sync; these two syncs are sequential (not nested) — safe.
-                    self.resampleQueue.sync {
-                        self.gaplessPlaybackEnded = false
-                        self.onDeckURL = nil
-                    }
-
-                    // Attempt Pure path when requested, a file is provided, and capability allows.
-                    if pureMode, let url = fileURL {
-                        let viable = self.evaluatePureViable(fileURL: url, deviceID: self.currentDeviceID)
-                        if viable {
-                            // Tear down any live Enhanced playback before entering Pure
-                            // (keep the graph intact for fast fallback — just stop the player).
-                            self.stopEnhancedPlayback()
-                            let started = self.startPure(fileURL: url, deviceID: self.currentDeviceID)
-                            if started {
-                                continuation.resume(returning: ())
-                                return
-                            }
-                            // Pure engine started but achievedState.running == 0 → fall through
-                            // to Enhanced. Record that we fell back.
-                            NSLog("[AudioEngineBridge] Pure Mode start failed — falling back to Enhanced")
-                            self.cachedSignalPath.fellBackToEnhanced = true
-                        } else {
-                            self.cachedSignalPath.fellBackToEnhanced = true
-                        }
-                    } else {
-                        self.cachedSignalPath.fellBackToEnhanced = false
-                    }
-
-                    // If Pure was active, stop+destroy it before entering Enhanced
-                    // (releases hog mode + restores device rate).
-                    if self.activePath == .pure {
-                        self.tearDownPure()
-                    }
-
-                    // Enhanced path (original startAudio body).
-                    guard let engine = self.avEngine, let playerNode = self.playerNode else {
-                        throw AudioBridgeError.engineNotInitialized
-                    }
-
-                    if !engine.isRunning {
-                        try engine.start()
-                    }
-
-                    self.installSpectrumTap()
-
-                    if let url = fileURL {
-                        // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
-                        // line. Append only the Pure-fallback note here so it isn't double-logged.
-                        try self.playFile(at: url, engine: engine, playerNode: playerNode)
-                        if self.cachedSignalPath.fellBackToEnhanced {
-                            logUX("Enhanced started '\(url.lastPathComponent)' (fell back from Pure)")
-                        }
-                    } else {
-                        self.playReferenceTone(on: playerNode)
-                        logUX("Enhanced started reference tone")
-                    }
-
-                    self.activePath = .enhanced
-                    self.resampleQueue.sync { self.enhancedPlayIntent = true }
-                    self.cachedSignalPath = SignalPathInfo(
-                        path: .enhanced,
-                        decision: .fallbackEnhanced,
-                        fellBackToEnhanced: self.cachedSignalPath.fellBackToEnhanced
-                    )
-
-                    continuation.resume(returning: ())
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    /// Open `fileURL`, drive the M2-d multichannel load sequence, then schedule + play it.
-    ///
-    /// Sequence (the M2-d contract): read N + the source channel layout from the opened file,
-    /// `configureGraphForSource` (reconfigure the graph to N — a same-count no-op for stereo — THEN
-    /// publish the layout tag to the kernel for correct BS.1770-5 weights), and only AFTER that
-    /// stop the player + schedule + play. Reconfiguring before scheduling means the file is queued
-    /// onto the graph already settled at its width.
-    func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode) throws {
-        // Establish security-scoped access for sandboxed macOS file access.
-        let didAccess = fileURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
-
-        let audioFile: AVAudioFile
-        do {
-            audioFile = try AVAudioFile(forReading: fileURL)
-        } catch {
-            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
-        }
-
-        // 1. Read the source width N and (optional) layout tag from the processing format.
-        let processingFormat = audioFile.processingFormat
-        let channelCount = processingFormat.channelCount
-        let channelLayout = processingFormat.channelLayout
-
-        // 2. Reconfigure the graph to N, THEN publish the layout to the kernel (M2-d). Stereo
-        //    sources hit the same-count no-op, so the existing stereo path is unchanged.
-        configureGraphForSource(channelCount: channelCount, channelLayout: channelLayout)
-
-        // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
-        //    the current one. Also stop any prior streaming-resampler session (bumps the generation
-        //    so its in-flight buffers abandon themselves) before this new track supersedes it.
-        stopEnhancedResampler()
-        if playerNode.isPlaying {
-            playerNode.stop()
-        }
-        // Fresh play schedules the whole file from frame 0 → no position offset. (A later seek sets
-        // this to the seek target; see currentPlaybackPosition.)
-        enhancedPositionBaseSeconds = 0
-
-        // 4. Branch on rate. When the file is already 48 kHz the existing `scheduleFile` path is an
-        //    exact passthrough (the engine performs no SRC), so keep it BYTE-IDENTICAL. Only when the
-        //    file rate differs from the 48 kHz graph rate do we engage the high-quality streaming
-        //    resampler — bounding the new code's blast radius to rate-mismatched files. If the
-        //    converter can't be created / primes nothing, fall back to `scheduleFile` (default SRC).
-        let fileRate = processingFormat.sampleRate
-        let graphRate = playerNode.outputFormat(forBus: 0).sampleRate
-        if fileRate == graphRate {
-            // 48 kHz passthrough: byte-identical to the pre-gapless path. The completion callback
-            // type `.dataPlayedBack` fires after the hardware has played the last sample, which is
-            // the correct seam point for gapless. When no next track is armed the handler is nil and
-            // the player simply stops at end-of-file (pre-gapless behaviour, unchanged).
-            //
-            // NOTE: AVAudioFile / ExtAudioFile trims AAC priming silence and MP3 LAME
-            // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
-            // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
-            // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
-            // swiftlint:disable:next line_length
-            playerNode.scheduleFile(audioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak playerNode] _ in
-                guard let self, let livePlayer = playerNode else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
-            }
-            playerNode.play()
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")
-            return
-        }
-
-        let started = startEnhancedResampler(audioFile: audioFile, player: playerNode, startFrame: 0)
-        if started {
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
-                + "(resample \(Int(fileRate))→\(Int(graphRate)) max)")
-        } else {
-            // Converter unavailable / primed nothing → keep playback working via the proven path.
-            playerNode.scheduleFile(audioFile, at: nil)
-            playerNode.play()
-            logUX("Enhanced started '\(fileURL.lastPathComponent)' "
-                + "(resample \(Int(fileRate))→\(Int(graphRate)) FELL BACK to default SRC)")
-        }
-    }
-
-    /// Fallback path when no file is supplied: schedule a 1 kHz reference tone on the player.
-    private func playReferenceTone(on playerNode: AVAudioPlayerNode) {
-        referenceToneBuffer = generateReferenceTone(
-            frequency: 1000.0,
-            duration: 5.0,
-            sampleRate: 48000.0
-        )
-
-        if let buffer = referenceToneBuffer {
-            if !playerNode.isPlaying {
-                playerNode.play()
-            }
-            playerNode.scheduleBuffer(buffer, at: nil)
-        }
-    }
-
-    func stopAudio() async throws {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                if self.activePath == .pure {
-                    self.tearDownPure()
-                } else {
-                    self.stopEnhancedPlayback()
-                }
-                // Clear the on-deck slot and play-intent on user stop: a stop is a deliberate
-                // abort, not an end-of-queue, so the armed next track must not silently begin
-                // playing later. Serialized on resampleQueue so it cannot race with an in-flight
-                // seam handler. Both writes are batched in one sync to avoid a second crossing.
-                self.resampleQueue.sync {
-                    self.onDeckURL = nil
-                    self.enhancedPlayIntent = false
-                }
-                self.removeSpectrumTap()
-                self.referenceToneBuffer = nil
-                self.activePath = .enhanced
-                self.cachedSignalPath = .init()
-                continuation.resume()
-            }
-        }
-    }
-
-    func currentPlaybackPosition() -> Double? {
-        // Route to the active path.
-        if activePath == .pure, let engine = pureEngine {
-            let pos = pureModeEnginePositionSeconds(engine)
-            return pos > 0 ? pos : nil
-        }
-        // Enhanced path: AVAudioPlayerNode's sampleTime counts from 0 at EACH play() — it is
-        // time-since-play, not absolute file position. A seek does stop()+scheduleSegment(from:)+
-        // play(), which restarts sampleTime at 0, so we add the seek target (enhancedPositionBaseSeconds,
-        // 0 on a fresh play) to report the true playhead.
-        guard let playerNode, playerNode.isPlaying,
-              let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
-              playerTime.sampleRate > 0
-        else {
-            return nil
-        }
-        let position = enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
-        // Cache the freshest reliable playhead for the config-change re-establish path.
-        lastKnownEnhancedPositionSeconds = position
-        return position
-    }
-
     func currentSignalPath() -> SignalPathInfo {
         cachedSignalPath
     }
 
-    func setParameter(_ id: UInt32, value: Float) async throws {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                if id == 0 {
-                    // Pure path: never apply software gain to the bit-perfect stream. Instead drive
-                    // the device's HARDWARE master volume (analog/HW domain → stays bit-perfect), so
-                    // the in-app slider controls volume even without exclusive hog mode. A device with
-                    // no settable master volume returns 0 (volume then via the OS / device only).
-                    if self.activePath == .pure {
-                        // Volume routing is logged once at the view-model layer (coalesced); not
-                        // here — setParameter fires per slider tick and would spam the log.
-                        _ = pureModeSetDeviceVolume(self.currentDeviceID, value)
-                        continuation.resume()
-                        return
-                    }
-                    // Enhanced path: master gain parameter → player node volume.
-                    if let playerNode = self.playerNode {
-                        playerNode.volume = value
-                    }
-                }
-                continuation.resume()
-            }
-        }
-    }
-}
-
-// MARK: - AudioEngineBridge configuration-change resilience
-
-///
-/// Kept in a same-file extension (not the class body) so it stays close to the engine while not
-/// counting toward the class's body length; `private` engine state is still reachable (file scope).
-extension AudioEngineBridge {
-    /// Resume rendering after a hardware configuration change (route / default-device / format
-    /// change), which stops `AVAudioEngine` — otherwise the app silently goes quiet on a Bluetooth
-    /// or USB change (incl. a device merely *connecting* and stealing the system default).
-    func observeConfigurationChanges(of engine: AVAudioEngine) {
-        configChangeObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-        ) { [weak self] _ in
-            self?.configChangeQueue.async {
-                guard let self, let engine = self.avEngine else { return }
-                let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
-                logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
-                    + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "
-                    + "intent=\(intentSnap) default=\(getDefaultOutputDeviceID()) "
-                    + "selected=\(self.currentDeviceID)")
-                // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
-                // those very changes fire this notification. The Enhanced AVAudioEngine is
-                // intentionally stopped and must NOT try to restart on the hogged device — doing so
-                // fails with -10875 (invalid output HW format) and contends for the device. The
-                // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
-                // is handled (paused) by the CoreAudio device-alive listener in
-                // AudioEngineBridge+PureModeDeviceMonitor.swift.
-                guard self.activePath != .pure else { return }
-                // After a device-loss pause we are intentionally stopped — don't auto-restart on the
-                // config change that the disconnect itself fires. Cleared on the next startAudio.
-                guard !self.cachedSignalPath.interrupted else { return }
-                self.reestablishEnhancedAfterConfigChange(engine: engine)
-            }
-        }
-    }
-
-    /// Re-establish the Enhanced path after a route / default-device / format change.
-    ///
-    /// A configuration change stops `AVAudioEngine` AND flushes every buffer queued on the player
-    /// node. Restarting the engine + calling `play()` is enough for the 48 kHz `scheduleFile`
-    /// passthrough, but it does NOT refill the streaming-resampler's `scheduleBuffer` chain (the
-    /// completion chain that was feeding the player is broken when its buffers are flushed) — which
-    /// is why a device switch on a rate-mismatched file went intermittently silent. So we re-drive
-    /// the scheduler from the current playhead, reusing the seek machinery, on the now-current
-    /// output device. Runs on `configChangeQueue` (serialized — see `observeConfigurationChanges`).
-    /// Internal (not private) so the device-set handler in `AudioEngineBridge+Devices.swift` can
-    /// drive a re-establish when "follow the newly-connected device" mode adopts a new default.
-    func reestablishEnhancedAfterConfigChange(engine: AVAudioEngine) {
-        // Re-entrancy guard: a FOLLOW-mode device connect dispatches one re-establish explicitly
-        // (handleDeviceSetChange) AND causes AVAudioEngineConfigurationChange to fire a second one
-        // on the same configChangeQueue serial queue. The second call must early-return to prevent
-        // a double seekEnhancedResampler that abandons the first re-prime → audible dropout.
-        // Both this flag and all callers are confined to configChangeQueue — no atomics needed.
-        guard !isReestablishing else {
-            logUX("reestablish: skipping re-entrant call (already in progress)")
-            return
-        }
-        isReestablishing = true
-        defer { isReestablishing = false }
-
-        // Use the durable play-INTENT, not `playerNode.isPlaying`: a reconfiguration (a device
-        // connecting/disconnecting) can momentarily report the node as not-playing, and gating on
-        // that left playback silently dead after e.g. a Bluetooth device connected mid-track.
-        // Read under resampleQueue (its designated owner) for a consistent snapshot.
-        let wasPlaying = resampleQueue.sync { enhancedPlayIntent }
-
-        // Capture the playhead BEFORE restarting (the player may stop reporting a render time across
-        // the reconfiguration; `lastKnownEnhancedPositionSeconds` is the freshest reliable value).
-        let resumePos = currentPlaybackPosition() ?? lastKnownEnhancedPositionSeconds
-
-        if !engine.isRunning {
-            do {
-                try engine.start()
-            } catch {
-                NSLog("[AudioEngineBridge] engine restart after configuration change failed: \(error)")
-                return
-            }
-        }
-
-        guard wasPlaying, let player = playerNode else { return }
-
-        // Read resampleSession under the queue's lock so the branch decision is consistent with
-        // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
-        // or primeEnhancedResamplerLocked running concurrently).
-        let hasResampler = resampleQueue.sync { resampleSession != nil }
-
-        if hasResampler {
-            // Rate-mismatched file: re-prime the streaming resampler from the playhead. (engine.start()
-            // + play() alone leave the flushed buffer queue empty → silence.)
-            if !seekEnhancedResampler(to: resumePos, player: player), !player.isPlaying {
-                player.play()
-            }
-        } else if let url = lastFileURL {
-            // 48 kHz passthrough: re-schedule the remaining segment from the playhead onto the new
-            // device, guaranteeing fresh buffers regardless of whether the old schedule survived.
-            seekEnhancedBestEffort(url: url, player: player, to: resumePos)
-        } else if !player.isPlaying {
-            player.play() // reference tone / no source file
-        }
-        enhancedPositionBaseSeconds = resumePos
-        logUX("Enhanced re-established after configuration change at \(secs(resumePos))s")
-    }
+    // Device enumeration + selection live in AudioEngineBridge+Devices.swift.
+    // Playback transport lives in AudioEngineBridge+Playback.swift.
 }
 
 // AudioDeviceModel.DeviceType.sortOrder lives in AudioEngineBridge+Devices.swift (used by the
 // device-enumeration sort there).
+// Configuration-change resilience lives in AudioEngineBridge+ConfigChange.swift.

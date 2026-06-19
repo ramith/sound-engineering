@@ -204,7 +204,10 @@ namespace AdaptiveSound
                                                                 : 0.0;
     }
 
-    bool GaplessSource::ended() const noexcept { return ended_.load(std::memory_order_acquire); }
+    bool GaplessSource::ended() const noexcept
+    {
+        return ended_.load(std::memory_order_acquire);
+    }
 
     uint32_t GaplessSource::pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
     {

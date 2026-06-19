@@ -1,9 +1,11 @@
 # PHASE 1B PART B: Critical Path Kickoff
 
+> **✅ COMPLETED / HISTORICAL (2026-06-19).** The critical-path items below — progress bar, seek, auto-play (now auto-advance + gapless), and the test suite — are all shipped. Retained for provenance. **Stale instructions:** the "run `swift test`" gates in this doc no longer apply — `swift test` is broken here (toolchain skew); the DSP gate is the C++ null-test harness (`bash scripts/build-null-test.sh`, golden master `0xE7267654BA01D315`), and Swift mock tests run in Xcode.
+
 **Unblocks:** Phase 1c (Sprint 1–3)  
 **Timeline:** 2026-06-18 → 2026-06-21 (effort-driven; calendar is target only)  
 **Owner:** You (solo dev)  
-**Status:** Ready to start
+**Status:** ✅ Completed (historical)
 
 ---
 

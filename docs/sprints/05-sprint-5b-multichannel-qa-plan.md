@@ -3,10 +3,14 @@
 **Document ID:** MULTICHANNEL-QA-001
 **Date:** 2026-06-16
 **Author:** qa-expert
-**Status:** Ready for founder review and sprint execution
+**Status:** ✅ Multichannel epic SHIPPED (S0–S3 + M4 landed/merged). This document is the QA plan as written at planning time; it is retained for the test design + acceptance gates.
 **Epic ref:** MULTICHANNEL-EPIC-001 / MULTICHANNEL-PIPELINE-001
 **Sprint model ref:** 00-sprint-model.md
 **Companion:** 05-sprint-5b-multichannel-epic-plan.md (the plan this document extends)
+
+---
+
+> **Snapshot note (2026-06-19):** The "currently 19 tests" / "19/19" figures below were the C++ null-test harness count **at planning time**. The harness has since grown to **83 registered (82 passing, 1 pending)** — golden master `0xE7267654BA01D315` unchanged. The L2 `swift run` targets named below (`VerifyMultichannelGraph`, `VerifyDeviceBoundary`) were **planned, not built**; only `VerifyAUGraph` + `SRCQualityMeasure` exist in `Package.swift`.
 
 ---
 

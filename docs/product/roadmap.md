@@ -1,9 +1,9 @@
 # Adaptive Sound — Product Roadmap
 ## Phase Timeline & Release Plan
 
-**Status:** 🟢 READY FOR EXECUTION  
-**Last Updated:** 2026-06-16 (Team Review Complete)  
-**Release Target:** ~2026-07-10 (Internal MVP), Phase 1.5 TBD
+**Status:** 🟢 IN ACTIVE DEVELOPMENT  
+**Last Updated:** 2026-06-19  
+**Release Target:** Internal MVP (effort-driven, no calendar pressure), Phase 1.5 TBD
 
 ---
 
@@ -13,8 +13,11 @@
 
 - **Phase 1a (✅ Shipped):** Audio engine core + reference tone
 - **Phase 1b Part A (✅ Shipped):** Music playback UI + spectrum
-- **Phase 1b Part B (🟡 In Progress):** Critical path (progress, seek, auto-play, test suite)
-- **Phase 1c (Sprint 4-6, 🟡 Backlog):** Bundled DSP-first MVP (loudness → EQ → clarity)
+- **Phase 1b Part B (✅ Shipped):** Critical path — progress, seek, auto-play/gapless, test suite
+- **Sprint 4 — Loudness safety (✅ Shipped, merged):** BS.1770-5 meter + true-peak limiter
+- **Sprint 5 / 5b — EQ foundation + multichannel (✅ Shipped):** 31-band EQ wiring, N-channel two-AU pipeline, Monitoring tab
+- **Bit-perfect "Pure Mode" + gapless (✅ Shipped — pipeline-review additions, not in the original plan):** HAL-direct output path (runtime FFmpeg-or-Apple decode), gapless/continuous playback (Enhanced + Pure same-rate), device-resilience
+- **Sprint 6 — Adaptive clarity (🟡 Next):** perceptual Arbiter + masking-aware clarity + conversational tuning
 - **Phase 1.5 (🔄 Planning):** Stem separation + advanced DSP
 - **Phase 2 (🔄 Planning):** System-wide audio via virtual device
 
@@ -130,13 +133,13 @@
 | Milestone | Target | Content | Status |
 |-----------|--------|---------|--------|
 | **Phase 1b Part A Ship** | 2026-06-15 ✅ | Playback UI + spectrum | SHIPPED |
-| **Phase 1b Part B Complete** | 2026-06-21 | Progress, seek, auto-play, test suite | IN PROGRESS |
-| **Sprint 4 Complete** | TBD | Loudness safety | BACKLOG |
-| **Sprint 5 Complete** | TBD | EQ foundation | BACKLOG |
-| **Sprint 6 Complete** | TBD | Adaptive clarity | BACKLOG |
-| **Phase 1c MVP Ship** | ~2026-07-10 | Sprints 4–6 bundled (internal demo) | PLANNED |
-| **Phase 1.5 Complete** | ~2026-08-01 | Stem separation + spatial audio | PLANNING |
-| **Phase 2 Complete** | ~2026-09-01 | System-wide via virtual device | PLANNING |
+| **Phase 1b Part B Complete** | 2026-06 ✅ | Progress, seek, auto-play/gapless, test suite | SHIPPED |
+| **Sprint 4 Complete** | 2026-06 ✅ | Loudness safety (BS.1770-5 + true-peak limiter) | SHIPPED (merged) |
+| **Sprint 5 / 5b Complete** | 2026-06 ✅ | EQ foundation + N-channel multichannel + Monitoring | SHIPPED |
+| **Bit-perfect Pure Mode + gapless** | 2026-06 ✅ | HAL-direct output, FFmpeg/Apple decode, gapless, device-resilience | SHIPPED (unplanned pipeline-review additions) |
+| **Sprint 6 Complete** | TBD | Adaptive clarity (Arbiter + masking + conversational tuning) | NEXT |
+| **Phase 1.5 Complete** | TBD | Stem separation + spatial audio | PLANNING |
+| **Phase 2 Complete** | TBD | System-wide via Core Audio process tap | PLANNING |
 
 ---
 
@@ -181,5 +184,5 @@
 
 ---
 
-**Status:** 🟢 Ready for execution  
-**Next step:** Phase 1b Part B kickoff (2026-06-18)
+**Status:** 🟢 In active development  
+**Next step:** Sprint 6 — adaptive clarity (perceptual Arbiter + masking-aware clarity + conversational tuning). Recent unplanned work (bit-perfect Pure Mode, gapless playback, device-resilience) is shipped; remaining Pure-path by-ear verification needs a USB DAC.

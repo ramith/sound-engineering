@@ -70,42 +70,9 @@ struct SettingsTabView: View {
             Divider()
                 .padding(.horizontal, 16)
 
-            // MARK: Pure Mode (bit-perfect HAL) — interim B3 smoke-test control (A2 = polished UI)
+            // MARK: Pure Mode (bit-perfect HAL)
 
             PureModeSettingsSection(audioViewModel: audioViewModel)
-
-            Divider()
-                .padding(.horizontal, 16)
-
-            // MARK: Future Settings (placeholder)
-
-            VStack(spacing: 12) {
-                Text("Coming in Phase 1b")
-                    .font(.body)
-                    .foregroundStyle(Color.asLabelSecond)
-                    .padding(.top, 8)
-
-                SettingsControlRow(
-                    title: "Hearing Profile",
-                    icon: "ear.fill"
-                )
-
-                SettingsControlRow(
-                    title: "Device Correction EQ",
-                    icon: "slider.horizontal.3"
-                )
-
-                SettingsControlRow(
-                    title: "Loudness Compensation",
-                    icon: "speaker.wave.2.fill"
-                )
-
-                SettingsControlRow(
-                    title: "About/Help",
-                    icon: "questionmark.circle.fill"
-                )
-            }
-            .padding(.horizontal, 16)
 
             Spacer()
         }

@@ -8,9 +8,9 @@
 //
 // NOTE: AudioViewModel and AudioPlaybackEngine live in the `AdaptiveSound`
 // executable target. SPM does not allow @testable import of executable targets.
-// Until AudioViewModel is extracted into a library target (Phase 1.5), this
-// file mirrors only the AudioPlaybackEngine protocol surface needed by the tests.
-// When the library split lands, replace the mirror with:
+// This file mirrors only the AudioPlaybackEngine protocol surface needed by the
+// tests. When AudioViewModel is extracted into a library target, replace the
+// mirror with:
 //   @testable import AdaptiveSoundCore
 // and delete the duplicated protocol + model declarations below.
 

@@ -60,7 +60,7 @@ namespace AdaptiveSound
 
     namespace
     {
-        // Smallest advertised rate >= target (the soxr resample target hint for the Enhanced
+        // Smallest advertised rate >= target (the resample target rate hint for the Enhanced
         // path when the device cannot do the file's exact rate). If no advertised rate is
         // >= target, fall back to the device's maximum rate.
         double smallestRateAtLeast(const DeviceCapability& cap, double target)

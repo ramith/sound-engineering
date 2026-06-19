@@ -3,15 +3,15 @@
 
 // SpatialRenderKernel — host-agnostic C++ DSP core for SpatialRendererAU.
 //
-// Topology (M3 scope):
+// Topology:
 //   The existing AdaptiveSoundAU / DSPKernel is the N->N effects unit
 //   (EQ->Clarity->Loudness->Limiter, in-place on source channels).  This kernel
 //   is a SEPARATE device-boundary stage that maps N source channels -> M device
 //   channels.  It is NOT in-place: input and output are distinct buffer sets with
-//   (potentially) different channel counts.  The AU wrapper (M3-2) and graph
-//   wiring (M3-3) are separate chunks.
+//   (potentially) different channel counts.  The AU wrapper (SpatialRendererAU)
+//   and graph wiring drive it.
 //
-// M3 behaviour (identity / passthrough / route):
+// Current behaviour (identity / passthrough / route):
 //   out >= in  — copy input channel ch -> output channel ch for ch in [0, in).
 //                Zero-fill output channels [in, out).
 //                Implemented with vDSP_mmov per channel (bit-exact copy).
@@ -103,7 +103,7 @@ namespace AdaptiveSound
         // Routing config — written off-RT by configure(), read on-RT by process().
         // No atomic needed: configure() must complete (with a memory barrier at
         // the calling thread's scheduler boundary) before process() is called.
-        // The AU wrapper (M3-2) is responsible for this ordering guarantee.
+        // The AU wrapper (SpatialRendererAU) is responsible for this ordering guarantee.
         uint32_t inChannels_ = 0U;
         uint32_t outChannels_ = 0U;
         uint32_t sampleRate_ = kDefaultSampleRate;
