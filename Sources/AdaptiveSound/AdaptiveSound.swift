@@ -39,8 +39,7 @@ struct AdaptiveSound: App {
 
                 Button("Next Track") {
                     if let index = audioViewModel.selectedTrackIndex,
-                       index + 1 < audioViewModel.playlist.count
-                    {
+                       index + 1 < audioViewModel.playlist.count {
                         audioViewModel.playTrack(at: index + 1)
                     }
                 }
