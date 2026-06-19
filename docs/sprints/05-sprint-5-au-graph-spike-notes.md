@@ -1,5 +1,7 @@
 # Sprint 5 Pre-Plan — AU-Graph Integration De-Risk Spike (Findings)
 
+> **✅ SHIPPED — historical record (Sprint 5, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Date:** 2026-06-16
 **Status:** Spike complete — AU-graph integration **proven feasible**; throwaway code reverted; findings folded into the Sprint 5 plan.
 **Why:** Sprint 4 left the DSP kernel built but **not in the live playback graph** (see [[reference-dsp-au-not-in-playback-graph]]). Sprint 5's headline deliverable is wiring the AU in so EQ (and the Sprint-4 limiter/loudness) actually process audio. Before committing a plan, we ran a throwaway spike to retire the single biggest unknown: *can the custom v3 `AdaptiveSoundAU` be registered, instantiated as an `AVAudioUnit`, attached to `AVAudioEngine`, and rendered in-graph?*

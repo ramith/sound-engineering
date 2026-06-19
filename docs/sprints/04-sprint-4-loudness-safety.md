@@ -1,5 +1,7 @@
 # SPRINT 4: Loudness Safety & Transparent Dynamics
 
+> **✅ SHIPPED — historical record (Sprint 4, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Theme:** Establish the safety floor — true-peak limiter + LUFS normalization  
 **Effort:** 5–10 story points  
 **Owner:** Audio DSP Agent + C++ implementation  

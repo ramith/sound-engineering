@@ -1,5 +1,7 @@
 # GUI Design Review — AdaptiveSound (app-wide)
 
+> **✅ HISTORICAL design review (2026-06-16), retained for provenance.** Forward schedule: [sprint-plan.md](sprint-plan.md).
+
 **Document ID:** GUI-REVIEW-001
 **Version:** 1.0
 **Date:** 2026-06-16
