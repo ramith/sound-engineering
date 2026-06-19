@@ -4,18 +4,62 @@
 #include "../include/MultichannelView.h"
 #include "../include/ParameterRamp.h"
 #include "../include/PerChannel.h"
+#include "../include/RtSwappableResource.h"
 #include "../include/TargetState.h"
+#include <Accelerate/Accelerate.h>
 #include <array>
-#include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cassert>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace AdaptiveSound
 {
 
     // ParameterRamp now lives in include/ParameterRamp.h (shared by EQ + Loudness).
+
+    // Move-only RAII wrapper over the opaque vDSP_biquad_Setup handle. Owns exactly one
+    // setup; the destructor calls vDSP_biquad_DestroySetup. Used as the T of the EQ's
+    // RtSwappableResource: T's dtor frees the resource, so the swap template never has to
+    // know about Accelerate. Rule of five (it owns a resource): copy deleted, move clears
+    // the source, both move ops + dtor noexcept (no throw across the off-RT free).
+    class VDSPBiquadSetup
+    {
+      public:
+        VDSPBiquadSetup() = default;
+        explicit VDSPBiquadSetup(vDSP_biquad_Setup setup) noexcept : setup_(setup) {}
+
+        ~VDSPBiquadSetup()
+        {
+            if (setup_ != nullptr) {
+                vDSP_biquad_DestroySetup(setup_);
+            }
+        }
+
+        VDSPBiquadSetup(const VDSPBiquadSetup&) = delete;
+        VDSPBiquadSetup& operator=(const VDSPBiquadSetup&) = delete;
+
+        VDSPBiquadSetup(VDSPBiquadSetup&& other) noexcept
+            : setup_(std::exchange(other.setup_, nullptr))
+        {
+        }
+        VDSPBiquadSetup& operator=(VDSPBiquadSetup&& other) noexcept
+        {
+            if (this != &other) {
+                if (setup_ != nullptr) {
+                    vDSP_biquad_DestroySetup(setup_);
+                }
+                setup_ = std::exchange(other.setup_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] vDSP_biquad_Setup get() const noexcept { return setup_; }
+
+      private:
+        vDSP_biquad_Setup setup_ = nullptr;
+    };
 
     class EQModule
     {
@@ -55,16 +99,15 @@ namespace AdaptiveSound
         using EqDelay = std::array<float, kDelayStateSize>;
         PerChannel<EqDelay> delays_{};
 
-        // Double-buffered vDSP_biquad_Setup (opaque void*) for RT-safe coefficient
-        // updates without create/destroy on the audio thread (issue #3):
-        //  - publishCoefficients() (off-RT) creates a new setup into pendingSetup_.
-        //  - process() (RT) atomically swaps pendingSetup_ -> activeSetup_ and deposits
-        //    the displaced setup into toReleaseSetup_ (no free on the RT thread).
-        //  - publishCoefficients() / the destructor (off-RT) destroy released setups.
-        // Pointer-width atomics are lock-free on arm64 (asserted in the .mm).
-        std::atomic<void*> activeSetup_{nullptr};    // RT runs this
-        std::atomic<void*> pendingSetup_{nullptr};   // off-RT publishes, RT adopts
-        std::atomic<void*> toReleaseSetup_{nullptr}; // RT deposits old, off-RT destroys
+        // RT-safe vDSP_biquad_Setup handoff (issue #3), factored into the generic
+        // triple-atomic swap template (S6 Tier-3 §3):
+        //  - publishCoefficients() (off-RT) builds a new setup and publish()es it.
+        //  - process() (RT) adopt()s the pending setup; active() returns the live one.
+        //  - publishCoefficients()/dtor (off-RT) reclaim()/free retired setups.
+        // VDSPBiquadSetup's dtor calls vDSP_biquad_DestroySetup; the template owns the
+        // lock-free pointer swap. EQ's per-channel delays_ filter-state preservation
+        // across swaps stays HERE in process() — it is module-specific, not generic.
+        RtSwappableResource<VDSPBiquadSetup> setup_;
 
         // Coefficient scratch (kCoeffsPerBiquad per section x kMaxBiquads).
         // Off-RT use only (initialize / publishCoefficients).
