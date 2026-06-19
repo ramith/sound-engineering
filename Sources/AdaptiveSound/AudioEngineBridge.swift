@@ -191,6 +191,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// re-establish sequence (stop → re-prime → play) from interleaving across concurrent handlers.
     let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
+    /// Re-entrancy guard for `reestablishEnhancedAfterConfigChange`. Exclusively accessed on
+    /// `configChangeQueue` (both the FOLLOW-mode dispatch and the config-change notification handler
+    /// run there). A FOLLOW device-connect fires BOTH paths — the explicit `configChangeQueue.async`
+    /// in `handleDeviceSetChange` AND the subsequent `AVAudioEngineConfigurationChange` notification —
+    /// causing a second `seekEnhancedResampler` that abandons the first re-prime → audible dropout.
+    /// This flag lets the second entry early-return. `defer` ensures it is always cleared.
+    var isReestablishing: Bool = false
+
     // MARK: - Initialize
 
     func initialize() async throws -> Bool {
@@ -372,11 +380,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     // A fresh startAudio always begins a new playback context: clear the end-of-queue
                     // sentinel and the on-deck slot so the new play starts clean (the caller must
                     // re-arm on-deck after startAudio if it wants gapless from the first track).
-                    // Both values live on resampleQueue, but startAudio always runs before any
-                    // resampler loop is active (the prior session is stopped below), so writing them
-                    // here (on DispatchQueue.global) before the resampler is started is race-free.
-                    self.gaplessPlaybackEnded = false
-                    self.onDeckURL = nil
+                    // P2-3: the 20 Hz VM timer can call playbackEnded() (which reads gaplessPlaybackEnded
+                    // via resampleQueue.sync) concurrently with this startAudio body — write under
+                    // resampleQueue to prevent a race. stopEnhancedResampler() below also acquires
+                    // resampleQueue.sync; these two syncs are sequential (not nested) — safe.
+                    self.resampleQueue.sync {
+                        self.gaplessPlaybackEnded = false
+                        self.onDeckURL = nil
+                    }
 
                     // Attempt Pure path when requested, a file is provided, and capability allows.
                     if pureMode, let url = fileURL {
@@ -431,7 +442,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                     }
 
                     self.activePath = .enhanced
-                    self.enhancedPlayIntent = true
+                    self.resampleQueue.sync { self.enhancedPlayIntent = true }
                     self.cachedSignalPath = SignalPathInfo(
                         path: .enhanced,
                         decision: .fallbackEnhanced,
@@ -549,11 +560,14 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 } else {
                     self.stopEnhancedPlayback()
                 }
-                // Clear the on-deck slot on user stop: a stop is a deliberate abort, not an
-                // end-of-queue, so the armed next track must not silently begin playing later.
-                // Serialized on resampleQueue so it cannot race with an in-flight seam handler.
-                self.resampleQueue.async { self.onDeckURL = nil }
-                self.enhancedPlayIntent = false
+                // Clear the on-deck slot and play-intent on user stop: a stop is a deliberate
+                // abort, not an end-of-queue, so the armed next track must not silently begin
+                // playing later. Serialized on resampleQueue so it cannot race with an in-flight
+                // seam handler. Both writes are batched in one sync to avoid a second crossing.
+                self.resampleQueue.sync {
+                    self.onDeckURL = nil
+                    self.enhancedPlayIntent = false
+                }
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
                 self.activePath = .enhanced
@@ -631,9 +645,10 @@ extension AudioEngineBridge {
         ) { [weak self] _ in
             self?.configChangeQueue.async {
                 guard let self, let engine = self.avEngine else { return }
+                let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
                 logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
                     + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "
-                    + "intent=\(self.enhancedPlayIntent) default=\(getDefaultOutputDeviceID()) "
+                    + "intent=\(intentSnap) default=\(getDefaultOutputDeviceID()) "
                     + "selected=\(self.currentDeviceID)")
                 // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
                 // those very changes fire this notification. The Enhanced AVAudioEngine is
@@ -663,10 +678,23 @@ extension AudioEngineBridge {
     /// Internal (not private) so the device-set handler in `AudioEngineBridge+Devices.swift` can
     /// drive a re-establish when "follow the newly-connected device" mode adopts a new default.
     func reestablishEnhancedAfterConfigChange(engine: AVAudioEngine) {
+        // Re-entrancy guard: a FOLLOW-mode device connect dispatches one re-establish explicitly
+        // (handleDeviceSetChange) AND causes AVAudioEngineConfigurationChange to fire a second one
+        // on the same configChangeQueue serial queue. The second call must early-return to prevent
+        // a double seekEnhancedResampler that abandons the first re-prime → audible dropout.
+        // Both this flag and all callers are confined to configChangeQueue — no atomics needed.
+        guard !isReestablishing else {
+            logUX("reestablish: skipping re-entrant call (already in progress)")
+            return
+        }
+        isReestablishing = true
+        defer { isReestablishing = false }
+
         // Use the durable play-INTENT, not `playerNode.isPlaying`: a reconfiguration (a device
         // connecting/disconnecting) can momentarily report the node as not-playing, and gating on
         // that left playback silently dead after e.g. a Bluetooth device connected mid-track.
-        let wasPlaying = enhancedPlayIntent
+        // Read under resampleQueue (its designated owner) for a consistent snapshot.
+        let wasPlaying = resampleQueue.sync { enhancedPlayIntent }
 
         // Capture the playhead BEFORE restarting (the player may stop reporting a render time across
         // the reconfiguration; `lastKnownEnhancedPositionSeconds` is the freshest reliable value).
@@ -683,7 +711,12 @@ extension AudioEngineBridge {
 
         guard wasPlaying, let player = playerNode else { return }
 
-        if resampleSession != nil {
+        // Read resampleSession under the queue's lock so the branch decision is consistent with
+        // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
+        // or primeEnhancedResamplerLocked running concurrently).
+        let hasResampler = resampleQueue.sync { resampleSession != nil }
+
+        if hasResampler {
             // Rate-mismatched file: re-prime the streaming resampler from the playhead. (engine.start()
             // + play() alone leave the flushed buffer queue empty → silence.)
             if !seekEnhancedResampler(to: resumePos, player: player), !player.isPlaying {

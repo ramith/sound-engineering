@@ -82,6 +82,15 @@ namespace AdaptiveSound
         // ended.
         [[nodiscard]] bool decoderFinished() const noexcept;
 
+        // True end-of-stream for the RT consumer: the decoder has finished AND the ring is drained
+        // AND no partial frame is carried. This is the gapless seam's true-EOF predicate — when it
+        // holds, this source will never produce another frame, so the gapless engine may swap to
+        // the armed-next track. RT-safe: noexcept, allocation-free, lock-free; the carry count is
+        // RT-thread-private (read race-free here on the RT thread). Distinguishing this from a
+        // transient underrun (decoder still running, ring momentarily empty) is what keeps the
+        // seam from triggering on a mid-stream buffer starve.
+        [[nodiscard]] bool exhausted() const noexcept;
+
       private:
         class Impl;
         std::unique_ptr<Impl> impl_;

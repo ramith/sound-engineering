@@ -163,6 +163,22 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         }
     }
 
+    /// Simulate the current track ending when the VM has NOT yet armed a next track.
+    ///
+    /// This models the "short-track / slow-poll gap": the engine reaches EOF before the VM's
+    /// 20 Hz poll has called `setNextTrack(_:)` — so `nextTrackURL` is nil and the engine sets
+    /// `endedFlag` rather than incrementing `transitionCount`. The VM then interprets this as
+    /// "end of queue" and stops, even though a next track exists in the playlist.
+    ///
+    /// This is a regression-target helper: it documents the architectural gap so a future fix
+    /// (pre-arm or engine-side look-ahead) can write a test against the corrected behaviour.
+    /// It is intentionally distinct from `simulateTrackEnd()` to make the failure mode explicit.
+    func simulateTrackEndWithoutArm() {
+        // Ignore nextTrackURL even if it has been set — model the race where the track ends
+        // before the VM's arm call reaches the engine.
+        endedFlag = true
+    }
+
     /// Reset all gapless state (useful between test cases).
     func resetGaplessState() {
         transitionCount = 0

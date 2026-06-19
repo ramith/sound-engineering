@@ -134,9 +134,33 @@ extern "C"
     /// NULL handle.
     CAchievedOutputState pureModeEngineAchievedState(void* engine);
 
-    /// Current playback position in seconds: (seekBase + renderedFrames) / source rate.
-    /// Jumps on seek. Returns 0 when there is no source or rate.
+    /// Current playback position in seconds: (active-track seekBase + active-track renderedFrames)
+    /// / active-track rate. RESTARTS at 0 at each gapless seam (position is per-track). Jumps on
+    /// seek. Returns 0 when there is no source or rate.
     double pureModeEnginePositionSeconds(void* engine);
+
+    // MARK: Pure-path gapless (Stage 2)
+
+    /// Pre-open `filePath` off-RT and arm it as the next track for a gapless seam at the current
+    /// track's true end-of-file. Same-rate only: the bridge runs sameRateGaplessCompatible() vs
+    /// the ACTIVE track first.
+    /// @return 2 = armed (compatible, gapless seam ready);
+    ///         1 = format/rate mismatch (caller should reconfigure for the next track itself);
+    ///         0 = error (unreadable/unsupported file, already armed, or NULL handle/path).
+    int pureModeEngineSetNextTrack(void* engine, const char* filePath);
+
+    /// Clear any armed next track (e.g. the user cleared the on-deck queue). Joins the dropped
+    /// source off-RT. Idempotent; NULL-safe.
+    void pureModeEngineClearNextTrack(void* engine);
+
+    /// Monotonic count of completed gapless seams. The view model polls this; an increase means
+    /// the armed next track became the active track. ALSO reaps a seam-retired source off-RT
+    /// (joins its decode thread) — so poll this regularly. Returns 0 for a NULL handle.
+    uint64_t pureModeEnginePollTrackAdvance(void* engine);
+
+    /// 1 once the active track ended with no armed next track (playlist exhausted), else 0.
+    /// Returns 0 for a NULL handle.
+    int pureModeEnginePlaybackEnded(void* engine);
 
     /// Set the device's hardware master volume (kAudioDevicePropertyVolumeScalar, output scope,
     /// 0..1, clamped). Hardware/analog-domain, so the rendered stream stays bit-perfect — this gives

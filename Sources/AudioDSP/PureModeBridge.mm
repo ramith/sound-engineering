@@ -6,10 +6,11 @@
 // C++ test harness (it links CoreAudio).
 //
 // Ownership: the void* handle is a PureModeSession owned via RAII. The session owns the
-// HALOutputEngine, the FileDecodeSource, and a tiny RT-safe adapter that forwards pullFloat() to
-// the file source while counting rendered frames into an atomic. Teardown is idempotent and runs
-// from the destructor: the FileDecodeSource dtor joins its decode thread; the HALOutputEngine dtor
-// restores the device nominal rate and releases hog mode.
+// HALOutputEngine and a GaplessSource (the engine's single PureModeSource). The GaplessSource owns
+// the current + an optionally pre-armed next FileDecodeSource and performs the sample-accurate
+// RT-thread seam swap (Stage 2 gapless). Teardown is idempotent and runs from the destructor: the
+// GaplessSource dtor frees both FileDecodeSources (each joins its decode thread); the
+// HALOutputEngine dtor restores the device nominal rate and releases hog mode.
 //
 // -fno-exceptions / -fno-rtti clean.
 //
@@ -17,6 +18,7 @@
 #include "include/CoreAudioDevice.h"
 #include "include/DeviceCapability.h"
 #include "include/FileDecodeSource.h"
+#include "include/GaplessSource.h"
 #include "include/HALOutputEngine.h"
 #include "include/PureModeBridge.h"
 #include "include/PureModeSource.h"
@@ -26,6 +28,7 @@
 #include <cstdint>
 #include <memory>
 #include <new>
+#include <utility>
 
 namespace
 {
@@ -34,47 +37,31 @@ namespace
     using AdaptiveSound::DeviceCapability;
     using AdaptiveSound::FileDecodeSource;
     using AdaptiveSound::FileFormat;
+    using AdaptiveSound::GaplessSource;
     using AdaptiveSound::HALOutputEngine;
     using AdaptiveSound::PureModeEvaluation;
-    using AdaptiveSound::PureModeSource;
 
     // Decoder backend codes mirrored into CAchievedOutputState::decoderBackend.
     constexpr uint8_t kDecoderBackendApple = 0U;
     constexpr uint8_t kDecoderBackendFFmpeg = 1U;
 
-    // RT-safe adapter: forwards pullFloat() to the wrapped FileDecodeSource and adds the produced
-    // frame count to an atomic counter. No allocation, no lock, no throw on the render path
-    // (memory_order_relaxed is sufficient — the counter is only read off-RT for position display).
-    class CountingSource final : public PureModeSource
-    {
-      public:
-        CountingSource(FileDecodeSource* source, std::atomic<uint64_t>* renderedFrames) noexcept
-            : source_(source), renderedFrames_(renderedFrames)
-        {
-        }
+    // pureModeEngineSetNextTrack return codes (mirrored in PureModeBridge.h).
+    constexpr int kNextTrackError = 0;          // unreadable/unsupported/already-armed/null
+    constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch — caller reconfigures
+    constexpr int kNextTrackArmed = 2;            // compatible — armed for a gapless seam
 
-        uint32_t pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept override
-        {
-            const uint32_t produced = source_->pullFloat(out, frames, channels);
-            renderedFrames_->fetch_add(produced, std::memory_order_relaxed);
-            return produced;
-        }
-
-      private:
-        FileDecodeSource* source_;            // borrowed; outlives this adapter (session-owned)
-        std::atomic<uint64_t>* renderedFrames_; // borrowed; session-owned
-    };
-
-    // The opaque engine session behind the void* handle.
+    // The opaque engine session behind the void* handle. The GaplessSource IS the engine's single
+    // PureModeSource; it owns the active + armed-next FileDecodeSources internally.
     struct PureModeSession
     {
         std::unique_ptr<HALOutputEngine> engine;
-        std::unique_ptr<FileDecodeSource> source;
-        std::unique_ptr<CountingSource> adapter;
-        std::atomic<uint64_t> renderedFrames{0U};
-        uint64_t seekBaseFrames = 0U;
+        std::unique_ptr<GaplessSource> gapless;
 
-        PureModeSession() : engine(std::make_unique<HALOutputEngine>()) {}
+        PureModeSession()
+            : engine(std::make_unique<HALOutputEngine>()),
+              gapless(std::make_unique<GaplessSource>())
+        {
+        }
     };
 
     // Translate a C++ DeviceCapability into the flat C struct + rate array (clamped to maxRates).
@@ -146,12 +133,9 @@ extern "C"
             return 0;
         }
 
-        // Re-starting an already-running session: stop + tear down the prior source first.
+        // Re-starting an already-running session: stop render first. setCurrent() below (with
+        // render stopped) clears any prior active/armed source inside the GaplessSource.
         session->engine->stop();
-        session->adapter.reset();
-        session->source.reset();
-        session->renderedFrames.store(0U, std::memory_order_relaxed);
-        session->seekBaseFrames = 0U;
 
         auto source = std::make_unique<FileDecodeSource>();
         if (!source->open(filePath))
@@ -184,9 +168,11 @@ extern "C"
             eval.requiresHog = false;
         }
 
-        auto adapter = std::make_unique<CountingSource>(source.get(), &session->renderedFrames);
+        // Install the active source into the GaplessSource (render is stopped → precondition met),
+        // then point the engine at the GaplessSource (its single, stable PureModeSource).
+        session->gapless->setCurrent(std::move(source));
 
-        if (!session->engine->configure(cap, eval, adapter.get()))
+        if (!session->engine->configure(cap, eval, session->gapless.get()))
         {
             return 0;
         }
@@ -195,32 +181,34 @@ extern "C"
             session->engine->stop();
             return 0;
         }
-
-        // Hand ownership to the session AFTER a successful start so a failed start leaves no
-        // dangling source/adapter referenced by the engine.
-        session->source = std::move(source);
-        session->adapter = std::move(adapter);
         return 1;
     }
 
     int pureModeEngineSeek(void* engine, double seconds)
     {
         auto* session = static_cast<PureModeSession*>(engine);
-        if (session == nullptr || session->source == nullptr)
+        if (session == nullptr)
+        {
+            return 0;
+        }
+        FileDecodeSource* active = session->gapless->activeSource();
+        if (active == nullptr)
         {
             return 0;
         }
 
-        // Satisfy the FileDecodeSource::seek precondition (pullFloat must not run concurrently) by
-        // stopping render around the seek (control-plane).
+        // Seek operates on the ACTIVE track ONLY and does NOT disturb the armed next (transitions_
+        // must not increment on a seek). Satisfy the FileDecodeSource::seek precondition (pullFloat
+        // must not run concurrently) by stopping render around the seek (control-plane).
         session->engine->stop();
-        const bool seekOk = session->source->seek(seconds);
+        const bool seekOk = active->seek(seconds);
 
-        const double rate = session->source->sampleRate();
+        const double rate = active->sampleRate();
         const double clampedSeconds = (seconds > 0.0) ? seconds : 0.0;
-        session->seekBaseFrames =
+        const uint64_t seekBaseFrames =
             (rate > 0.0) ? static_cast<uint64_t>(std::llround(clampedSeconds * rate)) : 0U;
-        session->renderedFrames.store(0U, std::memory_order_relaxed);
+        // Re-base the active track's position so display resumes from the seek target.
+        session->gapless->resetActiveBase(seekBaseFrames);
 
         session->engine->start();
         return seekOk ? 1 : 0;
@@ -269,11 +257,12 @@ extern "C"
         out.achievedIsFloat = state.achievedIsFloat ? 1U : 0U;
         out.running = state.running ? 1U : 0U;
 
-        // Report the decode backend the FileDecodeSource actually selected at open() (Apple
+        // Report the decode backend the ACTIVE FileDecodeSource selected at open() (Apple
         // ExtAudioFile vs FFmpeg) so the signal-path UI is honest about which decoder is live.
+        const FileDecodeSource* active = session->gapless->activeSource();
         out.decoderBackend =
-            (session->source != nullptr &&
-             session->source->decoderKind() == AdaptiveSound::DecoderKind::FFmpeg)
+            (active != nullptr &&
+             active->decoderKind() == AdaptiveSound::DecoderKind::FFmpeg)
                 ? kDecoderBackendFFmpeg
                 : kDecoderBackendApple;
         return out;
@@ -282,18 +271,89 @@ extern "C"
     double pureModeEnginePositionSeconds(void* engine)
     {
         auto* session = static_cast<PureModeSession*>(engine);
-        if (session == nullptr || session->source == nullptr)
+        if (session == nullptr)
         {
             return 0.0;
         }
-        const double rate = session->source->sampleRate();
+        // Per-track position: (active seekBase + active renderedFrames) / active rate. Restarts at
+        // 0 at each gapless seam (renderedFramesCurrent re-zeroes when the armed next becomes
+        // active).
+        const double rate = session->gapless->currentSampleRate();
         if (!(rate > 0.0))
         {
             return 0.0;
         }
-        const uint64_t rendered = session->renderedFrames.load(std::memory_order_relaxed);
-        const uint64_t total = session->seekBaseFrames + rendered;
+        const uint64_t total = session->gapless->renderedFramesCurrent();
         return static_cast<double>(total) / rate;
+    }
+
+    int pureModeEngineSetNextTrack(void* engine, const char* filePath)
+    {
+        auto* session = static_cast<PureModeSession*>(engine);
+        if (session == nullptr || filePath == nullptr)
+        {
+            return kNextTrackError;
+        }
+        const FileDecodeSource* active = session->gapless->activeSource();
+        if (active == nullptr)
+        {
+            return kNextTrackError; // nothing playing to arm behind
+        }
+
+        // Pre-open the next source off-RT. A failure (unreadable / unsupported / > 8 channels)
+        // leaves nothing armed and the RT path untouched.
+        auto next = std::make_unique<FileDecodeSource>();
+        if (!next->open(filePath))
+        {
+            return kNextTrackError;
+        }
+
+        // Same-rate-only gapless: a rate/channel/float/bit-depth mismatch can't be straddled at the
+        // seam. Drop the source and tell the caller to reconfigure for the next track itself.
+        if (!AdaptiveSound::sameRateGaplessCompatible(*active, *next))
+        {
+            return kNextTrackNeedsReconfigure; // `next` dtor joins its decode thread off-RT
+        }
+
+        // Arm it. A second arm (one already pending) is refused → treat as error so the caller
+        // does not assume a gapless seam is queued. `next` ownership transfers only on success.
+        if (!session->gapless->armNext(std::move(next)))
+        {
+            return kNextTrackError;
+        }
+        return kNextTrackArmed;
+    }
+
+    void pureModeEngineClearNextTrack(void* engine)
+    {
+        auto* session = static_cast<PureModeSession*>(engine);
+        if (session == nullptr)
+        {
+            return;
+        }
+        session->gapless->clearNext();
+    }
+
+    uint64_t pureModeEnginePollTrackAdvance(void* engine)
+    {
+        auto* session = static_cast<PureModeSession*>(engine);
+        if (session == nullptr)
+        {
+            return 0U;
+        }
+        // Reap a seam-retired source off-RT (joins its decode thread) before reporting the count.
+        session->gapless->reapRetired();
+        return session->gapless->transitionCount();
+    }
+
+    int pureModeEnginePlaybackEnded(void* engine)
+    {
+        auto* session = static_cast<PureModeSession*>(engine);
+        if (session == nullptr)
+        {
+            return 0;
+        }
+        return session->gapless->ended() ? 1 : 0;
     }
 
     int pureModeSetDeviceVolume(uint32_t deviceID, float scalar)
