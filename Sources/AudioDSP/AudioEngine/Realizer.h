@@ -110,7 +110,10 @@ namespace AdaptiveSound
         void applyIntensity(float value);
 
         // Read-only canonical-state accessor for tests/diagnostics (control thread only).
-        const TargetState& canonicalState() const noexcept { return canonical_; }
+        const TargetState& canonicalState() const noexcept
+        {
+            return canonical_;
+        }
 
       private:
         // Drain the dirty coalescing slots: read-and-clear, recompute only what changed,
@@ -122,9 +125,9 @@ namespace AdaptiveSound
         // site). Asserts the realizer queue in debug.
         void publishCanonical();
 
-        std::shared_ptr<DSPKernel> kernel_;  // outlives us (drained before release)
-        dispatch_queue_t queue_ = nullptr;   // serial, off-main; sole publisher
-        TargetState canonical_{};            // canonical feed-forward state (moved out of the AU)
+        std::shared_ptr<DSPKernel> kernel_; // outlives us (drained before release)
+        dispatch_queue_t queue_ = nullptr;  // serial, off-main; sole publisher
+        TargetState canonical_{};           // canonical feed-forward state (moved out of the AU)
 
         // Coalescing slots, written on the control thread, read-and-cleared in drain().
         PendingEqGains pendingEqGains_{};
