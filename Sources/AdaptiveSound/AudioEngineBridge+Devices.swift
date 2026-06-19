@@ -13,7 +13,7 @@ extension AudioEngineBridge {
     /// Returns real device IDs, names, sample rates, and types — no mock data.
     func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 let maxDevices = 32
                 var buffer = [CDeviceInfo](repeating: CDeviceInfo(), count: maxDevices)
                 let count = enumerateOutputDevicesC(&buffer, UInt32(maxDevices))
@@ -62,12 +62,12 @@ extension AudioEngineBridge {
 
     func selectDevice(_ deviceID: UInt32) async throws -> Bool {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
                 let result = selectOutputDeviceC(deviceID)
                 if result != 0 {
                     // Track the selected device so Pure Mode can open the HAL engine on it.
-                    self.currentDeviceID = deviceID
+                    self.setCurrentDeviceID(deviceID)
                     logUX("engine selectDevice: id=\(deviceID) result=ok")
                 } else {
                     logUX("engine selectDevice: id=\(deviceID) result=failed")
@@ -125,18 +125,19 @@ extension AudioEngineBridge {
         // This method runs on the device-list listener queue — off resampleQueue — so the sync is
         // deadlock-safe.
         let intent = resampleQueue.sync { enhancedPlayIntent }
-        guard activePath != .pure, intent, currentDeviceID != 0 else { return }
+        let selectedDeviceID = currentDeviceID
+        guard activePath != .pure, intent, selectedDeviceID != 0 else { return }
         let currentDefault = getDefaultOutputDeviceID()
-        guard currentDeviceID != currentDefault else { return } // already targeting the default
+        guard selectedDeviceID != currentDefault else { return } // already targeting the default
 
         if pinPlaybackToSelectedDevice {
-            let reasserted = selectOutputDeviceC(currentDeviceID) != 0
-            logUX("device change: PIN — selected=\(currentDeviceID) != default=\(currentDefault) → "
+            let reasserted = selectOutputDeviceC(selectedDeviceID) != 0
+            logUX("device change: PIN — selected=\(selectedDeviceID) != default=\(currentDefault) → "
                 + "re-assert \(reasserted ? "ok" : "failed (selected device gone?)")")
         } else {
             // FOLLOW: target the newly-connected default and re-establish playback on it.
-            logUX("device change: FOLLOW — adopt default=\(currentDefault) (was \(currentDeviceID))")
-            currentDeviceID = currentDefault
+            logUX("device change: FOLLOW — adopt default=\(currentDefault) (was \(selectedDeviceID))")
+            setCurrentDeviceID(currentDefault)
             if let engine = avEngine {
                 configChangeQueue.async { [weak self] in
                     self?.reestablishEnhancedAfterConfigChange(engine: engine)

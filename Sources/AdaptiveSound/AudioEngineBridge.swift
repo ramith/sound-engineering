@@ -2,6 +2,7 @@ import Accelerate
 import AudioFormatKit
 import AVFoundation
 import Foundation
+import os
 
 // MARK: - AudioEngineBridge
 
@@ -58,11 +59,23 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     var beforeTapInstalled = false
     var afterTapInstalled = false
 
+    /// Heap-allocated `os_unfair_lock` backing the leaf `stateLock` that guards the shared
+    /// playback-context fields (see `AudioEngineBridge+SharedState.swift`). Allocated once for
+    /// the bridge's lifetime so the pointer is stable across calls (an `os_unfair_lock` must be
+    /// locked/unlocked through a stable address). Freed in `deinit`.
+    let stateLockPtr: os_unfair_lock_t = {
+        let ptr = os_unfair_lock_t.allocate(capacity: 1)
+        ptr.initialize(to: os_unfair_lock())
+        return ptr
+    }()
+
     // MARK: - Pure-Mode stored state (methods live in AudioEngineBridge+PureMode.swift)
 
-    /// The device selected by `selectDevice(_:)`, or the system default selected at
-    /// `initialize()`. Pure Mode uses this to open the HAL engine on the right device.
-    var currentDeviceID: UInt32 = 0
+    /// Backing storage for `currentDeviceID` — guarded by `stateLock`. The device selected by
+    /// `selectDevice(_:)`, or the system default selected at `initialize()`. Pure Mode uses this to
+    /// open the HAL engine on the right device. Access ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `setCurrentDeviceID(_:)`).
+    var storedCurrentDeviceID: UInt32 = 0
 
     /// Opaque Pure-Mode engine handle (created lazily in `startPure`).
     /// Destroyed by `pureModeEngineDestroy` in `stopAudio` / `shutdown`.
@@ -71,25 +84,31 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// Which output path is currently active.
     var activePath: OutputPathKind = .enhanced
 
-    /// Latest signal-path snapshot; polled lock-free by `currentSignalPath()`.
-    var cachedSignalPath: SignalPathInfo = .init()
+    /// Backing storage for `cachedSignalPath` — guarded by `stateLock`. Latest signal-path
+    /// snapshot, polled at 20 Hz on the MainActor by `currentSignalPath()` while it is written from
+    /// engineQueue / configChangeQueue / the device-loss path. Access ONLY via the guarded
+    /// accessors in `AudioEngineBridge+SharedState.swift`.
+    var storedCachedSignalPath: SignalPathInfo = .init()
 
-    /// URL of the last successfully scheduled file, used by the device-change fallback
-    /// to restart playback on the new device without re-opening the file picker.
-    var lastFileURL: URL?
+    /// Backing storage for `lastFileURL` — guarded by `stateLock`. URL of the last successfully
+    /// scheduled file, used by the device-change fallback to restart playback on the new device
+    /// without re-opening the file picker. Access ONLY via the guarded accessors.
+    var storedLastFileURL: URL?
 
-    /// Absolute position offset (seconds) for the Enhanced path. AVAudioPlayerNode's sampleTime
-    /// restarts at 0 on every play(), so after a seek (stop + scheduleSegment(from:) + play) we add
-    /// this (= the seek target) to report the true playhead. 0 on a fresh from-start play.
-    var enhancedPositionBaseSeconds: Double = 0
+    /// Backing storage for `enhancedPositionBaseSeconds` — guarded by `stateLock`. Absolute position
+    /// offset (seconds) for the Enhanced path. AVAudioPlayerNode's sampleTime restarts at 0 on every
+    /// play(), so after a seek (stop + scheduleSegment(from:) + play) we add this (= the seek target)
+    /// to report the true playhead. 0 on a fresh from-start play. Access ONLY via the guarded
+    /// accessors.
+    var storedEnhancedPositionBaseSeconds: Double = 0
 
-    /// Last non-nil Enhanced playhead, cached every time `currentPlaybackPosition()` resolves a real
-    /// position (the view model polls it). Used to re-establish playback at the right point after an
+    /// Backing storage for `lastKnownEnhancedPositionSeconds` — guarded by `stateLock`. Last non-nil
+    /// Enhanced playhead, cached every time `currentPlaybackPosition()` resolves a real position (the
+    /// view model polls it). Used to re-establish playback at the right point after an
     /// `AVAudioEngineConfigurationChange` — at that instant the player may already report no render
     /// time, so this cached value is the most recent reliable playhead. Also updated at gapless seams
-    /// so the new track's position re-zeroes correctly. Internal (not private) so the gapless
-    /// extension in `AudioEngineBridge+Gapless.swift` can update it.
-    var lastKnownEnhancedPositionSeconds: Double = 0
+    /// so the new track's position re-zeroes correctly. Access ONLY via the guarded accessors.
+    var storedLastKnownEnhancedPositionSeconds: Double = 0
 
     // MARK: - Gapless / on-deck state (methods in AudioEngineBridge+Gapless.swift)
 
@@ -193,6 +212,15 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     /// re-establish sequence (stop → re-prime → play) from interleaving across concurrent handlers.
     let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
+    /// Serial queue that owns ALL transport / graph mutation: `startAudio`, `stopAudio`, `seek`,
+    /// `setParameter`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
+    /// their bodies here (previously each dispatched onto the CONCURRENT `DispatchQueue.global()`,
+    /// so they could interleave on `avEngine` / `playerNode` / `pureEngine` / `activePath`). One
+    /// serial queue makes those transitions mutually exclusive (P2-B). It may call
+    /// `resampleQueue.sync` (one-directional, engineQueue → resampleQueue); it must NEVER be the
+    /// target of a `.sync` from resampleQueue / configChangeQueue, so no wait-cycle can form.
+    let engineQueue = DispatchQueue(label: "com.adaptivesound.engine")
+
     /// Re-entrancy guard for `reestablishEnhancedAfterConfigChange`. Exclusively accessed on
     /// `configChangeQueue` (both the FOLLOW-mode dispatch and the config-change notification handler
     /// run there). A FOLLOW device-connect fires BOTH paths — the explicit `configChangeQueue.async`
@@ -209,10 +237,10 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         registerSpatialRendererAUSubclass()
 
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 // Capture the current default output device so Pure Mode can open the right
                 // HAL engine. Updated in selectDevice(_:) and by the device-change listener.
-                self.currentDeviceID = getDefaultOutputDeviceID()
+                self.setCurrentDeviceID(getDefaultOutputDeviceID())
 
                 let engine = AVAudioEngine()
                 self.avEngine = engine
@@ -285,7 +313,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
+            self.engineQueue.async {
                 // Stop the streaming-resampler loop FIRST (bump generation + drop session) so no
                 // in-flight buffer schedules onto the graph we're about to tear down.
                 self.stopEnhancedResampler()
@@ -330,7 +358,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
                 self.beforeAnalyzers = []
                 self.afterAnalyzers = []
                 self.activePath = .enhanced
-                self.cachedSignalPath = .init()
+                self.storeSignalPath(.init())
                 // Tap already removed above, so no callback can touch the meter now.
                 if let meter = self.loudnessMeter {
                     loudnessMeterDestroy(meter)
@@ -342,7 +370,15 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     }
 
     func currentSignalPath() -> SignalPathInfo {
-        cachedSignalPath
+        loadSignalPath()
+    }
+
+    deinit {
+        // Free the heap-allocated leaf lock. By the time the bridge deallocates, no queue work or
+        // listener can still reference it (shutdown() has torn everything down and removed the
+        // CoreAudio listeners), so this is a plain leaf cleanup.
+        stateLockPtr.deinitialize(count: 1)
+        stateLockPtr.deallocate()
     }
 
     // Device enumeration + selection live in AudioEngineBridge+Devices.swift.
