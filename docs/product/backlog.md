@@ -2,8 +2,8 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.1 — aligned to architecture.md v0.3 + requirements v0.6
-**Date:** 2026-06-13
+**Version:** 2.2 — aligned to architecture.md v0.3 + requirements v0.6
+**Date:** 2026-06-19
 **Author:** Lead Business Analyst
 **Status:** Draft — Pending sprint planning review
 
@@ -12,6 +12,8 @@
 > **v2.0 change note (2026-06-13 — architecture v0.2 alignment):** Major revamp to align with `docs/architecture/architecture.md` v0.2 (source of truth) and requirements v0.5. Adopted the **four-phase scheme (0 / 1 / 1.5 / 2)**. Epics restructured: added **EP-PERCEPTUAL** (typed contributors + ERB/Bark masking); **EP-SPAT → EP-IMMERSION** (BRIR-first); **EP-TONAL** reframed (min-phase default, no program DRC, loudness-comp method); **EP-NLT** reframed (typed-macro + per-stem); added **EP-REIMAGINE** (intensity control) and **EP-STEM** (Phase 1.5 object engine). New spikes: **SPIKE-PERF-BUDGET** (gates Phase 1.5), **SPIKE-SEP-QUALITY**, **SPIKE-REIMAGINE-MAP**, **SPIKE-MASKING-MODEL**, **SPIKE-BRIR** (kept SPIKE-IPREVIEW, SPIKE-LIBBS2B). Open Items updated with OQ-18–22. Existing Phase 0/1 stories are retained; affected ones are annotated rather than rewritten.
 
 > **v2.1 change note (2026-06-13 — architecture v0.3 sync):** Folded in the expert-panel review ([../architecture/review-v0.2.md](../architecture/review-v0.2.md)) + founder decisions: **re-sum mixbus** (ADR-011) onto US-STEM-02; **bass/lead-vocal spatial exemptions**; **shared late-reverb** + content-adaptive room; masking = **ERB excitation-pattern** subset; gate stems on **perceptual artifacts, not SDR**; **MLX-primary** + **weights auto-download on first run**; Reimagine defaults (low-mid / dead-band / loudness-matched); NL **on-device-lean + output-clamping** (mechanism still deferred); **ADR-004 RT-ML → contingent**; tap **high-consent + comms-exclusion + never-persist**. Hardware floor **M1 Pro/16 GB** (M4/M5 above) → **Risk R-3 Low**, SPIKE-PERF-BUDGET is a **tuning** spike (sets QualityProfile caps, not a go/no-go). Persona → **Ramith**. **Removed outdated:** Class-1/2a/2b labels and the M1/M2 runtime-gating stub (US-SYSW-04 — superseded by the Phase-1.5 stem engine); MacBook-Air/8 GB baselines → M1 Pro/16 GB floor.
+
+> **v2.2 change note (2026-06-19 — gapless follow-up):** Added **US-PLAY-07** (gapless trimming of lossy AAC/MP3 encoder delay/padding on the FFmpeg decode path; **Could**, deferred). Context: gapless / continuous playback shipped after v2.1 outside this backlog — Enhanced-path gapless + auto-advance (`cf33e5d`) and Pure-path same-rate gapless (`2e2242a`); see `../sprints/09-phase-b-bit-perfect-pure-mode.md`. US-PLAY-07 is the remaining refinement (lossy gapless on the FFmpeg backend; Apple backend + lossless already gapless) plus the deferred compressed-vs-uncompressed format-match-predicate edge case. The broader gapless/Pure-Mode feature is not yet otherwise back-filled into this backlog.
 
 ---
 
@@ -308,6 +310,23 @@ As a **Tom** I want the app to name the unsupported format and explain why it ca
 
 **Priority:** Should | **Phase:** 0 | **Estimate:** 1 sp | **Dependencies:** US-PLAY-01
 **Traceability:** FR-PLAY-06
+
+---
+
+#### US-PLAY-07 — Gapless trimming of lossy encoder delay/padding (FFmpeg decode path)
+
+As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly even when they are decoded by the FFmpeg backend, so that albums mastered to flow together (live recordings, DJ mixes, concept albums) do not get a sliver of silence inserted at every track boundary.
+
+> **Context (post-v2.1):** Gapless / continuous playback shipped outside this backlog after v2.1 — Enhanced-path gapless + auto-advance (commit `cf33e5d`) and Pure-path same-rate gapless via `GaplessSource` + the runtime FFmpeg-or-Apple `FileDecodeSource` (commit `2e2242a`); see `docs/sprints/09-phase-b-bit-perfect-pure-mode.md`. This story is the remaining refinement: lossy files carry encoder-delay/priming + remainder-padding silence (AAC `iTunSMPB` / priming samples; MP3 LAME delay/padding) at their start/end. Apple's decoder (`ExtAudioFile`) already trims these via the file's edit list — so the gap only occurs when **FFmpeg is the active decode backend** for lossy files. Lossless (FLAC/ALAC/WAV/AIFF) has no encoder delay and is the bit-perfect priority.
+
+**Acceptance Criteria:**
+- On the Pure (bit-perfect HAL) path, the FFmpeg decode backend trims AAC encoder-delay/priming + remainder padding (`iTunSMPB` / AAC priming samples) and MP3 LAME encoder delay/padding before the decoded stream reaches the gapless seam.
+- The Apple decode backend (`ExtAudioFile`) behaviour is unchanged (it already trims via the edit list); the Enhanced path (`AVAudioFile`) is likewise unchanged (already gapless for lossy).
+- Offline-verifiable in the C++ null-test harness: decoding two same-format lossy fixtures (known encoder delay/padding) and concatenating them yields the sample-accurate join with no inserted silence at the seam. Requires committed encoded (AAC/MP3) test fixtures.
+- Edge case (related Pure same-rate gapless predicate limitation, deferred from Stage 2a): `sameRateGaplessCompatible` compares `bitsPerChannel`, which is `0` for compressed formats — so MIXING a compressed (AAC, bits=0) and an uncompressed (WAV, bits=16) track at the same rate forces a needless reconfigure gap even though both decode to the same float format. Either exclude bits-per-channel from the predicate when a source is compressed, or normalise the compressed value to the decoded float format. (Consecutive same-format tracks — e.g. an all-AAC library — are unaffected.)
+
+**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** gapless Stage 1 (`cf33e5d`) + Stage 2a (`2e2242a`) — Pure `GaplessSource` + the `FileDecodeSource` FFmpeg backend
+**Traceability:** FR-PLAY-01, NFR-QUAL-03, NFR-QUAL-04
 
 ---
 
