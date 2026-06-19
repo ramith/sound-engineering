@@ -182,7 +182,11 @@ extension AudioEngineBridge {
                 // resampler from the target frame (bumps the generation → abandons in-flight buffers,
                 // resets the converter, re-primes + plays). Otherwise the 48 kHz `scheduleFile`
                 // session uses the existing best-effort segment re-schedule (UNCHANGED).
-                if self.resampleSession != nil {
+                // Read resampleSession under the lock for a consistent branch decision (avoids a
+                // TOCTOU race with primeEnhancedResamplerLocked / stopEnhancedResampler on
+                // resampleQueue).
+                let hasResampler = self.resampleQueue.sync { self.resampleSession != nil }
+                if hasResampler {
                     let restarted = self.seekEnhancedResampler(to: seconds, player: player)
                     logUX("engine seek: path=Enhanced(resample) target=\(secs(seconds))s "
                         + "result=\(restarted ? "ok" : "failed")")
@@ -202,7 +206,9 @@ extension AudioEngineBridge {
     func stopEnhancedPlayback() {
         // No longer intending to play the Enhanced path (deliberate stop, or handing the device to
         // Pure) — so a config/device change must not auto-resume it.
-        enhancedPlayIntent = false
+        // Write under resampleQueue (its designated owner). stopEnhancedResampler() also acquires
+        // resampleQueue.sync internally; that's fine — they are sequential, not nested.
+        resampleQueue.sync { enhancedPlayIntent = false }
         // Bump the generation + drop the session FIRST so no in-flight resampler buffer schedules
         // onto the player we're about to stop (or onto a graph we're about to hand to Pure mode).
         // stopEnhancedResampler also clears onResamplerEOF and onPassthroughEOF so no stale

@@ -939,6 +939,17 @@ namespace AdaptiveSound
             return finished_.load(std::memory_order_acquire);
         }
 
+        // True end-of-stream for the RT consumer: decoder finished AND ring drained AND no carry.
+        // finished_ flips (release) only AFTER the decode thread's final pushAll, so observing it
+        // true together with an empty ring + zero carry means no further frame can ever arrive.
+        // carryCount_ is mutated only by pullFloat (RT) — reading it here on the RT thread is
+        // race-free. RT-safe: noexcept, allocation-free, lock-free.
+        [[nodiscard]] bool exhausted() const noexcept
+        {
+            return finished_.load(std::memory_order_acquire) && ring_.isEmpty() &&
+                   carryCount_ == 0U;
+        }
+
       private:
         // Spawn the background producer. Caller guarantees no decode thread is currently running
         // (open() after construction, or seek() right after joinDecodeThread()).
@@ -1029,6 +1040,7 @@ namespace AdaptiveSound
     bool FileDecodeSource::sourceIsFloat() const noexcept { return impl_->sourceIsFloat(); }
     DecoderKind FileDecodeSource::decoderKind() const noexcept { return impl_->decoderKind(); }
     bool FileDecodeSource::decoderFinished() const noexcept { return impl_->decoderFinished(); }
+    bool FileDecodeSource::exhausted() const noexcept { return impl_->exhausted(); }
 
 } // namespace AdaptiveSound
 

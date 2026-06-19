@@ -99,6 +99,17 @@ namespace AdaptiveSound
             return read;
         }
 
+        // True when the ring holds no elements (head == tail). RT-safe: acquire-loads both
+        // indices, no allocation, no lock. Used by FileDecodeSource::exhausted() (the gapless
+        // true-EOF predicate) on the RT consumer side. A producer may concurrently push, so a
+        // false return is conservatively-correct (there is data); a true return means there was no
+        // data at the observation point — combined with finished_ (no more will ever arrive) this
+        // is a sound end-of-stream signal.
+        [[nodiscard]] auto isEmpty() const noexcept -> bool
+        {
+            return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
+        }
+
         // Reset the ring to empty. NOT thread-safe: the caller MUST guarantee that NEITHER the
         // producer NOR the consumer is concurrently accessing the ring. Used by
         // FileDecodeSource::seek, which joins the decode thread (producer) and runs only when the
