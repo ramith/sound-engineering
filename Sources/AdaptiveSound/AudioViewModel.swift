@@ -327,15 +327,20 @@ final class AudioViewModel {
     /// Enumerate all audio files under `folderURL` recursively and update `playlist`.
     func loadMusicFolder(_ folderURL: URL) async {
         logUX("loadMusicFolder: '\(Self.makeDisplayPath(folderURL))'")
-        folderPathDisplay = Self.makeDisplayPath(folderURL)
-        playlist = []
+        let displayPath = Self.makeDisplayPath(folderURL)
+        if folderPathDisplay != displayPath { folderPathDisplay = displayPath }
 
+        // Enumerate FIRST, then swap the result in atomically. Do NOT clear `playlist` to []
+        // before the async scan — that empties the list for the scan's duration, so every
+        // folder-monitor re-scan flashed empty→full (a window flicker, worst during a copy burst
+        // that fires repeated FSEvents). Keeping the current list visible until the new one is
+        // ready, plus stable AudioFile.id, makes the update diff cleanly with no flash.
         let files = await Task.detached(priority: .userInitiated) {
             AudioFileEnumerator.enumerate(folderURL: folderURL)
         }.value
 
         playlist = files
-        logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(folderPathDisplay)'")
+        logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(displayPath)'")
     }
 
     // MARK: - Playback
