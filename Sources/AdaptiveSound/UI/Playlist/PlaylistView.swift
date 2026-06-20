@@ -146,6 +146,10 @@ private struct PlaylistControlsView: View {
 private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
 
+    /// Non-nil while the "Info" popover is showing; identifies which row's card is open.
+    /// Only one row presents at a time — the per-row `Binding<Bool>` is derived from this.
+    @State private var infoTarget: AudioFile?
+
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
     private var numberColumnWidth: CGFloat {
@@ -172,12 +176,25 @@ private struct PlaylistItemList: View {
                 }
                 .accessibilityAddTraits(.isButton)
                 .contextMenu {
+                    Button("Info", systemImage: "info.circle") {
+                        infoTarget = file
+                    }
+                    Divider()
                     Button("Remove from Playlist", systemImage: "trash") {
                         viewModel.removeTrack(at: index)
                     }
                     Button("Clear Playlist", systemImage: "clear") {
                         viewModel.clearPlaylist()
                     }
+                }
+                .popover(
+                    isPresented: Binding(
+                        get: { infoTarget?.id == file.id },
+                        set: { if !$0 { infoTarget = nil } }
+                    ),
+                    arrowEdge: .trailing
+                ) {
+                    TrackInfoCard(file: file)
                 }
                 .onKeyPress(.delete) {
                     viewModel.removeTrack(at: index)
@@ -222,6 +239,11 @@ private struct PlaylistItemList: View {
         }
         .listStyle(.plain)
         .frame(maxHeight: .infinity)
+        // Dismiss any open Info popover when the playlist changes (remove / clear / folder
+        // re-scan / reorder) so a stale target can't match — and re-present on — a different row.
+        .onChange(of: viewModel.playlist.map(\.id)) { _, _ in
+            infoTarget = nil
+        }
         // Global keyboard shortcuts for the playlist
         .onKeyPress(.upArrow) {
             if let current = viewModel.selectedTrackIndex, current > 0 {

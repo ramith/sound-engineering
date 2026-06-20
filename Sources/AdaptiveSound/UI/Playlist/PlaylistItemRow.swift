@@ -33,13 +33,7 @@ struct PlaylistItemRow: View {
 
             Spacer()
 
-            Text(file.format)
-                .font(.system(size: 10, weight: .semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(isSelected ? Color.asAccent.opacity(0.2) : Color.asCard)
-                .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelSecond)
-                .clipShape(.rect(cornerRadius: 4, style: .continuous))
+            FormatBadgeView(format: file.format, isSelected: isSelected)
 
             Text(file.durationSeconds > 0 ? formatDuration(file.durationSeconds) : "--:--")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
