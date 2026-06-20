@@ -232,15 +232,27 @@ extension AudioEngineBridge {
     /// The explicit `resampleQueue.async` clear in `stopEnhancedPlayback` is a belt-and-suspenders
     /// guard for the rare path where only the passthrough hook is live (no resampler session).
     ///
-    /// Concurrency: ALL callers (stopAudio, stopEnhancedPlayback, playFile, shutdown) run on
-    /// engineQueue / configChangeQueue — never on resampleQueue — so the sync here is deadlock-safe.
+    /// Concurrency: off-queue callers (stopAudio, stopEnhancedPlayback, playFile, reconfigure,
+    /// shutdown) run on engineQueue / configChangeQueue — never on resampleQueue — so the
+    /// `resampleQueue.sync` here is deadlock-safe. Callers ALREADY on resampleQueue (the gapless
+    /// seam handlers in GaplessRoll.swift) MUST call `stopEnhancedResamplerLocked()` directly —
+    /// the same re-entrancy discipline as `primeEnhancedResamplerLocked` (C-1). Calling this
+    /// syncing variant from resampleQueue traps libdispatch ("dispatch_sync on a queue already
+    /// owned by current thread").
     func stopEnhancedResampler() {
-        resampleQueue.sync {
-            resampleGeneration &+= 1
-            resampleSession = nil
-            onResamplerEOF = nil
-            onPassthroughEOF = nil
-        }
+        resampleQueue.sync { stopEnhancedResamplerLocked() }
+    }
+
+    /// Teardown body run WITHOUT dispatching — the caller MUST already be on `resampleQueue`.
+    /// Bumps the generation (in-flight read→convert→schedule iterations and pending completions
+    /// abandon themselves), drops the session, and clears both gapless EOF hooks. Used by the
+    /// gapless seam handlers (which run on resampleQueue); off-queue callers use
+    /// `stopEnhancedResampler()`, which wraps this in `resampleQueue.sync`.
+    func stopEnhancedResamplerLocked() {
+        resampleGeneration &+= 1
+        resampleSession = nil
+        onResamplerEOF = nil
+        onPassthroughEOF = nil
     }
 }
 
