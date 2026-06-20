@@ -41,9 +41,11 @@ extension AudioEngineBridge {
 
         if nextRate == graphRate {
             // Next file is 48 kHz — switch to the passthrough path for it.
-            // stopEnhancedResampler bumps the generation so the old session's completions abandon;
-            // we don't call player.stop() so the queue stays running.
-            stopEnhancedResampler()
+            // Bump the generation so the old session's completions abandon; we don't call
+            // player.stop() so the queue stays running. We are ALREADY on resampleQueue here, so
+            // call the *Locked variant directly — stopEnhancedResampler() would resampleQueue.sync
+            // onto ourselves and trap libdispatch (C-1 re-entrancy).
+            stopEnhancedResamplerLocked()
             bumpTransitionCount(player: player)
             setLastFileURL(nextURL)
             scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: true)
