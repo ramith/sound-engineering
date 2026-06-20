@@ -146,6 +146,13 @@ private struct PlaylistControlsView: View {
 private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
 
+    /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
+    /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
+    private var numberColumnWidth: CGFloat {
+        let digits = max(2, String(viewModel.playlist.count).count)
+        return CGFloat(digits) * 8 + 6
+    }
+
     var body: some View {
         List {
             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
@@ -153,7 +160,8 @@ private struct PlaylistItemList: View {
                     file: file,
                     index: index,
                     isSelected: viewModel.selectedTrackIndex == index,
-                    isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index
+                    isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
+                    numberColumnWidth: numberColumnWidth
                 )
                 .onTapGesture {
                     viewModel.selectedTrackIndex = index
