@@ -2,9 +2,9 @@
 #define ADAPTIVE_SOUND_REALIZER_H
 
 #include "../EQ/EQModuleCoefficients.h" // computeBiquadCascade (off-main EQ design)
-#include "../Spatial/CrossfeedModule.h" // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
+#include "../Spatial/CrossfeedModule.h" // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include <array>
 #include <cstdint>
 #include <dispatch/dispatch.h>
