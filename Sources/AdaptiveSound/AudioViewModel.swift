@@ -343,15 +343,6 @@ final class AudioViewModel {
         logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(displayPath)'")
     }
 
-    // MARK: - Playback
-
-    /// Play the track at the given playlist index.
-    func playTrack(at index: Int) {
-        guard index < playlist.count else { return }
-        selectedTrackIndex = index
-        startPlayback()
-    }
-
     // MARK: - Helpers
 
     static func makeDisplayPath(_ url: URL) -> String {
