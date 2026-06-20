@@ -164,14 +164,11 @@ private struct PlaylistItemList: View {
                     numberColumnWidth: numberColumnWidth
                 )
                 .onTapGesture {
-                    viewModel.selectedTrackIndex = index
-                }
-                .onTapGesture(count: 2) {
-                    viewModel.selectedTrackIndex = index
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        viewModel.startPlayback()
-                    }
+                    // Single-click plays the row, so the now-playing card always matches the
+                    // audio (no select-without-play state). Re-clicking the track that's already
+                    // playing is a no-op so it doesn't restart from the top.
+                    guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
+                    viewModel.playTrack(at: index)
                 }
                 .accessibilityAddTraits(.isButton)
                 .contextMenu {
