@@ -52,6 +52,40 @@ def test_bwe_oversampling_suppresses_alias():
     assert harm_2nd > alias_3rd, f"alias not suppressed: 2nd={harm_2nd:.2e}, alias={alias_3rd:.2e}"
 
 
+# --- DSP-review: the per-octave safety cap bounds the synthesized HF lift ----------------
+def test_bwe_safety_cap_limits_hf_lift():
+    sr = 44100
+    rng = np.random.default_rng(9)
+    dull = dsp.lowpass(rng.standard_normal(sr), 6000.0, sr, order=8)
+
+    def first_octave_lift(cap: float) -> float:
+        # absurd mix (+0 dB) that WOULD make a huge shelf; the cap should rein it in
+        y, roll = bwe_classical.extend_bandwidth(dull, sr, rolloff_hz=6000.0, mix_db=0.0, max_delta_db=cap)
+        f, py = dsp.ltas(y, sr)
+        _, pd = dsp.ltas(dull, sr)
+        band = (f > roll) & (f < roll * 2)
+        return 10 * np.log10((py[band].sum() + 1e-20) / (pd[band].sum() + 1e-20))
+
+    capped, uncapped = first_octave_lift(8.0), first_octave_lift(1e9)
+    assert capped < uncapped - 1.0, f"cap didn't reduce lift: {capped:.1f} vs {uncapped:.1f} dB"
+    assert capped <= 12.0, f"capped first-octave lift still too high: {capped:.1f} dB"
+
+
+# --- stochastic blend makes the synthesized HF less tonal (anti-metallic) ----------------
+def test_bwe_noise_blend_reduces_tonality():
+    from remaster.analyze import hf_flatness
+
+    sr = 44100
+    t = np.arange(sr) / sr
+    tone = sum(np.sin(2 * np.pi * f * t) for f in (400.0, 800.0, 1200.0))  # harmonic-rich
+    dull = dsp.lowpass(tone, 6000.0, sr, order=8)
+    harm_only, _ = bwe_classical.extend_bandwidth(dull, sr, rolloff_hz=6000.0, noise_blend=0.0)
+    blended, _ = bwe_classical.extend_bandwidth(dull, sr, rolloff_hz=6000.0, noise_blend=0.8)
+    # measure in the synthesized band (just above the 6 kHz rolloff); higher flatness =>
+    # more noise-like / less metallic comb
+    assert hf_flatness(blended, sr, fmin=6500.0) > hf_flatness(harm_only, sr, fmin=6500.0)
+
+
 # --- H-3: match-EQ correction is faded to zero above the rolloff -------------------------
 def test_match_eq_taper_zeroes_above_rolloff():
     sr = 44100
