@@ -249,7 +249,8 @@ namespace
         {"Soak_DSPKernel_ZeroRtAlloc_Blend", testSoakDspKernelZeroRtAllocBlend, false},
         // QW1 CF-12: crossfeed-on blend soak (rtAllocs==0).
         {"Soak_DSPKernel_ZeroRtAlloc_CrossfeedBlend",
-         testSoakDspKernelZeroRtAllocCrossfeedBlend, false},
+         testSoakDspKernelZeroRtAllocCrossfeedBlend,
+         false},
         {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)

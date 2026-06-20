@@ -80,8 +80,8 @@ namespace AdaptiveSound
     struct CrossfeedParams
     {
         // --- Intent (set by the control layer / UI) ---
-        uint8_t enabled = 0;             // 0 = bypass (bit-exact pass-through); 1 = active
-        uint8_t preset = 0;              // CrossfeedPreset value (Relaxed=0 default)
+        uint8_t enabled = 0;              // 0 = bypass (bit-exact pass-through); 1 = active
+        uint8_t preset = 0;               // CrossfeedPreset value (Relaxed=0 default)
         std::array<uint8_t, 2> _pad = {}; // explicit pad → trivial, deterministic layout
         // --- Derived (computed off-RT in the Realizer from {preset, level, fs}) ---
         float gDirect = 1.0F;    // direct-path gain = 1/(1+alpha)  (off: unity)
@@ -126,8 +126,9 @@ namespace AdaptiveSound
     // output + default field values, not sizeof. If a FUTURE change trips this assert: re-MEASURE
     // N, then re-confirm the golden-master hash (CF-1) still holds — never silently bump N.
     constexpr size_t kMeasuredTargetStateBytes = 320;
-    static_assert(sizeof(TargetState) == kMeasuredTargetStateBytes,
-                  "TargetState size changed — re-measure N and re-confirm the golden master (CF-1)");
+    static_assert(
+        sizeof(TargetState) == kMeasuredTargetStateBytes,
+        "TargetState size changed — re-measure N and re-confirm the golden master (CF-1)");
 
 } // namespace AdaptiveSound
 
