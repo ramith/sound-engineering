@@ -36,8 +36,11 @@ class RemasterConfig:
     # bandwidth extension (classical baseline; swap in a learned model via the bake-off)
     do_bwe: bool = True
     bwe_rolloff_hz: float | None = None    # None = auto-detect
-    bwe_drive: float = 2.5
-    bwe_mix_db: float = -3.0
+    bwe_drive: float = 1.5
+    bwe_mix_db: float = -15.0
+    bwe_tilt_db_per_oct: float = -9.0
+    bwe_max_delta_db: float = 8.0          # per-octave safety cap on the synthesized lift
+    bwe_noise_blend: float = 0.0           # 0..1 stochastic "air" vs harmonic (anti-metallic)
     # tone / loudness / width
     do_match_eq: bool = True
     target_lufs: float = -14.0
@@ -104,7 +107,9 @@ def remaster(
         log.info("[2/6] bandwidth extension (harmonic synthesis) ...")
         with t.stage("bandwidth_ext"):
             y, _ = bwe_classical.extend_bandwidth(
-                y, sr, rolloff_hz=rolloff, drive=cfg.bwe_drive, mix_db=cfg.bwe_mix_db
+                y, sr, rolloff_hz=rolloff, drive=cfg.bwe_drive, mix_db=cfg.bwe_mix_db,
+                tilt_db_per_oct=cfg.bwe_tilt_db_per_oct, max_delta_db=cfg.bwe_max_delta_db,
+                noise_blend=cfg.bwe_noise_blend,
             )
         log.info(
             "[2/6] BWE done in %.2fs (RTF %.3f), rolloff=%.0f Hz",
