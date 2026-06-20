@@ -1,0 +1,15 @@
+# POC scratch — keep the repo clean of binaries, audio, model weights, venvs.
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+out/
+data/*
+!data/README.md
+# model checkpoints
+*.ckpt
+*.pt
+*.pth
+*.safetensors
