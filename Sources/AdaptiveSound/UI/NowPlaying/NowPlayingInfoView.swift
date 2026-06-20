@@ -102,10 +102,14 @@ private struct HeadphonesSectionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
-
-            if bvm.crossfeedEnabled && isEnabled {
-                CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
+            HStack(spacing: 12) {
+                CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
+                    .fixedSize()
+                Spacer(minLength: 12)
+                if bvm.crossfeedEnabled && isEnabled {
+                    CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
+                        .fixedSize()
+                }
             }
         }
         .opacity(isEnabled ? 1 : 0.5)
