@@ -47,6 +47,24 @@ Useful flags (shared by `play`/`remaster`): `--reference`, `--target-lufs -14`, 
 `--width 0.4`, `--rolloff HZ`, `--noise-start S --noise-dur D`, and `--no-dehiss / --no-bwe /
 --no-match-eq / --no-width`. Add `-v` for per-stage debug logging.
 
+### Tuning the bandwidth extension (avoiding "metallic")
+
+Pure harmonic synthesis sounds metallic on harmonic-rich material (e.g. electric guitar) — see the
+DSP/lit notes in the spike report. The BWE knobs (and a good starting recipe validated by ear on a
+band-limited track) are:
+
+- `--bwe-mix-db` (default −15) — overall HF lift level; **lower = subtler**.
+- `--bwe-drive` (default 1.5) — harmonic drive; **lower = cleaner** (fewer high-order "buzzy" harmonics).
+- `--bwe-tilt` (default −9) — HF decay dB/oct; **steeper (−12) = less top sizzle**.
+- `--bwe-cap-db` (default 8) — per-octave safety cap; **lower reins in bright content**.
+- `--bwe-noise` (default 0) — **stochastic "air" blend 0..1**; the anti-metallic control. Mixes in
+  envelope-shaped noise (air on the notes, not constant hiss) to break the harmonic comb.
+
+Recommended starting point for a metallic-prone, ~5 kHz-limited source:
+```bash
+--bwe-drive 1.0 --bwe-mix-db -20 --bwe-tilt -12 --bwe-cap-db 5 --bwe-noise 0.5
+```
+
 ## The chain
 
 ```

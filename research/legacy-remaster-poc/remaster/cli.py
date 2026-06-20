@@ -22,14 +22,14 @@ import time
 
 import numpy as np
 
-from . import audioio, bakeoff, sim, synth, verify
+from . import analyze, audioio, bakeoff, sim, synth, verify
 from .loudness import integrated_lufs
 from .pipeline import RemasterConfig, remaster
 
 log = logging.getLogger("legacy-remaster")
 
 WORK_SR = 44100
-SUBCOMMANDS = {"play", "remaster", "make-test", "bakeoff", "sim"}
+SUBCOMMANDS = {"play", "remaster", "make-test", "bakeoff", "sim", "analyze"}
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -73,6 +73,11 @@ def _build_config(args: argparse.Namespace) -> RemasterConfig:
         noise_start=args.noise_start,
         noise_dur=args.noise_dur,
         bwe_rolloff_hz=args.rolloff,
+        bwe_drive=args.bwe_drive,
+        bwe_mix_db=args.bwe_mix_db,
+        bwe_tilt_db_per_oct=args.bwe_tilt,
+        bwe_max_delta_db=args.bwe_cap_db,
+        bwe_noise_blend=args.bwe_noise,
     )
 
 
@@ -173,6 +178,23 @@ def _cmd_remaster(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_analyze(args: argparse.Namespace) -> int:
+    orig, sr, _ = _load_input(args.input)
+    if args.against:
+        if not os.path.exists(args.against):
+            raise FileNotFoundError(f"--against file not found: {args.against}")
+        rem, _ = audioio.load(args.against, target_sr=sr)
+        log.info("comparing against %s", args.against)
+    else:
+        reference = _load_reference(args, sr)
+        rem = remaster(orig, sr, _build_config(args), reference=reference).audio
+    out_dir = args.out or "out/analysis"
+    metrics = analyze.compare(orig, rem, sr, out_dir)
+    print(analyze.format_report(metrics))
+    log.info("wrote comparison plots (LTAS, spectrograms, residual) to %s", out_dir)
+    return 0
+
+
 def _cmd_make_test(args: argparse.Namespace) -> int:
     os.makedirs(args.outdir, exist_ok=True)
     modern = synth.make_modern_reference(sr=args.sr, dur=args.dur)
@@ -248,6 +270,16 @@ def _add_processing_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--ceiling", type=float, default=-1.0, help="true-peak ceiling dBTP")
     p.add_argument("--width", type=float, default=0.4, help="stereo width amount 0..1")
     p.add_argument("--rolloff", type=float, default=None, help="force BWE rolloff Hz (default auto)")
+    p.add_argument("--bwe-mix-db", type=float, default=-15.0,
+                   help="BWE level vs source band (lower = subtler highs; default -15)")
+    p.add_argument("--bwe-drive", type=float, default=1.5,
+                   help="BWE harmonic drive (lower = cleaner; default 1.5)")
+    p.add_argument("--bwe-tilt", type=float, default=-9.0,
+                   help="BWE HF decay dB/octave (steeper = less top sizzle; default -9)")
+    p.add_argument("--bwe-cap-db", type=float, default=8.0,
+                   help="per-octave cap on the synthesized lift (lower reins in bright content; default 8)")
+    p.add_argument("--bwe-noise", type=float, default=0.0,
+                   help="stochastic 'air' blend 0..1 (higher = less metallic, more airy; default 0)")
     p.add_argument("--noise-start", type=float, default=None, help="noise-only segment start (s)")
     p.add_argument("--noise-dur", type=float, default=None, help="noise-only segment duration (s)")
     p.add_argument("--no-dehiss", action="store_true")
@@ -278,6 +310,12 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--sr", type=int, default=WORK_SR)
     m.add_argument("--dur", type=float, default=8.0)
     m.set_defaults(func=_cmd_make_test)
+
+    an = sub.add_parser("analyze", help="compare original vs remastered (plots + metrics)")
+    _add_processing_opts(an)
+    an.add_argument("--against", help="compare against an already-remastered file (skip internal remaster)")
+    an.add_argument("--out", help="dir for comparison plots (default out/analysis)")
+    an.set_defaults(func=_cmd_analyze)
 
     b = sub.add_parser("bakeoff", help="compare bandwidth-extension methods")
     b.add_argument("input")
