@@ -7,13 +7,17 @@ struct PlaylistItemRow: View {
     let index: Int
     let isSelected: Bool
     let isNowPlaying: Bool
+    /// Width of the track-number column, sized by the caller to the widest number in the
+    /// list so 3-/4-digit indices (track 100+) fit on one line instead of wrapping.
+    var numberColumnWidth: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 12) {
             Text(index + 1, format: .number.grouping(.never))
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .lineLimit(1)
                 .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
-                .frame(width: 22)
+                .frame(width: numberColumnWidth, alignment: .trailing)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
