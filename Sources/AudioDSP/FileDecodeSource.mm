@@ -4,9 +4,13 @@
 // Decodes on a background std::thread into an SpscRing<float>; the RT render thread drains the ring
 // via pullFloat(). Decoding goes through a pluggable DecodeBackend selected at open():
 //
-//   makeBackend():  ADAPTIVESOUND_DECODER=apple|ffmpeg overrides; else FFmpeg-if-present, else Apple.
-//     AppleDecodeBackend   — ExtAudioFile (AudioToolbox). Always available; the fallback.
+//   open() decoder policy (FALLBACK-ONLY): Apple first, FFmpeg only if Apple can't open the file.
+//     ADAPTIVESOUND_DECODER=apple|ffmpeg forces exactly one backend (diagnostics/tests).
+//     AppleDecodeBackend   — ExtAudioFile (AudioToolbox). Always available; the DEFAULT + the
+//                            bit/timing-exactness reference (trims lossy encoder delay via the
+//                            file's edit list, keeping common formats gapless + Apple-identical).
 //     FFmpegDecodeBackend  — FFmpeg via dlopen/dlsym (no link-time dependency, nothing to bundle).
+//                            FALLBACK only, for formats Apple's decoder cannot open (e.g. Opus).
 //                            Compiled only where FFmpeg headers are present (__has_include) and used
 //                            only when a runtime FFmpeg whose MAJOR versions match the ones baked into
 //                            this binary is found (FFmpeg guarantees ABI only within a major).
@@ -800,21 +804,22 @@ namespace AdaptiveSound
         // NOLINTEND(clang-analyzer-core.CallAndMessage)
 #endif // __has_include(<libavformat/avformat.h>)
 
-        // Factory: ADAPTIVESOUND_DECODER=apple|ffmpeg overrides; else FFmpeg-if-present, else Apple.
-        std::unique_ptr<DecodeBackend> makeBackend()
+        // Explicit backend constructors. Apple (ExtAudioFile) is always available and is the
+        // bit/timing-exactness reference (it trims lossy encoder delay via the file's edit list).
+        // FFmpeg is optional (loaded via dlopen) and may be unavailable — returns nullptr then.
+        std::unique_ptr<DecodeBackend> makeAppleBackend()
         {
-            const char* forced = std::getenv("ADAPTIVESOUND_DECODER");
-            const bool wantApple = (forced != nullptr) && (std::strcmp(forced, "apple") == 0);
+            return std::make_unique<AppleDecodeBackend>();
+        }
+        std::unique_ptr<DecodeBackend> makeFFmpegBackend()
+        {
 #if __has_include(<libavformat/avformat.h>)
-            const bool wantFFmpeg = (forced != nullptr) && (std::strcmp(forced, "ffmpeg") == 0);
-            if (!wantApple && (wantFFmpeg || ffmpegAvailable()))
+            if (ffmpegAvailable())
             {
                 return std::make_unique<FFmpegDecodeBackend>();
             }
-#else
-            static_cast<void>(wantApple);
 #endif
-            return std::make_unique<AppleDecodeBackend>();
+            return nullptr;
         }
     } // namespace
 
@@ -838,8 +843,43 @@ namespace AdaptiveSound
             {
                 return false;
             }
-            backend_ = makeBackend();
-            if (backend_ == nullptr || !backend_->open(path))
+
+            // Decoder policy (FALLBACK-ONLY): Apple's ExtAudioFile is the DEFAULT and the
+            // bit/timing-exactness reference (it trims lossy encoder delay via the file's edit
+            // list, so common formats stay gapless + Apple-identical). FFmpeg is a FALLBACK,
+            // tried only when Apple cannot open the file (a format Apple doesn't support, e.g.
+            // Opus). This prevents FFmpeg from silently becoming the decoder for Apple-decodable
+            // formats (which would change the sound + tick lossy gapless seams).
+            // ADAPTIVESOUND_DECODER=apple|ffmpeg forces exactly one backend (diagnostics/tests).
+            const char* forced = std::getenv("ADAPTIVESOUND_DECODER");
+            const bool forceApple = (forced != nullptr) && (std::strcmp(forced, "apple") == 0);
+            const bool forceFFmpeg = (forced != nullptr) && (std::strcmp(forced, "ffmpeg") == 0);
+
+            // Open each candidate at most ONCE; the first that opens `path` wins and is retained.
+            auto tryOpen = [&](std::unique_ptr<DecodeBackend> candidate) -> bool {
+                if (candidate == nullptr || !candidate->open(path))
+                {
+                    return false;
+                }
+                backend_ = std::move(candidate);
+                return true;
+            };
+
+            bool opened = false;
+            if (forceFFmpeg)
+            {
+                opened = tryOpen(makeFFmpegBackend());
+            }
+            else if (forceApple)
+            {
+                opened = tryOpen(makeAppleBackend());
+            }
+            else
+            {
+                // Default: Apple first (bit-exact reference); FFmpeg only if Apple can't open it.
+                opened = tryOpen(makeAppleBackend()) || tryOpen(makeFFmpegBackend());
+            }
+            if (!opened)
             {
                 backend_.reset();
                 return false;
