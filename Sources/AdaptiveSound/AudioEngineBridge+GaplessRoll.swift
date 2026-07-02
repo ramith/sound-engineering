@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Enhanced-path gapless seam handlers
@@ -125,8 +125,9 @@ extension AudioEngineBridge {
             // Degradation: fall back to a clean start on the global queue (stops + restarts,
             // brief gap). Sets playbackEnded if avEngine is gone (engine was shut down).
             DispatchQueue.global().async { [weak self] in
-                guard let self, let engine = self.avEngine else {
-                    self?.resampleQueue.async { self?.gaplessPlaybackEnded = true }
+                guard let self else { return }
+                guard let engine = self.avEngine else {
+                    self.resampleQueue.async { self.gaplessPlaybackEnded = true }
                     return
                 }
                 // P3-3: surface the failure rather than discarding it via `try?`. If the clean

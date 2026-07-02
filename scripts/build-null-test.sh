@@ -4,8 +4,15 @@
 # Builds and optionally runs the DSPKernel null test.
 #
 # Usage:
-#   ./Scripts/build-null-test.sh          # build + run (default)
-#   ./Scripts/build-null-test.sh --build  # build only, do not run
+#   ./Scripts/build-null-test.sh            # build + run (default)
+#   ./Scripts/build-null-test.sh --build    # build only, do not run
+#   ./Scripts/build-null-test.sh --sanitize # build + run with ASan + UBSan
+#   ./Scripts/build-null-test.sh --tsan     # build + run with ThreadSanitizer
+#
+# --sanitize / --tsan add runtime instrumentation (mutually exclusive: ASan and
+# TSan cannot coexist in one binary). Both imply -g -fno-omit-frame-pointer so
+# reports carry symbolised stacks. UBSan (bundled with --sanitize) runs in
+# halt-on-error mode so any undefined behaviour aborts with a non-zero exit.
 #
 # Output binary: Tests/DSPKernelNullTest  (gitignored; not checked in)
 #
@@ -17,6 +24,26 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SDK="$(xcrun --show-sdk-path)"
 OUTPUT="$REPO_ROOT/Tests/DSPKernelNullTest"
+
+# ---------------------------------------------------------------------------
+# Argument parsing: --build (no run), --sanitize (ASan+UBSan), --tsan (TSan).
+# SAN_FLAGS is applied to BOTH the C99 ebur128 compile and the C++ link so the
+# whole binary is instrumented. BUILD_ONLY skips the run step.
+# ---------------------------------------------------------------------------
+SAN_FLAGS=()
+SAN_LABEL="none"
+BUILD_ONLY=0
+for arg in "$@"; do
+    case "$arg" in
+        --build)    BUILD_ONLY=1 ;;
+        --sanitize) SAN_FLAGS=(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+                    SAN_LABEL="ASan+UBSan" ;;
+        --tsan)     SAN_FLAGS=(-fsanitize=thread -fno-omit-frame-pointer -g)
+                    SAN_LABEL="TSan" ;;
+        *)          echo "Unknown argument: $arg" >&2; exit 2 ;;
+    esac
+done
+[[ "$SAN_LABEL" != "none" ]] && echo "Sanitizer: $SAN_LABEL"
 
 # ---------------------------------------------------------------------------
 # TEST-ONLY loudness oracle: libebur128 (MIT, pinned v1.2.6) is vendored as a git
@@ -38,6 +65,8 @@ xcrun clang \
     -x c -std=c11 \
     -isysroot "$SDK" \
     -O2 \
+    -DACCELERATE_NEW_LAPACK \
+    ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
     -I"$EBUR128_DIR" \
     -c "$EBUR128_DIR/ebur128.c" \
     -o "$EBUR128_OBJ"
@@ -52,7 +81,9 @@ xcrun clang++ \
     -fno-exceptions \
     -fno-rtti \
     -Wall -Wextra \
+    ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
     -D_LIBCPP_DISABLE_AVAILABILITY \
+    -DACCELERATE_NEW_LAPACK \
     -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
     -I"$REPO_ROOT/Sources/AudioDSP/include" \
     -I"$REPO_ROOT/Sources/AudioDSP" \
@@ -81,10 +112,16 @@ xcrun clang++ \
 
 echo "Built: $OUTPUT"
 
-if [[ "${1:-}" == "--build" ]]; then
+if ((BUILD_ONLY)); then
     exit 0
 fi
 
 echo ""
 echo "Running null test..."
+# halt_on_error=1: abort on the first UBSan/ASan finding with a non-zero exit so
+# the gate (&&-chained in the Makefile) actually fails instead of printing and
+# continuing. abort_on_error=1 gives a symbolisable crash for the debugger.
+ASAN_OPTIONS="halt_on_error=1:abort_on_error=1:detect_leaks=0" \
+UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \
+TSAN_OPTIONS="halt_on_error=1" \
 "$OUTPUT"

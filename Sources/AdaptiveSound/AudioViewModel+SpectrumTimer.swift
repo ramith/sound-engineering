@@ -3,13 +3,19 @@ import Foundation
 
 // MARK: - AudioViewModel spectrum timer
 
+@MainActor
 extension AudioViewModel {
     /// Start polling the spectrum double-buffer at 20 Hz.
     /// Safe to call multiple times — guards against duplicate timers.
     func startSpectrumTimer() {
         guard spectrumTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            self?.tickSpectrum()
+            // The timer is scheduled on RunLoop.main (below), so this callback always fires on
+            // the main thread. assumeIsolated proves that to the compiler with no per-tick Task
+            // allocation, letting us call the @MainActor tickSpectrum() directly.
+            MainActor.assumeIsolated {
+                self?.tickSpectrum()
+            }
         }
         spectrumTimer = timer
         // Include in common run-loop modes so the timer fires during tracking

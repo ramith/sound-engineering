@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Enhanced resampler — read → convert → schedule iteration

@@ -1,5 +1,5 @@
 import AudioFormatKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge multichannel reconfigure lifecycle (Sprint 5b, M2-c)

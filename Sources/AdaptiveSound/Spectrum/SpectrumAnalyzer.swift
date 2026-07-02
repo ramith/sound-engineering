@@ -34,7 +34,7 @@
 
 import Accelerate
 import AudioToolbox
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - Spectrum Analyzer
@@ -42,7 +42,15 @@ import Foundation
 /// Owns the FFT setup, Hann window, band mapping, and meter ballistics.
 /// Lives inside `AudioEngineBridge`. All real-time-safe methods are marked
 /// with a comment; all allocating setup methods must be called off the audio thread.
-final class SpectrumAnalyzer {
+///
+/// `@unchecked Sendable` invariant: all scratch/FFT buffers are pre-allocated at `init`
+/// OFF the audio thread. After init the RT-safe entry points (`processTapBuffer`,
+/// `computeAndPublish`) are called from exactly ONE thread — the tap block that owns this
+/// analyzer instance — so no concurrent mutation of the scratch buffers occurs, and the
+/// only cross-thread publication is through the SPSC `SpectrumDoubleBuffer` (itself audited
+/// `@unchecked Sendable`). This is what lets the tap closure capture a Sendable analyzer
+/// without any lock. No lock/queue/allocation is added on the RT path.
+final class SpectrumAnalyzer: @unchecked Sendable {
     // MARK: - Pre-allocated FFT state (set up off-RT, read-only on RT)
 
     private let fftSize: Int
@@ -128,7 +136,7 @@ final class SpectrumAnalyzer {
         frameCount: AVAudioFrameCount,
         channelCount: UInt32
     ) {
-        guard let fftSetup else { return }
+        guard fftSetup != nil else { return }
 
         let frameLen = min(Int(frameCount), fftSize)
 
@@ -142,11 +150,9 @@ final class SpectrumAnalyzer {
             guard abls.count >= 2,
                   let ch1 = abls[1].mData?.assumingMemoryBound(to: Float.self)
             else {
-                // Fallback: copy channel 0 only
-                cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
-                if frameLen < fftSize {
-                    vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
-                }
+                // Fallback: copy channel 0 only (straight stride-1 copy, non-allocating).
+                monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: ch0, count: frameLen) }
+                zeroMonoTail(from: frameLen)
                 return
             }
             // mono[i] = 0.5 * (ch0[i] + ch1[i])
@@ -159,17 +165,26 @@ final class SpectrumAnalyzer {
                 vDSP_vsmul(ptr, 1, &half, ptr, 1, vDSP_Length(frameLen))
             }
         } else {
-            // Mono input — copy directly
+            // Mono input — copy directly (straight stride-1 copy, non-allocating).
             guard let ch0 = bufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }
-            cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+            monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: ch0, count: frameLen) }
         }
 
         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
-        if frameLen < fftSize {
-            vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
-        }
+        zeroMonoTail(from: frameLen)
 
         computeAndPublish()
+    }
+
+    /// Zero the `monoBuffer` tail `[frameLen, fftSize)` when the tap delivered a short
+    /// buffer. REAL-TIME SAFE: no allocation, no lock; a stable base pointer avoids the
+    /// `&monoBuffer + frameLen` temporary-pointer form.
+    private func zeroMonoTail(from frameLen: Int) {
+        guard frameLen < fftSize else { return }
+        monoBuffer.withUnsafeMutableBufferPointer { buf in
+            guard let base = buf.baseAddress else { return }
+            vDSP_vclr(base + frameLen, 1, vDSP_Length(fftSize - frameLen))
+        }
     }
 
     /// Process ONE channel (0 = L, 1 = R) of a non-interleaved tap buffer through the same
@@ -185,10 +200,9 @@ final class SpectrumAnalyzer {
         let abls = UnsafeMutableAudioBufferListPointer(bufferList)
         guard channel >= 0, channel < abls.count,
               let chPtr = abls[channel].mData?.assumingMemoryBound(to: Float.self) else { return }
-        cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
-        if frameLen < fftSize {
-            vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
-        }
+        // Straight stride-1 copy, non-allocating.
+        monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: chPtr, count: frameLen) }
+        zeroMonoTail(from: frameLen)
         computeAndPublish()
     }
 
@@ -207,8 +221,8 @@ final class SpectrumAnalyzer {
             complexReal.withUnsafeMutableBufferPointer { rPtr in
                 complexImag.withUnsafeMutableBufferPointer { iPtr in
                     guard let wBase = wPtr.baseAddress,
-                          var rBase = rPtr.baseAddress,
-                          var iBase = iPtr.baseAddress else { return }
+                          let rBase = rPtr.baseAddress,
+                          let iBase = iPtr.baseAddress else { return }
                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
                         vDSP_ctoz(dspComplexPtr, 2, &splitComplex, 1, vDSP_Length(fftSize / 2))

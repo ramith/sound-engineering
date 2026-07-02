@@ -1,10 +1,10 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.2
 import PackageDescription
 
 let package = Package(
     name: "AdaptiveSound",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v26),
     ],
     dependencies: [
     ],
@@ -19,7 +19,12 @@ let package = Package(
                 .process("Assets.xcassets"),
             ],
             swiftSettings: [
-                .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug)),
+                // Swift 6 LANGUAGE MODE (from swift-tools-version 6.0): complete
+                // data-race / Sendable / actor-isolation checking is enforced as
+                // build-breaking ERRORS, not warnings. Replaces the former
+                // `-suppress-warnings` debug flag (which masked ALL diagnostics) and
+                // the interim `-strict-concurrency=complete` warning flag. The compiler
+                // now guarantees the app target is data-race-free at build time.
                 // Explicitly import DeviceBridge.h as the Obj-C bridging header.
                 // The auto-discovered bridging header (AdaptiveSound-Bridging-Header.h)
                 // is not reliably processed by SPM for executable targets; the explicit
@@ -28,6 +33,13 @@ let package = Package(
                 .unsafeFlags([
                     "-import-objc-header",
                     "Sources/AudioDSP/include/DeviceBridge.h",
+                ]),
+                // Opt the Swift Accelerate overlay into the new-LAPACK CBLAS headers so the
+                // `cblas_scopy` deprecation clears here too (Spectrum* + ReferenceTone). The
+                // flag reaches the underlying Clang module via `-Xcc`. No ILP64 (32-bit int
+                // counts unchanged) — matches the AudioDSP C++ target above.
+                .unsafeFlags([
+                    "-Xcc", "-DACCELERATE_NEW_LAPACK",
                 ]),
             ]
         ),
@@ -114,21 +126,13 @@ let package = Package(
                 "AutoAdvanceGaplessSeamTests.swift",
                 "AutoAdvanceReconfigureGapTests.swift",
                 "AutoAdvanceDeviceLossTests.swift",
-            ],
-            swiftSettings: [
-                // CommandLineTools ships Testing.framework in a non-standard path.
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
-            ],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                    "-framework", "Testing",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
             ]
+            // swift-testing is provided natively by the toolchain under swift-tools 6.2;
+            // no manual Testing.framework linkage. (The former -F/-framework hack pointed
+            // at CommandLineTools' Testing.framework, whose macro plugin was built against
+            // a different swift-syntax than the active toolchain's macro expander, which
+            // broke @Suite/@Test expansion — "SuiteDeclarationMacro doesn't conform to
+            // MemberMacro".)
         ),
         // Obj-C++ bridge: wraps EQModule and EQModuleCoefficients in a pure-C
         // interface (EQTestBridge.h) for Swift test consumption.
@@ -175,18 +179,9 @@ let package = Package(
                     "-import-objc-header",
                     "Sources/AudioDSPTestBridge/include/EQTestBridge.h",
                 ]),
-                // Testing.framework location on CommandLine Tools.
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
-            ],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                    "-framework", "Testing",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
+                // swift-testing is provided natively by the toolchain under swift-tools 6.2;
+                // no manual Testing.framework linkage (see AudioViewModelTests for why the
+                // former CommandLineTools -F/-framework hack broke macro expansion).
             ]
         ),
         // Pure-Swift format helper (Sprint 5b, M2-a): maps a channel count to the
@@ -207,6 +202,12 @@ let package = Package(
             cxxSettings: [
                 .headerSearchPath("include"),
                 .unsafeFlags(["-D_LIBCPP_DISABLE_AVAILABILITY"], .when(platforms: [.macOS])),
+                // Opt into the new-LAPACK CBLAS headers (macOS 13.3+). This clears the
+                // `cblas_scopy` deprecation without changing behaviour: the prototype is
+                // source-compatible (32-bit `int` counts/strides unchanged). We deliberately
+                // do NOT define ACCELERATE_LAPACK_ILP64 — that would widen LAPACK/BLAS
+                // integers to 64-bit, which we neither need nor want (our calls use `int`).
+                .unsafeFlags(["-DACCELERATE_NEW_LAPACK"]),
                 .unsafeFlags([
                     "-Wall", "-Wextra", "-Wpedantic",
                     "-Wunused", "-Wshadow", "-Wconversion",

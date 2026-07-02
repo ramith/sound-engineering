@@ -32,7 +32,7 @@ private final class MockPlaylistController {
 
 // MARK: - Test helpers
 
-private func makeTracks(count: Int) -> [String] {
+private func makeWavTracks(count: Int) -> [String] {
     (0 ..< count).map { "track\($0).wav" }
 }
 
@@ -45,7 +45,7 @@ struct AudioViewModelTests {
     @Test("playTrack(at:2) sets selectedTrackIndex to 2")
     func playTrackSelectsCorrectTrack() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 3)
+        vm.playlist = makeWavTracks(count: 3)
 
         vm.playTrack(at: 2)
 
@@ -56,7 +56,7 @@ struct AudioViewModelTests {
     @Test("playTrack(at:) triggers startPlayback() exactly once")
     func playTrackTriggersStartPlayback() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 3)
+        vm.playlist = makeWavTracks(count: 3)
 
         vm.playTrack(at: 1)
 
@@ -69,7 +69,7 @@ struct AudioViewModelTests {
         // Regression: startPlayback() must run AFTER selectedTrackIndex is set,
         // not before (the bug was the reversed order).
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 3)
+        vm.playlist = makeWavTracks(count: 3)
         vm.selectedTrackIndex = 0 // pre-existing selection
 
         vm.playTrack(at: 2)
@@ -83,7 +83,7 @@ struct AudioViewModelTests {
     @Test("out-of-bounds index does not change selection or trigger playback")
     func playTrackIgnoresOutOfBoundsIndex() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 3)
+        vm.playlist = makeWavTracks(count: 3)
         vm.selectedTrackIndex = 0
 
         vm.playTrack(at: 99) // beyond playlist end
@@ -112,7 +112,7 @@ struct AudioViewModelTests {
     @Test("playTrack at last valid index succeeds")
     func playTrackAtLastValidIndex() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 5)
+        vm.playlist = makeWavTracks(count: 5)
 
         vm.playTrack(at: 4) // last valid index
 
@@ -123,7 +123,7 @@ struct AudioViewModelTests {
     @Test("index equal to playlist.count is rejected")
     func playTrackAtExactCountIsRejected() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 5)
+        vm.playlist = makeWavTracks(count: 5)
 
         vm.playTrack(at: 5) // one past the end
 
@@ -137,7 +137,7 @@ struct AudioViewModelTests {
     @Test("second playTrack(at:) call overwrites the previous selection")
     func playTrackOverwritesPreviousSelection() {
         let vm = MockPlaylistController()
-        vm.playlist = makeTracks(count: 5)
+        vm.playlist = makeWavTracks(count: 5)
 
         vm.playTrack(at: 0)
         vm.playTrack(at: 3)

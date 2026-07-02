@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format library-store-verify gate help
+.PHONY: build run release run-release clean xcode profile test format library-store-verify gate sanitize tsan help
 
 build:
 	swift build -c debug -j 8
@@ -68,6 +68,17 @@ library-store-verify:
 gate:
 	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run VerifyLibraryStore
 
+# Runtime-instrumented C++ DSP null test. sanitize = AddressSanitizer + Undefined
+# Behavior Sanitizer (heap/stack overruns, use-after-free, signed overflow, bad
+# casts, misaligned loads in the biquad/vDSP math). tsan = ThreadSanitizer (data
+# races). Both halt on the first finding with a non-zero exit. Run before merging
+# changes to the AudioDSP kernels.
+sanitize:
+	bash scripts/build-null-test.sh --sanitize
+
+tsan:
+	bash scripts/build-null-test.sh --tsan
+
 help:
 	@echo "AdaptiveSound Build Commands:"
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
@@ -80,4 +91,6 @@ help:
 	@echo "  make format - Format code (Swift + C++)"
 	@echo "  make library-store-verify - Run the S8.1a library-store acceptance gate"
 	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
+	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
+	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
 	@echo "  make profile- Build and profile with system trace"
