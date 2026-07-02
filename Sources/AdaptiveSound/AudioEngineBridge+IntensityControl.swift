@@ -2,10 +2,14 @@ import Foundation
 
 // MARK: - AudioEngineBridge Intensity control plane
 
-/// File-scope alias so the C-ABI `publishIntensity(void*, float)` can be called
-/// unambiguously from the `AudioEngineBridge` extension — the extension's own
-/// `func publishIntensity(_:)` would otherwise shadow the free function.
-private let cPublishIntensity: (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+/// Caseless-enum namespace holding an alias for the C-ABI `publishIntensity(void*, float)`
+/// so it can be called unambiguously from the `AudioEngineBridge` extension — the
+/// extension's own `func publishIntensity(_:)` would otherwise shadow the free function.
+/// A caseless enum is a `Sendable` static namespace (no shared mutable state); the stored
+/// value is an immutable C-function pointer that is never mutated.
+private enum CIntensityABI {
+    static let publish: @Sendable (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+}
 
 extension AudioEngineBridge {
     /// Publish a new Reimagine intensity value (wet/dry blend, [0, 1]) to the live DSP AU.
@@ -19,6 +23,6 @@ extension AudioEngineBridge {
             return
         }
         logUX("[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
-        cPublishIntensity(handle, intensity)
+        CIntensityABI.publish(handle, intensity)
     }
 }

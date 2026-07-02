@@ -18,6 +18,7 @@
 // aliasing < -80 dBFS. Both directions measured: 44100 -> 48000 (live up-conversion) and reverse.
 
 import Accelerate
+@preconcurrency import AVFAudio
 import AVFoundation
 import Foundation
 
@@ -107,6 +108,13 @@ private func makeInputBuffer(_ sourceSamples: [Float], format: AVAudioFormat) ->
 /// `.max` quality (default Normal algorithm), and the pull `convert(to:error:withInputFrom:)` API
 /// with a once-per-call input latch + slack output capacity. Returns the converted LEFT channel
 /// (both are identical), incl. the resampler tail, or nil on a setup/conversion failure.
+/// One-shot latch for the converter input block. `@unchecked Sendable` because the block that
+/// mutates it is invoked only synchronously on the calling thread inside
+/// `AVAudioConverter.convert(to:withInputFrom:)` — there is a single writer and no concurrency.
+private final class InputLatch: @unchecked Sendable {
+    var consumed = false
+}
+
 private func convertTone(
     sourceSamples: [Float],
     sourceRate: Double,
@@ -132,13 +140,18 @@ private func convertTone(
 
     // Once-latch input block: hand the whole source over exactly once, then report end-of-stream so
     // the converter flushes its tail (identical contract to B4's makeInputBlock).
-    var inputConsumed = false
+    //
+    // `AVAudioConverterInputBlock` is `@Sendable`, so we cannot mutate a captured `var` directly.
+    // `convert(to:withInputFrom:)` invokes this block SYNCHRONOUSLY on the calling thread and never
+    // concurrently, so the single-writer latch is data-race-free; a reference box makes that explicit
+    // without a captured-var mutation.
+    let latch = InputLatch()
     let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-        if inputConsumed {
+        if latch.consumed {
             outStatus.pointee = .endOfStream
             return nil
         }
-        inputConsumed = true
+        latch.consumed = true
         outStatus.pointee = .haveData
         return inputBuffer
     }

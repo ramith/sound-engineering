@@ -62,7 +62,7 @@ struct AutoAdvanceReconfigureGapTests {
 
         // 3-track playlist; we will fire track-end BEFORE the VM has called setNextTrack.
         // Simulate: VM starts track 0, but before it can call setNextTrack the engine reaches EOF.
-        engine.endedFlag = false
+        // (A fresh MockAudioEngine already has endedFlag == false; no reset needed.)
 
         // Manually simulate the "track ended with nothing on deck" condition:
         // nextTrackURL is nil (the VM hasn't armed it yet) → endedFlag fires, not transitionCount.
@@ -83,9 +83,15 @@ struct AutoAdvanceReconfigureGapTests {
         ctrl.engineEndedFlag = true
         ctrl.tick()
 
-        #expect(ctrl.isPlaying == false,
-                "VM must stop when engine signals ended with no next track armed (short-track gap regression)")
-        // FUTURE: when the architectural fix lands, the above expectation becomes isPlaying == true
-        // and selectedTrackIndex advances to 1. Leave this comment as the regression marker.
+        // KNOWN ISSUE KI-001 (docs/product/known-issues.md): a short track can reach EOF
+        // before the VM arms the next track, and the player stalls instead of advancing.
+        // The desired behavior (continue/advance) is pending a product decision + fix; this
+        // assertion documents the CURRENT (defective) behavior. Wrapped in withKnownIssue so
+        // the suite stays green while tracked — when the fix lands this stops reproducing and
+        // the test fails, prompting removal of the wrapper and a corrected assertion.
+        withKnownIssue("KI-001: short-track auto-advance gap — VM stalls instead of advancing") {
+            #expect(ctrl.isPlaying == false,
+                    "VM must stop when engine signals ended with no next track armed (short-track gap regression)")
+        }
     }
 }

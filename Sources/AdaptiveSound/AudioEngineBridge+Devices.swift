@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -100,7 +100,12 @@ extension AudioEngineBridge {
             // Apply the connect-behaviour preference (pin vs follow) BEFORE refreshing the picker
             // (a connecting device can steal the system default — see handleDeviceSetChange).
             self.handleDeviceSetChange()
-            DispatchQueue.main.async { self.onOutputDevicesChanged?() }
+            DispatchQueue.main.async {
+                // `DispatchQueue.main` runs on the main thread, which is the main actor's
+                // executor; `assumeIsolated` proves that to the compiler so the @MainActor
+                // `onOutputDevicesChanged` callback can be invoked with no extra hop/allocation.
+                MainActor.assumeIsolated { self.onOutputDevicesChanged?() }
+            }
         }
         let status = AudioObjectAddPropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject), &address, listenerQueue, block

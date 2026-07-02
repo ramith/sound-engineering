@@ -55,7 +55,7 @@ extension AudioPlaybackEngine {
     func publishCrossfeed(enabled _: Bool, strength _: CrossfeedStrength) async {}
 }
 
-protocol AudioPlaybackEngine: AnyObject {
+protocol AudioPlaybackEngine: AnyObject, Sendable {
     // MARK: Lifecycle
 
     /// Initialize the engine and prepare for playback.
@@ -200,7 +200,7 @@ protocol AudioPlaybackEngine: AnyObject {
     /// Invoked on the main thread when the set of available output devices changes (a device was
     /// added or removed, e.g. Bluetooth connect/disconnect). The view model re-enumerates in
     /// response so the picker stays current.
-    var onOutputDevicesChanged: (() -> Void)? { get set }
+    var onOutputDevicesChanged: (@MainActor () -> Void)? { get set }
 
     // MARK: Spectrum
 

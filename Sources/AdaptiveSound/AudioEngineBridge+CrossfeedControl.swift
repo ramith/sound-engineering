@@ -2,11 +2,15 @@ import Foundation
 
 // MARK: - AudioEngineBridge Crossfeed control plane
 
-/// File-scope type alias matching the C-ABI signature for `publishCrossfeed`.
-/// Captured here so it can be called unambiguously from the `AudioEngineBridge`
-/// extension without the compiler preferring the Swift instance method of the same name.
-private typealias CPublishCrossfeed = (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
-private let cPublishCrossfeed: CPublishCrossfeed = publishCrossfeed
+/// Caseless-enum namespace holding an alias for the C-ABI `publishCrossfeed` so it can be
+/// called unambiguously from the `AudioEngineBridge` extension without the compiler
+/// preferring the Swift instance method of the same name. A caseless enum is a `Sendable`
+/// static namespace (no shared mutable state); the stored value is an immutable C-function
+/// pointer that is never mutated.
+private typealias CPublishCrossfeed = @Sendable (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+private enum CCrossfeedABI {
+    static let publish: CPublishCrossfeed = publishCrossfeed
+}
 
 extension AudioEngineBridge {
     /// Publish a new crossfeed state to the live DSP AU (QW1 §3).
@@ -27,6 +31,6 @@ extension AudioEngineBridge {
         let enabledFlag: UInt32 = enabled ? 1 : 0
         logUX("[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
             + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
-        cPublishCrossfeed(handle, enabledFlag, strength.dspLevel, strength.presetIndex)
+        CCrossfeedABI.publish(handle, enabledFlag, strength.dspLevel, strength.presetIndex)
     }
 }

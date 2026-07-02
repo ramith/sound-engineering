@@ -1,6 +1,6 @@
 import Accelerate
 import AudioFormatKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import os
 
@@ -11,7 +11,22 @@ import os
 /// Device enumeration is wired to real CoreAudio data via the C-ABI functions
 /// exported from `AUAudioUnit.mm` (`enumerateOutputDevicesC`, `selectOutputDeviceC`).
 /// No mock data — every `AudioDeviceModel` reflects an actual system device.
-final class AudioEngineBridge: AudioPlaybackEngine {
+///
+/// `@unchecked Sendable` invariant: this type is a hand-rolled isolation domain, NOT a
+/// Swift actor and NOT `@MainActor`. ALL mutable stored state is confined to one of the
+/// bridge's serial dispatch queues — `engineQueue` (transport/graph/device lifecycle),
+/// `resampleQueue` (streaming-resampler + gapless state), `configChangeQueue` (device/
+/// config re-establish) — OR is guarded by the leaf `os_unfair_lock` (`stateLock`, see
+/// `AudioEngineBridge+SharedState.swift`) for the small set of fields the MainActor 20 Hz
+/// poll reads while a queue writes. No field is mutated from two domains without that
+/// discipline; the lock is a leaf (no other lock/queue taken while held) so no deadlock
+/// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
+/// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
+/// SpectrumDoubleBuffer / the C loudness-meter handle). The public API is therefore safe
+/// to call from any thread — which is why the class can honestly be `Sendable` even though
+/// the compiler cannot see the queue/lock model. An `actor` would violate RT-safety
+/// (executor hops on the control path, cannot express the tap/render boundary).
+final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var avEngine: AVAudioEngine?
     var playerNode: AVAudioPlayerNode?
     /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
@@ -182,7 +197,7 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
     /// Invoked on the main thread when the available-output-device set changes. Set by the view
     /// model; fired by the `kAudioHardwarePropertyDevices` listener (see AudioEngineBridge+Devices).
-    var onOutputDevicesChanged: (() -> Void)?
+    var onOutputDevicesChanged: (@MainActor () -> Void)?
 
     /// CoreAudio property-listener token for the device-list (add/remove) notification.
     /// Registered in `initialize()`, removed in `shutdown()`.
@@ -265,8 +280,11 @@ final class AudioEngineBridge: AudioPlaybackEngine {
 
                 // Instantiate both AUs and build the two-AU graph; the (nested) completion handlers
                 // resume the continuation exactly once for this path.
-                self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
-                                              completion: continuation.resume(returning:))
+                self.instantiateAndBuildGraph(engine: engine, player: player, format: format) { success in
+                    // `Bool` is Sendable, so this @Sendable wrapper around the continuation's
+                    // resume is race-free; it makes the sending-parameter conversion explicit.
+                    continuation.resume(returning: success)
+                }
             }
         }
     }

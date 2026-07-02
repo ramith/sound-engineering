@@ -1,6 +1,6 @@
 import Accelerate
 import AudioFormatKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge graph construction + analysis taps (Sprint 5b, M3-3)
@@ -19,7 +19,7 @@ extension AudioEngineBridge {
         engine: AVAudioEngine,
         player: AVAudioPlayerNode,
         format: AVAudioFormat,
-        completion: @escaping (Bool) -> Void
+        completion: @escaping @Sendable (Bool) -> Void
     ) {
         let effectsDescription = adaptiveAudioUnitComponentDescription()
         AVAudioUnit.instantiate(with: effectsDescription, options: []) { [weak self] effectsUnit, error in

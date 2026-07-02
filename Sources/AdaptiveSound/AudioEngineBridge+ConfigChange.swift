@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge configuration-change resilience
@@ -11,8 +11,9 @@ extension AudioEngineBridge {
         configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
-            self?.configChangeQueue.async {
-                guard let self, let engine = self.avEngine else { return }
+            guard let self else { return }
+            self.configChangeQueue.async {
+                guard let engine = self.avEngine else { return }
                 let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
                 logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
                     + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "

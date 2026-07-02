@@ -271,14 +271,12 @@ final class AudioViewModel {
     /// actor. Fire-and-forget; behaviour is identical to the previously-inlined block.
     private func computeDurationAsync(for fileURL: URL) {
         Task.detached(priority: .userInitiated) { [weak self] in
-            var computedDuration: Double = 0
-            if let file = try? AVAudioFile(forReading: fileURL) {
+            let computedDuration: Double = {
+                guard let file = try? AVAudioFile(forReading: fileURL) else { return 0 }
                 let rate = file.processingFormat.sampleRate
-                if rate > 0 {
-                    computedDuration = Double(file.length) / rate
-                }
-            }
-            await MainActor.run {
+                return rate > 0 ? Double(file.length) / rate : 0
+            }()
+            await MainActor.run { [computedDuration] in
                 self?.duration = computedDuration
                 logUX("duration = \(secs(computedDuration))s")
             }

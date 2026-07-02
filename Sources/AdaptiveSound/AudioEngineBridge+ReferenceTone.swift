@@ -1,5 +1,5 @@
 import Accelerate
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - Reference Tone Generation (using vDSP)
@@ -49,7 +49,8 @@ extension AudioEngineBridge {
             UnsafeMutableBufferPointer(start: floatData, count: Int(frameCount))
                 .baseAddress
                 .map { dst in
-                    cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
+                    // Straight contiguous copy (was cblas_scopy stride-1); non-allocating.
+                    dst.update(from: srcBase, count: Int(frameCount))
                 }
         }
 

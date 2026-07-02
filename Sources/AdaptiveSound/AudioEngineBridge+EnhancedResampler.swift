@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Enhanced streaming-resampler path
@@ -261,7 +261,13 @@ extension AudioEngineBridge {
 /// Per-playback-session state for the Enhanced streaming resampler. A class (reference type) so the
 /// completion-chained iterations and the input pull block share one instance; held by the bridge as
 /// `resampleSession` and only ever mutated on `resampleQueue`.
-final class EnhancedResampleSession {
+///
+/// `@unchecked Sendable` invariant: this session is created and *only ever mutated on*
+/// `resampleQueue`. The completion / input closures that capture it either run on
+/// `resampleQueue` or do nothing but re-dispatch onto it. Single-serial-queue confinement
+/// is the external synchronization that makes `@unchecked` truthful; it is never touched
+/// on the render/tap (RT) thread, so no allocation/lock is added there.
+final class EnhancedResampleSession: @unchecked Sendable {
     /// The high-quality streaming converter (file rate → 48 kHz, N→N), `.max` quality, Normal algo.
     let converter: AVAudioConverter
 

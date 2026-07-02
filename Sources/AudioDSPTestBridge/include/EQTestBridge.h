@@ -61,6 +61,26 @@ extern "C"
     // ---------------------------------------------------------------------------
     void eqModuleProcessC(float* ioBuffer, const CEQParams* params, uint32_t numFrames);
 
+    // ---------------------------------------------------------------------------
+    // EQModule STREAMING process bridge
+    //
+    // Runs the ENTIRE signal through ONE persistent EQModule (initialized once,
+    // coefficients published once), processing in <=512-frame windows while
+    // PRESERVING filter delay state and the master-gain ramp across windows — i.e.
+    // it models the real render thread's long-lived module. This is different from
+    // eqModuleProcessC, which rebuilds a fresh module every call (resetting filter
+    // state and restarting the 32 ms master-gain ramp on each chunk).
+    //
+    // Use this for any measurement that depends on settled / steady-state output
+    // (frequency response, per-band gain, master-gain settling). Measure the
+    // SETTLED TAIL of the result — discard the leading transient.
+    //
+    // @param ioBuffer   Float buffer (mono), length numFrames.  Modified in-place.
+    // @param params     Coefficient parameters (biquads + masterGainLinear).
+    // @param numFrames  Total frames to process (any length; windowed internally).
+    // ---------------------------------------------------------------------------
+    void eqModuleProcessStreamC(float* ioBuffer, const CEQParams* params, uint32_t numFrames);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

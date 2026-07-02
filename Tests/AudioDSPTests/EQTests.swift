@@ -26,8 +26,11 @@ struct EQTests {
     /// Tolerance for frequency-response measurements (dB)
     private let frequencyResponseTolerance: Float = 0.1
 
-    /// Tolerance for gain linearity tests (dB)
-    private let gainLinearityTolerance: Float = 0.05
+    /// Tolerance for gain linearity tests (dB). A settled-tail measurement of a
+    /// peaking biquad at its centre frequency is exact in principle; ±0.1 dB
+    /// absorbs float32 measurement noise and stays far tighter than the product
+    /// frequency-response bar (kEqFrToleranceDb = ±1.0 dB in the C++ gate).
+    private let gainLinearityTolerance: Float = 0.1
 
     /// Maximum allowed divergence (dB) between the Swift reference path and
     /// the real EQModule path.  The two biquad implementations must agree within
@@ -62,28 +65,40 @@ struct EQTests {
                 "Swift reference and EQModule must agree within \(crossPathTolerance) dB")
     }
 
-    // MARK: - Test 2: Gain Linearity (-20 to +12 dB per band, ±0.05 dB)
+    // MARK: - Test 2: Gain Linearity (-20 to +12 dB per band, ±0.1 dB)
 
-    @Test("Gain linearity: -20 to +12 dB at 1 kHz within ±0.05 dB")
+    /// Measures the STEADY-STATE gain of a peaking biquad at its centre frequency.
+    ///
+    /// A peaking-EQ (RBJ) filter has `|H(e^{jω₀})| = 10^(gainDB/20)` exactly at the
+    /// centre frequency, so the measured gain must equal the target. The measurement
+    /// discards the leading transient (the biquad turn-on AND the 32 ms master-gain
+    /// ramp) and reads only the SETTLED TAIL, and it drives the production module via
+    /// the STREAMING bridge (one persistent module — no per-chunk state reset).
+    /// A whole-buffer RMS of a fresh-per-chunk module (the old approach) folded ~47
+    /// startup transients into the number and could not converge.
+    @Test("Gain linearity: -20 to +12 dB at 1 kHz within ±0.1 dB (settled tail)")
     func gainLinearity() {
         let testGains: [Float] = [-20, -15, -10, -5, 0, 6, 12]
+        // ~0.5 s so the settled tail is long; skip the first ~85 ms (well past the
+        // 32 ms master-gain ramp and the sub-ms biquad settling).
         let numSamples = Int(Float(testSampleRate) * 0.5)
+        let settleSkip = 4096
         let sine1kHz = generateSineWave(frequency: 1000,
                                         sampleRate: testSampleRate,
                                         numSamples: numSamples)
-        let inputRMS = rootMeanSquare(signal: sine1kHz)
+        let inputRMS = settledRMS(signal: sine1kHz, skip: settleSkip)
 
         for targetGainDB in testGains {
             let params = makePeakBiquadCEQParams(frequencyHz: 1000, gainDB: targetGainDB,
                                                  qFactor: 1.0, sampleRate: testSampleRate)
 
             let refOut = processViaSwiftReference(signal: sine1kHz, params: params)
-            let refMeasured = gainDBValue(output: refOut, inputRMS: inputRMS)
+            let refMeasured = settledGainDB(output: refOut, inputRMS: inputRMS, skip: settleSkip)
             #expect(abs(refMeasured - targetGainDB) < gainLinearityTolerance,
                     "Reference gain at \(targetGainDB) dB: got \(refMeasured) dB")
 
-            let realOut = processViaRealEQModule(signal: sine1kHz, params: params)
-            let realMeasured = gainDBValue(output: realOut, inputRMS: inputRMS)
+            let realOut = processViaRealEQModuleStream(signal: sine1kHz, params: params)
+            let realMeasured = settledGainDB(output: realOut, inputRMS: inputRMS, skip: settleSkip)
             #expect(abs(realMeasured - targetGainDB) < gainLinearityTolerance,
                     "EQModule gain at \(targetGainDB) dB: got \(realMeasured) dB")
 
@@ -105,8 +120,7 @@ struct EQTests {
 
         for (idx, freq) in [(0, iso266BandCenters[0]), (10, iso266BandCenters[10]),
                             (17, iso266BandCenters[17]), (24, iso266BandCenters[24]),
-                            (30, iso266BandCenters[30])]
-        {
+                            (30, iso266BandCenters[30])] {
             let params = makePeakBiquadCEQParams(frequencyHz: freq, gainDB: 6.0,
                                                  qFactor: 1.0, sampleRate: testSampleRate)
             #expect(Int(params.numBiquads) > 0,
@@ -114,27 +128,48 @@ struct EQTests {
         }
     }
 
-    // MARK: - Test 4: Phase Response (Minimum-Phase Validation)
+    // MARK: - Test 4: Impulse Response (Minimum-Phase: no pre-ring, stable decay)
 
-    @Test("Minimum-phase: no pre-ring, no NaN/Inf (reference and EQModule)")
+    /// Validates the minimum-phase time-domain behaviour with a UNIT IMPULSE, not
+    /// white noise. Pre-ring is energy that appears BEFORE the impulse-response peak;
+    /// a causal minimum-phase biquad has none (the peak is at/near index 0 and its
+    /// energy decays). The previous test measured `max(first 10 noise samples)/max(all)`
+    /// on white noise — a category error: white noise already has ~full amplitude in
+    /// its first samples, so the ratio (~0.65) is meaningless for any causal filter.
+    /// The structural minimum-phase guarantee (poles+zeros inside the unit circle) is
+    /// covered separately by the Schur-Cohn check in EQModuleCoefficientsXCTests.
+    @Test("Impulse response: no pre-ring, stable decay, no NaN/Inf (reference and EQModule)")
     func phaseResponse() {
         let params = makePeakBiquadCEQParams(frequencyHz: 1000, gainDB: 6.0,
                                              qFactor: 1.0, sampleRate: testSampleRate)
-        let whiteNoise = generateWhiteNoise(numSamples: Int(testSampleRate))
+        let impulseLen = 512
+        var impulse = [Float](repeating: 0, count: impulseLen)
+        impulse[0] = 1.0
 
         let paths: [(String, [Float])] = [
-            ("Reference", processViaSwiftReference(signal: whiteNoise, params: params)),
-            ("EQModule", processViaRealEQModule(signal: whiteNoise, params: params)),
+            ("Reference", processViaSwiftReference(signal: impulse, params: params)),
+            ("EQModule", processViaRealEQModuleStream(signal: impulse, params: params)),
         ]
 
-        for (label, output) in paths {
-            let firstSamplesMax = output.prefix(10).map(abs).max() ?? 0
-            let maxOutput = output.map(abs).max() ?? 1
-            let preRingRatio = firstSamplesMax / maxOutput
-            #expect(preRingRatio < 0.1,
-                    "\(label): minimum-phase filter pre-ring ratio must be < 10%, got \(preRingRatio)")
-            #expect(!output.contains { $0.isNaN }, "\(label): output must not contain NaN")
-            #expect(!output.contains { $0.isInfinite }, "\(label): output must not contain Inf")
+        for (label, impulse) in paths {
+            #expect(!impulse.contains { $0.isNaN }, "\(label): impulse response must not contain NaN")
+            #expect(!impulse.contains { $0.isInfinite }, "\(label): impulse response must not contain Inf")
+
+            let peakIdx = impulse.indices.max(by: { abs(impulse[$0]) < abs(impulse[$1]) }) ?? 0
+            // Minimum-phase / causal: no meaningful energy before the peak.
+            let preEnergy = (0 ..< peakIdx).reduce(Float(0)) { $0 + impulse[$1] * impulse[$1] }
+            let totalEnergy = impulse.reduce(Float(0)) { $0 + $1 * $1 }
+            let preRingFraction = totalEnergy > 0 ? preEnergy / totalEnergy : 0
+            #expect(preRingFraction < 1e-3,
+                    "\(label): pre-peak (pre-ring) energy fraction must be < 0.1%, got \(preRingFraction)")
+
+            // Stability: the response must decay — tail energy far below head energy.
+            let quarter = impulseLen / 4
+            let headEnergy = (0 ..< quarter).reduce(Float(0)) { $0 + impulse[$1] * impulse[$1] }
+            let tailEnergy = (impulse.count - quarter ..< impulse.count)
+                .reduce(Float(0)) { $0 + impulse[$1] * impulse[$1] }
+            #expect(tailEnergy < headEnergy * 0.01,
+                    "\(label): impulse response must decay (tail=\(tailEnergy) head=\(headEnergy))")
         }
     }
 
@@ -150,9 +185,9 @@ struct EQTests {
         // Reference path (full 10s, processes entire buffer at once)
         var refSignal = whiteNoise
         for (freq, gain) in [(100 as Float, -6 as Float), (1000, 3), (8000, -3)] {
-            let p = makePeakBiquadCEQParams(frequencyHz: freq, gainDB: gain,
-                                            qFactor: 1.0, sampleRate: testSampleRate)
-            refSignal = processViaSwiftReference(signal: refSignal, params: p)
+            let bandParams = makePeakBiquadCEQParams(frequencyHz: freq, gainDB: gain,
+                                                     qFactor: 1.0, sampleRate: testSampleRate)
+            refSignal = processViaSwiftReference(signal: refSignal, params: bandParams)
         }
 
         // Real EQModule path: check the first 512-frame chunk (production chunk size)
@@ -191,14 +226,14 @@ struct EQTests {
                                           numSamples: Int(testSampleRate))
         let out1 = processViaSwiftReference(signal: testSignal, params: original)
         let out2 = processViaSwiftReference(signal: testSignal, params: deserialized)
-        for i in 0 ..< out1.count {
-            #expect(abs(out1[i] - out2[i]) < 1e-7, "Sample \(i) must match after round-trip")
+        for idx in 0 ..< out1.count {
+            #expect(abs(out1[idx] - out2[idx]) < 1e-7, "Sample \(idx) must match after round-trip")
         }
 
         let out3 = processViaRealEQModule(signal: testSignal, params: original)
         let out4 = processViaRealEQModule(signal: testSignal, params: deserialized)
-        for i in 0 ..< out3.count {
-            #expect(abs(out3[i] - out4[i]) < 1e-7, "EQModule sample \(i) after round-trip")
+        for idx in 0 ..< out3.count {
+            #expect(abs(out3[idx] - out4[idx]) < 1e-7, "EQModule sample \(idx) after round-trip")
         }
     }
 
@@ -221,8 +256,8 @@ struct EQTests {
         #expect(refOutput.count == realOutput.count)
 
         var maxDiff: Float = 0
-        for i in 0 ..< refOutput.count {
-            let diff = abs(refOutput[i] - realOutput[i])
+        for idx in 0 ..< refOutput.count {
+            let diff = abs(refOutput[idx] - realOutput[idx])
             if diff > maxDiff { maxDiff = diff }
         }
 
@@ -261,11 +296,11 @@ struct EQTests {
         // All designed coefficients must be finite.
         let mirror = Mirror(reflecting: cParams.biquads)
         let children = Array(mirror.children)
-        for i in 0 ..< Int(cParams.numBiquads) {
-            guard let b = children[i].value as? CEQBiquadCoeffs else { continue }
-            #expect(b.b0.isFinite, "b0[\(i)] must be finite after coefficient design")
-            #expect(b.a1.isFinite, "a1[\(i)] must be finite after coefficient design")
-            #expect(b.a2.isFinite, "a2[\(i)] must be finite after coefficient design")
+        for idx in 0 ..< Int(cParams.numBiquads) {
+            guard let coeffs = children[idx].value as? CEQBiquadCoeffs else { continue }
+            #expect(coeffs.b0.isFinite, "b0[\(idx)] must be finite after coefficient design")
+            #expect(coeffs.a1.isFinite, "a1[\(idx)] must be finite after coefficient design")
+            #expect(coeffs.a2.isFinite, "a2[\(idx)] must be finite after coefficient design")
         }
 
         // Process a 1 kHz sine wave through the real EQModule using the designed params.
@@ -293,37 +328,39 @@ struct EQTests {
 
     /// Verifies that `masterGainLinear` in CEQParams is applied by the real EQModule.
     ///
-    /// The EQModule uses a one-pole ramp on masterGain; for a single 512-frame call
-    /// the ramp settles quickly enough that the output RMS must be within ±1 dB of
-    /// the expected attenuated level.
-    @Test("EQModule applies masterGainLinear from CEQParams")
+    /// masterGain uses a ~32 ms one-pole ramp, so the gain only reaches its target
+    /// after ~5τ (~160 ms). The measurement therefore streams a ~0.5 s signal through
+    /// ONE persistent module and reads the SETTLED TAIL (past ~85 ms). The previous
+    /// test asserted a settled −6 dB inside a single 512-frame (10.7 ms) call on a
+    /// fresh-per-call module — mathematically impossible: the ramp only reaches
+    /// ~−0.66 dB in 10.7 ms, which is exactly what it (wrongly) measured.
+    @Test("EQModule applies masterGainLinear from CEQParams (settled tail)")
     func masterGainApplied() {
         // Use flat EQ (zero biquads = identity cascade) so only master gain changes the signal.
         var flatParams = CEQParams()
         flatParams.numBiquads = 0
         flatParams.masterGainLinear = 1.0
 
-        let numSamples = 512
+        let numSamples = Int(Float(testSampleRate) * 0.5)
+        let settleSkip = 4096
         let sine1kHz = generateSineWave(frequency: 1000, sampleRate: testSampleRate,
                                         numSamples: numSamples)
-        let inputRMS = rootMeanSquare(signal: sine1kHz)
+        let inputRMS = settledRMS(signal: sine1kHz, skip: settleSkip)
 
         // Verify -6 dB attenuation (masterGainLinear = 10^(-6/20) ≈ 0.501)
         var attenuatedParams = flatParams
         attenuatedParams.masterGainLinear = Darwin.pow(Float(10.0), Float(-6.0) / Float(20.0))
 
-        let attenuatedOut = processViaRealEQModule(signal: sine1kHz, params: attenuatedParams)
-        let attenuatedGainDB = gainDBValue(output: attenuatedOut, inputRMS: inputRMS)
+        let attenuatedOut = processViaRealEQModuleStream(signal: sine1kHz, params: attenuatedParams)
+        let attenuatedGainDB = settledGainDB(output: attenuatedOut, inputRMS: inputRMS, skip: settleSkip)
 
-        // Allow ±1 dB tolerance for the one-pole ramp transient during the 512-frame window.
-        #expect(attenuatedGainDB < -4.0,
-                "EQModule must attenuate output with masterGainLinear=-6 dB, got \(attenuatedGainDB) dB")
-        #expect(attenuatedGainDB > -8.0,
-                "EQModule attenuation must not overshoot -8 dB, got \(attenuatedGainDB) dB")
+        // Settled gain must be -6 dB within ±0.1 dB.
+        #expect(abs(attenuatedGainDB - -6.0) < 0.1,
+                "EQModule settled gain with masterGainLinear=-6 dB must be -6 dB ±0.1, got \(attenuatedGainDB) dB")
 
         // Verify unity gain preserves signal level (baseline sanity-check).
-        let unityOut = processViaRealEQModule(signal: sine1kHz, params: flatParams)
-        let unityGainDB = gainDBValue(output: unityOut, inputRMS: inputRMS)
+        let unityOut = processViaRealEQModuleStream(signal: sine1kHz, params: flatParams)
+        let unityGainDB = settledGainDB(output: unityOut, inputRMS: inputRMS, skip: settleSkip)
         #expect(abs(unityGainDB) < 0.1,
                 "Unity masterGainLinear must preserve signal within ±0.1 dB, got \(unityGainDB) dB")
     }
@@ -348,9 +385,9 @@ struct EQTests {
 
         // Sample-by-sample comparison: all samples must be within 1e-4.
         var maxDiff: Float = 0
-        for i in 0 ..< sine1kHz.count {
-            let d = abs(output[i] - sine1kHz[i])
-            if d > maxDiff { maxDiff = d }
+        for idx in 0 ..< sine1kHz.count {
+            let diff = abs(output[idx] - sine1kHz[idx])
+            if diff > maxDiff { maxDiff = diff }
         }
         #expect(maxDiff < 1e-4,
                 "Zero-biquad EQModule must pass signal through unchanged (max diff: \(maxDiff))")
@@ -400,38 +437,50 @@ struct EQTests {
             withUnsafeMutablePointer(to: &mutableParams) { paramsPtr in
                 eqModuleProcessC(&chunk, paramsPtr, UInt32(count))
             }
-            for i in 0 ..< count {
-                output[offset + i] = chunk[i]
+            for idx in 0 ..< count {
+                output[offset + idx] = chunk[idx]
             }
             offset += count
         }
         return output
     }
 
+    /// Process the ENTIRE signal through ONE persistent production EQModule via the
+    /// streaming bridge (filter + master-gain-ramp state preserved across the internal
+    /// 512-frame windows). Use this — not `processViaRealEQModule` — whenever a
+    /// measurement depends on settled/steady-state output.
+    private func processViaRealEQModuleStream(signal: [Float], params: CEQParams) -> [Float] {
+        var buffer = signal
+        var mutableParams = params
+        withUnsafeMutablePointer(to: &mutableParams) { paramsPtr in
+            eqModuleProcessStreamC(&buffer, paramsPtr, UInt32(signal.count))
+        }
+        return buffer
+    }
+
     // MARK: - CEQParams Factories
 
     private func makeFlatCEQParams() -> CEQParams {
-        var p = CEQParams()
-        p.numBiquads = 0
-        p.masterGainLinear = 1.0
-        return p
+        var params = CEQParams()
+        params.numBiquads = 0
+        params.masterGainLinear = 1.0
+        return params
     }
 
     private func makePeakBiquadCEQParams(frequencyHz: Float, gainDB: Float,
-                                         qFactor: Float, sampleRate: UInt32) -> CEQParams
-    {
+                                         qFactor: Float, sampleRate: UInt32) -> CEQParams {
         let w0: Float = 2.0 * Float.pi * frequencyHz / Float(sampleRate)
         let cosW0: Float = Darwin.cos(w0)
         let sinW0: Float = Darwin.sin(w0)
-        let A: Float = Darwin.pow(Float(10.0), gainDB / Float(40.0))
+        let ampA: Float = Darwin.pow(Float(10.0), gainDB / Float(40.0))
         let alpha: Float = sinW0 / (Float(2.0) * qFactor)
 
-        let rawB0 = Float(1.0) + alpha * A
+        let rawB0 = Float(1.0) + alpha * ampA
         let rawB1 = Float(-2.0) * cosW0
-        let rawB2 = Float(1.0) - alpha * A
-        let a0 = Float(1.0) + alpha / A
+        let rawB2 = Float(1.0) - alpha * ampA
+        let a0 = Float(1.0) + alpha / ampA
         let rawA1 = Float(-2.0) * cosW0
-        let rawA2 = Float(1.0) - alpha / A
+        let rawA2 = Float(1.0) - alpha / ampA
 
         var biquad = CEQBiquadCoeffs()
         biquad.b0 = rawB0 / a0
@@ -440,11 +489,11 @@ struct EQTests {
         biquad.a1 = rawA1 / a0
         biquad.a2 = rawA2 / a0
 
-        var p = CEQParams()
-        p.numBiquads = 1
-        p.masterGainLinear = Float(1.0)
-        p.biquads.0 = biquad
-        return p
+        var params = CEQParams()
+        params.numBiquads = 1
+        params.masterGainLinear = Float(1.0)
+        params.biquads.0 = biquad
+        return params
     }
 
     private func biquadCoeffsAt(index: Int, in params: CEQParams) -> CEQBiquadCoeffs {
@@ -459,8 +508,7 @@ struct EQTests {
     // MARK: - Signal Generators
 
     private func generateSineWave(frequency: Float, sampleRate: UInt32,
-                                  numSamples: Int) -> [Float]
-    {
+                                  numSamples: Int) -> [Float] {
         let phaseInc = 2.0 * Float.pi * frequency / Float(sampleRate)
         return (0 ..< numSamples).map { Darwin.sin(Float($0) * phaseInc) }
     }
@@ -468,8 +516,8 @@ struct EQTests {
     private func generateWhiteNoise(numSamples: Int) -> [Float] {
         var signal = [Float](repeating: 0, count: numSamples)
         srand48(12345)
-        for i in 0 ..< numSamples {
-            signal[i] = 2.0 * Float(drand48()) - 1.0
+        for idx in 0 ..< numSamples {
+            signal[idx] = 2.0 * Float(drand48()) - 1.0
         }
         let rms = rootMeanSquare(signal: signal)
         return signal.map { $0 / (rms > 0 ? rms : 1.0) * 0.5 }
@@ -483,6 +531,20 @@ struct EQTests {
 
     private func gainDBValue(output: [Float], inputRMS: Float) -> Float {
         let outRMS = rootMeanSquare(signal: output)
+        return Float(20.0) * Float(Darwin.log10(Double(outRMS / inputRMS)))
+    }
+
+    /// RMS over the SETTLED TAIL (samples `[skip, end)`), excluding the leading
+    /// transient (filter turn-on + master-gain ramp). For a pure tone through an LTI
+    /// filter the tail is a steady sinusoid, so its RMS is the exact steady-state level.
+    private func settledRMS(signal: [Float], skip: Int) -> Float {
+        guard skip < signal.count else { return rootMeanSquare(signal: signal) }
+        return rootMeanSquare(signal: Array(signal[skip...]))
+    }
+
+    /// Steady-state gain in dB: settled-tail output RMS vs settled-tail input RMS.
+    private func settledGainDB(output: [Float], inputRMS: Float, skip: Int) -> Float {
+        let outRMS = settledRMS(signal: output, skip: skip)
         return Float(20.0) * Float(Darwin.log10(Double(outRMS / inputRMS)))
     }
 }

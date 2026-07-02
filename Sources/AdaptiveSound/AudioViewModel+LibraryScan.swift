@@ -84,11 +84,11 @@ extension AudioViewModel {
                     Task { @MainActor [weak self] in self?.scanProgress = snapshot }
                 }
             )
-            await publishScanResult(result)
+            publishScanResult(result)
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let conflict as NestedRootConflict {
-            await publishScanRejection(conflict)
+            publishScanRejection(conflict)
         } catch {
             await MainActor.run { [weak self] in
                 self?.scanProgress = nil

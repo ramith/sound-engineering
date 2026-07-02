@@ -1,5 +1,5 @@
 import AudioFormatKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge channel-layout publish (Sprint 5b, M2-d)
