@@ -52,7 +52,8 @@ extension AudioViewModel {
                 crossfeedEnabled = false
                 logUX("refreshDevices: crossfeed auto-disabled (non-headphone device)")
             }
-            logUX("refreshDevices: \(devices.count) device(s), "
+            logUX("refreshDevices: \(devices.count) device(s) "
+                + "[\(devices.map(\.name).joined(separator: " | "))] "
                 + "selected='\(selectedDevice?.name ?? "none")'")
         }
     }
