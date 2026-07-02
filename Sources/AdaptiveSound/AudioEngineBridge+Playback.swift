@@ -77,7 +77,7 @@ extension AudioEngineBridge {
     private func startEnhancedPlayback(fileURL: URL?) throws {
         // If Pure was active, stop+destroy it before entering Enhanced
         // (releases hog mode + restores device rate).
-        if activePath == .pure {
+        if activePathKind == .pure {
             tearDownPure()
         }
 
@@ -104,7 +104,7 @@ extension AudioEngineBridge {
             logUX("Enhanced started reference tone")
         }
 
-        activePath = .enhanced
+        setActivePath(.enhanced)
         resampleQueue.sync { enhancedPlayIntent = true }
         let fellBack = loadSignalPath().fellBackToEnhanced
         storeSignalPath(SignalPathInfo(
@@ -196,7 +196,7 @@ extension AudioEngineBridge {
     func stopAudio() async throws {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                if self.activePath == .pure {
+                if self.activePathKind == .pure {
                     self.tearDownPure()
                 } else {
                     self.stopEnhancedPlayback()
@@ -211,7 +211,7 @@ extension AudioEngineBridge {
                 }
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
-                self.activePath = .enhanced
+                self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
                 continuation.resume()
             }
@@ -219,9 +219,11 @@ extension AudioEngineBridge {
     }
 
     func currentPlaybackPosition() -> Double? {
-        // Route to the active path.
-        if activePath == .pure, let engine = pureEngine {
-            let pos = pureModeEnginePositionSeconds(engine)
+        // Route to the active path. `withPureEngine` reads the position C-ABI UNDER stateLock so a
+        // concurrent teardown (engineQueue stop/shutdown OR configChangeQueue device-loss) cannot
+        // free the handle mid-call (S6 UAF-1). Returns nil when not on the Pure path → fall through
+        // to Enhanced.
+        if let pos = withPureEngine({ pureModeEnginePositionSeconds($0) }) {
             return pos > 0 ? pos : nil
         }
         // Enhanced path: AVAudioPlayerNode's sampleTime counts from 0 at EACH play() — it is
@@ -249,7 +251,7 @@ extension AudioEngineBridge {
                     // the device's HARDWARE master volume (analog/HW domain → stays bit-perfect), so
                     // the in-app slider controls volume even without exclusive hog mode. A device with
                     // no settable master volume returns 0 (volume then via the OS / device only).
-                    if self.activePath == .pure {
+                    if self.activePathKind == .pure {
                         // Volume routing is logged once at the view-model layer (coalesced); not
                         // here — setParameter fires per slider tick and would spam the log.
                         _ = pureModeSetDeviceVolume(self.currentDeviceID, value)

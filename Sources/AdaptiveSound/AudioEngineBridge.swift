@@ -92,11 +92,17 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `setCurrentDeviceID(_:)`).
     var storedCurrentDeviceID: UInt32 = 0
 
-    /// Opaque Pure-Mode engine handle (created lazily in `startPure`).
-    /// Destroyed by `pureModeEngineDestroy` in `stopAudio` / `shutdown`.
+    /// Opaque Pure-Mode engine handle (created lazily in `startPure`), destroyed by
+    /// `pureModeEngineDestroy` in `tearDownPure` / `shutdown`. Guarded by `stateLock`: it is written
+    /// from `engineQueue` (start/stop/shutdown) AND `configChangeQueue` (device-loss) and read by the
+    /// MainActor 20 Hz poll, so access it ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`withPureEngine` to use it, `detachPureEngineForTeardown`
+    /// to destroy it, `pureEngineHandle`/`setPureEngine` for lifecycle bookkeeping) — never directly.
     var pureEngine: UnsafeMutableRawPointer?
 
-    /// Which output path is currently active.
+    /// Which output path is currently active. Guarded by `stateLock` (same cross-domain read/write
+    /// pattern as `pureEngine`); access ONLY via `activePathKind` / `setActivePath` / `withPureEngine`
+    /// in `AudioEngineBridge+SharedState.swift` — never directly.
     var activePath: OutputPathKind = .enhanced
 
     /// Backing storage for `cachedSignalPath` — guarded by `stateLock`. Latest signal-path
@@ -347,12 +353,12 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
                 }
 
                 // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
-                if self.activePath == .pure {
+                if self.activePathKind == .pure {
                     self.tearDownPure()
-                } else if let engine = self.pureEngine {
-                    // Orphaned handle (e.g. failed mid-start): always destroy to avoid a hog leak.
+                } else if let engine = self.detachPureEngineForTeardown() {
+                    // Orphaned handle (e.g. failed mid-start): destroy OUTSIDE the lock (the detach
+                    // nils the field first) to avoid a hog leak without blocking a concurrent poll.
                     pureModeEngineDestroy(engine)
-                    self.pureEngine = nil
                 }
 
                 if let playerNode = self.playerNode, playerNode.isPlaying {
@@ -375,7 +381,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
                 self.graphState = .idle
                 self.beforeAnalyzers = []
                 self.afterAnalyzers = []
-                self.activePath = .enhanced
+                self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
                 // Tap already removed above, so no callback can touch the meter now.
                 if let meter = self.loudnessMeter {

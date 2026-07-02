@@ -98,7 +98,11 @@ void DSPKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept {
     // then SNAP it to the canonical default intensity so the first buffer does not fade in
     // from silence (review DSP-Issue 5). The snapshot's default intensityLinear is 1.0.
     intensityRamp_.initialize(kIntensityRampTauSeconds, static_cast<float>(sampleRate));
-    intensityRamp_.target = targetStateSnapshot_.acquireSnapshot().intensityLinear;
+    // Seed the RT-owned snapshot from whatever has been published so far (default identity state if
+    // nothing yet). No concurrent producer during initialize(), so this copy always succeeds; if a
+    // pathological straddle ever returned false, currentState_ keeps its default identity value.
+    (void)targetStateSnapshot_.tryCopySnapshot(currentState_);
+    intensityRamp_.target = currentState_.intensityLinear;
     intensityRamp_.snap();
 }
 
@@ -128,8 +132,15 @@ void DSPKernel::publishChannelLayout(const ChannelLayout& layout) noexcept {
 }
 
 void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept {
-    // Acquire current parameter snapshot (one acquire-load, held for entire buffer)
-    const TargetState& state = targetStateSnapshot_.acquireSnapshot();
+    // Copy the current parameter snapshot ONCE into RT-owned storage and use that stable copy for
+    // the whole block (S6 RACE-1: never hold a reference into the transport across the block — two
+    // off-RT publishes could otherwise overwrite the referenced slot mid-block → torn read). On a
+    // straddled (contended) read, keep the previous consistent snapshot; parameters are ramped so a
+    // one-block-stale value is inaudible. Wait-free: bounded retries inside tryCopySnapshot.
+    if (targetStateSnapshot_.tryCopySnapshot(scratchState_)) {
+        currentState_ = scratchState_;
+    }
+    const TargetState& state = currentState_;
 
     // --- Steerable wet/dry intensity (S6 Tier-3 §3b) -----------------------------------
     //

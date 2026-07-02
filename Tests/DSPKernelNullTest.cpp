@@ -62,6 +62,7 @@
 #include "LimiterTruePeakTests.inc"
 #include "EqFrequencyResponseSweepTests.inc"
 #include "SoakRtAllocTests.inc"
+#include "SnapshotConcurrencyTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 118U> kTests = {{
+    constexpr std::array<TestEntry, 119U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -252,6 +253,8 @@ namespace
          testSoakDspKernelZeroRtAllocCrossfeedBlend,
          false},
         {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
+        // S6 RACE-1: lock-free parameter-snapshot seqlock — concurrent publish/read, no torn read.
+        {"Snapshot_Seqlock_ConcurrentNoTear_RACE1", testSnapshotSeqlockConcurrentNoTear, true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
