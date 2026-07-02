@@ -1,23 +1,25 @@
-// VerifyLibraryStore — headless S8.1a acceptance gate for the persistent library
+// VerifyLibraryStore — headless S8.1 acceptance gate for the persistent library
 // store (design §6). `swift test` is unusable here (swift-testing macro skew), so
 // this is a runnable executable (`swift run VerifyLibraryStore`) that asserts,
-// against the REAL LibraryStore code, the S8.1a subset of the harness plan:
+// against the REAL LibraryStore code, the harness plan:
 //
-//   SCHEMA-1  fresh create → user_version == 1, integrity_check ok, WAL +
-//             foreign_keys + busy_timeout set, all v1 tables present + sentinel.
-//   SCHEMA-2  first-run idempotency (open the same fresh DB twice).
-//   SCHEMA-3  migration-runner preserves data across a version bump — a TEST-ONLY
-//             v1->v2 (adds a nullable column) keeps every seeded row.
-//   SCHEMA-4  migration is transactional — a throwing v1->v2 leaves user_version
-//             + data at the pre-migration state (all-or-nothing).
-//   SCHEMA-5  corrupt file (garbage, with live -wal/-shm present) → quarantine
-//             (main + both sidecars) + rebuild fresh, no crash, corrupt preserved;
-//             plus the actor's own auto-repair path end to end.
-//   SCHEMA-6  downgrade guard — user_version newer than the app → runner throws
-//             schemaTooNew AND the actor quarantines + rebuilds (non-crashing).
-//   RESTART   durability — write, drop the store, reopen → rows present.
+//   S8.1a (store foundation):
+//     SCHEMA-1  fresh create → user_version == 1, integrity_check ok, WAL +
+//               foreign_keys + busy_timeout set, all v1 tables present + sentinel.
+//     SCHEMA-2  first-run idempotency (open the same fresh DB twice).
+//     SCHEMA-3  migration-runner preserves data across a version bump.
+//     SCHEMA-4  migration is transactional (all-or-nothing).
+//     SCHEMA-5  corrupt file (+ live -wal/-shm) → quarantine + rebuild, no crash;
+//               plus the actor's own auto-repair path end to end.
+//     SCHEMA-6  downgrade guard — newer user_version → schemaTooNew + rebuild.
+//     RESTART   durability — write, drop the store, reopen → rows present.
 //
-// The DAO / facet / concurrency / filesystem-divergence cases are S8.1b.
+//   S8.1b (DAO + concurrency/FS-divergence):
+//     B  CRUD/integrity — round-trip, UNIQUE(url) typed conflict, FK detach, M1.
+//     C  facets — album/artist/genre/year/folder-boundary vs computed expectations.
+//     D  concurrency — WAL/busy_timeout, snapshot isolation, BUSY, stress, abort.
+//     E  idempotency + identity — no-bump re-upsert, M2 classify, M6 moveTrack.
+//     F  filesystem divergence — diverged-row read, orphan primitives, no-dup, loose.
 //
 // Idiom mirrors Sources/VerifyAUGraph/main.swift EXACTLY: `fail(_) -> Never`,
 // numbered PASS/FAIL lines, exit(0) ONLY when every check passes. Temp databases
@@ -126,11 +128,12 @@ struct CheckCase {
 func runAllChecks() async {
     await runRestartSubcommandIfRequested()
 
-    print("=== VerifyLibraryStore — S8.1a store/schema/migration/corruption/durability ===")
+    print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence ===")
     print("test-data dir: \(testDataDirectory.path)")
     print("run id: \(runIdentifier)")
 
     let cases: [CheckCase] = [
+        // S8.1a — store foundation (unchanged).
         CheckCase(label: "schema1-fresh", run: checkFreshCreate),
         CheckCase(label: "schema2-idempotent", run: checkIdempotentReopen),
         CheckCase(label: "schema3-preserve") { number, url in checkMigrationPreservesData(number: number, url: url) },
@@ -139,6 +142,12 @@ func runAllChecks() async {
         CheckCase(label: "schema5b-autorepair", run: checkActorAutoRepair),
         CheckCase(label: "schema6-downgrade", run: checkDowngradeGuard),
         CheckCase(label: "restart-durability", run: checkRestartDurability),
+        // S8.1b — DAO + concurrency + FS divergence.
+        CheckCase(label: "b-crud-integrity", run: checkCRUDIntegrity),
+        CheckCase(label: "c-facets", run: checkFacets),
+        CheckCase(label: "d-concurrency", run: checkConcurrency),
+        CheckCase(label: "e-idempotency-identity", run: checkIdempotencyIdentity),
+        CheckCase(label: "f-fs-divergence", run: checkFilesystemDivergence),
     ]
 
     var passed = 0
@@ -168,11 +177,11 @@ func runAllChecks() async {
         cleanupStore(url)
     }
     print("=== SUMMARY: \(passed)/\(cases.count) checks PASSED "
-        + "(SCHEMA-1 fresh, SCHEMA-2 idempotent, SCHEMA-3 preserve, SCHEMA-4 transactional, "
-        + "SCHEMA-5 corrupt-quarantine + actor auto-repair, SCHEMA-6 downgrade guard, RESTART durability) ===")
-    print("ALL S8.1A STORE CHECKS PASSED — store opens/migrates, schema v\(currentSchemaVersion) correct, "
-        + "migration runner transactional + downgrade-guarded, corruption quarantined + rebuilt, "
-        + "data durable across restart")
+        + "(S8.1a: SCHEMA-1..6 + RESTART; S8.1b: B CRUD/integrity, C facets, D concurrency, "
+        + "E idempotency+identity, F filesystem-divergence) ===")
+    print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
+        + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
+        + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
     exit(0)
 }
 

@@ -1,26 +1,30 @@
 // LibraryStore — the actor front door to the persistent library database.
 //
-// S8.1a FOUNDATION ONLY. This chunk provides: open/create + migrate, the
+// S8.1a FOUNDATION + S8.1b DAO. This file owns: open/create + migrate, the
 // App-Support default location, `schemaVersion()`, `integrityCheck()`, and the
 // corruption/first-run/downgrade handling (quarantine + rebuild). It also exposes
 // a narrow set of verification hooks (`countRows`, `seedFolderRow`) so the
 // headless harness can prove migration-preserves-data and restart durability
-// without reaching into the private connection.
+// without reaching into the connection.
 //
-// The S8.1b DAO (upsert / moveTrack / facets / loose-file / classify) is NOT
-// implemented here — see the `// S8.1b` marker.
+// The S8.1b DAO (upsert / moveTrack / facets / loose-file / classify / roots) lives
+// in the `LibraryStore+DAO.swift`, `LibraryStore+Reads.swift`, and
+// `LibraryStore+Facets.swift` extensions (this file kept small). Those extensions
+// use the module-internal `connection` directly — it is never exposed publicly and
+// never escapes the actor.
 //
 // Concurrency contract (design §4): `LibraryStore` is an `actor`. Only `Sendable`
-// value types cross its boundary; the private `SQLiteConnection` (and its raw
-// `sqlite3*`) NEVER escapes. Single writer by construction (actor isolation),
-// WAL-backed concurrent reads.
+// value types cross its boundary; the `SQLiteConnection` (and its raw `sqlite3*`)
+// NEVER escapes. Single writer by construction (actor isolation), WAL-backed
+// concurrent reads.
 
 import Foundation
 
 /// Actor-isolated front door to the SQLite-backed library store.
 public actor LibraryStore {
-    /// The open connection. Private and actor-isolated — never escapes.
-    private let connection: SQLiteConnection
+    /// The open connection. Module-internal + actor-isolated so the DAO extensions
+    /// (same module) can use it; never exposed publicly, never escapes the actor.
+    let connection: SQLiteConnection
 
     /// The on-disk location this store was opened from (nil for `:memory:`).
     public let storeURL: URL?
@@ -118,12 +122,6 @@ public actor LibraryStore {
         _ = try statement.step()
         return connection.lastInsertRowID()
     }
-
-    // S8.1b — the full DAO lives here next chunk:
-    //   upsert(one/batch), moveTrack, delete(by-key/by-folder), classify,
-    //   addRoot/roots/removeRoot, facet queries (albums/artists/genres), loose-file
-    //   add/remove, applyMetadata, linkArtwork, beginScanGeneration, sweepOrphans.
-    // Intentionally NOT implemented in S8.1a (foundation only).
 
     // MARK: - Open / repair pipeline
 

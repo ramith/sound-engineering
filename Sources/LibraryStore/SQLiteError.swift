@@ -56,6 +56,21 @@ public enum SQLiteError: Error, Sendable {
         }
     }
 
+    /// True when this is a `UNIQUE`/PK constraint violation — the DAO maps it to a
+    /// typed `URLConflict` for `moveTrack`/`upsert` (design §4, M6). Covers both the
+    /// dedicated `.constraintViolation` case and a raw `SQLITE_CONSTRAINT` surfaced
+    /// as a `.stepFailed`.
+    public var isConstraintViolation: Bool {
+        if case .constraintViolation = self { return true }
+        return sqliteCode == SQLITE_CONSTRAINT
+    }
+
+    /// True when the underlying SQLite result code is `SQLITE_BUSY` — a writer held
+    /// the lock past the `busy_timeout`. The concurrency harness discriminates on it.
+    public var isBusy: Bool {
+        sqliteCode == SQLITE_BUSY
+    }
+
     /// True when the underlying SQLite result code means "this file is not a
     /// usable database": SQLITE_CORRUPT (11) or SQLITE_NOTADB (26). Used by
     /// `LibraryStore` to decide when to quarantine + rebuild.
