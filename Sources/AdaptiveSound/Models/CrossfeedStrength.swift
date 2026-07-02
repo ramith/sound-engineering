@@ -29,15 +29,6 @@ enum CrossfeedStrength: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Short label used in the signal-path badge (e.g. "XF:Relaxed").
-    var badgeLabel: String {
-        switch self {
-        case .relaxed: "Relaxed"
-        case .defaultStrength: "Default"
-        case .strong: "Strong"
-        }
-    }
-
     /// Crossfeed level in [0, 1] forwarded to `publishCrossfeed`.
     /// Maps each strength to a normalised level derived from the bs2b cross-level values.
     var dspLevel: Float {

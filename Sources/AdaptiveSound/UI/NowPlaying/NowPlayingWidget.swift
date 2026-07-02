@@ -213,7 +213,7 @@ private struct SignalPathBadge: View {
 
         // 6. Crossfeed badge — only when intensity > 0 (§9: don't show inaudible-chain badge)
         if info.intensityLinear > 0, let xfStrength = info.crossfeedStrength {
-            segments.append(.init(text: "XF:\(xfStrength.badgeLabel)", color: Color.asLabelSecond))
+            segments.append(.init(text: "XF:\(xfStrength.displayName)", color: Color.asLabelSecond))
         }
 
         return segments

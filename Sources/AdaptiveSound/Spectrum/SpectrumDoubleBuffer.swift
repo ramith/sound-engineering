@@ -38,6 +38,12 @@ final class SpectrumDoubleBuffer: @unchecked Sendable {
     /// swift-atomics (SE-0282).
     private var publishedGeneration: Int = -1 // read on main, written on audio thread
 
+    /// Generation the reader last copied out. Accessed ONLY on the main thread (the sole reader),
+    /// so it needs no cross-thread synchronization. Lets `read(into:)` honour its documented "new
+    /// data since the last call?" contract and lets the 20 Hz UI skip redundant work when the tap
+    /// has not published a fresh frame (e.g. while paused / idle). (F2)
+    private var lastConsumedGeneration: Int = -1
+
     init(count: Int) {
         self.count = count
         slots = [
@@ -67,6 +73,10 @@ final class SpectrumDoubleBuffer: @unchecked Sendable {
     func read(into out: inout [Float]) -> Bool {
         let gen = publishedGeneration // read once
         guard gen >= 0 else { return false }
+        // No frame published since the last read → nothing new to copy (F2: the return value now
+        // honestly means "new data", so callers can skip redundant UI work).
+        guard gen != lastConsumedGeneration else { return false }
+        lastConsumedGeneration = gen
         let slot = gen & 1
         out.withUnsafeMutableBufferPointer { dst in
             slots[slot].withUnsafeBufferPointer { src in

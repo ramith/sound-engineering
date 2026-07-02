@@ -1,5 +1,6 @@
-#ifndef DSP_KERNEL_H
-#define DSP_KERNEL_H
+// F4: was an unnamespaced `#ifndef DSP_KERNEL_H` (collision-prone); switched to `#pragma once`
+// to match the plurality convention in this include tree and remove the bare-macro risk.
+#pragma once
 
 #include "AudioConstants.h"
 #include "ChannelLayout.h"
@@ -100,5 +101,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // DSP_KERNEL_H
