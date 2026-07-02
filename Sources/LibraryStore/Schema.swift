@@ -39,6 +39,11 @@ public enum Schema {
             created_at INTEGER NOT NULL,
             migrated_at INTEGER NOT NULL);
         """,
+        // folders: dev/inode capture each ROOT's on-disk identity (lstat), so a
+        // case-variant or differently-spelled path for the SAME directory on a
+        // case-insensitive volume is caught as a duplicate at `addRoot` — not
+        // registered as a second root (QS3). v1-direct (no populated store; mirrors
+        // tracks.dev). Populated for roots only; NULL otherwise (never matches).
         """
         CREATE TABLE folders (
             id INTEGER PRIMARY KEY,
@@ -47,6 +52,8 @@ public enum Schema {
             is_root INTEGER NOT NULL DEFAULT 0,
             bookmark BLOB,
             last_scanned INTEGER,
+            dev INTEGER,
+            inode INTEGER,
             UNIQUE(path));
         """,
         "CREATE INDEX idx_folders_parent ON folders(parent_id);",
@@ -130,6 +137,10 @@ public enum Schema {
         "CREATE INDEX idx_tracks_added ON tracks(date_added);",
         "CREATE INDEX idx_tracks_lastseen ON tracks(last_seen_scan);",
         "CREATE INDEX idx_tracks_album_order ON tracks(album_id, disc_no, track_no);",
+        // The move-signature columns S8.4 matches an orphan-plus-new-path on — indexed
+        // now, with the columns that exist to serve it, so S8.4's matcher is an index
+        // seek, not a table scan per candidate move (A1).
+        "CREATE INDEX idx_tracks_dev_inode ON tracks(dev, inode);",
         """
         CREATE TABLE track_genres (
             track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,

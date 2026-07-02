@@ -62,25 +62,19 @@ public extension LibraryScanner {
             if newPath == existingPath {
                 continue // exact duplicate → idempotent addRoot no-op, not a conflict.
             }
-            if Self.isDescendant(newPath, of: existingPath) {
+            // Component-boundary compare (shared with RelativePathResolver via
+            // PathNormalizer) — never a bare string prefix, so `/Music/Rock` and
+            // `/Music/RockAndRoll` are siblings. Equal paths are handled above.
+            if PathNormalizer.isComponentBoundaryDescendant(newPath, of: existingPath) {
                 throw NestedRootConflict(
                     newRoot: newPath, existingRoot: existingPath, kind: .descendantOfExisting
                 )
             }
-            if Self.isDescendant(existingPath, of: newPath) {
+            if PathNormalizer.isComponentBoundaryDescendant(existingPath, of: newPath) {
                 throw NestedRootConflict(
                     newRoot: newPath, existingRoot: existingPath, kind: .ancestorOfExisting
                 )
             }
         }
-    }
-
-    /// `true` iff `candidate` is strictly BELOW `ancestor` at a path-COMPONENT
-    /// boundary — `candidate` begins with `ancestor + "/"`. A bare string prefix is
-    /// deliberately NOT enough (that is the `/Music/Rock` ⊄ `/Music/RockAndRoll` fix).
-    /// Equal paths are not descendants (handled as the duplicate no-op by the caller).
-    private static func isDescendant(_ candidate: String, of ancestor: String) -> Bool {
-        let ancestorWithSeparator = ancestor.hasSuffix("/") ? ancestor : ancestor + "/"
-        return candidate.hasPrefix(ancestorWithSeparator)
     }
 }

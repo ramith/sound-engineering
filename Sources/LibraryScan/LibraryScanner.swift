@@ -47,6 +47,16 @@ public struct LibraryScanner: Sendable {
 
     public init() {}
 
+    /// The `(dev, inode)` on-disk identity of `url` (an `lstat`, symlinks unresolved) —
+    /// the same signature `makeScannedFile` captures per file, exposed so a caller can
+    /// hand a ROOT's identity to `LibraryStore.addRoot`, which treats a matching
+    /// `(dev, inode)` as the same directory (case-insensitive-volume dedup, QS3).
+    /// nil-tolerant: a failed `lstat` yields `(nil, nil)` and simply skips the dedup.
+    public static func deviceInode(of url: URL) -> (dev: Int64?, inode: Int64?) {
+        let signature = FileSignature.deviceInode(of: url)
+        return (dev: signature.dev, inode: signature.inode)
+    }
+
     /// Scan `root` (already `addRoot`'ed → `folderID`) and reconcile its subtree into
     /// `store`. Runs off the main actor (the caller wraps it in a detached task).
     ///

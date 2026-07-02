@@ -20,6 +20,7 @@
 //     each return under a wall-clock bound (never block unboundedly behind the batched
 //     writes); the scan still completes and sees every file.
 
+import Dispatch
 import Foundation
 import LibraryScan
 import LibraryStore
@@ -223,43 +224,70 @@ private func expectAllowed(_ root: URL, against existing: [URL], number: Int, la
 func checkReadsDuringScan(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
-        guard try await readsDuringScan(store, number: number) else { return false }
-        printPass(number, "reads-during-scan (M-D / SF-4): reads issued while a ~500-file scan runs each "
-            + "return under a 5s bound (never block unboundedly behind the batched writes); the scan "
-            + "still completes and sees every file")
+        guard try await readsDuringScan(store, url: url, number: number) else { return false }
+        printPass(number, "reads-during-scan (M-D / SF-4): with the scanner PARKED mid-walk after its "
+            + "first committed batch, a reader on a SEPARATE connection reads a consistent PARTIAL "
+            + "row-set (0 < seen < total) under a bound; the scan then completes and sees every file")
         return true
     } catch {
         printFail(number, "reads-during-scan threw: \(error)"); return false
     }
 }
 
-/// Issue reads concurrently with a ~500-file scan; each read must return under a bound
-/// (SF-4 baseline: reads are not starved by the scan's batched writes on the actor).
-private func readsDuringScan(_ store: LibraryStore, number: Int) async throws -> Bool {
+/// Prove a read genuinely runs DURING a scan (not before/after it). A naive `async let`
+/// + fast read-loop is vacuous — the reads all drain before the walk's first
+/// `nextObject()`. Instead: park the scanner in its progress closure right after the
+/// first batch commits, then — on a SEPARATE connection (one actor would serialize) —
+/// read and assert a consistent PARTIAL count (0 < seen < total). Release the scanner;
+/// it finishes seeing every file. `withDeadline` makes any deadlock a FAIL, not a hang.
+private func readsDuringScan(_ store: LibraryStore, url: URL, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("reads-during-scan")
-    let fileCount = 500
+    let fileCount = 600 // > 2 batches (internal batchSize 256) so a mid-scan commit is < total
     for index in 0 ..< fileCount {
-        _ = try ScanFixtureBuilder.writeFile(
-            at: root, subdirs: ["d\(index / 50)"], fileName: "t\(index).flac"
-        )
+        _ = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["d\(index / 60)"], fileName: "t\(index).flac")
     }
     let folderID = try await store.addRoot(root)
 
-    // Kick off the scan, then interleave reads that MUST each finish under the bound.
-    async let scanned = LibraryScanner().scan(root: root, folderID: folderID, into: store)
-    for iteration in 0 ..< 20 {
-        let done = try await withDeadline(seconds: 5) { () async throws -> Bool in
-            _ = try await store.allTracks(sortedBy: .name)
-            return true
-        }
-        guard done == true else {
-            printFail(number, "reads-during-scan: read #\(iteration) exceeded 5s while a scan ran (SF-4)")
-            return false
-        }
+    guard let seen = try await parkedMidScanRead(store: store, url: url, root: root, folderID: folderID) else {
+        printFail(number, "reads-during-scan: did NOT complete within the deadline (deadlock)"); return false
     }
-    let result = try await scanned
-    guard result.filesSeen == fileCount else {
-        printFail(number, "reads-during-scan: scan saw \(result.filesSeen), expected \(fileCount)"); return false
+    guard seen > 0, seen < fileCount else {
+        printFail(number, "reads-during-scan: mid-scan read saw \(seen), expected a partial 0<seen<\(fileCount)")
+        return false
+    }
+    guard try await store.trackCount() == fileCount else {
+        printFail(number, "reads-during-scan: final count != \(fileCount) after the scan completed"); return false
     }
     return true
+}
+
+/// Run a scan that PARKS (in its progress closure) right after its first committed
+/// batch, and — while parked — read `trackCount` on a fresh SEPARATE connection. Returns
+/// that mid-scan count (the reader releases the scanner, which then finishes), or nil if
+/// the wall-clock deadline wins (a deadlock ⇒ caller FAILs). The `firstTick` latch
+/// (`DispatchSemaphore(value: 1)`) makes the park a one-shot, so later batches run freely.
+private func parkedMidScanRead(store: LibraryStore, url: URL, root: URL, folderID: Int64) async throws -> Int? {
+    let firstBatch = OneShotLatch()
+    let readDone = DispatchSemaphore(value: 0) // released by the reader; wait()ed in the SYNC closure only
+    let committed = AsyncStream<Void>.makeStream() // scanner → async: "first batch committed"
+    return try await withDeadline(seconds: 20) {
+        async let scanned: ScanResult = LibraryScanner().scan(
+            root: root, folderID: folderID, into: store,
+            progress: { _ in
+                // Sync closure: DispatchSemaphore.wait() is legal here (not an async context).
+                firstBatch.runOnce {
+                    committed.continuation.yield(())
+                    committed.continuation.finish()
+                    readDone.wait() // park the scanner mid-walk until the read completes
+                }
+            }
+        )
+        var batches = committed.stream.makeAsyncIterator()
+        _ = await batches.next() // async-await the first committed batch (no async-context semaphore wait)
+        let reader = try await LibraryStore(url: url, appBuild: "verify")
+        let seen = try await reader.trackCount()
+        readDone.signal() // release the parked scanner; it then finishes the walk + sweep
+        _ = try await scanned
+        return seen
+    }
 }

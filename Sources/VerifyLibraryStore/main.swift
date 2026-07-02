@@ -152,6 +152,13 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "j-scan-reconcile-delete-rename", run: checkReconcileDeleteRename),
         CheckCase(label: "k-reject-nested-roots", run: checkRejectNestedRoots),
         CheckCase(label: "l-reads-during-scan", run: checkReadsDuringScan),
+        // S8.2b review-driven: FS-safety invariants + edge cases + QS3 root identity.
+        CheckCase(label: "m-cancellation-skips-sweep", run: checkCancellationSkipsSweep),
+        CheckCase(label: "n-throw-skips-sweep", run: checkThrowSkipsSweep),
+        CheckCase(label: "o-cross-dir-move", run: checkCrossDirMove),
+        CheckCase(label: "p-vanished-root", run: checkVanishedRoot),
+        CheckCase(label: "q-scan-edge-perm-symlink", run: checkScanEdgePermissionsSymlink),
+        CheckCase(label: "r-root-identity-dedup", run: checkRootIdentityDedup),
     ]
 }
 
@@ -202,7 +209,9 @@ func runAllChecks() async {
         + "S8.2a: G scan-core [correctness/relative-path/boundary/signature], "
         + "H scan-rescan-edge [idempotent/FS-5 add+modify/empty/TOCTOU]; "
         + "S8.2b: I multi-root-sweep-isolation, J reconcile-delete+rename [sweep + move-signature], "
-        + "K reject-nested-roots, L reads-during-scan) ===")
+        + "K reject-nested-roots, L reads-during-scan [parked mid-scan rendezvous]; "
+        + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move, "
+        + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
