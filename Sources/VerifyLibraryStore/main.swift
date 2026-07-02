@@ -125,15 +125,11 @@ struct CheckCase {
     let run: (Int, URL) async -> Bool
 }
 
-func runAllChecks() async {
-    await runRestartSubcommandIfRequested()
-
-    print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence ===")
-    print("test-data dir: \(testDataDirectory.path)")
-    print("run id: \(runIdentifier)")
-
-    let cases: [CheckCase] = [
-        // S8.1a — store foundation (unchanged).
+/// The ordered check list. Extracted from `runAllChecks` to keep that function under the
+/// body-length limit as S8.2+ append cases.
+func allCheckCases() -> [CheckCase] {
+    [
+        // S8.1a — store foundation.
         CheckCase(label: "schema1-fresh", run: checkFreshCreate),
         CheckCase(label: "schema2-idempotent", run: checkIdempotentReopen),
         CheckCase(label: "schema3-preserve") { number, url in checkMigrationPreservesData(number: number, url: url) },
@@ -148,7 +144,20 @@ func runAllChecks() async {
         CheckCase(label: "d-concurrency", run: checkConcurrency),
         CheckCase(label: "e-idempotency-identity", run: checkIdempotencyIdentity),
         CheckCase(label: "f-fs-divergence", run: checkFilesystemDivergence),
+        // S8.2a — real folder scan → store.
+        CheckCase(label: "g-scan-core", run: checkScanCore),
+        CheckCase(label: "h-scan-rescan-edge", run: checkScanRescanEdge),
     ]
+}
+
+func runAllChecks() async {
+    await runRestartSubcommandIfRequested()
+
+    print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence ===")
+    print("test-data dir: \(testDataDirectory.path)")
+    print("run id: \(runIdentifier)")
+
+    let cases = allCheckCases()
 
     var passed = 0
     var usedURLs: [URL] = []
@@ -172,13 +181,20 @@ func runAllChecks() async {
         }
     }
 
-    // All passed — clean up every temp fixture and exit 0.
+    // All passed — clean up every temp fixture and exit 0. (On failure, fail() exits above,
+    // so both the store files AND the scan-fixture trees are kept for post-mortem.)
     for url in usedURLs {
         cleanupStore(url)
     }
+    // The S8.2 scan cases build real directory trees under test-data/scan-fixtures/; remove them.
+    try? FileManager.default.removeItem(
+        at: testDataDirectory.appendingPathComponent("scan-fixtures", isDirectory: true)
+    )
     print("=== SUMMARY: \(passed)/\(cases.count) checks PASSED "
         + "(S8.1a: SCHEMA-1..6 + RESTART; S8.1b: B CRUD/integrity, C facets, D concurrency, "
-        + "E idempotency+identity, F filesystem-divergence) ===")
+        + "E idempotency+identity, F filesystem-divergence; "
+        + "S8.2a: G scan-core [correctness/relative-path/boundary/signature], "
+        + "H scan-rescan-edge [idempotent/FS-5 add+modify/empty/TOCTOU]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")

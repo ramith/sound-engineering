@@ -34,8 +34,13 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
     public let fileSize: Int64
     /// File modification time in WHOLE Unix seconds — part of the delta signature.
     public let mtime: Int64
-    /// Filesystem inode (volume-local), or `nil` until S8.2 populates it.
+    /// Filesystem inode (volume-local) — part of the move-signature, populated by
+    /// the S8.2 scan; `nil` if the `lstat` failed.
     public let inode: Int64?
+    /// Filesystem device id (`st_dev`) — the volume-scoping half of the move-
+    /// signature (M-B), populated by the S8.2 scan; `nil` if the `lstat` failed.
+    /// S8.4's move-matcher pairs it with `inode` to avoid cross-volume false hits.
+    public let dev: Int64?
     /// Resolved album rowid (S8.3), or `nil`.
     public let albumID: Int64?
     /// Resolved track-artist rowid (S8.3), or `nil`.
@@ -60,9 +65,9 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
 
     public init(
         id: Int64, url: URL, folderID: Int64?, relativePath: String, name: String,
-        format: String, fileSize: Int64, mtime: Int64, inode: Int64?, albumID: Int64?,
-        artistID: Int64?, title: String?, trackNo: Int?, discNo: Int?, year: Int?,
-        durationMs: Int64, artworkKey: String?
+        format: String, fileSize: Int64, mtime: Int64, inode: Int64?, dev: Int64?,
+        albumID: Int64?, artistID: Int64?, title: String?, trackNo: Int?, discNo: Int?,
+        year: Int?, durationMs: Int64, artworkKey: String?
     ) {
         self.id = id
         self.url = url
@@ -73,6 +78,7 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
         self.fileSize = fileSize
         self.mtime = mtime
         self.inode = inode
+        self.dev = dev
         self.albumID = albumID
         self.artistID = artistID
         self.title = title
@@ -103,12 +109,15 @@ public struct ScannedFile: Sendable, Equatable {
     public let fileSize: Int64
     /// Modification time in WHOLE Unix seconds (delta signature; design §3 discipline).
     public let mtime: Int64
-    /// Filesystem inode (volume-local), or `nil` if unavailable.
+    /// Filesystem inode (volume-local), or `nil` if unavailable (move-signature).
     public let inode: Int64?
+    /// Filesystem device id (`st_dev`), or `nil` if unavailable. Completes the
+    /// `(dev, inode, size, mtime)` move-signature (M-B); populated in S8.2.
+    public let dev: Int64?
 
     public init(
         url: URL, relativePath: String = "", name: String, format: String,
-        fileSize: Int64, mtime: Int64, inode: Int64? = nil
+        fileSize: Int64, mtime: Int64, inode: Int64? = nil, dev: Int64? = nil
     ) {
         self.url = url
         self.relativePath = relativePath
@@ -117,6 +126,7 @@ public struct ScannedFile: Sendable, Equatable {
         self.fileSize = fileSize
         self.mtime = mtime
         self.inode = inode
+        self.dev = dev
     }
 }
 

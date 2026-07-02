@@ -22,7 +22,7 @@ public extension LibraryStore {
     /// The `tracks` columns, in the fixed order `mapTrackRow` decodes. Every
     /// track-returning SELECT projects exactly this list so decoding never drifts.
     internal static let trackColumns =
-        "id, url, folder_id, relative_path, name, format, file_size, mtime, inode, "
+        "id, url, folder_id, relative_path, name, format, file_size, mtime, inode, dev, "
             + "album_id, artist_id, title, track_no, disc_no, year, duration_ms, artwork_key"
 
     /// Decode the current row of `statement` (projected as `trackColumns`) into a
@@ -39,14 +39,15 @@ public extension LibraryStore {
             fileSize: statement.columnInt64(6),
             mtime: statement.columnInt64(7),
             inode: statement.columnIsNull(8) ? nil : statement.columnInt64(8),
-            albumID: statement.columnIsNull(9) ? nil : statement.columnInt64(9),
-            artistID: statement.columnIsNull(10) ? nil : statement.columnInt64(10),
-            title: statement.columnText(11),
-            trackNo: statement.columnIsNull(12) ? nil : statement.columnInt(12),
-            discNo: statement.columnIsNull(13) ? nil : statement.columnInt(13),
-            year: statement.columnIsNull(14) ? nil : statement.columnInt(14),
-            durationMs: statement.columnInt64(15),
-            artworkKey: statement.columnText(16)
+            dev: statement.columnIsNull(9) ? nil : statement.columnInt64(9),
+            albumID: statement.columnIsNull(10) ? nil : statement.columnInt64(10),
+            artistID: statement.columnIsNull(11) ? nil : statement.columnInt64(11),
+            title: statement.columnText(12),
+            trackNo: statement.columnIsNull(13) ? nil : statement.columnInt(13),
+            discNo: statement.columnIsNull(14) ? nil : statement.columnInt(14),
+            year: statement.columnIsNull(15) ? nil : statement.columnInt(15),
+            durationMs: statement.columnInt64(16),
+            artworkKey: statement.columnText(17)
         )
     }
 
