@@ -22,6 +22,8 @@
 > - **Deviation flags recorded** (for traceability honesty): (1) shipped EQ is **31-band**, backlog said 10-band (US-TON-01 / US-ENG-02); (2) the shipped transparency UI is **signal-path** transparency (Pure vs Enhanced, rate, decode backend), **not** the adaptation-transparency view (US-ADAPT-04) — these are two distinct features.
 > - **Doc-gap closed:** `sprint-plan.md` now exists (it was referenced-but-missing). All backlog references to "`00-sprint-model.md` for sprint assignments" have been pointed at `sprint-plan.md`.
 
+> **v2.4 change note (2026-07-02 — library/playlist domain rules formalized):** Added two new Phase-0 epics, back-filling the founder's stated library/playlist use cases as formal requirements ahead of the S8 library-spine build so the persistent store schema is designed against them from day one rather than retrofitted. **EP-LIBRARY** (8 stories, US-LIB-01..08) — multiple independent scan folders; single-file play outside any scan folder; a track lives in exactly one scan folder, with cross-folder duplicates treated as normal distinct files (never silently deduped); a filesystem move updates a track's location in place while its durable identity (and therefore playlist membership) survives the move; stable durable track identity as the thing every future reference (playlist entry, play count) points at, not the file path. **EP-PLAYLIST** (8 stories, US-PLIST-01..08) — many-to-many, user-ordered playlist membership; adding a single non-library file to a playlist; drag-and-drop into a playlist is always a reference-add, never a filesystem move; drag-and-drop folder-to-folder is potentially a real filesystem move (routed through EP-LIBRARY's move-in-place handling so membership survives); user-provided playlist naming with "untitled-N" auto-naming; the built-in non-deletable "current" playlist as the play queue. Every story is tagged with the sprint-chunk it belongs to (S8.1 store schema / S8.2 scan / S8.4 rescan-move / S9 browse / S10 queue-playlists) per [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md), which is being updated in step to accommodate these rules (nullable `folder_id` for loose files, the stable integer `tracks.id` as the durable reference, and new playlist/playlist_entry tables). No FR/NFR IDs exist yet for library/playlist domain rules (requirements.md predates this feature); stories trace to the design doc and to sprint-plan.md's S8–S10 scope instead, per the same precedent set by the EP-QA stories (US-QA-01..06) tracing to sprint docs. These stories are Draft/Ready-for-sprint-planning, not Done — no code has been touched.
+
 ---
 
 > **Note:** Sprint methodology and Kanban model details are documented in `docs/sprints/00-sprint-model.md`; the authoritative **sprint schedule** (which now exists — it was referenced-but-missing until 2026-06-19) is `docs/sprints/sprint-plan.md`. This backlog contains epics, stories, and spikes; sprint assignments are tracked in sprint-plan.md.
@@ -130,6 +132,8 @@ A story is done when:
 | EP-SYSWIDE | System-wide via **Core Audio process tap (primary, macOS 14.2+)** + libASPL fallback; **mix-level only** — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-07/08/01..06, NFR-PERF-05 | System-wide adoption; no admin password on tap path |
 | EP-VDEVICE | AudioServerPlugIn **fallback** (older macOS / driver preference) — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-01..06, NFR-INSTALL-02..04 | Driver install success > 90% |
 | EP-QA | **(new — re-anchor 2026-06-19) ✅ Done** DSP-gate hardening: automated regression gates for every shipped DSP stage, validated against independent oracles where possible (libebur128 LUFS/TP, limiter TP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak) | 0 | NFR-QUAL-01..04, NFR-PERF-01/03, CON-01/02 | Null-test 105/0; golden master held; meter conformant ±0.047 LU vs libebur128 |
+| EP-LIBRARY | **(new — v2.4, 2026-07-02)** Persistent library: multiple scan folders, single-file (non-library) play, stable durable track identity across moves/retags, cross-folder duplicates treated as normal distinct files (not deduped) | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S8)* | Library survives a scan-folder move/rescan with zero broken playlist references; duplicates across folders never silently collapsed |
+| EP-PLAYLIST | **(new — v2.4, 2026-07-02)** Playlists: many-to-many ordered membership, single non-library file added to a playlist, DnD reference-add (playlist) vs. potential real move (folder→folder), user/auto naming, built-in "current" queue playlist | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S9/S10)* | Zero filesystem side-effects from playlist add/remove; a track survives in all its playlists across a folder→folder move |
 
 > **Re-anchor note (v2.3, 2026-06-19):** Several Phase-0/Phase-1 epics now carry shipped Done stories (back-filled from the two-path engine, Pure Mode, decode, EQ, limiter, loudness, gapless, device-resilience, signal-path transparency). **EP-STEM**, **EP-SYSWIDE**, **EP-VDEVICE**, and **EP-NLT** are tagged **⛔ Won't, this horizon** per sprint-plan.md §6B — entries retained as the future roadmap, marked out-of-window. **DSD** (a feature, not an epic) is deferred post-R2, gated on acquiring a DSD DAC. See the v2.3 change note.
 
@@ -1018,6 +1022,256 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 **Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-UI-03, SPIKE-TELEMETRY
 **Traceability:** NFR-PRIV-04
+
+---
+
+---
+
+## Phase 0 Stories (Continued) — Library & Playlist Foundation *(new — v2.4, 2026-07-02)*
+
+> **Context:** these two epics formalize a set of domain rules/use-cases the founder stated directly (2026-07-02) ahead of the S8 library-spine build, so the persistent store schema (see [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md)) is *designed against* them rather than retrofitted after the fact. **No FR/NFR IDs exist for this domain** — `requirements.md` predates the persistent-library feature entirely (it only covers flat-playlist playback under `FR-PLAY-*`). Stories below trace to the S8.1 design doc and to `sprint-plan.md`'s S8–S10 scope, the same pattern already used for `EP-QA` (US-QA-01..06), which trace to sprint docs rather than invented FR-IDs. **All stories in this section are Draft — pending sprint planning review; none are Done.** Every story is tagged with its sprint-chunk so sprint boundaries stay clean: **S8.1** (store schema — design exists, implementation pending), **S8.2** (folder scan), **S8.4** (incremental rescan / move detection), **S9** (browse UI), **S10** (queue + playlists UI). Nothing here is scheduled for S8.3 (metadata/artwork extraction) — that chunk is orthogonal to these rules.
+
+### EP-LIBRARY — Persistent Library: Scan Folders, Single-File Play, Durable Identity, Duplicates
+
+**Epic goal:** Formalize the rules governing how the persistent library store (S8.1 schema) represents scan folders and tracks so that (a) a listener can point the app at several independent folders and play from any of them, (b) a single file outside any scan folder is still first-class playable, (c) duplicates of a song across folders are treated as normal — never silently deduped — and (d) a track's durable identity survives a filesystem move or a retag, so nothing that references it (a playlist, a future play-count) breaks. This epic is the schema-shaping input to S8.1/S8.2/S8.4; it does not itself ship UI.
+
+---
+
+#### US-LIB-01 — Multiple independent scan folders
+
+As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live Bootlegs," "Podcasts") and have the app treat each as an independent library root that I can play from, browse, or remove independently, so that I am not forced to consolidate my collection into one folder tree to get library features.
+
+**Acceptance Criteria:**
+- The store's `folders` table supports multiple root rows (`parent_id IS NULL`, `is_root = 1`); no artificial limit on the number of roots (S8.1 schema already supports this — `folders.id` is a normal auto-increment key, not a singleton).
+- Adding a second, third, ... Nth scan folder does not require removing or merging any existing root; each root scans and rescans independently (S8.2/S8.4 scope — this story pins the *rule*, not the scan mechanics).
+- A track's browse/queue/playlist behavior is identical regardless of which scan-folder root it came from — "which folder" is provenance metadata (`tracks.folder_id`), not a partition that changes app behavior.
+- Removing a scan folder root removes (cascades) only that root's tracks (`ON DELETE CASCADE` on `folders.parent_id` / `tracks.folder_id`, per the S8.1 DDL); it does not touch tracks under other roots, and playlist entries referencing tracks under the removed root are handled per US-LIB-06 (orphan/dangling-reference policy), not silently left corrupt.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.1 (schema — supports this today) / S8.2 (scan UX to add/remove roots) | **Estimate:** 3 sp | **Dependencies:** S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §3 (`folders` table, `parent_id`/`is_root`)
+
+---
+
+#### US-LIB-02 — Single-file play outside any scan folder
+
+As a **Ramith** I want to open and play a single audio file that is not inside any of my scan folders (e.g., a one-off download or an email attachment), so that I am not forced to import or copy a file into my library just to hear it once.
+
+**Acceptance Criteria:**
+- A file opened via Finder drag-and-drop, the macOS Open panel, or "open with" plays immediately through the existing playback engine (US-PLAY-01/US-ENG-07/08) without requiring a library entry to exist first — this path must keep working exactly as it does today (S8.1 §7: "the running app is byte-identical" — this story extends that guarantee forward through S8.2+).
+- The played file is **not required** to be written into the persistent store to play; if/when it is added to a playlist (US-PLIST-02), *that* action creates its track row with `folder_id = NULL` (loose file) — playing alone never does.
+- A loose (non-scan-folder) file that is never added to a playlist leaves no residue in the library store after the session ends (no orphan row).
+- Session-state restore (US-PLAY-05) continues to work for a loose file that was mid-playback at last quit, exactly as it does for a scan-folder file.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.1 (schema: nullable `folder_id`) / S8.2 (does not regress the existing single-file-open path) | **Estimate:** 2 sp | **Dependencies:** US-PLAY-01, S8.1 store foundation
+**Traceability:** FR-PLAY-01 (existing single-file playback path is preserved, not superseded); design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §7 (integration — additive only)
+
+---
+
+#### US-LIB-03 — Stable durable track identity, independent of file path
+
+As a **developer** I want every track to have a stable integer identity (the store's `tracks.id`) that playlists and any future per-track state (play counts, ratings) reference, rather than referencing the file's URL/path directly, so that a filesystem move or a metadata retag never silently breaks a playlist or loses history.
+
+**Acceptance Criteria:**
+- All playlist-membership references (US-PLIST-01) point at `tracks.id` (a stable integer), never at `tracks.url` or a raw path string.
+- A track retag (title/artist/album edited) updates the row in place; `tracks.id` is unchanged; every playlist referencing that track continues to resolve correctly with no re-linking step.
+- This is a **naming/design constraint on the schema**, not new DDL — the S8.1 schema (§3, §4) already keys `tracks` on an integer `id` and exposes it via the `LibraryStore` actor API; this story is the explicit requirement that all *future* consumers (playlists, S10) build against `id`, never against `url`, for anything that must survive a move.
+- Distinguish explicitly from `UNIQUE(url)`: `url` remains the natural key for *duplicate-file detection at scan time* (US-LIB-04) and for *resolving "is this exact path already known"* — but it is never the reference playlists hold.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.1 (schema decision — pins how S10's playlist tables must be built) | **Estimate:** 1 sp | **Dependencies:** S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §3 (`tracks.id`), §4 (`LibraryStore` API keys reads/writes off `Int64` track ids)
+
+---
+
+#### US-LIB-04 — Duplicates across scan folders are normal, never auto-deduped
+
+As a **Ramith** I want the app to treat two copies of the same song living in two different scan folders (e.g., a FLAC rip in "Lossless" and an MP3 of the same track in "Car") as two distinct, independent tracks — each playable, each addable to playlists on its own — rather than trying to detect and collapse them into one, so that I never lose a file or have the "wrong" copy silently substituted.
+
+**Acceptance Criteria:**
+- A song residing in exactly one scan folder is the normal case (per the founder's stated invariant); a second (or third...) copy of that same song under a **different** scan folder is a **distinct row** in `tracks` (distinct `url`, distinct `folder_id`, distinct `id`) — not an error, not a warning, not something the scanner attempts to merge.
+- Two files with identical audio content but different paths are never collapsed into a single library entry by default. The `content_hash` column exists in the S8.1 schema for a **future, explicitly opt-in** dedupe/"show duplicates" feature (per S8.1 Open Decision D3: "Defer. Column provisioned, unused in S8.1/8.2; path-uniqueness is enough for R1.") — this story confirms that deferral and pins the default behavior (no auto-dedupe) as a hard requirement, not just an implementation shortcut.
+- `UNIQUE(url)` is the only per-scan-folder duplicate guard (re-scanning the same file at the same path is idempotent — see US-LIB-05); it does **not** and must not be used across different folders/paths to detect or block "duplicates."
+- Adding either copy to a playlist adds *that specific file's* track row; adding "the same song" from two folders to one playlist results in two distinct entries (this is expected, not a bug — see US-PLIST-01).
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.2 (scan behavior) | **Estimate:** 2 sp | **Dependencies:** US-LIB-01, S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §3 (`content_hash` deferred), Open Decision D3
+
+---
+
+#### US-LIB-05 — Idempotent re-scan (unchanged files produce no spurious writes)
+
+As a **developer** I want re-scanning a folder whose files have not changed to produce zero new rows and zero spurious updates (no `mtime`/`date_added` churn), so that the "duplicates are normal, don't dedupe" rule (US-LIB-04) never gets confused with "the same file re-scanned" (which is not a duplicate at all).
+
+**Acceptance Criteria:**
+- Re-scanning an unchanged file (same `url`, same `(file_size, mtime, inode)` signature) results in exactly one row, unchanged, per the S8.1 delta-friendly upsert contract (`ON CONFLICT(url) DO UPDATE`, classified as "unchanged" by `classify(_:)`).
+- This is explicitly **the boundary case that separates US-LIB-04 (cross-folder duplicate = normal, two rows) from a re-scan (same-folder same-file = one row, no-op)** — the acceptance test set must include both cases side by side so the distinction is provable, not just described.
+- Covered by the S8.1 `VerifyLibraryStore` idempotency test cases (already scoped in the design doc §6: "re-upsert identical row = one row, no spurious mtime bump").
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.1 (store contract — already designed) / S8.4 (consumed by incremental rescan) | **Estimate:** 1 sp | **Dependencies:** S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §6 ("Idempotency" test group)
+
+---
+
+#### US-LIB-06 — Filesystem move updates a track in place, preserving playlist membership
+
+As a **Ramith** I want moving a file from one scan folder to another (or renaming/relocating it within a scan folder) to be recognized by a rescan as "the same track that moved," updating its stored location in place, so that every playlist it belonged to still contains it after the move — not a broken reference plus an orphaned new entry.
+
+**Acceptance Criteria:**
+- A rescan that finds a file at a **new** path whose content/identity signature matches a previously-known track (see Note below on the matching heuristic) updates that track's `url`/`folder_id`/`relative_path` **in place**; `tracks.id` does not change.
+- Because all playlist membership references `tracks.id` (US-LIB-03), a track that moves remains present, in the same position, in every playlist that contained it — before and after the move, a `SELECT` over that playlist's entries returns the identical set of track ids.
+- **Explicit scope note (do not over-promise):** the S8.1 design doc records this as **Open Decision D1**, currently deferred: *"File-move tracking (moved file = delete+add today, losing future play-counts/ratings) — Accept for R1. `inode` column provisioned to add move-following later (revisit at S10 when per-track state exists)."* This story is the formal requirement that **motivates reversing that deferral before/at S8.4** (rescan is exactly where move-detection belongs) — it does not itself change the D1 default. Acceptance for *this story* is: (a) the requirement is recorded and traced (this row), (b) S8.4's design must explicitly re-examine D1 in light of it, using the provisioned `inode` (and/or `content_hash`) column as the move-matching signature, given `url`'s `UNIQUE` constraint means a naive delete-at-old-path + insert-at-new-path is the *wrong* default once playlists exist.
+- A retag (US-LIB-03) and a move (this story) compose: a track that is both retagged and moved between scans is still the same `tracks.id` row, playlist membership intact.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S8.4 (incremental rescan/move detection — this is where D1 must be revisited) | **Estimate:** 5 sp | **Dependencies:** US-LIB-03, US-LIB-05, S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §8, Open Decision D1 (`inode` column provisioned, revisit at S10) — **this story is the formal driver to revisit D1 at S8.4, not S10, given playlists (EP-PLAYLIST) land at S10 and depend on membership surviving a move that could happen any time before then**
+
+---
+
+#### US-LIB-07 — Drag-and-drop folder-to-folder is a real filesystem move
+
+As a **Ramith** I want dragging a song (or songs) from one scan folder's browse view into another scan folder to physically relocate the file(s) on disk — not just re-file them in the database — so that folder-to-folder drag behaves the way Finder-style file organization actually expects.
+
+**Acceptance Criteria:**
+- Dropping track(s) from scan-folder A's browse view onto scan-folder B (in the browse UI) performs an actual `FileManager` move of the underlying file(s) from A's directory tree to B's, then reconciles the store per US-LIB-06 (in-place update, `tracks.id` unchanged, playlist membership intact) — it is explicitly **not** a copy, and it is explicitly **not** a database-only re-parent with the file left in place.
+- This is the deliberate contrast with playlist drag-and-drop (US-PLIST-03/04): dropping into a **playlist** is a reference-add (US-PLIST-04), dropping into a **scan folder** is a potential real move (this story) — the UI/UX must make the distinction between "playlist" drop targets and "scan folder" drop targets unambiguous (different visual affordance), since the filesystem consequence is different.
+- Collision handling is explicit: if a file with the same name already exists at the destination path, the user is prompted (rename / skip / overwrite) rather than silently overwriting or silently failing.
+- Failure mid-move (permissions, destination full, source removed externally) leaves the store consistent with whatever actually happened on disk — never a store row pointing at a path that doesn't exist, and never a lost file.
+
+**Priority:** Should | **Phase:** 0 | **Sprint-chunk:** S9 (browse UI — this is where folder-to-folder DnD is exposed) | **Estimate:** 5 sp | **Dependencies:** US-LIB-06, US-LIB-01
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §8 (reconciliation path reused from US-LIB-06)
+
+---
+
+#### US-LIB-08 — Corrupt/missing-store recovery does not lose scan-folder registrations
+
+As a **developer** I want the list of registered scan-folder roots to be recoverable independently of the rest of the store's corruption-recovery path, so that a quarantine-and-rebuild event (S8.1 §5) does not force the listener to re-register every scan folder from scratch on top of losing their scan history.
+
+**Acceptance Criteria:**
+- On store quarantine + fresh-create (S8.1 §5 policy: corrupt file → rename `library.corrupt-<ts>.sqlite3` + create fresh), the app can re-populate `folders` root rows without founder/user having to manually re-pick each folder via a file picker — at minimum, the security-scoped `bookmark` blob per root (already provisioned in the S8.1 schema, §3: `folders.bookmark`) must be resolvable independent of the rest of the corrupted DB, or a lightweight sidecar (e.g., a small JSON of root bookmarks in App Support, alongside the SQLite file) must exist for this purpose.
+- This story does **not** require recovering tracks or playlists after corruption (that remains "files on disk are the source of truth, rescan repopulates," per S8.1 §5/D2) — it is scoped narrowly to *not losing the roots themselves*, which is the one piece of state a rescan cannot regenerate on its own (the user would have to remember and re-browse-to every folder).
+
+**Priority:** Could | **Phase:** 0 | **Sprint-chunk:** S8.1 (schema already provisions `folders.bookmark`; the sidecar-or-not decision belongs here) | **Estimate:** 2 sp | **Dependencies:** S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §3 (`folders.bookmark`), §5 (corruption policy), Open Decision D5 (sandbox posture)
+
+---
+
+### EP-PLAYLIST — Playlists: Membership, Drag-and-Drop Semantics, Built-in "current," Naming
+
+**Epic goal:** Formalize the rules governing playlists as a distinct concept from scan folders: many-to-many ordered membership referencing the durable track identity (EP-LIBRARY, US-LIB-03), the ability to add a single non-library file to a playlist, the drag-and-drop reference-add semantic (never a filesystem operation), user/auto naming, and the built-in "current" playlist that is the play queue. This epic is schema-shaping input to S8.1 (playlist tables are noted as an S10 addition in the store design) and UX-shaping input to S10.
+
+---
+
+#### US-PLIST-01 — Many-to-many, user-ordered playlist membership
+
+As a **Ramith** I want a track to be able to belong to any number of playlists at once, and each playlist to hold an arbitrary, user-arrangeable ordering of its tracks, so that I can organize the same song into "Workout," "Chill," and "2026 Favorites" simultaneously without the app treating that as a conflict.
+
+**Acceptance Criteria:**
+- The store schema (an addition beyond what S8.1 ships — S8.1's scope is explicitly library-only, per its §1 table: "S10 queue/playlist tables" is listed as deferred) adds a `playlists` table (id, name, `is_builtin`, `created_at`) and a `playlist_entries` join table (`playlist_id`, `track_id` referencing `tracks.id` — **not** `tracks.url` — per US-LIB-03 — plus an explicit `position` / ordering column and its own entry id, since the same `track_id` can legitimately appear more than once in one playlist, e.g. an intro track re-used later).
+- A track appearing in zero playlists is valid (not every track needs to be organized); a track appearing in many playlists is valid and is the expected common case, not an edge case.
+- Reordering a playlist (drag-to-reorder within the playlist, reusing the existing queue-reorder UX pattern from US-PLAY-03) updates only that playlist's `position` values; it has no effect on any other playlist containing the same track, and no effect on the track's row in `tracks`.
+- Deleting a playlist removes its `playlist_entries` rows (cascade) but never touches `tracks` or the underlying file — deleting "Workout" does not delete the song from the library or from "Chill."
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 (playlist tables + UI) | **Estimate:** 5 sp | **Dependencies:** US-LIB-03, S8.1 store foundation
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §1 ("S10 queue/playlist tables" listed as deferred-from-S8.1 scope)
+
+---
+
+#### US-PLIST-02 — Add a single (possibly non-library) file to a playlist
+
+As a **Ramith** I want to add a single audio file to a playlist even when that file is not inside any of my scan folders, so that a one-off track (a promo download, a friend's demo) can live in a playlist alongside my scanned library without first importing it as a full library citizen.
+
+**Acceptance Criteria:**
+- Adding a file via Finder drag-and-drop or the Open panel directly onto a playlist (not onto the main library view) creates a `tracks` row with `folder_id = NULL` (a "loose" / non-scan-folder track, per US-LIB-02's schema accommodation) if one doesn't already exist for that exact `url`, then adds a `playlist_entries` row referencing it.
+- A loose track added to a playlist this way behaves identically to a scan-folder track for playback, metadata display, and further playlist membership (it can be added to additional playlists, reordered, removed) — the only difference is `folder_id IS NULL` and it is invisible to folder-scoped browse views (US-LIB-01's "which folder" provenance) since it has no folder.
+- If the underlying file is later deleted or moved externally (outside the app, since it's not scan-folder-monitored), the playlist entry surfaces an inline "file not found" state on next play attempt (consistent with the existing US-PLAY-05 pattern for a moved/deleted queued file), rather than crashing or silently dropping the entry.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 3 sp | **Dependencies:** US-LIB-02, US-PLIST-01
+**Traceability:** FR-PLAY-05 (moved/deleted-file inline-error pattern reused); design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §3 (nullable `folder_id`)
+
+---
+
+#### US-PLIST-03 — Drag a song from a scan folder or another playlist into a playlist
+
+As a **Ramith** I want to drag a song (or a multi-select of songs) from a scan-folder browse view, or from one playlist, and drop it onto a different playlist, so that building and curating a playlist feels the same regardless of where the song is coming from.
+
+**Acceptance Criteria:**
+- Dragging from a scan-folder browse view (US-LIB-01/US-LIB-07 context) onto a playlist and dropping it into another playlist both use the identical drop handler and produce the identical result: a new `playlist_entries` row in the **destination** playlist referencing the existing `tracks.id` (US-LIB-03) — the source (folder browse, or the source playlist) is completely unaffected.
+- Dragging from playlist A to playlist B does **not** remove the track from playlist A (a copy-the-reference semantic, not a move-the-reference semantic) unless the user explicitly performs a "move" gesture (e.g., holding a modifier key) if/when that is designed — the **default** DnD outcome is additive-only, per the founder's stated rule ("adding to a playlist" — no move variant was specified as default).
+- Multi-select drag (several songs at once) adds all of them, preserving their relative order, as consecutive entries at (or near) the drop position.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 5 sp | **Dependencies:** US-PLIST-01, US-LIB-01
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §4 (`LibraryStore` write-path pattern reused for the entry-insert)
+
+---
+
+#### US-PLIST-04 — Playlist drop is always a reference-add, never a filesystem move
+
+As a **developer** I want dropping a song onto a playlist to be implemented so that it is architecturally impossible for it to touch the filesystem, so that the "playlist add ≠ file move" invariant the founder stated cannot be violated by a future refactor that conflates it with the folder-to-folder move handler (US-LIB-07).
+
+**Acceptance Criteria:**
+- The playlist drop handler's only side effect is an INSERT into `playlist_entries` (plus, if the source track doesn't yet have a `tracks` row — the loose-file case, US-PLIST-02 — an INSERT into `tracks` with `folder_id = NULL`); it never calls any `FileManager` move/copy/relocate API, and this is enforced by keeping the playlist-drop code path and the folder-to-folder-move code path (US-LIB-07) as two separate, non-shared handlers rather than one generic "drop" handler with a folder-vs-playlist branch buried inside it.
+- This story is explicitly the architectural/testable counterpart to US-LIB-07: a regression test (or code-review checklist item) asserts that dropping onto any playlist target across a stress set of source types (scan-folder track, another-playlist track, loose file) never results in a changed `mtime` or moved path for the underlying file on disk.
+- Removing a track from a playlist (the inverse operation) is likewise filesystem-inert: it is a DELETE on `playlist_entries` only, never a file delete.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 2 sp | **Dependencies:** US-PLIST-03, US-LIB-07
+**Traceability:** *(no FR/NFR — see epic-level note; this is a founder-stated invariant, not a derived one)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §7 (additive-only integration precedent)
+
+---
+
+#### US-PLIST-05 — Playlist naming: user-provided, or auto-named "untitled-N"
+
+As a **Ramith** I want a newly-created playlist to take the name I type, or if I don't type one, to be auto-named "untitled-1," "untitled-2," and so on, so that I never end up with an unnamed or ambiguously-named playlist cluttering my list.
+
+**Acceptance Criteria:**
+- Playlist creation accepts an optional user-provided name; if omitted (or left as empty string), the app assigns the lowest-numbered unused `"untitled-N"` name (N starting at 1), scanning existing playlist names to avoid collision — e.g., if "untitled-1" and "untitled-3" exist but "untitled-2" was renamed away, the next auto-name is "untitled-2," not "untitled-4" (lowest-unused, not a monotonic counter, to avoid unbounded drift from rename/delete churn — *flagging this as the recommended default; founder may prefer a monotonic counter instead, which is the simpler alternative if collision-avoidance-by-scan is judged unnecessary complexity*).
+- A user can rename any playlist (including an auto-named one) at any time; renaming a user-named playlist to an empty string re-triggers the "untitled-N" auto-naming rule rather than leaving it blank.
+- The built-in "current" playlist (US-PLIST-06) is explicitly exempt from this rule — it is never auto-numbered and its name is not user-editable (see US-PLIST-06).
+- Two playlists may not share the exact same name at the same time (case-sensitive exact match) — attempting to rename/create a duplicate name either auto-suffixes or is rejected with an inline message; the specific choice is a UI-design decision for S10, not pinned here, but *some* collision handling is required (never two rows with byte-identical `name`).
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 2 sp | **Dependencies:** US-PLIST-01
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §1 (playlist tables, S10 scope)
+
+---
+
+#### US-PLIST-06 — Built-in "current" playlist (the play queue)
+
+As a **Ramith** I want a built-in playlist named "current" that always represents whatever is queued/now-playing, so that the existing queue concept (US-PLAY-03) and the new playlist concept are unified into one model rather than two parallel, inconsistent systems.
+
+**Acceptance Criteria:**
+- Exactly one `playlists` row has `is_builtin = 1` and `name = "current"`; it is created once, at first launch after S10 ships (or via a one-time migration for existing installs), and can never be deleted or renamed by the user (delete/rename UI affordances are disabled/hidden for it, and the store layer rejects a delete/rename attempt on a builtin row defensively, not just via UI graying-out).
+- The existing queue behaviors — drag-to-reorder, remove, shuffle, repeat (US-PLAY-03), auto-advance (US-PLAY-09), gapless (US-PLAY-08), session-state restore (US-PLAY-05) — become, architecturally, operations on the "current" playlist's `playlist_entries` rather than a separate in-memory queue data structure; this is the unification this story requires, not merely a coincidental same-named list.
+- "current" is otherwise a normal playlist for read purposes: it can be Saved-As under a different (user-chosen) name to "freeze" today's queue into a permanent playlist (a copy of its entries into a new, non-builtin playlist) without disturbing "current" itself or requiring the two rows to be kept in sync afterward.
+- Shuffle/repeat state (US-PLAY-03) is a *playback-session* setting, not a permanent reordering of "current"'s stored entry order — shuffling the queue must not silently rewrite the persisted `position` values in a way that's visible as "current" being permanently shuffled the next time it's viewed unshuffled.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 5 sp | **Dependencies:** US-PLIST-01, US-PLAY-03, US-PLAY-05, US-PLAY-08, US-PLAY-09
+**Traceability:** FR-PLAY-03 (queue reorder/remove/shuffle/repeat — behavior preserved, re-platformed onto playlist storage), FR-PLAY-05 (session-state restore — re-platformed); design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §1
+
+---
+
+#### US-PLIST-07 — Multiple playlists coexist with no artificial limit
+
+As a **Ramith** I want to create as many playlists as I want, so that my organizational scheme (by mood, by activity, by year, by project) is not constrained by an arbitrary cap.
+
+**Acceptance Criteria:**
+- No hard-coded limit on the number of `playlists` rows (beyond SQLite's own practical ceilings, which are far beyond any realistic personal-library scale).
+- The browse/list UI for "all my playlists" (S10 scope) scales to at least low hundreds of playlists without a perceptible slowdown (indexed query, not a full unindexed scan — reuses the same indexing discipline the S8.1 schema already applies to `tracks`/`albums` facets).
+- This story exists primarily to make the "no limit" requirement explicit and testable (a stress-fixture of e.g. 200 synthetic playlists in the `VerifyLibraryStore`-style harness, once playlist tables exist) rather than left as an unstated assumption.
+
+**Priority:** Should | **Phase:** 0 | **Sprint-chunk:** S10 | **Estimate:** 1 sp | **Dependencies:** US-PLIST-01, US-PLIST-05
+**Traceability:** *(no FR/NFR — see epic-level note)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §6 (indexed-facet-query discipline reused)
+
+---
+
+#### US-PLIST-08 — Playlist membership survives a scan-folder move
+
+As a **Ramith** I want a playlist that contains a song to still contain that exact song after I've moved its file from one scan folder to another via folder-to-folder drag-and-drop (US-LIB-07), so that reorganizing my library on disk never quietly breaks the playlists I've curated.
+
+**Acceptance Criteria:**
+- This story is the explicit **integration test** that ties EP-LIBRARY's durable-identity/move handling (US-LIB-06, US-LIB-07) to EP-PLAYLIST's membership model (US-PLIST-01): given a track that is a member of ≥2 playlists, performing a folder-to-folder move (US-LIB-07) on that track's file, then re-querying every playlist that contained it, returns the identical membership (same playlists, same relative position) as before the move.
+- This is the concrete, testable form of the founder's derived invariant ("a filesystem move updates the track's location in place, preserving playlist memberships") — it is listed as its own story specifically so it has an independent acceptance test in the S10/S8.4 verification harness, rather than being assumed as a free consequence of US-LIB-06 + US-PLIST-01 without ever being explicitly checked end-to-end.
+- Covers the cross-chunk dependency explicitly: this story cannot be verified until **both** S8.4 (move detection, US-LIB-06) and S10 (playlist tables, US-PLIST-01) have shipped — it is the seam between the two sprint-chunks and should be flagged in sprint planning as a "does not enter Definition of Done until both sides exist" story, not scheduled as if it were a single-chunk unit of work.
+
+**Priority:** Must | **Phase:** 0 | **Sprint-chunk:** S10 (verification depends on S8.4 having shipped first — cross-chunk seam, see Acceptance Criteria) | **Estimate:** 3 sp | **Dependencies:** US-LIB-06, US-LIB-07, US-PLIST-01, US-PLIST-03
+**Traceability:** *(no FR/NFR — see epic-level note; this is the integration test for the founder's derived invariant)*; design ref: [`s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md) §8
 
 ---
 
