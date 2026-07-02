@@ -6,6 +6,25 @@ auto-alerts when the underlying behavior changes.
 
 ---
 
+## ENH-002 — UI loudness readout meter is L/R-only for >2-channel device output
+
+**Status:** OPEN (enhancement; UI-only, low priority). Surfaced by the S6 full-team review (MC-1).
+
+The Now-Playing loudness meter (`AudioEngineBridge+Graph.installMixerTap` →
+`loudnessMeterAddStereo`) measures only L/R of the mixer-output bus. It is **correct for the
+common stereo device width** (M == 2 → L/R is every channel) and is a **UI readout only** — it does
+**not** drive makeup gain. The audible loudness normalization is the DSP kernel's own
+N-channel-weighted `LoudnessModule` (S1/S2), which is unaffected.
+
+For a >2-channel **device** output the integrated LUFS shown reads slightly low (surround energy
+unmeasured). A correct N-channel UI meter needs the device-width BS.1770-5 weights (surround ×1.41,
+LFE excluded — the `LufsMeter` already supports this via `configureChannels` + `addNonInterleaved`)
+configured once at tap install and all M planar channels fed in the tap. Deferred with the
+multichannel-output path (the S4 binaural fold is deferred) rather than plumb channel-layout weights
+into the RT tap for a path that is not yet primary.
+
+---
+
 ## KI-001 — Short-track auto-advance: RESOLVED (VM already continues; seamless-for-tiny-tracks tracked as ENH-001)
 
 **Status:** RESOLVED 2026-07-02. Closer code analysis (during the fix) showed the VM does NOT

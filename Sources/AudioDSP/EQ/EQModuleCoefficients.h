@@ -118,17 +118,25 @@ namespace AdaptiveSound
         // monic-normalize safety) but share the same small epsilon.
         static constexpr float kSchurCohnTolerance = 1e-6F;
 
-        // Fit 31-band gains to cascaded biquads
-        // This uses a simplified fitting approach:
-        // - Group consecutive bands with similar gains
-        // - Create peaking filters at center frequencies with proportional Q and gain
-        // Returns number of biquads used (1 to kMaxBiquads)
+        // Fit 31-band gains to cascaded biquads.
+        // Approach: split the active bands into MAXIMAL SAME-SIGN runs and place ONE peaking
+        // filter per run at the run's extremum-by-MAGNITUDE (deepest cut / highest boost).
+        //
+        // Splitting at sign changes + tracking |gain| (not the raw maximum) is the S6 EQ-1 fix.
+        // The previous version grouped every contiguous active run and tracked only the maximum
+        // gain, which (a) collapsed a run of CUTS to its least-negative band — e.g. [-12,-9,-12]
+        // became a single -9 dB filter, under-applying the cut — and (b) dropped the cut in a
+        // boost+cut run entirely — e.g. [+6,-6] became a single +6 dB filter. A boost-only run is
+        // unaffected (its extremum-by-magnitude IS its maximum), so pure-boost cascades — including
+        // the golden-master +6 dB @ 1 kHz — are byte-identical to before.
+        //
+        // Returns number of biquads used (1 to kMaxBiquads).
         static int
         fitBiquadCascade(const std::array<float, kNumBands>& gains,
                          float sampleRate,
                          std::array<EQParams::BiquadCoeffs, kMaxBiquads>& outBiquads) noexcept
         {
-            // Identify bands with significant gain change (≥ 0.5 dB threshold)
+            // Identify bands with significant gain (≥ 0.5 dB threshold).
             std::array<bool, kNumBands> activeRegions{};
             int numActiveRegions = 0;
 
@@ -148,45 +156,39 @@ namespace AdaptiveSound
                 return 1;
             }
 
-            // Group consecutive active bands and create peaking filters
             int numBiquads = 0;
             int i = 0;
 
             while (i < kNumBands && numBiquads < kMaxBiquads)
             {
-                if (activeRegions[static_cast<size_t>(i)])
-                {
-                    // Find the peak of this gain region
-                    int peakIdx = i;
-                    float peakGain = gains[static_cast<size_t>(i)];
-
-                    // Extend region forward
-                    while (i < kNumBands && activeRegions[static_cast<size_t>(i)])
-                    {
-                        if (gains[static_cast<size_t>(i)] > peakGain)
-                        {
-                            peakGain = gains[static_cast<size_t>(i)];
-                            peakIdx = i;
-                        }
-                        i++;
-                    }
-
-                    // Create peaking biquad at peak frequency with peak gain
-                    float centerFreq = kCenterFrequencies[static_cast<size_t>(peakIdx)];
-                    float gainDb = peakGain;
-
-                    // Clamp to safe range (±12 dB as per spec)
-                    gainDb = clamp(gainDb, -kEQMaxGainDb, kEQMaxGainDb);
-
-                    // Create peaking filter
-                    EQParams::BiquadCoeffs biquad =
-                        designPeakingFilter(centerFreq, gainDb, sampleRate);
-                    outBiquads[static_cast<size_t>(numBiquads++)] = biquad;
-                }
-                else
+                if (!activeRegions[static_cast<size_t>(i)])
                 {
                     i++;
+                    continue;
                 }
+
+                // Start a run at band i; it extends only while bands stay active AND keep the same
+                // sign. Active bands have |gain| > 0.5, so the sign is unambiguous (never zero).
+                const bool positive = gains[static_cast<size_t>(i)] > 0.0F;
+                int extremeIdx = i;
+                float extremeGain = gains[static_cast<size_t>(i)];
+
+                while (i < kNumBands && activeRegions[static_cast<size_t>(i)] &&
+                       (gains[static_cast<size_t>(i)] > 0.0F) == positive)
+                {
+                    if (std::abs(gains[static_cast<size_t>(i)]) > std::abs(extremeGain))
+                    {
+                        extremeGain = gains[static_cast<size_t>(i)];
+                        extremeIdx = i;
+                    }
+                    i++;
+                }
+
+                // Create a peaking biquad at the run's extremum band, with its (clamped) gain.
+                const float centerFreq = kCenterFrequencies[static_cast<size_t>(extremeIdx)];
+                const float gainDb = clamp(extremeGain, -kEQMaxGainDb, kEQMaxGainDb);
+                outBiquads[static_cast<size_t>(numBiquads++)] =
+                    designPeakingFilter(centerFreq, gainDb, sampleRate);
             }
 
             return std::max(1, numBiquads);

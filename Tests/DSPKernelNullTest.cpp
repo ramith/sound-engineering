@@ -73,7 +73,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
-    constexpr std::array<TestEntry, 119U> kTests = {{
+    constexpr std::array<TestEntry, 120U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -240,6 +240,7 @@ namespace
         {"EQ_Sweep31Bands_44k", testEqSweep31Bands44k, true},
         {"EQ_SweepExtremes_PlusMinus12", testEqSweepExtremesPlusMinus12, true},
         {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
+        {"EQ_CombinedBands_CutRunAndMixedSign", testEqCombinedBandsCutRunAndMixedSign, true},
         {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local

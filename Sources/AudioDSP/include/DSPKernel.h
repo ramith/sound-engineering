@@ -68,8 +68,9 @@ namespace AdaptiveSound
         // RT-thread-owned snapshot state (S6 RACE-1). `currentState_` is the last CONSISTENT
         // snapshot the RT thread committed; `process()` copies the published snapshot into
         // `scratchState_` and promotes it to `currentState_` only on a non-torn read, otherwise it
-        // keeps the previous `currentState_` (one-block-stale but consistent). Both are pre-allocated
-        // members (no RT allocation) and touched ONLY on the RT thread, so they need no locking.
+        // keeps the previous `currentState_` (one-block-stale but consistent). Both are
+        // pre-allocated members (no RT allocation) and touched ONLY on the RT thread, so they need
+        // no locking.
         TargetState currentState_{};
         TargetState scratchState_{};
 
