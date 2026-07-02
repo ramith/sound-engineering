@@ -368,6 +368,12 @@ public extension LibraryStore {
     /// the playlist table deferred (M7) that is ALL of them; the S10 filter slots in
     /// here as `... AND id NOT IN (SELECT track_id FROM playlist_tracks)`. A dedicated
     /// hook (not inlined) so the "in any playlist?" predicate is a one-line change.
+    ///
+    /// ⚠️ HARD GATE (S10) — this stub returning ALL candidates is ONLY safe while no
+    /// `playlist_tracks` table exists. Removing a root today deletes every track in the folder
+    /// (nothing references them). BEFORE the S9/S10 playlist UI ships, this MUST gain the
+    /// `NOT IN (SELECT track_id FROM playlist_tracks)` filter, or `removeRoot` will delete
+    /// playlist-referenced tracks → data loss. Tracked in docs/product/known-issues.md (SEQ-1).
     private func unreferencedTrackIDs(among candidates: [Int64]) -> [Int64] {
         candidates
     }
