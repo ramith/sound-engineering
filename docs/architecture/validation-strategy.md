@@ -75,6 +75,16 @@ clang-tidy --checks=readability-*,cppcoreguidelines-* \
 
 **Acceptance:** zero sanitizer errors, zero clang-tidy violations.
 
+### Gate 5: Library Store Verify (S8+ persistent store)
+
+The library store (`LibraryStore`, system SQLite) has no place in the DSP null-test; it is gated by its own headless harness (`swift test` is broken here, so this mirrors the `VerifyAUGraph` idiom — a `swift run` executable, not XCTest):
+
+```bash
+swift run VerifyLibraryStore     # or: make library-store-verify
+```
+
+**Acceptance:** all checks PASS (schema/migration/corruption/restart-durability + CRUD/integrity, facets, WAL concurrency ending in `PRAGMA integrity_check=ok`, idempotency+identity, and filesystem-divergence), process exits 0. `make gate` runs Gate 1 + `VerifyAUGraph` + this in one command.
+
 ---
 
 ## Nightly Regression Suite (Full, ~30 Minutes)

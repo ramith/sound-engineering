@@ -26,6 +26,8 @@ Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. E
 ### How tests actually run
 The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). **`swift test` is broken** here (toolchain `@Test`/`@Suite` macro skew) — the Swift mock tests compile/lint but run only in Xcode. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
 
+The **library store** (S8+) has its own headless gate — `swift run VerifyLibraryStore` (mirrors the `VerifyAUGraph` idiom, since `swift test` is broken). **`make gate`** runs all three: the C++ null test, `VerifyAUGraph`, and `VerifyLibraryStore`.
+
 ---
 
 ## Naming Convention
