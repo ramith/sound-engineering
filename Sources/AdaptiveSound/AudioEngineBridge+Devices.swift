@@ -112,6 +112,7 @@ extension AudioEngineBridge {
         )
         if status == noErr {
             deviceListListenerBlock = block
+            deviceListListenerQueue = listenerQueue // F5: remove on the EXACT queue we added on
         } else {
             NSLog("[AudioEngineBridge] failed to register device-list listener: \(status)")
         }
@@ -165,9 +166,10 @@ extension AudioEngineBridge {
         )
         AudioObjectRemovePropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject), &address,
-            DispatchQueue.global(qos: .userInitiated), block
+            deviceListListenerQueue ?? DispatchQueue.global(qos: .userInitiated), block // F5
         )
         deviceListListenerBlock = nil
+        deviceListListenerQueue = nil
     }
 }
 

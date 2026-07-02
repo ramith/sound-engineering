@@ -14,28 +14,15 @@
 // width of 2, then run the offline reconfigure dance (the branch `applyReconfigure` takes when
 // `isInManualRenderingMode`) to the 6ch source and assert the bus widths.
 //
-// NOTE (review finding TOOL-1): resolvedDeviceFormat is a hand-copied mirror of the production
-// AudioEngineBridge.deviceWidthFormat (the bridge type isn't constructible in this harness). A
-// follow-up (cluster F) will extract the shared min(N,device) logic into AudioFormatKit so both
-// the bridge and this gate call one source of truth rather than a copy that can drift.
+// Review finding TOOL-1 (RESOLVED, cluster F): the M = min(N, device) resolver was previously a
+// hand-copied mirror here. It now lives once in AudioFormatKit.deviceWidthFormat, which BOTH the
+// production bridge (AudioEngineBridge.deviceWidthFormat) and this gate call — so the gate can no
+// longer test a stale copy that has drifted from production.
 
 import AudioFormatKit
 @preconcurrency import AVFAudio
 import AVFoundation
 import Foundation
-
-/// Free-function mirror of `AudioEngineBridge.deviceWidthFormat`: M = min(N, deviceChannels),
-/// reusing the source format when M == N or when `multichannelFormat(for: M)` has no mapping.
-func resolvedDeviceFormat(sourceFormat: AVAudioFormat, deviceChannels: AVAudioChannelCount) -> AVAudioFormat {
-    let sourceChannels = sourceFormat.channelCount
-    guard deviceChannels > 0 else { return sourceFormat }
-    let deviceWidth = min(sourceChannels, deviceChannels)
-    if deviceWidth == sourceChannels { return sourceFormat }
-    if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
-        return format
-    }
-    return sourceFormat
-}
 
 /// Build the two-AU graph offline at the simulated `deviceChannels` width, then run the offline
 /// reconfigure dance to `sourceChannels` (effects edges at N; spatial output + mixer + output at
@@ -73,7 +60,8 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
     // 2. Resolve M from the output node (the in-effect device width) BEFORE re-enabling, exactly as
     //    `applyReconfigure` does, then reconfigure to the 6ch source via the offline dance.
     let observedDeviceChannels = dwEngine.outputNode.outputFormat(forBus: 0).channelCount
-    let resolvedDevice = resolvedDeviceFormat(sourceFormat: sourceFmt, deviceChannels: observedDeviceChannels)
+    let resolvedDevice = deviceWidthFormat(sourceFormat: sourceFmt,
+                                           deviceChannels: observedDeviceChannels)
     if !reconfigureToSource(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
                             sourceFormat: sourceFmt, deviceFormat: resolvedDevice, label: label) {
         return false

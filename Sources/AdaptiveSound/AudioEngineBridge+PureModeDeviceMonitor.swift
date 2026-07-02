@@ -47,6 +47,7 @@ extension AudioEngineBridge {
         if status == noErr {
             deviceAliveListenerBlock = block
             aliveListenerDeviceID = deviceID
+            aliveListenerQueue = listenerQueue // F5: remove on the EXACT queue we added on
         } else {
             NSLog("[PureMode] Failed to register device-alive listener for device \(deviceID): \(status)")
         }
@@ -65,11 +66,12 @@ extension AudioEngineBridge {
         AudioObjectRemovePropertyListenerBlock(
             AudioObjectID(aliveListenerDeviceID),
             &address,
-            DispatchQueue.global(qos: .userInteractive),
+            aliveListenerQueue ?? DispatchQueue.global(qos: .userInteractive), // F5: exact queue
             block
         )
         deviceAliveListenerBlock = nil
         aliveListenerDeviceID = 0
+        aliveListenerQueue = nil
     }
 
     // MARK: - Pause on device loss

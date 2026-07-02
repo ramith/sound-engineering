@@ -59,17 +59,18 @@ enum EQPreset: String, CaseIterable, Identifiable {
             return [Float](repeating: 0.0, count: 31)
 
         case .presence:
-            // Bell centred around 2 kHz: peaks at ~8 dB at 2 kHz, decays to
-            // ~4 dB at 8 kHz, 0 below 1 kHz.
+            // Matches gainForPresence: main bell over 1–4 kHz peaking ~+8 dB at 2 kHz (0 at 4 kHz),
+            // then a smaller lobe peaking ~+4 dB at 4 kHz that decays to 0 by 8 kHz; 0 below 1 kHz.
             return Self.isoFrequencies.map { Float(gainForPresence($0)) }
 
         case .clarity:
-            // Rising shelf from 1 kHz to 8 kHz (+6 dB), then rolls off toward
-            // 16 kHz (+4 dB), 0 below 1 kHz.
+            // Matches gainForClarity: rising shelf 1 kHz → 8 kHz reaching +6 dB at 8 kHz, then a
+            // +4 dB lobe just above 8 kHz that rolls off to 0 by 16 kHz; 0 below 1 kHz.
             return Self.isoFrequencies.map { Float(gainForClarity($0)) }
 
         case .warm:
-            // Bass shelf peaking below 500 Hz, decaying through 2 kHz.
+            // Matches gainForWarm: low-mid lift rising from ~+7 dB at 20 Hz to ~+10 dB at 500 Hz,
+            // then decaying from ~+8 dB just above 500 Hz through ~+3 dB at 2 kHz; 0 above 2 kHz.
             return Self.isoFrequencies.map { Float(gainForWarm($0)) }
 
         case .loudness:

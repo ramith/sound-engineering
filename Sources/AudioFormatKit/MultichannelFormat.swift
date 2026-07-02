@@ -65,3 +65,39 @@ public func multichannelLayoutTag(for channels: AVAudioChannelCount) -> AudioCha
         return nil
     }
 }
+
+// MARK: - Device-width resolution (Sprint 5b M2-d / M3)
+
+/// Resolve the device-boundary render format: width M = min(N, deviceChannels), where N is the
+/// source width. This is the single source of truth for the M2-d/M3 device-width choice — a 5.1
+/// file (N = 6) on a stereo device (deviceChannels = 2) processes at N = 6 and renders N→M = 2 at
+/// the spatial AU, instead of letting the mixer naively downmix.
+///
+/// Lives here (not on `AudioEngineBridge`) so the production graph AND the offline `VerifyAUGraph`
+/// gate call ONE implementation rather than hand-copied mirrors that can drift (review finding
+/// TOOL-1). The bridge passes `engine.outputNode`'s channel count as `deviceChannels`; the gate
+/// passes its simulated device width.
+///
+/// Falls back to `sourceFormat` (M == N) when the device reports 0 channels (not yet negotiated),
+/// when M == N, or when `multichannelFormat(for: M)` has no mapping for the resolved M — it never
+/// returns a format WIDER than the source.
+///
+/// - Parameters:
+///   - sourceFormat: the source (processing) format at width N.
+///   - deviceChannels: the negotiated output-device channel count.
+/// - Returns: the device-width format at M = min(N, deviceChannels), or `sourceFormat` per above.
+public func deviceWidthFormat(sourceFormat: AVAudioFormat,
+                              deviceChannels: AVAudioChannelCount) -> AVAudioFormat {
+    let sourceChannels = sourceFormat.channelCount
+    guard deviceChannels > 0 else { return sourceFormat }
+
+    let deviceWidth = min(sourceChannels, deviceChannels)
+    if deviceWidth == sourceChannels { return sourceFormat } // M == N: reuse the source format.
+
+    if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
+        return format
+    }
+    // No mapped format for the resolved M (e.g. an odd device width): stay at N rather than produce
+    // an invalid narrower format. The device-boundary line still runs at a valid width.
+    return sourceFormat
+}

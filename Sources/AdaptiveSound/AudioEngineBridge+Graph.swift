@@ -83,19 +83,12 @@ extension AudioEngineBridge {
     /// negotiated) or if `multichannelFormat(for: M)` has no mapping for the resolved M — never
     /// returns a format wider than the source.
     func deviceWidthFormat(engine: AVAudioEngine, sourceFormat: AVAudioFormat) -> AVAudioFormat {
-        let sourceChannels = sourceFormat.channelCount
+        // Thin wrapper over the shared AudioFormatKit resolver (F3 / TOOL-1): read the negotiated
+        // device width from the output node, then delegate the M = min(N, device) + format-mapping
+        // logic to the ONE implementation the VerifyAUGraph gate also uses — no drift.
         let deviceChannels = engine.outputNode.outputFormat(forBus: 0).channelCount
-        guard deviceChannels > 0 else { return sourceFormat }
-
-        let deviceWidth = min(sourceChannels, deviceChannels)
-        if deviceWidth == sourceChannels { return sourceFormat } // M == N: reuse the source format.
-
-        if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
-            return format
-        }
-        // No mapped format for the resolved M (e.g. an odd device width): stay at N rather than
-        // produce an invalid narrower format. The mixer-output line still runs at a valid width.
-        return sourceFormat
+        return AudioFormatKit.deviceWidthFormat(sourceFormat: sourceFormat,
+                                                deviceChannels: deviceChannels)
     }
 
     /// Pre-allocate the spectrum analyzer, loudness meter, and per-channel monitoring analyzers off
