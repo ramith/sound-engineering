@@ -35,6 +35,9 @@ struct PlaylistView: View {
         ) { result in
             if case let .success(urls) = result, let folderURL = urls.first {
                 viewModel.musicFolderURL = folderURL
+                // Populate the persistent library store IN PARALLEL (S8.2b, additive):
+                // the in-memory playlist below is unchanged; the store fills alongside.
+                viewModel.scanFolderIntoLibrary(folderURL)
                 Task {
                     // Hold the security-scoped access across the async enumeration —
                     // the previous `defer` released it before this Task ran, leaving

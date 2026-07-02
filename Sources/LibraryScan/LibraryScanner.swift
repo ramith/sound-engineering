@@ -1,27 +1,36 @@
-// LibraryScanner — the recursive scan → `LibraryStore` upsert core (design §2).
+// LibraryScanner — the recursive scan → `LibraryStore` upsert + reconcile core (§2).
 //
-// S8.2a (produce-and-write core). A new SwiftPM library target `LibraryScan`
-// (depends on `LibraryStore`), linked by BOTH the app and the harness so the walk
-// has ONE implementation and never drifts. `supportedExtensions` is the SINGLE
-// SOURCE OF TRUTH the app's `AudioFileEnumerator` references.
+// A new SwiftPM library target `LibraryScan` (depends on `LibraryStore`), linked by
+// BOTH the app and the harness so the walk has ONE implementation and never drifts.
+// `supportedExtensions` is the SINGLE SOURCE OF TRUTH the app's `AudioFileEnumerator`
+// references.
 //
-// Scope of THIS chunk (S8.2a):
+// S8.2a (produce-and-write core):
 //   • one root per `scan` call → one per-root generation (M-A)
-//   • walk via `FileManager.enumerator` reusing the app's
-//     `[.skipsHiddenFiles, .skipsPackageDescendants]` options
+//   • walk via `FileManager.enumerator` reusing `[.skipsHiddenFiles,
+//     .skipsPackageDescendants]`
 //   • per file: guard regular-file + supported ext → build `ScannedFile` with the
 //     full `(dev, inode, size, mtime)` move-signature (§3) → batch → `upsert`
-//   • returns a `ScanResult`
 //
-// DEFERRED to S8.2b (marked below): the end-of-walk orphan sweep (re-scan
-// reconciliation), progress callback, cancellation checks, and the VM seam. This
-// core does NOT sweep, so a re-scan here only inserts/updates — deletions are
-// reconciled in S8.2b.
+// S8.2b (the reconciling half, added here):
+//   • END-OF-WALK orphan sweep — `sweepOrphans(inFolders:[folderID], olderThan:gen)`
+//     runs ONLY after the full walk completes (design §5, §9 D-sweep), so a re-scan
+//     reconciles deletions. The sweep is ALWAYS single-root-scoped (M-A), so scanning
+//     root B can never touch root A's rows.
+//   • PROGRESS — an optional `@Sendable (ScanProgress) -> Void`, fired per committed
+//     batch (indeterminate count-up, §5).
+//   • CANCELLATION — `try Task.checkCancellation()` per file (cancels within one
+//     file, §5). A cancelled scan leaves already-committed batches valid AND SKIPS
+//     the sweep — no orphan is wrongly deleted from a partial view (this is why the
+//     sweep is end-of-walk, not interleaved).
+//
+// Root-rejection (`validateNewRoot`) lives in RootValidation.swift; the caller runs
+// it BEFORE `addRoot` + `scan` (design §6).
 
 import Foundation
 import LibraryStore
 
-/// Recursively scans a registered root and upserts its audio files into the store.
+/// Recursively scans a registered root and reconciles its audio files into the store.
 public struct LibraryScanner: Sendable {
     /// The audio container extensions a scan admits (lowercased) — the SINGLE
     /// SOURCE OF TRUTH shared with the app's `AudioFileEnumerator`, so the two
@@ -38,30 +47,61 @@ public struct LibraryScanner: Sendable {
 
     public init() {}
 
-    /// Scan `root` (already `addRoot`'ed → `folderID`) and upsert its subtree into
+    /// Scan `root` (already `addRoot`'ed → `folderID`) and reconcile its subtree into
     /// `store`. Runs off the main actor (the caller wraps it in a detached task).
     ///
-    /// Call flow (per root, design §2):
-    ///   `let gen = try await store.beginScanGeneration()` → walk → per file guard
-    ///   regular-file + supported ext → build `ScannedFile` → batch (~256) →
-    ///   `try await store.upsert(batch, folderID:generation:)`.
+    /// Call flow (per root, design §2 + §5):
+    ///   `let gen = try await store.beginScanGeneration()` (per-root, M-A) → walk →
+    ///   per file `try Task.checkCancellation()`, guard regular-file + supported ext →
+    ///   build `ScannedFile` → batch (~256) → `upsert` + fire `progress` → after the
+    ///   FULL walk, `sweepOrphans(inFolders:[folderID], olderThan:gen)`.
     ///
-    /// `beginScanGeneration()` is called ONCE here (per-root generation, M-A);
-    /// S8.2a scans exactly one root per call.
-    ///
-    /// NO orphan sweep in S8.2a — the re-scan reconciliation sweep is S8.2b.
-    ///
-    /// - Throws: whatever `store` throws (a write error propagates).
+    /// - Throws: `CancellationError` if the task is cancelled mid-walk (the sweep is
+    ///   then skipped; committed batches stay valid), or whatever `store` throws.
     /// - Returns: a `ScanResult` (folderID, generation, filesSeen, filesSkipped,
-    ///   trackIDs in walk order).
-    public func scan(root: URL, folderID: Int64, into store: LibraryStore) async throws -> ScanResult {
+    ///   orphansSwept, trackIDs in walk order).
+    public func scan(
+        root: URL, folderID: Int64, into store: LibraryStore,
+        progress: (@Sendable (ScanProgress) -> Void)? = nil
+    ) async throws -> ScanResult {
         let generation = try await store.beginScanGeneration()
+        let walked = try await walk(
+            root: root, folderID: folderID, into: store,
+            generation: generation, progress: progress
+        )
+        // End-of-walk sweep (design §5, §9 D-sweep): reconciles deletions for THIS
+        // root only. Reached ONLY after the walk completes — a cancellation throws in
+        // `walk`, so a cancelled scan never sweeps (no wrongful delete). Single-root
+        // scoped (M-A): never touches another root's rows.
+        let orphansSwept = try await store.sweepOrphans(inFolders: [folderID], olderThan: generation)
 
-        var batch: [ScannedFile] = []
-        batch.reserveCapacity(Self.batchSize)
-        var trackIDs: [Int64] = []
+        return ScanResult(
+            folderID: folderID, generation: generation, filesSeen: walked.filesSeen,
+            filesSkipped: walked.filesSkipped, orphansSwept: orphansSwept, trackIDs: walked.trackIDs
+        )
+    }
+
+    // MARK: - Walk
+
+    /// The accumulated result of walking a root: what a full traversal upserted.
+    private struct WalkOutcome {
         var filesSeen = 0
         var filesSkipped = 0
+        var trackIDs: [Int64] = []
+    }
+
+    /// Walk `root`, upserting supported files into `folderID` in ~`batchSize`
+    /// batches, firing `progress` per committed batch. Checks cancellation PER FILE
+    /// (§5) so a cancel is observed within one file; throwing here means the caller's
+    /// end-of-walk sweep is skipped. Extracted from `scan` to keep both bodies within
+    /// the function-length limit.
+    private func walk(
+        root: URL, folderID: Int64, into store: LibraryStore,
+        generation: Int64, progress: (@Sendable (ScanProgress) -> Void)?
+    ) async throws -> WalkOutcome {
+        var outcome = WalkOutcome()
+        var batch: [ScannedFile] = []
+        batch.reserveCapacity(Self.batchSize)
 
         let enumerator = FileManager.default.enumerator(
             at: root,
@@ -71,35 +111,32 @@ public struct LibraryScanner: Sendable {
 
         if let enumerator {
             while let next = enumerator.nextObject() {
-                // S8.2b: Task.checkCancellation() goes here (per file, not per batch).
+                // Cancel WITHIN one file (design §5): committed batches stay valid,
+                // and the sweep in `scan` is skipped because this throws first.
+                try Task.checkCancellation()
                 guard let fileURL = next as? URL else { continue }
                 guard let scanned = Self.makeScannedFile(fileURL: fileURL, root: root) else {
-                    filesSkipped += 1
+                    outcome.filesSkipped += 1
                     continue
                 }
-                filesSeen += 1
+                outcome.filesSeen += 1
                 batch.append(scanned)
                 if batch.count >= Self.batchSize {
                     let ids = try await store.upsert(batch, folderID: folderID, generation: generation)
-                    trackIDs.append(contentsOf: ids)
+                    outcome.trackIDs.append(contentsOf: ids)
                     batch.removeAll(keepingCapacity: true)
+                    progress?(ScanProgress(folderID: folderID, filesSeenSoFar: outcome.filesSeen))
                 }
             }
         }
 
-        // Flush the final partial batch.
+        // Flush the final partial batch + fire a closing progress tick.
         if !batch.isEmpty {
             let ids = try await store.upsert(batch, folderID: folderID, generation: generation)
-            trackIDs.append(contentsOf: ids)
+            outcome.trackIDs.append(contentsOf: ids)
+            progress?(ScanProgress(folderID: folderID, filesSeenSoFar: outcome.filesSeen))
         }
-
-        // S8.2b: end-of-walk sweepOrphans(inFolders:[folderID], olderThan:generation)
-        // (re-scan reconciliation) goes here — deliberately absent in S8.2a.
-
-        return ScanResult(
-            folderID: folderID, generation: generation, filesSeen: filesSeen,
-            filesSkipped: filesSkipped, trackIDs: trackIDs
-        )
+        return outcome
     }
 
     // MARK: - Per-file → ScannedFile

@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import LibraryScan
+import LibraryStore
 
 // MARK: - AudioViewModel
 
@@ -157,6 +159,28 @@ final class AudioViewModel {
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int?
 
+    // MARK: - Library Store + Scan State (S8.2b — additive)
+
+    /// The persistent library store (S8.1). Constructed off-main at init from
+    /// `LibraryStore.defaultStoreURL()`. `nil` until construction completes (or if it
+    /// failed — the app still runs; the in-memory playlist is unaffected). ADDITIVE:
+    /// the store populates in PARALLEL with `loadMusicFolder`; the UI's source swaps
+    /// to store-reads at S9.
+    var store: LibraryStore?
+
+    /// Latest scan progress snapshot (indeterminate count-up), published from the
+    /// off-main scan via a `@MainActor` hop. `nil` when no scan is running.
+    var scanProgress: ScanProgress?
+
+    /// The outcome of the most recently COMPLETED scan (files seen/skipped, orphans
+    /// swept, track ids). `nil` until the first scan finishes.
+    var lastScanResult: ScanResult?
+
+    /// The in-flight scan `Task`, held so a re-trigger can cancel the prior scan
+    /// before starting the next (mirrors the folder-monitor debounce). Cancelling it
+    /// makes the scanner throw `CancellationError` mid-walk and SKIP its sweep.
+    var scanTask: Task<Void, Never>?
+
     // MARK: - Directory Monitoring
 
     /// Internal (not private) so `AudioViewModel+FolderMonitor.swift` can access them.
@@ -190,6 +214,10 @@ final class AudioViewModel {
 
     init(engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.engine = engine
+        // Construct the persistent library store off-main (S8.2b, additive). The
+        // initializer is async, so — per design §7 — it runs in an init-time Task;
+        // failure leaves `store` nil and the in-memory playlist path fully intact.
+        Task { await self.makeLibraryStore() }
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in

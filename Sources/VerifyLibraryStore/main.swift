@@ -147,13 +147,19 @@ func allCheckCases() -> [CheckCase] {
         // S8.2a — real folder scan → store.
         CheckCase(label: "g-scan-core", run: checkScanCore),
         CheckCase(label: "h-scan-rescan-edge", run: checkScanRescanEdge),
+        // S8.2b — reconcile (end-of-walk sweep) + move-signature + root rejection + reads-during-scan.
+        CheckCase(label: "i-scan-multiroot-isolation", run: checkMultiRootSweepIsolation),
+        CheckCase(label: "j-scan-reconcile-delete-rename", run: checkReconcileDeleteRename),
+        CheckCase(label: "k-reject-nested-roots", run: checkRejectNestedRoots),
+        CheckCase(label: "l-reads-during-scan", run: checkReadsDuringScan),
     ]
 }
 
 func runAllChecks() async {
     await runRestartSubcommandIfRequested()
 
-    print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence ===")
+    print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence "
+        + "+ S8.2a/b folder scan + reconcile ===")
     print("test-data dir: \(testDataDirectory.path)")
     print("run id: \(runIdentifier)")
 
@@ -194,7 +200,9 @@ func runAllChecks() async {
         + "(S8.1a: SCHEMA-1..6 + RESTART; S8.1b: B CRUD/integrity, C facets, D concurrency, "
         + "E idempotency+identity, F filesystem-divergence; "
         + "S8.2a: G scan-core [correctness/relative-path/boundary/signature], "
-        + "H scan-rescan-edge [idempotent/FS-5 add+modify/empty/TOCTOU]) ===")
+        + "H scan-rescan-edge [idempotent/FS-5 add+modify/empty/TOCTOU]; "
+        + "S8.2b: I multi-root-sweep-isolation, J reconcile-delete+rename [sweep + move-signature], "
+        + "K reject-nested-roots, L reads-during-scan) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
