@@ -3,8 +3,11 @@
 // Covers: re-upsert of an identical row = one row with NO mtime bump; a changed
 // field updates in place; scan-twice batch steady state; M2 (an mtime-only change
 // AND a size-only change EACH → .modified); and M6 (moveTrack preserves id, updates
-// url/folder_id, and a SYNTHETIC reference row — a stand-in playlist_tracks-shaped
-// (ref_id, track_id) fixture table — still resolves to the moved track).
+// url/folder_id + relative_path, and a SYNTHETIC reference row — a stand-in
+// playlist_tracks-shaped (ref_id, track_id) fixture table — still resolves to the
+// moved track). The M6 case also proves the cross-folder relative_path fix: a track
+// with a NON-EMPTY relative_path moved into a DIFFERENT non-NULL folder takes the NEW
+// relative_path (not the stale old one, which was relative to the old root).
 
 import Foundation
 import LibraryStore
@@ -26,7 +29,7 @@ func checkIdempotencyIdentity(number: Int, url: URL) async -> Bool {
 
         printPass(number, "idempotency+identity: re-upsert = 1 row, no mtime bump; changed field updates "
             + "in place; scan-twice steady state; M2 (mtime-only AND size-only each → .modified); "
-            + "M6 (moveTrack preserves id, updates url/folder, synthetic reference still resolves)")
+            + "M6 (moveTrack preserves id, updates url/folder + relative_path, synthetic reference resolves)")
         return true
     } catch {
         printFail(number, "idempotency+identity threw: \(error)"); return false
@@ -125,19 +128,28 @@ private func checkClassifyPerField(_ store: LibraryStore, number: Int, rootID: I
     return true
 }
 
-/// M6: moveTrack preserves the stable id and updates url/folder_id, AND a SYNTHETIC
-/// reference row (a stand-in playlist_tracks-shaped (ref_id, track_id) fixture table
-/// the harness creates on a second connection) STILL resolves to the moved track —
-/// proving memberships keyed on tracks.id survive an in-place move with zero writes.
+/// M6: moveTrack preserves the stable id and updates url/folder_id + relative_path,
+/// AND a SYNTHETIC reference row (a stand-in playlist_tracks-shaped (ref_id, track_id)
+/// fixture table the harness creates on a second connection) STILL resolves to the
+/// moved track — proving memberships keyed on tracks.id survive an in-place move with
+/// zero writes. Also asserts the cross-folder relative_path fix: the seed carries a
+/// NON-EMPTY relative_path under /Music/E, is moved into the DIFFERENT root
+/// /Music/E-dest with a NEW relative_path, and the stored value is the NEW one (never
+/// the stale old path, which was relative to /Music/E).
 private func checkMoveTrackIdentity(
     _ store: LibraryStore, url: URL, number: Int, rootID: Int64
 ) async throws -> Bool {
     let gen = try await store.beginScanGeneration()
-    let ids = try await store.upsert(
-        [makeScanned(path: "/Music/E/move-src.flac", name: "move-src")],
-        folderID: rootID, generation: gen
+    // Seed with a NON-EMPTY relative_path (relative to the /Music/E root).
+    let seed = ScannedFile(
+        url: URL(fileURLWithPath: "/Music/E/sub/move-src.flac"), relativePath: "sub/move-src.flac",
+        name: "move-src", format: "FLAC", fileSize: 4096, mtime: 1000, inode: 42
     )
+    let ids = try await store.upsert([seed], folderID: rootID, generation: gen)
     guard let trackID = ids.first else { printFail(number, "M6: move seed failed"); return false }
+    guard let seeded = try await store.track(id: trackID), seeded.relativePath == "sub/move-src.flac" else {
+        printFail(number, "M6: seed did not store the non-empty relative_path"); return false
+    }
     let destFolderID = try await store.addRoot(URL(fileURLWithPath: "/Music/E-dest"))
 
     // Synthetic reference table + a reference row → this track (a second WAL reader
@@ -149,9 +161,12 @@ private func checkMoveTrackIdentity(
     )
     try refConnection.exec("INSERT INTO synthetic_refs(ref_id, track_id) VALUES (7, \(trackID));")
 
-    // Move in place.
-    let newURL = URL(fileURLWithPath: "/Music/E-dest/move-dst.flac")
-    try await store.moveTrack(id: trackID, newURL: newURL, newFolderID: destFolderID)
+    // Move in place into the DIFFERENT root with a NEW relative_path.
+    let newURL = URL(fileURLWithPath: "/Music/E-dest/moved/move-dst.flac")
+    let newRelativePath = "moved/move-dst.flac"
+    try await store.moveTrack(
+        id: trackID, newURL: newURL, newFolderID: destFolderID, newRelativePath: newRelativePath
+    )
 
     guard let moved = try await store.track(id: trackID) else {
         printFail(number, "M6: track id \(trackID) vanished after moveTrack"); return false
@@ -164,8 +179,13 @@ private func checkMoveTrackIdentity(
         printFail(number, "M6: moveTrack did not update url/folder (\(moved.url), \(movedFolder))")
         return false
     }
+    // The cross-folder fix: relative_path is the NEW value, NOT the stale old one.
+    guard moved.relativePath == newRelativePath else {
+        printFail(number, "M6: cross-folder move left relative_path '\(moved.relativePath)', "
+            + "expected the new '\(newRelativePath)' (stale old path relative to the old root)"); return false
+    }
     // The old url must be free now (the row moved, not copied).
-    guard try await store.track(url: URL(fileURLWithPath: "/Music/E/move-src.flac")) == nil else {
+    guard try await store.track(url: URL(fileURLWithPath: "/Music/E/sub/move-src.flac")) == nil else {
         printFail(number, "M6: old url still resolves — the move copied instead of moving"); return false
     }
     // The synthetic reference still resolves to the moved track (join on track_id).

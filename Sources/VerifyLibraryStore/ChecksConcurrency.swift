@@ -4,7 +4,9 @@
 // single-writer + concurrent-readers SNAPSHOT-ISOLATION check (every read result ∈
 // {pre,post}, never torn); SQLITE_BUSY handled (typed, not a crash); a bounded
 // N-writes ‖ M-reads STRESS loop ending in PRAGMA integrity_check=ok + a Swift-side
-// row-count ledger; and reader-survives-a-writer's-mid-transaction-abort (WAL replay).
+// row-count ledger; reader-survives-a-writer's-mid-transaction-abort (WAL replay);
+// and RESOLVER RACE-SAFETY (two separate store instances resolving the same brand-new
+// artist/album/genre name concurrently → exactly one row each, neither throws).
 //
 // GENUINE concurrency needs multiple connections against the shared WAL file: within
 // ONE actor every call serialises, so the readers/writer here are SEPARATE
@@ -49,11 +51,13 @@ func checkConcurrency(number: Int, url: URL) async -> Bool {
         }
         guard checkBusyHandled(url: url, number: number) else { return false }
         guard try await checkReaderSurvivesWriterAbort(primary, url: url, number: number) else { return false }
+        guard try await checkResolverRaceSafety(primary, url: url, number: number) else { return false }
         guard try await checkStressLoop(primary, url: url, number: number, rootID: rootID) else { return false }
 
         printPass(number, "concurrency: WAL + busy_timeout set; concurrent readers OK; snapshot isolation "
             + "(reads ∈ {pre,post}, never torn); SQLITE_BUSY typed-handled; reader survives a writer's "
-            + "mid-txn abort; stress N-writes ‖ M-reads → integrity_check=ok + row-count ledger reconciles")
+            + "mid-txn abort; resolver race → 1 artist/album/genre row each (no throw); stress N-writes ‖ "
+            + "M-reads → integrity_check=ok + row-count ledger reconciles")
         return true
     } catch {
         printFail(number, "concurrency threw: \(error)"); return false
@@ -236,6 +240,76 @@ private func checkReaderSurvivesWriterAbort(
     }
     guard try await reader.integrityCheck() else {
         printFail(number, "abort: integrity_check failed after a writer's rollback"); return false
+    }
+    return true
+}
+
+/// RESOLVER RACE-SAFETY (SF-4 fix): two SEPARATE LibraryStore instances on the same
+/// file each own a track and concurrently `applyMetadata` with an IDENTICAL brand-new
+/// artist/album/genre name. The resolvers' `INSERT … ON CONFLICT DO NOTHING` + re-SELECT
+/// must resolve both to the winner's row: neither call throws (a bare SELECT-then-INSERT
+/// would trip a spurious SQLITE_CONSTRAINT on the loser) AND exactly ONE row exists for
+/// each name. Runs under the concurrency deadline.
+private func checkResolverRaceSafety(
+    _ primary: LibraryStore, url: URL, number: Int
+) async throws -> Bool {
+    // Two tracks (one per racing instance) so each has a distinct row to decorate.
+    let root = try await primary.addRoot(URL(fileURLWithPath: "/Music/Race"))
+    let gen = try await primary.beginScanGeneration()
+    let ids = try await primary.upsert(
+        [makeScanned(path: "/Music/Race/r1.flac", name: "r1"),
+         makeScanned(path: "/Music/Race/r2.flac", name: "r2")],
+        folderID: root, generation: gen
+    )
+    guard ids.count == 2 else { printFail(number, "resolver race: two-row seed failed"); return false }
+    let (id1, id2) = (ids[0], ids[1])
+
+    // The identical BRAND-NEW names both instances will resolve concurrently.
+    let meta = TrackMetadata(
+        artistName: "Race Artist", albumTitle: "Race Album",
+        albumArtistName: "Race Artist", year: 2024, genres: ["Race Genre"]
+    )
+
+    let finished = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                let workerA = try await LibraryStore(url: url, appBuild: "verify")
+                try await workerA.applyMetadata(meta, forTrack: id1)
+            }
+            group.addTask {
+                let workerB = try await LibraryStore(url: url, appBuild: "verify")
+                try await workerB.applyMetadata(meta, forTrack: id2)
+            }
+            try await group.waitForAll()
+        }
+        return true
+    }
+    guard finished == true else {
+        printFail(number, "resolver race: did NOT complete within the deadline (deadlock)"); return false
+    }
+
+    // Exactly one row per name (the ON CONFLICT DO NOTHING collapsed the loser's insert).
+    return try resolverRaceRowCountsOK(url: url, number: number)
+}
+
+/// Assert exactly one artist, one album, and one genre row exist for the raced names.
+private func resolverRaceRowCountsOK(url: URL, number: Int) throws -> Bool {
+    let reader = try SQLiteConnection(path: url.path)
+    defer { reader.close() }
+    let artistRows = try reader.scalarInt("SELECT count(*) FROM artists WHERE name = ?;", bind: "Race Artist")
+    let albumRows = try reader.scalarInt("SELECT count(*) FROM albums WHERE title = ?;", bind: "Race Album")
+    let genreRows = try reader.scalarInt("SELECT count(*) FROM genres WHERE name = ?;", bind: "Race Genre")
+    guard artistRows == 1 else {
+        printFail(number, "resolver race: \(String(describing: artistRows)) 'Race Artist' rows, expected 1")
+        return false
+    }
+    guard albumRows == 1 else {
+        printFail(number, "resolver race: \(String(describing: albumRows)) 'Race Album' rows, expected 1")
+        return false
+    }
+    guard genreRows == 1 else {
+        printFail(number, "resolver race: \(String(describing: genreRows)) 'Race Genre' rows, expected 1")
+        return false
     }
     return true
 }

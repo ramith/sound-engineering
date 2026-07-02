@@ -127,11 +127,14 @@ public extension LibraryStore {
     /// stamp, not track content) so orphan detection stays correct across re-scans.
     @discardableResult
     func upsert(_ files: [ScannedFile], folderID: Int64?, generation: Int64) throws -> [Int64] {
-        try connection.transaction {
+        // One epoch for the whole batch: `date_added` is set on first insert only and
+        // reflects when the scan observed the file, not the scan-generation counter.
+        let now = LibraryStore.nowSeconds()
+        return try connection.transaction {
             var ids: [Int64] = []
             ids.reserveCapacity(files.count)
             for file in files {
-                try ids.append(upsertOne(file, folderID: folderID, generation: generation))
+                try ids.append(upsertOne(file, folderID: folderID, generation: generation, dateAdded: now))
             }
             return ids
         }
@@ -144,8 +147,9 @@ public extension LibraryStore {
     @discardableResult
     func addLooseFile(_ file: ScannedFile) throws -> Int64 {
         let generation = try beginScanGeneration()
+        let now = LibraryStore.nowSeconds()
         return try connection.transaction {
-            try upsertOne(file, folderID: nil, generation: generation)
+            try upsertOne(file, folderID: nil, generation: generation, dateAdded: now)
         }
     }
 
@@ -157,7 +161,12 @@ public extension LibraryStore {
     /// new path, orphaning references — the exact bug the identity model prevents
     /// (design §4 M6). Moving onto a url another row already holds is a typed
     /// `URLConflict` (a duplicate — normal per Req 5), NOT a silent merge.
-    func moveTrack(id trackID: Int64, newURL: URL, newFolderID: Int64?) throws {
+    ///
+    /// `newRelativePath` is bound DIRECTLY: it is relative to the NEW owning root, so
+    /// the caller supplies it (a loose move — `newFolderID` nil — passes ""). Keeping
+    /// the old `relative_path` on a cross-folder move would leave a path relative to
+    /// the OLD root, which then renders wrong.
+    func moveTrack(id trackID: Int64, newURL: URL, newFolderID: Int64?, newRelativePath: String) throws {
         let key = PathNormalizer.normalizedString(for: newURL)
         try connection.transaction {
             // Pre-flight the UNIQUE(url) collision so we can surface the occupant id.
@@ -167,13 +176,12 @@ public extension LibraryStore {
                 throw URLConflict(url: key, existingID: occupant)
             }
             let statement = try connection.prepare(
-                "UPDATE tracks SET url = ?, folder_id = ?, relative_path = "
-                    + "CASE WHEN ? IS NULL THEN '' ELSE relative_path END WHERE id = ?;"
+                "UPDATE tracks SET url = ?, folder_id = ?, relative_path = ? WHERE id = ?;"
             )
             defer { statement.finalize() }
             try statement.bind(key, at: 1)
             try statement.bind(newFolderID, at: 2)
-            try statement.bind(newFolderID, at: 3)
+            try statement.bind(newRelativePath, at: 3)
             try statement.bind(trackID, at: 4)
             do {
                 _ = try statement.step()
@@ -192,6 +200,12 @@ public extension LibraryStore {
     /// tracks (folder NULL) are NEVER swept — the `IN (:folders)` filter excludes
     /// NULL by SQL semantics, so a loose track survives a sweep of any root (FS-4).
     /// Returns the number of rows deleted.
+    ///
+    /// The `IN (?, ?, …)` list is built dynamically (one placeholder per folder)
+    /// because this is a SINGLE set-membership DELETE — one statement, one `changes()`
+    /// count for the whole sweep. That is DISTINCT from `deleteTrackRows`'s prepared
+    /// reset-loop, which fires a separate per-id DELETE (an unbounded id set it must
+    /// not splice into SQL).
     @discardableResult
     func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64) throws -> Int {
         guard !folderIDs.isEmpty else { return 0 }
@@ -226,9 +240,13 @@ public extension LibraryStore {
 
     /// Upsert ONE file (inside the caller's transaction). See `upsert` for the
     /// idempotency contract. `folderID` nil → loose. On a url collision the
-    /// `ON CONFLICT(url) DO UPDATE` refreshes the row in place.
+    /// `ON CONFLICT(url) DO UPDATE` refreshes the row in place. `dateAdded` (a real
+    /// epoch) is written ONLY on the first insert — it stays out of the conflict
+    /// update, so a re-scan never rewrites when the track first entered the library.
     @discardableResult
-    private func upsertOne(_ file: ScannedFile, folderID: Int64?, generation: Int64) throws -> Int64 {
+    private func upsertOne(
+        _ file: ScannedFile, folderID: Int64?, generation: Int64, dateAdded: Int64
+    ) throws -> Int64 {
         let key = PathNormalizer.normalizedString(for: file.url)
         let statement = try connection.prepare(
             """
@@ -262,7 +280,7 @@ public extension LibraryStore {
         try statement.bind(file.fileSize, at: 6)
         try statement.bind(file.mtime, at: 7)
         try statement.bind(file.inode, at: 8)
-        try statement.bind(generation, at: 9) // date_added (first insert only)
+        try statement.bind(dateAdded, at: 9) // real epoch; first insert only (out of the conflict SET)
         try statement.bind(generation, at: 10) // last_seen_scan
         _ = try statement.step()
 
@@ -323,7 +341,11 @@ public extension LibraryStore {
         candidates
     }
 
-    /// Delete the given track rows by id (inside the caller's transaction).
+    /// Delete the given track rows by id (inside the caller's transaction). Uses a
+    /// prepared reset-loop (one DELETE per id) rather than a dynamic `IN(...)`: the id
+    /// set is caller-supplied and potentially large, so it must never be spliced into
+    /// SQL (contrast `sweepOrphans`, whose bounded folder set is a single membership
+    /// DELETE).
     private func deleteTrackRows(ids: [Int64]) throws {
         guard !ids.isEmpty else { return }
         let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
