@@ -130,4 +130,21 @@ public extension LibraryStore {
     func trackCount() throws -> Int {
         try Int(connection.scalarInt("SELECT count(*) FROM tracks;") ?? 0)
     }
+
+    /// Ids of tracks that still need a metadata attempt (`metadata_scanned == 0`),
+    /// id-ordered, capped at `limit` — the S8.3 metadata-pass driving query. A no-tags
+    /// file, once marked, never reappears here (the anti-loop guarantee); a retagged
+    /// file is reset to 0 by the upsert and reappears. FS-independent (§2a).
+    func tracksNeedingMetadata(limit: Int) throws -> [Int64] {
+        let statement = try connection.prepare(
+            "SELECT id FROM tracks WHERE metadata_scanned = 0 ORDER BY id ASC LIMIT ?;"
+        )
+        defer { statement.finalize() }
+        try statement.bind(Int64(limit), at: 1)
+        var ids: [Int64] = []
+        while try statement.step() {
+            ids.append(statement.columnInt64(0))
+        }
+        return ids
+    }
 }

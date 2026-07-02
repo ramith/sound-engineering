@@ -124,6 +124,7 @@ public enum Schema {
             artwork_key TEXT REFERENCES artwork(content_hash) ON DELETE SET NULL,
             date_added INTEGER NOT NULL,
             last_seen_scan INTEGER NOT NULL DEFAULT 0,
+            metadata_scanned INTEGER NOT NULL DEFAULT 0,
             play_count INTEGER NOT NULL DEFAULT 0,
             rating INTEGER,
             loved INTEGER NOT NULL DEFAULT 0,
@@ -141,6 +142,11 @@ public enum Schema {
         // now, with the columns that exist to serve it, so S8.4's matcher is an index
         // seek, not a table scan per candidate move (A1).
         "CREATE INDEX idx_tracks_dev_inode ON tracks(dev, inode);",
+        // The S8.3 metadata-pass driving query: rows with metadata_scanned == 0 (never
+        // attempted). Records the *attempt* (the scan generation), decoupled from
+        // outcome — a genuinely tagless file is marked and never re-extracted (the
+        // anti-loop guarantee); a retagged file is reset to 0 by the upsert (below).
+        "CREATE INDEX idx_tracks_meta_scanned ON tracks(metadata_scanned);",
         """
         CREATE TABLE track_genres (
             track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,

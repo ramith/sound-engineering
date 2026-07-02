@@ -288,7 +288,8 @@ public extension LibraryStore {
                 mtime = excluded.mtime,
                 inode = excluded.inode,
                 dev = excluded.dev,
-                last_seen_scan = excluded.last_seen_scan
+                last_seen_scan = excluded.last_seen_scan,
+                metadata_scanned = 0
             WHERE tracks.file_size <> excluded.file_size
                OR tracks.mtime <> excluded.mtime
                OR tracks.name <> excluded.name

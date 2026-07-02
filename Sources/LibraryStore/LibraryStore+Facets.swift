@@ -118,12 +118,18 @@ public extension LibraryStore {
     /// uses the M1 total-album-key so untagged albums collapse to one. Idempotent —
     /// re-applying identical metadata makes no net change.
     func applyMetadata(_ meta: TrackMetadata, forTrack trackID: Int64) throws {
-        try connection.transaction {
-            let artistID = try meta.artistName.flatMap { try resolveArtist(named: $0) }
-            let albumID = try resolveAlbum(for: meta)
-            try updateTrackMetadata(trackID: trackID, meta: meta, albumID: albumID, artistID: artistID)
-            try replaceGenres(forTrack: trackID, names: meta.genres)
-        }
+        try connection.transaction { try applyMetadataLocked(meta, forTrack: trackID) }
+    }
+
+    /// The transaction-free body of `applyMetadata`, so `applyExtractedResult`
+    /// (LibraryStore+MetadataWrite) can fold it into a SINGLE per-track transaction
+    /// alongside the artwork link + the `metadata_scanned` marker (SQLite won't nest
+    /// `BEGIN`). Runs inside the caller's transaction.
+    internal func applyMetadataLocked(_ meta: TrackMetadata, forTrack trackID: Int64) throws {
+        let artistID = try meta.artistName.flatMap { try resolveArtist(named: $0) }
+        let albumID = try resolveAlbum(for: meta)
+        try updateTrackMetadata(trackID: trackID, meta: meta, albumID: albumID, artistID: artistID)
+        try replaceGenres(forTrack: trackID, names: meta.genres)
     }
 
     /// Link (or refresh) an artwork cache reference. S8.3 owns extraction + the

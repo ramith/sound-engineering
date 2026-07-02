@@ -8,6 +8,7 @@
 // All of these are value types (`struct`/`enum`) and explicitly `Sendable`; they
 // carry only plain scalars, `String`, and `URL` (itself `Sendable`).
 
+import CoreGraphics
 import Foundation
 
 // MARK: - Track (read model + the AudioFile superset)
@@ -312,5 +313,30 @@ public struct URLConflict: Error, Sendable, Equatable {
     public init(url: String, existingID: Int64?) {
         self.url = url
         self.existingID = existingID
+    }
+}
+
+// MARK: - Artwork link (S8.3 — the cache→store descriptor)
+
+/// A cached-artwork descriptor produced by `ArtworkCache` (S8.3, `LibraryScan`) and
+/// consumed by the store's `applyExtractedResult`/`attachArtwork`. Defined HERE (in
+/// `LibraryStore`) rather than in `LibraryScan` so the store can take it as a parameter
+/// without a `LibraryStore → LibraryScan` dependency cycle. `Sendable` — scalars + a
+/// `CGSize` (itself `Sendable`) only.
+public struct ArtworkLink: Sendable, Equatable {
+    /// sha256 (lowercase hex) of the ORIGINAL embedded image bytes — the dedup key and `artwork.content_hash`.
+    public let contentHash: String
+    /// On-disk path of the cached ORIGINAL image (the thumbnail path is derived from it).
+    public let cachePath: String
+    /// The original image's pixel dimensions (`.zero` if it could not be decoded).
+    public let pixelSize: CGSize
+    /// The original image's byte count.
+    public let byteSize: Int64
+
+    public init(contentHash: String, cachePath: String, pixelSize: CGSize, byteSize: Int64) {
+        self.contentHash = contentHash
+        self.cachePath = cachePath
+        self.pixelSize = pixelSize
+        self.byteSize = byteSize
     }
 }
