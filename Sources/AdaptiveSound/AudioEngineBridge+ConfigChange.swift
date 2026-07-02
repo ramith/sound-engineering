@@ -15,7 +15,7 @@ extension AudioEngineBridge {
             self.configChangeQueue.async {
                 guard let engine = self.avEngine else { return }
                 let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
-                logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
+                logUX("config-change fired: path=\(self.activePathKind == .pure ? "Pure" : "Enhanced") "
                     + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "
                     + "intent=\(intentSnap) default=\(getDefaultOutputDeviceID()) "
                     + "selected=\(self.currentDeviceID)")
@@ -26,7 +26,7 @@ extension AudioEngineBridge {
                 // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
                 // is handled (paused) by the CoreAudio device-alive listener in
                 // AudioEngineBridge+PureModeDeviceMonitor.swift.
-                guard self.activePath != .pure else { return }
+                guard self.activePathKind != .pure else { return }
                 // After a device-loss pause we are intentionally stopped — don't auto-restart on the
                 // config change that the disconnect itself fires. Cleared on the next startAudio.
                 guard !self.loadSignalPath().interrupted else { return }

@@ -54,19 +54,27 @@ extension AudioEngineBridge {
         // sample-accurate seam (result 2); a rate/format mismatch (result 1) is NOT armed — the
         // track still plays, but via a fresh start (the brief reconfigure gap) when the VM sees
         // playbackEnded with a track still queued. result 0 = error (unreadable/unsupported).
-        if activePath == .pure {
+        if activePathKind == .pure {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 DispatchQueue.global().async {
-                    guard let engine = self.pureEngine else { continuation.resume(); return }
+                    // Borrow the handle UNDER stateLock so a concurrent device-loss teardown
+                    // (configChangeQueue) cannot free it mid-arm (S6 UAF-1). The pre-open inside
+                    // pureModeEngineSetNextTrack runs under the leaf lock: bounded (once per track
+                    // arm), non-re-entrant, off MainActor — at worst one coinciding 20 Hz poll tick
+                    // waits for the open. Log AFTER the lock; nil ⇒ no longer Pure ⇒ nothing to arm.
                     if let url = fileURL {
                         let didAccess = url.startAccessingSecurityScopedResource()
                         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-                        let result = url.path.withCString { pureModeEngineSetNextTrack(engine, $0) }
-                        logUX("pure setNextTrack '\(url.lastPathComponent)' → "
-                            + (result == 2 ? "armed (gapless)"
-                                : result == 1 ? "needs-reconfigure (gap on advance)" : "error"))
+                        let result = self.withPureEngine { engine in
+                            url.path.withCString { pureModeEngineSetNextTrack(engine, $0) }
+                        }
+                        if let result {
+                            logUX("pure setNextTrack '\(url.lastPathComponent)' → "
+                                + (result == 2 ? "armed (gapless)"
+                                    : result == 1 ? "needs-reconfigure (gap on advance)" : "error"))
+                        }
                     } else {
-                        pureModeEngineClearNextTrack(engine)
+                        _ = self.withPureEngine { pureModeEngineClearNextTrack($0) }
                     }
                     continuation.resume()
                 }
@@ -74,7 +82,7 @@ extension AudioEngineBridge {
             return
         }
 
-        guard activePath == .enhanced else { return }
+        guard activePathKind == .enhanced else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             resampleQueue.async {
                 self.onDeckURL = fileURL
@@ -103,8 +111,11 @@ extension AudioEngineBridge {
     func trackTransitionCount() -> UInt64 {
         // Pure path: the HAL GaplessSource owns the seam counter (polling it also reaps a retired
         // source off-RT — that's why the VM polls every tick). Enhanced path: the resampler counter.
-        if activePath == .pure, let engine = pureEngine {
-            return pureModeEnginePollTrackAdvance(engine)
+        // `withPureEngine` reads the counter UNDER stateLock so a concurrent teardown cannot free the
+        // handle mid-call (S6 UAF-1); the reap it triggers joins an already-finished decode thread
+        // (quick) and never re-enters the bridge, so holding the leaf lock across it is deadlock-free.
+        if let count = withPureEngine({ pureModeEnginePollTrackAdvance($0) }) {
+            return count
         }
         return resampleQueue.sync { gaplessTransitionCount }
     }
@@ -112,8 +123,10 @@ extension AudioEngineBridge {
     /// `true` once the current track ended with no next track on deck (queue exhausted).
     /// Cleared on the next `startAudio`.
     func playbackEnded() -> Bool {
-        if activePath == .pure, let engine = pureEngine {
-            return pureModeEnginePlaybackEnded(engine) == 1
+        // `withPureEngine` reads the ended flag UNDER stateLock (S6 UAF-1); nil ⇒ not Pure ⇒
+        // fall through to the Enhanced flag.
+        if let ended = withPureEngine({ pureModeEnginePlaybackEnded($0) == 1 }) {
+            return ended
         }
         return resampleQueue.sync { gaplessPlaybackEnded }
     }

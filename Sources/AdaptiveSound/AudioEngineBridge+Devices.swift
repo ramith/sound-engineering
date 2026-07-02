@@ -136,7 +136,7 @@ extension AudioEngineBridge {
         // deadlock-safe.
         let intent = resampleQueue.sync { enhancedPlayIntent }
         let selectedDeviceID = currentDeviceID
-        guard activePath != .pure, intent, selectedDeviceID != 0 else { return }
+        guard activePathKind != .pure, intent, selectedDeviceID != 0 else { return }
         let currentDefault = getDefaultOutputDeviceID()
         guard selectedDeviceID != currentDefault else { return } // already targeting the default
 

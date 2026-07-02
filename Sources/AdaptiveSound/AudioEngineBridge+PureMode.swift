@@ -87,11 +87,15 @@ extension AudioEngineBridge {
     /// - Returns: `true` on success; `false` on any failure (caller falls back to Enhanced).
     @discardableResult
     func startPure(fileURL: URL, deviceID: UInt32) -> Bool {
-        // Lazily create the engine handle; destroy any stale handle first.
-        if pureEngine == nil {
-            pureEngine = pureModeEngineCreate()
+        // Lazily create the engine handle. All pureEngine/activePath access goes through the
+        // stateLock accessors (S6 UAF-1). This runs on engineQueue BEFORE the device-alive listener
+        // is registered (see registerDeviceAliveListener below), so no concurrent device-loss
+        // teardown can free the handle mid-start; the guarded writes only keep the field consistent
+        // for the MainActor poll.
+        if pureEngineHandle == nil {
+            setPureEngine(pureModeEngineCreate())
         }
-        guard let engine = pureEngine else {
+        guard let engine = pureEngineHandle else {
             NSLog("[PureMode] pureModeEngineCreate returned nil")
             return false
         }
@@ -106,21 +110,25 @@ extension AudioEngineBridge {
 
         guard startResult == 1 else {
             NSLog("[PureMode] pureModeEngineStart failed (result=\(startResult))")
+            // activePath is still .enhanced (not set to .pure until below), so no poll can be
+            // borrowing this handle — nil the field then destroy the local.
+            setPureEngine(nil)
             pureModeEngineDestroy(engine)
-            pureEngine = nil
             return false
         }
 
         let state = pureModeEngineAchievedState(engine)
         guard state.running == 1 else {
             NSLog("[PureMode] Engine started but running==0 — aborting Pure path")
+            setPureEngine(nil)
             pureModeEngineStop(engine)
             pureModeEngineDestroy(engine)
-            pureEngine = nil
             return false
         }
 
-        activePath = .pure
+        // Publish the handle-then-path invariant: pureEngine is already set (above), so the instant
+        // activePath becomes .pure the poll's withPureEngine can safely borrow it.
+        setActivePath(.pure)
         let pureInfo = makeSignalPathInfo(from: state)
         storeSignalPath(pureInfo)
 
@@ -150,8 +158,10 @@ extension AudioEngineBridge {
     func seek(to seconds: Double) async {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                if self.activePath == .pure, let engine = self.pureEngine {
-                    let result = pureModeEngineSeek(engine, seconds)
+                // Pure seek borrows the handle UNDER stateLock so a concurrent device-loss teardown
+                // (configChangeQueue) cannot free it mid-seek (S6 UAF-1). Log AFTER releasing the
+                // lock (no logUX under the leaf lock). nil ⇒ not Pure ⇒ fall through to Enhanced.
+                if let result = self.withPureEngine({ pureModeEngineSeek($0, seconds) }) {
                     logUX("engine seek: path=Pure target=\(secs(seconds))s "
                         + "result=\(result == 1 ? "ok" : "failed(\(result))")")
                     if result != 1 {
@@ -229,12 +239,17 @@ extension AudioEngineBridge {
     /// callback fires after `pureEngine` is set to nil.
     func tearDownPure() {
         unregisterDeviceAliveListener()
-        if let engine = pureEngine {
+        // Detach the handle + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
+        // teardown (stop restores device rate + releases hog; destroy joins the decode thread)
+        // OUTSIDE the lock. This guarantees a concurrent MainActor poll / seek / setNextTrack that
+        // borrowed the handle via withPureEngine either completed its C-ABI call before the detach
+        // returned, or now sees activePath == .enhanced and skips — never a freed handle (S6 UAF-1).
+        // detachPureEngineForTeardown is idempotent, so a racing engineQueue teardown and
+        // configChangeQueue device-loss teardown cannot double-free (the loser gets nil).
+        if let engine = detachPureEngineForTeardown() {
             pureModeEngineStop(engine)
             pureModeEngineDestroy(engine)
-            pureEngine = nil
         }
-        activePath = .enhanced
     }
 
     // MARK: - Private helpers
