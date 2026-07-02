@@ -64,6 +64,18 @@ extension AudioEngineBridge {
         // Read under resampleQueue (its designated owner) for a consistent snapshot.
         let wasPlaying = resampleQueue.sync { enhancedPlayIntent }
 
+        // Idle (nothing playing, or a deliberate stop): do NOT start the engine. A config change
+        // ALSO fires when a device merely CONNECTS and steals the system default (e.g. a Bluetooth
+        // headphone). Starting the idle AVAudioEngine here would seize that just-connected device —
+        // route-flipping / disconnecting a BT headset the user isn't even playing to (the reported
+        // "connect Sony WH-1000XM4 → it disconnects" bug). The engine is (re)started only when there
+        // is a live play intent to resume; idle == engine-stopped is the launch invariant, and
+        // nothing renders or meters when idle anyway. Guard MUST precede engine.start().
+        guard wasPlaying, let player = playerNode else {
+            logUX("config-change: idle (no play intent) — leaving engine stopped, not seizing the device")
+            return
+        }
+
         // Capture the playhead BEFORE restarting (the player may stop reporting a render time across
         // the reconfiguration; `lastKnownEnhancedPositionSeconds` is the freshest reliable value).
         let resumePos = currentPlaybackPosition() ?? lastKnownEnhancedPositionSeconds
@@ -76,8 +88,6 @@ extension AudioEngineBridge {
                 return
             }
         }
-
-        guard wasPlaying, let player = playerNode else { return }
 
         // Read resampleSession under the queue's lock so the branch decision is consistent with
         // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
