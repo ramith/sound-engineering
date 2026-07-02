@@ -26,7 +26,17 @@ struct SettingsTabView: View {
                     }
                     .padding(.horizontal, 16)
                 } else {
-                    Picker("Output Device", selection: $bindVM.selectedDevice) {
+                    // Commit-on-success binding (UI-1), mirroring the toolbar device pill: the
+                    // setter routes through selectDevice(), which persists `selectedDevice` ONLY
+                    // when the switch succeeds. The getter always reflects the actual active device,
+                    // so a FAILED switch leaves the picker on the previous device (auto-revert) —
+                    // it never pre-commits the way a plain two-way binding + onChange did.
+                    Picker("Output Device", selection: Binding(
+                        get: { audioViewModel.selectedDevice },
+                        set: { newDevice in
+                            if let device = newDevice { audioViewModel.selectDevice(device) }
+                        }
+                    )) {
                         Text("None")
                             .tag(AudioDeviceModel?.none)
                         ForEach(audioViewModel.availableDevices) { device in
@@ -39,11 +49,6 @@ struct SettingsTabView: View {
                     }
                     .pickerStyle(.menu)
                     .padding(.horizontal, 16)
-                    .onChange(of: audioViewModel.selectedDevice) { _, newDevice in
-                        if let device = newDevice {
-                            audioViewModel.selectDevice(device)
-                        }
-                    }
 
                     // Show current device details
                     if let device = audioViewModel.selectedDevice {

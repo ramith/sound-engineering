@@ -223,4 +223,59 @@ struct AutoAdvanceLinearRepeatShuffleTests {
         #expect(ctrl.selectedTrackIndex == 1)
         #expect(ctrl.isPlaying == true)
     }
+
+    // MARK: VM-AA-13..16: manual Next / Previous honour shuffle + repeat (D2 / VM-2)
+
+    // The manual transport buttons route through computeNextIndex(manualSkip:) /
+    // computePreviousIndex, so Next/Prev respect shuffle and repeat instead of stepping linearly.
+
+    @Test("VM-AA-13: manual Next under repeat-one STEPS to the next track (does not repeat)")
+    func manualNextRepeatOneSteps() {
+        let ctrl = MockAdvanceController()
+        ctrl.playlist = makeTracks(count: 3)
+        ctrl.repeatMode = 2 // repeat-one
+        // Auto-advance repeats the same index…
+        #expect(ctrl.computeNextIndex(current: 1, playlistCount: 3) == 1,
+                "auto advance under repeat-one repeats the current track")
+        // …but a manual Next steps forward.
+        #expect(ctrl.computeNextIndex(current: 1, playlistCount: 3, manualSkip: true) == 2,
+                "manual Next under repeat-one must step to the next track, not repeat")
+    }
+
+    @Test("VM-AA-14: manual Next at the last track wraps under repeat-all, stops otherwise")
+    func manualNextEndBehaviour() {
+        let ctrl = MockAdvanceController()
+        ctrl.playlist = makeTracks(count: 3)
+        ctrl.repeatMode = 1 // repeat-all
+        #expect(ctrl.computeNextIndex(current: 2, playlistCount: 3, manualSkip: true) == 0,
+                "manual Next on the last track wraps to 0 under repeat-all")
+        ctrl.repeatMode = 0 // no repeat
+        #expect(ctrl.computeNextIndex(current: 2, playlistCount: 3, manualSkip: true) == nil,
+                "manual Next on the last track is a no-op (nil) with no repeat")
+    }
+
+    @Test("VM-AA-15: manual Previous wraps to the last track under repeat-all, stops otherwise")
+    func manualPreviousWrap() {
+        let ctrl = MockAdvanceController()
+        ctrl.playlist = makeTracks(count: 3)
+        ctrl.repeatMode = 1 // repeat-all
+        #expect(ctrl.computePreviousIndex(current: 0, playlistCount: 3) == 2,
+                "Previous on the first track wraps to the last under repeat-all")
+        #expect(ctrl.computePreviousIndex(current: 2, playlistCount: 3) == 1,
+                "Previous steps back linearly mid-playlist")
+        ctrl.repeatMode = 0 // no repeat
+        #expect(ctrl.computePreviousIndex(current: 0, playlistCount: 3) == nil,
+                "Previous on the first track is a no-op (nil) with no repeat")
+    }
+
+    @Test("VM-AA-16: manual Next / Previous under shuffle pick a different index")
+    func manualSkipShufflePicksOther() {
+        let ctrl = MockAdvanceController()
+        ctrl.playlist = makeTracks(count: 5)
+        ctrl.shuffleEnabled = true
+        let next = ctrl.computeNextIndex(current: 2, playlistCount: 5, manualSkip: true)
+        let prev = ctrl.computePreviousIndex(current: 2, playlistCount: 5)
+        #expect(next != nil && next != 2, "shuffle Next must pick a different index")
+        #expect(prev != nil && prev != 2, "shuffle Previous must pick a different index")
+    }
 }

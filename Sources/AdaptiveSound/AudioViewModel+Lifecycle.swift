@@ -88,9 +88,25 @@ extension AudioViewModel {
         logUX("stop (was at \(secs(playbackPosition))s)")
         // Clear the on-deck state synchronously so `tickSpectrum` won't react after stop.
         pendingNextIndex = nil
+        // An explicit stop is not a pause: drop any position-preserving resume point so the next
+        // Play starts from the top (D2).
+        pausedResumePosition = nil
         // Fire-and-forget for the normal (non-shutdown) stop path — behaviour unchanged.
         // The actual stop sequence lives in `performStop()` so `shutdown()` can `await` it.
         Task { await performStop() }
+    }
+
+    /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2).
+    /// Mirrors `performStop()` but leaves `playbackPosition` and `duration` intact so the scrubber
+    /// stays at the paused spot; `pause()` has already recorded `pausedResumePosition` for resume.
+    func performPause() async {
+        do {
+            await engine.setNextTrack(nil)
+            try await engine.stopAudio()
+            isPlaying = false
+        } catch {
+            errorMessage = "Pause failed: \(error.localizedDescription)"
+        }
     }
 
     /// Stop the engine and reset transport state. Returns only once `stopAudio()` has fully

@@ -20,6 +20,11 @@ final class AudioViewModel {
 
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
+    /// Resume point for a position-preserving Pause (D2 / UI-3): set by `pause()` to the playhead
+    /// at the moment of pausing, consumed + cleared by `play()` to resume from there via a seek.
+    /// `nil` means "not paused" — any explicit new-track action (playTrack/next/previous/stop)
+    /// clears it. Internal (not `@Observable`-bound to UI); it only gates the resume logic.
+    var pausedResumePosition: Double?
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
     /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
     /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
@@ -137,6 +142,12 @@ final class AudioViewModel {
     /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can read and invalidate it.
     var spectrumTimer: Timer?
 
+    /// Drives TRANSPORT polling (playhead, gapless auto-advance, device-loss) at ~20 Hz — a
+    /// SEPARATE timer from `spectrumTimer` so auto-advance never shares fate with the spectrum
+    /// visualizer (VM-3). The visualizer timer may one day be gated on view visibility; transport
+    /// must keep polling whenever the engine is alive, so it has its own always-on timer.
+    var transportTimer: Timer?
+
     /// Scratch array — reused each tick, never reallocated.
     /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can write into it.
     var spectrumScratch: [Float] = .init(repeating: 0, count: SpectrumConstants.bandCount)
@@ -229,7 +240,11 @@ final class AudioViewModel {
 
     // MARK: - Playback Control
 
-    func startPlayback() {
+    /// Start playback of the selected track. When `resumeFrom` is non-nil (a position-preserving
+    /// Pause resume, D2) the engine seeks to that offset immediately after starting, so playback
+    /// continues from where it was paused rather than the top. All other callers pass nil (start
+    /// from 0).
+    func startPlayback(resumeFrom: Double? = nil) {
         guard isEngineReady else {
             errorMessage = "Engine not ready"
             return
@@ -241,9 +256,11 @@ final class AudioViewModel {
         }
 
         let fileURL = playlist[selectedIndex].absoluteURL
-        playbackPosition = 0
+        // Show the resume point immediately (avoid a scrubber flash to 0 before the seek lands).
+        playbackPosition = resumeFrom ?? 0
         logUX("play: track[\(selectedIndex)] '\(playlist[selectedIndex].name)' "
-            + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'")
+            + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'"
+            + (resumeFrom.map { " resumeFrom=\(secs($0))s" } ?? ""))
 
         computeDurationAsync(for: fileURL)
 
@@ -255,6 +272,11 @@ final class AudioViewModel {
         Task {
             do {
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot)
+                // Position-preserving Pause resume: seek to the saved offset after the engine has
+                // started on the (possibly reconfigured) device.
+                if let resumeFrom, resumeFrom > 0 {
+                    await engine.seek(to: resumeFrom)
+                }
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
                 isPlaying = true
                 errorMessage = nil

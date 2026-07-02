@@ -1,13 +1,17 @@
 import AVFoundation
 import Foundation
 
-// MARK: - AudioViewModel spectrum timer
+// MARK: - AudioViewModel transport + spectrum timers
 
 @MainActor
 extension AudioViewModel {
-    /// Start polling the spectrum double-buffer at 20 Hz.
-    /// Safe to call multiple times — guards against duplicate timers.
+    /// Start BOTH the always-on transport timer and the spectrum-visualizer timer at 20 Hz.
+    /// Safe to call multiple times — each guards against a duplicate timer. (VM-3: transport and the
+    /// visualizer are driven by SEPARATE timers so auto-advance never depends on the visualizer's
+    /// lifecycle.) Named `startSpectrumTimer` for call-site compatibility; it owns both timers.
     func startSpectrumTimer() {
+        startTransportTimer()
+
         guard spectrumTimer == nil else { return }
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             // The timer is scheduled on RunLoop.main (below), so this callback always fires on
@@ -22,18 +26,40 @@ extension AudioViewModel {
         RunLoop.main.add(timer, forMode: .common)
     }
 
+    /// Start the transport-polling timer (playhead, gapless auto-advance, device-loss) — always on
+    /// while the engine is alive, independent of the spectrum visualizer (VM-3).
+    private func startTransportTimer() {
+        guard transportTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.tickTransport()
+            }
+        }
+        transportTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
     func stopSpectrumTimer() {
         spectrumTimer?.invalidate()
         spectrumTimer = nil
+        transportTimer?.invalidate()
+        transportTimer = nil
     }
 
-    /// Called at 20 Hz on the main thread. Reads the latest band magnitudes
-    /// from the double-buffer, interpolates 44 bands → 88 display bars, and
-    /// writes into `spectrumBars` to trigger SwiftUI observation.
+    /// Called at 20 Hz on the main thread by the TRANSPORT timer. Polls the playhead, loudness, and
+    /// signal path, handles device-loss, and drives gapless auto-advance. Deliberately does NOT
+    /// touch the spectrum bars — that is the visualizer's concern (VM-3), so gating the visualizer
+    /// (e.g. when its view is hidden) can never stall transport or auto-advance.
     @MainActor
-    func tickSpectrum() {
-        // Poll the playhead + loudness + signal path every tick (independent of spectrum).
-        playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+    func tickTransport() {
+        // Poll the playhead + loudness + signal path every tick.
+        // While playing, follow the engine. While PAUSED (position-preserving Pause, D2), freeze the
+        // scrubber at the paused spot. Only a genuine stop (not playing, not paused) zeroes it.
+        if isPlaying {
+            playbackPosition = engine.currentPlaybackPosition() ?? playbackPosition
+        } else if pausedResumePosition == nil {
+            playbackPosition = 0
+        }
         loudness = engine.currentLoudness()
         var freshPath = engine.currentSignalPath()
         // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
@@ -88,7 +114,13 @@ extension AudioViewModel {
                 }
             }
         }
+    }
 
+    /// Called at 20 Hz on the main thread by the SPECTRUM timer. Reads the latest band magnitudes
+    /// from the double-buffer, interpolates 44 bands → 88 display bars, and writes into
+    /// `spectrumBars` to trigger SwiftUI observation. Pure visualizer work — no transport state.
+    @MainActor
+    func tickSpectrum() {
         guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
         // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).

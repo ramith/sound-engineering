@@ -26,10 +26,11 @@ struct PlayControlsView: View {
                 viewModel.previousTrack()
             }
 
-            // Play / Pause — larger, gradient-filled, prominent.
+            // Play / Pause — larger, gradient-filled, prominent. Pause preserves the playhead so
+            // Play resumes from where it was paused (D2), instead of stopping and restarting at 0.
             Button {
                 if viewModel.isPlaying {
-                    viewModel.stopPlayback()
+                    viewModel.pause()
                 } else {
                     viewModel.play()
                 }
