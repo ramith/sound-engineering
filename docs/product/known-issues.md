@@ -6,6 +6,34 @@ auto-alerts when the underlying behavior changes.
 
 ---
 
+## SEQ-1 — Hard sequencing gates before S9/S10 playlists ship (library data integrity)
+
+**Status:** OPEN (enforced sequencing constraint, not a defect in current behavior). Surfaced by
+the S6 full-team review (E1/E2). Both gates are safe to leave open *only* because no playlist table
+or playlist UI exists yet; shipping S9/S10 without closing them causes data loss.
+
+**Verified current state (2026-07-03):** `removeRoot` (LibraryStore+DAO) already implements the
+design §8 detach-to-loose flow correctly — it deletes the `folders` row (the `folder_id … ON DELETE
+SET NULL` FK detaches the folder's tracks to loose), then deletes only the *unreferenced* ones. The
+loose-file path is wired (nullable `folder_id`, `addLooseFile`, and VerifyLibraryStore FS-4 proves a
+loose track survives an unrelated root's removal). No code change was needed for E1.
+
+**Gate 1 — `unreferencedTrackIDs` playlist filter (S10).** The hook currently returns ALL
+candidates (no `playlist_tracks` table yet), so removing a root deletes every track in that folder.
+BEFORE the S10 playlist UI ships it MUST gain `AND id NOT IN (SELECT track_id FROM playlist_tracks)`,
+or `removeRoot` will delete playlist-referenced tracks. Marked with a ⚠️ HARD GATE comment at the
+call site.
+
+**Gate 2 — S8.4 move-matcher before S9/S10.** A filesystem move currently re-scans as delete-old +
+add-new, minting a NEW `tracks.id` (VerifyLibraryStore check 17/22: the move-signature
+`(dev,inode,size,mtime)` is *populated* but not yet *matched* — matching is S8.4). Durable track
+identity therefore does NOT survive a move until S8.4 ships. Since every playlist entry / play count
+will reference `tracks.id`, S8.4 (move-in-place, id preserved) MUST ship before S9/S10, else a moved
+track silently drops out of its playlists. Traces to EP-LIBRARY (US-LIB move-in-place) +
+EP-PLAYLIST in docs/product/backlog.md.
+
+---
+
 ## ENH-002 — UI loudness readout meter is L/R-only for >2-channel device output
 
 **Status:** OPEN (enhancement; UI-only, low priority). Surfaced by the S6 full-team review (MC-1).
