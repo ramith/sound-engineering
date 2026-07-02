@@ -159,6 +159,10 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "p-vanished-root", run: checkVanishedRoot),
         CheckCase(label: "q-scan-edge-perm-symlink", run: checkScanEdgePermissionsSymlink),
         CheckCase(label: "r-root-identity-dedup", run: checkRootIdentityDedup),
+        // S8.3 Slice 1 — metadata/artwork store write ops (synthetic; extraction is Slice 5).
+        CheckCase(label: "s-meta-marker", run: checkMetadataMarker),
+        CheckCase(label: "t-meta-apply-result", run: checkMetadataApplyResult),
+        CheckCase(label: "u-meta-artwork-orphan", run: checkMetadataArtworkOrphan),
     ]
 }
 
@@ -212,7 +216,8 @@ func runAllChecks() async {
         + "S8.2b: I multi-root-sweep-isolation, J reconcile-delete+rename [sweep + move-signature], "
         + "K reject-nested-roots, L reads-during-scan [parked mid-scan rendezvous]; "
         + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move, "
-        + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]) ===")
+        + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]; "
+        + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")

@@ -73,6 +73,25 @@ public actor LibraryStore {
         return directory.appendingPathComponent("library.sqlite3")
     }
 
+    /// The default artwork cache directory — `~/Library/Application Support/
+    /// AdaptiveSound/artwork/`, a sibling of the store (design §4). Created if needed.
+    /// The S8.3 metadata pass writes `<hash>.<ext>` originals + `<hash>.thumb.jpg`
+    /// thumbnails here; tests pass a temp dir instead so App Support is never touched.
+    public static func defaultArtworkCacheURL() throws -> URL {
+        let fileManager = FileManager.default
+        let appSupport = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = appSupport
+            .appendingPathComponent("AdaptiveSound", isDirectory: true)
+            .appendingPathComponent("artwork", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     /// The schema version the store is currently at.
     public func schemaVersion() -> Int {
         version
