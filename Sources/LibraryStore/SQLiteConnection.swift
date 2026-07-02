@@ -113,6 +113,16 @@ public final class SQLiteConnection {
         return try statement.step() ? statement.columnInt64(0) : nil
     }
 
+    /// Execute a single-text-parameter statement (bound at index 1) expected to
+    /// yield a single integer in column 0. Returns `nil` if no row is produced. The
+    /// DAO's query-then-insert resolvers (artist/genre by name) use this.
+    public func scalarInt(_ sql: String, bind text: String) throws -> Int64? {
+        let statement = try prepare(sql)
+        defer { statement.finalize() }
+        try statement.bind(text, at: 1)
+        return try statement.step() ? statement.columnInt64(0) : nil
+    }
+
     /// Execute a parameterless statement expected to yield a single text value in
     /// column 0. Returns `nil` if no row is produced or the value is NULL.
     public func scalarText(_ sql: String) throws -> String? {
