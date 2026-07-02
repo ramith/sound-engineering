@@ -87,8 +87,10 @@ public enum Schema {
         """,
         "CREATE INDEX idx_albums_artist ON albums(album_artist_id);",
         "CREATE INDEX idx_albums_year ON albums(year);",
-        // tracks: stable id identity + nullable folder (loose files) + delta signature
-        // + metadata columns (NULL until S8.3) + reserved user-track-state columns.
+        // tracks: stable id identity + nullable folder (loose files) + the delta/move
+        // signature (file_size, mtime, inode, dev — dev added to v1 DIRECTLY in S8.2a,
+        // M-B: no populated production store exists, so no migration) + metadata columns
+        // (NULL until S8.3) + reserved user-track-state columns.
         """
         CREATE TABLE tracks (
             id INTEGER PRIMARY KEY,
@@ -100,6 +102,7 @@ public enum Schema {
             file_size INTEGER NOT NULL,
             mtime INTEGER NOT NULL,
             inode INTEGER,
+            dev INTEGER,
             content_hash TEXT,
             album_id INTEGER REFERENCES albums(id) ON DELETE SET NULL,
             artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL,

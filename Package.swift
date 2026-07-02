@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore"],
+            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan"],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -59,6 +59,16 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+        // Recursive folder scanner (Sprint 8, S8.2a). Depends on LibraryStore; NO
+        // external deps. Its own library target so BOTH the app (AdaptiveSound) and
+        // the offline gate (VerifyLibraryStore) link the identical walk/signature
+        // implementation — the walk has one source of truth (LibraryScanner
+        // .supportedExtensions) and never drifts. Off the audio path entirely.
+        .target(
+            name: "LibraryScan",
+            dependencies: ["LibraryStore"],
+            path: "Sources/LibraryScan"
+        ),
         // Headless S8.1a acceptance gate: proves the store opens/creates/migrates, the v1 schema
         // is correct, the migration runner is transactional + downgrade-guarded, corruption is
         // quarantined (with -wal/-shm sidecars) + rebuilt, and data survives restart. Mirrors the
@@ -66,7 +76,7 @@ let package = Package(
         // (swift test is broken here; this is the runnable verification for the store path.)
         .executableTarget(
             name: "VerifyLibraryStore",
-            dependencies: ["LibraryStore"],
+            dependencies: ["LibraryStore", "LibraryScan"],
             path: "Sources/VerifyLibraryStore"
         ),
         // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact

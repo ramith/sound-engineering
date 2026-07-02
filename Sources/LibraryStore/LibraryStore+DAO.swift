@@ -252,8 +252,8 @@ public extension LibraryStore {
             """
             INSERT INTO tracks(
                 url, folder_id, relative_path, name, format,
-                file_size, mtime, inode, date_added, last_seen_scan)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_size, mtime, inode, dev, date_added, last_seen_scan)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(url) DO UPDATE SET
                 folder_id = excluded.folder_id,
                 relative_path = excluded.relative_path,
@@ -262,6 +262,7 @@ public extension LibraryStore {
                 file_size = excluded.file_size,
                 mtime = excluded.mtime,
                 inode = excluded.inode,
+                dev = excluded.dev,
                 last_seen_scan = excluded.last_seen_scan
             WHERE tracks.file_size <> excluded.file_size
                OR tracks.mtime <> excluded.mtime
@@ -280,8 +281,13 @@ public extension LibraryStore {
         try statement.bind(file.fileSize, at: 6)
         try statement.bind(file.mtime, at: 7)
         try statement.bind(file.inode, at: 8)
-        try statement.bind(dateAdded, at: 9) // real epoch; first insert only (out of the conflict SET)
-        try statement.bind(generation, at: 10) // last_seen_scan
+        // dev + inode are move-signature (M-B): bound on insert AND set on the conflict
+        // UPDATE (a replaced file at this url can have a different dev/inode), but they
+        // are DELIBERATELY absent from the no-bump WHERE predicate above — that predicate
+        // gates on CONTENT (size/mtime/name/format/path/folder), not the move-signature.
+        try statement.bind(file.dev, at: 9)
+        try statement.bind(dateAdded, at: 10) // real epoch; first insert only (out of the conflict SET)
+        try statement.bind(generation, at: 11) // last_seen_scan
         _ = try statement.step()
 
         // The conflict-update's WHERE means an UNCHANGED row makes no row-change, so
