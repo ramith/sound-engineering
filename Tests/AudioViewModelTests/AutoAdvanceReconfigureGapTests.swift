@@ -52,46 +52,43 @@ struct AutoAdvanceReconfigureGapTests {
     // The helper simulateTrackEndWithoutArm() below makes the gap explicit and documents the
     // expected (INCORRECT-but-stable) outcome so a future fix can flip the assertion.
 
-    @Test("VM-AA-RTR-1: track ends before VM arms next — engine reports ended, VM stops (regression target)")
-    func trackEndsBeforeVMArmsSetsEndedFlag() {
-        // NOTE: This test documents the CURRENT behaviour: the VM stops rather than advancing.
-        // A future architectural fix (pre-arm or engine-side look-ahead) should invert the
-        // final `isPlaying` assertion to `true` and the `endedFlag` assertion to `false`.
+    @Test("VM-AA-RTR-1: track ends before a seamless seam — engine reports ended, VM ADVANCES (reconfigure gap)")
+    func trackEndsBeforeSeamlessSeamAdvances() {
+        // KI-001 (docs/product/known-issues.md), RESOLVED: a very short current track can end
+        // before the engine armed the next track for a SEAMLESS seam, so the engine reports
+        // playbackEnded with no transition. The VM must CONTINUE to the queued next track via a
+        // fresh start — a brief, honest reconfigure gap — NOT stop mid-playlist. This continue
+        // behavior is provided by tickSpectrum()'s `playbackEnded → advance to pendingNextIndex`
+        // branch (pendingNextIndex is always set mid-playlist; it is nil only at end-of-playlist,
+        // which is the one case that legitimately stops). Seamless (gapless) advance for
+        // arbitrarily-short tracks is a separate enhancement: it needs an engine-side 2-deep
+        // on-deck queue (a single slot can't arm track C until B is current at the seam).
 
         let engine = MockAudioEngine()
 
-        // 3-track playlist; we will fire track-end BEFORE the VM has called setNextTrack.
-        // Simulate: VM starts track 0, but before it can call setNextTrack the engine reaches EOF.
-        // (A fresh MockAudioEngine already has endedFlag == false; no reset needed.)
-
-        // Manually simulate the "track ended with nothing on deck" condition:
-        // nextTrackURL is nil (the VM hasn't armed it yet) → endedFlag fires, not transitionCount.
-        engine.simulateTrackEnd() // nextTrackURL == nil → sets endedFlag
+        // The engine reaches EOF with no on-deck track armed for a seamless seam → endedFlag,
+        // no transition. (A fresh MockAudioEngine already has endedFlag == false.)
+        engine.simulateTrackEnd()
 
         #expect(engine.endedFlag == true,
-                "Engine must set endedFlag when track ends with no next track armed")
+                "Engine must set endedFlag when a track ends without a seamless seam")
         #expect(engine.transitionCount == 0,
-                "transitionCount must NOT increment when no track was armed (short-track gap)")
+                "transitionCount must NOT increment when no gapless seam occurred")
 
-        // The VM's tick sees endedFlag == true with isPlaying == true → stops playback.
-        // (Modelled here via MockAdvanceController since we cannot drive AudioViewModel's async loop
-        // synchronously. The real VM behaviour is identical: engineEndedFlag=true, tick() → stops.)
+        // The VM's tick sees endedFlag == true with a track still queued (pendingNextIndex set)
+        // and ADVANCES to it via a fresh start rather than stopping. (Modelled via
+        // MockAdvanceController, which mirrors tickSpectrum()'s auto-advance logic exactly.)
         let ctrl = MockAdvanceController()
         ctrl.playlist = makeTracks(count: 3)
-        ctrl.playTrack(at: 0)
-        // Force the engine-ended condition without arming: mirror of engine.simulateTrackEnd() with nil.
-        ctrl.engineEndedFlag = true
+        ctrl.playTrack(at: 0) // arms pendingNextIndex = 1
+        ctrl.engineEndedFlag = true // current track ended with 1 still on deck (no seamless seam)
         ctrl.tick()
 
-        // KNOWN ISSUE KI-001 (docs/product/known-issues.md): a short track can reach EOF
-        // before the VM arms the next track, and the player stalls instead of advancing.
-        // The desired behavior (continue/advance) is pending a product decision + fix; this
-        // assertion documents the CURRENT (defective) behavior. Wrapped in withKnownIssue so
-        // the suite stays green while tracked — when the fix lands this stops reproducing and
-        // the test fails, prompting removal of the wrapper and a corrected assertion.
-        withKnownIssue("KI-001: short-track auto-advance gap — VM stalls instead of advancing") {
-            #expect(ctrl.isPlaying == false,
-                    "VM must stop when engine signals ended with no next track armed (short-track gap regression)")
-        }
+        #expect(ctrl.isPlaying == true,
+                "VM must CONTINUE (advance to the queued track) when a track ends before a seamless seam")
+        #expect(ctrl.selectedTrackIndex == 1,
+                "VM must advance selection to the queued next track (not stop)")
+        #expect(ctrl.startPlaybackCallCount == 2,
+                "the advance is a fresh start of the queued track (initial play + one advance)")
     }
 }

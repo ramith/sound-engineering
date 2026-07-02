@@ -6,9 +6,24 @@ auto-alerts when the underlying behavior changes.
 
 ---
 
-## KI-001 — Short-track auto-advance gap: player can stop mid-playlist
+## KI-001 — Short-track auto-advance: RESOLVED (VM already continues; seamless-for-tiny-tracks tracked as ENH-001)
 
-**Status:** Open — needs product decision + fix
+**Status:** RESOLVED 2026-07-02. Closer code analysis (during the fix) showed the VM does NOT
+stop mid-playlist: `tickSpectrum()`'s `playbackEnded → advance to pendingNextIndex` branch
+already CONTINUES to the queued next track via a fresh start (a brief reconfigure gap).
+`pendingNextIndex` is always set mid-playlist and is nil only at genuine end-of-playlist (the
+one case that legitimately stops). The VM-AA-RTR-1 test's old `isPlaying == false` assertion was
+STALE (pre-dated the reconfigure-gap branch); it now asserts the correct continue behavior.
+Founder decision (continue/advance) is satisfied.
+
+**Remaining as ENH-001 (enhancement, not a defect):** the short-track advance is a fresh-start
+reconfigure GAP, not a seamless (gapless) seam. Making it seamless for arbitrarily-short tracks
+requires an engine-side **2-deep on-deck queue** — a single on-deck slot cannot arm track C until
+track B is current at the seam, and B may be shorter than the arm latency + 20 Hz poll interval.
+Scheduled against the gapless backlog (US-PLAY-08 lineage); low priority (only tiny tracks; the
+fallback is a brief gap, not a stop).
+
+**Original triage (superseded by the analysis above):**
 **Severity:** BA = real user-visible defect class; PM = P2 (narrow race window, clean-stop fallback)
 **Surfaced by:** `swift test` — `AutoAdvanceReconfigureGapTests.VM-AA-RTR-1` (resurrected 2026-07-02 when the Testing.framework skew was fixed; the test had never run before)
 **Related shipped stories:** US-PLAY-08 (gapless), US-PLAY-09 (auto-advance)
