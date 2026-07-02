@@ -191,7 +191,7 @@ public actor LibraryStore {
     public func beginScanGeneration() throws -> Int64
     public func classify(_ file: ScannedFile) throws -> TrackDelta          // new/modified(unchanged) from (size,mtime)
     public func upsert(_ files: [ScannedFile], folderID: Int64?, generation: Int64) throws -> [Int64]  // ONE txn; folderID nil = loose
-    public func moveTrack(id: Int64, newURL: URL, newFolderID: Int64?) throws  // M6: in-place; preserves id + memberships; typed conflict on UNIQUE(url)
+    public func moveTrack(id: Int64, newURL: URL, newFolderID: Int64?, newRelativePath: String) throws  // M6: in-place; preserves id + memberships; newRelativePath is relative to the NEW root (loose move → ""); typed conflict on UNIQUE(url)
     public func sweepOrphans(inFolders: [Int64], olderThan: Int64) throws -> Int
     public func addLooseFile(_ file: ScannedFile) throws -> Int64            // loose track (folder_id NULL)
     public func delete(id: Int64) throws
@@ -274,4 +274,15 @@ Nothing removed; the running app stays byte-identical. `AudioFile`/`AudioFileEnu
 
 ---
 
-**Next:** founder sign-off on this revised design + the two open decisions (**M4** S8.1a/S8.1b split; **D5** distribution target) → implement **S8.1a** (store/schema/migration/harness) → gate → commit → **S8.1b** (DAO + concurrency/FS-divergence tests) → gate → commit. Then S8.2 (scan).
+## 10. Post-implementation review (2026-07-02) — tracked debt
+
+S8.1a+b shipped and were independently reviewed (architect-reviewer: **GO-WITH-CHANGES**, no blockers; refactoring-specialist: 1 reproduced blocker + should-fixes). **Fixed in a follow-up pass:** `moveTrack` relative_path staleness on cross-folder moves (added `newRelativePath`); `date_added` now a real epoch (was the scan-generation counter → wrong "Recently Added"); `SQLITE_OPEN_FULLMUTEX` + a synchronous-only invariant comment; race-safe `resolveArtist/Genre/Album` (`ON CONFLICT DO NOTHING` + re-select); minor hardening.
+
+**Deferred as tracked debt:**
+- **SF-2 — facet-orphan sweep → S8.4 ACCEPTANCE ITEM.** `moveTrack`/rescan churn will leave zero-track `albums`/`artists`/`genres` rows (ghost empty albums in S9). No churn exists yet, so deferred — but **S8.4 must add `sweepOrphanFacets()`** (delete facet rows with no referencing track) as an acceptance criterion, or S9 browse shows phantoms.
+- **SF-4 — all reads serialize through the writer actor → R1 DEBT for S9.** Acceptable for R1 (batched writes, library scale), but a long S8.2/S8.4 scan makes an S9 browse queue behind write batches (WAL MVCC discarded by the single isolation domain). Seam marked in `LibraryStore+Reads.swift`: if browse jank appears, add a `SQLITE_OPEN_READONLY` read connection. Revisit at S9 with a measurement trigger.
+- **Minor notes:** two concurrent `LibraryStore(url:)` on a corrupt file race the quarantine rename (unlikely — single instance today); the harness "path-boundary" check proves distinct-folder-id separation, NOT string-prefix matching — the S8.2 scanner author must validate real `path`-prefix logic when it introduces one.
+
+---
+
+**Next:** **S8.2** — folder scan → store (populating the `(inode, size, mtime)` move-signature), its own design → architect vet → implement → gate cycle.
