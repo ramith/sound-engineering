@@ -147,12 +147,12 @@ final class MockAdvanceController {
         primeNextTrack(newNextIdx)
     }
 
-    // MARK: - Mirror of computeNextIndex()
+    // MARK: - Mirror of computeNextIndex() / computePreviousIndex()
 
-    func computeNextIndex(current: Int, playlistCount: Int) -> Int? {
+    func computeNextIndex(current: Int, playlistCount: Int, manualSkip: Bool = false) -> Int? {
         guard playlistCount > 0 else { return nil }
 
-        if repeatMode == 2 { return current }
+        if repeatMode == 2, !manualSkip { return current } // repeat-one: auto repeats, manual steps
 
         if shuffleEnabled, playlistCount > 1 {
             // Deterministic in tests: use a simple linear walk that avoids current.
@@ -164,6 +164,20 @@ final class MockAdvanceController {
         if nextLinear < playlistCount { return nextLinear }
         if repeatMode == 1 { return 0 }
         return nil
+    }
+
+    /// Mirror of AudioViewModel.computePreviousIndex (Previous button). Shuffle → a different index
+    /// (deterministic stand-in for random≠current); repeat-all wraps to the last track.
+    func computePreviousIndex(current: Int, playlistCount: Int) -> Int? {
+        guard playlistCount > 0 else { return nil }
+
+        if shuffleEnabled, playlistCount > 1 {
+            return (current + 1) % playlistCount // deterministic ≠current stand-in for random
+        }
+
+        let prevLinear = current - 1
+        if prevLinear >= 0 { return prevLinear }
+        return repeatMode == 1 ? playlistCount - 1 : nil // repeat-all wraps to the last track
     }
 
     // MARK: - Mirror of removeTrack(at:) — gapless-relevant section
