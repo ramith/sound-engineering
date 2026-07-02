@@ -37,8 +37,10 @@ public enum RelativePathResolver {
             return ""
         }
         // Component-boundary: the dir must start with `root + "/"`, never a bare
-        // string prefix (that is the /Music/Rock ⊄ /Music/RockAndRoll fix).
-        let rootWithSeparator = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        // string prefix (that is the /Music/Rock ⊄ /Music/RockAndRoll fix). The
+        // separator construction is shared with RootValidation via PathNormalizer so
+        // the one safety-critical comparison never drifts.
+        let rootWithSeparator = PathNormalizer.directoryPrefix(rootPath)
         guard dirPath.hasPrefix(rootWithSeparator) else {
             return ""
         }

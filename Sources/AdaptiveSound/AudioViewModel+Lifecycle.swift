@@ -62,6 +62,10 @@ extension AudioViewModel {
         // the engine and could otherwise touch handles we're about to tear down).
         stopSpectrumTimer()
         stopFolderMonitoring()
+        // Cancel any in-flight library scan (mirrors folderMonitorDebounceTask): the
+        // detached scan observes per-file cancellation and skips its sweep, so it never
+        // writes to `store` while the engine is being torn down.
+        scanTask?.cancel()
         // P2-C: sequence the teardown in a SINGLE ordered async chain so `engine.shutdown()`
         // runs only AFTER the stop has fully completed. Previously `stopPlayback()` spawned its
         // own (unawaited) Task while a separate Task called `engine.shutdown()`; the two were

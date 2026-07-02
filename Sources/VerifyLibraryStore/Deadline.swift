@@ -33,3 +33,22 @@ func withDeadline<T: Sendable>(
         return first
     }
 }
+
+/// A thread-safe one-shot: `runOnce`'s body executes on the FIRST call only. Used to gate
+/// a scan's synchronous `progress` closure so a mid-scan rendezvous parks EXACTLY once
+/// (after the first committed batch), never on later batches. `@unchecked Sendable` is
+/// sound: the single `Bool` is guarded by the lock. (A `DispatchSemaphore(value: 1)` used
+/// as a latch would deadlock-safe but trap at deallocation once decremented and never
+/// restored — `value < initial` — so a lock is the correct primitive here.)
+final class OneShotLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasRun = false
+
+    func runOnce(_ body: () -> Void) {
+        lock.lock()
+        let first = !hasRun
+        hasRun = true
+        lock.unlock()
+        if first { body() }
+    }
+}

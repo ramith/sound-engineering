@@ -10,10 +10,12 @@ import LibraryStore
 // UX) while this fills the persistent store in parallel. The UI's source swaps to
 // store-reads at S9. Folder-monitor → store rewiring is S8.4 — NOT here.
 //
-// Shape mirrors `loadMusicFolder`: off-main work in a detached task, results
-// published back on the VM's `@MainActor` isolation; only `Sendable` types cross.
-// Cancellation: the detached scan `Task` is retained in `scanTask`; a re-trigger (or
-// teardown) cancels it, which makes `LibraryScanner`'s per-file `checkCancellation()`
+// Shape mirrors `loadMusicFolder`: a `Task` retained in `scanTask` drives the scan.
+// The heavy per-file walk runs OFF the main actor inside `LibraryScanner`'s
+// `nonisolated` scan; `performScan` itself is `@MainActor` (extension inheritance) and
+// only publishes results there — so just `Sendable` types cross. Cancellation: a
+// re-trigger (which reassigns `scanTask`, cancelling the prior) or teardown
+// (`shutdown()`) cancels it, making `LibraryScanner`'s per-file `checkCancellation()`
 // throw and SKIP its sweep (no wrongful delete).
 
 extension AudioViewModel {
@@ -49,20 +51,33 @@ extension AudioViewModel {
             logUX("scanFolderIntoLibrary: store not ready; skipping (playlist unaffected)")
             return
         }
-        scanTask = Task.detached(priority: .utility) { [weak self] in
+        // A plain `Task` (not `.detached`): the heavy walk is already off-main inside
+        // `LibraryScanner`'s `nonisolated` scan, so detachment buys nothing here.
+        scanTask = Task(priority: .utility) { [weak self] in
             await self?.performScan(url, store: store)
         }
     }
 
-    /// The off-main scan body (a detached task). Validates the root, registers it,
-    /// then walks + reconciles; progress + the final result are published on the main
-    /// actor. Errors are surfaced via `errorMessage`; a `CancellationError` is silent
-    /// (an expected re-trigger/teardown), leaving committed batches valid.
+    /// Validates the root, registers it, then walks + reconciles. Runs on the main
+    /// actor (extension inheritance) but AWAITS `LibraryScanner`'s `nonisolated` walk,
+    /// so the heavy per-file work executes off the main actor; progress + the final
+    /// result are published on the main actor. Errors are surfaced via `errorMessage`;
+    /// a `CancellationError` is silent (an expected re-trigger/teardown), leaving
+    /// committed batches valid.
     private func performScan(_ url: URL, store: LibraryStore) async {
+        // Hold security-scoped access across the whole scan — the walk reads files
+        // under `url`. Inert under the Developer-ID posture (returns false); correct
+        // once sandbox bookmarks land (S8.4). Per-process, so it covers the off-main
+        // walk, and this scan owns its own scope independent of the view's Task.
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
         do {
             let existing = try await store.roots().map { URL(fileURLWithPath: $0.path) }
             try LibraryScanner().validateNewRoot(url, against: existing)
-            let folderID = try await store.addRoot(url)
+            // Pass the root's on-disk (dev,inode) so addRoot dedups a case-variant path
+            // for the same directory on a case-insensitive volume (QS3).
+            let signature = LibraryScanner.deviceInode(of: url)
+            let folderID = try await store.addRoot(url, dev: signature.dev, inode: signature.inode)
             let result = try await LibraryScanner().scan(
                 root: url, folderID: folderID, into: store,
                 progress: { snapshot in

@@ -47,4 +47,21 @@ public enum PathNormalizer {
         }
         return absolute.precomposedStringWithCanonicalMapping
     }
+
+    /// `path` terminated with exactly one trailing "/", so it can serve as a
+    /// path-COMPONENT-boundary prefix. Centralized here so the one safety-critical
+    /// boundary construction lives in a SINGLE place — shared by `RelativePathResolver`
+    /// (relative-path strip) and `RootValidation` (nested-root reject), which must
+    /// never drift apart (both are the `/Music/Rock` ⊄ `/Music/RockAndRoll` rule).
+    public static func directoryPrefix(_ path: String) -> String {
+        path.hasSuffix("/") ? path : path + "/"
+    }
+
+    /// `true` iff `candidate` is strictly BELOW `ancestor` at a path-COMPONENT boundary
+    /// (`candidate` begins with `ancestor + "/"`) — never a bare string prefix. Equal
+    /// paths are NOT descendants. Inputs are expected already-normalized (see
+    /// `normalizedString`).
+    public static func isComponentBoundaryDescendant(_ candidate: String, of ancestor: String) -> Bool {
+        candidate.hasPrefix(directoryPrefix(ancestor))
+    }
 }

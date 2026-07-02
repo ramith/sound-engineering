@@ -19,23 +19,48 @@ import Foundation
 public extension LibraryStore {
     // MARK: - Scan roots
 
-    /// Register (or return the existing) scan-root folder for `url`. Idempotent on
-    /// the normalised path (`UNIQUE(path)`): a repeat call returns the same rowid.
+    /// Register (or return the existing) scan-root folder for `url`. Idempotent two
+    /// ways: on the normalised path (`UNIQUE(path)`), AND — when `dev`/`inode` are
+    /// supplied (the caller's lstat of the root) — on the on-disk `(dev, inode)`
+    /// identity, so a case-variant or differently-spelled path for the SAME directory
+    /// on a case-insensitive volume returns the existing root instead of registering a
+    /// duplicate (QS3). `dev`/`inode` nil → path-only idempotency (unchanged).
     /// `bookmark` is stored but reserved-unused under the Developer-ID posture (§8-D5).
     @discardableResult
-    func addRoot(_ url: URL, bookmark: Data? = nil) throws -> Int64 {
+    func addRoot(_ url: URL, dev: Int64? = nil, inode: Int64? = nil, bookmark: Data? = nil) throws -> Int64 {
         let path = PathNormalizer.normalizedString(for: url)
         if let existing = try connection.scalarInt("SELECT id FROM folders WHERE path = ?;", bind: path) {
             return existing
         }
+        // Same on-disk directory (by lstat identity) already a root? → idempotent.
+        if let dev, let inode, let existing = try existingRootID(forDev: dev, inode: inode) {
+            return existing
+        }
         let statement = try connection.prepare(
-            "INSERT INTO folders(path, is_root, bookmark) VALUES (?, 1, ?);"
+            "INSERT INTO folders(path, is_root, bookmark, dev, inode) VALUES (?, 1, ?, ?, ?);"
         )
         defer { statement.finalize() }
         try statement.bind(path, at: 1)
         try statement.bind(bookmark, at: 2)
+        try statement.bind(dev, at: 3)
+        try statement.bind(inode, at: 4)
         _ = try statement.step()
         return connection.lastInsertRowID()
+    }
+
+    /// The rowid of an existing ROOT registered for the same on-disk directory (matched
+    /// on the lstat `(dev, inode)` identity), or nil. Roots with a NULL dev/inode never
+    /// match (SQL `= NULL` is never true), so a caller that omits the signature is
+    /// unaffected. Underlies `addRoot`'s case-insensitive-volume dedup (QS3).
+    private func existingRootID(forDev dev: Int64, inode: Int64) throws -> Int64? {
+        let statement = try connection.prepare(
+            "SELECT id FROM folders WHERE is_root = 1 AND dev = ? AND inode = ? LIMIT 1;"
+        )
+        defer { statement.finalize() }
+        try statement.bind(dev, at: 1)
+        try statement.bind(inode, at: 2)
+        guard try statement.step() else { return nil }
+        return statement.columnInt64(0)
     }
 
     /// Every registered scan root, path-ordered.
