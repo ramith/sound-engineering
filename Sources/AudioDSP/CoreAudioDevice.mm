@@ -146,6 +146,13 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
 
     // Filter for output-capable devices
     for (AudioDeviceID deviceID : deviceIDs) {
+        // DIAGNOSTIC: name every raw device in the CoreAudio set and log whether it passes the
+        // output-stream filter. Debugging "connected BT headphone doesn't appear in the picker" —
+        // this distinguishes the device being ABSENT from CoreAudio's device set entirely vs.
+        // PRESENT but excluded (its output stream isn't negotiated/ready yet, e.g. a BT device
+        // mid-A2DP-handshake reports zero output streams).
+        const std::string candidateName = getDeviceName(deviceID);
+
         // Check if device has output channels
         AudioObjectPropertyAddress outputChannelsAddr{
             kAudioDevicePropertyStreamConfiguration,
@@ -161,6 +168,8 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
             nullptr,
             &bufferListSize);
 
+        bool included = false;
+        UInt32 outputStreams = 0;
         if (status == noErr && bufferListSize > 0) {
             // RAII-owned storage for the AudioBufferList (control-plane; size from API).
             std::vector<std::byte> bufferStorage(bufferListSize);
@@ -173,11 +182,20 @@ std::vector<AudioDevice> CoreAudioDevice::enumerateOutputDevices() {
                 &bufferListSize,
                 bufferList);
 
-            if (status == noErr && bufferList->mNumberBuffers > 0) {
-                AudioDevice device = queryDevice(deviceID);
-                devices.push_back(device);
+            if (status == noErr) {
+                outputStreams = bufferList->mNumberBuffers;
+                if (outputStreams > 0) {
+                    AudioDevice device = queryDevice(deviceID);
+                    devices.push_back(device);
+                    included = true;
+                }
             }
         }
+
+        fprintf(stderr, "[CoreAudioDevice] candidate id=%u '%s' outputStreams=%u -> %s\n",
+                static_cast<unsigned int>(deviceID), candidateName.c_str(),
+                static_cast<unsigned int>(outputStreams),
+                included ? "included" : "EXCLUDED (no output stream)");
     }
 
     fprintf(stderr, "[CoreAudioDevice] Enumerated %zu output devices\n", devices.size());

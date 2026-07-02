@@ -92,6 +92,11 @@ extension AudioEngineBridge {
         let listenerQueue = DispatchQueue.global(qos: .userInitiated)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
+            // DIAGNOSTIC: confirms macOS actually notified us of a device-set change. If a BT
+            // headphone connects and this does NOT log, the CoreAudio device set didn't change
+            // (a reconnecting device whose object persisted) → the picker never re-enumerates.
+            logUX("device-list listener FIRED (kAudioHardwarePropertyDevices changed); "
+                + "default=\(getDefaultOutputDeviceID()) — re-enumerating picker")
             // Apply the connect-behaviour preference (pin vs follow) BEFORE refreshing the picker
             // (a connecting device can steal the system default — see handleDeviceSetChange).
             self.handleDeviceSetChange()
