@@ -199,10 +199,11 @@ func runAllChecks() async {
     for url in usedURLs {
         cleanupStore(url)
     }
-    // The S8.2 scan cases build real directory trees under test-data/scan-fixtures/; remove them.
-    try? FileManager.default.removeItem(
-        at: testDataDirectory.appendingPathComponent("scan-fixtures", isDirectory: true)
-    )
+    // The S8.2 scan cases build real directory trees under test-data/scan-fixtures/<runID>/;
+    // remove this run's tree. cleanupScanFixtures() restores writable permission first, so a
+    // chmod 0o000 permission-denied fixture (S8.2b, check Q) can't wedge the teardown and leak
+    // (a plain removeItem would silently fail on it). (F8: this helper was defined but never called.)
+    cleanupScanFixtures()
     print("=== SUMMARY: \(passed)/\(cases.count) checks PASSED "
         + "(S8.1a: SCHEMA-1..6 + RESTART; S8.1b: B CRUD/integrity, C facets, D concurrency, "
         + "E idempotency+identity, F filesystem-divergence; "
