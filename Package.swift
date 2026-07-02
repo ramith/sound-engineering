@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP", "AudioFormatKit"],
+            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore"],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -44,6 +44,30 @@ let package = Package(
                     "Sources/AudioDSP/include/DeviceBridge.h",
                 ]),
             ]
+        ),
+        // Persistent library store (Sprint 8, S8.1a). System SQLite ONLY (import SQLite3;
+        // .linkedLibrary("sqlite3")) — ZERO external SwiftPM deps, matching the CoreAudio/
+        // Accelerate system-lib idiom and avoiding the toolchain-skew class that broke
+        // `swift test`. Its own library target so BOTH the app (AdaptiveSound) and the offline
+        // gate (VerifyLibraryStore) link the identical store/schema/migration implementation —
+        // no drift. Off the audio path entirely (additive; S8.1 touches no DSP).
+        .target(
+            name: "LibraryStore",
+            dependencies: [],
+            path: "Sources/LibraryStore",
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
+        ),
+        // Headless S8.1a acceptance gate: proves the store opens/creates/migrates, the v1 schema
+        // is correct, the migration runner is transactional + downgrade-guarded, corruption is
+        // quarantined (with -wal/-shm sidecars) + rebuilt, and data survives restart. Mirrors the
+        // VerifyAUGraph idiom (numbered PASS/FAIL, exit(0) all-pass). `swift run VerifyLibraryStore`.
+        // (swift test is broken here; this is the runnable verification for the store path.)
+        .executableTarget(
+            name: "VerifyLibraryStore",
+            dependencies: ["LibraryStore"],
+            path: "Sources/VerifyLibraryStore"
         ),
         // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact
         // converter the Enhanced (B4) resampler uses — by measuring imaging/aliasing on pure tones.

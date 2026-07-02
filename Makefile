@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format help
+.PHONY: build run release run-release clean xcode profile test format library-store-verify gate help
 
 build:
 	swift build -c debug -j 8
@@ -54,6 +54,20 @@ format:
 	swift format -i Sources/ 2>/dev/null || true
 	clang-format -i Sources/AudioDSP/*.{h,cpp,mm} 2>/dev/null || true
 
+# S8.1a store acceptance gate — headless verification of the persistent library
+# store (open/create/migrate, v1 schema, transactional + downgrade-guarded
+# migration runner, corruption quarantine + rebuild, restart durability). `swift
+# test` is broken here, so this executable IS the verification. Temp DBs are
+# written under test-data/ (never /tmp) and cleaned up on success.
+library-store-verify:
+	swift run VerifyLibraryStore
+
+# Full pre-merge gate (NOT the fast lint-only pre-commit hook): the C++ DSP null
+# test (golden master), the AU-graph offline integration check, and the library
+# store acceptance check. Any failure stops the chain (&&). Run before merging.
+gate:
+	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run VerifyLibraryStore
+
 help:
 	@echo "AdaptiveSound Build Commands:"
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
@@ -64,4 +78,6 @@ help:
 	@echo "  make clean  - Remove build artifacts"
 	@echo "  make test   - Run test suite"
 	@echo "  make format - Format code (Swift + C++)"
+	@echo "  make library-store-verify - Run the S8.1a library-store acceptance gate"
+	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
 	@echo "  make profile- Build and profile with system trace"
