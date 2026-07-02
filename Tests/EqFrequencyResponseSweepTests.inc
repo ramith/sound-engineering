@@ -352,3 +352,141 @@ static auto testEqFlatIsBitTransparentBypass() -> void
     }
     logPass(kName);
 }
+
+// ---------------------------------------------------------------------------
+// EQ_CombinedBands_CutRunAndMixedSign — S6 EQ-1 regression.
+//
+// The single-band sweeps above cannot catch the fitter bug (one active band is one run either
+// way). The bug only bites a MULTI-band active run:
+//   (a) a run of CUTS [-12,-9,-12] used to collapse to a single -9 dB filter (least-negative) —
+//       the deepest -12 bands were under-cut by ~3 dB; and
+//   (b) a boost+cut run [+6,-6] used to become a single +6 dB filter — the cut was DROPPED, so the
+//       cut band read a POSITIVE gain.
+// The fix splits at sign changes and tracks |gain|, so the deep cut is applied and the mixed run
+// yields both a boost and a cut. We measure the realized response (settled-half Goertzel, same
+// method as the sweeps) at the relevant band centers through the full multi-band cascade.
+// ---------------------------------------------------------------------------
+namespace
+{
+    // Measure the realized gain (dB) at `band`'s center for a FULL multi-band `gains` cascade,
+    // relative to the flat baseline. NaN if the flat baseline is silent.
+    auto measureMultiBandGainDb(const std::array<float, kEqBands>& gains, int band,
+                                uint32_t sampleRate, uint32_t frames) -> double
+    {
+        const float toneHz = EQModuleCoefficients::kCenterFrequencies[static_cast<size_t>(band)];
+        std::array<float, kEqBands> flat{};
+        const std::vector<float> flatOut = runEqSineAt(flat, sampleRate, toneHz, frames);
+        const std::vector<float> mixOut = runEqSineAt(gains, sampleRate, toneHz, frames);
+
+        const uint32_t half = frames / 2U;
+        const uint32_t n = frames - half;
+        const double flatP =
+            goertzelPower(flatOut.data() + half, n, toneHz, static_cast<float>(sampleRate));
+        const double mixP =
+            goertzelPower(mixOut.data() + half, n, toneHz, static_cast<float>(sampleRate));
+        if (!(flatP > 0.0))
+        {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        return 10.0 * std::log10(mixP / flatP);
+    }
+} // namespace
+
+static auto testEqCombinedBandsCutRunAndMixedSign() -> void
+{
+    static const char* const kName = "EQ_CombinedBands_CutRunAndMixedSign";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kFrames = TestConstants::kTotalFrames1s;
+    std::ostringstream report;
+
+    // (a) Adjacent CUT run at bands 15/16/17 (630/800/1000 Hz): [-12,-9,-12]. The deepest-cut band
+    // (15, the first -12) must now read ~-12 dB, NOT the old ~-7..-9 collapse.
+    {
+        constexpr int kDeepBand = 15;
+        std::array<float, kEqBands> gains{};
+        gains[15] = -12.0F;
+        gains[16] = -9.0F;
+        gains[17] = -12.0F;
+        const double deep = measureMultiBandGainDb(gains, kDeepBand, kSR, kFrames);
+        report << "  [info] " << kName << ": cut-run deep band 15 (630 Hz) measured " << deep
+               << " dB (target -12)\n";
+        if (!std::isfinite(deep))
+        {
+            logInfo(report.str());
+            logFail(kName, "cut-run produced a non-finite measurement");
+            return;
+        }
+        // Regression sentinel: the old collapse-to-least-negative would read shallower than -10.5.
+        if (deep > -10.5)
+        {
+            logInfo(report.str());
+            std::ostringstream oss;
+            oss << "cut run [-12,-9,-12]: deepest band 15 measured only " << deep
+                << " dB — the deep cut is under-applied (EQ-1 regression)";
+            logFail(kName, oss.str());
+            return;
+        }
+        // And it must be ACCURATE to the target within the ratified FR tolerance (single filter at
+        // its own center → no adjacent-filter interaction in a same-sign run).
+        if (std::abs(deep - (-12.0)) > static_cast<double>(kEqFrToleranceDb))
+        {
+            logInfo(report.str());
+            std::ostringstream oss;
+            oss << "cut run: deepest band 15 measured " << deep << " dB, expected -12 ± "
+                << kEqFrToleranceDb;
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
+    // (b) Adjacent MIXED-sign run at bands 20/21 (2000/2500 Hz): [+6,-6]. This is ONE contiguous
+    // active run that must SPLIT at the sign change into a +6 boost filter AND a -6 cut filter.
+    //
+    // We assert SIGN-CORRECTNESS, not magnitude: bands 20 and 21 are only 1/3 octave apart while
+    // the greedy fitter's peaking filters are ~1.5 octaves wide (Q≈0.9 at 6 dB), so the two
+    // opposite-sign filters heavily overlap and partially cancel — each center realizes only ~±1 dB.
+    // That mutual cancellation is an inherent limitation of a wide-Q one-filter-per-run fitter (an
+    // ERB-weighted optimizer is the noted future enhancement), NOT the EQ-1 bug. The DECISIVE proof
+    // of the fix is the sign: before the fix the run collapsed to a single +6 filter and the cut was
+    // DROPPED, so band 21 read a POSITIVE gain; after the fix band 21 is a real (negative) cut and
+    // band 20 stays a (positive) boost. A revert flips band 21 back positive → this fails.
+    {
+        std::array<float, kEqBands> gains{};
+        gains[20] = 6.0F;
+        gains[21] = -6.0F;
+        const double boost = measureMultiBandGainDb(gains, 20, kSR, kFrames);
+        const double cut = measureMultiBandGainDb(gains, 21, kSR, kFrames);
+        report << "  [info] " << kName << ": mixed run band 20 (2 kHz) " << boost
+               << " dB (boost), band 21 (2.5 kHz) " << cut
+               << " dB (cut) — signs must be +/- (magnitude cancels: adjacent wide-Q filters)\n";
+        if (!std::isfinite(boost) || !std::isfinite(cut))
+        {
+            logInfo(report.str());
+            logFail(kName, "mixed run produced a non-finite measurement");
+            return;
+        }
+        // Decisive regression sentinel: the old code dropped the cut → band 21 read POSITIVE.
+        if (cut >= -0.5)
+        {
+            logInfo(report.str());
+            std::ostringstream oss;
+            oss << "mixed run [+6,-6]: cut band 21 measured " << cut
+                << " dB — expected a real (negative) cut; the cut was dropped (EQ-1 regression)";
+            logFail(kName, oss.str());
+            return;
+        }
+        // The boost sub-run must still register as a boost.
+        if (boost <= 0.5)
+        {
+            logInfo(report.str());
+            std::ostringstream oss;
+            oss << "mixed run [+6,-6]: boost band 20 measured " << boost
+                << " dB — expected a real (positive) boost";
+            logFail(kName, oss.str());
+            return;
+        }
+    }
+
+    logInfo(report.str());
+    logPass(kName);
+}

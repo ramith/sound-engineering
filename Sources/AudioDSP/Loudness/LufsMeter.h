@@ -52,6 +52,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "../include/AudioConstants.h"
 
@@ -109,7 +110,22 @@ namespace AdaptiveSound
             const double out = (b0 * input) + z1;
             z1 = (b1 * input) - (a1 * out) + z2;
             z2 = (b2 * input) - (a2 * out);
+            // Denormal guard (S6 LOUD-1): fed exact-silence, this stable IIR's state decays
+            // geometrically through the double subnormal range (< ~2.2e-308) before reaching 0.
+            // Subnormal doubles are slow on some hardware, and — unlike single precision — AArch64
+            // FPCR.FZ does NOT flush them, so a thread-level FTZ would not help; flush here
+            // instead. Only true subnormals are zeroed, so no normal value (hence no LUFS reading)
+            // changes.
+            flushSubnormal(z1);
+            flushSubnormal(z2);
             return out;
+        }
+        static void flushSubnormal(double& value) noexcept
+        {
+            if (std::abs(value) < std::numeric_limits<double>::min())
+            {
+                value = 0.0;
+            }
         }
         void reset() noexcept
         {

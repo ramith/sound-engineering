@@ -55,7 +55,8 @@ namespace AdaptiveSound
         static constexpr std::size_t kWords = sizeof(T) / sizeof(uint64_t);
 
         // Bounded read-retry budget. A single rarely-publishing producer needs ~0 retries; the cap
-        // makes the reader wait-free even under a pathological publish storm (fall back to last good).
+        // makes the reader wait-free even under a pathological publish storm (fall back to last
+        // good).
         static constexpr int kMaxSnapshotReadRetries = 8;
 
       public:
@@ -65,7 +66,10 @@ namespace AdaptiveSound
         // its slots to a default T; preserving that is load-bearing — the golden master is the
         // DEFAULT full-chain output (which needs intensityLinear=1.0), and zeroed bytes would make
         // an unpublished read bypass to raw passthrough and change the hash.
-        DoubleBufferSnapshot() noexcept { publish(T{}); }
+        DoubleBufferSnapshot() noexcept
+        {
+            publish(T{});
+        }
 
         // Off-RT writer (SINGLE producer): publish a new snapshot.
         // `seq_` is odd while the word stores are in flight, even once a consistent generation is
@@ -85,8 +89,8 @@ namespace AdaptiveSound
         }
 
         // RT reader (SINGLE consumer): copy the current snapshot into `out`.
-        // Returns true on a consistent (non-torn) copy; false when a publish straddled every attempt
-        // within the retry budget (the caller then keeps its previous snapshot). Wait-free.
+        // Returns true on a consistent (non-torn) copy; false when a publish straddled every
+        // attempt within the retry budget (the caller then keeps its previous snapshot). Wait-free.
         [[nodiscard]] bool tryCopySnapshot(T& out) const noexcept
         {
             for (int attempt = 0; attempt < kMaxSnapshotReadRetries; ++attempt)

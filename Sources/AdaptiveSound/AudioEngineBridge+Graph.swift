@@ -152,6 +152,16 @@ extension AudioEngineBridge {
             )
 
             // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
+            // S6 MC-1 (UI-only, tracked as ENH-002 in docs/product/known-issues.md): this UI
+            // READOUT meter measures L/R only. It is CORRECT for the common stereo device width
+            // (M == 2, where L/R IS every channel) and does NOT drive makeup gain — the audible
+            // loudness normalization is the DSP kernel's own N-channel-weighted LoudnessModule
+            // (S1/S2), not this tap. For a >2-channel DEVICE output the integrated LUFS shown reads
+            // slightly low (surround energy unmeasured). A correct N-channel UI meter needs the
+            // device-width BS.1770-5 weights (surround ×1.41, LFE excluded) configured on the meter
+            // and all M planar channels fed here — deferred with the multichannel-output path (S4
+            // binaural fold is DEFERRED) to avoid plumbing channel-layout weights into the RT tap
+            // for an edge that is not yet a primary path.
             if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
                 let left = channels[0]
                 let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
