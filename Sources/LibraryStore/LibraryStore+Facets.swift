@@ -10,6 +10,11 @@
 // resolution implements the M1 TOTAL-ALBUM-KEY query-then-insert: an album is keyed
 // on (title, album_artist_id defaulting to the id-0 unknown-artist sentinel, year
 // defaulting to 0), so untagged albums collapse to ONE row, never N.
+//
+// The resolvers are RACE-SAFE against a second LibraryStore on the same file (e.g. an
+// S8.3 metadata worker): each INSERT is `ON CONFLICT(<unique-key>) DO NOTHING` then a
+// re-SELECT, so two instances inserting the same brand-new name resolve to the
+// winner's row rather than one of them tripping a spurious SQLITE_CONSTRAINT.
 
 import Foundation
 
@@ -150,30 +155,46 @@ public extension LibraryStore {
     // MARK: - Resolution helpers (M1 total-album-key)
 
     /// Resolve (query-then-insert) an artist by name, returning its rowid. Idempotent
-    /// via `UNIQUE(name)`; a repeat call returns the existing id.
+    /// via `UNIQUE(name)`; a repeat call returns the existing id. RACE-SAFE: the insert
+    /// is `ON CONFLICT(name) DO NOTHING` followed by a re-SELECT, so a concurrent second
+    /// instance inserting the same new name resolves to the winner's row (no spurious
+    /// constraint failure).
     internal func resolveArtist(named name: String) throws -> Int64 {
         if let existing = try connection.scalarInt("SELECT id FROM artists WHERE name = ?;", bind: name) {
             return existing
         }
-        let insert = try connection.prepare("INSERT INTO artists(name, sort_name) VALUES (?, ?);")
+        let insert = try connection.prepare(
+            "INSERT INTO artists(name, sort_name) VALUES (?, ?) ON CONFLICT(name) DO NOTHING;"
+        )
         defer { insert.finalize() }
         try insert.bind(name, at: 1)
         try insert.bind(name, at: 2)
         _ = try insert.step()
-        return connection.lastInsertRowID()
+        // Re-SELECT (not lastInsertRowID): on a race the INSERT did nothing and the id
+        // belongs to the row the other instance wrote.
+        guard let id = try connection.scalarInt("SELECT id FROM artists WHERE name = ?;", bind: name) else {
+            throw SQLiteError.internalError(message: "resolveArtist: row for name not found after insert")
+        }
+        return id
     }
 
     /// Resolve (query-then-insert) a genre by name, returning its rowid. Idempotent
-    /// via `UNIQUE(name)`.
+    /// via `UNIQUE(name)`. RACE-SAFE: `ON CONFLICT(name) DO NOTHING` then a re-SELECT,
+    /// so a concurrent insert of the same new name resolves to the winner's row.
     internal func resolveGenre(named name: String) throws -> Int64 {
         if let existing = try connection.scalarInt("SELECT id FROM genres WHERE name = ?;", bind: name) {
             return existing
         }
-        let insert = try connection.prepare("INSERT INTO genres(name) VALUES (?);")
+        let insert = try connection.prepare(
+            "INSERT INTO genres(name) VALUES (?) ON CONFLICT(name) DO NOTHING;"
+        )
         defer { insert.finalize() }
         try insert.bind(name, at: 1)
         _ = try insert.step()
-        return connection.lastInsertRowID()
+        guard let id = try connection.scalarInt("SELECT id FROM genres WHERE name = ?;", bind: name) else {
+            throw SQLiteError.internalError(message: "resolveGenre: row for name not found after insert")
+        }
+        return id
     }
 
     /// Resolve an album for `meta` via the M1 TOTAL-ALBUM-KEY query-then-insert.
@@ -181,13 +202,35 @@ public extension LibraryStore {
     /// `album_id` NULL rather than joining a bogus empty-title album). The key is
     /// (title, album_artist_id, year) with album_artist_id defaulting to the id-0
     /// unknown-artist sentinel and year defaulting to 0 — so two untagged
-    /// ('Greatest Hits', 0, 0) collapse to ONE album, not N.
+    /// ('Greatest Hits', 0, 0) collapse to ONE album, not N. RACE-SAFE:
+    /// `ON CONFLICT(title, album_artist_id, year) DO NOTHING` then a re-SELECT.
     internal func resolveAlbum(for meta: TrackMetadata) throws -> Int64? {
         guard let title = meta.albumTitle, !title.isEmpty else { return nil }
         let albumArtistID = try meta.albumArtistName
             .flatMap { try resolveArtist(named: $0) } ?? unknownArtistID
         let year = Int64(meta.year ?? 0)
+        if let existing = try selectAlbumID(title: title, albumArtistID: albumArtistID, year: year) {
+            return existing
+        }
 
+        let insert = try connection.prepare(
+            "INSERT INTO albums(title, album_artist_id, year) VALUES (?, ?, ?) "
+                + "ON CONFLICT(title, album_artist_id, year) DO NOTHING;"
+        )
+        defer { insert.finalize() }
+        try insert.bind(title, at: 1)
+        try insert.bind(albumArtistID, at: 2)
+        try insert.bind(year, at: 3)
+        _ = try insert.step()
+        // Re-SELECT: on a race the INSERT did nothing; the id is the winner's row.
+        guard let id = try selectAlbumID(title: title, albumArtistID: albumArtistID, year: year) else {
+            throw SQLiteError.internalError(message: "resolveAlbum: row for key not found after insert")
+        }
+        return id
+    }
+
+    /// SELECT the album id for the total key `(title, album_artist_id, year)`, or nil.
+    private func selectAlbumID(title: String, albumArtistID: Int64, year: Int64) throws -> Int64? {
         let query = try connection.prepare(
             "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND year = ?;"
         )
@@ -195,19 +238,7 @@ public extension LibraryStore {
         try query.bind(title, at: 1)
         try query.bind(albumArtistID, at: 2)
         try query.bind(year, at: 3)
-        if try query.step() {
-            return query.columnInt64(0)
-        }
-
-        let insert = try connection.prepare(
-            "INSERT INTO albums(title, album_artist_id, year) VALUES (?, ?, ?);"
-        )
-        defer { insert.finalize() }
-        try insert.bind(title, at: 1)
-        try insert.bind(albumArtistID, at: 2)
-        try insert.bind(year, at: 3)
-        _ = try insert.step()
-        return connection.lastInsertRowID()
+        return try query.step() ? query.columnInt64(0) : nil
     }
 
     // MARK: - Private metadata update

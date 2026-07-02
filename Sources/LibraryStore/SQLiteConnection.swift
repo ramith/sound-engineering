@@ -25,7 +25,11 @@ public final class SQLiteConnection {
     ///   - busyTimeoutMillis: `busy_timeout` in milliseconds (default 5000).
     public init(path: String, busyTimeoutMillis: Int32 = 5000) throws {
         var database: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE
+        // FULLMUTEX (serialized threading, THREADSAFE=2) is defence-in-depth for the
+        // single-writer store: the connection is actor-isolated and never *meant* to
+        // be touched from two threads, but if a stray cross-thread resume ever does,
+        // it degrades to a harmless lock wait instead of corruption — negligible cost.
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         let code = sqlite3_open_v2(path, &database, flags, nil)
         guard code == SQLITE_OK, let opened = database else {
             let message: String
@@ -163,6 +167,7 @@ public final class SQLiteConnection {
     /// Set `PRAGMA user_version`. Note: `user_version` cannot be parameter-bound,
     /// so the integer is interpolated — safe because it is a validated `Int`.
     public func setUserVersion(_ version: Int) throws {
+        precondition(version >= 0, "user_version must be non-negative")
         try exec("PRAGMA user_version = \(version);")
     }
 

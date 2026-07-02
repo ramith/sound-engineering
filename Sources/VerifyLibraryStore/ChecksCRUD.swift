@@ -21,7 +21,8 @@ func makeScanned(
 
 /// B: insert/read/update/delete round-trip; UNIQUE(url) → typed URLConflict on a
 /// move collision; FK integrity (foreign_keys ON) — folder ON DELETE SET NULL
-/// detaches tracks to loose; and M1 (two untagged 'Greatest Hits' collapse to ONE).
+/// detaches tracks to loose; M1 (two untagged 'Greatest Hits' collapse to ONE); and
+/// SF-1 (date_added is a real epoch, not the scan-generation counter).
 func checkCRUDIntegrity(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
@@ -55,9 +56,11 @@ func checkCRUDIntegrity(number: Int, url: URL) async -> Bool {
         guard try await checkUniqueConflict(store, number: number, rootID: rootID) else { return false }
         guard try await checkFolderDetach(store, number: number) else { return false }
         guard try await checkUntaggedAlbumCollapse(store, number: number) else { return false }
+        guard try await checkDateAddedIsEpoch(store, url: url, number: number) else { return false }
 
         printPass(number, "CRUD/integrity: insert/read/update/delete round-trips; UNIQUE(url) → typed "
-            + "URLConflict; folder ON DELETE SET NULL detaches to loose; M1 two untagged albums collapse to 1")
+            + "URLConflict; folder ON DELETE SET NULL detaches to loose; M1 two untagged albums collapse to 1; "
+            + "SF-1 date_added is a real epoch (not the generation counter)")
         return true
     } catch {
         printFail(number, "CRUD/integrity threw: \(error)"); return false
@@ -75,7 +78,10 @@ private func checkUniqueConflict(_ store: LibraryStore, number: Int, rootID: Int
     guard ids.count == 2 else { printFail(number, "CRUD: two-row seed failed"); return false }
     let (xID, yID) = (ids[0], ids[1])
     do {
-        try await store.moveTrack(id: xID, newURL: URL(fileURLWithPath: "/Music/B/y.flac"), newFolderID: rootID)
+        try await store.moveTrack(
+            id: xID, newURL: URL(fileURLWithPath: "/Music/B/y.flac"),
+            newFolderID: rootID, newRelativePath: "y.flac"
+        )
         printFail(number, "CRUD: moveTrack onto an occupied url did NOT throw")
         return false
     } catch let conflict as URLConflict {
@@ -126,6 +132,35 @@ private func checkUntaggedAlbumCollapse(_ store: LibraryStore, number: Int) asyn
     guard greatestHits[0].albumArtistID == 0, greatestHits[0].year == 0,
           greatestHits[0].trackCount == 2 else {
         printFail(number, "M1: collapsed album facet wrong (\(greatestHits[0]))")
+        return false
+    }
+    return true
+}
+
+/// SF-1: `date_added` must be a real Unix epoch (a large timestamp), NOT the small
+/// scan-generation counter that used to be bound there. Read the raw column via a
+/// second connection (it is not part of the public `LibraryTrack` read model). The
+/// generation here is a single-digit counter, so both the "plausible epoch" and the
+/// "not equal to the generation" assertions are unambiguous.
+private func checkDateAddedIsEpoch(_ store: LibraryStore, url: URL, number: Int) async throws -> Bool {
+    let root = try await store.addRoot(URL(fileURLWithPath: "/Music/DateAdded"))
+    let generation = try await store.beginScanGeneration()
+    let path = "/Music/DateAdded/da.flac"
+    _ = try await store.upsert([makeScanned(path: path, name: "da")], folderID: root, generation: generation)
+
+    let reader = try SQLiteConnection(path: url.path)
+    defer { reader.close() }
+    let key = PathNormalizer.normalizedString(for: URL(fileURLWithPath: path))
+    guard let dateAdded = try reader.scalarInt("SELECT date_added FROM tracks WHERE url = ?;", bind: key) else {
+        printFail(number, "SF-1: could not read date_added"); return false
+    }
+    // Plausible epoch: after 2001-09-09 (1e9). Generations here are tiny counters.
+    guard dateAdded > 1_000_000_000 else {
+        printFail(number, "SF-1: date_added \(dateAdded) is not a plausible epoch (> 1_000_000_000)")
+        return false
+    }
+    guard dateAdded != generation else {
+        printFail(number, "SF-1: date_added equals the scan-generation counter (\(generation)) — regressed")
         return false
     }
     return true

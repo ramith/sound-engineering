@@ -9,6 +9,10 @@
 // The `tracks` column list + row mapper are centralised (`trackColumns` /
 // `mapTrackRow`) so every track-returning query decodes identically — one place to
 // keep column order and the read model in lock-step.
+//
+// SF-4 seam: reads currently serialize through the writer actor; if S9 browse jank
+// appears during a scan, add a SQLITE_OPEN_READONLY connection here (design §5's
+// measured-only escape hatch) — a dedicated read connection on the same WAL file.
 
 import Foundation
 

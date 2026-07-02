@@ -114,7 +114,8 @@ private func checkNoDuplicateOnReappear(_ store: LibraryStore, number: Int) asyn
     guard let trackID = ids.first else { printFail(number, "FS-3: move seed failed"); return false }
     let before = try await store.trackCount()
     try await store.moveTrack(
-        id: trackID, newURL: URL(fileURLWithPath: "/Music/FS3/relocated.flac"), newFolderID: folderID
+        id: trackID, newURL: URL(fileURLWithPath: "/Music/FS3/relocated.flac"),
+        newFolderID: folderID, newRelativePath: "relocated.flac"
     )
     guard try await store.trackCount() == before else {
         printFail(number, "FS-3: moveTrack changed the row count (duplicate created)"); return false

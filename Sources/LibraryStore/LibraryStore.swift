@@ -24,6 +24,11 @@ import Foundation
 public actor LibraryStore {
     /// The open connection. Module-internal + actor-isolated so the DAO extensions
     /// (same module) can use it; never exposed publicly, never escapes the actor.
+    ///
+    /// INVARIANT: every method touching this connection must run FULLY synchronously —
+    /// no `await` between two connection calls, or the actor's serialization guarantee
+    /// breaks under THREADSAFE=2 (a suspended method could interleave a second caller's
+    /// statements on the same handle).
     let connection: SQLiteConnection
 
     /// The on-disk location this store was opened from (nil for `:memory:`).
@@ -221,7 +226,9 @@ public actor LibraryStore {
     }
 
     /// Current Unix epoch seconds (whole seconds — mtime discipline, design §3).
-    private static func nowSeconds() -> Int64 {
+    /// Module-internal (not private) so the DAO extension can stamp `date_added`
+    /// with a real timestamp on insert (SF-1), sharing one definition of "now".
+    static func nowSeconds() -> Int64 {
         Int64(Date().timeIntervalSince1970)
     }
 }
