@@ -1,45 +1,32 @@
 # Sprint Planning & Documentation
 
-This directory contains planning, test strategies, and retrospectives for each sprint of AdaptiveSound development.
+This directory contains the sprint methodology, the forward sprint schedule, and the historical per-sprint records (plans, test strategies, retrospectives) for AdaptiveSound development.
+
+## The two authoritative docs
+
+- **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S17).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
+- **[`00-sprint-model.md`](00-sprint-model.md) — the authoritative sprint / Kanban methodology** (5–10 SP sprints, done-done criteria, enabler-first ordering). The *how*, not the *what-next*.
+
+> **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (DSP-gate hardening). The old docs are historical records, not current plans.
 
 ## Organization
 
-Files are named with numeric prefixes (`00-`, `01-`, etc.) for sorting in editors:
+Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. Early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-1b-Part-A postmortem) lives in [`../session-notes/`](../session-notes/). This directory holds the methodology, the forward schedule, and the shipped-sprint records.
 
-### Sprint 0: Project Bootstrap
-- **00-bootstrap-plan.md** — Sprint 0 plan (Xcode project, Swift/C++ interop, guardrails)
-- **00-bootstrap-checklist.md** — Done-done criteria (build, test, commit, zero warnings)
+### Historical per-sprint records (this directory)
+- **04-sprint-4-loudness-safety{,-plan,-test-plan,-retro}.md** — Loudness safety (BS.1770-5 meter + true-peak limiter) — ✅ shipped (merged)
+- **05-sprint-5-eq-foundation{,-plan}.md**, **05-sprint-5-monitoring-tab-design.md**, **05-sprint-5-au-graph-spike-notes.md** — EQ foundation + Monitoring tab — ✅ shipped
+- **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md** — N-channel multichannel pipeline (S0–S3 + M4 shipped) — ✅ shipped
+- **05-sprint-5b-s4-binaural-design.md** — Apple-native binaural design — ⏸ deferred; folded into `sprint-plan.md` Phase 2 (S17 BRIR)
+- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded by `sprint-plan.md` (loudness-comp → S13; clarity → S14–S15)
+- **07-phase-1b-part-b-kickoff.md** — critical-path kickoff — ✅ completed (historical)
+- **08-gui-design-review.md** — GUI design review — ✅ historical
+- **09-phase-b-bit-perfect-pure-mode.md** — bit-perfect "Pure Mode" + gapless: status & learnings — ✅ shipped
 
-### Sprint 1: Real Audio Engine
-- **01-engine-plan.md** — Sprint 1 implementation plan (US-ENG-01, AUHAL, device enumeration)
-- **01-engine-test-plan.md** — QA strategy (unit/integration tests, RT safety, manual checks)
+### How tests actually run
+The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). **`swift test` is broken** here (toolchain `@Test`/`@Suite` macro skew) — the Swift mock tests compile/lint but run only in Xcode. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
 
-### Sprint 2: Phase 1a → Phase 1b Handoff
-- **02-phase-1a-kickoff.md** — Phase 1a architecture review + team sign-off
-- **02-phase-1b-ui-redesign.md** — UI spec for Phase 1b (design-driven architecture)
-- **02-mix-core-plan.md** — EQ + audio infrastructure
-- **02-mix-core-test-plan.md** — Audio testing strategy
-- **02-mix-core-briefing.md** — Team coordination
-- **02-blocker-resolutions.md** — Critical issue fixes
-
-### Sprint 3: Music Playback Implementation
-- **03-KICKOFF.md** — Sprint 3 launch plan (solo execution model)
-- **03-music-playback-implementation.md** — Full spec + breakdown (Parts 1–4)
-- **PHASE-1B-PART-A-POSTMORTEM.md** — Post-audit retrospective (2026-06-15)
-  - Scope delta analysis (planned vs. actual delivery)
-  - Root cause analysis (why Part B deferred)
-  - Time allocation breakdown
-  - Lessons learned for next sprint
-  - Quality assessment (code, testing, accessibility, design compliance)
-  - Recommendations (Phase 1b Part B scope, Phase 1c blockers)
-
-### Future Sprints
-- **03-PHASE-1B-PART-B-PLAN.md** *(2026-06-18, 2 days, ~8 sp)*
-  - Seek implementation, progress bar, metadata, persistence
-- **04-PHASE-1C-PLAN.md** *(2026-06-22, 3 days, ~12 sp)*
-  - AU wiring, conversational tuning, real-time DSP validation
-- **05-PHASE-1.5-PLAN.md** *(2026-07-01, 5–7 days, ~20 sp)*
-  - Stem separation, spatial audio, per-stem processing
+The **library store** (S8+) has its own headless gate — `swift run VerifyLibraryStore` (mirrors the `VerifyAUGraph` idiom, since `swift test` is broken). **`make gate`** runs all three: the C++ null test, `VerifyAUGraph`, and `VerifyLibraryStore`.
 
 ---
 
@@ -164,5 +151,5 @@ Each sprint includes three documents:
 
 ---
 
-**Last Updated:** 2026-06-13  
+**Last Updated:** 2026-06-19  
 **Maintainer:** AdaptiveSound Team

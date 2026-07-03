@@ -23,6 +23,16 @@ struct LeftPanelView: View {
                 .padding(.leading, Layout.leadingPad)
                 .padding(.trailing, Layout.trailingPad)
                 .padding(.vertical, Layout.spectrumVPad)
+                // Double-click the spectrum to open the dedicated Monitoring tab (per-channel
+                // before/after). Single-tap is unaffected (the spectrum has no single-tap action).
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { viewModel.selectedTab = .monitoring }
+                .help("Double-click to open Monitoring")
+
+            TransportScrubberView()
+                .padding(.leading, Layout.leadingPad)
+                .padding(.trailing, Layout.trailingPad)
+                .padding(.vertical, Layout.sectionVPad)
 
             PlayControlsView()
                 .padding(.leading, Layout.leadingPad)

@@ -1,34 +1,15 @@
 #include "EQModule.h"
 #include <Accelerate/Accelerate.h>
+#include <cassert>
 #include <format>
 #include <iostream>
 
 namespace AdaptiveSound
 {
 
-// Pointer-width atomics must be lock-free for the RT setup swap to be wait-free.
-static_assert(std::atomic<void*>::is_always_lock_free,
-              "EQModule requires lock-free pointer atomics for RT-safe setup swaps");
-
-namespace
-{
-    // Destroy a setup held in an atomic slot, if any (off-RT only).
-    void destroySlot(std::atomic<void*>& slot) noexcept
-    {
-        void* setupPtr = slot.exchange(nullptr, std::memory_order_acq_rel);
-        if (setupPtr != nullptr) {
-            vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(setupPtr));
-        }
-    }
-} // namespace
-
-EQModule::~EQModule()
-{
-    // Destructor runs off-RT; drain every slot and free any live setup.
-    destroySlot(activeSetup_);
-    destroySlot(pendingSetup_);
-    destroySlot(toReleaseSetup_);
-}
+EQModule::~EQModule() = default;
+// The RtSwappableResource<VDSPBiquadSetup> member's dtor (off-RT) frees every live setup
+// via VDSPBiquadSetup -> vDSP_biquad_DestroySetup. Precondition: the RT thread is quiesced.
 
 void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
 {
@@ -36,8 +17,7 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     maxFrames_ = maxFrames;
 
     // Reset per-channel delay state (issue #2).
-    leftDelay_.fill(0.0F);
-    rightDelay_.fill(0.0F);
+    delays_.reset();
 
     // Seed coefficients to an all-identity cascade (b0=1, rest 0 per section).
     cascadeCoeffs_.fill(0.0);
@@ -47,25 +27,28 @@ void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
 
     // Create the initial (identity) setup once, off-RT. Until publishCoefficients()
     // supplies real coefficients, the cascade passes audio through unchanged.
-    destroySlot(activeSetup_);
+    // publish() into pending_; the first process() adopt()s it into active_. (Before any
+    // adopt, active() is null and process() returns early, exactly as before initialize.)
     vDSP_biquad_Setup setup =
         vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
-    activeSetup_.store(static_cast<void*>(setup), std::memory_order_release);
+    setup_.publish(std::make_unique<VDSPBiquadSetup>(setup));
 
     // Initialize the master-gain ramp with a 32 ms time constant and snap it to
     // unity so the first buffer plays at full gain rather than ramping up from 0.
-    masterGainRamp_.initialize(0.032F, static_cast<float>(sampleRate));
+    constexpr float kMasterGainRampSeconds = 0.032F; // 32 ms one-pole smoothing
+    masterGainRamp_.initialize(kMasterGainRampSeconds, static_cast<float>(sampleRate));
     masterGainRamp_.target = 1.0F;
     masterGainRamp_.snap();
 
-    // Zero the ramp scratch buffer (pre-allocated, no heap on the RT path).
-    rampBuf_.fill(0.0F);
+    // Size the ramp scratch buffer to maxFrames_ (off-RT; the only allocation site).
+    // process() asserts frameCount <= maxFrames_ so this is the tight upper bound.
+    rampBuf_.assign(maxFrames_, 0.0F);
 }
 
 void EQModule::publishCoefficients(const EQParams& params) noexcept
 {
     // OFF-RT ONLY. Pack the active sections, identity-pad the rest, build a new
-    // fixed-size (kMaxBiquads) setup, and hand it to the RT thread via pendingSetup_.
+    // fixed-size (kMaxBiquads) setup, and hand it to the RT thread via setup_.publish().
     const size_t numActive =
         std::min(static_cast<size_t>(params.numBiquads), static_cast<size_t>(kMaxBiquads));
 
@@ -97,68 +80,54 @@ void EQModule::publishCoefficients(const EQParams& params) noexcept
         return;
     }
 
-    // Publish. If a prior pending setup was never consumed by the RT thread
-    // (two updates before one render), destroy the unclaimed one here (off-RT).
-    void* unclaimed = pendingSetup_.exchange(static_cast<void*>(newSetup), std::memory_order_acq_rel);
-    if (unclaimed != nullptr) {
-        vDSP_biquad_DestroySetup(static_cast<vDSP_biquad_Setup>(unclaimed));
-    }
-
-    // Drain any setup the RT thread retired into toReleaseSetup_ and free it here.
-    destroySlot(toReleaseSetup_);
+    // Publish to the RT thread. publish() first reclaim()s anything the RT thread retired,
+    // then release-stores the new setup into pending_. If a prior pending was never adopted
+    // (two updates before one render), publish() frees that displaced setup here (off-RT) —
+    // single-pending. The Realizer's coalescing guarantees the producer never outruns the RT
+    // adopt (S6 Tier-3 §3.2 ↔ §3a).
+    setup_.publish(std::make_unique<VDSPBiquadSetup>(newSetup));
 }
 
-void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept
+void EQModule::process(const EQParams& params, const MultichannelView& block) noexcept
 {
-    if (ioData == nullptr || frameCount == 0) {
+    const uint32_t frameCount = block.frames();
+    if (frameCount == 0) {
         return;
     }
+    // frameCount must never exceed the buffer capacity established in initialize().
+    // Violating this would overrun rampBuf_ (sized to maxFrames_ off-RT).
+    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 
-    // RT-safe setup adoption: if a new setup was published, swap it in and retire the
-    // old one for off-RT destruction. All operations are lock-free atomics — no alloc,
-    // no free, no lock on the render thread.
-    void* pending = pendingSetup_.exchange(nullptr, std::memory_order_acq_rel);
-    if (pending != nullptr) {
-        void* old = activeSetup_.exchange(pending, std::memory_order_acq_rel);
-        void* orphan = toReleaseSetup_.exchange(old, std::memory_order_acq_rel);
-        // Pathological only (off-RT severely behind): we cannot DestroySetup on the
-        // RT thread, so intentionally leak the orphan rather than free/block here.
-        (void)orphan;
-
-        // Delay state is intentionally PRESERVED across swaps. The cascade is a fixed
-        // kMaxBiquads topology, so the 2*kMaxBiquads+2 delay layout is invariant and the
-        // existing state is valid input to the new coefficients — continuous filter
-        // memory is click-free, whereas re-zeroing would inject a discontinuity on every
-        // EQ change. (Confirmed by audio-dsp-agent + cpp-pro; obsoletes the #2 re-zero,
-        // which only existed because the section count — and thus the layout — varied.)
-    }
-
-    vDSP_biquad_Setup setup = static_cast<vDSP_biquad_Setup>(activeSetup_.load(std::memory_order_acquire));
-    if (setup == nullptr) {
+    // RT-safe setup adoption: adopt() swaps any pending setup into active, retires the old
+    // one for off-RT reclaim, and returns the live resource. All lock-free atomics — no
+    // alloc, no free, no lock on the render thread.
+    //
+    // Delay state (delays_) is intentionally PRESERVED across swaps and stays HERE in
+    // EQModule — it is module-specific filter memory, NOT part of the generic swap template
+    // (S6 Tier-3 §3). The cascade is a fixed kMaxBiquads topology, so the 2*kMaxBiquads+2
+    // delay layout is invariant and the existing state is valid input to the new
+    // coefficients — continuous filter memory is click-free, whereas re-zeroing would inject
+    // a discontinuity on every EQ change. (Confirmed by audio-dsp-agent + cpp-pro; obsoletes
+    // the #2 re-zero, which only existed because the section count — and thus the layout —
+    // varied.) The template swaps the resource; delays_ are never touched by adopt().
+    VDSPBiquadSetup* adopted = setup_.adopt();
+    if (adopted == nullptr || adopted->get() == nullptr) {
         return;
     }
+    vDSP_biquad_Setup setup = adopted->get();
 
-    // Only process the first 2 channels (stereo).
-    uint32_t numChannels = ioData->mNumberBuffers > 2 ? 2 : ioData->mNumberBuffers;
-
-    float* leftBuffer = nullptr;
-    float* rightBuffer = nullptr;
-    if (numChannels >= 1) {
-        leftBuffer = static_cast<float*>(ioData->mBuffers[0].mData);
-    }
-    if (numChannels >= 2) {
-        rightBuffer = static_cast<float*>(ioData->mBuffers[1].mData);
-    }
-
-    // Run each channel through the fixed kMaxBiquads-section cascade (identity-padded)
-    // with its own independent delay state.
-    if (leftBuffer != nullptr) {
-        vDSP_biquad(setup, leftDelay_.data(), leftBuffer, 1, leftBuffer, 1,
-                    static_cast<vDSP_Length>(frameCount));
-    }
-    if (rightBuffer != nullptr) {
-        vDSP_biquad(setup, rightDelay_.data(), rightBuffer, 1, rightBuffer, 1,
-                    static_cast<vDSP_Length>(frameCount));
+    // Run every channel through the fixed kMaxBiquads-section cascade (identity-padded).
+    // Each channel has its own independent delay state in delays_[ch]; the SAME setup
+    // (coefficient cascade) is applied to all channels — identical tonal curve, independent
+    // filter memory. delays_ is sized kMaxChannels; block.channels() ≤ kMaxChannels (enforced
+    // by MultichannelView::fromABL). No alloc, no lock — RT-safe.
+    const uint32_t numChannels = block.channels();
+    const vDSP_Length vDspFrames = static_cast<vDSP_Length>(frameCount);
+    for (uint32_t ch = 0U; ch < numChannels; ++ch) {
+        float* buf = block.channel(ch);
+        if (buf != nullptr) {
+            vDSP_biquad(setup, delays_[ch].data(), buf, 1, buf, 1, vDspFrames);
+        }
     }
 
     // Apply master gain with per-sample ramping to eliminate zipper noise.
@@ -175,24 +144,25 @@ void EQModule::process(const EQParams& params, AudioBufferList* ioData, uint32_t
     const bool settled = (std::abs(masterGainRamp_.current - masterGainRamp_.target) < 1e-6F);
 
     if (!settled || params.masterGainLinear != 1.0F) {
-        // Generate the per-sample gain envelope into rampBuf_.
+        // Generate the per-sample gain envelope into rampBuf_ ONCE (shared across all
+        // channels — one ramp for all; the envelope is channel-independent).
         // tick() advances current toward target by α each sample — this IS the
         // one-pole smoother; no secondary vDSP_vramp interpolation needed.
         //
-        // rampBuf_ is sized to kMaxFramesCeil (= kDefaultMaxFrames = 512). Clamp
-        // frameCount defensively so a misconfigured caller cannot overrun the buffer.
-        const uint32_t safeCount = std::min(frameCount, kMaxFramesCeil);
-        const vDSP_Length n = static_cast<vDSP_Length>(safeCount);
-        for (uint32_t i = 0; i < safeCount; ++i) {
+        // rampBuf_ is sized to maxFrames_ in initialize(). The assert above
+        // guarantees frameCount <= maxFrames_, so the full frameCount is safe.
+        const uint32_t safeCount = std::min(frameCount, maxFrames_);
+        const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
+        for (uint32_t i = 0U; i < safeCount; ++i) {
             rampBuf_[i] = masterGainRamp_.tick();
         }
 
-        // vDSP_vmul: element-wise multiply (signal × per-sample gain).
-        if (leftBuffer != nullptr) {
-            vDSP_vmul(leftBuffer, 1, rampBuf_.data(), 1, leftBuffer, 1, n);
-        }
-        if (rightBuffer != nullptr) {
-            vDSP_vmul(rightBuffer, 1, rampBuf_.data(), 1, rightBuffer, 1, n);
+        // vDSP_vmul: element-wise multiply (signal × per-sample gain), per channel.
+        for (uint32_t ch = 0U; ch < numChannels; ++ch) {
+            float* buf = block.channel(ch);
+            if (buf != nullptr) {
+                vDSP_vmul(buf, 1, rampBuf_.data(), 1, buf, 1, len);
+            }
         }
     }
 }

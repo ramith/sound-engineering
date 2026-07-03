@@ -6,20 +6,20 @@
 
 ## Key Design Decisions
 
-### 1. Realizer-Style Fitting (Phase 1b Approach)
+### 1. Greedy Region Fitting
 
-This implementation uses a **simplified fitting algorithm** for Phase 1b:
+This implementation uses a **simplified fitting algorithm**:
 - Groups consecutive frequency bands with significant gains (≥ 0.5 dB threshold)
 - Creates peaking filters at the center frequency of each region
 - Limits cascade to 10 biquads maximum
 
-**Future**: Dynamic Realizer fitting (ML-based optimization) deferred to Phase 2. Phase 1b is "static but correct" — coefficients pre-computed off-RT and validated.
+The shipped design is "static but correct" — coefficients are pre-computed off-RT and validated. A dynamic ML-based fitting optimizer is a possible future enhancement.
 
 ### 2. Minimum-Phase by Default
 
 All filters are **minimum-phase** (poles and zeros designed for causal response):
 - Validates pole stability: `|a2| < 1` and `|a1| ≤ 1 + a2` (Schur-Cohn conditions)
-- No linear-phase option in Phase 1b (deferred to Phase 1.5 polish)
+- No linear-phase option (a possible future enhancement)
 - Group delay inherently non-negative for minimum-phase filters
 
 ### 3. RBJ Peaking Filter Design
@@ -57,7 +57,7 @@ Coefficients normalized by `a0` for standard form.
 - `EQParams` struct containing:
   - `biquads[10]`: Cascaded biquad coefficients (b0, b1, b2, a1, a2)
   - `numBiquads`: Number of active biquads (1–10)
-  - `masterGainLinear`: Overall gain (always 1.0 in Phase 1b)
+  - `masterGainLinear`: Overall gain (always 1.0)
 
 **Behavior:**
 - **All gains = 0 dB**: Returns unity-gain pass-through (1 biquad: `[1, 0, 0, 0, 0]`)
@@ -94,7 +94,7 @@ kernel->publishTargetState(targetState);
 
 ### Minimum-Phase Verification
 - Group delay always non-negative (inherent to minimum-phase design)
-- No explicit group delay computation in Phase 1b (reserved for spectral analysis in Phase 2)
+- No explicit group delay computation (a possible future enhancement for spectral analysis)
 
 ## 31-Band Center Frequencies (ISO 3-Octave)
 
@@ -140,9 +140,9 @@ All test cases in `Tests/EQModuleCoefficientsTests.cpp`:
 - **Memory**: Negligible (local arrays only, no allocations)
 - **No SIMD**: Single-threaded scalar math (C++17, no Accelerate for coefficient generation)
 
-## Future Enhancements (Phase 2+)
+## Future Enhancements
 
-1. **Realizer Integration**: ML-based dynamic fitting for optimal spectral response
+1. **ML-Based Fitting**: Dynamic fitting for optimal spectral response
 2. **Linear-Phase Option**: Zero-phase filtering for professional mastering
 3. **Group Delay Analysis**: Spectral visualization of phase response
 4. **Preset Morphing**: Smooth interpolation between presets

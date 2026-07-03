@@ -1,5 +1,7 @@
 # SPRINT 5: Minimum-Phase EQ Wiring & Spectral Correction
 
+> **✅ SHIPPED — historical record (Sprint 5, shipped & merged).** This is the as-built/as-planned record, retained for provenance and design detail. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+
 **Theme:** Professional-grade EQ foundation with device correction profiles  
 **Effort:** 5–10 story points  
 **Owner:** Audio DSP Agent + SwiftUI Pro  

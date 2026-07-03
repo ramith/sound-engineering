@@ -1,5 +1,7 @@
 # Sprint 1 Implementation Plan — US-ENG-01: Real Audio Engine
 
+> **⚠️ HISTORICAL (Sprint 1 implementation plan).** The XCTest files/paths and `swift test` figures in the "Testing"/DoD sections were never built that way — the real DSP gate is the **C++ null-test harness** (`bash scripts/build-null-test.sh`, golden master `0xE7267654BA01D315`); `swift test` is broken here. Retained for provenance.
+
 **Story:** US-ENG-01 — Real AVAudioEngine with Core Audio device integration  
 **Estimate:** 8 sp / 3–4 days  
 **Team Review:** Complete (Core Audio, QA, UI/UX experts)  

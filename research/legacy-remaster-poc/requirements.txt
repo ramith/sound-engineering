@@ -1,0 +1,12 @@
+# Core POC deps — faithful "Quick Remaster" chain + verification.
+# Deliberately lean: no librosa/numba (scipy covers STFT/resample) for fast installs.
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12        # libsndfile I/O (wav/flac; mp3 via recent libsndfile)
+pyloudnorm>=0.1.1      # ITU-R BS.1770 integrated loudness (LUFS)
+matplotlib>=3.8        # spectrograms / LTAS plots
+
+# --- Optional, for the ML bandwidth-extension runners (heavy; install on demand) ---
+# torch>=2.2           # AERO / FlashSR / nuwave2 inference
+# torchaudio>=2.2
+# See bwe/README.md for per-model setup. The classical SBR baseline needs none of these.

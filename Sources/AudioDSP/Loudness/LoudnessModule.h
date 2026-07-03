@@ -27,16 +27,20 @@
 // References: ITU-R BS.1770-5; Timur Doumler (RT thread safety: scalars via atomic,
 // streams via lock-free SPSC FIFO, RT side drops); rigtorp/SPSCQueue; JOS one-pole.
 
-#include "../EQ/EQModule.h" // ParameterRamp
 #include "../include/AudioConstants.h"
+#include "../include/ChannelLayout.h"
+#include "../include/MultichannelView.h"
+#include "../include/ParameterRamp.h" // ParameterRamp (shared EQ/Loudness infra)
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
 #include "LufsMeter.h"
 #include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
+#include <cassert>
 #include <cstdint>
 #include <thread>
+#include <vector>
 
 namespace AdaptiveSound
 {
@@ -50,13 +54,13 @@ namespace AdaptiveSound
 
     // SPSC ring: per-channel frames buffered (~683 ms @ 48 k) so the worker can fall
     // a full integration block behind without forcing the RT side to drop. Power of
-    // two. Stereo is pushed interleaved → backing element count is 2×.
+    // two. Element count is frames × kMaxChannels so the same ring holds up to 7.1.
     inline constexpr std::size_t kLoudnessRingFrames = 32768U;
-    inline constexpr std::size_t kLoudnessRingElems = kLoudnessRingFrames * 2U;
+    inline constexpr std::size_t kLoudnessRingElems = kLoudnessRingFrames * kMaxChannels;
 
     // Worker drain chunk (interleaved elements per popBlock).
     inline constexpr std::size_t kWorkerChunkFrames = 1024U;
-    inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * 2U;
+    inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * kMaxChannels;
 
     inline constexpr int kWorkerIdleSleepMs = 5; // off-RT sleep when ring empty
     inline constexpr float kUnityGainLinear = 1.0F;
@@ -83,11 +87,15 @@ namespace AdaptiveSound
         // unity, and STARTS the measurement worker. Call before the first process().
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
 
+        // Off-RT (control thread only): publish per-channel BS.1770-5 weights decoded
+        // from a ChannelLayout.  Lock-free; single producer.  The measurement worker
+        // picks up the new weights on the next reconfigure check.  Safe to call before
+        // or after initialize(); the worker ignores zero-gen until it first runs.
+        void publishChannelLayout(const ChannelLayout& layout) noexcept;
+
         // RT: noexcept, zero alloc/lock. Relays params to the worker, pushes samples
         // (drop on full), and applies the smoothed makeup gain in place.
-        void process(const LoudnessParams& params,
-                     AudioBufferList* ioData,
-                     uint32_t frameCount) noexcept;
+        void process(const LoudnessParams& params, const MultichannelView& block) noexcept;
 
         // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
         [[nodiscard]] auto measuredLufsIntegrated() const noexcept -> float;
@@ -103,20 +111,40 @@ namespace AdaptiveSound
         void publishTelemetry() noexcept;
 
         // --- Atomic hand-offs (asserted is_always_lock_free in the .mm) ---
-        std::atomic<float> makeupGainLinear_{kUnityGainLinear};              // worker→RT (audible)
-        std::atomic<float> targetLufs_{kDefaultLufsTarget};                  // RT→worker (control)
-        std::atomic<uint8_t> enabled_{1U};                                   // RT→worker (control)
+        std::atomic<float> makeupGainLinear_{kUnityGainLinear}; // worker→RT (audible)
+        std::atomic<float> targetLufs_{kDefaultLufsTarget};     // RT→worker (control)
+        std::atomic<uint8_t> enabled_{1U};                      // RT→worker (control)
+        std::atomic<uint32_t> channelCount_{2U};                // RT→worker (channel N)
         std::atomic<float> measuredLufsIntegrated_{kLoudnessUnmeasuredLufs}; // worker→UI
         std::atomic<float> measuredLufsShortTerm_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<float> measuredLufsMomentary_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<uint64_t> droppedFrames_{0U};                            // RT→diagnostics
 
+        // --- Generation-parity double buffer for BS.1770-5 per-channel weights ---
+        //
+        // Single-producer (control thread via publishChannelLayout), single-consumer
+        // (measurement worker via runMeasurementLoop).  Protocol:
+        //   publish: write into layoutWeights_[(gen+1) & 1], then release-store gen+1.
+        //   consume: acquire-load gen; read from layoutWeights_[gen & 1].
+        // The parity ensures the consumer always reads from the buffer that is NOT
+        // being written: the producer increments gen AFTER the write is complete
+        // (release), so the consumer only sees the new gen after the write has
+        // propagated (acquire).  No torn double-slot reads are possible because there
+        // is exactly one producer and one consumer.
+        std::atomic<uint32_t> layoutGen_{0U};                              // control→worker
+        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{}; // double buffer
+
         // --- RT-owned state ---
         SpscRing<float, kLoudnessRingElems> sampleRing_;
         ParameterRamp makeupGainRamp_{};
-        std::array<float, kDefaultMaxFrames> rampBuf_{}; // per-sample gain scratch
-        std::array<float, static_cast<std::size_t>(kDefaultMaxFrames) * 2U>
-            pushBuf_{}; // interleave scratch
+        // Per-sample gain scratch and interleave scratch: heap-allocated to
+        // maxFrames_ (and maxFrames_*kMaxChannels) in initialize() so they scale
+        // with the host's maximumFramesToRender. process() asserts frameCount <=
+        // maxFrames_ and never allocates. The SPSC ring and workerChunk_ are sized
+        // independently of maxFrames_ and are not affected by this change.
+        std::vector<float> rampBuf_; // maxFrames_ elements, heap-allocated in initialize()
+        std::vector<float>
+            pushBuf_; // maxFrames_ * kMaxChannels elements, heap-allocated in initialize()
 
         // --- Worker-owned state (touched only on measurementThread_) ---
         LufsMeter meter_;

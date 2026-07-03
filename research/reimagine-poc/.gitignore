@@ -1,0 +1,18 @@
+# Stage-0 experiment scratch — keep the repo clean of huge external clones, models, venvs, audio.
+vendor/          # cloned external tools (ACE-Step-1.5, Smule-Renaissance-Small) — each has its own .git
+.cache/          # tool caches (acestep, etc.)
+.venv*/
+__pycache__/
+*.pyc
+models/
+out/
+data/*
+!data/README.md
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.safetensors
+*.ckpt
+*.pt
+*.pth

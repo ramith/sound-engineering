@@ -3,6 +3,9 @@ import SwiftUI
 
 @main
 struct AdaptiveSound: App {
+    // Quit on last-window close (single-window player; the engine lifecycle is window-bound —
+    // see AppDelegate). Without this, closing the window leaves a windowless process behind.
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var audioViewModel: AudioViewModel
     @State private var eqViewModel: EQViewModel
 
@@ -18,6 +21,15 @@ struct AdaptiveSound: App {
             ContentView()
                 .environment(audioViewModel)
                 .environment(eqViewModel)
+                .onAppear {
+                    // Engine lifecycle belongs to the app/scene, NOT a child view's
+                    // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
+                    // was the fire-and-forget shutdown that couldn't complete at quit). Wire the
+                    // terminate-time teardown owner and start the engine here (single-window app,
+                    // so this runs once); teardown runs in `AppDelegate.applicationShouldTerminate`.
+                    appDelegate.audioViewModel = audioViewModel
+                    audioViewModel.initializeEngine()
+                }
         }
         .windowResizability(.contentMinSize)
         .commands {
@@ -39,8 +51,7 @@ struct AdaptiveSound: App {
 
                 Button("Next Track") {
                     if let index = audioViewModel.selectedTrackIndex,
-                       index + 1 < audioViewModel.playlist.count
-                    {
+                       index + 1 < audioViewModel.playlist.count {
                         audioViewModel.playTrack(at: index + 1)
                     }
                 }

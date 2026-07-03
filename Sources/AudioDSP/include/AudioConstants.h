@@ -9,6 +9,10 @@ namespace AdaptiveSound
 
     constexpr uint32_t kDefaultSampleRate = 48000U;
     constexpr uint32_t kDefaultMaxFrames = 512U;
+    // Maximum channels the DSP pipeline allocates per-channel state for (mono..7.1).
+    // The multichannel epic pre-allocates all per-channel storage at this ceiling so the
+    // render thread never reallocates; the active channel count (≤ this) is read per render.
+    constexpr uint32_t kMaxChannels = 8U;
     constexpr int kCoeffsPerBiquad = 5;    // vDSP packs [b0,b1,b2,a1,a2]
     constexpr size_t kCacheLineBytes = 64; // ARM64 / Apple Silicon cache line
     constexpr float kTruePeakCeilingLinear =

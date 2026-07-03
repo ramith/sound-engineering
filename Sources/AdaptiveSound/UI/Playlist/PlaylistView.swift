@@ -5,10 +5,15 @@ import SwiftUI
 struct PlaylistView: View {
     @Environment(AudioViewModel.self) var viewModel
     @State private var showFolderPicker = false
+    /// Bumped by the header's "Jump to Now Playing" button; observed by the list to scroll the
+    /// current track into view (UI-2). A monotonic request-ID (not a Bool) so repeated presses
+    /// re-fire even when the value would otherwise be unchanged.
+    @State private var jumpToCurrentRequestID = 0
 
     var body: some View {
         VStack(spacing: 12) {
-            PlaylistHeaderView(showFolderPicker: $showFolderPicker)
+            PlaylistHeaderView(showFolderPicker: $showFolderPicker,
+                               jumpToCurrentRequestID: $jumpToCurrentRequestID)
 
             if !viewModel.folderPathDisplay.isEmpty {
                 HStack {
@@ -26,7 +31,7 @@ struct PlaylistView: View {
                 .clipShape(.rect(cornerRadius: 8, style: .continuous))
             }
 
-            PlaylistItemList()
+            PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
         }
         .fileImporter(
             isPresented: $showFolderPicker,
@@ -35,6 +40,9 @@ struct PlaylistView: View {
         ) { result in
             if case let .success(urls) = result, let folderURL = urls.first {
                 viewModel.musicFolderURL = folderURL
+                // Populate the persistent library store IN PARALLEL (S8.2b, additive):
+                // the in-memory playlist below is unchanged; the store fills alongside.
+                viewModel.scanFolderIntoLibrary(folderURL)
                 Task {
                     // Hold the security-scoped access across the async enumeration —
                     // the previous `defer` released it before this Task ran, leaving
@@ -53,6 +61,7 @@ struct PlaylistView: View {
 private struct PlaylistHeaderView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var showFolderPicker: Bool
+    @Binding var jumpToCurrentRequestID: Int
 
     var body: some View {
         HStack {
@@ -70,7 +79,8 @@ private struct PlaylistHeaderView: View {
 
             Spacer()
 
-            PlaylistControlsView(showFolderPicker: $showFolderPicker)
+            PlaylistControlsView(showFolderPicker: $showFolderPicker,
+                                 jumpToCurrentRequestID: $jumpToCurrentRequestID)
         }
     }
 }
@@ -80,6 +90,7 @@ private struct PlaylistHeaderView: View {
 private struct PlaylistControlsView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var showFolderPicker: Bool
+    @Binding var jumpToCurrentRequestID: Int
 
     var body: some View {
         HStack(spacing: 8) {
@@ -112,7 +123,9 @@ private struct PlaylistControlsView: View {
             // Jump to now-playing
             if viewModel.selectedTrackIndex != nil {
                 Button("Jump to Now Playing", systemImage: "play.circle.fill") {
-                    // Scroll to current track (implemented via ScrollViewReader)
+                    // Signal the list to scroll the current track into view (UI-2). The list owns
+                    // the ScrollViewReader proxy; bumping this request-ID triggers its onChange.
+                    jumpToCurrentRequestID += 1
                 }
                 .labelStyle(.iconOnly)
                 .font(.system(size: 14))
@@ -145,108 +158,135 @@ private struct PlaylistControlsView: View {
 
 private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
+    @Binding var jumpToCurrentRequestID: Int
+
+    /// Non-nil while the "Info" popover is showing; identifies which row's card is open.
+    /// Only one row presents at a time — the per-row `Binding<Bool>` is derived from this.
+    @State private var infoTarget: AudioFile?
+
+    /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
+    /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
+    private var numberColumnWidth: CGFloat {
+        let digits = max(2, String(viewModel.playlist.count).count)
+        return CGFloat(digits) * 8 + 6
+    }
 
     var body: some View {
-        List {
-            ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
-                PlaylistItemRow(
-                    file: file,
-                    index: index,
-                    isSelected: viewModel.selectedTrackIndex == index,
-                    isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index
-                )
-                .onTapGesture {
-                    viewModel.selectedTrackIndex = index
-                }
-                .onTapGesture(count: 2) {
-                    viewModel.selectedTrackIndex = index
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        viewModel.startPlayback()
+        ScrollViewReader { proxy in
+            List {
+                ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+                    PlaylistItemRow(
+                        file: file,
+                        index: index,
+                        isSelected: viewModel.selectedTrackIndex == index,
+                        isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
+                        numberColumnWidth: numberColumnWidth
+                    )
+                    .id(index)
+                    .onTapGesture {
+                        // Single-click plays the row, so the now-playing card always matches the
+                        // audio (no select-without-play state). Re-clicking the track that's already
+                        // playing is a no-op so it doesn't restart from the top.
+                        guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
+                        viewModel.playTrack(at: index)
                     }
-                }
-                .accessibilityAddTraits(.isButton)
-                .contextMenu {
-                    Button("Remove from Playlist", systemImage: "trash") {
+                    .accessibilityAddTraits(.isButton)
+                    .contextMenu {
+                        Button("Info", systemImage: "info.circle") {
+                            infoTarget = file
+                        }
+                        Divider()
+                        Button("Remove from Playlist", systemImage: "trash") {
+                            viewModel.removeTrack(at: index)
+                        }
+                        Button("Clear Playlist", systemImage: "clear") {
+                            viewModel.clearPlaylist()
+                        }
+                    }
+                    .popover(
+                        isPresented: Binding(
+                            get: { infoTarget?.id == file.id },
+                            set: { if !$0 { infoTarget = nil } }
+                        ),
+                        arrowEdge: .trailing
+                    ) {
+                        TrackInfoCard(file: file)
+                    }
+                    .onKeyPress(.delete) {
                         viewModel.removeTrack(at: index)
+                        return .handled
                     }
-                    Button("Clear Playlist", systemImage: "clear") {
-                        viewModel.clearPlaylist()
-                    }
-                }
-                .onKeyPress(.delete) {
-                    viewModel.removeTrack(at: index)
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    if index > 0 {
-                        viewModel.selectedTrackIndex = index - 1
-                    }
-                    return .handled
-                }
-                .onKeyPress(.downArrow) {
-                    if index < viewModel.playlist.count - 1 {
-                        viewModel.selectedTrackIndex = index + 1
-                    }
-                    return .handled
-                }
-                .onKeyPress(.return) {
-                    if viewModel.selectedTrackIndex == index {
-                        if viewModel.isPlaying {
-                            viewModel.stopPlayback()
-                        } else {
-                            viewModel.startPlayback()
+                    .onKeyPress(.upArrow) {
+                        if index > 0 {
+                            viewModel.selectedTrackIndex = index - 1
                         }
+                        return .handled
                     }
-                    return .handled
-                }
-                .onKeyPress(.space) {
-                    if viewModel.selectedTrackIndex == index {
-                        if viewModel.isPlaying {
-                            viewModel.stopPlayback()
-                        } else {
-                            viewModel.startPlayback()
+                    .onKeyPress(.downArrow) {
+                        if index < viewModel.playlist.count - 1 {
+                            viewModel.selectedTrackIndex = index + 1
                         }
+                        return .handled
                     }
-                    return .handled
+                    .onKeyPress(.return) {
+                        if viewModel.selectedTrackIndex == index {
+                            if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                        }
+                        return .handled
+                    }
+                    .onKeyPress(.space) {
+                        if viewModel.selectedTrackIndex == index {
+                            if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                        }
+                        return .handled
+                    }
+                }
+                .onMove { source, destination in
+                    viewModel.movePlaylistItems(from: source, to: destination)
                 }
             }
-            .onMove { source, destination in
-                viewModel.movePlaylistItems(from: source, to: destination)
+            .listStyle(.plain)
+            .frame(maxHeight: .infinity)
+            // Dismiss any open Info popover when the playlist changes (remove / clear / folder
+            // re-scan / reorder) so a stale target can't match — and re-present on — a different row.
+            .onChange(of: viewModel.playlist.map(\.id)) { _, _ in
+                infoTarget = nil
             }
-        }
-        .listStyle(.plain)
-        .frame(maxHeight: .infinity)
-        // Global keyboard shortcuts for the playlist
-        .onKeyPress(.upArrow) {
-            if let current = viewModel.selectedTrackIndex, current > 0 {
-                viewModel.selectedTrackIndex = current - 1
-                return .handled
+            // Global keyboard shortcuts for the playlist
+            .onKeyPress(.upArrow) {
+                if let current = viewModel.selectedTrackIndex, current > 0 {
+                    viewModel.selectedTrackIndex = current - 1
+                    return .handled
+                }
+                return .ignored
             }
-            return .ignored
-        }
-        .onKeyPress(.downArrow) {
-            if let current = viewModel.selectedTrackIndex,
-               current < viewModel.playlist.count - 1
-            {
-                viewModel.selectedTrackIndex = current + 1
-                return .handled
+            .onKeyPress(.downArrow) {
+                if let current = viewModel.selectedTrackIndex,
+                   current < viewModel.playlist.count - 1 {
+                    viewModel.selectedTrackIndex = current + 1
+                    return .handled
+                }
+                return .ignored
             }
-            return .ignored
-        }
-        .onKeyPress(.return) {
-            if viewModel.selectedTrackIndex != nil {
-                viewModel.startPlayback()
-                return .handled
+            .onKeyPress(.return) {
+                if viewModel.selectedTrackIndex != nil {
+                    if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                    return .handled
+                }
+                return .ignored
             }
-            return .ignored
-        }
-        .onKeyPress(.space) {
-            if viewModel.selectedTrackIndex != nil {
-                viewModel.startPlayback()
-                return .handled
+            .onKeyPress(.space) {
+                if viewModel.selectedTrackIndex != nil {
+                    if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                    return .handled
+                }
+                return .ignored
             }
-            return .ignored
-        }
+            // Scroll the current track into view when the header's "Jump to Now Playing" fires (UI-2).
+            .onChange(of: jumpToCurrentRequestID) { _, _ in
+                guard let index = viewModel.selectedTrackIndex else { return }
+                withAnimation { proxy.scrollTo(index, anchor: .center) }
+            }
+        } // ScrollViewReader
     }
 }

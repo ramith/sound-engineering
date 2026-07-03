@@ -1,1 +1,7 @@
 # SwiftFormat rules for AdaptiveSound
+
+# Keep opening braces on the same line as a multi-line condition (K&R), matching
+# SwiftLint's `opening_brace` rule. Without this, swiftformat wraps the brace to its
+# own line on wrapped `if/guard/while` conditions, which swiftlint then flags — the two
+# tools fight. Disabling this one rule makes them agree on inline braces.
+--disable wrapMultilineStatementBraces

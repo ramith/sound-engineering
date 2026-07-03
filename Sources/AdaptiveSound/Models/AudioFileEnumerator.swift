@@ -1,4 +1,5 @@
 import Foundation
+import LibraryScan
 
 // MARK: - Audio File Enumerator
 
@@ -7,11 +8,10 @@ import Foundation
 /// Runs on a background executor (via `Task.detached` in the call site).
 /// Returns results sorted locale-aware ascending by name.
 enum AudioFileEnumerator {
-    /// Supported audio file extensions (lowercased).
-    /// These are the formats that AVAudioFile natively supports on macOS.
-    static let supportedExtensions: Set<String> = [
-        "flac", "mp3", "wav", "aac", "m4a", "alac", "aiff", "ogg",
-    ]
+    /// Supported audio file extensions (lowercased) — the SINGLE SOURCE OF TRUTH
+    /// lives in `LibraryScanner.supportedExtensions` (S8.2a) so this in-memory walk
+    /// and the store-populating scan can never drift.
+    static let supportedExtensions = LibraryScanner.supportedExtensions
 
     /// Recursively enumerate all audio files under `folderURL`.
     ///
@@ -50,8 +50,7 @@ enum AudioFileEnumerator {
             let relativePath: String
             if let rel = relativeURL.path.dropFirst(folderURL.path.count)
                 .trimmingCharacters(in: .init(charactersIn: "/")) as String?,
-                !rel.isEmpty
-            {
+                !rel.isEmpty {
                 relativePath = rel + "/"
             } else {
                 relativePath = ""

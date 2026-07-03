@@ -1,6 +1,8 @@
 # Sprint 1 (US-ENG-01) Test & Validation Plan
 ## Audio Engine Foundation — Core Audio Device Enumeration & AUHAL Render Loop
 
+> **⚠️ HISTORICAL / SUPERSEDED (Sprint 1 planning doc).** The Swift/XCTest suites and `swift test` gates described below were **never built that way**. The actual DSP gate is the **C++ null-test harness** (`bash scripts/build-null-test.sh`, golden master `0xE7267654BA01D315`); `swift test` is broken here (Swift mock tests run in Xcode). Engine coverage is via the C++ harness + the `VerifyAUGraph` offline-render executable. Retained for provenance only — do not use as live test guidance.
+
 **Document ID:** SPRINT-1-TEST-001  
 **Version:** 1.0  
 **Date:** 2026-06-13  

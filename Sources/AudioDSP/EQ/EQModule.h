@@ -1,57 +1,72 @@
 #ifndef EQ_MODULE_H
 #define EQ_MODULE_H
 #include "../include/AudioConstants.h"
+#include "../include/MultichannelView.h"
+#include "../include/ParameterRamp.h"
+#include "../include/PerChannel.h"
+#include "../include/RtSwappableResource.h"
 #include "../include/TargetState.h"
+#include <Accelerate/Accelerate.h>
 #include <array>
-#include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
+#include <cassert>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 namespace AdaptiveSound
 {
 
-    // ---------------------------------------------------------------------------
-    // ParameterRamp — one-pole IIR smoother for zipper-noise-free gain changes.
-    //
-    // Model: y[n] = α·target + (1-α)·y[n-1]   (one-pole low-pass on the target)
-    //
-    // Coefficient: α = 1 - exp(-1 / (τ · fs))
-    //   where τ is the 1/e time constant (seconds) and fs is the sample rate.
-    //   This follows directly from the bilinear approximation of the RC circuit,
-    //   but uses the exact discrete-time solution (Julius O. Smith, CCRMA,
-    //   "Introduction to Digital Filters", §1.3.1).
-    //   At 32 ms / 48 kHz: α ≈ 0.000648, giving ~98% of the step in 5τ ≈ 160 ms.
-    //
-    // RT-safety: tick() is noexcept with no allocation; target is written off-RT
-    // before process() is called (no concurrent write during tick()).
-    // ---------------------------------------------------------------------------
-    struct ParameterRamp
+    // ParameterRamp now lives in include/ParameterRamp.h (shared by EQ + Loudness).
+
+    // Move-only RAII wrapper over the opaque vDSP_biquad_Setup handle. Owns exactly one
+    // setup; the destructor calls vDSP_biquad_DestroySetup. Used as the T of the EQ's
+    // RtSwappableResource: T's dtor frees the resource, so the swap template never has to
+    // know about Accelerate. Rule of five (it owns a resource): copy deleted, move clears
+    // the source, both move ops + dtor noexcept (no throw across the off-RT free).
+    class VDSPBiquadSetup
     {
-        float target = 0.0F;
-        float current = 0.0F;
-        float alpha = 0.0F; // (1-α) pole coefficient; α = 1 - alpha
-
-        // Off-RT: compute coefficient for the given time constant and sample rate.
-        auto initialize(float timeConstantSeconds, float sampleRate) noexcept -> void
+      public:
+        VDSPBiquadSetup() = default;
+        explicit VDSPBiquadSetup(vDSP_biquad_Setup setup) noexcept : setup_(setup)
         {
-            // Exact discrete-time RC: α = 1 - exp(-1/(τ·fs))
-            // (1-α) is the pole; stored as 'alpha' to avoid repeated subtraction.
-            alpha = 1.0F - std::exp(-1.0F / (timeConstantSeconds * sampleRate));
         }
 
-        // RT: advance one sample toward target; returns current smoothed value.
-        auto tick() noexcept -> float
+        ~VDSPBiquadSetup()
         {
-            current += alpha * (target - current);
-            return current;
+            if (setup_ != nullptr)
+            {
+                vDSP_biquad_DestroySetup(setup_);
+            }
         }
 
-        // RT: set current = target immediately (used at initialization so the
-        // first buffer does not ramp up from zero).
-        auto snap() noexcept -> void
+        VDSPBiquadSetup(const VDSPBiquadSetup&) = delete;
+        VDSPBiquadSetup& operator=(const VDSPBiquadSetup&) = delete;
+
+        VDSPBiquadSetup(VDSPBiquadSetup&& other) noexcept
+            : setup_(std::exchange(other.setup_, nullptr))
         {
-            current = target;
         }
+        VDSPBiquadSetup& operator=(VDSPBiquadSetup&& other) noexcept
+        {
+            if (this != &other)
+            {
+                if (setup_ != nullptr)
+                {
+                    vDSP_biquad_DestroySetup(setup_);
+                }
+                setup_ = std::exchange(other.setup_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] vDSP_biquad_Setup get() const noexcept
+        {
+            return setup_;
+        }
+
+      private:
+        vDSP_biquad_Setup setup_ = nullptr;
     };
 
     class EQModule
@@ -80,7 +95,7 @@ namespace AdaptiveSound
         void publishCoefficients(const EQParams& params) noexcept;
 
         // RT: adopt any pending setup (atomic swap, no alloc) and run the cascade.
-        void process(const EQParams& params, AudioBufferList* ioData, uint32_t frameCount) noexcept;
+        void process(const EQParams& params, const MultichannelView& block) noexcept;
 
       private:
         // Per-channel delay state for the vDSP_biquad cascade (issue #2).
@@ -89,19 +104,18 @@ namespace AdaptiveSound
         // Independent, non-overlapping per channel; zero-initialized; persists across
         // process() calls (this IS the filter memory). std::array => no heap, RT-safe.
         static constexpr size_t kDelayStateSize = (2 * static_cast<size_t>(kMaxBiquads)) + 2;
-        std::array<float, kDelayStateSize> leftDelay_{};
-        std::array<float, kDelayStateSize> rightDelay_{};
+        using EqDelay = std::array<float, kDelayStateSize>;
+        PerChannel<EqDelay> delays_{};
 
-        // Double-buffered vDSP_biquad_Setup (opaque void*) for RT-safe coefficient
-        // updates without create/destroy on the audio thread (issue #3):
-        //  - publishCoefficients() (off-RT) creates a new setup into pendingSetup_.
-        //  - process() (RT) atomically swaps pendingSetup_ -> activeSetup_ and deposits
-        //    the displaced setup into toReleaseSetup_ (no free on the RT thread).
-        //  - publishCoefficients() / the destructor (off-RT) destroy released setups.
-        // Pointer-width atomics are lock-free on arm64 (asserted in the .mm).
-        std::atomic<void*> activeSetup_{nullptr};    // RT runs this
-        std::atomic<void*> pendingSetup_{nullptr};   // off-RT publishes, RT adopts
-        std::atomic<void*> toReleaseSetup_{nullptr}; // RT deposits old, off-RT destroys
+        // RT-safe vDSP_biquad_Setup handoff (issue #3), factored into the generic
+        // triple-atomic swap template (S6 Tier-3 §3):
+        //  - publishCoefficients() (off-RT) builds a new setup and publish()es it.
+        //  - process() (RT) adopt()s the pending setup; active() returns the live one.
+        //  - publishCoefficients()/dtor (off-RT) reclaim()/free retired setups.
+        // VDSPBiquadSetup's dtor calls vDSP_biquad_DestroySetup; the template owns the
+        // lock-free pointer swap. EQ's per-channel delays_ filter-state preservation
+        // across swaps stays HERE in process() — it is module-specific, not generic.
+        RtSwappableResource<VDSPBiquadSetup> setup_;
 
         // Coefficient scratch (kCoeffsPerBiquad per section x kMaxBiquads).
         // Off-RT use only (initialize / publishCoefficients).
@@ -113,11 +127,11 @@ namespace AdaptiveSound
         // process() writes rampBuf_[i] = masterGainRamp_.tick() then calls vDSP_vmul.
         ParameterRamp masterGainRamp_{};
 
-        // Per-sample gain ramp scratch buffer. Pre-allocated in initialize() to
-        // maxFrames_ capacity so process() never touches the heap. RT-safe std::array
-        // sized to the compile-time ceiling; only [0, frameCount) is populated per call.
-        static constexpr uint32_t kMaxFramesCeil = kDefaultMaxFrames; // 512 frames
-        std::array<float, kMaxFramesCeil> rampBuf_{};
+        // Per-sample gain ramp scratch buffer. Heap-allocated in initialize() to
+        // maxFrames_ capacity so process() never touches the heap. Only
+        // [0, frameCount) is populated per call. frameCount <= maxFrames_ is
+        // asserted at process() entry.
+        std::vector<float> rampBuf_;
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;

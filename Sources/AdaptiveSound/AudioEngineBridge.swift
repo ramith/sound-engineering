@@ -1,6 +1,8 @@
 import Accelerate
-import AVFoundation
+import AudioFormatKit
+@preconcurrency import AVFoundation
 import Foundation
+import os
 
 // MARK: - AudioEngineBridge
 
@@ -9,114 +11,257 @@ import Foundation
 /// Device enumeration is wired to real CoreAudio data via the C-ABI functions
 /// exported from `AUAudioUnit.mm` (`enumerateOutputDevicesC`, `selectOutputDeviceC`).
 /// No mock data — every `AudioDeviceModel` reflects an actual system device.
-final class AudioEngineBridge: AudioPlaybackEngine {
-    private var avEngine: AVAudioEngine?
-    private var playerNode: AVAudioPlayerNode?
-    private var referenceToneBuffer: AVAudioPCMBuffer?
+///
+/// `@unchecked Sendable` invariant: this type is a hand-rolled isolation domain, NOT a
+/// Swift actor and NOT `@MainActor`. ALL mutable stored state is confined to one of the
+/// bridge's serial dispatch queues — `engineQueue` (transport/graph/device lifecycle),
+/// `resampleQueue` (streaming-resampler + gapless state), `configChangeQueue` (device/
+/// config re-establish) — OR is guarded by the leaf `os_unfair_lock` (`stateLock`, see
+/// `AudioEngineBridge+SharedState.swift`) for the small set of fields the MainActor 20 Hz
+/// poll reads while a queue writes. No field is mutated from two domains without that
+/// discipline; the lock is a leaf (no other lock/queue taken while held) so no deadlock
+/// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
+/// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
+/// SpectrumDoubleBuffer / the C loudness-meter handle). The public API is therefore safe
+/// to call from any thread — which is why the class can honestly be `Sendable` even though
+/// the compiler cannot see the queue/lock model. An `actor` would violate RT-safety
+/// (executor hops on the control path, cannot express the tap/render boundary).
+final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
+    var avEngine: AVAudioEngine?
+    var playerNode: AVAudioPlayerNode?
+    /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
+    var referenceToneBuffer: AVAudioPCMBuffer?
 
     // MARK: - Spectrum Analyzer
 
     /// Owns the FFT state and the lock-free double-buffer.
     /// Created in `initialize()` (off the audio thread) so all buffers are
     /// pre-allocated before the tap fires.
-    private var spectrumAnalyzer: SpectrumAnalyzer?
+    var spectrumAnalyzer: SpectrumAnalyzer?
 
     /// Opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
     /// Created in `initialize()`, destroyed in `shutdown()`.
-    private var loudnessMeter: UnsafeMutableRawPointer?
+    var loudnessMeter: UnsafeMutableRawPointer?
 
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
-    private var tapInstalled = false
+    var tapInstalled = false
 
-    // MARK: - Initialize
+    /// The custom DSP effects AU node (N->N), inserted as `player -> effectsAU -> spatialAU` (M1).
+    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
+    var dspAudioUnit: AVAudioUnit?
 
-    func initialize() async throws -> Bool {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    self.avEngine = AVAudioEngine()
-                    guard let engine = self.avEngine else {
-                        continuation.resume(returning: false)
-                        return
-                    }
+    /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
+    /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3). It is the stage that maps the
+    /// source/processing width N to the device width M, so the mixer no longer naively downmixes
+    /// (it runs at the device width M). For M3 the device width M == source width N, making the
+    /// spatial AU a bit-exact identity route; S4 introduces the real M < N fold (binaural).
+    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
+    var spatialAudioUnit: AVAudioUnit?
 
-                    // Use stereo 48 kHz format to support any input file (mono, stereo, WebM, etc).
-                    // AVAudio will automatically convert any file format to match this.
-                    let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2) ??
-                        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000.0, channels: 2, interleaved: false)
+    // MARK: - Monitoring analyzers (per-channel before/after spectra)
 
-                    self.playerNode = AVAudioPlayerNode()
-                    if let playerNode = self.playerNode, let format = audioFormat {
-                        engine.attach(playerNode)
-                        engine.connect(playerNode, to: engine.mainMixerNode, format: format)
-                    }
+    /// One spectrum analyzer PER CHANNEL for each tap point: `beforeAnalyzers` from the pre-DSP
+    /// player-node tap, `afterAnalyzers` from the post-DSP effects-AU tap. Sized to the stream's
+    /// channel count at init — N-channel by construction (stereo today; practical ceiling 7.1 / 8).
+    /// Read by the Monitoring tab; never resized on the audio thread.
+    var beforeAnalyzers: [SpectrumAnalyzer] = []
+    var afterAnalyzers: [SpectrumAnalyzer] = []
+    /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the EFFECTS AU output bus —
+    /// NOT the mixer (which carries the device width M once the spatial AU is in the graph), and
+    /// NOT the spatial AU (which renders the device-width signal; "after DSP" monitors the
+    /// N-channel processed signal). Both stay N-channel by construction.
+    var beforeTapInstalled = false
+    var afterTapInstalled = false
 
-                    // Pre-allocate the spectrum analyzer using the mixer's output sample rate.
-                    // This MUST happen off the audio thread (vDSP_create_fftsetup allocates).
-                    let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
-                    let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
-                    self.spectrumAnalyzer = SpectrumAnalyzer(
-                        fftSize: SpectrumConstants.fftSize,
-                        sampleRate: sampleRate
-                    )
+    /// Heap-allocated `os_unfair_lock` backing the leaf `stateLock` that guards the shared
+    /// playback-context fields (see `AudioEngineBridge+SharedState.swift`). Allocated once for
+    /// the bridge's lifetime so the pointer is stable across calls (an `os_unfair_lock` must be
+    /// locked/unlocked through a stable address). Freed in `deinit`.
+    let stateLockPtr: os_unfair_lock_t = {
+        let ptr = os_unfair_lock_t.allocate(capacity: 1)
+        ptr.initialize(to: os_unfair_lock())
+        return ptr
+    }()
 
-                    // BS.1770-5 loudness meter, fed from the same mixer tap.
-                    self.loudnessMeter = loudnessMeterCreate(Double(sampleRate))
+    // MARK: - Pure-Mode stored state (methods live in AudioEngineBridge+PureMode.swift)
 
-                    continuation.resume(returning: true)
-                } catch {
-                    continuation.resume(returning: false)
-                }
-            }
-        }
+    /// Backing storage for `currentDeviceID` — guarded by `stateLock`. The device selected by
+    /// `selectDevice(_:)`, or the system default selected at `initialize()`. Pure Mode uses this to
+    /// open the HAL engine on the right device. Access ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `setCurrentDeviceID(_:)`).
+    var storedCurrentDeviceID: UInt32 = 0
+
+    /// Opaque Pure-Mode engine handle (created lazily in `startPure`), destroyed by
+    /// `pureModeEngineDestroy` in `tearDownPure` / `shutdown`. Guarded by `stateLock`: it is written
+    /// from `engineQueue` (start/stop/shutdown) AND `configChangeQueue` (device-loss) and read by the
+    /// MainActor 20 Hz poll, so access it ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`withPureEngine` to use it, `detachPureEngineForTeardown`
+    /// to destroy it, `pureEngineHandle`/`setPureEngine` for lifecycle bookkeeping) — never directly.
+    var pureEngine: UnsafeMutableRawPointer?
+
+    /// Which output path is currently active. Guarded by `stateLock` (same cross-domain read/write
+    /// pattern as `pureEngine`); access ONLY via `activePathKind` / `setActivePath` / `withPureEngine`
+    /// in `AudioEngineBridge+SharedState.swift` — never directly.
+    var activePath: OutputPathKind = .enhanced
+
+    /// Backing storage for `cachedSignalPath` — guarded by `stateLock`. Latest signal-path
+    /// snapshot, polled at 20 Hz on the MainActor by `currentSignalPath()` while it is written from
+    /// engineQueue / configChangeQueue / the device-loss path. Access ONLY via the guarded
+    /// accessors in `AudioEngineBridge+SharedState.swift`.
+    var storedCachedSignalPath: SignalPathInfo = .init()
+
+    /// Backing storage for `lastFileURL` — guarded by `stateLock`. URL of the last successfully
+    /// scheduled file, used by the device-change fallback to restart playback on the new device
+    /// without re-opening the file picker. Access ONLY via the guarded accessors.
+    var storedLastFileURL: URL?
+
+    /// Backing storage for `enhancedPositionBaseSeconds` — guarded by `stateLock`. Absolute position
+    /// offset (seconds) for the Enhanced path. AVAudioPlayerNode's sampleTime restarts at 0 on every
+    /// play(), so after a seek (stop + scheduleSegment(from:) + play) we add this (= the seek target)
+    /// to report the true playhead. 0 on a fresh from-start play. Access ONLY via the guarded
+    /// accessors.
+    var storedEnhancedPositionBaseSeconds: Double = 0
+
+    /// Backing storage for `lastKnownEnhancedPositionSeconds` — guarded by `stateLock`. Last non-nil
+    /// Enhanced playhead, cached every time `currentPlaybackPosition()` resolves a real position (the
+    /// view model polls it). Used to re-establish playback at the right point after an
+    /// `AVAudioEngineConfigurationChange` — at that instant the player may already report no render
+    /// time, so this cached value is the most recent reliable playhead. Also updated at gapless seams
+    /// so the new track's position re-zeroes correctly. Access ONLY via the guarded accessors.
+    var storedLastKnownEnhancedPositionSeconds: Double = 0
+
+    // MARK: - Gapless / on-deck state (methods in AudioEngineBridge+Gapless.swift)
+
+    /// The track armed to play gaplessly after the current one. `nil` means no next track is queued.
+    /// All access is serialized on `resampleQueue` (same queue that owns the resampler session + all
+    /// buffer scheduling). Written by `setNextTrack(_:)` (dispatched onto `resampleQueue`);
+    /// consumed at EOF by the seam handler.
+    var onDeckURL: URL?
+
+    /// Monotonic count of completed gapless seams (track transitions). Incremented on `resampleQueue`
+    /// at each real seam; read synchronously from `resampleQueue` by `trackTransitionCount()`.
+    var gaplessTransitionCount: UInt64 = 0
+
+    /// Set to `true` when the current track reaches EOF with no next track on deck. Cleared by the
+    /// next `startAudio`. Read synchronously from `resampleQueue` by `playbackEnded()`.
+    var gaplessPlaybackEnded: Bool = false
+
+    /// Called on `resampleQueue` when the 48 kHz passthrough `scheduleFile` reaches playback-end
+    /// (`.dataPlayedBack` fires). The gapless extension installs this to chain the next track or
+    /// set `gaplessPlaybackEnded`. Cleared on stop/seek so a stale handler cannot fire.
+    var onPassthroughEOF: ((AVAudioPlayerNode) -> Void)?
+
+    /// Called on `resampleQueue` when the streaming resampler reaches EOF and is about to stop
+    /// chaining. The gapless extension installs this to roll into the next track without a gap.
+    /// The handler receives the session that just ended and the live player node. Cleared on stop /
+    /// seek / track-change (via `stopEnhancedResampler`) so a stale handler cannot fire.
+    var onResamplerEOF: ((EnhancedResampleSession, AVAudioPlayerNode) -> Void)?
+
+    /// Whether the most recent `startAudio` call requested Pure mode.
+    var pureModeRequested: Bool = false
+
+    /// Whether the Enhanced path is INTENDED to be playing — set when Enhanced playback starts,
+    /// cleared on stop / device-loss / end-of-queue. The config-change + device-change re-establish
+    /// uses this instead of the transient `playerNode.isPlaying`, which a hardware reconfiguration
+    /// (a device connecting/disconnecting) can momentarily flip to `false` — causing the re-establish
+    /// to bail and leave playback silently dead. Intent is the durable truth; the node state is not.
+    var enhancedPlayIntent: Bool = false
+
+    /// User preference for what happens when a NEW output device connects mid-playback (set by the
+    /// view model from a Settings toggle). `true` (default) = "app-authoritative": re-pin the selected
+    /// device so playback stays put. `false` = "follow": adopt the newly-connected device as the
+    /// target. Consumed by `handleDeviceSetChange()`.
+    var pinPlaybackToSelectedDevice: Bool = true
+
+    // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
+
+    /// Live streaming-resampler session, non-nil only while an Enhanced rate-mismatched file is
+    /// being played through `AVAudioConverter` (file rate != 48 kHz graph rate). The 48 kHz
+    /// passthrough path (`scheduleFile`) leaves this `nil` and is byte-identical to before.
+    /// All access is serialized on `resampleQueue`; published/read off the audio thread only.
+    var resampleSession: EnhancedResampleSession?
+
+    /// Serial queue owning ALL converter access + buffer scheduling for the streaming-resampler
+    /// path. Read → convert → schedule and the completion-driven chaining all run here, so the
+    /// converter's internal rate-conversion state is touched from exactly one thread.
+    let resampleQueue = DispatchQueue(label: "com.adaptivesound.enhanced-resampler")
+
+    /// Generation/epoch counter for the streaming resampler. Bumped on every start / seek / stop /
+    /// teardown. Each in-flight read→convert→schedule iteration captures the generation it started
+    /// under and bails (schedules nothing more) the moment it no longer matches — so a seek, stop,
+    /// track change, or reconfigure cleanly abandons every queued-but-not-yet-played buffer.
+    var resampleGeneration: UInt64 = 0
+
+    /// CoreAudio property-listener token for the device-is-alive notification on the device Pure is
+    /// rendering on. Registered when Pure starts; removed on teardown. On the device disappearing,
+    /// playback pauses (see AudioEngineBridge+PureModeDeviceMonitor.swift).
+    var deviceAliveListenerBlock: AudioObjectPropertyListenerBlock?
+
+    /// The device the alive-listener was registered on, so we UNregister from the SAME device.
+    var aliveListenerDeviceID: UInt32 = 0
+
+    /// The EXACT dispatch queue the alive-listener block was registered on, retained so removal
+    /// passes the identical queue instance rather than re-deriving one (F5). `AudioObjectRemove…`
+    /// only unregisters when the (object, address, queue, block) tuple matches the Add call; a
+    /// re-derived queue would silently fail to remove and leak the listener.
+    var aliveListenerQueue: DispatchQueue?
+
+    /// Invoked on the main thread when the available-output-device set changes. Set by the view
+    /// model; fired by the `kAudioHardwarePropertyDevices` listener (see AudioEngineBridge+Devices).
+    var onOutputDevicesChanged: (@MainActor () -> Void)?
+
+    /// CoreAudio property-listener token for the device-list (add/remove) notification.
+    /// Registered in `initialize()`, removed in `shutdown()`.
+    var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
+
+    /// The EXACT dispatch queue the device-list listener was registered on, retained so removal
+    /// passes the identical queue instance rather than re-deriving one (F5, same rationale as
+    /// `aliveListenerQueue`).
+    var deviceListListenerQueue: DispatchQueue?
+
+    // MARK: - Graph state
+
+    /// Top-level engine-graph state. The `.reconfiguring` transition is driven by
+    /// `reconfigureGraph(to:)`. The trigger that calls it (track channel-count change at
+    /// file load) is wired in `startAudio` via `configureGraphForSource`.
+    enum GraphState {
+        case idle
+        case running(channelCount: Int)
+        case reconfiguring
     }
 
-    // MARK: - Spectrum tap
+    var graphState: GraphState = .idle
 
-    /// Install a single output tap on `mainMixerNode`.
-    ///
-    /// The tap block runs on the audio thread (or a CoreAudio I/O thread).
-    /// It may NOT allocate, lock, log, or call Obj-C/Swift runtime.
-    ///
-    /// Buffer size of 4096 aligns with `SpectrumConstants.fftSize` so the
-    /// analyzer can process one tap delivery per FFT frame. AVAudioEngine
-    /// will round up to a power-of-two multiple of the hardware buffer size
-    /// automatically if needed.
-    private func installSpectrumTap() {
-        guard let engine = avEngine, !tapInstalled else { return }
-        let mixer = engine.mainMixerNode
-        let mixerFormat = mixer.outputFormat(forBus: 0)
+    /// Observer for `AVAudioEngineConfigurationChange`. Without it, a hardware route change
+    /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
+    /// the app silently goes quiet. Registered in `initialize()`, removed in `shutdown()`.
+    /// Internal (not private) so `AudioEngineBridge+ConfigChange.swift` can write it.
+    var configChangeObserver: NSObjectProtocol?
 
-        mixer.installTap(onBus: 0,
-                         bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                         format: mixerFormat)
-        { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-            // --- AUDIO THREAD ---
-            // Access only pre-allocated state through the analyzer pointer.
-            guard let analyzer = self?.spectrumAnalyzer else { return }
-            let abl = buffer.mutableAudioBufferList
-            analyzer.processTapBuffer(
-                abl,
-                frameCount: buffer.frameLength,
-                channelCount: buffer.format.channelCount
-            )
+    /// Serial queue on which the `AVAudioEngineConfigurationChange` handler runs. A single device
+    /// switch can post the notification more than once in quick succession; serializing keeps the
+    /// re-establish sequence (stop → re-prime → play) from interleaving across concurrent handlers.
+    let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
-            // Feed the BS.1770-5 loudness meter from the same buffer (non-interleaved).
-            if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
-                let left = channels[0]
-                let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
-                loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
-            }
-        }
-        tapInstalled = true
-    }
+    /// Serial queue that owns ALL transport / graph mutation: `startAudio`, `stopAudio`, `seek`,
+    /// `setParameter`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
+    /// their bodies here (previously each dispatched onto the CONCURRENT `DispatchQueue.global()`,
+    /// so they could interleave on `avEngine` / `playerNode` / `pureEngine` / `activePath`). One
+    /// serial queue makes those transitions mutually exclusive (P2-B). It may call
+    /// `resampleQueue.sync` (one-directional, engineQueue → resampleQueue); it must NEVER be the
+    /// target of a `.sync` from resampleQueue / configChangeQueue, so no wait-cycle can form.
+    let engineQueue = DispatchQueue(label: "com.adaptivesound.engine")
 
-    private func removeSpectrumTap() {
-        guard let engine = avEngine, tapInstalled else { return }
-        engine.mainMixerNode.removeTap(onBus: 0)
-        tapInstalled = false
-    }
+    /// Re-entrancy guard for `reestablishEnhancedAfterConfigChange`. Exclusively accessed on
+    /// `configChangeQueue` (both the FOLLOW-mode dispatch and the config-change notification handler
+    /// run there). A FOLLOW device-connect fires BOTH paths — the explicit `configChangeQueue.async`
+    /// in `handleDeviceSetChange` AND the subsequent `AVAudioEngineConfigurationChange` notification —
+    /// causing a second `seekEnhancedResampler` that abandons the first re-prime → audible dropout.
+    /// This flag lets the second entry early-return. `defer` ensures it is always cleared.
+    var isReestablishing: Bool = false
+
+    // Engine lifecycle (initialize / shutdown) lives in AudioEngineBridge+Lifecycle.swift.
 
     // MARK: - Public spectrum read (called from main thread via ViewModel)
 
@@ -126,6 +271,24 @@ final class AudioEngineBridge: AudioPlaybackEngine {
     func readSpectrumBands(into out: inout [Float]) -> Bool {
         return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
     }
+
+    // MARK: - Monitoring read (per-channel before/after)
+
+    /// Number of channels being monitored (the graph's channel count). 0 until the engine is ready.
+    var monitorChannelCount: Int {
+        afterAnalyzers.count
+    }
+
+    /// Copy the latest band magnitudes for one tap point + channel into `out`. Returns false if
+    /// unavailable (engine not ready, channel out of range, or no data published yet).
+    @discardableResult
+    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
+        let analyzers = (tap == .before) ? beforeAnalyzers : afterAnalyzers
+        guard channel >= 0, channel < analyzers.count else { return false }
+        return analyzers[channel].doubleBuffer.read(into: &out)
+    }
+
+    // EQ control plane (dspAudioUnitHandle + publishEQGains) lives in AudioEngineBridge+EQControl.swift.
 
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter else { return .unmeasured }
@@ -138,257 +301,22 @@ final class AudioEngineBridge: AudioPlaybackEngine {
         )
     }
 
-    // MARK: - Shutdown
-
-    func shutdown() async throws {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                self.removeSpectrumTap()
-                if let playerNode = self.playerNode, playerNode.isPlaying {
-                    playerNode.stop()
-                }
-                if let engine = self.avEngine, engine.isRunning {
-                    engine.stop()
-                }
-                self.avEngine = nil
-                self.playerNode = nil
-                self.referenceToneBuffer = nil
-                self.spectrumAnalyzer = nil
-                // Tap already removed above, so no callback can touch the meter now.
-                if let meter = self.loudnessMeter {
-                    loudnessMeterDestroy(meter)
-                    self.loudnessMeter = nil
-                }
-                continuation.resume()
-            }
-        }
+    func currentSignalPath() -> SignalPathInfo {
+        loadSignalPath()
     }
 
-    // MARK: - Device Enumeration (real CoreAudio data)
-
-    /// Enumerate output devices using the C-ABI bridge to CoreAudio.
-    /// Returns real device IDs, names, sample rates, and types — no mock data.
-    func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                let maxDevices = 32
-                var buffer = [CDeviceInfo](repeating: CDeviceInfo(), count: maxDevices)
-                let count = enumerateOutputDevicesC(&buffer, UInt32(maxDevices))
-
-                var models: [AudioDeviceModel] = []
-                models.reserveCapacity(Int(count))
-
-                for index in 0 ..< Int(count) {
-                    let info = buffer[index]
-                    let name = withUnsafeBytes(of: info.name) { rawPtr -> String in
-                        let ptr = rawPtr.bindMemory(to: CChar.self)
-                        guard let base = ptr.baseAddress else { return "" }
-                        return String(cString: base)
-                    }
-                    let deviceType = AudioDeviceModel.DeviceType(rawValue: info.deviceType)
-                    models.append(AudioDeviceModel(
-                        id: info.deviceID,
-                        name: name,
-                        sampleRate: info.sampleRate,
-                        bufferFrameSize: info.bufferFrameSize,
-                        type: deviceType
-                    ))
-                }
-
-                // Sort: built-in first, then wireless, then USB, then unknown.
-                // Within each type, sort alphabetically by name.
-                models.sort { lhs, rhs in
-                    let lhsOrder = lhs.type.sortOrder
-                    let rhsOrder = rhs.type.sortOrder
-                    if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
-                    return lhs.name < rhs.name
-                }
-
-                continuation.resume(returning: models)
-            }
-        }
+    deinit {
+        // Free the heap-allocated leaf lock. By the time the bridge deallocates, no queue work or
+        // listener can still reference it (shutdown() has torn everything down and removed the
+        // CoreAudio listeners), so this is a plain leaf cleanup.
+        stateLockPtr.deinitialize(count: 1)
+        stateLockPtr.deallocate()
     }
 
-    func selectDevice(_ deviceID: UInt32) async throws -> Bool {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
-                let result = selectOutputDeviceC(deviceID)
-                continuation.resume(returning: result != 0)
-            }
-        }
-    }
-
-    // MARK: - Playback
-
-    func startAudio(fileURL: URL? = nil) async throws {
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    guard let engine = self.avEngine, let playerNode = self.playerNode else {
-                        throw AudioBridgeError.engineNotInitialized
-                    }
-
-                    // Start the engine first
-                    if !engine.isRunning {
-                        try engine.start()
-                    }
-
-                    // Install the spectrum tap once the engine is running.
-                    // installSpectrumTap is idempotent (guarded by tapInstalled flag).
-                    self.installSpectrumTap()
-
-                    if let fileURL = fileURL {
-                        // Establish security-scoped access for sandboxed macOS file access
-                        let didAccess = fileURL.startAccessingSecurityScopedResource()
-                        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
-
-                        // Load and schedule the audio file (AVAudioFile handles format conversion)
-                        do {
-                            // CRITICAL: Stop and reset the player before scheduling a new file.
-                            // If we don't stop, the new file queues AFTER the old one instead of replacing it.
-                            // This ensures track switching happens immediately, not after current track finishes.
-                            if playerNode.isPlaying {
-                                playerNode.stop()
-                            }
-
-                            let audioFile = try AVAudioFile(forReading: fileURL)
-                            playerNode.scheduleFile(audioFile, at: nil)
-                            playerNode.play()
-                        } catch {
-                            throw AudioBridgeError.unsupportedFormat(fileURL.pathExtension)
-                        }
-                    } else {
-                        // Fallback to reference tone if no file provided
-                        self.referenceToneBuffer = self.generateReferenceTone(
-                            frequency: 1000.0,
-                            duration: 5.0,
-                            sampleRate: 48000.0
-                        )
-
-                        if let buffer = self.referenceToneBuffer {
-                            if !playerNode.isPlaying {
-                                playerNode.play()
-                            }
-                            playerNode.scheduleBuffer(buffer, at: nil)
-                        }
-                    }
-
-                    continuation.resume(returning: ())
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    func stopAudio() async throws {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                if let playerNode = self.playerNode, playerNode.isPlaying {
-                    playerNode.stop()
-                }
-                if let engine = self.avEngine, engine.isRunning {
-                    engine.stop()
-                }
-                self.removeSpectrumTap()
-                self.referenceToneBuffer = nil
-                continuation.resume()
-            }
-        }
-    }
-
-    func currentPlaybackPosition() -> Double? {
-        // Derive the playhead from the player node's render time. sampleTime counts
-        // from 0 at play() and accumulates while playing — divide by the rate to get
-        // seconds. AVAudioPlayerNode time queries are safe to call from any thread.
-        guard let playerNode, playerNode.isPlaying,
-              let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
-              playerTime.sampleRate > 0
-        else {
-            return nil
-        }
-        return Double(playerTime.sampleTime) / playerTime.sampleRate
-    }
-
-    func setParameter(_ id: UInt32, value: Float) async throws {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                if id == 0 {
-                    // Master gain parameter
-                    if let playerNode = self.playerNode {
-                        playerNode.volume = value
-                    }
-                }
-                continuation.resume()
-            }
-        }
-    }
-
-    // MARK: - Reference Tone Generation (using vDSP)
-
-    func generateReferenceTone(
-        frequency: Float,
-        duration: Float,
-        sampleRate: Float
-    ) -> AVAudioPCMBuffer? {
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
-
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1) else {
-            return nil
-        }
-
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-            return nil
-        }
-
-        buffer.frameLength = frameCount
-
-        guard let floatChannelData = buffer.floatChannelData else {
-            return nil
-        }
-
-        let floatData = floatChannelData[0]
-
-        // Generate sine wave using vDSP
-        // Phase increment per sample: 2π * frequency / sampleRate
-        let phaseIncrement = 2.0 * Float.pi * frequency / sampleRate
-
-        // Build angle array: angle[i] = phaseIncrement * i
-        var angles = [Float](repeating: 0, count: Int(frameCount))
-        for sampleIndex in 0 ..< Int(frameCount) {
-            angles[sampleIndex] = phaseIncrement * Float(sampleIndex)
-        }
-
-        // Compute sine using vForce.sin (Accelerate, vectorised single-precision)
-        let sineValues = vForce.sin(angles)
-        sineValues.withUnsafeBufferPointer { src in
-            guard let srcBase = src.baseAddress else { return }
-            UnsafeMutableBufferPointer(start: floatData, count: Int(frameCount))
-                .baseAddress
-                .map { dst in
-                    cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
-                }
-        }
-
-        // Apply gain
-        var gain = Float(0.3)
-        vDSP_vsmul(floatData, 1, &gain, floatData, 1, vDSP_Length(frameCount))
-
-        return buffer
-    }
+    // Device enumeration + selection live in AudioEngineBridge+Devices.swift.
+    // Playback transport lives in AudioEngineBridge+Playback.swift.
 }
 
-// MARK: - AudioDeviceModel.DeviceType sort order
-
-private extension AudioDeviceModel.DeviceType {
-    var sortOrder: Int {
-        switch self {
-        case .builtin: return 0
-        case .wireless: return 1
-        case .usb: return 2
-        case .unknown: return 3
-        }
-    }
-}
+// AudioDeviceModel.DeviceType.sortOrder lives in AudioEngineBridge+Devices.swift (used by the
+// device-enumeration sort there).
+// Configuration-change resilience lives in AudioEngineBridge+ConfigChange.swift.

@@ -2,15 +2,26 @@ import SwiftUI
 
 // MARK: - EQ Preset Picker
 
+/// A `.menu`-style picker that groups EQ presets by category.
+///
+/// Menu order (F6):
+///   Group 1 — Analytic: Flat, Presence, Clarity, Warm
+///   Group 2 — House curves: Loudness, Vocal, Studio
+///   Divider
+///   Custom (read-only; reflects canvas/slider edits)
+///
+/// Selecting a real preset routes through `EQViewModel.selectPreset`, which
+/// updates `bandGains` and dispatches once. "Custom" is a read-only reflection
+/// tag — its setter is intentionally a no-op.
 struct EQPresetPickerView: View {
     let eqViewModel: EQViewModel
 
+    // MARK: - Named preset groups (F6)
+
+    private static let analyticPresets: [EQPreset] = [.flat, .presence, .clarity, .warm]
+    private static let housePresets: [EQPreset] = [.loudness, .vocal, .studio]
+
     var body: some View {
-        // Drive selection through a single path: the setter calls selectPreset
-        // (which updates bandGains + dispatches once). Selecting a real preset
-        // routes through there; the "Custom" tag is read-only — it reflects
-        // canvas/slider edits, not a user choice — so its set is a no-op.
-        // (Previously a direct binding + onChange mutated the model twice.)
         let selection = Binding<EQPreset?>(
             get: { eqViewModel.selectedPreset },
             set: { newPreset in
@@ -21,13 +32,21 @@ struct EQPresetPickerView: View {
         )
 
         Picker("Preset", selection: selection) {
-            ForEach(EQPreset.allCases) { preset in
+            ForEach(Self.analyticPresets) { preset in
                 Text(preset.displayName).tag(EQPreset?.some(preset))
             }
+
+            Divider()
+
+            ForEach(Self.housePresets) { preset in
+                Text(preset.displayName).tag(EQPreset?.some(preset))
+            }
+
+            Divider()
+
             Text("Custom").tag(EQPreset?.none)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        .pickerStyle(.menu)
         .accessibilityLabel("EQ Preset")
         .accessibilityValue(eqViewModel.selectedPresetName)
     }
