@@ -93,6 +93,22 @@ enum ScanFixtureBuilder {
         return fileURL
     }
 
+    /// Copy `source` to `destination` (a real second file → a DISTINCT inode), returning
+    /// `destination`. For the copy-is-not-a-move case (S8.4 M11). Parent dirs must exist.
+    @discardableResult
+    static func copyFile(from source: URL, to destination: URL) throws -> URL {
+        try FileManager.default.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    /// Overwrite the file at `url` with `byteCount` bytes of DIFFERENT filler — changes
+    /// size (and mtime), i.e. a content modification at the SAME path (S8.4 M10). The
+    /// byte pattern is distinct from `writeFile`'s so the content genuinely differs.
+    static func overwriteFile(at url: URL, byteCount: Int) throws {
+        let bytes = Data((0 ..< byteCount).map { UInt8((0xFF - $0) & 0xFF) })
+        try bytes.write(to: url)
+    }
+
     /// The nested tree the scan-correctness case asserts against. Returns the root
     /// plus the set of audio-file URLs that SHOULD end up as rows (so the case can
     /// assert an EXACT match, not just a count). The tree deliberately contains:

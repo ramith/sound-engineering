@@ -176,6 +176,27 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
+    ] + moveMatchCheckCases() + facetSweepCheckCases()
+}
+
+/// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
+/// function so `allCheckCases` stays within the body-length limit.
+func moveMatchCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "ad-move-reference-survives", run: checkMoveReferenceSurvives),
+        CheckCase(label: "ae-move-candidate-selection", run: checkMoveCandidateSelection),
+        CheckCase(label: "af-move-not-false-triggered", run: checkMoveNotFalseTriggered),
+        CheckCase(label: "ag-move-url-collision", run: checkMoveUrlCollision),
+        CheckCase(label: "ah-move-reorg-crossroot", run: checkMoveReorgAndCrossRoot),
+    ]
+}
+
+/// S8.4 Slice 2 — SF-2 facet-orphan sweep (zero-track albums/artists/genres; sentinel-safe).
+func facetSweepCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "ai-facet-sweep-basics", run: checkFacetSweepBasics),
+        CheckCase(label: "aj-facet-sweep-sentinel-albumartist", run: checkFacetSweepSentinelAndAlbumArtist),
+        CheckCase(label: "ak-facet-sweep-artwork", run: checkFacetSweepArtworkInteraction),
     ]
 }
 
@@ -221,25 +242,40 @@ func runAllChecks() async {
     // chmod 0o000 permission-denied fixture (S8.2b, check Q) can't wedge the teardown and leak
     // (a plain removeItem would silently fail on it). (F8: this helper was defined but never called.)
     cleanupScanFixtures()
-    print("=== SUMMARY: \(passed)/\(cases.count) checks PASSED "
+    printRunSummary(passed: passed, total: cases.count)
+    exit(0)
+}
+
+/// Print the final PASS summary + banner. Extracted from `runAllChecks` so its long,
+/// ever-growing multi-line summary string does not push that function over the
+/// body-length limit as each slice appends its cases.
+private func printRunSummary(passed: Int, total: Int) {
+    print("=== SUMMARY: \(passed)/\(total) checks PASSED "
         + "(S8.1a: SCHEMA-1..6 + RESTART; S8.1b: B CRUD/integrity, C facets, D concurrency, "
         + "E idempotency+identity, F filesystem-divergence; "
         + "S8.2a: G scan-core [correctness/relative-path/boundary/signature], "
         + "H scan-rescan-edge [idempotent/FS-5 add+modify/empty/TOCTOU]; "
         + "S8.2b: I multi-root-sweep-isolation, J reconcile-delete+rename [sweep + move-signature], "
         + "K reject-nested-roots, L reads-during-scan [parked mid-scan rendezvous]; "
-        + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move, "
-        + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]; "
+        + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move [id-preserving], "
+        + "P vanished-root [S8.4 empty-walk guard: rows preserved], Q perm-denied+symlink, "
+        + "R root-identity-dedup [dev/inode, QS3]; "
         + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
         + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
         + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]; "
         + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]; "
         + "S8.3 review: AA album-cover-first-wins [IS NULL guard], AB metadata-pass-cancellation "
-        + "[skips sweep], AC real-no-tags [empty-not-crash + marked]) ===")
+        + "[skips sweep], AC real-no-tags [empty-not-crash + marked]; "
+        + "S8.4 Slice 1: AD move-reference-survives [Gate-2: play_count/loved/rating keep the id], "
+        + "AE move-candidate-selection [cross-vol/format/ambiguity → no-match], "
+        + "AF move-not-false-triggered [modify/copy], AG move-url-collision [typed conflict], "
+        + "AH move-reorg-crossroot [double-move + cross-root id-preserving]; "
+        + "S8.4 Slice 2: AI facet-sweep-basics [zero-track album/genre swept, referenced kept, idempotent], "
+        + "AJ facet-sweep-sentinel-albumartist [id-0 never swept, album-artist-only kept + not rewritten], "
+        + "AK facet-sweep-artwork [album deletion → artwork reclaimed]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
-    exit(0)
 }
 
 await runAllChecks()

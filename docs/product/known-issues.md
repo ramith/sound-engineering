@@ -24,13 +24,17 @@ BEFORE the S10 playlist UI ships it MUST gain `AND id NOT IN (SELECT track_id FR
 or `removeRoot` will delete playlist-referenced tracks. Marked with a ⚠️ HARD GATE comment at the
 call site.
 
-**Gate 2 — S8.4 move-matcher before S9/S10.** A filesystem move currently re-scans as delete-old +
-add-new, minting a NEW `tracks.id` (VerifyLibraryStore check 17/22: the move-signature
-`(dev,inode,size,mtime)` is *populated* but not yet *matched* — matching is S8.4). Durable track
-identity therefore does NOT survive a move until S8.4 ships. Since every playlist entry / play count
-will reference `tracks.id`, S8.4 (move-in-place, id preserved) MUST ship before S9/S10, else a moved
-track silently drops out of its playlists. Traces to EP-LIBRARY (US-LIB move-in-place) +
-EP-PLAYLIST in docs/product/backlog.md.
+**Gate 2 — S8.4 move-matcher before S9/S10 — ADDRESSED (S8.4 slice 1, branch
+`feat/s8-4-live-watch-move-match`; pending merge to `main`).** A filesystem move now reconciles as an
+id-PRESERVING move: the scanner's walk uses `upsertReconciling` → `moveCandidate` (matches the
+`(dev,inode,size,mtime)` + `format` signature via `idx_tracks_dev_inode`, ambiguity/cross-volume →
+no-match) → `moveMatched` (relocate + stamp `last_seen_scan` in one txn, so the end-of-walk sweep
+can't reap it). A rename / cross-dir / cross-root move keeps its `tracks.id` AND its durable
+user-state (play_count/loved/rating) — proven by VerifyLibraryStore AD–AH (AD reference-survives-move
+is the Gate-2 assertion). The signature is now *matched*, not merely *populated*. Remaining before
+S9/S10: land this on `main`, and close Gate 1 (above). Known limitation: a copy-then-delete move
+(cross-volume drag, rsync) gets a new inode and is NOT matched (id lost) — `content_hash` is the
+deferred escape hatch. Traces to EP-LIBRARY (US-LIB move-in-place) + EP-PLAYLIST in docs/product/backlog.md.
 
 ---
 

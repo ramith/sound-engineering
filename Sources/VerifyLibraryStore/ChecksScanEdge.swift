@@ -12,8 +12,10 @@
 //     folderID → FK violation → the scan rethrows before any commit or sweep.
 //   • cross-directory move (QS2) — the realistic move shape: signature preserved,
 //     relative_path updated, so S8.4's matcher can reunite it.
-//   • root vanishes entirely (QS5) — external-drive-unmount: a re-scan sees 0 files
-//     and sweeps every row the root held (the founder's "FS changes while closed").
+//   • root vanishes entirely (QS5 / S8.4) — external-drive-unmount or deleted folder: a
+//     re-scan sees 0 files, so the EMPTY-WALK GUARD refuses the sweep and throws
+//     RootUnreachableError — every row + its user-state is preserved (never wipe on an
+//     empty walk; founder-approved S8.4 slice 3).
 //   • edge (QS4) — an unreadable (chmod 000) subdir doesn't abort the scan; a symlink
 //     is its own entry with its OWN lstat inode (design §3 policy, finally tested).
 //   • root identity (QS3) — addRoot dedups by on-disk (dev,inode), so a case-variant
@@ -162,18 +164,19 @@ func checkCrossDirMove(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
         guard try await crossDirMove(store, number: number) else { return false }
-        printPass(number, "cross-dir move: moving a file to a DIFFERENT subdir within the root sweeps the "
-            + "old path and creates a new row carrying the SAME (dev,inode,size,mtime) move-signature AND "
-            + "an updated relative_path — the realistic move shape S8.4's matcher will reunite")
+        printPass(number, "cross-dir move: moving a file to a DIFFERENT subdir within the root is an "
+            + "id-PRESERVING move (S8.4) — same id, orphansSwept 0, move-signature intact, relative_path "
+            + "updated to the new subdir")
         return true
     } catch {
         printFail(number, "cross-dir move threw: \(error)"); return false
     }
 }
 
-/// Same-dir rename (case 17) is the weakest move; this exercises a cross-directory move
-/// within one root — the shape S8.4 must reunite. The new row keeps the four-field
-/// signature (same inode) and gets a NEW relative_path.
+/// A cross-directory move within one root: under S8.4 the matcher reunites it as an
+/// id-PRESERVING move — the SAME row's id survives, `orphansSwept == 0` (no delete+add),
+/// the four-field signature is unchanged (same inode), and `relative_path` refreshes to
+/// the new subdir. This is the realistic Finder-reorg shape.
 private func crossDirMove(_ store: LibraryStore, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("crossdir-move")
     let oldURL = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["From"], fileName: "song.flac", byteCount: 40)
@@ -187,11 +190,16 @@ private func crossDirMove(_ store: LibraryStore, number: Int) async throws -> Bo
     let newURL = destDir.appendingPathComponent("song.flac", isDirectory: false)
     try FileManager.default.moveItem(at: oldURL, to: newURL)
     let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-    guard result.orphansSwept == 1, try await store.track(url: oldURL) == nil else {
-        printFail(number, "cross-dir move: old path not swept (orphansSwept \(result.orphansSwept))"); return false
+    guard result.orphansSwept == 0, try await store.track(url: oldURL) == nil else {
+        printFail(number, "cross-dir move: expected an id-preserving move (orphansSwept 0), got "
+            + "\(result.orphansSwept)"); return false
     }
     guard let newRow = try await store.track(url: newURL) else {
         printFail(number, "cross-dir move: no row at the moved path"); return false
+    }
+    guard newRow.id == oldRow.id else {
+        printFail(number, "cross-dir move: id NOT preserved across the directory change "
+            + "(\(oldRow.id) → \(newRow.id))"); return false
     }
     guard newRow.inode == oldRow.inode, newRow.dev == oldRow.dev,
           newRow.fileSize == oldRow.fileSize, newRow.mtime == oldRow.mtime else {
@@ -203,26 +211,27 @@ private func crossDirMove(_ store: LibraryStore, number: Int) async throws -> Bo
     return true
 }
 
-// MARK: - QS5 — root vanishes entirely → full sweep
+// MARK: - QS5 / S8.4 — root vanishes entirely → empty-walk guard preserves rows
 
 func checkVanishedRoot(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
-        guard try await vanishedRootFullSweep(store, number: number) else { return false }
-        printPass(number, "vanished root (external-drive unmount / folder deleted while closed): a re-scan "
-            + "of a root whose whole directory is gone walks 0 files and sweeps EVERY row it held "
-            + "(filesSeen 0, orphansSwept == original count, folder now empty)")
+        guard try await vanishedRootPreservesRows(store, number: number) else { return false }
+        printPass(number, "vanished root (external-drive unmount / deleted folder): a re-scan whose whole "
+            + "directory is gone walks 0 files, so the EMPTY-WALK GUARD refuses the sweep and throws "
+            + "RootUnreachableError — every row + its user-state is preserved (never wipe on an empty walk)")
         return true
     } catch {
         printFail(number, "vanished-root threw: \(error)"); return false
     }
 }
 
-/// The founder's "FS changes while the app is not running" scenario at the ROOT level
-/// (distinct from a file inside the root being deleted): the entire root directory
-/// disappears. A re-scan enumerates nothing and every row it held is older than the new
-/// generation → all swept.
-private func vanishedRootFullSweep(_ store: LibraryStore, number: Int) async throws -> Bool {
+/// The founder's "FS changes while the app is not running" scenario at the ROOT level: the
+/// entire root directory disappears (external-drive unmount, or the folder deleted). A
+/// re-scan enumerates NOTHING — and under the S8.4 empty-walk guard the scanner REFUSES to
+/// sweep a populated root to zero, throwing `RootUnreachableError` instead. Every row (and
+/// its durable user-state) survives; a wrongful sweep here would be catastrophic mass-loss.
+private func vanishedRootPreservesRows(_ store: LibraryStore, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("vanished-root")
     for index in 0 ..< 5 {
         _ = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["Sub"], fileName: "t\(index).flac")
@@ -232,15 +241,25 @@ private func vanishedRootFullSweep(_ store: LibraryStore, number: Int) async thr
     guard first.filesSeen == 5, try await store.tracks(inFolder: folderID).count == 5 else {
         printFail(number, "vanished-root: first scan didn't populate 5 rows"); return false
     }
-
-    try FileManager.default.removeItem(at: root) // the whole root directory vanishes
-    let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-    guard result.filesSeen == 0 else {
-        printFail(number, "vanished-root: expected filesSeen 0, got \(result.filesSeen)"); return false
+    // Attach user-state to one row so a wrongful sweep would be detectable as real data loss.
+    guard let sampleID = try await store.tracks(inFolder: folderID).first?.id else {
+        printFail(number, "vanished-root: no rows to sample"); return false
     }
-    guard result.orphansSwept == 5, try await store.tracks(inFolder: folderID).isEmpty else {
-        printFail(number, "vanished-root: expected all 5 rows swept (orphansSwept \(result.orphansSwept))")
+    try await store.setUserState(trackID: sampleID, playCount: 7, loved: true, rating: 3)
+
+    try FileManager.default.removeItem(at: root) // the whole root directory vanishes (unmount-like)
+    do {
+        _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+        printFail(number, "vanished-root: scan did NOT throw — it swept a populated root to zero (mass-loss!)")
         return false
+    } catch is RootUnreachableError {
+        // Expected: the empty-walk guard refused the sweep.
+    }
+    guard try await store.tracks(inFolder: folderID).count == 5 else {
+        printFail(number, "vanished-root: rows were swept despite the empty-walk guard"); return false
+    }
+    guard let state = try await store.userState(trackID: sampleID), state.playCount == 7, state.loved else {
+        printFail(number, "vanished-root: user-state lost on a preserved row"); return false
     }
     return true
 }

@@ -83,8 +83,8 @@ func checkReconcileDeleteRename(number: Int, url: URL) async -> Bool {
         guard try await reconcileDelete(store, number: number) else { return false }
         guard try await reconcileRename(store, number: number) else { return false }
         printPass(number, "reconcile (real tree): a deleted file is swept on re-scan (survivor's id "
-            + "stable); a renamed file's old row is swept and the new row carries the SAME "
-            + "(dev,inode,size,mtime) move-signature (populated now, matched in S8.4)")
+            + "stable); a renamed file is reconciled as an id-PRESERVING move (orphansSwept 0, same id, "
+            + "name refreshed) — S8.4 move-matching")
         return true
     } catch {
         printFail(number, "reconcile delete/rename threw: \(error)"); return false
@@ -117,9 +117,10 @@ private func reconcileDelete(_ store: LibraryStore, number: Int) async throws ->
     return true
 }
 
-/// A same-directory rename preserves (dev,inode,size,mtime). S8.2 does NOT match the move
-/// (S8.4 does): the old path is swept and a NEW row appears at the new path — but its
-/// move-signature must EQUAL the old row's, so S8.4 can later reunite them.
+/// A same-directory rename is now an id-PRESERVING move (S8.4): the row's `id` survives,
+/// the url/name refresh in place, `orphansSwept == 0` (the old path is NOT swept-then-
+/// re-added), and the move-signature is unchanged. This is the semantic flip from S8.2's
+/// "populated now, matched in S8.4" — matching has landed.
 private func reconcileRename(_ store: LibraryStore, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("reconcile-rename")
     let oldURL = try ScanFixtureBuilder.writeFile(at: root, fileName: "rename-me.flac", byteCount: 24)
@@ -132,19 +133,24 @@ private func reconcileRename(_ store: LibraryStore, number: Int) async throws ->
     let newURL = root.appendingPathComponent("renamed.flac", isDirectory: false)
     try FileManager.default.moveItem(at: oldURL, to: newURL)
     let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-    guard result.orphansSwept == 1, try await store.track(url: oldURL) == nil else {
-        printFail(number, "reconcile-rename: old path not swept (orphansSwept \(result.orphansSwept))"); return false
+    guard result.orphansSwept == 0, try await store.track(url: oldURL) == nil else {
+        printFail(number, "reconcile-rename: expected an id-preserving move (orphansSwept 0, old url gone), "
+            + "got orphansSwept \(result.orphansSwept)"); return false
     }
     guard let newRow = try await store.track(url: newURL) else {
         printFail(number, "reconcile-rename: no row at the renamed path"); return false
     }
-    guard newRow.inode == oldRow.inode, newRow.dev == oldRow.dev,
+    guard newRow.id == oldRow.id else {
+        printFail(number, "reconcile-rename: id NOT preserved across rename (\(oldRow.id) → \(newRow.id)) — "
+            + "reconciled as delete+add (Gate-2 regression)"); return false
+    }
+    guard newRow.name == "renamed", newRow.inode == oldRow.inode, newRow.dev == oldRow.dev,
           newRow.fileSize == oldRow.fileSize, newRow.mtime == oldRow.mtime else {
-        printFail(number, "reconcile-rename: new row's (dev,inode,size,mtime) != old row's — "
-            + "S8.4 could not match this move"); return false
+        printFail(number, "reconcile-rename: name not refreshed to 'renamed' or signature changed on the "
+            + "moved row"); return false
     }
     // Folder-scoped (the store is shared with reconcileDelete): the rename root holds
-    // exactly the one renamed row (old swept, new added → net one).
+    // exactly the one moved row.
     guard try await store.tracks(inFolder: folderID).count == 1 else {
         printFail(number, "reconcile-rename: expected exactly 1 row in the rename root"); return false
     }

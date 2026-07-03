@@ -316,6 +316,40 @@ public struct URLConflict: Error, Sendable, Equatable {
     }
 }
 
+// MARK: - Track user-state (reserved play_count / loved / rating)
+
+/// A track's reserved user-authored state — the durable, `tracks.id`-keyed values
+/// (play-count, loved, rating) that S9/S10 build on and that a move MUST preserve.
+/// Returned by the `setUserState`/`userState` verification hooks so the S8.4 harness can
+/// prove they survive a move (Gate-2). A value struct, not a tuple (lint: large_tuple).
+public struct TrackUserState: Sendable, Equatable {
+    public let playCount: Int64
+    public let loved: Bool
+    public let rating: Int64?
+
+    public init(playCount: Int64, loved: Bool, rating: Int64?) {
+        self.playCount = playCount
+        self.loved = loved
+        self.rating = rating
+    }
+}
+
+// MARK: - Facet-orphan sweep counts (SF-2)
+
+/// Per-table deletion counts from `sweepOrphanFacets` (S8.4 SF-2) — for logging and
+/// harness assertions. A value struct, not a 3-tuple (lint: large_tuple).
+public struct FacetSweepCounts: Sendable, Equatable {
+    public let albums: Int
+    public let artists: Int
+    public let genres: Int
+
+    public init(albums: Int, artists: Int, genres: Int) {
+        self.albums = albums
+        self.artists = artists
+        self.genres = genres
+    }
+}
+
 // MARK: - Artwork link (S8.3 — the cache→store descriptor)
 
 /// A cached-artwork descriptor produced by `ArtworkCache` (S8.3, `LibraryScan`) and
