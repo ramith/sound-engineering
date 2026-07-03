@@ -219,16 +219,29 @@ let package = Package(
                 // do NOT define ACCELERATE_LAPACK_ILP64 — that would widen LAPACK/BLAS
                 // integers to 64-bit, which we neither need nor want (our calls use `int`).
                 .unsafeFlags(["-DACCELERATE_NEW_LAPACK"]),
+                // DEBUG: full -Werror — the primary dev + `make gate` build fails on ANY
+                // warning. Added -Wformat=2 / -Wimplicit-fallthrough / -Wunreachable-code /
+                // -Wcast-align to the existing set and promoted the partial -Werror=all/
+                // -Werror=conversion to a full -Werror. All verified clean (zero fallout) on
+                // this codebase. Deliberately NOT enabled: -Wfloat-equal — DSP legitimately
+                // compares to 0.0f/1.0f for silence/bypass/coefficient-change detection.
                 .unsafeFlags([
                     "-Wall", "-Wextra", "-Wpedantic",
                     "-Wunused", "-Wshadow", "-Wconversion",
                     "-Wsign-conversion", "-Wnull-dereference",
                     "-Wold-style-cast", "-Wno-exceptions",
-                    "-Werror=all", "-Werror=conversion",
+                    "-Wformat=2", "-Wimplicit-fallthrough", "-Wunreachable-code",
+                    "-Wcast-align", "-Werror",
                     "-fno-exceptions", "-fno-rtti",
                 ], .when(configuration: .debug)),
+                // RELEASE: kept PERMISSIVE ON PURPOSE. Warnings are enabled (incl. the three
+                // new ones) but NOT fatal, so an -O2-only / toolchain-version-dependent warning
+                // (-Wmaybe-uninitialized, -Wstringop-overflow, …) can never brick a shippable /
+                // notarization build with no code change. Debug's full -Werror already gates
+                // everything except optimization-only diagnostics before release is ever built.
                 .unsafeFlags([
                     "-Wall", "-Wextra",
+                    "-Wformat=2", "-Wimplicit-fallthrough", "-Wunreachable-code",
                     "-fno-exceptions", "-fno-rtti",
                 ], .when(configuration: .release)),
                 // FFmpeg headers (Homebrew) for the OPTIONAL runtime decode backend (B2b). Headers

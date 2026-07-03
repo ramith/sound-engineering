@@ -45,7 +45,7 @@ namespace AdaptiveSound
     // referenced throughout the kernel); the mechanism is now the seqlock described above.
     template <typename T> class alignas(kCacheLineBytes) DoubleBufferSnapshot
     {
-        static_assert(std::is_trivially_copyable<T>::value,
+        static_assert(std::is_trivially_copyable_v<T>,
                       "DoubleBufferSnapshot<T> requires a trivially-copyable T (it is byte-copied "
                       "through atomic words, and the reader re-copies on a straddled retry).");
         static_assert(sizeof(T) % sizeof(uint64_t) == 0,

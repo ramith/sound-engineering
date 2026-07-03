@@ -67,49 +67,66 @@ extension AudioEngineBridge {
                 self.unregisterDeviceListListener()
 
                 self.removeSpectrumTap()
-                if let observer = self.configChangeObserver {
-                    NotificationCenter.default.removeObserver(observer)
-                    self.configChangeObserver = nil
-                }
+                self.removeConfigChangeObserver()
+                self.tearDownActiveEngine()
+                self.resetGraphStateAfterShutdown()
 
-                // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
-                if self.activePathKind == .pure {
-                    self.tearDownPure()
-                } else if let engine = self.detachPureEngineForTeardown() {
-                    // Orphaned handle (e.g. failed mid-start): destroy OUTSIDE the lock (the detach
-                    // nils the field first) to avoid a hog leak without blocking a concurrent poll.
-                    pureModeEngineDestroy(engine)
-                }
-
-                if let playerNode = self.playerNode, playerNode.isPlaying {
-                    playerNode.stop()
-                }
-                if let engine = self.avEngine, engine.isRunning {
-                    engine.stop()
-                }
-                // Detach both AUs (graph is stopped; safe to mutate) and drop the strong refs.
-                if let engine = self.avEngine {
-                    if let effectsUnit = self.dspAudioUnit { engine.detach(effectsUnit) }
-                    if let spatialUnit = self.spatialAudioUnit { engine.detach(spatialUnit) }
-                }
-                self.dspAudioUnit = nil
-                self.spatialAudioUnit = nil
-                self.avEngine = nil
-                self.playerNode = nil
-                self.referenceToneBuffer = nil
-                self.spectrumAnalyzer = nil
-                self.graphState = .idle
-                self.beforeAnalyzers = []
-                self.afterAnalyzers = []
-                self.setActivePath(.enhanced)
-                self.storeSignalPath(.init())
-                // Tap already removed above, so no callback can touch the meter now.
-                if let meter = self.loudnessMeter {
-                    loudnessMeterDestroy(meter)
-                    self.loudnessMeter = nil
-                }
                 continuation.resume()
             }
+        }
+    }
+
+    /// Remove the CoreAudio-configuration-change `NotificationCenter` observer, if any.
+    private func removeConfigChangeObserver() {
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
+    }
+
+    /// Stop and release whichever engine (Pure or Enhanced) is currently live, then stop and
+    /// detach the shared two-AU `AVAudioEngine` graph. Split out of `shutdown()` so each teardown
+    /// concern (path-specific engine vs. the shared graph) reads as one step.
+    private func tearDownActiveEngine() {
+        // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
+        if activePathKind == .pure {
+            tearDownPure()
+        } else if let engine = detachPureEngineForTeardown() {
+            // Orphaned handle (e.g. failed mid-start): destroy OUTSIDE the lock (the detach
+            // nils the field first) to avoid a hog leak without blocking a concurrent poll.
+            pureModeEngineDestroy(engine)
+        }
+
+        if let playerNode = playerNode, playerNode.isPlaying {
+            playerNode.stop()
+        }
+        if let engine = avEngine, engine.isRunning {
+            engine.stop()
+        }
+        // Detach both AUs (graph is stopped; safe to mutate) and drop the strong refs.
+        if let engine = avEngine {
+            if let effectsUnit = dspAudioUnit { engine.detach(effectsUnit) }
+            if let spatialUnit = spatialAudioUnit { engine.detach(spatialUnit) }
+        }
+    }
+
+    /// Reset every stored field to its post-shutdown idle value and destroy the loudness meter.
+    private func resetGraphStateAfterShutdown() {
+        dspAudioUnit = nil
+        spatialAudioUnit = nil
+        avEngine = nil
+        playerNode = nil
+        referenceToneBuffer = nil
+        spectrumAnalyzer = nil
+        graphState = .idle
+        beforeAnalyzers = []
+        afterAnalyzers = []
+        setActivePath(.enhanced)
+        storeSignalPath(.init())
+        // Tap already removed above, so no callback can touch the meter now.
+        if let meter = loudnessMeter {
+            loudnessMeterDestroy(meter)
+            loudnessMeter = nil
         }
     }
 }

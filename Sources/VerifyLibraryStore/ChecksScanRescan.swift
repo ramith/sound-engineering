@@ -56,14 +56,8 @@ private func checkIdempotentRescan(_ store: LibraryStore, number: Int) async thr
     let first = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
     let countAfterFirst = try await store.trackCount()
     // Capture each row's stable id + content signature after the first scan.
-    var idByPath: [String: Int64] = [:]
-    var mtimeByPath: [String: Int64] = [:]
-    for fileURL in fileURLs {
-        guard let row = try await store.track(url: fileURL) else {
-            printFail(number, "idempotent: first-scan row missing for \(fileURL.lastPathComponent)"); return false
-        }
-        idByPath[fileURL.path] = row.id
-        mtimeByPath[fileURL.path] = row.mtime
+    guard let signatures = try await captureRowSignatures(store, fileURLs: fileURLs, number: number) else {
+        return false
     }
 
     let second = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
@@ -73,11 +67,39 @@ private func checkIdempotentRescan(_ store: LibraryStore, number: Int) async thr
     guard try await store.trackCount() == countAfterFirst else {
         printFail(number, "idempotent: re-scan changed the row count (duplicate)"); return false
     }
+    return try await checkRowsUnchangedAfterRescan(
+        store, fileURLs: fileURLs, root: root, signatures: signatures, number: number
+    )
+}
+
+/// Capture each row's stable id + mtime signature after a scan, keyed by file path. Returns
+/// `nil` (already reported) if any expected row is missing.
+private func captureRowSignatures(
+    _ store: LibraryStore, fileURLs: [URL], number: Int
+) async throws -> (ids: [String: Int64], mtimes: [String: Int64])? {
+    var idByPath: [String: Int64] = [:]
+    var mtimeByPath: [String: Int64] = [:]
+    for fileURL in fileURLs {
+        guard let row = try await store.track(url: fileURL) else {
+            printFail(number, "idempotent: first-scan row missing for \(fileURL.lastPathComponent)"); return nil
+        }
+        idByPath[fileURL.path] = row.id
+        mtimeByPath[fileURL.path] = row.mtime
+    }
+    return (idByPath, mtimeByPath)
+}
+
+/// After the second (idempotent) scan, every row must keep its `signatures` id/mtime and
+/// classify (pre-upsert) as `.unchanged(sameID)`.
+private func checkRowsUnchangedAfterRescan(
+    _ store: LibraryStore, fileURLs: [URL], root: URL,
+    signatures: (ids: [String: Int64], mtimes: [String: Int64]), number: Int
+) async throws -> Bool {
     for fileURL in fileURLs {
         guard let row = try await store.track(url: fileURL) else {
             printFail(number, "idempotent: second-scan row missing for \(fileURL.lastPathComponent)"); return false
         }
-        guard row.id == idByPath[fileURL.path], row.mtime == mtimeByPath[fileURL.path] else {
+        guard row.id == signatures.ids[fileURL.path], row.mtime == signatures.mtimes[fileURL.path] else {
             printFail(number, "idempotent: re-scan bumped id/mtime for \(fileURL.lastPathComponent)"); return false
         }
         // classify (pre-upsert view) must see the unchanged, same-id row.
@@ -110,7 +132,28 @@ private func checkFS5AddAndModify(_ store: LibraryStore, number: Int) async thro
     }
     _ = stable
 
-    // --- ADD a brand-new file on disk. ---
+    guard try await checkFS5Add(
+        store, root: root, folderID: folderID, countAfterFirst: countAfterFirst, number: number
+    ) else { return false }
+
+    let location = ScanLocation(root: root, folderID: folderID)
+    return try await checkFS5Modify(
+        store, location: location, mutable: mutable, mutableIDBefore: mutableIDBefore, number: number
+    )
+}
+
+/// The tree root + registered library folder id a re-scan runs against — bundled so
+/// `checkFS5Modify` stays under the SwiftLint parameter-count ceiling.
+private struct ScanLocation {
+    let root: URL
+    let folderID: Int64
+}
+
+/// FS-5 ADD: a brand-new file on disk classifies `.new` pre-upsert, and a re-scan creates
+/// exactly one new row for it.
+private func checkFS5Add(
+    _ store: LibraryStore, root: URL, folderID: Int64, countAfterFirst: Int, number: Int
+) async throws -> Bool {
     let added = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["New"], fileName: "added.flac")
     guard let addedScanned = LibraryScanner.makeScannedFile(fileURL: added, root: root) else {
         printFail(number, "FS-5: makeScannedFile nil for the added file"); return false
@@ -125,17 +168,23 @@ private func checkFS5AddAndModify(_ store: LibraryStore, number: Int) async thro
     guard try await store.track(url: added) != nil else {
         printFail(number, "FS-5: the added file has no row after re-scan"); return false
     }
+    return true
+}
 
-    // --- MODIFY an existing file's bytes (size + mtime change) on disk. ---
+/// FS-5 MODIFY: changing an existing file's bytes (size + mtime) on disk classifies
+/// `.modified(sameID)`, and a re-scan updates the row IN PLACE (same id, no duplicate).
+private func checkFS5Modify(
+    _ store: LibraryStore, location: ScanLocation, mutable: URL, mutableIDBefore: Int64, number: Int
+) async throws -> Bool {
     try await bumpFileOnDisk(mutable)
-    guard let modifiedScanned = LibraryScanner.makeScannedFile(fileURL: mutable, root: root) else {
+    guard let modifiedScanned = LibraryScanner.makeScannedFile(fileURL: mutable, root: location.root) else {
         printFail(number, "FS-5: makeScannedFile nil for the modified file"); return false
     }
     guard case let .modified(sameID) = try await store.classify(modifiedScanned), sameID == mutableIDBefore else {
         printFail(number, "FS-5: modified file did not classify .modified(sameID)"); return false
     }
     let countBeforeModifyScan = try await store.trackCount()
-    _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+    _ = try await LibraryScanner().scan(root: location.root, folderID: location.folderID, into: store)
     guard try await store.trackCount() == countBeforeModifyScan else {
         printFail(number, "FS-5: re-scan after modify changed the row count (should update in place)"); return false
     }

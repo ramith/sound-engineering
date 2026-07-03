@@ -1,0 +1,52 @@
+# Semgrep safety rules for AdaptiveSound.
+#
+# Run:  semgrep scan --config .semgrep.yml --error   (see `make lint` / strict-gate)
+#
+# WHY these rules and not the guide's AST rules: semgrep's `swift`/`cpp` AST parsers are
+# experimental and unusable here — the Swift parser false-matches plain `try`/`as` (1200+
+# bogus hits), and `cpp` mode doesn't even scan .mm (where all the DSP/CoreAudio bridge code
+# lives). So every rule below uses `pattern-regex` on tokens that never appear in normal
+# comments/strings, and the C++ bans use `languages: [generic]` + an explicit include list
+# (verified to scan .mm) so they actually see the bridge code.
+#
+# DIVISION OF LABOUR:
+#   * Swift force-try/force-cast: also caught by SwiftLint (force_try/force_cast = error under
+#     `--strict`); kept here as a cheap, config-independent second net.
+#   * C++ unbounded string funcs + thread detach: the one class NOT cleanly covered by
+#     clang-tidy's enabled set, -Werror, or cppcheck — this is semgrep's load-bearing job.
+#     (Memory/UB/race safety stays with clang-tidy + -Werror + ASan/UBSan/TSan; raw new/delete
+#     at the reviewed opaque-handle C-ABI boundary is intentional and covered by
+#     `make sanitize-library-store`.)
+#
+# Reviewed exceptions use a narrow `// nosemgrep: <rule-id>` with the PERMANENT/TEMP + reason
+# annotation enforced by scripts/check-suppressions.sh.
+rules:
+  - id: swift-no-force-try
+    languages: [swift]
+    severity: ERROR
+    message: "Do not use try!. Handle the error (do/catch, try?, or propagate)."
+    pattern-regex: '\btry!'
+
+  - id: swift-no-force-cast
+    languages: [swift]
+    severity: ERROR
+    message: "Do not use as!. Use conditional casting (as?) and handle nil."
+    pattern-regex: '\bas!'
+
+  - id: cpp-no-unsafe-string-fn
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Unbounded C string function. Use a bounds-checked alternative: snprintf (with size),
+      strlcpy/strlcat, std::string, or std::span.
+    paths:
+      include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
+    pattern-regex: '\b(strcpy|strcat|sprintf|vsprintf|stpcpy|gets)\s*\('
+
+  - id: cpp-no-thread-detach
+    languages: [generic]
+    severity: ERROR
+    message: "Do not detach threads. Use std::jthread or structured ownership (Audio Workgroups / GCD)."
+    paths:
+      include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
+    pattern-regex: '\.detach\s*\('

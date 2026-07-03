@@ -199,8 +199,7 @@ namespace AdaptiveSound
             }
 
             // frameCount must not exceed the buffer capacity established in initialize().
-            assert(frameCount <=
-                   maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+            assert(frameCount <= maxFrames_);
 
             // Process all frameCount samples — not just kDefaultMaxFrames.
             // grBuf_ and each ring are sized to maxFrames_ (and ringSize_ respectively)

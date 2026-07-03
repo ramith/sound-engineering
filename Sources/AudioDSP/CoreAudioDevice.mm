@@ -7,7 +7,7 @@ namespace AdaptiveSound {
 
 // control-plane logging only (init/shutdown/device-change); never on the RT audio
 // thread; fprintf varargs acceptable here. RT TUs keep the check.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
 
 // MARK: - Helper Functions
 
@@ -37,7 +37,7 @@ void* CoreAudioDevice::gListenerContext = nullptr;
 void CoreAudioDevice::listenerCallback(
     AudioObjectID objectID [[maybe_unused]],
     UInt32 numberAddresses,
-    const AudioObjectPropertyAddress inAddresses[], // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+    const AudioObjectPropertyAddress inAddresses[], // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
     void* clientData [[maybe_unused]]) {
     // Verify callback is registered
     if (gListenerCallback == nullptr) {
@@ -76,7 +76,7 @@ bool CoreAudioDevice::addDefaultDeviceListener(DeviceListenerCallback callback, 
         &defaultDeviceAddr,
         dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0),
         // Core Audio listener block ABI mandates the C-array parameter.
-        ^(UInt32 inNumberAddresses, const AudioObjectPropertyAddress inAddresses[]) { // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+        ^(UInt32 inNumberAddresses, const AudioObjectPropertyAddress inAddresses[]) { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
           listenerCallback(kAudioObjectSystemObject, inNumberAddresses, inAddresses, context);
         });
 

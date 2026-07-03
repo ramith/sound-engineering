@@ -1,34 +1,110 @@
 ---
-Checks: |
-  cppcoreguidelines-*,
-  -cppcoreguidelines-owning-memory,
-  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-  -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  modernize-*,
-  -modernize-use-auto,
-  readability-*,
-  -readability-magic-numbers,
-  performance-*,
+# clang-tidy configuration for AdaptiveSound (C++23 / Obj-C++ real-time audio).
+#
+# Philosophy: enable everything (`-*` resets, then re-enable every valuable group) so
+# every diagnostic is at least SURFACED, then promote all SAFETY/CORRECTNESS families to
+# build-breaking errors (WarningsAsErrors below). Checks that are incompatible with
+# real-time DSP buffer work, or that fight a deliberate/documented project convention, are
+# disabled outright with an inline reason (guide §5.3).
+#
+# WarningsAsErrors is the literal guide value `'*'` — every ENABLED check is a build-breaking
+# error. Because `Checks:` is an allowlist (it starts with `-*`), `'*'` here means "every
+# check we chose to keep is fatal", NOT "every check clang-tidy owns". This is drift-proof:
+# a family can't be enabled-but-only-warn by accident. The purely *stylistic* checks that
+# would otherwise turn ~150 pre-existing findings across 17 bridge files into commit blockers
+# for zero safety benefit are DISABLED outright below (with reasons), rather than promoted —
+# so the '*' promotion lands on 0 pre-existing findings while still failing all NEW unsafe
+# code. The stylistic-modernize backlog is deferred to a dedicated sweep (§5.3: don't enable
+# rules incompatible with the work).
+#
+# clang-tidy runs on STAGED files in the pre-commit hook (.githooks/pre-commit); the
+# strict-gate uses clang-format + build -Werror + sanitizers as the repo-wide C++ net.
+Checks: >
+  -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-exception-escape,
   cert-*,
   -cert-err09-cpp,
   -cert-err61-cpp,
+  -cert-err33-c,
   clang-analyzer-*,
   concurrency-*,
-  -concurrency-mt-unsafe
-
-WarningsAsErrors: |
+  -concurrency-mt-unsafe,
   cppcoreguidelines-*,
-  modernize-use-nullptr,
-  readability-*,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  modernize-*,
+  -modernize-use-auto,
+  -modernize-use-trailing-return-type,
+  -modernize-use-std-print,
+  -modernize-use-using,
+  -modernize-use-designated-initializers,
+  -modernize-use-equals-delete,
+  -modernize-use-integer-sign-comparison,
+  -modernize-deprecated-headers,
+  -modernize-return-braced-init-list,
   performance-*,
-  bugprone-*,
-  clang-analyzer-*
+  portability-*,
+  -portability-simd-intrinsics,
+  -portability-avoid-pragma-once,
+  readability-*,
+  -readability-magic-numbers
+
+# Every ENABLED check (see the `-*`-anchored allowlist above) is a build-breaking error.
+# The stylistic-only checks are disabled in Checks, so this promotion lands on 0 pre-existing
+# findings — literal-guide '*' with no landmines and no two-list drift.
+WarningsAsErrors: "*"
+
+# --- Why each disable exists (all are either RT-audio-incompatible or non-goals) ---
+#   bugprone-easily-swappable-parameters  DSP APIs legitimately take several same-typed
+#                                         (float/size_t) params (freq, Q, gain, frames).
+#   bugprone-exception-escape             Target builds -fno-exceptions; the check is moot.
+#   cert-err09-cpp / cert-err61-cpp       Exception-handling CERT rules; -fno-exceptions.
+#   cert-err33-c                          In this codebase this fires ONLY on ignored
+#                                         fprintf(stderr,…) / std::snprintf(…) return values
+#                                         — idiomatic diagnostic logging + bounded formatting,
+#                                         not the errno/parse-result class the rule targets.
+#                                         Checking those returns adds nothing; re-enable
+#                                         narrowly if a real unchecked-return case appears.
+#   concurrency-mt-unsafe                 Flags getenv/strerror etc. in non-RT setup code;
+#                                         the RT path is guarded by review + TSan, not this.
+#   cppcoreguidelines-owning-memory       No GSL dependency; ownership is enforced by RAII
+#                                         + opaque-handle design, not gsl::owner annotations.
+#   cppcoreguidelines-pro-bounds-*        Raw float* buffer arithmetic and constant array
+#                                         indexing are intrinsic to vDSP/Accelerate kernels;
+#                                         .at() throws (banned under -fno-exceptions).
+#   cppcoreguidelines-pro-type-reinterpret-cast  Required at the Swift/C++/CoreAudio
+#                                         AudioBufferList boundary (interleaved float bytes).
+#   modernize-use-auto                    Project prefers explicit types in DSP math for
+#                                         readability of fixed-width/precision intent.
+#   modernize-use-trailing-return-type    Purely stylistic; the codebase uses conventional
+#                                         leading-return-type declarations throughout. Not a
+#                                         safety/correctness check — promoting it would force
+#                                         a repo-wide rewrite with zero behavioural benefit.
+#   modernize-use-std-print               fprintf(stderr,…) is the documented off-RT-thread
+#                                         diagnostic-logging convention (DEVELOPMENT.md).
+#                                         std::print is not guaranteed on the Apple libc++
+#                                         deployment target and the rewrite adds no value.
+#   modernize-use-using                   } Purely STYLISTIC modernize checks. The codebase
+#   modernize-use-designated-initializers } predates them (typedef, {}-init, private-unimpl
+#   modernize-use-equals-delete           } special members, <stdio.h>). ~150 pre-existing
+#   modernize-use-integer-sign-comparison } findings across 17 bridge files, zero safety
+#   modernize-deprecated-headers          } value. Disabled here so WarningsAsErrors:'*' has
+#   modernize-return-braced-init-list     } no landmines; deferred to a dedicated style sweep.
+#   portability-simd-intrinsics           Apple-Silicon-only target (arm64). Deliberate
+#                                         Accelerate/vDSP + NEON use; cross-arch portability
+#                                         is an explicit non-goal, so the warning is noise.
+#   portability-avoid-pragma-once         Apple-Clang-only target; `#pragma once` is
+#                                         universally supported and is a project header
+#                                         convention. Cross-compiler portability is a non-goal.
+#   readability-magic-numbers             RBJ biquad / psychoacoustic formulas contain
+#                                         intrinsic structural constants; semantic ones are
+#                                         already named. See CheckOptions below.
 
 HeaderFilterRegex: "Sources/AudioDSP.*\\.h|Tests/.*\\.(inc|h)"
 FormatStyle: file

@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format library-store-verify gate sanitize tsan sanitize-library-store regenerate-metadata-fixtures help
+.PHONY: build run release run-release clean xcode profile test format lint strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store regenerate-metadata-fixtures help
 
 build:
 	swift build -c debug -j 8
@@ -50,9 +50,29 @@ profile: build
 test:
 	swift test
 
+# Auto-format IN PLACE (mutates files) — local convenience only, never run in CI.
+# Uses Nick Lockwood SwiftFormat (matching the pre-commit hook), NOT Apple `swift format`
+# — mixing the two makes them fight over brace/wrap style. clang-format walks every C++
+# tree via find (the old *.{h,cpp,mm} glob missed subdirectories and .mm bridge files).
 format:
-	swift format -i Sources/ 2>/dev/null || true
-	clang-format -i Sources/AudioDSP/*.{h,cpp,mm} 2>/dev/null || true
+	swiftformat Sources Tests
+	find Sources Tests -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) -print0 | xargs -0 clang-format -i
+
+# CI-safe drift DETECTION (never mutates): SwiftFormat lint + SwiftLint strict + clang-format
+# dry-run + Semgrep. This is the fast static slice of the strict gate.
+lint:
+	swiftformat Sources Tests --lint
+	swiftlint lint --strict
+	find Sources Tests -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' \) -print0 | xargs -0 clang-format --dry-run --Werror
+	semgrep scan --config .semgrep.yml --error --quiet
+
+# Full local pre-merge gate: lint + static analysis + builds + tests + sanitizers +
+# suppression policy. Fails on the first problem. Run before opening/merging a PR.
+strict-gate:
+	bash scripts/strict-gate.sh
+
+# CI entry point — same gate, so local and CI cannot diverge.
+ci: strict-gate
 
 # S8.1a store acceptance gate — headless verification of the persistent library
 # store (open/create/migrate, v1 schema, transactional + downgrade-guarded
@@ -122,7 +142,10 @@ help:
 	@echo "  make run-release - Release build + launch"
 	@echo "  make clean  - Remove build artifacts"
 	@echo "  make test   - Run test suite"
-	@echo "  make format - Format code (Swift + C++)"
+	@echo "  make format - Auto-format code in place (SwiftFormat + clang-format)"
+	@echo "  make lint   - Detect drift/violations without mutating (SwiftFormat/SwiftLint/clang-format/Semgrep)"
+	@echo "  make strict-gate - FULL pre-merge gate (lint + static analysis + build + test + sanitizers + suppressions)"
+	@echo "  make ci     - CI entry point (alias for strict-gate)"
 	@echo "  make library-store-verify - Run the S8.1a library-store acceptance gate"
 	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"

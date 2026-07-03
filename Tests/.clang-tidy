@@ -23,7 +23,9 @@ Checks: >
   -modernize-avoid-c-arrays,
   -hicpp-avoid-c-arrays,
   -bugprone-unchecked-string-to-number-conversion,
-  -cert-err34-c
+  -cert-err34-c,
+  -cert-dcl59-cpp,
+  -modernize-use-std-numbers
 #
 # Rationale (all standard, intentional null-test patterns):
 #   - memcmp on float arrays  -> bit-exact null-test comparison is the whole point
@@ -31,3 +33,9 @@ Checks: >
 #   - non-const global        -> the test result accumulator
 #   - magic numbers / short names / parens / std::max / redundant init
 #                             -> ordinary test-fixture ergonomics
+#   - cert-dcl59-cpp          -> TestSupport.h is a header-only test harness; its unnamed
+#                                namespaces give each test binary its own isolated copy of
+#                                the harness (internal linkage), not shipped code.
+#   - modernize-use-std-numbers -> golden/reference vectors hard-code literal constants
+#                                (a sqrt2 that differs from std::numbers::sqrt2_v by ~2.4e-08);
+#                                rewriting them would CHANGE the expected test value.

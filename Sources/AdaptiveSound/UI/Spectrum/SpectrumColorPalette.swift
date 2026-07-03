@@ -3,7 +3,11 @@ import SwiftUI
 // MARK: - RGBValue
 
 /// RGB value stored as (red, green, blue) in normalized [0, 1] range.
-typealias RGBValue = (r: Double, g: Double, b: Double)
+struct RGBValue {
+    let r: Double
+    let g: Double
+    let b: Double
+}
 
 // MARK: - Spectrum Color Palette
 
@@ -17,12 +21,12 @@ enum SpectrumColorPalette {
 
     // Palette: Teal → Lime (low freq to high freq)
     static let tealoLime: [Stop] = [
-        Stop(t: 0.00, rgb: (r: 0x1F / 255.0, g: 0x9D / 255.0, b: 0x8B / 255.0)), // #1F9D8B
-        Stop(t: 0.20, rgb: (r: 0x36 / 255.0, g: 0xC1 / 255.0, b: 0xAB / 255.0)), // #36C1AB
-        Stop(t: 0.40, rgb: (r: 0x4F / 255.0, g: 0xD2 / 255.0, b: 0xC0 / 255.0)), // #4FD2C0
-        Stop(t: 0.60, rgb: (r: 0x7F / 255.0, g: 0xE3 / 255.0, b: 0xA8 / 255.0)), // #7FE3A8
-        Stop(t: 0.80, rgb: (r: 0xA8 / 255.0, g: 0xEC / 255.0, b: 0x84 / 255.0)), // #A8EC84
-        Stop(t: 1.00, rgb: (r: 0xC8 / 255.0, g: 0xF0 / 255.0, b: 0x6A / 255.0)), // #C8F06A
+        Stop(t: 0.00, rgb: RGBValue(r: 0x1F / 255.0, g: 0x9D / 255.0, b: 0x8B / 255.0)), // #1F9D8B
+        Stop(t: 0.20, rgb: RGBValue(r: 0x36 / 255.0, g: 0xC1 / 255.0, b: 0xAB / 255.0)), // #36C1AB
+        Stop(t: 0.40, rgb: RGBValue(r: 0x4F / 255.0, g: 0xD2 / 255.0, b: 0xC0 / 255.0)), // #4FD2C0
+        Stop(t: 0.60, rgb: RGBValue(r: 0x7F / 255.0, g: 0xE3 / 255.0, b: 0xA8 / 255.0)), // #7FE3A8
+        Stop(t: 0.80, rgb: RGBValue(r: 0xA8 / 255.0, g: 0xEC / 255.0, b: 0x84 / 255.0)), // #A8EC84
+        Stop(t: 1.00, rgb: RGBValue(r: 0xC8 / 255.0, g: 0xF0 / 255.0, b: 0x6A / 255.0)), // #C8F06A
     ]
 
     /// Get the base color for a bar at normalized position t [0, 1].

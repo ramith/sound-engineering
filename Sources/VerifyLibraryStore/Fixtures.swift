@@ -200,6 +200,7 @@ private func rockAndRollFixtureTracks() -> [FixtureTrack] {
 
 // MARK: - Expectation computation
 
+// PERMANENT reason="test fixture expectation builder (Verify tool)"
 // swiftlint:disable:next function_parameter_count
 private func computeExpectations(
     allDefs: [FixtureTrack], looseGenres: [String], looseArtist: String, looseAlbum: String,

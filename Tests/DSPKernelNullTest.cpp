@@ -72,7 +72,7 @@
 
 namespace
 {
-    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
+    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     constexpr std::array<TestEntry, 120U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
@@ -279,7 +279,7 @@ auto main(int argc, const char* const* argv) -> int
             const int hwc = static_cast<int>(std::thread::hardware_concurrency());
             parallelN = std::max(2, hwc);
         }
-        else if (arg.rfind("--parallel=", 0) == 0)
+        else if (arg.starts_with("--parallel="))
         {
             const int val = std::stoi(arg.substr(11U));
             parallelN = std::max(1, val);
@@ -288,7 +288,7 @@ auto main(int argc, const char* const* argv) -> int
         {
             listOnly = true;
         }
-        else if (arg.rfind("--filter=", 0) == 0)
+        else if (arg.starts_with("--filter="))
         {
             filterName = argv[ai] + 9;
         }

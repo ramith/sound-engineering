@@ -28,7 +28,7 @@ extension AudioEngineBridge {
         // Design coefficients for the AU's negotiated output rate (graph is 48 kHz; fall back
         // to that if the bus isn't queryable). AUAudioUnitBusArray is not a Swift collection.
         var sampleRate = 48000.0
-        if let busArray = dspAudioUnit?.auAudioUnit.outputBusses, busArray.count > 0 {
+        if let busArray = dspAudioUnit?.auAudioUnit.outputBusses, busArray.count >= 1 {
             sampleRate = busArray[0].format.sampleRate
         }
         _ = gainsDb.withUnsafeBufferPointer { buffer -> Bool in

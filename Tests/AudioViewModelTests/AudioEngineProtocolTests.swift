@@ -207,8 +207,12 @@ struct DeviceSortOrderTests {
 
     @Test("Within same type, devices sort alphabetically by name")
     func alphabeticalWithinType() {
-        let b1 = AudioDeviceModelMirror(id: 1, name: "Zebra Speaker", sampleRate: 48000, bufferFrameSize: 512, type: .usb)
-        let b2 = AudioDeviceModelMirror(id: 2, name: "Alpha Headset", sampleRate: 48000, bufferFrameSize: 512, type: .usb)
+        let b1 = AudioDeviceModelMirror(
+            id: 1, name: "Zebra Speaker", sampleRate: 48000, bufferFrameSize: 512, type: .usb
+        )
+        let b2 = AudioDeviceModelMirror(
+            id: 2, name: "Alpha Headset", sampleRate: 48000, bufferFrameSize: 512, type: .usb
+        )
         let result = sorted([b1, b2])
         #expect(result[0].name == "Alpha Headset")
         #expect(result[1].name == "Zebra Speaker")
@@ -216,7 +220,9 @@ struct DeviceSortOrderTests {
 
     @Test("Unknown type sorts last")
     func unknownTypeSortsLast() {
-        let unknown = AudioDeviceModelMirror(id: 9, name: "Mystery Device", sampleRate: 44100, bufferFrameSize: 512, type: .unknown)
+        let unknown = AudioDeviceModelMirror(
+            id: 9, name: "Mystery Device", sampleRate: 44100, bufferFrameSize: 512, type: .unknown
+        )
         let builtin = makeBuiltin()
         let result = sorted([unknown, builtin])
         #expect(result.last?.type == .unknown)

@@ -112,7 +112,7 @@ public final class LibraryWatcher: @unchecked Sendable {
     // MARK: - Private (all queue-confined)
 
     /// Called by the C callback ON `queue` with the copied-out raw events. No-op once torn.
-    fileprivate func handleCallback(_ rawEvents: [(path: String, flags: FSEventStreamEventFlags)]) {
+    private func handleCallback(_ rawEvents: [(path: String, flags: FSEventStreamEventFlags)]) {
         guard !torn else { return }
         ingest(rawEvents: rawEvents)
     }
@@ -129,7 +129,7 @@ public final class LibraryWatcher: @unchecked Sendable {
                 | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagIgnoreSelf
         )
         guard let created = FSEventStreamCreate(
-            kCFAllocatorDefault, libraryWatcherCallback, &context,
+            kCFAllocatorDefault, LibraryWatcher.eventCallback, &context,
             roots.map(\.path) as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency, flags
         ) else { return }
@@ -145,29 +145,25 @@ public final class LibraryWatcher: @unchecked Sendable {
         FSEventStreamRelease(stream)
         self.stream = nil
     }
-}
 
-// The mandated `FSEventStreamCallback` C signature (6 params — fixed by the API, hence the
-// parameter-count exception). Resolves the watcher from the context `info` pointer and copies the
-// char** paths + flags into a Sendable value on the delivery queue, then hands them to `handleCallback`.
-// swiftlint:disable:next function_parameter_count
-private func libraryWatcherCallback(
-    streamRef _: ConstFSEventStreamRef,
-    clientCallBackInfo: UnsafeMutableRawPointer?,
-    numEvents: Int,
-    eventPaths: UnsafeMutableRawPointer,
-    eventFlags: UnsafePointer<FSEventStreamEventFlags>,
-    eventIds _: UnsafePointer<FSEventStreamEventId>
-) {
-    guard let info = clientCallBackInfo else { return }
-    let watcher = Unmanaged<LibraryWatcher>.fromOpaque(info).takeUnretainedValue()
-    // Without kFSEventStreamCreateFlagUseCFTypes, eventPaths is a char** of `numEvents` C strings.
-    let paths = eventPaths.bindMemory(to: UnsafeMutablePointer<CChar>?.self, capacity: numEvents)
-    var raw: [(path: String, flags: FSEventStreamEventFlags)] = []
-    raw.reserveCapacity(numEvents)
-    for index in 0 ..< numEvents {
-        guard let cString = paths[index] else { continue }
-        raw.append((path: String(cString: cString), flags: eventFlags[index]))
+    // MARK: - C callback trampoline
+
+    /// The mandated `FSEventStreamCallback` C signature (6 params — fixed by the API). A
+    /// `private static` closure (not a file-scope free function) so it can call the `private`
+    /// `handleCallback` directly — same-type access, no `fileprivate` needed. Resolves the
+    /// watcher from the context `info` pointer and copies the char** paths + flags into a
+    /// Sendable value on the delivery queue, then hands them to `handleCallback`.
+    private static let eventCallback: FSEventStreamCallback = { _, info, numEvents, eventPaths, eventFlags, _ in
+        guard let info else { return }
+        let watcher = Unmanaged<LibraryWatcher>.fromOpaque(info).takeUnretainedValue()
+        // Without kFSEventStreamCreateFlagUseCFTypes, eventPaths is a char** of `numEvents` C strings.
+        let paths = eventPaths.bindMemory(to: UnsafeMutablePointer<CChar>?.self, capacity: numEvents)
+        var raw: [(path: String, flags: FSEventStreamEventFlags)] = []
+        raw.reserveCapacity(numEvents)
+        for index in 0 ..< numEvents {
+            guard let cString = paths[index] else { continue }
+            raw.append((path: String(cString: cString), flags: eventFlags[index]))
+        }
+        watcher.handleCallback(raw)
     }
-    watcher.handleCallback(raw)
 }

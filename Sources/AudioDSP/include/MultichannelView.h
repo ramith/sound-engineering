@@ -32,7 +32,7 @@ namespace AdaptiveSound
                 abl->mNumberBuffers < kMaxChannels ? abl->mNumberBuffers : kMaxChannels;
             for (uint32_t ch = 0U; ch < count; ++ch)
             {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) — CoreAudio
+                // CoreAudio
                 // flexible-array idiom: the ABL is allocated with `count` AudioBuffers.
                 view.data_[ch] = static_cast<float*>(abl->mBuffers[ch].mData);
             }

@@ -121,7 +121,7 @@ extern "C"
 
     void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT
     {
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): ownership transfers to the C caller.
+        // ownership transfers to the C caller
         return new (std::nothrow) PureModeSession();
     }
 
@@ -234,7 +234,7 @@ extern "C"
         // Stop render before tearing down members: the HALOutputEngine dtor restores the device
         // rate + releases hog; the FileDecodeSource dtor joins its decode thread.
         session->engine->stop();
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): balances pureModeEngineCreate().
+        // balances pureModeEngineCreate()
         delete session;
     }
 
