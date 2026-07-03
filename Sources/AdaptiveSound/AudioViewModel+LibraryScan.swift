@@ -94,6 +94,12 @@ extension AudioViewModel {
             await runMetadataPass(store, generation: result.generation)
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
+        } catch let unreachable as RootUnreachableError {
+            // Empty-walk safety guard tripped (unmounted/zombie volume or deleted root): the
+            // rows are preserved, NOT swept. Silent like cancellation — a background non-event.
+            logUX("performScan: root unreachable (folder \(unreachable.folderID); "
+                + "\(unreachable.storedRowCount) rows preserved) — sweep refused")
+            await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let conflict as NestedRootConflict {
             publishScanRejection(conflict)
         } catch {

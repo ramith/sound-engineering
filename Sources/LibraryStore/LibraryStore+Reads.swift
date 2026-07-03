@@ -131,6 +131,17 @@ public extension LibraryStore {
         try Int(connection.scalarInt("SELECT count(*) FROM tracks;") ?? 0)
     }
 
+    /// Number of track rows directly under `folderID` — the cheap pre-scan magnitude the
+    /// empty-walk safety guard uses (S8.4 slice 3): a walk that sees 0 files while this is
+    /// > 0 must REFUSE the sweep (an unmounted/zombie volume must never read as mass-deletion).
+    func trackCount(inFolder folderID: Int64) throws -> Int {
+        let statement = try connection.prepare("SELECT count(*) FROM tracks WHERE folder_id = ?;")
+        defer { statement.finalize() }
+        try statement.bind(folderID, at: 1)
+        guard try statement.step() else { return 0 }
+        return Int(statement.columnInt64(0))
+    }
+
     /// Ids of tracks that still need a metadata attempt (`metadata_scanned == 0`),
     /// id-ordered, capped at `limit` — the S8.3 metadata-pass driving query. A no-tags
     /// file, once marked, never reappears here (the anti-loop guarantee); a retagged

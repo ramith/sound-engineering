@@ -104,6 +104,7 @@ public extension LibraryStore {
             try deleteFolderRow(folderID)
             let toDelete = unreferencedTrackIDs(among: detaching)
             try deleteTrackRows(ids: toDelete)
+            _ = try sweepOrphanFacetsLocked() // SF-2: reap facets orphaned by the delete, same txn
         }
     }
 
@@ -268,8 +269,9 @@ public extension LibraryStore {
     /// `ON CONFLICT(url) DO UPDATE` refreshes the row in place. `dateAdded` (a real
     /// epoch) is written ONLY on the first insert — it stays out of the conflict
     /// update, so a re-scan never rewrites when the track first entered the library.
+    /// `internal` so the move-matching path (`LibraryStore+MoveMatch`) can fall back to it.
     @discardableResult
-    private func upsertOne(
+    func upsertOne(
         _ file: ScannedFile, folderID: Int64?, generation: Int64, dateAdded: Int64
     ) throws -> Int64 {
         let key = PathNormalizer.normalizedString(for: file.url)
