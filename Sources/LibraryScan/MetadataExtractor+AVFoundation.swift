@@ -36,12 +36,12 @@ extension MetadataExtractor {
                 .commonIdentifierCreationDate, .iTunesMetadataReleaseDate,
                 .id3MetadataRecordingTime, .id3MetadataYear,
             ])),
-            trackNo: Self.parseLeadingInt(await Self.firstString(items, [
-                .iTunesMetadataTrackNumber, .id3MetadataTrackNumber,
-            ])),
-            discNo: Self.parseLeadingInt(await Self.firstString(items, [
-                .iTunesMetadataDiscNumber, .id3MetadataPartOfASet,
-            ])),
+            trackNo: await Self.trackOrDiscNumber(
+                items, stringIdentifiers: [.iTunesMetadataTrackNumber, .id3MetadataTrackNumber], binaryAtom: "trkn"
+            ),
+            discNo: await Self.trackOrDiscNumber(
+                items, stringIdentifiers: [.iTunesMetadataDiscNumber, .id3MetadataPartOfASet], binaryAtom: "disk"
+            ),
             genres: Self.parseGenres(await Self.firstString(items, [
                 .iTunesMetadataUserGenre, .iTunesMetadataPredefinedGenre, .id3MetadataContentType,
             ])),
@@ -62,14 +62,20 @@ extension MetadataExtractor {
 
     // MARK: - Field helpers
 
-    /// The first non-empty string value across `identifiers` (in precedence order).
+    /// The first non-empty value across `identifiers` (in precedence order), as a string.
+    /// Falls back to `numberValue` because iTunes binary atoms — `trkn` (track) / `disk`
+    /// (disc) — have NO `stringValue`; their number is stringified so `parseLeadingInt`
+    /// still yields the count.
     static func firstString(_ items: [AVMetadataItem], _ identifiers: [AVMetadataIdentifier]) async -> String? {
         for identifier in identifiers {
-            let matches = AVMetadataItem.metadataItems(from: items, filteredByIdentifier: identifier)
-            for item in matches {
-                guard let value = try? await item.load(.stringValue) else { continue }
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return trimmed }
+            for item in AVMetadataItem.metadataItems(from: items, filteredByIdentifier: identifier) {
+                if let value = try? await item.load(.stringValue) {
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { return trimmed }
+                }
+                if let number = try? await item.load(.numberValue) {
+                    return number.stringValue
+                }
             }
         }
         return nil
@@ -99,12 +105,36 @@ extension MetadataExtractor {
         )
     }
 
-    /// The first embedded cover art (≤ `maxArtBytes`), sniffed for its UTI, or nil.
+    /// Track/disc number across taggers: an ID3/string atom ("3/12" → 3) first, else the
+    /// iTunes `trkn`/`disk` BINARY atom — 16-bit big-endian `[reserved, number, total, …]`,
+    /// so the number is bytes 2–3 (these atoms have NO string/number value).
+    static func trackOrDiscNumber(
+        _ items: [AVMetadataItem], stringIdentifiers: [AVMetadataIdentifier], binaryAtom: String
+    ) async -> Int? {
+        if let parsed = parseLeadingInt(await firstString(items, stringIdentifiers)) { return parsed }
+        guard let data = await firstDataValue(items, atomSuffix: binaryAtom), data.count >= 4 else { return nil }
+        let bytes = [UInt8](data.prefix(4))
+        return Int(bytes[2]) << 8 | Int(bytes[3])
+    }
+
+    /// The first non-empty `.dataValue` of an item whose identifier ends with `atomSuffix`
+    /// (the raw mp4 atom name — "trkn"/"disk"/"covr"), for BINARY iTunes atoms.
+    static func firstDataValue(_ items: [AVMetadataItem], atomSuffix: String) async -> Data? {
+        for item in items where item.identifier?.rawValue.hasSuffix(atomSuffix) ?? false {
+            if let data = try? await item.load(.dataValue), !data.isEmpty { return data }
+        }
+        return nil
+    }
+
+    /// The first embedded cover art (≤ `maxArtBytes`), sniffed for its UTI, or nil. Reads
+    /// the common-key artwork (mp3 APIC / most formats) then the iTunes `covr` data atom.
     static func artwork(_ items: [AVMetadataItem]) async -> ExtractedArtwork? {
-        let matches = AVMetadataItem.metadataItems(from: items, filteredByIdentifier: .commonIdentifierArtwork)
-        for item in matches {
-            guard let data = try? await item.load(.dataValue), !data.isEmpty else { continue }
-            guard data.count <= maxArtBytes else { continue }
+        for item in AVMetadataItem.metadataItems(from: items, filteredByIdentifier: .commonIdentifierArtwork) {
+            if let data = try? await item.load(.dataValue), !data.isEmpty, data.count <= maxArtBytes {
+                return ExtractedArtwork(data: data, uti: utiFromSniff(data))
+            }
+        }
+        if let data = await firstDataValue(items, atomSuffix: "covr"), data.count <= maxArtBytes {
             return ExtractedArtwork(data: data, uti: utiFromSniff(data))
         }
         return nil
