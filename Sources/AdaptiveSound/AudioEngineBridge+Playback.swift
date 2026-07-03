@@ -170,6 +170,7 @@ extension AudioEngineBridge {
             // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
             // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
             // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
+            // PERMANENT reason="AVFoundation scheduleFile call reads best on one line"
             // swiftlint:disable:next line_length
             playerNode.scheduleFile(audioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak playerNode] _ in
                 guard let self, let livePlayer = playerNode else { return }

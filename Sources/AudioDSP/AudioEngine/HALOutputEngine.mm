@@ -32,7 +32,7 @@
 #include <vector>
 
 // Control-plane logging only (configure/start/stop); never on the RT audio thread.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
 
 using namespace AdaptiveSound;
 
@@ -97,13 +97,13 @@ namespace
         }
         if (printable)
         {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — control-plane logging helper.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="control-plane logging helper"
             std::snprintf(buf.data(), buf.size(), "'%c%c%c%c'", bytes[0], bytes[1], bytes[2],
                           bytes[3]);
         }
         else
         {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — control-plane logging helper.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="control-plane logging helper"
             std::snprintf(buf.data(), buf.size(), "%d", static_cast<int>(code));
         }
         return buf.data();

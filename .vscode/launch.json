@@ -25,6 +25,66 @@
       "target": "AdaptiveSound",
       "configuration": "release",
       "preLaunchTask": "swift: Build Release AdaptiveSound"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Debug VerifyLibraryStore",
+      "target": "VerifyLibraryStore",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug VerifyLibraryStore"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Release VerifyLibraryStore",
+      "target": "VerifyLibraryStore",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release VerifyLibraryStore"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Debug VerifyAUGraph",
+      "target": "VerifyAUGraph",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug VerifyAUGraph"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Release VerifyAUGraph",
+      "target": "VerifyAUGraph",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release VerifyAUGraph"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Debug SRCQualityMeasure",
+      "target": "SRCQualityMeasure",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug SRCQualityMeasure"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:sound-engineering}",
+      "name": "Release SRCQualityMeasure",
+      "target": "SRCQualityMeasure",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release SRCQualityMeasure"
     }
   ]
 }

@@ -1,0 +1,11 @@
+# Scope semgrep to first-party source. Vendored/build/asset trees are not ours to lint.
+.build/
+.swiftpm/
+third_party/
+Tests/Fixtures/
+docs/
+research/
+assets/
+scripts/hal-spike.dSYM/
+scripts/hal-spike
+*.dSYM/

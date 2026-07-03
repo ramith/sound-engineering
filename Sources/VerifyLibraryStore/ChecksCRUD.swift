@@ -29,29 +29,9 @@ func checkCRUDIntegrity(number: Int, url: URL) async -> Bool {
         let generation = try await store.beginScanGeneration()
         let rootID = try await store.addRoot(URL(fileURLWithPath: "/Music/B"))
 
-        // Insert → read.
-        let ids = try await store.upsert(
-            [makeScanned(path: "/Music/B/one.flac", name: "one")],
-            folderID: rootID, generation: generation
-        )
-        guard let trackID = ids.first, let inserted = try await store.track(id: trackID) else {
-            printFail(number, "CRUD: insert/read failed"); return false
-        }
-        guard inserted.name == "one", inserted.folderID == rootID, inserted.inode == 42 else {
-            printFail(number, "CRUD: round-trip mismatch (\(inserted))"); return false
-        }
-
-        // Update via applyMetadata → read back.
-        try await store.applyMetadata(TrackMetadata(title: "One!", artistName: "B Artist"), forTrack: trackID)
-        guard let updated = try await store.track(id: trackID), updated.title == "One!" else {
-            printFail(number, "CRUD: update-in-place not reflected"); return false
-        }
-
-        // Delete → gone.
-        try await store.delete(id: trackID)
-        guard try await store.track(id: trackID) == nil else {
-            printFail(number, "CRUD: delete did not remove the row"); return false
-        }
+        guard try await checkInsertReadUpdateDelete(
+            store, number: number, rootID: rootID, generation: generation
+        ) else { return false }
 
         guard try await checkUniqueConflict(store, number: number, rootID: rootID) else { return false }
         guard try await checkFolderDetach(store, number: number) else { return false }
@@ -65,6 +45,37 @@ func checkCRUDIntegrity(number: Int, url: URL) async -> Bool {
     } catch {
         printFail(number, "CRUD/integrity threw: \(error)"); return false
     }
+}
+
+/// Insert → read → update (via applyMetadata) → read → delete → confirm-gone round trip for a
+/// single track, seeded under `rootID` at the given scan `generation`.
+private func checkInsertReadUpdateDelete(
+    _ store: LibraryStore, number: Int, rootID: Int64, generation: Int64
+) async throws -> Bool {
+    // Insert → read.
+    let ids = try await store.upsert(
+        [makeScanned(path: "/Music/B/one.flac", name: "one")],
+        folderID: rootID, generation: generation
+    )
+    guard let trackID = ids.first, let inserted = try await store.track(id: trackID) else {
+        printFail(number, "CRUD: insert/read failed"); return false
+    }
+    guard inserted.name == "one", inserted.folderID == rootID, inserted.inode == 42 else {
+        printFail(number, "CRUD: round-trip mismatch (\(inserted))"); return false
+    }
+
+    // Update via applyMetadata → read back.
+    try await store.applyMetadata(TrackMetadata(title: "One!", artistName: "B Artist"), forTrack: trackID)
+    guard let updated = try await store.track(id: trackID), updated.title == "One!" else {
+        printFail(number, "CRUD: update-in-place not reflected"); return false
+    }
+
+    // Delete → gone.
+    try await store.delete(id: trackID)
+    guard try await store.track(id: trackID) == nil else {
+        printFail(number, "CRUD: delete did not remove the row"); return false
+    }
+    return true
 }
 
 /// UNIQUE(url): moving track X onto Y's url must throw a typed `URLConflict`.

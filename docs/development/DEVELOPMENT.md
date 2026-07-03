@@ -4,37 +4,36 @@ This document covers coding standards, tooling, and guardrails to maintain code 
 
 ## Tool Setup
 
-**Required:**
+The strict gate (`make strict-gate`) and the pre-commit hook require the full toolchain.
+Missing tools are now a **hard failure**, not a silent skip — install everything:
+
 ```bash
-# Format for C++ (included with Xcode)
-clang-format --version
+# Swift format + lint
+brew install swiftformat swiftlint
 
-# Format for Swift
-brew install swiftformat
+# C++ static analysis (keg-only clang-tidy) + supplementary checker
+brew install llvm cppcheck
 
-# Lint for Swift
-brew install swiftlint
+# Pattern-based safety bans (Swift force-try/cast; C++ unbounded string funcs)
+brew install semgrep
 
-# Verify
+# clang-format ships with Xcode/LLVM. Verify the whole set:
 swiftformat --version
 swiftlint --version
-```
-
-**Recommended (for C++ static analysis):**
-```bash
-# Install LLVM toolchain with clang-tidy
-brew install llvm
-
-# Verify
+clang-format --version
 /opt/homebrew/opt/llvm/bin/clang-tidy --version
+semgrep --version
+cppcheck --version   # optional: strict-gate runs a supplementary pass if present
 ```
 
-**Why clang-tidy is optional but recommended:**
+**Why clang-tidy is now REQUIRED (was "optional"):**
 - Catches subtle C++ bugs (nullptr dereferences, use-after-free, data races)
-- Enforces Core Guidelines at build time
+- Enforces the Core Guidelines subset as build-breaking errors (`WarningsAsErrors: '*'`)
 - Prevents hard-to-debug audio glitches
 
-Pre-commit hooks will warn if clang-tidy is missing and gracefully skip static analysis. All tools run automatically on `git commit`. No manual execution needed unless debugging locally.
+The pre-commit hook **fails** (no longer skips) if a required tool is missing for the file
+types you staged. `git commit --no-verify` is the deliberate escape hatch; the repo-wide
+`make strict-gate` / CI is the real net.
 
 ---
 
@@ -65,9 +64,61 @@ git config core.hooksPath .githooks
 It then runs automatically on `git commit` and:
 1. **Formats** staged Swift/C++/Obj-C++ files (swiftformat, clang-format) and re-stages them
 2. **Lints** staged Swift with swiftlint — error-severity violations block the commit
-3. **Static-analyses** staged C++ with clang-tidy — failures block the commit (gracefully skipped with a warning if clang-tidy is not installed)
+3. **Static-analyses** staged C++ with clang-tidy — failures block the commit
 
-Bypass once (not recommended): `git commit --no-verify`. No need to run manually unless debugging.
+A **missing required tool now blocks the commit** (it used to skip with a warning). Bypass
+once (not recommended): `git commit --no-verify`. The pre-commit hook is fast + staged-only;
+it is a convenience, not the real protection — that is `make strict-gate` / CI.
+
+---
+
+## Quality Gates
+
+Three tiers, fastest first:
+
+| Command | When | Scope | What it runs |
+|---------|------|-------|--------------|
+| pre-commit hook | every `git commit` | staged files | swiftformat + clang-format (auto-fix), swiftlint (errors block), clang-tidy |
+| `make lint` | anytime / editor | whole repo, no mutation | swiftformat `--lint`, `swiftlint --strict`, `clang-format --dry-run --Werror`, semgrep |
+| `make strict-gate` | before PR / merge | whole repo | `make lint` + suppression policy + cppcheck + `swift build` + `swift test` + `make gate` + ASan/UBSan/TSan |
+
+`make ci` == `make strict-gate`; the CI workflow (`.github/workflows/strict-ci.yml`) runs the
+identical command on a self-hosted macOS 26 / Xcode 26 runner, so local and CI cannot diverge.
+(GitHub-hosted `macos-latest` cannot build this package until it ships Tahoe/Xcode 26.)
+
+`make format` auto-formats in place (SwiftFormat + clang-format) — local convenience, never CI.
+
+### Suppression policy
+
+Every lint/analysis suppression in first-party code must be **accountable**, enforced by
+`scripts/check-suppressions.sh` (part of `make strict-gate`). Metadata rides on the same
+comment line as the directive (clang-tidy/semgrep ignore trailing text) — no multi-line
+blocks. Two classes:
+
+- **PERMANENT** — an architectural necessity that does not expire (C-ABI `reinterpret_cast`,
+  CoreAudio `AudioObjectPropertyAddress[]` arrays, opaque-handle boundaries, `NSLog` varargs).
+  Carries a reason, **no** expiry.
+- **TEMP** — time-boxed tech debt. Requires `expiry=YYYY-MM-DD` (fails once past) **or**
+  `issue=<#id|url>`.
+
+```cpp
+// NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform log API"
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays) PERMANENT reason="CoreAudio AudioObjectPropertyAddress[]"
+// nosemgrep: cpp-no-thread-detach PERMANENT reason="reviewed boundary; joined at teardown"
+// NOLINTNEXTLINE(some-check) TEMP reason="works around SDK bug" expiry=2026-09-01
+```
+
+Rules: rule-id mandatory (no blanket `// NOLINT`), exactly one of PERMANENT|TEMP, a
+`reason="…"` of ≥12 chars, owner resolved from the path→owner map in the script,
+`NOLINTBEGIN` balanced by `NOLINTEND` (same rules), and **no suppression of a rule already
+globally disabled in `.clang-tidy`** (dead → remove it). Fix the code first; suppress only a
+genuine, documented necessity — never to quiet the gate.
+
+### TODO policy
+
+The `todo` SwiftLint rule is disabled so roadmap markers are allowed, but a `TODO` must carry
+an **owner or a sprint/issue ID** — e.g. `// TODO(S8.4): …` or `// TODO(ramith): …`. Bare
+`// TODO` with no attribution is not allowed in review.
 
 ---
 
@@ -304,18 +355,25 @@ vDSP_vsmul(input, 1, &gain, output, 1, frameCount);
 
 ## Compiler & Linting
 
-### Compiler Flags (Enabled by Default)
+### Compiler Flags (`AudioDSP` C++ target)
 
-**Debug builds** treat warnings as errors:
+**Debug builds fail on ANY warning** — full `-Werror` over a wide set (this is the primary
+dev + `make gate` build, so it catches everything except optimization-only diagnostics):
 - `-Wall -Wextra -Wpedantic` — all standard warnings
-- `-Wshadow` — catch variable shadowing
-- `-Wconversion -Wsign-conversion` — implicit type conversions
-- `-Wnull-dereference` — null pointer dereferences
-- `-Wold-style-cast` — C-style casts (use `static_cast`)
-- `-Werror=all -Werror=conversion` — fail on warnings
+- `-Wshadow`, `-Wconversion -Wsign-conversion`, `-Wnull-dereference`, `-Wold-style-cast`
+- `-Wformat=2`, `-Wimplicit-fallthrough`, `-Wunreachable-code`, `-Wcast-align`
+- `-Werror` — every warning above is a build-breaking error
 
-**Release builds** are slightly permissive (smaller binary, faster):
-- Still `-Wall -Wextra`, but warnings don't fail build
+**Deliberately NOT enabled:** `-Wfloat-equal` — DSP legitimately compares to `0.0f`/`1.0f`
+for silence / bypass / coefficient-change detection.
+
+**Release builds stay PERMISSIVE on purpose** (`-Wall -Wextra` + the three new warnings, but
+**no** `-Werror`). Rationale: `-O2`-only, toolchain-version-dependent warnings
+(`-Wmaybe-uninitialized`, `-Wstringop-overflow`, …) must never brick a shippable /
+notarization build with no code change. Debug's full `-Werror` already gates everything
+except optimization-only diagnostics before release is ever built. (The `AudioDSPTestBridge`
+target is intentionally lighter — `-Wall -Wextra`, no `-Werror` — because the stub module
+headers carry expected `-Wunused-parameter` warnings.)
 
 ### SwiftLint Analysis
 
@@ -438,5 +496,6 @@ ASAN reports memory leaks, buffer overruns, use-after-free, etc. in real-time.
 
 ---
 
-**Last Updated:** 2026-06-13  
+**Last Updated:** 2026-07-03 (strict build guardrails: `make strict-gate`, suppression policy, C++23)
+
 **Maintained By:** AdaptiveSound Team

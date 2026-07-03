@@ -79,14 +79,14 @@ namespace
                 sizeof(AudioBufferList) + (static_cast<size_t>(channels - 1U) * sizeof(AudioBuffer));
             ablStorage_.assign(ablBytes, std::byte{0});
 
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — sole ABL decode; the
+            // sole ABL decode; the
             // byte vector is sized + aligned for AudioBufferList above (vectors are max-aligned).
             auto* abl = reinterpret_cast<AudioBufferList*>(ablStorage_.data());
             abl->mNumberBuffers = channels;
             const UInt32 bytesPerChannel = static_cast<UInt32>(frameCount * sizeof(float));
             for (uint32_t ch = 0U; ch < channels; ++ch)
             {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) — CoreAudio
+                // CoreAudio
                 // flexible-array idiom: the ABL was sized for `channels` AudioBuffers above.
                 AudioBuffer& buffer = abl->mBuffers[ch];
                 buffer.mNumberChannels = 1U; // non-interleaved: one channel per buffer
@@ -116,12 +116,12 @@ namespace
             {
                 return;
             }
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — see allocate().
+            // see allocate()
             auto* abl = reinterpret_cast<AudioBufferList*>(ablStorage_.data());
             const UInt32 byteSize = static_cast<UInt32>(static_cast<size_t>(frames) * sizeof(float));
             for (uint32_t ch = 0U; ch < channels_; ++ch)
             {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) — sized above.
+                // sized above
                 abl->mBuffers[ch].mDataByteSize = byteSize;
             }
         }
@@ -133,7 +133,7 @@ namespace
             {
                 return nullptr;
             }
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — see allocate().
+            // see allocate()
             return reinterpret_cast<AudioBufferList*>(ablStorage_.data());
         }
 

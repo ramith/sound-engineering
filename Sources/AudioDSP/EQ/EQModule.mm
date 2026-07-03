@@ -96,7 +96,7 @@ void EQModule::process(const EQParams& params, const MultichannelView& block) no
     }
     // frameCount must never exceed the buffer capacity established in initialize().
     // Violating this would overrun rampBuf_ (sized to maxFrames_ off-RT).
-    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    assert(frameCount <= maxFrames_);
 
     // RT-safe setup adoption: adopt() swaps any pending setup into active, retires the old
     // one for off-RT reclaim, and returns the live resource. All lock-free atomics — no

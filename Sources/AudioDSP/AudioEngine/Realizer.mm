@@ -143,7 +143,7 @@ bool Realizer::setPendingEqGains(const float* gainsDb, uint32_t count, double sa
     pendingEqGains_.sampleRate = static_cast<float>(sampleRate);
     pendingEqGains_.dirty = true;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingEqGains count=%u sampleRate=%.1f -> %s", count, sampleRate,
           wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
 
@@ -169,7 +169,7 @@ void Realizer::setPendingIntensity(float value)
     pendingIntensity_.value = clamped;
     pendingIntensity_.dirty = true;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingIntensity value=%.4f (clamped=%.4f) -> %s", value, clamped,
           wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
 
@@ -206,7 +206,7 @@ bool Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t prese
     pendingCrossfeed_.sampleRate = static_cast<float>(sampleRate);
     pendingCrossfeed_.dirty = true;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingCrossfeed enabled=%u level=%.4f preset=%u sampleRate=%.1f -> %s",
           enabled, clampedLevel, clampedPreset, sampleRate,
           wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
@@ -266,7 +266,7 @@ void Realizer::drain()
         return; // spurious wake (slot already drained by an earlier coalesced block)
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.drain applying dirty slots: eq=%d intensity=%d crossfeed=%d",
           static_cast<int>(eqDirty), static_cast<int>(intensityDirty),
           static_cast<int>(crossfeedDirty));
@@ -327,7 +327,7 @@ void Realizer::publishCanonical()
     // The SOLE publishTargetState call site. Calls the kernel DIRECTLY (never captures the
     // ObjC AU). The kernel is guaranteed alive: blocks capture shared_from_this(), and
     // shutdown() drains before the owner releases the kernel.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.publishCanonical seq=%llu intensity=%.4f crossfeed{enabled=%u preset=%u} "
           @"eq{numBiquads=%u}",
           static_cast<unsigned long long>(canonical_.sequenceNumber), canonical_.intensityLinear,

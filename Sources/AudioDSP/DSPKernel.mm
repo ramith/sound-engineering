@@ -182,7 +182,7 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
     const uint32_t numChannels = block.channels();
     // frameCount must not exceed the capacity established in initialize() — the dry-scratch
     // and gain buffers are sized to maxFrames_, so this guards against an RT-path overrun.
-    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    assert(frameCount <= maxFrames_);
     const uint32_t safeCount = std::min(frameCount, maxFrames_);
 
     // BRANCH 2 — settled at 1: run the chain fully in-place EXACTLY as before, with NO blend

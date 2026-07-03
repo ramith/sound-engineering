@@ -63,13 +63,13 @@ private struct DevicePillView: View {
     var body: some View {
         Menu {
             ForEach(viewModel.availableDevices) { device in
-                Button(action: { viewModel.selectDevice(device) }) {
+                Button(action: { viewModel.selectDevice(device) }, label: {
                     if device.id == viewModel.selectedDevice?.id {
                         Label(device.displayName, systemImage: "checkmark")
                     } else {
                         Text(device.displayName)
                     }
-                }
+                })
             }
         } label: {
             Label(
