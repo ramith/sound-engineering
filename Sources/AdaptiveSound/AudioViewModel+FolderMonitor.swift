@@ -20,7 +20,14 @@ extension AudioViewModel {
         // Swift 6 traps at runtime (EXC_BREAKPOINT on this queue, seen on every quit when a
         // final FS event fires). Hop to the main actor first, then debounce.
         source.setEventHandler { @Sendable [weak self] in
-            Task { @MainActor in self?.scheduleFolderReload() }
+            // Back on the main actor, drop the event if monitoring was torn down in the meantime:
+            // cancel() only suppresses FUTURE handler invocations, not one already enqueued on
+            // monitoringQueue. Without this guard a straggling event could re-arm a reload after
+            // stopFolderMonitoring() niled the source — a reload racing teardown.
+            Task { @MainActor [weak self] in
+                guard let self, self.folderMonitorSource != nil else { return }
+                self.scheduleFolderReload()
+            }
         }
 
         // Same rule as the event handler: the cancel handler runs on `monitoringQueue`, so it
