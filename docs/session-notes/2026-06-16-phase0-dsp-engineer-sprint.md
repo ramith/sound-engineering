@@ -1,4 +1,7 @@
 # 🔌 Phase 0 Sprint: Audio DSP Engineer
+
+> **📦 ARCHIVED — historical Phase-0 sprint note (2026-06-16).** ✅ Completed; retained for provenance, not a current plan.
+
 **Task:** Parameter Ramping + Intensity Bypass + FTZ/DAZ  
 **Owner:** Audio DSP Engineer  
 **Duration:** 2 days (Wed 06/17 → Thu 06/18)  
