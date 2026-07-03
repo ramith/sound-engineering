@@ -128,7 +128,7 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
     }
 
     // frameCount must not exceed the buffer capacity established in initialize().
-    assert(frameCount <= maxFrames_); // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    assert(frameCount <= maxFrames_);
 
     // Relay control to the worker (cheap atomics — never blocks).
     enabled_.store(params.enabled, std::memory_order_relaxed);

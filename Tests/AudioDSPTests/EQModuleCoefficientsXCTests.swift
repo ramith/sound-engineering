@@ -47,9 +47,11 @@ struct EQModuleCoefficientsTests {
     private func biquad(at index: Int, in params: CEQParams) -> CEQBiquadCoeffs {
         let mirror = Mirror(reflecting: params.biquads)
         let children = Array(mirror.children)
-        precondition(index < children.count && children[index].value is CEQBiquadCoeffs,
-                     "biquad index \(index) out of range or wrong type")
-        return children[index].value as! CEQBiquadCoeffs // swiftlint:disable:this force_cast
+        precondition(index < children.count, "biquad index \(index) out of range")
+        guard let coeffs = children[index].value as? CEQBiquadCoeffs else {
+            preconditionFailure("biquad index \(index) is not a CEQBiquadCoeffs")
+        }
+        return coeffs
     }
 
     /// -----------------------------------------------------------------------

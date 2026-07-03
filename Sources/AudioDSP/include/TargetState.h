@@ -56,7 +56,7 @@ namespace AdaptiveSound
     // `Default`) to avoid the `default:` keyword clash in switch statements (refactoring F8);
     // the Swift-facing label for `Bauer` stays "Default". Underlying type is uint8_t so it can
     // packs alongside the other intent bytes in CrossfeedParams without padding surprises.
-    // NOLINTNEXTLINE(performance-enum-size)
+    // NOLINTNEXTLINE(performance-enum-size) PERMANENT reason="enum intentionally packed to uint8_t (ABI/layout)"
     enum class CrossfeedPreset : uint8_t
     {
         Relaxed = 0, // bs2b "Jmeier": fc 650 Hz, cross -9.5 dB (alpha 0.335) — subtlest
@@ -112,11 +112,10 @@ namespace AdaptiveSound
         uint64_t sequenceNumber = 0;
     };
 
-    // Verify trivially copyable at compile time (C++11 compatible)
-    static_assert(std::is_trivially_copyable<TargetState>::value,
+    // Verify trivially copyable + standard layout at compile time.
+    static_assert(std::is_trivially_copyable_v<TargetState>,
                   "TargetState must be trivially copyable");
-    static_assert(std::is_standard_layout<TargetState>::value,
-                  "TargetState must have standard layout");
+    static_assert(std::is_standard_layout_v<TargetState>, "TargetState must have standard layout");
 
     // Lock the layout (QW1 §3 F2) — N is the MEASURED post-insertion size, NOT an assumption.
     // Inserting the 24-byte CrossfeedParams fit inside the slack of the alignas(64) struct (the

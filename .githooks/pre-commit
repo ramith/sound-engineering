@@ -55,7 +55,9 @@ if ((${#cpp_files[@]})); then
         # emits a benign "does not support Objective-C" notice on .mm files.
         clang-format -i "${cpp_files[@]}" 2>/dev/null && git add -- "${cpp_files[@]}"
     else
-        yellow "⚠️  clang-format not found — skipping C++ formatting."
+        red "❌ clang-format not found — REQUIRED for staged C++ files."
+        red "    Install it (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
+        fail=1
     fi
 fi
 
@@ -63,7 +65,9 @@ if ((${#swift_files[@]})); then
     if command -v swiftformat >/dev/null 2>&1; then
         swiftformat "${swift_files[@]}" >/dev/null 2>&1 && git add -- "${swift_files[@]}"
     else
-        yellow "⚠️  swiftformat not found — skipping Swift formatting."
+        red "❌ swiftformat not found — REQUIRED for staged Swift files."
+        red "    Install it (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
+        fail=1
     fi
 fi
 
@@ -78,7 +82,9 @@ if ((${#swift_files[@]})); then
             fail=1
         fi
     else
-        yellow "⚠️  swiftlint not found — skipping Swift lint."
+        red "❌ swiftlint not found — REQUIRED for staged Swift files."
+        red "    Install it (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
+        fail=1
     fi
 fi
 
@@ -121,8 +127,9 @@ if ((${#cpp_files[@]})); then
             fi
         done
     else
-        yellow "⚠️  clang-tidy not found — skipping C++ static analysis."
-        yellow "    Install with: brew install llvm  (see DEVELOPMENT.md)"
+        red "❌ clang-tidy not found — REQUIRED for staged C++ files."
+        red "    Install with: brew install llvm  (see docs/development/DEVELOPMENT.md), or bypass with --no-verify."
+        fail=1
     fi
 fi
 

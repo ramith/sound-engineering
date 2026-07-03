@@ -32,9 +32,11 @@ A personal, open-source audio enhancement app for macOS that turns any good-qual
 
 ## Requirements
 
-- **macOS**: 14 (Sonoma) or later
+- **macOS**: 26 (Tahoe) or later
 - **Hardware**: Apple Silicon Mac (M1 Pro / 16 GB minimum, LD-18)
-- **Xcode**: 15.0 or later (Swift 6.2+)
+- **Xcode**: 26 or later
+- **Swift**: 6.2 or later (Swift 6 language mode)
+- **C++**: C++23 / GNU++2b (as required by SwiftPM + Apple Clang)
 
 ---
 
@@ -178,4 +180,4 @@ License deferred to post-MVP. See docs for full details.
 
 ---
 
-**Built with:** Swift 6.2 · Xcode 15 · CoreAudio · Accelerate · C++17
+**Built with:** Swift 6.2 · Xcode 26 · macOS 26 Tahoe · CoreAudio · Accelerate · C++23

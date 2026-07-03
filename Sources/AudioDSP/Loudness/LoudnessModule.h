@@ -70,7 +70,7 @@ namespace AdaptiveSound
     // so it is destroyed (request_stop()+join()) before the ring/meter it touches.
     // That ordering prevents the size-optimal layout, but there is a single
     // long-lived instance, so the padding is irrelevant.
-    // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
+    // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding) PERMANENT reason="deliberate RT struct layout"
     class LoudnessModule
     {
       public:

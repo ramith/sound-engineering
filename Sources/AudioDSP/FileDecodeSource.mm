@@ -79,7 +79,7 @@ struct CFileMetadataHandle
 };
 
 // Control-plane logging only (open/close/decode thread); never on the RT pull path.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
 
 namespace AdaptiveSound
 {
@@ -469,7 +469,7 @@ namespace AdaptiveSound
         // (loadFFmpegApi returns early otherwise) and open() bails when !loaded — so every api.*()
         // call below is non-null. The static analyzer can't track that invariant through the
         // singleton, hence the localized suppression of its null-function-pointer false positives.
-        // NOLINTBEGIN(clang-analyzer-core.CallAndMessage)
+        // NOLINTBEGIN(clang-analyzer-core.CallAndMessage) PERMANENT reason="guarded path; analyzer false positive"
         class FFmpegDecodeBackend final : public DecodeBackend
         {
           public:
@@ -1170,7 +1170,7 @@ namespace AdaptiveSound
             api.avformat_close_input(&fmt);
             return nullptr;
         }
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): ownership transfers to the C caller.
+        // ownership transfers to the C caller
         auto* handle = new (std::nothrow) CFileMetadataHandle();
         if (handle == nullptr)
         {
@@ -1231,7 +1231,7 @@ extern "C" void* ffmpegOpenMetadata(const char* path) AUDIODSP_C_NOEXCEPT
 
 extern "C" void ffmpegCloseMetadata(void* handle) AUDIODSP_C_NOEXCEPT
 {
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): balances ffmpegOpenMetadata().
+    // balances ffmpegOpenMetadata()
     delete static_cast<CFileMetadataHandle*>(handle);
 }
 

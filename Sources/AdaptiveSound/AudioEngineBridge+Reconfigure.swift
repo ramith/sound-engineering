@@ -10,6 +10,16 @@ import Foundation
 /// file. The members it touches (`avEngine`, `playerNode`, `dspAudioUnit`, `spatialAudioUnit`, the
 /// analyzer arrays, `graphState`, the tap install/remove) are module-internal on the base class so
 /// this extension — in a separate file — can reach them.
+/// The four live-graph node references threaded through the reconfigure lifecycle's private
+/// helpers (`reconnectGraph`, `applyReconfigure`). Grouping them keeps those functions under the
+/// SwiftLint parameter-count ceiling without losing the descriptive per-node names at call sites.
+private struct ReconfigureGraphNodes {
+    let engine: AVAudioEngine
+    let player: AVAudioPlayerNode
+    let effects: AVAudioUnit
+    let spatial: AVAudioUnit
+}
+
 extension AudioEngineBridge {
     // MARK: - Multichannel reconfigure lifecycle (Sprint 5b, M2-c / M3-3)
 
@@ -66,8 +76,8 @@ extension AudioEngineBridge {
         // 7. Resize analyzers while taps are removed (off the audio thread) — done inside the helper.
         // 9 + 10: reinstall taps + publish the new running state — done inside the helper.
         do {
-            try applyReconfigure(engine: engine, player: player, effects: effects, spatial: spatial,
-                                 format: format, channels: resolvedChannels)
+            let nodes = ReconfigureGraphNodes(engine: engine, player: player, effects: effects, spatial: spatial)
+            try applyReconfigure(nodes: nodes, format: format, channels: resolvedChannels)
         } catch {
             // 8. engine.start() threw (an AU could not re-allocate render resources at this width):
             // transition to a safe state and log — never crash the app.
@@ -116,16 +126,14 @@ extension AudioEngineBridge {
     /// `mainMixerNode -> outputNode` line is the spike's critical finding: without it the mixer
     /// silently downmixes to its own output width.
     private func reconnectGraph(
-        engine: AVAudioEngine,
-        player: AVAudioPlayerNode,
-        effects: AVAudioUnit,
-        spatial: AVAudioUnit,
+        nodes: ReconfigureGraphNodes,
         sourceFormat: AVAudioFormat,
         deviceFormat: AVAudioFormat
     ) {
-        engine.connect(player, to: effects, format: sourceFormat)
-        engine.connect(effects, to: spatial, format: sourceFormat)
-        engine.connect(spatial, to: engine.mainMixerNode, format: deviceFormat)
+        let engine = nodes.engine
+        engine.connect(nodes.player, to: nodes.effects, format: sourceFormat)
+        engine.connect(nodes.effects, to: nodes.spatial, format: sourceFormat)
+        engine.connect(nodes.spatial, to: engine.mainMixerNode, format: deviceFormat)
         engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat)
     }
 
@@ -152,13 +160,11 @@ extension AudioEngineBridge {
     /// M == N the spatial AU is a bit-exact identity route. The real binaural fold is S4, on the
     /// spatial AU side — see the `TODO(S4)` marker in `connectInitialGraph`.
     private func applyReconfigure(
-        engine: AVAudioEngine,
-        player: AVAudioPlayerNode,
-        effects: AVAudioUnit,
-        spatial: AVAudioUnit,
+        nodes: ReconfigureGraphNodes,
         format: AVAudioFormat,
         channels: AVAudioChannelCount
     ) throws {
+        let engine = nodes.engine
         // Device width M = min(N, deviceChannels). Resolved BEFORE any stop/re-enable so the output
         // node still reports the in-effect device width (the manual-rendering width when offline).
         let deviceFormat = deviceWidthFormat(engine: engine, sourceFormat: format)
@@ -166,8 +172,7 @@ extension AudioEngineBridge {
             // Offline: the manual-rendering format is immutable while running, so changing WIDTH
             // requires stop -> re-enable manual rendering at the new (device-width) format -> start.
             engine.stop()
-            reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
-                           sourceFormat: format, deviceFormat: deviceFormat)
+            reconnectGraph(nodes: nodes, sourceFormat: format, deviceFormat: deviceFormat)
             resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
             try engine.enableManualRenderingMode(.offline, format: deviceFormat,
                                                  maximumFrameCount: manualRenderingBlockSize)
@@ -176,8 +181,7 @@ extension AudioEngineBridge {
             // Live device: pause keeps attachments and is lighter than stop. The device width is
             // fixed, so reconnecting at the resolved formats + restart re-allocates both AUs.
             engine.pause()
-            reconnectGraph(engine: engine, player: player, effects: effects, spatial: spatial,
-                           sourceFormat: format, deviceFormat: deviceFormat)
+            reconnectGraph(nodes: nodes, sourceFormat: format, deviceFormat: deviceFormat)
             resizeAnalyzers(to: channels, sampleRate: format.sampleRate)
             try engine.start()
         }

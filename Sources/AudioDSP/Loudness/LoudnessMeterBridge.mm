@@ -39,7 +39,7 @@ namespace
 
 void* loudnessMeterCreate(double sampleRate)
 {
-    auto* handle = new (std::nothrow) LoudnessMeterHandle(); // NOLINT(cppcoreguidelines-owning-memory)
+    auto* handle = new (std::nothrow) LoudnessMeterHandle();
     if (handle != nullptr)
     {
         handle->meter.prepare(sampleRate);
@@ -49,7 +49,7 @@ void* loudnessMeterCreate(double sampleRate)
 
 void loudnessMeterDestroy(void* meter)
 {
-    delete static_cast<LoudnessMeterHandle*>(meter); // NOLINT(cppcoreguidelines-owning-memory)
+    delete static_cast<LoudnessMeterHandle*>(meter);
 }
 
 void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames)

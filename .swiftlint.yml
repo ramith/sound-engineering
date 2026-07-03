@@ -1,4 +1,10 @@
-# SwiftLint configuration for AdaptiveSound
+# SwiftLint configuration for AdaptiveSound.
+#
+# Strict by intent: force_* are errors, complexity/length thresholds are tight, and the
+# pre-merge gate runs `swiftlint lint --strict` (every warning becomes a failure). The
+# identifier_name rule is tuned DSP-aware (short RBJ/biquad + loop notation is allowed),
+# mirroring the .clang-tidy identifier exemptions on the C++ side — we configure the
+# convention, we do NOT rename `x0/y1/a0/w0/sr` to satisfy a generic default.
 
 disabled_rules:
   - trailing_comma
@@ -6,29 +12,86 @@ disabled_rules:
   - implicit_optional_initialization
   # "master" (master gain / master bus) is standard, intentional audio terminology here.
   - inclusive_language
-  # TODOs are used as intentional roadmap markers (e.g. S4 binaural); the rule fights that practice.
+  # TODOs are intentional roadmap markers (e.g. S4 binaural). Policy: a TODO must carry an
+  # owner or sprint/issue ID (see docs/development/DEVELOPMENT.md § TODO policy).
   - todo
 
 opt_in_rules:
   - force_unwrapping
+  - implicitly_unwrapped_optional
+  - empty_count
+  - fatal_error_message
+  - first_where
+  - sorted_imports
+  - weak_delegate
+  - unowned_variable_capture
+  - private_action
+  - private_outlet
+  - strict_fileprivate
+
+# Analyzer-only rules run by `swiftlint analyze` (needs a compile log), not `swiftlint lint`.
+# Declared here (not opt_in_rules) to avoid the "should be in analyzer_rules" config warning.
+analyzer_rules:
+  - unused_import
+  - unused_declaration
 
 excluded:
   - .build/
   - .swiftpm/
   - Pods/
 
+# --- Severity promotions (guide §4.2) ---
+force_cast: error
+force_try: error
+force_unwrapping: error
+implicitly_unwrapped_optional: error
+
+# --- Complexity / size thresholds (guide §4.2) ---
 cyclomatic_complexity:
-  warning: 10
-  error: 20
+  warning: 8
+  error: 12
+
+function_body_length:
+  warning: 60
+  error: 90
+
+type_body_length:
+  warning: 250
+  error: 400
+
+file_length:
+  warning: 500
+  error: 800
 
 line_length:
   warning: 120
-  error: 150
+  error: 160
 
 function_parameter_count:
   warning: 5
-  error: 8
+  error: 7
 
-force_cast: warning
-force_try: warning
-force_unwrapping: error
+# --- DSP-aware identifier naming ---
+# Allow 2-char names (biquad coeffs a0/b1/b2, state x0..y2, w0, sr, fs, fc, lo, hi, eq, vm)
+# and whitelist the canonical 1-char DSP/loop names. Everything else still obeys the rule.
+# Mirrors .clang-tidy readability-identifier-length (MinimumVariableNameLength: 2 + ignore
+# list) so the two languages agree on RBJ Audio EQ Cookbook notation.
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    - i   # loop index
+    - j   # loop index
+    - k   # loop index
+    - n   # count / sample index
+    - b   # band / biquad index
+    - c   # channel index
+    - t   # time / sample position
+    - r   # radius / ratio
+    - g   # gain
+    - x   # generic sample
+    - y   # generic sample

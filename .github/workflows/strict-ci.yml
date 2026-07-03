@@ -1,0 +1,47 @@
+name: Strict CI
+
+# Runs the full strict pre-merge gate (`make strict-gate`) on every PR and on pushes to
+# main. Local `make strict-gate` and this job are the SAME command, so they cannot diverge.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save runner time.
+concurrency:
+  group: strict-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  strict-gate:
+    name: strict-gate
+    # IMPORTANT: this package targets macOS 26 (Tahoe) + Xcode 26 + Swift 6.2. GitHub-hosted
+    # `macos-latest` does NOT yet provide Tahoe/Xcode 26, so it cannot build this package —
+    # a self-hosted runner (the maintainer's Apple-Silicon Mac) is required. Register one via
+    # Settings → Actions → Runners and give it these labels. Once GitHub-hosted images ship
+    # Tahoe/Xcode 26, switch `runs-on` to `macos-latest` and drop the Install-tools note.
+    runs-on: [self-hosted, macOS, tahoe, xcode26]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          clang --version
+
+      - name: Install tools (idempotent)
+        run: |
+          # keg-only llvm provides clang-tidy; the rest are formatters/linters/scanners.
+          brew install swiftformat swiftlint llvm semgrep cppcheck || true
+
+      - name: Run strict gate
+        env:
+          # Homebrew keg-only LLVM (clang-tidy) must be on PATH for the tool check.
+          PATH: /opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:${{ env.PATH }}
+        run: make strict-gate

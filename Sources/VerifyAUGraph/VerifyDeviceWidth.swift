@@ -46,9 +46,9 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
     let dwEngine = AVAudioEngine()
     let dwPlayer = AVAudioPlayerNode()
     defer { dwEngine.stop() }
+    let nodes = GraphNodes(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial)
     // 1. Build + start the graph at the simulated device width (the engine's fixed device width).
-    connectTwoAUGraph(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
-                      sourceFormat: deviceFmt, deviceFormat: deviceFmt)
+    connectTwoAUGraph(nodes: nodes, sourceFormat: deviceFmt, deviceFormat: deviceFmt)
     do {
         try dwEngine.enableManualRenderingMode(.offline, format: deviceFmt, maximumFrameCount: renderBlockSize)
         try dwEngine.start()
@@ -62,8 +62,8 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
     let observedDeviceChannels = dwEngine.outputNode.outputFormat(forBus: 0).channelCount
     let resolvedDevice = deviceWidthFormat(sourceFormat: sourceFmt,
                                            deviceChannels: observedDeviceChannels)
-    if !reconfigureToSource(engine: dwEngine, player: dwPlayer, effects: effects, spatial: spatial,
-                            sourceFormat: sourceFmt, deviceFormat: resolvedDevice, label: label) {
+    if !reconfigureToSource(nodes: nodes, sourceFormat: sourceFmt,
+                            deviceFormat: resolvedDevice, label: label) {
         return false
     }
 
@@ -75,19 +75,17 @@ func verifyDeviceWidthResolution(sourceChannels: AVAudioChannelCount,
 /// `applyReconfigure`'s manual-rendering branch. Effects edges at `sourceFormat` (N); spatial
 /// output + mixer + output at `deviceFormat` (M).
 func reconfigureToSource(
-    engine: AVAudioEngine,
-    player: AVAudioPlayerNode,
-    effects: AVAudioUnit,
-    spatial: AVAudioUnit,
+    nodes: GraphNodes,
     sourceFormat: AVAudioFormat,
     deviceFormat: AVAudioFormat,
     label: String
 ) -> Bool {
-    player.stop()
+    let engine = nodes.engine
+    nodes.player.stop()
     engine.stop()
-    engine.connect(player, to: effects, format: sourceFormat)
-    engine.connect(effects, to: spatial, format: sourceFormat)
-    engine.connect(spatial, to: engine.mainMixerNode, format: deviceFormat)
+    engine.connect(nodes.player, to: nodes.effects, format: sourceFormat)
+    engine.connect(nodes.effects, to: nodes.spatial, format: sourceFormat)
+    engine.connect(nodes.spatial, to: engine.mainMixerNode, format: deviceFormat)
     engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat)
     do {
         try engine.enableManualRenderingMode(.offline, format: deviceFormat, maximumFrameCount: renderBlockSize)

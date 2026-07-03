@@ -92,7 +92,7 @@ namespace AdaptiveSound
 
         // Core Audio listener callback trampoline. The C-array parameter is
         // mandated by the Core Audio listener ABI and cannot be changed.
-        // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+        // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
         static void listenerCallback(AudioObjectID objectID,
                                      UInt32 numberAddresses,
                                      const AudioObjectPropertyAddress inAddresses[],

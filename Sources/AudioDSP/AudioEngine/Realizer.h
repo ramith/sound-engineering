@@ -172,11 +172,11 @@ namespace AdaptiveSound
 
     // -fno-exceptions discipline (design §6): the intent/slot PODs must be trivially copyable
     // so they can be byte-copied into a captured drain block without surprises.
-    static_assert(std::is_trivially_copyable<Realizer::PendingEqGains>::value,
+    static_assert(std::is_trivially_copyable_v<Realizer::PendingEqGains>,
                   "Realizer::PendingEqGains must be trivially copyable");
-    static_assert(std::is_trivially_copyable<Realizer::PendingIntensity>::value,
+    static_assert(std::is_trivially_copyable_v<Realizer::PendingIntensity>,
                   "Realizer::PendingIntensity must be trivially copyable");
-    static_assert(std::is_trivially_copyable<Realizer::PendingCrossfeed>::value,
+    static_assert(std::is_trivially_copyable_v<Realizer::PendingCrossfeed>,
                   "Realizer::PendingCrossfeed must be trivially copyable");
 
 } // namespace AdaptiveSound

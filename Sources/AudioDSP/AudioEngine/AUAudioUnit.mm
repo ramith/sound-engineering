@@ -349,7 +349,7 @@ int selectOutputDeviceC(uint32_t deviceID) {
     const OSStatus status = AudioObjectSetPropertyData(
         kAudioObjectSystemObject, &addr, 0, nullptr, sizeof(dev), &dev);
     if (status != noErr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[selectOutputDeviceC] could not set default output device %u (status %d)", deviceID,
               static_cast<int>(status));
     }
@@ -422,17 +422,17 @@ bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, 
     // (computeBiquadCascade) now runs OFF-MAIN inside the Realizer's drain, bursts coalesce to
     // a single publish, and the Realizer is the sole caller of publishTargetState. The slot
     // setter validates the 31-band/SR/non-null contract and returns false on mismatch.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] C-ABI publishEQBandGains count=%u sampleRate=%.1f", count, sampleRate);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishEQBandGains SKIP — auUnit == nullptr");
         return false;
     }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishEQBandGains SKIP — realizer == nil");
         return false;
     }
@@ -444,10 +444,10 @@ void publishIntensity(void* auUnit, float intensity) {
     // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
     // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
     // interleaved intensity intent is never dropped by an EQ burst. Off-RT; no-op if null.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] C-ABI publishIntensity intensity=%.4f", intensity);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishIntensity SKIP — auUnit == nullptr");
         return;
     }
@@ -456,7 +456,7 @@ void publishIntensity(void* auUnit, float intensity) {
     if (realizer != nullptr) {
         realizer->setPendingIntensity(intensity);
     } else {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishIntensity SKIP — realizer == nil");
     }
 }
@@ -468,10 +468,10 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
     // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
     // The design coefficient sample rate is the kernel's current rate. Off-RT; no-op if null.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] C-ABI publishCrossfeed enabled=%u level=%.4f preset=%u", enabled, level, preset);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
         return;
     }
@@ -481,7 +481,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
         const double sampleRate = [audioUnit kernelSampleRate];
         (void)realizer->setPendingCrossfeed(enabled, level, preset, sampleRate);
     } else {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) — NSLog is the platform logging API.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
         NSLog(@"[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
     }
 }

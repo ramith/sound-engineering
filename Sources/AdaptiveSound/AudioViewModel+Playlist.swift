@@ -23,28 +23,7 @@ extension AudioViewModel {
         let removingCurrent = (selectedTrackIndex == index)
         playlist.remove(at: index)
 
-        if let pending = pendingNextIndex {
-            if pending == index {
-                // The on-deck track was removed. Re-compute the next index from the current
-                // playing track so the engine stays primed (rather than leaving it with nil).
-                // P2-2: playlist.remove(at:) above has already shifted indices — if the
-                // currently-playing track was AFTER the removed slot its index is now one lower.
-                let rawCurrent = selectedTrackIndex ?? 0
-                let currentIdx = rawCurrent > index ? rawCurrent - 1 : rawCurrent
-                let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
-                pendingNextIndex = newNextIdx
-                Task { [weak self] in
-                    guard let self else { return }
-                    if let newIdx = newNextIdx, newIdx < playlist.count {
-                        await engine.setNextTrack(playlist[newIdx].absoluteURL)
-                    } else {
-                        await engine.setNextTrack(nil)
-                    }
-                }
-            } else if pending > index {
-                pendingNextIndex = pending - 1
-            }
-        }
+        adjustPendingNextIndexAfterRemoval(removedIndex: index)
 
         if removingCurrent, isPlaying {
             logUX("removeTrack: removed currently-playing track, stopping")
@@ -58,6 +37,34 @@ extension AudioViewModel {
             selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
         } else if let cur = selectedTrackIndex, cur > index {
             selectedTrackIndex = cur - 1
+        }
+    }
+
+    /// Keep `pendingNextIndex` (the on-deck track the engine has preloaded) in sync after
+    /// `playlist.remove(at: removedIndex)`: re-derive it if the on-deck track itself was removed,
+    /// or shift it down by one if it sat after the removed slot.
+    private func adjustPendingNextIndexAfterRemoval(removedIndex: Int) {
+        guard let pending = pendingNextIndex else { return }
+
+        if pending == removedIndex {
+            // The on-deck track was removed. Re-compute the next index from the current
+            // playing track so the engine stays primed (rather than leaving it with nil).
+            // P2-2: playlist.remove(at:) above has already shifted indices — if the
+            // currently-playing track was AFTER the removed slot its index is now one lower.
+            let rawCurrent = selectedTrackIndex ?? 0
+            let currentIdx = rawCurrent > removedIndex ? rawCurrent - 1 : rawCurrent
+            let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
+            pendingNextIndex = newNextIdx
+            Task { [weak self] in
+                guard let self else { return }
+                if let newIdx = newNextIdx, newIdx < playlist.count {
+                    await engine.setNextTrack(playlist[newIdx].absoluteURL)
+                } else {
+                    await engine.setNextTrack(nil)
+                }
+            }
+        } else if pending > removedIndex {
+            pendingNextIndex = pending - 1
         }
     }
 

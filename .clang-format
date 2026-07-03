@@ -1,6 +1,10 @@
 ---
 Language: Cpp
-Standard: c++17
+# C++23 / GNU++2b (matches Package.swift cxxLanguageStandard: .gnucxx2b and the
+# -std=gnu++2b clang-tidy invocation). clang-format's `Standard` enum has no
+# explicit `c++23` value in the installed clang-format (v22); `Latest` selects the
+# newest standard it knows and is the guide-documented fallback for C++23.
+Standard: Latest
 BasedOnStyle: LLVM
 IndentWidth: 4
 TabWidth: 4
@@ -19,7 +23,7 @@ IndentCaseLabels: true
 KeepEmptyLinesAtTheStartOfBlocks: false
 NamespaceIndentation: All
 PointerAlignment: Left
-ReflowComments: true
+ReflowComments: false
 SortIncludes: CaseInsensitive
 SpaceAfterCStyleCast: false
 SpaceBeforeAssignmentOperators: true
@@ -31,4 +35,11 @@ SpacesInCStyleCastParentheses: false
 SpacesInContainerLiterals: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
+# NOTE: no `Language: ObjC` section on purpose. Adding one makes clang-format switch to
+# ObjC-mode rules that reflow EVERY .mm file non-idempotently (verified: a 5k-line, unstable
+# churn). Without it, clang-format simply NO-OPS .mm files (it prints a benign "does not
+# support Objective-C" notice and applies no changes). So .mm formatting is not
+# clang-format-enforceable here — the lint/strict-gate clang-format check covers
+# .cpp/.cc/.h/.hpp only; .mm formatting rides on the pre-commit hook + review, and .mm
+# CORRECTNESS is covered by clang-tidy (which parses Obj-C++) + -Werror + ASan/UBSan/TSan.
 ---

@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # The package itself is zero-dependency (system libs only: sqlite3, CoreAudio,
+  # Accelerate, AVFoundation — no external SwiftPM packages). Only the GitHub Actions
+  # used by the CI workflow need update tracking for now. Add a `swift` ecosystem entry
+  # here once an external SwiftPM dependency is introduced.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
