@@ -176,7 +176,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
-    ] + moveMatchCheckCases() + facetSweepCheckCases()
+    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -200,8 +200,16 @@ func facetSweepCheckCases() -> [CheckCase] {
     ]
 }
 
+/// S8.4 Slice 4 — FSEvents LibraryWatcher plumbing (deterministic ingest-seam decode/routing).
+func folderWatchCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "al-watcher-ingest", run: checkWatcherIngest),
+    ]
+}
+
 func runAllChecks() async {
     await runRestartSubcommandIfRequested()
+    await runFSEventsSmokeIfRequested()
 
     print("=== VerifyLibraryStore — S8.1a store + S8.1b DAO/concurrency/FS-divergence "
         + "+ S8.2a/b folder scan + reconcile ===")
@@ -272,7 +280,8 @@ private func printRunSummary(passed: Int, total: Int) {
         + "AH move-reorg-crossroot [double-move + cross-root id-preserving]; "
         + "S8.4 Slice 2: AI facet-sweep-basics [zero-track album/genre swept, referenced kept, idempotent], "
         + "AJ facet-sweep-sentinel-albumartist [id-0 never swept, album-artist-only kept + not rewritten], "
-        + "AK facet-sweep-artwork [album deletion → artwork reclaimed]) ===")
+        + "AK facet-sweep-artwork [album deletion → artwork reclaimed]; "
+        + "S8.4 Slice 4: AL watcher-ingest [FSEvents decode/routing via ingest seam]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
