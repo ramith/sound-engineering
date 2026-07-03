@@ -3,6 +3,9 @@ import SwiftUI
 
 @main
 struct AdaptiveSound: App {
+    // Quit on last-window close (single-window player; the engine lifecycle is window-bound —
+    // see AppDelegate). Without this, closing the window leaves a windowless process behind.
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var audioViewModel: AudioViewModel
     @State private var eqViewModel: EQViewModel
 
