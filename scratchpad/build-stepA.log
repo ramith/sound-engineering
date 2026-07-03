@@ -1,0 +1,521 @@
+[0/1] Planning build
+Building for debugging...
+[0/2] Write sources
+[1/2] Write swift-version--58304C5D6DBC2206.txt
+[3/3] Generating AdaptiveSound PCH
+[4/27] Compiling AdaptiveSound AudioEngineBridge+ChannelLayout.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+ConfigChange.swift:15:27: warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+ 13 |         ) { [weak self] _ in
+ 14 |             self?.configChangeQueue.async {
+ 15 |                 guard let self, let engine = self.avEngine else { return }
+    |                           `- warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+ 16 |                 let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
+ 17 |                 logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[5/27] Compiling AdaptiveSound AudioEngineBridge+ConfigChange.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+ConfigChange.swift:15:27: warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+ 13 |         ) { [weak self] _ in
+ 14 |             self?.configChangeQueue.async {
+ 15 |                 guard let self, let engine = self.avEngine else { return }
+    |                           `- warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+ 16 |                 let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
+ 17 |                 logUX("config-change fired: path=\(self.activePath == .pure ? "Pure" : "Enhanced") "
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[6/28] Compiling AdaptiveSound TabSelection.swift
+[7/28] Compiling AdaptiveSound AudioEngineBridge+Devices.swift
+[8/28] Compiling AdaptiveSound AudioEngineBridge+EQControl.swift
+[9/28] Compiling AdaptiveSound AudioEngineBridge+Reconfigure.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+ReferenceTone.swift:52:21: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+50 |                 .baseAddress
+51 |                 .map { dst in
+52 |                     cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
+   |                     `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+53 |                 }
+54 |         }
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[10/28] Compiling AdaptiveSound AudioEngineBridge+ReferenceTone.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+ReferenceTone.swift:52:21: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+50 |                 .baseAddress
+51 |                 .map { dst in
+52 |                     cblas_scopy(Int32(frameCount), srcBase, 1, dst, 1)
+   |                     `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+53 |                 }
+54 |         }
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[11/28] Compiling AdaptiveSound CrossfeedStrength.swift
+[12/28] Compiling AdaptiveSound MonitorTap.swift
+[13/32] Compiling AdaptiveSound LoudnessSnapshot.swift
+[14/32] Compiling AdaptiveSound AudioDeviceModel.swift
+[15/32] Compiling AdaptiveSound AudioEngineBridge+PureMode.swift
+[16/32] Compiling AdaptiveSound AudioEngineBridge+PureModeDeviceMonitor.swift
+[17/32] Compiling AdaptiveSound AudioEngineBridge+EnhancedResampler.swift
+[18/32] Compiling AdaptiveSound AudioEngineBridge+EnhancedResamplerSeam.swift
+[19/32] Compiling AdaptiveSound AudioEngineBridge.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge.swift:284:72: warning: converting non-Sendable function value to '@Sendable (Bool) -> Void' may introduce data races
+282 |                 // resume the continuation exactly once for this path.
+283 |                 self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
+284 |                                               completion: continuation.resume(returning:))
+    |                                                                        `- warning: converting non-Sendable function value to '@Sendable (Bool) -> Void' may introduce data races
+285 |             }
+286 |         }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge.swift:284:72: warning: converting a value of type '(sending Bool) -> ()' to type '@Sendable (Bool) -> Void' risks causing data races; this is an error in the Swift 6 language mode
+282 |                 // resume the continuation exactly once for this path.
+283 |                 self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
+284 |                                               completion: continuation.resume(returning:))
+    |                                                                        |- warning: converting a value of type '(sending Bool) -> ()' to type '@Sendable (Bool) -> Void' risks causing data races; this is an error in the Swift 6 language mode
+    |                                                                        `- note: converting a function typed value with a sending parameter to one without risks allowing actor-isolated values to escape their isolation domain as an argument to an invocation of value
+285 |             }
+286 |         }
+[20/32] Compiling AdaptiveSound AudioPlaybackEngine.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge.swift:284:72: warning: converting non-Sendable function value to '@Sendable (Bool) -> Void' may introduce data races
+282 |                 // resume the continuation exactly once for this path.
+283 |                 self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
+284 |                                               completion: continuation.resume(returning:))
+    |                                                                        `- warning: converting non-Sendable function value to '@Sendable (Bool) -> Void' may introduce data races
+285 |             }
+286 |         }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge.swift:284:72: warning: converting a value of type '(sending Bool) -> ()' to type '@Sendable (Bool) -> Void' risks causing data races; this is an error in the Swift 6 language mode
+282 |                 // resume the continuation exactly once for this path.
+283 |                 self.instantiateAndBuildGraph(engine: engine, player: player, format: format,
+284 |                                               completion: continuation.resume(returning:))
+    |                                                                        |- warning: converting a value of type '(sending Bool) -> ()' to type '@Sendable (Bool) -> Void' risks causing data races; this is an error in the Swift 6 language mode
+    |                                                                        `- note: converting a function typed value with a sending parameter to one without risks allowing actor-isolated values to escape their isolation domain as an argument to an invocation of value
+285 |             }
+286 |         }
+[21/32] Compiling AdaptiveSound AudioEngineBridge+Gapless.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+GaplessRoll.swift:129:49: warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+127 |             DispatchQueue.global().async { [weak self] in
+128 |                 guard let self, let engine = self.avEngine else {
+129 |                     self?.resampleQueue.async { self?.gaplessPlaybackEnded = true }
+    |                                                 `- warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+130 |                     return
+131 |                 }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[22/32] Compiling AdaptiveSound AudioEngineBridge+GaplessRoll.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+GaplessRoll.swift:129:49: warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+127 |             DispatchQueue.global().async { [weak self] in
+128 |                 guard let self, let engine = self.avEngine else {
+129 |                     self?.resampleQueue.async { self?.gaplessPlaybackEnded = true }
+    |                                                 `- warning: reference to captured var 'self' in concurrently-executing code [#SendableClosureCaptures]
+130 |                     return
+131 |                 }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[23/32] Compiling AdaptiveSound AudioEngineBridge+Graph.swift
+[24/32] Compiling AdaptiveSound AudioEngineBridge+Playback.swift
+[25/38] Compiling AdaptiveSound SpectrumDoubleBuffer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumDoubleBuffer.swift:57:13: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+55 |             guard let dstBase = dst.baseAddress,
+56 |                   let srcBase = values.baseAddress else { return }
+57 |             cblas_scopy(Int32(count), srcBase, 1, dstBase, 1)
+   |             `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+58 |         }
+59 |         generation = generation &+ 1 // wrapping add; sole writer on audio thread
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumDoubleBuffer.swift:73:17: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+71 |             slots[slot].withUnsafeBufferPointer { src in
+72 |                 guard let dstBase = dst.baseAddress, let srcBase = src.baseAddress else { return }
+73 |                 cblas_scopy(Int32(count), srcBase, 1, dstBase, 1)
+   |                 `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+74 |             }
+75 |         }
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[26/38] Compiling AdaptiveSound SignalPathInfo.swift
+[27/38] Compiling AdaptiveSound SpectrumAnalyzer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:154:17: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+152 |             else {
+153 |                 // Fallback: copy channel 0 only
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+    |                 `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:172:13: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+170 |             // Mono input — copy directly
+171 |             guard let ch0 = bufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }
+172 |             cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+    |             `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+173 |         }
+174 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:196:9: warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+194 |         guard channel >= 0, channel < abls.count,
+195 |               let chPtr = abls[channel].mData?.assumingMemoryBound(to: Float.self) else { return }
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+    |         `- warning: 'cblas_scopy' was deprecated in macOS 13.3: An updated CBLAS interface supporting ILP64 is available.  Please compile with -DACCELERATE_NEW_LAPACK to access the new headers and -DACCELERATE_LAPACK_ILP64 for ILP64 support. [#DeprecatedDeclaration]
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[28/43] Compiling AdaptiveSound AudioEngineBridge+CrossfeedControl.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+CrossfeedControl.swift:9:13: warning: let 'cPublishCrossfeed' is not concurrency-safe because non-'Sendable' type 'CPublishCrossfeed' (aka '(Optional<UnsafeMutableRawPointer>, UInt32, Float, UInt32) -> ()') may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 7 | /// extension without the compiler preferring the Swift instance method of the same name.
+ 8 | private typealias CPublishCrossfeed = (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+ 9 | private let cPublishCrossfeed: CPublishCrossfeed = publishCrossfeed
+   |             `- warning: let 'cPublishCrossfeed' is not concurrency-safe because non-'Sendable' type 'CPublishCrossfeed' (aka '(Optional<UnsafeMutableRawPointer>, UInt32, Float, UInt32) -> ()') may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+10 | 
+11 | extension AudioEngineBridge {
+
+<unknown>:0: note: a function type must be marked '@Sendable' to conform to 'Sendable'
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+CrossfeedControl.swift:9:13: note: add '@MainActor' to make let 'cPublishCrossfeed' part of global actor 'MainActor'
+ 7 | /// extension without the compiler preferring the Swift instance method of the same name.
+ 8 | private typealias CPublishCrossfeed = (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+ 9 | private let cPublishCrossfeed: CPublishCrossfeed = publishCrossfeed
+   |             |- note: add '@MainActor' to make let 'cPublishCrossfeed' part of global actor 'MainActor'
+   |             `- note: disable concurrency-safety checks if accesses are protected by an external synchronization mechanism
+10 | 
+11 | extension AudioEngineBridge {
+
+[#MutableGlobalVariable]: <https://docs.swift.org/compiler/documentation/diagnostics/mutable-global-variable>
+[29/45] Compiling AdaptiveSound AudioEngineBridge+IntensityControl.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift:8:13: warning: let 'cPublishIntensity' is not concurrency-safe because non-'Sendable' type '(UnsafeMutableRawPointer?, Float) -> Void' may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 6 | /// unambiguously from the `AudioEngineBridge` extension — the extension's own
+ 7 | /// `func publishIntensity(_:)` would otherwise shadow the free function.
+ 8 | private let cPublishIntensity: (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+   |             `- warning: let 'cPublishIntensity' is not concurrency-safe because non-'Sendable' type '(UnsafeMutableRawPointer?, Float) -> Void' may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 9 | 
+10 | extension AudioEngineBridge {
+
+<unknown>:0: note: a function type must be marked '@Sendable' to conform to 'Sendable'
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift:8:13: note: add '@MainActor' to make let 'cPublishIntensity' part of global actor 'MainActor'
+ 6 | /// unambiguously from the `AudioEngineBridge` extension — the extension's own
+ 7 | /// `func publishIntensity(_:)` would otherwise shadow the free function.
+ 8 | private let cPublishIntensity: (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+   |             |- note: add '@MainActor' to make let 'cPublishIntensity' part of global actor 'MainActor'
+   |             `- note: disable concurrency-safety checks if accesses are protected by an external synchronization mechanism
+ 9 | 
+10 | extension AudioEngineBridge {
+
+[#MutableGlobalVariable]: <https://docs.swift.org/compiler/documentation/diagnostics/mutable-global-variable>
+[30/47] Compiling AdaptiveSound AudioEngineBridge+SharedState.swift
+[31/49] Compiling AdaptiveSound PureModeSettingsSection.swift
+[32/51] Compiling AdaptiveSound SpectrumAnalyzerView.swift
+[33/51] Compiling AdaptiveSound EQTabView.swift
+[34/55] Compiling AdaptiveSound AdaptiveSound.swift
+[35/56] Compiling AdaptiveSound SettingsTabView.swift
+[36/56] Compiling AdaptiveSound MonitoringTabView.swift
+[37/57] Compiling AdaptiveSound NowPlayingTabView.swift
+[38/57] Compiling AdaptiveSound NowPlayingWidget.swift
+[39/57] Emitting module AdaptiveSound
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+CrossfeedControl.swift:9:13: warning: let 'cPublishCrossfeed' is not concurrency-safe because non-'Sendable' type 'CPublishCrossfeed' (aka '(Optional<UnsafeMutableRawPointer>, UInt32, Float, UInt32) -> ()') may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 7 | /// extension without the compiler preferring the Swift instance method of the same name.
+ 8 | private typealias CPublishCrossfeed = (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+ 9 | private let cPublishCrossfeed: CPublishCrossfeed = publishCrossfeed
+   |             `- warning: let 'cPublishCrossfeed' is not concurrency-safe because non-'Sendable' type 'CPublishCrossfeed' (aka '(Optional<UnsafeMutableRawPointer>, UInt32, Float, UInt32) -> ()') may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+10 | 
+11 | extension AudioEngineBridge {
+
+<unknown>:0: note: a function type must be marked '@Sendable' to conform to 'Sendable'
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+CrossfeedControl.swift:9:13: note: add '@MainActor' to make let 'cPublishCrossfeed' part of global actor 'MainActor'
+ 7 | /// extension without the compiler preferring the Swift instance method of the same name.
+ 8 | private typealias CPublishCrossfeed = (UnsafeMutableRawPointer?, UInt32, Float, UInt32) -> Void
+ 9 | private let cPublishCrossfeed: CPublishCrossfeed = publishCrossfeed
+   |             |- note: add '@MainActor' to make let 'cPublishCrossfeed' part of global actor 'MainActor'
+   |             `- note: disable concurrency-safety checks if accesses are protected by an external synchronization mechanism
+10 | 
+11 | extension AudioEngineBridge {
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift:8:13: warning: let 'cPublishIntensity' is not concurrency-safe because non-'Sendable' type '(UnsafeMutableRawPointer?, Float) -> Void' may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 6 | /// unambiguously from the `AudioEngineBridge` extension — the extension's own
+ 7 | /// `func publishIntensity(_:)` would otherwise shadow the free function.
+ 8 | private let cPublishIntensity: (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+   |             `- warning: let 'cPublishIntensity' is not concurrency-safe because non-'Sendable' type '(UnsafeMutableRawPointer?, Float) -> Void' may have shared mutable state; this is an error in the Swift 6 language mode [#MutableGlobalVariable]
+ 9 | 
+10 | extension AudioEngineBridge {
+
+<unknown>:0: note: a function type must be marked '@Sendable' to conform to 'Sendable'
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift:8:13: note: add '@MainActor' to make let 'cPublishIntensity' part of global actor 'MainActor'
+ 6 | /// unambiguously from the `AudioEngineBridge` extension — the extension's own
+ 7 | /// `func publishIntensity(_:)` would otherwise shadow the free function.
+ 8 | private let cPublishIntensity: (UnsafeMutableRawPointer?, Float) -> Void = publishIntensity
+   |             |- note: add '@MainActor' to make let 'cPublishIntensity' part of global actor 'MainActor'
+   |             `- note: disable concurrency-safety checks if accesses are protected by an external synchronization mechanism
+ 9 | 
+10 | extension AudioEngineBridge {
+
+[#MutableGlobalVariable]: <https://docs.swift.org/compiler/documentation/diagnostics/mutable-global-variable>
+[40/57] Compiling AdaptiveSound PlayControlsView.swift
+[41/57] Compiling AdaptiveSound TransportScrubberView.swift
+[42/57] Compiling AdaptiveSound LoudnessMetersView.swift
+[43/57] Compiling AdaptiveSound LeftPanelView.swift
+[44/57] Compiling AdaptiveSound TabContentView.swift
+[45/57] Compiling AdaptiveSound ToolbarView.swift
+[46/57] Compiling AdaptiveSound PlaylistView.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift:164:9: warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+147 | // MARK: - Playlist Item List
+148 | 
+149 | private struct PlaylistItemList: View {
+    |                `- note: add '@available' attribute to enclosing struct
+150 |     @Environment(AudioViewModel.self) var viewModel
+151 | 
+    :
+161 |     }
+162 | 
+163 |     var body: some View {
+    |         `- note: add '@available' attribute to enclosing property
+164 |         List {
+    |         |- warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+    |         `- note: add 'if #available' version check
+165 |             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+166 |                 PlaylistItemRow(
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift:164:14: warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+147 | // MARK: - Playlist Item List
+148 | 
+149 | private struct PlaylistItemList: View {
+    |                `- note: add '@available' attribute to enclosing struct
+150 |     @Environment(AudioViewModel.self) var viewModel
+151 | 
+    :
+161 |     }
+162 | 
+163 |     var body: some View {
+    |         `- note: add '@available' attribute to enclosing property
+164 |         List {
+    |              |- warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+    |              `- note: add 'if #available' version check
+165 |             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+166 |                 PlaylistItemRow(
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift:165:13: warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+147 | // MARK: - Playlist Item List
+148 | 
+149 | private struct PlaylistItemList: View {
+    |                `- note: add '@available' attribute to enclosing struct
+150 |     @Environment(AudioViewModel.self) var viewModel
+151 | 
+    :
+161 |     }
+162 | 
+163 |     var body: some View {
+    |         `- note: add '@available' attribute to enclosing property
+164 |         List {
+165 |             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+    |             |- warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+    |             `- note: add 'if #available' version check
+166 |                 PlaylistItemRow(
+167 |                     file: file,
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift:165:13: warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+147 | // MARK: - Playlist Item List
+148 | 
+149 | private struct PlaylistItemList: View {
+    |                `- note: add '@available' attribute to enclosing struct
+150 |     @Environment(AudioViewModel.self) var viewModel
+151 | 
+    :
+161 |     }
+162 | 
+163 |     var body: some View {
+    |         `- note: add '@available' attribute to enclosing property
+164 |         List {
+165 |             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+    |             |- warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+    |             `- note: add 'if #available' version check
+166 |                 PlaylistItemRow(
+167 |                     file: file,
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/UI/Playlist/PlaylistView.swift:239:14: warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+147 | // MARK: - Playlist Item List
+148 | 
+149 | private struct PlaylistItemList: View {
+    |                `- note: add '@available' attribute to enclosing struct
+150 |     @Environment(AudioViewModel.self) var viewModel
+151 | 
+    :
+161 |     }
+162 | 
+163 |     var body: some View {
+    |         `- note: add '@available' attribute to enclosing property
+164 |         List {
+165 |             ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+    :
+237 |                 }
+238 |             }
+239 |             .onMove { source, destination in
+    |              |- warning: conformance of 'EnumeratedSequence<Base>' to 'RandomAccessCollection' is only available in macOS 26.0 or newer; this is an error in the Swift 6 language mode
+    |              `- note: add 'if #available' version check
+240 |                 viewModel.movePlaylistItems(from: source, to: destination)
+241 |             }
+[47/57] Compiling AdaptiveSound MasterGainSliderView.swift
+[48/57] Compiling AdaptiveSound NowPlayingInfoView.swift
+[49/57] Compiling AdaptiveSound AudioViewModel.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel.swift:282:17: warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+280 |             }
+281 |             await MainActor.run {
+282 |                 self?.duration = computedDuration
+    |                 `- warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+283 |                 logUX("duration = \(secs(computedDuration))s")
+284 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel.swift:282:34: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+280 |             }
+281 |             await MainActor.run {
+282 |                 self?.duration = computedDuration
+    |                                  `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+283 |                 logUX("duration = \(secs(computedDuration))s")
+284 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel.swift:283:42: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+281 |             await MainActor.run {
+282 |                 self?.duration = computedDuration
+283 |                 logUX("duration = \(secs(computedDuration))s")
+    |                                          `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+284 |             }
+285 |         }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[50/57] Compiling AdaptiveSound MonitoringViewModel.swift
+[51/57] Compiling AdaptiveSound AudioViewModel+Lifecycle.swift
+[52/57] Compiling AdaptiveSound AudioViewModel+Playlist.swift
+[53/57] Compiling AdaptiveSound EQViewModel.swift
+[54/57] Compiling AdaptiveSound AudioViewModel+SpectrumTimer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+SpectrumTimer.swift:12:19: warning: call to main actor-isolated instance method 'tickSpectrum()' in a synchronous nonisolated context [#ActorIsolatedCall]
+ 10 |         guard spectrumTimer == nil else { return }
+ 11 |         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+ 12 |             self?.tickSpectrum()
+    |                   `- warning: call to main actor-isolated instance method 'tickSpectrum()' in a synchronous nonisolated context [#ActorIsolatedCall]
+ 13 |         }
+ 14 |         spectrumTimer = timer
+    :
+ 26 |     /// writes into `spectrumBars` to trigger SwiftUI observation.
+ 27 |     @MainActor
+ 28 |     func tickSpectrum() {
+    |          `- note: calls to instance method 'tickSpectrum()' from outside of its actor context are implicitly asynchronous
+ 29 |         // Poll the playhead + loudness + signal path every tick (independent of spectrum).
+ 30 |         playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+
+[#ActorIsolatedCall]: <https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call>
+[55/57] Compiling AdaptiveSound ContentView.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+SpectrumTimer.swift:12:19: warning: call to main actor-isolated instance method 'tickSpectrum()' in a synchronous nonisolated context [#ActorIsolatedCall]
+ 10 |         guard spectrumTimer == nil else { return }
+ 11 |         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+ 12 |             self?.tickSpectrum()
+    |                   `- warning: call to main actor-isolated instance method 'tickSpectrum()' in a synchronous nonisolated context [#ActorIsolatedCall]
+ 13 |         }
+ 14 |         spectrumTimer = timer
+    :
+ 26 |     /// writes into `spectrumBars` to trigger SwiftUI observation.
+ 27 |     @MainActor
+ 28 |     func tickSpectrum() {
+    |          `- note: calls to instance method 'tickSpectrum()' from outside of its actor context are implicitly asynchronous
+ 29 |         // Poll the playhead + loudness + signal path every tick (independent of spectrum).
+ 30 |         playbackPosition = isPlaying ? (engine.currentPlaybackPosition() ?? playbackPosition) : 0
+
+[#ActorIsolatedCall]: <https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call>
+[56/57] Compiling AdaptiveSound AudioViewModel+AutoAdvance.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:44:17: warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+42 |             }
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+   |                 `- warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+46 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:44:34: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+42 |             }
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+   |                                  `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+46 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:45:59: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+   |                                                           `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+46 |             }
+47 |         }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+[57/57] Compiling AdaptiveSound AudioViewModel+Devices.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:44:17: warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+42 |             }
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+   |                 `- warning: reference to captured var 'self' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+46 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:44:34: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+42 |             }
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+   |                                  `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+46 |             }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+AutoAdvance.swift:45:59: warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+43 |             await MainActor.run {
+44 |                 self?.duration = computedDuration
+45 |                 logUX("trackTransition: duration = \(secs(computedDuration))s")
+   |                                                           `- warning: reference to captured var 'computedDuration' in concurrently-executing code; this is an error in the Swift 6 language mode [#SendableClosureCaptures]
+46 |             }
+47 |         }
+
+[#SendableClosureCaptures]: <https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures>
+Build of target: 'AdaptiveSound' complete! (2.28s)

@@ -1,6 +1,11 @@
 # Stage-0 experiment scratch — keep the repo clean of huge external clones, models, venvs, audio.
-vendor/          # cloned external tools (ACE-Step-1.5, Smule-Renaissance-Small) — each has its own .git
-.cache/          # tool caches (acestep, etc.)
+# cloned external tools (ACE-Step-1.5, Smule-Renaissance-Small) — each has its own .git.
+# NOTE: inline comments (after a pattern on the same line) break .gitignore matching —
+# git treats them as part of the pattern, so `vendor/` was NOT actually ignored (17 GB leaked
+# into `git status`). Keep comments on their OWN lines.
+vendor/
+# tool caches (acestep, etc.)
+.cache/
 .venv*/
 __pycache__/
 *.pyc
