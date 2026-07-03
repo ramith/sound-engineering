@@ -26,6 +26,10 @@ Thumbs.db
 *.mp3
 *.tmp
 
+# EXCEPTION: the S8.3 metadata-extraction test fixtures are committed on purpose
+# (self-made/public-domain tagged audio; see Tests/Fixtures/artwork-audio/README.md).
+!Tests/Fixtures/artwork-audio/*
+
 # Compiled test binaries (built locally by Scripts/build-null-test.sh)
 Tests/DSPKernelNullTest
 Tests/lufs-tool

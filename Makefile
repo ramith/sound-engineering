@@ -79,6 +79,28 @@ sanitize:
 tsan:
 	bash scripts/build-null-test.sh --tsan
 
+# Regenerate the S8.3 metadata-extraction fixtures (Tests/Fixtures/artwork-audio/).
+# DEV-ONLY + manual: the checked-in fixtures are AUTHORITATIVE and `make gate` never runs
+# this (a builder need not have ffmpeg). Self-made/public-domain — a sine tone + a solid
+# cover, tagged via ffmpeg. See that dir's README.md.
+regenerate-metadata-fixtures:
+	@dir=Tests/Fixtures/artwork-audio; mkdir -p "$$dir"; \
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "color=c=blue:s=64x64:d=1" -frames:v 1 -y "$$dir/cover.png"; \
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" -i "$$dir/cover.png" \
+	  -map 0:a -map 1:v -c:a aac -c:v copy -disposition:v attached_pic \
+	  -metadata title="Verify Title" -metadata artist="Verify Artist" -metadata album="Verify Album" \
+	  -metadata album_artist="Verify Artist" -metadata date="2001" -metadata track="3/12" \
+	  -metadata disc="1/2" -metadata genre="TestGenre" -y "$$dir/fixture.m4a"; \
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" -i "$$dir/cover.png" \
+	  -map 0:a -map 1:v -c:a flac -c:v copy -disposition:v attached_pic \
+	  -metadata title="Verify Title" -metadata artist="Verify Artist" -metadata album="Verify Album" \
+	  -metadata album_artist="Verify Artist" -metadata date="2001" -metadata track="3/12" \
+	  -metadata disc="1/2" -metadata genre="TestGenre" -y "$$dir/fixture.flac"; \
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" \
+	  -map 0:a -c:a aac -map_metadata -1 -y "$$dir/no-tags.m4a"; \
+	rm -f "$$dir/cover.png"; \
+	echo "Regenerated $$dir fixtures (fixture.m4a, fixture.flac, no-tags.m4a)."
+
 help:
 	@echo "AdaptiveSound Build Commands:"
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
@@ -93,4 +115,5 @@ help:
 	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
 	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
+	@echo "  make regenerate-metadata-fixtures - Rebuild the S8.3 tagged test fixtures (needs ffmpeg; manual)"
 	@echo "  make profile- Build and profile with system trace"
