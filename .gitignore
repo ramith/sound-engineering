@@ -36,6 +36,8 @@ Tests/lufs-tool
 Tests/EQSafetyClampTest
 # TEST-ONLY libebur128 oracle object (compiled into the harness; never committed)
 Tests/.ebur128.o
+# Debug-symbol bundles from sanitizer/debug builds (e.g. Tests/DSPKernelNullTest.dSYM/)
+*.dSYM/
 # HAL bit-perfect "Pure Mode" spike — throwaway diagnostic, kept local-only (source +
 # build outputs); not held to the production C++ gate, so not committed.
 scripts/hal-spike*

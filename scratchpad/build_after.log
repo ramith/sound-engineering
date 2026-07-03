@@ -1,0 +1,539 @@
+[0/1] Planning build
+Building for debugging...
+[0/29] Write swift-version--58304C5D6DBC2206.txt
+[1/25] Compiling AudioDSP PureModeSource.cpp
+[2/25] Compiling AudioDSP PureModeFormat.cpp
+[3/25] Compiling LoudnessMeterBridge.mm
+[4/25] Compiling AudioDSP PureModeBridgePolicy.cpp
+[5/25] Compiling AudioDSP CoreAudioDevice.mm
+[6/25] Compiling AudioDSP PureModePolicy.cpp
+[7/25] Compiling AudioDSP PureModeBridge.mm
+[8/25] Compiling ChannelLayoutDecoder.mm
+[9/25] Compiling CrossfeedModule.mm
+[10/25] Compiling AudioDSP GaplessSource.cpp
+[11/25] Compiling Realizer.mm
+[12/25] Compiling HALOutputEngine.mm
+[13/25] Compiling AudioDSP AudioEngine.mm
+[14/26] Compiling SpatialRenderKernel.mm
+[15/26] Compiling SpatialRendererAU.mm
+[16/26] Compiling AudioDSP DSPKernel.mm
+[17/26] Compiling AUAudioUnit.mm
+[18/26] Compiling AudioDSP FileDecodeSource.mm
+[19/26] Compiling EQModule.mm
+[20/26] Compiling LoudnessModule.mm
+[22/28] Generating VerifyAUGraph PCH
+[23/29] Emitting module VerifyAUGraph
+[23/29] Write Objects.LinkFileList
+[24/29] Linking VerifyAUGraph
+[25/29] Applying VerifyAUGraph
+[27/29] Generating AdaptiveSound PCH
+[28/112] Compiling AdaptiveSound DurationFormatter.swift
+[29/112] Compiling AdaptiveSound LoudnessSnapshot.swift
+[30/112] Compiling AdaptiveSound AudioDeviceModel.swift
+[31/112] Compiling AdaptiveSound AudioFile.swift
+[32/112] Compiling AdaptiveSound AudioFileEnumerator.swift
+[33/112] Compiling AdaptiveSound CrossfeedStrength.swift
+[34/113] Compiling AdaptiveSound Color+Brand.swift
+[35/113] Compiling AdaptiveSound ContentView.swift
+[36/113] Compiling AdaptiveSound DesignSystem.swift
+[37/113] Compiling AdaptiveSound EQSafetyClamp.swift
+[38/113] Compiling AdaptiveSound EQViewModel+Persistence.swift
+[39/113] Compiling AdaptiveSound EQViewModel.swift
+[40/113] Compiling AdaptiveSound TabContentView.swift
+[41/113] Compiling AdaptiveSound TabSelection.swift
+[42/113] Compiling AdaptiveSound HeaderView.swift
+[43/113] Compiling AdaptiveSound ToolbarView.swift
+[44/113] Compiling AdaptiveSound EQControlsSection.swift
+[45/113] Compiling AdaptiveSound EQInterpolationPickerView.swift
+[46/113] Compiling AdaptiveSound AudioEngineBridge+SharedState.swift
+[47/113] Compiling AdaptiveSound AudioEngineBridge.swift
+[48/113] Compiling AdaptiveSound AudioPlaybackEngine.swift
+[49/113] Compiling AdaptiveSound AudioViewModel+AutoAdvance.swift
+[50/113] Compiling AdaptiveSound AudioViewModel+Devices.swift
+[51/113] Compiling AdaptiveSound AudioViewModel+FolderMonitor.swift
+[52/113] Compiling AdaptiveSound NowPlayingWidget.swift
+[53/113] Compiling AdaptiveSound PlayControlsView.swift
+[54/113] Compiling AdaptiveSound RightPanelView.swift
+[55/113] Compiling AdaptiveSound TransportButton.swift
+[56/113] Compiling AdaptiveSound TransportScrubberView.swift
+[57/113] Compiling AdaptiveSound PlaylistItemRow.swift
+[58/113] Compiling AdaptiveSound AudioEngineBridge+EQControl.swift
+[59/113] Compiling AdaptiveSound AudioEngineBridge+EnhancedResampler.swift
+[60/113] Compiling AdaptiveSound AudioEngineBridge+EnhancedResamplerSeam.swift
+[61/113] Compiling AdaptiveSound AudioEngineBridge+Gapless.swift
+[62/113] Compiling AdaptiveSound AudioEngineBridge+GaplessRoll.swift
+[63/113] Compiling AdaptiveSound AudioEngineBridge+Graph.swift
+[64/113] Compiling AdaptiveSound MonitoringViewModel.swift
+[65/113] Compiling AdaptiveSound SpectrumMiniView.swift
+[66/113] Compiling AdaptiveSound LeftPanelView.swift
+[67/113] Compiling AdaptiveSound MasterGainSliderView.swift
+[68/113] Compiling AdaptiveSound NowPlayingInfoView.swift
+[69/113] Compiling AdaptiveSound NowPlayingTabView.swift
+[70/113] Compiling AdaptiveSound AudioEngineBridge+IntensityControl.swift
+[71/113] Compiling AdaptiveSound AudioEngineBridge+Playback.swift
+[72/113] Compiling AdaptiveSound AudioEngineBridge+PureMode.swift
+[73/113] Compiling AdaptiveSound AudioEngineBridge+PureModeDeviceMonitor.swift
+[74/113] Compiling AdaptiveSound AudioEngineBridge+Reconfigure.swift
+[75/113] Compiling AdaptiveSound AudioEngineBridge+ReferenceTone.swift
+[76/113] Compiling AdaptiveSound AdaptiveSound.swift
+[77/113] Compiling AdaptiveSound AudioBridgeError.swift
+[78/113] Compiling AdaptiveSound AudioEngineBridge+ChannelLayout.swift
+[79/113] Compiling AdaptiveSound AudioEngineBridge+ConfigChange.swift
+[80/113] Compiling AdaptiveSound AudioEngineBridge+CrossfeedControl.swift
+[81/113] Compiling AdaptiveSound AudioEngineBridge+Devices.swift
+[82/113] Compiling AdaptiveSound EQPreset.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[83/113] Compiling AdaptiveSound MonitorTap.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[84/113] Compiling AdaptiveSound SignalPathInfo.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[85/113] Compiling AdaptiveSound SpectrumAnalyzer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[86/113] Compiling AdaptiveSound SpectrumConstants.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[87/113] Compiling AdaptiveSound SpectrumDoubleBuffer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:156:31: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+154 |                 cblas_scopy(Int32(frameLen), ch0, 1, &monoBuffer, 1)
+155 |                 if frameLen < fftSize {
+156 |                     vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                               |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                               |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                               `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+157 |                 }
+158 |                 return
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:177:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+175 |         // Zero-pad the tail if the tap delivered fewer frames than the FFT window
+176 |         if frameLen < fftSize {
+177 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+178 |         }
+179 | 
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:139:19: warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+137 |         channelCount: UInt32
+138 |     ) {
+139 |         guard let fftSetup else { return }
+    |                   `- warning: value 'fftSetup' was defined but never used; consider replacing with boolean test [#no-usage]
+140 | 
+141 |         let frameLen = min(Int(frameCount), fftSize)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:198:23: warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+196 |         cblas_scopy(Int32(frameLen), chPtr, 1, &monoBuffer, 1)
+197 |         if frameLen < fftSize {
+198 |             vDSP_vclr(&monoBuffer + frameLen, 1, vDSP_Length(fftSize - frameLen))
+    |                       |- warning: cannot use inout expression here; argument #1 must be a pointer that outlives the call to '+' [#TemporaryPointers]
+    |                       |- note: implicit argument conversion from '[Float]' to 'UnsafeMutablePointer<Float>' produces a pointer valid only for the duration of the call to '+'
+    |                       `- note: use the 'withUnsafeMutableBufferPointer' method on Array in order to explicitly convert argument to buffer pointer valid for a defined scope
+199 |         }
+200 |         computeAndPublish()
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:218:31: warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+216 |                 complexImag.withUnsafeMutableBufferPointer { iPtr in
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+    |                               `- warning: variable 'rBase' was never mutated; consider changing to 'let' constant
+219 |                           var iBase = iPtr.baseAddress else { return }
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/Spectrum/SpectrumAnalyzer.swift:219:31: warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+217 |                     guard let wBase = wPtr.baseAddress,
+218 |                           var rBase = rPtr.baseAddress,
+219 |                           var iBase = iPtr.baseAddress else { return }
+    |                               `- warning: variable 'iBase' was never mutated; consider changing to 'let' constant
+220 |                     var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
+221 |                     wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
+
+[#TemporaryPointers]: <https://docs.swift.org/compiler/documentation/diagnostics/temporary-pointers>
+[88/113] Compiling AdaptiveSound AudioViewModel+LibraryScan.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[89/113] Compiling AdaptiveSound AudioViewModel+Lifecycle.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[90/113] Compiling AdaptiveSound AudioViewModel+Playlist.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[91/113] Compiling AdaptiveSound AudioViewModel+SpectrumTimer.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[92/113] Compiling AdaptiveSound AudioViewModel+Transport.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[93/113] Compiling AdaptiveSound AudioViewModel.swift
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:87:13: warning: no 'async' operations occur within 'await' expression
+ 85 |                 }
+ 86 |             )
+ 87 |             await publishScanResult(result)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 88 |         } catch is CancellationError {
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+
+/Users/ramith/code/sound-engineering/Sources/AdaptiveSound/AudioViewModel+LibraryScan.swift:91:13: warning: no 'async' operations occur within 'await' expression
+ 89 |             await MainActor.run { [weak self] in self?.scanProgress = nil }
+ 90 |         } catch let conflict as NestedRootConflict {
+ 91 |             await publishScanRejection(conflict)
+    |             `- warning: no 'async' operations occur within 'await' expression
+ 92 |         } catch {
+ 93 |             await MainActor.run { [weak self] in
+[94/113] Compiling AdaptiveSound EQTabView.swift
+[95/113] Compiling AdaptiveSound MonitoringTabView.swift
+[96/113] Compiling AdaptiveSound SettingsTabView.swift
+[97/113] Compiling AdaptiveSound UXLog.swift
+[98/113] Compiling AdaptiveSound resource_bundle_accessor.swift
+[99/113] Compiling AdaptiveSound EQPresetPickerView.swift
+[100/113] Compiling AdaptiveSound FrequencyResponseCanvas.swift
+[101/113] Compiling AdaptiveSound SaveCustomPresetView.swift
+[102/113] Compiling AdaptiveSound FormatBadgeView.swift
+[103/113] Compiling AdaptiveSound LoudnessMetersView.swift
+[104/113] Compiling AdaptiveSound MonitorChannelRowView.swift
+[105/113] Compiling AdaptiveSound PlaylistView.swift
+[106/113] Compiling AdaptiveSound TrackInfoCard.swift
+[107/113] Compiling AdaptiveSound PureModeSettingsSection.swift
+[108/113] Compiling AdaptiveSound SettingsControlRow.swift
+[109/113] Compiling AdaptiveSound SpectrumAnalyzerView.swift
+[110/113] Compiling AdaptiveSound SpectrumColorPalette.swift
+[111/113] Emitting module AdaptiveSound
+[111/114] Write Objects.LinkFileList
+warning: /var/folders/cc/96ryh1p90_l_49flfmssr5j00000gn/T/TemporaryDirectory.3vtXca/DeviceBridge.pch: No such file or directory
+note: while processing /var/folders/cc/96ryh1p90_l_49flfmssr5j00000gn/T/TemporaryDirectory.3vtXca/DeviceBridge.pch
+[112/114] Linking AdaptiveSound
+[113/114] Applying AdaptiveSound
+Build complete! (8.94s)
