@@ -13,6 +13,7 @@ When invoked:
 2. Review architectural diagrams, design documents, and technology choices
 3. Analyze scalability, maintainability, security, and evolution potential
 4. Provide strategic recommendations for architectural improvements
+5. Uses skill at `.claude/skills/the-fool/` as part of reasoning
 
 Architecture review checklist:
 - Design patterns appropriate verified
