@@ -156,11 +156,11 @@ final class AudioViewModel {
 
     var musicFolderURL: URL? {
         didSet {
-            // Update folder monitoring when folder changes
-            stopFolderMonitoring()
-            if let url = musicFolderURL {
-                startFolderMonitoring(url)
-            }
+            // S8.4: the recursive FSEvents `LibraryWatcher` replaces the old non-recursive
+            // DispatchSource monitor. Re-point it at the current folder set so a newly chosen
+            // folder is watched promptly (for both the visible playlist refresh and the store
+            // reconcile). refreshWatchedRoots is async, so hop through a Task.
+            Task { @MainActor [weak self] in await self?.refreshWatchedRoots() }
         }
     }
 
@@ -200,12 +200,25 @@ final class AudioViewModel {
     /// published from the off-main pass via a `@MainActor` hop. `nil` when idle.
     var metadataProgress: MetadataProgress?
 
-    // MARK: - Directory Monitoring
+    // MARK: - Directory Monitoring (S8.4 — recursive FSEvents LibraryWatcher)
 
-    /// Internal (not private) so `AudioViewModel+FolderMonitor.swift` can access them.
-    var folderMonitorSource: DispatchSourceFileSystemObject?
-    var monitoringQueue = DispatchQueue(label: "com.adaptivesound.folder-monitor", qos: .default)
-    var folderMonitorDebounceTask: Task<Void, Never>?
+    /// The recursive FSEvents watcher. Replaces the old non-recursive DispatchSource monitor:
+    /// it watches the registered store roots (+ the visible folder) and drives BOTH the store
+    /// reconcile AND the in-memory playlist refresh. Built in `makeLibraryStore`. Live-reconcile
+    /// wiring lives in `AudioViewModel+Reconcile.swift`.
+    var libraryWatcher: LibraryWatcher?
+    let libraryWatcherQueue = DispatchQueue(label: "com.adaptivesound.library-watcher", qos: .utility)
+    /// The store roots the watcher currently covers, for attributing an event path to the root
+    /// that must be reconciled.
+    var watchedRoots: [WatchedRoot] = []
+    /// Per-root reconcile debounce tasks (coalesce a burst → one reconcile ~1 s after the last event).
+    var reconcileDebounce: [Int64: Task<Void, Never>] = [:]
+    /// Roots with a reconcile in flight, and roots whose reconcile must re-run (a burst arrived
+    /// mid-reconcile) — so same-root reconciles never overlap and a late change is not lost.
+    var reconcilingRoots: Set<Int64> = []
+    var pendingReconcile: Set<Int64> = []
+    /// Debounce for the visible in-memory playlist refresh (replaces the old monitor's reload).
+    var playlistRefreshTask: Task<Void, Never>?
 
     // MARK: - Playback Modes (WinAmp Style)
 
@@ -316,7 +329,7 @@ final class AudioViewModel {
 
 // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
 // AudioViewModel+Lifecycle.swift.
-// Folder monitoring lives in AudioViewModel+FolderMonitor.swift.
+// Live folder-watch + reconcile (FSEvents) lives in AudioViewModel+Reconcile.swift.
 // Playlist editing (movePlaylistItems, removeTrack, clearPlaylist, toggleShuffle, cycleRepeatMode)
 // lives in AudioViewModel+Playlist.swift.
 // Gapless/auto-advance (handleTrackTransition, computeNextIndex) lives in AudioViewModel+AutoAdvance.swift.
