@@ -11,7 +11,7 @@ This directory contains the sprint methodology, the forward sprint schedule, and
 
 ## Organization
 
-Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. Early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-1b-Part-A postmortem) lives in [`../session-notes/`](../session-notes/). This directory holds the methodology, the forward schedule, and the shipped-sprint records.
+Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. Early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-0 team sprints, the team fixing plans, the Phase-1b-Part-A postmortem) lives in [`../session-notes/`](../session-notes/), where it is date-prefixed (`YYYY-MM-DD-*.md`). This directory holds the methodology, the forward schedule, and the shipped-sprint records.
 
 ### Historical per-sprint records (this directory)
 - **04-sprint-4-loudness-safety{,-plan,-test-plan,-retro}.md** — Loudness safety (BS.1770-5 meter + true-peak limiter) — ✅ shipped (merged)

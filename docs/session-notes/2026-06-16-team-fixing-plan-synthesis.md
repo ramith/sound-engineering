@@ -1,4 +1,7 @@
 # 🎯 Team Fixing Plan — Final Synthesis
+
+> **📦 ARCHIVED — historical session note (2026-06-16).** Synthesis of the Phase-0/1 team fixing plan; the work shipped. Retained for provenance, not a current plan.
+
 **Status:** ✅ COMPLETE — All 5 domain experts delivered  
 **Date:** 2026-06-16  
 **Ready:** For immediate team execution
@@ -250,7 +253,7 @@ Phase 1 (Features)
 
 ## **How to Use This Plan**
 
-1. **Print or open in IDE:** `TEAM-FIXING-PLAN.md` (full detailed version)
+1. **Print or open in IDE:** `2026-06-16-team-fixing-plan.md` (full detailed version)
 2. **Track progress:** Check boxes above as tasks complete
 3. **Dependencies:** Respect critical path (ramping → bypass → modules)
 4. **Daily standup:** Reference timeline above to stay aligned
@@ -260,10 +263,10 @@ Phase 1 (Features)
 
 ## **Integration with Existing Docs**
 
-- **Architecture rationale:** [docs/architecture/architecture.md](docs/architecture/architecture.md)
-- **Sprint execution:** [docs/sprints/07-phase-1b-part-b-kickoff.md](docs/sprints/07-phase-1b-part-b-kickoff.md)
-- **Validation strategy:** [docs/architecture/validation-strategy.md](docs/architecture/validation-strategy.md)
-- **Product roadmap:** [docs/product/roadmap.md](docs/product/roadmap.md)
+- **Architecture rationale:** [docs/architecture/architecture.md](../architecture/architecture.md)
+- **Sprint execution:** [docs/sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md)
+- **Validation strategy:** [docs/architecture/validation-strategy.md](../architecture/validation-strategy.md)
+- **Product roadmap:** [docs/product/roadmap.md](../product/roadmap.md)
 
 ---
 

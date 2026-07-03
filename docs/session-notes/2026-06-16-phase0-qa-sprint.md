@@ -1,4 +1,7 @@
 # ✅ Phase 0 Sprint: QA Expert
+
+> **📦 ARCHIVED — historical Phase-0 sprint note (2026-06-16).** ✅ Completed; retained for provenance, not a current plan.
+
 **Task:** Null Test Framework + Pre-Commit Hook  
 **Owner:** QA Expert  
 **Duration:** 1 day (Fri 06/19, after DSP finishes bypass)  

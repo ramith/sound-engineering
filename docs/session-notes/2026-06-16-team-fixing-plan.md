@@ -1,4 +1,7 @@
 # 🎯 Adaptive Sound: Comprehensive Team Fixing Plan
+
+> **📦 ARCHIVED — historical session note (2026-06-16).** These Phase-0/1 fixes shipped; retained for provenance, not a current plan. Forward schedule: [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).
+
 **Status:** In synthesis (5 domain experts coordinating)  
 **Generated:** 2026-06-16  
 **Target Release:** Phase 1b Part B (2026-06-21)
@@ -352,10 +355,10 @@ Break multi-type files into single-type files:
 
 ## Integration with Existing Docs
 
-- **Architecture rationale:** See [docs/architecture/architecture.md](docs/architecture/architecture.md) §9–14
-- **Sprint execution:** See [docs/sprints/07-phase-1b-part-b-kickoff.md](docs/sprints/07-phase-1b-part-b-kickoff.md)
-- **Validation strategy:** See [docs/architecture/validation-strategy.md](docs/architecture/validation-strategy.md)
-- **Product roadmap:** See [docs/product/roadmap.md](docs/product/roadmap.md)
+- **Architecture rationale:** See [docs/architecture/architecture.md](../architecture/architecture.md) §9–14
+- **Sprint execution:** See [docs/sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md)
+- **Validation strategy:** See [docs/architecture/validation-strategy.md](../architecture/validation-strategy.md)
+- **Product roadmap:** See [docs/product/roadmap.md](../product/roadmap.md)
 
 ---
 
