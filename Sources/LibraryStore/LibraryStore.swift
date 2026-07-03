@@ -147,6 +147,38 @@ public actor LibraryStore {
         return connection.lastInsertRowID()
     }
 
+    /// Set a track's reserved user-state columns (`play_count`/`loved`/`rating`). A
+    /// VERIFICATION HOOK, not the DAO: real play-count/rating writes are an S10 concern.
+    /// Used by the harness to prove these durable, id-keyed values SURVIVE a move-match
+    /// (S8.4 Gate-2 — the whole point of preserving `tracks.id` across a move).
+    public func setUserState(trackID: Int64, playCount: Int64, loved: Bool, rating: Int64?) throws {
+        let statement = try connection.prepare(
+            "UPDATE tracks SET play_count = ?, loved = ?, rating = ? WHERE id = ?;"
+        )
+        defer { statement.finalize() }
+        try statement.bind(playCount, at: 1)
+        try statement.bind(Int64(loved ? 1 : 0), at: 2)
+        try statement.bind(rating, at: 3)
+        try statement.bind(trackID, at: 4)
+        _ = try statement.step()
+    }
+
+    /// Read a track's reserved user-state columns — the read side of `setUserState`, so
+    /// the harness can assert they survived a move. Verification hook, not the DAO. `nil`
+    /// if no such track.
+    public func userState(trackID: Int64) throws -> TrackUserState? {
+        let statement = try connection.prepare(
+            "SELECT play_count, loved, rating FROM tracks WHERE id = ?;"
+        )
+        defer { statement.finalize() }
+        try statement.bind(trackID, at: 1)
+        guard try statement.step() else { return nil }
+        let playCount = statement.columnInt64(0)
+        let loved = statement.columnInt64(1) == 1
+        let rating = statement.columnIsNull(2) ? nil : statement.columnInt64(2)
+        return TrackUserState(playCount: playCount, loved: loved, rating: rating)
+    }
+
     // MARK: - Open / repair pipeline
 
     /// The result of an open: the live connection plus the schema version reached.
