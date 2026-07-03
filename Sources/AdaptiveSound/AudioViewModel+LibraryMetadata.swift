@@ -18,6 +18,7 @@ extension AudioViewModel {
     /// `generation`. No-op if the artwork cache never built (store construction failed).
     func runMetadataPass(_ store: LibraryStore, generation: Int64) async {
         guard let cache = metadataArtworkCache else { return }
+        logUX("runMetadataPass: start (generation \(generation))")
         do {
             try await MetadataScanner().run(
                 generation: generation, into: store, cache: cache, extractor: MetadataExtractor(),
@@ -29,8 +30,13 @@ extension AudioViewModel {
             logUX("runMetadataPass: done (generation \(generation))")
         } catch is CancellationError {
             metadataProgress = nil // expected on a re-trigger/teardown; enriched rows stay valid
+            logUX("runMetadataPass: cancelled (generation \(generation); enriched rows remain valid)")
         } catch {
             metadataProgress = nil
+            // Log the FULL error (not just localizedDescription, which drops the cause): a store
+            // failure — e.g. a schema-drift `no such column: metadata_scanned` on a DB created by
+            // a pre-S8.3 build — surfaces HERE, in Console, instead of vanishing into errorMessage.
+            logUX("runMetadataPass: FAILED — \(error)")
             errorMessage = "Metadata pass failed: \(error.localizedDescription)"
         }
     }
