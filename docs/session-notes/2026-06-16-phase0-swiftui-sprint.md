@@ -1,4 +1,7 @@
 # 📱 Phase 0 Sprint: SwiftUI Pro
+
+> **📦 ARCHIVED — historical Phase-0 sprint note (2026-06-16).** ✅ Completed; retained for provenance, not a current plan.
+
 **Task:** EQ Consolidation  
 **Owner:** SwiftUI Pro  
 **Duration:** 2 days (Wed 06/17 → Thu 06/18)  

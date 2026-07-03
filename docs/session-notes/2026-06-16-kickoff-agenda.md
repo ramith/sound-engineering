@@ -1,4 +1,7 @@
 # 🚀 Team Kick-Off Meeting Agenda
+
+> **📦 ARCHIVED — historical kickoff agenda (2026-06-16).** Phase-0 team kickoff; retained for provenance, not a current plan.
+
 **Date:** 2026-06-16 (Today) / 2026-06-17 (First Day)  
 **Duration:** 30 minutes (review) + 15 min Q&A  
 **Attendees:** Full team (DSP Engineer, SwiftUI Pro, Refactoring Specialist, QA Expert, C++ Expert)
@@ -9,8 +12,8 @@
 
 ### **1. Review Fixing Plan (10 min)**
 📄 **Documents:**
-- [`TEAM-FIXING-PLAN-SYNTHESIS.md`](TEAM-FIXING-PLAN-SYNTHESIS.md) — 2-minute overview
-- [`TEAM-FIXING-PLAN.md`](TEAM-FIXING-PLAN.md) — Details as needed
+- [`2026-06-16-team-fixing-plan-synthesis.md`](2026-06-16-team-fixing-plan-synthesis.md) — 2-minute overview
+- [`2026-06-16-team-fixing-plan.md`](2026-06-16-team-fixing-plan.md) — Details as needed
 
 **Key Points:**
 - Phase 0 (Critical, 2-3 days) must complete before Phase 1
@@ -134,9 +137,9 @@
 
 ## Important Links
 
-- **Full Plan:** [`TEAM-FIXING-PLAN.md`](TEAM-FIXING-PLAN.md)
-- **Executive Summary:** [`TEAM-FIXING-PLAN-SYNTHESIS.md`](TEAM-FIXING-PLAN-SYNTHESIS.md)
-- **Architecture Docs:** [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
+- **Full Plan:** [`2026-06-16-team-fixing-plan.md`](2026-06-16-team-fixing-plan.md)
+- **Executive Summary:** [`2026-06-16-team-fixing-plan-synthesis.md`](2026-06-16-team-fixing-plan-synthesis.md)
+- **Architecture Docs:** [`docs/architecture/architecture.md`](../architecture/architecture.md)
 - **Code Review:** Comprehensive review above (code-review summary in conversation)
 
 ---

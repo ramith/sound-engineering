@@ -1,4 +1,7 @@
 # 📋 Code Review Findings: Comprehensive Fixing Plan
+
+> **📦 ARCHIVED — historical session note (2026-06-16).** These code-review fixes shipped in Phase 0/1; retained for provenance, not a current plan.
+
 **Status:** Ready for parallel execution  
 **Effort:** 3-5 days (all agents working in parallel)  
 **Impact:** Production-quality code before Phase 1 DSP shipping

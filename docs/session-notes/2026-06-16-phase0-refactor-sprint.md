@@ -1,4 +1,7 @@
 # 🔄 Phase 0 Sprint: Refactoring Specialist
+
+> **📦 ARCHIVED — historical Phase-0 sprint note (2026-06-16).** ✅ Completed; retained for provenance, not a current plan.
+
 **Task:** Fix playTrack(at:) Bug  
 **Owner:** Refactoring Specialist  
 **Duration:** 15 minutes  
