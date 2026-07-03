@@ -12,6 +12,14 @@ struct WatchedRoot: Equatable {
     let normalizedPath: String
 }
 
+/// Per-root live reconcile state (coarse — for the S9 browse UI's reassurance affordance).
+enum ReconcileState: Equatable {
+    case watching // local volume, live-watched via FSEvents
+    case onDemandOnly // network volume — no FSEvents; reconciles on-demand / at launch
+    case paused // volume/folder currently unreachable
+    case catchingUp // a reconcile is running
+}
+
 // MARK: - AudioViewModel live folder-watch + reconcile seam (S8.4 slice 5a)
 
 //
@@ -40,16 +48,38 @@ extension AudioViewModel {
     func refreshWatchedRoots() async {
         var roots: [LibraryFolder] = []
         if let store { roots = (try? await store.roots()) ?? [] }
-        watchedRoots = roots.map {
+        let all = roots.map {
             WatchedRoot(folderID: $0.id, url: URL(fileURLWithPath: $0.path),
                         normalizedPath: PathNormalizer.normalizedString(forPath: $0.path))
         }
-        var urls = watchedRoots.map(\.url)
+        watchedRoots = all
+        var localURLs: [URL] = []
+        var network: [WatchedRoot] = []
+        for root in all {
+            if isLocalVolume(root.url) {
+                localURLs.append(root.url)
+                if reconcileState[root.folderID] == nil { reconcileState[root.folderID] = .watching }
+            } else {
+                network.append(root)
+                reconcileState[root.folderID] = .onDemandOnly
+                logUX("watch: '\(root.url.lastPathComponent)' is on a network volume — FSEvents "
+                    + "unavailable; reconciles on-demand + at launch only")
+            }
+        }
+        networkRoots = network
+        // The visible folder (for the playlist refresh) if it isn't already a store root + is local.
         if let visible = musicFolderURL {
             let visiblePath = PathNormalizer.normalizedString(for: visible)
-            if !watchedRoots.contains(where: { $0.normalizedPath == visiblePath }) { urls.append(visible) }
+            if !all.contains(where: { $0.normalizedPath == visiblePath }), isLocalVolume(visible) {
+                localURLs.append(visible)
+            }
         }
-        libraryWatcher?.setRoots(urls)
+        libraryWatcher?.setRoots(localURLs)
+    }
+
+    /// Whether `url` is on a LOCAL volume (FSEvents can watch it). Unknown → assume local.
+    func isLocalVolume(_ url: URL) -> Bool {
+        ((try? url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) ?? nil) ?? true
     }
 
     /// Route one FSEvents batch (on @MainActor): reconcile each affected store root, and refresh
@@ -94,8 +124,10 @@ extension AudioViewModel {
         guard let store else { return }
         if reconcilingRoots.contains(folderID) { pendingReconcile.insert(folderID); return }
         reconcilingRoots.insert(folderID)
+        isReconciling = true
         await performReconcile(folderID: folderID, root: root, store: store)
         reconcilingRoots.remove(folderID)
+        isReconciling = !reconcilingRoots.isEmpty
         if pendingReconcile.remove(folderID) != nil { scheduleReconcile(folderID: folderID, root: root) }
     }
 
@@ -103,19 +135,32 @@ extension AudioViewModel {
     /// same scan → move-match → metadata → facet-sweep the on-demand path runs. Catches the
     /// empty-walk guard + cancellation silently (background non-events).
     private func performReconcile(folderID: Int64, root: URL, store: LibraryStore) async {
+        // Proactive reachability precheck (slice 5b): an unmounted volume / deleted folder → skip
+        // the walk entirely (paused). The empty-walk backstop (slice 3) remains the actual safety.
+        guard RootReachabilityProbe.isReachable(root) else {
+            reconcileState[folderID] = .paused
+            logUX("reconcile: folder \(folderID) unreachable (volume/folder gone) — paused, rows preserved")
+            return
+        }
+        reconcileState[folderID] = .catchingUp
         let didAccess = root.startAccessingSecurityScopedResource()
         defer { if didAccess { root.stopAccessingSecurityScopedResource() } }
         do {
             let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
             await runMetadataPass(store, generation: result.generation)
             if !Task.isCancelled { _ = try? await store.sweepOrphanFacets() } // SF-2 post-churn cleanup
+            reconcileState[folderID] = isLocalVolume(root) ? .watching : .onDemandOnly
+            lastReconciledAt = Date()
+            lastReconcileError = nil
             logUX("reconcile: folder \(folderID) — seen=\(result.filesSeen) swept=\(result.orphansSwept)")
         } catch is CancellationError {
             // expected on teardown / re-trigger
         } catch let unreachable as RootUnreachableError {
+            reconcileState[folderID] = .paused
             logUX("reconcile: root unreachable (folder \(unreachable.folderID); "
                 + "\(unreachable.storedRowCount) rows preserved) — sweep refused")
         } catch {
+            lastReconcileError = error.localizedDescription
             logUX("reconcile: folder \(folderID) failed — \(error.localizedDescription)")
         }
     }
