@@ -192,6 +192,14 @@ final class AudioViewModel {
     /// makes the scanner throw `CancellationError` mid-walk and SKIP its sweep.
     var scanTask: Task<Void, Never>?
 
+    /// The artwork cache (S8.3), built alongside `store` in `makeLibraryStore` from
+    /// `LibraryStore.defaultArtworkCacheURL()`. `nil` if the store failed to construct.
+    var metadataArtworkCache: ArtworkCache?
+
+    /// Latest metadata-pass progress (determinate — the pass knows its total up front),
+    /// published from the off-main pass via a `@MainActor` hop. `nil` when idle.
+    var metadataProgress: MetadataProgress?
+
     // MARK: - Directory Monitoring
 
     /// Internal (not private) so `AudioViewModel+FolderMonitor.swift` can access them.

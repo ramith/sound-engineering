@@ -28,6 +28,9 @@ extension AudioViewModel {
             let url = try LibraryStore.defaultStoreURL()
             let created = try await LibraryStore(url: url, appBuild: appBuildIdentifier)
             store = created
+            if let cacheURL = try? LibraryStore.defaultArtworkCacheURL() {
+                metadataArtworkCache = ArtworkCache(directory: cacheURL)
+            }
             logUX("libraryStore: ready at '\(Self.makeDisplayPath(url))'")
         } catch {
             // Additive seam — the app runs without the store; only the parallel
@@ -85,6 +88,10 @@ extension AudioViewModel {
                 }
             )
             publishScanResult(result)
+            // After the structural scan (NOT inline — locked decision): enrich new/changed
+            // rows with tags + art, reusing this scan's generation. Runs on the same
+            // `scanTask`, so a re-trigger/teardown cancels the pass too.
+            await runMetadataPass(store, generation: result.generation)
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let conflict as NestedRootConflict {

@@ -167,6 +167,8 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "v-extractor-vanished", run: checkExtractorVanishedFile),
         // S8.3 Slice 3 — ArtworkCache (sha256 dedup + original + 512px thumbnail).
         CheckCase(label: "w-artwork-cache", run: checkArtworkCache),
+        // S8.3 Slice 4 — MetadataScanner pass (stub extractors; real files are Slice 5).
+        CheckCase(label: "x-metadata-pass", run: checkMetadataPass),
     ]
 }
 
@@ -222,7 +224,8 @@ func runAllChecks() async {
         + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move, "
         + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]; "
         + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
-        + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail) ===")
+        + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
+        + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
