@@ -20,11 +20,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(Color.asWindow)
-        .task {
-            viewModel.initializeEngine()
-        }
-        .onDisappear {
-            viewModel.shutdown()
-        }
+        // Engine init/teardown intentionally NOT here — it's owned by the app/scene lifecycle
+        // (AdaptiveSound.swift `.onAppear` starts it; AppDelegate.applicationShouldTerminate
+        // tears it down, awaited). Binding it to a view's `.task`/`.onDisappear` made teardown
+        // unreliable at quit (fire-and-forget) and re-inited on any view re-appearance.
     }
 }
