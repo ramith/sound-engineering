@@ -22,3 +22,19 @@ public struct RootUnreachableError: Error, Sendable, Equatable {
         self.storedRowCount = storedRowCount
     }
 }
+
+/// The proactive reachability precheck the VM runs BEFORE a live reconcile (S8.4 slice 5b) —
+/// an optimization layered on the empty-walk backstop (the actual data-loss safety, slice 3).
+public enum RootReachabilityProbe {
+    /// A root is reachable iff its path resolves to a readable directory RIGHT NOW. An unmounted
+    /// volume AND a deleted folder both read as unreachable — and both are handled identically:
+    /// SKIP the reconcile (never walk, never sweep — matching the founder-locked "never wipe on an
+    /// empty walk"). Deliberately simple + robust: distinguishing unmount-vs-delete would need the
+    /// stored volume identity (`st_dev`, which changes across remounts), and it isn't needed —
+    /// skipping is the right response to both.
+    public static func isReachable(_ root: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+}

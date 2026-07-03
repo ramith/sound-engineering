@@ -220,6 +220,21 @@ final class AudioViewModel {
     /// Debounce for the visible in-memory playlist refresh (replaces the old monitor's reload).
     var playlistRefreshTask: Task<Void, Never>?
 
+    // MARK: - Reconcile observability (S8.4 slice 5b — coarse state for the future S9 browse UI)
+
+    /// True while any root is reconciling — bind for a subtle "updating…" affordance at S9.
+    var isReconciling = false
+    /// When the last reconcile completed (a freshness indicator).
+    var lastReconciledAt: Date?
+    /// Last reconcile error message (a quiet inline notice at S9 — never a modal).
+    var lastReconcileError: String?
+    /// Per-root live state (watching / on-demand-only / paused / catching-up).
+    var reconcileState: [Int64: ReconcileState] = [:]
+    /// Roots on network volumes: FSEvents can't watch them, so they reconcile on-demand + at launch.
+    var networkRoots: [WatchedRoot] = []
+    /// NSWorkspace mount/unmount observer tokens (removed in `shutdown()`).
+    var volumeMonitorTokens: [any NSObjectProtocol] = []
+
     // MARK: - Playback Modes (WinAmp Style)
 
     /// Shuffle mode: when enabled, plays tracks in random order

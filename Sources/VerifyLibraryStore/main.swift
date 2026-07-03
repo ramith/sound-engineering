@@ -176,7 +176,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
-    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
+    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases() + reachabilityCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -204,6 +204,14 @@ func facetSweepCheckCases() -> [CheckCase] {
 func folderWatchCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "al-watcher-ingest", run: checkWatcherIngest),
+    ]
+}
+
+/// S8.4 Slice 5b — reconcile reachability precheck + root identity re-stamp (headless logic).
+func reachabilityCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "am-root-reachability", run: checkRootReachability),
+        CheckCase(label: "an-restamp-root", run: checkRestampRoot),
     ]
 }
 
@@ -281,7 +289,9 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S8.4 Slice 2: AI facet-sweep-basics [zero-track album/genre swept, referenced kept, idempotent], "
         + "AJ facet-sweep-sentinel-albumartist [id-0 never swept, album-artist-only kept + not rewritten], "
         + "AK facet-sweep-artwork [album deletion → artwork reclaimed]; "
-        + "S8.4 Slice 4: AL watcher-ingest [FSEvents decode/routing via ingest seam]) ===")
+        + "S8.4 Slice 4: AL watcher-ingest [FSEvents decode/routing via ingest seam]; "
+        + "S8.4 Slice 5b: AM root-reachability [precheck skips unmounted/deleted], "
+        + "AN restamp-root [remount dev/inode re-stamp keeps identity-dedup]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
