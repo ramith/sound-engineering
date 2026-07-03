@@ -4,6 +4,8 @@
 // deduped art + album cover), mark them, idempotent re-run (0 extractions), and the
 // tagless anti-loop. Same VerifyAUGraph idiom.
 
+import CoreGraphics
+import Dispatch
 import Foundation
 import LibraryScan
 import LibraryStore
@@ -125,5 +127,92 @@ private func checkPassNoTagsAntiLoop(
         return true
     } catch {
         printFail(number, "no-tags anti-loop threw: \(error)"); return false
+    }
+}
+
+// MARK: - metadata-pass cancellation skips the orphan sweep (M9, design §6 / §11-f)
+
+/// A pass cancelled mid-flight MUST commit its already-applied rows but SKIP the end-of-pass
+/// artwork orphan sweep — otherwise a cancelled pass on a partial view could delete cache
+/// files a not-yet-processed track will reference. The scan pass proves this (case M); this
+/// is the distinct `MetadataScanner` path. Idiom mirrors ChecksScanEdge's parked rendezvous.
+func checkMetadataPassCancellation(number: Int, url: URL) async -> Bool {
+    let cacheDir = url.deletingLastPathComponent()
+        .appendingPathComponent("m9-cache-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let cache = ArtworkCache(directory: cacheDir)
+        let root = try await store.addRoot(URL(fileURLWithPath: "/Music/M9"))
+        let gen = try await store.beginScanGeneration()
+        let ids = try await store.upsert(
+            (0 ..< 4).map { makeScanned(path: "/Music/M9/t\($0).flac", name: "t\($0)") },
+            folderID: root, generation: gen
+        )
+        guard ids.count == 4 else { printFail(number, "m9: 4-track seed failed"); return false }
+        // Seed an ORPHAN artwork row referenced by no track/album — a COMPLETED pass would sweep it.
+        try await store.linkArtwork(contentHash: "m9orphan", cachePath: "/cache/m9orphan.jpg", size: .zero, byteSize: 0)
+        guard try await store.countRows(inTable: "artwork") == 1 else {
+            printFail(number, "m9: orphan seed failed"); return false
+        }
+        // Park after the first apply, cancel, release → the pass must throw and skip the sweep.
+        guard try await cancelPassAfterFirstApply(store, cache: cache, gen: gen, number: number) else { return false }
+        // Sweep skipped ⇒ the orphan SURVIVES (artwork = {m9orphan, t0's shared art} = 2), and t0
+        // was enriched + marked (< 4 still pending).
+        guard try await store.countRows(inTable: "artwork") == 2 else {
+            printFail(number, "m9: orphan was swept despite cancellation (sweep NOT skipped)"); return false
+        }
+        guard try await store.tracksNeedingMetadata(limit: 10).count < 4 else {
+            printFail(number, "m9: no track was enriched before cancel (rendezvous mis-timed)"); return false
+        }
+        // A full (uncancelled) pass now completes and DOES sweep the orphan.
+        try await MetadataScanner().run(
+            generation: gen, into: store, cache: cache, extractor: StubExtractor(withArt: true, emptyTags: false)
+        )
+        guard try await store.countRows(inTable: "artwork") == 1 else {
+            printFail(number, "m9: a full pass did not sweep the orphan"); return false
+        }
+        printPass(number, "metadata-pass cancellation skips the sweep (§6/§11-f): a pass cancelled after the "
+            + "first apply throws CancellationError, keeps its applied+marked row, and does NOT sweep — a "
+            + "pre-seeded orphan SURVIVES; a later full pass reaps it")
+        return true
+    } catch {
+        printFail(number, "m9 cancellation threw: \(error)"); return false
+    }
+}
+
+/// Run the pass, park it in its progress closure after the FIRST apply, cancel while parked,
+/// then release so the drain loop's next `checkCancellation()` throws. Returns true iff the
+/// pass threw `CancellationError`. Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly.
+private func cancelPassAfterFirstApply(
+    _ store: LibraryStore, cache: ArtworkCache, gen: Int64, number: Int
+) async throws -> Bool {
+    let firstApply = OneShotLatch()
+    let proceed = DispatchSemaphore(value: 0) // released after cancel; wait()ed in the SYNC closure only
+    let applied = AsyncStream<Void>.makeStream()
+    let task = Task {
+        try await MetadataScanner().run(
+            generation: gen, into: store, cache: cache,
+            extractor: StubExtractor(withArt: true, emptyTags: false),
+            progress: { _ in
+                firstApply.runOnce {
+                    applied.continuation.yield(())
+                    applied.continuation.finish()
+                    proceed.wait() // park the pass after the first apply until the test has cancelled
+                }
+            }
+        )
+    }
+    var applies = applied.stream.makeAsyncIterator()
+    _ = await applies.next() // await the first applied row (no async-context semaphore wait)
+    task.cancel()
+    proceed.signal() // release → the drain loop's next checkCancellation() throws
+    do {
+        try await task.value
+        printFail(number, "m9: cancelled pass did NOT throw"); return false
+    } catch is CancellationError {
+        return true
+    } catch {
+        printFail(number, "m9: pass threw \(error), expected CancellationError"); return false
     }
 }

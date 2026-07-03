@@ -107,7 +107,7 @@ extern "C"
                                 CDeviceCapability* outCap,
                                 double* outRates,
                                 uint32_t maxRates,
-                                uint32_t* outRateCount)
+                                uint32_t* outRateCount) AUDIODSP_C_NOEXCEPT
     {
         if (outCap == nullptr)
         {
@@ -119,13 +119,13 @@ extern "C"
         return 1;
     }
 
-    void* pureModeEngineCreate(void)
+    void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT
     {
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): ownership transfers to the C caller.
         return new (std::nothrow) PureModeSession();
     }
 
-    int pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath)
+    int pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || filePath == nullptr)
@@ -184,7 +184,7 @@ extern "C"
         return 1;
     }
 
-    int pureModeEngineSeek(void* engine, double seconds)
+    int pureModeEngineSeek(void* engine, double seconds) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -214,7 +214,7 @@ extern "C"
         return seekOk ? 1 : 0;
     }
 
-    void pureModeEngineStop(void* engine)
+    void pureModeEngineStop(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -224,7 +224,7 @@ extern "C"
         session->engine->stop();
     }
 
-    void pureModeEngineDestroy(void* engine)
+    void pureModeEngineDestroy(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -238,7 +238,7 @@ extern "C"
         delete session;
     }
 
-    CAchievedOutputState pureModeEngineAchievedState(void* engine)
+    CAchievedOutputState pureModeEngineAchievedState(void* engine) AUDIODSP_C_NOEXCEPT
     {
         CAchievedOutputState out{};
         auto* session = static_cast<PureModeSession*>(engine);
@@ -268,7 +268,7 @@ extern "C"
         return out;
     }
 
-    double pureModeEnginePositionSeconds(void* engine)
+    double pureModeEnginePositionSeconds(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -287,7 +287,7 @@ extern "C"
         return static_cast<double>(total) / rate;
     }
 
-    int pureModeEngineSetNextTrack(void* engine, const char* filePath)
+    int pureModeEngineSetNextTrack(void* engine, const char* filePath) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || filePath == nullptr)
@@ -324,7 +324,7 @@ extern "C"
         return kNextTrackArmed;
     }
 
-    void pureModeEngineClearNextTrack(void* engine)
+    void pureModeEngineClearNextTrack(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -334,7 +334,7 @@ extern "C"
         session->gapless->clearNext();
     }
 
-    uint64_t pureModeEnginePollTrackAdvance(void* engine)
+    uint64_t pureModeEnginePollTrackAdvance(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -346,7 +346,7 @@ extern "C"
         return session->gapless->transitionCount();
     }
 
-    int pureModeEnginePlaybackEnded(void* engine)
+    int pureModeEnginePlaybackEnded(void* engine) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr)
@@ -356,7 +356,7 @@ extern "C"
         return session->gapless->ended() ? 1 : 0;
     }
 
-    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar)
+    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar) AUDIODSP_C_NOEXCEPT
     {
         if (deviceID == 0)
         {

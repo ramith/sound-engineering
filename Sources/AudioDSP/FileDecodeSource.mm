@@ -1219,7 +1219,7 @@ namespace AdaptiveSound
 // MetadataExtractor degrades to AVFoundation-only. No malloc: the handle owns its
 // std::vector/std::string storage and is released by ffmpegCloseMetadata.
 // ===========================================================================
-extern "C" void* ffmpegOpenMetadata(const char* path)
+extern "C" void* ffmpegOpenMetadata(const char* path) AUDIODSP_C_NOEXCEPT
 {
     if (path == nullptr) { return nullptr; }
 #if __has_include(<libavformat/avformat.h>)
@@ -1229,13 +1229,13 @@ extern "C" void* ffmpegOpenMetadata(const char* path)
 #endif
 }
 
-extern "C" void ffmpegCloseMetadata(void* handle)
+extern "C" void ffmpegCloseMetadata(void* handle) AUDIODSP_C_NOEXCEPT
 {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): balances ffmpegOpenMetadata().
     delete static_cast<CFileMetadataHandle*>(handle);
 }
 
-extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out)
+extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT
 {
     if (handle == nullptr || out == nullptr) { return; }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
@@ -1247,28 +1247,28 @@ extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out)
     out->artLength = static_cast<uint32_t>(meta->art.size());
 }
 
-extern "C" const char* ffmpegMetadataTagKey(void* handle, uint32_t index)
+extern "C" const char* ffmpegMetadataTagKey(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT
 {
     if (handle == nullptr) { return nullptr; }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return index < meta->keys.size() ? meta->keys[index].c_str() : nullptr;
 }
 
-extern "C" const char* ffmpegMetadataTagValue(void* handle, uint32_t index)
+extern "C" const char* ffmpegMetadataTagValue(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT
 {
     if (handle == nullptr) { return nullptr; }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return index < meta->values.size() ? meta->values[index].c_str() : nullptr;
 }
 
-extern "C" const uint8_t* ffmpegMetadataArtBytes(void* handle)
+extern "C" const uint8_t* ffmpegMetadataArtBytes(void* handle) AUDIODSP_C_NOEXCEPT
 {
     if (handle == nullptr) { return nullptr; }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return meta->art.empty() ? nullptr : meta->art.data();
 }
 
-extern "C" const char* ffmpegMetadataArtMime(void* handle)
+extern "C" const char* ffmpegMetadataArtMime(void* handle) AUDIODSP_C_NOEXCEPT
 {
     if (handle == nullptr) { return nullptr; }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);

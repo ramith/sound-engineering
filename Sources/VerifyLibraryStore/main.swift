@@ -172,6 +172,10 @@ func allCheckCases() -> [CheckCase] {
         // S8.3 Slice 5 — REAL-file extraction correctness (self-made tagged fixtures).
         CheckCase(label: "y-real-m4a", run: checkRealMetadataM4A),
         CheckCase(label: "z-real-flac", run: checkRealMetadataFLAC),
+        // S8.3 review-driven: album-cover first-wins (M5), pass cancellation (M9), real tagless.
+        CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
+        CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
+        CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ]
 }
 
@@ -229,7 +233,9 @@ func runAllChecks() async {
         + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
         + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
         + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]; "
-        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]) ===")
+        + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]; "
+        + "S8.3 review: AA album-cover-first-wins [IS NULL guard], AB metadata-pass-cancellation "
+        + "[skips sweep], AC real-no-tags [empty-not-crash + marked]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")

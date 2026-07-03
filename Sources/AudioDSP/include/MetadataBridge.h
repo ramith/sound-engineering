@@ -25,6 +25,17 @@
 
 #include <stdint.h>
 
+// A noexcept-specifier for the extern "C" bridge functions under C++ (a C++ exception must
+// never unwind across the C ABI into Swift — that is UB / std::terminate). Expands to nothing
+// for the C compiler Swift's bridging uses, where `noexcept` is not a keyword.
+#ifndef AUDIODSP_C_NOEXCEPT
+#ifdef __cplusplus
+#define AUDIODSP_C_NOEXCEPT noexcept
+#else
+#define AUDIODSP_C_NOEXCEPT
+#endif
+#endif
+
 // Scalar metadata read in one call into a caller-allocated POD (no allocation crosses the
 // ABI). `tagCount`/`artLength` bound the pointer accessors below.
 typedef struct
@@ -45,24 +56,24 @@ extern "C"
     /// Open `path` and extract its metadata into an owned handle, or NULL on ANY failure
     /// (FFmpeg absent, open failure, no such file, `path` NULL). The caller MUST balance a
     /// non-NULL return with exactly one ffmpegCloseMetadata().
-    void* ffmpegOpenMetadata(const char* path);
+    void* ffmpegOpenMetadata(const char* path) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy a handle from ffmpegOpenMetadata(). NULL-safe.
-    void ffmpegCloseMetadata(void* handle);
+    void ffmpegCloseMetadata(void* handle) AUDIODSP_C_NOEXCEPT;
 
     /// Fill `out` (caller-allocated) with the handle's scalar properties + counts. No-op
     /// if either argument is NULL.
-    void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out);
+    void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT;
 
     /// The lowercased key / the value of tag `index` (< scalars.tagCount), borrowed from
     /// the handle (valid until close). NULL if out of range / handle NULL.
-    const char* ffmpegMetadataTagKey(void* handle, uint32_t index);
-    const char* ffmpegMetadataTagValue(void* handle, uint32_t index);
+    const char* ffmpegMetadataTagKey(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
+    const char* ffmpegMetadataTagValue(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
 
     /// The embedded-art bytes (scalars.artLength long) / its MIME string, borrowed from the
     /// handle (valid until close). NULL if there is no art / handle NULL.
-    const uint8_t* ffmpegMetadataArtBytes(void* handle);
-    const char* ffmpegMetadataArtMime(void* handle);
+    const uint8_t* ffmpegMetadataArtBytes(void* handle) AUDIODSP_C_NOEXCEPT;
+    const char* ffmpegMetadataArtMime(void* handle) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

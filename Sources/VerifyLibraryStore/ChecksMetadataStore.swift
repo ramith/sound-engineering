@@ -212,3 +212,60 @@ func checkExtractorVanishedFile(number: Int, url: URL) async -> Bool {
         + "FFmpeg-first (.flac) and AVFoundation-first (.m4a) routing paths")
     return true
 }
+
+// MARK: - album-cover first-wins (M5): attachArtworkLocked's `artwork_key IS NULL` guard
+
+/// The album cover is the FIRST applied track's art. `attachArtworkLocked` sets it only when
+/// the album has none (`… AND artwork_key IS NULL`), so re-linking a track — or applying a
+/// LATER track in the same album — updates the TRACK's art but must NOT override the album
+/// cover. Case U covered only album-LESS tracks, so this guard was untested.
+func checkAlbumCoverFirstWins(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let root = try await store.addRoot(URL(fileURLWithPath: "/Music/S83d"))
+        let gen = try await store.beginScanGeneration()
+        let ids = try await store.upsert([
+            makeScanned(path: "/Music/S83d/a.flac", name: "a"),
+            makeScanned(path: "/Music/S83d/b.flac", name: "b"),
+        ], folderID: root, generation: gen)
+        guard ids.count == 2 else { printFail(number, "album-cover: 2-track seed failed"); return false }
+
+        // t0 → art A: the album had no cover, so A becomes the album cover.
+        try await applyCover(store, track: ids[0], title: "a", hash: "A", gen: gen)
+        guard try await trackArt(store, ids[0]) == "A", try await albumCover(store) == "A" else {
+            printFail(number, "album-cover: first apply did not set the album cover to A"); return false
+        }
+        // Re-link t0 → art B: the TRACK updates; the album cover STAYS A (IS NULL guard).
+        try await applyCover(store, track: ids[0], title: "a", hash: "B", gen: gen)
+        guard try await trackArt(store, ids[0]) == "B", try await albumCover(store) == "A" else {
+            printFail(number, "album-cover: re-link overrode the album cover (IS NULL guard failed)"); return false
+        }
+        // A SECOND track in the SAME album → art C: album cover still A (not overridden).
+        try await applyCover(store, track: ids[1], title: "b", hash: "C", gen: gen)
+        guard try await trackArt(store, ids[1]) == "C", try await albumCover(store) == "A" else {
+            printFail(number, "album-cover: a later track in the album overrode the album cover"); return false
+        }
+        printPass(number, "album cover = FIRST applied track's art: the `artwork_key IS NULL` guard means "
+            + "re-linking a track (or applying a later track in the album) updates the TRACK art but NEVER "
+            + "overrides the album cover")
+        return true
+    } catch {
+        printFail(number, "album-cover-first-wins threw: \(error)"); return false
+    }
+}
+
+/// Apply `hash` as `track`'s art within album "One Album" (all tracks share the album).
+private func applyCover(_ store: LibraryStore, track: Int64, title: String, hash: String, gen: Int64) async throws {
+    let meta = TrackMetadata(title: title, artistName: "AA", albumTitle: "One Album", albumArtistName: "AA")
+    let link = ArtworkLink(contentHash: hash, cachePath: "/cache/\(hash).jpg",
+                           pixelSize: CGSize(width: 10, height: 10), byteSize: 10)
+    try await store.applyExtractedResult(trackID: track, meta: meta, artwork: link, generation: gen)
+}
+
+private func trackArt(_ store: LibraryStore, _ id: Int64) async throws -> String? {
+    try await store.track(id: id)?.artworkKey
+}
+
+private func albumCover(_ store: LibraryStore) async throws -> String? {
+    try await store.albums().first(where: { $0.title == "One Album" })?.artworkKey
+}

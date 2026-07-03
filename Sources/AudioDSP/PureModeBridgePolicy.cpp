@@ -20,7 +20,7 @@ extern "C"
                           const double* availableRates,
                           uint32_t rateCount,
                           const CFileFormat* file,
-                          CPureModeEvaluation* out)
+                          CPureModeEvaluation* out) AUDIODSP_C_NOEXCEPT
     {
         if (cap == nullptr || file == nullptr || out == nullptr)
         {

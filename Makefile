@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format library-store-verify gate sanitize tsan help
+.PHONY: build run release run-release clean xcode profile test format library-store-verify gate sanitize tsan sanitize-library-store regenerate-metadata-fixtures help
 
 build:
 	swift build -c debug -j 8
@@ -79,6 +79,17 @@ sanitize:
 tsan:
 	bash scripts/build-null-test.sh --tsan
 
+# M11 (S8.3): the FFmpeg-metadata C bridge (FileDecodeSource.mm's new/delete handle + the
+# std::vector art copy in readAttachedArt) under AddressSanitizer. `make sanitize`/`tsan`
+# only instrument the standalone C++ null test — never this bridge — so this target builds +
+# runs the library-store harness with ASan; its real-file cases (Y/Z/AC) drive
+# ffmpegOpenMetadata → accessors → ffmpegCloseMetadata over the flac/m4a fixtures. Catches
+# heap-overflow / use-after-free / double-free in the bridge's handle lifecycle. NOTE:
+# macOS/Apple-Silicon ASan ships NO LeakSanitizer, so leaks are covered by the opaque-handle
+# RAII design + review, not by this gate. Part of the pre-merge sanitizer suite (with sanitize/tsan).
+sanitize-library-store:
+	swift run --sanitize=address VerifyLibraryStore
+
 # Regenerate the S8.3 metadata-extraction fixtures (Tests/Fixtures/artwork-audio/).
 # DEV-ONLY + manual: the checked-in fixtures are AUTHORITATIVE and `make gate` never runs
 # this (a builder need not have ffmpeg). Self-made/public-domain — a sine tone + a solid
@@ -98,6 +109,7 @@ regenerate-metadata-fixtures:
 	  -metadata disc="1/2" -metadata genre="TestGenre" -y "$$dir/fixture.flac"; \
 	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" \
 	  -map 0:a -c:a aac -map_metadata -1 -y "$$dir/no-tags.m4a"; \
+	echo "cover.png sha256 (pin in ChecksMetadataReal.knownCoverSHA256 + the README table): $$(shasum -a 256 "$$dir/cover.png" | awk '{print $$1}')"; \
 	rm -f "$$dir/cover.png"; \
 	echo "Regenerated $$dir fixtures (fixture.m4a, fixture.flac, no-tags.m4a)."
 
@@ -115,5 +127,6 @@ help:
 	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
 	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
+	@echo "  make sanitize-library-store - VerifyLibraryStore under ASan (M11: FFmpeg-metadata bridge memory safety)"
 	@echo "  make regenerate-metadata-fixtures - Rebuild the S8.3 tagged test fixtures (needs ffmpeg; manual)"
 	@echo "  make profile- Build and profile with system trace"

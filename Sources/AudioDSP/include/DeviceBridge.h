@@ -21,7 +21,8 @@
 #include "PureModeBridge.h"
 
 // Re-export the pure-C metadata bridge (S8.3) so `import AudioDSP` (LibraryScan) exposes
-// ffmpegReadMetadata / ffmpegMetadataFree to Swift for the FFmpeg-fallback extractor.
+// the opaque-handle FFmpeg-metadata API (ffmpegOpenMetadata / ffmpegCloseMetadata +
+// the ffmpegMetadata* accessors) to Swift for the FFmpeg-fallback extractor.
 // Pure C11; #pragma once guards double-include.
 #include "MetadataBridge.h"
 
