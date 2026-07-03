@@ -72,6 +72,7 @@ extension AudioViewModel {
         // per-file cancellation and skip their sweeps, so nothing writes to `store` while the
         // engine is being torn down.
         libraryWatcher?.stop()
+        stopVolumeMonitor()
         for task in reconcileDebounce.values {
             task.cancel()
         }

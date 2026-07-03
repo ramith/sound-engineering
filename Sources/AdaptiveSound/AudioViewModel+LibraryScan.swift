@@ -42,6 +42,11 @@ extension AudioViewModel {
         // reconcile. refreshWatchedRoots picks up the store roots (∪ the visible folder).
         startLibraryWatcher()
         await refreshWatchedRoots()
+        startVolumeMonitor() // NSWorkspace mount/unmount → pause/resume + remount re-stamp (5b)
+        // Network roots have no FSEvents live-watch — reconcile them once at launch (D2 split).
+        for root in networkRoots {
+            scheduleReconcile(folderID: root.folderID, root: root.url)
+        }
     }
 
     /// Scan `url` INTO the persistent library store, in parallel with the in-memory
