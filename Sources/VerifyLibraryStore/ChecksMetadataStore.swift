@@ -7,6 +7,7 @@
 
 import CoreGraphics
 import Foundation
+import LibraryScan
 import LibraryStore
 
 // MARK: - s — metadata_scanned marker + tracksNeedingMetadata + upsert reset
@@ -189,4 +190,25 @@ private func checkArtworkReachabilitySweep(_ store: LibraryStore, number: Int, r
     } catch {
         printFail(number, "artwork reachability sweep threw: \(error)"); return false
     }
+}
+
+// MARK: - v — MetadataExtractor FS-tolerance smoke (Slice 2; full extraction is Slice 5)
+
+func checkExtractorVanishedFile(number: Int, url: URL) async -> Bool {
+    // A vanished/unreadable file yields nil (never a throw, never a crash) on BOTH routing
+    // paths — flac (FFmpeg-first) and m4a (AVFoundation-first). Full extraction correctness
+    // (real tagged fixtures) is Slice 5's M1/M2. `url` (the temp store path) is unused here.
+    _ = url
+    let extractor = MetadataExtractor()
+    let ghostFlac = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/ghost.flac")
+    let ghostM4a = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/ghost.m4a")
+    guard await extractor.extract(from: ghostFlac) == nil else {
+        printFail(number, "extractor: expected nil for a vanished .flac (FFmpeg path)"); return false
+    }
+    guard await extractor.extract(from: ghostM4a) == nil else {
+        printFail(number, "extractor: expected nil for a vanished .m4a (AVFoundation path)"); return false
+    }
+    printPass(number, "extractor FS-tolerance: a vanished file yields nil (no crash) on both the "
+        + "FFmpeg-first (.flac) and AVFoundation-first (.m4a) routing paths")
+    return true
 }

@@ -20,6 +20,11 @@
 // pureModeEngine* / pureModeEvaluate to Swift. Pure C11; #pragma once guards double-include.
 #include "PureModeBridge.h"
 
+// Re-export the pure-C metadata bridge (S8.3) so `import AudioDSP` (LibraryScan) exposes
+// ffmpegReadMetadata / ffmpegMetadataFree to Swift for the FFmpeg-fallback extractor.
+// Pure C11; #pragma once guards double-include.
+#include "MetadataBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.

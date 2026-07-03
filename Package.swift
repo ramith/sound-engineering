@@ -78,8 +78,19 @@ let package = Package(
         // .supportedExtensions) and never drifts. Off the audio path entirely.
         .target(
             name: "LibraryScan",
-            dependencies: ["LibraryStore"],
-            path: "Sources/LibraryScan"
+            // AudioDSP supplies ONLY the C metadata bridge (DeviceBridge.h → MetadataBridge.h,
+            // via the module map) for the FFmpeg-fallback extractor — header-only + dlopen,
+            // no link-time FFmpeg. Acyclic: AudioDSP depends on no Swift library target. (S8.3)
+            dependencies: ["LibraryStore", "AudioDSP"],
+            path: "Sources/LibraryScan",
+            linkerSettings: [
+                // MetadataExtractor uses AVFoundation (tags/duration/format); ArtworkCache
+                // uses ImageIO/CoreGraphics (thumbnails). These are NOT supplied transitively
+                // by the AudioDSP dep, so LibraryScan links them itself (VET BLOCKER, S8.3).
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("ImageIO"),
+                .linkedFramework("CoreGraphics"),
+            ]
         ),
         // Headless S8.1a acceptance gate: proves the store opens/creates/migrates, the v1 schema
         // is correct, the migration runner is transactional + downgrade-guarded, corruption is

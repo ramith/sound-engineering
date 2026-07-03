@@ -163,6 +163,8 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "s-meta-marker", run: checkMetadataMarker),
         CheckCase(label: "t-meta-apply-result", run: checkMetadataApplyResult),
         CheckCase(label: "u-meta-artwork-orphan", run: checkMetadataArtworkOrphan),
+        // S8.3 Slice 2 — extractor FS-tolerance smoke (full extraction is Slice 5).
+        CheckCase(label: "v-extractor-vanished", run: checkExtractorVanishedFile),
     ]
 }
 
@@ -217,7 +219,8 @@ func runAllChecks() async {
         + "K reject-nested-roots, L reads-during-scan [parked mid-scan rendezvous]; "
         + "S8.2b review: M cancellation-skips-sweep, N throw-skips-sweep, O cross-dir-move, "
         + "P vanished-root, Q perm-denied+symlink, R root-identity-dedup [dev/inode, QS3]; "
-        + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep) ===")
+        + "S8.3 Slice 1: S meta-marker+idempotency, T applyExtractedResult, U artwork-dedup+orphan-sweep; "
+        + "S8.3 Slice 2: V extractor-FS-tolerance) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")

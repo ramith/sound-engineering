@@ -27,6 +27,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 
 #include "../include/FileDecodeSource.h"
+#include "../include/MetadataBridge.h"
 #include "../include/SpscRing.h"
 
 #include <array>
@@ -38,6 +39,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -55,10 +57,26 @@
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
 #pragma clang diagnostic pop
 #endif
+
+// S8.3 metadata handle (MetadataBridge.h's opaque `void*`): the C++ side OWNS the
+// extracted storage via std::vector/std::string (no manual malloc, no cross-ABI free).
+// Filled by ffmpegOpenMetadata, read via the accessors, released by ffmpegCloseMetadata.
+struct CFileMetadataHandle
+{
+    std::vector<std::string> keys;
+    std::vector<std::string> values;
+    std::vector<uint8_t> art;
+    std::string artMime;
+    double durationSeconds = 0.0;
+    uint32_t sampleRate = 0U;
+    uint32_t channels = 0U;
+    uint32_t bitsPerRawSample = 0U;
+};
 
 // Control-plane logging only (open/close/decode thread); never on the RT pull path.
 // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
@@ -332,6 +350,7 @@ namespace AdaptiveSound
             decltype(&::av_frame_free) av_frame_free = nullptr;
             decltype(&::av_frame_unref) av_frame_unref = nullptr;
             decltype(&::av_get_bytes_per_sample) av_get_bytes_per_sample = nullptr;
+            decltype(&::av_dict_get) av_dict_get = nullptr; // S8.3 metadata read
             decltype(&::avutil_version) avutil_version = nullptr;
             decltype(&::swr_alloc_set_opts2) swr_alloc_set_opts2 = nullptr;
             decltype(&::swr_init) swr_init = nullptr;
@@ -403,6 +422,7 @@ namespace AdaptiveSound
                 resolveSym(hutil, "av_frame_free", api.av_frame_free) &&
                 resolveSym(hutil, "av_frame_unref", api.av_frame_unref) &&
                 resolveSym(hutil, "av_get_bytes_per_sample", api.av_get_bytes_per_sample) &&
+                resolveSym(hutil, "av_dict_get", api.av_dict_get) &&
                 resolveSym(hutil, "avutil_version", api.avutil_version) &&
                 resolveSym(hswr, "swr_alloc_set_opts2", api.swr_alloc_set_opts2) &&
                 resolveSym(hswr, "swr_init", api.swr_init) &&
@@ -1082,6 +1102,177 @@ namespace AdaptiveSound
     bool FileDecodeSource::decoderFinished() const noexcept { return impl_->decoderFinished(); }
     bool FileDecodeSource::exhausted() const noexcept { return impl_->exhausted(); }
 
+#if __has_include(<libavformat/avformat.h>)
+    // =======================================================================
+    // S8.3 metadata read — reuses the resolved ffmpegApi() backend above and fills
+    // an OWNED CFileMetadataHandle (std::vector/std::string — no manual malloc, no
+    // cross-ABI free): ffmpegOpenMetadata news it, ffmpegCloseMetadata deletes it.
+    // =======================================================================
+
+    static const char* artMimeForCodecID(int codecID)
+    {
+        if (codecID == AV_CODEC_ID_MJPEG) { return "image/jpeg"; }
+        if (codecID == AV_CODEC_ID_PNG) { return "image/png"; }
+        return nullptr;
+    }
+
+    // Append every entry of `dict` to the handle's key/value vectors, lowercasing keys.
+    static void appendDictTags(const AVDictionary* dict, const FFmpegApi& api,
+                               CFileMetadataHandle* handle)
+    {
+        if (dict == nullptr) { return; }
+        const AVDictionaryEntry* entry = nullptr;
+        while ((entry = api.av_dict_get(dict, "", entry, AV_DICT_IGNORE_SUFFIX)) != nullptr)
+        {
+            std::string key = entry->key != nullptr ? entry->key : "";
+            for (char& character : key)
+            {
+                if (character >= 'A' && character <= 'Z')
+                {
+                    character = static_cast<char>(character - 'A' + 'a');
+                }
+            }
+            handle->keys.push_back(std::move(key));
+            handle->values.emplace_back(entry->value != nullptr ? entry->value : "");
+        }
+    }
+
+    // Copy the first attached-picture stream's bytes + MIME into the handle.
+    static void readAttachedArt(AVFormatContext* fmt, CFileMetadataHandle* handle)
+    {
+        for (unsigned index = 0U; index < fmt->nb_streams; ++index)
+        {
+            AVStream* stream = fmt->streams[index];
+            const bool isPic = (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) != 0;
+            if (isPic && stream->attached_pic.size > 0)
+            {
+                const std::size_t bytes = static_cast<std::size_t>(stream->attached_pic.size);
+                handle->art.assign(stream->attached_pic.data, stream->attached_pic.data + bytes);
+                const char* mime = artMimeForCodecID(stream->codecpar->codec_id);
+                if (mime != nullptr) { handle->artMime = mime; }
+                return;
+            }
+        }
+    }
+
+    // Open `path` and fill a NEW owned handle, or nullptr on failure (caller frees).
+    static CFileMetadataHandle* openFFmpegMetadataImpl(const char* path)
+    {
+        const FFmpegApi& api = ffmpegApi();
+        if (!api.loaded) { return nullptr; }
+        AVFormatContext* fmt = nullptr;
+        if (api.avformat_open_input(&fmt, path, nullptr, nullptr) < 0 || fmt == nullptr)
+        {
+            return nullptr;
+        }
+        if (api.avformat_find_stream_info(fmt, nullptr) < 0)
+        {
+            api.avformat_close_input(&fmt);
+            return nullptr;
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): ownership transfers to the C caller.
+        auto* handle = new (std::nothrow) CFileMetadataHandle();
+        if (handle == nullptr)
+        {
+            api.avformat_close_input(&fmt);
+            return nullptr;
+        }
+
+        const int audioIndex = api.av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, kFindStreamAuto,
+                                                       kFindStreamAuto, nullptr, kNoFlags);
+        if (audioIndex >= 0)
+        {
+            const AVCodecParameters* params = fmt->streams[audioIndex]->codecpar;
+            if (params->sample_rate > 0)
+            {
+                handle->sampleRate = static_cast<uint32_t>(params->sample_rate);
+            }
+            if (params->ch_layout.nb_channels > 0)
+            {
+                handle->channels = static_cast<uint32_t>(params->ch_layout.nb_channels);
+            }
+            if (params->bits_per_raw_sample > 0)
+            {
+                handle->bitsPerRawSample = static_cast<uint32_t>(params->bits_per_raw_sample);
+            }
+        }
+        if (fmt->duration > 0)
+        {
+            handle->durationSeconds =
+                static_cast<double>(fmt->duration) / static_cast<double>(AV_TIME_BASE);
+        }
+
+        appendDictTags(fmt->metadata, api, handle);
+        if (audioIndex >= 0) { appendDictTags(fmt->streams[audioIndex]->metadata, api, handle); }
+        readAttachedArt(fmt, handle);
+
+        api.avformat_close_input(&fmt);
+        return handle;
+    }
+#endif // __has_include(<libavformat/avformat.h>)
+
 } // namespace AdaptiveSound
+
+// ===========================================================================
+// C-ABI metadata bridge (S8.3, MetadataBridge.h) — an opaque OWNED handle (mirrors
+// PureModeBridge). Real open when FFmpeg headers are present; otherwise nullptr so
+// MetadataExtractor degrades to AVFoundation-only. No malloc: the handle owns its
+// std::vector/std::string storage and is released by ffmpegCloseMetadata.
+// ===========================================================================
+extern "C" void* ffmpegOpenMetadata(const char* path)
+{
+    if (path == nullptr) { return nullptr; }
+#if __has_include(<libavformat/avformat.h>)
+    return AdaptiveSound::openFFmpegMetadataImpl(path);
+#else
+    return nullptr;
+#endif
+}
+
+extern "C" void ffmpegCloseMetadata(void* handle)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory): balances ffmpegOpenMetadata().
+    delete static_cast<CFileMetadataHandle*>(handle);
+}
+
+extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out)
+{
+    if (handle == nullptr || out == nullptr) { return; }
+    const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
+    out->durationSeconds = meta->durationSeconds;
+    out->sampleRate = meta->sampleRate;
+    out->channels = meta->channels;
+    out->bitsPerRawSample = meta->bitsPerRawSample;
+    out->tagCount = static_cast<uint32_t>(meta->keys.size());
+    out->artLength = static_cast<uint32_t>(meta->art.size());
+}
+
+extern "C" const char* ffmpegMetadataTagKey(void* handle, uint32_t index)
+{
+    if (handle == nullptr) { return nullptr; }
+    const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
+    return index < meta->keys.size() ? meta->keys[index].c_str() : nullptr;
+}
+
+extern "C" const char* ffmpegMetadataTagValue(void* handle, uint32_t index)
+{
+    if (handle == nullptr) { return nullptr; }
+    const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
+    return index < meta->values.size() ? meta->values[index].c_str() : nullptr;
+}
+
+extern "C" const uint8_t* ffmpegMetadataArtBytes(void* handle)
+{
+    if (handle == nullptr) { return nullptr; }
+    const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
+    return meta->art.empty() ? nullptr : meta->art.data();
+}
+
+extern "C" const char* ffmpegMetadataArtMime(void* handle)
+{
+    if (handle == nullptr) { return nullptr; }
+    const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
+    return meta->artMime.empty() ? nullptr : meta->artMime.c_str();
+}
 
 // NOLINTEND(cppcoreguidelines-pro-type-vararg)
