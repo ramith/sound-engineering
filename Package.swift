@@ -1,17 +1,17 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.2
 import PackageDescription
 
 let package = Package(
     name: "AdaptiveSound",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v26),
     ],
     dependencies: [
     ],
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP"],
+            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan"],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -19,7 +19,12 @@ let package = Package(
                 .process("Assets.xcassets"),
             ],
             swiftSettings: [
-                .unsafeFlags(["-suppress-warnings"], .when(configuration: .debug)),
+                // Swift 6 LANGUAGE MODE (from swift-tools-version 6.0): complete
+                // data-race / Sendable / actor-isolation checking is enforced as
+                // build-breaking ERRORS, not warnings. Replaces the former
+                // `-suppress-warnings` debug flag (which masked ALL diagnostics) and
+                // the interim `-strict-concurrency=complete` warning flag. The compiler
+                // now guarantees the app target is data-race-free at build time.
                 // Explicitly import DeviceBridge.h as the Obj-C bridging header.
                 // The auto-discovered bridging header (AdaptiveSound-Bridging-Header.h)
                 // is not reliably processed by SPM for executable targets; the explicit
@@ -29,7 +34,82 @@ let package = Package(
                     "-import-objc-header",
                     "Sources/AudioDSP/include/DeviceBridge.h",
                 ]),
+                // Opt the Swift Accelerate overlay into the new-LAPACK CBLAS headers so the
+                // `cblas_scopy` deprecation clears here too (Spectrum* + ReferenceTone). The
+                // flag reaches the underlying Clang module via `-Xcc`. No ILP64 (32-bit int
+                // counts unchanged) — matches the AudioDSP C++ target above.
+                .unsafeFlags([
+                    "-Xcc", "-DACCELERATE_NEW_LAPACK",
+                ]),
             ]
+        ),
+        // Headless M1 acceptance gate: proves the custom v3 AU registers, instantiates, sits
+        // in the AVAudioEngine graph, and renders. `swift run VerifyAUGraph`. (swift test is
+        // broken here; this is the runnable integration check for the AU-graph path.)
+        .executableTarget(
+            name: "VerifyAUGraph",
+            dependencies: ["AudioDSP", "AudioFormatKit"],
+            path: "Sources/VerifyAUGraph",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-import-objc-header",
+                    "Sources/AudioDSP/include/DeviceBridge.h",
+                ]),
+            ]
+        ),
+        // Persistent library store (Sprint 8, S8.1a). System SQLite ONLY (import SQLite3;
+        // .linkedLibrary("sqlite3")) — ZERO external SwiftPM deps, matching the CoreAudio/
+        // Accelerate system-lib idiom and avoiding the toolchain-skew class that broke
+        // `swift test`. Its own library target so BOTH the app (AdaptiveSound) and the offline
+        // gate (VerifyLibraryStore) link the identical store/schema/migration implementation —
+        // no drift. Off the audio path entirely (additive; S8.1 touches no DSP).
+        .target(
+            name: "LibraryStore",
+            dependencies: [],
+            path: "Sources/LibraryStore",
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
+        ),
+        // Recursive folder scanner (Sprint 8, S8.2a). Depends on LibraryStore; NO
+        // external deps. Its own library target so BOTH the app (AdaptiveSound) and
+        // the offline gate (VerifyLibraryStore) link the identical walk/signature
+        // implementation — the walk has one source of truth (LibraryScanner
+        // .supportedExtensions) and never drifts. Off the audio path entirely.
+        .target(
+            name: "LibraryScan",
+            // AudioDSP supplies ONLY the C metadata bridge (DeviceBridge.h → MetadataBridge.h,
+            // via the module map) for the FFmpeg-fallback extractor — header-only + dlopen,
+            // no link-time FFmpeg. Acyclic: AudioDSP depends on no Swift library target. (S8.3)
+            dependencies: ["LibraryStore", "AudioDSP"],
+            path: "Sources/LibraryScan",
+            linkerSettings: [
+                // MetadataExtractor uses AVFoundation (tags/duration/format); ArtworkCache
+                // uses ImageIO/CoreGraphics (thumbnails). These are NOT supplied transitively
+                // by the AudioDSP dep, so LibraryScan links them itself (VET BLOCKER, S8.3).
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("ImageIO"),
+                .linkedFramework("CoreGraphics"),
+            ]
+        ),
+        // Headless S8.1a acceptance gate: proves the store opens/creates/migrates, the v1 schema
+        // is correct, the migration runner is transactional + downgrade-guarded, corruption is
+        // quarantined (with -wal/-shm sidecars) + rebuilt, and data survives restart. Mirrors the
+        // VerifyAUGraph idiom (numbered PASS/FAIL, exit(0) all-pass). `swift run VerifyLibraryStore`.
+        // (swift test is broken here; this is the runnable verification for the store path.)
+        .executableTarget(
+            name: "VerifyLibraryStore",
+            dependencies: ["LibraryStore", "LibraryScan"],
+            path: "Sources/VerifyLibraryStore"
+        ),
+        // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact
+        // converter the Enhanced (B4) resampler uses — by measuring imaging/aliasing on pure tones.
+        // Headless (AVAudioConverter is a pure DSP object, no device). REPLICATES the B4 setup; it
+        // imports no app-target code and changes no production audio path. `swift run SRCQualityMeasure`.
+        .executableTarget(
+            name: "SRCQualityMeasure",
+            dependencies: [],
+            path: "Sources/SRCQualityMeasure"
         ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
@@ -37,29 +117,33 @@ let package = Package(
             name: "AudioViewModelTests",
             dependencies: [],
             path: "Tests/AudioViewModelTests",
-            // All three source files build together:
-            //   AudioViewModelTests.swift     — original playlist logic tests
-            //   MockAudioEngine.swift         — MockAudioEngine (AudioPlaybackEngineMirror)
-            //   AudioEngineProtocolTests.swift — protocol contract + sort order tests
+            // Source files build together:
+            //   AudioViewModelTests.swift                   — original playlist logic tests
+            //   MockAudioEngine.swift                       — MockAudioEngine (AudioPlaybackEngineMirror)
+            //   AudioEngineProtocolTests.swift              — protocol contract + sort order tests
+            //   AutoAdvanceTests.swift                      — redirect comment (split below)
+            //   MockAdvanceController.swift                 — state-machine mirror + helpers
+            //   AutoAdvanceLinearRepeatShuffleTests.swift   — VM-AA-01..12
+            //   AutoAdvanceGaplessSeamTests.swift           — VM-AA-14..19
+            //   AutoAdvanceReconfigureGapTests.swift        — VM-AA-RGAP-1, VM-AA-RTR-1
+            //   AutoAdvanceDeviceLossTests.swift            — VM-AA-06..07, VM-AA-13, VM-AA-18
             sources: [
                 "AudioViewModelTests.swift",
                 "MockAudioEngine.swift",
                 "AudioEngineProtocolTests.swift",
-            ],
-            swiftSettings: [
-                // CommandLineTools ships Testing.framework in a non-standard path.
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
-            ],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                    "-framework", "Testing",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
+                "AutoAdvanceTests.swift",
+                "MockAdvanceController.swift",
+                "AutoAdvanceLinearRepeatShuffleTests.swift",
+                "AutoAdvanceGaplessSeamTests.swift",
+                "AutoAdvanceReconfigureGapTests.swift",
+                "AutoAdvanceDeviceLossTests.swift",
             ]
+            // swift-testing is provided natively by the toolchain under swift-tools 6.2;
+            // no manual Testing.framework linkage. (The former -F/-framework hack pointed
+            // at CommandLineTools' Testing.framework, whose macro plugin was built against
+            // a different swift-syntax than the active toolchain's macro expander, which
+            // broke @Suite/@Test expansion — "SuiteDeclarationMacro doesn't conform to
+            // MemberMacro".)
         ),
         // Obj-C++ bridge: wraps EQModule and EQModuleCoefficients in a pure-C
         // interface (EQTestBridge.h) for Swift test consumption.
@@ -106,19 +190,20 @@ let package = Package(
                     "-import-objc-header",
                     "Sources/AudioDSPTestBridge/include/EQTestBridge.h",
                 ]),
-                // Testing.framework location on CommandLine Tools.
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
-            ],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                    "-framework", "Testing",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ]),
+                // swift-testing is provided natively by the toolchain under swift-tools 6.2;
+                // no manual Testing.framework linkage (see AudioViewModelTests for why the
+                // former CommandLineTools -F/-framework hack broke macro expansion).
             ]
+        ),
+        // Pure-Swift format helper (Sprint 5b, M2-a): maps a channel count to the
+        // AVAudioFormat the engine graph is connected at (stereo standard-format path;
+        // 5.1 / 7.1 via CoreAudio layout tags). Its own library target so BOTH the app
+        // (AdaptiveSound) and the offline gate (VerifyAUGraph) link the identical
+        // implementation — no drift in the format logic between them.
+        .target(
+            name: "AudioFormatKit",
+            dependencies: [],
+            path: "Sources/AudioFormatKit"
         ),
         .target(
             name: "AudioDSP",
@@ -128,6 +213,12 @@ let package = Package(
             cxxSettings: [
                 .headerSearchPath("include"),
                 .unsafeFlags(["-D_LIBCPP_DISABLE_AVAILABILITY"], .when(platforms: [.macOS])),
+                // Opt into the new-LAPACK CBLAS headers (macOS 13.3+). This clears the
+                // `cblas_scopy` deprecation without changing behaviour: the prototype is
+                // source-compatible (32-bit `int` counts/strides unchanged). We deliberately
+                // do NOT define ACCELERATE_LAPACK_ILP64 — that would widen LAPACK/BLAS
+                // integers to 64-bit, which we neither need nor want (our calls use `int`).
+                .unsafeFlags(["-DACCELERATE_NEW_LAPACK"]),
                 .unsafeFlags([
                     "-Wall", "-Wextra", "-Wpedantic",
                     "-Wunused", "-Wshadow", "-Wconversion",
@@ -140,6 +231,12 @@ let package = Package(
                     "-Wall", "-Wextra",
                     "-fno-exceptions", "-fno-rtti",
                 ], .when(configuration: .release)),
+                // FFmpeg headers (Homebrew) for the OPTIONAL runtime decode backend (B2b). Headers
+                // only — functions resolve via dlopen/dlsym at runtime (no -l link, nothing to
+                // bundle). __has_include gates the backend, so a machine without FFmpeg still builds.
+                // -isystem (not -I): FFmpeg's third-party headers/macros are exempt from our strict
+                // warnings + clang-tidy.
+                .unsafeFlags(["-isystem", "/opt/homebrew/include"]),
             ],
             linkerSettings: [
                 .linkedFramework("CoreAudio"),

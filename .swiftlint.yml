@@ -4,6 +4,10 @@ disabled_rules:
   - trailing_comma
   - function_name_whitespace
   - implicit_optional_initialization
+  # "master" (master gain / master bus) is standard, intentional audio terminology here.
+  - inclusive_language
+  # TODOs are used as intentional roadmap markers (e.g. S4 binaural); the rule fights that practice.
+  - todo
 
 opt_in_rules:
   - force_unwrapping

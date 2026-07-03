@@ -14,7 +14,18 @@ import Foundation
 ///
 /// Safety: both slots are pre-allocated at init. No allocation ever
 /// occurs in `write(_:)` or `read(into:)`.
-final class SpectrumDoubleBuffer {
+///
+/// `@unchecked Sendable` invariant: this is a single-producer/single-consumer (SPSC)
+/// lock-free handoff. `write(_:)` is called ONLY from the audio tap thread (the sole
+/// writer); `read(into:)` is called ONLY from the MainActor (the sole reader). Both
+/// `slots` are pre-sized at `init` and NEVER reallocated — they are only overwritten
+/// in place via `withUnsafeMutableBufferPointer`. Cross-thread coordination is the
+/// wrapping `publishedGeneration` counter, published via an aligned `Int` store
+/// (single-instruction, atomic on arm64 for aligned 64-bit stores). No lock or queue
+/// is ever taken on either side; adding one would put synchronization on the RT writer
+/// (priority-inversion risk) — forbidden. This is the actual RT→UI boundary, so an
+/// audited `@unchecked Sendable` is the correct tool here.
+final class SpectrumDoubleBuffer: @unchecked Sendable {
     private let count: Int
     private var slots: [[Float]] // [slot0, slot1]
     private var generation: Int = 0 // written only on audio thread; read on main
@@ -24,8 +35,14 @@ final class SpectrumDoubleBuffer {
     /// we rely on the fact that Int writes are atomic on LP64 (arm64) for
     /// aligned 64-bit stores, and the audio thread is the sole writer.
     /// For a production-grade alternative, use AtomicRepresentable from
-    /// swift-atomics (SE-0282). This is a deliberate Phase 1b simplification.
+    /// swift-atomics (SE-0282).
     private var publishedGeneration: Int = -1 // read on main, written on audio thread
+
+    /// Generation the reader last copied out. Accessed ONLY on the main thread (the sole reader),
+    /// so it needs no cross-thread synchronization. Lets `read(into:)` honour its documented "new
+    /// data since the last call?" contract and lets the 20 Hz UI skip redundant work when the tap
+    /// has not published a fresh frame (e.g. while paused / idle). (F2)
+    private var lastConsumedGeneration: Int = -1
 
     init(count: Int) {
         self.count = count
@@ -43,7 +60,8 @@ final class SpectrumDoubleBuffer {
         slots[nextSlot].withUnsafeMutableBufferPointer { dst in
             guard let dstBase = dst.baseAddress,
                   let srcBase = values.baseAddress else { return }
-            cblas_scopy(Int32(count), srcBase, 1, dstBase, 1)
+            // Straight contiguous copy (was cblas_scopy stride-1); non-allocating.
+            dstBase.update(from: srcBase, count: count)
         }
         generation = generation &+ 1 // wrapping add; sole writer on audio thread
         publishedGeneration = generation // arm64: aligned Int write is single instruction
@@ -55,11 +73,16 @@ final class SpectrumDoubleBuffer {
     func read(into out: inout [Float]) -> Bool {
         let gen = publishedGeneration // read once
         guard gen >= 0 else { return false }
+        // No frame published since the last read → nothing new to copy (F2: the return value now
+        // honestly means "new data", so callers can skip redundant UI work).
+        guard gen != lastConsumedGeneration else { return false }
+        lastConsumedGeneration = gen
         let slot = gen & 1
         out.withUnsafeMutableBufferPointer { dst in
             slots[slot].withUnsafeBufferPointer { src in
-                guard let d = dst.baseAddress, let s = src.baseAddress else { return }
-                cblas_scopy(Int32(count), s, 1, d, 1)
+                guard let dstBase = dst.baseAddress, let srcBase = src.baseAddress else { return }
+                // Straight contiguous copy (was cblas_scopy stride-1); non-allocating.
+                dstBase.update(from: srcBase, count: count)
             }
         }
         return true

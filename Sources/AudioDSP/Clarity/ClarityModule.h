@@ -1,5 +1,6 @@
 #ifndef CLARITY_MODULE_H
 #define CLARITY_MODULE_H
+#include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
 
@@ -13,9 +14,7 @@ namespace AdaptiveSound
         void initialize(uint32_t /*sampleRate*/, uint32_t /*maxFrames*/) noexcept
         {
         }
-        void process(const ClarityParams& /*params*/,
-                     AudioBufferList* /*ioData*/,
-                     uint32_t /*frameCount*/) noexcept
+        void process(const ClarityParams& /*params*/, const MultichannelView& /*block*/) noexcept
         {
         }
     };

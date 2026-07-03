@@ -7,13 +7,17 @@ struct PlaylistItemRow: View {
     let index: Int
     let isSelected: Bool
     let isNowPlaying: Bool
+    /// Width of the track-number column, sized by the caller to the widest number in the
+    /// list so 3-/4-digit indices (track 100+) fit on one line instead of wrapping.
+    var numberColumnWidth: CGFloat = 22
 
     var body: some View {
         HStack(spacing: 12) {
             Text(index + 1, format: .number.grouping(.never))
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .lineLimit(1)
                 .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
-                .frame(width: 22)
+                .frame(width: numberColumnWidth, alignment: .trailing)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
@@ -29,13 +33,7 @@ struct PlaylistItemRow: View {
 
             Spacer()
 
-            Text(file.format)
-                .font(.system(size: 10, weight: .semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(isSelected ? Color.asAccent.opacity(0.2) : Color.asCard)
-                .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelSecond)
-                .clipShape(.rect(cornerRadius: 4, style: .continuous))
+            FormatBadgeView(format: file.format, isSelected: isSelected)
 
             Text(file.durationSeconds > 0 ? formatDuration(file.durationSeconds) : "--:--")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))

@@ -1,5 +1,7 @@
 # SPRINT 6: Adaptive Clarity & Loudness Compensation
 
+> **⚠️ SUPERSEDED by [sprint-plan.md](sprint-plan.md) (2026-06-19).** This pre-pivot "Sprint 6" spec is retained for design detail only. Its scope is now re-sequenced under the new plan: **loudness compensation → S13 (Phase 1)**, **masking-aware adaptive clarity → S14–S15 (Phase 2)**. ⚠️ Note: "Sprint 6" in this document is NOT the new plan's **S6** (which is DSP-gate hardening) — the numbering schemes differ.
+
 **Theme:** Intelligent, content-aware, conversationally-steerable DSP  
 **Effort:** 5–10 story points  
 **Owner:** Audio DSP Agent + SwiftUI Pro  

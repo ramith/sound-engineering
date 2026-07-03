@@ -5,6 +5,7 @@ import Foundation
 enum TabSelection: String, CaseIterable {
     case nowPlaying = "Now Playing"
     case eq = "EQ"
+    case monitoring = "Monitoring"
     case settings = "Settings"
 
     var id: String {
@@ -15,6 +16,7 @@ enum TabSelection: String, CaseIterable {
         switch self {
         case .nowPlaying: "Now Playing"
         case .eq: "EQ Editing"
+        case .monitoring: "Signal Monitoring"
         case .settings: "Preferences"
         }
     }
@@ -23,6 +25,7 @@ enum TabSelection: String, CaseIterable {
         switch self {
         case .nowPlaying: "play.circle.fill"
         case .eq: "slider.horizontal.3"
+        case .monitoring: "waveform.and.magnifyingglass"
         case .settings: "gearshape.fill"
         }
     }

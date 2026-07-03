@@ -2,9 +2,10 @@ import SwiftUI
 
 struct SettingsTabView: View {
     @Environment(AudioViewModel.self) private var audioViewModel
+    @Environment(EQViewModel.self) private var eqViewModel
 
     var body: some View {
-        @Bindable var vm = audioViewModel
+        @Bindable var bindVM = audioViewModel
 
         VStack(spacing: 24) {
             // MARK: Output Device Section
@@ -25,7 +26,17 @@ struct SettingsTabView: View {
                     }
                     .padding(.horizontal, 16)
                 } else {
-                    Picker("Output Device", selection: $vm.selectedDevice) {
+                    // Commit-on-success binding (UI-1), mirroring the toolbar device pill: the
+                    // setter routes through selectDevice(), which persists `selectedDevice` ONLY
+                    // when the switch succeeds. The getter always reflects the actual active device,
+                    // so a FAILED switch leaves the picker on the previous device (auto-revert) —
+                    // it never pre-commits the way a plain two-way binding + onChange did.
+                    Picker("Output Device", selection: Binding(
+                        get: { audioViewModel.selectedDevice },
+                        set: { newDevice in
+                            if let device = newDevice { audioViewModel.selectDevice(device) }
+                        }
+                    )) {
                         Text("None")
                             .tag(AudioDeviceModel?.none)
                         ForEach(audioViewModel.availableDevices) { device in
@@ -38,52 +49,39 @@ struct SettingsTabView: View {
                     }
                     .pickerStyle(.menu)
                     .padding(.horizontal, 16)
-                    .onChange(of: audioViewModel.selectedDevice) { _, newDevice in
-                        if let device = newDevice {
-                            audioViewModel.selectDevice(device)
-                        }
-                    }
 
                     // Show current device details
                     if let device = audioViewModel.selectedDevice {
                         DeviceDetailRow(device: device)
                             .padding(.horizontal, 16)
                     }
+
+                    Toggle(isOn: $bindVM.pinPlaybackToSelectedDevice) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Keep playback on this device")
+                                .font(.body)
+                                .foregroundStyle(Color.asLabel)
+                            Text(audioViewModel.pinPlaybackToSelectedDevice
+                                ? "Connecting headphones or a Bluetooth device won't move playback — switch to it here."
+                                : "Playback follows a newly-connected device.")
+                                .font(.caption)
+                                .foregroundStyle(Color.asLabelTertiary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .padding(.horizontal, 16)
                 }
             }
 
             Divider()
                 .padding(.horizontal, 16)
 
-            // MARK: Future Settings (placeholder)
+            // MARK: Pure Mode (bit-perfect HAL)
 
-            VStack(spacing: 12) {
-                Text("Coming in Phase 1b")
-                    .font(.body)
-                    .foregroundStyle(Color.asLabelSecond)
-                    .padding(.top, 8)
-
-                SettingsControlRow(
-                    title: "Hearing Profile",
-                    icon: "ear.fill"
-                )
-
-                SettingsControlRow(
-                    title: "Device Correction EQ",
-                    icon: "slider.horizontal.3"
-                )
-
-                SettingsControlRow(
-                    title: "Loudness Compensation",
-                    icon: "speaker.wave.2.fill"
-                )
-
-                SettingsControlRow(
-                    title: "About/Help",
-                    icon: "questionmark.circle.fill"
-                )
-            }
-            .padding(.horizontal, 16)
+            PureModeSettingsSection(
+                audioViewModel: audioViewModel,
+                eqPresetName: eqViewModel.selectedPresetName
+            )
 
             Spacer()
         }

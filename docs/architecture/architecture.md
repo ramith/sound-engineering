@@ -1,10 +1,10 @@
 # Adaptive Sound — Architecture (v0.3)
 
 **Status:** Canonical design · **Date:** 2026-06-13
-**Supersedes:** [proposal.md](proposal.md) (v0.1). **Shaped by:** [proposal-review.md](proposal-review.md) (panel 1) + [review-v0.2.md](review-v0.2.md) (expert panel 2) + founder talk-through.
+**Supersedes:** [proposal.md](../session-notes/proposal.md) (v0.1). **Shaped by:** [proposal-review.md](../session-notes/proposal-review.md) (panel 1) + [review-v0.2.md](../session-notes/review-v0.2.md) (expert panel 2) + founder talk-through.
 
-> **v0.3 (expert-panel fold-in):** **shared late-reverb** decomposition (not 6 independent BRIRs — the ~6× cost cut); **re-sum mixbus discipline** (loudness-matched per-stem trim); **bass + lead-vocal exempt from spatial spread**; masking re-scoped to the **excitation-pattern (ERB) subset** (full Moore-Glasberg is ~50× too slow); stems **gated on perceptual artifacts, not SDR**; BRIR room amount **content-adaptive**; Demucs **weights auto-downloaded on first run** (code MIT; NC-trained weights not redistributed), **MLX primary**; NL planned **on-device LLM + SAFE/SocialEQ priors** (mechanism still deferred) with **untrusted-output clamping**; global tap reframed as a **high-consent, captures-everything** capability. Detail: [review-v0.2.md](review-v0.2.md).
-**Companion docs:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/user-journeys.md](../product/user-journeys.md) · [../product/backlog.md](../product/backlog.md) · [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)
+> **v0.3 (expert-panel fold-in):** **shared late-reverb** decomposition (not 6 independent BRIRs — the ~6× cost cut); **re-sum mixbus discipline** (loudness-matched per-stem trim); **bass + lead-vocal exempt from spatial spread**; masking re-scoped to the **excitation-pattern (ERB) subset** (full Moore-Glasberg is ~50× too slow); stems **gated on perceptual artifacts, not SDR**; BRIR room amount **content-adaptive**; Demucs **weights auto-downloaded on first run** (code MIT; NC-trained weights not redistributed), **MLX primary**; NL planned **on-device LLM + SAFE/SocialEQ priors** (mechanism still deferred) with **untrusted-output clamping**; global tap reframed as a **high-consent, captures-everything** capability. Detail: [review-v0.2.md](../session-notes/review-v0.2.md).
+**Companion docs:** [prior-art.md](../session-notes/prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md) · [../product/user-journeys.md](../product/user-journeys.md) · [../product/backlog.md](../product/backlog.md) · [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)
 
 > One-line: **turn any good-quality song into a personal, perceptually-tuned, spatially-rendered mix you can steer in plain language** — on modern Macs, headphones or speakers.
 
@@ -68,13 +68,73 @@ graph TB
 
 **RT rules (every kernel line):** no heap alloc, no locks, no Obj-C/Swift runtime, no I/O; pre-allocate; bounded deterministic work per buffer; cross-thread state via atomic snapshot + ramping; the **Realizer does all design/fitting off-RT** — the kernel only ramps & runs finished coefficients.
 
+> **Status note (built vs. target).** The diagram above is the **target** control-plane/data-plane architecture (the stem object engine is its full-fat form). The **shipped** pipeline is narrower — see **§2.5 Shipped pipeline** for what actually runs today. In short: the per-stem chain + the **perceptual** Arbiter + the **masking-driven** Realizer + masking/BRIR are **design, not yet implemented**; what ships is a stereo/N-channel two-AU graph with the EQ/Clarity/BRIR/Loudness/Limiter kernel present (EQ live; Clarity/BRIR no-op stubs; Loudness/Limiter real), a live UI-driven EQ path, a steerable equal-power intensity blend, and a **control-plane `Realizer`** (off-RT, coalesces EQ + intensity intents, sole publisher) — plus a parallel bit-perfect HAL output path. The control-plane `Realizer` is **distinct from** the perceptual Arbiter + masking-driven Realizer of §4 / ADR-006, which remain design.
+
+---
+
+## 2.5 Shipped pipeline (Sprints 4–5b + Pure Mode + gapless)
+
+This section documents what is **actually built and merged** on the `feat/sprint-5-eq-wiring` line, as distinct from the target architecture in §2 and the phased design in §3–§16. Source of truth: `Sources/AdaptiveSound/` + `Sources/AudioDSP/`; sprint records in [../sprints/](../sprints/) (esp. [04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md), [05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md), [05-sprint-5b-multichannel-epic-plan.md](../sprints/05-sprint-5b-multichannel-epic-plan.md), [09-phase-b-bit-perfect-pure-mode.md](../sprints/09-phase-b-bit-perfect-pure-mode.md)).
+
+### Two output paths (mutually exclusive per playback start)
+
+The engine (`AudioEngineBridge`) drives **two** parallel output paths; the active one is chosen at each `startAudio` call:
+
+1. **Enhanced path (default)** — `AVAudioEngine`-hosted graph. Owns decode (`AVAudioFile`), device routing, and the render thread. Rate-mismatched files run through an explicit streaming **`AVAudioConverter` at `.max` quality** (`AudioEngineBridge+EnhancedResampler.swift`); 48 kHz files take a byte-identical `scheduleFile` passthrough.
+2. **Pure Mode path (bit-perfect, opt-in)** — a HAL-direct output engine (`HALOutputEngine`, `kAudioUnitSubType_HALOutput`) that **bypasses `AVAudioEngine` entirely** and the DSP graph, opening the device in exclusive/integer mode for a bit-perfect stream. Decode is runtime-pluggable: **FFmpeg-or-Apple** (`FileDecodeSource`, `dlopen`'d FFmpeg with a baked major-version guard; Apple `ExtAudioFile` otherwise). User-toggled in Settings (`AudioViewModel.pureModeEnabled`); falls back to Enhanced when the device/file combination isn't viable (`evaluatePureViable`).
+
+### The two-AU N-channel graph (Enhanced path)
+
+```
+player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
+```
+
+- **effectsAU** (`dspAudioUnit`) hosts the C++ `DSPKernel` (EQ → Clarity → BRIR → Loudness → Limiter). It is **in the live graph**; the EQ stage is driven by the UI and the Loudness/Limiter stages are real, while Clarity/BRIR are no-op stubs (see "Live-graph reality" below). Intensity is a **continuous equal-power wet/dry blend** (intensity-0 = bit-exact bypass anchor; intensity-1 = full in-place chain) applied before Loudness+Limiter (`DSPKernel::process`, `DSPKernel.mm:131-235`).
+- **spatialAU** (`spatialAudioUnit`, subtype `'aspz'`) is the **device-boundary render stage** that maps processing width N to device width M so the mixer no longer naively downmixes. For the shipped case **M == N**, so it is a **bit-exact identity route**; the real M < N binaural fold (S4) is **deferred**.
+- The graph reconfigures to the source channel count on file load (`configureGraphForSource`; a same-count no-op for stereo) — the N-channel (≤7.1) two-AU pipeline, no naive downmix.
+
+### Live-graph reality (read this before assuming the kernel is "the sound")
+
+- The custom **effects AU is wired into the Enhanced graph**, and **EQ is driven live from the UI**: the drag-the-curve `FrequencyResponseCanvas` (`FrequencyResponseCanvas.swift`) commits edits to `EQViewModel` (`commitCustomBandEdits` / `applyBandGain` / `selectPreset` → `dispatchAllBands`, `EQViewModel.swift:101-110`) which calls `AudioViewModel.publishEQGains` (`AudioViewModel.swift:255`) → `engine.publishEQGains` (`AudioEngineBridge+EQControl.swift:19`) → the `publishEQBandGains` C-ABI (`AUAudioUnit.mm:409`) → `Realizer::setPendingEqGains` (`Realizer.mm:40`). Gains are hearing-safety-clamped (`EQSafetyClamp`) before reaching the kernel.
+- A **control-plane `Realizer` SHIPPED** (`AudioEngine/Realizer.h` / `.mm`): a `shared_ptr`-owned, off-RT C++ object that owns the canonical `TargetState`, recomputes the EQ biquad cascade off-main, coalesces EQ + intensity intents into per-kind slots, is the **sole caller** of `publishTargetState`, and has a queue-draining teardown. This is the *plumbing* control plane only — the **perceptual Arbiter and the masking-driven Realizer of §4 / ADR-006 (typed-contributor composition, roex masking, L-M biquad fitter) remain design, not yet wired.**
+- **Clarity and BRIR modules are instantiated no-op stubs** in `DSPKernel` (`ClarityModule.h` / `BRIRModule.h` — empty `process`). **Loudness is NOT a stub**: `LoudnessModule` (`Loudness/LoudnessModule.h` / `.mm`) is a real ITU-R BS.1770-5 gated-loudness worker (off-RT measurement jthread + SPSC ring) with a smoothed makeup-gain feedback path, enabled by default (`LoudnessParams.enabled = 1`, `TargetState.h:41`) and applied in `DSPKernel::process`. The **Limiter** (`LimiterModule`) is likewise real and active. (Caveat: Loudness/Limiter are wired and run in the chain, but their live audible effect is bounded by the conservative makeup law and the −1 dBTP true-peak ceiling; full perceptual tuning is later sprints.)
+- **Meters / spectrum / BS.1770-5 loudness come from a Swift tap on `mainMixerNode`** (`SpectrumAnalyzer` + `LufsMeter`, `AudioEngineBridge.swift`), **not** from the C++ kernel. The Monitoring tab's per-channel before/after spectra are separate taps on the player node (before) and the effects-AU output (after).
+
+### Gapless / continuous playback + auto-advance
+
+- **Enhanced gapless** (`AudioEngineBridge+Gapless.swift`): resampler→resampler / passthrough→passthrough / cross-rate seams without `player.stop()`; AAC priming / MP3 LAME delay trimming is handled automatically by `AVAudioFile`/`ExtAudioFile` edit lists.
+- **Pure gapless** (`GaplessSource`, C++): same-rate sample-accurate seams armed via the `pureModeEngineSetNextTrack` C-ABI; a rate/format mismatch advances with a brief reconfigure gap.
+- **Auto-advance**: the view model polls `trackTransitionCount()` / `playbackEnded()` at 20 Hz (`AudioViewModel.tickSpectrum`) and arms the next on-deck track.
+
+### Device model (pin vs. follow)
+
+- App-selected device is **authoritative** by default. A Settings toggle (`pinPlaybackToSelectedDevice`, default `true`) chooses behaviour when a **new** device connects mid-playback: **PIN** re-asserts the selected device; **FOLLOW** adopts the newly-connected default and re-establishes playback on it.
+- Resilience: an `AVAudioEngineConfigurationChange` observer re-establishes the Enhanced path after route/format changes; a `kAudioDevicePropertyDeviceIsAlive` listener **pauses** the Pure path on device loss (never auto-jumps).
+
+### Two bit-perfect concepts (don't conflate them)
+
+| Concept | Mechanism | Scope |
+|---|---|---|
+| **Intensity-0 kernel bypass** | Intensity is now a **continuous equal-power wet/dry blend** (`DSPKernel::process`, `DSPKernel.mm:131-235`): the settled `intensityLinear == 0` endpoint takes a hard early-return branch → output equals input (in-place AU); intermediate `x ∈ (0,1)` blends `cos(x·π/2)·dry + sin(x·π/2)·wet`; settled `x == 1` is the full in-place chain. | Intensity-0 is the **bit-exact** "hear exactly what's played" anchor *within the Enhanced DSP graph* (LD-16); verified by the C++ null test + golden master `0xE7267654BA01D315`. |
+| **Pure Mode HAL path** | A separate `HALOutputEngine` that bypasses the whole `AVAudioEngine` graph + DSP and renders the decoded stream to the device unchanged | A user-facing, device-level bit-perfect playback mode (exclusive/integer where the device allows). Verified by `RoundTripTests` (software-chain) + on-device by ear. |
+
+### Validation gate (the real one)
+
+The DSP gate is the **C++ null-test harness** — `bash scripts/build-null-test.sh` (93 tests after S6, including new `RealizerTests`, `IntensityTests`, and `GaplessContractTests` suites; stereo golden master `0xE7267654BA01D315` unchanged through S6; fixtures in `<repo>/test-data/`) — plus `swift run VerifyAUGraph` (AU-graph integration) and `swift run SRCQualityMeasure` (characterises the `.max` SRC). **`swift test` is broken** (toolchain macro skew); the Swift mock tests run in Xcode only. See [validation-strategy.md](validation-strategy.md).
+
+> **S6 architecture-review gate (2026-06-19):** the shipped pipeline above was hardened under the S6 review. See [../sprints/s6-architecture-review-findings.md](../sprints/s6-architecture-review-findings.md) (findings + prioritized fix list) and [../sprints/s6-tier3-spine-design.md](../sprints/s6-tier3-spine-design.md) (the Tier-3 spine: `RtSwappableResource` extraction, control-plane `Realizer`, steerable intensity, `GaplessController` conformance).
+
 ---
 
 ## 3. Foundation (ADR-001)
 
-AVAudioEngine host + **one custom `AUAudioUnit` (v3)** whose render block calls a **C++ DSP kernel**; Swift↔C++ via **Swift/C++ interop** + small facade. AVAudioEngine owns decode, format/SR conversion, device routing, the render thread. Reference: `bradhowes/LPF` (MIT); Apple `AudioUnitSDK` (Apache-2.0).
+> **Built vs. design.** ADR-001 is **shipped** (AVAudioEngine + custom v3 AU + C++ kernel) — but see §2.5: the effects AU is in the graph with EQ driven live and a steerable intensity blend, there is now a **second** bit-perfect HAL output path that bypasses AVAudioEngine, and an off-RT **control-plane `Realizer`** owns/publishes the `TargetState`. Still design: the kernel's Clarity/BRIR modules (no-op stubs) and the **perceptual** Arbiter + masking-driven Realizer of §4 (Loudness/Limiter, by contrast, are real and active).
+
+AVAudioEngine host + **one custom `AUAudioUnit` (v3)** whose render block calls a **C++ DSP kernel**; Swift↔C++ via **Swift/C++ interop** + small facade. AVAudioEngine owns decode, format/SR conversion, device routing, the render thread. Reference: `bradhowes/LPF` (MIT); Apple `AudioUnitSDK` (Apache-2.0). *(Shipped reality: a parallel Pure Mode HAL path bypasses this graph — §2.5.)*
 
 ## 4. The signal model — typed contributors, perceptual decisions (LD-12)
+
+> **DESIGN — NOT YET SHIPPED.** Everything in §4 (the typed-contributor model, the **perceptual Arbiter**, the **roex / excitation-pattern masking model**, the **greedy-add + Levenberg-Marquardt biquad-cascade fitter**, the masking-driven Realizer) is **design intent**, not implemented on the current branch. What ships today: the EQ coefficient design is `computeBiquadCascade` / `EQModuleCoefficients` (not the L-M fitter described below), `ClarityModule` is a no-op stub with no masking model, and there is **no perceptual Arbiter**. **Note (do not conflate):** a *control-plane* `Realizer` SHIPPED in S6 (`AudioEngine/Realizer.h` / `.mm`) — but it is only the plumbing that owns the `TargetState`, designs the EQ cascade off-main, coalesces intents, and is the sole publisher. It is **not** the masking-driven, typed-contributor Realizer described below. The design content here is retained as the target. See §2.5 for shipped reality and [../sprints/s6-tier3-spine-design.md](../sprints/s6-tier3-spine-design.md) for the control-plane Realizer.
 
 The tonal/spatial/dynamic state is **not** a single dB curve. Each source contributes a **typed contribution**:
 
@@ -175,6 +235,8 @@ Mechanism: **crossfade original↔stem-render** + scale spatial spread / unmask 
 
 ## 6. Stem-based object engine (Phase 1.5 · LD-15)
 
+> **DESIGN — NOT YET SHIPPED.** The stem object engine (Demucs separation, per-stem chains, between-stem masking, stem caching) is **Phase 1.5 design intent**, not implemented. The shipped pipeline (§2.5) processes the **mix**, not stems.
+
 Pre-separation pipeline: on add/first-play, run **Demucs 6-stem** offline (**MLX primary**, Core ML secondary — STFT/complex ops don't convert cleanly; runs on GPU, ~seconds/track, latency-free), **cache stems to SSD** (FLAC; bounded LRU, ~120–160 MB/track). Code is MIT; the **model weights are auto-downloaded on first run** — NC-trained, so *not* redistributed in the repo (keeps it MIT/Apache-clean and setup one-tap, per the founder's open-source + minimal-setup steer).
 
 **Weights download & integrity (supply-chain security):** Weights are fetched from the **official Demucs GitHub releases** (primary) with a **fallback to Hugging Face MLX-Community** if GitHub is unreachable. **Integrity verification:** use GitHub's native release checksums (typically SHA-256, published in release notes or as separate artifact files); validate the downloaded weights against the pinned hash before loading. **Failure mode:** if verification fails or both sources are unreachable, warn the user ("Separation weights unavailable; operating in mix-only mode"), disable the stem engine (fall back to mix-level DSP only), and proceed with the rest of the app functioning normally. **Updates:** users obtain new model weights by downloading a new app version (in-app weight updates deferred to far-future roadmap). The weights download happens once (on first add/play of a track); subsequent plays load from the local cache (LRU).
@@ -182,6 +244,8 @@ Pre-separation pipeline: on add/first-play, run **Demucs 6-stem** offline (**MLX
 **Security note:** the app enforces a **code invariant** that stems are only ever derived from user-supplied local files — never from tapped audio or DRM sources (LD-15). The separation pipeline source-type is type-checked; untrusted sources (tap/aggregate) are rejected at compile time. The kernel renders **N stem-objects** — each its own EQ + dynamics + **spatial placement** — but through a **shared late-reverb tail + a cheap per-stem early/direct filter**, *not* 6 independent full BRIRs (the ~6× cost cut; §7, §15). **Bass (≲120 Hz) is high-passed out of the spatial path and summed mono; the lead vocal stays centered** (review C4). Masking/unmasking is computed **between stems** (ERB subset, §4); NL macros can **target a stem** ("bring up the guitar"). Stems are **gated on a perceptual-artifact estimate (not SDR)** — guitar/piano are the least-robust 6-stem case; poor stems fold into "other" / fewer stems, and confidence **clamps the per-track Reimagine ceiling**. **Own-player-only**, and **stems are only ever derived from user-supplied local files — never tapped/DRM audio**; the live tap path (Phase 2) is mix-level; real-time-lite separation is a research track.
 
 ## 7. Spatial / immersion (LD-14 · ADR-003)
+
+> **DESIGN — NOT YET SHIPPED.** BRIR convolution, head-tracking, M/S width / crosstalk-cancellation are **design intent**. What ships is the device-boundary spatial render AU (`'aspz'`), and for the shipped case (device width M == source width N) it is a **bit-exact identity route** — no binaural fold yet. The Apple-native binaural fold (S4) is **deferred** behind the bit-perfect Pure-Mode pivot. See §2.5.
 
 - **Headphones — BRIR-first.** Convolve with a **binaural room response** (HRTF + early reflections + late reverb carrying interaural difference); dry SADIE-II HRIR is the anechoic core *inside* the BRIR; headphone-correction EQ is for **timbre only** (it does not externalize). Synthesize the room (image-source + FDN) or use CC0/CC-BY IRs. **Head-tracking opt-in** (`CMHeadphoneMotionManager`, macOS 14+). Loader: `libmysofa` (BSD-3); convolution via vDSP / FFTConvolver (MIT).
   - **v0.3:** one **shared late-reverb tail across stems** + cheap per-stem early/direct filters (not one full BRIR per stem). **Room amount is content-adaptive** — less on already-reverberant material (avoid reverb-on-reverb wash that *reduces* clarity), more on dry sources. **Bass excluded from the BRIR path + summed mono; lead vocal kept centered** (depth/early-reflections allowed, not L/R spread) — binaural-izing bass or a centered vocal combs and destabilizes the phantom center.
@@ -208,9 +272,11 @@ Interface (mechanism deferred — OQ-11): `interpret(text, context) → { eq_ban
 
 **v0.3 (ML panel):** the evidence leans to a **small on-device LLM + SAFE/SocialEQ priors (few-shot/RAG)** as the planned primary back-end — CLAP-embedding optimization scored ≈ random for EQ, so it's demoted to a **retrieval/reranker**; deterministic **rules are the floor**; cloud is **opt-in only**. *The mechanism itself stays deferred (OQ-11)* — only the lean is recorded. The interpreter's output is treated as **untrusted**: schema-validated + **numeric-clamped** to the governing-principle and **hearing-safety** limits (bounds prompt-injection + hallucination). `context` is a **field allowlist** — excludes audio, hearing data, **and** track identity / listening history.
 
-**Hearing-Safety Numeric Clamps (locked for Phase 0; validated in SPIKE-HEARING-SAFETY-VALIDATION):**
+**Hearing-Safety Numeric Clamps (DESIGN — NOT YET SHIPPED; design locked for Phase 0):**
 
-The Arbiter enforces these clamps on all NL interpreter output to prevent hearing damage and prompt-injection:
+> The clamp engine and the Arbiter that would enforce these do **not** exist on the current branch. This table is the **design** the Sprint 6 Arbiter will implement (and SPIKE-HEARING-SAFETY-VALIDATION will validate); it is not active in shipped playback. See §2.5.
+
+The Arbiter (when built) enforces these clamps on all NL interpreter output to prevent hearing damage and prompt-injection:
 
 | Parameter | Bound | Hard Clamp | Notes |
 |---|---|---|---|
@@ -267,7 +333,7 @@ Core Audio **process taps** (macOS 14.2/14.4+): muted global tap + private aggre
 - **Crossfade during IR swap:** Triggered by Reimagine knob, device switch, or hearing-profile update. The **crossfade duration is tied to the parameter ramp (≥50 ms)**; both old and new IRs run for this window, crossfaded on the output. The crossfade masks any discontinuity between slots.
 - **Threading / Audio Workgroups:** with up to **6 stems × full chains × BRIR convolution**, the render uses **`os_workgroup`** to fan parallel per-stem work across cores while holding the per-buffer deadline.
 - **Privacy (NFR-PRIV):** mic → SPL scalar only, never transmitted; hearing profile in Phase 0 stored as simple file-based JSON (Phase 0 interim; encryption + Keychain deferred to post-MVP); cloud-LLM `context` excludes audio/hearing data; graceful offline fallback (LD-11).
-- **Quality floor (NFR-QUAL):** the **bit-transparent path = intensity 0** (verified MD5-equal bypass); THD+N budget tracked across the chain; validated at 44.1/48/88.2/96 kHz.
+- **Quality floor (NFR-QUAL):** the **bit-transparent path = intensity 0** (verified MD5-equal bypass; a *kernel-bypass* within the Enhanced graph). Distinct from the shipped **Pure Mode HAL path**, which is bit-perfect by bypassing the whole AVAudioEngine graph + DSP at the device boundary (§2.5). THD+N budget tracked across the chain; validated at 44.1/48/88.2/96 kHz.
 - **Persistence:** device↔profile binding; session-scoped NL principles with explicit save; cached stems + pre-analysis.
 
 ## 15. Performance & feasibility budget ⚠ (key review target)
@@ -285,16 +351,19 @@ The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is
 
 ### Phase 1 — Sprint-based breakdown (Mix-level DSP core)
 
-Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel:
+Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel. **Status:** Sprint 4 **DONE + merged**; Sprint 5 / 5b **DONE + merged** (EQ wiring + multichannel two-AU pipeline + Monitoring tab) — and **EQ is now driven live from the UI** (drag-the-curve canvas → `EQViewModel` → `publishEQGains` → `Realizer`, §2.5). The S6 architecture-review gate also shipped (review + three tiers of fixes; see [../sprints/sprint-plan.md](../sprints/sprint-plan.md) S6). The **perceptual** Arbiter / clarity / loudness-compensation work (the original "Sprint 6" content) is **not yet shipped** and now sits in Phase 2 (S15–S17 of the sprint plan).
 
-**Sprint 4: Loudness Safety & Transparent Dynamics**
+**Sprint 4: Loudness Safety & Transparent Dynamics — DONE (merged)**
 - **True-peak limiter** (≥4× oversampling, −1 dBTP ceiling, ~1 ms look-ahead) as the final safety stage
 - **LUFS normalization** (ITU-R BS.1770-5) with transparent makeup gain (no artifacts, fidelity-preserving)
 - **Hearing-safety numeric clamps** (cumulative ≤ +12 dB, proportional scaling)
 - **Validation:** Loudness accuracy ±0.1 LUFS, true-peak enforcement, 1-hour soak test, listening panel
 - **See:** [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md) for detailed design, RT implementation, and acceptance criteria
 
-**Sprint 5: Minimum-Phase EQ Wiring & Spectral Correction**
+**Sprint 5 / 5b: Minimum-Phase EQ Wiring & Spectral Correction — DONE (merged)**
+
+> Shipped reality: the EQ module + biquad-cascade design + the two-AU N-channel graph + Monitoring tab ship and pass the C++ harness, and **EQ gains ARE driven from a live UI** — the drag-the-curve `FrequencyResponseCanvas` → `EQViewModel.dispatchAllBands` → `AudioViewModel.publishEQGains` → `publishEQBandGains` C-ABI → the control-plane `Realizer`. See §2.5.
+
 - **EQ module** wired into RT chain: 31-band ISO parametric, biquad cascade (min-phase, LD-13), real-time parameter automation
 - **Before/after spectrum taps** showing input + DSP effect (visual proof)
 - **AutoEq device-correction profiles** (5 common headphones: Sony WH-1000XM5, AirPods Pro, Sennheiser HD 600, Apple Studio, Generic)
@@ -302,7 +371,7 @@ Phase 1 is implemented as three integrated sprints, each shipping a complete fea
 - **Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, perceptual listening panel
 - **See:** [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md) for detailed design, EQ realization algorithm, and acceptance criteria
 
-**Sprint 6: Adaptive Clarity & Loudness Compensation**
+**Sprint 6: Adaptive Clarity & Loudness Compensation — NOT YET SHIPPED**
 - **Clarity module** (masking-aware per-band gain, roex filter on ERB-rate grid, ≤ +3 dB/band phase-1 conservative)
 - **Loudness compensation** (fractional contour-difference, ISO 226, 40% per-band adjustment)
 - **Arbiter control plane** composes device + loudness + clarity + content + user intent into unified TargetState
@@ -317,18 +386,13 @@ Before Phase 1c (Sprints 4–6), the following enablers must ship:
 - **Progress bar + polling** (playback position display)
 - **Seek implementation** (drag to position, resume smoothly)
 - **Auto-play next track** (completion listener, respects repeat mode)
-- **Test suite fixed** (`swift test` passes, validates DSP coefficient math)
+- **DSP test gate** — the **C++ null-test harness** (`bash scripts/build-null-test.sh`, ~83 tests, stereo golden master `0xE7267654BA01D315`) validates the coefficient math + bit-exact bypass. **NOTE: `swift test` is broken** (toolchain macro skew); the harness — not `swift test` — is the gate. See [validation-strategy.md](validation-strategy.md).
 
 **See:** [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md) for action items and acceptance criteria
 
 ### Validation framework
 
-All three sprints follow the validation strategy outlined in [validation-strategy.md](validation-strategy.md):
-- **Per-merge gates** (automated, < 15 min): unit tests, null-test, frequency sweep, ASAN/TSan clean
-- **Nightly regression** (~30 min): biquad stress, 20-track corpus, parameter sweep, masking model
-- **Per-sprint final validation** (manual + listening panel): Acceptance criteria + listening panel (5–10 audio engineers, MUSHRA protocol)
-
-Cross-reference: [../product/roadmap.md](../product/roadmap.md) for timeline and phase milestones.
+The canonical validation strategy (per-merge gates, nightly regression, per-sprint listening panel) lives in **[validation-strategy.md](validation-strategy.md)** — that doc is authoritative; do not duplicate its gate definitions here. In brief, the DSP gate is the C++ null-test harness (`swift test` is broken). Cross-reference: [../product/roadmap.md](../product/roadmap.md) for timeline and phase milestones.
 
 ## 17. Open questions & risks
 
@@ -341,7 +405,7 @@ Cross-reference: [../product/roadmap.md](../product/roadmap.md) for timeline and
 
 ## 18. ADR details
 
-**v0.3 amendments (expert panel — see [review-v0.2.md](review-v0.2.md)):** ADR-002 +tap is high-consent (TCC + purple indicator; auto-exclude comms apps; never persist); ADR-003 +shared late-reverb, content-adaptive room, bass/lead-vocal spatial exemptions; **ADR-004 → contingent** (no RT ML currently needed — reserved escape hatch); ADR-006 +masking = excitation-pattern (ERB) subset; ADR-007 +shared-reverb decomposition, MLX-primary, weights download-on-first-run, gate on perceptual artifacts (not SDR); ADR-008 +default low-to-mid, dead-band above 0%, loudness-matched across the knob; ADR-009 +planned on-device LLM + priors (CLAP demoted), output clamped/validated (mechanism still deferred). **New: ADR-011.**
+**v0.3 amendments (expert panel — see [review-v0.2.md](../session-notes/review-v0.2.md)):** ADR-002 +tap is high-consent (TCC + purple indicator; auto-exclude comms apps; never persist); ADR-003 +shared late-reverb, content-adaptive room, bass/lead-vocal spatial exemptions; **ADR-004 → contingent** (no RT ML currently needed — reserved escape hatch); ADR-006 +masking = excitation-pattern (ERB) subset; ADR-007 +shared-reverb decomposition, MLX-primary, weights download-on-first-run, gate on perceptual artifacts (not SDR); ADR-008 +default low-to-mid, dead-band above 0%, loudness-matched across the knob; ADR-009 +planned on-device LLM + priors (CLAP demoted), output clamped/validated (mechanism still deferred). **New: ADR-011.**
 
 - **ADR-001 (Accepted):** AVAudioEngine + single custom AU (C++ kernel), Swift/C++ interop. *Consequence:* fast to first sound; the kernel is reused in the Phase-2 tap path.
 - **ADR-002 (Accepted):** Phase-2 = process taps primary, libASPL fallback. *Consequence:* no driver for most users; stem features can't apply to live audio.

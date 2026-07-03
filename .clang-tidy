@@ -30,7 +30,7 @@ WarningsAsErrors: |
   bugprone-*,
   clang-analyzer-*
 
-HeaderFilterRegex: "Sources/AudioDSP.*\\.h"
+HeaderFilterRegex: "Sources/AudioDSP.*\\.h|Tests/.*\\.(inc|h)"
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.VariableCase

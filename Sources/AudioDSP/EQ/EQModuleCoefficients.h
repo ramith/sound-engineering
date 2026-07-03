@@ -56,7 +56,7 @@ namespace AdaptiveSound
             bool allZero = true;
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > kFlatGainThresholdDb)
+                if (std::abs(gains[static_cast<size_t>(i)]) > kFlatGainThresholdDb)
                 {
                     allZero = false;
                     break;
@@ -72,8 +72,9 @@ namespace AdaptiveSound
                 return result;
             }
 
-            // Realizer-style biquad fitting: fit 31-band response with cascade of up to 10 biquads
-            // Phase 1b uses pre-computed coefficients; dynamic Realizer fitting deferred to Phase 2
+            // Greedy biquad fitting: fit 31-band response with cascade of up to 10 biquads.
+            // Coefficients are pre-computed off-RT; ML-based dynamic fitting is a future
+            // enhancement.
             std::array<EQParams::BiquadCoeffs, kMaxBiquads> biquads{};
             int numBiquads = fitBiquadCascade(gains, sampleRate, biquads);
 
@@ -86,10 +87,10 @@ namespace AdaptiveSound
             }
 
             // Copy to result
-            result.numBiquads = std::min(numBiquads, kMaxBiquads);
+            result.numBiquads = static_cast<uint8_t>(std::min(numBiquads, kMaxBiquads));
             for (int i = 0; i < result.numBiquads; ++i)
             {
-                result.biquads[i] = biquads[i];
+                result.biquads[static_cast<size_t>(i)] = biquads[static_cast<size_t>(i)];
             }
             result.masterGainLinear = 1.0F;
 
@@ -117,25 +118,33 @@ namespace AdaptiveSound
         // monic-normalize safety) but share the same small epsilon.
         static constexpr float kSchurCohnTolerance = 1e-6F;
 
-        // Fit 31-band gains to cascaded biquads
-        // This uses a simplified fitting approach for Phase 1b:
-        // - Group consecutive bands with similar gains
-        // - Create peaking filters at center frequencies with proportional Q and gain
-        // Returns number of biquads used (1 to kMaxBiquads)
+        // Fit 31-band gains to cascaded biquads.
+        // Approach: split the active bands into MAXIMAL SAME-SIGN runs and place ONE peaking
+        // filter per run at the run's extremum-by-MAGNITUDE (deepest cut / highest boost).
+        //
+        // Splitting at sign changes + tracking |gain| (not the raw maximum) is the S6 EQ-1 fix.
+        // The previous version grouped every contiguous active run and tracked only the maximum
+        // gain, which (a) collapsed a run of CUTS to its least-negative band — e.g. [-12,-9,-12]
+        // became a single -9 dB filter, under-applying the cut — and (b) dropped the cut in a
+        // boost+cut run entirely — e.g. [+6,-6] became a single +6 dB filter. A boost-only run is
+        // unaffected (its extremum-by-magnitude IS its maximum), so pure-boost cascades — including
+        // the golden-master +6 dB @ 1 kHz — are byte-identical to before.
+        //
+        // Returns number of biquads used (1 to kMaxBiquads).
         static int
         fitBiquadCascade(const std::array<float, kNumBands>& gains,
                          float sampleRate,
                          std::array<EQParams::BiquadCoeffs, kMaxBiquads>& outBiquads) noexcept
         {
-            // Identify bands with significant gain change (≥ 0.5 dB threshold)
+            // Identify bands with significant gain (≥ 0.5 dB threshold).
             std::array<bool, kNumBands> activeRegions{};
             int numActiveRegions = 0;
 
             for (int i = 0; i < kNumBands; ++i)
             {
-                if (std::abs(gains[i]) > kActiveRegionThresholdDb)
+                if (std::abs(gains[static_cast<size_t>(i)]) > kActiveRegionThresholdDb)
                 {
-                    activeRegions[i] = true;
+                    activeRegions[static_cast<size_t>(i)] = true;
                     numActiveRegions++;
                 }
             }
@@ -147,45 +156,39 @@ namespace AdaptiveSound
                 return 1;
             }
 
-            // Group consecutive active bands and create peaking filters
             int numBiquads = 0;
             int i = 0;
 
             while (i < kNumBands && numBiquads < kMaxBiquads)
             {
-                if (activeRegions[i])
-                {
-                    // Find the peak of this gain region
-                    int peakIdx = i;
-                    float peakGain = gains[i];
-
-                    // Extend region forward
-                    while (i < kNumBands && activeRegions[i])
-                    {
-                        if (gains[i] > peakGain)
-                        {
-                            peakGain = gains[i];
-                            peakIdx = i;
-                        }
-                        i++;
-                    }
-
-                    // Create peaking biquad at peak frequency with peak gain
-                    float centerFreq = kCenterFrequencies[peakIdx];
-                    float gainDb = peakGain;
-
-                    // Clamp to safe range (±12 dB as per spec)
-                    gainDb = clamp(gainDb, -kEQMaxGainDb, kEQMaxGainDb);
-
-                    // Create peaking filter
-                    EQParams::BiquadCoeffs biquad =
-                        designPeakingFilter(centerFreq, gainDb, sampleRate);
-                    outBiquads[numBiquads++] = biquad;
-                }
-                else
+                if (!activeRegions[static_cast<size_t>(i)])
                 {
                     i++;
+                    continue;
                 }
+
+                // Start a run at band i; it extends only while bands stay active AND keep the same
+                // sign. Active bands have |gain| > 0.5, so the sign is unambiguous (never zero).
+                const bool positive = gains[static_cast<size_t>(i)] > 0.0F;
+                int extremeIdx = i;
+                float extremeGain = gains[static_cast<size_t>(i)];
+
+                while (i < kNumBands && activeRegions[static_cast<size_t>(i)] &&
+                       (gains[static_cast<size_t>(i)] > 0.0F) == positive)
+                {
+                    if (std::abs(gains[static_cast<size_t>(i)]) > std::abs(extremeGain))
+                    {
+                        extremeGain = gains[static_cast<size_t>(i)];
+                        extremeIdx = i;
+                    }
+                    i++;
+                }
+
+                // Create a peaking biquad at the run's extremum band, with its (clamped) gain.
+                const float centerFreq = kCenterFrequencies[static_cast<size_t>(extremeIdx)];
+                const float gainDb = clamp(extremeGain, -kEQMaxGainDb, kEQMaxGainDb);
+                outBiquads[static_cast<size_t>(numBiquads++)] =
+                    designPeakingFilter(centerFreq, gainDb, sampleRate);
             }
 
             return std::max(1, numBiquads);
@@ -215,10 +218,10 @@ namespace AdaptiveSound
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
-            // Q factor: wider for larger gains (simple Phase-1b heuristic; ~1.4 oct at
+            // Q factor: wider for larger gains (simple heuristic; ~1.4 oct at
             // 6 dB, ~2.2 oct at 12 dB). Not Nyquist-aware — wide filters near 20 kHz at
             // 44.1 kHz skew their lower skirt into the audible band. Acceptable for the
-            // greedy fitter; the Realizer's ERB-weighted L-M optimizer will supersede it.
+            // greedy fitter; an ERB-weighted L-M optimizer is a possible future enhancement.
             float Q = 1.0F / (kQHeuristicBase + (std::abs(gainDb) * kQHeuristicSlope));
 
             float alpha = sinw0 / (2.0F * Q);
@@ -255,13 +258,16 @@ namespace AdaptiveSound
         {
             for (int i = 0; i < numBiquads; ++i)
             {
-                const auto& b = biquads[i];
+                const auto& b = biquads[static_cast<size_t>(i)];
 
-                // Check stability: poles must be inside unit circle
-                // For biquad: A(z) = 1 + a1*z^-1 + a2*z^-2
-                // Poles are roots of A(z)
-                // Simple check: |a2| < 1 and |a1| < 1 + a2
-
+                // Check stability: both poles must lie strictly inside the unit circle.
+                // For biquad: A(z) = 1 + a1*z^-1 + a2*z^-2 (poles are roots of A(z)).
+                // The stability triangle (necessary AND sufficient for both roots strictly
+                // inside the unit circle) reduces to exactly two inequalities:
+                //   |a2| < 1   AND   |a1| < 1 + a2.
+                // The second already encodes both edges of the triangle (a2 > a1 - 1 and
+                // a2 > -a1 - 1 combine to a2 > |a1| - 1). There is no separate "lower
+                // triangle" term for this 1+a1 z^-1+a2 z^-2 convention.
                 if (std::abs(b.a2) >= 1.0F)
                 {
                     return false; // Pole on or outside unit circle

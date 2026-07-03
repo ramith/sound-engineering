@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "legacy-remaster-poc"
+version = "0.1.0"
+description = "Research POC: faithful, streaming-oriented 'Quick Remaster' of legacy music recordings."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary — internal research spike (Adaptive Sound)" }
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "soundfile>=0.12",
+    "pyloudnorm>=0.1.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# Learned bandwidth-extension runners for the bake-off (heavy; install on demand).
+ml = ["torch>=2.2", "torchaudio>=2.2"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+legacy-remaster = "remaster.cli:main"
+
+[tool.setuptools]
+packages = ["remaster"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

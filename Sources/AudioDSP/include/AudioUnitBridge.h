@@ -54,21 +54,25 @@ extern "C"
     /// @param auUnit Opaque pointer returned from createAdaptiveAudioUnit().
     void destroyAdaptiveAudioUnit(void* auUnit);
 
-    /// Set a parameter on the AU (off-RT safe).
-    /// Changes are published to the RT kernel via the DoubleBufferSnapshot.
+    /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6).
+    /// It does NOT reach the RT kernel: it ignores paramID/value and returns false. The real
+    /// control surfaces are the dedicated intent entry points routed through the Realizer —
+    /// `publishIntensity()` (the single intensity surface) and `publishEQBandGains()` for EQ — so
+    /// there are never two contradictory parameter paths. See the impl note in AUAudioUnit.mm.
     ///
     /// @param auUnit      Opaque pointer to AUAudioUnit.
-    /// @param paramID     Parameter ID (see AUParameterID enum).
-    /// @param value       Parameter value (semantics depend on paramID).
-    /// @return True on success, false if paramID is invalid or auUnit is NULL.
+    /// @param paramID     Ignored.
+    /// @param value       Ignored.
+    /// @return Always false (auUnit==NULL also returns false).
     bool setAUParameter(void* auUnit, uint64_t paramID, float value);
 
-    /// Get the current value of a parameter from the AU.
-    /// Reads from the last published TargetState snapshot.
+    /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6). There is no
+    /// readable AU parameter store; the live values live in the Realizer's canonical TargetState.
+    /// Always returns 0.0f. See `setAUParameter` / `publishIntensity` / `publishEQBandGains`.
     ///
     /// @param auUnit      Opaque pointer to AUAudioUnit.
-    /// @param paramID     Parameter ID.
-    /// @return Parameter value, or 0.0f if paramID is invalid or auUnit is NULL.
+    /// @param paramID     Ignored.
+    /// @return Always 0.0f.
     float getAUParameter(void* auUnit, uint64_t paramID);
 
     /// Publish a new TargetState to the AU's render kernel.
@@ -80,6 +84,13 @@ extern "C"
     /// @param state     Pointer to TargetState struct (will be memcpy'd to double-buffer).
     /// @return True on success.
     bool publishTargetState(void* auUnit, const void* state);
+
+    // publishIntensity(...) is declared in AudioUnitRegistrationBridge.h (sibling of
+    // publishEQBandGains, the other control-plane intent entry point) — declared once.
+    //
+    // publishCrossfeed(...) likewise lives ONLY in AudioUnitRegistrationBridge.h (the same
+    // control-plane intent surface) — declared once there, NOT here, to avoid a duplicate
+    // declaration.
 
 #ifdef __cplusplus
 } // extern "C"

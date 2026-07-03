@@ -23,17 +23,16 @@ struct PlayControlsView: View {
                 symbolSize: Layout.skipSymbolSize,
                 containerSize: Layout.skipButtonSize
             ) {
-                if let currentIndex = viewModel.selectedTrackIndex, currentIndex > 0 {
-                    viewModel.selectedTrackIndex = currentIndex - 1
-                }
+                viewModel.previousTrack()
             }
 
-            // Play / Pause — larger, gradient-filled, prominent.
+            // Play / Pause — larger, gradient-filled, prominent. Pause preserves the playhead so
+            // Play resumes from where it was paused (D2), instead of stopping and restarting at 0.
             Button {
                 if viewModel.isPlaying {
-                    viewModel.stopPlayback()
-                } else if viewModel.selectedTrackIndex != nil {
-                    viewModel.startPlayback()
+                    viewModel.pause()
+                } else {
+                    viewModel.play()
                 }
             } label: {
                 Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
@@ -56,11 +55,7 @@ struct PlayControlsView: View {
                 symbolSize: Layout.skipSymbolSize,
                 containerSize: Layout.skipButtonSize
             ) {
-                if let currentIndex = viewModel.selectedTrackIndex,
-                   currentIndex < viewModel.playlist.count - 1
-                {
-                    viewModel.selectedTrackIndex = currentIndex + 1
-                }
+                viewModel.nextTrack()
             }
         }
         .frame(maxWidth: .infinity)
