@@ -20,6 +20,17 @@
 
 #include <stdint.h>
 
+// A noexcept-specifier for the extern "C" bridge functions under C++ (a C++ exception must
+// never unwind across the C ABI into Swift — that is UB / std::terminate). Expands to nothing
+// for the C compiler Swift's bridging uses, where `noexcept` is not a keyword.
+#ifndef AUDIODSP_C_NOEXCEPT
+#ifdef __cplusplus
+#define AUDIODSP_C_NOEXCEPT noexcept
+#else
+#define AUDIODSP_C_NOEXCEPT
+#endif
+#endif
+
 // MARK: - Flat POD structs
 
 /// Flat mirror of AdaptiveSound::DeviceCapability's scalar fields (CoreAudio-free).
@@ -94,7 +105,7 @@ extern "C"
                           const double* availableRates,
                           uint32_t rateCount,
                           const CFileFormat* file,
-                          CPureModeEvaluation* out);
+                          CPureModeEvaluation* out) AUDIODSP_C_NOEXCEPT;
 
     // MARK: CoreAudio glue (implemented in PureModeBridge.mm)
 
@@ -110,34 +121,35 @@ extern "C"
                                 CDeviceCapability* outCap,
                                 double* outRates,
                                 uint32_t maxRates,
-                                uint32_t* outRateCount);
+                                uint32_t* outRateCount) AUDIODSP_C_NOEXCEPT;
 
     /// Create an opaque Pure-Mode engine session handle. Returns NULL on allocation failure.
     /// Destroy with pureModeEngineDestroy().
-    void* pureModeEngineCreate(void);
+    void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT;
 
     /// Open `filePath`, query+evaluate `deviceID`, configure and start bit-perfect render.
     /// Resets the position counters to 0. Returns 1 on success, 0 on failure.
-    int pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath);
+    int
+    pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT;
 
     /// Stop render, seek the source to `seconds`, restart render. Returns 1 on success, 0 on
     /// failure (the seek precondition — pullFloat not running — is satisfied internally).
-    int pureModeEngineSeek(void* engine, double seconds);
+    int pureModeEngineSeek(void* engine, double seconds) AUDIODSP_C_NOEXCEPT;
 
     /// Stop the engine (control-plane). Idempotent; NULL-safe.
-    void pureModeEngineStop(void* engine);
+    void pureModeEngineStop(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Tear down the engine and free the handle. Idempotent + NULL-safe.
-    void pureModeEngineDestroy(void* engine);
+    void pureModeEngineDestroy(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Snapshot the state the engine actually achieved (lock-free). Returns a zeroed struct for a
     /// NULL handle.
-    CAchievedOutputState pureModeEngineAchievedState(void* engine);
+    CAchievedOutputState pureModeEngineAchievedState(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Current playback position in seconds: (active-track seekBase + active-track renderedFrames)
     /// / active-track rate. RESTARTS at 0 at each gapless seam (position is per-track). Jumps on
     /// seek. Returns 0 when there is no source or rate.
-    double pureModeEnginePositionSeconds(void* engine);
+    double pureModeEnginePositionSeconds(void* engine) AUDIODSP_C_NOEXCEPT;
 
     // MARK: Pure-path gapless (Stage 2)
 
@@ -147,26 +159,26 @@ extern "C"
     /// @return 2 = armed (compatible, gapless seam ready);
     ///         1 = format/rate mismatch (caller should reconfigure for the next track itself);
     ///         0 = error (unreadable/unsupported file, already armed, or NULL handle/path).
-    int pureModeEngineSetNextTrack(void* engine, const char* filePath);
+    int pureModeEngineSetNextTrack(void* engine, const char* filePath) AUDIODSP_C_NOEXCEPT;
 
     /// Clear any armed next track (e.g. the user cleared the on-deck queue). Joins the dropped
     /// source off-RT. Idempotent; NULL-safe.
-    void pureModeEngineClearNextTrack(void* engine);
+    void pureModeEngineClearNextTrack(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Monotonic count of completed gapless seams. The view model polls this; an increase means
     /// the armed next track became the active track. ALSO reaps a seam-retired source off-RT
     /// (joins its decode thread) — so poll this regularly. Returns 0 for a NULL handle.
-    uint64_t pureModeEnginePollTrackAdvance(void* engine);
+    uint64_t pureModeEnginePollTrackAdvance(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// 1 once the active track ended with no armed next track (playlist exhausted), else 0.
     /// Returns 0 for a NULL handle.
-    int pureModeEnginePlaybackEnded(void* engine);
+    int pureModeEnginePlaybackEnded(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Set the device's hardware master volume (kAudioDevicePropertyVolumeScalar, output scope,
     /// 0..1, clamped). Hardware/analog-domain, so the rendered stream stays bit-perfect — this
     /// gives Pure Mode a working volume control WITHOUT exclusive hog mode. Returns 1 on success, 0
     /// if the device has no settable master volume (the caller treats that as "volume on device").
-    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar);
+    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

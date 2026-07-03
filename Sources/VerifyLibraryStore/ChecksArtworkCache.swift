@@ -40,7 +40,7 @@ func checkArtworkCache(number: Int, url: URL) async -> Bool {
             printFail(number, "artwork-cache: dedup produced a different path/hash"); return false
         }
         // removeFiles clears original + derived thumbnail.
-        cache.removeFiles(forContentHash: link.contentHash, cachePath: link.cachePath)
+        cache.removeFiles(cachePath: link.cachePath)
         guard !fileManager.fileExists(atPath: link.cachePath), !fileManager.fileExists(atPath: thumbPath) else {
             printFail(number, "artwork-cache: removeFiles left files behind"); return false
         }

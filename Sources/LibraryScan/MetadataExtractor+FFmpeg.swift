@@ -21,6 +21,9 @@ extension MetadataExtractor {
         var scalars = CFileMetadataScalars()
         ffmpegMetadataScalars(handle, &scalars)
         let tags = Self.tagDictionary(handle, count: scalars.tagCount)
+        // The bridge lowercases keys; each ?? chain maps BOTH the Vorbis-comment spelling
+        // (FLAC/Ogg: `albumartist`, `tracknumber`, `discnumber`, `date`) and the alternate
+        // ID3/container spelling (`album artist`, `track`, `disc`, `year`/`originaldate`).
         let meta = TrackMetadata(
             title: tags["title"],
             artistName: tags["artist"],
@@ -53,6 +56,8 @@ extension MetadataExtractor {
     /// COPIED into `Data` before the caller's `defer` closes the handle.
     private static func ffmpegArtwork(_ handle: UnsafeMutableRawPointer,
                                       scalars: CFileMetadataScalars) -> ExtractedArtwork? {
+        // Art beyond maxArtBytes is intentionally DROPPED (returns nil): a guard against a
+        // pathological embedded image. The track keeps its tags — it just gets no cover.
         guard scalars.artLength > 0, Int(scalars.artLength) <= maxArtBytes,
               let bytes = ffmpegMetadataArtBytes(handle) else { return nil }
         let data = Data(bytes: bytes, count: Int(scalars.artLength))

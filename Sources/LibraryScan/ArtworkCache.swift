@@ -36,7 +36,15 @@ public struct ArtworkCache: Sendable {
         let originalURL = directory.appendingPathComponent(
             "\(hash).\(Self.fileExtension(forUTI: uti))", isDirectory: false
         )
+        // pixelSize is a cheap HEADER read (no full-pixel decode), taken from the in-memory
+        // bytes — never re-read from the file, so it can't observe a concurrent writer's
+        // half-written file.
         let pixelSize = Self.pixelSize(of: imageData) // `.zero` if undecodable
+        // Content-addressed dedup: a byte-identical original already on disk skips the write
+        // AND the expensive thumbnail decode/downscale (the real cost — the header read above
+        // is negligible). Concurrent callers (the pass fans `store` out across TaskGroup
+        // children for shared album art) may race here on the SAME hash/path — deliberately
+        // safe: identical bytes ⇒ any duplicate write is idempotent, so no lock is needed.
         if !FileManager.default.fileExists(atPath: originalURL.path) {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try imageData.write(to: originalURL)
@@ -56,8 +64,8 @@ public struct ArtworkCache: Sendable {
     }
 
     /// Remove the original + derived thumbnail for a swept (orphaned) artwork. Best-effort.
-    public func removeFiles(forContentHash contentHash: String, cachePath: String) {
-        _ = contentHash
+    /// The thumbnail path is a pure function of `cachePath`, so the content hash isn't needed.
+    public func removeFiles(cachePath: String) {
         let original = URL(fileURLWithPath: cachePath)
         try? FileManager.default.removeItem(at: original)
         try? FileManager.default.removeItem(at: Self.thumbnailURL(forOriginal: original))
