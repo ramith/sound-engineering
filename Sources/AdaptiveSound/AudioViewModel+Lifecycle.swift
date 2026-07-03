@@ -67,10 +67,15 @@ extension AudioViewModel {
         // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls
         // the engine and could otherwise touch handles we're about to tear down).
         stopSpectrumTimer()
-        stopFolderMonitoring()
-        // Cancel any in-flight library scan (mirrors folderMonitorDebounceTask): the
-        // detached scan observes per-file cancellation and skips its sweep, so it never
-        // writes to `store` while the engine is being torn down.
+        // S8.4: stop the FSEvents watcher (ordered Stop→Invalidate→Release) and cancel any
+        // in-flight reconcile / playlist-refresh / scan. The detached scan+reconcile observe
+        // per-file cancellation and skip their sweeps, so nothing writes to `store` while the
+        // engine is being torn down.
+        libraryWatcher?.stop()
+        for task in reconcileDebounce.values {
+            task.cancel()
+        }
+        playlistRefreshTask?.cancel()
         scanTask?.cancel()
         // P2-C: ordered teardown — `engine.shutdown()` runs only AFTER `performStop()` has fully
         // completed, so shutdown can't tear down `avEngine`/`loudnessMeter`/`pureEngine` while

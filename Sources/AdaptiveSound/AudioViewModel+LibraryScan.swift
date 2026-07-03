@@ -37,6 +37,11 @@ extension AudioViewModel {
             // store-population is unavailable until the next successful construction.
             logUX("libraryStore: init failed — \(error.localizedDescription)")
         }
+        // S8.4: start the FSEvents watcher regardless of the store outcome — it drives the
+        // visible playlist refresh (store-independent) AND, when the store exists, the live
+        // reconcile. refreshWatchedRoots picks up the store roots (∪ the visible folder).
+        startLibraryWatcher()
+        await refreshWatchedRoots()
     }
 
     /// Scan `url` INTO the persistent library store, in parallel with the in-memory
@@ -81,6 +86,8 @@ extension AudioViewModel {
             // for the same directory on a case-insensitive volume (QS3).
             let signature = LibraryScanner.deviceInode(of: url)
             let folderID = try await store.addRoot(url, dev: signature.dev, inode: signature.inode)
+            // Cover the newly registered root with the live FSEvents watcher (S8.4).
+            await refreshWatchedRoots()
             let result = try await LibraryScanner().scan(
                 root: url, folderID: folderID, into: store,
                 progress: { snapshot in
@@ -92,6 +99,9 @@ extension AudioViewModel {
             // rows with tags + art, reusing this scan's generation. Runs on the same
             // `scanTask`, so a re-trigger/teardown cancels the pass too.
             await runMetadataPass(store, generation: result.generation)
+            // Post-churn facet cleanup (SF-2): reap albums/artists/genres a re-scan's deletes
+            // orphaned. Non-cancelled only (matches the artwork-sweep posture).
+            if !Task.isCancelled { _ = try? await store.sweepOrphanFacets() }
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let unreachable as RootUnreachableError {
