@@ -56,7 +56,13 @@ extension AudioViewModel {
         }
     }
 
-    func shutdown() {
+    /// AWAITABLE teardown. The terminate path (`AppDelegate.applicationShouldTerminate`) awaits
+    /// this and only lets AppKit finish quitting once it returns, so the ordered teardown is
+    /// GUARANTEED to complete before the process exits. It used to be fire-and-forget (an
+    /// unawaited `Task` kicked off from `ContentView.onDisappear`), so at quit the process could
+    /// die mid-teardown — losing the P2-C ordering it exists to guarantee (use-after-free of the
+    /// C handles). Being `async` also lets callers sequence teardown deterministically.
+    func shutdown() async {
         logUX("shutdown — was playing=\(isPlaying)")
         // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls
         // the engine and could otherwise touch handles we're about to tear down).
@@ -66,20 +72,17 @@ extension AudioViewModel {
         // detached scan observes per-file cancellation and skips its sweep, so it never
         // writes to `store` while the engine is being torn down.
         scanTask?.cancel()
-        // P2-C: sequence the teardown in a SINGLE ordered async chain so `engine.shutdown()`
-        // runs only AFTER the stop has fully completed. Previously `stopPlayback()` spawned its
-        // own (unawaited) Task while a separate Task called `engine.shutdown()`; the two were
-        // unordered, so shutdown could tear down `avEngine`/`loudnessMeter`/`pureEngine` while
-        // `stopAudio()` was still mid-flight on another thread → use-after-free of the C handles.
-        Task {
-            await performStop()
-            do {
-                try await engine.shutdown()
-            } catch {
-                errorMessage = "Engine shutdown failed: \(error.localizedDescription)"
-            }
-            isEngineReady = false
+        // P2-C: ordered teardown — `engine.shutdown()` runs only AFTER `performStop()` has fully
+        // completed, so shutdown can't tear down `avEngine`/`loudnessMeter`/`pureEngine` while
+        // `stopAudio()` is still mid-flight on another thread → use-after-free of the C handles.
+        await performStop()
+        do {
+            try await engine.shutdown()
+        } catch {
+            errorMessage = "Engine shutdown failed: \(error.localizedDescription)"
         }
+        isEngineReady = false
+        logUX("shutdown — complete")
     }
 
     // MARK: - Stop / teardown
