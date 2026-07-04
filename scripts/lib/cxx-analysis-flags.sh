@@ -50,13 +50,18 @@ cxx_analysis_core_flags() {
 
 # cxx_test_extra_flags — the TEST-ONLY additions layered on top of the core flags for
 # translation units under Tests/: the vendored libebur128 oracle headers (a submodule)
-# and the ADAPTIVESOUND_TEST_DATA_DIR macro (a quoted string literal — the embedded
-# double quotes are intentional and survive the caller's word-splitting because the
-# repo path is space-free).
+# and two quoted-string-literal path macros. The embedded double quotes are intentional
+# and survive the caller's word-splitting because the repo path is space-free.
+#   - ADAPTIVESOUND_TEST_DATA_DIR — the DSP-kernel null-test data dir.
+#   - ADAPTIVE_FIXTURES_DIR       — the audio fixtures dir; Tests/HandleLeakHarness.mm hard
+#     `#error`s without it, so it must live HERE (not injected per-caller) or the pre-commit
+#     hook and the strict-gate tests-pass would drift — build-leak-check.sh passes the same
+#     value for the actual harness build.
 cxx_test_extra_flags() {
     local flags=(
         -I "$_cxx_repo_root/third_party/libebur128/ebur128"
         "-DADAPTIVESOUND_TEST_DATA_DIR=\"$_cxx_repo_root/test-data\""
+        "-DADAPTIVE_FIXTURES_DIR=\"$_cxx_repo_root/Tests/Fixtures/artwork-audio\""
     )
     printf '%s ' "${flags[@]}"
 }

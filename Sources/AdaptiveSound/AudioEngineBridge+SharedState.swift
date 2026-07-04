@@ -128,16 +128,24 @@ extension AudioEngineBridge {
         withStateLock { activePath = value }
     }
 
-    /// Thread-safe snapshot of the Pure engine handle (nil when not created). For lifecycle
+    /// Thread-safe snapshot of the Pure engine session (nil when not created). For lifecycle
     /// bookkeeping only (e.g. the lazy-create check in `startPure`); to USE the handle, go through
     /// `withPureEngine` so it cannot be destroyed mid-call.
-    var pureEngineHandle: UnsafeMutableRawPointer? {
+    var pureEngineHandle: PureModeSession? {
         withStateLock { pureEngine }
     }
 
-    /// Thread-safe write of the Pure engine handle.
-    func setPureEngine(_ value: UnsafeMutableRawPointer?) {
-        withStateLock { pureEngine = value }
+    /// Thread-safe write of the Pure engine session. Per the RT-safety invariant this is used ONLY
+    /// to set a previously-`nil` field to a freshly-created session (the lazy create in `startPure`);
+    /// clearing a live session goes through `detachPureEngineForTeardown` so the wrapper's `deinit`
+    /// (slow HAL destroy) never runs while `stateLock` is held.
+    func setPureEngine(_ value: PureModeSession?) {
+        withStateLock {
+            // RT-safety invariant: only ever SET onto a nil field; cleared only via detachPureEngineForTeardown.
+            assert(pureEngine == nil, "setPureEngine must only set onto a nil field; clear via "
+                + "detachPureEngineForTeardown to keep destroy off stateLock")
+            pureEngine = value
+        }
     }
 
     /// Borrow the live Pure engine handle for the duration of `body`, holding `stateLock` so a
@@ -158,24 +166,29 @@ extension AudioEngineBridge {
     ///      dereference a freed handle.
     func withPureEngine<T>(_ body: (UnsafeMutableRawPointer) -> T) -> T? {
         withStateLock {
-            guard activePath == .pure, let engine = pureEngine else { return nil }
-            return body(engine)
+            guard activePath == .pure, let session = pureEngine else { return nil }
+            // Borrow the RAW handle for the C-ABI read; the wrapper cannot be dropped/destroyed while
+            // we hold `stateLock` (teardown detaches under this same lock — see below).
+            return body(session.handle)
         }
     }
 
-    /// Atomically (under `stateLock`) detach the Pure engine handle for teardown: nil the field and
-    /// reset `activePath` to `.enhanced`, returning the previous handle for the caller to
-    /// `pureModeEngineStop` / `pureModeEngineDestroy` OUTSIDE the lock. Returns `nil` when no handle
-    /// was set. Idempotent across the two teardown domains: if `engineQueue` (stop/shutdown) and
-    /// `configChangeQueue` (device-loss) race, exactly one caller gets the handle and destroys it;
-    /// the loser gets `nil` and skips — no double-free.
+    /// Atomically (under `stateLock`) detach the Pure engine session for teardown: nil the field and
+    /// reset `activePath` to `.enhanced`, returning the previous SESSION WRAPPER for the caller to
+    /// `stop()` and then DROP OUTSIDE the lock (its `deinit` runs `pureModeEngineDestroy`). Returning
+    /// the wrapper — rather than dropping it here — is what keeps the slow HAL destroy off `stateLock`:
+    /// the field is nil under the lock, but the wrapper's release (and thus `deinit`) happens in the
+    /// caller's controlled scope on `engineQueue`. Returns `nil` when no session was set. Idempotent
+    /// across the two teardown domains: if `engineQueue` (stop/shutdown) and `configChangeQueue`
+    /// (device-loss) race, exactly one caller gets the wrapper and destroys it; the loser gets `nil`
+    /// and skips — no double-free.
     @discardableResult
-    func detachPureEngineForTeardown() -> UnsafeMutableRawPointer? {
+    func detachPureEngineForTeardown() -> PureModeSession? {
         withStateLock {
-            let handle = pureEngine
+            let session = pureEngine
             pureEngine = nil
             activePath = .enhanced
-            return handle
+            return session
         }
     }
 }

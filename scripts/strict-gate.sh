@@ -40,6 +40,11 @@ require_tool swiftlint
 require_tool semgrep
 require_tool make
 
+# leaks(1) backs the leak-detection gate (make leak-check). It ships with the Xcode Command
+# Line Tools but is not on PATH like a normal binary, so `require_tool` (command -v) misses it;
+# resolve it via xcrun instead and fail hard if absent (this gate REQUIRES it).
+xcrun --find leaks >/dev/null 2>&1 || { red "ERROR: leaks(1) missing (Xcode CLT)"; exit 1; }
+
 # clang-tidy is keg-only under Homebrew LLVM; prefer that path, fall back to PATH. It is
 # REQUIRED (not skipped) so the pre-commit C++ static-analysis net is guaranteed to work.
 if [[ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
@@ -142,7 +147,14 @@ while IFS= read -r f; do
   fi
 done < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type f \( -name '*.cpp' -o -name '*.mm' \))
 
-# Tests pass — top-level Tests/*.cpp (core flags + the test-only libebur128 + test-data-dir).
+# Tests pass — top-level Tests/*.{cpp,mm} (core flags + cxx_test_extra_flags: libebur128 +
+# test-data-dir + fixtures-dir). .mm included so the Obj-C++ leak harness
+# (Tests/HandleLeakHarness.mm) is actually analysed — it was previously missed by a .cpp-only
+# glob, which is how its findings slipped past the gate while the pre-commit hook (which globs
+# .mm) would have caught them. cxx_lang_flags already selects -x objective-c++ -fobjc-arc
+# -fblocks per file, exactly like the production pass. The harness hard-#errors unless
+# ADAPTIVE_FIXTURES_DIR is defined; that now lives in cxx_test_extra_flags (shared with the
+# pre-commit hook) so the two can't drift — no per-caller injection here.
 while IFS= read -r f; do
   clang_tidy_analyzed=$((clang_tidy_analyzed + 1))
   if ! ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- $(cxx_lang_flags "$f") $(cxx_analysis_core_flags) $(cxx_test_extra_flags) 2>&1)"; then
@@ -150,7 +162,7 @@ while IFS= read -r f; do
     printf '%s\n' "$ct_out"
     clang_tidy_fail=1
   fi
-done < <(find Tests -maxdepth 1 -type f -name '*.cpp')
+done < <(find Tests -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.mm' \))
 
 # Analyzed-≥1-file guard: a 0-file run means the source scope is broken (Sources/AudioDSP
 # renamed/emptied, a bad find, etc.). Without this, clang_tidy_fail stays 0 and the step would
@@ -187,6 +199,10 @@ step "Null-test source-coverage drift guard"
 # ALLOWLIST — needs a live CoreAudio device / AU host — intentionally not in the standalone
 # null test. Derived empirically as (find-all) minus (build-null-test.sh compile list); keep
 # in sync when adding/removing a live-only glue file.
+# NOTE: PureModeBridge.mm + Loudness/LoudnessMeterBridge.mm are allowlisted here (they link
+# CoreAudio, so the null test can't build them) but ADDITIONALLY get runtime coverage from the
+# leak-detection harness (make leak-check, Tests/HandleLeakHarness.mm) — their C-ABI handle
+# lifecycles run under leaks(1) even though they stay out of the standalone null test.
 null_test_allowlist=(
   Sources/AudioDSP/CoreAudioDevice.mm
   Sources/AudioDSP/PureModeBridge.mm
@@ -227,6 +243,13 @@ step "Sanitizer gates (ASan/UBSan + TSan + library-store ASan)"
 make sanitize
 make tsan
 make sanitize-library-store
+
+# Leak detection is the runtime complement to the sanitizers above: macOS/Apple-Silicon ASan
+# ships NO LeakSanitizer, so leaks are otherwise invisible to this gate. Placed AFTER the
+# sanitizer block because, like them, it is an expensive runtime check (builds + runs a
+# dedicated harness twice under leaks(1), including a plant-a-leak self-test).
+step "Leak detection (leaks(1) over the C-ABI opaque handles)"
+make leak-check
 
 green "
 =========================================

@@ -59,6 +59,9 @@ extension AudioViewModel {
     }
 
     func retryInitialization() {
+        // Bail if an init is already in-flight so retry can't clear state / re-enter under a
+        // running init (`initializeEngine()` also guards and owns the `isInitializing` lifecycle).
+        guard !isInitializing else { return }
         errorMessage = nil
         isEngineReady = false
         initializeEngine()

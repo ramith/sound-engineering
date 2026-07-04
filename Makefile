@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format lint strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store regenerate-metadata-fixtures help
+.PHONY: build run release run-release clean xcode profile test format lint strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
 
 build:
 	swift build -c debug -j 8
@@ -110,6 +110,15 @@ tsan:
 sanitize-library-store:
 	swift run --sanitize=address VerifyLibraryStore
 
+# Leak DETECTION over the C-ABI opaque handles (audit hole #2). macOS/Apple-Silicon ASan
+# ships NO LeakSanitizer, so `sanitize`/`tsan`/`sanitize-library-store` are blind to plain
+# leaks. This builds a headless harness (Tests/HandleLeakHarness.mm) that exercises the
+# loudness-meter / FileDecodeSource / PureModeSession / FFmpeg-metadata handle lifecycles and
+# runs it under `xcrun leaks --atExit`, plus a plant-a-leak self-test proving the step is not
+# a no-op. Expensive runtime check — part of the strict gate, run before merging.
+leak-check:
+	bash scripts/build-leak-check.sh
+
 # Regenerate the S8.3 metadata-extraction fixtures (Tests/Fixtures/artwork-audio/).
 # DEV-ONLY + manual: the checked-in fixtures are AUTHORITATIVE and `make gate` never runs
 # this (a builder need not have ffmpeg). Self-made/public-domain — a sine tone + a solid
@@ -151,5 +160,6 @@ help:
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
 	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
 	@echo "  make sanitize-library-store - VerifyLibraryStore under ASan (M11: FFmpeg-metadata bridge memory safety)"
+	@echo "  make leak-check - Leak detection over the C-ABI opaque handles via leaks(1) (+ plant-a-leak self-test)"
 	@echo "  make regenerate-metadata-fixtures - Rebuild the S8.3 tagged test fixtures (needs ffmpeg; manual)"
 	@echo "  make profile- Build and profile with system trace"
