@@ -34,9 +34,14 @@ OUTPUT="$REPO_ROOT/Tests/DSPKernelNullTest"
 
 # Shared SINGLE SOURCE OF TRUTH for the C++/Obj-C++ core parse flags (std, isysroot, -fno-*,
 # the -D defines, the AudioDSP includes, -isystem homebrew) — the same flags clang-tidy uses.
-# Sourcing them here makes THIS production compile the SELF-VERIFICATION of that shared core:
-# a broken include/flag in the library fails `make gate` loudly instead of silently drifting
-# from the analysis flags. The values are byte-for-byte what this script already hard-coded.
+# Sourcing them makes THIS production compile the self-verification of exactly ONE library
+# function, cxx_analysis_core_flags: a broken include/flag in that core set fails `make gate`
+# loudly instead of silently drifting from the analysis flags. The values are byte-for-byte
+# what this script already hard-coded. SCOPE NOTE: only cxx_analysis_core_flags is exercised by
+# a real compile here; the library's other helpers (cxx_test_extra_flags, cxx_bridge_extra_flags,
+# cxx_lang_flags) are NOT used by this script — it layers its own test-only extras below and
+# selects language mode by file extension — so those are self-verified by the clang-tidy passes
+# in strict-gate.sh / the pre-commit hook, not by this compile.
 # shellcheck source=scripts/lib/cxx-analysis-flags.sh
 source "$REPO_ROOT/scripts/lib/cxx-analysis-flags.sh"
 
@@ -113,14 +118,24 @@ mkdir -p "$REPO_ROOT/test-data"
 # The core parse flags (-std/-isysroot/-fno-exceptions/-fno-rtti/the -D defines/the AudioDSP
 # includes/-isystem homebrew) come from the shared library sourced above — byte-for-byte what
 # this script used to hard-code, now the single source of truth also used by clang-tidy. Kept
-# LOCAL to this compile: the warning flags (-Wall -Wextra), the sanitizer/-O2 flag sets, the
-# TEST-ONLY -DADAPTIVESOUND_TEST_DATA_DIR macro and the libebur128 oracle include.
-# strict-gate's drift-guard greps this compile list — do not reference Sources/AudioDSP/*.{mm,cpp}
+# LOCAL to this compile: the warning flags (-Wall -Wextra), -fobjc-arc -fblocks (see below), the
+# sanitizer/-O2 flag sets, the TEST-ONLY -DADAPTIVESOUND_TEST_DATA_DIR macro and the libebur128
+# oracle include.
+# -fobjc-arc -fblocks: the .mm translation units below are ARC-written (no manual retain/release),
+# and BOTH production (SwiftPM, per .build/debug.yaml) and clang-tidy (cxx_lang_flags emits
+# -x objective-c++ -fobjc-arc -fblocks for .mm) compile them under ARC — so without these flags
+# this compile alone would build them in manual-retain-release, diverging from every other path.
+# clang applies -fobjc-arc only to Obj-C++ (.mm) inputs; for the pure-C++ (.cpp) inputs here it
+# is a verified harmless no-op (no warning/error even under -Werror, and identical codegen since
+# they contain no Obj-C), so a single shared invocation still yields "ARC for .mm only" in effect.
+# The C99 libebur128 oracle is compiled SEPARATELY above (-x c), so it never sees ARC / -x c++.
+# strict-gate's drift-guard greps this compile list — do not reference Sources/AudioDSP/*.{mm,cpp,cc}
 # paths in comments outside it (the grep is scoped to this xcrun clang++ … -o "$OUTPUT" block).
 # shellcheck disable=SC2046  # intentional word-splitting of the space-separated core flags
 xcrun clang++ \
     $(cxx_analysis_core_flags) \
     -Wall -Wextra \
+    -fobjc-arc -fblocks \
     ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
     ${RELEASE_STRICT_FLAGS[@]+"${RELEASE_STRICT_FLAGS[@]}"} \
     -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
