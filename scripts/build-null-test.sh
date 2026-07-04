@@ -4,15 +4,22 @@
 # Builds and optionally runs the DSPKernel null test.
 #
 # Usage:
-#   ./Scripts/build-null-test.sh            # build + run (default)
-#   ./Scripts/build-null-test.sh --build    # build only, do not run
-#   ./Scripts/build-null-test.sh --sanitize # build + run with ASan + UBSan
-#   ./Scripts/build-null-test.sh --tsan     # build + run with ThreadSanitizer
+#   ./Scripts/build-null-test.sh                 # build + run (default)
+#   ./Scripts/build-null-test.sh --build         # build only, do not run
+#   ./Scripts/build-null-test.sh --sanitize      # build + run with ASan + UBSan
+#   ./Scripts/build-null-test.sh --tsan          # build + run with ThreadSanitizer
+#   ./Scripts/build-null-test.sh --release-strict # -O2 -Werror compile only (no run)
 #
 # --sanitize / --tsan add runtime instrumentation (mutually exclusive: ASan and
 # TSan cannot coexist in one binary). Both imply -g -fno-omit-frame-pointer so
 # reports carry symbolised stacks. UBSan (bundled with --sanitize) runs in
 # halt-on-error mode so any undefined behaviour aborts with a non-zero exit.
+#
+# --release-strict compiles the C++ at -O2 -Werror (build only, no run) to surface
+# optimization-only real bugs the debug -Werror build can't see: -Warray-bounds
+# (auto-enabled at -O2) and inlining-exposed uninitialised reads. It is mutually
+# exclusive with --sanitize / --tsan (mixing -O2 with a sanitizer would muddy which
+# flag surfaced a finding, and this is a pure compile check).
 #
 # Output binary: Tests/DSPKernelNullTest  (gitignored; not checked in)
 #
@@ -25,6 +32,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SDK="$(xcrun --show-sdk-path)"
 OUTPUT="$REPO_ROOT/Tests/DSPKernelNullTest"
 
+# Shared SINGLE SOURCE OF TRUTH for the C++/Obj-C++ core parse flags (std, isysroot, -fno-*,
+# the -D defines, the AudioDSP includes, -isystem homebrew) — the same flags clang-tidy uses.
+# Sourcing them here makes THIS production compile the SELF-VERIFICATION of that shared core:
+# a broken include/flag in the library fails `make gate` loudly instead of silently drifting
+# from the analysis flags. The values are byte-for-byte what this script already hard-coded.
+# shellcheck source=scripts/lib/cxx-analysis-flags.sh
+source "$REPO_ROOT/scripts/lib/cxx-analysis-flags.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing: --build (no run), --sanitize (ASan+UBSan), --tsan (TSan).
 # SAN_FLAGS is applied to BOTH the C99 ebur128 compile and the C++ link so the
@@ -33,6 +48,8 @@ OUTPUT="$REPO_ROOT/Tests/DSPKernelNullTest"
 SAN_FLAGS=()
 SAN_LABEL="none"
 BUILD_ONLY=0
+RELEASE_STRICT=0
+RELEASE_STRICT_FLAGS=()
 for arg in "$@"; do
     case "$arg" in
         --build)    BUILD_ONLY=1 ;;
@@ -40,10 +57,28 @@ for arg in "$@"; do
                     SAN_LABEL="ASan+UBSan" ;;
         --tsan)     SAN_FLAGS=(-fsanitize=thread -fno-omit-frame-pointer -g)
                     SAN_LABEL="TSan" ;;
+        --release-strict)
+                    # -O2 surfaces optimization-only real bugs the debug build can't see:
+                    # -Warray-bounds (auto-enabled at -O2) plus inlining-exposed uninitialised
+                    # reads via clang's flow-sensitive -Wconditional-uninitialized. Do NOT add
+                    # -Wmaybe-uninitialized / -Wstringop-overflow: those are GCC-only and Apple
+                    # clang errors on the unknown option. Implies build-only (no run step).
+                    RELEASE_STRICT=1
+                    RELEASE_STRICT_FLAGS=(-O2 -Werror -Wconditional-uninitialized)
+                    BUILD_ONLY=1 ;;
         *)          echo "Unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
+
+# --release-strict (-O2 -Werror) and the sanitizers (-fsanitize + -g) are mutually exclusive:
+# mixing -O2 with a sanitizer would muddy which flag surfaced a finding, and --release-strict
+# is a pure compile check with no run step. Reject the combination explicitly.
+if ((RELEASE_STRICT)) && [[ "$SAN_LABEL" != "none" ]]; then
+    echo "Error: --release-strict is mutually exclusive with --sanitize / --tsan" >&2
+    exit 2
+fi
 [[ "$SAN_LABEL" != "none" ]] && echo "Sanitizer: $SAN_LABEL"
+((RELEASE_STRICT)) && echo "Mode: release-strict (-O2 -Werror)"
 
 # ---------------------------------------------------------------------------
 # TEST-ONLY loudness oracle: libebur128 (MIT, pinned v1.2.6) is vendored as a git
@@ -75,20 +110,21 @@ echo "Building null test..."
 # Test fixtures are written + read here (never /tmp). The dir is tracked via test-data/README.md;
 # the generated WAV/bin fixtures inside are git-ignored.
 mkdir -p "$REPO_ROOT/test-data"
+# The core parse flags (-std/-isysroot/-fno-exceptions/-fno-rtti/the -D defines/the AudioDSP
+# includes/-isystem homebrew) come from the shared library sourced above — byte-for-byte what
+# this script used to hard-code, now the single source of truth also used by clang-tidy. Kept
+# LOCAL to this compile: the warning flags (-Wall -Wextra), the sanitizer/-O2 flag sets, the
+# TEST-ONLY -DADAPTIVESOUND_TEST_DATA_DIR macro and the libebur128 oracle include.
+# strict-gate's drift-guard greps this compile list — do not reference Sources/AudioDSP/*.{mm,cpp}
+# paths in comments outside it (the grep is scoped to this xcrun clang++ … -o "$OUTPUT" block).
+# shellcheck disable=SC2046  # intentional word-splitting of the space-separated core flags
 xcrun clang++ \
-    -std=gnu++2b \
-    -isysroot "$SDK" \
-    -fno-exceptions \
-    -fno-rtti \
+    $(cxx_analysis_core_flags) \
     -Wall -Wextra \
     ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
-    -D_LIBCPP_DISABLE_AVAILABILITY \
-    -DACCELERATE_NEW_LAPACK \
+    ${RELEASE_STRICT_FLAGS[@]+"${RELEASE_STRICT_FLAGS[@]}"} \
     -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
-    -I"$REPO_ROOT/Sources/AudioDSP/include" \
-    -I"$REPO_ROOT/Sources/AudioDSP" \
     -I"$EBUR128_DIR" \
-    -isystem /opt/homebrew/include \
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.mm" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.mm" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.mm" \
