@@ -17,9 +17,10 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 # --------------------------------------------------------------------------- helpers
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
-step()  { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
+red()    { printf '\033[31m%s\033[0m\n' "$*"; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
+step()   { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 
 require_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -97,6 +98,74 @@ else
   step "cppcheck (SKIPPED — not installed; optional)"
 fi
 
+step "clang-tidy (.clang-tidy enforcement over AudioDSP + tests)"
+# The parse flags come from the single source of truth shared with the pre-commit hook and
+# build-null-test.sh, so this gate analyses the SAME translation units the compiler builds.
+# This is what closes the biggest gate hole: until now .clang-tidy was enforced only by the
+# bypassable pre-commit hook and NEVER by the merge gate. $CLANG_TIDY (resolved in the tool
+# check) is finally USED here.
+# shellcheck source=scripts/lib/cxx-analysis-flags.sh
+source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+
+# The FFmpeg decode + metadata branch in FileDecodeSource.mm is behind
+# __has_include(<libavformat/avformat.h>); clang-tidy only PARSES (hence analyses) it when
+# the ffmpeg headers are installed. Warn loudly — but do NOT fail — locally when they are
+# absent; CI (with ffmpeg installed) is the guaranteed coverage for that branch.
+if [[ ! -f /opt/homebrew/include/libavformat/avformat.h ]]; then
+  yellow "WARNING: libavformat headers not found under /opt/homebrew/include —"
+  yellow "         the FFmpeg decode + metadata branch in FileDecodeSource.mm will go"
+  yellow "         UNANALYZED locally. Only CI (with ffmpeg installed) covers that branch."
+  yellow "         Install locally with:  brew install ffmpeg"
+fi
+
+# Guarded per-file loops: `if ! ct_out=$(...)` keeps `set -e` from aborting before we can
+# print the offending file's findings. clang_tidy_fail accumulates across BOTH passes so
+# every bad file is reported, then the step fails once at the end. clang_tidy_analyzed counts
+# the TUs actually fed to clang-tidy so a 0-file scope (e.g. a renamed/emptied Sources/AudioDSP)
+# fails loudly instead of silently passing green.
+# --use-color=false is passed to BOTH invocations (matching the pre-commit hook): .clang-tidy
+# sets UseColor:true, which would otherwise emit raw ANSI escapes into captured CI output.
+clang_tidy_fail=0
+clang_tidy_analyzed=0
+
+# Production pass — AudioDSP + the Obj-C++ test bridge. The bridge's public C-ABI header
+# lives in Sources/AudioDSPTestBridge/include, so bridge TUs get that extra -I (see the
+# flags library); AudioDSP proper needs core flags only.
+while IFS= read -r f; do
+  clang_tidy_analyzed=$((clang_tidy_analyzed + 1))
+  bridge_extra=""
+  case "$f" in Sources/AudioDSPTestBridge/*) bridge_extra="$(cxx_bridge_extra_flags)" ;; esac
+  if ! ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- $(cxx_lang_flags "$f") $(cxx_analysis_core_flags) $bridge_extra 2>&1)"; then
+    red "clang-tidy findings in $f:"
+    printf '%s\n' "$ct_out"
+    clang_tidy_fail=1
+  fi
+done < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type f \( -name '*.cpp' -o -name '*.mm' \))
+
+# Tests pass — top-level Tests/*.cpp (core flags + the test-only libebur128 + test-data-dir).
+while IFS= read -r f; do
+  clang_tidy_analyzed=$((clang_tidy_analyzed + 1))
+  if ! ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- $(cxx_lang_flags "$f") $(cxx_analysis_core_flags) $(cxx_test_extra_flags) 2>&1)"; then
+    red "clang-tidy findings in $f:"
+    printf '%s\n' "$ct_out"
+    clang_tidy_fail=1
+  fi
+done < <(find Tests -maxdepth 1 -type f -name '*.cpp')
+
+# Analyzed-≥1-file guard: a 0-file run means the source scope is broken (Sources/AudioDSP
+# renamed/emptied, a bad find, etc.). Without this, clang_tidy_fail stays 0 and the step would
+# report a bogus "clean" — a silent green-pass. Fail hard instead.
+if ((clang_tidy_analyzed == 0)); then
+  red "clang-tidy analyzed 0 files — source scope is broken (Sources/AudioDSP renamed/emptied?)."
+  exit 1
+fi
+
+if ((clang_tidy_fail)); then
+  red "clang-tidy reported findings (build-breaking per .clang-tidy WarningsAsErrors). Fix them above."
+  exit 1
+fi
+green "clang-tidy clean (0 findings across $clang_tidy_analyzed files)."
+
 # --------------------------------------------------------------------------- builds / tests
 step "Swift build (debug) — Swift 6 data-race checking + C++ -Werror"
 swift build -c debug
@@ -106,6 +175,53 @@ swift test
 
 step "make gate (C++ null test + VerifyAUGraph + VerifyLibraryStore)"
 make gate
+
+# --------------------------------------------------------------------------- null-test coverage guard
+step "Null-test source-coverage drift guard"
+# The null test compiles the PURE-DSP kernels but DELIBERATELY excludes the CoreAudio/AU/
+# bridge glue that needs a live device / AU host. This guard fails if a NEW production
+# .mm/.cpp under Sources/AudioDSP is neither compiled by the null test (and therefore run
+# under -O2 -Werror below + the ASan/UBSan/TSan gates) NOR listed in the documented live-only
+# allowlist — closing the "a new .mm silently escapes the null test / sanitizers" drift.
+#
+# ALLOWLIST — needs a live CoreAudio device / AU host — intentionally not in the standalone
+# null test. Derived empirically as (find-all) minus (build-null-test.sh compile list); keep
+# in sync when adding/removing a live-only glue file.
+null_test_allowlist=(
+  Sources/AudioDSP/CoreAudioDevice.mm
+  Sources/AudioDSP/PureModeBridge.mm
+  Sources/AudioDSP/Loudness/LoudnessMeterBridge.mm
+  Sources/AudioDSP/AudioEngine/AUAudioUnit.mm
+  Sources/AudioDSP/AudioEngine/HALOutputEngine.mm
+  Sources/AudioDSP/AudioEngine/SpatialRendererAU.mm
+)
+# uncovered = (every production .mm/.cpp) minus (files build-null-test.sh actually compiles,
+# grepped straight out of the script so this tracks the real list) minus (the allowlist). The
+# compile list is grepped (not re-hardcoded) so it can never drift from build-null-test.sh.
+# The grep is SCOPED (via sed) to ONLY the `xcrun clang++ … -o "$OUTPUT"` compile block, not the
+# whole script: this guards the dangerous OVER-COUNT direction — a Sources/AudioDSP/*.{mm,cpp}
+# path mentioned in a COMMENT elsewhere in build-null-test.sh would otherwise be counted as
+# "covered" and MASK a genuinely-uncovered source. Only real compile-list entries count.
+null_test_uncovered="$(
+  comm -23 \
+    <(find Sources/AudioDSP -type f \( -name '*.mm' -o -name '*.cpp' \) | sort -u) \
+    <( { sed -n '/xcrun clang++/,/-o "\$OUTPUT"/p' scripts/build-null-test.sh \
+           | grep -oE 'Sources/AudioDSP/[^"]+\.(mm|cpp)'
+         printf '%s\n' "${null_test_allowlist[@]}"; } | sort -u )
+)"
+if [[ -n "$null_test_uncovered" ]]; then
+  while IFS= read -r src; do
+    red "new production DSP source not covered by null-test/-O2/sanitizers: $src — add it to build-null-test.sh or the documented allowlist."
+  done <<< "$null_test_uncovered"
+  exit 1
+fi
+green "null-test source coverage complete (every production DSP source is compiled or documented live-only)."
+
+# --------------------------------------------------------------------------- -O2 strict compile
+step "Null test -O2 -Werror strict compile (optimization-only diagnostics)"
+# Surfaces -O2-only real bugs the debug -Werror build can't see: -Warray-bounds (auto-enabled
+# at -O2) and inlining-exposed uninitialised reads (-Wconditional-uninitialized). Build-only.
+bash "$repo_root/scripts/build-null-test.sh" --release-strict
 
 step "Sanitizer gates (ASan/UBSan + TSan + library-store ASan)"
 make sanitize

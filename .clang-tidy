@@ -65,12 +65,14 @@ WarningsAsErrors: "*"
 #                                         (float/size_t) params (freq, Q, gain, frames).
 #   bugprone-exception-escape             Target builds -fno-exceptions; the check is moot.
 #   cert-err09-cpp / cert-err61-cpp       Exception-handling CERT rules; -fno-exceptions.
-#   cert-err33-c                          In this codebase this fires ONLY on ignored
-#                                         fprintf(stderr,…) / std::snprintf(…) return values
-#                                         — idiomatic diagnostic logging + bounded formatting,
-#                                         not the errno/parse-result class the rule targets.
-#                                         Checking those returns adds nothing; re-enable
-#                                         narrowly if a real unchecked-return case appears.
+#   cert-err33-c                          Disabled as a redundant ALIAS of bugprone-unused-
+#                                         return-value: it fires on the same broad C-stdlib set
+#                                         (std::remove, fwrite, the printf family, etc.), not
+#                                         "only fprintf/snprintf". Precise dangerous-unchecked-
+#                                         return coverage is provided instead by the explicit
+#                                         bugprone-unused-return-value.CheckedFunctions list
+#                                         (parse / IO / alloc functions) in CheckOptions below,
+#                                         with AllowCastToVoid as the (void)-cast escape hatch.
 #   concurrency-mt-unsafe                 Flags getenv/strerror etc. in non-RT setup code;
 #                                         the RT path is guarded by review + TSan, not this.
 #   cppcoreguidelines-owning-memory       No GSL dependency; ownership is enforced by RAII
@@ -132,6 +134,20 @@ CheckOptions:
     value: false
   - key: bugprone-narrowing-conversions.PedanticMode
     value: true
+  # bugprone-unused-return-value: narrow the default STL-centric list down to the functions
+  # where an IGNORED return is a genuine silent bug — parse (strto*/ato*/*scanf), IO
+  # (fread/fgets) and allocation (malloc/calloc/realloc/aligned_alloc/posix_memalign). This is
+  # the precise unchecked-return coverage that replaces the redundant cert-err33-c alias
+  # (disabled above). posix_memalign is the codebase's ACTUAL over-aligned allocator
+  # (Tests/SoakRtAllocTests.inc): unlike malloc it returns an int ERROR CODE and leaves the
+  # out-pointer INDETERMINATE on failure, so an unchecked call is doubly dangerous — the
+  # existing callsite already checks `!= 0`, so this adds 0 findings today while catching any
+  # future unchecked use. (aligned_alloc stays as the standard C11 sibling.)
+  # AllowCastToVoid gives an explicit `(void)fn();` escape hatch for a deliberate discard.
+  - key: bugprone-unused-return-value.CheckedFunctions
+    value: '::strtol;::strtoll;::strtoul;::strtoull;::strtof;::strtod;::strtold;::atoi;::atol;::atoll;::atof;::scanf;::sscanf;::fscanf;::fread;::fgets;::malloc;::calloc;::realloc;::aligned_alloc;::posix_memalign'
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: 'true'
   # RBJ Audio EQ Cookbook uses canonical single-letter DSP notation:
   #   A = amplitude (sqrt of linear gain), Q = quality factor, w0 = angular freq.
   # Allow these specific names rather than obscuring them with verbose renames.

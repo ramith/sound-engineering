@@ -6,7 +6,10 @@
 #   1. Format staged Swift / C++ / Obj-C++ files (clang-format, swiftformat)
 #   2. Lint staged Swift files (swiftlint)  -> errors block the commit
 #   3. Static-analyse staged C++ files (clang-tidy) -> errors block the commit
-#      (gracefully skipped with a warning if clang-tidy is not installed)
+#
+# The required tools (clang-format, swiftformat, swiftlint, clang-tidy) are REQUIRED, not
+# optional: if one is missing for a file type you staged, the hook HARD-FAILS and blocks the
+# commit (it no longer skips with a warning). The only escape hatch is `git commit --no-verify`.
 #
 # Only STAGED files are processed. Reformatted files are re-staged so the
 # commit reflects the formatted result.
@@ -93,33 +96,32 @@ fi
 # ---------------------------------------------------------------------------
 if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
-        sdk="$(xcrun --show-sdk-path 2>/dev/null)"
-        # gnu++2b matches Package.swift's cxxLanguageStandard (C++23, GNU dialect
-        # so Apple ObjC extensions like __typeof parse); all AudioDSP + test-bridge
-        # module dirs on the include path so quote-includes resolve (the test bridge
-        # includes its own EQTestBridge.h and the AudioDSP headers).
-        compile_flags=(-std=gnu++2b)
-        # AudioDSP + test-bridge module dirs so quote-includes resolve; plus the
-        # test-only libebur128 oracle headers (third_party/libebur128, a submodule)
-        # so test files that include "ebur128.h" can be analysed. The find on a
-        # missing submodule dir is a harmless no-op (2>/dev/null), and ebur128's
-        # own headers are outside HeaderFilterRegex so they aren't linted.
-        while IFS= read -r d; do compile_flags+=(-I "$d"); done \
-            < <(find Sources/AudioDSP Sources/AudioDSPTestBridge third_party/libebur128/ebur128 -type d 2>/dev/null)
-        [[ -n "$sdk" ]] && compile_flags+=(-isysroot "$sdk")
+        # Parse flags come from the single source of truth shared with the strict-gate
+        # and build-null-test.sh, so the hook analyses the SAME translation units the
+        # compiler builds (incl. the -isystem/-D flags that make FileDecodeSource.mm's
+        # __has_include(<libavformat/...>) FFmpeg branch parse). See the library header.
+        source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+        # Constant across files: resolve once (xcrun etc.) rather than per file.
+        core_flags=($(cxx_analysis_core_flags))
+        test_extra_flags=($(cxx_test_extra_flags))
+        bridge_extra_flags=($(cxx_bridge_extra_flags))
 
         for f in "${cpp_files[@]}"; do
-            # Pick the language mode. Project headers may be Obj-C++, so analyse
-            # .h/.hpp in objective-c++ mode too (a superset that also parses pure
-            # C++). lang_flags is always non-empty (bash 3.2 + set -u safe).
+            # Per-file language mode (.h/.hpp analysed as Obj-C++, a C++ superset).
+            # cxx_lang_flags always emits >=1 flag (bash 3.2 + set -u safe).
+            lang_flags=($(cxx_lang_flags "$f"))
+            # Layer extras by repo-relative staged path: test TUs get the libebur128
+            # oracle include + test-data-dir macro; the test-support bridge gets its own
+            # include/ dir (so #include "EQTestBridge.h" resolves, as it did before).
+            file_flags=("${core_flags[@]}")
             case "$f" in
-                *.mm|*.h|*.hpp) lang_flags=(-x objective-c++ -fobjc-arc -fblocks) ;;
-                *)              lang_flags=(-x c++) ;;
+                Tests/*)                      file_flags+=("${test_extra_flags[@]}") ;;
+                Sources/AudioDSPTestBridge/*) file_flags+=("${bridge_extra_flags[@]}") ;;
             esac
             # --quiet hides the "N warnings generated" summary. Capture output and
             # only surface it when the file actually fails (WarningsAsErrors), so
             # non-blocking style warnings don't spam every commit.
-            ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- "${lang_flags[@]}" "${compile_flags[@]}" 2>&1)"
+            ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- "${lang_flags[@]}" "${file_flags[@]}" 2>&1)"
             if [[ $? -ne 0 ]]; then
                 red "❌ clang-tidy reported issues in $f"
                 printf '%s\n' "$ct_out"

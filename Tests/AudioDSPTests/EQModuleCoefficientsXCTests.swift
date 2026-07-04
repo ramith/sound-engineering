@@ -111,6 +111,8 @@ struct EQModuleCoefficientsTests {
             for i in 0 ..< Int(result.numBiquads) {
                 let b = biquad(at: i, in: result)
                 #expect(b.b0.isFinite, "b0[\(i)] at \(gain) dB must be finite")
+                #expect(b.b1.isFinite, "b1[\(i)] at \(gain) dB must be finite")
+                #expect(b.b2.isFinite, "b2[\(i)] at \(gain) dB must be finite")
                 #expect(b.a1.isFinite, "a1[\(i)] at \(gain) dB must be finite")
                 #expect(b.a2.isFinite, "a2[\(i)] at \(gain) dB must be finite")
             }
@@ -152,6 +154,9 @@ struct EQModuleCoefficientsTests {
         for i in 0 ..< Int(result.numBiquads) {
             let b = biquad(at: i, in: result)
             #expect(b.b0.isFinite, "b0[\(i)] must be finite")
+            #expect(b.b1.isFinite, "b1[\(i)] must be finite")
+            #expect(b.b2.isFinite, "b2[\(i)] must be finite")
+            #expect(b.a1.isFinite, "a1[\(i)] must be finite")
             #expect(b.a2.isFinite, "a2[\(i)] must be finite")
         }
     }
@@ -236,8 +241,10 @@ struct EQModuleCoefficientsTests {
             gains[bandIdx] = bandIdx == 0 ? 5.0 : -5.0
             let result = computeCoeffs(gains: gains)
             #expect(Int(result.numBiquads) >= 1, "Must produce biquads for \(bandHz) Hz")
-            #expect(biquad(at: 0, in: result).b0.isFinite,
-                    "b0 must be finite for \(bandHz) Hz band")
+            for i in 0 ..< Int(result.numBiquads) {
+                #expect(biquad(at: i, in: result).b0.isFinite,
+                        "b0[\(i)] must be finite for \(bandHz) Hz band")
+            }
         }
     }
 }
