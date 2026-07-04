@@ -80,7 +80,7 @@ Three tiers, fastest first:
 |---------|------|-------|--------------|
 | pre-commit hook | every `git commit` | staged files | swiftformat + clang-format (auto-fix), swiftlint (errors block), clang-tidy |
 | `make lint` | anytime / editor | whole repo, no mutation | swiftformat `--lint`, `swiftlint --strict`, `clang-format --dry-run --Werror`, semgrep |
-| `make strict-gate` | before PR / merge | whole repo | `make lint` + suppression policy + cppcheck + `swift build` + `swift test` + `make gate` + ASan/UBSan/TSan |
+| `make strict-gate` | before PR / merge | whole repo | `make lint` + suppression policy + cppcheck + **clang-tidy fail-on-any** over first-party C++ (production + `Tests/*.cpp`) + `swift build` + `swift test` + `make gate` + **null-test source-list drift-guard** + **`-O2 -Werror` release compile** (`build-null-test.sh --release-strict`) + ASan/UBSan/TSan |
 
 `make ci` == `make strict-gate`; the CI workflow (`.github/workflows/strict-ci.yml`) runs the
 identical command on a self-hosted macOS 26 / Xcode 26 runner, so local and CI cannot diverge.
@@ -119,6 +119,30 @@ genuine, documented necessity — never to quiet the gate.
 The `todo` SwiftLint rule is disabled so roadmap markers are allowed, but a `TODO` must carry
 an **owner or a sprint/issue ID** — e.g. `// TODO(S8.4): …` or `// TODO(ramith): …`. Bare
 `// TODO` with no attribution is not allowed in review.
+
+### Accepted residual risks / follow-ups
+
+The C++ static-analysis gate is deliberately strict; these are the known, accepted edges:
+
+- **clang-tidy fail-on-any is LLVM-version-sensitive.** `WarningsAsErrors: '*'` promotes every
+  enabled check to fatal, so a `brew upgrade llvm` can fire a *newly-added* check on otherwise
+  unchanged code and break the gate. When convenient, pin/record the expected LLVM major
+  (CI uses the runner's `llvm`). Treat such a break as a check-triage task, not a code bug.
+- **clang-tidy scope is hardcoded.** It analyses `Sources/AudioDSP` + `Sources/AudioDSPTestBridge`
+  + top-level `Tests/*.cpp` only. A **new C++ directory/target** would go unanalysed until it is
+  explicitly added to the gate (`scripts/strict-gate.sh` clang-tidy step + `build-null-test.sh`
+  if it belongs in the null test). The "analyzed ≥1 file" guard only catches a broken *existing*
+  scope, not a brand-new unlisted one.
+- **`-O2` diagnostics: prove real-vs-false-positive first.** The `--release-strict` pass surfaces
+  optimization-only diagnostics (`-Warray-bounds`, `-Wconditional-uninitialized`). If one fires,
+  confirm whether it is a genuine bug or a compiler false positive *before* changing code. For a
+  real FP, prefer a **narrowly-scoped `#pragma clang diagnostic push/ignored/pop`** carrying the
+  suppression-policy comment (owner / reason / expiry) over a value-changing zero-init or clamp on
+  the audio path — silencing a warning must never alter DSP output.
+- **Optional deferred polishes** (nice-to-have, not blocking): (a) move the off-RT-path meter-peak
+  loop in `LoudnessMeterBridge.mm` into a null-tested helper so it rides the `-O2`/sanitizer gates
+  instead of the live-only allowlist; (b) add `-fobjc-arc` to the null-test `.mm` compile in
+  `build-null-test.sh` for ARC/MRC parity with the SwiftPM build.
 
 ---
 

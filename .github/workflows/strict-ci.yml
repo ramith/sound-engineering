@@ -16,12 +16,13 @@ concurrency:
 jobs:
   strict-gate:
     name: strict-gate
-    # IMPORTANT: this package targets macOS 26 (Tahoe) + Xcode 26 + Swift 6.2. GitHub-hosted
-    # `macos-latest` does NOT yet provide Tahoe/Xcode 26, so it cannot build this package —
-    # a self-hosted runner (the maintainer's Apple-Silicon Mac) is required. Register one via
-    # Settings → Actions → Runners and give it these labels. Once GitHub-hosted images ship
-    # Tahoe/Xcode 26, switch `runs-on` to `macos-latest` and drop the Install-tools note.
-    runs-on: [self-hosted, macOS, tahoe, xcode26]
+    # This package targets macOS 26 (Tahoe) + Xcode 26 + Swift 6.2. GitHub-hosted `macos-26`
+    # went GA on 2026-02-26, runs natively on Apple Silicon (arm64), and ships Xcode 26.x
+    # preinstalled (default is 26.x) — so it builds this package directly, no self-hosted
+    # runner needed. Pinned to `macos-26` (not `macos-latest`) to hold the OS major explicitly;
+    # bump when the target OS moves. The base image includes swiftlint/swiftformat but NOT
+    # semgrep/cppcheck/clang-tidy — the Install-tools step below covers those.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v7
