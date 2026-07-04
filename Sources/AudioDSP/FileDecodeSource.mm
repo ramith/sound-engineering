@@ -98,7 +98,9 @@ namespace AdaptiveSound
         // Float client format is 32-bit.
         constexpr uint32_t kClientFloatBits = 32U;
 
-        constexpr uint32_t kBitsPerByte = 8U;
+        // Bytes -> bits when reporting source bit depth; used only in the FFmpeg decode path,
+        // so [[maybe_unused]] keeps the no-FFmpeg build (__has_include false) clean under -Werror.
+        [[maybe_unused]] constexpr uint32_t kBitsPerByte = 8U;
 
         // Backpressure nap when the ring is momentarily full (off-RT only).
         constexpr int kRingFullNapMs = 2;

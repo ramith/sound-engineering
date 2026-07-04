@@ -21,7 +21,11 @@ jobs:
     # preinstalled (default is 26.x) — so it builds this package directly, no self-hosted
     # runner needed. Pinned to `macos-26` (not `macos-latest`) to hold the OS major explicitly;
     # bump when the target OS moves. The base image includes swiftlint/swiftformat but NOT
-    # semgrep/cppcheck/clang-tidy — the Install-tools step below covers those.
+    # semgrep/cppcheck/clang-tidy/ffmpeg — the Install-tools step below covers those. ffmpeg is
+    # required for coverage, not just convenience: it ships the libavformat headers under
+    # /opt/homebrew/include that make FileDecodeSource.mm's __has_include(<libavformat/...>)
+    # FFmpeg decode + metadata branch actually parse, so clang-tidy analyzes it here (see
+    # strict-gate.sh — CI-with-ffmpeg is the guaranteed coverage for that branch).
     runs-on: macos-26
 
     steps:
@@ -38,8 +42,12 @@ jobs:
 
       - name: Install tools (idempotent)
         run: |
-          # keg-only llvm provides clang-tidy; the rest are formatters/linters/scanners.
-          brew install swiftformat swiftlint llvm semgrep cppcheck || true
+          # keg-only llvm provides clang-tidy; ffmpeg supplies the libavformat headers under
+          # /opt/homebrew/include so FileDecodeSource.mm's __has_include(<libavformat/...>)
+          # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
+          # (that branch is analyzed NOWHERE else in the merge path); the rest are
+          # formatters/linters/scanners.
+          brew install swiftformat swiftlint llvm semgrep cppcheck ffmpeg || true
           # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
           # runner default PATH (/usr/bin, where make lives). A step-level
           # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,

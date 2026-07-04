@@ -129,20 +129,28 @@ The C++ static-analysis gate is deliberately strict; these are the known, accept
   unchanged code and break the gate. When convenient, pin/record the expected LLVM major
   (CI uses the runner's `llvm`). Treat such a break as a check-triage task, not a code bug.
 - **clang-tidy scope is hardcoded.** It analyses `Sources/AudioDSP` + `Sources/AudioDSPTestBridge`
-  + top-level `Tests/*.cpp` only. A **new C++ directory/target** would go unanalysed until it is
-  explicitly added to the gate (`scripts/strict-gate.sh` clang-tidy step + `build-null-test.sh`
-  if it belongs in the null test). The "analyzed ≥1 file" guard only catches a broken *existing*
-  scope, not a brand-new unlisted one.
+  + `Tests/` (`.cpp`/`.mm`/`.cc`, any depth — matching the pre-commit hook and the Makefile). A
+  **new C++ directory/target** outside those roots would go unanalysed until it is explicitly added
+  to the gate (`scripts/strict-gate.sh` clang-tidy step + `build-null-test.sh` if it belongs in the
+  null test). The "analyzed ≥1 file" guard only catches a broken *existing* scope, not a brand-new
+  unlisted one.
 - **`-O2` diagnostics: prove real-vs-false-positive first.** The `--release-strict` pass surfaces
   optimization-only diagnostics (`-Warray-bounds`, `-Wconditional-uninitialized`). If one fires,
   confirm whether it is a genuine bug or a compiler false positive *before* changing code. For a
   real FP, prefer a **narrowly-scoped `#pragma clang diagnostic push/ignored/pop`** carrying the
   suppression-policy comment (owner / reason / expiry) over a value-changing zero-init or clamp on
   the audio path — silencing a warning must never alter DSP output.
-- **Optional deferred polishes** (nice-to-have, not blocking): (a) move the off-RT-path meter-peak
-  loop in `LoudnessMeterBridge.mm` into a null-tested helper so it rides the `-O2`/sanitizer gates
-  instead of the live-only allowlist; (b) add `-fobjc-arc` to the null-test `.mm` compile in
-  `build-null-test.sh` for ARC/MRC parity with the SwiftPM build.
+- **Optional deferred polish** (nice-to-have, not blocking): move the off-RT-path meter-peak loop
+  in `LoudnessMeterBridge.mm` into a null-tested helper so it rides the `-O2`/sanitizer gates
+  instead of the live-only allowlist. (The former ARC/MRC-parity item — `-fobjc-arc` on the
+  null-test `.mm` compile — is now done; `build-null-test.sh` compiles Obj-C++ under ARC to match
+  the SwiftPM build.)
+- **`ADAPTIVESOUND_TEST_DATA_DIR` is defined in two places.** `scripts/lib/cxx-analysis-flags.sh`
+  (`cxx_test_extra_flags`, for analysis) and `scripts/build-null-test.sh` (the compile) each define
+  it independently; they agree today (both `<repo>/test-data`). A clean single-source dedup isn't
+  possible without `build-null-test.sh` also inheriting `cxx_test_extra_flags`' unrelated flags
+  (libebur128 `-I`, `ADAPTIVE_FIXTURES_DIR`) that it neither wants nor uses, so it's left as a
+  low-risk known duplication.
 
 ---
 

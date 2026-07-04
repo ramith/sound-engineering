@@ -145,16 +145,20 @@ while IFS= read -r f; do
     printf '%s\n' "$ct_out"
     clang_tidy_fail=1
   fi
-done < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type f \( -name '*.cpp' -o -name '*.mm' \))
+done < <(find Sources/AudioDSP Sources/AudioDSPTestBridge -type f \( -name '*.cpp' -o -name '*.mm' -o -name '*.cc' \))
 
-# Tests pass — top-level Tests/*.{cpp,mm} (core flags + cxx_test_extra_flags: libebur128 +
+# Tests pass — Tests/*.{cpp,mm,cc} (core flags + cxx_test_extra_flags: libebur128 +
 # test-data-dir + fixtures-dir). .mm included so the Obj-C++ leak harness
 # (Tests/HandleLeakHarness.mm) is actually analysed — it was previously missed by a .cpp-only
 # glob, which is how its findings slipped past the gate while the pre-commit hook (which globs
-# .mm) would have caught them. cxx_lang_flags already selects -x objective-c++ -fobjc-arc
-# -fblocks per file, exactly like the production pass. The harness hard-#errors unless
-# ADAPTIVE_FIXTURES_DIR is defined; that now lives in cxx_test_extra_flags (shared with the
-# pre-commit hook) so the two can't drift — no per-caller injection here.
+# .mm) would have caught them. .cc is included for the same forward-looking reason as the
+# production pass (the Makefile/pre-commit treat it as first-class C++). cxx_lang_flags already
+# selects -x objective-c++ -fobjc-arc -fblocks per file, exactly like the production pass. The
+# harness hard-#errors unless ADAPTIVE_FIXTURES_DIR is defined; that now lives in
+# cxx_test_extra_flags (shared with the pre-commit hook) so the two can't drift — no per-caller
+# injection here. No -maxdepth: the pre-commit hook matches staged Tests/* at ANY depth, so the
+# gate scans the same set (the .inc test fragments are #included into a TU, never matched by
+# this {cpp,mm,cc} glob, and there are no nested standalone TUs today).
 while IFS= read -r f; do
   clang_tidy_analyzed=$((clang_tidy_analyzed + 1))
   if ! ct_out="$("$CLANG_TIDY" "$f" --quiet --use-color=false -- $(cxx_lang_flags "$f") $(cxx_analysis_core_flags) $(cxx_test_extra_flags) 2>&1)"; then
@@ -162,7 +166,7 @@ while IFS= read -r f; do
     printf '%s\n' "$ct_out"
     clang_tidy_fail=1
   fi
-done < <(find Tests -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.mm' \))
+done < <(find Tests -type f \( -name '*.cpp' -o -name '*.mm' -o -name '*.cc' \))
 
 # Analyzed-≥1-file guard: a 0-file run means the source scope is broken (Sources/AudioDSP
 # renamed/emptied, a bad find, etc.). Without this, clang_tidy_fail stays 0 and the step would
@@ -192,7 +196,7 @@ make gate
 step "Null-test source-coverage drift guard"
 # The null test compiles the PURE-DSP kernels but DELIBERATELY excludes the CoreAudio/AU/
 # bridge glue that needs a live device / AU host. This guard fails if a NEW production
-# .mm/.cpp under Sources/AudioDSP is neither compiled by the null test (and therefore run
+# .mm/.cpp/.cc under Sources/AudioDSP is neither compiled by the null test (and therefore run
 # under -O2 -Werror below + the ASan/UBSan/TSan gates) NOR listed in the documented live-only
 # allowlist — closing the "a new .mm silently escapes the null test / sanitizers" drift.
 #
@@ -211,18 +215,18 @@ null_test_allowlist=(
   Sources/AudioDSP/AudioEngine/HALOutputEngine.mm
   Sources/AudioDSP/AudioEngine/SpatialRendererAU.mm
 )
-# uncovered = (every production .mm/.cpp) minus (files build-null-test.sh actually compiles,
+# uncovered = (every production .mm/.cpp/.cc) minus (files build-null-test.sh actually compiles,
 # grepped straight out of the script so this tracks the real list) minus (the allowlist). The
 # compile list is grepped (not re-hardcoded) so it can never drift from build-null-test.sh.
 # The grep is SCOPED (via sed) to ONLY the `xcrun clang++ … -o "$OUTPUT"` compile block, not the
-# whole script: this guards the dangerous OVER-COUNT direction — a Sources/AudioDSP/*.{mm,cpp}
+# whole script: this guards the dangerous OVER-COUNT direction — a Sources/AudioDSP/*.{mm,cpp,cc}
 # path mentioned in a COMMENT elsewhere in build-null-test.sh would otherwise be counted as
 # "covered" and MASK a genuinely-uncovered source. Only real compile-list entries count.
 null_test_uncovered="$(
   comm -23 \
-    <(find Sources/AudioDSP -type f \( -name '*.mm' -o -name '*.cpp' \) | sort -u) \
+    <(find Sources/AudioDSP -type f \( -name '*.mm' -o -name '*.cpp' -o -name '*.cc' \) | sort -u) \
     <( { sed -n '/xcrun clang++/,/-o "\$OUTPUT"/p' scripts/build-null-test.sh \
-           | grep -oE 'Sources/AudioDSP/[^"]+\.(mm|cpp)'
+           | grep -oE 'Sources/AudioDSP/[^"]+\.(mm|cpp|cc)'
          printf '%s\n' "${null_test_allowlist[@]}"; } | sort -u )
 )"
 if [[ -n "$null_test_uncovered" ]]; then
