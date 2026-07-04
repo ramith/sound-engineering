@@ -87,15 +87,18 @@ extension AudioEngineBridge {
     /// - Returns: `true` on success; `false` on any failure (caller falls back to Enhanced).
     @discardableResult
     func startPure(fileURL: URL, deviceID: UInt32) -> Bool {
-        // Lazily create the engine handle. All pureEngine/activePath access goes through the
-        // stateLock accessors (S6 UAF-1). This runs on engineQueue BEFORE the device-alive listener
-        // is registered (see registerDeviceAliveListener below), so no concurrent device-loss
-        // teardown can free the handle mid-start; the guarded writes only keep the field consistent
-        // for the MainActor poll.
+        // Lazily create the engine session (create ONLY when the field is nil — the RT-safety
+        // invariant). All pureEngine/activePath access goes through the stateLock accessors (S6
+        // UAF-1). This runs on engineQueue BEFORE the device-alive listener is registered (see
+        // registerDeviceAliveListener below), so no concurrent device-loss teardown can free the
+        // session mid-start; the guarded writes only keep the field consistent for the MainActor
+        // poll. We borrow the RAW `handle` (a POD pointer) for the C-ABI calls; the FIELD remains the
+        // sole strong owner of the wrapper, so a failure-path `detachPureEngineForTeardown()` drop is
+        // the last reference and destroys deterministically OUTSIDE the lock.
         if pureEngineHandle == nil {
-            setPureEngine(pureModeEngineCreate())
+            setPureEngine(PureModeSession())
         }
-        guard let engine = pureEngineHandle else {
+        guard let engine = pureEngineHandle?.handle else {
             NSLog("[PureMode] pureModeEngineCreate returned nil")
             return false
         }
@@ -110,19 +113,19 @@ extension AudioEngineBridge {
 
         guard startResult == 1 else {
             NSLog("[PureMode] pureModeEngineStart failed (result=\(startResult))")
-            // activePath is still .enhanced (not set to .pure until below), so no poll can be
-            // borrowing this handle — nil the field then destroy the local.
-            setPureEngine(nil)
-            pureModeEngineDestroy(engine)
+            // activePath is still .enhanced (not set to .pure until below), so no poll is borrowing
+            // this session. Detach (nils the field UNDER the lock) and let the returned wrapper drop
+            // HERE on engineQueue — its deinit runs pureModeEngineDestroy OUTSIDE stateLock.
+            detachPureEngineForTeardown()
             return false
         }
 
         let state = pureModeEngineAchievedState(engine)
         guard state.running == 1 else {
             NSLog("[PureMode] Engine started but running==0 — aborting Pure path")
-            setPureEngine(nil)
-            pureModeEngineStop(engine)
-            pureModeEngineDestroy(engine)
+            // Detach under the lock, stop() (control-plane), then let the returned wrapper drop at
+            // the end of this statement — deinit → pureModeEngineDestroy, OUTSIDE stateLock.
+            detachPureEngineForTeardown()?.stop()
             return false
         }
 
@@ -239,16 +242,19 @@ extension AudioEngineBridge {
     /// callback fires after `pureEngine` is set to nil.
     func tearDownPure() {
         unregisterDeviceAliveListener()
-        // Detach the handle + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
-        // teardown (stop restores device rate + releases hog; destroy joins the decode thread)
-        // OUTSIDE the lock. This guarantees a concurrent MainActor poll / seek / setNextTrack that
+        // Detach the session + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
+        // teardown OUTSIDE the lock: `stop()` restores the device rate + releases hog, and dropping
+        // the wrapper at the end of this block runs its deinit → pureModeEngineDestroy (joins the
+        // decode thread). This guarantees a concurrent MainActor poll / seek / setNextTrack that
         // borrowed the handle via withPureEngine either completed its C-ABI call before the detach
         // returned, or now sees activePath == .enhanced and skips — never a freed handle (S6 UAF-1).
         // detachPureEngineForTeardown is idempotent, so a racing engineQueue teardown and
-        // configChangeQueue device-loss teardown cannot double-free (the loser gets nil).
-        if let engine = detachPureEngineForTeardown() {
-            pureModeEngineStop(engine)
-            pureModeEngineDestroy(engine)
+        // configChangeQueue device-loss teardown cannot double-free (the loser gets nil). The drop
+        // runs on the CALLER's serial queue (engineQueue / configChangeQueue), never under stateLock.
+        if let session = detachPureEngineForTeardown() {
+            session.stop()
+            // `session` drops at the end of this scope → deinit → pureModeEngineDestroy, OUTSIDE the
+            // lock, on the caller's queue.
         }
     }
 

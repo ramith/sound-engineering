@@ -34,6 +34,10 @@ Thumbs.db
 Tests/DSPKernelNullTest
 Tests/lufs-tool
 Tests/EQSafetyClampTest
+# Leak-detection harness binaries + plant-a-leak log (built by scripts/build-leak-check.sh)
+Tests/HandleLeakHarness
+Tests/HandleLeakHarness-planted
+Tests/HandleLeakHarness-plant.log
 # TEST-ONLY libebur128 oracle object (compiled into the harness; never committed)
 Tests/.ebur128.o
 # Debug-symbol bundles from sanitizer/debug builds (e.g. Tests/DSPKernelNullTest.dSYM/)

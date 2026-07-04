@@ -39,9 +39,13 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// pre-allocated before the tap fires.
     var spectrumAnalyzer: SpectrumAnalyzer?
 
-    /// Opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
-    /// Created in `initialize()`, destroyed in `shutdown()`.
-    var loudnessMeter: UnsafeMutableRawPointer?
+    /// RAII owner of the opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
+    /// Created in `allocateAnalysisState` (off the audio thread), dropped in the graph teardown
+    /// AFTER `removeSpectrumTap()`. The wrapper's `deinit` is the backstop that closes the leak if a
+    /// bridge is ever released without `shutdown()`. The RT mixer tap captures the wrapper's RAW
+    /// `handle` once at install time (never the class), so no ARC touches the audio thread — see
+    /// `AudioEngineBridge+Graph.swift`.
+    var loudnessMeter: LoudnessMeterHandle?
 
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
@@ -92,13 +96,16 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `setCurrentDeviceID(_:)`).
     var storedCurrentDeviceID: UInt32 = 0
 
-    /// Opaque Pure-Mode engine handle (created lazily in `startPure`), destroyed by
-    /// `pureModeEngineDestroy` in `tearDownPure` / `shutdown`. Guarded by `stateLock`: it is written
-    /// from `engineQueue` (start/stop/shutdown) AND `configChangeQueue` (device-loss) and read by the
-    /// MainActor 20 Hz poll, so access it ONLY via the guarded accessors in
-    /// `AudioEngineBridge+SharedState.swift` (`withPureEngine` to use it, `detachPureEngineForTeardown`
-    /// to destroy it, `pureEngineHandle`/`setPureEngine` for lifecycle bookkeeping) — never directly.
-    var pureEngine: UnsafeMutableRawPointer?
+    /// RAII owner of the opaque Pure-Mode engine handle (created lazily in `startPure`). The wrapper
+    /// is dropped — running its `deinit` → `pureModeEngineDestroy` (slow HAL teardown) — by the
+    /// controlled teardown, OUTSIDE `stateLock`, on `engineQueue`; its `deinit` is the backstop that
+    /// closes the leak if a bridge is ever released without `shutdown()`. Guarded by `stateLock`: it
+    /// is written from `engineQueue` (start/stop/shutdown) AND `configChangeQueue` (device-loss) and
+    /// read by the MainActor 20 Hz poll, so access it ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`withPureEngine` to borrow its `handle`,
+    /// `detachPureEngineForTeardown` to relinquish ownership, `pureEngineHandle`/`setPureEngine` for
+    /// lifecycle bookkeeping) — never directly.
+    var pureEngine: PureModeSession?
 
     /// Which output path is currently active. Guarded by `stateLock` (same cross-domain read/write
     /// pattern as `pureEngine`); access ONLY via `activePathKind` / `setActivePath` / `withPureEngine`
@@ -291,7 +298,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     // EQ control plane (dspAudioUnitHandle + publishEQGains) lives in AudioEngineBridge+EQControl.swift.
 
     func currentLoudness() -> LoudnessSnapshot {
-        guard let meter = loudnessMeter else { return .unmeasured }
+        guard let meter = loudnessMeter?.handle else { return .unmeasured }
         let readout = loudnessMeterRead(meter)
         return LoudnessSnapshot(
             integratedLufs: readout.integratedLufs,

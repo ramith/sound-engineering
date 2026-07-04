@@ -17,6 +17,19 @@ extension AudioEngineBridge {
 
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
+                // LEAK #1 fix — teardown-before-reinit. `initialize()` has no external re-entry guard
+                // and `AudioViewModel.retryInitialization()` can re-run it WITHOUT an intervening
+                // `shutdown()`. Building a fresh graph + loudness meter over a live one would leak the
+                // prior meter (and orphan the old AVAudioEngine graph + CoreAudio listeners). So if a
+                // previous initialize already built the graph, run the SAME ordered teardown first
+                // (removeSpectrumTap → meter wrapper dropped) so the rebuild starts from idle. This
+                // matches the "create only when nil" discipline used for the Pure session. `avEngine`
+                // is the "graph exists" sentinel (set below; cleared by the teardown); the guard is a
+                // no-op on a fresh (idle) bridge.
+                if self.avEngine != nil {
+                    self.performEngineTeardown()
+                }
+
                 // Capture the current default output device so Pure Mode can open the right
                 // HAL engine. Updated in selectDevice(_:) and by the device-change listener.
                 self.setCurrentDeviceID(getDefaultOutputDeviceID())
@@ -58,22 +71,32 @@ extension AudioEngineBridge {
     func shutdown() async throws {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                // Stop the streaming-resampler loop FIRST (bump generation + drop session) so no
-                // in-flight buffer schedules onto the graph we're about to tear down.
-                self.stopEnhancedResampler()
-
-                // Remove CoreAudio property listeners before tearing down anything else.
-                self.unregisterDeviceAliveListener()
-                self.unregisterDeviceListListener()
-
-                self.removeSpectrumTap()
-                self.removeConfigChangeObserver()
-                self.tearDownActiveEngine()
-                self.resetGraphStateAfterShutdown()
-
+                self.performEngineTeardown()
                 continuation.resume()
             }
         }
+    }
+
+    /// Ordered engine teardown, shared by `shutdown()` and the re-init guard in `initialize()`
+    /// (LEAK #1). MUST run on `engineQueue`.
+    ///
+    /// Order is load-bearing:
+    ///  1. Stop the streaming-resampler loop FIRST (bump generation + drop session) so no in-flight
+    ///     buffer schedules onto the graph we're about to tear down.
+    ///  2. Remove the CoreAudio property listeners before touching anything else.
+    ///  3. `removeSpectrumTap()` BEFORE the loudness-meter wrapper is dropped — so no RT tap can hold
+    ///     the meter's raw handle when its deinit destroys it (constraint: destroy only after
+    ///     removeTap). The meter wrapper is dropped inside `resetGraphStateAfterShutdown`.
+    ///  4. Stop/detach the active (Pure or Enhanced) engine + the shared two-AU graph.
+    ///  5. Reset every field to its idle value (drops the meter wrapper — see step 3 ordering).
+    private func performEngineTeardown() {
+        stopEnhancedResampler()
+        unregisterDeviceAliveListener()
+        unregisterDeviceListListener()
+        removeSpectrumTap()
+        removeConfigChangeObserver()
+        tearDownActiveEngine()
+        resetGraphStateAfterShutdown()
     }
 
     /// Remove the CoreAudio-configuration-change `NotificationCenter` observer, if any.
@@ -91,10 +114,13 @@ extension AudioEngineBridge {
         // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
         if activePathKind == .pure {
             tearDownPure()
-        } else if let engine = detachPureEngineForTeardown() {
-            // Orphaned handle (e.g. failed mid-start): destroy OUTSIDE the lock (the detach
-            // nils the field first) to avoid a hog leak without blocking a concurrent poll.
-            pureModeEngineDestroy(engine)
+        } else {
+            // Orphaned session (e.g. failed mid-start; never reached .pure so tearDownPure's branch
+            // was skipped): detach it (nils the field UNDER the lock) and let the returned wrapper
+            // drop here on engineQueue — its deinit runs pureModeEngineDestroy OUTSIDE the lock,
+            // releasing hog mode without blocking a concurrent poll. A no-op (returns nil, nothing
+            // to drop) in the common case where there is no orphaned session.
+            detachPureEngineForTeardown()
         }
 
         if let playerNode = playerNode, playerNode.isPlaying {
@@ -123,10 +149,10 @@ extension AudioEngineBridge {
         afterAnalyzers = []
         setActivePath(.enhanced)
         storeSignalPath(.init())
-        // Tap already removed above, so no callback can touch the meter now.
-        if let meter = loudnessMeter {
-            loudnessMeterDestroy(meter)
-            loudnessMeter = nil
-        }
+        // Tap already removed above (removeSpectrumTap ran in shutdown before tearDownActiveEngine),
+        // so no RT callback can still hold the meter's raw handle. Dropping the wrapper here runs its
+        // deinit → loudnessMeterDestroy. This runs on engineQueue; the meter field is not stateLock-
+        // guarded, so no lock ordering concern applies. Constraint: destroy ONLY after removeTap.
+        loudnessMeter = nil
     }
 }
