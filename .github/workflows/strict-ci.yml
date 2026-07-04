@@ -40,9 +40,12 @@ jobs:
         run: |
           # keg-only llvm provides clang-tidy; the rest are formatters/linters/scanners.
           brew install swiftformat swiftlint llvm semgrep cppcheck || true
+          # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
+          # runner default PATH (/usr/bin, where make lives). A step-level
+          # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,
+          # so it expanded to empty, dropped /usr/bin, and broke `make` (exit 127).
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
 
       - name: Run strict gate
-        env:
-          # Homebrew keg-only LLVM (clang-tidy) must be on PATH for the tool check.
-          PATH: /opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:${{ env.PATH }}
         run: make strict-gate
