@@ -81,6 +81,11 @@ namespace AdaptiveSound
 
             const uint64_t begin = seq_.load(std::memory_order_relaxed) + 1U; // -> odd
             seq_.store(begin, std::memory_order_release);
+            // Release FENCE (StoreStore): commit the odd marker BEFORE any payload store. A
+            // release *store* is a one-way (upward) barrier and does NOT stop the relaxed payload
+            // stores from hoisting above it; without this a new-generation word can become visible
+            // while seq_ is still the previous even value → a reader accepts a torn read.
+            std::atomic_thread_fence(std::memory_order_release);
             for (std::size_t i = 0; i < kWords; ++i)
             {
                 words_[i].store(tmp[i], std::memory_order_relaxed);
@@ -105,7 +110,12 @@ namespace AdaptiveSound
                 {
                     tmp[i] = words_[i].load(std::memory_order_relaxed);
                 }
-                const uint64_t after = seq_.load(std::memory_order_acquire);
+                // Acquire FENCE (LoadLoad): complete the payload loads BEFORE the second seq load.
+                // A load-acquire is a one-way (downward) barrier and does NOT stop the relaxed
+                // payload loads from sinking below it; without this the payload can be sampled after
+                // both seq observations, so before==after==even would accept a later generation (torn).
+                std::atomic_thread_fence(std::memory_order_acquire);
+                const uint64_t after = seq_.load(std::memory_order_relaxed);
                 if (before == after)
                 {
                     std::memcpy(&out, tmp.data(), sizeof(T));
