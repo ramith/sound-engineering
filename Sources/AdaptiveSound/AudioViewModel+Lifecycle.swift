@@ -11,7 +11,15 @@ extension AudioViewModel {
     // MARK: - Engine Lifecycle
 
     func initializeEngine() {
+        // Guard against overlapping inits — a second init while a prior one is still in-flight
+        // races the retry's teardown over the same ARC class refs (retain-count corruption).
+        // `@MainActor` isolation makes this flag check/set race-free.
+        guard !isInitializing else { return }
+        isInitializing = true
         Task {
+            // Reset on EVERY completion path (success, the `!success` early return, and any throw
+            // incl. `enumerateOutputDevices`) so the guard can never get stuck latched `true`.
+            defer { isInitializing = false }
             do {
                 let success = try await engine.initialize()
                 if !success {

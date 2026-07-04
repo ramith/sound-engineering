@@ -97,7 +97,12 @@ extension AudioEngineBridge {
         let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
         let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
         spectrumAnalyzer = SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-        loudnessMeter = loudnessMeterCreate(Double(sampleRate))
+        // Precondition: `loudnessMeter` is nil here. This runs only from initialize()'s graph build,
+        // and the LEAK #1 re-init guard tears down (nils the meter wrapper AFTER removeSpectrumTap)
+        // before any rebuild — so this assigns onto a nil field, never overwriting (and silently
+        // destroying) a meter whose raw handle a live tap might still hold. The wrapper's deinit is
+        // the backstop that frees the handle on teardown / abandonment.
+        loudnessMeter = LoudnessMeterHandle(sampleRate: Double(sampleRate))
 
         // Per-channel monitoring analyzers (Sprint 5 M3) — one per channel of the graph format, for
         // the pre-DSP (player) and post-DSP (effects AU) tap points. N-channel by construction.
@@ -132,9 +137,15 @@ extension AudioEngineBridge {
     /// Now-Playing spectrum + BS.1770-5 loudness, both fed from the mixer output bus.
     private func installMixerTap(on mixer: AVAudioMixerNode) {
         let mixerFormat = mixer.outputFormat(forBus: 0)
+        // Capture the loudness meter's RAW handle ONCE here (off the audio thread), NOT the class
+        // wrapper: reading the `loudnessMeter` class property on the audio thread would incur an ARC
+        // retain/release, which is forbidden on the RT tap. The captured value is a POD pointer. It
+        // stays valid because removeSpectrumTap() always runs BEFORE the meter wrapper is dropped/
+        // destroyed (constraint c), so this closure can never fire after the handle is freed.
+        let meterHandle = loudnessMeter?.handle
         mixer.installTap(onBus: 0,
                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                         format: mixerFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                         format: mixerFormat) { [weak self, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- Access only pre-allocated state through the analyzer pointer.
             guard let analyzer = self?.spectrumAnalyzer else { return }
             let abl = buffer.mutableAudioBufferList
@@ -155,10 +166,10 @@ extension AudioEngineBridge {
             // and all M planar channels fed here — deferred with the multichannel-output path (S4
             // binaural fold is DEFERRED) to avoid plumbing channel-layout weights into the RT tap
             // for an edge that is not yet a primary path.
-            if let meter = self?.loudnessMeter, let channels = buffer.floatChannelData {
+            if let meterHandle, let channels = buffer.floatChannelData {
                 let left = channels[0]
                 let right = buffer.format.channelCount >= 2 ? channels[1] : channels[0]
-                loudnessMeterAddStereo(meter, left, right, buffer.frameLength)
+                loudnessMeterAddStereo(meterHandle, left, right, buffer.frameLength)
             }
         }
     }
