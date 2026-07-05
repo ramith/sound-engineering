@@ -57,6 +57,20 @@ public enum QueueAdvance {
         return repeatMode == 1 ? count - 1 : nil // repeat-all wraps to the last track
     }
 
+    /// The on-deck index to arm after appending to a PLAYING queue, or `nil` to leave the
+    /// current on-deck pick untouched. Only the linear end-of-queue case re-arms: playing
+    /// the last track (`current == oldCount - 1`) with nothing on-deck (`!hasPending`),
+    /// repeat-off, not shuffle → the FIRST appended track (index `oldCount`) becomes the
+    /// immediate next. Every other case (shuffle, mid-list, repeat-all/one, already-armed)
+    /// returns `nil` — appending must NEVER re-roll or disturb an existing primed pick
+    /// (design §6). The pure decision behind `appendToQueue`, shared by the app + tests.
+    public static func appendArmIndex(
+        current: Int, oldCount: Int, hasPending: Bool, shuffle: Bool, repeatMode: Int
+    ) -> Int? {
+        guard !hasPending, !shuffle, repeatMode == 0, current == oldCount - 1 else { return nil }
+        return oldCount
+    }
+
     /// The production shuffle picker: a uniformly-random index in `0 ..< count` that is
     /// not `current`. Precondition: `count > 1` (guarded by the `shuffle && count > 1`
     /// branch in `nextIndex`/`previousIndex`). Rejection-free + O(1): pick among the
