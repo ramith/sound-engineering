@@ -98,6 +98,9 @@ public extension LibraryStore {
         let albumID = try resolveAlbum(for: meta)
         try updateTrackMetadata(trackID: trackID, meta: meta, albumID: albumID, artistID: artistID)
         try replaceGenres(forTrack: trackID, names: meta.genres)
+        // Re-index for search AFTER genres are written so group_concat(genre) is fresh
+        // (design §4). Folded into the caller's per-track transaction.
+        try syncSearchRow(trackID: trackID)
     }
 
     /// Link (or refresh) an artwork cache reference. S8.3 owns extraction + the

@@ -236,6 +236,9 @@ public extension LibraryStore {
     func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64) throws -> Int {
         guard !folderIDs.isEmpty else { return 0 }
         return try connection.transaction {
+            // Clear the FTS rows for the swept set FIRST — after the tracks DELETE the
+            // sub-select would find nothing and the FTS rows would leak (design §4).
+            try deleteSearchRowsForSweep(inFolders: folderIDs, olderThan: generation)
             let placeholders = folderIDs.map { _ in "?" }.joined(separator: ", ")
             let statement = try connection.prepare(
                 "DELETE FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?;"
@@ -256,10 +259,17 @@ public extension LibraryStore {
     /// `track_genres` clears its genre links; playlist memberships (S10) will cascade
     /// likewise. A no-op if `id` does not exist.
     func delete(id trackID: Int64) throws {
-        let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
-        defer { statement.finalize() }
-        try statement.bind(trackID, at: 1)
-        _ = try statement.step()
+        // Two statements (FTS row + track row) → wrap in a transaction so they commit
+        // atomically (every other delete site is transactional; without this a failure
+        // between them could leave an orphaned/missing FTS row — benign today under the
+        // single-writer actor, but the atomicity invariant every delete path holds).
+        try connection.transaction {
+            try deleteSearchRows(ids: [trackID]) // FTS is not an FK — clear its row too
+            let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
+            defer { statement.finalize() }
+            try statement.bind(trackID, at: 1)
+            _ = try statement.step()
+        }
     }
 
     // MARK: - Private write helpers
@@ -275,6 +285,9 @@ public extension LibraryStore {
         _ file: ScannedFile, folderID: Int64?, generation: Int64, dateAdded: Int64
     ) throws -> Int64 {
         let key = PathNormalizer.normalizedString(for: file.url)
+        // Detect a genuine new insert (vs an ON CONFLICT update) so the FTS index is
+        // seeded ONLY for new rows — a no-op re-scan must do ZERO FTS writes (design §4).
+        let isNewRow = try connection.scalarInt("SELECT 1 FROM tracks WHERE url = ?;", bind: key) == nil
         let statement = try connection.prepare(
             """
             INSERT INTO tracks(
@@ -323,7 +336,15 @@ public extension LibraryStore {
         // (it is liveness, not content) so orphan detection stays correct — without
         // bumping any content column (idempotency preserved).
         try stampLastSeen(url: key, generation: generation)
-        return try rowID(forURL: key)
+        let id = try rowID(forURL: key)
+        // Seed the search index for a brand-new track (findable by filename immediately).
+        // On an update we intentionally DON'T sync here: the FTS `title` falls back to the
+        // filename `name`, and `name` is a pure function of `url` (a rename is a NEW url →
+        // a new row here, or the reconcile move path `moveMatchedLocked` which re-syncs) —
+        // so on a same-url update no searchable field changes except via the metadata pass
+        // (tagged → applyMetadataLocked re-syncs; tagless → columns stay, row already correct).
+        if isNewRow { try syncSearchRow(trackID: id) }
+        return id
     }
 
     /// Refresh ONLY `last_seen_scan` for the row at `url` (no content columns).
@@ -388,6 +409,7 @@ public extension LibraryStore {
     /// DELETE).
     private func deleteTrackRows(ids: [Int64]) throws {
         guard !ids.isEmpty else { return }
+        try deleteSearchRows(ids: ids) // FTS is not an FK — clear their rows too
         let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
         defer { statement.finalize() }
         for id in ids {
