@@ -17,13 +17,16 @@ This document defines the core user journeys (workflows) for Adaptive Sound. Eac
 - **Journey 2.6:** Phase 2 (system-wide, two implementation paths)
 - **Journey 2.7:** Natural-language steering (Conversational Tuning, applies across phases)
 
+> **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching. Each journey below carries a **Status** line marking how much is built. Onboarding, hearing calibration, the automatic adaptivity engine, environment/mic sensing, natural-language tuning, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior.
+
 ---
 
 ## Journey 2.1 — First-Run Onboarding
 
 **Actor:** New user, app just launched for the first time.  
 **Goal:** Reach a working listening state with a meaningful default sound profile in under 3 minutes.  
-**Phase:** Phase 0 (Player MVP).
+**Phase:** Phase 0 (Player MVP).  
+**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, hearing-profile prompt, mic-permission step, or first-run tooltip in the code (`ContentView.swift` → `ToolbarView` + `TabContentView`).
 
 **Steps:**
 
@@ -67,7 +70,8 @@ Step 6 — First Listening Moment
 
 **Actor:** User who chose to run or re-run the hearing check.  
 **Goal:** Generate a personal hearing profile that the DSP engine uses for equalisation compensation.  
-**Phase:** Phase 0 onwards (optional, skippable).
+**Phase:** Phase 0 onwards (optional, skippable).  
+**Status:** NOT YET BUILT (planned). No hearing test, tone sequence, audiogram, or stored hearing profile exists in the code; the only "hearing" reference is the EQ cumulative-gain safety clamp (`EQSafetyClamp.swift`), which is unrelated.
 
 **Steps:**
 
@@ -98,7 +102,8 @@ Step 4 — Ongoing Prompt
 
 **Actor:** Returning user with a configured profile.  
 **Goal:** Listen to a music playlist with seamless adaptive enhancement.  
-**Phase:** Phase 1 (mix-level adaptation).
+**Phase:** Phase 1 (mix-level adaptation).  
+**Status:** PARTIALLY BUILT. Playback, manual 31-band EQ (+ per-device preset recall), LUFS loudness normalization + true-peak limiter, crossfeed, and the Reimagine "Intensity" wet/dry knob are live. The **automatic adaptivity** in Steps 3–5 is NOT built: there is no content/genre classifier and no Fletcher-Munson volume compensation (only a manual EQ + program-loudness normalization; no per-track curve cross-fades).
 
 **Steps:**
 
@@ -140,7 +145,8 @@ Step 6 — Session End
 
 **Actor:** User listening on AirPods who unplugs or switches to laptop speakers.  
 **Goal:** Sound continues without interruption; DSP profile switches automatically.  
-**Phase:** Phase 1 onwards.
+**Phase:** Phase 1 onwards.  
+**Status:** PARTIALLY BUILT. Automatic output-device detection/switch and the follow-vs-pin preference work (`AudioEngineBridge+Devices` / `+ConfigChange`), and crossfeed auto-disables on non-headphone devices. Step 5's **spatialization-mode change** (HRTF binaural vs. speaker widening) is NOT built — the spatial render stage is an identity/stub, so the only headphone spatial effect is the opt-in crossfeed. Per-*device* EQ preset recall exists, but there is no full "DSP profile" concept.
 
 **Steps:**
 
@@ -177,7 +183,8 @@ Step 5 — Spatialization Mode Change
 
 **Actor:** User listening in a room that has become noisier (e.g., construction starts outside).  
 **Goal:** User triggers a one-shot environment sample; app adapts DSP to compensate, then releases the mic.  
-**Phase:** Phase 1 onwards (requires microphone permission, LD-6 on-demand sampling only).
+**Phase:** Phase 1 onwards (requires microphone permission, LD-6 on-demand sampling only).  
+**Status:** NOT YET BUILT (planned). There is no microphone access, ambient-SPL sampling, or noise-based adaptation anywhere in the code.
 
 **Steps:**
 
@@ -221,10 +228,11 @@ Step 6 — Mic Permission Denied Fallback
 
 **Actor:** User who wants to enable the Phase 2 system-wide enhancement.  
 **Goal:** All system audio (Spotify, Apple Music, YouTube, etc.) routed through the DSP engine.  
-**Phase:** Phase 2 (system-wide, two implementation paths).
+**Phase:** Phase 2 (system-wide, two implementation paths).  
+**Status:** NOT YET BUILT (planned — Phase 2). Neither path exists in the code: there is no Core Audio process tap (`CATapDescription` / `AudioHardwareCreateProcessTap`) and no AudioServerPlugIn driver. The current app processes only its own player output; the sole system-level output path is the bit-perfect Pure Mode HAL render, not a capture-all-apps tap.
 
 **Architecture Note:**  
-See `docs/architecture/architecture.md` §13 and `docs/architecture/prior-art.md` (ADR-002) for the technical foundation. The primary mechanism for macOS 14.2/14.4+ is a **Core Audio process tap** (no driver, no admin password, no coreaudiod restart). The **AudioServerPlugIn virtual device** (FALLBACK PATH) is used when the tap path is unavailable (macOS < 14.2) or when the user specifically wants a persistent, selectable output device.
+See `docs/architecture/architecture.md` §13 and `docs/session-notes/prior-art.md` (ADR-002) for the technical foundation. The primary mechanism for macOS 14.2/14.4+ is a **Core Audio process tap** (no driver, no admin password, no coreaudiod restart). The **AudioServerPlugIn virtual device** (FALLBACK PATH) is used when the tap path is unavailable (macOS < 14.2) or when the user specifically wants a persistent, selectable output device.
 
 ### PRIMARY PATH: Core Audio Process Tap (macOS 14.2+)
 
@@ -306,7 +314,8 @@ Step 6 — Uninstall Path
 
 **Actor:** Returning user actively listening to music.  
 **Goal:** Adjust the sound by typing what they hear in plain language, without touching EQ controls.  
-**Phase:** Phase 1 onwards (NL tuning, mechanism deferred per OQ-11).
+**Phase:** Phase 1 onwards (NL tuning, mechanism deferred per OQ-11).  
+**Status:** NOT YET BUILT (planned; mechanism deferred, OQ-11). There is no text-input control, intent-derivation subsystem, confirmation card, or transparency log in the code — no natural-language path of any kind exists yet.
 
 **Steps:**
 
@@ -342,9 +351,9 @@ Step 3 — Intent Derived, Change Applied
 
 ## Cross-References
 
-- **Requirements.md:** Journey descriptions in §2 link back to this document.
-- **UX-guidelines.md:** §2.2 (Core Journeys) references each journey's UX principles.
-- **Test-and-qa-strategy.md:** §3.1 (Integration Test Journeys) uses these journeys as the basis for end-to-end testing.
+- **Requirements.md:** Journey descriptions in §2 link back to this document. (`docs/product/requirements.md` — exists.)
+- **UX-guidelines.md:** §2.2 (Core Journeys) references each journey's UX principles. *(Planned — this document does not yet exist in the repo.)*
+- **Test-and-qa-strategy.md:** §3.1 (Integration Test Journeys) uses these journeys as the basis for end-to-end testing. *(Planned — this document does not yet exist in the repo.)*
 
 ---
 

@@ -1,5 +1,7 @@
 # Brand Kit Integration Plan — AdaptiveSound
 
+> **⚠️ SUPERSEDED — this is NOT the shipped identity (2026-07-05).** The visual identity that actually shipped is the **teal `DesignSystem`** — neutral surfaces (no warm tint), system fonts, and a plain-text header — see `Sources/AdaptiveSound/DesignSystem.swift`, `Sources/AdaptiveSound/Color+Brand.swift` (now compatibility aliases delegating to `DesignSystem`), and `Sources/AdaptiveSound/UI/Components/HeaderView.swift`. The **Sunset gradient (pink → orange → gold), the "Flux" mark, and Space Grotesk typography described below were NOT adopted.** This document is retained only as provenance (being archived to `docs/session-notes/`); do not treat any part of it as current guidance.
+
 ## Overview
 
 The brand kit provides a cohesive visual identity around the "Flux" mark (eighth note + adaptive waveform) with a **Sunset gradient** (pink → orange → gold) and **Space Grotesk typography**.

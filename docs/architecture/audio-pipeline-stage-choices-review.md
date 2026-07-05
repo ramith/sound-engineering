@@ -77,9 +77,10 @@ each stage, return a verdict — **Confirm / Adjust / Reject** — with rational
 ### Reconciliation with the current implementation (so the panel grounds its verdicts)
 
 - **Equalizer → Custom C++/Accelerate:** ✅ implemented (31-band, off-RT biquad cascade, `vDSP_biquad`,
-  ramped) and the effects AU is in the live graph. ⚠️ Caveat: **no live UI publishes EQ gains yet**
-  (`publishEQGains` is exercised by the C++ harness, not by a slider/profile during playback) — see
-  architecture.md §2.5.
+  ramped), the effects AU is in the live graph, and **EQ gains ARE published from a live UI** (QW1): the
+  drag-the-curve `FrequencyResponseCanvas` + preset picker + band sliders → `EQViewModel.dispatchAllBands`
+  → `AudioViewModel.publishEQGains` → the `publishEQBandGains` C-ABI → the control-plane `Realizer` (gains
+  hearing-safety-clamped by `EQSafetyClamp` en route) — see architecture.md §2.5.
 - **Limiter → Custom C++:** ✅ implemented (true-peak/ISP lookahead, dual-stage release, −1 dBTP). Matches.
 - **Loudness normalization → libebur128 or custom:** ⚠️ we hand-rolled `LufsMeter` (BS.1770-5) + an
   independent in-test oracle. Matrix lists **libebur128**. Open question: adopt libebur128 (at least as
@@ -107,7 +108,11 @@ each stage, return a verdict — **Confirm / Adjust / Reject** — with rational
   (`FileDecodeSource`). This is **distinct from** the kernel's intensity-0 bit-exact passthrough
   (golden-master `0xE7267654BA01D315`), which is a *kernel bypass within* the Enhanced graph. See
   architecture.md §2.5.
-- **Convolution / room correction / crossfeed / stereo widening / compressor / dither / oversampling /
+- **Crossfeed → Custom C++:** ✅ implemented (QW1) — a real `CrossfeedModule` (Bauer/bs2b: ITD delay +
+  one-pole LPF, coefficients designed off-RT in the `Realizer`) wired into the RT chain (`DSPKernel::process`,
+  after BRIR in the wet region) with a `publishCrossfeed` control-plane C-ABI and a user-facing headphone
+  toggle + strength picker; **default-off = bit-exact pass-through** (golden master holds).
+- **Convolution / room correction / stereo widening / compressor / dither / oversampling /
   ReplayGain / clipping detection:** not yet implemented — future scope; validate the recommended
   approach + the M1→M5 gating.
 - **AI denoise / stem separation → Core ML, offline first:** aligns with the Phase-1.5 offline stem
@@ -135,8 +140,8 @@ corrections, any missing stages, and a **prioritized list of deltas vs the curre
 
 **Status: the formal multi-discipline panel review was NOT run.** This document remains a *review brief* plus the **interim reconciliation** above (the "Reconciliation with the current implementation" section), which captures the verdicts that have actually been decided against shipped code. Rather than leave an empty placeholder, the load-bearing conclusions are summarised here and the authoritative versions are recorded in `architecture.md`:
 
-- **Decided & shipped (see architecture.md §2.5 and ADRs):** EQ + Limiter as custom C++/Accelerate; internal format Float32 RT / Float64 offline; Apple-native graph/mixing/output; **runtime SRC = `AVAudioConverter(.max)`** (soxr offline-export only); spectrum/meters via a Swift tap on `mainMixerNode`; **Pure Mode** HAL bit-perfect path; the spatial AU as an identity route with **S4 binaural deferred**.
+- **Decided & shipped (see architecture.md §2.5 and ADRs):** EQ + Limiter as custom C++/Accelerate; internal format Float32 RT / Float64 offline; Apple-native graph/mixing/output; **runtime SRC = `AVAudioConverter(.max)`** (soxr offline-export only); spectrum/meters via a Swift tap on `mainMixerNode`; **Pure Mode** HAL bit-perfect path; the spatial AU as an identity route with **S4 binaural deferred**; **QW1 crossfeed** (Bauer/bs2b headphone stage) as custom C++, default-off → bit-exact.
 - **Open decisions tracked elsewhere:** libebur128 vs. the custom `LufsMeter` (adopt as oracle and/or runtime meter?) — keep in the architecture OQ list.
-- **Future scope, approach pre-validated by the matrix:** convolution (partitioned), room correction, crossfeed, stereo widening, compressor, dither, oversampling, ReplayGain, clipping detection, AI denoise / stem separation (offline-only RT boundary).
+- **Future scope, approach pre-validated by the matrix:** convolution (partitioned), room correction, stereo widening, compressor, dither, oversampling, ReplayGain, clipping detection, AI denoise / stem separation (offline-only RT boundary).
 
 If a future formal panel review is run, append its verdict table below; otherwise treat the matrix + reconciliation as the standing record.

@@ -1,13 +1,13 @@
 # Audio Quality Validation Strategy
 
-**Purpose:** Define comprehensive validation gates for Sprints 4–6 (Phase 1c MVP — the loudness/EQ/clarity DSP core)  
+**Purpose:** Define comprehensive validation gates for the DSP core (EQ / loudness / limiter / clarity). *(Historical note: authored for the pre-pivot "Phase 1c / Sprints 4–6" framing; the gate definitions below remain current — for the current phase map see [../product/roadmap.md](../product/roadmap.md) and [../sprints/sprint-plan.md](../sprints/sprint-plan.md).)*  
 **Scope:** Unit tests, integration tests, listening panels, regression gates, soak tests  
 **Approval:** QA Expert + Audio DSP + Project Lead  
 **Maintenance:** Update per sprint
 
 > **Sprint numbering:** canonical sprints are **4 = loudness, 5 / 5b = EQ + multichannel, 6 = adaptive clarity** (see [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md)). Older drafts of this doc used 1/2/3; those map to 4/5/6 respectively.
 >
-> **Test-harness reality (read first):** the DSP gate is the **C++ null-test harness** (`bash scripts/build-null-test.sh`), **not** `swift test` — which is **broken** on this toolchain (macro skew). The Swift mock/view-model tests build and run under **Xcode** only. The fictional `./AdaptiveSound --input … --intensity N` CLI does **not** exist; bit-exact and frequency-response checks are C++ harness tests. Sections below have been corrected to match.
+> **Test-harness reality (read first):** the DSP correctness gate is the **C++ null-test golden-master harness** (`bash scripts/build-null-test.sh`). `swift test` (native swift-testing) runs the Swift suites headless as part of `make strict-gate`, but it is **not** the DSP golden-master gate. The fictional `./AdaptiveSound --input … --intensity N` CLI does **not** exist; bit-exact and frequency-response checks are C++ harness tests. Sections below have been corrected to match.
 
 ---
 
@@ -35,11 +35,11 @@ bash scripts/build-null-test.sh
 This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` + the `*.inc` area files). It is the **canonical DSP gate**.
 
 **Requirements:**
-- All harness tests pass (~83 tests, 0 failures) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams.
+- All harness tests pass (120 tests, 0 failures) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams.
 - Stereo **golden master** signature `0xE7267654BA01D315` (FNV-1a over the processed L+R of a deterministic chirp through +6 dB @ 1 kHz EQ + active limiter) must match. Any one-ULP change to stereo output flips it; re-baseline only on a founder-approved DSP change.
 - Fixtures are written + read in `<repo>/test-data/` (never `/tmp`); generated WAV/bin are git-ignored.
 
-**`swift test` is BROKEN** (toolchain macro skew) and is **not** a merge gate. The Swift test targets (`AudioViewModelTests`, `AudioDSPTests`) use the Swift Testing framework and run under **Xcode** only, not headless `swift test`.
+**`swift test` runs headless** (native swift-testing) and **is** part of the pre-merge `make strict-gate`. The Swift test targets (`AudioViewModelTests`, `AudioDSPTests`) use the Swift Testing framework; the DSP golden-master gate, however, remains the C++ null-test harness, not `swift test`.
 
 **Companion offline checks (`swift run`, headless):**
 - `swift run VerifyAUGraph` — proves the custom v3 AU registers, instantiates, sits in the AVAudioEngine graph, and renders.
@@ -77,7 +77,7 @@ clang-tidy --checks=readability-*,cppcoreguidelines-* \
 
 ### Gate 5: Library Store Verify (S8+ persistent store)
 
-The library store (`LibraryStore`, system SQLite) has no place in the DSP null-test; it is gated by its own headless harness (`swift test` is broken here, so this mirrors the `VerifyAUGraph` idiom — a `swift run` executable, not XCTest):
+The library store (`LibraryStore`, system SQLite) has no place in the DSP null-test; it is gated by its own headless harness — a `swift run` executable that mirrors the `VerifyAUGraph` idiom (headless-gate parity, not XCTest):
 
 ```bash
 swift run VerifyLibraryStore     # or: make library-store-verify
@@ -353,7 +353,7 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| C++ harness pass rate (~83 tests) | 100% (0 failures) | DONE — passing |
+| C++ harness pass rate (120 tests) | 100% (0 failures) | DONE — passing |
 | Stereo golden master | `0xE7267654BA01D315` match | DONE — matching |
 | Code coverage (signal path) | ≥80% | TBD |
 | Null-test accuracy (THD+N) | ≤ −120 dB | TBD |

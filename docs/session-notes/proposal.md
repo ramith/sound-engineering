@@ -1,6 +1,6 @@
 # Architecture Proposal — Adaptive Sound (for team review)
 
-> ⚠️ **SUPERSEDED by [architecture.md](architecture.md) (v0.2).** This v0.1 proposal is kept for provenance; the panel review that drove v0.2 is in [proposal-review.md](proposal-review.md). Read `architecture.md` for the current design.
+> ⚠️ **SUPERSEDED by [architecture.md](../architecture/architecture.md) (v0.2).** This v0.1 proposal is kept for provenance; the panel review that drove v0.2 is in [proposal-review.md](proposal-review.md). Read `architecture.md` for the current design.
 
 **Status:** Draft v0.1 — SUPERSEDED · **Date:** 2026-06-13
 **Related:** [prior-art.md](prior-art.md) · [../product/PRD.md](../product/PRD.md) · [../product/requirements.md](../product/requirements.md)
