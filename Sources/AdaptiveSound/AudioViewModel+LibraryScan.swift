@@ -5,12 +5,11 @@ import LibraryStore
 // MARK: - AudioViewModel library-scan seam (S8.2b — ADDITIVE)
 
 //
-// The store-population half of Choose-Folder. It runs ALONGSIDE `loadMusicFolder`
-// (design §7): the in-memory `playlist` still comes from `loadMusicFolder` (unchanged
-// UX) while this fills the persistent store in parallel. The UI's source swaps to
-// store-reads at S9. Folder-monitor → store rewiring is S8.4 — NOT here.
+// The store-population path for adding a music folder. Adding a folder SCANS it into the
+// persistent library store (the browse UI reads the store); it never touches the play queue
+// (S9 IA change — the queue is built by the Library's Play / Play Next / Add to Queue verbs).
 //
-// Shape mirrors `loadMusicFolder`: a `Task` retained in `scanTask` drives the scan.
+// A `Task` retained in `scanTask` drives the scan.
 // The heavy per-file walk runs OFF the main actor inside `LibraryScanner`'s
 // `nonisolated` scan; `performScan` itself is `@MainActor` (extension inheritance) and
 // only publishes results there — so just `Sendable` types cross. Cancellation: a
@@ -37,9 +36,8 @@ extension AudioViewModel {
             // store-population is unavailable until the next successful construction.
             logUX("libraryStore: init failed — \(error.localizedDescription)")
         }
-        // S8.4: start the FSEvents watcher regardless of the store outcome — it drives the
-        // visible playlist refresh (store-independent) AND, when the store exists, the live
-        // reconcile. refreshWatchedRoots picks up the store roots (∪ the visible folder).
+        // S8.4: start the FSEvents watcher — it drives the live store reconcile.
+        // refreshWatchedRoots picks up the store roots.
         startLibraryWatcher()
         await refreshWatchedRoots()
         startVolumeMonitor() // NSWorkspace mount/unmount → pause/resume + remount re-stamp (5b)
@@ -49,12 +47,12 @@ extension AudioViewModel {
         }
     }
 
-    /// Scan `url` INTO the persistent library store, in parallel with the in-memory
-    /// playlist (design §7). Cancels any prior scan, then off-main: reject nested/
-    /// overlapping roots (surfaced via `errorMessage`), `addRoot`, then walk +
-    /// reconcile with a progress closure that hops to `@MainActor` to publish state.
+    /// Scan `url` INTO the persistent library store (the browse UI's source of truth). Cancels
+    /// any prior scan, then off-main: reject nested/overlapping roots (surfaced via
+    /// `errorMessage`), `addRoot`, then walk + reconcile with a progress closure that hops to
+    /// `@MainActor` to publish state.
     ///
-    /// ADDITIVE: does NOT touch `loadMusicFolder`/`playlist`/the folder monitor.
+    /// Never touches the play queue (S9 IA change) — adding a folder only scans.
     func scanFolderIntoLibrary(_ url: URL) {
         // Cancel a prior in-flight scan (re-trigger) before starting the next — the
         // old scanner observes cancellation per file and skips its sweep.
