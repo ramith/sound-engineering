@@ -5,6 +5,11 @@
 // GROUP BY; the harness asserts the counts against a computed `FixtureExpectations`
 // so a JOIN fan-out (a genre counted twice, an album over-counted) is caught.
 //
+// `albums()`/`artists()` delegate to the SHARED `fetchAlbums`/`fetchArtists` builders
+// in LibraryStore+FacetDrilldown (which also back the S9.1 drill-downs + `album(id:)`/
+// `artist(id:)`), so the list reads and the single-facet reads can never drift and the
+// id-0 sentinel exclusion is defined in one place. `genres()` stays self-contained.
+//
 // The metadata write path (`applyMetadata`/`linkArtwork`) is provided now (S8.3
 // fills it) so the schema's write side is complete + testable. Album/artist/genre
 // resolution implements the M1 TOTAL-ALBUM-KEY query-then-insert: an album is keyed
@@ -21,70 +26,33 @@ import Foundation
 public extension LibraryStore {
     // MARK: - Facet reads
 
-    /// Album grid entries with resolved artist name + track count. `sortedBy`
-    /// chooses title or year ordering. Counts come from a LEFT JOIN so a zero-track
-    /// album (possible after a sweep) still lists with count 0.
-    func albums(sortedBy sort: FacetSort = .title) throws -> [AlbumFacet] {
-        let order: String
-        switch sort {
-        case .title:
-            order = "al.title COLLATE NOCASE ASC, al.id ASC"
-        case .year:
-            order = "al.year ASC, al.title COLLATE NOCASE ASC, al.id ASC"
+    /// Album grid entries with resolved artist name + track count. `sortedBy` chooses
+    /// title or year ordering; optional `limit`/`offset` paginate (nil = unbounded,
+    /// non-breaking). Counts come from a LEFT JOIN so a zero-track album (possible after
+    /// a sweep) still lists with count 0. Delegates to the shared `fetchAlbums` builder
+    /// so `album(id:)` returns a facet identical to the matching list entry.
+    func albums(sortedBy sort: FacetSort = .title, limit: Int? = nil, offset: Int = 0) throws -> [AlbumFacet] {
+        try fetchAlbums(
+            whereClause: "",
+            order: sort == .title ? LibraryStore.albumTitleOrder : LibraryStore.albumYearOrder,
+            limited: limit != nil
+        ) { statement in
+            try LibraryStore.bindPagination(statement, limit: limit, offset: offset, firstIndex: 1)
         }
-        let sql = """
-        SELECT al.id, al.title, al.album_artist_id, ar.name, al.year,
-               count(t.id) AS track_count, al.artwork_key
-        FROM albums al
-        LEFT JOIN artists ar ON ar.id = al.album_artist_id
-        LEFT JOIN tracks t ON t.album_id = al.id
-        GROUP BY al.id
-        ORDER BY \(order);
-        """
-        let statement = try connection.prepare(sql)
-        defer { statement.finalize() }
-        var facets: [AlbumFacet] = []
-        while try statement.step() {
-            facets.append(AlbumFacet(
-                id: statement.columnInt64(0),
-                title: statement.columnText(1) ?? "",
-                albumArtistID: statement.columnInt64(2),
-                albumArtist: statement.columnText(3) ?? "",
-                year: statement.columnInt(4),
-                trackCount: statement.columnInt(5),
-                artworkKey: statement.columnText(6)
-            ))
-        }
-        return facets
     }
 
-    /// Artist list entries with track count. Excludes the id-0 unknown-artist
-    /// sentinel so an untagged-only library shows no phantom "Unknown Artist" row
-    /// in the artist list (it still backs the album key internally).
-    func artists(sortedBy sort: FacetSort = .title) throws -> [ArtistFacet] {
-        let order = sort == .title
-            ? "ar.name COLLATE NOCASE ASC, ar.id ASC"
-            : "ar.sort_name COLLATE NOCASE ASC, ar.name COLLATE NOCASE ASC, ar.id ASC"
-        let sql = """
-        SELECT ar.id, ar.name, ar.sort_name, count(t.id) AS track_count
-        FROM artists ar
-        LEFT JOIN tracks t ON t.artist_id = ar.id
-        WHERE ar.id <> \(unknownArtistID)
-        GROUP BY ar.id
-        ORDER BY \(order);
-        """
-        let statement = try connection.prepare(sql)
-        defer { statement.finalize() }
-        var facets: [ArtistFacet] = []
-        while try statement.step() {
-            facets.append(ArtistFacet(
-                id: statement.columnInt64(0),
-                name: statement.columnText(1) ?? "",
-                sortName: statement.columnText(2),
-                trackCount: statement.columnInt(3)
-            ))
+    /// Artist list entries with track count. Excludes the id-0 unknown-artist sentinel
+    /// so an untagged-only library shows no phantom "Unknown Artist" row in the artist
+    /// list (the exclusion lives in the shared `artistSelectSQL`, so `artist(id:)` can
+    /// never surface it either). Optional `limit`/`offset` paginate (nil = unbounded).
+    func artists(sortedBy sort: FacetSort = .title, limit: Int? = nil, offset: Int = 0) throws -> [ArtistFacet] {
+        try fetchArtists(
+            extraWhere: "",
+            order: sort == .title ? LibraryStore.artistNameOrder : LibraryStore.artistSortNameOrder,
+            limited: limit != nil
+        ) { statement in
+            try LibraryStore.bindPagination(statement, limit: limit, offset: offset, firstIndex: 1)
         }
-        return facets
     }
 
     /// Genre list entries with DISTINCT track counts. The count uses

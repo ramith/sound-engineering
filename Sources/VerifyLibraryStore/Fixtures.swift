@@ -11,6 +11,10 @@
 // no album-artist / no year — must collapse to ONE album, M1), across 2 years and 3
 // OVERLAPPING genres, the CONFUSABLE `/Music/Rock` vs `/Music/RockAndRoll` folders,
 // and at least one LOOSE file (folder NULL, outside every root).
+//
+// S9.1 adds DERIVED per-facet expectation sets (year set + per-artist/-genre/-year
+// album & track sets) so the browse-drill-down checks (BR2/BR2b/BR2c) assert against
+// values computed from the fixture definition, never magic numbers.
 
 import Foundation
 import LibraryStore
@@ -40,6 +44,21 @@ struct FixtureExpectations {
     let looseTrackID: Int64
     /// genre name → distinct track count (for the DISTINCT-count assertion).
     let genreTrackCounts: [String: Int]
+
+    // --- S9.1 derived drill-down sets (BR2/BR2b/BR2c) ---
+
+    /// Distinct non-null TRACK years, DESCENDING — the expected `years()` result.
+    let yearsDescending: [Int]
+    /// album-artist NAME → its album titles (`album_artist_id` match, `albums(byArtist:)`).
+    let albumsByAlbumArtist: [String: Set<String>]
+    /// track-artist NAME → its track display titles (`tracksDisplay(byArtist:)`).
+    let tracksByArtist: [String: Set<String>]
+    /// genre NAME → album titles containing ≥1 track in it (`albums(inGenre:)`).
+    let albumsByGenre: [String: Set<String>]
+    /// genre NAME → track display titles in it (`tracksDisplay(inGenre:)`).
+    let tracksByGenre: [String: Set<String>]
+    /// album year → album titles released that year (`albums(inYear:)`).
+    let albumsByYear: [Int: Set<String>]
 }
 
 // MARK: - Seed
@@ -82,22 +101,29 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
         folderID: rockAndRollRootID, gen: generation
     )
 
-    // One LOOSE file (folder NULL, outside every root) — Req 2.
+    // One LOOSE file (folder NULL, outside every root) — Req 2. Its metadata facts are
+    // hoisted so both the write and the derived expectations share one source of truth.
+    let looseTitle = "Loose Single"
+    let looseArtist = "Loose Artist"
+    let looseAlbum = "Loose Album"
+    let looseYear = 2020
+    let looseGenres = ["Electronic"]
     let looseFile = ScannedFile(
         url: URL(fileURLWithPath: "/Downloads/loose-single.flac"),
         name: "loose-single", format: "FLAC", fileSize: 5000, mtime: 1000
     )
     let looseTrackID = try await store.addLooseFile(looseFile)
     try await store.applyMetadata(
-        TrackMetadata(title: "Loose Single", artistName: "Loose Artist",
-                      albumTitle: "Loose Album", albumArtistName: "Loose Artist",
-                      year: 2020, trackNo: 1, genres: ["Electronic"]),
+        TrackMetadata(title: looseTitle, artistName: looseArtist,
+                      albumTitle: looseAlbum, albumArtistName: looseArtist,
+                      year: looseYear, trackNo: 1, genres: looseGenres),
         forTrack: looseTrackID
     )
 
     return computeExpectations(
         allDefs: popTracks + jazzTracks + rockTracks + rockAndRollTracks,
-        looseGenres: ["Electronic"], looseArtist: "Loose Artist", looseAlbum: "Loose Album",
+        looseGenres: looseGenres, looseArtist: looseArtist, looseAlbum: looseAlbum,
+        looseTitle: looseTitle, looseYear: looseYear,
         rootCounts: [
             popRootID: popTracks.count, jazzRootID: jazzTracks.count,
             rockRootID: rockTracks.count, rockAndRollRootID: rockAndRollTracks.count,
@@ -204,50 +230,92 @@ private func rockAndRollFixtureTracks() -> [FixtureTrack] {
 // swiftlint:disable:next function_parameter_count
 private func computeExpectations(
     allDefs: [FixtureTrack], looseGenres: [String], looseArtist: String, looseAlbum: String,
+    looseTitle: String, looseYear: Int,
     rootCounts: [Int64: Int], rockRootID: Int64, rockCount: Int,
     rockAndRollRootID: Int64, rockAndRollCount: Int, looseTrackID: Int64
 ) -> FixtureExpectations {
-    let totalTracks = allDefs.count + 1 // + the loose track
+    // Fold the loose track into ONE definition list so every derived set is computed
+    // uniformly (the loose track participates in artist/album/genre/year facets too).
+    let looseDef = FixtureTrack(
+        fileName: "loose-single.flac", title: looseTitle, artist: looseArtist,
+        album: looseAlbum, albumArtist: looseArtist, year: looseYear, trackNo: 1, genres: looseGenres
+    )
+    let everyDef = allDefs + [looseDef]
+    let totalTracks = everyDef.count
 
     // Album count via the M1 total key: (title, albumArtist ?? sentinel, year ?? 0).
     var albumKeys = Set<String>()
-    for def in allDefs where def.album != nil {
+    for def in everyDef where def.album != nil {
         albumKeys.insert(albumKey(title: def.album, albumArtist: def.albumArtist, year: def.year))
     }
-    albumKeys.insert(albumKey(title: looseAlbum, albumArtist: looseArtist, year: 2020))
     let albumCount = albumKeys.count
 
-    // Named artists (track-artist ∪ album-artist ∪ loose), EXCLUDING the sentinel.
+    // Named artists (track-artist ∪ album-artist), EXCLUDING the sentinel.
     var artists = Set<String>()
-    for def in allDefs {
+    for def in everyDef {
         if let artist = def.artist { artists.insert(artist) }
         if let albumArtist = def.albumArtist { artists.insert(albumArtist) }
     }
-    artists.insert(looseArtist)
     let artistCount = artists.count
 
-    // Genre DISTINCT-track counts.
-    var genreTrackCounts: [String: Int] = [:]
-    for def in allDefs {
-        for genre in Set(def.genres) {
-            genreTrackCounts[genre, default: 0] += 1
-        }
-    }
-    for genre in Set(looseGenres) {
-        genreTrackCounts[genre, default: 0] += 1
-    }
-    let genreCount = genreTrackCounts.count
+    let derived = deriveFacetSets(everyDef)
 
-    let untaggedCount = allDefs.filter {
+    let untaggedCount = everyDef.filter {
         $0.album == "Greatest Hits" && $0.albumArtist == nil && $0.year == nil
     }.count
 
     return FixtureExpectations(
         totalTracks: totalTracks, albumCount: albumCount, artistCount: artistCount,
-        genreCount: genreCount, untaggedAlbumTrackCount: untaggedCount, tracksPerRoot: rootCounts,
+        genreCount: derived.tracksByGenre.count, untaggedAlbumTrackCount: untaggedCount,
+        tracksPerRoot: rootCounts,
         rockRootID: rockRootID, rockRootTrackCount: rockCount,
         rockAndRollRootID: rockAndRollRootID, rockAndRollRootTrackCount: rockAndRollCount,
-        looseTrackID: looseTrackID, genreTrackCounts: genreTrackCounts
+        looseTrackID: looseTrackID, genreTrackCounts: derived.genreTrackCounts,
+        yearsDescending: derived.yearsDescending, albumsByAlbumArtist: derived.albumsByAlbumArtist,
+        tracksByArtist: derived.tracksByArtist, albumsByGenre: derived.albumsByGenre,
+        tracksByGenre: derived.tracksByGenre, albumsByYear: derived.albumsByYear
+    )
+}
+
+/// The derived per-facet sets computed from the full fixture definition list.
+private struct DerivedFacetSets {
+    let genreTrackCounts: [String: Int]
+    let yearsDescending: [Int]
+    let albumsByAlbumArtist: [String: Set<String>]
+    let tracksByArtist: [String: Set<String>]
+    let albumsByGenre: [String: Set<String>]
+    let tracksByGenre: [String: Set<String>]
+    let albumsByYear: [Int: Set<String>]
+}
+
+/// Build every derived facet set in one pass over `defs` — the single source the
+/// browse-drill-down checks assert against (mirrors the store's LEFT-JOIN semantics).
+private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
+    var genreTrackCounts: [String: Int] = [:]
+    var albumsByAlbumArtist: [String: Set<String>] = [:]
+    var tracksByArtist: [String: Set<String>] = [:]
+    var albumsByGenre: [String: Set<String>] = [:]
+    var tracksByGenre: [String: Set<String>] = [:]
+    var albumsByYear: [Int: Set<String>] = [:]
+    for def in defs {
+        if let artist = def.artist { tracksByArtist[artist, default: []].insert(def.title) }
+        if let album = def.album {
+            if let albumArtist = def.albumArtist {
+                albumsByAlbumArtist[albumArtist, default: []].insert(album)
+            }
+            albumsByYear[def.year ?? 0, default: []].insert(album)
+        }
+        for genre in Set(def.genres) {
+            genreTrackCounts[genre, default: 0] += 1
+            tracksByGenre[genre, default: []].insert(def.title)
+            if let album = def.album { albumsByGenre[genre, default: []].insert(album) }
+        }
+    }
+    return DerivedFacetSets(
+        genreTrackCounts: genreTrackCounts,
+        yearsDescending: Set(defs.compactMap(\.year)).sorted(by: >),
+        albumsByAlbumArtist: albumsByAlbumArtist, tracksByArtist: tracksByArtist,
+        albumsByGenre: albumsByGenre, tracksByGenre: tracksByGenre, albumsByYear: albumsByYear
     )
 }
 

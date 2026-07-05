@@ -176,7 +176,8 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
-    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases() + reachabilityCheckCases()
+    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
+        + reachabilityCheckCases() + browseReadsCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -212,6 +213,24 @@ func reachabilityCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "am-root-reachability", run: checkRootReachability),
         CheckCase(label: "an-restamp-root", run: checkRestampRoot),
+    ]
+}
+
+/// S9.1 — browse/search DAO reads (LibraryTrackDisplay projection, artwork-path map,
+/// facet drill-downs, pagination, EXPLAIN-plan scale tripwire). In its own function so
+/// `allCheckCases` stays within the body-length limit.
+func browseReadsCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "br1-artwork-map", run: checkBrowseArtworkMap),
+        CheckCase(label: "br1b-artwork-miss", run: checkBrowseArtworkMiss),
+        CheckCase(label: "br1c-artwork-chunk", run: checkBrowseArtworkChunking),
+        CheckCase(label: "br2-artist-drilldown", run: checkBrowseArtistDrilldown),
+        CheckCase(label: "br2b-genre-drilldown", run: checkBrowseGenreDrilldown),
+        CheckCase(label: "br2c-year-facet", run: checkBrowseYearFacet),
+        CheckCase(label: "br3-single-facet", run: checkBrowseSingleFacet),
+        CheckCase(label: "br3b-sentinel-excluded", run: checkBrowseSentinelExcluded),
+        CheckCase(label: "br4-pagination", run: checkBrowsePagination),
+        CheckCase(label: "br5-explain-plan", run: checkBrowseQueryPlan),
     ]
 }
 
@@ -291,7 +310,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "AK facet-sweep-artwork [album deletion → artwork reclaimed]; "
         + "S8.4 Slice 4: AL watcher-ingest [FSEvents decode/routing via ingest seam]; "
         + "S8.4 Slice 5b: AM root-reachability [precheck skips unmounted/deleted], "
-        + "AN restamp-root [remount dev/inode re-stamp keeps identity-dedup]) ===")
+        + "AN restamp-root [remount dev/inode re-stamp keeps identity-dedup]; "
+        + "S9.1: BR1/1b/1c artwork-path-map+miss+chunked-IN, BR2/2b/2c artist/genre/year "
+        + "drill-downs [no fan-out], BR3/3b single-facet+sentinel-excluded, BR4 pagination-window, "
+        + "BR5 EXPLAIN no-SCAN-TABLE-tracks) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
