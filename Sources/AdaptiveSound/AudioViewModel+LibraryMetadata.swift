@@ -27,6 +27,9 @@ extension AudioViewModel {
                 }
             )
             metadataProgress = nil
+            // Album/artist rows + artwork links now exist — signal the browse layer to reload
+            // its facets (review B1). Once per completed pass (scan or reconcile both land here).
+            libraryRevision &+= 1
             logUX("runMetadataPass: done (generation \(generation))")
         } catch is CancellationError {
             metadataProgress = nil // expected on a re-trigger/teardown; enriched rows stay valid

@@ -8,12 +8,16 @@ struct AdaptiveSound: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var audioViewModel: AudioViewModel
     @State private var eqViewModel: EQViewModel
+    @State private var libraryModel: LibraryBrowseModel
 
     init() {
-        // Build the single AudioViewModel once and share it with EQViewModel.
+        // Build the single AudioViewModel once and share it with EQViewModel + LibraryBrowseModel.
         let audio = AudioViewModel()
         _audioViewModel = State(initialValue: audio)
         _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio))
+        // S9.4: the browse model is owned HERE (above the tab switch) and injected, so Library
+        // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed).
+        _libraryModel = State(initialValue: LibraryBrowseModel(audio: audio))
     }
 
     var body: some Scene {
@@ -21,6 +25,7 @@ struct AdaptiveSound: App {
             ContentView()
                 .environment(audioViewModel)
                 .environment(eqViewModel)
+                .environment(libraryModel)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and

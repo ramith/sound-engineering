@@ -12,6 +12,8 @@ struct TabContentView: View {
         switch selectedTab {
         case .nowPlaying:
             NowPlayingTabView()
+        case .library:
+            LibraryTabView()
         case .eq:
             EQTabView()
         case .monitoring:

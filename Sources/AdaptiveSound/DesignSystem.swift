@@ -33,6 +33,9 @@ enum DesignSystem {
         static let accentDeep = SwiftUI.Color(red: 0.078, green: 0.537, blue: 0.478) // #148979
         static let accentSubtle = accent.opacity(0.16) // selected-row fill
         static let accentMid = accent.opacity(0.25) // now-playing-row fill
+        /// Foreground drawn ON the accent (e.g. a play glyph over the teal fill). Appearance-
+        /// independent like `accent` itself — white reads on the teal in both light + dark.
+        static let onAccent = SwiftUI.Color.white
 
         // Alternates (swap into accent to change feel)
         static let blue = SwiftUI.Color(red: 0.039, green: 0.518, blue: 1.0) // #0A84FF
