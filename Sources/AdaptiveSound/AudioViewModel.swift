@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import LibraryScan
 import LibraryStore
@@ -161,18 +160,7 @@ final class AudioViewModel {
 
     // MARK: - Playlist State
 
-    var musicFolderURL: URL? {
-        didSet {
-            // S8.4: the recursive FSEvents `LibraryWatcher` replaces the old non-recursive
-            // DispatchSource monitor. Re-point it at the current folder set so a newly chosen
-            // folder is watched promptly (for both the visible playlist refresh and the store
-            // reconcile). refreshWatchedRoots is async, so hop through a Task.
-            Task { @MainActor [weak self] in await self?.refreshWatchedRoots() }
-        }
-    }
-
     var playlist: [AudioFile] = []
-    var folderPathDisplay: String = ""
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int?
@@ -181,9 +169,8 @@ final class AudioViewModel {
 
     /// The persistent library store (S8.1). Constructed off-main at init from
     /// `LibraryStore.defaultStoreURL()`. `nil` until construction completes (or if it
-    /// failed — the app still runs; the in-memory playlist is unaffected). ADDITIVE:
-    /// the store populates in PARALLEL with `loadMusicFolder`; the UI's source swaps
-    /// to store-reads at S9.
+    /// failed — the app still runs; the queue is unaffected). The browse UI's source of
+    /// truth (`LibraryBrowseModel` reads it); a folder scan populates it.
     var store: LibraryStore?
 
     /// Latest scan progress snapshot (indeterminate count-up), published from the
@@ -220,9 +207,9 @@ final class AudioViewModel {
     // MARK: - Directory Monitoring (S8.4 — recursive FSEvents LibraryWatcher)
 
     /// The recursive FSEvents watcher. Replaces the old non-recursive DispatchSource monitor:
-    /// it watches the registered store roots (+ the visible folder) and drives BOTH the store
-    /// reconcile AND the in-memory playlist refresh. Built in `makeLibraryStore`. Live-reconcile
-    /// wiring lives in `AudioViewModel+Reconcile.swift`.
+    /// it watches the registered store roots and drives the persistent-store reconcile. The queue
+    /// is not folder-bound (S9 IA change), so a disk change never rewrites it. Built in
+    /// `makeLibraryStore`; live-reconcile wiring lives in `AudioViewModel+Reconcile.swift`.
     var libraryWatcher: LibraryWatcher?
     let libraryWatcherQueue = DispatchQueue(label: "com.adaptivesound.library-watcher", qos: .utility)
     /// The store roots the watcher currently covers, for attributing an event path to the root
@@ -234,8 +221,6 @@ final class AudioViewModel {
     /// mid-reconcile) — so same-root reconciles never overlap and a late change is not lost.
     var reconcilingRoots: Set<Int64> = []
     var pendingReconcile: Set<Int64> = []
-    /// Debounce for the visible in-memory playlist refresh (replaces the old monitor's reload).
-    var playlistRefreshTask: Task<Void, Never>?
 
     // MARK: - Reconcile observability (S8.4 slice 5b — coarse state for the future S9 browse UI)
 
@@ -324,27 +309,6 @@ final class AudioViewModel {
     @discardableResult
     func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
         engine.readMonitorBands(tap, channel: channel, into: &out)
-    }
-
-    // MARK: - Folder Loading & Monitoring
-
-    /// Enumerate all audio files under `folderURL` recursively and update `playlist`.
-    func loadMusicFolder(_ folderURL: URL) async {
-        logUX("loadMusicFolder: '\(Self.makeDisplayPath(folderURL))'")
-        let displayPath = Self.makeDisplayPath(folderURL)
-        if folderPathDisplay != displayPath { folderPathDisplay = displayPath }
-
-        // Enumerate FIRST, then swap the result in atomically. Do NOT clear `playlist` to []
-        // before the async scan — that empties the list for the scan's duration, so every
-        // folder-monitor re-scan flashed empty→full (a window flicker, worst during a copy burst
-        // that fires repeated FSEvents). Keeping the current list visible until the new one is
-        // ready, plus stable AudioFile.id, makes the update diff cleanly with no flash.
-        let files = await Task.detached(priority: .userInitiated) {
-            AudioFileEnumerator.enumerate(folderURL: folderURL)
-        }.value
-
-        playlist = files
-        logUX("loadMusicFolder: loaded \(files.count) file(s) from '\(displayPath)'")
     }
 
     // MARK: - Helpers

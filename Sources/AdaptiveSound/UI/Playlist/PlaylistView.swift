@@ -1,10 +1,12 @@
 import SwiftUI
 
-// MARK: - Playlist View
+// MARK: - Queue View (the current playback queue — S9 IA change)
 
+/// The Now Playing queue: ONLY the current play queue, built by the Library's Play / Play Next /
+/// Add to Queue verbs. Folder-loading moved to the Library section (design §4/§5), so there is no
+/// folder chooser or "~/…" chip here anymore, and choosing a folder never rewrites this list.
 struct PlaylistView: View {
     @Environment(AudioViewModel.self) var viewModel
-    @State private var showFolderPicker = false
     /// Bumped by the header's "Jump to Now Playing" button; observed by the list to scroll the
     /// current track into view (UI-2). A monotonic request-ID (not a Bool) so repeated presses
     /// re-fire even when the value would otherwise be unchanged.
@@ -12,84 +14,62 @@ struct PlaylistView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            PlaylistHeaderView(showFolderPicker: $showFolderPicker,
-                               jumpToCurrentRequestID: $jumpToCurrentRequestID)
-
-            if !viewModel.folderPathDisplay.isEmpty {
-                HStack {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.asLabelSecond)
-                    Text(viewModel.folderPathDisplay)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color.asLabelSecond)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.asCard)
-                .clipShape(.rect(cornerRadius: 8, style: .continuous))
-            }
-
-            PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
-        }
-        .fileImporter(
-            isPresented: $showFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            if case let .success(urls) = result, let folderURL = urls.first {
-                viewModel.musicFolderURL = folderURL
-                // Populate the persistent library store IN PARALLEL (S8.2b, additive):
-                // the in-memory playlist below is unchanged; the store fills alongside.
-                viewModel.scanFolderIntoLibrary(folderURL)
-                Task {
-                    // Hold the security-scoped access across the async enumeration —
-                    // the previous `defer` released it before this Task ran, leaving
-                    // a sandboxed build with an empty playlist.
-                    let didAccess = folderURL.startAccessingSecurityScopedResource()
-                    defer { if didAccess { folderURL.stopAccessingSecurityScopedResource() } }
-                    await viewModel.loadMusicFolder(folderURL)
-                }
+            PlaylistHeaderView(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+            if viewModel.playlist.isEmpty {
+                emptyQueue
+            } else {
+                PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
             }
         }
     }
+
+    /// Shown whenever the queue is empty (fresh launch, or after Clear Queue). The queue is now
+    /// filled from the Library, so the primary action is a doorway to it (design §4).
+    private var emptyQueue: some View {
+        ContentUnavailableView {
+            Label("Queue is Empty", systemImage: "play.square.stack")
+        } description: {
+            Text("Browse your Library and press Play to start listening.")
+        } actions: {
+            Button("Browse Library") { viewModel.selectedTab = .library }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.asAccent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
-// MARK: - Playlist Header
+// MARK: - Queue Header
 
 private struct PlaylistHeaderView: View {
     @Environment(AudioViewModel.self) var viewModel
-    @Binding var showFolderPicker: Bool
     @Binding var jumpToCurrentRequestID: Int
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Playlist")
+                Text("Queue")
                     .font(.caption.weight(.semibold))
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundStyle(Color.asLabelSecond)
 
-                Text("\(viewModel.playlist.count) files · recursive")
+                Text("\(viewModel.playlist.count) \(viewModel.playlist.count == 1 ? "track" : "tracks")")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(Color.asLabelTertiary)
             }
 
             Spacer()
 
-            PlaylistControlsView(showFolderPicker: $showFolderPicker,
-                                 jumpToCurrentRequestID: $jumpToCurrentRequestID)
+            PlaylistControlsView(jumpToCurrentRequestID: $jumpToCurrentRequestID)
         }
     }
 }
 
-// MARK: - Playlist Controls
+// MARK: - Queue Controls
 
 private struct PlaylistControlsView: View {
     @Environment(AudioViewModel.self) var viewModel
-    @Binding var showFolderPicker: Bool
     @Binding var jumpToCurrentRequestID: Int
 
     var body: some View {
@@ -131,24 +111,6 @@ private struct PlaylistControlsView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Color.asAccent)
                 .help("Jump to now playing")
-            }
-
-            Divider()
-                .frame(height: 20)
-
-            Button("Choose Folder…", systemImage: "folder") {
-                showFolderPicker = true
-            }
-            .labelStyle(.titleAndIcon)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Color.asAccent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.asAccent.opacity(0.16))
-            .clipShape(.rect(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.asAccent.opacity(0.5), lineWidth: 0.5)
             }
         }
     }
@@ -196,10 +158,10 @@ private struct PlaylistItemList: View {
                             infoTarget = file
                         }
                         Divider()
-                        Button("Remove from Playlist", systemImage: "trash") {
+                        Button("Remove from Queue", systemImage: "trash") {
                             viewModel.removeTrack(at: index)
                         }
-                        Button("Clear Playlist", systemImage: "clear") {
+                        Button("Clear Queue", systemImage: "clear") {
                             viewModel.clearPlaylist()
                         }
                     }
@@ -247,8 +209,8 @@ private struct PlaylistItemList: View {
             }
             .listStyle(.plain)
             .frame(maxHeight: .infinity)
-            // Dismiss any open Info popover when the playlist changes (remove / clear / folder
-            // re-scan / reorder) so a stale target can't match — and re-present on — a different row.
+            // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
+            // so a stale target can't match — and re-present on — a different row.
             .onChange(of: viewModel.playlist.map(\.id)) { _, _ in
                 infoTarget = nil
             }
