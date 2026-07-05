@@ -91,6 +91,73 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Track display projection (S9.1 browse/search row — resolved names)
+
+/// A browse/search row: a `Sendable` projection of a track with its artist and album
+/// NAMES resolved by a SQL LEFT JOIN (added ALONGSIDE `LibraryTrack`, which carries
+/// only `artistID`/`albumID`). A Songs/search row renders "Title · Artist · Album" from
+/// this in ONE query — no N per-row name lookups. `title` is the display title (the tag
+/// title, or the filename `name` when the tag title is absent/empty); `artistName` is
+/// `COALESCE`d to '' (a track with no artist still yields a row), while `albumName`
+/// stays a true optional (nil = no album). The UI never renders `relativePath` (design
+/// §3.1). Reads never assert filesystem existence (§2a).
+public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
+    /// Stable durable reference identity (`tracks.id`).
+    public let id: Int64
+    /// Absolute file URL — the mutable natural key.
+    public let url: URL
+    /// Display title: the tag title, falling back to the filename `name` if absent/empty.
+    public let title: String
+    /// Filename display name (without extension) — the fallback source behind `title`.
+    public let name: String
+    /// Resolved track-artist rowid, or `nil`.
+    public let artistID: Int64?
+    /// Resolved track-artist name; "" when the track has no artist (COALESCE).
+    public let artistName: String
+    /// Resolved album rowid, or `nil`.
+    public let albumID: Int64?
+    /// Resolved album title, or `nil` when the track has no album.
+    public let albumName: String?
+    /// Uppercased container format, e.g. "FLAC", "MP3".
+    public let format: String
+    /// Track number within its disc, or `nil`.
+    public let trackNo: Int?
+    /// Disc number, or `nil`.
+    public let discNo: Int?
+    /// Release year, or `nil`.
+    public let year: Int?
+    /// Duration in whole milliseconds (0 until decoded).
+    public let durationMs: Int64
+    /// Artwork content-hash reference key, or `nil`.
+    public let artworkKey: String?
+
+    /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
+    public var durationSeconds: Double {
+        Double(durationMs) / 1000.0
+    }
+
+    public init(
+        id: Int64, url: URL, title: String, name: String, artistID: Int64?,
+        artistName: String, albumID: Int64?, albumName: String?, format: String,
+        trackNo: Int?, discNo: Int?, year: Int?, durationMs: Int64, artworkKey: String?
+    ) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.name = name
+        self.artistID = artistID
+        self.artistName = artistName
+        self.albumID = albumID
+        self.albumName = albumName
+        self.format = format
+        self.trackNo = trackNo
+        self.discNo = discNo
+        self.year = year
+        self.durationMs = durationMs
+        self.artworkKey = artworkKey
+    }
+}
+
 // MARK: - Scanned file (write model — the scanner's product, S8.2)
 
 /// A file as observed on disk by a scan (design §4). It is the WRITE model fed into
