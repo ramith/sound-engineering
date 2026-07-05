@@ -194,6 +194,16 @@ final class AudioViewModel {
     /// swept, track ids). `nil` until the first scan finishes.
     var lastScanResult: ScanResult?
 
+    /// Monotonic "browsable library content changed" counter (S9.4). Bumped ONCE each time
+    /// the store's browsable facets change: at the tail of a completed metadata pass (which
+    /// is what actually creates album/artist rows + links artwork) — and therefore on BOTH
+    /// the folder-add scan AND the live FSEvents reconcile, since both funnel through
+    /// `runMetadataPass`. Coarse by design (once per pass, NOT per `metadataProgress` tick).
+    /// The browse layer reloads its facets when this changes (`LibraryBrowseModel`); without
+    /// it a fresh scan's albums never appear until a tab-switch re-runs the grid's load
+    /// (review B1 — `lastScanResult` is set BEFORE metadata builds the album rows).
+    var libraryRevision = 0
+
     /// The in-flight scan `Task`, held so a re-trigger can cancel the prior scan
     /// before starting the next (mirrors the folder-monitor debounce). Cancelling it
     /// makes the scanner throw `CancellationError` mid-walk and SKIP its sweep.
