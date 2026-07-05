@@ -71,4 +71,26 @@ struct QueueAdvanceTests {
             }
         }
     }
+
+    @Test("VM-QA-09: appendArmIndex arms only the linear end-of-queue case")
+    func appendArmIndexDecision() {
+        // Linear end-of-queue, repeat-off, nothing on-deck → arm the first appended (oldCount).
+        #expect(QueueAdvance.appendArmIndex(current: 2, oldCount: 3, hasPending: false,
+                                            shuffle: false, repeatMode: 0) == 3)
+        // Mid-list → leave.
+        #expect(QueueAdvance.appendArmIndex(current: 0, oldCount: 3, hasPending: false,
+                                            shuffle: false, repeatMode: 0) == nil)
+        // Already on-deck → leave.
+        #expect(QueueAdvance.appendArmIndex(current: 2, oldCount: 3, hasPending: true,
+                                            shuffle: false, repeatMode: 0) == nil)
+        // Shuffle → leave (never re-roll).
+        #expect(QueueAdvance.appendArmIndex(current: 2, oldCount: 3, hasPending: false,
+                                            shuffle: true, repeatMode: 0) == nil)
+        // Repeat-all → leave (it already wraps to 0).
+        #expect(QueueAdvance.appendArmIndex(current: 2, oldCount: 3, hasPending: false,
+                                            shuffle: false, repeatMode: 1) == nil)
+        // Repeat-one → leave (auto-advance repeats current, never reaches the appended track).
+        #expect(QueueAdvance.appendArmIndex(current: 2, oldCount: 3, hasPending: false,
+                                            shuffle: false, repeatMode: 2) == nil)
+    }
 }

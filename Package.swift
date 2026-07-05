@@ -147,6 +147,7 @@ let package = Package(
                 "AutoAdvanceReconfigureGapTests.swift",
                 "AutoAdvanceDeviceLossTests.swift",
                 "QueueAdvanceTests.swift",
+                "QueueOpsTests.swift",
             ]
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed
