@@ -28,7 +28,10 @@ struct TrackInfoCard: View {
             pathBlock
         }
         .padding(16)
-        .frame(width: 300)
+        .frame(width: 340)
+        // Every field (title, metadata values, path) is selectable + ⌘C-copyable — this
+        // propagates to all descendant Text, so the per-field modifier isn't repeated.
+        .textSelection(.enabled)
         .task { await loadMetadata() }
     }
 
@@ -46,7 +49,7 @@ struct TrackInfoCard: View {
             Text(file.name)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.asLabel)
-                .lineLimit(2)
+                .lineLimit(nil) // show the FULL title — wrap to as many lines as needed, never truncate
                 .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 8)
