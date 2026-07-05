@@ -8,7 +8,9 @@
 //
 // The `tracks` column list + row mapper are centralised (`trackColumns` /
 // `mapTrackRow`) so every track-returning query decodes identically — one place to
-// keep column order and the read model in lock-step.
+// keep column order and the read model in lock-step. S9.1 adds a parallel
+// `LibraryTrackDisplay` projection (LibraryStore+BrowseReads) ALONGSIDE these reads;
+// the `LibraryTrack` reads below keep their signatures (gate callers depend on them).
 //
 // SF-4 seam: reads currently serialize through the writer actor; if S9 browse jank
 // appears during a scan, add a SQLITE_OPEN_READONLY connection here (design §5's
@@ -31,7 +33,7 @@ public extension LibraryStore {
     internal func mapTrackRow(_ statement: SQLiteStatement) -> LibraryTrack {
         LibraryTrack(
             id: statement.columnInt64(0),
-            url: URL(fileURLWithPath: statement.columnText(1) ?? ""),
+            url: URL(fileURLWithPath: statement.columnText(1) ?? "", isDirectory: false),
             folderID: statement.columnIsNull(2) ? nil : statement.columnInt64(2),
             relativePath: statement.columnText(3) ?? "",
             name: statement.columnText(4) ?? "",
@@ -67,21 +69,16 @@ public extension LibraryStore {
 
     // MARK: - Track reads
 
-    /// All tracks in the store, ordered by `sortedBy`. Reads never touch the FS (§2a).
-    func allTracks(sortedBy sort: TrackSort = .name) throws -> [LibraryTrack] {
-        let order: String
-        switch sort {
-        case .name:
-            order = "name COLLATE NOCASE ASC, id ASC"
-        case .album:
-            // Album-then-disc/track; NULL album_id sorts last, then a stable id tie-break.
-            order = "album_id IS NULL, album_id ASC, disc_no ASC, track_no ASC, id ASC"
-        case .dateAddedDescending:
-            order = "date_added DESC, id DESC"
+    /// All tracks in the store, ordered by `sortedBy`. Optional `limit`/`offset`
+    /// paginate; `limit == nil` is the unbounded default (non-breaking — the SQL is
+    /// byte-identical to the historical unpaginated form). Reads never touch the FS (§2a).
+    func allTracks(sortedBy sort: TrackSort = .name, limit: Int? = nil, offset: Int = 0) throws -> [LibraryTrack] {
+        let sql = "SELECT \(LibraryStore.trackColumns) FROM tracks ORDER BY "
+            + LibraryStore.trackOrder(sort, prefix: "")
+            + LibraryStore.paginationClause(limit: limit) + ";"
+        return try fetchTracks(sql) { statement in
+            try LibraryStore.bindPagination(statement, limit: limit, offset: offset, firstIndex: 1)
         }
-        return try fetchTracks(
-            "SELECT \(LibraryStore.trackColumns) FROM tracks ORDER BY \(order);"
-        )
     }
 
     /// The single track at `url` (its normalised key form), or `nil` if absent.
