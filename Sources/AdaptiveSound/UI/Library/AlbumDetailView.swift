@@ -12,6 +12,8 @@ struct AlbumDetailView: View {
     @State private var album: AlbumFacet?
     @State private var tracks: [LibraryTrackDisplay] = []
     @State private var selection = Set<LibraryTrackDisplay.ID>()
+    /// The track whose info popover is open (mirrors the Now Playing playlist's Info affordance).
+    @State private var infoTarget: LibraryTrackDisplay?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,6 +83,17 @@ struct AlbumDetailView: View {
                         Button("Play") { model.play(tracks, startAt: index) }
                         Button("Play Next") { model.playNext([track]) }
                         Button("Add to Queue") { model.append([track]) }
+                        Divider()
+                        Button("Info", systemImage: "info.circle") { infoTarget = track }
+                    }
+                    .popover(
+                        isPresented: Binding(
+                            get: { infoTarget?.id == track.id },
+                            set: { if !$0 { infoTarget = nil } }
+                        ),
+                        arrowEdge: .trailing
+                    ) {
+                        TrackInfoCard(file: AudioFile(track))
                     }
             }
         }
