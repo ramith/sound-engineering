@@ -15,16 +15,16 @@ struct LibraryEmptyStateView: View {
     }
 
     let kind: Kind
-    @Environment(AudioViewModel.self) private var audio
+    @Environment(LibraryBrowseModel.self) private var model
     @State private var showFolderPicker = false
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
-                if case let .success(url) = result {
-                    audio.scanFolderIntoLibrary(url) // non-sandboxed (Developer-ID): no scoped-access dance
-                }
+                // The ONE shared add path (scan-only, never touches the queue) — same as the
+                // sidebar footer + Music Folders popover, so behavior can't drift between them.
+                if case let .success(url) = result { model.addFolder(url) }
             }
     }
 
@@ -36,7 +36,7 @@ struct LibraryEmptyStateView: View {
             } description: {
                 Text("Add a folder of music to start browsing your library.")
             } actions: {
-                Button("Add Music Folder…") { showFolderPicker = true }
+                Button("Add Folder…") { showFolderPicker = true }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Color.accent)
             }
@@ -53,7 +53,7 @@ struct LibraryEmptyStateView: View {
             } description: {
                 Text("No playable audio was found in your library folders.")
             } actions: {
-                Button("Add Another Folder…") { showFolderPicker = true }
+                Button("Add Folder…") { showFolderPicker = true }
                     .buttonStyle(.borderedProminent)
                     .tint(DesignSystem.Color.accent)
             }

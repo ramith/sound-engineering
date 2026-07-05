@@ -71,6 +71,41 @@ extension AudioViewModel {
         }
     }
 
+    /// Remove a registered library root. Deletes its store rows (tracks → orphaned albums/
+    /// artists/genres are swept), so browse drops the folder's content — but the audio files on
+    /// disk and the in-memory QUEUE are untouched: the queue is URL-keyed and not a store
+    /// reference, so a queued or currently-playing track from this folder keeps playing. Cancels
+    /// any pending/queued reconcile for the root BEFORE the delete so a late reconcile can't
+    /// re-insert its rows (design §5 / AC-14), then re-points the FSEvents watcher and bumps
+    /// `libraryRevision`. ADDITIVE: never touches `playlist`/`selectedTrackIndex`/`pendingNextIndex`/engine.
+    func removeLibraryFolder(id folderID: Int64) async {
+        guard let store else { return }
+        // Cancel an in-flight ADD scan of THIS folder before deleting its row: otherwise the
+        // walk's next batch UPSERTs a now-dangling folder_id → FK failure + a spurious
+        // "scan failed" error + wasted work (AC-14, review 1b). `scanTask` is a single shared
+        // task, so only cancel when the active scan targets this folder; await it so no batch
+        // lands after the delete. (`scanProgress` is nil between scan + metadata phases — that
+        // narrow window is FK-backstopped, not resurrected.)
+        if scanProgress?.folderID == folderID {
+            let scan = scanTask
+            scan?.cancel()
+            await scan?.value
+        }
+        reconcileDebounce[folderID]?.cancel()
+        reconcileDebounce[folderID] = nil
+        pendingReconcile.remove(folderID)
+        reconcileState[folderID] = nil
+        do {
+            try await store.removeRoot(id: folderID)
+            await refreshWatchedRoots() // drop the removed root from the FSEvents watch set
+            libraryRevision &+= 1 // browse reloads and drops the folder's albums/songs
+            logUX("removeLibraryFolder: removed root \(folderID)")
+        } catch {
+            errorMessage = "Couldn't remove folder: \(error.localizedDescription)"
+            logUX("removeLibraryFolder: FAILED for root \(folderID) — \(error)")
+        }
+    }
+
     /// Validates the root, registers it, then walks + reconciles. Runs on the main
     /// actor (extension inheritance) but AWAITS `LibraryScanner`'s `nonisolated` walk,
     /// so the heavy per-file work executes off the main actor; progress + the final
