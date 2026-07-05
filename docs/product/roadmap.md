@@ -1,188 +1,112 @@
 # Adaptive Sound — Product Roadmap
 ## Phase Timeline & Release Plan
 
-**Status:** 🟢 IN ACTIVE DEVELOPMENT  
-**Last Updated:** 2026-06-19  
-**Release Target:** Internal MVP (effort-driven, no calendar pressure), Phase 1.5 TBD
+**Status:** 🟢 IN ACTIVE DEVELOPMENT
+**Last Updated:** 2026-07-05
+**Strategy:** *Player-maturity first → differentiate later* (founder-reviewed 2026-06-19)
+**Release model:** GitHub releases R1 → R2 → R3, effort-driven (no calendar pressure)
+
+> **This is the high-altitude product view.** The authoritative, detailed sprint sequence lives in [../sprints/sprint-plan.md](../sprints/sprint-plan.md) (S6–S18). Where the two overlap, sprint-plan.md wins.
 
 ---
 
-## Overview
+## Strategy in one paragraph
 
-**Vision shift:** Away from Phase-based terminology toward **Sprint 4-6 DSP-First Model**
-
-- **Phase 1a (✅ Shipped):** Audio engine core + reference tone
-- **Phase 1b Part A (✅ Shipped):** Music playback UI + spectrum
-- **Phase 1b Part B (✅ Shipped):** Critical path — progress, seek, auto-play/gapless, test suite
-- **Sprint 4 — Loudness safety (✅ Shipped, merged):** BS.1770-5 meter + true-peak limiter
-- **Sprint 5 / 5b — EQ foundation + multichannel (✅ Shipped):** 31-band EQ wiring, N-channel two-AU pipeline, Monitoring tab
-- **Bit-perfect "Pure Mode" + gapless (✅ Shipped — pipeline-review additions, not in the original plan):** HAL-direct output path (runtime FFmpeg-or-Apple decode), gapless/continuous playback (Enhanced + Pure same-rate), device-resilience
-- **Sprint 6 — Adaptive clarity (🟡 Next):** perceptual Arbiter + masking-aware clarity + conversational tuning
-- **Phase 1.5 (🔄 Planning):** Stem separation + advanced DSP
-- **Phase 2 (🔄 Planning):** System-wide audio via virtual device
+An audiophile player lives or dies on **library + playback maturity, not on its cleverest DSP** — a listener who can't get an album into a queue never hears the differentiator. So we **reach competitive parity as a player first** (Phase 1), then build the differentiating *Adaptive Sound* thesis — masking-aware perceptual clarity, steerable Reimagine, spatial rendering — on top of a credible base where it can actually be compared against the field (Phase 2). Our anchor story is *this Mac → this DAC, bit-perfect* (which Apple Music is not, on macOS). See [../sprints/sprint-plan.md](../sprints/sprint-plan.md) §1.
 
 ---
 
-## Phase 1b Part B: Critical Path (Unblocks Phase 1c)
+## What's shipped (verified against code)
 
-**Timeline:** 2026-06-18 → 2026-06-21 (effort-driven, not calendar-driven)  
-**Owner:** You (solo)  
-**Must-Have (2.5 days):**
-1. Progress bar + polling (1 day)
-2. Seek implementation (1 day)
-3. Auto-play next track (0.5 day)
-4. Fix test suite (0.5 day)
+- **Sprint 4 — Loudness safety (✅ Shipped, merged):** BS.1770-5 loudness meter + true-peak limiter (8× ISP) with active LUFS normalization.
+- **Sprint 5 / 5b — EQ + multichannel (✅ Shipped):** live 31-band UI-driven EQ (drag the response curve, ±12 dB, kernel-clamped), N-channel two-AU Enhanced graph (≤7.1, EQ → loudness → limiter → spatial-passthrough), Monitoring tab.
+- **Bit-perfect "Pure Mode" + gapless (✅ Shipped — pipeline-review additions):** CoreAudio HAL-direct output (hog mode, per-track sample-rate match, DSP bypassed), runtime FFmpeg-or-Apple decode (FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC), gapless (Enhanced full + Pure same-rate), auto-advance, device-resilience + pin/follow, signal-path transparency UI.
+- **S6 — Architecture-review gate (✅ Shipped):** 4-discipline review + Tier 1/2/3 fixes — control-plane `Realizer`, steerable equal-power wet/dry intensity (intensity-0 = bit-exact anchor), `RtSwappableResource`, `GaplessController` contract. Gate green.
+- **S7 — DSP-gate hardening (✅ Shipped):** regression oracles for every shipped DSP stage — libebur128 loudness/TP, limiter −1 dBTP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak.
+- **QW1 — Quick-Win Differentiators (✅ Shipped — code; founder by-ear pending):** crossfeed DSP + UI (headphone-gated), Reimagine intensity knob UI, tonal presets (house curves + Save-as-Custom + per-output recall).
 
-**Details:** See [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md)
-
----
-
-## Phase 1c: Sprints 4-6 DSP Bundle (MVP Release)
-
-**Timeline:** TBD (effort-driven, no calendar pressure)  
-**Scope:** Three integrated sprints, bundled into one Phase 1c MVP release  
-**Target Internal Demo:** ~2026-07-10
-
-### SPRINT 4: Loudness Safety & Transparent Dynamics
-**Effort:** 5–10 story points
-
-**High-level:** True-peak limiter (−1 dBTP, ≥4× OS) + LUFS normalization (ITU-R BS.1770-5) + hearing-safety clamps (≤ +12 dB cumulative)
-
-**Why industry-best:** Hearing safety non-negotiable. Transparent loudness normalization (no artifacts). Safe floor for adaptive DSP.
-
-**Validation:** Loudness ±0.1 LUFS, true-peak enforcement, 1-hour soak, listening panel
-
-**Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 4](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md) (design, C++ implementation, acceptance criteria)
+**Current focus → 🟡 S8, the library spine.** The single biggest gap between us and a mature player: today we are a flat playlist/folder player with no persistent library, browse, search, or cover-art grid. The spine has largely landed — folder scan + persistent store + identity/FS-divergence/move-match (`LibraryScan`, `LibraryStore`), headless-gated by `VerifyLibraryStore`. The next user-facing step is the browse UI (S9).
 
 ---
 
-### SPRINT 5: Minimum-Phase EQ Wiring & Spectral Correction
-**Effort:** 5–10 story points
+## Phase 1 — Player maturity / competitive parity (S8–S14)
 
-**High-level:** 31-band EQ wired to RT chain + before/after spectrum taps + AutoEq device profiles (5 headphones) + master gain post-DSP
+**Exit criterion:** a listener can point the app at their music folders and live in it daily — browse, search, queue, play bit-perfect with art / tags / media keys, CUE albums, headphone correction, loudness compensation — on a QA gate we trust. This is the GitHub release that earns the right to differentiate.
 
-**Why industry-best:** Minimum-phase avoids pre-ringing. Biquad cascade RT-efficient. AutoEq scientifically grounded.
+| Sprint | Scope | Status |
+|--------|-------|--------|
+| **S8** | **Library spine: scan + persistent DB** | **🟡 In progress** |
+| S9 | Browse & search UI — album grid; Artist/Album/Genre/Year; incremental search; cover art; click-to-queue | Planned |
+| S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center | Planned |
+| S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim | Planned |
+| S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass | Planned |
+| S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export | Planned |
+| S14 | Loudness compensation (ISO-226) — the lowest-risk first taste of the adaptive thesis | Planned |
 
-**Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, device-profile accuracy, perceptual listening panel
-
-**Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 5](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md) (design, EQ realization, acceptance criteria)
-
----
-
-### SPRINT 6: Adaptive Clarity & Loudness Compensation
-**Effort:** 5–10 story points
-
-**High-level:** Masking-aware clarity (ERB-rate roex model, ≤ +3 dB/band) + fractional loudness compensation (ISO 226, 40% contour-diff) + Arbiter (control-plane composition) + conversational tuning (text → Claude → EQ) + content-aware adaptation
-
-**Why industry-best:** Masking-aware clarity distinguishes professional from static EQ. Fractional loudness compensation transparent. Per-buffer adaptation is competitive moat. Conversational tuning brings accessibility + power-user depth.
-
-**Validation:** Masking model ±1 dB, clarity conservative, conversational tuning ≥75% phrase accuracy, listening panel A/B, 2-hour adaptive soak
-
-**Details:**
-- Architecture: [../architecture/architecture.md §16 — Sprint 6](../architecture/architecture.md#phase-1--sprint-based-breakdown-mix-level-dsp-core)
-- Full spec: [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md) (design, Arbiter composition, acceptance criteria)
+*(Preset save/load, the Reimagine intensity-knob wiring, and crossfeed — originally scoped in S12/S13 — were delivered early in QW1.)*
 
 ---
 
-## Minimal UI Strategy (Phase 1c MVP)
+## Phase 2 — The Adaptive Sound differentiation (S15–S18)
 
-**Principle:** "UI as Support Layer" — 70% DSP, 30% UI
+Built on the mature base, enabler-first, lowest-artifact-risk first. This is the thesis that no static competitor (including Apple's ASAF) can match — it adapts every buffer to content, level, device, and hearing.
 
-**Phase 1c Minimal (3 days):**
-- ✅ 31-band EQ sliders (direct control)
-- ✅ Before/after spectrum (visual proof)
-- ✅ Conversational text input
-- ❌ Graphical curve editor (defer to Phase 1.5)
-- ❌ Multichannel spectrum (defer to Phase 1.5)
-- ❌ Preset save/load (defer to Phase 1.5)
-
-**Rationale:** Sliders + spectrum sufficient for MVP. Graphical curves are polish. Phase 1c ships faster; Phase 1.5 adds UI refinements.
+| Sprint | Scope | Status |
+|--------|-------|--------|
+| S15 | SPIKE: masking model + arbitration (roex + Arbiter logic; de-risks the thesis) | Planned |
+| S16 | Clarity (masking-aware) — Arbiter + Realizer v1; the core perceptual differentiator | Planned |
+| S17 | Reimagine intensity — full mapping (0→1 across loudness-comp + clarity + crossfeed) | Planned |
+| S18 | SPIKE-BRIR + BRIR spatial render v1 — highest artifact risk → sequenced last | Planned |
 
 ---
 
-## Validation Framework
+## Release milestones (per [../sprints/sprint-plan.md](../sprints/sprint-plan.md) §7)
 
-**Three pillars:** Automated testing + integration tests + listening panel (professional audio engineers)
+| Release | After | Theme | Content |
+|---------|-------|-------|---------|
+| **R1 — "a real player"** | S10 | Daily-driver | Library, browse, search, queue, media keys, bit-perfect playback |
+| **R2 — "audiophile-credible"** | S14 | Parity (unlocks Phase 2) | CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green |
+| **R3 — "differentiated"** | S17 | The thesis | Clarity + steerable Reimagine — demonstrable and comparable |
 
-**Per-merge gates (< 15 min):**
-- Unit tests ≥80% coverage
-- Null-test: MD5 bit-exact bypass @ intensity 0
-- ASAN/TSan/clang-tidy clean
+**Critical path:** S6 (gate, done) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8 — the highest-leverage and most-underestimated stretch in the plan.
 
-**Nightly regression (~30 min):**
-- Biquad fitting stress (1000 random curves)
-- 20-track corpus end-to-end
-- Masking model accuracy
-- RT-safety metrics (p99.9 ≤ 5 ms, xruns = 0)
-
-**Per-sprint final validation:**
-- Sprint 4: Loudness ±0.1 LUFS, true-peak ≤ −1 dBTP, listening panel
-- Sprint 5: EQ frequency response ±1 dB, null-test, device-profile accuracy, listening panel
-- Sprint 6: Masking model ±1 dB, clarity gains conservative, conversational tuning accuracy ≥75%, listening panel
-
-**Details:** [../architecture/validation-strategy.md](../architecture/validation-strategy.md) (full QA framework, listening panel protocol, lab setup)
+**Opinionated guardrail (PM + BA agree):** do not start Phase 2 until S8–S10 ship and the app has been the daily driver for a week. The adaptive DSP is more fun than catalog plumbing — the differentiators only earn attention once the table-stakes are invisible-because-they-just-work.
 
 ---
 
-## Release Milestones
+## Deferred / out-of-window
 
-| Milestone | Target | Content | Status |
-|-----------|--------|---------|--------|
-| **Phase 1b Part A Ship** | 2026-06-15 ✅ | Playback UI + spectrum | SHIPPED |
-| **Phase 1b Part B Complete** | 2026-06 ✅ | Progress, seek, auto-play/gapless, test suite | SHIPPED |
-| **Sprint 4 Complete** | 2026-06 ✅ | Loudness safety (BS.1770-5 + true-peak limiter) | SHIPPED (merged) |
-| **Sprint 5 / 5b Complete** | 2026-06 ✅ | EQ foundation + N-channel multichannel + Monitoring | SHIPPED |
-| **Bit-perfect Pure Mode + gapless** | 2026-06 ✅ | HAL-direct output, FFmpeg/Apple decode, gapless, device-resilience | SHIPPED (unplanned pipeline-review additions) |
-| **Sprint 6 Complete** | TBD | Adaptive clarity (Arbiter + masking + conversational tuning) | NEXT |
-| **Phase 1.5 Complete** | TBD | Stem separation + spatial audio | PLANNING |
-| **Phase 2 Complete** | TBD | System-wide via Core Audio process tap | PLANNING |
+- **DSD playback (DoP + native)** — deferred past R2, gated on acquiring a DSD DAC (keeps every feature by-ear verifiable).
+- **"Won't, this horizon"** — kept on the [backlog](backlog.md) as future vision, out of this plan's window:
+  - **Natural-language / conversational tuning** — the vision's endgame; needs the full adaptive stack (S14–S18) to have anything to steer.
+  - **Stem separation / object engine (Phase 1.5)** — high compute/artifact risk; revisit only after the mix-based thesis is validated and loved.
+  - **System-wide capture / virtual device (Phase 2 system-wide)** — a different product surface; our story stays *this Mac → this DAC, bit-perfect*.
+  - Off-thesis player features (streaming integration, CD ripping, DLNA/UPnP/multi-zone, SACD ISO) and cheap nice-to-haves (tag write-back, smart playlists, scrobbling, sleep timer) — opportunistic only, never planned scope.
 
 ---
 
-## Success Criteria (Phase 1c MVP)
+## Validation framework
 
-**Functional:**
-- Music playback (file picker, play/pause, next/previous, auto-play)
-- Real-time EQ (31 sliders, immediate audio feedback)
-- Before/after spectrum (visual proof DSP works)
-- Conversational tuning (text → Claude → EQ changes)
-- Seek + progress bar (playback position control)
+Three pillars: automated per-merge gates + DSP regression oracles + founder by-ear/by-hand verification.
 
-**Quality:**
-- No xruns or dropouts (soak tests pass)
-- Seek accurate ±100 ms (imperceptible)
-- ASAN + TSan clean (no leaks, data races)
-- Unit tests passing (EQ math verified)
-- Listening panel consensus (≥80% rate naturalness)
+- **Per-merge gate (`make gate`):** the C++ null-test (golden master `0xE7267654BA01D315`, bit-exact bypass @ intensity 0), `VerifyAUGraph`, and `VerifyLibraryStore`. ASAN/TSan/clang-tidy clean. *(The DSP correctness gate is the C++ null-test golden-master; `swift test` (native swift-testing) also runs headless in `make strict-gate`. See [../sprints/README.md](../sprints/README.md).)*
+- **DSP oracles (S7):** libebur128 loudness/TP, limiter −1 dBTP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak.
+- **By-ear / by-hand:** the founder owns audible/visual checks; Pure-path + QW1 by-ear verification is pending a USB DAC.
 
-**Performance:**
-- Sub-500 ms playback latency
-- Real-time slider feedback (no lag)
-- Conversational tuning responsive (< 500 ms API latency)
+Details: [../architecture/validation-strategy.md](../architecture/validation-strategy.md).
 
 ---
 
-## Cross-References
+## Cross-references
 
-**For detailed DSP design & architecture:** [../architecture/architecture.md](../architecture/architecture.md) (complete system design, locked decisions, ADRs)
-
-**For detailed sprint specs & implementation:** 
-- [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md)
-- [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md)
-- [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md)
-- [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md) (critical path action items)
-
-**For QA framework & validation procedures:** [../architecture/validation-strategy.md](../architecture/validation-strategy.md) (per-merge gates, nightly regression, listening panel protocol)
-
-**For product requirements & features:** [requirements.md](requirements.md) (what we're building, user needs, feature breakdown)
-
-**For backlog & prioritization:** [backlog.md](backlog.md) (features ranked by priority, Phase dependencies)
+- **Detailed sprint sequence (authoritative "what's next"):** [../sprints/sprint-plan.md](../sprints/sprint-plan.md)
+- **Sprint methodology & historical records:** [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md), [../sprints/README.md](../sprints/README.md)
+- **Architecture, locked decisions & ADRs:** [../architecture/architecture.md](../architecture/architecture.md)
+- **Product requirements & vision:** [PRD.md](PRD.md), [requirements.md](requirements.md)
+- **Backlog & stories:** [backlog.md](backlog.md)
+- **QA framework:** [../architecture/validation-strategy.md](../architecture/validation-strategy.md)
 
 ---
 
-**Status:** 🟢 In active development  
-**Next step:** Sprint 6 — adaptive clarity (perceptual Arbiter + masking-aware clarity + conversational tuning). Recent unplanned work (bit-perfect Pure Mode, gapless playback, device-resilience) is shipped; remaining Pure-path by-ear verification needs a USB DAC.
+**Status:** 🟢 In active development
+**Next step:** 🟡 **S8 — the library spine** (scan + persistent store → S9 browse/queue), the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).

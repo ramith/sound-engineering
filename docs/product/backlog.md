@@ -2,12 +2,12 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.3 — re-anchored to shipped reality (sprint-plan.md §6); S6/S7 marked Done
+**Version:** 2.5 — QW1 (crossfeed / Reimagine intensity knob / tonal presets) back-filled as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
 **Status:** Draft — Pending sprint planning review
 
-> **v1.1 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/architecture/prior-art.md`. (A) EP-VDEVICE reframed as driver **fallback path** only; EP-SYSWIDE updated to lead with tap-primary path, drive-fallback secondary; US-SYS-01..05 annotated accordingly. (B) SPIKE-HRTF updated: largely resolved to SADIE II (Apache-2.0) + libmysofa (BSD-3) + custom SOFA-HRIR convolution; remaining work is performance benchmark and integration. (C) US-SPAT-01 and US-SPAT-01a/b/c updated to reference custom SOFA convolution. (D) US-TON-04 updated with mono-summed constraint (CON-11). (E) SPIKE-VDEVICE updated to include tap-path prototype as primary workstream. (F) Added SPIKE-IPREVIEW (OQ-16 — patent IP review for bass enhancement). (G) Added SPIKE-LIBBS2B (OQ-17 — libbs2b licence dispute). (H) Updated Open Items table with OQ-16 and OQ-17.
+> **v1.1 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/session-notes/prior-art.md`. (A) EP-VDEVICE reframed as driver **fallback path** only; EP-SYSWIDE updated to lead with tap-primary path, drive-fallback secondary; US-SYS-01..05 annotated accordingly. (B) SPIKE-HRTF updated: largely resolved to SADIE II (Apache-2.0) + libmysofa (BSD-3) + custom SOFA-HRIR convolution; remaining work is performance benchmark and integration. (C) US-SPAT-01 and US-SPAT-01a/b/c updated to reference custom SOFA convolution. (D) US-TON-04 updated with mono-summed constraint (CON-11). (E) SPIKE-VDEVICE updated to include tap-path prototype as primary workstream. (F) Added SPIKE-IPREVIEW (OQ-16 — patent IP review for bass enhancement). (G) Added SPIKE-LIBBS2B (OQ-17 — libbs2b licence dispute). (H) Updated Open Items table with OQ-16 and OQ-17.
 
 > **v2.0 change note (2026-06-13 — architecture v0.2 alignment):** Major revamp to align with `docs/architecture/architecture.md` v0.2 (source of truth) and requirements v0.5. Adopted the **four-phase scheme (0 / 1 / 1.5 / 2)**. Epics restructured: added **EP-PERCEPTUAL** (typed contributors + ERB/Bark masking); **EP-SPAT → EP-IMMERSION** (BRIR-first); **EP-TONAL** reframed (min-phase default, no program DRC, loudness-comp method); **EP-NLT** reframed (typed-macro + per-stem); added **EP-REIMAGINE** (intensity control) and **EP-STEM** (Phase 1.5 object engine). New spikes: **SPIKE-PERF-BUDGET** (gates Phase 1.5), **SPIKE-SEP-QUALITY**, **SPIKE-REIMAGINE-MAP**, **SPIKE-MASKING-MODEL**, **SPIKE-BRIR** (kept SPIKE-IPREVIEW, SPIKE-LIBBS2B). Open Items updated with OQ-18–22. Existing Phase 0/1 stories are retained; affected ones are annotated rather than rewritten.
 
@@ -23,6 +23,8 @@
 > - **Doc-gap closed:** `sprint-plan.md` now exists (it was referenced-but-missing). All backlog references to "`00-sprint-model.md` for sprint assignments" have been pointed at `sprint-plan.md`.
 
 > **v2.4 change note (2026-07-02 — library/playlist domain rules formalized):** Added two new Phase-0 epics, back-filling the founder's stated library/playlist use cases as formal requirements ahead of the S8 library-spine build so the persistent store schema is designed against them from day one rather than retrofitted. **EP-LIBRARY** (8 stories, US-LIB-01..08) — multiple independent scan folders; single-file play outside any scan folder; a track lives in exactly one scan folder, with cross-folder duplicates treated as normal distinct files (never silently deduped); a filesystem move updates a track's location in place while its durable identity (and therefore playlist membership) survives the move; stable durable track identity as the thing every future reference (playlist entry, play count) points at, not the file path. **EP-PLAYLIST** (8 stories, US-PLIST-01..08) — many-to-many, user-ordered playlist membership; adding a single non-library file to a playlist; drag-and-drop into a playlist is always a reference-add, never a filesystem move; drag-and-drop folder-to-folder is potentially a real filesystem move (routed through EP-LIBRARY's move-in-place handling so membership survives); user-provided playlist naming with "untitled-N" auto-naming; the built-in non-deletable "current" playlist as the play queue. Every story is tagged with the sprint-chunk it belongs to (S8.1 store schema / S8.2 scan / S8.4 rescan-move / S9 browse / S10 queue-playlists) per [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md), which is being updated in step to accommodate these rules (nullable `folder_id` for loose files, the stable integer `tracks.id` as the durable reference, and new playlist/playlist_entry tables). No FR/NFR IDs exist yet for library/playlist domain rules (requirements.md predates this feature); stories trace to the design doc and to sprint-plan.md's S8–S10 scope instead, per the same precedent set by the EP-QA stories (US-QA-01..06) tracing to sprint docs. These stories are Draft/Ready-for-sprint-planning, not Done — no code has been touched.
+
+> **v2.5 change note (2026-07-05 — QW1 back-fill):** Marked three stories **✅ DONE** that shipped in the founder-approved **QW1 Quick-Win Differentiators** burst (sprint-plan.md §3, the "exception, before S8") but were never back-filled here: **US-TON-06** (tonal presets), **US-DEVICE-07** (crossfeed), and **US-RMG-01** (the single Reimagine intensity control, 0 = bit-faithful). Status mirrors sprint-plan.md's QW1 framing exactly — **code-complete, founder by-ear verification pending**; evidence (code files + QW1 gate: null-test 117/0, golden master `0xE7267654BA01D315` held) is cited per story. **US-RMG-02** (the full intensity→parameter *mapping*) stays **not-done** — `ClarityModule`/`BRIRModule` are still empty stubs, so there is nothing to widen/unmask yet (that mapping is S15–S17). No re-prioritization performed. *Reconciled 2026-07-05:* sprint-plan.md's **S12/S13** rows have been updated to note these items (preset save/load per-output, the Reimagine intensity-knob wiring, crossfeed) were delivered early in QW1.
 
 ---
 
@@ -614,9 +616,11 @@ As a **Marcus** I want the app to apply appropriate compression per content type
 
 ---
 
-#### US-TON-06 — Tonal preset library (8+ named presets)
+#### US-TON-06 — Tonal preset library (8+ named presets) ✅ DONE
 
 As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Boost, Podcast, Film, Classical, Electronic) and save custom variations, so that I can quickly switch tonal characters without manual EQ work.
+
+> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** Shipped in the **QW1 Quick-Win Differentiators** burst (sprint-plan.md §3): tonal **house-curve presets + Save-as-Custom + per-output recall** — `Sources/AdaptiveSound/UI/EQ/EQPresetPickerView.swift`, `UI/EQ/SaveCustomPresetView.swift`, `EQViewModel+Persistence.swift`. QW1 gate: null-test 117/0, golden master held.
 
 **Acceptance Criteria:**
 - See FR-TONAL-06 Given/When/Then: "Electronic" preset selected; EQ parameters update within one render cycle; "Save as Custom" appears on any subsequent adjustment.
@@ -819,9 +823,11 @@ As a **Ramith** I want the app to automatically switch to stereo widening mode w
 
 ---
 
-#### US-DEVICE-07 — Basic crossfeed for headphones
+#### US-DEVICE-07 — Basic crossfeed for headphones ✅ DONE
 
 As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed on headphones so that hard-panned elements feel less fatiguing and more natural over long listening sessions.
+
+> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** Shipped in the **QW1** burst (sprint-plan.md §3) as a knob-scaled, headphone-gated **crossfeed DSP stage** (Bauer/bs2b) + crossfeed UI — `Sources/AudioDSP/Spatial/CrossfeedModule.h`, `AudioEngineBridge+CrossfeedControl.swift`, `Models/CrossfeedStrength.swift`; 12 null tests, golden master held. *Not re-verified in this audit: the OQ-17 / SPIKE-LIBBS2B licence gate below — presumed resolved by shipping (Bauer/bs2b), but the written spike outcome was not confirmed against code.*
 
 **Acceptance Criteria:**
 - See FR-SPAT-03 Given/When/Then: hard-panned stereo on headphones; crossfeed enabled at default (~700 Hz crossover); channel separation measurably reduced via FFT; no perceived image collapse.
@@ -1289,7 +1295,7 @@ As a **Marcus** I want binaural HRTF rendering that places the soundstage outsid
 
 **Acceptance Criteria:**
 - See FR-SPAT-01 Given/When/Then: stereo track, headphone device active, HRTF mode enabled; naive listener ABX test shows audible spatial difference vs. bypass at statistically significant rate.
-- HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/architecture/prior-art.md`).
+- HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/session-notes/prior-art.md`).
 - Default dataset is **SADIE II (Apache-2.0)** (ASM-04, DEP-06 — confirmed permissive; OQ-04 resolved).
 - Convolution CPU within NFR-PERF-02 budget. Validated in SPIKE-HRTF.
 - HRTF is default-on for any device classified as headphones; off for speakers.
@@ -1658,8 +1664,11 @@ Traceability: LD-12, FR-ADAPT, OQ-22
 
 ### EP-REIMAGINE — Intensity Control
 
-**US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful)**
+**US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful) ✅ DONE**
 As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can dial how much the app transforms my music.
+
+> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** The steerable **equal-power wet/dry intensity** primitive landed in S6 Tier-3 (intensity-0 = the bit-exact anchor; see US-ENG-08), and the **Reimagine intensity knob UI** shipped in QW1 (sprint-plan.md §3) — `Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift`, `UI/NowPlaying/NowPlayingWidget.swift`. **US-RMG-02** (the full intensity→parameter *mapping* across clarity/widening) stays **not-done** — `ClarityModule`/`BRIRModule` are still empty stubs (S15–S17).
+
 Acceptance: FR-REIMAGINE-01/02; at 0% the engine is bypassed and output is MD5-identical to source (NFR-QUAL-03).
 Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-ENG-02, US-UI-02
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
@@ -1730,13 +1739,13 @@ Traceability: FR-REIMAGINE-03, FR-STEM-06, LD-15, LD-16
 
 Phase 2 is far out and subject to change. Full story detail is deferred; epics and stubs provide engineering team visibility for architecture decisions made now.
 
-> **UI & Branding Note:** Phase 2 also includes UI polish and brand identity implementation (Flux mark, Sunset gradient, Space Grotesk typography). This is deferred from Phase 1c (DSP-first focus). See [branding/BRAND-INTEGRATION-PLAN.md](branding/BRAND-INTEGRATION-PLAN.md) for detailed guidance (app icon integration, color constants, typography, README branding section). Estimate: ~2–3 hours Phase 2 workstream.
+> **UI & Branding Note:** Phase 2 also includes UI polish and brand-identity work. **Note:** the original Flux-mark / Sunset-gradient / Space-Grotesk direction is **superseded** — the shipped identity is the teal `DesignSystem` (neutral surfaces, system fonts). The original plan is archived at [../session-notes/brand-integration-plan.md](../session-notes/brand-integration-plan.md) for provenance. Estimate: ~2–3 hours Phase 2 workstream.
 
 ### EP-VDEVICE — AudioServerPlugIn Virtual Device (FALLBACK PATH)
 
 **Epic goal:** Build, sign, notarise, and install an AudioServerPlugIn that intercepts system audio from any application, processes it through the Adaptivity Engine, and forwards processed audio to the physical output device. **This epic covers the FALLBACK PATH only** (macOS < 14.2 or where the user explicitly requests a persistent selectable output device). The primary Phase 2 mechanism is the Core Audio process tap (EP-SYSWIDE / US-SYSW-TAP). Both paths are needed; this epic is not deprecated.
 
-> **Prior-art note (ADR-002, Proposed — `docs/architecture/prior-art.md`):** Reference implementation: **libASPL (MIT)** as the AudioServerPlugIn framework; **AudioCap (BSD-2)** as tap-path sample. Ref-only: eqMac (Apache-2.0 v1.3.2 snapshot), BlackHole (GPL — ref only), Background Music (GPL — ref only).
+> **Prior-art note (ADR-002, Proposed — `docs/session-notes/prior-art.md`):** Reference implementation: **libASPL (MIT)** as the AudioServerPlugIn framework; **AudioCap (BSD-2)** as tap-path sample. Ref-only: eqMac (Apache-2.0 v1.3.2 snapshot), BlackHole (GPL — ref only), Background Music (GPL — ref only).
 
 **Critical architecture notes:**
 - Plug-in must be pure C/C++ — no Objective-C, no Swift, no Foundation (FR-SYS-06 / CON-03).
@@ -1784,7 +1793,7 @@ Refs: P2-3 | Phase: 2 | Estimate: TBD
 
 ### EP-SYSWIDE — System-Wide Adaptivity and Per-App Profiles
 
-> **Primary mechanism (macOS 14.2+):** Core Audio process tap (`CATapDescription` + `AudioHardwareCreateProcessTap` + private aggregate device with original output muted) — no HAL plug-in, no privileged helper, no coreaudiod restart, no admin password; TCC audio-capture consent only. Sample reference: **AudioCap (BSD-2)** — `docs/architecture/prior-art.md`. This is ADR-002 (Proposed); architecture discussion will confirm. The driver path (EP-VDEVICE) remains as fallback for macOS < 14.2.
+> **Primary mechanism (macOS 14.2+):** Core Audio process tap (`CATapDescription` + `AudioHardwareCreateProcessTap` + private aggregate device with original output muted) — no HAL plug-in, no privileged helper, no coreaudiod restart, no admin password; TCC audio-capture consent only. Sample reference: **AudioCap (BSD-2)** — `docs/session-notes/prior-art.md`. This is ADR-002 (Proposed); architecture discussion will confirm. The driver path (EP-VDEVICE) remains as fallback for macOS < 14.2.
 
 ---
 
@@ -1831,7 +1840,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 #### SPIKE-HRTF — HRTF dataset and convolution engine validation
 
-**Goal:** Prior-art research pass has largely resolved the dataset selection question (OQ-04 resolved — see `docs/architecture/prior-art.md`). The remaining work is: (a) confirm SADIE II (Apache-2.0) SOFA file quality and subject coverage for the 3-preset requirement (FR-SPAT-02); (b) benchmark partitioned SOFA-HRIR convolution using **libmysofa (BSD-3)** + **vDSP / FFTConvolver (MIT)** on the M1 Pro / 16 GB floor (LD-18) at 44.1 and 48 kHz; (c) confirm that Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly **not** used (their HRTFs are fixed and non-replaceable — custom convolution is the only path); (d) confirm FFTConvolver `LICENSE` file path in-repo (README says MIT; canonical `/LICENSE` path 404'd per `docs/architecture/prior-art.md` §5).
+**Goal:** Prior-art research pass has largely resolved the dataset selection question (OQ-04 resolved — see `docs/session-notes/prior-art.md`). The remaining work is: (a) confirm SADIE II (Apache-2.0) SOFA file quality and subject coverage for the 3-preset requirement (FR-SPAT-02); (b) benchmark partitioned SOFA-HRIR convolution using **libmysofa (BSD-3)** + **vDSP / FFTConvolver (MIT)** on the M1 Pro / 16 GB floor (LD-18) at 44.1 and 48 kHz; (c) confirm that Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly **not** used (their HRTFs are fixed and non-replaceable — custom convolution is the only path); (d) confirm FFTConvolver `LICENSE` file path in-repo (README says MIT; canonical `/LICENSE` path 404'd per `docs/session-notes/prior-art.md` §5).
 
 **Outputs:**
 - SADIE II subject selection for generic / small-head / large-head presets with SOFA file inventory
@@ -1846,7 +1855,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 #### SPIKE-DEVCORRLIB — Device correction library scope and data sourcing
 
-**Goal:** OQ-08 is partially resolved: **AutoEq computed parametric curves (MIT + attribution)** are the confirmed source. The remaining work is: (a) select the 20+ headphone/speaker models to ship at Phase 0; (b) verify upstream measurement provenance per model — AutoEq's code is MIT but upstream measurers (oratory1990, Crinacle, etc.) may be CC-BY-NC-SA; ship only AutoEq's *computed* curves with attribution, do not republish raw databases (see `docs/architecture/prior-art.md` §5 and CON-12); (c) define format for integrating AutoEq parametric curves into the app's EQ profile format; (d) identify owner of ongoing library curation.
+**Goal:** OQ-08 is partially resolved: **AutoEq computed parametric curves (MIT + attribution)** are the confirmed source. The remaining work is: (a) select the 20+ headphone/speaker models to ship at Phase 0; (b) verify upstream measurement provenance per model — AutoEq's code is MIT but upstream measurers (oratory1990, Crinacle, etc.) may be CC-BY-NC-SA; ship only AutoEq's *computed* curves with attribution, do not republish raw databases (see `docs/session-notes/prior-art.md` §5 and CON-12); (c) define format for integrating AutoEq parametric curves into the app's EQ profile format; (d) identify owner of ongoing library curation.
 
 **Outputs:**
 - List of 20+ validated device correction profiles with per-model provenance note
@@ -1895,7 +1904,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 > **⛔ Won't, this horizon (re-anchor v2.3, 2026-06-19):** Gating spike for EP-SYSWIDE / EP-VDEVICE (tagged Won't, this horizon). Out of this plan's window; not scheduled.
 
-**Goal:** Validate both Phase 2 mechanisms (per ADR-002 Proposed — `docs/architecture/prior-art.md`). Two parallel workstreams:
+**Goal:** Validate both Phase 2 mechanisms (per ADR-002 Proposed — `docs/session-notes/prior-art.md`). Two parallel workstreams:
 
 **Workstream A — Core Audio process tap (primary path, macOS 14.2+):**
 - Confirm exact minimum macOS version for `CATapDescription` + `AudioHardwareCreateProcessTap` + muted-aggregate-device topology by inspecting `<CoreAudio/AudioHardwareTapping.h>` SDK headers (CON-10 — 14.2 vs. 14.4 unconfirmed).

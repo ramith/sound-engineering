@@ -1,7 +1,7 @@
 # Architecture v0.2 — Expert Panel Review (synthesis)
 
 **Date:** 2026-06-13 · **Reviewers:** Real-time systems/perf · ML/source-separation · Mastering/audio-engineer · Security/privacy (all literature-grounded, web-cited).
-**Input:** [architecture.md](architecture.md) v0.2. **Net verdict: feasible / endorse-with-changes — no showstoppers, but several must-fix items, two of them factual/blocking.**
+**Input:** [architecture.md](../architecture/architecture.md) v0.2. **Net verdict: feasible / endorse-with-changes — no showstoppers, but several must-fix items, two of them factual/blocking.**
 
 ## Verdicts
 - **RT/perf:** Feasible-with-changes; one internal contradiction (§15 pressure-response is backwards). The chief risk is real and hinges on **one unmeasured number** (BRIR length × stem count).

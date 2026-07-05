@@ -4,7 +4,7 @@
 **Status**: Draft v0.3 — aligned to architecture.md v0.3 (architecture is the source of truth)
 **Date**: 2026-06-13
 **Owner**: Product (ramith@wso2.com)
-**Phase**: Pre-development / Concept validation
+**Phase**: Concept-era vision doc (2026-06-13), **reframed 2026-07-05 to lead with the player-maturity-first thesis** (see §1 / §3 / §4). Build is well underway — current status & sprint sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) + [`backlog.md`](backlog.md). The vision, personas, KPIs, locked decisions, and risks remain the north star — now **sequenced behind the player, not abandoned**; treat phase/status specifics here as historical.
 
 **Related Documents:**
 - `docs/product/user-journeys.md` — detailed user journeys and workflows (authoritative reference)
@@ -48,17 +48,23 @@ These were confirmed with the founder and supersede any conflicting text below. 
 
 > Turn any good-quality song into a personal, perceptually-tuned, spatially-rendered mix you can steer in plain language.
 
+### Near-term thesis vs. long-horizon vision *(sequencing — 2026-06-19 founder review)*
+
+The one-line vision above is the **north star** — *sequenced behind the player, not abandoned.* The identity we build and release **first** is a **mature, bit-perfect audiophile player**: *this Mac → this DAC, bit-perfect*, with the library, browse, queue, tags, media-keys, headphone-correction and loudness maturity that Roon / Audirvana / foobar2000 / JRiver set as table stakes (and that Apple Music does **not** deliver bit-perfect on macOS). Only on that credible base do we layer the differentiation — masking-aware perceptual clarity, the steerable Reimagine knob, spatial rendering, and (long-horizon) per-stem and natural-language control. An audiophile player lives or dies on library + playback maturity, not its cleverest DSP: we earn parity, then we differentiate. Detailed sequencing: [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).
+
 ### What Adaptive Sound Is
 
-Adaptive Sound is an **object-based spatial music renderer** with its own player. It does three things simultaneously:
+Near-term, Adaptive Sound is a **bit-perfect audiophile music player** for macOS — a real library player (scan, browse, search, queue, tags, cover art, media keys, gapless) that drives your DAC **bit-exact** (CoreAudio HAL-direct, hog mode, per-track sample-rate match). That mature player is the near-term product and the foundation everything else stands on.
 
-1. **Perceptual clarity** — a masking-aware, ERB/Bark tonal engine ensures every element of the recording is actually audible at the playback level and device in use.
-2. **Spatial rendering** — BRIR-first binaural reproduction (HRTF + early reflections + late reverb) places the mix in a convincing acoustic space on headphones; M/S width + ambience extraction on speakers.
-3. **Natural-language steering** — users direct the engine in plain language; instructions become typed multi-band macros that govern how the engine adapts, without needing to touch a slider.
+On that base it grows into an **object-based spatial music renderer** — the long-horizon differentiation, layered in once the player is credible. That layer does three things:
+
+1. **Perceptual clarity** — a masking-aware, ERB/Bark tonal engine ensures every element of the recording is actually audible at the playback level and device in use. *(Phase 2 — S15–S16.)*
+2. **Spatial rendering** — BRIR-first binaural reproduction (HRTF + early reflections + late reverb) places the mix in a convincing acoustic space on headphones; M/S width + ambience extraction on speakers. *(Phase 2 — S18.)*
+3. **Natural-language steering** — users direct the engine in plain language; instructions become typed multi-band macros that govern how the engine adapts, without needing to touch a slider. *(Long-horizon / "Won't, this horizon" — needs the full adaptive stack to steer.)*
 
 ### Positioning Statement
 
-For **audio-conscious Mac users** who want to hear their music the way it was meant to sound — not the flattened, device-compromised version their hardware delivers by default — **Adaptive Sound** is an **object-based spatial music renderer** that turns any good-quality song into a personal, perceptually-tuned mix they can steer in plain language. Unlike static equalizers (eqMac), one-size "3D" effects (Boom 3D), or Apple's Spatial Audio Foundation (ASAF) — which applies fixed post-decode processing — Adaptive Sound **adapts continuously** to audio content, playback level, output device, and individual hearing, and lets the user direct it naturally.
+For **audio-conscious Mac users** who want to hear their music the way it was meant to sound — not the flattened, device-compromised version their hardware delivers by default — **Adaptive Sound** is, near-term, a **mature, bit-perfect audiophile player** (*this Mac → this DAC, bit-perfect* — which Apple Music is not on macOS), and, long-horizon, an **object-based spatial music renderer** that turns any good-quality song into a personal, perceptually-tuned mix they can steer in plain language. Unlike static equalizers (eqMac), one-size "3D" effects (Boom 3D), or Apple's Spatial Audio Foundation (ASAF) — which applies fixed post-decode processing — Adaptive Sound **adapts continuously** to audio content, playback level, output device, and individual hearing, and lets the user direct it naturally.
 
 ### The Reimagine Knob — Reconciling Fidelity and Transformation
 
@@ -142,6 +148,8 @@ None of this is available to a static post-decode pass. The stem object engine (
 ---
 
 ## 3. Value Proposition & Competitive Differentiation
+
+> **Sequencing note (2026-06-19).** Near-term, the competition we must first match is the **mature audiophile players** — Roon, Audirvana, foobar2000, JRiver — on library, playback, and **bit-perfect** fidelity (our *this Mac → this DAC, bit-perfect* story; Apple Music is not bit-perfect on macOS). The continuous-adaptation differentiation described below — and the comparison table against static enhancers (eqMac, Boom 3D, ASAF) — is the **long-horizon moat** we build **on top** once player parity is reached (Phase 2), not the near-term wedge.
 
 ### Core Value Proposition
 
@@ -230,6 +238,15 @@ Design principles:
 
 ## 4. Prioritized Feature Set by Phase
 
+> **⚠️ Sequencing reconciliation (2026-06-19 founder review — read first).** This section's Phase 0/1/1.5/2 scheme predates the current, founder-reviewed execution plan in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md). The **feature detail below is preserved as the product's north star**, but the *order in which it ships* is now player-maturity-first:
+> - **Phase 0 player MVP + the tonal / loudness / device parity work** → the **Phase 1 maturity arc (S8–S14)**, built **library-spine-first**. Loudness compensation (ISO-226) ships here (S14) as the lowest-risk first taste of the adaptive thesis.
+> - **Reimagine mix-range mapping + masking-aware clarity + BRIR spatial** → **Phase 2 (S15–S18)**, the differentiation layer. *(The Reimagine intensity knob, crossfeed, and tonal presets already shipped early in QW1.)*
+> - **Natural-language / conversational tuning** → **long-horizon, "Won't, this horizon"** — it needs the full adaptive stack (S14–S18) to have anything to steer.
+> - **Stem-based object engine (Phase 1.5)** → **"Won't, this horizon"** — revisit only after the mix-based thesis is validated and loved.
+> - **System-wide via process tap (Phase 2 below)** → **"Won't, this horizon"** — a different product surface; our story stays *this Mac → this DAC, bit-perfect*.
+>
+> The MoSCoW priorities below are within-phase *engineering* priorities as originally conceived, not the current ship order.
+
 ### Prioritization Scheme: MoSCoW
 
 - **M** (Must Have): Ship-blocking. The phase is unusable without it.
@@ -301,7 +318,7 @@ Design principles:
 
 ---
 
-### Phase 1.5 — Stem-Based Object Engine
+### Phase 1.5 — Stem-Based Object Engine  *(now sequenced as "Won't, this horizon" — see the §4 reconciliation note)*
 
 **Goal**: Unlock the full spatial reimagining story via per-stem rendering. This phase is **gated on a performance/feasibility spike** (see §7) that must complete before Phase 1.5 engineering begins.
 **Architecture**: All Phase 1 plus offline 6-stem Demucs/HTDemucs separation (Core ML / MLX, MIT weights), per-stem DSP chains, extended Arbiter (between-stem masking), per-stem NL targeting, Reimagine knob stem range.
@@ -326,7 +343,7 @@ Design principles:
 
 ---
 
-### Phase 2 — System-Wide (Process Tap)
+### Phase 2 — System-Wide (Process Tap)  *(now sequenced as "Won't, this horizon" — different product surface; see the §4 reconciliation note)*
 
 **Goal**: Process audio from any app — Spotify, Apple Music, YouTube, Zoom — through the same kernel. Mix-level only (stem features remain own-player-only).
 
@@ -437,7 +454,7 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 | macOS future OS updates break AudioServerPlugIn ABI (fallback path only) | R-7 | Medium | High | Fallback driver path only. Monitor Apple developer forums. Fast release cadence for compatibility patches. Primary tap path governed by a different API surface. |
 | App Store sandbox blocks Phase 2 AudioServerPlugIn (fallback path only) | R-8 | High | High | Fallback driver path: direct notarized DMG is the required distribution path. Verify whether primary process-tap path is App Store-eligible during Phase 2 planning. |
 | **Patent risk — psychoacoustic bass enhancement** | R-9 | Medium | High | Waves US-11,102,577 (stereo virtual bass, active ~2038). Mitigation: generate bass harmonics from mono-summed (L+R) low band only (per architecture §9). Do NOT implement per-channel/stereo virtual bass. Obtain formal IP review before any public release (OQ-16). |
-| **OSS license-compliance risk** | R-10 | Medium | High | All shipped code and data must be permissively licensed. Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole) are reference-only — do not copy or ship. Weights/data licenses are separate from code licenses (MIT-code + NC-weights is not shippable). Verify each dependency against `docs/architecture/prior-art.md` §4–5 before vendoring. |
+| **OSS license-compliance risk** | R-10 | Medium | High | All shipped code and data must be permissively licensed. Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole) are reference-only — do not copy or ship. Weights/data licenses are separate from code licenses (MIT-code + NC-weights is not shippable). Verify each dependency against `docs/session-notes/prior-art.md` §4–5 before vendoring. |
 | Apple Spatial Audio / ASAF improvements narrow the differentiation gap | R-11 | Medium | Medium | Stay ahead on continuous content-awareness, per-stem spatial rendering, and NL steering — areas ASAF (static post-decode) structurally cannot address. Speed of iteration is the moat. |
 | BRIR quality not compelling out-of-box with generic HRTFs | R-12 | Medium | High | Invest in a high-quality default BRIR set (room synthesis + SADIE-II HRIR core). Offer personalization path (Phase 1). Ship A/B mode (Reimagine 0% vs. current setting). |
 | Phase 2 setup friction (permission grant or driver install) | R-13 | Medium | Medium | Primary tap path needs only a one-screen permission grant (no device switch, no sudo). Fallback: dedicated onboarding, guided installer. Study eqMac's UX. |

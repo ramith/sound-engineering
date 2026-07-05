@@ -24,15 +24,17 @@ BEFORE the S10 playlist UI ships it MUST gain `AND id NOT IN (SELECT track_id FR
 or `removeRoot` will delete playlist-referenced tracks. Marked with a ⚠️ HARD GATE comment at the
 call site.
 
-**Gate 2 — S8.4 move-matcher before S9/S10 — ADDRESSED (S8.4 slice 1, branch
-`feat/s8-4-live-watch-move-match`; pending merge to `main`).** A filesystem move now reconciles as an
+**Gate 2 — S8.4 move-matcher before S9/S10 — ADDRESSED & LANDED on `main` (S8.4 slice 1).** A
+filesystem move now reconciles as an
 id-PRESERVING move: the scanner's walk uses `upsertReconciling` → `moveCandidate` (matches the
 `(dev,inode,size,mtime)` + `format` signature via `idx_tracks_dev_inode`, ambiguity/cross-volume →
 no-match) → `moveMatched` (relocate + stamp `last_seen_scan` in one txn, so the end-of-walk sweep
 can't reap it). A rename / cross-dir / cross-root move keeps its `tracks.id` AND its durable
 user-state (play_count/loved/rating) — proven by VerifyLibraryStore AD–AH (AD reference-survives-move
-is the Gate-2 assertion). The signature is now *matched*, not merely *populated*. Remaining before
-S9/S10: land this on `main`, and close Gate 1 (above). Known limitation: a copy-then-delete move
+is the Gate-2 assertion). The signature is now *matched*, not merely *populated*. This has since
+landed on `main` (`LibraryStore+MoveMatch.swift`; VerifyLibraryStore AD/AH/AN move checks in
+`main.swift`), so Gate 2 is effectively closed. Remaining before S9/S10: close Gate 1 (above). Known
+limitation: a copy-then-delete move
 (cross-volume drag, rsync) gets a new inode and is NOT matched (id lost) — `content_hash` is the
 deferred escape hatch. Traces to EP-LIBRARY (US-LIB move-in-place) + EP-PLAYLIST in docs/product/backlog.md.
 

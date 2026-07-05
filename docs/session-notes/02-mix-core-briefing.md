@@ -170,8 +170,8 @@ After Sprint 2, the team will have:
 - **This Briefing:** [02-mix-core-briefing.md](02-mix-core-briefing.md) ← you are here
 - **Implementation Plan:** [02-mix-core-plan.md](02-mix-core-plan.md) (detailed 5-phase breakdown)
 - **Test & QA Strategy:** [02-mix-core-test-plan.md](02-mix-core-test-plan.md) (25+ tests, manual QA protocol)
-- **Product Requirements:** [../../product/requirements.md](../../product/requirements.md) (Phase 1 locked decisions)
-- **Architecture:** [../../architecture/architecture.md](../../architecture/architecture.md) (DSP pipeline design)
+- **Product Requirements:** [../../product/requirements.md](../product/requirements.md) (Phase 1 locked decisions)
+- **Architecture:** [../../architecture/architecture.md](../architecture/architecture.md) (DSP pipeline design)
 
 ---
 

@@ -4,7 +4,7 @@ This directory contains the sprint methodology, the forward sprint schedule, and
 
 ## The two authoritative docs
 
-- **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S17).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
+- **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S18).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
 - **[`00-sprint-model.md`](00-sprint-model.md) — the authoritative sprint / Kanban methodology** (5–10 SP sprints, done-done criteria, enabler-first ordering). The *how*, not the *what-next*.
 
 > **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (DSP-gate hardening). The old docs are historical records, not current plans.
@@ -18,15 +18,15 @@ Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. E
 - **05-sprint-5-eq-foundation{,-plan}.md**, **05-sprint-5-monitoring-tab-design.md**, **05-sprint-5-au-graph-spike-notes.md** — EQ foundation + Monitoring tab — ✅ shipped
 - **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md** — N-channel multichannel pipeline (S0–S3 + M4 shipped) — ✅ shipped
 - **05-sprint-5b-s4-binaural-design.md** — Apple-native binaural design — ⏸ deferred; folded into `sprint-plan.md` Phase 2 (S17 BRIR)
-- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded by `sprint-plan.md` (loudness-comp → S13; clarity → S14–S15)
+- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded by `sprint-plan.md` (loudness-comp → S14; clarity → S16, spike S15)
 - **07-phase-1b-part-b-kickoff.md** — critical-path kickoff — ✅ completed (historical)
 - **08-gui-design-review.md** — GUI design review — ✅ historical
 - **09-phase-b-bit-perfect-pure-mode.md** — bit-perfect "Pure Mode" + gapless: status & learnings — ✅ shipped
 
 ### How tests actually run
-The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). **`swift test` is broken** here (toolchain `@Test`/`@Suite` macro skew) — the Swift mock tests compile/lint but run only in Xcode. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
+The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). `swift test` runs the Swift suites headless (native swift-testing) as part of `make strict-gate`. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
 
-The **library store** (S8+) has its own headless gate — `swift run VerifyLibraryStore` (mirrors the `VerifyAUGraph` idiom, since `swift test` is broken). **`make gate`** runs all three: the C++ null test, `VerifyAUGraph`, and `VerifyLibraryStore`.
+The **library store** (S8+) has its own headless gate — `swift run VerifyLibraryStore` (mirrors the `VerifyAUGraph` idiom). **`make gate`** runs all three: the C++ null test, `VerifyAUGraph`, and `VerifyLibraryStore`.
 
 ---
 
@@ -62,21 +62,21 @@ The **library store** (S8+) has its own headless gate — `swift run VerifyLibra
 ## Accessing Sprint Documentation
 
 ### In VSCode
-File → Open → `docs/sprints/01-engine-plan.md`
-Or: Ctrl+P (Quick Open) → type `01-engine`
+File → Open → `docs/sprints/04-sprint-4-loudness-safety-plan.md`
+Or: Ctrl+P (Quick Open) → type `04-sprint-4`
 
 ### Cross-references from other docs
 Link format:
 ```markdown
-See [Sprint 1 Implementation Plan](../sprints/01-engine-plan.md)
-See [Sprint 1 Test Strategy](../sprints/01-engine-test-plan.md)
+See [Sprint 4 Implementation Plan](../sprints/04-sprint-4-loudness-safety-plan.md)
+See [Sprint 4 Test Strategy](../sprints/04-sprint-4-loudness-safety-test-plan.md)
 ```
 
 ### In README
 ```markdown
 ## Active Sprint
 
-**Sprint 1:** [Engine Bootstrap](docs/sprints/01-engine-plan.md)
+**Sprint 4:** [Loudness Safety](docs/sprints/04-sprint-4-loudness-safety-plan.md)
 ```
 
 ---

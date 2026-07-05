@@ -77,7 +77,7 @@ ci: strict-gate
 # S8.1a store acceptance gate — headless verification of the persistent library
 # store (open/create/migrate, v1 schema, transactional + downgrade-guarded
 # migration runner, corruption quarantine + rebuild, restart durability). `swift
-# test` is broken here, so this executable IS the verification. Temp DBs are
+# test` runs in `make strict-gate`; this executable is the DSP-independent store gate. Temp DBs are
 # written under test-data/ (never /tmp) and cleaned up on success.
 library-store-verify:
 	swift run VerifyLibraryStore

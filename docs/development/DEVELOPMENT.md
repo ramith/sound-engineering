@@ -523,7 +523,7 @@ ASAN reports memory leaks, buffer overruns, use-after-free, etc. in real-time.
 ## Further Reading
 
 - **C++ Core Guidelines:** https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines
-- **Real-Time Audio Rules:** See `../docs/architecture/architecture.md` § Real-Time Audio Constraints
+- **Real-Time Audio Rules:** See `../architecture/architecture.md` §2 (RT rules) and §14 (threading / Audio Workgroups)
 - **Core Audio Essentials:** Apple's official real-time audio guide (linked in core-audio-macos skill)
 
 ---
