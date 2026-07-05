@@ -24,15 +24,14 @@ enum ReconcileState: Equatable {
 
 //
 // Replaces the old non-recursive DispatchSource monitor: ONE recursive FSEvents `LibraryWatcher`
-// drives BOTH the persistent-store reconcile AND the visible in-memory playlist refresh. On a
-// filesystem change under a watched folder we debounce (~1 s), then re-scan that root into the
-// store (reusing the already-verified LibraryScanner.scan → move-match → metadata → facet-sweep)
-// and/or refresh the visible playlist. The watcher's `@Sendable` sink hops to @MainActor FIRST
-// (the SIGTRAP lesson) before touching any state.
+// drives the persistent-store reconcile. On a filesystem change under a watched store root we
+// debounce (~1 s), then re-scan that root into the store (reusing the already-verified
+// LibraryScanner.scan → move-match → metadata → facet-sweep). The queue is NOT folder-bound
+// (S9 IA change), so a disk change never rewrites it. The watcher's `@Sendable` sink hops to
+// @MainActor FIRST (the SIGTRAP lesson) before touching any state.
 
 extension AudioViewModel {
-    /// Build + start the FSEvents watcher (idempotent). Called once from `makeLibraryStore`,
-    /// regardless of store outcome, so the visible playlist refresh works even store-less.
+    /// Build + start the FSEvents watcher (idempotent). Called once from `makeLibraryStore`.
     func startLibraryWatcher() {
         guard libraryWatcher == nil else { return }
         let watcher = LibraryWatcher(queue: libraryWatcherQueue) { [weak self] batch in
@@ -43,8 +42,8 @@ extension AudioViewModel {
         watcher.start()
     }
 
-    /// Re-point the watcher at the current root set: the store roots (for reconcile) ∪ the visible
-    /// `musicFolderURL` (for the playlist refresh, even when the store is unavailable).
+    /// Re-point the watcher at the current store roots (for reconcile). The queue is not
+    /// folder-bound, so there is no visible-folder leg to watch (S9 IA change).
     func refreshWatchedRoots() async {
         var roots: [LibraryFolder] = []
         if let store { roots = (try? await store.roots()) ?? [] }
@@ -67,13 +66,8 @@ extension AudioViewModel {
             }
         }
         networkRoots = network
-        // The visible folder (for the playlist refresh) if it isn't already a store root + is local.
-        if let visible = musicFolderURL {
-            let visiblePath = PathNormalizer.normalizedString(for: visible)
-            if !all.contains(where: { $0.normalizedPath == visiblePath }), isLocalVolume(visible) {
-                localURLs.append(visible)
-            }
-        }
+        // Watch the store roots only. The queue is no longer folder-bound (S9 IA change), so
+        // there is no visible-folder leg to add for a playlist refresh.
         libraryWatcher?.setRoots(localURLs)
     }
 
@@ -82,25 +76,22 @@ extension AudioViewModel {
         ((try? url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) ?? nil) ?? true
     }
 
-    /// Route one FSEvents batch (on @MainActor): reconcile each affected store root, and refresh
-    /// the visible playlist if the change fell under `musicFolderURL`. Both are debounced.
+    /// Route one FSEvents batch (on @MainActor): reconcile each affected store root (debounced).
+    /// The queue is not folder-bound (S9 IA change), so a disk change never rewrites it — only
+    /// the library store reconciles.
     func handleWatcherBatch(_ batch: WatcherEventBatch) {
         var affected: Set<Int64> = []
-        var playlistTouched = false
-        let visiblePath = musicFolderURL.map { PathNormalizer.normalizedString(for: $0) }
         for event in batch.events {
             let path = PathNormalizer.normalizedString(forPath: event.path)
             for root in watchedRoots where isPathUnder(path, root.normalizedPath) {
                 affected.insert(root.folderID)
             }
-            if let visiblePath, isPathUnder(path, visiblePath) { playlistTouched = true }
         }
         for folderID in affected {
             if let root = watchedRoots.first(where: { $0.folderID == folderID }) {
                 scheduleReconcile(folderID: folderID, root: root.url)
             }
         }
-        if playlistTouched { schedulePlaylistRefresh() }
     }
 
     /// `path` is AT or UNDER `rootPath` (component-boundary; both already normalized).
@@ -162,16 +153,6 @@ extension AudioViewModel {
         } catch {
             lastReconcileError = error.localizedDescription
             logUX("reconcile: folder \(folderID) failed — \(error.localizedDescription)")
-        }
-    }
-
-    /// Debounce (~1 s) → refresh the visible in-memory playlist (replaces the old monitor's reload).
-    func schedulePlaylistRefresh() {
-        playlistRefreshTask?.cancel()
-        playlistRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(1000))
-            guard !Task.isCancelled, let self, let url = self.musicFolderURL else { return }
-            await self.loadMusicFolder(url)
         }
     }
 }

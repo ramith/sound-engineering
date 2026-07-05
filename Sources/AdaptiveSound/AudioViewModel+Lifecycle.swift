@@ -84,7 +84,6 @@ extension AudioViewModel {
         for task in reconcileDebounce.values {
             task.cancel()
         }
-        playlistRefreshTask?.cancel()
         scanTask?.cancel()
         // P2-C: ordered teardown — `engine.shutdown()` runs only AFTER `performStop()` has fully
         // completed, so shutdown can't tear down `avEngine`/`loudnessMeter`/`pureEngine` while
