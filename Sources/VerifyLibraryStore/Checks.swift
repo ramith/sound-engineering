@@ -42,14 +42,12 @@ func seedFolders(_ connection: SQLiteConnection, count: Int, prefix: String) thr
     return paths
 }
 
-/// A test-only v1→v2 migration that adds a NULLABLE column to `folders` and bumps
-/// the provenance row — proves the runner mechanically (SCHEMA-3).
-func testMigrationV1toV2(addingColumn column: String) -> Migration {
-    Migration(toVersion: 2) { connection in
-        try connection.exec("ALTER TABLE folders ADD COLUMN \(column) TEXT;")
-        try Schema.writeSchemaInfo(connection, version: 2, appBuild: "test-v2",
-                                   createdAt: testTimestamp, migratedAt: testTimestamp)
-    }
+/// The v0→v1-only migration list — used by the SCHEMA-3/4 migration-mechanics
+/// checks to build a genuine v1 store, so they can then exercise the REAL v1→v2
+/// (now that v2 is a real production step, not a synthetic test one).
+func v1OnlyMigrations() -> [Migration] {
+    MigrationRunner.productionMigrations(appBuild: "verify", timestamp: testTimestamp)
+        .filter { $0.toVersion <= 1 }
 }
 
 // MARK: - SCHEMA-1 — fresh create
@@ -152,19 +150,19 @@ func checkIdempotentReopen(number: Int, url: URL) async -> Bool {
     }
 }
 
-// MARK: - SCHEMA-3 — migration preserves data across a version bump
+// MARK: - SCHEMA-3 — the REAL v1→v2 migration preserves data + creates FTS
 
-/// SCHEMA-3: with a TEST-ONLY v1→v2 (adds a nullable column), seed rows at v1,
-/// run the runner to v2, and assert EVERY row survived + the new column defaults
-/// to NULL. Proves the runner mechanically (v1 is the first production schema).
+/// SCHEMA-3: build a genuine v1 store, seed rows, then run the REAL production
+/// v1→v2 migration (S9.2 FTS5) and assert EVERY row survived AND `tracks_fts` was
+/// created. (Rich track backfill correctness is FTS-MIG1/MIG2 in ChecksSearch.)
 func checkMigrationPreservesData(number: Int, url: URL) -> Bool {
     do {
-        // Bring an empty DB to v1 and seed rows.
+        // Bring an empty DB to v1 ONLY (so the real v1→v2 below is what we exercise), seed rows.
         let seededPaths: [String]
         do {
             let connection = try SQLiteConnection(path: url.path)
             defer { connection.close() }
-            try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
+            try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
             seededPaths = try seedFolders(connection, count: 5, prefix: "v1seed")
             guard try connection.userVersion() == 1 else {
                 printFail(number, "migration preserves data: pre-migration version != 1")
@@ -172,12 +170,10 @@ func checkMigrationPreservesData(number: Int, url: URL) -> Bool {
             }
         }
 
-        // Reopen and migrate v1 -> v2 via the runner with the test-only step.
+        // Reopen and run the REAL production v1 → v2 (FTS5 table + backfill).
         let connection = try SQLiteConnection(path: url.path)
         defer { connection.close() }
-        let migrations = MigrationRunner.productionMigrations(appBuild: "verify", timestamp: testTimestamp)
-            + [testMigrationV1toV2(addingColumn: "test_note")]
-        try MigrationRunner.migrate(connection, migrations: migrations, targetVersion: 2)
+        try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
 
         guard try connection.userVersion() == 2 else {
             printFail(number, "migration preserves data: post-migration version != 2")
@@ -189,16 +185,16 @@ func checkMigrationPreservesData(number: Int, url: URL) -> Bool {
                 + "expected \(seededPaths.count)")
             return false
         }
-        // The new column must exist AND default to NULL for every pre-existing row.
-        let nonNull = try Int(connection.scalarInt(
-            "SELECT count(*) FROM folders WHERE test_note IS NOT NULL;"
-        ) ?? -1)
-        guard nonNull == 0 else {
-            printFail(number, "migration preserves data: new column non-NULL for \(nonNull) rows, expected 0")
+        // v2 must have created the FTS search table.
+        let ftsExists = try Int(connection.scalarInt(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
+        ) ?? 0)
+        guard ftsExists == 1 else {
+            printFail(number, "migration preserves data: tracks_fts not created by the real v1->v2")
             return false
         }
-        printPass(number, "migration-runner preserves data: v1->v2 (test-only ADD COLUMN) kept all "
-            + "\(folderCount) seeded rows; new nullable column defaults NULL")
+        printPass(number, "migration-runner preserves data: the REAL v1->v2 kept all "
+            + "\(folderCount) seeded rows and created tracks_fts")
         return true
     } catch {
         printFail(number, "migration preserves data threw: \(error)")
@@ -218,18 +214,18 @@ func checkMigrationTransactional(number: Int, url: URL) -> Bool {
     do {
         let connection = try SQLiteConnection(path: url.path)
         defer { connection.close() }
-        try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
+        // Build a genuine v1 store (NOT v2 — we test a throwing v1→v2 below).
+        try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
         let seededPaths = try seedFolders(connection, count: 3, prefix: "txn")
         let preCount = try Int(connection.scalarInt("SELECT count(*) FROM folders;") ?? -1)
 
-        // A migration that makes a change, then throws mid-step.
+        // A v1→v2 migration that makes a change, then throws mid-step.
         let throwingStep = Migration(toVersion: 2) { conn in
             _ = try seedFolders(conn, count: 2, prefix: "should-rollback")
             try conn.exec("ALTER TABLE folders ADD COLUMN doomed TEXT;")
             throw MigrationTestError()
         }
-        let migrations = MigrationRunner.productionMigrations(appBuild: "verify", timestamp: testTimestamp)
-            + [throwingStep]
+        let migrations = v1OnlyMigrations() + [throwingStep]
 
         var threw = false
         do {

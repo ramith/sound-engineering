@@ -138,5 +138,9 @@ public extension LibraryStore {
             // still trip UNIQUE(url); map it to the typed conflict (mirrors moveTrack).
             throw URLConflict(url: key, existingID: nil)
         }
+        // The move rewrote `name` (the pre-metadata FTS title) and does NOT reset
+        // metadata_scanned, so nothing else re-syncs it — re-index here (design §4, the
+        // blocker-fix: a renamed tagless file must become findable by its new name).
+        try syncSearchRow(trackID: trackID)
     }
 }

@@ -37,6 +37,10 @@ public enum SQLiteError: Error, Sendable {
     case schemaTooNew(found: Int, supported: Int)
     /// A migration step for `version` is not registered in the runner.
     case migrationMissing(version: Int)
+    /// This SQLite build lacks the FTS5 extension, which schema v2 requires
+    /// (S9.2). Deliberately NOT rebuild-recoverable: a valid store must fail to
+    /// open (surface the reason), never be quarantined for a missing extension.
+    case fts5Unavailable
     /// A generic wrapper failure (unexpected NULL handle, encoding failure, …).
     case internalError(message: String)
 
@@ -51,7 +55,7 @@ public enum SQLiteError: Error, Sendable {
              let .stepFailed(code, _),
              let .constraintViolation(code, _):
             return code
-        case .integrityCheckFailed, .schemaTooNew, .migrationMissing, .internalError:
+        case .integrityCheckFailed, .schemaTooNew, .migrationMissing, .fts5Unavailable, .internalError:
             return nil
         }
     }
@@ -112,6 +116,8 @@ extension SQLiteError: CustomStringConvertible {
             return "Store schema version \(found) is newer than supported \(supported)"
         case let .migrationMissing(version):
             return "No migration step registered for schema version \(version)"
+        case .fts5Unavailable:
+            return "SQLite FTS5 extension unavailable; full-text search (schema v2) cannot be created"
         case let .internalError(message):
             return "SQLite wrapper internal error: \(message)"
         }
