@@ -11,7 +11,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan"],
+            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit"],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -111,11 +111,20 @@ let package = Package(
             dependencies: [],
             path: "Sources/SRCQualityMeasure"
         ),
+        // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel
+        // (an executable target SPM can't @testable-import) so BOTH the app and the
+        // AudioViewModelTests suite link the identical next/previous-index logic — no
+        // hand-mirror to drift. Pure Swift, zero deps, off the audio path entirely.
+        .target(
+            name: "PlaybackQueueKit",
+            dependencies: [],
+            path: "Sources/PlaybackQueueKit"
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
             name: "AudioViewModelTests",
-            dependencies: [],
+            dependencies: ["PlaybackQueueKit"],
             path: "Tests/AudioViewModelTests",
             // Source files build together:
             //   AudioViewModelTests.swift                   — original playlist logic tests
@@ -137,6 +146,7 @@ let package = Package(
                 "AutoAdvanceGaplessSeamTests.swift",
                 "AutoAdvanceReconfigureGapTests.swift",
                 "AutoAdvanceDeviceLossTests.swift",
+                "QueueAdvanceTests.swift",
             ]
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed

@@ -1,3 +1,4 @@
+import PlaybackQueueKit
 import Testing
 
 // MARK: - State machine mirror for auto-advance tests
@@ -6,12 +7,13 @@ import Testing
 /// Only the auto-advance logic (not AVAudioFile duration or timer firing) is
 /// mirrored; everything async/effectful is synchronous in this model.
 ///
-/// NOTE: AudioViewModel lives in the `AdaptiveSound` executable target. SPM does
-/// not allow @testable import of executable targets, so these tests exercise the
-/// auto-advance state machine via this local mirror that replicates the exact
-/// logic from AudioViewModel. When AudioViewModel is extracted into a library
-/// target, replace this mirror approach with @testable import AdaptiveSoundCore
-/// and drive AudioViewModel directly.
+/// NOTE: AudioViewModel lives in the `AdaptiveSound` executable target, which SPM
+/// cannot @testable import. The pure DECISION core (next/previous index) has been
+/// extracted to the `PlaybackQueueKit` library (S9-Q1); `computeNextIndex`/
+/// `computePreviousIndex` below now DELEGATE to it (no replicated branch logic —
+/// QueueAdvanceTests gates the real core directly). What remains mirrored here is only
+/// the state-machine SEQUENCING (startPlayback/tick/handleTrackTransition/removeTrack),
+/// which is VM+engine-coupled and can't move to a pure library.
 final class MockAdvanceController {
     // MARK: Playlist
 
@@ -147,37 +149,26 @@ final class MockAdvanceController {
         primeNextTrack(newNextIdx)
     }
 
-    // MARK: - Mirror of computeNextIndex() / computePreviousIndex()
+    // MARK: - Decision core: DELEGATES to the real PlaybackQueueKit.QueueAdvance
+
+    /// A deterministic shuffle picker — a linear walk that avoids `current` — so the
+    /// state-machine tests stay deterministic while exercising the REAL decision logic.
+    /// (Production injects `QueueAdvance.uniformRandomExcluding`; the shuffle tests
+    /// assert the PROPERTY "≠ current, in range", satisfied by both.)
+    static let deterministicPick: @Sendable (Int, Int) -> Int = { current, count in (current + 1) % count }
 
     func computeNextIndex(current: Int, playlistCount: Int, manualSkip: Bool = false) -> Int? {
-        guard playlistCount > 0 else { return nil }
-
-        if repeatMode == 2, !manualSkip { return current } // repeat-one: auto repeats, manual steps
-
-        if shuffleEnabled, playlistCount > 1 {
-            // Deterministic in tests: use a simple linear walk that avoids current.
-            // (The real VM uses Int.random; we verify the property, not the value.)
-            return (current + 1) % playlistCount
-        }
-
-        let nextLinear = current + 1
-        if nextLinear < playlistCount { return nextLinear }
-        if repeatMode == 1 { return 0 }
-        return nil
+        QueueAdvance.nextIndex(
+            current: current, count: playlistCount, shuffle: shuffleEnabled,
+            repeatMode: repeatMode, manualSkip: manualSkip, randomPick: Self.deterministicPick
+        )
     }
 
-    /// Mirror of AudioViewModel.computePreviousIndex (Previous button). Shuffle → a different index
-    /// (deterministic stand-in for random≠current); repeat-all wraps to the last track.
     func computePreviousIndex(current: Int, playlistCount: Int) -> Int? {
-        guard playlistCount > 0 else { return nil }
-
-        if shuffleEnabled, playlistCount > 1 {
-            return (current + 1) % playlistCount // deterministic ≠current stand-in for random
-        }
-
-        let prevLinear = current - 1
-        if prevLinear >= 0 { return prevLinear }
-        return repeatMode == 1 ? playlistCount - 1 : nil // repeat-all wraps to the last track
+        QueueAdvance.previousIndex(
+            current: current, count: playlistCount, shuffle: shuffleEnabled,
+            repeatMode: repeatMode, randomPick: Self.deterministicPick
+        )
     }
 
     // MARK: - Mirror of removeTrack(at:) — gapless-relevant section

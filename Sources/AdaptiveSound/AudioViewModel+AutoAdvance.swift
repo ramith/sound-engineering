@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel gapless / auto-advance
 
@@ -60,7 +61,7 @@ extension AudioViewModel {
     }
 }
 
-// MARK: - Next-Index Computation (internal — consumed by tests via local mirror)
+// MARK: - Next-Index Computation (thin delegates to PlaybackQueueKit.QueueAdvance)
 
 extension AudioViewModel {
     /// Compute the playlist index that should play after `current`, honouring
@@ -72,16 +73,11 @@ extension AudioViewModel {
     ///   either way.
     /// - Returns: the next index, or `nil` when playback should stop / stay after `current`.
     func computeNextIndex(current: Int, playlistCount: Int, manualSkip: Bool = false) -> Int? {
-        guard playlistCount > 0 else { return nil }
-        if repeatMode == 2, !manualSkip { return current } // repeat-one: auto repeats, manual steps
-
-        if shuffleEnabled, playlistCount > 1 {
-            return randomIndexExcluding(current, playlistCount: playlistCount)
-        }
-
-        let nextLinear = current + 1
-        if nextLinear < playlistCount { return nextLinear }
-        return repeatMode == 1 ? 0 : nil // repeat-all wraps to the first track; else stop
+        QueueAdvance.nextIndex(
+            current: current, count: playlistCount, shuffle: shuffleEnabled,
+            repeatMode: repeatMode, manualSkip: manualSkip,
+            randomPick: QueueAdvance.uniformRandomExcluding
+        )
     }
 
     /// Compute the playlist index that should play BEFORE `current` (the Previous button).
@@ -92,24 +88,9 @@ extension AudioViewModel {
     /// - Returns: the previous index, or `nil` when there is nowhere to go back to (first track,
     ///   no repeat) so the caller should stay put.
     func computePreviousIndex(current: Int, playlistCount: Int) -> Int? {
-        guard playlistCount > 0 else { return nil }
-
-        if shuffleEnabled, playlistCount > 1 {
-            return randomIndexExcluding(current, playlistCount: playlistCount)
-        }
-
-        let prevLinear = current - 1
-        if prevLinear >= 0 { return prevLinear }
-        return repeatMode == 1 ? playlistCount - 1 : nil // repeat-all wraps to the last track
-    }
-
-    /// Pick a uniformly-random index in `0 ..< playlistCount` that is not `current`.
-    /// Precondition: `playlistCount > 1` (the caller guards this).
-    private func randomIndexExcluding(_ current: Int, playlistCount: Int) -> Int {
-        var candidate = Int.random(in: 0 ..< playlistCount)
-        while candidate == current {
-            candidate = Int.random(in: 0 ..< playlistCount)
-        }
-        return candidate
+        QueueAdvance.previousIndex(
+            current: current, count: playlistCount, shuffle: shuffleEnabled,
+            repeatMode: repeatMode, randomPick: QueueAdvance.uniformRandomExcluding
+        )
     }
 }
