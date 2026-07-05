@@ -43,6 +43,9 @@ final class LibraryBrowseModel {
     var albumSort: FacetSort = .title // S9.5 adds a "Recently Added" album sort (needs a DAO read)
     private(set) var albumsState: LoadState = .idle
 
+    /// Library folders (the "Music Folders" management surface — S9 IA change).
+    private(set) var roots: [LibraryFolder] = []
+
     private let audio: AudioViewModel
     private var artwork: ArtworkThumbnailStore?
     /// The `audio.libraryRevision` last loaded, so `reloadIfScanChanged` reloads exactly once
@@ -51,6 +54,8 @@ final class LibraryBrowseModel {
     /// Monotonic load token — only the newest in-flight `loadAlbums` may publish, guarding the
     /// sort-change vs scan-reload last-completer race (review S3).
     private var loadEpoch = 0
+    /// Same guard for the roots list (its reloads race adds/removes + libraryRevision).
+    private var loadRootsEpoch = 0
 
     init(audio: AudioViewModel) {
         self.audio = audio
@@ -76,8 +81,49 @@ final class LibraryBrowseModel {
         audio.scanProgress != nil || audio.metadataProgress != nil || audio.isReconciling
     }
 
+    /// A short, phase-aware status line for the sidebar scan strip, or nil when idle. Coarse by
+    /// design (one line per phase, not per tick).
+    var scanStatusText: String? {
+        if let scan = audio.scanProgress { return "Scanning… \(scan.filesSeenSoFar) files" }
+        if audio.metadataProgress != nil { return "Reading tags…" }
+        if audio.isReconciling { return "Updating library…" }
+        return nil
+    }
+
+    /// The root currently being scanned (for a per-row "scanning…" hint), or nil.
+    var scanningRootID: Int64? {
+        audio.scanProgress?.folderID
+    }
+
     private func ensureArtwork() {
         if artwork == nil, let store { artwork = ArtworkThumbnailStore(store: store) }
+    }
+
+    // MARK: - Folder management (the "Music Folders" surface — S9 IA change)
+
+    /// Refresh the registered-roots list (drives the Music Folders popover). Epoch-guarded like
+    /// `loadAlbums` so a slow read can't overwrite a newer one (add/remove + libraryRevision +
+    /// scan-progress all trigger reloads concurrently — review S3/#2).
+    func loadRoots() async {
+        loadRootsEpoch &+= 1
+        let epoch = loadRootsEpoch
+        let loaded = (try? await store?.roots()) ?? []
+        guard epoch == loadRootsEpoch else { return }
+        roots = loaded
+    }
+
+    /// Add a music folder — SCAN ONLY (never touches the queue, design §2/§5). The single
+    /// add path shared by the sidebar footer, the Music Folders popover, and the first-run CTA,
+    /// so scan-only + nested-root rejection can't drift between entry points.
+    func addFolder(_ url: URL) {
+        audio.scanFolderIntoLibrary(url)
+    }
+
+    /// Remove a registered root and refresh the list. Deletes the folder's library rows (files on
+    /// disk + the queue are untouched — see `AudioViewModel.removeLibraryFolder`).
+    func removeFolder(id: Int64) async {
+        await audio.removeLibraryFolder(id: id)
+        await loadRoots()
     }
 
     // MARK: - Album loading
