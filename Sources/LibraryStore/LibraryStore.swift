@@ -37,6 +37,12 @@ public actor LibraryStore {
     /// The schema version the store is at after open/migrate.
     private let version: Int
 
+    /// A count of FTS `SearchIndex` write operations (sync/delete) performed this
+    /// session — a verification hook so the harness can prove a no-op re-scan does
+    /// ZERO FTS writes (the `.new`-only-seed idempotency contract, design §4).
+    /// Module-internal so the `LibraryStore+SearchIndex` extension increments it.
+    var searchIndexWrites = 0
+
     /// Open (creating if absent) and migrate the store at `url` to the current
     /// schema. Corruption / `integrity_check` failure / a newer-than-app schema
     /// all trigger quarantine (file + `-wal`/`-shm` sidecars) followed by a fresh
@@ -126,10 +132,16 @@ public actor LibraryStore {
     /// `table` is validated against the known schema table set to keep the
     /// interpolated identifier injection-safe.
     public func countRows(inTable table: String) throws -> Int {
-        guard Schema.expectedTables.contains(table) else {
+        guard Schema.expectedTables.contains(table) || table == Schema.ftsTableName else {
             throw SQLiteError.internalError(message: "unknown table for countRows: \(table)")
         }
         return try Int(connection.scalarInt("SELECT count(*) FROM \(table);") ?? 0)
+    }
+
+    /// The number of FTS `SearchIndex` write ops (sync/delete) since open — a
+    /// verification hook (NOT the DAO) used to prove a no-op re-scan writes nothing.
+    public func searchIndexWriteCount() -> Int {
+        searchIndexWrites
     }
 
     /// Seed a `folders` row (a persistent, FK-free row usable as a durable fixture

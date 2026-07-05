@@ -20,7 +20,13 @@ import Foundation
 /// The schema version this build of `LibraryStore` targets. The migration runner
 /// brings any older store up to this; a store newer than this triggers the
 /// downgrade guard (quarantine + rebuild).
-public let currentSchemaVersion = 1
+///
+/// v2 (S9.2) adds the `tracks_fts` FTS5 full-text search table + its v1→v2
+/// backfill — the first real V1→V2 migration. Bumping this constant and adding the
+/// `toVersion: 2` step to `MigrationRunner.productionMigrations` MUST happen in one
+/// change: bump-without-step → `.migrationMissing` (store fails to open, not
+/// quarantined); step-without-bump → `tracks_fts` is silently never created.
+public let currentSchemaVersion = 2
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -176,6 +182,76 @@ public enum Schema {
         }
         try seedSentinelArtist(connection)
         try writeSchemaInfo(connection, version: 1, appBuild: appBuild,
+                            createdAt: timestamp, migratedAt: timestamp)
+    }
+
+    // MARK: - v2: FTS5 full-text search (S9.2, design §4)
+
+    /// The FTS5 virtual table (schema v2). Its rowid IS `tracks.id`, so the
+    /// `SearchIndex` seam maintains one row per track by rowid (delete-then-insert) —
+    /// no separate id column. `unicode61 remove_diacritics 2` folds case + accents
+    /// (so "bjork" matches "Björk").
+    /// The FTS5 search table name (v2). Kept as a constant so read hooks can
+    /// validate it as an injection-safe identifier alongside `expectedTables`.
+    public static let ftsTableName = "tracks_fts"
+
+    public static let createV2FtsStatement = """
+    CREATE VIRTUAL TABLE tracks_fts USING fts5(
+        title, artist, album, genre,
+        tokenize = 'unicode61 remove_diacritics 2');
+    """
+
+    /// Backfill `tracks_fts` from every existing track. **All LEFT JOINs + COALESCE**
+    /// so a track with no artist/album/genre still yields exactly one FTS row (an INNER
+    /// JOIN would silently drop it from the index). `title` falls back to the filename
+    /// `name` (matching `LibraryTrackDisplay`); genres are space-joined via a correlated
+    /// `group_concat`. rowid = `t.id` so the row is addressable by the seam.
+    public static let backfillV2FtsStatement = """
+    INSERT INTO tracks_fts(rowid, title, artist, album, genre)
+    SELECT t.id,
+           COALESCE(NULLIF(t.title, ''), t.name),
+           COALESCE(ar.name, ''),
+           COALESCE(al.title, ''),
+           COALESCE((SELECT group_concat(g.name, ' ')
+                     FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
+                     WHERE tg.track_id = t.id), '')
+    FROM tracks t
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    LEFT JOIN albums  al ON al.id = t.album_id;
+    """
+
+    /// Probe whether this SQLite build has the FTS5 extension, by creating and
+    /// dropping a throwaway temp virtual table. FTS5 is REQUIRED for v2, so the
+    /// migration calls this first and throws a clear error rather than failing
+    /// cryptically at `CREATE VIRTUAL TABLE`. (System libsqlite3 on macOS ships FTS5;
+    /// this is cheap insurance against a future toolchain regression.)
+    public static func fts5IsAvailable(_ connection: SQLiteConnection) -> Bool {
+        do {
+            try connection.exec("CREATE VIRTUAL TABLE temp.__as_fts5_probe USING fts5(x);")
+            try connection.exec("DROP TABLE temp.__as_fts5_probe;")
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Migrate v1 → v2: create `tracks_fts` and backfill it. Runs inside the migration
+    /// runner's single `BEGIN IMMEDIATE` — so it uses `connection.exec` DIRECTLY and
+    /// must NOT open its own transaction. `fts5Available` is injectable so the harness
+    /// can force the unavailable path (CAP); production passes the real probe.
+    public static func migrateV1toV2(
+        _ connection: SQLiteConnection,
+        appBuild: String?,
+        timestamp: Int64,
+        fts5Available: (SQLiteConnection) -> Bool = fts5IsAvailable
+    ) throws {
+        guard fts5Available(connection) else {
+            throw SQLiteError.fts5Unavailable
+        }
+        try connection.exec(createV2FtsStatement)
+        try connection.exec(backfillV2FtsStatement)
+        // Refresh provenance to v2; `created_at` is preserved by the ON CONFLICT SET.
+        try writeSchemaInfo(connection, version: 2, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 

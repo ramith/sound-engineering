@@ -8,10 +8,10 @@
 // downgrade guard (`SQLiteError.schemaTooNew`), which `LibraryStore` translates
 // into quarantine + rebuild.
 //
-// v1 is the first production schema, so production ships exactly one step
-// (v0→v1 = create-all + seed). The runner is deliberately list-driven so the
-// verify harness can register TEST-ONLY steps (e.g. a synthetic v1→v2 that adds
-// a nullable column) to prove the runner mechanically — SCHEMA-3/SCHEMA-4.
+// Production ships the ordered steps to `currentSchemaVersion`: v0→v1 (create-all
+// + seed) and v1→v2 (S9.2 — the `tracks_fts` FTS5 table + backfill). The runner is
+// deliberately list-driven so the verify harness can also register TEST-ONLY steps
+// to prove the runner mechanically — SCHEMA-3/SCHEMA-4.
 
 import Foundation
 
@@ -41,6 +41,9 @@ public enum MigrationRunner {
         [
             Migration(toVersion: 1) { connection in
                 try Schema.migrateV0toV1(connection, appBuild: appBuild, timestamp: timestamp)
+            },
+            Migration(toVersion: 2) { connection in
+                try Schema.migrateV1toV2(connection, appBuild: appBuild, timestamp: timestamp)
             },
         ]
     }

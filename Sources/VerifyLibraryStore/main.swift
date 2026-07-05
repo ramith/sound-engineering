@@ -177,7 +177,29 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
-        + reachabilityCheckCases() + browseReadsCheckCases()
+        + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
+}
+
+/// S9.2 — FTS5 search: v1→v2 migration/backfill, the write-path sync seam (every
+/// mutation site), query safety/matching, and read-during-write. Own function so
+/// `allCheckCases` stays within the body-length limit.
+func searchCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "fts-mig-backfill", run: checkFtsMigrationBackfill),
+        CheckCase(label: "fts-mig-idempotent", run: checkFtsMigrationIdempotent),
+        CheckCase(label: "fts-mig-rollback", run: checkFtsMigrationRollback),
+        CheckCase(label: "fts-cap-probe", run: checkFtsCapabilityProbe),
+        CheckCase(label: "fts-sync-write", run: checkFtsSyncOnWrite),
+        CheckCase(label: "fts-sync-rename", run: checkFtsSyncOnRename),
+        CheckCase(label: "fts-sync-genre", run: checkFtsGenreWritePath),
+        CheckCase(label: "fts-delete-move", run: checkFtsDeleteAndMove),
+        CheckCase(label: "fts-sweep-removeroot", run: checkFtsSweepAndRemoveRoot),
+        CheckCase(label: "fts-query-safety", run: checkFtsQuerySafety),
+        CheckCase(label: "fts-query-matching", run: checkFtsQueryMatching),
+        CheckCase(label: "fts-ranking-shape", run: checkFtsRankingAndShape),
+        CheckCase(label: "fts-noop-rescan-zero-writes", run: checkFtsNoOpRescanZeroWrites),
+        CheckCase(label: "fts-read-during-write", run: checkFtsReadDuringWrite),
+    ]
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
@@ -313,7 +335,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "AN restamp-root [remount dev/inode re-stamp keeps identity-dedup]; "
         + "S9.1: BR1/1b/1c artwork-path-map+miss+chunked-IN, BR2/2b/2c artist/genre/year "
         + "drill-downs [no fan-out], BR3/3b single-facet+sentinel-excluded, BR4 pagination-window, "
-        + "BR5 EXPLAIN no-SCAN-TABLE-tracks) ===")
+        + "BR5 EXPLAIN no-SCAN-TABLE-tracks; "
+        + "S9.2 FTS5: MIG-backfill [all 4 columns] + MIG-idempotent + CAP-probe, SYNC write/rename "
+        + "[moveMatched blocker-fix], DEL delete/move + sweep-ordering/removeRoot, Q safety/prefix/"
+        + "AND/diacritics/bm25-rank/dedup, no-op-rescan-zero-writes, read-during-write) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
