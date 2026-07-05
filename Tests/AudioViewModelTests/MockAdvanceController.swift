@@ -244,6 +244,56 @@ final class MockAdvanceController {
         selectedTrackIndex = index
         startPlayback()
     }
+
+    // MARK: - Mirror of the S9-Q2 queue ops (playNow / playNext / appendToQueue)
+
+    //
+    // Sequencing scaffold (array + on-deck arming) mirroring AudioViewModel+Queue; the one
+    // real DECISION — whether an append re-arms — is the shipped `QueueAdvance.appendArmIndex`
+    // (not re-implemented here), so that logic is gated against real code.
+
+    func playNow(_ tracks: [String], startAt index: Int = 0) {
+        guard !tracks.isEmpty else { return }
+        let start = min(max(0, index), tracks.count - 1)
+        playlist = tracks
+        playTrack(at: start)
+    }
+
+    func playNext(_ tracks: [String]) {
+        let tracks = dedupedAgainstQueue(tracks)
+        guard !tracks.isEmpty else { return }
+        guard let current = selectedTrackIndex else { appendToQueue(tracks); return }
+        let insertAt = min(current + 1, playlist.count)
+        playlist.insert(contentsOf: tracks, at: insertAt)
+        if isPlaying { armOnDeck(insertAt) }
+    }
+
+    func appendToQueue(_ tracks: [String]) {
+        let tracks = dedupedAgainstQueue(tracks)
+        guard !tracks.isEmpty else { return }
+        let oldCount = playlist.count
+        playlist.append(contentsOf: tracks)
+        guard isPlaying, let current = selectedTrackIndex else { return }
+        if let armIndex = QueueAdvance.appendArmIndex(
+            current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
+            shuffle: shuffleEnabled, repeatMode: repeatMode
+        ) {
+            armOnDeck(armIndex)
+        }
+    }
+
+    private func dedupedAgainstQueue(_ tracks: [String]) -> [String] {
+        var seen = Set(playlist)
+        return tracks.filter { seen.insert($0).inserted }
+    }
+
+    /// Mirror of `AudioViewModel.armOnDeck`: set `pendingNextIndex` + record the primed
+    /// URL, without `computeNextIndex` or a `lastTransitionCount` touch.
+    private func armOnDeck(_ index: Int?) {
+        pendingNextIndex = index
+        setNextTrackCallCount += 1
+        lastNextTrackURL = index.flatMap { $0 < playlist.count ? playlist[$0] : nil }
+    }
 }
 
 // MARK: - Test helpers
