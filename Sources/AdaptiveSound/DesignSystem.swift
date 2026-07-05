@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - Design System (canonical visual tokens)
@@ -14,7 +15,20 @@ enum DesignSystem {
     // MARK: Color
 
     enum Color {
-        // Accent
+        /// An appearance-reactive color (S9-T): `dark` is served under `.darkAqua`, `light`
+        /// otherwise, via an `NSColor` dynamic provider — so surfaces/labels follow the
+        /// system appearance with NO per-view `colorScheme` checks (D2: build light+dark,
+        /// not dark-lock). `dark` values are the pre-S9-T look, unchanged; `light` values
+        /// are a first pass to tune during the founder `make run` in Light Appearance.
+        static func dynamic(light: SwiftUI.Color, dark: SwiftUI.Color) -> SwiftUI.Color {
+            let lightNS = NSColor(light)
+            let darkNS = NSColor(dark)
+            return SwiftUI.Color(nsColor: NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? darkNS : lightNS
+            })
+        }
+
+        // Accent — appearance-independent (the teal reads on both light + dark).
         static let accent = SwiftUI.Color(red: 0.161, green: 0.714, blue: 0.643) // #29B6A4
         static let accentDeep = SwiftUI.Color(red: 0.078, green: 0.537, blue: 0.478) // #148979
         static let accentSubtle = accent.opacity(0.16) // selected-row fill
@@ -24,20 +38,29 @@ enum DesignSystem {
         static let blue = SwiftUI.Color(red: 0.039, green: 0.518, blue: 1.0) // #0A84FF
         static let graphite = SwiftUI.Color(red: 0.557, green: 0.557, blue: 0.576) // #8E8E93
 
-        // Surfaces (elevation stack)
-        static let window = SwiftUI.Color(red: 0.118, green: 0.118, blue: 0.118) // #1E1E1E
-        static let inset = SwiftUI.Color.black.opacity(0.28)
-        static let card = SwiftUI.Color.white.opacity(0.045)
-        static let panel = SwiftUI.Color.white.opacity(0.06) // NEW — panel vs card elevation
-        static let hairline = SwiftUI.Color.white.opacity(0.08)
+        /// Surfaces (elevation stack) — dark = pre-S9-T; light = first pass (gray base,
+        /// white raised cards, darker inset).
+        static let window = dynamic(light: SwiftUI.Color(white: 0.93),
+                                    dark: SwiftUI.Color(red: 0.118, green: 0.118, blue: 0.118)) // #1E1E1E
+        static let inset = dynamic(light: SwiftUI.Color(white: 0.87), dark: SwiftUI.Color.black.opacity(0.28))
+        static let card = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.045))
+        static let panel = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.06))
+        static let hairline = dynamic(light: SwiftUI.Color.black.opacity(0.12),
+                                      dark: SwiftUI.Color.white.opacity(0.08))
 
-        // Labels
-        static let label = SwiftUI.Color.white.opacity(0.92)
-        static let labelSecondary = SwiftUI.Color.white.opacity(0.50)
-        static let labelTertiary = SwiftUI.Color.white.opacity(0.42)
-        static let labelDisabled = SwiftUI.Color.white.opacity(0.25) // NEW
+        // Labels — secondary + tertiary lifted so BOTH clear WCAG AA (≥4.5:1) on the
+        // stricter card/panel surface (not just the window), AND the secondary→tertiary
+        // hierarchy stays perceptible (dark 0.92 > 0.55 > 0.48; light 0.90 > 0.62 > 0.55).
+        // `labelDisabled` is WCAG-exempt (disabled text). Light values still tune-in-make-run.
+        static let label = dynamic(light: SwiftUI.Color.black.opacity(0.90), dark: SwiftUI.Color.white.opacity(0.92))
+        static let labelSecondary = dynamic(light: SwiftUI.Color.black.opacity(0.62),
+                                            dark: SwiftUI.Color.white.opacity(0.55))
+        static let labelTertiary = dynamic(light: SwiftUI.Color.black.opacity(0.55),
+                                           dark: SwiftUI.Color.white.opacity(0.48))
+        static let labelDisabled = dynamic(light: SwiftUI.Color.black.opacity(0.28),
+                                           dark: SwiftUI.Color.white.opacity(0.25))
 
-        // Status (NEW — warning/error had no semantic token)
+        // Status (NEW — warning/error had no semantic token). System-vibrant; read on both.
         static let statusOK = SwiftUI.Color(red: 0.188, green: 0.820, blue: 0.345) // #30D158
         static let statusWarning = SwiftUI.Color(red: 1.0, green: 0.623, blue: 0.039) // #FF9F0A
         static let statusError = SwiftUI.Color(red: 1.0, green: 0.271, blue: 0.227) // #FF453A
