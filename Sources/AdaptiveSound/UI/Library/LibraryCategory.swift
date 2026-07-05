@@ -6,9 +6,11 @@ import Foundation
 /// ship in S9.4; Songs/Artists/Genres/Years fill in over S9.5/S9.6 (their roots show a
 /// "coming in a later slice" placeholder until then). S10 extends the sidebar with Playlists.
 enum LibraryCategory: String, CaseIterable, Identifiable {
+    // Declaration order = sidebar order (CaseIterable). Songs leads: the library skews toward
+    // loose singles (album-less tracks appear only in Songs), so it's the most useful entry point.
+    case songs
     case albums
     case artists
-    case songs
     case genres
     case years
 
@@ -18,9 +20,9 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .songs: "Songs"
         case .albums: "Albums"
         case .artists: "Artists"
-        case .songs: "Songs"
         case .genres: "Genres"
         case .years: "Years"
         }
@@ -28,9 +30,9 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .songs: "music.note"
         case .albums: "square.grid.2x2"
         case .artists: "music.mic"
-        case .songs: "music.note"
         case .genres: "guitars"
         case .years: "calendar"
         }
