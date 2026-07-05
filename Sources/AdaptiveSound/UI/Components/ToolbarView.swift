@@ -105,13 +105,14 @@ private struct TabSelectorView: View {
 
     var body: some View {
         Picker(
-            "Tab Navigation",
             selection: $selectedTab.animation(reduceMotion ? nil : .easeInOut(duration: 0.2))
         ) {
             ForEach(TabSelection.allCases, id: \.id) { tab in
                 Label(tab.rawValue, systemImage: tab.icon)
                     .tag(tab)
             }
+        } label: {
+            EmptyView() // no picker label at all — the VoiceOver name comes from .accessibilityLabel below
         }
         .pickerStyle(.segmented)
         .layoutPriority(1)
