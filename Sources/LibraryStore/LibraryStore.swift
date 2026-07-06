@@ -31,9 +31,6 @@ public actor LibraryStore {
     /// statements on the same handle).
     let connection: SQLiteConnection
 
-    /// The on-disk location this store was opened from (nil for `:memory:`).
-    public let storeURL: URL?
-
     /// The schema version the store is at after open/migrate.
     private let version: Int
 
@@ -53,7 +50,6 @@ public actor LibraryStore {
     ///     bespoke URL; `defaultStoreURL()` creates App-Support for you).
     ///   - appBuild: optional build identifier stored in `schema_info.app_build`.
     public init(url: URL, appBuild: String? = nil) async throws {
-        storeURL = url
         let opened = try LibraryStore.openMigratingAndRepairing(
             url: url,
             appBuild: appBuild,

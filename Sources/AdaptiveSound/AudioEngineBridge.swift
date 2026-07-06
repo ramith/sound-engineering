@@ -1,5 +1,4 @@
 import Accelerate
-import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 import os
@@ -165,9 +164,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// seek / track-change (via `stopEnhancedResampler`) so a stale handler cannot fire.
     var onResamplerEOF: ((EnhancedResampleSession, AVAudioPlayerNode) -> Void)?
 
-    /// Whether the most recent `startAudio` call requested Pure mode.
-    var pureModeRequested: Bool = false
-
     /// Whether the Enhanced path is INTENDED to be playing — set when Enhanced playback starts,
     /// cleared on stop / device-loss / end-of-queue. The config-change + device-change re-establish
     /// uses this instead of the transient `playerNode.isPlaying`, which a hardware reconfiguration
@@ -226,19 +222,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// passes the identical queue instance rather than re-deriving one (F5, same rationale as
     /// `aliveListenerQueue`).
     var deviceListListenerQueue: DispatchQueue?
-
-    // MARK: - Graph state
-
-    /// Top-level engine-graph state. The `.reconfiguring` transition is driven by
-    /// `reconfigureGraph(to:)`. The trigger that calls it (track channel-count change at
-    /// file load) is wired in `startAudio` via `configureGraphForSource`.
-    enum GraphState {
-        case idle
-        case running(channelCount: Int)
-        case reconfiguring
-    }
-
-    var graphState: GraphState = .idle
 
     /// Observer for `AVAudioEngineConfigurationChange`. Without it, a hardware route change
     /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
@@ -303,7 +286,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         return LoudnessSnapshot(
             integratedLufs: readout.integratedLufs,
             shortTermLufs: readout.shortTermLufs,
-            momentaryLufs: readout.momentaryLufs,
             peakDb: readout.peakDb
         )
     }

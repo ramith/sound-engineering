@@ -50,12 +50,6 @@ struct SignalPathInfo: Equatable {
     /// `true` when the device AU output format is float (vs integer PCM).
     var isFloat: Bool = false
 
-    /// `true` when this process holds hog mode (exclusive access) on the output device.
-    var exclusiveHog: Bool = false
-
-    /// `true` when the device nominal rate was changed to match the file's sample rate.
-    var rateMatched: Bool = false
-
     /// Active decoder backend. `nil` when the Enhanced path is in use.
     var decoder: DecoderKindUI?
 

@@ -109,7 +109,7 @@ public extension LibraryStore {
         if let occupant = try connection.scalarInt(
             "SELECT id FROM tracks WHERE url = ?;", bind: key
         ), occupant != trackID {
-            throw URLConflict(url: key, existingID: occupant)
+            throw URLConflict(existingID: occupant)
         }
         let statement = try connection.prepare(
             """
@@ -136,7 +136,7 @@ public extension LibraryStore {
         } catch let error as SQLiteError where error.isConstraintViolation {
             // Belt-and-braces: a racing insert between the pre-flight and the UPDATE would
             // still trip UNIQUE(url); map it to the typed conflict (mirrors moveTrack).
-            throw URLConflict(url: key, existingID: nil)
+            throw URLConflict(existingID: nil)
         }
         // The move rewrote `name` (the pre-metadata FTS title) and does NOT reset
         // metadata_scanned, so nothing else re-syncs it — re-index here (design §4, the

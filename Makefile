@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format lint strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
+.PHONY: build run release run-release clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
 
 build:
 	swift build -c debug -j 8
@@ -65,6 +65,13 @@ lint:
 	swiftlint lint --strict
 	find Sources Tests -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' \) -print0 | xargs -0 clang-format --dry-run --Werror
 	semgrep scan --config .semgrep.yml --error --quiet
+
+# Swift dead-code detection (Periphery) on the HOSTILE config in .periphery.yml — retain_public
+# false + strict (fails on ANY unused declaration); Tests/ excluded (mock-conformance noise).
+# Also runs inside `make strict-gate` / CI. Requires periphery:
+#   brew install peripheryapp/periphery/periphery
+periphery:
+	periphery scan
 
 # Full local pre-merge gate: lint + static analysis + builds + tests + sanitizers +
 # suppression policy. Fails on the first problem. Run before opening/merging a PR.

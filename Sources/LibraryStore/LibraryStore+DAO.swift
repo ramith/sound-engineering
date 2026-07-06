@@ -74,11 +74,7 @@ public extension LibraryStore {
         while try statement.step() {
             folders.append(LibraryFolder(
                 id: statement.columnInt64(0),
-                path: statement.columnText(1) ?? "",
-                parentID: statement.columnIsNull(2) ? nil : statement.columnInt64(2),
-                isRoot: statement.columnInt64(3) == 1,
-                bookmark: statement.columnBlob(4),
-                lastScanned: statement.columnIsNull(5) ? nil : statement.columnInt64(5)
+                path: statement.columnText(1) ?? ""
             ))
         }
         return folders
@@ -199,7 +195,7 @@ public extension LibraryStore {
             if let occupant = try connection.scalarInt(
                 "SELECT id FROM tracks WHERE url = ?;", bind: key
             ), occupant != trackID {
-                throw URLConflict(url: key, existingID: occupant)
+                throw URLConflict(existingID: occupant)
             }
             let statement = try connection.prepare(
                 "UPDATE tracks SET url = ?, folder_id = ?, relative_path = ? WHERE id = ?;"
@@ -214,7 +210,7 @@ public extension LibraryStore {
             } catch let error as SQLiteError where error.isConstraintViolation {
                 // Belt-and-braces: a racing insert between the pre-flight and the
                 // UPDATE would still trip UNIQUE(url); map it to the typed conflict.
-                throw URLConflict(url: key, existingID: nil)
+                throw URLConflict(existingID: nil)
             }
         }
     }

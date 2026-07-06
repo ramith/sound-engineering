@@ -21,14 +21,14 @@ import Foundation
 import LibraryStore
 
 /// Derives a file's root-relative folder path (`tracks.relative_path`).
-public enum RelativePathResolver {
+enum RelativePathResolver {
     /// The containing-directory of `fileURL`, relative to `rootURL`, as
     /// `"Sub/Deep/"` (trailing slash) or `""` for a root-level file.
     ///
     /// If `fileURL` is not actually under `rootURL` (no component-boundary prefix
     /// match) the result is `""` — a defensive fallback; the walk only ever passes
     /// files enumerated beneath the root, so this cannot mis-attribute a sibling.
-    public static func relativePath(forFile fileURL: URL, root rootURL: URL) -> String {
+    static func relativePath(forFile fileURL: URL, root rootURL: URL) -> String {
         let rootPath = PathNormalizer.normalizedString(for: rootURL)
         let dirPath = PathNormalizer.normalizedString(for: fileURL.deletingLastPathComponent())
 

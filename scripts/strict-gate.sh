@@ -38,6 +38,7 @@ require_tool clang-format
 require_tool swiftformat
 require_tool swiftlint
 require_tool semgrep
+require_tool periphery
 require_tool make
 
 # leaks(1) backs the leak-detection gate (make leak-check). It ships with the Xcode Command
@@ -181,6 +182,15 @@ if ((clang_tidy_fail)); then
   exit 1
 fi
 green "clang-tidy clean (0 findings across $clang_tidy_analyzed files)."
+
+# --------------------------------------------------------------------------- dead code
+step "Periphery (Swift dead-code detection — hostile config, --strict)"
+# .periphery.yml sets strict:true (non-zero exit on ANY unused declaration), retain_public:false
+# (analyze the app + its own SwiftPM libraries — there are no external consumers), and excludes
+# Tests/ (mocks implement whole protocols tests exercise only in part). Deliberate keeps carry a
+# `// periphery:ignore` + reason. Periphery builds its own SwiftPM index, so it heads the
+# build/test section rather than the cheap static block above.
+periphery scan
 
 # --------------------------------------------------------------------------- builds / tests
 step "Swift build (debug) — Swift 6 data-race checking + C++ -Werror"

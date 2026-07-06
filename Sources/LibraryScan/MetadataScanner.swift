@@ -41,7 +41,6 @@ public struct MetadataScanner: Sendable {
         let pending = try await store.tracksNeedingMetadata(limit: Self.unlimited)
         guard !pending.isEmpty else { return }
         let maxInFlight = max(1, min(ProcessInfo.processInfo.activeProcessorCount, 6))
-        var processed = 0
         var next = 0
         try await withThrowingTaskGroup(of: ExtractResult.self) { group in
             while next < min(maxInFlight, pending.count) {
@@ -50,8 +49,7 @@ public struct MetadataScanner: Sendable {
             }
             while let result = try await group.next() {
                 try await apply(result, into: store, generation: generation)
-                processed += 1
-                progress?(MetadataProgress(filesProcessedSoFar: processed, totalToProcess: pending.count))
+                progress?(MetadataProgress())
                 try Task.checkCancellation()
                 if next < pending.count {
                     let id = pending[next]; next += 1

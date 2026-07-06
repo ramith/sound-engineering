@@ -10,7 +10,6 @@ extension AudioEngineBridge {
                 do {
                     // Record the intent for the device-change fallback restart path.
                     self.setLastFileURL(fileURL)
-                    self.pureModeRequested = pureMode
 
                     // A fresh startAudio always begins a new playback context: clear the end-of-queue
                     // sentinel and the on-deck slot so the new play starts clean (the caller must
