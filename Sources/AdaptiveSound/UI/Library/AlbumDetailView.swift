@@ -25,7 +25,6 @@ struct AlbumDetailView: View {
             album = await model.album(id: albumID)
             tracks = await model.tracks(inAlbum: albumID)
         }
-        .navigationTitle(album?.title ?? "Album")
     }
 
     private var header: some View {
