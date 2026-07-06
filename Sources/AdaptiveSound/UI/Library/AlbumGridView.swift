@@ -3,8 +3,8 @@ import SwiftUI
 
 // MARK: - Album grid (S9.4)
 
-/// The full-width adaptive album grid. Single-click a cell → OPEN (NavigationLink push to
-/// AlbumDetailView); Play verbs come from the hover button + the context menu. Warms one
+/// The full-width adaptive album grid. Single-click a cell → OPEN (appends the album route to
+/// `model.path` → AlbumDetailView); Play verbs come from the hover button + the context menu. Warms one
 /// batched artwork query per album set. Empty/first-run/scanning/failed states delegate to
 /// LibraryEmptyStateView.
 struct AlbumGridView: View {
@@ -63,10 +63,10 @@ struct AlbumGridView: View {
     }
 }
 
-// MARK: - Grid item (NavigationLink + hover Play overlay)
+// MARK: - Grid item (Open button + hover Play overlay)
 
-/// One grid entry. The whole cell is a NavigationLink (Open). The hover Play button is a
-/// SIBLING overlay ABOVE the link — not nested in its label — so it reliably wins the hit test
+/// One grid entry. The whole cell is an Open button (appends the album route to `model.path`).
+/// The hover Play button is a SIBLING overlay ABOVE it — not nested in its label — so it reliably wins the hit test
 /// on macOS (review §6); it's positioned over the art (top `side`×`side` region), and is
 /// `accessibilityHidden` because the cell exposes Play as a custom action.
 private struct AlbumGridItem: View {
@@ -77,7 +77,9 @@ private struct AlbumGridItem: View {
     @State private var hovering = false
 
     var body: some View {
-        NavigationLink(value: LibraryRoute.album(album.id)) {
+        Button {
+            model.path.append(.album(album.id))
+        } label: {
             AlbumCell(album: album, side: side)
         }
         .buttonStyle(.plain)

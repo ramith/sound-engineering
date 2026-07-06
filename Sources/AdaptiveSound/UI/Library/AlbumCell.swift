@@ -4,9 +4,9 @@ import SwiftUI
 // MARK: - Album grid cell (S9.4)
 
 /// One album in the grid: 1:1 art + title + artist (no track-count — grid clutter). The hover
-/// Play overlay and the NavigationLink (Open) are owned by the enclosing `AlbumGridItem`; this
-/// view is the pure content + accessibility. VoiceOver: one combined element with Play / Play
-/// Next / Add-to-Queue custom actions (hover is invisible to VO; Open is the link's activation).
+/// Play overlay and the Open button are owned by the enclosing `AlbumGridItem`; this view is the
+/// pure content + accessibility. VoiceOver: one combined element with Play / Play Next /
+/// Add-to-Queue custom actions (hover is invisible to VO; Open is the button's activation).
 struct AlbumCell: View {
     let album: AlbumFacet
     let side: CGFloat

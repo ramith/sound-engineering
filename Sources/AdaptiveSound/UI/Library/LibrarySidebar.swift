@@ -21,6 +21,10 @@ struct LibrarySidebar: View {
                     .tag(category)
             }
         }
+        // Source-list appearance — set explicitly now that the enclosing NavigationSplitView is
+        // gone (the split view used to imply it). Standalone `.sidebar` is just a list style; it
+        // does NOT recreate the split view's under-the-titlebar coordination.
+        .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) { footer }
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { model.addFolder(url) }

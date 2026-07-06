@@ -49,10 +49,6 @@ struct AdaptiveSound: App {
             // No document model — drop the default New/Open items.
             CommandGroup(replacing: .newItem) {}
 
-            // Escape hatch for the Library sidebar: its toolbar toggle is removed (L2), so
-            // View ▸ Toggle Sidebar is the accessible way to re-show a divider-collapsed sidebar.
-            SidebarCommands()
-
             CommandMenu("Controls") {
                 Button(audioViewModel.isPlaying ? "Pause" : "Play") {
                     if audioViewModel.isPlaying {
