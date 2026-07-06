@@ -6,13 +6,13 @@ import SwiftUI
 ///   App logo squircle | Device dropdown pill | Tab selector | Spacer
 ///
 /// `AppShell` owns the band height (`ShellMetrics.chromeHeight`), the window background,
-/// and the bottom hairline, so this view sets none of those. It only adds the leading
-/// `trafficLightInset` so the logo clears the native traffic-light buttons that stay
-/// visible under `.windowStyle(.hiddenTitleBar)` (design §4, L2).
+/// and the bottom hairline, so this view sets none of those. Its leading edge shares the
+/// content's left margin — with the native titlebar restored, the window buttons sit in their
+/// own strip, so no traffic-light inset is needed.
 ///
-/// The tab picker gets `.layoutPriority(1)` to prevent compression. The device
-/// pill is width-bounded (minWidth…maxWidth) and truncates long names so an
-/// aggregate-device name can't blow out the header.
+/// The tab picker is `.fixedSize()` (locked to its intrinsic size — never stretches or
+/// compresses). The device pill is fixed-width and truncates long names, so the tab control's
+/// left edge is invariant to the device name and an aggregate-device name can't blow out the header.
 struct ChromeBar: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -32,11 +32,11 @@ struct ChromeBar: View {
 
             Spacer(minLength: 8)
         }
+        // Shares the content's leading margin: with the native titlebar restored, the window
+        // buttons live in their own strip, so the chrome no longer insets to clear them — its
+        // left edge lines up with the content below. Height, window background, and the bottom
+        // hairline are owned by AppShell — deliberately not set here.
         .padding(.horizontal, 16)
-        // Clear the macOS traffic-light buttons, which stay visible under
-        // `.windowStyle(.hiddenTitleBar)`. Height, window background, and the
-        // bottom hairline are owned by AppShell (L2) — deliberately not set here.
-        .padding(.leading, DesignSystem.ShellMetrics.trafficLightInset)
     }
 }
 
