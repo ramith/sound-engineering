@@ -3,14 +3,18 @@ import SwiftUI
 
 @main
 struct AdaptiveSound: App {
-    // Quit on last-window close (single-window player; the engine lifecycle is window-bound —
-    // see AppDelegate). Without this, closing the window leaves a windowless process behind.
+    // Resident menu-bar app: closing the window retreats to the menu bar (Dock icon hidden) and
+    // does NOT quit — see AppDelegate. `initializeEngine()` is idempotent so window reopen is safe.
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var audioViewModel: AudioViewModel
     @State private var eqViewModel: EQViewModel
     @State private var libraryModel: LibraryBrowseModel
 
     init() {
+        // Single instance only: if another copy already holds the lock, raise it and exit before
+        // building any @State or touching the audio engine (no two engines fighting one device).
+        guard SingleInstanceGuard.acquire() else { exit(0) }
+
         // Build the single AudioViewModel once and share it with EQViewModel + LibraryBrowseModel.
         let audio = AudioViewModel()
         _audioViewModel = State(initialValue: audio)
@@ -21,7 +25,7 @@ struct AdaptiveSound: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(audioViewModel)
                 .environment(eqViewModel)
@@ -75,6 +79,13 @@ struct AdaptiveSound: App {
                     .keyboardShortcut(.leftArrow, modifiers: .command)
                     .disabled(audioViewModel.selectedTrackIndex == nil)
             }
+        }
+
+        // macOS menu-bar (top-bar) presence: quick transport + raise/quit, controllable without
+        // focusing the window. Shares the single AudioViewModel, so it drives the same engine.
+        MenuBarExtra("AdaptiveSound", systemImage: "music.note") {
+            MenuBarView()
+                .environment(audioViewModel)
         }
     }
 }
