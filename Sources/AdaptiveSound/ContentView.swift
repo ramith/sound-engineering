@@ -20,6 +20,7 @@ struct ContentView: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.selectedTab)
         } footer: {
             NowPlayingBar()
+                .environment(viewModel)
         }
         // Engine init/teardown intentionally NOT here — it's owned by the app/scene lifecycle
         // (AdaptiveSound.swift `.onAppear` starts it; AppDelegate.applicationShouldTerminate
