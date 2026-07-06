@@ -8,18 +8,19 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var viewModel = viewModel
-        VStack(spacing: 0) {
-            // Primary Toolbar (60pt): Logo | Device | Tabs
-            ToolbarView(selectedTab: $viewModel.selectedTab)
+        // Pinned chrome header + flexible content + pinned footer. AppShell owns the band
+        // heights, backgrounds, hairlines, and the window minimum (L2) — this view no longer
+        // sets `.frame(minWidth:minHeight:)` or the window background.
+        AppShell {
+            ChromeBar(selectedTab: $viewModel.selectedTab)
                 .environment(viewModel)
-
-            // Tab Content
+        } content: {
             TabContentView(selectedTab: viewModel.selectedTab)
                 .transition(.opacity)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.selectedTab)
+        } footer: {
+            NowPlayingBar()
         }
-        .frame(minWidth: 800, minHeight: 600)
-        .background(Color.asWindow)
         // Engine init/teardown intentionally NOT here — it's owned by the app/scene lifecycle
         // (AdaptiveSound.swift `.onAppear` starts it; AppDelegate.applicationShouldTerminate
         // tears it down, awaited). Binding it to a view's `.task`/`.onDisappear` made teardown

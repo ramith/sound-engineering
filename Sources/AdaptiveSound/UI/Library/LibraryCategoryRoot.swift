@@ -56,6 +56,5 @@ struct LibraryPlaceholderView: View {
         } description: {
             Text(detail)
         }
-        .navigationTitle(title)
     }
 }

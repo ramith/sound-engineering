@@ -21,7 +21,6 @@ struct LibrarySidebar: View {
                     .tag(category)
             }
         }
-        .navigationTitle("Library")
         .safeAreaInset(edge: .bottom) { footer }
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { model.addFolder(url) }

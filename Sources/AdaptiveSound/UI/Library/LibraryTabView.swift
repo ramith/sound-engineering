@@ -16,6 +16,10 @@ struct LibraryTabView: View {
         NavigationSplitView(columnVisibility: $model.columnVisibility) {
             LibrarySidebar()
                 .navigationSplitViewColumnWidth(min: 170, ideal: 200, max: 300)
+                // R1 (L2, bug 3): drop the split-view sidebar toggle that projects into the
+                // window toolbar. The sidebar stays pinned (columnVisibility == .all); the
+                // escape hatch for a divider-collapsed sidebar is View ▸ Toggle Sidebar.
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             NavigationStack(path: $model.path) {
                 LibraryCategoryRoot(category: model.selectedCategory)
@@ -25,6 +29,9 @@ struct LibraryTabView: View {
             }
         }
         .background(DesignSystem.Color.window)
+        // Backstop for bug 3: with the scene titlebar hidden (L2), keep the split view from
+        // surfacing any window-toolbar band of its own (the "second titlebar").
+        .toolbarVisibility(.hidden, for: .windowToolbar)
         // Live-fill the grid as a scan / metadata pass / reconcile completes while the tab is
         // open. Coalesced to `libraryRevision` (bumped when metadata builds the album rows) —
         // not per metadata tick, and not the earlier `lastScanResult` (design §7; review B1).

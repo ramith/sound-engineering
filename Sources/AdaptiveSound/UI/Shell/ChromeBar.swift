@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// Primary application toolbar (60pt).
+/// The app-owned chrome header (the shell's top band).
 ///
 /// Layout (left → right):
 ///   App logo squircle | Device dropdown pill | Tab selector | Spacer
 ///
+/// `AppShell` owns the band height (`ShellMetrics.chromeHeight`), the window background,
+/// and the bottom hairline, so this view sets none of those. It only adds the leading
+/// `trafficLightInset` so the logo clears the native traffic-light buttons that stay
+/// visible under `.windowStyle(.hiddenTitleBar)` (design §4, L2).
+///
 /// The tab picker gets `.layoutPriority(1)` to prevent compression. The device
 /// pill is width-bounded (minWidth…maxWidth) and truncates long names so an
-/// aggregate-device name can't blow out the toolbar.
-struct ToolbarView: View {
+/// aggregate-device name can't blow out the header.
+struct ChromeBar: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     /// Binding to the tab selection owned by ContentView so the toolbar
@@ -28,13 +33,10 @@ struct ToolbarView: View {
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 16)
-        .frame(height: 60)
-        .background(Color.asWindow)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.asHairline)
-                .frame(height: 0.5)
-        }
+        // Clear the macOS traffic-light buttons, which stay visible under
+        // `.windowStyle(.hiddenTitleBar)`. Height, window background, and the
+        // bottom hairline are owned by AppShell (L2) — deliberately not set here.
+        .padding(.leading, DesignSystem.ShellMetrics.trafficLightInset)
     }
 }
 

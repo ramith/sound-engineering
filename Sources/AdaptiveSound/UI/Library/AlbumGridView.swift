@@ -22,7 +22,6 @@ struct AlbumGridView: View {
             // Keyed on store-readiness so a Library visit BEFORE the async store finishes
             // building reloads once it's ready (review S2) — not stuck on the nil-store spinner.
             .task(id: model.isStoreReady) { await model.loadAlbums() }
-            .navigationTitle("Albums")
     }
 
     @ViewBuilder private var content: some View {
