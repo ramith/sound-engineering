@@ -115,4 +115,59 @@ enum DesignSystem {
             endPoint: .bottom
         )
     }
+
+    // MARK: Shell metrics (app-owned window chrome bands)
+
+    /// Fixed heights + insets for the app-owned chrome (header / footer bands) and the
+    /// window minimum. Reconciled to the shipping look in the layout plan (§5): chrome
+    /// stays 60 (today's `ToolbarView`), window min bumps to 880×640 for the footer
+    /// transport + two Now Playing panes. `trafficLightInset` reserves room so the header
+    /// logo clears the native traffic lights under `.hiddenTitleBar` (wired in L2, not here).
+    enum ShellMetrics {
+        static let chromeHeight: CGFloat = 60
+        static let footerHeight: CGFloat = 64
+        static let trafficLightInset: CGFloat = 80
+        static let windowMinWidth: CGFloat = 880
+        static let windowMinHeight: CGFloat = 640
+        static let hairline: CGFloat = 0.5
+    }
+
+    // MARK: Layout metrics (screen insets + pane / sidebar sizing)
+
+    /// Screen-level layout metrics: content insets, the readable-width cap for form-like
+    /// screens, and split-view sizing. Named `LayoutMetrics` (NOT `Layout`) to avoid
+    /// colliding with the SwiftUI `Layout` protocol.
+    enum LayoutMetrics {
+        static let screenInsetH: CGFloat = 20
+        static let screenInsetV: CGFloat = 16
+        static let sectionGap: CGFloat = 20
+        static let readableMaxWidth: CGFloat = 720
+        static let sidebarMin: CGFloat = 170
+        static let sidebarIdeal: CGFloat = 200
+        static let sidebarMax: CGFloat = 300
+        static let paneMinWidth: CGFloat = 360
+    }
+
+    // MARK: Visualizer surfaces (drawing-surface sizing)
+
+    /// Sizing for drawing surfaces (EQ response graph, spectrum, channel rows). The Canvas
+    /// draws to whatever size the slot gives it; these tokens size the slot — replacing the
+    /// former magic pixel heights.
+    enum Visualizer {
+        static let responseGraphMinHeight: CGFloat = 220
+        static let responseGraphIdealHeight: CGFloat = 360
+        static let responseGraphMaxHeight: CGFloat = 460
+        static let spectrumBandHeight: CGFloat = 50
+        static let channelRowHeight: CGFloat = 72
+    }
+
+    // MARK: Artwork sizes
+
+    /// Square artwork edge lengths at the three call sites (list thumbnail, grid cell,
+    /// now-playing detail hero).
+    enum Artwork {
+        static let thumb: CGFloat = 44
+        static let cell: CGFloat = 168
+        static let detail: CGFloat = 148
+    }
 }
