@@ -13,16 +13,6 @@ enum TabSelection: String, CaseIterable {
         rawValue
     }
 
-    var subtitle: String {
-        switch self {
-        case .nowPlaying: "Now Playing"
-        case .library: "Music Library"
-        case .eq: "EQ Editing"
-        case .monitoring: "Signal Monitoring"
-        case .settings: "Preferences"
-        }
-    }
-
     var icon: String {
         switch self {
         case .nowPlaying: "play.circle.fill"

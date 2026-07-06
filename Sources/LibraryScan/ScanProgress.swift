@@ -2,7 +2,7 @@
 //
 // S8.2b. The walk is single-pass (`FileManager.enumerator` is lazy; a pre-count
 // would double the traversal just to feed a determinate spinner), so progress is an
-// INDETERMINATE count-up: `totalFiles` is nil and `filesSeenSoFar` increments per
+// INDETERMINATE count-up: `filesSeenSoFar` increments per
 // batch. Carrying only scalars, it crosses the actor boundary freely — the scanner
 // (off-main) fires it, and the VM hops to `@MainActor` to publish it (design §5, §7).
 //
@@ -18,14 +18,9 @@ public struct ScanProgress: Sendable, Equatable {
     /// How many regular, supported-extension files have been seen so far
     /// (monotonically non-decreasing across a single scan's callbacks).
     public let filesSeenSoFar: Int
-    /// The total file count if known, or `nil` — the single-pass walk is
-    /// INDETERMINATE, so this is always `nil` in S8.2b (design §5). Present so a
-    /// future two-pass/determinate mode is a non-breaking fill-in.
-    public let totalFiles: Int?
 
-    public init(folderID: Int64, filesSeenSoFar: Int, totalFiles: Int? = nil) {
+    public init(folderID: Int64, filesSeenSoFar: Int) {
         self.folderID = folderID
         self.filesSeenSoFar = filesSeenSoFar
-        self.totalFiles = totalFiles
     }
 }

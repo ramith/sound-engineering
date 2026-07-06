@@ -26,6 +26,11 @@ public extension LibraryStore {
     /// LEFT JOINs `artists`/`albums`; `artist_name` is `COALESCE`d to '' (a track with
     /// no artist still yields exactly one row with an empty name), while `album_name`
     /// stays a true optional (NULL → nil) so "no album" is distinguishable.
+    ///
+    /// Note: a few columns (name, disc_no, year, artwork_key) are projected but not currently
+    /// mapped — the matching `LibraryTrackDisplay` fields were removed in the Periphery dead-code
+    /// pass. They stay in the SELECT so the positional decode indices don't shift; S9.5's
+    /// Songs/detail views re-add the struct fields + their mapper lines (DB schema untouched).
     internal static let displayTrackColumns =
         "t.id, t.url, t.name, t.format, t.album_id, t.artist_id, t.title, t.track_no, "
             + "t.disc_no, t.year, t.duration_ms, t.artwork_key, "
@@ -86,17 +91,13 @@ public extension LibraryStore {
             id: statement.columnInt64(0),
             url: URL(fileURLWithPath: statement.columnText(1) ?? "", isDirectory: false),
             title: displayTitle,
-            name: name,
             artistID: statement.columnIsNull(5) ? nil : statement.columnInt64(5),
             artistName: statement.columnText(12) ?? "",
             albumID: statement.columnIsNull(4) ? nil : statement.columnInt64(4),
             albumName: statement.columnText(13),
             format: statement.columnText(3) ?? "",
             trackNo: statement.columnIsNull(7) ? nil : statement.columnInt(7),
-            discNo: statement.columnIsNull(8) ? nil : statement.columnInt(8),
-            year: statement.columnIsNull(9) ? nil : statement.columnInt(9),
-            durationMs: statement.columnInt64(10),
-            artworkKey: statement.columnText(11)
+            durationMs: statement.columnInt64(10)
         )
     }
 

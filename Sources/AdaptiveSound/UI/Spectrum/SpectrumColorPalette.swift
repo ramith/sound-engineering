@@ -28,30 +28,6 @@ enum SpectrumColorPalette {
         Stop(t: 0.80, rgb: RGBValue(r: 0xA8 / 255.0, g: 0xEC / 255.0, b: 0x84 / 255.0)), // #A8EC84
         Stop(t: 1.00, rgb: RGBValue(r: 0xC8 / 255.0, g: 0xF0 / 255.0, b: 0x6A / 255.0)), // #C8F06A
     ]
-
-    /// Get the base color for a bar at normalized position t [0, 1].
-    /// Linearly interpolates between palette stops in sRGB space.
-    static func colorAt(_ t: Float) -> Color {
-        let clamped = max(0, min(1, t))
-
-        var lower = tealoLime[0]
-        var upper = tealoLime[tealoLime.count - 1]
-
-        for i in 0 ..< tealoLime.count - 1 {
-            if tealoLime[i].t <= clamped && clamped <= tealoLime[i + 1].t {
-                lower = tealoLime[i]
-                upper = tealoLime[i + 1]
-                break
-            }
-        }
-
-        let localT = Double((upper.t > lower.t) ? (clamped - lower.t) / (upper.t - lower.t) : 0)
-        let r = lower.rgb.r * (1 - localT) + upper.rgb.r * localT
-        let g = lower.rgb.g * (1 - localT) + upper.rgb.g * localT
-        let b = lower.rgb.b * (1 - localT) + upper.rgb.b * localT
-
-        return Color(red: r, green: g, blue: b)
-    }
 }
 
 // MARK: - Gradient Utilities

@@ -1,11 +1,16 @@
 import SwiftUI
 
-/// The only sanctioned in-content title surface. Use this instead of the SwiftUI
-/// navigation-title modifier, which would leak text into the window titlebar the app owns
-/// (and is banned under `Sources/` by `.semgrep.yml` → `swift-no-navigation-title`).
-///
-/// A title (optional subtitle) with an optional leading back control. The back button keeps
-/// its "Back" label for VoiceOver even under `.labelStyle(.iconOnly)`.
+// The only sanctioned in-content title surface. Use this instead of the SwiftUI
+// navigation-title modifier, which would leak text into the window titlebar the app owns
+// (and is banned under `Sources/` by `.semgrep.yml` → `swift-no-navigation-title`).
+//
+// A title (optional subtitle) with an optional leading back control. The back button keeps
+// its "Back" label for VoiceOver even under `.labelStyle(.iconOnly)`.
+//
+// RETAINED DELIBERATELY: the sanctioned in-content title primitive the
+// `swift-no-navigation-title` ban steers code toward — kept for the upcoming Songs/detail
+// screens (not yet wired, hence no caller). Hence the bare periphery directive below.
+// periphery:ignore
 struct ScreenHeader: View {
     let title: String
     let subtitle: String?

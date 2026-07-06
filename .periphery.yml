@@ -1,0 +1,26 @@
+# Periphery — Swift dead-code detection, run on a HOSTILE config.
+#   local:  make periphery      CI: .github/workflows/periphery.yml
+#
+# HOSTILE = maximally aggressive. Public declarations are NOT retained (they're analyzed like
+# everything else — this is an app plus its OWN SwiftPM libraries with no external consumers, so a
+# "public but unused anywhere in the package" symbol is genuinely dead). Assign-only properties,
+# unused imports, parameters, and enum cases are all reported, and `strict` fails the run on ANY
+# finding. Periphery already understands SwiftUI `App`/`Scene` and protocol-conformance witnesses,
+# so framework-invoked app code is retained without special rules.
+#
+# The ONE exclusion (report_exclude below) is test scaffolding, for a documented reason — it is not
+# leniency on product code. Every product + library + verify-harness declaration stays in scope.
+
+retain_public: false                    # analyze public API — no external consumers to assume-used
+retain_assign_only_properties: false    # report properties written but never read
+retain_objc_accessible: false           # don't blanket-retain @objc; conformances are retained anyway
+disable_update_check: true              # never phone home (CI / offline)
+strict: true                            # exit non-zero on ANY unused declaration — fails the gate
+
+report_exclude:
+  # Test targets only. Mocks implement ENTIRE protocols that individual tests exercise only in
+  # part, so a mock's uncalled conformance witnesses read as "unused" yet are not shippable dead
+  # code (you cannot delete a required protocol method from a conforming type). Excluding the test
+  # tree keeps the signal about PRODUCT code; the app, its SwiftPM libraries, and the Verify* CI
+  # harnesses remain fully in scope.
+  - "**/Tests/**"

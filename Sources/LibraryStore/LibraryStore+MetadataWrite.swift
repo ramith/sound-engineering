@@ -36,11 +36,6 @@ public extension LibraryStore {
         }
     }
 
-    /// Point `trackID` (and, when unset, its album) at `link`'s artwork (own transaction).
-    func attachArtwork(_ link: ArtworkLink, toTrack trackID: Int64) throws {
-        try connection.transaction { try attachArtworkLocked(link, toTrack: trackID) }
-    }
-
     /// Delete `artwork` rows that NO track and NO album references (pure reachability —
     /// the authoritative orphan test). Returns the swept `(contentHash, cachePath)` so the
     /// caller removes the on-disk files. Run once at end-of-pass (non-cancelled only).

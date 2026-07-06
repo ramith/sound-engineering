@@ -5,7 +5,6 @@
 // recreate the real pre-v2 library a migration upgrades, then assert the backfill.
 
 import Foundation
-import LibraryScan
 import LibraryStore
 
 // MARK: - Raw v1 seeding (no FTS — the pre-v2 state a real migration upgrades)

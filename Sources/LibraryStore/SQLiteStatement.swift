@@ -18,7 +18,7 @@ import SQLite3
 /// SQLite's `SQLITE_TRANSIENT` sentinel: instructs SQLite to make its own private
 /// copy of bound text/BLOB bytes. The C macro `((sqlite3_destructor_type)-1)` is
 /// not imported into Swift, so it is reconstructed here via a bit-cast of -1.
-public let sqliteTransientDestructor = unsafeBitCast(
+let sqliteTransientDestructor = unsafeBitCast(
     Int(-1), to: sqlite3_destructor_type.self
 )
 
@@ -67,17 +67,6 @@ public final class SQLiteStatement {
         try checkBind(code, index: index)
     }
 
-    /// Bind an optional double; `nil` binds SQL NULL.
-    public func bind(_ value: Double?, at index: Int32) throws {
-        let code: Int32
-        if let value {
-            code = sqlite3_bind_double(handle, index, value)
-        } else {
-            code = sqlite3_bind_null(handle, index)
-        }
-        try checkBind(code, index: index)
-    }
-
     /// Bind an optional string; `nil` binds SQL NULL. Uses SQLITE_TRANSIENT so
     /// SQLite copies immediately (no lifetime coupling to the Swift `String`).
     public func bind(_ value: String?, at index: Int32) throws {
@@ -101,11 +90,6 @@ public final class SQLiteStatement {
             sqlite3_bind_blob(handle, index, raw.baseAddress, Int32(raw.count), sqliteTransientDestructor)
         }
         try checkBind(code, index: index)
-    }
-
-    /// Bind an explicit SQL NULL at `index`.
-    public func bindNull(at index: Int32) throws {
-        try checkBind(sqlite3_bind_null(handle, index), index: index)
     }
 
     // MARK: - Stepping
@@ -149,11 +133,6 @@ public final class SQLiteStatement {
         Int(sqlite3_column_int64(handle, index))
     }
 
-    /// Read column `index` as `Double`.
-    public func columnDouble(_ index: Int32) -> Double {
-        sqlite3_column_double(handle, index)
-    }
-
     /// Read column `index` as `String`, or `nil` if the column is SQL NULL.
     public func columnText(_ index: Int32) -> String? {
         guard sqlite3_column_type(handle, index) != SQLITE_NULL,
@@ -162,18 +141,6 @@ public final class SQLiteStatement {
             return nil
         }
         return String(cString: cString)
-    }
-
-    /// Read column `index` as `Data`, or `nil` if the column is SQL NULL/empty.
-    public func columnBlob(_ index: Int32) -> Data? {
-        guard sqlite3_column_type(handle, index) != SQLITE_NULL,
-              let bytes = sqlite3_column_blob(handle, index)
-        else {
-            return nil
-        }
-        let count = Int(sqlite3_column_bytes(handle, index))
-        guard count > 0 else { return nil }
-        return Data(bytes: bytes, count: count)
     }
 
     /// True if column `index` is SQL NULL in the current row.

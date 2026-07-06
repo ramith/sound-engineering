@@ -48,6 +48,9 @@ jobs:
           # (that branch is analyzed NOWHERE else in the merge path); the rest are
           # formatters/linters/scanners.
           brew install swiftformat swiftlint llvm semgrep cppcheck ffmpeg || true
+          # Periphery (Swift dead-code detection) lives in a tap, not core Homebrew — install it
+          # separately so `make strict-gate`'s hostile `periphery scan` step has the binary.
+          brew install peripheryapp/periphery/periphery || true
           # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
           # runner default PATH (/usr/bin, where make lives). A step-level
           # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,

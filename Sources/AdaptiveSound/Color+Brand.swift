@@ -10,18 +10,9 @@ import SwiftUI
 extension Color {
     /// Primary accent — icon, selection, checkmark (teal)
     static let asAccent = DesignSystem.Color.accent
-    static let asAccentDeep = DesignSystem.Color.accentDeep
-
-    /// Alternate accents (swap into asAccent to change feel)
-    static let asBlue = DesignSystem.Color.blue
-    static let asGraphite = DesignSystem.Color.graphite
-
-    /// System green status dot
-    static let asGreen = DesignSystem.Color.statusOK
 
     /// Neutral surfaces (no warm tint)
     static let asWindow = DesignSystem.Color.window
-    static let asInset = DesignSystem.Color.inset
     static let asCard = DesignSystem.Color.card
     static let asHairline = DesignSystem.Color.hairline
 
@@ -29,9 +20,6 @@ extension Color {
     static let asLabel = DesignSystem.Color.label
     static let asLabelSecond = DesignSystem.Color.labelSecondary
     static let asLabelTertiary = DesignSystem.Color.labelTertiary
-
-    /// Teal-tinted row background for the selected device
-    static let asSelection = DesignSystem.Color.accentSubtle
 }
 
 // MARK: - Icon gradient (app mark squircle)

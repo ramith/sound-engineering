@@ -54,21 +54,14 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
     public let discNo: Int?
     /// Release year (S8.3), or `nil`.
     public let year: Int?
-    /// Duration in whole milliseconds (0 until decoded).
-    public let durationMs: Int64
     /// Artwork content-hash reference key (S8.3), or `nil`.
     public let artworkKey: String?
-
-    /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
-    public var durationSeconds: Double {
-        Double(durationMs) / 1000.0
-    }
 
     public init(
         id: Int64, url: URL, folderID: Int64?, relativePath: String, name: String,
         format: String, fileSize: Int64, mtime: Int64, inode: Int64?, dev: Int64?,
         albumID: Int64?, artistID: Int64?, title: String?, trackNo: Int?, discNo: Int?,
-        year: Int?, durationMs: Int64, artworkKey: String?
+        year: Int?, artworkKey: String?
     ) {
         self.id = id
         self.url = url
@@ -86,7 +79,6 @@ public struct LibraryTrack: Sendable, Identifiable, Equatable {
         self.trackNo = trackNo
         self.discNo = discNo
         self.year = year
-        self.durationMs = durationMs
         self.artworkKey = artworkKey
     }
 }
@@ -106,10 +98,8 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     public let id: Int64
     /// Absolute file URL — the mutable natural key.
     public let url: URL
-    /// Display title: the tag title, falling back to the filename `name` if absent/empty.
+    /// Display title: the tag title, falling back to the filename name if absent/empty.
     public let title: String
-    /// Filename display name (without extension) — the fallback source behind `title`.
-    public let name: String
     /// Resolved track-artist rowid, or `nil`.
     public let artistID: Int64?
     /// Resolved track-artist name; "" when the track has no artist (COALESCE).
@@ -122,14 +112,8 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     public let format: String
     /// Track number within its disc, or `nil`.
     public let trackNo: Int?
-    /// Disc number, or `nil`.
-    public let discNo: Int?
-    /// Release year, or `nil`.
-    public let year: Int?
     /// Duration in whole milliseconds (0 until decoded).
     public let durationMs: Int64
-    /// Artwork content-hash reference key, or `nil`.
-    public let artworkKey: String?
 
     /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
     public var durationSeconds: Double {
@@ -137,24 +121,20 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     }
 
     public init(
-        id: Int64, url: URL, title: String, name: String, artistID: Int64?,
+        id: Int64, url: URL, title: String, artistID: Int64?,
         artistName: String, albumID: Int64?, albumName: String?, format: String,
-        trackNo: Int?, discNo: Int?, year: Int?, durationMs: Int64, artworkKey: String?
+        trackNo: Int?, durationMs: Int64
     ) {
         self.id = id
         self.url = url
         self.title = title
-        self.name = name
         self.artistID = artistID
         self.artistName = artistName
         self.albumID = albumID
         self.albumName = albumName
         self.format = format
         self.trackNo = trackNo
-        self.discNo = discNo
-        self.year = year
         self.durationMs = durationMs
-        self.artworkKey = artworkKey
     }
 }
 
@@ -239,18 +219,14 @@ public struct AlbumFacet: Sendable, Identifiable, Equatable {
     }
 }
 
-/// An artist list entry: the artist row plus its track count.
+/// An artist list entry: the artist row (id + resolved name).
 public struct ArtistFacet: Sendable, Identifiable, Equatable {
     public let id: Int64
     public let name: String
-    public let sortName: String?
-    public let trackCount: Int
 
-    public init(id: Int64, name: String, sortName: String?, trackCount: Int) {
+    public init(id: Int64, name: String) {
         self.id = id
         self.name = name
-        self.sortName = sortName
-        self.trackCount = trackCount
     }
 }
 
@@ -269,26 +245,15 @@ public struct GenreFacet: Sendable, Identifiable, Equatable {
 
 // MARK: - Folder (scan roots)
 
-/// A `folders` row (design §4 `roots()`). `bookmark` stays reserved-unused under
-/// the Developer-ID (non-sandboxed) posture; roots persist as plain absolute paths.
+/// A `folders` row (design §4 `roots()`). Roots persist as plain absolute paths — no
+/// security-scoped bookmark under the Developer-ID (non-sandboxed) posture.
 public struct LibraryFolder: Sendable, Identifiable, Equatable {
     public let id: Int64
     public let path: String
-    public let parentID: Int64?
-    public let isRoot: Bool
-    public let bookmark: Data?
-    public let lastScanned: Int64?
 
-    public init(
-        id: Int64, path: String, parentID: Int64?, isRoot: Bool,
-        bookmark: Data?, lastScanned: Int64?
-    ) {
+    public init(id: Int64, path: String) {
         self.id = id
         self.path = path
-        self.parentID = parentID
-        self.isRoot = isRoot
-        self.bookmark = bookmark
-        self.lastScanned = lastScanned
     }
 }
 
@@ -369,16 +334,13 @@ public struct TrackMetadata: Sendable, Equatable {
 
 /// A typed `UNIQUE(url)` collision surfaced by `moveTrack`/`upsert`/`addLooseFile`
 /// so callers can distinguish "a row already occupies that URL" (a duplicate,
-/// normal per Req 5) from a generic SQLite failure. Carries the colliding URL and,
-/// where known, the id of the row that already holds it. `Sendable` — no handle.
+/// normal per Req 5) from a generic SQLite failure. Carries, where known, the id of
+/// the row that already holds the URL. `Sendable` — no handle.
 public struct URLConflict: Error, Sendable, Equatable {
-    /// The URL string that already has a row.
-    public let url: String
     /// The rowid of the pre-existing occupant, if it was looked up.
     public let existingID: Int64?
 
-    public init(url: String, existingID: Int64?) {
-        self.url = url
+    public init(existingID: Int64?) {
         self.existingID = existingID
     }
 }

@@ -31,21 +31,17 @@ enum DesignSystem {
         // Accent — appearance-independent (the teal reads on both light + dark).
         static let accent = SwiftUI.Color(red: 0.161, green: 0.714, blue: 0.643) // #29B6A4
         static let accentDeep = SwiftUI.Color(red: 0.078, green: 0.537, blue: 0.478) // #148979
-        static let accentSubtle = accent.opacity(0.16) // selected-row fill
-        static let accentMid = accent.opacity(0.25) // now-playing-row fill
         /// Foreground drawn ON the accent (e.g. a play glyph over the teal fill). Appearance-
         /// independent like `accent` itself — white reads on the teal in both light + dark.
         static let onAccent = SwiftUI.Color.white
 
-        // Alternates (swap into accent to change feel)
+        /// Alternates (swap into accent to change feel)
         static let blue = SwiftUI.Color(red: 0.039, green: 0.518, blue: 1.0) // #0A84FF
-        static let graphite = SwiftUI.Color(red: 0.557, green: 0.557, blue: 0.576) // #8E8E93
 
         /// Surfaces (elevation stack) — dark = pre-S9-T; light = first pass (gray base,
         /// white raised cards, darker inset).
         static let window = dynamic(light: SwiftUI.Color(white: 0.93),
                                     dark: SwiftUI.Color(red: 0.118, green: 0.118, blue: 0.118)) // #1E1E1E
-        static let inset = dynamic(light: SwiftUI.Color(white: 0.87), dark: SwiftUI.Color.black.opacity(0.28))
         static let card = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.045))
         static let panel = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.06))
         static let hairline = dynamic(light: SwiftUI.Color.black.opacity(0.12),
@@ -63,10 +59,8 @@ enum DesignSystem {
         static let labelDisabled = dynamic(light: SwiftUI.Color.black.opacity(0.28),
                                            dark: SwiftUI.Color.white.opacity(0.25))
 
-        // Status (NEW — warning/error had no semantic token). System-vibrant; read on both.
-        static let statusOK = SwiftUI.Color(red: 0.188, green: 0.820, blue: 0.345) // #30D158
+        /// Status (NEW — warning had no semantic token). System-vibrant; read on both.
         static let statusWarning = SwiftUI.Color(red: 1.0, green: 0.623, blue: 0.039) // #FF9F0A
-        static let statusError = SwiftUI.Color(red: 1.0, green: 0.271, blue: 0.227) // #FF453A
     }
 
     // MARK: Typography (5-rung scale; replaces scattered Font.system(size:) calls)
@@ -79,7 +73,6 @@ enum DesignSystem {
         static let caption = SwiftUI.Font.system(size: 12, weight: .regular)
         /// Uppercase section labels — pair with `.tracking(0.5).textCase(.uppercase)`.
         static let micro = SwiftUI.Font.system(size: 11, weight: .semibold)
-        static let mono = SwiftUI.Font.system(size: 12, weight: .regular, design: .monospaced)
         static let monoSmall = SwiftUI.Font.system(size: 11, weight: .regular, design: .monospaced)
         /// Compact now-playing pairing (footer transport / mini-player): title over subtitle.
         static let trackTitle = SwiftUI.Font.system(size: 13, weight: .semibold)
@@ -93,13 +86,11 @@ enum DesignSystem {
         static let small: CGFloat = 8
         static let medium: CGFloat = 16
         static let large: CGFloat = 24
-        static let xLarge: CGFloat = 32
     }
 
     // MARK: Corner radius
 
     enum Radius {
-        static let chip: CGFloat = 4 // badges / tags
         static let control: CGFloat = 8 // buttons / pills / small cards
         static let container: CGFloat = 10 // canvas / large cards / panels
     }
@@ -144,10 +135,7 @@ enum DesignSystem {
         static let screenInsetV: CGFloat = 16
         static let sectionGap: CGFloat = 20
         static let readableMaxWidth: CGFloat = 720
-        static let sidebarMin: CGFloat = 170
         static let sidebarIdeal: CGFloat = 200
-        static let sidebarMax: CGFloat = 300
-        static let paneMinWidth: CGFloat = 360
     }
 
     // MARK: Visualizer surfaces (drawing-surface sizing)
@@ -159,18 +147,15 @@ enum DesignSystem {
         static let responseGraphMinHeight: CGFloat = 220
         static let responseGraphIdealHeight: CGFloat = 360
         static let responseGraphMaxHeight: CGFloat = 460
-        static let spectrumBandHeight: CGFloat = 50
-        static let channelRowHeight: CGFloat = 72
     }
 
     // MARK: Artwork sizes
 
-    /// Square artwork edge lengths at the three call sites (list thumbnail, grid cell,
-    /// now-playing detail hero).
+    /// Square artwork edge length for the list / footer thumbnail. (The album grid-cell and
+    /// detail-hero sizes are literals at their own call sites; add a token here only when a
+    /// second consumer needs the same value.)
     enum Artwork {
         static let thumb: CGFloat = 44
-        static let cell: CGFloat = 168
-        static let detail: CGFloat = 148
     }
 
     // MARK: Footer transport metrics (L3)

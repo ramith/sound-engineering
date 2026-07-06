@@ -144,7 +144,6 @@ extension AudioEngineBridge {
         playerNode = nil
         referenceToneBuffer = nil
         spectrumAnalyzer = nil
-        graphState = .idle
         beforeAnalyzers = []
         afterAnalyzers = []
         setActivePath(.enhanced)
