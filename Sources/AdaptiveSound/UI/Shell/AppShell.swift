@@ -35,5 +35,11 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
                 minWidth: DesignSystem.ShellMetrics.windowMinWidth,
                 minHeight: DesignSystem.ShellMetrics.windowMinHeight
             )
+            // Hard window-min clamp at the AppKit layer — `.windowResizability(.contentMinSize)`
+            // alone didn't stop the window being dragged smaller than the shell (chrome clipped).
+            .background(WindowMinSize(
+                width: DesignSystem.ShellMetrics.windowMinWidth,
+                height: DesignSystem.ShellMetrics.windowMinHeight
+            ))
     }
 }
