@@ -63,6 +63,7 @@ Add the 2 semgrep bans to `.semgrep.yml`; `readableWidth` caps; delete dead `Fix
 5. **Footer transport** — controls playback from every tab; seek/scrub correct; space-to-play from EQ/Library; loaded↔idle no layout jump; no perf churn on other tabs.
 6. **Now Playing** — panes don't collapse at 880 width; queue list still fills; nothing duplicated vs the footer.
 7. **All tabs, light + dark** — tab bar in the identical position; content top-aligned; scroll on short window (Settings/Monitoring) with no clip.
+8. **Chrome-fix (interim) silent-truncation check (architect Condition B)** — `AppShell` now hard-bounds + clips the content region (chrome is immovable). Until L4 gives them scroll, the tall `.fill` tabs (**Now Playing + Library**) will silently CLIP their bottom at the 640×880 minimum — verify at min-window that this is only bottom-truncation (chrome always intact) and confirm L4 actually makes them scroll (don't mistake the silent clip for "done"). Chrome-fix also: device pill fixed-width so the tab bar's left edge is invariant to device name; segmented tabs `.fixedSize()`.
 
 ## 7. Open decisions for founder
 1. **Footer = custom `safeAreaInset` bar** (recommended) vs native `tabViewBottomAccessory` (requires abandoning the custom chrome). *Recommend custom.*
