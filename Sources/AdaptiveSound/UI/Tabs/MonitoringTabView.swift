@@ -60,7 +60,10 @@ private struct MonitoringTabContent: View {
     let reduceMotion: Bool
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        // Screen(.stack) provides the scroll + fill + top-align + background (was a bespoke
+        // ScrollView). The `.task`/polling lifecycle lives on MonitoringTabView (unchanged), so
+        // swapping only this inner content view's container doesn't affect start/stop-on-tab-switch.
+        Screen(mode: .stack) {
             VStack(spacing: DesignSystem.Spacing.small) {
                 MonitoringHeaderView()
 
@@ -70,7 +73,6 @@ private struct MonitoringTabContent: View {
                     channelRows
                 }
             }
-            .padding(DesignSystem.Spacing.medium)
         }
     }
 
