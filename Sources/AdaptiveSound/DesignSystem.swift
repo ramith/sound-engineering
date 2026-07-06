@@ -118,15 +118,14 @@ enum DesignSystem {
 
     // MARK: Shell metrics (app-owned window chrome bands)
 
-    /// Fixed heights + insets for the app-owned chrome (header / footer bands) and the
-    /// window minimum. Reconciled to the shipping look in the layout plan (§5): chrome
-    /// stays 60 (today's `ToolbarView`), window min bumps to 880×640 for the footer
-    /// transport + two Now Playing panes. `trafficLightInset` reserves room so the header
-    /// logo clears the native traffic lights under `.hiddenTitleBar` (wired in L2, not here).
+    /// Fixed heights for the app-owned chrome (header / footer bands) and the window minimum.
+    /// Reconciled to the shipping look in the layout plan (§5): chrome stays 60 (today's
+    /// `ToolbarView`), window min bumps to 880×640 for the footer transport + two Now Playing
+    /// panes. No traffic-light inset — the native titlebar carries the window buttons in their
+    /// own strip, so the chrome shares the content's left margin.
     enum ShellMetrics {
         static let chromeHeight: CGFloat = 60
         static let footerHeight: CGFloat = 64
-        static let trafficLightInset: CGFloat = 80
         static let windowMinWidth: CGFloat = 880
         static let windowMinHeight: CGFloat = 640
         static let hairline: CGFloat = 0.5

@@ -36,10 +36,12 @@ struct AdaptiveSound: App {
                     audioViewModel.initializeEngine()
                 }
         }
-        // App-owned chrome (L2): hide the native titlebar (traffic lights stay), let the
-        // chrome band drag the window natively (no AppKit NSView), keep the content-driven
-        // window minimum that AppShell now supplies.
-        .windowStyle(.hiddenTitleBar)
+        // App-owned chrome: a standard native titlebar carries the window buttons in their OWN
+        // strip, so nothing overlaps the content — the app's chrome band and all content share a
+        // single left margin (no traffic-light inset). The chrome band can still drag the window
+        // natively; AppShell supplies the content-driven window minimum. (An earlier revision used
+        // `.windowStyle(.hiddenTitleBar)`, but the buttons then overlapped the top-left and forced
+        // an ~80pt indent on the chrome that misaligned it with the content — founder's call.)
         .windowBackgroundDragBehavior(.enabled)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1000, height: 720) // open comfortably above the 880×640 hard minimum
