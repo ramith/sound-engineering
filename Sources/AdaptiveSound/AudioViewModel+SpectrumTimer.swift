@@ -73,7 +73,9 @@ extension AudioViewModel {
             logUX("device-loss interrupt — stopping playback")
             isPlaying = false
             playbackPosition = 0
-            errorMessage = "Output device disconnected — playback paused. Pick a device to resume."
+            // Copy is precise: selecting a device does NOT auto-resume (and the playhead was reset
+            // above), so the user must press Play — don't promise "resume" (architect gate).
+            errorMessage = "Output device disconnected — playback paused. Select a device, then press Play."
             // Clear pending on-deck track; device loss invalidates the gapless queue.
             pendingNextIndex = nil
             Task { await engine.setNextTrack(nil) }

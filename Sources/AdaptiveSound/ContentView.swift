@@ -18,6 +18,13 @@ struct ContentView: View {
             TabContentView(selectedTab: viewModel.selectedTab)
                 .transition(.opacity)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.selectedTab)
+                // Shell-level error surface: overlaid at the top of the content region (below the
+                // chrome, above every tab) so `errorMessage` is visible on all tabs without pushing
+                // content. AppShell clips the content frame, so the slide-in reveals from the top edge.
+                .overlay(alignment: .top) {
+                    ErrorBanner()
+                        .environment(viewModel)
+                }
         } footer: {
             NowPlayingBar()
                 .environment(viewModel)
