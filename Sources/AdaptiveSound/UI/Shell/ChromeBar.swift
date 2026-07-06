@@ -84,7 +84,10 @@ private struct DevicePillView: View {
             .truncationMode(.tail)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(minWidth: 160, maxWidth: 240, minHeight: 32, alignment: .leading)
+            // Fixed width (minWidth == maxWidth), not a range: the pill's width was tracking the
+            // device NAME, which slid the tab control's left edge on every device change. Fixed →
+            // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate.
+            .frame(minWidth: 200, maxWidth: 200, minHeight: 32, alignment: .leading)
             .background(Color.asCard)
             .clipShape(.rect(cornerRadius: 8, style: .continuous))
             .overlay {
@@ -117,7 +120,9 @@ private struct TabSelectorView: View {
             EmptyView() // no picker label at all — the VoiceOver name comes from .accessibilityLabel below
         }
         .pickerStyle(.segmented)
-        .layoutPriority(1)
+        // Lock the segmented control to its intrinsic size so the tabs never stretch with the
+        // window or compress — a stable, fixed-size chrome control (layoutPriority is now moot).
+        .fixedSize()
         .accessibilityLabel("Tab Navigation")
         .accessibilityValue(selectedTab.rawValue)
     }
