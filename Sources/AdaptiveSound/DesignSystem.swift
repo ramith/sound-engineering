@@ -81,6 +81,9 @@ enum DesignSystem {
         static let micro = SwiftUI.Font.system(size: 11, weight: .semibold)
         static let mono = SwiftUI.Font.system(size: 12, weight: .regular, design: .monospaced)
         static let monoSmall = SwiftUI.Font.system(size: 11, weight: .regular, design: .monospaced)
+        /// Compact now-playing pairing (footer transport / mini-player): title over subtitle.
+        static let trackTitle = SwiftUI.Font.system(size: 13, weight: .semibold)
+        static let trackSubtitle = SwiftUI.Font.system(size: 11, weight: .regular)
     }
 
     // MARK: Spacing (single rhythm scale)
@@ -168,5 +171,31 @@ enum DesignSystem {
         static let thumb: CGFloat = 44
         static let cell: CGFloat = 168
         static let detail: CGFloat = 148
+    }
+
+    // MARK: Footer transport metrics (L3)
+
+    /// Sizing for the persistent footer transport bar (`NowPlayingBar`). Keeps the four-region
+    /// layout free of magic numbers; the band height itself stays `ShellMetrics.footerHeight`.
+    enum Footer {
+        static let hInset: CGFloat = 16 // matches the chrome header inset
+        static let infoMinWidth: CGFloat = 174
+        static let infoIdealWidth: CGFloat = 240
+        static let artGap: CGFloat = 10
+        static let controlSpacing: CGFloat = 18
+        static let playButton: CGFloat = 34
+        static let playSymbol: CGFloat = 14
+        static let skipButton: CGFloat = 30 // hit target
+        static let skipSymbol: CGFloat = 15
+        static let scrubberTrackMinWidth: CGFloat = 120
+        static let scrubberTrackHeight: CGFloat = 3
+        static let scrubberHitHeight: CGFloat = 20
+        static let thumbSize: CGFloat = 10
+        static let timeLabelWidth: CGFloat = 46
+        static let signalSlotWidth: CGFloat = 120
+        static let regionGapInfoToControls: CGFloat = 20
+        static let regionGap: CGFloat = 16 // controls→scrubber, scrubber→signal
+        static let tooltipHalfWidth: CGFloat = 22 // half the drag tooltip width, for edge clamping
+        static let tooltipYOffset: CGFloat = -20 // tooltip rises above the track while dragging
     }
 }

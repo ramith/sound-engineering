@@ -17,9 +17,10 @@ struct LeftPanelView: View {
     }
 
     var body: some View {
-        // Scrolls within its pane (L4b): the Now Playing detail stack (spectrum → transport →
-        // gain → info) is taller than the shell's bounded content region on a short window, so it
+        // Scrolls within its pane (L4b): the Now Playing detail stack (spectrum → gain → track
+        // info) can be taller than the shell's bounded content region on a short window, so it
         // must scroll rather than be clipped. On a tall window it simply sits top-aligned.
+        // Transport (scrubber + play controls) moved to the global footer bar in L3.
         ScrollView(.vertical) {
             VStack(spacing: 0) {
                 SpectrumAnalyzerView()
@@ -32,16 +33,6 @@ struct LeftPanelView: View {
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { viewModel.selectedTab = .monitoring }
                     .help("Double-click to open Monitoring")
-
-                TransportScrubberView()
-                    .padding(.leading, Layout.leadingPad)
-                    .padding(.trailing, Layout.trailingPad)
-                    .padding(.vertical, Layout.sectionVPad)
-
-                PlayControlsView()
-                    .padding(.leading, Layout.leadingPad)
-                    .padding(.trailing, Layout.trailingPad)
-                    .padding(.vertical, Layout.sectionVPad)
 
                 MasterGainSliderView()
                     .padding(.leading, Layout.leadingPad)

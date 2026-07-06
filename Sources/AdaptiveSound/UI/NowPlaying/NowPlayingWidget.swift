@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Now Playing Widget
 
 /// Compact card showing the current track's artwork placeholder, name, and live signal-path badge.
-/// The progress/seek row has been promoted to the standalone `TransportScrubberView` in `LeftPanelView`.
+/// The progress/seek row now lives in the global footer transport (`NowPlayingBar`, L3).
 struct NowPlayingWidget: View {
     @Environment(AudioViewModel.self) var viewModel
 

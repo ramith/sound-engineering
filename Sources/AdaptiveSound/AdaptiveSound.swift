@@ -50,11 +50,16 @@ struct AdaptiveSound: App {
             CommandGroup(replacing: .newItem) {}
 
             CommandMenu("Controls") {
+                // Use the SAME transport semantics as the footer bar (L3): position-preserving
+                // pause/play (not the old stopPlayback/startPlayback hard-stop that zeroed the
+                // playhead), and shuffle/repeat-aware next/previous (not linear playTrack(at:)).
+                // A menu key-equivalent wins over the queue's .onKeyPress, so spacebar MUST match
+                // the footer's play button — otherwise the two global transports contradict.
                 Button(audioViewModel.isPlaying ? "Pause" : "Play") {
                     if audioViewModel.isPlaying {
-                        audioViewModel.stopPlayback()
+                        audioViewModel.pause()
                     } else {
-                        audioViewModel.startPlayback()
+                        audioViewModel.play()
                     }
                 }
                 .keyboardShortcut(.space, modifiers: [])
@@ -62,22 +67,13 @@ struct AdaptiveSound: App {
 
                 Divider()
 
-                Button("Next Track") {
-                    if let index = audioViewModel.selectedTrackIndex,
-                       index + 1 < audioViewModel.playlist.count {
-                        audioViewModel.playTrack(at: index + 1)
-                    }
-                }
-                .keyboardShortcut(.rightArrow, modifiers: .command)
-                .disabled(audioViewModel.selectedTrackIndex == nil)
+                Button("Next Track") { audioViewModel.nextTrack() }
+                    .keyboardShortcut(.rightArrow, modifiers: .command)
+                    .disabled(audioViewModel.selectedTrackIndex == nil)
 
-                Button("Previous Track") {
-                    if let index = audioViewModel.selectedTrackIndex, index > 0 {
-                        audioViewModel.playTrack(at: index - 1)
-                    }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
-                .disabled(audioViewModel.selectedTrackIndex == nil)
+                Button("Previous Track") { audioViewModel.previousTrack() }
+                    .keyboardShortcut(.leftArrow, modifiers: .command)
+                    .disabled(audioViewModel.selectedTrackIndex == nil)
             }
         }
     }
