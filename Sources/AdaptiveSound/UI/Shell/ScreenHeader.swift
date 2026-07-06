@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The only sanctioned in-content title surface (replaces `.navigationTitle`, which would
-/// leak into the window titlebar the app owns).
+/// The only sanctioned in-content title surface. Use this instead of the SwiftUI
+/// navigation-title modifier, which would leak text into the window titlebar the app owns
+/// (and is banned under `Sources/` by `.semgrep.yml` → `swift-no-navigation-title`).
 ///
 /// A title (optional subtitle) with an optional leading back control. The back button keeps
 /// its "Back" label for VoiceOver even under `.labelStyle(.iconOnly)`.
