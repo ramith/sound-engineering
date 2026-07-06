@@ -17,6 +17,13 @@
 #     (Memory/UB/race safety stays with clang-tidy + -Werror + ASan/UBSan/TSan; raw new/delete
 #     at the reviewed opaque-handle C-ABI boundary is intentional and covered by
 #     `make sanitize-library-store`.)
+#   * Swift navigation-title (L5): banned — the app owns the window chrome (no native titlebar
+#     text), so titles go in-content via ScreenHeader (UI/Shell/ScreenHeader.swift). A companion
+#     "no window-sizing .frame(minWidth/minHeight)" ban was CONSIDERED and REJECTED: window
+#     sizing is structurally owned by AppShell + WindowMinSize, but many legitimate component
+#     frames (device pill, scrubber track, visualizer surface, preset sheet) use minWidth/
+#     minHeight, so a token regex would be a false-positive machine — and the ContentView bug it
+#     targeted isn't even under UI/. Enforced by review + the AppShell/WindowMinSize ownership.
 #
 # Reviewed exceptions use a narrow `// nosemgrep: <rule-id>` with the PERMANENT/TEMP + reason
 # annotation enforced by scripts/check-suppressions.sh.
@@ -32,6 +39,15 @@ rules:
     severity: ERROR
     message: "Do not use as!. Use conditional casting (as?) and handle nil."
     pattern-regex: '\bas!'
+
+  - id: swift-no-navigation-title
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Do not use the navigation-title modifier — this app owns the window chrome (there is no
+      native titlebar text to set). Put titles in-content via ScreenHeader
+      (Sources/AdaptiveSound/UI/Shell/ScreenHeader.swift).
+    pattern-regex: '\.navigationTitle'
 
   - id: cpp-no-unsafe-string-fn
     languages: [generic]
