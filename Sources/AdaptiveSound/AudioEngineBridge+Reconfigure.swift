@@ -8,7 +8,7 @@ import Foundation
 /// extension to keep the core class body focused (SwiftLint `type_body_length`). The public entry
 /// point is `reconfigureGraph(to:)`; the helpers below are `private` so they stay scoped to this
 /// file. The members it touches (`avEngine`, `playerNode`, `dspAudioUnit`, `spatialAudioUnit`, the
-/// analyzer arrays, `graphState`, the tap install/remove) are module-internal on the base class so
+/// analyzer arrays, the tap install/remove) are module-internal on the base class so
 /// this extension — in a separate file — can reach them.
 /// The four live-graph node references threaded through the reconfigure lifecycle's private
 /// helpers (`reconnectGraph`, `applyReconfigure`). Grouping them keeps those functions under the
@@ -52,10 +52,7 @@ extension AudioEngineBridge {
         guard let engine = avEngine, let player = playerNode,
               let effects = dspAudioUnit, let spatial = spatialAudioUnit else { return }
 
-        // 2. Enter the reconfiguring state for the duration of the teardown/rebuild.
-        graphState = .reconfiguring
-
-        // 3. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
+        // 2. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
         //    session so no in-flight buffer schedules onto the graph we're about to reconnect), then
         //    stop the player and remove every tap before touching nodes.
         stopEnhancedResampler()
@@ -187,23 +184,19 @@ extension AudioEngineBridge {
         }
 
         // 9. Reinstall taps using each node's freshly negotiated outputFormat(forBus: 0). The
-        // "after" tap stays on the EFFECTS AU output (the N-channel processed signal).
+        // "after" tap stays on the EFFECTS AU output (the N-channel processed signal). The source
+        // layout tag is published separately by `configureGraphForSource` (M2-d) AFTER this returns,
+        // so the kernel sees the tag for the width the graph just settled on.
         installSpectrumTap()
-
-        // 10. Publish the new running state. The source layout tag is published separately by
-        // `configureGraphForSource` (M2-d) AFTER this returns, so the kernel sees the tag for the
-        // width the graph just settled on.
-        graphState = .running(channelCount: Int(channels))
     }
 
-    /// Land in a safe state after a reconfigure failure: pause the engine if it is still running,
-    /// drop to `.idle`, and log. Never crashes — a failed reconfigure must degrade, not abort.
+    /// Land in a safe state after a reconfigure failure: pause the engine if it is still running
+    /// and log. Never crashes — a failed reconfigure must degrade, not abort.
     private func abortReconfigure(reason: String) {
         print("reconfigureGraph: aborting — \(reason)")
         if let engine = avEngine, engine.isRunning, !engine.isInManualRenderingMode {
             engine.pause()
         }
-        graphState = .idle
     }
 
     /// Maximum render block the offline manual-rendering path re-enables with. Mirrors the

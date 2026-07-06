@@ -6,7 +6,7 @@ import Foundation
 
 /// Pure-Mode orchestration: capability evaluation, engine lifecycle, transport routing,
 /// and seek helpers. All stored properties (pureEngine, activePath,
-/// cachedSignalPath, lastFileURL, pureModeRequested, currentDeviceID,
+/// cachedSignalPath, lastFileURL, currentDeviceID,
 /// deviceAliveListenerBlock, aliveListenerDeviceID) live on the main class body
 /// in AudioEngineBridge.swift (Swift extensions cannot add stored properties).
 ///
@@ -275,8 +275,6 @@ extension AudioEngineBridge {
             achievedSampleRate: state.achievedRate,
             bitDepth: state.achievedBitsPerChannel,
             isFloat: state.achievedIsFloat == 1,
-            exclusiveHog: state.didHog == 1,
-            rateMatched: state.rateChanged == 1,
             decoder: decoderUI,
             fellBackToEnhanced: false
         )

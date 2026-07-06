@@ -5,7 +5,7 @@ import Foundation
 /// Manages 31-band EQ state and dispatches gain changes to the DSP kernel.
 ///
 /// Preset shapes live in `EQPreset.gains` (the single source of truth).
-/// All mutations go through `applyBandGain(_:_:)` or `selectPreset(_:)`,
+/// All mutations go through `commitCustomBandEdits()` or `selectPreset(_:)`,
 /// both of which call `dispatchAllBands()` exactly once per user action.
 ///
 /// Presets are typed as `EQPreset`; "Custom" is represented by setting
@@ -81,17 +81,6 @@ final class EQViewModel {
 
     // MARK: - Per-Band Editing
 
-    /// Update a single band gain and dispatch the full band array to the kernel.
-    ///
-    /// Clamps `gain` to [-12, +12] dB. Marks `selectedPreset` as `nil` so
-    /// the UI reflects that the current state no longer matches a named preset.
-    func applyBandGain(_ band: Int, _ gain: Float) {
-        guard band >= 0, band < bandGains.count else { return }
-        bandGains[band] = max(-12.0, min(12.0, gain))
-        selectedPreset = nil
-        dispatchAllBands()
-    }
-
     /// Commit canvas-drawn ("custom") edits. The `FrequencyResponseCanvas` mutates
     /// `bandGains` in place during a drag, then calls this to **defensively clamp
     /// every band to the DSP range [-12, +12] dB**, mark the preset custom, and
@@ -103,14 +92,6 @@ final class EQViewModel {
         }
         selectedPreset = nil
         dispatchAllBands()
-    }
-
-    // MARK: - Reset
-
-    /// Resets all bands to 0 dB and selects the Flat preset.
-    func resetToFlat() {
-        logUX("EQ reset → flat")
-        selectPreset(.flat)
     }
 
     // MARK: - Save Custom Preset
@@ -129,18 +110,6 @@ final class EQViewModel {
     }
 
     // MARK: - Per-Output Recall
-
-    /// Associate the current preset with a device so it is recalled automatically
-    /// when that device is selected.
-    ///
-    /// Call this after the user has selected a preset they want associated with the
-    /// given device (or after a save-custom that they confirmed to map).
-    func mapCurrentPresetToDevice(_ device: AudioDeviceModel) {
-        let key = String(device.id)
-        outputPresetMap[key] = selectedPresetName
-        persistOutputPresetMap()
-        logUX("EQ output-map: device '\(device.name)' → '\(selectedPresetName)'")
-    }
 
     /// Recall the preset previously mapped to `device`, if any.
     ///
@@ -170,8 +139,8 @@ final class EQViewModel {
     // MARK: - Dispatch
 
     /// Publish the full 31-band gain vector to the live DSP AU. Called exactly
-    /// once per user action — never in a per-band loop. Used by `selectPreset`,
-    /// `applyBandGain`, and `commitCustomBandEdits`.
+    /// once per user action — never in a per-band loop. Used by `selectPreset`
+    /// and `commitCustomBandEdits`.
     ///
     /// The published gains pass through `EQSafetyClamp`: if the summed band gains
     /// exceed the cumulative hearing-safety ceiling, all bands are proportionally

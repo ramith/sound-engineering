@@ -108,9 +108,7 @@ public extension LibraryStore {
     internal func mapArtistRow(_ statement: SQLiteStatement) -> ArtistFacet {
         ArtistFacet(
             id: statement.columnInt64(0),
-            name: statement.columnText(1) ?? "",
-            sortName: statement.columnText(2),
-            trackCount: statement.columnInt(3)
+            name: statement.columnText(1) ?? ""
         )
     }
 

@@ -1,19 +1,10 @@
 // MetadataProgress — the S8.3 metadata-pass progress tick (mirrors ScanProgress §5).
 //
 // Sendable, scalars only, so it crosses from the off-main pass to the VM's @MainActor.
-// Unlike the scan (a lazy single-pass walk → indeterminate), the metadata pass starts
-// from a KNOWN id list, so `totalToProcess` is populated → a determinate progress bar.
+// A per-file "a tag was read" signal: the VM publishes it (non-nil while the pass runs,
+// nil at start/end) to drive the coarse "Reading tags…" indicator. It carries no counts
+// today — the UI only observes presence, not progress magnitude.
 
 import Foundation
 
-public struct MetadataProgress: Sendable, Equatable {
-    /// Tracks whose metadata attempt has completed so far this pass.
-    public let filesProcessedSoFar: Int
-    /// Total tracks the pass will attempt (known up front), or nil if indeterminate.
-    public let totalToProcess: Int?
-
-    public init(filesProcessedSoFar: Int, totalToProcess: Int?) {
-        self.filesProcessedSoFar = filesProcessedSoFar
-        self.totalToProcess = totalToProcess
-    }
-}
+public struct MetadataProgress: Sendable, Equatable {}

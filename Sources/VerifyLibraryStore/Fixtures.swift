@@ -32,16 +32,12 @@ struct FixtureExpectations {
     let genreCount: Int
     /// Track count of the collapsed untagged 'Greatest Hits' album (must be 2).
     let untaggedAlbumTrackCount: Int
-    /// rootID → number of tracks directly under that root.
-    let tracksPerRoot: [Int64: Int]
     /// The `/Music/Rock` root id and its EXACT track count (path-boundary check).
     let rockRootID: Int64
     let rockRootTrackCount: Int
     /// The `/Music/RockAndRoll` root id and its EXACT track count.
     let rockAndRollRootID: Int64
     let rockAndRollRootTrackCount: Int
-    /// The loose track's id (folder NULL) — used by the FS-4 survival check.
-    let looseTrackID: Int64
     /// genre name → distinct track count (for the DISTINCT-count assertion).
     let genreTrackCounts: [String: Int]
 
@@ -124,13 +120,8 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
         allDefs: popTracks + jazzTracks + rockTracks + rockAndRollTracks,
         looseGenres: looseGenres, looseArtist: looseArtist, looseAlbum: looseAlbum,
         looseTitle: looseTitle, looseYear: looseYear,
-        rootCounts: [
-            popRootID: popTracks.count, jazzRootID: jazzTracks.count,
-            rockRootID: rockTracks.count, rockAndRollRootID: rockAndRollTracks.count,
-        ],
         rockRootID: rockRootID, rockCount: rockTracks.count,
-        rockAndRollRootID: rockAndRollRootID, rockAndRollCount: rockAndRollTracks.count,
-        looseTrackID: looseTrackID
+        rockAndRollRootID: rockAndRollRootID, rockAndRollCount: rockAndRollTracks.count
     )
 }
 
@@ -231,8 +222,8 @@ private func rockAndRollFixtureTracks() -> [FixtureTrack] {
 private func computeExpectations(
     allDefs: [FixtureTrack], looseGenres: [String], looseArtist: String, looseAlbum: String,
     looseTitle: String, looseYear: Int,
-    rootCounts: [Int64: Int], rockRootID: Int64, rockCount: Int,
-    rockAndRollRootID: Int64, rockAndRollCount: Int, looseTrackID: Int64
+    rockRootID: Int64, rockCount: Int,
+    rockAndRollRootID: Int64, rockAndRollCount: Int
 ) -> FixtureExpectations {
     // Fold the loose track into ONE definition list so every derived set is computed
     // uniformly (the loose track participates in artist/album/genre/year facets too).
@@ -267,10 +258,9 @@ private func computeExpectations(
     return FixtureExpectations(
         totalTracks: totalTracks, albumCount: albumCount, artistCount: artistCount,
         genreCount: derived.tracksByGenre.count, untaggedAlbumTrackCount: untaggedCount,
-        tracksPerRoot: rootCounts,
         rockRootID: rockRootID, rockRootTrackCount: rockCount,
         rockAndRollRootID: rockAndRollRootID, rockAndRollRootTrackCount: rockAndRollCount,
-        looseTrackID: looseTrackID, genreTrackCounts: derived.genreTrackCounts,
+        genreTrackCounts: derived.genreTrackCounts,
         yearsDescending: derived.yearsDescending, albumsByAlbumArtist: derived.albumsByAlbumArtist,
         tracksByArtist: derived.tracksByArtist, albumsByGenre: derived.albumsByGenre,
         tracksByGenre: derived.tracksByGenre, albumsByYear: derived.albumsByYear

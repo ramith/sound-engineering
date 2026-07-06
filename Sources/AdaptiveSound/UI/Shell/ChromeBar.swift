@@ -14,8 +14,6 @@ import SwiftUI
 /// compresses). The device pill is fixed-width and truncates long names, so the tab control's
 /// left edge is invariant to the device name and an aggregate-device name can't blow out the header.
 struct ChromeBar: View {
-    @Environment(AudioViewModel.self) private var viewModel
-
     /// Binding to the tab selection owned by ContentView so the toolbar
     /// controls navigation without owning state it does not produce.
     @Binding var selectedTab: TabSelection

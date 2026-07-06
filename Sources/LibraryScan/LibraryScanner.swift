@@ -71,8 +71,8 @@ public struct LibraryScanner: Sendable {
     ///   saw ZERO files while the store still held rows for this root (the empty-walk
     ///   safety guard, S8.4 slice 3 — the sweep is refused, rows preserved); or whatever
     ///   `store` throws.
-    /// - Returns: a `ScanResult` (folderID, generation, filesSeen, filesSkipped,
-    ///   orphansSwept, trackIDs in walk order).
+    /// - Returns: a `ScanResult` (generation, filesSeen, filesSkipped, orphansSwept,
+    ///   trackIDs in walk order).
     public func scan(
         root: URL, folderID: Int64, into store: LibraryStore,
         progress: (@Sendable (ScanProgress) -> Void)? = nil
@@ -102,7 +102,7 @@ public struct LibraryScanner: Sendable {
         let orphansSwept = try await store.sweepOrphans(inFolders: [folderID], olderThan: generation)
 
         return ScanResult(
-            folderID: folderID, generation: generation, filesSeen: walked.filesSeen,
+            generation: generation, filesSeen: walked.filesSeen,
             filesSkipped: walked.filesSkipped, orphansSwept: orphansSwept, trackIDs: walked.trackIDs
         )
     }

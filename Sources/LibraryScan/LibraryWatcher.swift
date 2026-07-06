@@ -24,7 +24,6 @@ public struct WatcherEvent: Sendable, Equatable {
     public let isCreated: Bool
     public let isRemoved: Bool
     public let isRenamed: Bool
-    public let isModified: Bool
     public let isDir: Bool
     public let mustScanSubdirs: Bool
     public let rootChanged: Bool
@@ -37,7 +36,6 @@ public struct WatcherEvent: Sendable, Equatable {
         isCreated = has(kFSEventStreamEventFlagItemCreated)
         isRemoved = has(kFSEventStreamEventFlagItemRemoved)
         isRenamed = has(kFSEventStreamEventFlagItemRenamed)
-        isModified = has(kFSEventStreamEventFlagItemModified)
         isDir = has(kFSEventStreamEventFlagItemIsDir)
         mustScanSubdirs = has(kFSEventStreamEventFlagMustScanSubDirs)
         rootChanged = has(kFSEventStreamEventFlagRootChanged)

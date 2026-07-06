@@ -13,13 +13,6 @@ import Foundation
 /// Implementations are responsible for dispatching UI-bound side-effects to
 /// the main actor if needed; the protocol itself is actor-agnostic.
 extension AudioPlaybackEngine {
-    /// Convenience overload: start playback without Pure-mode (Enhanced path).
-    /// Non-Pure callers — including legacy call sites — use this rather than the
-    /// full `startAudio(fileURL:pureMode:)` signature.
-    func startAudio(fileURL: URL?) async throws {
-        try await startAudio(fileURL: fileURL, pureMode: false)
-    }
-
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
     //

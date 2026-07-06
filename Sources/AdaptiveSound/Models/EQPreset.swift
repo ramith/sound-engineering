@@ -90,13 +90,6 @@ enum EQPreset: String, CaseIterable, Identifiable {
         }
     }
 
-    // MARK: - Gains as Double (for FrequencyResponseCanvas drawing)
-
-    /// Same gains as `Double` for use by the canvas interpolation code.
-    var gainsAsDouble: [Double] {
-        gains.map { Double($0) }
-    }
-
     // MARK: - ISO Centre Frequencies
 
     static let isoFrequencies: [Double] = [

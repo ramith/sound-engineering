@@ -165,12 +165,6 @@ final class LibraryBrowseModel {
         await loadAlbums()
     }
 
-    func setAlbumSort(_ sort: FacetSort) async {
-        guard sort != albumSort else { return }
-        albumSort = sort
-        await loadAlbums()
-    }
-
     // MARK: - Detail reads (album)
 
     func album(id: Int64) async -> AlbumFacet? {

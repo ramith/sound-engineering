@@ -174,20 +174,10 @@ public final class SQLiteConnection {
     // MARK: - Integrity
 
     /// Run `PRAGMA integrity_check` and return `true` iff SQLite reports "ok".
-    /// A corrupt database yields one or more problem rows; the first is surfaced
-    /// via a thrown `SQLiteError.integrityCheckFailed` from `integrityCheckStrict`.
+    /// A corrupt database yields one or more problem rows.
     public func integrityCheck() throws -> Bool {
         let result = try scalarText("PRAGMA integrity_check(1);")
         return result == "ok"
-    }
-
-    /// Like `integrityCheck()` but throws `.integrityCheckFailed` (with the first
-    /// problem row) when the check does not return "ok".
-    public func integrityCheckStrict() throws {
-        let result = try scalarText("PRAGMA integrity_check(1);")
-        guard result == "ok" else {
-            throw SQLiteError.integrityCheckFailed(details: result ?? "no result row")
-        }
     }
 
     /// The current `journal_mode` (e.g. "wal") — used by the harness to assert WAL.

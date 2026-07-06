@@ -13,8 +13,6 @@ import Foundation
 
 /// The outcome of scanning one registered root into the store.
 public struct ScanResult: Sendable, Equatable {
-    /// The scanned root's `folders` rowid (as passed in — one root per `scan`).
-    public let folderID: Int64
     /// The per-root scan generation stamped onto every touched row (`last_seen_scan`).
     public let generation: Int64
     /// How many regular, supported-extension files were upserted.
@@ -29,10 +27,9 @@ public struct ScanResult: Sendable, Equatable {
     public let trackIDs: [Int64]
 
     public init(
-        folderID: Int64, generation: Int64, filesSeen: Int, filesSkipped: Int,
+        generation: Int64, filesSeen: Int, filesSkipped: Int,
         orphansSwept: Int, trackIDs: [Int64]
     ) {
-        self.folderID = folderID
         self.generation = generation
         self.filesSeen = filesSeen
         self.filesSkipped = filesSkipped

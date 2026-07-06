@@ -200,8 +200,9 @@ final class AudioViewModel {
     /// `LibraryStore.defaultArtworkCacheURL()`. `nil` if the store failed to construct.
     var metadataArtworkCache: ArtworkCache?
 
-    /// Latest metadata-pass progress (determinate — the pass knows its total up front),
-    /// published from the off-main pass via a `@MainActor` hop. `nil` when idle.
+    /// Non-nil while a metadata pass is running — a presence signal (`MetadataProgress` no longer
+    /// carries counts after the dead-code pass; kept as a re-population seam for an S9.5 progress
+    /// bar). Published from the off-main pass via a `@MainActor` hop; `nil` when idle.
     var metadataProgress: MetadataProgress?
 
     // MARK: - Directory Monitoring (S8.4 — recursive FSEvents LibraryWatcher)
@@ -295,20 +296,6 @@ final class AudioViewModel {
     /// called once per EQ change by `EQViewModel.dispatchAllBands()`.
     func publishEQGains(_ gainsDb: [Float]) {
         engine.publishEQGains(gainsDb)
-    }
-
-    // MARK: - Monitoring (per-channel before/after)
-
-    /// Channels available to monitor (= the graph's channel count). 0 until the engine is ready.
-    var monitorChannelCount: Int {
-        engine.monitorChannelCount
-    }
-
-    /// Read one tap point + channel's latest band magnitudes into `out` (polled by the
-    /// Monitoring tab while it is visible).
-    @discardableResult
-    func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
-        engine.readMonitorBands(tap, channel: channel, into: &out)
     }
 
     // MARK: - Helpers

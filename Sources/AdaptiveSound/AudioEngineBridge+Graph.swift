@@ -9,7 +9,7 @@ import Foundation
 /// mainMixer -> output`) and the analysis-tap install/remove, factored out of the core
 /// `AudioEngineBridge` class body into a same-module extension to keep the class focused (SwiftLint
 /// `type_body_length`). The members touched here (`avEngine`, `playerNode`, `dspAudioUnit`,
-/// `spatialAudioUnit`, the analyzer arrays, the meter/analyzer handles, `graphState`, the
+/// `spatialAudioUnit`, the analyzer arrays, the meter/analyzer handles, the
 /// `tapInstalled` flags) are module-internal on the base class so this extension can reach them.
 extension AudioEngineBridge {
     /// Instantiate the effects AU, then (nested) the spatial AU, then wire the full two-AU graph and
@@ -113,8 +113,6 @@ extension AudioEngineBridge {
         afterAnalyzers = (0 ..< channelCount).map { _ in
             SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
         }
-
-        graphState = .running(channelCount: channelCount)
     }
 
     // MARK: - Spectrum tap
