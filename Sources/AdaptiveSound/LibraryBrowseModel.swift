@@ -36,7 +36,6 @@ final class LibraryBrowseModel {
     }
 
     var path: [LibraryRoute] = []
-    var columnVisibility: NavigationSplitViewVisibility = .all
 
     // Albums (S9.4). Songs/artists/genres/years arrays land in S9.5/S9.6.
     private(set) var albums: [AlbumFacet] = []
