@@ -42,6 +42,7 @@ struct AdaptiveSound: App {
         .windowStyle(.hiddenTitleBar)
         .windowBackgroundDragBehavior(.enabled)
         .windowResizability(.contentMinSize)
+        .defaultSize(width: 1000, height: 720) // open comfortably above the 880×640 hard minimum
         .commands {
             // No document model — drop the default New/Open items.
             CommandGroup(replacing: .newItem) {}
