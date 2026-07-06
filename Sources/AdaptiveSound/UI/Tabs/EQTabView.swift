@@ -10,14 +10,22 @@ struct EQTabView: View {
     @State private var bannerVisible = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        // `.fill` (not `.stack`): the graph is an interactive drag surface, so it must NOT
+        // live in a ScrollView (drag-to-edit vs scroll is a real conflict — plan §1). The
+        // graph flexes to fill instead; at the window min it shrinks toward its 220 min and
+        // the content still fits the content region, so no scrolling is needed.
+        Screen(mode: .fill) {
             VStack(spacing: 20) {
-                FrequencyResponseCanvas(
-                    eqViewModel: eqViewModel,
-                    isUsingDiscreteSteps: isUsingDiscreteSteps
-                )
-                .frame(height: 400, alignment: .center)
-                .frame(minWidth: 400)
+                VisualizerSurface(
+                    minHeight: DesignSystem.Visualizer.responseGraphMinHeight,
+                    idealHeight: DesignSystem.Visualizer.responseGraphIdealHeight,
+                    maxHeight: DesignSystem.Visualizer.responseGraphMaxHeight
+                ) {
+                    FrequencyResponseCanvas(
+                        eqViewModel: eqViewModel,
+                        isUsingDiscreteSteps: isUsingDiscreteSteps
+                    )
+                }
                 .padding(.top, 20)
                 .padding(.horizontal)
 
@@ -26,32 +34,34 @@ struct EQTabView: View {
                     isUsingDiscreteSteps: $isUsingDiscreteSteps
                 )
             }
+            .overlay(alignment: .bottom) { recallBanner }
+            .animation(.easeInOut(duration: 0.3), value: bannerVisible)
+            .onChange(of: isUsingDiscreteSteps) { _, newValue in
+                eqViewModel.logInterpolationModeChange(newValue)
+            }
+            // F3: per-output recall wired here in the view — NOT via a cross-VM callback.
+            .onChange(of: audioViewModel.selectedDevice) { _, newDevice in
+                guard let device = newDevice else { return }
+                eqViewModel.recallPresetForDevice(device)
+            }
+            .onChange(of: eqViewModel.recallBannerMessage) { _, message in
+                guard message != nil else { return }
+                bannerVisible = true
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    bannerVisible = false
+                    eqViewModel.recallBannerMessage = nil
+                }
+            }
+        }
+    }
 
-            // Non-modal auto-recall banner (F3).
-            if bannerVisible, let message = eqViewModel.recallBannerMessage {
-                EQRecallBanner(message: message)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .background(Color.asWindow)
-        .animation(.easeInOut(duration: 0.3), value: bannerVisible)
-        .onChange(of: isUsingDiscreteSteps) { _, newValue in
-            eqViewModel.logInterpolationModeChange(newValue)
-        }
-        // F3: per-output recall wired here in the view — NOT via a cross-VM callback.
-        .onChange(of: audioViewModel.selectedDevice) { _, newDevice in
-            guard let device = newDevice else { return }
-            eqViewModel.recallPresetForDevice(device)
-        }
-        .onChange(of: eqViewModel.recallBannerMessage) { _, message in
-            guard message != nil else { return }
-            bannerVisible = true
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                bannerVisible = false
-                eqViewModel.recallBannerMessage = nil
-            }
+    /// Non-modal auto-recall banner (F3), pinned to the bottom of the graph area.
+    @ViewBuilder private var recallBanner: some View {
+        if bannerVisible, let message = eqViewModel.recallBannerMessage {
+            EQRecallBanner(message: message)
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 }
