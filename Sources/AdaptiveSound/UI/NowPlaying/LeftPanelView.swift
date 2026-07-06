@@ -17,46 +17,49 @@ struct LeftPanelView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SpectrumAnalyzerView()
-                .frame(height: 50)
-                .padding(.leading, Layout.leadingPad)
-                .padding(.trailing, Layout.trailingPad)
-                .padding(.vertical, Layout.spectrumVPad)
-                // Double-click the spectrum to open the dedicated Monitoring tab (per-channel
-                // before/after). Single-tap is unaffected (the spectrum has no single-tap action).
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { viewModel.selectedTab = .monitoring }
-                .help("Double-click to open Monitoring")
+        // Scrolls within its pane (L4b): the Now Playing detail stack (spectrum → transport →
+        // gain → info) is taller than the shell's bounded content region on a short window, so it
+        // must scroll rather than be clipped. On a tall window it simply sits top-aligned.
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                SpectrumAnalyzerView()
+                    .frame(height: 50)
+                    .padding(.leading, Layout.leadingPad)
+                    .padding(.trailing, Layout.trailingPad)
+                    .padding(.vertical, Layout.spectrumVPad)
+                    // Double-click the spectrum to open the dedicated Monitoring tab (per-channel
+                    // before/after). Single-tap is unaffected (the spectrum has no single-tap action).
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { viewModel.selectedTab = .monitoring }
+                    .help("Double-click to open Monitoring")
 
-            TransportScrubberView()
-                .padding(.leading, Layout.leadingPad)
-                .padding(.trailing, Layout.trailingPad)
-                .padding(.vertical, Layout.sectionVPad)
+                TransportScrubberView()
+                    .padding(.leading, Layout.leadingPad)
+                    .padding(.trailing, Layout.trailingPad)
+                    .padding(.vertical, Layout.sectionVPad)
 
-            PlayControlsView()
-                .padding(.leading, Layout.leadingPad)
-                .padding(.trailing, Layout.trailingPad)
-                .padding(.vertical, Layout.sectionVPad)
+                PlayControlsView()
+                    .padding(.leading, Layout.leadingPad)
+                    .padding(.trailing, Layout.trailingPad)
+                    .padding(.vertical, Layout.sectionVPad)
 
-            MasterGainSliderView()
-                .padding(.leading, Layout.leadingPad)
-                .padding(.trailing, Layout.trailingPad)
-                .padding(.vertical, Layout.sectionVPad)
+                MasterGainSliderView()
+                    .padding(.leading, Layout.leadingPad)
+                    .padding(.trailing, Layout.trailingPad)
+                    .padding(.vertical, Layout.sectionVPad)
 
-            // Divider() does not respond to foregroundStyle on macOS —
-            // a filled Rectangle is the only reliable way to honour the
-            // hairline design token.
-            Rectangle()
-                .fill(Color.asHairline)
-                .frame(height: 0.5)
+                // Divider() does not respond to foregroundStyle on macOS —
+                // a filled Rectangle is the only reliable way to honour the
+                // hairline design token.
+                Rectangle()
+                    .fill(Color.asHairline)
+                    .frame(height: 0.5)
 
-            NowPlayingInfoView()
-                .padding(.leading, Layout.leadingPad)
-                .padding(.trailing, Layout.trailingPad)
-                .padding(.vertical, Layout.sectionVPad)
-
-            Spacer(minLength: 0)
+                NowPlayingInfoView()
+                    .padding(.leading, Layout.leadingPad)
+                    .padding(.trailing, Layout.trailingPad)
+                    .padding(.vertical, Layout.sectionVPad)
+            }
         }
     }
 }

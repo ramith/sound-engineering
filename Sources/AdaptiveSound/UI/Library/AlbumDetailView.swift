@@ -17,6 +17,7 @@ struct AlbumDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            backBar
             header
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
             trackList
@@ -25,6 +26,26 @@ struct AlbumDetailView: View {
             album = await model.album(id: albumID)
             tracks = await model.tracks(inAlbum: albumID)
         }
+    }
+
+    /// In-content back to the album grid. Replaces the `NavigationStack`'s window-toolbar back
+    /// button, which is hidden along with the whole window toolbar under `.hiddenTitleBar` (L2).
+    /// Pops the browse model's `path` (guarded — `removeLast()` on an empty array traps).
+    private var backBar: some View {
+        HStack {
+            Button {
+                if !model.path.isEmpty { model.path.removeLast() }
+            } label: {
+                Label("Library", systemImage: "chevron.backward")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(DesignSystem.Color.accent)
+            .accessibilityLabel("Back to Albums")
+
+            Spacer()
+        }
+        .padding(.horizontal, DesignSystem.Spacing.medium)
+        .padding(.top, DesignSystem.Spacing.small)
     }
 
     private var header: some View {
