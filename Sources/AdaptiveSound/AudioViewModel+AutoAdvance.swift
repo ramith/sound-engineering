@@ -10,12 +10,21 @@ extension AudioViewModel {
     /// Advances the highlighted index, resets the scrubber, refreshes duration,
     /// and queues the NEW next track on-deck.
     func handleTrackTransition() {
+        // Pre-existing, not one of the §12.3 completion sites: a live transition-count
+        // increase implies an on-deck track was armed (pendingNextIndex non-nil), so this
+        // branch is structurally unreachable during normal playback — defensive, not a
+        // natural-completion path, hence no play-count call here.
         guard let nextIdx = pendingNextIndex else {
             logUX("trackTransition: pendingNextIndex is nil, ignoring")
             return
         }
         guard nextIdx < playlist.count else {
             logUX("trackTransition: pendingNextIndex \(nextIdx) out of range, stopping")
+            // §12.3: the track that was playing (pre-advance selectedTrackIndex) still
+            // completed naturally — count it before returning (a playlist-shrank-after-
+            // arming edge; the normal end-of-queue path below is what usually counts the
+            // final track).
+            countOutgoingTrackCompletion()
             pendingNextIndex = nil
             isPlaying = false
             playbackPosition = 0
@@ -24,6 +33,10 @@ extension AudioViewModel {
 
         let advancedTrack = playlist[nextIdx]
         logUX("trackTransition: advancing to index=\(nextIdx) '\(advancedTrack.name)'")
+
+        // §12.3: count the OUTGOING track (pre-advance selectedTrackIndex) before it
+        // reassigns below — this IS the gapless-seam natural-completion site.
+        countOutgoingTrackCompletion()
 
         selectedTrackIndex = nextIdx
         playbackPosition = 0

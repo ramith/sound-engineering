@@ -126,6 +126,28 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     public let sampleRate: Int?
     /// PCM bit depth, or `nil`. Re-added in S9.5 for the "Format/Quality" cell.
     public let bitDepth: Int?
+    /// Disc number (S8.3), or `nil`. Projected since S9.1 (index 8 of `displayTrackColumns`)
+    /// but left unmapped until S9.5 §12.1's "Disc #" column.
+    public let discNo: Int?
+    /// File byte size (`tracks.file_size`, `NOT NULL`). S9.5 §12.1 "File Size" column.
+    public let fileSize: Int64
+    /// Play count (`tracks.play_count`, `NOT NULL DEFAULT 0`). S9.5 §12.1/§12.3 "Play Count"
+    /// column — real writes land via `incrementPlayCount` (play-tracking pulled forward
+    /// from S10).
+    public let playCount: Int64
+    /// Last-played epoch seconds (`tracks.last_played`), or `nil` if never played. S9.5
+    /// §12.3 — written by `incrementPlayCount`.
+    public let lastPlayed: Int64?
+    /// Resolved ALBUM-artist name (`albums.album_artist_id → artists.name`), or `nil` when
+    /// the track has no album OR the album's artist is the id-0 "Unknown Artist" sentinel
+    /// (blank-cell rendering, mirrors the BR3b sentinel-exclusion convention). Distinct
+    /// from `artistName` (the TRACK artist). S9.5 §12.1 "Album Artist" column.
+    public let albumArtistName: String?
+    /// A representative genre name (`MIN` over the track's `track_genres`), or `nil` when
+    /// the track has no genre. Display-only — deliberately NO header sort (a per-row
+    /// correlated subquery; sorting on it is a BR5 temp-b-tree hazard, §11.1/§12.1). S9.5
+    /// §12.1 "Genre" column.
+    public let genreName: String?
 
     /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
     public var durationSeconds: Double {
@@ -136,7 +158,9 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
         id: Int64, url: URL, title: String, artistID: Int64?,
         artistName: String, albumID: Int64?, albumName: String?, format: String,
         trackNo: Int?, durationMs: Int64, year: Int?, artworkKey: String?,
-        dateAdded: Int64, sampleRate: Int?, bitDepth: Int?
+        dateAdded: Int64, sampleRate: Int?, bitDepth: Int?, discNo: Int?,
+        fileSize: Int64, playCount: Int64, lastPlayed: Int64?,
+        albumArtistName: String?, genreName: String?
     ) {
         self.id = id
         self.url = url
@@ -153,6 +177,12 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
         self.dateAdded = dateAdded
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
+        self.discNo = discNo
+        self.fileSize = fileSize
+        self.playCount = playCount
+        self.lastPlayed = lastPlayed
+        self.albumArtistName = albumArtistName
+        self.genreName = genreName
     }
 }
 
@@ -277,67 +307,9 @@ public struct LibraryFolder: Sendable, Identifiable, Equatable {
 
 // MARK: - Sort orders
 
-/// Sort order for `allTracks(sortedBy:)` / `allTracksDisplay(sortedBy:)`. Every order is
-/// realised in SQL by `trackOrder(_:prefix:)` (one definition site, so the bare-`tracks`
-/// and JOINed-Display reads can never drift) and ALWAYS ends in `id` as the final unique
-/// tiebreaker, so a collision on the primary key yields a fully deterministic order.
-///
-/// `Hashable` so `trackOrder` can classify the descending variants by set membership.
-///
-/// The S9.5 (D7) additions serve the rich sortable Songs table. Nulls-ordering is EXPLICIT
-/// and documented per case below; the JOINed artist/album **name** sorts
-/// (`artistAlbumTrack`, `albumTitle*`) reference the Display reads' `ar`/`al` join aliases
-/// and are therefore valid ONLY on the LEFT-JOINed Display reads — the bare `tracks` reads
-/// use only the column-based sorts.
-public enum TrackSort: Sendable, Hashable {
-    /// By display name, locale-insensitive (SQLite `NOCASE`) — the S8.2 default.
-    case name
-    /// By resolved album then disc/track order (the album-detail order). No-album tracks
-    /// (`album_id` NULL) sort FIRST (the `album_id IS NULL` lead term).
-    case album
-    /// By `date_added` descending (most-recent first) — a "recently added" view.
-    case dateAddedDescending
-
-    // MARK: S9.5 (D7) — rich sortable-table orders
-
-    /// By display title (tag `title`, falling back to filename `name`) NOCASE ascending.
-    case titleAsc
-    /// By display title NOCASE descending.
-    case titleDesc
-    /// The composite DEFAULT: artist name NOCASE → album title NOCASE → disc_no → track_no
-    /// → id. A NULL artist/album name (no artist / no album) sorts FIRST within its group
-    /// (SQLite's default NULLS-FIRST for ascending).
-    case artistAlbumTrack
-    /// By album title NOCASE ascending; tracks with NO album (`al.title` NULL) sort LAST.
-    case albumTitleAsc
-    /// By album title NOCASE descending; tracks with NO album sort LAST (both directions,
-    /// via the `al.title IS NULL` lead term).
-    case albumTitleDesc
-    /// By `duration_ms` ascending. `duration_ms` is `NOT NULL DEFAULT 0`, so undecoded
-    /// tracks (0 ms) sort FIRST.
-    case durationAsc
-    /// By `duration_ms` descending; undecoded tracks (0 ms) sort LAST.
-    case durationDesc
-    /// By `date_added` ascending (oldest first) — complements `dateAddedDescending`.
-    case dateAddedAsc
-    /// By container `format` NOCASE ascending (`format` is `NOT NULL`).
-    case formatAsc
-    /// By container `format` NOCASE descending.
-    case formatDesc
-    /// By release `year` ascending; NULL year (unknown) sorts FIRST (NULLS-FIRST for asc),
-    /// which keeps the read index-driven on `idx_tracks_year`.
-    case yearAsc
-    /// By release `year` descending; NULL year sorts LAST (NULLS-LAST for desc).
-    case yearDesc
-}
-
-/// Sort order for the facet queries (`albums`/`artists`).
-public enum FacetSort: Sendable {
-    /// Alphabetical by title/name (case-insensitive).
-    case title
-    /// By year ascending then title (albums); by name for artists.
-    case year
-}
+//
+// `TrackSort`/`FacetSort` moved to `LibrarySortOrders.swift` (S9.5 §12.1, to keep this
+// file under the `file_length` budget as the catalog grew).
 
 // MARK: - Metadata write payload (S8.3 fills — provided now)
 
