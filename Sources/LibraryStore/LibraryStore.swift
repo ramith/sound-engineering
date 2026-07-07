@@ -156,9 +156,13 @@ public actor LibraryStore {
     }
 
     /// Set a track's reserved user-state columns (`play_count`/`loved`/`rating`). A
-    /// VERIFICATION HOOK, not the DAO: real play-count/rating writes are an S10 concern.
-    /// Used by the harness to prove these durable, id-keyed values SURVIVE a move-match
-    /// (S8.4 Gate-2 — the whole point of preserving `tracks.id` across a move).
+    /// VERIFICATION HOOK, not the DAO: `loved`/`rating` writes are still an S10 concern.
+    /// `play_count` now has a REAL production writer — `incrementPlayCount` (§12.3, S9.5,
+    /// pulled forward from S10) — so this hook is no longer the only way `play_count`
+    /// changes; it remains for the harness's move-match assertion below and for
+    /// seeding/asserting `loved`/`rating` directly. Used by the harness to prove these
+    /// durable, id-keyed values SURVIVE a move-match (S8.4 Gate-2 — the whole point of
+    /// preserving `tracks.id` across a move).
     public func setUserState(trackID: Int64, playCount: Int64, loved: Bool, rating: Int64?) throws {
         let statement = try connection.prepare(
             "UPDATE tracks SET play_count = ?, loved = ?, rating = ? WHERE id = ?;"
@@ -185,6 +189,28 @@ public actor LibraryStore {
         let loved = statement.columnInt64(1) == 1
         let rating = statement.columnIsNull(2) ? nil : statement.columnInt64(2)
         return TrackUserState(playCount: playCount, loved: loved, rating: rating)
+    }
+
+    // MARK: - Play tracking (§12.3, S9.5 — pulled forward from S10)
+
+    /// Count one natural-completion play for the track at `url`: a SINGLE atomic
+    /// `UPDATE … SET play_count = play_count + 1, last_played = ?` — no read-modify-write
+    /// race, no id round-trip (URL-keyed, normalized via `PathNormalizer` like every other
+    /// write/read keyed on `url`). Increments commute, so callers may fire this
+    /// fire-and-forget with no ordering requirement between concurrent completions.
+    ///
+    /// A `url` with no matching row (a file not in the library) is a SILENT no-op — zero
+    /// rows affected, NOT an error — because a play-count write must never throw into the
+    /// audio path (`AudioViewModel.countPlayCompletion`).
+    public func incrementPlayCount(url: URL, playedAt: Int64) throws {
+        let key = PathNormalizer.normalizedString(for: url)
+        let statement = try connection.prepare(
+            "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?;"
+        )
+        defer { statement.finalize() }
+        try statement.bind(playedAt, at: 1)
+        try statement.bind(key, at: 2)
+        _ = try statement.step()
     }
 
     // MARK: - Open / repair pipeline

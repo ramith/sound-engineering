@@ -27,16 +27,22 @@ public extension LibraryStore {
     /// no artist still yields exactly one row with an empty name), while `album_name`
     /// stays a true optional (NULL → nil) so "no album" is distinguishable.
     ///
-    /// Indices 0–13 are the S9.1 layout and MUST NOT shift (`mapDisplayRow` decodes
-    /// positionally); S9.5 (D1/D5) APPENDS `date_added`(14)/`sample_rate`(15)/`bit_depth`(16)
-    /// AFTER `album_name`. `name`(2) and `disc_no`(8) remain projected-but-unmapped (kept so
-    /// the decode indices don't shift); `year`(9) and `artwork_key`(11) are now mapped again
-    /// (S9.5 Songs "Year" column + per-row artwork). DB schema untouched (all columns persist).
+    /// Indices 0–16 are the S9.1/S9.5(D1/D5) layout and MUST NOT shift (`mapDisplayRow`
+    /// decodes positionally); S9.5 §12.1 (full-catalog columns) APPENDS
+    /// `file_size`(17)/`play_count`(18)/`last_played`(19)/`album_artist_name`(20, via the
+    /// `aa` LEFT JOIN)/`genre_name`(21, a correlated `MIN` scalar subquery — never a
+    /// fan-out JOIN) AFTER `bit_depth`. `name`(2) remains projected-but-unmapped (kept so
+    /// the decode indices don't shift); `disc_no`(8) is now ALSO mapped (S9.5 §12.1
+    /// "Disc #" column — it was already projected here since S9.1, just unused until now).
+    /// DB schema untouched (all columns already persisted).
     internal static let displayTrackColumns =
         "t.id, t.url, t.name, t.format, t.album_id, t.artist_id, t.title, t.track_no, "
             + "t.disc_no, t.year, t.duration_ms, t.artwork_key, "
             + "COALESCE(ar.name, '') AS artist_name, al.title AS album_name, "
-            + "t.date_added, t.sample_rate, t.bit_depth"
+            + "t.date_added, t.sample_rate, t.bit_depth, "
+            + "t.file_size, t.play_count, t.last_played, aa.name AS album_artist_name, "
+            + "(SELECT MIN(g.name) FROM track_genres tg JOIN genres g ON g.id = tg.genre_id "
+            + "WHERE tg.track_id = t.id) AS genre_name"
 
     // MARK: - Shared SQL fragments (identical text drives the read AND its EXPLAIN)
 
@@ -53,6 +59,21 @@ public extension LibraryStore {
     internal static let displayInGenreJoin = "JOIN track_genres tg ON tg.track_id = t.id"
     internal static let displayInGenreWhere = "WHERE tg.genre_id = ?"
 
+    /// The artist/album/album-artist LEFT JOIN chain every `displayTrackColumns` consumer
+    /// MUST carry (keyed off the `tracks` alias `t`) — `displayTracksSQL` uses it below, and
+    /// `LibraryStore+Search.search()` hand-builds a different FROM clause (`tracks_fts JOIN
+    /// tracks t`) so it interpolates this constant too rather than duplicating the JOIN text.
+    /// Extracted after `search()` broke (S9.5 §12.1 added `aa.name` to `displayTrackColumns`
+    /// without search() carrying the matching join) — this closes that exact drift class:
+    /// any future column needing a new join updates ONE constant, not N hand-rolled SELECTs.
+    /// The `al.album_artist_id <> 0` guard suppresses the id-0 "Unknown Artist" sentinel
+    /// (`albums.album_artist_id NOT NULL DEFAULT 0`), so a sentinel or no-album track
+    /// resolves `album_artist_name` to NULL (a blank cell), never the literal string.
+    internal static let displayArtistAlbumJoins =
+        "LEFT JOIN artists ar ON ar.id = t.artist_id "
+            + "LEFT JOIN albums al ON al.id = t.album_id "
+            + "LEFT JOIN artists aa ON aa.id = al.album_artist_id AND al.album_artist_id <> 0"
+
     /// The IN-list chunk size for `artworkCachePaths` — a few hundred, well under
     /// SQLite's 32766 bound-variable limit, so a large grid page never overflows it.
     internal static let artworkKeyChunkSize = 500
@@ -68,8 +89,7 @@ public extension LibraryStore {
     ) -> String {
         var sql = "SELECT \(displayTrackColumns) FROM tracks t"
         if !join.isEmpty { sql += " " + join }
-        sql += " LEFT JOIN artists ar ON ar.id = t.artist_id"
-        sql += " LEFT JOIN albums al ON al.id = t.album_id"
+        sql += " " + displayArtistAlbumJoins
         if !whereClause.isEmpty { sql += " " + whereClause }
         sql += " ORDER BY \(order)"
         if limited { sql += " LIMIT ? OFFSET ?" }
@@ -104,7 +124,13 @@ public extension LibraryStore {
             artworkKey: statement.columnText(11),
             dateAdded: statement.columnInt64(14),
             sampleRate: statement.columnIsNull(15) ? nil : statement.columnInt(15),
-            bitDepth: statement.columnIsNull(16) ? nil : statement.columnInt(16)
+            bitDepth: statement.columnIsNull(16) ? nil : statement.columnInt(16),
+            discNo: statement.columnIsNull(8) ? nil : statement.columnInt(8),
+            fileSize: statement.columnInt64(17),
+            playCount: statement.columnInt64(18),
+            lastPlayed: statement.columnIsNull(19) ? nil : statement.columnInt64(19),
+            albumArtistName: statement.columnText(20),
+            genreName: statement.columnText(21)
         )
     }
 
@@ -240,6 +266,7 @@ public extension LibraryStore {
     /// `.album`, `.artistAlbumTrack`) are handled directly in `trackOrder` and are not here.
     private static let descendingTrackSorts: Set<TrackSort> = [
         .titleDesc, .albumTitleDesc, .durationDesc, .dateAddedDescending, .formatDesc, .yearDesc,
+        .discNoDesc, .fileSizeDesc, .playCountDesc, .lastPlayedDesc, .albumArtistDesc,
     ]
 
     /// The `ORDER BY` body for a `TrackSort`, column-prefixed (`""` for the bare `tracks`
@@ -247,10 +274,11 @@ public extension LibraryStore {
     /// families can never drift; every order ends in `id` as the final unique tiebreaker.
     ///
     /// The multi-term composite orders live here; the single-column asc/desc pairs delegate
-    /// to `singleKeyTrackOrder` (kept a separate function so neither switch exceeds the
-    /// cyclomatic-complexity budget — there are 9 distinct sort keys). The name-based orders
-    /// (`.artistAlbumTrack` here, `.albumTitle*` in the helper) reference the Display reads'
-    /// `ar`/`al` join aliases and are valid ONLY on the LEFT-JOINed Display reads.
+    /// to `singleKeyTrackOrder`, which itself delegates the S9.5 §12.1 full-catalog additions
+    /// to `catalogTrackOrder` — split across three functions so NO switch exceeds the
+    /// cyclomatic-complexity budget. The name-based orders (`.artistAlbumTrack` here,
+    /// `.albumTitle*`/`.albumArtist*` in the helpers) reference the Display reads'
+    /// `ar`/`al`/`aa` join aliases and are valid ONLY on the LEFT-JOINed Display reads.
     internal static func trackOrder(_ sort: TrackSort, prefix: String) -> String {
         switch sort {
         case .name:
@@ -292,7 +320,40 @@ public extension LibraryStore {
         case .yearAsc, .yearDesc:
             return "\(prefix)year \(dir), \(prefix)id \(dir)"
         default:
-            // Unreachable: name/album/artistAlbumTrack are resolved in `trackOrder`.
+            // The S9.5 §12.1 full-catalog additions delegate to `catalogTrackOrder` (kept
+            // OUT of this switch so neither stays within the cyclomatic-complexity budget).
+            return catalogTrackOrder(sort, prefix: prefix, dir: dir)
+        }
+    }
+
+    /// The `ORDER BY` body for the S9.5 §12.1 full-catalog columns' single-column asc/desc
+    /// `TrackSort` pairs (Disc #/File Size/Play Count/Last Played/Album Artist) — split out
+    /// of `singleKeyTrackOrder` so neither switch exceeds the cyclomatic-complexity budget.
+    /// `dir` is passed in (already resolved by `singleKeyTrackOrder` from
+    /// `descendingTrackSorts`) so there is still exactly ONE place that decides direction.
+    private static func catalogTrackOrder(_ sort: TrackSort, prefix: String, dir: String) -> String {
+        switch sort {
+        case .discNoAsc, .discNoDesc:
+            // disc_no is nullable; NULL (no disc number) sorts FIRST asc / LAST desc
+            // (SQLite's default NULL ordering — same convention as `.yearAsc`/`.yearDesc`).
+            return "\(prefix)disc_no \(dir), \(prefix)id \(dir)"
+        case .fileSizeAsc, .fileSizeDesc:
+            // file_size is NOT NULL — no NULLs-ordering concern.
+            return "\(prefix)file_size \(dir), \(prefix)id \(dir)"
+        case .playCountAsc, .playCountDesc:
+            // play_count is NOT NULL DEFAULT 0 — no NULLs-ordering concern.
+            return "\(prefix)play_count \(dir), \(prefix)id \(dir)"
+        case .lastPlayedAsc, .lastPlayedDesc:
+            // last_played is nullable (never played); NULL sorts FIRST asc / LAST desc
+            // (SQLite default — same convention as `.yearAsc`/`.dateAddedAsc`).
+            return "\(prefix)last_played \(dir), \(prefix)id \(dir)"
+        case .albumArtistAsc, .albumArtistDesc:
+            // Display-only (the `aa` join). NULL album-artist (no album, OR the id-0
+            // "Unknown Artist" sentinel) sorts LAST in BOTH directions — mirrors
+            // `.albumTitleAsc`/`.albumTitleDesc`, NOT the SQL NULLS-FIRST default.
+            return "aa.name IS NULL, aa.name COLLATE NOCASE \(dir), \(prefix)id \(dir)"
+        default:
+            // Unreachable: every other TrackSort is resolved in trackOrder/singleKeyTrackOrder.
             return "\(prefix)id \(dir)"
         }
     }

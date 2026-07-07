@@ -101,6 +101,9 @@ extension AudioViewModel {
                 // since its resampler arms any rate, so this advance is the Pure rate-change path.)
                 if let nextIdx = pendingNextIndex, nextIdx < playlist.count {
                     logUX("playbackEnded — advancing to queued track[\(nextIdx)] (reconfigure gap)")
+                    // §12.3: count the OUTGOING track (pre-advance selectedTrackIndex) before it
+                    // reassigns below — the Pure cross-rate reconfigure natural-completion site.
+                    countOutgoingTrackCompletion()
                     selectedTrackIndex = nextIdx
                     // Clear the trigger SYNCHRONOUSLY before the async startPlayback: `playbackEnded()`
                     // stays true until startPlayback's Task runs `pureModeEngineStart` (≤ a few ticks
@@ -111,6 +114,9 @@ extension AudioViewModel {
                     startPlayback()
                 } else {
                     logUX("playbackEnded — no next track, stopping")
+                    // §12.3: true end-of-queue / single-track completion — count the track that
+                    // just finished before clearing isPlaying below.
+                    countOutgoingTrackCompletion()
                     isPlaying = false
                     playbackPosition = 0
                 }

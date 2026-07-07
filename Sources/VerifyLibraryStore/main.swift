@@ -341,7 +341,11 @@ private func printRunSummary(passed: Int, total: Int) {
         + "[moveMatched blocker-fix], DEL delete/move + sweep-ordering/removeRoot, Q safety/prefix/"
         + "AND/diacritics/bm25-rank/dedup, no-op-rescan-zero-writes, read-during-write; "
         + "S9.5 D7: SS1 new-TrackSort order + id tiebreak + NULLs-ordering, "
-        + "SS2 EXPLAIN no-SCAN-TABLE-tracks + index-ordered date_added/year, filesort rest [R3]) ===")
+        + "SS2 EXPLAIN no-SCAN-TABLE-tracks + index-ordered date_added/year, filesort rest [R3]; "
+        + "S9.5 §12.1/§12.3: SS3 full-catalog projection round-trip [discNo/fileSize/playCount/"
+        + "lastPlayed/albumArtistName/genreName + 0-16 index-drift guard], SS4 EXPLAIN shape lock "
+        + "[genre CORRELATED SCALAR SUBQUERY + SEARCH aa + BR5 hot-reads recheck], "
+        + "SS5 incrementPlayCount [atomic URL-keyed accumulate + independent + silent no-op]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
