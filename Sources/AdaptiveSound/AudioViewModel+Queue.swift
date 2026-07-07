@@ -1,16 +1,18 @@
 import Foundation
 import PlaybackQueueKit
 
-// MARK: - AudioViewModel queue ops (S9-Q2 — Play Now / Play Next / Add to Queue)
+// MARK: - AudioViewModel queue ops (S9-Q2 — Play Now / Play Next / Add to Queue / jump-play)
 
 //
-// The browse UI's three play verbs, layered on the existing index-addressed engine
+// The browse UI's play verbs, layered on the existing index-addressed engine
 // (playlist: [AudioFile] + selectedTrackIndex + the gapless on-deck pendingNextIndex).
 // Callers convert LibraryTrackDisplay → AudioFile (see AudioFile+LibraryTrackDisplay).
+// `playTrackNextNow` is the Songs-list single-track "insert after current + jump to play NOW".
 //
-// The pure DECISION (whether an append re-arms the on-deck) lives in
-// PlaybackQueueKit.QueueAdvance.appendArmIndex, shared by the tests; the rest here is
-// mechanical array + engine sequencing.
+// The pure DECISIONS live in PlaybackQueueKit, shared by the tests: whether an append re-arms
+// the on-deck is `QueueAdvance.appendArmIndex`; the single-track jump-play index-remap
+// (remove/insert slots + the current-index shift) is `QueueInsert.playNextNow`. The rest here
+// is mechanical array + engine sequencing.
 //
 // SCOPE (per the S9-Q2 decision — the per-entry-id queue wrapper is deferred to S10):
 // a queue entry's identity is its URL (AudioFile.id == absoluteURL), and the id-keyed
@@ -52,6 +54,46 @@ extension AudioViewModel {
         // primeGaplessPipeline derives computeNextIndex(current) = current+1); the
         // shuffle-while-paused case is best-effort until the S10 forced-next queue.
         if isPlaying { armOnDeck(index: insertAt) }
+    }
+
+    /// Insert `track` immediately after the current track and JUMP to play it NOW — the Songs-list
+    /// double-click / Return / single-row "Play". Unlike `playNext` (which only ARMS the on-deck),
+    /// this routes through `playTrack(at:)`, so the engine restarts on the inserted slot and
+    /// `primeGaplessPipeline` re-primes the on-deck; the rest of the EXISTING queue follows after.
+    ///
+    /// The queue forbids duplicate URLs (until S10 — a dup breaks `PlaylistView`'s id-keyed
+    /// `ForEach`), so if `track` is already queued its existing occurrence is REMOVED before the
+    /// insert (a MOVE, not a copy). The pure index-remap — remove/insert slots and the
+    /// current-index shift when the removed occurrence was before current — is
+    /// `QueueInsert.playNextNow`, shared by the tests.
+    ///
+    /// Edge cases:
+    /// - Nothing playing (`selectedTrackIndex == nil`): front-insert (index 0) so the existing
+    ///   queue follows; an empty queue simply becomes `[track]`.
+    /// - Re-clicking the currently-playing track: RESTART it in place — a jump-play of the current
+    ///   track restarts from the top (no dup, no array churn, no on-deck disturbance).
+    ///
+    /// No play-count increment is routed here: a jump-play is not a natural completion, so
+    /// play-tracking (S10) stays a separate change.
+    func playTrackNextNow(_ track: AudioFile) {
+        let move = QueueInsert.playNextNow(
+            current: selectedTrackIndex,
+            existing: playlist.firstIndex { $0.id == track.id },
+            count: playlist.count
+        )
+        switch move {
+        case let .restartCurrent(index):
+            logUX("playTrackNextNow: restart current index \(index) '\(track.name)'")
+            playTrack(at: index)
+        case let .insertAndPlay(removeAt, insertAt):
+            if let removeAt { playlist.remove(at: removeAt) }
+            playlist.insert(track, at: insertAt)
+            logUX("playTrackNextNow: '\(track.name)' → index \(insertAt)"
+                + (removeAt.map { " (moved from \($0))" } ?? "") + " (playing=\(isPlaying))")
+            // playTrack overwrites selectedTrackIndex and re-primes the on-deck, so the stale
+            // pre-mutation selection/pending never surfaces.
+            playTrack(at: insertAt)
+        }
     }
 
     /// Append `tracks` to the end of the queue. Re-arms the on-deck ONLY in the linear
