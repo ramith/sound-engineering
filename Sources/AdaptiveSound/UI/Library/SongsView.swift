@@ -87,9 +87,10 @@ private struct SongsHeader: View {
 // MARK: - Table (SwiftUI Table over the full in-memory set)
 
 /// The Songs `Table`. Selection lives HERE (not the parent) so selection churn stays isolated to
-/// the table subtree. Double-click / Return plays the full ordered list from the row; the context
-/// menu mirrors `AlbumDetailView` (Play · Play Next · Add to Queue · — · Info), operating on the
-/// selection in sort order for a multi-selection and on the primary row for Info.
+/// the table subtree. Double-click / Return plays the single clicked row NOW (inserted right after
+/// the current track + jump, preserving the existing queue); the context menu mirrors
+/// `AlbumDetailView` (Play · Play Next · Add to Queue · — · Info), operating on the selection in
+/// sort order for a multi-selection and on the primary row for Info.
 private struct SongsTable: View {
     @Environment(LibraryBrowseModel.self) private var model
     @State private var selection = Set<LibraryTrackDisplay.ID>()
@@ -112,11 +113,11 @@ private struct SongsTable: View {
         .contextMenu(forSelectionType: LibraryTrackDisplay.ID.self) { ids in
             menuItems(for: ids)
         } primaryAction: { ids in
-            _ = playFullOrder(startingAt: ids)
+            _ = playSingleTrack(startingAt: ids)
         }
         // Return plays the current selection from its row (double-click is mouse-only in AppKit).
         .onKeyPress(.return) {
-            playFullOrder(startingAt: selection) ? .handled : .ignored
+            playSingleTrack(startingAt: selection) ? .handled : .ignored
         }
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))
@@ -125,12 +126,14 @@ private struct SongsTable: View {
 
     // MARK: Play + context actions
 
-    /// Play the FULL ordered list starting at the first (sort-order) row in `ids` — the double-
-    /// click / Return / single-row-Play behavior (the loaded `songs` array IS the play order, D3).
+    /// Jump to play the SINGLE row in `ids` now — the double-click / Return / single-row-"Play"
+    /// behavior. The clicked track is inserted right after the current track and played
+    /// immediately, with the rest of the existing queue preserved (`playTrackNextNow`); it does
+    /// NOT dump the whole `songs` list into the queue. Returns false when `ids` resolves to no row.
     @discardableResult
-    private func playFullOrder(startingAt ids: Set<LibraryTrackDisplay.ID>) -> Bool {
+    private func playSingleTrack(startingAt ids: Set<LibraryTrackDisplay.ID>) -> Bool {
         guard let index = model.songs.firstIndex(where: { ids.contains($0.id) }) else { return false }
-        model.play(model.songs, startAt: index)
+        model.playTrackNextNow(model.songs[index])
         return true
     }
 
@@ -150,7 +153,7 @@ private struct SongsTable: View {
             Button("Info", systemImage: "info.circle") { infoTarget = tracks.first }
         } else if let index = model.songs.firstIndex(where: { ids.contains($0.id) }) {
             let track = model.songs[index]
-            Button("Play") { model.play(model.songs, startAt: index) } // full ordered list from row
+            Button("Play") { model.playTrackNextNow(track) } // single track: insert next + jump
             Button("Play Next") { model.playNext([track]) }
             Button("Add to Queue") { model.append([track]) }
             Divider()
