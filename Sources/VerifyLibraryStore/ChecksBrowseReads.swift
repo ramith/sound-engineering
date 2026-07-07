@@ -426,7 +426,8 @@ func checkBrowseQueryPlan(number: Int, url: URL) async -> Bool {
 // MARK: - EXPLAIN plan parsing helpers
 
 /// True if a plan `detail` row is an index-driven access (SEARCH … USING [COVERING] INDEX).
-private func detailUsesIndex(_ detail: String) -> Bool {
+/// Internal (not private) so the S9.5 Songs-sort plan check reuses the SAME definition.
+func detailUsesIndex(_ detail: String) -> Bool {
     let upper = detail.uppercased()
     return upper.contains("USING INDEX") || upper.contains("USING COVERING INDEX")
 }
@@ -435,8 +436,9 @@ private func detailUsesIndex(_ detail: String) -> Bool {
 /// index SCAN (`SCAN t USING [COVERING] INDEX …`) is fine; a legacy `SCAN TABLE tracks`
 /// is also caught. `tracks` appears as alias `t` in the display reads and `t2` inside
 /// `albums(inGenre:)`'s membership sub-select — flag BOTH, else a `SCAN t2` slips through
-/// and the genre coverage is illusory.
-private func detailIsTracksTableScan(_ detail: String) -> Bool {
+/// and the genre coverage is illusory. Internal (not private) so the S9.5 Songs-sort plan
+/// check reuses the SAME tripwire definition (one source of truth, no drift).
+func detailIsTracksTableScan(_ detail: String) -> Bool {
     let upper = detail.uppercased()
     guard upper.hasPrefix("SCAN"), !detailUsesIndex(detail) else { return false }
     var tokens = upper.split(separator: " ").map(String.init)

@@ -27,14 +27,16 @@ public extension LibraryStore {
     /// no artist still yields exactly one row with an empty name), while `album_name`
     /// stays a true optional (NULL → nil) so "no album" is distinguishable.
     ///
-    /// Note: a few columns (name, disc_no, year, artwork_key) are projected but not currently
-    /// mapped — the matching `LibraryTrackDisplay` fields were removed in the Periphery dead-code
-    /// pass. They stay in the SELECT so the positional decode indices don't shift; S9.5's
-    /// Songs/detail views re-add the struct fields + their mapper lines (DB schema untouched).
+    /// Indices 0–13 are the S9.1 layout and MUST NOT shift (`mapDisplayRow` decodes
+    /// positionally); S9.5 (D1/D5) APPENDS `date_added`(14)/`sample_rate`(15)/`bit_depth`(16)
+    /// AFTER `album_name`. `name`(2) and `disc_no`(8) remain projected-but-unmapped (kept so
+    /// the decode indices don't shift); `year`(9) and `artwork_key`(11) are now mapped again
+    /// (S9.5 Songs "Year" column + per-row artwork). DB schema untouched (all columns persist).
     internal static let displayTrackColumns =
         "t.id, t.url, t.name, t.format, t.album_id, t.artist_id, t.title, t.track_no, "
             + "t.disc_no, t.year, t.duration_ms, t.artwork_key, "
-            + "COALESCE(ar.name, '') AS artist_name, al.title AS album_name"
+            + "COALESCE(ar.name, '') AS artist_name, al.title AS album_name, "
+            + "t.date_added, t.sample_rate, t.bit_depth"
 
     // MARK: - Shared SQL fragments (identical text drives the read AND its EXPLAIN)
 
@@ -97,7 +99,12 @@ public extension LibraryStore {
             albumName: statement.columnText(13),
             format: statement.columnText(3) ?? "",
             trackNo: statement.columnIsNull(7) ? nil : statement.columnInt(7),
-            durationMs: statement.columnInt64(10)
+            durationMs: statement.columnInt64(10),
+            year: statement.columnIsNull(9) ? nil : statement.columnInt(9),
+            artworkKey: statement.columnText(11),
+            dateAdded: statement.columnInt64(14),
+            sampleRate: statement.columnIsNull(15) ? nil : statement.columnInt(15),
+            bitDepth: statement.columnIsNull(16) ? nil : statement.columnInt(16)
         )
     }
 
@@ -228,18 +235,65 @@ public extension LibraryStore {
         try statement.bind(Int64(max(0, offset)), at: firstIndex + 1)
     }
 
-    /// The `ORDER BY` body for a `TrackSort`, column-prefixed (`""` for the bare
-    /// `tracks` reads, `"t."` for the LEFT-JOINed Display reads). One definition so the
-    /// two read families can never drift in ordering.
+    /// The `TrackSort`s whose ORDER BY runs DESC (used by `singleKeyTrackOrder` to pick a
+    /// direction without a per-case ternary). The multi-term composite orders (`.name`,
+    /// `.album`, `.artistAlbumTrack`) are handled directly in `trackOrder` and are not here.
+    private static let descendingTrackSorts: Set<TrackSort> = [
+        .titleDesc, .albumTitleDesc, .durationDesc, .dateAddedDescending, .formatDesc, .yearDesc,
+    ]
+
+    /// The `ORDER BY` body for a `TrackSort`, column-prefixed (`""` for the bare `tracks`
+    /// reads, `"t."` for the LEFT-JOINed Display reads). ONE definition site so the two read
+    /// families can never drift; every order ends in `id` as the final unique tiebreaker.
+    ///
+    /// The multi-term composite orders live here; the single-column asc/desc pairs delegate
+    /// to `singleKeyTrackOrder` (kept a separate function so neither switch exceeds the
+    /// cyclomatic-complexity budget — there are 9 distinct sort keys). The name-based orders
+    /// (`.artistAlbumTrack` here, `.albumTitle*` in the helper) reference the Display reads'
+    /// `ar`/`al` join aliases and are valid ONLY on the LEFT-JOINed Display reads.
     internal static func trackOrder(_ sort: TrackSort, prefix: String) -> String {
         switch sort {
         case .name:
             return "\(prefix)name COLLATE NOCASE ASC, \(prefix)id ASC"
         case .album:
+            // No-album tracks (album_id NULL) sort FIRST via the `IS NULL` lead term.
             return "\(prefix)album_id IS NULL, \(prefix)album_id ASC, "
                 + "\(prefix)disc_no ASC, \(prefix)track_no ASC, \(prefix)id ASC"
-        case .dateAddedDescending:
-            return "\(prefix)date_added DESC, \(prefix)id DESC"
+        case .artistAlbumTrack:
+            // Composite DEFAULT (Display-only: uses the ar/al joins). NULL artist/album
+            // name sorts FIRST within its group (SQLite NULLS-FIRST, ascending).
+            return "ar.name COLLATE NOCASE ASC, al.title COLLATE NOCASE ASC, "
+                + "\(prefix)disc_no ASC, \(prefix)track_no ASC, \(prefix)id ASC"
+        default:
+            return singleKeyTrackOrder(sort, prefix: prefix)
+        }
+    }
+
+    /// The `ORDER BY` body for the single-column asc/desc `TrackSort` pairs. Split out of
+    /// `trackOrder` so each switch stays within the cyclomatic-complexity budget. The
+    /// direction is chosen once from `descendingTrackSorts`; every order ends in `id` in the
+    /// SAME direction (so a reversed asc order equals its desc twin, tiebreak included).
+    private static func singleKeyTrackOrder(_ sort: TrackSort, prefix: String) -> String {
+        let dir = descendingTrackSorts.contains(sort) ? "DESC" : "ASC"
+        switch sort {
+        case .titleAsc, .titleDesc:
+            // Display title = tag title, else filename name (mirrors `mapDisplayRow`/backfill).
+            return "COALESCE(NULLIF(\(prefix)title, ''), \(prefix)name) COLLATE NOCASE "
+                + "\(dir), \(prefix)id \(dir)"
+        case .albumTitleAsc, .albumTitleDesc:
+            // Display-only (al join). NULL album (no album) sorts LAST in BOTH directions.
+            return "al.title IS NULL, al.title COLLATE NOCASE \(dir), \(prefix)id \(dir)"
+        case .durationAsc, .durationDesc:
+            return "\(prefix)duration_ms \(dir), \(prefix)id \(dir)"
+        case .dateAddedAsc, .dateAddedDescending:
+            return "\(prefix)date_added \(dir), \(prefix)id \(dir)"
+        case .formatAsc, .formatDesc:
+            return "\(prefix)format COLLATE NOCASE \(dir), \(prefix)id \(dir)"
+        case .yearAsc, .yearDesc:
+            return "\(prefix)year \(dir), \(prefix)id \(dir)"
+        default:
+            // Unreachable: name/album/artistAlbumTrack are resolved in `trackOrder`.
+            return "\(prefix)id \(dir)"
         }
     }
 
@@ -289,6 +343,19 @@ public extension LibraryStore {
                 order: LibraryStore.albumTitleOrder, limited: false
             ))
         }
+    }
+
+    /// The `EXPLAIN QUERY PLAN` `detail` rows for the FULL-LIBRARY `allTracksDisplay(sortedBy:)`
+    /// read under `sort`, EXPLAINing the EXACT SQL that read prepares (same `displayTracksSQL`
+    /// builder + `trackOrder`, so no drift). Diagnostic/verification hook (like `explainQueryPlan`),
+    /// NOT browse-facing — it lets the S9.5 gate classify each sort as index-driven vs filesort
+    /// (R3): an unfiltered full-library read always visits every row, so the meaningful question
+    /// is whether the ORDER BY is satisfied by an index (`SCAN t USING INDEX …`) or forces a bare
+    /// `SCAN t` + temp-b-tree filesort.
+    func explainAllTracksDisplayPlan(sortedBy sort: TrackSort) throws -> [String] {
+        try collectQueryPlan(LibraryStore.displayTracksSQL(
+            whereClause: "", order: LibraryStore.trackOrder(sort, prefix: "t."), limited: false
+        ))
     }
 
     /// Run `EXPLAIN QUERY PLAN <sql>` and collect the `detail` column (index 3) of each

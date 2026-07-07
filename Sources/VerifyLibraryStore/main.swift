@@ -178,6 +178,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
+        + songsSortCheckCases()
 }
 
 /// S9.2 — FTS5 search: v1→v2 migration/backfill, the write-path sync seam (every
@@ -338,7 +339,9 @@ private func printRunSummary(passed: Int, total: Int) {
         + "BR5 EXPLAIN no-SCAN-TABLE-tracks; "
         + "S9.2 FTS5: MIG-backfill [all 4 columns] + MIG-idempotent + CAP-probe, SYNC write/rename "
         + "[moveMatched blocker-fix], DEL delete/move + sweep-ordering/removeRoot, Q safety/prefix/"
-        + "AND/diacritics/bm25-rank/dedup, no-op-rescan-zero-writes, read-during-write) ===")
+        + "AND/diacritics/bm25-rank/dedup, no-op-rescan-zero-writes, read-during-write; "
+        + "S9.5 D7: SS1 new-TrackSort order + id tiebreak + NULLs-ordering, "
+        + "SS2 EXPLAIN no-SCAN-TABLE-tracks + index-ordered date_added/year, filesort rest [R3]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
