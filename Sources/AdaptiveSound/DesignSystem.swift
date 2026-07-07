@@ -183,4 +183,14 @@ enum DesignSystem {
         static let tooltipHalfWidth: CGFloat = 22 // half the drag tooltip width, for edge clamping
         static let tooltipYOffset: CGFloat = -20 // tooltip rises above the track while dragging
     }
+
+    // MARK: Songs list metrics (S9.5)
+
+    /// Sizing for the Songs table (S9.5), a peer of `Footer`/`LayoutMetrics`. Only the tokens
+    /// THIS slice consumes are declared; artwork thumb / search-field / A–Z-rail widths are added
+    /// in the slices that consume them (§10.8) so there are no unused tokens for periphery to flag.
+    enum SongsList {
+        static let rowHeight: CGFloat = 36 // uniform; dense but legible; aids virtualization
+        static let headerHeight: CGFloat = 44 // SongsHeader band (count now; + search later)
+    }
 }
