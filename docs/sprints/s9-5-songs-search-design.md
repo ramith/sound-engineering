@@ -315,6 +315,8 @@ Verdicts: columns §12.1 **GO-WITH-CHANGES**; play-tracking §12.3 **GO-WITH-CHA
 - DAO: atomic **URL-keyed** `UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?` (normalize via `PathNormalizer`); NEW `incrementPlayCount` (NOT `setUserState` — update its S10-deferred comment). Increments commute → fire-and-forget ordering irrelevant; 0 rows for non-library files is correct; store==nil / write-error swallowed, never touches playback.
 - Manual skip **CONFIRMED excluded** (primeGaplessPipeline rebaselines `lastTransitionCount`) — do NOT add counts to `startPlayback`/`playTrack`/`armOnDeck`. repeat-one counts each loop (keep).
 
+**Confirmed behavior change (refactoring-specialist, post-change review):** pre-change, EVERY launch recalled the device-mapped preset (F3); post-change, every launch restores "last setting" instead, per the last-setting-wins-at-launch rule above. Intended, not a defect — noting explicitly since it changes launch-time F3 semantics for anyone using per-device preset recall.
+
 **EQ persistence — vetted approach:** `EQLiveState{presetRaw,bandGains}` under `"eqLiveStateV1"` restored in `loadPersistedState()` (validate 31 bands + clamp [-12,+12]); `isUsingDiscreteSteps` → `@AppStorage("eq.discreteSteps.v1")` at the view (display-only); **headless engine-ready re-dispatch** via a new `AudioViewModel.onEngineReady` closure invoked right after `isEngineReady = true` (NOT a view `.onChange` — the AU is live even with the EQ tab closed); device precedence `guard old != nil` in EQTabView's device `.onChange` (last-setting-wins-at-launch).
 
 ### 12.6 Single-track activation changed (founder, 2026-07-07) — supersedes D3/OD-1 for single click
