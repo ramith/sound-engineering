@@ -54,7 +54,12 @@ public extension LibraryStore {
     /// Full-text search across track title/artist/album/genre. Returns bm25-ranked
     /// track hits (capped at `limit`) plus the deduped albums/artists the hits belong
     /// to, in first-hit order. An empty / all-stripped query yields `.empty`.
-    func search(_ query: String, limit: Int = 50) throws -> SearchResults {
+    ///
+    /// The default cap is a BOUNDED 400 (S9.5 D4/OD-3): high enough that the incremental
+    /// filter over a medium (~2k–20k) library shows a complete-feeling result set, low
+    /// enough to stay off the scale cliff. `ftsMatchQuery`'s injection/diacritics/prefix
+    /// behaviour is unchanged. Callers may still pass an explicit `limit`.
+    func search(_ query: String, limit: Int = 400) throws -> SearchResults {
         guard let match = LibraryStore.ftsMatchQuery(for: query) else { return .empty }
         // NB: FTS5's MATCH operator + bm25() take the FTS table by NAME, not by alias —
         // `tracks_fts` is referenced unaliased (an alias trips "no such column").
