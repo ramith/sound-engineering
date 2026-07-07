@@ -10,6 +10,14 @@ import LibraryStore
 @Observable
 final class AudioViewModel {
     var isEngineReady = false
+    /// Lifecycle hook fired ONCE each time the engine transitions to ready (the single
+    /// `isEngineReady = true` spot in `initializeEngine`, which also covers device-loss
+    /// `retryInitialization` — it re-enters `initializeEngine`). Lets a collaborator that
+    /// depends on the live AU act the moment it comes up, even headless (its tab closed) —
+    /// e.g. `EQViewModel` re-dispatching its restored "last setting" curve. Analogous to the
+    /// engine's `onOutputDevicesChanged`; this is NOT a device-recall callback. Set and
+    /// invoked on the main actor (`@MainActor` isolation), so no `@Sendable` is required.
+    var onEngineReady: (() -> Void)?
     /// Re-entrant `initialize()` guard. `true` from the moment an init is kicked off
     /// (`initializeEngine()` / `retryInitialization()`) until its `Task` finishes (success OR
     /// failure). A second init while one is in-flight would race the retry's teardown over the

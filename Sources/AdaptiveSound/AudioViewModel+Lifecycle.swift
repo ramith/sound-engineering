@@ -56,6 +56,10 @@ extension AudioViewModel {
                 // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
                 engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
+                // Fire the ready hook the instant the AU is live (e.g. EQ re-dispatches its
+                // restored "last setting" curve, which no-ops until now). This is the single
+                // ready-transition site, so it also covers device-loss `retryInitialization`.
+                onEngineReady?()
                 errorMessage = nil
                 logUX("initializeEngine: ready — \(devices.count) device(s), "
                     + "selected='\(selectedDevice?.name ?? "none")'")

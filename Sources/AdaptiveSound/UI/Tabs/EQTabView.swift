@@ -6,7 +6,10 @@ struct EQTabView: View {
     @Environment(EQViewModel.self) private var eqViewModel
     @Environment(AudioViewModel.self) private var audioViewModel
 
-    @State private var isUsingDiscreteSteps = false
+    // Display-only (drives the canvas + `logInterpolationModeChange`; no engine dispatch), so it
+    // persists directly at the view via AppStorage — NOT routed through the EQ view model.
+    // `$isUsingDiscreteSteps` still projects a Binding for EQControlsSection.
+    @AppStorage("eq.discreteSteps.v1") private var isUsingDiscreteSteps = false
     @State private var bannerVisible = false
 
     var body: some View {
@@ -40,8 +43,13 @@ struct EQTabView: View {
                 eqViewModel.logInterpolationModeChange(newValue)
             }
             // F3: per-output recall wired here in the view — NOT via a cross-VM callback.
-            .onChange(of: audioViewModel.selectedDevice) { _, newDevice in
+            // Last-setting-wins-at-launch: skip the launch nil→value device resolution
+            // (`guard old != nil`) so it does NOT recall a device preset and clobber the
+            // restored "last setting" curve. Value→value user switches still recall.
+            // Known edge: a value→nil→value reconnect is also skipped — acceptable.
+            .onChange(of: audioViewModel.selectedDevice) { old, newDevice in
                 guard let device = newDevice else { return }
+                guard old != nil else { return }
                 eqViewModel.recallPresetForDevice(device)
             }
             .onChange(of: eqViewModel.recallBannerMessage) { _, message in

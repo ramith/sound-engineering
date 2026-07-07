@@ -57,6 +57,17 @@ final class EQViewModel {
     init(audioViewModel: AudioViewModel) {
         self.audioViewModel = audioViewModel
         loadPersistedState()
+        // "Remember last setting" — HEADLESS re-dispatch of the restored curve.
+        //
+        // `dispatchAllBands()` no-ops until `audioViewModel.isEngineReady`, which is still false
+        // here at init. So we hook the engine-ready lifecycle transition to re-dispatch once the
+        // AU is live — even with the EQ tab closed (the DSP graph runs regardless of which tab is
+        // visible). This is a lifecycle hook (analogous to the engine's `onOutputDevicesChanged`),
+        // NOT the F3-forbidden device-recall callback. `[weak self]` — no retain cycle.
+        audioViewModel.onEngineReady = { [weak self] in self?.dispatchAllBands() }
+        // Also dispatch once now: idempotent — no-ops if the engine isn't ready yet (the hook
+        // above will fire), dispatches immediately if the engine is already up.
+        dispatchAllBands()
     }
 
     // MARK: - Preset Selection
@@ -68,6 +79,7 @@ final class EQViewModel {
         selectedPreset = preset
         bandGains = preset.gains
         dispatchAllBands()
+        persistLiveState()
     }
 
     /// Apply a saved custom preset by name. No-op if the name is not found.
@@ -77,6 +89,7 @@ final class EQViewModel {
         selectedPreset = nil
         bandGains = gains
         dispatchAllBands()
+        persistLiveState()
     }
 
     // MARK: - Per-Band Editing
@@ -86,6 +99,11 @@ final class EQViewModel {
     /// every band to the DSP range [-12, +12] dB**, mark the preset custom, and
     /// dispatch once. Centralizes the DSP-range guarantee that direct `bandGains`
     /// writes would otherwise bypass.
+    ///
+    /// Called once PER DRAG SAMPLE (~60-120 Hz) — dispatch-only, deliberately. Persisting the
+    /// live state here would JSON-encode + UserDefaults-write on every pointer move during the
+    /// most latency-sensitive interaction in the app. The canvas persists once via
+    /// `persistLiveState()` from `DragGesture.onEnded` instead (architect review).
     func commitCustomBandEdits() {
         for index in bandGains.indices {
             bandGains[index] = max(-12.0, min(12.0, bandGains[index]))

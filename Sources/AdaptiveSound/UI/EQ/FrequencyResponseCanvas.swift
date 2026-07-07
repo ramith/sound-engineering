@@ -49,7 +49,11 @@ struct FrequencyResponseCanvas: View {
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .onChanged { value in updateEQFromDrag(location: value.location) }
-                .onEnded { _ in lastBandIndex = nil }
+                .onEnded { _ in
+                    lastBandIndex = nil
+                    // Persist once at drag-end (not per-sample — see commitCustomBandEdits).
+                    eqViewModel.persistLiveState()
+                }
         )
         .background(Color.asCard)
         .clipShape(.rect(cornerRadius: 9))
