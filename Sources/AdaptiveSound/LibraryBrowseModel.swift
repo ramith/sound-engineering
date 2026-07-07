@@ -24,8 +24,10 @@ final class LibraryBrowseModel {
         case failed(String)
     }
 
-    /// Navigation state — MUST survive tab teardown, so it lives here (design §2).
-    var selectedCategory: LibraryCategory? = .albums {
+    /// Navigation state — MUST survive tab teardown, so it lives here (design §2). Default flips
+    /// `.albums → .songs` (S9.5 D8 / §10.0): Songs is the landing so the app never opens onto the
+    /// old placeholder, and loose album-less singles are reachable from the first frame.
+    var selectedCategory: LibraryCategory? = .songs {
         didSet {
             // A category switch resets the detail drill-down; otherwise a pushed album/artist
             // detail stays visible UNDER the newly-selected category's root (review blocker).
@@ -37,10 +39,18 @@ final class LibraryBrowseModel {
 
     var path: [LibraryRoute] = []
 
-    // Albums (S9.4). Songs/artists/genres/years arrays land in S9.5/S9.6.
+    // Albums (S9.4). Artists/genres/years arrays land in S9.6.
     private(set) var albums: [AlbumFacet] = []
     var albumSort: FacetSort = .title // S9.5 adds a "Recently Added" album sort (needs a DAO read)
     private(set) var albumsState: LoadState = .idle
+
+    // Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
+    // structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
+    // indexes straight into it with no separate read. `songSort` drives the DAO-side order (header
+    // sort UI is slice 3); the composite default groups by artist → album → disc → track → id.
+    private(set) var songs: [LibraryTrackDisplay] = []
+    var songSort: TrackSort = .artistAlbumTrack
+    private(set) var songsState: LoadState = .idle
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
@@ -53,6 +63,9 @@ final class LibraryBrowseModel {
     /// Monotonic load token — only the newest in-flight `loadAlbums` may publish, guarding the
     /// sort-change vs scan-reload last-completer race (review S3).
     private var loadEpoch = 0
+    /// Same monotonic-token guard as `loadEpoch`, for `loadSongs` — its full-load races the
+    /// scan-reload and (slice 3) a sort change; only the newest completer may publish.
+    private var songsLoadEpoch = 0
     /// Same guard for the roots list (its reloads race adds/removes + libraryRevision).
     private var loadRootsEpoch = 0
 
@@ -155,14 +168,46 @@ final class LibraryBrowseModel {
         }
     }
 
-    /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + art
-    /// fill in live). Coalesced to `audio.libraryRevision` — one reload per pass, NOT per metadata
-    /// tick (design §7; review B1 — the revision bumps when metadata builds the album rows, not
-    /// at the earlier `lastScanResult` set, so a fresh scan's albums actually appear).
+    // MARK: - Song loading (S9.5 — OD-1 full-load)
+
+    /// Full-load the Songs list: the ENTIRE sorted set into memory (`allTracksDisplay(limit: nil)`,
+    /// no cursor — OD-1). Mirrors `loadAlbums`'s epoch / `isStoreReady` / firstRun-vs-empty
+    /// discipline; `songSort` drives the DAO-side order, so `songs` is already the play order.
+    func loadSongs() async {
+        guard let store else {
+            songsState = .loading // store still building; the list reloads on `isStoreReady`
+            return
+        }
+        songsLoadEpoch &+= 1
+        let epoch = songsLoadEpoch
+        if songs.isEmpty { songsState = .loading } // keep showing cached rows while refreshing
+        do {
+            let loaded = try await store.allTracksDisplay(sortedBy: songSort, limit: nil)
+            guard epoch == songsLoadEpoch else { return } // a newer load superseded this one
+            songs = loaded
+            if loaded.isEmpty {
+                let hasRoots = try await !store.roots().isEmpty
+                guard epoch == songsLoadEpoch else { return }
+                songsState = hasRoots ? .empty : .firstRun
+            } else {
+                songsState = .loaded
+            }
+        } catch {
+            guard epoch == songsLoadEpoch else { return }
+            songsState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + songs
+    /// + art fill in live). Coalesced to `audio.libraryRevision` — one reload per pass, NOT per
+    /// metadata tick (design §7; review B1 — the revision bumps when metadata builds the rows, not
+    /// at the earlier `lastScanResult` set, so a fresh scan's content actually appears). Both lists
+    /// refresh (each epoch-guarded independently); the visible one shows cached rows same-frame.
     func reloadIfScanChanged() async {
         guard audio.libraryRevision != lastLoadedRevision else { return }
         lastLoadedRevision = audio.libraryRevision
         await loadAlbums()
+        await loadSongs()
     }
 
     // MARK: - Detail reads (album)
