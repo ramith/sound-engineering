@@ -136,7 +136,13 @@ private struct PlaylistItemList: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                ForEach(viewModel.playlist.enumerated(), id: \.element.id) { index, file in
+                // Materialized to `Array` (rather than iterating the raw `.enumerated()` sequence)
+                // so `Data.Index` is a plain `Int`, matching what `List`'s native macOS row-drag
+                // reordering has always been tested against. `EnumeratedSequence` only recently
+                // gained a conditional `RandomAccessCollection` conformance with its own opaque
+                // index type, and that combination silently prevented `.onMove` from initiating a
+                // drag here — this is the "reliable" pattern for a reorderable, indexed `ForEach`.
+                ForEach(Array(viewModel.playlist.enumerated()), id: \.element.id) { index, file in
                     PlaylistItemRow(
                         file: file,
                         index: index,
@@ -145,13 +151,19 @@ private struct PlaylistItemList: View {
                         numberColumnWidth: numberColumnWidth
                     )
                     .id(index)
-                    .onTapGesture {
-                        // Single-click plays the row, so the now-playing card always matches the
-                        // audio (no select-without-play state). Re-clicking the track that's already
-                        // playing is a no-op so it doesn't restart from the top.
-                        guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
-                        viewModel.playTrack(at: index)
-                    }
+                    // `.simultaneousGesture` (not `.onTapGesture`) so this tap recognizer doesn't
+                    // claim exclusive priority over the mouseDown/mouseDragged stream — exclusive
+                    // claim is what prevented the List's native row-drag (`.onMove` below) from ever
+                    // getting a chance to recognize a drag on macOS.
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            // Single-click plays the row, so the now-playing card always matches the
+                            // audio (no select-without-play state). Re-clicking the track that's
+                            // already playing is a no-op so it doesn't restart from the top.
+                            guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
+                            viewModel.playTrack(at: index)
+                        }
+                    )
                     .accessibilityAddTraits(.isButton)
                     .contextMenu {
                         Button("Info", systemImage: "info.circle") {
