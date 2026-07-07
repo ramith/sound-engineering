@@ -16,6 +16,18 @@ build:
 	'
 
 run: build
+	@# Dev loop: fully replace any running instance so `make run` always launches the
+	@# freshly built binary. The SHIPPED single-instance guard deliberately raises the
+	@# existing instance instead of relaunching (correct product behavior), and closing
+	@# the window now keeps the app resident in the menu bar — so a rebuilt bundle would
+	@# otherwise re-focus stale code. Here we quit gracefully (runs the ordered teardown
+	@# + releases the flock), wait for the process to exit, force-kill any leftover, then
+	@# launch fresh. Guarded by pgrep so we never AppleScript-auto-launch a dead app.
+	@if pgrep -x AdaptiveSound >/dev/null 2>&1; then \
+		osascript -e 'tell application "AdaptiveSound" to quit' >/dev/null 2>&1 || true; \
+		for i in $$(seq 1 20); do pgrep -x AdaptiveSound >/dev/null 2>&1 || break; sleep 0.25; done; \
+		pkill -x AdaptiveSound >/dev/null 2>&1 || true; \
+	fi
 	@APP_PATH=$$(cat /tmp/adaptive-sound-app-path); open "$$APP_PATH"
 
 # Optimized release build + bundle. `swift build --show-bin-path` yields the exact,
