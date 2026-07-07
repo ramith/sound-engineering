@@ -1,6 +1,6 @@
 # S9.5 — Songs view · incremental search · Songs-default · queue feedback (design)
 
-Status: **requirements vetted** (product-manager · business-analyst) + **4 architecture/UX decisions locked** (founder, 2026-07-07). UX (ui-designer) + gate (architect-reviewer · the-fool) pending; founder manual-test gate is the ship criterion. Grounded on the S9.1/S9.2/S9.4 code + the S9.5 market/algorithm research (2026-07-07).
+Status: **requirements vetted** (product-manager · business-analyst) + **4 decisions locked** (founder) + **UX designed** (ui-designer, §10), all 2026-07-07. Gate (architect-reviewer · the-fool) pending; founder manual-test gate is the ship criterion. Grounded on the S9.1/S9.2/S9.4 code + the S9.5 market/algorithm research.
 
 Supersedes the two conflicting S9.5 blocks in `s9-implementation-plan.md` (to be reconciled to this doc).
 
@@ -93,4 +93,70 @@ Scope lines respected: Artists/Genres/Years lists+details = **S9.6**; playlists 
 
 ---
 
-*Next: on OD-1..4 sign-off, hand to **ui-designer** for the UX pass (appended as §10 here), then **swiftui-pro** implements the slices, then **architect-reviewer + the-fool** gate, then the founder manual-test gate.*
+## 10. UX design (ui-designer, 2026-07-07)
+
+Mirrors the shipped S9.4 idioms (`AlbumDetailView` TrackRow, `AlbumArtworkView`, `LibraryEmptyStateView`, `ErrorBanner`/`EQRecallBanner` capsule) + the `macos-design` HIG skill. Every value is a `DesignSystem` token or a proposed token (§10.8).
+
+### 10.0 View tree
+`ContentView(AppShell)` → content = `TabContentView` with `.overlay(.top) ErrorBanner` (existing) + **`.overlay(.bottom) QueueToast`** (NEW, shell-hosted, gated by `selectedTab != .nowPlaying`). Library detail column hosts **`SongsView`** (replaces the `.songs` placeholder in `LibraryCategoryRoot`): `VStack(spacing:0){ SongsHeader (count + search) · Hairline · ZStack{ SongsTable ; AZRail(.trailing) } }`. Default landing = flip `LibraryBrowseModel.selectedCategory` `.albums → .songs`.
+
+### 10.1 Songs table
+SwiftUI `Table` with `selection: Set<ID>` + `sortOrder: [KeyPathComparator]` (the binding renders the native platform sort triangle + drives header clicks; observe it, translate the primary comparator to a `TrackSort`, re-read DAO-side so ordering stays index-driven/EXPLAIN-gated). `NSTableView` fallback (OD-1) inherits this visual spec.
+
+| # | Column | Header | Sort | Align | min/ideal/max | Resize |
+|---|---|---|---|---|---|---|
+| 1 | Artwork | — | no | center | 32 fixed | no |
+| 2 | Title | Title | yes | leading | 160/300/∞ (primary flex) | yes |
+| 3 | Artist | Artist | yes | leading | 110/170/∞ | yes |
+| 4 | Album | Album | yes | leading | 110/190/∞ | yes |
+| 5 | Time | Time | yes | trailing | 52/60/72 | no |
+| 6 | Date Added | Date Added | yes | leading | 92/112/140 | yes |
+| 7 | Format | Format | yes | leading | 96/118/140 | yes |
+| 8 | Year | Year | yes | trailing | 44/52/64 | no |
+
+- **Row height 36 fixed** (uniform → helps 60fps virtualization; ~14 rows at min height). At the 880 window-min the sum-of-mins + rail ≈ detail width, so the native Table shows a horizontal scroller at absolute-min; Format + Date Added compress first (acceptable, native).
+- **Artwork:** reuse `AlbumArtworkView(key:, side: 28)` verbatim (sync cache-peek → no flash, off-main downsample, cancel-on-scroll, reduce-motion fade, `music.note`-on-`card` placeholder, `Radius.control` clip). Per-row lazy warm suffices; optionally batch `warmArtwork` on the first screenful.
+- **Title** `Font.body`/`label`, 1 line tail. **Artist/Album** `Font.body`/`labelSecondary`, 1 line tail; empty artist/nil album → **blank cell** (no "Unknown Artist" in-cell — VO substitutes it). **Time** `Font.body` + `.monospacedDigit()`/`labelTertiary` trailing (uses `formatDuration()`; body+mono, not `monoSmall`, so baselines align across columns). **Date Added** `Font.caption`/`labelTertiary`, "MMM d, yyyy" (nil/0 → blank; new compact date formatter). **Format** `Font.body`+mono/`labelSecondary`: `FORMAT` + (bit&rate ? " · 24/96" : ""), e.g. "FLAC · 24/96", bare "AAC" when null — **plain text, not a colored badge** (badge noise at 20k; badge stays in the Info popover + footer). **Year** `Font.body`+mono/`labelTertiary` trailing (0/nil → blank).
+- **Sort:** native headers. First-click direction: Title/Artist/Album/Format/Year → asc; **Date Added → desc** (recently-added); Time → asc. Triangle only on the active column. **Composite default** (Artist→Album→disc→track→id): seed visual `sortOrder` to Artist-asc as the anchor (grouped-by-artist), model applies the composite; first explicit header click switches to that column's plain sort. Sort state persists on the model (survives teardown).
+- **Selection:** single-click selects; ⌘/⇧ multi-select; **system list-selection highlight (NOT teal)** — HIG, dims on blur, auto light/dark. **Double-click/Return → Play** the full ordered list from the row (`playNow(startAt: indexInFullOrder)`, D3). **No hover row-fill**, default arrow cursor (single-click = select, not link) — HIG-correct + avoids fling churn.
+
+### 10.2 Filter field (search)
+In **SongsHeader** (44pt band, `.padding(.horizontal, 20)`): leading = count line (§10.5), trailing = search field. Field: `RoundedRectangle(Radius.control)` `Color.card` + 0.5 `hairline` stroke, height 28, min 180 / ideal 240, trailing-anchored; leading `magnifyingglass` (`labelTertiary`) + `TextField` (`Font.body`/`label`, placeholder **"Search Songs"**); trailing `xmark.circle.fill` clear when non-empty. **⌘F focuses** (hidden button/`@FocusState`); **Escape** clears-then-defocuses. ≥2 chars · ~120ms debounce · off-main + newest-wins (model). **Transition full↔filtered:** header/field never move; entering filter → rows swap to bm25 **relevance order**, sort triangle clears ("Relevance"; headers still re-sort the subset client-side), A–Z rail hides, count → "N results". Don't animate the row-set swap (Table diff jank); only the count text may crossfade. Clearing restores the full list + prior sort + rail.
+
+### 10.3 States
+Header + rail hidden whenever there's no content. Loading → `ProgressView`. First-run/scanning-empty/empty-library/failed → reuse `LibraryEmptyStateView(kind:)` (no new case). Scanning **with rows** → show the table (sidebar scan strip is the only cue; live-fill on `libraryRevision` preserving sort/selection). No-search-results → `ContentUnavailableView` (magnifyingglass, "No Results", "No songs match “\(query)”.") with the **header shown** (field + "0 results"), rail hidden.
+
+### 10.4 Queue toast
+`TabContentView.overlay(alignment: .bottom) { QueueToast() }` — bottom sibling of `ErrorBanner`; reads coalesced toast state on `LibraryBrowseModel` (D8). **Bottom-center**, `.padding(.bottom, 16)` (floats above the footer). **Render only when `selectedTab != .nowPlaying`.** Style = `EQRecallBanner` capsule exactly (`.ultraThinMaterial` in `.capsule` + `hairline` stroke; icon `accent`, text `Font.callout`/`label`, trailing `chevron.forward`/`labelTertiary`). Copy (count = actually-added, OD-2): Add to Queue → "Added N to Queue" / "Added to Queue" / "Already in Queue"; Play Next → "Added N to Play Next" / "Playing Next" / "Already in Queue"; **Play Now = silent**. Multi-select → **one** toast, true added count. Whole capsule is a `Button` → `selectedTab = .nowPlaying` (doorway, `.link` pointer). Motion: `.move(edge:.bottom)+.opacity` `.easeInOut(0.25)`; **reduce-motion → `.opacity` only**; ~2.0s auto-dismiss; a new add within the window **replaces text + resets timer** (never stacks). VoiceOver: one `.isButton` element (label = message, hint "Opens Now Playing") + `AccessibilityNotification.Announcement(message)` on appear.
+
+### 10.5 Count + A–Z rail + type-select
+**Count** (leading in header, `Font.caption`/`labelSecondary`): unfiltered "**N songs · total**" ("1,240 songs · 3 hr 14 min"; grouping separator; singular "1 song"; needs a humane total-duration formatter); filtered "**N results**" (drop duration; 0 → "0 results"). **A–Z rail:** alphabetical sorts only (Title/Artist/Album; hidden while filtered or on Time/Date/Format/Year); slim 18pt trailing strip (Table trailing inset = 18 so it never overlaps the scroller), A–Z + "#"; `Font.micro`/`labelTertiary`, hover/press → `accent`; tap → `ScrollViewReader.scrollTo(firstRowID, anchor:.top)` on the active sort-key, empty letter seeks the next non-empty bucket; reduce-motion → no scroll animation. **This is COULD-priority — first to defer to S9.6 if the chunk spills.** **Type-to-select:** native Table type-select (no custom UI); ensure the Table has key focus.
+
+### 10.6 Context menu + Info
+Mirror `AlbumDetailView`. Single row: Play (full ordered list from row) · Play Next · Add to Queue · — · Info. Multi-select: Play plays the **selected subset** as the queue; Play Next/Add to Queue on the whole selection in sort order; Info on the primary row. Info = `.popover(arrowEdge:.trailing){ TrackInfoCard(file: AudioFile(track)) }` (renders `FormatBadgeView` + async rate/depth/channels/size + copyable path). Play Next/Add to Queue fire the §10.4 toast; **Play is silent**.
+
+### 10.7 Accessibility + light/dark
+**Row = one VO element** (`children:.ignore`): label `"\(title), \(artist||"Unknown Artist")"` + album? + duration; value = "\(quality), \(year), added \(fullDate)" (skip nils); truncated cells expose full text to VO + `.help(full)` tooltip. **Default action = Play**; custom actions Play Next / Add to Queue / Info. Sort headers announce name+direction (+ `Announcement` on change). **Dynamic Type:** clamp Table to `.dynamicTypeSize(.small ... .xxLarge)` (36pt fixed rows can't grow to AX5; Info popover + tooltips carry full-fidelity scaling; header/count/search scale normally). Focus order: search → headers → rows → rail; toast announced but out of tab order. **Light/dark:** all `DesignSystem` dynamic tokens (`card`/`panel`/`window`/`hairline`, `label*` clear WCAG AA on `card` per token comments, teal `accent` appearance-independent); selection = system highlight; toast `.ultraThinMaterial`. No hardcoded colors, no `colorScheme` checks.
+
+### 10.8 Token delta
+Reuse everything first (`Spacing`, `Radius.control`, `Font.body/caption/micro/callout`, `Color.*`, `LayoutMetrics.screenInsetH`, `AlbumArtworkView`, `EQRecallBanner` recipe). Add one grouped enum in `DesignSystem.swift` (peer of `Footer`/`LayoutMetrics`):
+```swift
+enum SongsList {
+    static let rowHeight: CGFloat = 36          // uniform; dense but artwork-legible; aids virtualization
+    static let artwork: CGFloat = 28            // row thumb (denser than the 44pt footer Artwork.thumb)
+    static let headerHeight: CGFloat = 44       // SongsHeader (count + search)
+    static let searchFieldMinWidth: CGFloat = 180
+    static let searchFieldIdealWidth: CGFloat = 240
+    static let azRailWidth: CGFloat = 18
+}
+```
+Column min/ideal/max may be inlined on each `TableColumn` (single-consumer). Non-token helpers to add (like `DurationFormatter`): compact date ("MMM d, yyyy"), humane total-duration ("3 hr 14 min"), and the "FLAC · 24/96" quality-string builder (reuse the `TrackInfoCard` kHz rule).
+
+### 10.9 File map (for swiftui-pro)
+- **New:** `UI/Library/SongsView.swift` (table + header + A–Z rail), row/column builders, `UI/Shell/QueueToast.swift`.
+- **Edit:** `LibraryCategoryRoot.swift` (`.songs` → `SongsView`); `LibraryBrowseModel.swift` (default `.songs` + songs/sort/search/toast state, D8); `ContentView.swift` (bottom `QueueToast` overlay); `DesignSystem.swift` (`SongsList`).
+- **Reuse unchanged:** `AlbumArtworkView`, `TrackInfoCard`, `LibraryEmptyStateView`, `FormatBadgeView` (Info only), `DurationFormatter`.
+
+---
+
+*Next: **swiftui-pro** implements the slices (§8: backend micro-adds → Songs list + default-flip → founder `make run` perf go/no-go → columns/artwork → search → toast → tail), each behind build/lint/test/periphery; then **architect-reviewer + the-fool** gate; then the founder manual-test gate.*
