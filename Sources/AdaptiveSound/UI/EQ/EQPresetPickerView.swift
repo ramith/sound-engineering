@@ -47,7 +47,7 @@ struct EQPresetPickerView: View {
             Text("Custom").tag(EQPreset?.none)
         }
         .pickerStyle(.menu)
-        .accessibilityLabel("EQ Preset")
+        .labelsHidden() // the parent LabeledContent("Preset") supplies the VoiceOver label
         .accessibilityValue(eqViewModel.selectedPresetName)
     }
 }
