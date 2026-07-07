@@ -1,3 +1,4 @@
+import Foundation
 import LibraryStore
 import SwiftUI
 
@@ -104,6 +105,12 @@ private struct SongsTable: View {
             TableColumn("Album") { albumCell($0) }.width(min: 110, ideal: 190)
             TableColumn("Time") { timeCell($0) }.width(min: 52, ideal: 60, max: 72)
             TableColumn("Date Added") { dateCell($0) }.width(min: 92, ideal: 112, max: 140)
+            // S9.5 §12.1 full-catalog columns (backend delta): fixed/always-visible for this
+            // chunk — show/hide customization lands in the later slice-3 UI (§11).
+            TableColumn("Quality") { qualityCell($0) }.width(min: 96, ideal: 118, max: 140)
+            TableColumn("Year") { yearCell($0) }.width(min: 44, ideal: 52, max: 64)
+            TableColumn("Disc #") { discCell($0) }.width(min: 44, ideal: 52, max: 64)
+            TableColumn("File Size") { fileSizeCell($0) }.width(min: 72, ideal: 88, max: 110)
         }
         // Uniform row height (aids virtualization / the R1 selection-latency measurement).
         .environment(\.defaultMinListRowHeight, DesignSystem.SongsList.rowHeight)
@@ -204,4 +211,48 @@ private struct SongsTable: View {
             .foregroundStyle(DesignSystem.Color.labelTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    // MARK: Cells — S9.5 §12.1 full-catalog columns
+
+    private func qualityCell(_ track: LibraryTrackDisplay) -> some View {
+        // format is NOT NULL — never blank (bare codec when rate/depth are unknown).
+        Text(qualityString(format: track.format, sampleRate: track.sampleRate, bitDepth: track.bitDepth))
+            .font(DesignSystem.Font.body)
+            .fontDesign(.monospaced)
+            .foregroundStyle(DesignSystem.Color.labelSecondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func yearCell(_ track: LibraryTrackDisplay) -> some View {
+        Text(track.year.flatMap { $0 > 0 ? String($0) : nil } ?? "") // 0 / nil → blank
+            .font(DesignSystem.Font.body)
+            .monospacedDigit()
+            .foregroundStyle(DesignSystem.Color.labelTertiary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func discCell(_ track: LibraryTrackDisplay) -> some View {
+        Text(track.discNo.flatMap { $0 > 0 ? String($0) : nil } ?? "") // nil / 0 → blank
+            .font(DesignSystem.Font.body)
+            .monospacedDigit()
+            .foregroundStyle(DesignSystem.Color.labelTertiary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func fileSizeCell(_ track: LibraryTrackDisplay) -> some View {
+        // track.fileSize is NOT NULL; 0 (never legitimately observed) still renders blank.
+        Text(track.fileSize > 0 ? Self.byteCountFormatter.string(fromByteCount: track.fileSize) : "")
+            .font(DesignSystem.Font.body)
+            .monospacedDigit()
+            .foregroundStyle(DesignSystem.Color.labelTertiary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
 }

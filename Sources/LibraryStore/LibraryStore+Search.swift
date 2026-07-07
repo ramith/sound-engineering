@@ -62,13 +62,15 @@ public extension LibraryStore {
     func search(_ query: String, limit: Int = 400) throws -> SearchResults {
         guard let match = LibraryStore.ftsMatchQuery(for: query) else { return .empty }
         // NB: FTS5's MATCH operator + bm25() take the FTS table by NAME, not by alias —
-        // `tracks_fts` is referenced unaliased (an alias trips "no such column").
+        // `tracks_fts` is referenced unaliased (an alias trips "no such column"). This FROM
+        // clause can't reuse `displayTracksSQL` (it starts from `tracks_fts`, not `tracks`),
+        // so it interpolates the shared `displayArtistAlbumJoins` constant instead of
+        // hand-rolling the join text — see that constant's doc for why (S9.5 §12.1 drift).
         let sql = """
         SELECT \(LibraryStore.displayTrackColumns)
         FROM tracks_fts
         JOIN tracks t ON t.id = tracks_fts.rowid
-        LEFT JOIN artists ar ON ar.id = t.artist_id
-        LEFT JOIN albums  al ON al.id = t.album_id
+        \(LibraryStore.displayArtistAlbumJoins)
         WHERE tracks_fts MATCH ?
         ORDER BY bm25(tracks_fts)
         LIMIT ?;
