@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Category root + drill-down route views (S9.4)
 
-/// The detail-stack root for the selected sidebar category. Albums ships in S9.4; Songs
-/// (S9.5) and Artists/Genres/Years (S9.6) show a placeholder until their slice lands.
+/// The detail-stack root for the selected sidebar category. Albums (S9.4) + Songs (S9.5) ship;
+/// Artists/Genres/Years (S9.6) show a placeholder until their slice lands.
 struct LibraryCategoryRoot: View {
     let category: LibraryCategory?
 
@@ -12,7 +12,7 @@ struct LibraryCategoryRoot: View {
         case .albums:
             AlbumGridView()
         case .songs:
-            LibraryPlaceholderView(title: "Songs", detail: "The Songs list arrives in the next update.")
+            SongsView()
         case .artists:
             LibraryPlaceholderView(title: "Artists", detail: "Artist browsing arrives in a later update.")
         case .genres:
