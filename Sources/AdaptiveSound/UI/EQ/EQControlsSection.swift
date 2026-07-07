@@ -2,6 +2,12 @@ import SwiftUI
 
 // MARK: - EQ Controls Section
 
+/// Single control-bar layout for the EQ tab, below the frequency-response graph
+/// (docs/sprints/eq-controls-redesign.md). Leading cluster — Interpolation, then
+/// Preset (founder override, §0) — plus a trailing "Save as Custom…" action,
+/// joined by a flexible spacer so the strip uses the available width instead of
+/// hugging the leading edge. `ViewThatFits` reflows to a two-row fallback when the
+/// single row can't fit (e.g. large Dynamic Type inflating the segment titles).
 struct EQControlsSection: View {
     let eqViewModel: EQViewModel
     @Binding var isUsingDiscreteSteps: Bool
@@ -9,26 +15,53 @@ struct EQControlsSection: View {
     @State private var showSaveSheet = false
 
     var body: some View {
-        // Grid aligns control rows on a shared leading label column; the
-        // pickers themselves use .labelsHidden() so the label is shown once here.
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-            GridRow {
-                rowLabel("Preset")
-                EQPresetPickerView(eqViewModel: eqViewModel)
-            }
-            GridRow {
-                rowLabel("Interpolation")
-                EQInterpolationPickerView(isUsingDiscreteSteps: $isUsingDiscreteSteps)
-            }
-            GridRow {
-                rowLabel("Custom")
-                saveButton
-            }
+        ViewThatFits(in: .horizontal) {
+            singleRow
+            twoRow
         }
         .padding(.horizontal)
         .padding(.bottom, 20)
         .sheet(isPresented: $showSaveSheet) {
             SaveCustomPresetView(eqViewModel: eqViewModel, isPresented: $showSaveSheet)
+        }
+    }
+
+    // MARK: - Row layouts
+
+    private var singleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            leadingCluster
+            Spacer(minLength: DesignSystem.Spacing.large)
+            saveButton
+        }
+    }
+
+    private var twoRow: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
+            leadingCluster
+            HStack {
+                Spacer()
+                saveButton
+            }
+        }
+    }
+
+    /// Interpolation, then Preset — founder order override (design §0).
+    private var leadingCluster: some View {
+        HStack(spacing: DesignSystem.Spacing.large) {
+            LabeledContent {
+                EQInterpolationPickerView(isUsingDiscreteSteps: $isUsingDiscreteSteps)
+                    .fixedSize()
+            } label: {
+                controlLabel("Interpolation")
+            }
+
+            LabeledContent {
+                EQPresetPickerView(eqViewModel: eqViewModel)
+                    .frame(minWidth: 140)
+            } label: {
+                controlLabel("Preset")
+            }
         }
     }
 
@@ -42,15 +75,17 @@ struct EQControlsSection: View {
         .help(eqViewModel.selectedPreset != nil
             ? "Edit the EQ bands first, then save."
             : "Save the current band state as a named custom preset.")
+        .accessibilityLabel("Save as Custom Preset")
+        .accessibilityHint(eqViewModel.selectedPreset != nil
+            ? "Edit the EQ bands first, then save."
+            : "Save the current band state as a named custom preset.")
     }
 
-    private func rowLabel(_ title: String) -> some View {
+    /// Quiet inline label for a `LabeledContent` control — sentence case, no tracking
+    /// (design §4/§6): identifies the control without shouting like a section header.
+    private func controlLabel(_ title: String) -> some View {
         Text(title)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(Color.asLabelTertiary)
-            .textCase(.uppercase)
-            .tracking(0.6)
-            .gridColumnAlignment(.leading)
+            .font(DesignSystem.Font.caption)
+            .foregroundStyle(DesignSystem.Color.labelSecondary)
     }
 }
