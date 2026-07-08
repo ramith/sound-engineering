@@ -25,6 +25,12 @@ struct ContentView: View {
                     ErrorBanner()
                         .environment(viewModel)
                 }
+                // Bottom sibling of ErrorBanner: the queue-add confirmation toast (S9.5 §10.4),
+                // visibility-gated (hidden on Now Playing) inside the view itself.
+                .overlay(alignment: .bottom) {
+                    QueueToast()
+                        .environment(viewModel)
+                }
         } footer: {
             NowPlayingBar()
                 .environment(viewModel)

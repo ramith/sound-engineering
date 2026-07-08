@@ -146,4 +146,33 @@ struct QueueOpsTests {
         ctrl.appendToQueue([])
         #expect(ctrl.playlist == before)
     }
+
+    // OD-2 truthful count — the toast reads the returned count, so a dedup must never over-report.
+
+    @Test("VM-Q-13: appendToQueue / playNext return the POST-DEDUP added count")
+    func returnsPostDedupCount() {
+        let ctrl = MockAdvanceController()
+        ctrl.playNow(makeTracks(count: 3), startAt: 0) // track0/1/2.flac
+        #expect(ctrl.appendToQueue(["track1.flac", "a.flac", "b.flac"]) == 2) // 1 dup dropped → 2
+        #expect(ctrl.playNext(["a.flac", "c.flac"]) == 1) // a.flac now queued → 1 new (c)
+    }
+
+    @Test("VM-Q-14: all-duplicate and empty adds return 0 (→ \"Already in Queue\")")
+    func returnsZeroWhenNothingAdded() {
+        let ctrl = MockAdvanceController()
+        ctrl.playNow(makeTracks(count: 3), startAt: 0)
+        #expect(ctrl.appendToQueue(["track0.flac", "track2.flac"]) == 0) // all dups
+        #expect(ctrl.playNext(["track1.flac"]) == 0) // dup
+        #expect(ctrl.appendToQueue([]) == 0) // empty
+        #expect(ctrl.playNext([]) == 0) // empty
+    }
+
+    @Test("VM-Q-15: a single multi-track add returns the true count (within-batch dedupe → one toast)")
+    func multiAddTrueCount() {
+        let ctrl = MockAdvanceController()
+        ctrl.playNow(makeTracks(count: 2), startAt: 0) // track0/1.flac
+        // one add of 4: track0 (queued), d, d (within-batch dup), e → 2 unique-new (d, e)
+        #expect(ctrl.appendToQueue(["track0.flac", "d.flac", "d.flac", "e.flac"]) == 2)
+        #expect(ctrl.playlist.filter { $0 == "d.flac" }.count == 1)
+    }
 }

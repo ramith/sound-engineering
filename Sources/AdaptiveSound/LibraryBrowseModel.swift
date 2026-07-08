@@ -105,6 +105,22 @@ final class LibraryBrowseModel {
     /// in-flight actor call, hence the epoch.
     private var searchEpoch = SearchEpoch()
 
+    /// Queue-add toast (S9.5 §10.4). State lives HERE (Library is the only queue-adder — arch #4, not
+    /// a global service); the shell-hosted `QueueToast` view renders + announces off `queueToast`.
+    /// The current toast, or nil. No `didSet` (so no @Observable self-assign trap); the `token` is a
+    /// monotonic key the VIEW uses as its announce + animation trigger, so a coalesced replace with an
+    /// IDENTICAL string still re-announces/re-renders (review swiftui #1/#5).
+    struct QueueToastState: Equatable {
+        let message: String
+        let token: Int
+    }
+
+    private(set) var queueToast: QueueToastState?
+    private var queueToastToken = 0
+    /// Single cancellable dismiss task (cancel-and-respawn) — NOT one task per raise. The post-sleep
+    /// `!Task.isCancelled` guard stops a superseded task from clearing a newer toast (review swiftui #3).
+    private var queueToastDismissTask: Task<Void, Never>?
+
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
 
@@ -364,13 +380,13 @@ final class LibraryBrowseModel {
     func playAlbumNext(_ albumID: Int64) async {
         let files = await tracks(inAlbum: albumID).map(AudioFile.init)
         guard !files.isEmpty else { return }
-        audio.playNext(files)
+        showQueueToast(.playNext, added: audio.playNext(files))
     }
 
     func appendAlbum(_ albumID: Int64) async {
         let files = await tracks(inAlbum: albumID).map(AudioFile.init)
         guard !files.isEmpty else { return }
-        audio.appendToQueue(files)
+        showQueueToast(.addToQueue, added: audio.appendToQueue(files))
     }
 
     /// Play a specific set of already-loaded display tracks now (album-detail row tap).
@@ -381,11 +397,13 @@ final class LibraryBrowseModel {
     }
 
     func playNext(_ tracks: [LibraryTrackDisplay]) {
-        audio.playNext(tracks.map(AudioFile.init))
+        guard !tracks.isEmpty else { return } // empty selection → nothing submitted, no toast
+        showQueueToast(.playNext, added: audio.playNext(tracks.map(AudioFile.init)))
     }
 
     func append(_ tracks: [LibraryTrackDisplay]) {
-        audio.appendToQueue(tracks.map(AudioFile.init))
+        guard !tracks.isEmpty else { return } // empty selection → nothing submitted, no toast
+        showQueueToast(.addToQueue, added: audio.appendToQueue(tracks.map(AudioFile.init)))
     }
 
     /// Insert a single track right after the current one and jump to play it NOW (Songs-list
@@ -394,5 +412,33 @@ final class LibraryBrowseModel {
     /// and delegates to `AudioViewModel.playTrackNextNow`.
     func playTrackNextNow(_ track: LibraryTrackDisplay) {
         audio.playTrackNextNow(AudioFile(track))
+    }
+
+    // MARK: - Queue toast (S9.5 §10.4)
+
+    /// Raise the visibility-gated queue-add toast for a completed add. Silent for Play Now, on the Now
+    /// Playing tab, or whenever `QueueToastDecision` suppresses it. Coalesces: a new toast replaces the
+    /// text and resets the ~2 s timer (single cancellable task; the post-sleep guard prevents a
+    /// superseded task from clearing the newer toast). The token bumps every raise so the view
+    /// re-announces even an identical string.
+    private func showQueueToast(_ verb: QueueVerb, added: Int) {
+        guard let message = QueueToastDecision.message(
+            verb: verb, addedCount: added, isNowPlayingTab: audio.selectedTab == .nowPlaying
+        ) else { return }
+        queueToastToken &+= 1
+        queueToast = QueueToastState(message: message, token: queueToastToken)
+        queueToastDismissTask?.cancel()
+        queueToastDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            self?.queueToast = nil
+        }
+    }
+
+    /// Clear the toast immediately — tap-through / entering Now Playing — so the render gate can't let
+    /// a stale toast reappear on return to a gated tab within the window (review swiftui #2).
+    func dismissQueueToast() {
+        queueToastDismissTask?.cancel()
+        queueToast = nil
     }
 }
