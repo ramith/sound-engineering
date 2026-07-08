@@ -51,6 +51,23 @@ public extension LibraryStore {
         return tokens.map { "\"\($0)\"*" }.joined(separator: " ")
     }
 
+    /// The shared `MATCH` predicate text — ONE source of truth so `search()` and
+    /// `searchMatchingIDs()` can never diverge on membership. FTS5's `MATCH` operator takes
+    /// the FTS table by NAME (`tracks_fts`), never an alias.
+    internal static let ftsMatchWhere = "WHERE tracks_fts MATCH ?"
+
+    /// The IDs-only membership read behind the Songs "filter-preserves-sort" filter (S9.5
+    /// §4, A2 LOCKED). It is `search()`'s predicate with EVERYTHING presentational removed:
+    /// `SELECT rowid` (== `tracks.id`), NO `ORDER BY bm25`, NO `LIMIT`, and NO joins — so it
+    /// touches neither `tracks` nor the artist/album joins, and can only ever return the SAME
+    /// membership `search()` would. This ONE constant drives both the read and its EXPLAIN
+    /// (no drift), and shares `ftsMatchWhere` with `search()`.
+    internal static let searchMatchingIDsSQL = """
+    SELECT rowid
+    FROM tracks_fts
+    \(LibraryStore.ftsMatchWhere);
+    """
+
     /// Full-text search across track title/artist/album/genre. Returns bm25-ranked
     /// track hits (capped at `limit`) plus the deduped albums/artists the hits belong
     /// to, in first-hit order. An empty / all-stripped query yields `.empty`.
@@ -71,7 +88,7 @@ public extension LibraryStore {
         FROM tracks_fts
         JOIN tracks t ON t.id = tracks_fts.rowid
         \(LibraryStore.displayArtistAlbumJoins)
-        WHERE tracks_fts MATCH ?
+        \(LibraryStore.ftsMatchWhere)
         ORDER BY bm25(tracks_fts)
         LIMIT ?;
         """
@@ -98,5 +115,37 @@ public extension LibraryStore {
             }
         }
         return SearchResults(tracks: tracks, albums: albums, artists: artists)
+    }
+
+    /// The set of `tracks.id`s matching `query` — the IDs-only membership read behind the
+    /// Songs "filter-preserves-sort" filter (S9.5 §4, A2 LOCKED). Reuses the SAME
+    /// `ftsMatchQuery` sanitizer and the SAME `WHERE tracks_fts MATCH ?` predicate as
+    /// `search()` (via `searchMatchingIDsSQL`), so the two can never diverge on membership;
+    /// it differs ONLY by `SELECT rowid` (== `tracks.id`), no `ORDER BY bm25`, no `LIMIT`,
+    /// and no joins.
+    ///
+    /// Junk / all-stripped input (`ftsMatchQuery → nil`) returns an EMPTY set — mirroring how
+    /// `search()` yields `.empty` for the same input — NEVER all rows and never a throw for
+    /// that reason. `nil` (i.e. "not filtering") is the CALLER's concept; this read only ever
+    /// returns a concrete set. The ≥2-char gate is likewise the caller's job.
+    func searchMatchingIDs(_ query: String) throws -> Set<Int64> {
+        guard let match = LibraryStore.ftsMatchQuery(for: query) else { return [] }
+        let statement = try connection.prepare(LibraryStore.searchMatchingIDsSQL)
+        defer { statement.finalize() }
+        try statement.bind(match, at: 1)
+        var ids = Set<Int64>()
+        while try statement.step() {
+            ids.insert(statement.columnInt64(0))
+        }
+        return ids
+    }
+
+    /// The `EXPLAIN QUERY PLAN` `detail` rows for `searchMatchingIDs`, EXPLAINing the EXACT
+    /// `searchMatchingIDsSQL` the read prepares (same constant, so no drift). The plan is
+    /// independent of the (unbound) `MATCH` value. Diagnostic/verification hook (like
+    /// `explainQueryPlan(for:)`/`explainAllTracksDisplayPlan`), NOT browse-facing: it lets the
+    /// gate prove the membership read visits `tracks_fts` ONLY and never scans `tracks`.
+    func explainSearchMatchingIDsPlan() throws -> [String] {
+        try collectQueryPlan(LibraryStore.searchMatchingIDsSQL)
     }
 }

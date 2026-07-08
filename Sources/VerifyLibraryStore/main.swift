@@ -182,8 +182,8 @@ func allCheckCases() -> [CheckCase] {
 }
 
 /// S9.2 — FTS5 search: v1→v2 migration/backfill, the write-path sync seam (every
-/// mutation site), query safety/matching, and read-during-write. Own function so
-/// `allCheckCases` stays within the body-length limit.
+/// mutation site), query safety/matching, and read-during-write. Plus the S9.5 §4 (A2)
+/// membership-filter read. Own function so `allCheckCases` stays within the body-length limit.
 func searchCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "fts-mig-backfill", run: checkFtsMigrationBackfill),
@@ -200,6 +200,7 @@ func searchCheckCases() -> [CheckCase] {
         CheckCase(label: "fts-ranking-shape", run: checkFtsRankingAndShape),
         CheckCase(label: "fts-noop-rescan-zero-writes", run: checkFtsNoOpRescanZeroWrites),
         CheckCase(label: "fts-read-during-write", run: checkFtsReadDuringWrite),
+        CheckCase(label: "fts-matching-ids", run: checkFtsMatchingIDsParity),
     ]
 }
 
@@ -345,7 +346,9 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S9.5 §12.1/§12.3: SS3 full-catalog projection round-trip [discNo/fileSize/playCount/"
         + "lastPlayed/albumArtistName/genreName + 0-16 index-drift guard], SS4 EXPLAIN shape lock "
         + "[genre CORRELATED SCALAR SUBQUERY + SEARCH aa + BR5 hot-reads recheck], "
-        + "SS5 incrementPlayCount [atomic URL-keyed accumulate + independent + silent no-op]) ===")
+        + "SS5 incrementPlayCount [atomic URL-keyed accumulate + independent + silent no-op]; "
+        + "S9.5 §4 A2: MID searchMatchingIDs membership == unbounded search + junk/empty → [] "
+        + "+ EXPLAIN tracks_fts-only, never SCAN tracks) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
