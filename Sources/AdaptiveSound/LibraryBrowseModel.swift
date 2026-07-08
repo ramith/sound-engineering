@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import LibraryBrowseKit
 import LibraryScan
 import LibraryStore
 import SwiftUI
@@ -75,8 +76,8 @@ final class LibraryBrowseModel {
     /// LOW-1). A ≥2-char edit keeps the last-good set until the new read lands (no flash to empty).
     var searchQuery: String = "" {
         didSet {
-            searchEpoch &+= 1 // invalidate any dispatched read immediately, not after the debounce
-            if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
+            searchEpoch.invalidate() // invalidate any dispatched read immediately, not after the debounce
+            if !SearchQueryGate.shouldQuery(searchQuery) {
                 matchedIDs = nil // instant restore-to-full; don't wait for the debounced runFilter
             }
         }
@@ -96,12 +97,13 @@ final class LibraryBrowseModel {
     /// `songs` or `matchedIDs` changes (their `didSet`s).
     private(set) var visibleSongs: [LibraryTrackDisplay] = []
 
-    /// Monotonic newest-wins guard for the actor round-trip in `runFilter`. Bumped **synchronously
-    /// on every `searchQuery` edit** (its `didSet`), not inside the debounced `runFilter` — so an
-    /// already-dispatched `searchMatchingIDs` from a prior query is invalidated the instant the user
-    /// edits and can't publish a stale result after the field has moved on (review LOW-1). `.task(id:)`
-    /// cancellation alone can't interrupt an in-flight actor call, hence the epoch.
-    private var searchEpoch = 0
+    /// Monotonic newest-wins guard (`LibraryBrowseKit.SearchEpoch`) for the actor round-trip in
+    /// `runFilter`. `invalidate()` is called **synchronously on every `searchQuery` edit** (its
+    /// `didSet`), not inside the debounced `runFilter` — so an already-dispatched `searchMatchingIDs`
+    /// from a prior query is invalidated the instant the user edits and can't publish a stale result
+    /// after the field has moved on (review LOW-1). `.task(id:)` cancellation alone can't interrupt an
+    /// in-flight actor call, hence the epoch.
+    private var searchEpoch = SearchEpoch()
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
@@ -249,34 +251,14 @@ final class LibraryBrowseModel {
         }
     }
 
-    /// Sortable-column keypath → its `(ascending, descending)` `TrackSort` pair. A data table (not a
-    /// per-column `switch`) so `applySortOrder` stays branch-light; each row is one sortable
-    /// `TableColumn`'s `sortUsing:` keypath (Genre/Artwork are display-only, so absent → fallback).
-    private static let songSortMapping:
-        [PartialKeyPath<LibraryTrackDisplay>: (asc: TrackSort, desc: TrackSort)] = [
-            \LibraryTrackDisplay.title: (.titleAsc, .titleDesc),
-            \LibraryTrackDisplay.artistName: (.artistNameAsc, .artistNameDesc),
-            \LibraryTrackDisplay.albumName: (.albumTitleAsc, .albumTitleDesc),
-            \LibraryTrackDisplay.durationMs: (.durationAsc, .durationDesc),
-            \LibraryTrackDisplay.dateAdded: (.dateAddedAsc, .dateAddedDescending),
-            \LibraryTrackDisplay.format: (.formatAsc, .formatDesc),
-            \LibraryTrackDisplay.year: (.yearAsc, .yearDesc),
-            \LibraryTrackDisplay.discNo: (.discNoAsc, .discNoDesc),
-            \LibraryTrackDisplay.fileSize: (.fileSizeAsc, .fileSizeDesc),
-        ]
-
-    /// Map the Songs table's active-column comparator → a `TrackSort` and re-read DAO-side. The
-    /// triangle rides `sortOrder` (single source of truth, §3.1); this translates the PRIMARY
-    /// comparator's keypath + direction into the matching asc/desc `TrackSort`, sets `songSort`, and
-    /// re-loads. Sorting stays index-driven in SQL (`allTracksDisplay`), never a client-side sort of
-    /// the full ≤20k set. An unrecognized comparator (or an empty order) falls back to the composite
-    /// grouped default (`.artistAlbumTrack`).
+    /// Map the Songs table's active-column comparator → a `TrackSort` (via
+    /// `LibraryBrowseKit.SongSortMapping`, unit-tested) and re-read DAO-side. The triangle rides
+    /// `sortOrder` (single source of truth, §3.1); the mapping translates the PRIMARY comparator's
+    /// keypath + direction into the matching asc/desc `TrackSort` (unrecognized / empty → composite
+    /// default), sets `songSort`, and re-loads. Sorting stays index-driven in SQL (`allTracksDisplay`),
+    /// never a client-side sort of the full ≤20k set.
     func applySortOrder(_ comparators: [KeyPathComparator<LibraryTrackDisplay>]) {
-        if let primary = comparators.first, let pair = Self.songSortMapping[primary.keyPath] {
-            songSort = primary.order == .forward ? pair.asc : pair.desc
-        } else {
-            songSort = .artistAlbumTrack
-        }
+        songSort = SongSortMapping.trackSort(for: comparators)
         Task { await self.loadSongs() }
     }
 
@@ -304,12 +286,12 @@ final class LibraryBrowseModel {
     /// cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
     /// reload (§11 #4), where no edit occurred and the captured epoch simply stays current.
     func runFilter() async {
-        let epoch = searchEpoch
-        guard searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
+        let captured = searchEpoch.value
+        guard SearchQueryGate.shouldQuery(searchQuery) else {
             matchedIDs = nil
             return
         }
-        guard let ids = try? await store?.searchMatchingIDs(searchQuery), epoch == searchEpoch
+        guard let ids = try? await store?.searchMatchingIDs(searchQuery), searchEpoch.isCurrent(captured)
         else { return } // stale epoch OR store error/not-ready → keep last-good, no publish
         matchedIDs = ids // [] on junk/no-match (never nil here) → drives zero-results
     }
