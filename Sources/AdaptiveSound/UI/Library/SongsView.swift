@@ -99,18 +99,43 @@ private struct SongsTable: View {
     @State private var infoTarget: LibraryTrackDisplay?
 
     var body: some View {
-        Table(model.songs, selection: $selection) {
-            TableColumn("Title") { titleCell($0) }.width(min: 160, ideal: 300)
-            TableColumn("Artist") { artistCell($0) }.width(min: 110, ideal: 170)
-            TableColumn("Album") { albumCell($0) }.width(min: 110, ideal: 190)
-            TableColumn("Time") { timeCell($0) }.width(min: 52, ideal: 60, max: 72)
-            TableColumn("Date Added") { dateCell($0) }.width(min: 92, ideal: 112, max: 140)
+        // Environment yields no binding; a local `@Bindable` provides `$model.sortOrder` for the
+        // Table's `sortOrder:` (single source of truth on the model, §3.1/§6 — NOT a re-seeding
+        // subtree `@State`, and NOT a hand-rolled `Binding(get:set:)`).
+        @Bindable var model = model
+        Table(model.songs, selection: $selection, sortOrder: $model.sortOrder) {
+            // First-click direction per §3.1: all `.forward` except Date Added (`.reverse`,
+            // recently-added first). Quality sorts by the underlying `format`. `applySortOrder`
+            // maps each keypath + direction → its asc/desc `TrackSort`.
+            TableColumn("Title", sortUsing: KeyPathComparator(\.title, order: .forward)) {
+                titleCell($0)
+            }.width(min: 160, ideal: 300)
+            TableColumn("Artist", sortUsing: KeyPathComparator(\.artistName, order: .forward)) {
+                artistCell($0)
+            }.width(min: 110, ideal: 170)
+            TableColumn("Album", sortUsing: KeyPathComparator(\.albumName, order: .forward)) {
+                albumCell($0)
+            }.width(min: 110, ideal: 190)
+            TableColumn("Time", sortUsing: KeyPathComparator(\.durationMs, order: .forward)) {
+                timeCell($0)
+            }.width(min: 52, ideal: 60, max: 72)
+            TableColumn("Date Added", sortUsing: KeyPathComparator(\.dateAdded, order: .reverse)) {
+                dateCell($0)
+            }.width(min: 92, ideal: 112, max: 140)
             // S9.5 §12.1 full-catalog columns (backend delta): fixed/always-visible for this
             // chunk — show/hide customization lands in the later slice-3 UI (§11).
-            TableColumn("Quality") { qualityCell($0) }.width(min: 96, ideal: 118, max: 140)
-            TableColumn("Year") { yearCell($0) }.width(min: 44, ideal: 52, max: 64)
-            TableColumn("Disc #") { discCell($0) }.width(min: 44, ideal: 52, max: 64)
-            TableColumn("File Size") { fileSizeCell($0) }.width(min: 72, ideal: 88, max: 110)
+            TableColumn("Quality", sortUsing: KeyPathComparator(\.format, order: .forward)) {
+                qualityCell($0)
+            }.width(min: 96, ideal: 118, max: 140)
+            TableColumn("Year", sortUsing: KeyPathComparator(\.year, order: .forward)) {
+                yearCell($0)
+            }.width(min: 44, ideal: 52, max: 64)
+            TableColumn("Disc #", sortUsing: KeyPathComparator(\.discNo, order: .forward)) {
+                discCell($0)
+            }.width(min: 44, ideal: 52, max: 64)
+            TableColumn("File Size", sortUsing: KeyPathComparator(\.fileSize, order: .forward)) {
+                fileSizeCell($0)
+            }.width(min: 72, ideal: 88, max: 110)
         }
         // Uniform row height (aids virtualization / the R1 selection-latency measurement).
         .environment(\.defaultMinListRowHeight, DesignSystem.SongsList.rowHeight)
@@ -125,6 +150,12 @@ private struct SongsTable: View {
         // Return plays the current selection from its row (double-click is mouse-only in AppKit).
         .onKeyPress(.return) {
             playSingleTrack(startingAt: selection) ? .handled : .ignored
+        }
+        // Header click → re-map to a `TrackSort` + DAO re-read. Two-param form (the one-param is
+        // deprecated); no `initial:` — firing on the seed would clobber the composite anchor, and
+        // `onChange` correctly does not fire on the initial value (§3.1/§6).
+        .onChange(of: model.sortOrder) { _, newValue in
+            model.applySortOrder(newValue)
         }
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))

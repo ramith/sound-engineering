@@ -108,6 +108,10 @@ func checkSongsSortOrder(number: Int, url: URL) async -> Bool {
             (.titleDesc, [3, 1, 0, 4, 2]), // exact reverse of titleAsc
             // composite: nil-artist FIRST, then alpha(t2,t5 full-collide → id) then Beta(t3,t1).
             (.artistAlbumTrack, [3, 1, 4, 2, 0]),
+            // artist NOCASE, NULL artist LAST (both directions, ar.name IS NULL lead); id tiebreak.
+            // alpha(t2,t5) < Beta(t1,t3) < nil(t4). Mirrors .albumTitle* (NOT the composite).
+            (.artistNameAsc, [1, 4, 0, 2, 3]),
+            (.artistNameDesc, [2, 0, 4, 1, 3]), // nulls STILL last → NOT a plain reverse
             // album NOCASE, NULL album LAST (both directions); id tiebreak.
             (.albumTitleAsc, [1, 4, 0, 2, 3]),
             (.albumTitleDesc, [2, 0, 4, 1, 3]), // nulls STILL last → NOT a plain reverse
@@ -162,6 +166,7 @@ func checkSongsSortQueryPlan(number: Int, url: URL) async -> Bool {
         // reported, not hacked around); all must still clear the BR5 no-SCAN-TABLE-tracks wire.
         let allSorts: [(TrackSort, String)] = [
             (.titleAsc, "titleAsc"), (.titleDesc, "titleDesc"), (.artistAlbumTrack, "artistAlbumTrack"),
+            (.artistNameAsc, "artistNameAsc"), (.artistNameDesc, "artistNameDesc"),
             (.albumTitleAsc, "albumTitleAsc"), (.albumTitleDesc, "albumTitleDesc"),
             (.durationAsc, "durationAsc"), (.durationDesc, "durationDesc"),
             (.dateAddedAsc, "dateAddedAsc"), (.dateAddedDescending, "dateAddedDescending"),

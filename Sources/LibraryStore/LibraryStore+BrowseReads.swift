@@ -265,8 +265,9 @@ public extension LibraryStore {
     /// direction without a per-case ternary). The multi-term composite orders (`.name`,
     /// `.album`, `.artistAlbumTrack`) are handled directly in `trackOrder` and are not here.
     private static let descendingTrackSorts: Set<TrackSort> = [
-        .titleDesc, .albumTitleDesc, .durationDesc, .dateAddedDescending, .formatDesc, .yearDesc,
-        .discNoDesc, .fileSizeDesc, .playCountDesc, .lastPlayedDesc, .albumArtistDesc,
+        .titleDesc, .artistNameDesc, .albumTitleDesc, .durationDesc, .dateAddedDescending,
+        .formatDesc, .yearDesc, .discNoDesc, .fileSizeDesc, .playCountDesc, .lastPlayedDesc,
+        .albumArtistDesc,
     ]
 
     /// The `ORDER BY` body for a `TrackSort`, column-prefixed (`""` for the bare `tracks`
@@ -277,8 +278,8 @@ public extension LibraryStore {
     /// to `singleKeyTrackOrder`, which itself delegates the S9.5 §12.1 full-catalog additions
     /// to `catalogTrackOrder` — split across three functions so NO switch exceeds the
     /// cyclomatic-complexity budget. The name-based orders (`.artistAlbumTrack` here,
-    /// `.albumTitle*`/`.albumArtist*` in the helpers) reference the Display reads'
-    /// `ar`/`al`/`aa` join aliases and are valid ONLY on the LEFT-JOINed Display reads.
+    /// `.artistName*`/`.albumTitle*`/`.albumArtist*` in the helpers) reference the Display
+    /// reads' `ar`/`al`/`aa` join aliases and are valid ONLY on the LEFT-JOINed Display reads.
     internal static func trackOrder(_ sort: TrackSort, prefix: String) -> String {
         switch sort {
         case .name:
@@ -311,6 +312,11 @@ public extension LibraryStore {
         case .albumTitleAsc, .albumTitleDesc:
             // Display-only (al join). NULL album (no album) sorts LAST in BOTH directions.
             return "al.title IS NULL, al.title COLLATE NOCASE \(dir), \(prefix)id \(dir)"
+        case .artistNameAsc, .artistNameDesc:
+            // Display-only (the `ar` join — same class as the album-title name sort). NULL
+            // artist (no artist) sorts LAST in BOTH directions via the `ar.name IS NULL` lead
+            // term — mirrors `.albumTitle*`, NOT the composite `.artistAlbumTrack`'s NULLS-FIRST.
+            return "ar.name IS NULL, ar.name COLLATE NOCASE \(dir), \(prefix)id \(dir)"
         case .durationAsc, .durationDesc:
             return "\(prefix)duration_ms \(dir), \(prefix)id \(dir)"
         case .dateAddedAsc, .dateAddedDescending:

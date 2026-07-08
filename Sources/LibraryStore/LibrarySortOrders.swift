@@ -37,6 +37,17 @@ public enum TrackSort: Sendable, Hashable {
     /// → id. A NULL artist/album name (no artist / no album) sorts FIRST within its group
     /// (SQLite's default NULLS-FIRST for ascending).
     case artistAlbumTrack
+    /// By resolved track-artist name NOCASE ascending (Display-only — the `ar` join); tracks
+    /// with NO artist (`ar.name` NULL) sort LAST. The single-key Artist-column sort (S9.5
+    /// §3.1): `.artistAlbumTrack` stays the grouped default anchor, presenting the Artist
+    /// column as the active ascending sort — so the *first* Artist header-click toggles the
+    /// active column to `.artistNameDesc`, and the *second* returns here. SAME CLASS as
+    /// `.albumTitleAsc` (a LEFT-JOINed name).
+    case artistNameAsc
+    /// By resolved track-artist name NOCASE descending; tracks with NO artist sort LAST in
+    /// BOTH directions (via the `ar.name IS NULL` lead term) — mirrors `.albumTitleDesc`,
+    /// NOT a plain reverse of `.artistNameAsc`.
+    case artistNameDesc
     /// By album title NOCASE ascending; tracks with NO album (`al.title` NULL) sort LAST.
     case albumTitleAsc
     /// By album title NOCASE descending; tracks with NO album sort LAST (both directions,

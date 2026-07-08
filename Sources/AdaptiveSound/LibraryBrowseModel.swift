@@ -50,6 +50,15 @@ final class LibraryBrowseModel {
     // sort UI is slice 3); the composite default groups by artist → album → disc → track → id.
     private(set) var songs: [LibraryTrackDisplay] = []
     var songSort: TrackSort = .artistAlbumTrack
+    /// The Songs `Table`'s active-column comparator — the SINGLE SOURCE OF TRUTH for the sort
+    /// triangle (review #1). It lives HERE (not `@State` in the table subtree) so it survives the
+    /// tab-`switch` teardown alongside `songSort`; a subtree `@State` would re-seed to the anchor
+    /// on every return and desync the triangle from the persisted `songSort`. Seeded to the Artist
+    /// anchor while `songSort` stays the composite grouped default (`.artistAlbumTrack`); `onChange`
+    /// does NOT fire on this seed, so it never clobbers the composite (design §3.1).
+    var sortOrder: [KeyPathComparator<LibraryTrackDisplay>] = [
+        KeyPathComparator(\.artistName, order: .forward),
+    ]
     private(set) var songsState: LoadState = .idle
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
@@ -196,6 +205,37 @@ final class LibraryBrowseModel {
             guard epoch == songsLoadEpoch else { return }
             songsState = .failed(error.localizedDescription)
         }
+    }
+
+    /// Sortable-column keypath → its `(ascending, descending)` `TrackSort` pair. A data table (not a
+    /// per-column `switch`) so `applySortOrder` stays branch-light; each row is one sortable
+    /// `TableColumn`'s `sortUsing:` keypath (Genre/Artwork are display-only, so absent → fallback).
+    private static let songSortMapping:
+        [PartialKeyPath<LibraryTrackDisplay>: (asc: TrackSort, desc: TrackSort)] = [
+            \LibraryTrackDisplay.title: (.titleAsc, .titleDesc),
+            \LibraryTrackDisplay.artistName: (.artistNameAsc, .artistNameDesc),
+            \LibraryTrackDisplay.albumName: (.albumTitleAsc, .albumTitleDesc),
+            \LibraryTrackDisplay.durationMs: (.durationAsc, .durationDesc),
+            \LibraryTrackDisplay.dateAdded: (.dateAddedAsc, .dateAddedDescending),
+            \LibraryTrackDisplay.format: (.formatAsc, .formatDesc),
+            \LibraryTrackDisplay.year: (.yearAsc, .yearDesc),
+            \LibraryTrackDisplay.discNo: (.discNoAsc, .discNoDesc),
+            \LibraryTrackDisplay.fileSize: (.fileSizeAsc, .fileSizeDesc),
+        ]
+
+    /// Map the Songs table's active-column comparator → a `TrackSort` and re-read DAO-side. The
+    /// triangle rides `sortOrder` (single source of truth, §3.1); this translates the PRIMARY
+    /// comparator's keypath + direction into the matching asc/desc `TrackSort`, sets `songSort`, and
+    /// re-loads. Sorting stays index-driven in SQL (`allTracksDisplay`), never a client-side sort of
+    /// the full ≤20k set. An unrecognized comparator (or an empty order) falls back to the composite
+    /// grouped default (`.artistAlbumTrack`).
+    func applySortOrder(_ comparators: [KeyPathComparator<LibraryTrackDisplay>]) {
+        if let primary = comparators.first, let pair = Self.songSortMapping[primary.keyPath] {
+            songSort = primary.order == .forward ? pair.asc : pair.desc
+        } else {
+            songSort = .artistAlbumTrack
+        }
+        Task { await self.loadSongs() }
     }
 
     /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + songs
