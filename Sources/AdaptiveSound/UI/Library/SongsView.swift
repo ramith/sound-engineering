@@ -22,6 +22,15 @@ struct SongsView: View {
             // Keyed on store-readiness so a Library visit BEFORE the async store finishes building
             // reloads once it's ready (mirrors AlbumGridView / review S2) — not a stuck spinner.
             .task(id: model.isStoreReady) { await model.loadSongs() }
+            // Debounced incremental filter (§7). A new keystroke changes the task id → the sleeping
+            // task is cancelled → newest-wins on the debounce; the model's epoch guard covers the
+            // actor round-trip a cancel can't interrupt. Hosted HERE (the stable SongsView body, not
+            // the re-rendering SongsHeader) so it isn't torn down by header updates.
+            .task(id: model.searchQuery) {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                await model.runFilter()
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -47,41 +56,105 @@ struct SongsView: View {
         }
     }
 
-    /// Header + hairline + table — shown only when there is content (design §10.3).
+    /// Header + hairline + table — shown only when there is content (design §10.3). When a filter
+    /// is active but matches nothing (`matchedIDs == []`), the table is replaced by the zero-results
+    /// view while the header (field + "0 results") stays shown — DISTINCT from the empty-library
+    /// state, which is reached only when there's genuinely no library content (§3.3/§10.3).
     private var songsList: some View {
         VStack(spacing: 0) {
             SongsHeader()
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            SongsTable()
+            if model.matchedIDs?.isEmpty == true {
+                zeroResults
+            } else {
+                SongsTable()
+            }
         }
+    }
+
+    /// Filtered-to-nothing state (§3.3). Don't animate the swap in/out (Table diff jank / §11);
+    /// `ContentUnavailableView` respects Reduce Motion natively.
+    private var zeroResults: some View {
+        ContentUnavailableView {
+            Label("No Results", systemImage: "magnifyingglass")
+        } description: {
+            Text("No songs match “\(model.searchQuery)”.")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-// MARK: - Header (count line only for this slice; search field lands in slice 4)
+// MARK: - Header (count line + incremental filter field)
 
-/// The Songs header band: a leading "N songs · total duration" count. Kept a separate view (reads
-/// only `model.songs`, never the table's selection) so a selection change never re-sums the total.
+/// The Songs header band: leading "N songs · total duration" (or "N results" when filtered) count,
+/// trailing filter field. Kept a separate view (reads only `model.visibleSongs`/`matchedIDs`, never
+/// the table's selection) so a selection change never re-sums the total.
 private struct SongsHeader: View {
     @Environment(LibraryBrowseModel.self) private var model
+    /// Drives ⌘F focus + Escape defocus of the filter field (design §3.2/§8).
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
-        HStack {
-            Text(countLine)
+        // Environment yields no binding; a local `@Bindable` provides `$model.searchQuery` for the
+        // TextField (§6 — NOT a hand-rolled `Binding(get:set:)`).
+        @Bindable var model = model
+        HStack(spacing: DesignSystem.Spacing.small) {
+            Text(model.songsCountLine)
                 .font(DesignSystem.Font.caption)
                 .foregroundStyle(DesignSystem.Color.labelSecondary)
             Spacer(minLength: DesignSystem.Spacing.small)
+            filterField(query: $model.searchQuery)
         }
         .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
         .frame(height: DesignSystem.SongsList.headerHeight)
+        .background {
+            // ⌘F focuses the filter field. A `.hidden()` button keeps the shortcut installed
+            // regardless of field state — an `if`/`.disabled` would drop the shortcut (§6/§8).
+            Button("Find in Songs") { filterFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
     }
 
-    /// "1,240 songs · 3 hr 14 min" (grouped thousands; singular "1 song"). Filtered "N results"
-    /// is slice 4.
-    private var countLine: String {
-        let count = model.songs.count
-        let noun = count == 1 ? "song" : "songs"
-        let total = humaneTotalDuration(model.songs.reduce(0.0) { $0 + $1.durationSeconds })
-        return "\(count.formatted(.number)) \(noun) · \(total)"
+    /// The trailing filter field (§3.2 / parent §10.2): 28pt `card` pill with a 0.5 `hairline`
+    /// stroke, leading `magnifyingglass`, the bound `TextField`, and a trailing clear button when
+    /// non-empty. Escape clears-then-defocuses via `.onExitCommand` (the macOS Cancel hook).
+    private func filterField(query: Binding<String>) -> some View {
+        HStack(spacing: DesignSystem.Spacing.xSmall) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(DesignSystem.Color.labelTertiary)
+            TextField("Filter Songs", text: query)
+                .textFieldStyle(.plain)
+                .font(DesignSystem.Font.body)
+                .foregroundStyle(DesignSystem.Color.label)
+                .focused($filterFocused)
+                .onExitCommand {
+                    query.wrappedValue = ""
+                    filterFocused = false
+                }
+            if !query.wrappedValue.isEmpty {
+                Button {
+                    query.wrappedValue = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(DesignSystem.Color.labelTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, DesignSystem.Spacing.small)
+        .frame(height: 28)
+        .frame(minWidth: DesignSystem.SongsList.searchFieldMinWidth,
+               idealWidth: DesignSystem.SongsList.searchFieldIdealWidth)
+        .background(
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
+                .fill(DesignSystem.Color.card)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
+                .stroke(DesignSystem.Color.hairline, lineWidth: 0.5)
+        )
     }
 }
 
@@ -103,7 +176,10 @@ private struct SongsTable: View {
         // Table's `sortOrder:` (single source of truth on the model, §3.1/§6 — NOT a re-seeding
         // subtree `@State`, and NOT a hand-rolled `Binding(get:set:)`).
         @Bindable var model = model
-        Table(model.songs, selection: $selection, sortOrder: $model.sortOrder) {
+        // Rows bind to `visibleSongs` (the filter-narrowed set), NOT `songs` — so play / context /
+        // row-resolution below all operate over exactly what's on screen (§6, #3). `sortOrder` stays
+        // the model's single-source-of-truth binding: filtering PRESERVES the sort + triangle.
+        Table(model.visibleSongs, selection: $selection, sortOrder: $model.sortOrder) {
             // First-click direction per §3.1: all `.forward` except Date Added (`.reverse`,
             // recently-added first). Quality sorts by the underlying `format`. `applySortOrder`
             // maps each keypath + direction → its asc/desc `TrackSort`.
@@ -170,14 +246,16 @@ private struct SongsTable: View {
     /// NOT dump the whole `songs` list into the queue. Returns false when `ids` resolves to no row.
     @discardableResult
     private func playSingleTrack(startingAt ids: Set<LibraryTrackDisplay.ID>) -> Bool {
-        guard let index = model.songs.firstIndex(where: { ids.contains($0.id) }) else { return false }
-        model.playTrackNextNow(model.songs[index])
+        guard let index = model.visibleSongs.firstIndex(where: { ids.contains($0.id) })
+        else { return false }
+        model.playTrackNextNow(model.visibleSongs[index])
         return true
     }
 
     /// The selection as tracks in sort order (multi-select verbs operate in this order, §10.6).
+    /// Resolved over the visible (filtered) set so a multi-select Play never reaches a hidden row.
     private func orderedTracks(for ids: Set<LibraryTrackDisplay.ID>) -> [LibraryTrackDisplay] {
-        model.songs.filter { ids.contains($0.id) }
+        model.visibleSongs.filter { ids.contains($0.id) }
     }
 
     @ViewBuilder
@@ -189,8 +267,8 @@ private struct SongsTable: View {
             Button("Add to Queue") { model.append(tracks) }
             Divider()
             Button("Info", systemImage: "info.circle") { infoTarget = tracks.first }
-        } else if let index = model.songs.firstIndex(where: { ids.contains($0.id) }) {
-            let track = model.songs[index]
+        } else if let index = model.visibleSongs.firstIndex(where: { ids.contains($0.id) }) {
+            let track = model.visibleSongs[index]
             Button("Play") { model.playTrackNextNow(track) } // single track: insert next + jump
             Button("Play Next") { model.playNext([track]) }
             Button("Add to Queue") { model.append([track]) }
@@ -274,16 +352,10 @@ private struct SongsTable: View {
 
     private func fileSizeCell(_ track: LibraryTrackDisplay) -> some View {
         // track.fileSize is NOT NULL; 0 (never legitimately observed) still renders blank.
-        Text(track.fileSize > 0 ? Self.byteCountFormatter.string(fromByteCount: track.fileSize) : "")
+        Text(track.fileSize > 0 ? track.fileSize.formatted(.byteCount(style: .file)) : "")
             .font(DesignSystem.Font.body)
             .monospacedDigit()
             .foregroundStyle(DesignSystem.Color.labelTertiary)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
-
-    private static let byteCountFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter
-    }()
 }

@@ -72,17 +72,23 @@ Add a light IDs-only read `searchMatchingIDs(_ q:) -> Set<Int64>` and then `visi
 - **Add** `visibleSongs: [LibraryTrackDisplay]` — the single source the view binds to for rows, count, AND play/context row-resolution. **Cache it (L1):** recompute only when `songs` or `matchedIDs` changes (not per-`body`), since selection lives as `@State` in the table subtree and every arrow-key move re-evals `body` — with OD-1's hard <100 ms selection gate we don't want an O(n) refilter per keystroke. When `matchedIDs == nil`, return `songs` by identity (no copy).
 - **Add** `searchEpoch: Int` (monotonic) — newest-wins guard for the actor round-trip that `.task(id:)` cancellation can't interrupt mid-flight.
 - **Sort mapping:** `func applySortOrder(_ comparators: [KeyPathComparator<LibraryTrackDisplay>])` → map primary comparator (keypath **+ `.order`**) → `TrackSort` (incl. the new `.artistNameAsc/Desc`) → set `songSort` → `loadSongs()`. Unrecognized comparator → composite default. `songSort` already exists (line 52) and drives `allTracksDisplay(sortedBy:)`.
-- **Search run — epoch bumped at the TOP, before the gate (REQUIRED, H2/#4):**
+- **Search run — epoch invalidation is SYNCHRONOUS on edit (REQUIRED, H2/#4 + review LOW-1):** bump the epoch (and clear on <2 chars) in `searchQuery`'s `didSet`, NOT inside the debounced `runFilter`; `runFilter` only *captures* the current epoch:
   ```swift
+  var searchQuery = "" {
+      didSet {
+          searchEpoch &+= 1                            // invalidate any dispatched read the instant the user edits
+          if searchQuery.trimmed.count < 2 { matchedIDs = nil }   // instant restore-to-full, no debounce wait
+      }
+  }
   func runFilter() async {
-      let e = bump()                                   // bump FIRST so the clear path invalidates in-flight reads
+      let e = searchEpoch                              // capture, don't bump
       guard searchQuery.trimmed.count >= 2 else { matchedIDs = nil; return }
       guard let ids = try? await store.searchMatchingIDs(searchQuery), e == searchEpoch
       else { return }                                  // stale epoch OR store error → keep last-good, no publish
       matchedIDs = ids                                 // [] on junk/no-match (never nil here)
   }
   ```
-  Bumping *after* the `>=2` guard leaves a hole: type "ab" (epoch 1, in flight) → backspace to "a" (clear, no bump) → the "ab" read resumes and republishes a phantom filter over an empty field. Bump-first closes it. The pure newest-wins test **must** include this cross-2-char-boundary case.
+  Why not bump *inside* `runFilter`: because `runFilter` is itself debounced (~120 ms), a bump there lands too late — a fast in-flight read for "ab" can resolve and publish a phantom filter over the already-emptied field before the clearing "a" run bumps. Bumping in `didSet` invalidates the instant the field changes, and the <2 clear restores the full list immediately (no 120 ms flash). The pure newest-wins test **must** include the cross-2-char-boundary case.
 - **Background reload (L2):** `reloadIfScanChanged` replaces `songs` but leaves `matchedIDs`; a live scan adding matching tracks won't surface them until re-typed. **Re-run the active filter after a `libraryRevision` reload** (correctness-over-demoability) — or document the staleness explicitly. *(Founder call, §11.)*
 - Queue verbs (`playNext`/`append`/`playTrackNextNow`) **unchanged** in this slice (truthful-count / OD-2 + the toast are a separate slice).
 

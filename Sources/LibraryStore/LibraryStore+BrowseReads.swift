@@ -426,8 +426,9 @@ public extension LibraryStore {
     }
 
     /// Run `EXPLAIN QUERY PLAN <sql>` and collect the `detail` column (index 3) of each
-    /// plan row.
-    private func collectQueryPlan(_ sql: String) throws -> [String] {
+    /// plan row. Internal (not private) so `LibraryStore+Search`'s
+    /// `explainSearchMatchingIDsPlan` reuses the SAME collector (one EXPLAIN path, no drift).
+    internal func collectQueryPlan(_ sql: String) throws -> [String] {
         let statement = try connection.prepare("EXPLAIN QUERY PLAN " + sql)
         defer { statement.finalize() }
         var details: [String] = []
