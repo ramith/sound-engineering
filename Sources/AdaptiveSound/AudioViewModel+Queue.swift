@@ -39,12 +39,14 @@ extension AudioViewModel {
     /// "Play Next"), because it sets `pendingNextIndex` directly rather than routing
     /// through `computeNextIndex` (design §6; the multi-item forced-next FIFO is S10).
     /// With nothing playing there is no "current" to insert after, so it appends.
-    func playNext(_ tracks: [AudioFile]) {
+    /// Returns the number of tracks actually added (post-dedup) — 0 when every input was already
+    /// queued — so the caller can raise a truthful "Added N…" toast (OD-2).
+    @discardableResult
+    func playNext(_ tracks: [AudioFile]) -> Int {
         let tracks = dedupedAgainstQueue(tracks)
-        guard !tracks.isEmpty else { return }
+        guard !tracks.isEmpty else { return 0 }
         guard let current = selectedTrackIndex else {
-            appendToQueue(tracks) // nothing selected → no "current" to insert after
-            return
+            return appendToQueue(tracks) // nothing selected → no "current" to insert after
         }
         let insertAt = min(current + 1, playlist.count)
         logUX("playNext: \(tracks.count) track(s) after index \(current) (playing=\(isPlaying))")
@@ -54,6 +56,7 @@ extension AudioViewModel {
         // primeGaplessPipeline derives computeNextIndex(current) = current+1); the
         // shuffle-while-paused case is best-effort until the S10 forced-next queue.
         if isPlaying { armOnDeck(index: insertAt) }
+        return tracks.count
     }
 
     /// Insert `track` immediately after the current track and JUMP to play it NOW — the Songs-list
@@ -100,19 +103,23 @@ extension AudioViewModel {
     /// end-of-queue case (playing the last track with nothing on-deck, repeat-off) — see
     /// `QueueAdvance.appendArmIndex`; otherwise the existing primed pick is left untouched
     /// (append must never re-roll under shuffle or disturb a mid-list on-deck).
-    func appendToQueue(_ tracks: [AudioFile]) {
+    /// Returns the number of tracks actually appended (post-dedup) — 0 when every input was already
+    /// queued (OD-2).
+    @discardableResult
+    func appendToQueue(_ tracks: [AudioFile]) -> Int {
         let tracks = dedupedAgainstQueue(tracks)
-        guard !tracks.isEmpty else { return }
+        guard !tracks.isEmpty else { return 0 }
         let oldCount = playlist.count
         logUX("appendToQueue: \(tracks.count) track(s) (was \(oldCount))")
         playlist.append(contentsOf: tracks)
-        guard isPlaying, let current = selectedTrackIndex else { return }
+        guard isPlaying, let current = selectedTrackIndex else { return tracks.count }
         if let armIndex = QueueAdvance.appendArmIndex(
             current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
             shuffle: shuffleEnabled, repeatMode: repeatMode
         ) {
             armOnDeck(index: armIndex)
         }
+        return tracks.count
     }
 
     /// Arm the gapless on-deck to `index` (or clear it) — the shared engine-arming
