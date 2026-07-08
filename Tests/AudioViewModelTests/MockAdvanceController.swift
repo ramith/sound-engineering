@@ -259,27 +259,31 @@ final class MockAdvanceController {
         playTrack(at: start)
     }
 
-    func playNext(_ tracks: [String]) {
+    @discardableResult
+    func playNext(_ tracks: [String]) -> Int {
         let tracks = dedupedAgainstQueue(tracks)
-        guard !tracks.isEmpty else { return }
-        guard let current = selectedTrackIndex else { appendToQueue(tracks); return }
+        guard !tracks.isEmpty else { return 0 }
+        guard let current = selectedTrackIndex else { return appendToQueue(tracks) }
         let insertAt = min(current + 1, playlist.count)
         playlist.insert(contentsOf: tracks, at: insertAt)
         if isPlaying { armOnDeck(insertAt) }
+        return tracks.count
     }
 
-    func appendToQueue(_ tracks: [String]) {
+    @discardableResult
+    func appendToQueue(_ tracks: [String]) -> Int {
         let tracks = dedupedAgainstQueue(tracks)
-        guard !tracks.isEmpty else { return }
+        guard !tracks.isEmpty else { return 0 }
         let oldCount = playlist.count
         playlist.append(contentsOf: tracks)
-        guard isPlaying, let current = selectedTrackIndex else { return }
+        guard isPlaying, let current = selectedTrackIndex else { return tracks.count }
         if let armIndex = QueueAdvance.appendArmIndex(
             current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
             shuffle: shuffleEnabled, repeatMode: repeatMode
         ) {
             armOnDeck(armIndex)
         }
+        return tracks.count
     }
 
     private func dedupedAgainstQueue(_ tracks: [String]) -> [String] {
