@@ -44,11 +44,14 @@ final class LibraryBrowseModel {
     var albumSort: FacetSort = .title // S9.5 adds a "Recently Added" album sort (needs a DAO read)
     private(set) var albumsState: LoadState = .idle
 
-    // Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
-    // structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
-    // indexes straight into it with no separate read. `songSort` drives the DAO-side order (header
-    // sort UI is slice 3); the composite default groups by artist → album → disc → track → id.
-    private(set) var songs: [LibraryTrackDisplay] = []
+    /// Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
+    /// structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
+    /// indexes straight into it with no separate read. `songSort` drives the DAO-side order (header
+    /// sort UI is slice 3); the composite default groups by artist → album → disc → track → id.
+    private(set) var songs: [LibraryTrackDisplay] = [] {
+        didSet { refreshVisible() } // one recompute per full-load (design §5/L1)
+    }
+
     var songSort: TrackSort = .artistAlbumTrack
     /// The Songs `Table`'s active-column comparator — the SINGLE SOURCE OF TRUTH for the sort
     /// triangle (review #1). It lives HERE (not `@State` in the table subtree) so it survives the
@@ -60,6 +63,45 @@ final class LibraryBrowseModel {
         KeyPathComparator(\.artistName, order: .forward),
     ]
     private(set) var songsState: LoadState = .idle
+
+    // Songs filter (S9.5 chunk 2b — "filter-preserves-sort", design §3.3/§5). The filter NARROWS
+    // the already-`songSort`-ordered `songs` in place (A2): it never touches `songSort`/`sortOrder`,
+    // so the sort triangle is preserved and headers keep re-sorting the filtered subset.
+
+    /// The live filter text, bound to the header field via `@Bindable` and observed by the
+    /// SongsView-level debounce `.task(id:)`. Editing **synchronously** invalidates any in-flight
+    /// read (bumps the epoch) and, on dropping below the 2-char gate, clears the filter at once — so
+    /// a backspace/clear can't leave a stale filter flashing through the 120 ms debounce (review
+    /// LOW-1). A ≥2-char edit keeps the last-good set until the new read lands (no flash to empty).
+    var searchQuery: String = "" {
+        didSet {
+            searchEpoch &+= 1 // invalidate any dispatched read immediately, not after the debounce
+            if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
+                matchedIDs = nil // instant restore-to-full; don't wait for the debounced runFilter
+            }
+        }
+    }
+
+    /// The FTS-matched `tracks.id`s, or the filter mode. **`nil` = NOT filtering** →
+    /// `visibleSongs` short-circuits to `songs` (identity, no copy); **`[]` = filtering with zero
+    /// matches** → drives the zero-results state. A concrete set narrows `songs` to that membership.
+    private(set) var matchedIDs: Set<Int64>? {
+        didSet { refreshVisible() } // one recompute per filter publish (design §5/L1)
+    }
+
+    /// The single source the Songs table/count/row-resolution bind to — the current sort narrowed
+    /// by the active filter. **Cached, NOT a per-`body` computed (L1):** selection lives as `@State`
+    /// in the table subtree, so every arrow-key move re-evals `body`; an O(n) refilter per keystroke
+    /// would threaten OD-1's hard <100 ms selection gate. Recomputed by `refreshVisible()` ONLY when
+    /// `songs` or `matchedIDs` changes (their `didSet`s).
+    private(set) var visibleSongs: [LibraryTrackDisplay] = []
+
+    /// Monotonic newest-wins guard for the actor round-trip in `runFilter`. Bumped **synchronously
+    /// on every `searchQuery` edit** (its `didSet`), not inside the debounced `runFilter` — so an
+    /// already-dispatched `searchMatchingIDs` from a prior query is invalidated the instant the user
+    /// edits and can't publish a stale result after the field has moved on (review LOW-1). `.task(id:)`
+    /// cancellation alone can't interrupt an in-flight actor call, hence the epoch.
+    private var searchEpoch = 0
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
@@ -238,6 +280,53 @@ final class LibraryBrowseModel {
         Task { await self.loadSongs() }
     }
 
+    // MARK: - Song filtering (S9.5 chunk 2b — filter-preserves-sort, A2)
+
+    /// Recompute the cached `visibleSongs` from `songs` + `matchedIDs`. The ONLY writer of
+    /// `visibleSongs`; invoked from the `songs`/`matchedIDs` `didSet`s so every input change
+    /// refreshes exactly once (design §5/L1). When NOT filtering (`matchedIDs == nil`) it assigns
+    /// `songs` by identity — no `filter`, no copy — so the common unfiltered path stays free. `songs`
+    /// is already in `songSort` order, so the in-place membership filter preserves that order for
+    /// free (A2): it can only ever hide a row, never reorder or fabricate one.
+    private func refreshVisible() {
+        if let matchedIDs {
+            visibleSongs = songs.filter { matchedIDs.contains($0.id) }
+        } else {
+            visibleSongs = songs
+        }
+    }
+
+    /// Run the active filter: gate on ≥2 (trimmed) chars, hit the IDs-only membership read off-main,
+    /// and publish newest-wins. `nil` = not filtering (restore full list); `[]` (junk /
+    /// tokenizable-no-match) = zero results. A stale epoch OR a store error keeps the last-good set
+    /// (never a silent restore-to-full). The epoch is bumped in `searchQuery`'s `didSet`, so we only
+    /// CAPTURE it here; any newer edit that lands during the read drops this publish. Debounced +
+    /// cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
+    /// reload (§11 #4), where no edit occurred and the captured epoch simply stays current.
+    func runFilter() async {
+        let epoch = searchEpoch
+        guard searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
+            matchedIDs = nil
+            return
+        }
+        guard let ids = try? await store?.searchMatchingIDs(searchQuery), epoch == searchEpoch
+        else { return } // stale epoch OR store error/not-ready → keep last-good, no publish
+        matchedIDs = ids // [] on junk/no-match (never nil here) → drives zero-results
+    }
+
+    /// The Songs summary line: unfiltered "N songs · total duration"; filtered "N results" (duration
+    /// dropped; `0` → "0 results"). Driven off `visibleSongs`/`matchedIDs` (design §3.3/§6).
+    var songsCountLine: String {
+        let count = visibleSongs.count
+        if matchedIDs != nil {
+            let noun = count == 1 ? "result" : "results"
+            return "\(count.formatted(.number)) \(noun)"
+        }
+        let noun = count == 1 ? "song" : "songs"
+        let total = humaneTotalDuration(visibleSongs.reduce(0.0) { $0 + $1.durationSeconds })
+        return "\(count.formatted(.number)) \(noun) · \(total)"
+    }
+
     /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + songs
     /// + art fill in live). Coalesced to `audio.libraryRevision` — one reload per pass, NOT per
     /// metadata tick (design §7; review B1 — the revision bumps when metadata builds the rows, not
@@ -248,6 +337,11 @@ final class LibraryBrowseModel {
         lastLoadedRevision = audio.libraryRevision
         await loadAlbums()
         await loadSongs()
+        // Re-run the active filter after the reload (design §11 decision #4 / L2): a live scan may
+        // have added tracks that match the current query, and the reload replaced `songs` while
+        // leaving the stale `matchedIDs`. Re-querying surfaces the new matches; `matchedIDs`'s
+        // `didSet` refreshes `visibleSongs`. Skipped when not filtering (`matchedIDs == nil`).
+        if matchedIDs != nil { await runFilter() }
     }
 
     // MARK: - Detail reads (album)
