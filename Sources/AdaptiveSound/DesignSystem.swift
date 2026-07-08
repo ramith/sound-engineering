@@ -194,5 +194,6 @@ enum DesignSystem {
         static let headerHeight: CGFloat = 44 // SongsHeader band (count + filter field)
         static let searchFieldMinWidth: CGFloat = 180 // filter field, trailing in the header (§10.2)
         static let searchFieldIdealWidth: CGFloat = 240
+        static let artwork: CGFloat = 28 // leading row thumbnail (§10.1; denser than the 44pt footer)
     }
 }
