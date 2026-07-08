@@ -1,4 +1,5 @@
 import Foundation
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -246,16 +247,16 @@ private struct SongsTable: View {
     /// NOT dump the whole `songs` list into the queue. Returns false when `ids` resolves to no row.
     @discardableResult
     private func playSingleTrack(startingAt ids: Set<LibraryTrackDisplay.ID>) -> Bool {
-        guard let index = model.visibleSongs.firstIndex(where: { ids.contains($0.id) })
+        guard let track = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: ids)
         else { return false }
-        model.playTrackNextNow(model.visibleSongs[index])
+        model.playTrackNextNow(track)
         return true
     }
 
     /// The selection as tracks in sort order (multi-select verbs operate in this order, §10.6).
     /// Resolved over the visible (filtered) set so a multi-select Play never reaches a hidden row.
     private func orderedTracks(for ids: Set<LibraryTrackDisplay.ID>) -> [LibraryTrackDisplay] {
-        model.visibleSongs.filter { ids.contains($0.id) }
+        SongsRowResolver.orderedSelection(in: model.visibleSongs, selection: ids)
     }
 
     @ViewBuilder
@@ -267,8 +268,7 @@ private struct SongsTable: View {
             Button("Add to Queue") { model.append(tracks) }
             Divider()
             Button("Info", systemImage: "info.circle") { infoTarget = tracks.first }
-        } else if let index = model.visibleSongs.firstIndex(where: { ids.contains($0.id) }) {
-            let track = model.visibleSongs[index]
+        } else if let track = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: ids) {
             Button("Play") { model.playTrackNextNow(track) } // single track: insert next + jump
             Button("Play Next") { model.playNext([track]) }
             Button("Add to Queue") { model.append([track]) }

@@ -11,7 +11,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "AdaptiveSound",
-            dependencies: ["AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit"],
+            dependencies: [
+                "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
+                "LibraryBrowseKit",
+            ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
             exclude: ["Info.plist"],
@@ -120,6 +123,15 @@ let package = Package(
             dependencies: [],
             path: "Sources/PlaybackQueueKit"
         ),
+        // Pure Library-browse decision core (S9.5). Same rationale as PlaybackQueueKit: extracted
+        // from LibraryBrowseModel/SongsView (an executable target SPM can't @testable-import) so the
+        // app and LibraryBrowseKitTests link the identical sort-mapping / search-epoch / row-resolver
+        // logic — no untested UI-glue. Depends on LibraryStore only for the sort-column types.
+        .target(
+            name: "LibraryBrowseKit",
+            dependencies: ["LibraryStore"],
+            path: "Sources/LibraryBrowseKit"
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
@@ -156,6 +168,15 @@ let package = Package(
             // a different swift-syntax than the active toolchain's macro expander, which
             // broke @Suite/@Test expansion — "SuiteDeclarationMacro doesn't conform to
             // MemberMacro".)
+        ),
+        // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
+        // Gates the sort-mapping, search-epoch newest-wins (incl. the cross-2-char boundary), the
+        // ≥2-char gate, and the visible-subset row resolver directly (they used to be untested
+        // UI-glue in the non-importable app target).
+        .testTarget(
+            name: "LibraryBrowseKitTests",
+            dependencies: ["LibraryBrowseKit", "LibraryStore"],
+            path: "Tests/LibraryBrowseKitTests"
         ),
         // Obj-C++ bridge: wraps EQModule and EQModuleCoefficients in a pure-C
         // interface (EQTestBridge.h) for Swift test consumption.
