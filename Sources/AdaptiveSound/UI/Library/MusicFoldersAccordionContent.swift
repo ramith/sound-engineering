@@ -2,24 +2,27 @@ import Foundation
 import LibraryStore
 import SwiftUI
 
-// MARK: - Music Folders management popover (S9 IA change)
+// MARK: - Music Folders accordion content (S9 IA change → inline-accordion redesign)
 
-/// The Library's folder list with a per-root remove (confirmed via `.alert`). Adding lives on the
-/// sidebar footer's "+" — NOT here: an `.fileImporter` hosted inside this transient popover would
-/// be torn down when the `NSOpenPanel` steals focus (review S1). The footer's "+" stays visible
-/// below the upward-opening popover, so it's the single always-available add path. Reachable from
-/// the sidebar footer's "Music Folders" button.
-struct MusicFoldersView: View {
+/// The Library's folder list with a per-root remove (confirmed via `.alert`). Reachable by
+/// expanding the sidebar footer's "Music Folders" trigger row (`LibrarySidebar`), which renders
+/// this view inline below the trigger instead of inside a `.popover` (design:
+/// docs/sprints/music-folders-accordion.md). Adding still lives on the trigger row's "+" — NOT
+/// here — kept there for UX reasons (one-click add without an expand-then-add detour, §6), not
+/// because of any popover-lifecycle constraint: this content is part of the sidebar's persistent
+/// view hierarchy now, so an `.fileImporter` would be perfectly safe to host here too.
+///
+/// `.task`/`.onChange` below only run while this view is mounted, i.e. only while the accordion
+/// is expanded — the data they refresh (`model.roots`, the per-row "Scanning…" hint) is invisible
+/// while collapsed, so there's no reason to keep re-reading it in the background; expanding always
+/// re-triggers the `.task` for a fresh read.
+struct MusicFoldersAccordionContent: View {
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(AudioViewModel.self) private var audio
     @State private var removeTarget: LibraryFolder?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
-            Text("Music Folders")
-                .font(DesignSystem.Font.sectionTitle)
-                .foregroundStyle(DesignSystem.Color.label)
-
+        Group {
             if model.roots.isEmpty {
                 Text("No folders in your library yet. Use ＋ below to add one.")
                     .font(DesignSystem.Font.caption)
@@ -36,11 +39,13 @@ struct MusicFoldersView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 280) // bound the popover height; long libraries scroll (review S4)
+                .frame(maxHeight: 280) // bound the accordion height; long libraries scroll (review S4)
             }
         }
-        .padding(DesignSystem.Spacing.medium)
-        .frame(width: 340)
+        // Same horizontal rhythm as the trigger row above (no nested indent — the sidebar column
+        // is narrow, review §4) plus a little vertical breathing room off the hairline.
+        .padding(.horizontal, DesignSystem.Spacing.medium)
+        .padding(.vertical, DesignSystem.Spacing.small)
         .task { await model.loadRoots() }
         // Re-read as scans/adds/removes land: a freshly-added root (and its per-row "Scanning…"
         // hint) appears once its scan starts; libraryRevision covers completion.

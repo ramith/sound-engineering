@@ -10,8 +10,13 @@ import UniformTypeIdentifiers
 /// strip and the "Music Folders" management entry — the canonical macOS home for library sources.
 struct LibrarySidebar: View {
     @Environment(LibraryBrowseModel.self) private var model
-    @State private var showManageFolders = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showFolderImporter = false
+
+    /// Music Folders accordion expand/collapse — persisted across launches and across this view
+    /// being recreated mid-session (design §8), matching the `.v1`-key-versioned `@AppStorage`
+    /// convention `EQTabView` already uses for its interpolation-mode toggle.
+    @AppStorage("library.foldersExpanded.v1") private var isFoldersExpanded = false
 
     var body: some View {
         @Bindable var model = model
@@ -28,9 +33,6 @@ struct LibrarySidebar: View {
         .safeAreaInset(edge: .bottom) { footer }
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
             if case let .success(url) = result { model.addFolder(url) }
-        }
-        .popover(isPresented: $showManageFolders, arrowEdge: .bottom) {
-            MusicFoldersView()
         }
     }
 
@@ -53,14 +55,27 @@ struct LibrarySidebar: View {
             }
             HStack(spacing: DesignSystem.Spacing.small) {
                 Button {
-                    showManageFolders = true
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        isFoldersExpanded.toggle()
+                    }
                 } label: {
-                    Label("Music Folders", systemImage: "folder")
-                        .font(DesignSystem.Font.caption)
+                    // A shared `.font` on the HStack (not just the `Text`) so the chevron scales
+                    // in step with the label at larger Dynamic Type sizes (design §10) instead of
+                    // staying a fixed-size glyph next to growing text.
+                    HStack(spacing: DesignSystem.Spacing.small) {
+                        Image(systemName: "chevron.forward")
+                            .rotationEffect(.degrees(isFoldersExpanded ? 90 : 0))
+                            .accessibilityHidden(true)
+                        Image(systemName: "folder")
+                            .accessibilityHidden(true)
+                        Text("Music Folders")
+                    }
+                    .font(DesignSystem.Font.caption)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(DesignSystem.Color.labelSecondary)
-                .accessibilityHint("Add or remove the folders in your library")
+                .accessibilityValue(isFoldersExpanded ? "Expanded" : "Collapsed")
+                .accessibilityHint("Show or hide your music folders.")
                 Spacer(minLength: 0)
                 Button("Add Music Folder", systemImage: "plus") { showFolderImporter = true }
                     .labelStyle(.iconOnly)
@@ -71,6 +86,13 @@ struct LibrarySidebar: View {
             }
             .padding(.horizontal, DesignSystem.Spacing.medium)
             .padding(.vertical, DesignSystem.Spacing.small)
+            if isFoldersExpanded {
+                VStack(spacing: 0) {
+                    Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
+                    MusicFoldersAccordionContent()
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         // A material (not an opaque fill) so the translucent sidebar shows through; the hairline
         // above is the separator (review S5).
