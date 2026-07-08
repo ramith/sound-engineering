@@ -181,6 +181,13 @@ private struct SongsTable: View {
         // row-resolution below all operate over exactly what's on screen (§6, #3). `sortOrder` stays
         // the model's single-source-of-truth binding: filtering PRESERVES the sort + triangle.
         Table(model.visibleSongs, selection: $selection, sortOrder: $model.sortOrder) {
+            // Leading artwork thumbnail (design §10.1): the row-art column that consumes
+            // `LibraryTrackDisplay.artworkKey`. Non-sortable, fixed width; reuses `AlbumArtworkView`
+            // (sync cache-peek, off-main downsample, cancel-on-scroll, `music.note` placeholder).
+            TableColumn("") { track in
+                AlbumArtworkView(key: track.artworkKey, side: DesignSystem.SongsList.artwork)
+            }
+            .width(32)
             // First-click direction per §3.1: all `.forward` except Date Added (`.reverse`,
             // recently-added first). Quality sorts by the underlying `format`. `applySortOrder`
             // maps each keypath + direction → its asc/desc `TrackSort`.
