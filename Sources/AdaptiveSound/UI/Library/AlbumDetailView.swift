@@ -50,7 +50,7 @@ struct AlbumDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: DesignSystem.Spacing.medium) {
-            AlbumArtworkView(key: album?.artworkKey, side: 148)
+            AlbumArtworkView(key: album?.artworkKey, side: 148, model: model)
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
                 Text(album?.title ?? "")
                     .font(DesignSystem.Font.displayTitle)

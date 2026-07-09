@@ -78,6 +78,12 @@ public enum TrackSort: Sendable, Hashable {
     case discNoAsc
     /// By `disc_no` descending; NULL sorts LAST (NULLS-LAST for desc).
     case discNoDesc
+    /// By `track_no` ascending; NULL (no track number) sorts FIRST (SQLite's default
+    /// NULLS-FIRST for asc, same convention as `.discNoAsc`). No dedicated index → an
+    /// accepted bounded filesort (R3).
+    case trackNoAsc
+    /// By `track_no` descending; NULL sorts LAST (NULLS-LAST for desc).
+    case trackNoDesc
     /// By `file_size` ascending. `file_size` is `NOT NULL` — no NULLs-ordering concern
     /// (accepted bounded filesort, same class as `.durationAsc`/`.formatAsc`).
     case fileSizeAsc

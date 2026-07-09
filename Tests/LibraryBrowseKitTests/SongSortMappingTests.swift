@@ -22,6 +22,9 @@ struct SongSortMappingTests {
         #expect(sort(KeyPathComparator(\.year, order: .forward)) == .yearAsc)
         #expect(sort(KeyPathComparator(\.discNo, order: .forward)) == .discNoAsc)
         #expect(sort(KeyPathComparator(\.fileSize, order: .forward)) == .fileSizeAsc)
+        #expect(sort(KeyPathComparator(\.trackNo, order: .forward)) == .trackNoAsc)
+        #expect(sort(KeyPathComparator(\.albumArtistName, order: .forward)) == .albumArtistAsc)
+        #expect(sort(KeyPathComparator(\.playCount, order: .forward)) == .playCountAsc)
     }
 
     @Test("each sortable column maps DESCENDING to its TrackSort")
@@ -36,6 +39,9 @@ struct SongSortMappingTests {
         #expect(sort(KeyPathComparator(\.year, order: .reverse)) == .yearDesc)
         #expect(sort(KeyPathComparator(\.discNo, order: .reverse)) == .discNoDesc)
         #expect(sort(KeyPathComparator(\.fileSize, order: .reverse)) == .fileSizeDesc)
+        #expect(sort(KeyPathComparator(\.trackNo, order: .reverse)) == .trackNoDesc)
+        #expect(sort(KeyPathComparator(\.albumArtistName, order: .reverse)) == .albumArtistDesc)
+        #expect(sort(KeyPathComparator(\.playCount, order: .reverse)) == .playCountDesc)
     }
 
     @Test("no sort column → composite grouped default")
@@ -46,9 +52,9 @@ struct SongSortMappingTests {
 
     @Test("unrecognized (display-only) column → composite default")
     func unknownDefault() {
-        // `id` and `trackNo` are not sortable columns (no TrackSort) → fallback, not a crash.
+        // `id` and `genreName` are not sortable columns (Genre is display-only) → fallback, not a crash.
         #expect(sort(KeyPathComparator(\.id, order: .forward)) == .artistAlbumTrack)
-        #expect(sort(KeyPathComparator(\.trackNo, order: .reverse)) == .artistAlbumTrack)
+        #expect(sort(KeyPathComparator(\.genreName, order: .forward)) == .artistAlbumTrack)
     }
 
     @Test("only the PRIMARY comparator drives the sort")

@@ -124,6 +124,8 @@ func checkSongsSortOrder(number: Int, url: URL) async -> Bool {
             // year: NULL FIRST asc (t4), then 1999(t2,t5), then 2001(t1,t3); id tiebreak.
             (.yearAsc, [3, 1, 4, 0, 2]),
             (.yearDesc, [2, 0, 4, 1, 3]), // NULL LAST desc → exact reverse of yearAsc
+            (.trackNoAsc, [3, 1, 2, 4, 0]), // track_no NULL FIRST asc (t4), 1s by id, then 2(t1)
+            (.trackNoDesc, [0, 4, 2, 1, 3]), // NULL LAST desc → exact reverse of trackNoAsc
         ]
         for (sort, indices) in expected {
             let want = indices.map { ids[$0] }
@@ -175,6 +177,7 @@ func checkSongsSortQueryPlan(number: Int, url: URL) async -> Bool {
             // S9.5 §12.1 full-catalog additions — all ACCEPTED bounded filesorts (no index
             // covers disc_no/file_size/play_count/last_played alone, nor the `aa` name join).
             (.discNoAsc, "discNoAsc"), (.discNoDesc, "discNoDesc"),
+            (.trackNoAsc, "trackNoAsc"), (.trackNoDesc, "trackNoDesc"),
             (.fileSizeAsc, "fileSizeAsc"), (.fileSizeDesc, "fileSizeDesc"),
             (.playCountAsc, "playCountAsc"), (.playCountDesc, "playCountDesc"),
             (.lastPlayedAsc, "lastPlayedAsc"), (.lastPlayedDesc, "lastPlayedDesc"),

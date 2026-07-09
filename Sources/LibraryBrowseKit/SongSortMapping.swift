@@ -30,7 +30,11 @@ public enum SongSortMapping {
             \LibraryTrackDisplay.format: (.formatAsc, .formatDesc),
             \LibraryTrackDisplay.year: (.yearAsc, .yearDesc),
             \LibraryTrackDisplay.discNo: (.discNoAsc, .discNoDesc),
+            \LibraryTrackDisplay.trackNo: (.trackNoAsc, .trackNoDesc),
             \LibraryTrackDisplay.fileSize: (.fileSizeAsc, .fileSizeDesc),
+            \LibraryTrackDisplay.albumArtistName: (.albumArtistAsc, .albumArtistDesc),
+            \LibraryTrackDisplay.playCount: (.playCountAsc, .playCountDesc),
+            // Genre (genreName) is deliberately absent — display-only, no sort (BR5 hazard, §11.1).
         ]
         guard let primary = comparators.first, let pair = table[primary.keyPath] else { return defaultSort }
         return primary.order == .forward ? pair.asc : pair.desc

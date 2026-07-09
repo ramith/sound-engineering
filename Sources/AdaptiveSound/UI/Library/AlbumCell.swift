@@ -15,7 +15,7 @@ struct AlbumCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
-            AlbumArtworkView(key: album.artworkKey, side: side)
+            AlbumArtworkView(key: album.artworkKey, side: side, model: model)
             Text(album.title)
                 .font(DesignSystem.Font.bodyMedium)
                 .foregroundStyle(DesignSystem.Color.label)

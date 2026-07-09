@@ -10,8 +10,13 @@ import SwiftUI
 struct AlbumArtworkView: View {
     let key: String?
     let side: CGFloat
+    /// The browse model, passed in as a plain value — NOT `@Environment`. A `Table` cell's
+    /// `@Environment(Observable)` property is updated in a DETACHED graph host during the
+    /// sort-driven preferences/accessibility pass, where the injected object is unresolvable →
+    /// `EnvironmentValues.subscript` asserts (the header-click crash). A plain `let` has no
+    /// `EnvironmentBox` to update, so it can't trap; the caller (always an env holder) passes it in.
+    let model: LibraryBrowseModel
 
-    @Environment(LibraryBrowseModel.self) private var model
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: NSImage?
