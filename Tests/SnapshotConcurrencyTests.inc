@@ -25,6 +25,20 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
     std::atomic<uint64_t> tornReads{0U};    // accepted-but-inconsistent (must stay 0)
     std::atomic<uint64_t> staleForward{0U}; // accepted seq went backwards (must stay 0)
 
+    // Diagnostic (TSan torn-read investigation): capture the SHAPE of the first few torn accepts —
+    // the reference gen (out.sequenceNumber) vs the generation each OTHER field actually carries — so
+    // a re-run reveals WHICH field/word tore and by how many generations. Fires ONLY on the rare
+    // failure path and is printed AFTER join(), so it never perturbs the seqlock timing.
+    struct TearSample
+    {
+        uint64_t refGen;       // out.sequenceNumber
+        uint64_t intensityGen; // out.intensityLinear decoded back to a gen
+        uint64_t makeupGen;    // out.loudness.makeupGainLinear / 2 decoded to a gen
+        uint32_t numBiquads;   // out.eq.numBiquads (a later payload word)
+    };
+    std::array<TearSample, 16> tearSamples{};
+    std::atomic<size_t> tearSampleCount{0U};
+
     // RT consumer: hammer tryCopySnapshot and verify each accepted copy is internally consistent
     // and monotonically non-decreasing in sequenceNumber.
     std::thread reader([&] {
@@ -46,6 +60,14 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
             if (!consistent)
             {
                 tornReads.fetch_add(1U, std::memory_order_relaxed);
+                const size_t idx = tearSampleCount.fetch_add(1U, std::memory_order_relaxed);
+                if (idx < tearSamples.size())
+                {
+                    tearSamples[idx] =
+                        TearSample{gen, static_cast<uint64_t>(out.intensityLinear),
+                                   static_cast<uint64_t>(out.loudness.makeupGainLinear / 2.0F),
+                                   static_cast<uint32_t>(out.eq.numBiquads)};
+                }
             }
             if (gen < lastSeq)
             {
@@ -71,6 +93,20 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
 
     if (tornReads.load() != 0U)
     {
+        size_t sampleCount = tearSampleCount.load();
+        if (sampleCount > tearSamples.size())
+        {
+            sampleCount = tearSamples.size();
+        }
+        for (size_t i = 0; i < sampleCount; ++i)
+        {
+            const auto& s = tearSamples[i];
+            logInfo("  [tear] refGen=" + std::to_string(s.refGen) +
+                    " intensityGen=" + std::to_string(s.intensityGen) +
+                    " makeupGen=" + std::to_string(s.makeupGen) +
+                    " numBiquads=" + std::to_string(s.numBiquads) + " (expected " +
+                    std::to_string(s.refGen % 11U) + ")\n");
+        }
         logFail(kName, "torn read: " + std::to_string(tornReads.load()) +
                            " accepted snapshot(s) mixed parameter generations (seqlock broken)");
         return;

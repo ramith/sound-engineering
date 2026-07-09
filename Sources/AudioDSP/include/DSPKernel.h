@@ -63,7 +63,7 @@ namespace AdaptiveSound
         std::unique_ptr<LoudnessModule> loudnessModule_;
         std::unique_ptr<LimiterModule> limiterModule_;
 
-        // Lock-free parameter transport (seqlock SPSC snapshot).
+        // Lock-free parameter transport (wait-free SPSC triple-buffer snapshot).
         DoubleBufferSnapshot<TargetState> targetStateSnapshot_;
 
         // RT-thread-owned snapshot state (S6 RACE-1). `currentState_` is the last CONSISTENT
