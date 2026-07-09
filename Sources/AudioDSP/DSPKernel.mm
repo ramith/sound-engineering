@@ -99,8 +99,8 @@ void DSPKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept {
     // from silence (review DSP-Issue 5). The snapshot's default intensityLinear is 1.0.
     intensityRamp_.initialize(kIntensityRampTauSeconds, static_cast<float>(sampleRate));
     // Seed the RT-owned snapshot from whatever has been published so far (default identity state if
-    // nothing yet). No concurrent producer during initialize(), so this copy always succeeds; if a
-    // pathological straddle ever returned false, currentState_ keeps its default identity value.
+    // nothing yet). The triple-buffer reader is wait-free and always succeeds — on the pre-publish
+    // last-good path it hands back the default identity T the transport was seeded with.
     (void)targetStateSnapshot_.tryCopySnapshot(currentState_);
     intensityRamp_.target = currentState_.intensityLinear;
     intensityRamp_.snap();
@@ -134,9 +134,10 @@ void DSPKernel::publishChannelLayout(const ChannelLayout& layout) noexcept {
 void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept {
     // Copy the current parameter snapshot ONCE into RT-owned storage and use that stable copy for
     // the whole block (S6 RACE-1: never hold a reference into the transport across the block — two
-    // off-RT publishes could otherwise overwrite the referenced slot mid-block → torn read). On a
-    // straddled (contended) read, keep the previous consistent snapshot; parameters are ramped so a
-    // one-block-stale value is inaudible. Wait-free: bounded retries inside tryCopySnapshot.
+    // off-RT publishes could otherwise overwrite the referenced slot mid-block → torn read). The
+    // triple-buffer reader is wait-free (bounded, constant-step, retry-free) and always returns a
+    // consistent snapshot — the newest generation, or the last good one when nothing new was
+    // published; parameters are ramped so a one-block-stale value is inaudible.
     if (targetStateSnapshot_.tryCopySnapshot(scratchState_)) {
         currentState_ = scratchState_;
     }
