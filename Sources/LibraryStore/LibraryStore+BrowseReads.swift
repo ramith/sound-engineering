@@ -266,8 +266,8 @@ public extension LibraryStore {
     /// `.album`, `.artistAlbumTrack`) are handled directly in `trackOrder` and are not here.
     private static let descendingTrackSorts: Set<TrackSort> = [
         .titleDesc, .artistNameDesc, .albumTitleDesc, .durationDesc, .dateAddedDescending,
-        .formatDesc, .yearDesc, .discNoDesc, .fileSizeDesc, .playCountDesc, .lastPlayedDesc,
-        .albumArtistDesc,
+        .formatDesc, .yearDesc, .discNoDesc, .trackNoDesc, .fileSizeDesc, .playCountDesc,
+        .lastPlayedDesc, .albumArtistDesc,
     ]
 
     /// The `ORDER BY` body for a `TrackSort`, column-prefixed (`""` for the bare `tracks`
@@ -343,6 +343,10 @@ public extension LibraryStore {
             // disc_no is nullable; NULL (no disc number) sorts FIRST asc / LAST desc
             // (SQLite's default NULL ordering — same convention as `.yearAsc`/`.yearDesc`).
             return "\(prefix)disc_no \(dir), \(prefix)id \(dir)"
+        case .trackNoAsc, .trackNoDesc:
+            // track_no is nullable; NULL (no track number) sorts FIRST asc / LAST desc
+            // (SQLite default — same convention as `.discNoAsc`/`.discNoDesc`).
+            return "\(prefix)track_no \(dir), \(prefix)id \(dir)"
         case .fileSizeAsc, .fileSizeDesc:
             // file_size is NOT NULL — no NULLs-ordering concern.
             return "\(prefix)file_size \(dir), \(prefix)id \(dir)"
