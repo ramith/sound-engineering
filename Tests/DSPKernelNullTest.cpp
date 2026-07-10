@@ -73,7 +73,7 @@
 namespace
 {
     // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
-    constexpr std::array<TestEntry, 120U> kTests = {{
+    constexpr std::array<TestEntry, 121U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -254,8 +254,14 @@ namespace
          testSoakDspKernelZeroRtAllocCrossfeedBlend,
          false},
         {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
-        // S6 RACE-1: lock-free parameter-snapshot seqlock — concurrent publish/read, no torn read.
+        // S6 RACE-1: wait-free triple-buffer parameter snapshot — concurrent publish/read, no torn read
+        // (realistic TargetState payload; gen-0 identity-seed handled — see the .inc header).
         {"Snapshot_Seqlock_ConcurrentNoTear_RACE1", testSnapshotSeqlockConcurrentNoTear, true},
+        // Hardening (2026-07-10): whole-payload, all-words-equal tear detector over multiple fresh
+        // rounds — independent cross-check of the generic transport, no seed special-case.
+        {"Snapshot_TripleBuffer_WholePayloadNoTear",
+         testSnapshotTripleBufferWholePayloadNoTear,
+         true},
     }};
     // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
