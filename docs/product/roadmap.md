@@ -25,7 +25,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 - **S7 — DSP-gate hardening (✅ Shipped):** regression oracles for every shipped DSP stage — libebur128 loudness/TP, limiter −1 dBTP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak.
 - **QW1 — Quick-Win Differentiators (✅ Shipped — code; founder by-ear pending):** crossfeed DSP + UI (headphone-gated), Reimagine intensity knob UI, tonal presets (house curves + Save-as-Custom + per-output recall).
 
-**Current focus → 🟡 S8, the library spine.** The single biggest gap between us and a mature player: today we are a flat playlist/folder player with no persistent library, browse, search, or cover-art grid. The spine has largely landed — folder scan + persistent store + identity/FS-divergence/move-match (`LibraryScan`, `LibraryStore`), headless-gated by `VerifyLibraryStore`. The next user-facing step is the browse UI (S9).
+**Current focus → 🟡 S9, browse & search UI (nearly done → S9.6 next).** S8 (the library spine — folder scan + persistent store + identity/FS-divergence/move-match, `LibraryScan`/`LibraryStore`, headless-gated by `VerifyLibraryStore`) has **shipped & merged**. On top of it S9 is now largely built and merged (PRs #28–#31): DAO reads, FTS5 search, the queue/advance core (`PlaybackQueueKit`), the **Albums** grid+detail, and the full **Songs** view — incremental filter that preserves the column sort (native macOS paradigm), sortable + user-customizable full-catalog columns, queue-add toast with truthful counts, row artwork, play-tracking, and full VoiceOver a11y. **Remaining slice = S9.6:** the Artists / Genres / Years lists+detail (still `LibraryPlaceholderView` placeholders) plus drag-to-queue. After S9.6 the next sprint is S10 (queue/playlists/macOS control) → Release R1.
 
 ---
 
@@ -35,8 +35,8 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 
 | Sprint | Scope | Status |
 |--------|-------|--------|
-| **S8** | **Library spine: scan + persistent DB** | **🟡 In progress** |
-| S9 | Browse & search UI — album grid; Artist/Album/Genre/Year; incremental search; cover art; click-to-queue | Planned |
+| **S8** | **Library spine: scan + persistent DB** | ✅ Shipped |
+| **S9** | Browse & search UI — album grid; Artist/Album/Genre/Year; incremental search; cover art; click-to-queue | **🟡 Nearly done** — Albums + Songs (sort/search/columns/artwork/a11y) shipped; **S9.6** (Artists/Genres/Years lists+detail) remains |
 | S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center | Planned |
 | S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim | Planned |
 | S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass | Planned |
@@ -109,4 +109,4 @@ Details: [../architecture/validation-strategy.md](../architecture/validation-str
 ---
 
 **Status:** 🟢 In active development
-**Next step:** 🟡 **S8 — the library spine** (scan + persistent store → S9 browse/queue), the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).
+**Next step:** 🟡 **S9.6 — Artists / Genres / Years lists+detail** (the last S9 slice; S8 spine + Albums/Songs browse already shipped), then **S10** (queue/playlists/macOS control), the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).
