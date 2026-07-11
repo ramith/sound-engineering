@@ -40,10 +40,21 @@ final class LibraryBrowseModel {
 
     var path: [LibraryRoute] = []
 
-    // Albums (S9.4). Artists/genres/years arrays land in S9.6.
+    // Albums (S9.4).
     private(set) var albums: [AlbumFacet] = []
     var albumSort: FacetSort = .title // S9.5 adds a "Recently Added" album sort (needs a DAO read)
     private(set) var albumsState: LoadState = .idle
+
+    // Artists / Genres / Years (S9.6). Each mirrors the albums list pattern (array + LoadState +
+    // epoch). Declared `internal` (not `private(set)`) because their loaders live in the same-type
+    // `LibraryBrowseModel+Facets` extension — split to a separate file for file length — which a
+    // `private` setter can't reach; in practice only the model writes them.
+    var artists: [ArtistFacet] = []
+    var artistsState: LoadState = .idle
+    var genres: [GenreFacet] = []
+    var genresState: LoadState = .idle
+    var years: [YearFacet] = []
+    var yearsState: LoadState = .idle
 
     /// Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
     /// structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
@@ -124,7 +135,10 @@ final class LibraryBrowseModel {
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
 
-    private let audio: AudioViewModel
+    // `audio` / `store` / `showQueueToast` are `internal` (not `private`) so the same-type
+    // `LibraryBrowseModel+Facets` extension (a separate file, for file length) can reach them —
+    // an extension of this type IS this type, and the app is a single module.
+    let audio: AudioViewModel
     private var artwork: ArtworkThumbnailStore?
     /// The `audio.libraryRevision` last loaded, so `reloadIfScanChanged` reloads exactly once
     /// per library-content change (scan / metadata pass / reconcile).
@@ -137,6 +151,10 @@ final class LibraryBrowseModel {
     private var songsLoadEpoch = 0
     /// Same guard for the roots list (its reloads race adds/removes + libraryRevision).
     private var loadRootsEpoch = 0
+    /// Newest-wins tokens for the three facet-list loaders (mutated by `LibraryBrowseModel+Facets`).
+    var artistsLoadEpoch = 0
+    var genresLoadEpoch = 0
+    var yearsLoadEpoch = 0
 
     init(audio: AudioViewModel) {
         self.audio = audio
@@ -145,7 +163,8 @@ final class LibraryBrowseModel {
     // MARK: - Store access
 
     /// The store once `AudioViewModel` has finished building it (async at launch); nil early.
-    private var store: LibraryStore? {
+    /// `internal` — the +Facets loaders read it (see the `audio` note above).
+    var store: LibraryStore? {
         audio.store
     }
 
@@ -176,6 +195,8 @@ final class LibraryBrowseModel {
         audio.scanProgress?.folderID
     }
 
+    /// Lazily build the thumbnail store once the async `store` exists (used by the Artwork
+    /// extension's passthrough + `loadAlbums`). Private; reached from the same-file extension.
     private func ensureArtwork() {
         if artwork == nil, let store { artwork = ArtworkThumbnailStore(store: store) }
     }
@@ -335,6 +356,11 @@ final class LibraryBrowseModel {
         lastLoadedRevision = audio.libraryRevision
         await loadAlbums()
         await loadSongs()
+        // The three S9.6 facet lists refresh on the same revision bump (each epoch-guarded), else
+        // the Artists/Genres/Years roots + their counts go stale mid-scan (swiftui review #5).
+        await loadArtists()
+        await loadGenres()
+        await loadYears()
         // Re-run the active filter after the reload (design §11 decision #4 / L2): a live scan may
         // have added tracks that match the current query, and the reload replaced `songs` while
         // leaving the stale `matchedIDs`. Re-querying surfaces the new matches; `matchedIDs`'s
@@ -350,22 +376,6 @@ final class LibraryBrowseModel {
 
     func tracks(inAlbum albumID: Int64) async -> [LibraryTrackDisplay] {
         (try? await store?.tracksDisplay(inAlbum: albumID)) ?? []
-    }
-
-    // MARK: - Artwork (delegates to the lazy ArtworkThumbnailStore; nil → placeholder)
-
-    func warmArtwork(_ keys: [String]) async {
-        ensureArtwork()
-        await artwork?.warm(keys: keys)
-    }
-
-    func cachedArtwork(forKey key: String) -> NSImage? {
-        artwork?.cachedImage(forKey: key)
-    }
-
-    func artworkImage(forKey key: String, maxPixel: Int) async -> NSImage? {
-        ensureArtwork()
-        return await artwork?.image(forKey: key, maxPixel: maxPixel)
     }
 
     // MARK: - Play actions (delegate to AudioViewModel's queue verbs)
@@ -421,7 +431,7 @@ final class LibraryBrowseModel {
     /// text and resets the ~2 s timer (single cancellable task; the post-sleep guard prevents a
     /// superseded task from clearing the newer toast). The token bumps every raise so the view
     /// re-announces even an identical string.
-    private func showQueueToast(_ verb: QueueVerb, added: Int) {
+    func showQueueToast(_ verb: QueueVerb, added: Int) {
         guard let message = QueueToastDecision.message(
             verb: verb, addedCount: added, isNowPlayingTab: audio.selectedTab == .nowPlaying
         ) else { return }
@@ -440,5 +450,29 @@ final class LibraryBrowseModel {
     func dismissQueueToast() {
         queueToastDismissTask?.cancel()
         queueToast = nil
+    }
+}
+
+// MARK: - Artwork (delegates to the lazy ArtworkThumbnailStore; nil → placeholder)
+
+//
+// A same-file extension: pure passthrough to `ArtworkThumbnailStore`, grouped as its own concern
+// (and kept off the class-body length). Calls the class's private `ensureArtwork` (a same-file
+// extension reaches it); the thumbnail store is built lazily once the async `store` exists.
+
+@MainActor
+extension LibraryBrowseModel {
+    func warmArtwork(_ keys: [String]) async {
+        ensureArtwork()
+        await artwork?.warm(keys: keys)
+    }
+
+    func cachedArtwork(forKey key: String) -> NSImage? {
+        artwork?.cachedImage(forKey: key)
+    }
+
+    func artworkImage(forKey key: String, maxPixel: Int) async -> NSImage? {
+        ensureArtwork()
+        return await artwork?.image(forKey: key, maxPixel: maxPixel)
     }
 }
