@@ -7,8 +7,9 @@
 // - The audio tap callback (audio thread) calls `processTapBuffer(_:sampleRate:)`.
 //   That method does *no allocation*, *no lock*, and *no Swift runtime calls* beyond
 //   indexed buffer access and Accelerate/vDSP.
-// - The main thread calls `readBands()` at ~20 Hz to copy the last computed band
-//   magnitudes. The handoff uses a generation counter (ManagedAtomic<Int>) so no
+// - The main thread reads at ~20 Hz (via `SpectrumDoubleBuffer.read(into:)`) to copy the
+//   last computed band magnitudes. The handoff uses a generation counter published through
+//   a stdlib `Atomic<Int>` (release-store on the writer, acquire-load on the reader), so no
 //   lock is ever taken on either side.
 //
 // FFT design

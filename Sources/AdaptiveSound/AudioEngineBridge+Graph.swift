@@ -141,11 +141,13 @@ extension AudioEngineBridge {
         // stays valid because removeSpectrumTap() always runs BEFORE the meter wrapper is dropped/
         // destroyed (constraint c), so this closure can never fire after the handle is freed.
         let meterHandle = loudnessMeter?.handle
+        guard let analyzer = spectrumAnalyzer else { return }
         mixer.installTap(onBus: 0,
                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                         format: mixerFormat) { [weak self, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-            // --- AUDIO THREAD --- Access only pre-allocated state through the analyzer pointer.
-            guard let analyzer = self?.spectrumAnalyzer else { return }
+                         format: mixerFormat) { [analyzer, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+            // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzer` (like the raw `meterHandle`)
+            // is captured strongly at install, so the tap does zero refcount work (BS2). Valid because
+            // removeSpectrumTap() always runs before the analyzer is dropped/reassigned.
             let abl = buffer.mutableAudioBufferList
             analyzer.processTapBuffer(
                 abl,
@@ -177,15 +179,17 @@ extension AudioEngineBridge {
     private func installBeforeTap() {
         guard let player = playerNode else { return }
         let playerFormat = player.outputFormat(forBus: 0)
+        let analyzers = beforeAnalyzers // strong capture at install (BS2); see installMixerTap
         player.installTap(onBus: 0,
                           bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                          format: playerFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-            // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
-            guard let beforeAnalyzers = self?.beforeAnalyzers else { return }
+                          format: playerFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+            // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` is captured strongly at
+            // install and stays valid until removeSpectrumTap() drops this block (reconfigure only
+            // resizes the arrays while the taps are removed).
             let abl = buffer.mutableAudioBufferList
-            let channels = min(beforeAnalyzers.count, Int(buffer.format.channelCount))
+            let channels = min(analyzers.count, Int(buffer.format.channelCount))
             for index in 0 ..< channels {
-                beforeAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
             }
         }
         beforeTapInstalled = true
@@ -197,15 +201,16 @@ extension AudioEngineBridge {
     private func installAfterTap() {
         guard let effectsUnit = dspAudioUnit else { return }
         let auFormat = effectsUnit.outputFormat(forBus: 0)
+        let analyzers = afterAnalyzers // strong capture at install (BS2); see installMixerTap
         effectsUnit.installTap(onBus: 0,
                                bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
-                               format: auFormat) { [weak self] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
-            // --- AUDIO THREAD --- (only the weak load + indexed analyzer access)
-            guard let afterAnalyzers = self?.afterAnalyzers else { return }
+                               format: auFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+            // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` captured strongly at install
+            // (valid until removeSpectrumTap() drops this block; reconfigure resizes tap-removed).
             let abl = buffer.mutableAudioBufferList
-            let channels = min(afterAnalyzers.count, Int(buffer.format.channelCount))
+            let channels = min(analyzers.count, Int(buffer.format.channelCount))
             for index in 0 ..< channels {
-                afterAnalyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
             }
         }
         afterTapInstalled = true
