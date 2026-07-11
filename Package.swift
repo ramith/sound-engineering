@@ -184,7 +184,7 @@ let package = Package(
         // Separated from AudioDSPTests because SwiftPM 5.9 does not support
         // mixed-language source targets (Swift + Obj-C++ in the same directory).
         //
-        // Depends on AudioDSP so EQModule.mm is already compiled and linked.
+        // Depends on AudioDSP so EQModule.cpp is already compiled and linked.
         .target(
             name: "AudioDSPTestBridge",
             dependencies: ["AudioDSP"],

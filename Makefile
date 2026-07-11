@@ -118,7 +118,7 @@ sanitize:
 tsan:
 	bash scripts/build-null-test.sh --tsan
 
-# M11 (S8.3): the FFmpeg-metadata C bridge (FileDecodeSource.mm's new/delete handle + the
+# M11 (S8.3): the FFmpeg-metadata C bridge (FileDecodeSource.cpp's new/delete handle + the
 # std::vector art copy in readAttachedArt) under AddressSanitizer. `make sanitize`/`tsan`
 # only instrument the standalone C++ null test — never this bridge — so this target builds +
 # runs the library-store harness with ASan; its real-file cases (Y/Z/AC) drive

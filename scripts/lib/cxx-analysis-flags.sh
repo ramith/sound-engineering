@@ -15,7 +15,7 @@
 # scripts/build-null-test.sh (the clang++ invocation that actually compiles this C++
 # into the test binary). Analysis has to parse the SAME translation units the compiler
 # does — otherwise `__has_include(<...>)` branches (notably the FFmpeg decode + metadata
-# bridge in FileDecodeSource.mm, gated on <libavformat/avformat.h>) silently diverge
+# bridge in FileDecodeSource.cpp, gated on <libavformat/avformat.h>) silently diverge
 # between build and analysis, and the -D defines / -fno-exceptions / -isystem paths that
 # make those branches parse would be missing. If you change a compile flag in
 # build-null-test.sh, mirror it here (and vice-versa).
