@@ -6,6 +6,7 @@
 #include "../include/CoreAudioDevice.h"
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
+#include "../include/FlushToZero.h" // shared FPCR.FZ helper (AR-1)
 #include "../include/TargetState.h"
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
@@ -25,22 +26,6 @@ namespace
 
     constexpr AVAudioChannelCount kStereoChannelCount = 2U;
 
-    // FPCR flush-to-zero (FZ) bit on AArch64.
-    constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U;
-
-    // Enable flush-to-zero on the calling thread (must be called at render-block entry).
-    // See DSPKernel.mm::enableFlushToZero() for the full rationale.
-    // FPCR is a per-thread register; this sets it on the render thread independently
-    // of the control-thread call in DSPKernel::initialize().
-    inline void setRenderThreadFTZ() noexcept
-    {
-#ifdef __aarch64__
-        uint64_t fpcr = 0;
-        __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        fpcr |= kFpcrFlushToZeroBit;
-        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
-    }
 } // namespace
 
 @interface AdaptiveSoundAU : AUAudioUnit {
@@ -111,7 +96,7 @@ namespace
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
         // Called once per render callback; the register write is ~1 cycle on M1.
-        setRenderThreadFTZ();
+        enableFlushToZero();
 
         // Fix #11 + #4: pull input directly into the output buffers (in-place effect),
         // then process in place. This removes the stack-declared AudioBufferList (which

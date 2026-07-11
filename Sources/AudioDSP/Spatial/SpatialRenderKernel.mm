@@ -1,4 +1,5 @@
 #include "SpatialRenderKernel.h"
+#include "../include/FlushToZero.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <cstdint>
@@ -15,21 +16,8 @@
 namespace AdaptiveSound
 {
 
-// Enable flush-to-zero on the calling thread (Apple Silicon AArch64).
-// Identical to the pattern in DSPKernel.mm: FPCR.FZ (bit 24) covers both
-// input and output subnormals on AArch64 (ARM DDI 0487, §A1.4.3).
-// Must be called on every thread that runs DSP code.
-static constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U; // FPCR.FZ
-
-static void enableFlushToZero() noexcept
-{
-#ifdef __aarch64__
-    uint64_t fpcr = 0U;
-    __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= kFpcrFlushToZeroBit;
-    __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
-}
+// Flush-to-zero (FPCR.FZ) is shared: include/FlushToZero.h. The spatial render thread sets
+// it at render-block entry (SpatialRendererAU.mm); initialize() covers the control thread.
 
 // ---------------------------------------------------------------------------
 // Private RT-safe helpers — file-scope static (no Accelerate in the header,

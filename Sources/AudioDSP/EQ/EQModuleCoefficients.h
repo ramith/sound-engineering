@@ -130,6 +130,23 @@ namespace AdaptiveSound
         // unaffected (its extremum-by-magnitude IS its maximum), so pure-boost cascades — including
         // the golden-master +6 dB @ 1 kHz — are byte-identical to before.
         //
+        // KNOWN LIMITATION (Stage-1 review AC-1, deferred): one bell per run reproduces the run's
+        // PEAK gain but not its SHAPE — a broad plateau is under-served toward its edges (a
+        // ~1.5-oct bell cannot fill a 3-oct plateau), and for a flat run the extremum is the
+        // leading edge, so the bell sits low. A magnitude-weighted-centroid half-measure was
+        // evaluated and REJECTED: it moves the deep-cut bell off its band for asymmetric runs like
+        // [-12,-9,-12] (regressing the ratified S6 cut-run test) while only cleanly helping flat
+        // plateaus. The correct fix is one biquad per band, or an ERB-weighted least-squares / L-M
+        // cascade fit — scoped as a follow-up. The greedy extremum placement is retained meanwhile.
+        //
+        // Splitting at sign changes + tracking |gain| (not the raw maximum) is the S6 EQ-1 fix.
+        // The previous version grouped every contiguous active run and tracked only the maximum
+        // gain, which (a) collapsed a run of CUTS to its least-negative band — e.g. [-12,-9,-12]
+        // became a single -9 dB filter, under-applying the cut — and (b) dropped the cut in a
+        // boost+cut run entirely — e.g. [+6,-6] became a single +6 dB filter. A boost-only run is
+        // unaffected (its extremum-by-magnitude IS its maximum), so pure-boost cascades — including
+        // the golden-master +6 dB @ 1 kHz — are byte-identical to before.
+        //
         // Returns number of biquads used (1 to kMaxBiquads).
         static int
         fitBiquadCascade(const std::array<float, kNumBands>& gains,
@@ -218,10 +235,14 @@ namespace AdaptiveSound
             float sinw0 = std::sin(w0);
             float cosw0 = std::cos(w0);
 
-            // Q factor: wider for larger gains (simple heuristic; ~1.4 oct at
-            // 6 dB, ~2.2 oct at 12 dB). Not Nyquist-aware — wide filters near 20 kHz at
-            // 44.1 kHz skew their lower skirt into the audible band. Acceptable for the
-            // greedy fitter; an ERB-weighted L-M optimizer is a possible future enhancement.
+            // Q factor: wider for larger gains (simple heuristic; ~1.4 oct at 6 dB, ~2.2 oct
+            // at 12 dB). The Q is gain-dependent, NOT bandwidth-dependent, so it cannot match a
+            // requested curve's actual width — the real accuracy cost is MID-BAND skirt bleed
+            // into neighbouring bands (Stage-1 AC-1), not a near-Nyquist problem. (Measured: a
+            // bell near 20 kHz at 44.1 kHz actually NARROWS — bilinear frequency warping
+            // compresses bandwidth-in-Hz toward Nyquist — so its skirt does NOT bleed down into
+            // the audible band; the earlier comment here had that backwards.) An ERB-weighted
+            // L-M optimizer with band-aware Q is the future enhancement.
             float Q = 1.0F / (kQHeuristicBase + (std::abs(gainDb) * kQHeuristicSlope));
 
             float alpha = sinw0 / (2.0F * Q);

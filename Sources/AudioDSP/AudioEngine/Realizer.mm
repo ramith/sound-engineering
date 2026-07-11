@@ -12,17 +12,28 @@ namespace AdaptiveSound
 namespace
 {
     // Preset → (fc, alpha) resolution table (QW1 §2/§5). The middle case is `Bauer`; the Swift
-    // label stays "Default". Coefficients are the bs2b sets: Relaxed=Jmeier, Bauer=Default,
-    // Strong=Cmoy. Off-RT only (called from the Realizer's serial queue / a test).
+    // label stays "Default". These are bs2b-INSPIRED, not the bs2b coefficient sets: the DSP model
+    // is a simplified Chu-Moy-style flat-direct + one-pole-LPF-cross (see CrossfeedModule), not
+    // bs2b's complementary low/high-shelf topology, so the values approximate rather than reproduce
+    // it. The cut frequencies match bs2b (650/700/700 Hz); the alphas are chosen to form a
+    // MONOTONIC crossfeed-depth ladder Relaxed < Bauer < Strong (gCross = α/(1+α) is monotonic in
+    // α). Off-RT only (called from the Realizer's serial queue / a test).
+    //
+    // Stage-1 review AC-3 (deferred, founder call): Bauer (0.355) sits only ~0.5 dB of gCross above
+    // Relaxed (0.335), so the "Default" middle preset is barely distinct from Relaxed. The review
+    // noted 0.355 doesn't match bs2b's Default 4.5 dB feed, but do NOT blindly set α=0.596 — that
+    // exceeds Strong (0.501) and inverts the ladder. Any change here is a listening/UX decision
+    // about how distinct the three rungs should be, not a mechanical coefficient correction.
     struct CrossfeedPresetCoeffs
     {
         float fcHz;
         float alpha;
     };
 
-    constexpr CrossfeedPresetCoeffs kCrossfeedRelaxed = {.fcHz = 650.0F, .alpha = 0.335F}; // Jmeier
-    constexpr CrossfeedPresetCoeffs kCrossfeedBauer = {.fcHz = 700.0F, .alpha = 0.355F};   // Default
-    constexpr CrossfeedPresetCoeffs kCrossfeedStrong = {.fcHz = 700.0F, .alpha = 0.501F};  // Cmoy
+    // Labels are the UX depth rungs; the bs2b names are the design origins of each cut frequency.
+    constexpr CrossfeedPresetCoeffs kCrossfeedRelaxed = {.fcHz = 650.0F, .alpha = 0.335F}; // ~Jmeier fc
+    constexpr CrossfeedPresetCoeffs kCrossfeedBauer = {.fcHz = 700.0F, .alpha = 0.355F};   // ~Default fc
+    constexpr CrossfeedPresetCoeffs kCrossfeedStrong = {.fcHz = 700.0F, .alpha = 0.501F};  // ~Cmoy fc
 
     // 2π for the exact-RC one-pole pole: p = exp(-2π·fc/fs).
     constexpr float kTwoPi = 6.28318530717958647692F;

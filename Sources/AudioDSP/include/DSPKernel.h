@@ -20,6 +20,7 @@ namespace AdaptiveSound
     class BRIRModule;
     class CrossfeedModule;
     class LimiterModule;
+    class MultichannelView;
 
     // DSP Kernel: orchestrates the wet-region coloration + safety signal chain
     // EQ → Clarity → BRIR → Crossfeed → [intensity blend] → Loudness → Limiter
@@ -50,6 +51,13 @@ namespace AdaptiveSound
         void publishChannelLayout(const ChannelLayout& layout) noexcept;
 
       private:
+        // Run the wet-region coloration chain (EQ → Clarity → BRIR → Crossfeed) in place.
+        // Extracted so the settled-at-1 and mid-ramp crossfade branches of process() share
+        // ONE definition of the chain order instead of writing it twice (Stage-1 AR-4).
+        void runColorationChain(const TargetState& state, const MultichannelView& block) noexcept;
+        // Run the safety chain (Loudness → Limiter) on the final (possibly blended) signal.
+        void runSafetyChain(const TargetState& state, const MultichannelView& block) noexcept;
+
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
 

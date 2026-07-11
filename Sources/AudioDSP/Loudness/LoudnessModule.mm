@@ -1,5 +1,6 @@
 #include "LoudnessModule.h"
 #include "ChannelLayoutDecoder.h"
+#include "../include/FlushToZero.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <cassert>
@@ -25,21 +26,6 @@ namespace
 {
     // Ramp is treated as settled within this absolute gain epsilon (≈ −120 dB).
     constexpr float kGainSettleEpsilon = 1e-6F;
-
-    // AArch64 FPCR flush-to-zero bit (FZ). See DSPKernel.mm / ARM DDI 0487 §A1.4.3.
-    constexpr uint64_t kFpcrFlushToZeroBit = 24U;
-
-    // Enable flush-to-zero on the calling (measurement) thread. FPCR is per-thread,
-    // so the worker — which runs the K-weighting biquads — must set it itself.
-    void enableFlushToZeroOnThisThread() noexcept
-    {
-#ifdef __aarch64__
-        uint64_t fpcr = 0;
-        __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        fpcr |= (1ULL << kFpcrFlushToZeroBit);
-        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
-    }
 } // namespace
 
 LoudnessModule::~LoudnessModule() = default; // jthread RAII: request_stop()+join()
@@ -195,7 +181,9 @@ void LoudnessModule::process(const LoudnessParams& params, const MultichannelVie
 
 void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexcept
 {
-    enableFlushToZeroOnThisThread();
+    // FPCR is per-thread: the measurement worker runs the K-weighting biquads, so it must
+    // set flush-to-zero itself (shared definition in include/FlushToZero.h — AR-1).
+    enableFlushToZero();
 
     // Track the channel count and layout generation we last configured the meter for.
     // Use UINT32_MAX as the sentinel so the very first loop iteration always reconfigures
