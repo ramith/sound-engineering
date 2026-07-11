@@ -30,14 +30,13 @@ struct FacetTrackListView: View {
             backBar
             header
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if tracks.isEmpty {
+            switch FacetDetailState.state(trackCount: tracks.count) {
+            case .empty:
                 // A reachable-but-empty facet (e.g. one whose songs dropped to 0 after a rescan).
                 ContentUnavailableView("No Songs", systemImage: "music.note")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if groupByAlbum {
-                groupedList
-            } else {
-                flatList
+            case .list:
+                if groupByAlbum { groupedList } else { flatList }
             }
         }
     }
@@ -130,7 +129,7 @@ struct FacetTrackListView: View {
 
     private var groupedList: some View {
         List(selection: $selection) {
-            ForEach(albumSections) { section in
+            ForEach(FacetAlbumGrouping.sections(from: tracks)) { section in
                 Section {
                     ForEach(section.tracks) { track in
                         row(for: track, leadingNumber: track.trackNo, secondary: "")
@@ -145,7 +144,7 @@ struct FacetTrackListView: View {
         .onKeyPress(.return) { playSelected(); return .handled }
     }
 
-    private func sectionHeader(_ section: AlbumSection) -> some View {
+    private func sectionHeader(_ section: FacetAlbumSection<LibraryTrackDisplay>) -> some View {
         HStack(spacing: DesignSystem.Spacing.xSmall) {
             Text(section.title)
                 .font(DesignSystem.Font.sectionTitle)
@@ -204,32 +203,4 @@ struct FacetTrackListView: View {
         guard let id = selection.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
         model.play(tracks, startAt: index)
     }
-
-    // MARK: Album grouping (Artists)
-
-    /// `tracks` arrive album/disc/track-ordered, so consecutive same-album runs form the sections
-    /// in one O(n) pass (no per-row sort).
-    private var albumSections: [AlbumSection] {
-        tracks.reduce(into: [AlbumSection]()) { sections, track in
-            let albumID = track.albumID ?? -1
-            if sections.last?.id == albumID {
-                sections[sections.count - 1].tracks.append(track)
-            } else {
-                sections.append(AlbumSection(
-                    id: albumID,
-                    title: track.albumName ?? "Unknown Album",
-                    year: (track.year ?? 0) > 0 ? String(track.year ?? 0) : nil,
-                    tracks: [track]
-                ))
-            }
-        }
-    }
-}
-
-/// One album run within a grouped facet detail.
-private struct AlbumSection: Identifiable {
-    let id: Int64
-    let title: String
-    let year: String?
-    var tracks: [LibraryTrackDisplay]
 }
