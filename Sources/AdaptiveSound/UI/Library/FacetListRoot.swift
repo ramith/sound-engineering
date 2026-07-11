@@ -64,11 +64,13 @@ struct FacetListRoot<Item: Identifiable>: View {
 
     private func row(_ item: Item) -> some View {
         FacetRowLabel(name: name(item), count: count(item))
-            .onTapGesture(count: 2) { model.path.append(route(item)) }
+            // simultaneousGesture (NOT onTapGesture): the List keeps its native single-click
+            // selection/highlight underneath, while a double-click also opens the detail.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { model.path.append(route(item)) })
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(name(item)), \(FacetCountLabel.songs(count: count(item)))")
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: "Open") { model.path.append(route(item)) }
+            .accessibilityAction { model.path.append(route(item)) } // VoiceOver activate → open
             .accessibilityAction(named: "Play") { Task { await model.playFacet(ref(item)) } }
             .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(ref(item)) } }
             .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(ref(item)) } }

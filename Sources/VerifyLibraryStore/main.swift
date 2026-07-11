@@ -250,13 +250,12 @@ func browseReadsCheckCases() -> [CheckCase] {
         CheckCase(label: "br1c-artwork-chunk", run: checkBrowseArtworkChunking),
         CheckCase(label: "br2-artist-drilldown", run: checkBrowseArtistDrilldown),
         CheckCase(label: "br2b-genre-drilldown", run: checkBrowseGenreDrilldown),
-        CheckCase(label: "br2c-year-facet", run: checkBrowseYearFacet),
         CheckCase(label: "br3-single-facet", run: checkBrowseSingleFacet),
         CheckCase(label: "br3b-sentinel-excluded", run: checkBrowseSentinelExcluded),
         CheckCase(label: "br4-pagination", run: checkBrowsePagination),
         CheckCase(label: "br5-explain-plan", run: checkBrowseQueryPlan),
         CheckCase(label: "br7-artist-count", run: checkBrowseArtistCount),
-        CheckCase(label: "br8-year-null-empty-genre", run: checkBrowseYearNullAndEmptyGenre),
+        CheckCase(label: "br8-empty-genre", run: checkBrowseEmptyGenre),
     ]
 }
 
@@ -337,9 +336,9 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S8.4 Slice 4: AL watcher-ingest [FSEvents decode/routing via ingest seam]; "
         + "S8.4 Slice 5b: AM root-reachability [precheck skips unmounted/deleted], "
         + "AN restamp-root [remount dev/inode re-stamp keeps identity-dedup]; "
-        + "S9.1: BR1/1b/1c artwork-path-map+miss+chunked-IN, BR2/2b/2c artist/genre/year "
+        + "S9.1/S9.6: BR1/1b/1c artwork-path-map+miss+chunked-IN, BR2/2b artist/genre "
         + "drill-downs [no fan-out], BR3/3b single-facet+sentinel-excluded, BR4 pagination-window, "
-        + "BR5 EXPLAIN no-SCAN-TABLE-tracks; "
+        + "BR5 EXPLAIN no-SCAN-TABLE-tracks, BR7 artist-count+0-song-album-artist, BR8 empty-genre; "
         + "S9.2 FTS5: MIG-backfill [all 4 columns] + MIG-idempotent + CAP-probe, SYNC write/rename "
         + "[moveMatched blocker-fix], DEL delete/move + sweep-ordering/removeRoot, Q safety/prefix/"
         + "AND/diacritics/bm25-rank/dedup, no-op-rescan-zero-writes, read-during-write; "

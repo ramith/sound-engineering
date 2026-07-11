@@ -22,8 +22,6 @@ func checkBrowseQueryPlan(number: Int, url: URL) async -> Bool {
             (.tracksDisplayByArtist, "tracksDisplay(byArtist:)"),
             (.tracksDisplayInAlbum, "tracksDisplay(inAlbum:)"),
             (.tracksDisplayInGenre, "tracksDisplay(inGenre:)"),
-            (.tracksDisplayInYear, "tracksDisplay(inYear:)"),
-            (.albumsInYear, "albums(inYear:)"),
             (.albumsInGenre, "albums(inGenre:)"),
         ]
         for (target, label) in targets {
@@ -35,18 +33,8 @@ func checkBrowseQueryPlan(number: Int, url: URL) async -> Bool {
                 printFail(number, "BR5: \(label) SCANs the tracks table: \(details)"); return false
             }
         }
-        // tracksDisplay(inYear:) must be a year SEEK — the composite album/disc/track ORDER BY
-        // must NOT let the planner satisfy the sort via a full idx_tracks_album_order scan and
-        // filter year as a residual (which `detailUsesIndex` would wave through). Pin the seek.
-        let inYearPlan = try await store.explainQueryPlan(for: .tracksDisplayInYear)
-        guard inYearPlan.contains(where: {
-            let upper = $0.uppercased(); return upper.contains("SEARCH") && upper.contains("IDX_TRACKS_YEAR")
-        }) else {
-            printFail(number, "BR5: tracksDisplay(inYear:) is not a year SEEK: \(inYearPlan)"); return false
-        }
-        printPass(number, "BR5: EXPLAIN QUERY PLAN for tracksDisplay(byArtist:/inAlbum:/inGenre:/inYear:) + "
-            + "albums(inYear:/inGenre:) is SEARCH … USING INDEX — never SCAN TABLE tracks (aliases t/t2); "
-            + "inYear is a SEEK on idx_tracks_year")
+        printPass(number, "BR5: EXPLAIN QUERY PLAN for tracksDisplay(byArtist:/inAlbum:/inGenre:) + "
+            + "albums(inGenre:) is SEARCH … USING INDEX — never SCAN TABLE tracks (aliases t/t2)")
         return true
     } catch {
         printFail(number, "BR5 threw: \(error)"); return false

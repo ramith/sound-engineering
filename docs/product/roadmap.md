@@ -25,7 +25,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 - **S7 — DSP-gate hardening (✅ Shipped):** regression oracles for every shipped DSP stage — libebur128 loudness/TP, limiter −1 dBTP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak.
 - **QW1 — Quick-Win Differentiators (✅ Shipped — code; founder by-ear pending):** crossfeed DSP + UI (headphone-gated), Reimagine intensity knob UI, tonal presets (house curves + Save-as-Custom + per-output recall).
 
-**Current focus → 🟢 S9 DONE; S10 next.** S8 (the library spine) and all of S9 have **shipped**: DAO reads, FTS5 search, the queue/advance core (`PlaybackQueueKit`), the **Albums** grid+detail, the full **Songs** view (filter-preserves-sort, customizable columns, queue toast, artwork, play-tracking, a11y), and now **S9.6** — the **Artists / Genres / Years** tabs (list roots + flat song-list detail, Artists grouped by album; context-menu Play/Play Next/Add to Queue/Shuffle; 0-song facets hidden; VoiceOver a11y). The library surface is now a complete browse: Songs · Albums · Artists · Genres · Years. **Next: S10** (queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse) — where the deferred **drag-to-queue** + A–Z jump rail also land → then **Release R1**.
+**Current focus → 🟢 S9 DONE; S10 next.** S8 (the library spine) and all of S9 have **shipped**: DAO reads, FTS5 search, the queue/advance core (`PlaybackQueueKit`), the **Albums** grid+detail, the full **Songs** view (filter-preserves-sort, customizable columns, queue toast, artwork, play-tracking, a11y), and now **S9.6** — the **Artists** tab (a tile grid: representative album cover + name + N songs → grouped-by-album detail) and **Genres** (list → flat song-list detail), with context-menu Play/Play Next/Add to Queue/Shuffle, 0-song facets hidden, VoiceOver a11y. *(The Years tab was cut during founder review.)* The library surface is now a complete browse: Songs · Albums · Artists · Genres. **Next: S10** (queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse) — where the deferred **drag-to-queue** + A–Z jump rail also land → then **Release R1**.
 
 ---
 
@@ -36,7 +36,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 | Sprint | Scope | Status |
 |--------|-------|--------|
 | **S8** | **Library spine: scan + persistent DB** | ✅ Shipped |
-| **S9** | Browse & search UI — album grid; Artist/Album/Genre/Year; incremental search; cover art; click-to-queue | ✅ Shipped — Songs · Albums · Artists · Genres · Years all browse (S9.6 = the three facet tabs) |
+| **S9** | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue | ✅ Shipped — Songs · Albums · Artists · Genres all browse (S9.6 = Artists tile grid + Genres; Years cut) |
 | S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center | Planned |
 | S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim | Planned |
 | S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass | Planned |
@@ -109,4 +109,4 @@ Details: [../architecture/validation-strategy.md](../architecture/validation-str
 ---
 
 **Status:** 🟢 In active development
-**Next step:** 🟢 **S10 — queue + playlists + macOS control** (S9 browse is complete: Songs · Albums · Artists · Genres · Years). Queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse — plus the deferred drag-to-queue + A–Z rail — the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).
+**Next step:** 🟢 **S10 — queue + playlists + macOS control** (S9 browse is complete: Songs · Albums · Artists · Genres). Queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse — plus the deferred drag-to-queue + A–Z rail — the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).

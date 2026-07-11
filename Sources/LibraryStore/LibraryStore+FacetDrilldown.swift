@@ -1,9 +1,8 @@
 // LibraryStore+FacetDrilldown — S9.1 facet drill-downs + single-facet reads (design §3).
 //
-// Adds the browse drill-downs (`albums(byArtist:)`, `albums(inGenre:)`,
-// `albums(inYear:)`, `years()`) and the detail-header single-facet reads
-// (`album(id:)`, `artist(id:)`) ALONGSIDE the existing `albums()`/`artists()`/
-// `genres()` list reads (LibraryStore+Facets).
+// Adds the browse drill-downs (`albums(byArtist:)`, `albums(inGenre:)`) and the detail-header
+// single-facet reads (`album(id:)`, `artist(id:)`, `genre(id:)`) ALONGSIDE the existing
+// `albums()`/`artists()`/`genres()` list reads (LibraryStore+Facets).
 //
 // The album/artist SELECT + row mapper live here as SHARED builders that BOTH the list
 // reads (LibraryStore+Facets delegates to them) and these drill-downs use — so
@@ -23,7 +22,6 @@ public extension LibraryStore {
 
     internal static let albumTitleOrder = "al.title COLLATE NOCASE ASC, al.id ASC"
     internal static let albumYearOrder = "al.year ASC, al.title COLLATE NOCASE ASC, al.id ASC"
-    internal static let albumsInYearWhere = "WHERE al.year = ?"
     /// The genre-membership sub-select for `albums(inGenre:)` — `t2` aliases `tracks`
     /// inside it (so the BR5 scan detector must also flag a `SCAN t2`). Shared so the
     /// read + its EXPLAIN reproduce identical SQL; the DISTINCT sub-select means an album
@@ -93,7 +91,12 @@ public extension LibraryStore {
     /// excluded here (`WHERE ar.id <> unknownArtistID`), so no artist read — list or
     /// single-facet — can surface it (BR3b). `extraWhere` is appended with `AND`.
     internal static func artistSelectSQL(extraWhere: String, order: String, limited: Bool) -> String {
-        var sql = "SELECT ar.id, ar.name, ar.sort_name, count(t.id) AS track_count "
+        var sql = "SELECT ar.id, ar.name, ar.sort_name, count(t.id) AS track_count, "
+        // Representative album cover (index 4): any album containing one of this artist's tracks that
+        // has artwork. Correlated per artist row; `idx_tracks_artist` seeks t2, albums resolves by PK —
+        // no `tracks` scan. NULL when the artist has no artwork'd album → the grid tile shows a placeholder.
+        sql += "(SELECT al.artwork_key FROM tracks t2 JOIN albums al ON al.id = t2.album_id "
+        sql += "WHERE t2.artist_id = ar.id AND al.artwork_key IS NOT NULL LIMIT 1) AS artwork_key "
         sql += "FROM artists ar "
         sql += "LEFT JOIN tracks t ON t.artist_id = ar.id "
         sql += "WHERE ar.id <> \(unknownArtistID)"
@@ -104,16 +107,17 @@ public extension LibraryStore {
         return sql
     }
 
-    /// Decode the current row (projected as `artistSelectSQL`) into an `ArtistFacet`. Column 3
-    /// is the already-computed `count(t.id) AS track_count` (track-artist lens) — surfaced as
-    /// `trackCount`. NB: this exposes album-artist-only artists (e.g. "Various Artists") with
-    /// `trackCount == 0`; the Artists TAB hides those in the UI layer, but the DAO keeps them
+    /// Decode the current row (projected as `artistSelectSQL`) into an `ArtistFacet`. Column 3 is the
+    /// already-computed `count(t.id) AS track_count` (track-artist lens) → `trackCount`; column 4 is
+    /// the representative `artwork_key`. NB: this exposes album-artist-only artists (e.g. "Various
+    /// Artists") with `trackCount == 0`; the Artists TAB hides those in the UI, but the DAO keeps them
     /// reachable (do NOT add `HAVING count>0` here — `ChecksFacetSweep` + `artist(id:)` rely on it).
     internal func mapArtistRow(_ statement: SQLiteStatement) -> ArtistFacet {
         ArtistFacet(
             id: statement.columnInt64(0),
             name: statement.columnText(1) ?? "",
-            trackCount: statement.columnInt(3)
+            trackCount: statement.columnInt(3),
+            artworkKey: statement.columnText(4)
         )
     }
 
@@ -160,49 +164,7 @@ public extension LibraryStore {
         ) { try $0.bind(genreID, at: 1) }
     }
 
-    /// Albums released in `year` (the album row's `year`), title-ordered. Uses
-    /// `idx_albums_year` (BR5).
-    func albums(inYear year: Int) throws -> [AlbumFacet] {
-        try fetchAlbums(
-            whereClause: LibraryStore.albumsInYearWhere,
-            order: LibraryStore.albumTitleOrder, limited: false
-        ) { try $0.bind(Int64(year), at: 1) }
-    }
-
-    // MARK: - Year facet + single-facet detail reads
-
-    /// Distinct non-null track years, DESCENDING — the Years sidebar facet. Uses
-    /// `idx_tracks_year`.
-    func years() throws -> [Int] {
-        let statement = try connection.prepare(
-            "SELECT DISTINCT year FROM tracks WHERE year IS NOT NULL ORDER BY year DESC;"
-        )
-        defer { statement.finalize() }
-        var years: [Int] = []
-        while try statement.step() {
-            years.append(statement.columnInt(0))
-        }
-        return years
-    }
-
-    /// Distinct non-null track years with per-year SONG COUNT, DESCENDING — the Years list
-    /// with counts. `COUNT(*)` grouped over `idx_tracks_year` (covering). Cardinality matches
-    /// `tracksDisplay(inYear:)` exactly (same `t.year` filter). `years()` is kept as the plain
-    /// `[Int]` (BR2c + `albums(inYear:)` depend on it); this is a parallel read.
-    func yearFacets() throws -> [YearFacet] {
-        let statement = try connection.prepare(
-            "SELECT year, COUNT(*) AS track_count FROM tracks "
-                + "WHERE year IS NOT NULL GROUP BY year ORDER BY year DESC;"
-        )
-        defer { statement.finalize() }
-        var facets: [YearFacet] = []
-        while try statement.step() {
-            facets.append(
-                YearFacet(year: statement.columnInt(0), trackCount: statement.columnInt(1))
-            )
-        }
-        return facets
-    }
+    // MARK: - Single-facet detail reads
 
     /// The single `AlbumFacet` for `albumID`, or `nil`. Byte-identical to the matching
     /// `albums()` entry (same shared builder) — a detail header reads it directly rather
