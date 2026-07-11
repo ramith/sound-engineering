@@ -1,5 +1,5 @@
 //
-// FileDecodeSource.mm — Pure-Mode file decode source (Phase B — B2b).
+// FileDecodeSource.cpp — Pure-Mode file decode source (Phase B — B2b).
 //
 // Decodes on a background std::thread into an SpscRing<float>; the RT render thread drains the ring
 // via pullFloat(). Decoding goes through a pluggable DecodeBackend selected at open():
@@ -23,8 +23,8 @@
 // work + allocation live on the decode thread or the control-plane open()/close() path.
 //
 
-#import <AudioToolbox/AudioToolbox.h>
-#import <CoreFoundation/CoreFoundation.h>
+#include <AudioToolbox/AudioToolbox.h>
+#include <CoreFoundation/CoreFoundation.h>
 
 #include "../include/FileDecodeSource.h"
 #include "../include/MetadataBridge.h"
@@ -152,7 +152,10 @@ namespace AdaptiveSound
         {
           public:
             AppleDecodeBackend() = default;
-            ~AppleDecodeBackend() override { close(); }
+            ~AppleDecodeBackend() override
+            {
+                close();
+            }
             AppleDecodeBackend(const AppleDecodeBackend&) = delete;
             AppleDecodeBackend& operator=(const AppleDecodeBackend&) = delete;
             AppleDecodeBackend(AppleDecodeBackend&&) = delete;
@@ -164,9 +167,11 @@ namespace AdaptiveSound
                 {
                     return false;
                 }
-                CFURLRef url = CFURLCreateFromFileSystemRepresentation(
-                    nullptr, reinterpret_cast<const UInt8*>(path),
-                    static_cast<CFIndex>(std::strlen(path)), static_cast<Boolean>(false));
+                CFURLRef url =
+                    CFURLCreateFromFileSystemRepresentation(nullptr,
+                                                            reinterpret_cast<const UInt8*>(path),
+                                                            static_cast<CFIndex>(std::strlen(path)),
+                                                            static_cast<Boolean>(false));
                 if (url == nullptr)
                 {
                     return false;
@@ -175,7 +180,8 @@ namespace AdaptiveSound
                 CFRelease(url);
                 if (openStatus != noErr || file_ == nullptr)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] ExtAudioFileOpenURL failed (%d)\n",
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] ExtAudioFileOpenURL failed (%d)\n",
                                  static_cast<int>(openStatus));
                     file_ = nullptr;
                     return false;
@@ -208,7 +214,8 @@ namespace AdaptiveSound
                 const OSStatus status = ExtAudioFileSeek(file_, static_cast<SInt64>(frame));
                 if (status != noErr)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] ExtAudioFileSeek failed (%d)\n",
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] ExtAudioFileSeek failed (%d)\n",
                                  static_cast<int>(status));
                 }
                 return status == noErr;
@@ -229,7 +236,8 @@ namespace AdaptiveSound
                 const OSStatus status = ExtAudioFileRead(file_, &framesRead, &abl);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] ExtAudioFileRead failed (%d)\n",
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] ExtAudioFileRead failed (%d)\n",
                                  static_cast<int>(status));
                     return Status::Error;
                 }
@@ -237,14 +245,26 @@ namespace AdaptiveSound
                 return framesRead == 0U ? Status::Eof : Status::Ok;
             }
 
-            [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
-            [[nodiscard]] uint32_t channels() const noexcept override { return channels_; }
+            [[nodiscard]] double sampleRate() const noexcept override
+            {
+                return sampleRate_;
+            }
+            [[nodiscard]] uint32_t channels() const noexcept override
+            {
+                return channels_;
+            }
             [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept override
             {
                 return sourceBits_;
             }
-            [[nodiscard]] bool sourceIsFloat() const noexcept override { return sourceIsFloat_; }
-            [[nodiscard]] DecoderKind kind() const noexcept override { return DecoderKind::Apple; }
+            [[nodiscard]] bool sourceIsFloat() const noexcept override
+            {
+                return sourceIsFloat_;
+            }
+            [[nodiscard]] DecoderKind kind() const noexcept override
+            {
+                return DecoderKind::Apple;
+            }
 
           private:
             bool readFileFormat()
@@ -255,7 +275,8 @@ namespace AdaptiveSound
                     file_, kExtAudioFileProperty_FileDataFormat, &size, &fileFmt);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] read FileDataFormat failed (%d)\n",
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] read FileDataFormat failed (%d)\n",
                                  static_cast<int>(status));
                     return false;
                 }
@@ -266,8 +287,10 @@ namespace AdaptiveSound
                                  ((fileFmt.mFormatFlags & kAudioFormatFlagIsFloat) != 0U);
                 if (sampleRate_ <= 0.0 || channels_ == 0U || channels_ > kMaxSourceChannels)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] unsupported format (rate %.1f, ch %u)\n",
-                                 sampleRate_, channels_);
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] unsupported format (rate %.1f, ch %u)\n",
+                                 sampleRate_,
+                                 channels_);
                     return false;
                 }
                 return true;
@@ -290,7 +313,8 @@ namespace AdaptiveSound
                     file_, kExtAudioFileProperty_ClientDataFormat, sizeof(client), &client);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] set ClientDataFormat failed (%d)\n",
+                    std::fprintf(stderr,
+                                 "[FileDecodeSource] set ClientDataFormat failed (%d)\n",
                                  static_cast<int>(status));
                     return false;
                 }
@@ -409,8 +433,8 @@ namespace AdaptiveSound
                 resolveSym(hfmt, "av_seek_frame", api.av_seek_frame) &&
                 resolveSym(hfmt, "avformat_version", api.avformat_version) &&
                 resolveSym(hcodec, "avcodec_alloc_context3", api.avcodec_alloc_context3) &&
-                resolveSym(hcodec, "avcodec_parameters_to_context",
-                           api.avcodec_parameters_to_context) &&
+                resolveSym(
+                    hcodec, "avcodec_parameters_to_context", api.avcodec_parameters_to_context) &&
                 resolveSym(hcodec, "avcodec_open2", api.avcodec_open2) &&
                 resolveSym(hcodec, "avcodec_send_packet", api.avcodec_send_packet) &&
                 resolveSym(hcodec, "avcodec_receive_frame", api.avcodec_receive_frame) &&
@@ -446,10 +470,12 @@ namespace AdaptiveSound
             if (fmtMajor != kBuiltAvformatMajor || codecMajor != kBuiltAvcodecMajor ||
                 utilMajor != kBuiltAvutilMajor || swrMajor != kBuiltSwresampleMajor)
             {
-                std::fprintf(stderr,
-                             "[FileDecodeSource] FFmpeg ABI mismatch (built libavformat %d, found %d);"
-                             " using Apple decoder\n",
-                             kBuiltAvformatMajor, fmtMajor);
+                std::fprintf(
+                    stderr,
+                    "[FileDecodeSource] FFmpeg ABI mismatch (built libavformat %d, found %d);"
+                    " using Apple decoder\n",
+                    kBuiltAvformatMajor,
+                    fmtMajor);
                 return api;
             }
             api.loaded = true;
@@ -462,7 +488,10 @@ namespace AdaptiveSound
             return api;
         }
 
-        bool ffmpegAvailable() noexcept { return ffmpegApi().loaded; }
+        bool ffmpegAvailable() noexcept
+        {
+            return ffmpegApi().loaded;
+        }
 
         // FFmpeg decode backend: av_read_frame -> avcodec_send/receive -> swr_convert to interleaved
         // float at the file's NATIVE rate (out-rate == in-rate, so no sample-rate conversion).
@@ -476,7 +505,10 @@ namespace AdaptiveSound
         {
           public:
             FFmpegDecodeBackend() = default;
-            ~FFmpegDecodeBackend() override { close(); }
+            ~FFmpegDecodeBackend() override
+            {
+                close();
+            }
             FFmpegDecodeBackend(const FFmpegDecodeBackend&) = delete;
             FFmpegDecodeBackend& operator=(const FFmpegDecodeBackend&) = delete;
             FFmpegDecodeBackend(FFmpegDecodeBackend&&) = delete;
@@ -501,8 +533,8 @@ namespace AdaptiveSound
                     return false;
                 }
                 const AVCodec* codec = nullptr;
-                const int idx = api.av_find_best_stream(fmt_, AVMEDIA_TYPE_AUDIO, kFindStreamAuto,
-                                                        kFindStreamAuto, &codec, kNoFlags);
+                const int idx = api.av_find_best_stream(
+                    fmt_, AVMEDIA_TYPE_AUDIO, kFindStreamAuto, kFindStreamAuto, &codec, kNoFlags);
                 if (idx < 0 || codec == nullptr)
                 {
                     close();
@@ -515,7 +547,8 @@ namespace AdaptiveSound
                     close();
                     return false;
                 }
-                if (api.avcodec_parameters_to_context(codecCtx_, fmt_->streams[idx]->codecpar) < 0 ||
+                if (api.avcodec_parameters_to_context(codecCtx_, fmt_->streams[idx]->codecpar) <
+                        0 ||
                     api.avcodec_open2(codecCtx_, codec, nullptr) < 0)
                 {
                     close();
@@ -542,9 +575,15 @@ namespace AdaptiveSound
                 }
 
                 // Output: interleaved float at the SAME rate + layout => no resample, no remap.
-                if (api.swr_alloc_set_opts2(&swr_, &codecCtx_->ch_layout, AV_SAMPLE_FMT_FLT,
-                                            codecCtx_->sample_rate, &codecCtx_->ch_layout, sfmt,
-                                            codecCtx_->sample_rate, kNoFlags, nullptr) < 0 ||
+                if (api.swr_alloc_set_opts2(&swr_,
+                                            &codecCtx_->ch_layout,
+                                            AV_SAMPLE_FMT_FLT,
+                                            codecCtx_->sample_rate,
+                                            &codecCtx_->ch_layout,
+                                            sfmt,
+                                            codecCtx_->sample_rate,
+                                            kNoFlags,
+                                            nullptr) < 0 ||
                     api.swr_init(swr_) < 0)
                 {
                     close();
@@ -681,14 +720,26 @@ namespace AdaptiveSound
                 }
             }
 
-            [[nodiscard]] double sampleRate() const noexcept override { return sampleRate_; }
-            [[nodiscard]] uint32_t channels() const noexcept override { return channels_; }
+            [[nodiscard]] double sampleRate() const noexcept override
+            {
+                return sampleRate_;
+            }
+            [[nodiscard]] uint32_t channels() const noexcept override
+            {
+                return channels_;
+            }
             [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept override
             {
                 return sourceBits_;
             }
-            [[nodiscard]] bool sourceIsFloat() const noexcept override { return sourceIsFloat_; }
-            [[nodiscard]] DecoderKind kind() const noexcept override { return DecoderKind::FFmpeg; }
+            [[nodiscard]] bool sourceIsFloat() const noexcept override
+            {
+                return sourceIsFloat_;
+            }
+            [[nodiscard]] DecoderKind kind() const noexcept override
+            {
+                return DecoderKind::FFmpeg;
+            }
 
           private:
             // Empty swresample's internal buffer (feed null input until it yields nothing) so no
@@ -701,9 +752,8 @@ namespace AdaptiveSound
                 auto* discardPtr = reinterpret_cast<uint8_t*>(discard.data());
                 for (;;)
                 {
-                    const int converted = api.swr_convert(swr_, &discardPtr,
-                                                          static_cast<int>(kDecodeReadFrames),
-                                                          nullptr, 0);
+                    const int converted = api.swr_convert(
+                        swr_, &discardPtr, static_cast<int>(kDecodeReadFrames), nullptr, 0);
                     if (converted <= 0)
                     {
                         break;
@@ -768,7 +818,9 @@ namespace AdaptiveSound
                 return Status::Ok;
             }
 
-            Status convertFrame(const FFmpegApi& api, std::vector<float>& out, uint32_t& framesOut,
+            Status convertFrame(const FFmpegApi& api,
+                                std::vector<float>& out,
+                                uint32_t& framesOut,
                                 uint32_t frontDrop)
             {
                 const int inSamples = frame_->nb_samples;
@@ -800,7 +852,8 @@ namespace AdaptiveSound
                         const std::size_t dropFloats = static_cast<std::size_t>(drop) * channels_;
                         const std::size_t keptFloats =
                             static_cast<std::size_t>(keptFrames) * channels_;
-                        std::memmove(out.data(), out.data() + dropFloats, keptFloats * sizeof(float));
+                        std::memmove(
+                            out.data(), out.data() + dropFloats, keptFloats * sizeof(float));
                     }
                     producedFrames = keptFrames;
                 }
@@ -852,7 +905,10 @@ namespace AdaptiveSound
     {
       public:
         Impl() = default;
-        ~Impl() { close(); }
+        ~Impl()
+        {
+            close();
+        }
 
         Impl(const Impl&) = delete;
         Impl& operator=(const Impl&) = delete;
@@ -878,7 +934,8 @@ namespace AdaptiveSound
             const bool forceFFmpeg = (forced != nullptr) && (std::strcmp(forced, "ffmpeg") == 0);
 
             // Open each candidate at most ONCE; the first that opens `path` wins and is retained.
-            auto tryOpen = [&](std::unique_ptr<DecodeBackend> candidate) -> bool {
+            auto tryOpen = [&](std::unique_ptr<DecodeBackend> candidate) -> bool
+            {
                 if (candidate == nullptr || !candidate->open(path))
                 {
                     return false;
@@ -940,10 +997,10 @@ namespace AdaptiveSound
             }
             const double clamped = seconds > 0.0 ? seconds : 0.0;
             const int64_t targetFrame = std::llround(clamped * sampleRate_);
-            joinDecodeThread();                  // producer quiesced; consumer absent by precondition
+            joinDecodeThread(); // producer quiesced; consumer absent by precondition
             const bool ok = backend_->seekToFrame(targetFrame);
-            ring_.reset();                        // sole owner: discard buffered pre-seek audio
-            carryCount_ = 0U;                     // consumer-side straggler reset (consumer stopped)
+            ring_.reset();    // sole owner: discard buffered pre-seek audio
+            carryCount_ = 0U; // consumer-side straggler reset (consumer stopped)
             startDecodeThread();
             return ok;
         }
@@ -990,11 +1047,26 @@ namespace AdaptiveSound
             return static_cast<uint32_t>(wholeFloats / channels);
         }
 
-        [[nodiscard]] double sampleRate() const noexcept { return sampleRate_; }
-        [[nodiscard]] uint32_t channels() const noexcept { return channels_; }
-        [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept { return sourceBits_; }
-        [[nodiscard]] bool sourceIsFloat() const noexcept { return sourceIsFloat_; }
-        [[nodiscard]] DecoderKind decoderKind() const noexcept { return decoderKind_; }
+        [[nodiscard]] double sampleRate() const noexcept
+        {
+            return sampleRate_;
+        }
+        [[nodiscard]] uint32_t channels() const noexcept
+        {
+            return channels_;
+        }
+        [[nodiscard]] uint32_t sourceBitsPerChannel() const noexcept
+        {
+            return sourceBits_;
+        }
+        [[nodiscard]] bool sourceIsFloat() const noexcept
+        {
+            return sourceIsFloat_;
+        }
+        [[nodiscard]] DecoderKind decoderKind() const noexcept
+        {
+            return decoderKind_;
+        }
 
         [[nodiscard]] bool decoderFinished() const noexcept
         {
@@ -1072,7 +1144,8 @@ namespace AdaptiveSound
         std::unique_ptr<DecodeBackend> backend_;
         std::thread decodeThread_;
         double sampleRate_ = 0.0;
-        std::array<float, kMaxSourceChannels> carry_{}; // trailing partial frame (< channels floats)
+        std::array<float, kMaxSourceChannels>
+            carry_{}; // trailing partial frame (< channels floats)
         uint32_t channels_ = 0U;
         uint32_t sourceBits_ = 0U;
         uint32_t carryCount_ = 0U;
@@ -1085,28 +1158,57 @@ namespace AdaptiveSound
     // =======================================================================
     // FileDecodeSource (public shell -> Impl)
     // =======================================================================
-    FileDecodeSource::FileDecodeSource() : impl_(std::make_unique<Impl>()) {}
+    FileDecodeSource::FileDecodeSource() : impl_(std::make_unique<Impl>())
+    {
+    }
     FileDecodeSource::~FileDecodeSource() = default;
 
-    bool FileDecodeSource::open(const char* path) { return impl_->open(path); }
-    void FileDecodeSource::close() noexcept { impl_->close(); }
-    bool FileDecodeSource::seek(double seconds) { return impl_->seek(seconds); }
+    bool FileDecodeSource::open(const char* path)
+    {
+        return impl_->open(path);
+    }
+    void FileDecodeSource::close() noexcept
+    {
+        impl_->close();
+    }
+    bool FileDecodeSource::seek(double seconds)
+    {
+        return impl_->seek(seconds);
+    }
 
     uint32_t FileDecodeSource::pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
     {
         return impl_->pullFloat(out, frames, channels);
     }
 
-    double FileDecodeSource::sampleRate() const noexcept { return impl_->sampleRate(); }
-    uint32_t FileDecodeSource::channels() const noexcept { return impl_->channels(); }
+    double FileDecodeSource::sampleRate() const noexcept
+    {
+        return impl_->sampleRate();
+    }
+    uint32_t FileDecodeSource::channels() const noexcept
+    {
+        return impl_->channels();
+    }
     uint32_t FileDecodeSource::sourceBitsPerChannel() const noexcept
     {
         return impl_->sourceBitsPerChannel();
     }
-    bool FileDecodeSource::sourceIsFloat() const noexcept { return impl_->sourceIsFloat(); }
-    DecoderKind FileDecodeSource::decoderKind() const noexcept { return impl_->decoderKind(); }
-    bool FileDecodeSource::decoderFinished() const noexcept { return impl_->decoderFinished(); }
-    bool FileDecodeSource::exhausted() const noexcept { return impl_->exhausted(); }
+    bool FileDecodeSource::sourceIsFloat() const noexcept
+    {
+        return impl_->sourceIsFloat();
+    }
+    DecoderKind FileDecodeSource::decoderKind() const noexcept
+    {
+        return impl_->decoderKind();
+    }
+    bool FileDecodeSource::decoderFinished() const noexcept
+    {
+        return impl_->decoderFinished();
+    }
+    bool FileDecodeSource::exhausted() const noexcept
+    {
+        return impl_->exhausted();
+    }
 
 #if __has_include(<libavformat/avformat.h>)
     // =======================================================================
@@ -1117,16 +1219,25 @@ namespace AdaptiveSound
 
     static const char* artMimeForCodecID(int codecID)
     {
-        if (codecID == AV_CODEC_ID_MJPEG) { return "image/jpeg"; }
-        if (codecID == AV_CODEC_ID_PNG) { return "image/png"; }
+        if (codecID == AV_CODEC_ID_MJPEG)
+        {
+            return "image/jpeg";
+        }
+        if (codecID == AV_CODEC_ID_PNG)
+        {
+            return "image/png";
+        }
         return nullptr;
     }
 
     // Append every entry of `dict` to the handle's key/value vectors, lowercasing keys.
-    static void appendDictTags(const AVDictionary* dict, const FFmpegApi& api,
-                               CFileMetadataHandle* handle)
+    static void
+    appendDictTags(const AVDictionary* dict, const FFmpegApi& api, CFileMetadataHandle* handle)
     {
-        if (dict == nullptr) { return; }
+        if (dict == nullptr)
+        {
+            return;
+        }
         const AVDictionaryEntry* entry = nullptr;
         while ((entry = api.av_dict_get(dict, "", entry, AV_DICT_IGNORE_SUFFIX)) != nullptr)
         {
@@ -1155,7 +1266,10 @@ namespace AdaptiveSound
                 const std::size_t bytes = static_cast<std::size_t>(stream->attached_pic.size);
                 handle->art.assign(stream->attached_pic.data, stream->attached_pic.data + bytes);
                 const char* mime = artMimeForCodecID(stream->codecpar->codec_id);
-                if (mime != nullptr) { handle->artMime = mime; }
+                if (mime != nullptr)
+                {
+                    handle->artMime = mime;
+                }
                 return;
             }
         }
@@ -1165,7 +1279,10 @@ namespace AdaptiveSound
     static CFileMetadataHandle* openFFmpegMetadataImpl(const char* path)
     {
         const FFmpegApi& api = ffmpegApi();
-        if (!api.loaded) { return nullptr; }
+        if (!api.loaded)
+        {
+            return nullptr;
+        }
         AVFormatContext* fmt = nullptr;
         if (api.avformat_open_input(&fmt, path, nullptr, nullptr) < 0 || fmt == nullptr)
         {
@@ -1184,8 +1301,8 @@ namespace AdaptiveSound
             return nullptr;
         }
 
-        const int audioIndex = api.av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, kFindStreamAuto,
-                                                       kFindStreamAuto, nullptr, kNoFlags);
+        const int audioIndex = api.av_find_best_stream(
+            fmt, AVMEDIA_TYPE_AUDIO, kFindStreamAuto, kFindStreamAuto, nullptr, kNoFlags);
         if (audioIndex >= 0)
         {
             const AVCodecParameters* params = fmt->streams[audioIndex]->codecpar;
@@ -1209,7 +1326,10 @@ namespace AdaptiveSound
         }
 
         appendDictTags(fmt->metadata, api, handle);
-        if (audioIndex >= 0) { appendDictTags(fmt->streams[audioIndex]->metadata, api, handle); }
+        if (audioIndex >= 0)
+        {
+            appendDictTags(fmt->streams[audioIndex]->metadata, api, handle);
+        }
         readAttachedArt(fmt, handle);
 
         api.avformat_close_input(&fmt);
@@ -1227,7 +1347,10 @@ namespace AdaptiveSound
 // ===========================================================================
 extern "C" void* ffmpegOpenMetadata(const char* path) AUDIODSP_C_NOEXCEPT
 {
-    if (path == nullptr) { return nullptr; }
+    if (path == nullptr)
+    {
+        return nullptr;
+    }
 #if __has_include(<libavformat/avformat.h>)
     return AdaptiveSound::openFFmpegMetadataImpl(path);
 #else
@@ -1241,9 +1364,13 @@ extern "C" void ffmpegCloseMetadata(void* handle) AUDIODSP_C_NOEXCEPT
     delete static_cast<CFileMetadataHandle*>(handle);
 }
 
-extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT
+extern "C" void ffmpegMetadataScalars(const void* handle,
+                                      CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT
 {
-    if (handle == nullptr || out == nullptr) { return; }
+    if (handle == nullptr || out == nullptr)
+    {
+        return;
+    }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     out->durationSeconds = meta->durationSeconds;
     out->sampleRate = meta->sampleRate;
@@ -1253,30 +1380,43 @@ extern "C" void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out) A
     out->artLength = static_cast<uint32_t>(meta->art.size());
 }
 
-extern "C" const char* ffmpegMetadataTagKey(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT
+extern "C" const char* ffmpegMetadataTagKey(const void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT
 {
-    if (handle == nullptr) { return nullptr; }
+    if (handle == nullptr)
+    {
+        return nullptr;
+    }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return index < meta->keys.size() ? meta->keys[index].c_str() : nullptr;
 }
 
-extern "C" const char* ffmpegMetadataTagValue(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT
+extern "C" const char* ffmpegMetadataTagValue(const void* handle,
+                                              uint32_t index) AUDIODSP_C_NOEXCEPT
 {
-    if (handle == nullptr) { return nullptr; }
+    if (handle == nullptr)
+    {
+        return nullptr;
+    }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return index < meta->values.size() ? meta->values[index].c_str() : nullptr;
 }
 
-extern "C" const uint8_t* ffmpegMetadataArtBytes(void* handle) AUDIODSP_C_NOEXCEPT
+extern "C" const uint8_t* ffmpegMetadataArtBytes(const void* handle) AUDIODSP_C_NOEXCEPT
 {
-    if (handle == nullptr) { return nullptr; }
+    if (handle == nullptr)
+    {
+        return nullptr;
+    }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return meta->art.empty() ? nullptr : meta->art.data();
 }
 
-extern "C" const char* ffmpegMetadataArtMime(void* handle) AUDIODSP_C_NOEXCEPT
+extern "C" const char* ffmpegMetadataArtMime(const void* handle) AUDIODSP_C_NOEXCEPT
 {
-    if (handle == nullptr) { return nullptr; }
+    if (handle == nullptr)
+    {
+        return nullptr;
+    }
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return meta->artMime.empty() ? nullptr : meta->artMime.c_str();
 }

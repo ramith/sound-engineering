@@ -53,17 +53,17 @@ extern "C"
 
     /// Fill `out` (caller-allocated) with the handle's scalar properties + counts. No-op
     /// if either argument is NULL.
-    void ffmpegMetadataScalars(void* handle, CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT;
+    void ffmpegMetadataScalars(const void* handle, CFileMetadataScalars* out) AUDIODSP_C_NOEXCEPT;
 
     /// The lowercased key / the value of tag `index` (< scalars.tagCount), borrowed from
     /// the handle (valid until close). NULL if out of range / handle NULL.
-    const char* ffmpegMetadataTagKey(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
-    const char* ffmpegMetadataTagValue(void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
+    const char* ffmpegMetadataTagKey(const void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
+    const char* ffmpegMetadataTagValue(const void* handle, uint32_t index) AUDIODSP_C_NOEXCEPT;
 
     /// The embedded-art bytes (scalars.artLength long) / its MIME string, borrowed from the
     /// handle (valid until close). NULL if there is no art / handle NULL.
-    const uint8_t* ffmpegMetadataArtBytes(void* handle) AUDIODSP_C_NOEXCEPT;
-    const char* ffmpegMetadataArtMime(void* handle) AUDIODSP_C_NOEXCEPT;
+    const uint8_t* ffmpegMetadataArtBytes(const void* handle) AUDIODSP_C_NOEXCEPT;
+    const char* ffmpegMetadataArtMime(const void* handle) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

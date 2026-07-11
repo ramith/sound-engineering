@@ -1,5 +1,5 @@
 //
-// PureModeBridge.mm — CoreAudio (Obj-C++) glue exposing the Pure-Mode engine to Swift.
+// PureModeBridge.cpp — CoreAudio glue exposing the Pure-Mode engine to Swift (pure C++).
 //
 // Implements the capability-query + engine-session half of PureModeBridge.h. The CoreAudio-free
 // policy (pureModeEvaluate) lives in PureModeBridgePolicy.cpp; this file is NOT compiled into the
@@ -15,12 +15,12 @@
 // -fno-exceptions / -fno-rtti clean.
 //
 
+#include "include/PureModeBridge.h"
 #include "include/CoreAudioDevice.h"
 #include "include/DeviceCapability.h"
 #include "include/FileDecodeSource.h"
 #include "include/GaplessSource.h"
 #include "include/HALOutputEngine.h"
-#include "include/PureModeBridge.h"
 #include "include/PureModeSource.h"
 
 #include <atomic>
@@ -46,7 +46,7 @@ namespace
     constexpr uint8_t kDecoderBackendFFmpeg = 1U;
 
     // pureModeEngineSetNextTrack return codes (mirrored in PureModeBridge.h).
-    constexpr int kNextTrackError = 0;          // unreadable/unsupported/already-armed/null
+    constexpr int kNextTrackError = 0;            // unreadable/unsupported/already-armed/null
     constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch — caller reconfigures
     constexpr int kNextTrackArmed = 2;            // compatible — armed for a gapless seam
 
@@ -129,7 +129,8 @@ extern "C"
         return new (std::nothrow) PureModeSession();
     }
 
-    int pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT
+    int
+    pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || filePath == nullptr)
@@ -265,8 +266,7 @@ extern "C"
         // ExtAudioFile vs FFmpeg) so the signal-path UI is honest about which decoder is live.
         const FileDecodeSource* active = session->gapless->activeSource();
         out.decoderBackend =
-            (active != nullptr &&
-             active->decoderKind() == AdaptiveSound::DecoderKind::FFmpeg)
+            (active != nullptr && active->decoderKind() == AdaptiveSound::DecoderKind::FFmpeg)
                 ? kDecoderBackendFFmpeg
                 : kDecoderBackendApple;
         return out;
