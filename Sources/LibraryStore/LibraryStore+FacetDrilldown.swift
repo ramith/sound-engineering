@@ -104,11 +104,16 @@ public extension LibraryStore {
         return sql
     }
 
-    /// Decode the current row (projected as `artistSelectSQL`) into an `ArtistFacet`.
+    /// Decode the current row (projected as `artistSelectSQL`) into an `ArtistFacet`. Column 3
+    /// is the already-computed `count(t.id) AS track_count` (track-artist lens) — surfaced as
+    /// `trackCount`. NB: this exposes album-artist-only artists (e.g. "Various Artists") with
+    /// `trackCount == 0`; the Artists TAB hides those in the UI layer, but the DAO keeps them
+    /// reachable (do NOT add `HAVING count>0` here — `ChecksFacetSweep` + `artist(id:)` rely on it).
     internal func mapArtistRow(_ statement: SQLiteStatement) -> ArtistFacet {
         ArtistFacet(
             id: statement.columnInt64(0),
-            name: statement.columnText(1) ?? ""
+            name: statement.columnText(1) ?? "",
+            trackCount: statement.columnInt(3)
         )
     }
 
@@ -180,6 +185,25 @@ public extension LibraryStore {
         return years
     }
 
+    /// Distinct non-null track years with per-year SONG COUNT, DESCENDING — the Years list
+    /// with counts. `COUNT(*)` grouped over `idx_tracks_year` (covering). Cardinality matches
+    /// `tracksDisplay(inYear:)` exactly (same `t.year` filter). `years()` is kept as the plain
+    /// `[Int]` (BR2c + `albums(inYear:)` depend on it); this is a parallel read.
+    func yearFacets() throws -> [YearFacet] {
+        let statement = try connection.prepare(
+            "SELECT year, COUNT(*) AS track_count FROM tracks "
+                + "WHERE year IS NOT NULL GROUP BY year ORDER BY year DESC;"
+        )
+        defer { statement.finalize() }
+        var facets: [YearFacet] = []
+        while try statement.step() {
+            facets.append(
+                YearFacet(year: statement.columnInt(0), trackCount: statement.columnInt(1))
+            )
+        }
+        return facets
+    }
+
     /// The single `AlbumFacet` for `albumID`, or `nil`. Byte-identical to the matching
     /// `albums()` entry (same shared builder) — a detail header reads it directly rather
     /// than client-side filtering a list (BR3).
@@ -195,5 +219,28 @@ public extension LibraryStore {
         try fetchArtists(
             extraWhere: "AND ar.id = ?", order: LibraryStore.artistNameOrder, limited: false
         ) { try $0.bind(artistID, at: 1) }.first
+    }
+
+    /// The single `GenreFacet` for `genreID`, or `nil`. Same `count(DISTINCT tg.track_id)`
+    /// semantics as `genres()`, so a Genre detail header reads it directly rather than
+    /// client-side filtering the list (BR3-style).
+    func genre(id genreID: Int64) throws -> GenreFacet? {
+        let statement = try connection.prepare(
+            """
+            SELECT g.id, g.name, count(DISTINCT tg.track_id) AS track_count
+            FROM genres g
+            LEFT JOIN track_genres tg ON tg.genre_id = g.id
+            WHERE g.id = ?
+            GROUP BY g.id;
+            """
+        )
+        defer { statement.finalize() }
+        try statement.bind(genreID, at: 1)
+        guard try statement.step() else { return nil }
+        return GenreFacet(
+            id: statement.columnInt64(0),
+            name: statement.columnText(1) ?? "",
+            trackCount: statement.columnInt(2)
+        )
     }
 }
