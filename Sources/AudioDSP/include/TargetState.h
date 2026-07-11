@@ -57,9 +57,9 @@ namespace AdaptiveSound
 
     // User-facing crossfeed strength presets (QW1 §5). The middle case is `Bauer` (NOT
     // `Default`) to avoid the `default:` keyword clash in switch statements (refactoring F8);
-    // the Swift-facing label for `Bauer` stays "Default". Underlying type is uint8_t so it can
-    // packs alongside the other intent bytes in CrossfeedParams without padding surprises.
-    // NOLINTNEXTLINE(performance-enum-size) PERMANENT reason="enum intentionally packed to uint8_t (ABI/layout)"
+    // the Swift-facing label for `Bauer` stays "Default". Underlying type is uint8_t so it packs
+    // alongside the other intent bytes in CrossfeedParams without padding surprises. (uint8_t is
+    // already the minimal type, so performance-enum-size does not fire — no suppression needed.)
     enum class CrossfeedPreset : uint8_t
     {
         Relaxed = 0, // bs2b "Jmeier": fc 650 Hz, cross -9.5 dB (alpha 0.335) — subtlest

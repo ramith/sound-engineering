@@ -26,6 +26,7 @@
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreFoundation/CoreFoundation.h>
 
+#include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
 #include "../include/FileDecodeSource.h"
 #include "../include/MetadataBridge.h"
 #include "../include/SpscRing.h"
@@ -79,7 +80,7 @@ struct CFileMetadataHandle
 };
 
 // Control-plane logging only (open/close/decode thread); never on the RT pull path.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
+// Diagnostics go through AdaptiveSound::log::line (AsLog.h) — no vararg suppression needed.
 
 namespace AdaptiveSound
 {
@@ -180,9 +181,8 @@ namespace AdaptiveSound
                 CFRelease(url);
                 if (openStatus != noErr || file_ == nullptr)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] ExtAudioFileOpenURL failed (%d)\n",
-                                 static_cast<int>(openStatus));
+                    AdaptiveSound::log::line("[FileDecodeSource] ExtAudioFileOpenURL failed ({})",
+                                             static_cast<int>(openStatus));
                     file_ = nullptr;
                     return false;
                 }
@@ -214,9 +214,8 @@ namespace AdaptiveSound
                 const OSStatus status = ExtAudioFileSeek(file_, static_cast<SInt64>(frame));
                 if (status != noErr)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] ExtAudioFileSeek failed (%d)\n",
-                                 static_cast<int>(status));
+                    AdaptiveSound::log::line("[FileDecodeSource] ExtAudioFileSeek failed ({})",
+                                             static_cast<int>(status));
                 }
                 return status == noErr;
             }
@@ -236,9 +235,8 @@ namespace AdaptiveSound
                 const OSStatus status = ExtAudioFileRead(file_, &framesRead, &abl);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] ExtAudioFileRead failed (%d)\n",
-                                 static_cast<int>(status));
+                    AdaptiveSound::log::line("[FileDecodeSource] ExtAudioFileRead failed ({})",
+                                             static_cast<int>(status));
                     return Status::Error;
                 }
                 framesOut = framesRead;
@@ -275,9 +273,8 @@ namespace AdaptiveSound
                     file_, kExtAudioFileProperty_FileDataFormat, &size, &fileFmt);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] read FileDataFormat failed (%d)\n",
-                                 static_cast<int>(status));
+                    AdaptiveSound::log::line("[FileDecodeSource] read FileDataFormat failed ({})",
+                                             static_cast<int>(status));
                     return false;
                 }
                 sampleRate_ = fileFmt.mSampleRate;
@@ -287,10 +284,10 @@ namespace AdaptiveSound
                                  ((fileFmt.mFormatFlags & kAudioFormatFlagIsFloat) != 0U);
                 if (sampleRate_ <= 0.0 || channels_ == 0U || channels_ > kMaxSourceChannels)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] unsupported format (rate %.1f, ch %u)\n",
-                                 sampleRate_,
-                                 channels_);
+                    AdaptiveSound::log::line(
+                        "[FileDecodeSource] unsupported format (rate {:.1f}, ch {})",
+                        sampleRate_,
+                        channels_);
                     return false;
                 }
                 return true;
@@ -313,9 +310,8 @@ namespace AdaptiveSound
                     file_, kExtAudioFileProperty_ClientDataFormat, sizeof(client), &client);
                 if (status != noErr)
                 {
-                    std::fprintf(stderr,
-                                 "[FileDecodeSource] set ClientDataFormat failed (%d)\n",
-                                 static_cast<int>(status));
+                    AdaptiveSound::log::line("[FileDecodeSource] set ClientDataFormat failed ({})",
+                                             static_cast<int>(status));
                     return false;
                 }
                 return true;
@@ -343,7 +339,6 @@ namespace AdaptiveSound
         constexpr int kBuiltAvutilMajor = LIBAVUTIL_VERSION_MAJOR;
         constexpr int kBuiltSwresampleMajor = LIBSWRESAMPLE_VERSION_MAJOR;
 
-        constexpr std::size_t kLibNameBufBytes = 128U;
         constexpr int kFindStreamAuto = -1; // av_find_best_stream: any / no related stream
         constexpr int kNoFlags = 0;
 
@@ -393,9 +388,8 @@ namespace AdaptiveSound
                 "/opt/homebrew/lib/", "/usr/local/lib/", "@loader_path/../Frameworks/", ""};
             for (const char* prefix : prefixes)
             {
-                std::array<char, kLibNameBufBytes> name{};
-                std::snprintf(name.data(), name.size(), "%s%s.%d.dylib", prefix, base, major);
-                void* handle = dlopen(name.data(), RTLD_NOW | RTLD_LOCAL);
+                const std::string soname = std::format("{}{}.{}.dylib", prefix, base, major);
+                void* handle = dlopen(soname.c_str(), RTLD_NOW | RTLD_LOCAL);
                 if (handle != nullptr)
                 {
                     return handle;
@@ -457,8 +451,8 @@ namespace AdaptiveSound
                 resolveSym(hswr, "swresample_version", api.swresample_version);
             if (!ok)
             {
-                std::fprintf(stderr,
-                             "[FileDecodeSource] FFmpeg symbol resolution failed; Apple decoder\n");
+                AdaptiveSound::log::line(
+                    "[FileDecodeSource] FFmpeg symbol resolution failed; Apple decoder");
                 return api;
             }
 
@@ -470,10 +464,9 @@ namespace AdaptiveSound
             if (fmtMajor != kBuiltAvformatMajor || codecMajor != kBuiltAvcodecMajor ||
                 utilMajor != kBuiltAvutilMajor || swrMajor != kBuiltSwresampleMajor)
             {
-                std::fprintf(
-                    stderr,
-                    "[FileDecodeSource] FFmpeg ABI mismatch (built libavformat %d, found %d);"
-                    " using Apple decoder\n",
+                AdaptiveSound::log::line(
+                    "[FileDecodeSource] FFmpeg ABI mismatch (built libavformat {}, found {}); "
+                    "using Apple decoder",
                     kBuiltAvformatMajor,
                     fmtMajor);
                 return api;
@@ -497,10 +490,10 @@ namespace AdaptiveSound
         // float at the file's NATIVE rate (out-rate == in-rate, so no sample-rate conversion).
         //
         // INVARIANT: ffmpegApi().loaded is true ONLY after every entry point resolved non-null
-        // (loadFFmpegApi returns early otherwise) and open() bails when !loaded — so every api.*()
-        // call below is non-null. The static analyzer can't track that invariant through the
-        // singleton, hence the localized suppression of its null-function-pointer false positives.
-        // NOLINTBEGIN(clang-analyzer-core.CallAndMessage) PERMANENT reason="guarded path; analyzer false positive"
+        // (loadFFmpegApi returns early otherwise), and open()/seekToFrame() bail when !loaded — so
+        // every api.*() call below runs through a non-null function pointer. close() is safe under
+        // !loaded too: it guards each owned pointer (frame_/pkt_/…), all of which stay null unless a
+        // prior open() succeeded (which itself requires loaded).
         class FFmpegDecodeBackend final : public DecodeBackend
         {
           public:
@@ -523,7 +516,7 @@ namespace AdaptiveSound
                 }
                 if (api.avformat_open_input(&fmt_, path, nullptr, nullptr) < 0)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] avformat_open_input failed\n");
+                    AdaptiveSound::log::line("[FileDecodeSource] avformat_open_input failed");
                     fmt_ = nullptr;
                     return false;
                 }
@@ -647,7 +640,7 @@ namespace AdaptiveSound
                 }
                 if (api.av_seek_frame(fmt_, audioStream_, ts, AVSEEK_FLAG_BACKWARD) < 0)
                 {
-                    std::fprintf(stderr, "[FileDecodeSource] av_seek_frame failed\n");
+                    AdaptiveSound::log::line("[FileDecodeSource] av_seek_frame failed");
                     return false;
                 }
                 // Discard decoder + swresample state carried over from the pre-seek position.
@@ -876,7 +869,6 @@ namespace AdaptiveSound
             bool sourceIsFloat_ = false;
             bool needDiscard_ = false; // a seek is pending sample-accurate front-drop
         };
-        // NOLINTEND(clang-analyzer-core.CallAndMessage)
 #endif // __has_include(<libavformat/avformat.h>)
 
         // Explicit backend constructors. Apple (ExtAudioFile) is always available and is the
@@ -1420,5 +1412,3 @@ extern "C" const char* ffmpegMetadataArtMime(const void* handle) AUDIODSP_C_NOEX
     const auto* meta = static_cast<const CFileMetadataHandle*>(handle);
     return meta->artMime.empty() ? nullptr : meta->artMime.c_str();
 }
-
-// NOLINTEND(cppcoreguidelines-pro-type-vararg)

@@ -11,12 +11,11 @@ namespace AdaptiveSound
     class AudioEngine;
     class DSPKernel;
 
-    /// C++-exported AU parameter IDs.
-    /// These correspond to AUAudioUnit parameter indexing.
-    /// Base type is uint64_t to match the C-ABI paramID width in setAUParameter/
-    /// getAUParameter (AudioUnitBridge.h); do not shrink it.
-    // NOLINTNEXTLINE(performance-enum-size) PERMANENT reason="width fixed to uint64_t to match the C-ABI paramID in set/getAUParameter"
-    enum class AUParameterID : uint64_t
+    /// C++-exported AU parameter IDs. The C-ABI paramID in set/getAUParameter is a SEPARATE raw
+    /// uint64_t; this enum is only used symbolically (never stored or cast as the ABI width), so it
+    /// takes the minimal underlying type. (Stage-2 suppression audit: the former uint64_t +
+    /// performance-enum-size NOLINT was unjustified — the enum is unused as a value.)
+    enum class AUParameterID : uint8_t
     {
         MasterGain = 0, // EQ master gain (dB)
         Bypass = 1,     // Bypass flag (0 = process, 1 = bypass)

@@ -44,9 +44,13 @@ typedef struct
     uint32_t sampleRate;      ///< Nominal sample rate (Hz)
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
     uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
-    // C-ABI fixed-size name buffer: a plain C array is required for Swift bridging
-    // and the C ABI (std::array is neither C-compatible nor bridgeable here).
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
+    // Fixed-size C name buffer for the Swift bridging header. All four suppressed rules are
+    // irreducible in THIS file, which must be valid ISO C11 (see the file header): the c-array
+    // rules can't use std::array (not valid C / not Swift-bridgeable), and every way to NAME the
+    // 256 bound trips a worse check under C11 — a macro fires macro-to-enum, and a plain enum
+    // fires performance-enum-size (which wants a uint16_t base type, a C23 feature). So the bound
+    // stays a literal and avoid-magic-numbers rides on the same already-required suppression.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers) PERMANENT reason="C11 ABI name buffer: std::array/named-bound unavailable in ISO C11 (see comment)"
     char name[256]; ///< Device name (UTF-8, null-terminated)
 } CDeviceInfo;
 

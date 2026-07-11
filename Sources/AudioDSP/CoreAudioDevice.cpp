@@ -1,4 +1,5 @@
 #include "CoreAudioDevice.h"
+#include "AsLog.h" // off-RT control-plane logging seam (AdaptiveSound::log::line)
 #include "AudioConstants.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <cstddef>
@@ -6,9 +7,8 @@
 namespace AdaptiveSound
 {
 
-    // control-plane logging only (init/shutdown/device-change); never on the RT audio
-    // thread; fprintf varargs acceptable here. RT TUs keep the check.
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
+    // control-plane logging only (init/shutdown/device-change); never on the RT audio thread.
+    // Diagnostics use AdaptiveSound::log::line (AsLog.h) — no vararg suppression needed.
 
     // MARK: - Helper Functions
 
@@ -57,7 +57,7 @@ namespace AdaptiveSound
 
         if (status != noErr || devicesDataSize == 0)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get device list size\n");
+            AdaptiveSound::log::line("[CoreAudioDevice] Failed to get device list size");
             return devices;
         }
 
@@ -73,7 +73,7 @@ namespace AdaptiveSound
 
         if (status != noErr)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get device IDs\n");
+            AdaptiveSound::log::line("[CoreAudioDevice] Failed to get device IDs");
             return devices;
         }
 
@@ -119,15 +119,15 @@ namespace AdaptiveSound
                 }
             }
 
-            fprintf(stderr,
-                    "[CoreAudioDevice] candidate id=%u '%s' outputStreams=%u -> %s\n",
-                    static_cast<unsigned int>(deviceID),
-                    candidateName.c_str(),
-                    static_cast<unsigned int>(outputStreams),
-                    included ? "included" : "EXCLUDED (no output stream)");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] candidate id={} '{}' outputStreams={} -> {}",
+                static_cast<unsigned int>(deviceID),
+                candidateName.c_str(),
+                static_cast<unsigned int>(outputStreams),
+                included ? "included" : "EXCLUDED (no output stream)");
         }
 
-        fprintf(stderr, "[CoreAudioDevice] Enumerated %zu output devices\n", devices.size());
+        AdaptiveSound::log::line("[CoreAudioDevice] Enumerated {} output devices", devices.size());
         return devices;
     }
 
@@ -156,7 +156,7 @@ namespace AdaptiveSound
 
         if (status != noErr)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get default output device\n");
+            AdaptiveSound::log::line("[CoreAudioDevice] Failed to get default output device");
             return kAudioObjectUnknown;
         }
 
@@ -199,7 +199,8 @@ namespace AdaptiveSound
 
         if (status != noErr)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get sample rate, using default 48 kHz\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] Failed to get sample rate, using default 48 kHz");
             return kDefaultSampleRate;
         }
 
@@ -220,8 +221,8 @@ namespace AdaptiveSound
 
         if (status != noErr)
         {
-            fprintf(stderr,
-                    "[CoreAudioDevice] Failed to get buffer size, using default 512 frames\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] Failed to get buffer size, using default 512 frames");
             return kDefaultMaxFrames;
         }
 
@@ -319,7 +320,8 @@ namespace AdaptiveSound
             AudioObjectGetPropertyDataSize(deviceID, &ratesAddr, 0, nullptr, &dataSize);
         if (status != noErr || dataSize == 0)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get available sample-rate ranges size\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] Failed to get available sample-rate ranges size");
             return rates;
         }
 
@@ -329,7 +331,8 @@ namespace AdaptiveSound
             AudioObjectGetPropertyData(deviceID, &ratesAddr, 0, nullptr, &dataSize, ranges.data());
         if (status != noErr)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get available sample-rate ranges\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] Failed to get available sample-rate ranges");
             return rates;
         }
 
@@ -358,7 +361,8 @@ namespace AdaptiveSound
         AudioObjectID stream = firstOutputStream(deviceID);
         if (stream == kAudioObjectUnknown)
         {
-            fprintf(stderr, "[CoreAudioDevice] No output stream; cannot read stream format\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] No output stream; cannot read stream format");
             return info;
         }
 
@@ -373,9 +377,8 @@ namespace AdaptiveSound
             AudioObjectGetPropertyData(stream, &formatAddr, 0, nullptr, &dataSize, &asbd);
         if (status != noErr)
         {
-            fprintf(stderr,
-                    "[CoreAudioDevice] Failed to get %s stream format\n",
-                    physical ? "physical" : "virtual");
+            AdaptiveSound::log::line("[CoreAudioDevice] Failed to get {} stream format",
+                                     physical ? "physical" : "virtual");
             return info;
         }
 
@@ -402,7 +405,8 @@ namespace AdaptiveSound
             deviceID, &transportAddr, 0, nullptr, &dataSize, &transportType);
         if (status != noErr)
         {
-            fprintf(stderr, "[CoreAudioDevice] Failed to get transport type for capability\n");
+            AdaptiveSound::log::line(
+                "[CoreAudioDevice] Failed to get transport type for capability");
             transportType = 0;
         }
         cap.transportType = transportType;
@@ -472,7 +476,5 @@ namespace AdaptiveSound
 
         return value;
     }
-
-    // NOLINTEND(cppcoreguidelines-pro-type-vararg)
 
 } // namespace AdaptiveSound
