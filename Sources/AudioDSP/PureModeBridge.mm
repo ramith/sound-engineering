@@ -54,12 +54,16 @@ namespace
     // PureModeSource; it owns the active + armed-next FileDecodeSources internally.
     struct PureModeSession
     {
-        std::unique_ptr<HALOutputEngine> engine;
+        // gapless declared BEFORE engine so the engine — which holds a raw, non-owning source_
+        // pointer into gapless — is destroyed FIRST (referrer before referent), making the
+        // teardown ordering structural rather than relying on every path calling stop() first
+        // (Stage-2 review OWN-3). Members destruct in reverse declaration order.
         std::unique_ptr<GaplessSource> gapless;
+        std::unique_ptr<HALOutputEngine> engine;
 
         PureModeSession()
-            : engine(std::make_unique<HALOutputEngine>()),
-              gapless(std::make_unique<GaplessSource>())
+            : gapless(std::make_unique<GaplessSource>()),
+              engine(std::make_unique<HALOutputEngine>())
         {
         }
     };

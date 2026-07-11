@@ -1,5 +1,4 @@
-#ifndef LIMITER_MODULE_H
-#define LIMITER_MODULE_H
+#pragma once
 
 // LimiterModule — True-peak lookahead limiter (Sprint 4, Milestone 3 = state of the art)
 //
@@ -83,34 +82,34 @@ namespace AdaptiveSound
 {
 
     // --- Polyphase ISP detector (replaces M1 4× linear interpolation) -----------
-    static constexpr uint32_t kIspOversampling = 8U; // 8× polyphase upsample
-    static constexpr uint32_t kIspNumTaps = 24U;     // taps per phase (windowed sinc)
-    static constexpr uint32_t kIspPrototypeN = kIspOversampling * kIspNumTaps; // 192
-    static constexpr double kIspKaiserBeta = 8.0;         // Kaiser β (≈ −98 dB stopband)
-    static constexpr double kIspProtoCutoffNorm = 0.0625; // 0.5/L: pass base band, reject images
-    static constexpr uint32_t kI0MaxTerms = 25U;          // I0 Bessel series term cap
-    static constexpr double kI0ConvergeEps = 1.0e-16;     // I0 series termination
+    inline constexpr uint32_t kIspOversampling = 8U; // 8× polyphase upsample
+    inline constexpr uint32_t kIspNumTaps = 24U;     // taps per phase (windowed sinc)
+    inline constexpr uint32_t kIspPrototypeN = kIspOversampling * kIspNumTaps; // 192
+    inline constexpr double kIspKaiserBeta = 8.0;         // Kaiser β (≈ −98 dB stopband)
+    inline constexpr double kIspProtoCutoffNorm = 0.0625; // 0.5/L: pass base band, reject images
+    inline constexpr uint32_t kI0MaxTerms = 25U;          // I0 Bessel series term cap
+    inline constexpr double kI0ConvergeEps = 1.0e-16;     // I0 series termination
 
     // Working-ceiling margin: polyphase worst-case under-read < 0.17 dB + 0.10 guard
     // → −0.27 dB = 10^(−0.27/20). (Was −0.5 dB / 0.94406 under M1 linear-interp.)
-    static constexpr double kIspSafetyMargin = 0.96939327;
+    inline constexpr double kIspSafetyMargin = 0.96939327;
 
     // --- Ballistics (dB domain, dual-stage release + LF hold) -------------------
-    static constexpr float kLimiterAttackMs = 0.5F;        // attack τ
-    static constexpr float kLimiterFastReleaseMs = 100.0F; // fast release τ
-    static constexpr float kLimiterSlowReleaseMs = 500.0F; // slow release τ (sustained)
-    static constexpr float kMillisToSeconds = 0.001F;
-    static constexpr double kLimiterDbScale = 20.0;   // 20·log10 (amplitude ↔ dB)
-    static constexpr double kLimiterDbBase = 10.0;    // base for dB → linear
-    static constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
-    static constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
+    inline constexpr float kLimiterAttackMs = 0.5F;        // attack τ
+    inline constexpr float kLimiterFastReleaseMs = 100.0F; // fast release τ
+    inline constexpr float kLimiterSlowReleaseMs = 500.0F; // slow release τ (sustained)
+    inline constexpr float kMillisToSeconds = 0.001F;
+    inline constexpr double kLimiterDbScale = 20.0;   // 20·log10 (amplitude ↔ dB)
+    inline constexpr double kLimiterDbBase = 10.0;    // base for dB → linear
+    inline constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
+    inline constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
 
     // Monotonic-deque capacity: window of look-ahead pair-peaks plus one transient slot
     // between push-back and front-evict. Sized to the MAX supported rate's look-ahead
     // (kMaxLimiterLookaheadFrames) so the fixed-capacity deque never overflows at any
     // sample rate; dequeCount_ is tracked explicitly, so a larger-than-needed capacity at
     // lower rates is harmless and does not change the window-max sequence (AC-2).
-    static constexpr uint32_t kPeakDequeCapacity = kMaxLimiterLookaheadFrames + 1U;
+    inline constexpr uint32_t kPeakDequeCapacity = kMaxLimiterLookaheadFrames + 1U;
 
     class LimiterModule
     {
@@ -520,4 +519,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif // LIMITER_MODULE_H

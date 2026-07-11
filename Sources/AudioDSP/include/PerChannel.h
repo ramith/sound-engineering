@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_PER_CHANNEL_H
-#define ADAPTIVE_SOUND_PER_CHANNEL_H
+#pragma once
 
 #include "AudioConstants.h"
 #include <array>
@@ -36,5 +35,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_PER_CHANNEL_H

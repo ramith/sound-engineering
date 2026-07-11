@@ -8,6 +8,7 @@
 // It declares only the CDeviceInfo struct and the C-ABI device functions.
 //
 
+#include "CApiNoexcept.h"
 #include <stdint.h>
 
 // Re-export the pure-C AU registration surface so the single Swift bridging header
@@ -72,32 +73,33 @@ extern "C"
 
     /// Create an opaque loudness-meter handle for the given sample rate.
     /// Returns NULL on allocation failure. Destroy with loudnessMeterDestroy().
-    void* loudnessMeterCreate(double sampleRate);
+    void* loudnessMeterCreate(double sampleRate) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy a handle from loudnessMeterCreate(). NULL-safe.
-    void loudnessMeterDestroy(void* meter);
+    void loudnessMeterDestroy(void* meter) AUDIODSP_C_NOEXCEPT;
 
     /// Feed non-interleaved stereo frames (audio-tap thread; no allocation/lock).
     /// Pass right == left for mono.
-    void
-    loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames);
+    void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames)
+        AUDIODSP_C_NOEXCEPT;
 
     /// Read the latest measured loudness (any thread; lock-free).
-    CLoudnessReadout loudnessMeterRead(void* meter);
+    CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT;
 
     /// Enumerate output devices and populate the caller-supplied array.
     ///
     /// @param outDevices  Caller-allocated array of CDeviceInfo; must fit maxCount entries.
     /// @param maxCount    Capacity of outDevices.
     /// @return            Number of entries written (0 on error or no devices found).
-    uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount);
+    uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices,
+                                     uint32_t maxCount) AUDIODSP_C_NOEXCEPT;
 
     /// Return the default output device ID, or 0 if none is available.
-    uint32_t getDefaultOutputDeviceID(void);
+    uint32_t getDefaultOutputDeviceID(void) AUDIODSP_C_NOEXCEPT;
 
     /// Verify that a device ID is valid and live; returns 1 on success, 0 on failure.
     /// Also used by selectOutputDeviceC to validate before queuing the change.
-    int selectOutputDeviceC(uint32_t deviceID);
+    int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

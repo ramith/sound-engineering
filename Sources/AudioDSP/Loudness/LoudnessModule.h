@@ -1,5 +1,4 @@
-#ifndef LOUDNESS_MODULE_H
-#define LOUDNESS_MODULE_H
+#pragma once
 
 // LoudnessModule — ITU-R BS.1770-5 gated loudness measurement + auto makeup gain.
 //
@@ -98,11 +97,11 @@ namespace AdaptiveSound
         void process(const LoudnessParams& params, const MultichannelView& block) noexcept;
 
         // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
-        [[nodiscard]] auto measuredLufsIntegrated() const noexcept -> float;
-        [[nodiscard]] auto measuredLufsShortTerm() const noexcept -> float;
-        [[nodiscard]] auto measuredLufsMomentary() const noexcept -> float;
-        [[nodiscard]] auto currentMakeupGainLinear() const noexcept -> float;
-        [[nodiscard]] auto droppedFrameCount() const noexcept -> uint64_t;
+        [[nodiscard]] float measuredLufsIntegrated() const noexcept;
+        [[nodiscard]] float measuredLufsShortTerm() const noexcept;
+        [[nodiscard]] float measuredLufsMomentary() const noexcept;
+        [[nodiscard]] float currentMakeupGainLinear() const noexcept;
+        [[nodiscard]] uint64_t droppedFrameCount() const noexcept;
 
       private:
         // Off-RT worker (runs on measurementThread_).
@@ -161,4 +160,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif // LOUDNESS_MODULE_H

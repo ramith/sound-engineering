@@ -149,10 +149,14 @@ bool Realizer::setPendingEqGains(const float* gainsDb, uint32_t count, double sa
 
     // Write the slot on the control thread. The cascade is NOT computed here; it is designed
     // off-main inside drain() (design §1.3 "EQ dirty -> computeBiquadCascade off-main, here").
-    const bool wasClean = !pendingEqGains_.dirty;
-    std::memcpy(pendingEqGains_.gainsDb.data(), gainsDb, sizeof(pendingEqGains_.gainsDb));
-    pendingEqGains_.sampleRate = static_cast<float>(sampleRate);
-    pendingEqGains_.dirty = true;
+    bool wasClean = false;
+    {
+        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
+        wasClean = !pendingEqGains_.dirty;
+        std::memcpy(pendingEqGains_.gainsDb.data(), gainsDb, sizeof(pendingEqGains_.gainsDb));
+        pendingEqGains_.sampleRate = static_cast<float>(sampleRate);
+        pendingEqGains_.dirty = true;
+    }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingEqGains count=%u sampleRate=%.1f -> %s", count, sampleRate,
@@ -176,9 +180,13 @@ void Realizer::setPendingIntensity(float value)
     // Clamp to [0,1] at the surface (design §1.5: publishIntensity clamps).
     const float clamped = std::clamp(value, 0.0F, 1.0F);
 
-    const bool wasClean = !pendingIntensity_.dirty;
-    pendingIntensity_.value = clamped;
-    pendingIntensity_.dirty = true;
+    bool wasClean = false;
+    {
+        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
+        wasClean = !pendingIntensity_.dirty;
+        pendingIntensity_.value = clamped;
+        pendingIntensity_.dirty = true;
+    }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingIntensity value=%.4f (clamped=%.4f) -> %s", value, clamped,
@@ -210,12 +218,16 @@ bool Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t prese
     const float clampedLevel = std::clamp(level, 0.0F, 1.0F);
     const uint32_t clampedPreset = std::clamp(preset, 0U, kMaxPreset);
 
-    const bool wasClean = !pendingCrossfeed_.dirty;
-    pendingCrossfeed_.enabled = enabled;
-    pendingCrossfeed_.level = clampedLevel;
-    pendingCrossfeed_.preset = clampedPreset;
-    pendingCrossfeed_.sampleRate = static_cast<float>(sampleRate);
-    pendingCrossfeed_.dirty = true;
+    bool wasClean = false;
+    {
+        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
+        wasClean = !pendingCrossfeed_.dirty;
+        pendingCrossfeed_.enabled = enabled;
+        pendingCrossfeed_.level = clampedLevel;
+        pendingCrossfeed_.preset = clampedPreset;
+        pendingCrossfeed_.sampleRate = static_cast<float>(sampleRate);
+        pendingCrossfeed_.dirty = true;
+    }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
     NSLog(@"[QW1] Realizer.setPendingCrossfeed enabled=%u level=%.4f preset=%u sampleRate=%.1f -> %s",
@@ -244,32 +256,41 @@ void Realizer::drain()
     // concurrent control-thread burst) flips dirty=true again and, because we cleared it,
     // looks "clean" to the next setPending* call -> that call posts a fresh drain. So no
     // intent is lost across the read/clear boundary.
-    bool eqDirty = pendingEqGains_.dirty;
+    // Read-and-clear under slotMutex_ (OWN-2): a control-thread setPending* may be writing a slot
+    // concurrently. Copy each dirty slot into a local, then RELEASE the lock before the expensive
+    // recompute/publish below — never hold the slot lock across computeBiquadCascade.
+    bool eqDirty = false;
     std::array<float, static_cast<size_t>(EQModuleCoefficients::kNumBands)> eqGains{};
     float eqSampleRate = 0.0F;
-    if (eqDirty)
-    {
-        eqGains = pendingEqGains_.gainsDb;
-        eqSampleRate = pendingEqGains_.sampleRate;
-        pendingEqGains_.dirty = false;
-    }
-
-    bool intensityDirty = pendingIntensity_.dirty;
+    bool intensityDirty = false;
     float intensityValue = 1.0F;
-    if (intensityDirty)
-    {
-        intensityValue = pendingIntensity_.value;
-        pendingIntensity_.dirty = false;
-    }
-
-    // Third per-intent read-and-clear block (QW1 §3). Same coalescing contract: a rewrite after
-    // this read flips dirty=true again and posts a fresh drain, so no crossfeed intent is lost.
-    bool crossfeedDirty = pendingCrossfeed_.dirty;
+    bool crossfeedDirty = false;
     PendingCrossfeed crossfeed{};
-    if (crossfeedDirty)
     {
-        crossfeed = pendingCrossfeed_;
-        pendingCrossfeed_.dirty = false;
+        const std::scoped_lock lock(slotMutex_);
+        eqDirty = pendingEqGains_.dirty;
+        if (eqDirty)
+        {
+            eqGains = pendingEqGains_.gainsDb;
+            eqSampleRate = pendingEqGains_.sampleRate;
+            pendingEqGains_.dirty = false;
+        }
+
+        intensityDirty = pendingIntensity_.dirty;
+        if (intensityDirty)
+        {
+            intensityValue = pendingIntensity_.value;
+            pendingIntensity_.dirty = false;
+        }
+
+        // Third per-intent read-and-clear block (QW1 §3). Same coalescing contract: a rewrite
+        // after this read flips dirty=true again and posts a fresh drain, so no intent is lost.
+        crossfeedDirty = pendingCrossfeed_.dirty;
+        if (crossfeedDirty)
+        {
+            crossfeed = pendingCrossfeed_;
+            pendingCrossfeed_.dirty = false;
+        }
     }
 
     if (!eqDirty && !intensityDirty && !crossfeedDirty)

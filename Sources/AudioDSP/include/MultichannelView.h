@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_MULTICHANNEL_VIEW_H
-#define ADAPTIVE_SOUND_MULTICHANNEL_VIEW_H
+#pragma once
 
 #include "AudioConstants.h"
 #include <array>
@@ -63,5 +62,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_MULTICHANNEL_VIEW_H

@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_CROSSFEED_MODULE_H
-#define ADAPTIVE_SOUND_CROSSFEED_MODULE_H
+#pragma once
 
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
@@ -102,5 +101,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_CROSSFEED_MODULE_H

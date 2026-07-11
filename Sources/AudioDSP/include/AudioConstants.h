@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_AUDIO_CONSTANTS_H
-#define ADAPTIVE_SOUND_AUDIO_CONSTANTS_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -41,5 +40,3 @@ namespace AdaptiveSound
     constexpr float kAudibleBandMaxHz = 20000.0F; // upper edge of the audible band (Hz)
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_AUDIO_CONSTANTS_H

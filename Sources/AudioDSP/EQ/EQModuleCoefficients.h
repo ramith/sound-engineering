@@ -1,5 +1,4 @@
-#ifndef EQ_MODULE_COEFFICIENTS_H
-#define EQ_MODULE_COEFFICIENTS_H
+#pragma once
 
 #include "../include/AudioConstants.h"
 #include "../include/TargetState.h"
@@ -19,7 +18,7 @@ namespace AdaptiveSound
     {
       private:
         // Helper: clamp value to range [min, max]
-        static constexpr float clamp(float value, float minVal, float maxVal) noexcept
+        [[nodiscard]] static constexpr float clamp(float value, float minVal, float maxVal) noexcept
         {
             if (value < minVal)
             {
@@ -34,7 +33,10 @@ namespace AdaptiveSound
 
       public:
         static constexpr int kNumBands = 31;
-        static constexpr int kMaxBiquads = 10;
+        // kMaxBiquads is the SINGLE source of truth in TargetState.h (AdaptiveSound::kMaxBiquads):
+        // EQParams::biquads is sized by it, so the fitter's unqualified `kMaxBiquads` below resolves
+        // to that same namespace constant. A former duplicate class-scope copy risked a silent RT
+        // overrun if the two diverged (Stage-2 review IDM-1).
 
         // Standard 31-band ISO 3-octave center frequencies (Hz)
         static constexpr std::array<float, kNumBands> kCenterFrequencies = {
@@ -47,8 +49,8 @@ namespace AdaptiveSound
         // @param gains: 31-element array of gain in dB (typically ±12 dB range)
         // @param sampleRate: sample rate in Hz
         // @returns: EQParams with computed biquads and numBiquads set
-        static EQParams computeBiquadCascade(const std::array<float, kNumBands>& gains,
-                                             float sampleRate) noexcept
+        [[nodiscard]] static EQParams
+        computeBiquadCascade(const std::array<float, kNumBands>& gains, float sampleRate) noexcept
         {
             EQParams result{};
 
@@ -138,14 +140,6 @@ namespace AdaptiveSound
         // [-12,-9,-12] (regressing the ratified S6 cut-run test) while only cleanly helping flat
         // plateaus. The correct fix is one biquad per band, or an ERB-weighted least-squares / L-M
         // cascade fit — scoped as a follow-up. The greedy extremum placement is retained meanwhile.
-        //
-        // Splitting at sign changes + tracking |gain| (not the raw maximum) is the S6 EQ-1 fix.
-        // The previous version grouped every contiguous active run and tracked only the maximum
-        // gain, which (a) collapsed a run of CUTS to its least-negative band — e.g. [-12,-9,-12]
-        // became a single -9 dB filter, under-applying the cut — and (b) dropped the cut in a
-        // boost+cut run entirely — e.g. [+6,-6] became a single +6 dB filter. A boost-only run is
-        // unaffected (its extremum-by-magnitude IS its maximum), so pure-boost cascades — including
-        // the golden-master +6 dB @ 1 kHz — are byte-identical to before.
         //
         // Returns number of biquads used (1 to kMaxBiquads).
         static int
@@ -332,5 +326,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // EQ_MODULE_COEFFICIENTS_H

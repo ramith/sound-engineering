@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_PARAMETER_RAMP_H
-#define ADAPTIVE_SOUND_PARAMETER_RAMP_H
+#pragma once
 
 #include <cmath>
 
@@ -28,7 +27,7 @@ namespace AdaptiveSound
     {
         float target = 0.0F;
         float current = 0.0F;
-        float alpha = 0.0F; // (1-α) pole coefficient; α = 1 - alpha
+        float alpha = 0.0F; // smoothing coefficient α = 1 - exp(-1/(τ·fs)); the pole is (1 - α)
 
         // Off-RT: compute coefficient for the given time constant and sample rate.
         auto initialize(float timeConstantSeconds, float sampleRate) noexcept -> void
@@ -54,5 +53,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_PARAMETER_RAMP_H

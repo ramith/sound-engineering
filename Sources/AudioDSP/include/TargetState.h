@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_TARGET_STATE_H
-#define ADAPTIVE_SOUND_TARGET_STATE_H
+#pragma once
 
 #include "AudioConstants.h"
 #include <array>
@@ -9,18 +8,22 @@
 namespace AdaptiveSound
 {
 
-    static constexpr int kMaxBiquads = 10;
+    inline constexpr int kMaxBiquads = 10;
 
     struct EQParams
     {
         struct BiquadCoeffs
         {
-            float b0, b1, b2, a1, a2;
+            float b0;
+            float b1;
+            float b2;
+            float a1;
+            float a2;
         };
         std::array<BiquadCoeffs, kMaxBiquads> biquads{};
         uint8_t numBiquads = 0;
         float masterGainLinear = 1.0F;
-        std::array<uint8_t, 3> _pad = {};
+        std::array<uint8_t, 3> pad_ = {};
     };
 
     struct ClarityParams
@@ -31,7 +34,7 @@ namespace AdaptiveSound
         float ratioRecip = kClarityDefaultRatioRecip;
         float kneeWidthLinear = kClarityDefaultKneeWidthLinear;
         uint8_t enabled = 1;
-        std::array<uint8_t, 3> _pad = {};
+        std::array<uint8_t, 3> pad_ = {};
     };
 
     struct LoudnessParams
@@ -39,7 +42,7 @@ namespace AdaptiveSound
         float makeupGainLinear = 1.0F;
         float lufsTarget = kDefaultLufsTarget;
         uint8_t enabled = 1;
-        std::array<uint8_t, 3> _pad = {};
+        std::array<uint8_t, 3> pad_ = {};
     };
 
     struct BRIRParams
@@ -49,7 +52,7 @@ namespace AdaptiveSound
         float elevationDeg = 0.F;
         float roomAmountLinear = 1.0F;
         uint8_t bassMonoGated = 1;
-        std::array<uint8_t, 3> _pad = {};
+        std::array<uint8_t, 3> pad_ = {};
     };
 
     // User-facing crossfeed strength presets (QW1 §5). The middle case is `Bauer` (NOT
@@ -82,7 +85,7 @@ namespace AdaptiveSound
         // --- Intent (set by the control layer / UI) ---
         uint8_t enabled = 0;              // 0 = bypass (bit-exact pass-through); 1 = active
         uint8_t preset = 0;               // CrossfeedPreset value (Relaxed=0 default)
-        std::array<uint8_t, 2> _pad = {}; // explicit pad → trivial, deterministic layout
+        std::array<uint8_t, 2> pad_ = {}; // explicit pad → trivial, deterministic layout
         // --- Derived (computed off-RT in the Realizer from {preset, level, fs}) ---
         float gDirect = 1.0F;    // direct-path gain = 1/(1+alpha)  (off: unity)
         float gCross = 0.0F;     // cross-path gain  = alpha/(1+alpha) (off: zero → no cross)
@@ -130,5 +133,3 @@ namespace AdaptiveSound
         "TargetState size changed — re-measure N and re-confirm the golden master (CF-1)");
 
 } // namespace AdaptiveSound
-
-#endif

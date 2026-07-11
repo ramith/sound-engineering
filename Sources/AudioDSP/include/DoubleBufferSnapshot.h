@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_DOUBLE_BUFFER_SNAPSHOT_H
-#define ADAPTIVE_SOUND_DOUBLE_BUFFER_SNAPSHOT_H
+#pragma once
 
 #include "AudioConstants.h"
 #include <array>
@@ -212,5 +211,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_DOUBLE_BUFFER_SNAPSHOT_H

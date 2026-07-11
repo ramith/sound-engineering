@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CApiNoexcept.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <cstdint>
 
@@ -14,7 +15,7 @@ namespace AdaptiveSound
     /// These correspond to AUAudioUnit parameter indexing.
     /// Base type is uint64_t to match the C-ABI paramID width in setAUParameter/
     /// getAUParameter (AudioUnitBridge.h); do not shrink it.
-    // NOLINTNEXTLINE(performance-enum-size) PERMANENT reason="enum intentionally packed to uint8_t (ABI/layout)"
+    // NOLINTNEXTLINE(performance-enum-size) PERMANENT reason="width fixed to uint64_t to match the C-ABI paramID in set/getAUParameter"
     enum class AUParameterID : uint64_t
     {
         MasterGain = 0, // EQ master gain (dB)
@@ -46,13 +47,15 @@ extern "C"
     ///
     /// **Ownership:** The caller (Swift/Obj-C) owns the lifetime; must pair with
     /// destroyAdaptiveAudioUnit() on shutdown.
-    void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames);
+    void* createAdaptiveAudioUnit(void* audioEngine,
+                                  uint32_t sampleRate,
+                                  uint32_t bufferFrames) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy and clean up an AUAudioUnit created by createAdaptiveAudioUnit().
     /// Releases render resources and frees internal state.
     ///
     /// @param auUnit Opaque pointer returned from createAdaptiveAudioUnit().
-    void destroyAdaptiveAudioUnit(void* auUnit);
+    void destroyAdaptiveAudioUnit(void* auUnit) AUDIODSP_C_NOEXCEPT;
 
     /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6).
     /// It does NOT reach the RT kernel: it ignores paramID/value and returns false. The real
@@ -64,7 +67,7 @@ extern "C"
     /// @param paramID     Ignored.
     /// @param value       Ignored.
     /// @return Always false (auUnit==NULL also returns false).
-    bool setAUParameter(void* auUnit, uint64_t paramID, float value);
+    bool setAUParameter(void* auUnit, uint64_t paramID, float value) AUDIODSP_C_NOEXCEPT;
 
     /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6). There is no
     /// readable AU parameter store; the live values live in the Realizer's canonical TargetState.
@@ -73,7 +76,7 @@ extern "C"
     /// @param auUnit      Opaque pointer to AUAudioUnit.
     /// @param paramID     Ignored.
     /// @return Always 0.0f.
-    float getAUParameter(void* auUnit, uint64_t paramID);
+    float getAUParameter(void* auUnit, uint64_t paramID) AUDIODSP_C_NOEXCEPT;
 
     /// Publish a new TargetState to the AU's render kernel.
     /// Called by the Realizer (off-RT) after computing new DSP parameters.
@@ -83,7 +86,7 @@ extern "C"
     /// @param auUnit    Opaque pointer to AUAudioUnit.
     /// @param state     Pointer to TargetState struct (will be memcpy'd to double-buffer).
     /// @return True on success.
-    bool publishTargetState(void* auUnit, const void* state);
+    bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT;
 
     // publishIntensity(...) is declared in AudioUnitRegistrationBridge.h (sibling of
     // publishEQBandGains, the other control-plane intent entry point) — declared once.

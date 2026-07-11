@@ -17,6 +17,7 @@
 // typedef) — likewise pure C and safe for every includer (Swift bridging included).
 //
 
+#include "CApiNoexcept.h"
 #include <AudioToolbox/AudioComponent.h>
 #include <CoreAudioTypes/CoreAudioBaseTypes.h>
 #include <stdbool.h>
@@ -30,22 +31,22 @@ extern "C"
     /// Register the AdaptiveSoundAU subclass with the AudioComponent registry so it can be
     /// instantiated in-process via AVAudioUnit.instantiate(with:options:). Idempotent and
     /// thread-safe (guarded by dispatch_once). Call during engine setup before instantiating.
-    void registerAdaptiveAudioUnitSubclass(void);
+    void registerAdaptiveAudioUnitSubclass(void) AUDIODSP_C_NOEXCEPT;
 
     /// The AudioComponentDescription the subclass is registered under. Stable for the process
     /// lifetime. Pass to AVAudioUnit.instantiate(with:options:).
-    AudioComponentDescription adaptiveAudioUnitComponentDescription(void);
+    AudioComponentDescription adaptiveAudioUnitComponentDescription(void) AUDIODSP_C_NOEXCEPT;
 
     /// Register the SpatialRendererAU subclass (the device-boundary N->M render stage, subtype
     /// 'aspz') with the AudioComponent registry so it can be instantiated in-process via
     /// AVAudioUnit.instantiate(with:options:). Idempotent and thread-safe (dispatch_once). Call
     /// during engine setup before instantiating. Separate registry entry from AdaptiveSoundAU.
-    void registerSpatialRendererAUSubclass(void);
+    void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT;
 
     /// The AudioComponentDescription the SpatialRendererAU subclass is registered under (subtype
     /// 'aspz', same manufacturer as AdaptiveSoundAU). Stable for the process lifetime. Pass to
     /// AVAudioUnit.instantiate(with:options:).
-    AudioComponentDescription spatialRendererComponentDescription(void);
+    AudioComponentDescription spatialRendererComponentDescription(void) AUDIODSP_C_NOEXCEPT;
 
     /// Override the SpatialRendererAU's N->M channel routing explicitly (off-RT control plane).
     /// Normally UNNECESSARY: allocateRenderResources derives N (input) and M (output) from the
@@ -55,7 +56,9 @@ extern "C"
     /// @param auHandle    Borrowed (passUnretained) AUAudioUnit*; no-op if null.
     /// @param inChannels  Source channel count N (clamped to the DSP ceiling by the kernel).
     /// @param outChannels Device channel count M (clamped to the DSP ceiling by the kernel).
-    void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels);
+    void configureSpatialChannels(void* auHandle,
+                                  uint32_t inChannels,
+                                  uint32_t outChannels) AUDIODSP_C_NOEXCEPT;
 
     /// Publish a full 31-band EQ gain vector (dB) to the live AdaptiveSoundAU (Sprint 5 M2).
     /// Off-RT control plane: computes the minimum-phase biquad cascade and atomically publishes
@@ -67,8 +70,10 @@ extern "C"
     /// @param count        Must be exactly 31 (the ISO band count); any other value is rejected.
     /// @param sampleRate   Coefficient design sample rate in Hz (must be > 0).
     /// @return true if validated and published; false on any validation failure.
-    bool
-    publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate);
+    bool publishEQBandGains(void* auUnit,
+                            const float* bandGainsDb,
+                            uint32_t count,
+                            double sampleRate) AUDIODSP_C_NOEXCEPT;
 
     /// Publish the source file's channel layout tag to the live AdaptiveSoundAU (Sprint 5b M2).
     /// Off-RT control plane: decodes `tag` into the per-channel BS.1770-5 loudness weights and
@@ -79,7 +84,7 @@ extern "C"
     /// @param auHandle Borrowed (passUnretained) AUAudioUnit*; no-op if null.
     /// @param tag      CoreAudio AudioChannelLayoutTag describing the source layout; unrecognised
     ///                 tags decode to a neutral fallback (all weights 1.0).
-    void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag);
+    void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) AUDIODSP_C_NOEXCEPT;
 
     /// Publish a new intensity value (the spatial/clarity coloration wet/dry mix) to the live
     /// AdaptiveSoundAU (S6 Tier-3 3a). This is the SINGLE intensity control surface (design
@@ -91,7 +96,7 @@ extern "C"
     ///
     /// @param auUnit    Borrowed (passUnretained) AUAudioUnit*; no-op if null.
     /// @param intensity Intensity in [0,1]; values outside the range are clamped.
-    void publishIntensity(void* auUnit, float intensity);
+    void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT;
 
     /// Publish a new crossfeed state (the wet-region headphone-soundstage stage) to the live
     /// AdaptiveSoundAU (QW1 §3). Off-RT control plane: sets the Realizer's pending-crossfeed slot
@@ -107,7 +112,8 @@ extern "C"
     /// @param level    Crossfeed level in [0,1]; values outside the range are clamped.
     /// @param preset   CrossfeedPreset value (0 = Relaxed, 1 = Bauer/"Default", 2 = Strong);
     ///                 out-of-range values are clamped to the nearest valid preset.
-    void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset);
+    void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset)
+        AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

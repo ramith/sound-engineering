@@ -10,6 +10,7 @@
 
 #include "PureModeFormat.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -160,8 +161,7 @@ namespace AdaptiveSound
             // risk a wrong-endian copy.
             for (uint32_t idx = 0U; idx < samples; ++idx)
             {
-                uint32_t bits = 0U;
-                std::memcpy(&bits, &src[idx], sizeof(bits));
+                const uint32_t bits = std::bit_cast<uint32_t>(src[idx]);
                 store32(out + (static_cast<size_t>(idx) * kBytesFloat32), bits, /*bigEndian=*/true);
             }
         }

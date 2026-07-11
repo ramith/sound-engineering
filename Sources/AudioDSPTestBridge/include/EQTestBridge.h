@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "CApiNoexcept.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -45,7 +46,9 @@ extern "C"
     // @param sampleRate   Sample rate in Hz (e.g. 48000.0).
     // @param outParams    Caller-allocated CEQParams to receive results.
     // ---------------------------------------------------------------------------
-    void computeEQCoefficientsC(const float* bandGainsDb, float sampleRate, CEQParams* outParams);
+    void computeEQCoefficientsC(const float* bandGainsDb,
+                                float sampleRate,
+                                CEQParams* outParams) AUDIODSP_C_NOEXCEPT;
 
     // ---------------------------------------------------------------------------
     // EQModule process bridge

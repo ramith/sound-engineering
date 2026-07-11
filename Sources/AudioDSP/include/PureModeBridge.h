@@ -18,18 +18,8 @@
 // (NULL-safe). All structs are plain-old-data; uint8_t stands in for bool to keep the ABI fixed.
 //
 
+#include "CApiNoexcept.h"
 #include <stdint.h>
-
-// A noexcept-specifier for the extern "C" bridge functions under C++ (a C++ exception must
-// never unwind across the C ABI into Swift — that is UB / std::terminate). Expands to nothing
-// for the C compiler Swift's bridging uses, where `noexcept` is not a keyword.
-#ifndef AUDIODSP_C_NOEXCEPT
-#ifdef __cplusplus
-#define AUDIODSP_C_NOEXCEPT noexcept
-#else
-#define AUDIODSP_C_NOEXCEPT
-#endif
-#endif
 
 // MARK: - Flat POD structs
 
