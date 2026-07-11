@@ -16,9 +16,9 @@ struct LibraryCategoryRoot: View {
         case .artists:
             ArtistsListView()
         case .genres:
-            LibraryPlaceholderView(title: "Genres", detail: "Genre browsing arrives in a later update.")
+            GenresListView()
         case .years:
-            LibraryPlaceholderView(title: "Years", detail: "Year browsing arrives in a later update.")
+            YearsListView()
         case .none:
             LibraryPlaceholderView(title: "Library", detail: "Choose a category from the sidebar.")
         }
@@ -37,10 +37,10 @@ struct LibraryRouteView: View {
             AlbumDetailView(albumID: id)
         case let .artist(id):
             ArtistDetailView(artistID: id)
-        case .genre:
-            LibraryPlaceholderView(title: "Genre", detail: "Genre detail arrives in a later update.")
+        case let .genre(id):
+            GenreDetailView(genreID: id)
         case let .year(year):
-            LibraryPlaceholderView(title: "\(year)", detail: "Year detail arrives in a later update.")
+            YearDetailView(year: year)
         }
     }
 }
