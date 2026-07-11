@@ -11,14 +11,21 @@ import SwiftUI
 /// `FacetListVisibility` predicate.
 struct ArtistsGridView: View {
     @Environment(LibraryBrowseModel.self) private var model
+    /// In-view filter (narrows the visible artists by name, in place — the Apple Filter field).
+    @State private var filter = ""
 
     private let side: CGFloat = 168
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: side, maximum: 200), spacing: 16)]
     }
 
+    /// 0-song artists hidden (FacetListVisibility), then narrowed by the filter (name substring).
     private var visibleArtists: [ArtistFacet] {
         model.artists.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
+    }
+
+    private var filteredArtists: [ArtistFacet] {
+        filter.isEmpty ? visibleArtists : visibleArtists.filter { FacetTextFilter.matches($0.name, query: filter) }
     }
 
     var body: some View {
@@ -32,10 +39,10 @@ struct ArtistsGridView: View {
             if visibleArtists.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                grid
+                gridWithFilter
             }
         case .loaded:
-            if visibleArtists.isEmpty { facetEmpty } else { grid }
+            if visibleArtists.isEmpty { facetEmpty } else { gridWithFilter }
         case .firstRun:
             LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
         case .empty:
@@ -55,10 +62,28 @@ struct ArtistsGridView: View {
         )
     }
 
+    /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
+    private var gridWithFilter: some View {
+        VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: "Filter Artists")
+            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
+            if filteredArtists.isEmpty {
+                ContentUnavailableView.search(text: filter)
+            } else {
+                grid
+            }
+        }
+    }
+
+    private var countLine: String {
+        let shown = filteredArtists.count
+        return "\(shown) artist\(shown == 1 ? "" : "s")"
+    }
+
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(visibleArtists) { artist in
+                ForEach(filteredArtists) { artist in
                     ArtistGridItem(artist: artist, side: side)
                 }
             }

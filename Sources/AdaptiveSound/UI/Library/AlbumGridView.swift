@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -9,6 +10,8 @@ import SwiftUI
 /// LibraryEmptyStateView.
 struct AlbumGridView: View {
     @Environment(LibraryBrowseModel.self) private var model
+    /// In-view filter (narrows the loaded albums by title OR artist, in place — Apple Filter field).
+    @State private var filter = ""
 
     private let side: CGFloat = 168
     /// Adaptive minimum ≥ the fixed cell width, else a column can resolve narrower than the
@@ -30,11 +33,11 @@ struct AlbumGridView: View {
             if model.albums.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                grid
+                gridWithFilter
             }
         case .loaded:
             // `.loaded` but empty means every album was removed — a genuine empty library.
-            if model.albums.isEmpty { LibraryEmptyStateView(kind: .emptyLibrary) } else { grid }
+            if model.albums.isEmpty { LibraryEmptyStateView(kind: .emptyLibrary) } else { gridWithFilter }
         case .firstRun:
             // A scan just kicked off from the first-run CTA flips this to a truthful "scanning"
             // until the albums land; otherwise it's the add-a-folder call to action.
@@ -48,10 +51,35 @@ struct AlbumGridView: View {
         }
     }
 
+    /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
+    private var gridWithFilter: some View {
+        VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: "Filter Albums")
+            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
+            if filteredAlbums.isEmpty {
+                ContentUnavailableView.search(text: filter)
+            } else {
+                grid
+            }
+        }
+    }
+
+    /// Albums narrowed by the filter — matches on title OR album-artist (in place, order preserved).
+    private var filteredAlbums: [AlbumFacet] {
+        filter.isEmpty
+            ? model.albums
+            : model.albums.filter { FacetTextFilter.matches([$0.title, $0.albumArtist], query: filter) }
+    }
+
+    private var countLine: String {
+        let shown = filteredAlbums.count
+        return "\(shown) album\(shown == 1 ? "" : "s")"
+    }
+
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(model.albums) { album in
+                ForEach(filteredAlbums) { album in
                     AlbumGridItem(album: album, side: side)
                 }
             }
