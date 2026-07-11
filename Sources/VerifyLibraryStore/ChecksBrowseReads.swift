@@ -5,7 +5,6 @@
 // Same VerifyAUGraph idiom (Bool return, one numbered PASS line each):
 //   BR2  albums/tracksDisplay(byArtist:) sets + order + resolved artist/album names.
 //   BR2b albums/tracksDisplay(inGenre:) sets via track_genres JOIN, no fan-out.
-//   BR2c years()/yearFacets()/albums(inYear:)/tracksDisplay(inYear:) sets + counts (TRACK-year).
 //   BR3  album(id:)/artist(id:)/genre(id:) equal the matching list entry; a nonexistent id → nil.
 //   BR3b artist reads never surface the id-0 unknown-artist sentinel.
 //   BR4  pagination window: adjacent pages no dup/gap; limit == nil == unbounded.
@@ -165,72 +164,6 @@ private func checkGenre(
     return true
 }
 
-// MARK: - BR2c — year facet + albums(inYear:)
-
-func checkBrowseYearFacet(number: Int, url: URL) async -> Bool {
-    do {
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        let expected = try await seedFixtureLibrary(store)
-        let years = try await store.years()
-        guard years == expected.yearsDescending else {
-            printFail(number, "BR2c: years() \(years) != expected \(expected.yearsDescending)"); return false
-        }
-        for year in years {
-            let albums = try await store.albums(inYear: year)
-            guard Set(albums.map(\.title)) == (expected.albumsByYear[year] ?? []) else {
-                printFail(number, "BR2c: albums(inYear: \(year)) set != expected"); return false
-            }
-            guard albums.allSatisfy({ $0.year == year }) else {
-                printFail(number, "BR2c: albums(inYear: \(year)) returned an off-year album"); return false
-            }
-        }
-        guard try await checkYearFacetsAndTracks(store, expected: expected, number: number) else {
-            return false
-        }
-        printPass(number, "BR2c: years() = distinct non-null track years descending \(years); "
-            + "albums(inYear:) that year's albums; yearFacets()/tracksDisplay(inYear:) counts + sets match")
-        return true
-    } catch {
-        printFail(number, "BR2c threw: \(error)"); return false
-    }
-}
-
-/// `yearFacets()` counts + `tracksDisplay(inYear:)` sets/order/no-fan-out, all TRACK-year
-/// (`tracks.year`). The list count (`YearFacet.trackCount`) must equal the detail length and
-/// the derived fixture count; the facet year order must equal `years()`; and the counts must
-/// sum to every non-null-year track.
-private func checkYearFacetsAndTracks(
-    _ store: LibraryStore, expected: FixtureExpectations, number: Int
-) async throws -> Bool {
-    let facets = try await store.yearFacets()
-    guard facets.map(\.year) == expected.yearsDescending else {
-        printFail(number, "BR2c: yearFacets() years \(facets.map(\.year)) != years() descending")
-        return false
-    }
-    for facet in facets {
-        let tracks = try await store.tracksDisplay(inYear: facet.year)
-        let albumIDs = tracks.compactMap { $0.albumID.map(Int.init) }
-        guard Set(tracks.map(\.title)) == (expected.tracksByYear[facet.year] ?? []),
-              tracks.count == Set(tracks.map(\.id)).count else {
-            printFail(number, "BR2c: tracksDisplay(inYear: \(facet.year)) set/fan-out wrong"); return false
-        }
-        guard albumIDs.count == tracks.count, isNonDecreasing(albumIDs),
-              tracks.allSatisfy({ $0.year == facet.year }) else {
-            printFail(number, "BR2c: tracksDisplay(inYear: \(facet.year)) order/off-year wrong"); return false
-        }
-        guard facet.trackCount == tracks.count,
-              facet.trackCount == (expected.yearTrackCounts[facet.year] ?? -1) else {
-            printFail(number, "BR2c: yearFacet(\(facet.year)) count \(facet.trackCount) != "
-                + "detail/fixture"); return false
-        }
-    }
-    let facetSum = facets.reduce(0) { $0 + $1.trackCount }
-    guard facetSum == expected.yearTrackCounts.values.reduce(0, +) else {
-        printFail(number, "BR2c: sum(yearFacet counts) \(facetSum) != non-null-year total"); return false
-    }
-    return true
-}
-
 // MARK: - BR3 — single-facet reads equal the list entry
 
 func checkBrowseSingleFacet(number: Int, url: URL) async -> Bool {
@@ -370,60 +303,43 @@ func checkBrowseArtistCount(number: Int, url: URL) async -> Bool {
     }
 }
 
-// MARK: - BR8 — null-year omission + 0-song genre (ad-hoc store, shared fixture untouched)
+// MARK: - BR8 — 0-song genre reachability (ad-hoc store, shared fixture untouched)
 
-func checkBrowseYearNullAndEmptyGenre(number: Int, url: URL) async -> Bool {
+func checkBrowseEmptyGenre(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
         let root = try await store.addRoot(URL(fileURLWithPath: "/AdHoc"))
         let gen = try await store.beginScanGeneration()
         let ids = try await store.upsert(
-            [makeScanned(path: "/AdHoc/dated.flac", name: "dated"),
-             makeScanned(path: "/AdHoc/yearless.flac", name: "yearless")],
+            [makeScanned(path: "/AdHoc/g1.flac", name: "g1"),
+             makeScanned(path: "/AdHoc/g2.flac", name: "g2")],
             folderID: root, generation: gen
         )
         guard ids.count == 2 else { printFail(number, "BR8: ad-hoc seed failed"); return false }
-        // Dated: year 2021, genre "Ghost" (orphaned below). Yearless: year nil, genre "Keep".
+        // g1 tagged genre "Ghost" (orphaned below); g2 tagged "Keep".
         try await store.applyMetadata(
-            TrackMetadata(title: "Dated", artistName: "AH", albumTitle: "AH Album",
-                          albumArtistName: "AH", year: 2021, trackNo: 1, genres: ["Ghost"]),
+            TrackMetadata(title: "G1", artistName: "AH", albumTitle: "AH Album",
+                          albumArtistName: "AH", year: nil, trackNo: 1, genres: ["Ghost"]),
             forTrack: ids[0]
         )
         try await store.applyMetadata(
-            TrackMetadata(title: "Yearless", artistName: "AH", albumTitle: "AH Album",
+            TrackMetadata(title: "G2", artistName: "AH", albumTitle: "AH Album",
                           albumArtistName: "AH", year: nil, trackNo: 2, genres: ["Keep"]),
             forTrack: ids[1]
         )
-        // Orphan "Ghost": re-tag Dated to drop it → a genre row with 0 tracks remains.
+        // Orphan "Ghost": re-tag g1 to drop it → a genre row with 0 tracks remains.
         try await store.applyMetadata(
-            TrackMetadata(title: "Dated", artistName: "AH", albumTitle: "AH Album",
-                          albumArtistName: "AH", year: 2021, trackNo: 1, genres: []),
+            TrackMetadata(title: "G1", artistName: "AH", albumTitle: "AH Album",
+                          albumArtistName: "AH", year: nil, trackNo: 1, genres: []),
             forTrack: ids[0]
         )
-        guard try await checkNullYearOmitted(store, number: number),
-              try await checkZeroSongGenre(store, number: number) else { return false }
-        printPass(number, "BR8: a null-year track is absent from years()/yearFacets()/tracksDisplay(inYear:)"
-            + " yet present in allTracksDisplay; a 0-song genre lists with count 0 + empty drill-down")
+        guard try await checkZeroSongGenre(store, number: number) else { return false }
+        printPass(number, "BR8: a genre orphaned by a retag lists with count 0 and an empty "
+            + "tracksDisplay(inGenre:) drill-down; a live genre still counts")
         return true
     } catch {
         printFail(number, "BR8 threw: \(error)"); return false
     }
-}
-
-/// The null-year track is omitted from every year read but present in the full list.
-private func checkNullYearOmitted(_ store: LibraryStore, number: Int) async throws -> Bool {
-    let years = try await store.years()
-    let facets = try await store.yearFacets()
-    guard years == [2021], facets.map(\.year) == [2021], facets.first?.trackCount == 1 else {
-        printFail(number, "BR8: null-year leaked into years()/yearFacets() (\(years))"); return false
-    }
-    guard try await store.tracksDisplay(inYear: 2021).map(\.title) == ["Dated"] else {
-        printFail(number, "BR8: tracksDisplay(inYear:2021) != [Dated]"); return false
-    }
-    guard try Set(await store.allTracksDisplay().map(\.title)) == ["Dated", "Yearless"] else {
-        printFail(number, "BR8: the yearless track is missing from allTracksDisplay"); return false
-    }
-    return true
 }
 
 /// The orphaned genre lists with count 0 and an empty drill-down; a live genre still counts.

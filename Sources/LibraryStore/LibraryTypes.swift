@@ -267,17 +267,21 @@ public struct AlbumFacet: Sendable, Identifiable, Equatable {
     }
 }
 
-/// An artist list entry: the artist row (id + resolved name) plus its TRACK-artist song
-/// count (`count(tracks.artist_id == id)`), matching `tracksDisplay(byArtist:).count`.
+/// An artist list entry: the artist row (id + resolved name), its TRACK-artist song count
+/// (`count(tracks.artist_id == id)`, matching `tracksDisplay(byArtist:).count`), and a
+/// REPRESENTATIVE album-cover key (a cover from one of the artist's tracks' albums — there is no
+/// artist-photo source, so the Artists grid tiles fall back to album art; `nil` → placeholder).
 public struct ArtistFacet: Sendable, Identifiable, Equatable {
     public let id: Int64
     public let name: String
     public let trackCount: Int
+    public let artworkKey: String?
 
-    public init(id: Int64, name: String, trackCount: Int) {
+    public init(id: Int64, name: String, trackCount: Int, artworkKey: String?) {
         self.id = id
         self.name = name
         self.trackCount = trackCount
+        self.artworkKey = artworkKey
     }
 }
 
@@ -290,23 +294,6 @@ public struct GenreFacet: Sendable, Identifiable, Equatable {
     public init(id: Int64, name: String, trackCount: Int) {
         self.id = id
         self.name = name
-        self.trackCount = trackCount
-    }
-}
-
-/// A year list entry: a distinct non-null TRACK year (`tracks.year`) plus its song count.
-/// Track-year based (matches `years()`/`tracksDisplay(inYear:)`), distinct from an album's
-/// `year`.
-public struct YearFacet: Sendable, Identifiable, Equatable {
-    public var id: Int {
-        year
-    }
-
-    public let year: Int
-    public let trackCount: Int
-
-    public init(year: Int, trackCount: Int) {
-        self.year = year
         self.trackCount = trackCount
     }
 }

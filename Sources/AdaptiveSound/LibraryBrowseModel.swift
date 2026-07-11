@@ -53,8 +53,6 @@ final class LibraryBrowseModel {
     var artistsState: LoadState = .idle
     var genres: [GenreFacet] = []
     var genresState: LoadState = .idle
-    var years: [YearFacet] = []
-    var yearsState: LoadState = .idle
 
     /// Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
     /// structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
@@ -151,10 +149,9 @@ final class LibraryBrowseModel {
     private var songsLoadEpoch = 0
     /// Same guard for the roots list (its reloads race adds/removes + libraryRevision).
     private var loadRootsEpoch = 0
-    /// Newest-wins tokens for the three facet-list loaders (mutated by `LibraryBrowseModel+Facets`).
+    /// Newest-wins tokens for the facet-list loaders (mutated by `LibraryBrowseModel+Facets`).
     var artistsLoadEpoch = 0
     var genresLoadEpoch = 0
-    var yearsLoadEpoch = 0
 
     init(audio: AudioViewModel) {
         self.audio = audio
@@ -356,11 +353,10 @@ final class LibraryBrowseModel {
         lastLoadedRevision = audio.libraryRevision
         await loadAlbums()
         await loadSongs()
-        // The three S9.6 facet lists refresh on the same revision bump (each epoch-guarded), else
-        // the Artists/Genres/Years roots + their counts go stale mid-scan (swiftui review #5).
+        // The facet lists refresh on the same revision bump (each epoch-guarded), else the
+        // Artists/Genres roots + their counts go stale mid-scan (swiftui review #5).
         await loadArtists()
         await loadGenres()
-        await loadYears()
         // Re-run the active filter after the reload (design §11 decision #4 / L2): a live scan may
         // have added tracks that match the current query, and the reload replaced `songs` while
         // leaving the stale `matchedIDs`. Re-querying surfaces the new matches; `matchedIDs`'s
