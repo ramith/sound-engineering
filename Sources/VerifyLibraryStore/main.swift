@@ -255,6 +255,8 @@ func browseReadsCheckCases() -> [CheckCase] {
         CheckCase(label: "br3b-sentinel-excluded", run: checkBrowseSentinelExcluded),
         CheckCase(label: "br4-pagination", run: checkBrowsePagination),
         CheckCase(label: "br5-explain-plan", run: checkBrowseQueryPlan),
+        CheckCase(label: "br7-artist-count", run: checkBrowseArtistCount),
+        CheckCase(label: "br8-year-null-empty-genre", run: checkBrowseYearNullAndEmptyGenre),
     ]
 }
 
