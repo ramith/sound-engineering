@@ -111,13 +111,13 @@ step "clang-tidy (.clang-tidy enforcement over AudioDSP + tests)"
 # shellcheck source=scripts/lib/cxx-analysis-flags.sh
 source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
 
-# The FFmpeg decode + metadata branch in FileDecodeSource.mm is behind
+# The FFmpeg decode + metadata branch in FileDecodeSource.cpp is behind
 # __has_include(<libavformat/avformat.h>); clang-tidy only PARSES (hence analyses) it when
 # the ffmpeg headers are installed. Warn loudly — but do NOT fail — locally when they are
 # absent; CI (with ffmpeg installed) is the guaranteed coverage for that branch.
 if [[ ! -f /opt/homebrew/include/libavformat/avformat.h ]]; then
   yellow "WARNING: libavformat headers not found under /opt/homebrew/include —"
-  yellow "         the FFmpeg decode + metadata branch in FileDecodeSource.mm will go"
+  yellow "         the FFmpeg decode + metadata branch in FileDecodeSource.cpp will go"
   yellow "         UNANALYZED locally. Only CI (with ffmpeg installed) covers that branch."
   yellow "         Install locally with:  brew install ffmpeg"
 fi

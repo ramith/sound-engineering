@@ -43,32 +43,33 @@ HARNESS="$REPO_ROOT/Tests/HandleLeakHarness.mm"
 source "$REPO_ROOT/scripts/lib/cxx-analysis-flags.sh"
 
 # Source list: build-null-test.sh's DSP kernels PLUS the two C-ABI bridges under test
-# (LoudnessMeterBridge.mm, PureModeBridge.mm — NOT in the null-test list) and PureModeBridge's
-# live-CoreAudio transitive deps (CoreAudioDevice.mm for queryCapability + HALOutputEngine.mm
+# (LoudnessMeterBridge.cpp, PureModeBridge.cpp — NOT in the null-test list) and PureModeBridge's
+# live-CoreAudio transitive deps (CoreAudioDevice.cpp for queryCapability + HALOutputEngine.mm
 # for the engine session). Kept as an array so the clean + planted compiles reuse it verbatim.
+# (Realizer.mm + HALOutputEngine.mm stay Obj-C++; the rest are pure C++ .cpp post-migration.)
 SOURCES=(
-    "$REPO_ROOT/Sources/AudioDSP/DSPKernel.mm"
-    "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.mm"
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.mm"
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.mm"
-    "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.mm"
-    "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.mm"
+    "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp"
-    "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.mm"
+    "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/GaplessSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/AudioEngine/Realizer.mm"
     # --- ADDED for the leak harness (NOT compiled by build-null-test.sh) ---
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.mm" # under test
-    "$REPO_ROOT/Sources/AudioDSP/PureModeBridge.mm"               # under test
-    "$REPO_ROOT/Sources/AudioDSP/CoreAudioDevice.mm"              # PureModeBridge dep: queryCapability
-    "$REPO_ROOT/Sources/AudioDSP/AudioEngine/HALOutputEngine.mm"  # PureModeBridge dep: engine session
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" # under test
+    "$REPO_ROOT/Sources/AudioDSP/PureModeBridge.cpp"               # under test
+    "$REPO_ROOT/Sources/AudioDSP/CoreAudioDevice.cpp"              # PureModeBridge dep: queryCapability
+    "$REPO_ROOT/Sources/AudioDSP/AudioEngine/HALOutputEngine.mm"   # PureModeBridge dep: engine session
 )
 
-# The frameworks build-null-test.sh links, plus CoreAudio: the added CoreAudioDevice.mm /
-# HALOutputEngine.mm / PureModeBridge.mm reach the CoreAudio HAL (AudioObject* property calls),
+# The frameworks build-null-test.sh links, plus CoreAudio: the added CoreAudioDevice.cpp /
+# HALOutputEngine.mm / PureModeBridge.cpp reach the CoreAudio HAL (AudioObject* property calls),
 # whose symbols live in CoreAudio.framework (build-null-test.sh never links it because it does
 # not compile those live-CoreAudio files). This matches Package.swift's AudioDSP link settings.
 FRAMEWORKS=(
