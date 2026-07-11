@@ -213,14 +213,16 @@ step "Null-test source-coverage drift guard"
 # ALLOWLIST — needs a live CoreAudio device / AU host — intentionally not in the standalone
 # null test. Derived empirically as (find-all) minus (build-null-test.sh compile list); keep
 # in sync when adding/removing a live-only glue file.
-# NOTE: PureModeBridge.mm + Loudness/LoudnessMeterBridge.mm are allowlisted here (they link
+# NOTE: PureModeBridge.cpp + Loudness/LoudnessMeterBridge.cpp are allowlisted here (they link
 # CoreAudio, so the null test can't build them) but ADDITIONALLY get runtime coverage from the
 # leak-detection harness (make leak-check, Tests/HandleLeakHarness.mm) — their C-ABI handle
 # lifecycles run under leaks(1) even though they stay out of the standalone null test.
+# (CoreAudioDevice/PureModeBridge/LoudnessMeterBridge became .cpp in the .mm→.cpp migration; they
+# remain live-only glue — CoreAudio-linked, no offline null-test coverage.)
 null_test_allowlist=(
-  Sources/AudioDSP/CoreAudioDevice.mm
-  Sources/AudioDSP/PureModeBridge.mm
-  Sources/AudioDSP/Loudness/LoudnessMeterBridge.mm
+  Sources/AudioDSP/CoreAudioDevice.cpp
+  Sources/AudioDSP/PureModeBridge.cpp
+  Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp
   Sources/AudioDSP/AudioEngine/AUAudioUnit.mm
   Sources/AudioDSP/AudioEngine/HALOutputEngine.mm
   Sources/AudioDSP/AudioEngine/SpatialRendererAU.mm
