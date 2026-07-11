@@ -105,6 +105,11 @@ extension AudioViewModel {
         reconcileDebounce[folderID] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(1000))
             guard !Task.isCancelled, let self else { return }
+            // Debounce fired — drop our own now-completed handle so the map doesn't accumulate
+            // finished Tasks (S3 LOW-b). We are the current entry (not cancelled), and this runs
+            // synchronously on the MainActor before runReconcile, so it can't wipe a newer schedule;
+            // a re-run schedules a fresh handle via runReconcile's pendingReconcile path.
+            self.reconcileDebounce[folderID] = nil
             await self.runReconcile(folderID: folderID, root: root)
         }
     }

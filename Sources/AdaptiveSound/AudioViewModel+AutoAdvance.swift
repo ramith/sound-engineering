@@ -48,17 +48,7 @@ extension AudioViewModel {
         let fileURL = advancedTrack.absoluteURL
         let pureModeSnap = pureModeEnabled
 
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let computedDuration: Double = {
-                guard let file = try? AVAudioFile(forReading: fileURL) else { return 0 }
-                let rate = file.processingFormat.sampleRate
-                return rate > 0 ? Double(file.length) / rate : 0
-            }()
-            await MainActor.run { [computedDuration] in
-                self?.duration = computedDuration
-                logUX("trackTransition: duration = \(secs(computedDuration))s")
-            }
-        }
+        refreshDuration(for: fileURL, logLabel: "trackTransition: duration")
 
         Task { [weak self] in
             guard let self else { return }

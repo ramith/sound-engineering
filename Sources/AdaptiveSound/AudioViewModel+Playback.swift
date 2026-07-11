@@ -33,7 +33,7 @@ extension AudioViewModel {
             + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'"
             + (resumeFrom.map { " resumeFrom=\(secs($0))s" } ?? ""))
 
-        computeDurationAsync(for: fileURL)
+        refreshDuration(for: fileURL)
 
         // Snapshot index and mode for use inside the Task (avoids capturing `self` for
         // values that could change between now and when the Task body runs).
@@ -61,8 +61,9 @@ extension AudioViewModel {
 
     /// Compute the current file's duration off-main from `AVAudioFile` (more reliable than the
     /// metadata scan's `durationSeconds` for M4A, which can read 0) and publish it on the main
-    /// actor. Fire-and-forget; behaviour is identical to the previously-inlined block.
-    private func computeDurationAsync(for fileURL: URL) {
+    /// actor. Fire-and-forget. Shared by `startPlayback` and the gapless auto-advance seam
+    /// (S3 LOW-a — was duplicated); `logLabel` distinguishes the call site in the UX log.
+    func refreshDuration(for fileURL: URL, logLabel: String = "duration") {
         Task.detached(priority: .userInitiated) { [weak self] in
             let computedDuration: Double = {
                 guard let file = try? AVAudioFile(forReading: fileURL) else { return 0 }
@@ -71,7 +72,7 @@ extension AudioViewModel {
             }()
             await MainActor.run { [computedDuration] in
                 self?.duration = computedDuration
-                logUX("duration = \(secs(computedDuration))s")
+                logUX("\(logLabel) = \(secs(computedDuration))s")
             }
         }
     }
