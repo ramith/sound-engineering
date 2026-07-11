@@ -115,7 +115,7 @@ namespace AdaptiveSound
         // a discontinuity on every EQ change. (Confirmed by audio-dsp-agent + cpp-pro; obsoletes
         // the #2 re-zero, which only existed because the section count — and thus the layout —
         // varied.) The template swaps the resource; delays_ are never touched by adopt().
-        VDSPBiquadSetup* adopted = setup_.adopt();
+        const VDSPBiquadSetup* adopted = setup_.adopt();
         if (adopted == nullptr || adopted->get() == nullptr)
         {
             return;

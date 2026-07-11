@@ -122,10 +122,12 @@ namespace AdaptiveSound
         // triple-buffer reader is wait-free (bounded, constant-step, retry-free) and always returns a
         // consistent snapshot — the newest generation, or the last good one when nothing new was
         // published; parameters are ramped so a one-block-stale value is inaudible.
-        if (targetStateSnapshot_.tryCopySnapshot(scratchState_))
-        {
-            currentState_ = scratchState_;
-        }
+        // tryCopySnapshot is wait-free and ALWAYS succeeds (newest generation, or the last-good
+        // snapshot when nothing new was published) — the bool is vestigial API-compat from the
+        // former seqlock, so the copy is unconditional. The [[nodiscard]] result is intentionally
+        // discarded.
+        (void)targetStateSnapshot_.tryCopySnapshot(scratchState_);
+        currentState_ = scratchState_;
         const TargetState& state = currentState_;
 
         // --- Steerable wet/dry intensity (S6 Tier-3 §3b) -----------------------------------
