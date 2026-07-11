@@ -157,7 +157,7 @@ extension AudioEngineBridge {
     /// SAFE by construction (see the leaf-lock note at the top of this file):
     ///   1. `body` may ONLY call the non-re-entrant Pure C-ABI reads
     ///      (`pureModeEnginePositionSeconds` / `pureModeEnginePollTrackAdvance` /
-    ///      `pureModeEnginePlaybackEnded` / `pureModeEngineSeek` / `pureModeEngineSetNextTrack` /
+    ///      `pureModeEnginePlaybackEnded` / `pureModeEngineSeek` / `pureModeEngineArmOpenedNextTrack` /
     ///      `pureModeEngineClearNextTrack`). Those touch only the C++ session; they never take
     ///      `stateLock` or hop a bridge queue, so no lock cycle forms. Do NOT call `logUX`/`NSLog`
     ///      or any `withStateLock` accessor inside `body`; log the returned result afterwards.

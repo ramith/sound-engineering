@@ -143,13 +143,28 @@ extern "C"
 
     // MARK: Pure-path gapless (Stage 2)
 
-    /// Pre-open `filePath` off-RT and arm it as the next track for a gapless seam at the current
-    /// track's true end-of-file. Same-rate only: the bridge runs sameRateGaplessCompatible() vs
-    /// the ACTIVE track first.
+    /// Open `filePath` into a decode source OFF any caller lock — this is the potentially slow /
+    /// network file open (S3 F3: it no longer runs under the engine's leaf lock). Returns an opaque
+    /// decoder handle to hand to pureModeEngineArmOpenedNextTrack, or NULL on open failure
+    /// (unreadable / unsupported / NULL path). If it is never armed, free it with
+    /// pureModeDestroyDecodeSource.
+    void* pureModeOpenDecodeSource(const char* filePath) AUDIODSP_C_NOEXCEPT;
+
+    /// Arm a PRE-OPENED decoder (from pureModeOpenDecodeSource) as the next track for a gapless seam
+    /// at the current track's true end-of-file. Same-rate only: runs sameRateGaplessCompatible() vs
+    /// the ACTIVE track first. TAKES OWNERSHIP of `decoder` on every outcome — it is either moved
+    /// into the engine (armed) or destroyed here — so the caller must NOT free it afterwards. Only
+    /// the fast compat check + pointer-swap arm run under the caller's lock (the open already ran
+    /// outside it). NULL-safe.
     /// @return 2 = armed (compatible, gapless seam ready);
     ///         1 = format/rate mismatch (caller should reconfigure for the next track itself);
-    ///         0 = error (unreadable/unsupported file, already armed, or NULL handle/path).
-    int pureModeEngineSetNextTrack(void* engine, const char* filePath) AUDIODSP_C_NOEXCEPT;
+    ///         0 = error (NULL handle/decoder, no active track, or already armed).
+    int pureModeEngineArmOpenedNextTrack(void* engine, void* decoder) AUDIODSP_C_NOEXCEPT;
+
+    /// Destroy a decoder from pureModeOpenDecodeSource that was NEVER handed to
+    /// pureModeEngineArmOpenedNextTrack (e.g. the engine was torn down before arming). Joins the
+    /// decode thread off-RT. Idempotent; NULL-safe. Do NOT call after a successful arm.
+    void pureModeDestroyDecodeSource(void* decoder) AUDIODSP_C_NOEXCEPT;
 
     /// Clear any armed next track (e.g. the user cleared the on-deck queue). Joins the dropped
     /// source off-RT. Idempotent; NULL-safe.

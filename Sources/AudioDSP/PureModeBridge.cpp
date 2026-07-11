@@ -45,7 +45,7 @@ namespace
     constexpr uint8_t kDecoderBackendApple = 0U;
     constexpr uint8_t kDecoderBackendFFmpeg = 1U;
 
-    // pureModeEngineSetNextTrack return codes (mirrored in PureModeBridge.h).
+    // Pure-gapless arm return codes (mirrored in PureModeBridge.h).
     constexpr int kNextTrackError = 0;            // unreadable/unsupported/already-armed/null
     constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch — caller reconfigures
     constexpr int kNextTrackArmed = 2;            // compatible — armed for a gapless seam
@@ -291,10 +291,32 @@ extern "C"
         return static_cast<double>(total) / rate;
     }
 
-    int pureModeEngineSetNextTrack(void* engine, const char* filePath) AUDIODSP_C_NOEXCEPT
+    void* pureModeOpenDecodeSource(const char* filePath) AUDIODSP_C_NOEXCEPT
     {
+        if (filePath == nullptr)
+        {
+            return nullptr;
+        }
+        // Open OFF any caller lock — this is the potentially network-slow step (S3 F3). A failure
+        // (unreadable / unsupported / > 8 channels) returns null; the unique_ptr dtor joins the
+        // just-spawned (idle) decode thread here, still off-lock.
+        auto next = std::make_unique<FileDecodeSource>();
+        if (!next->open(filePath))
+        {
+            return nullptr;
+        }
+        return next.release();
+    }
+
+    int pureModeEngineArmOpenedNextTrack(void* engine, void* decoder) AUDIODSP_C_NOEXCEPT
+    {
+        // Adopt ownership of the pre-opened decoder for the whole call: on EVERY outcome it is
+        // either moved into the gapless engine (armed) or destroyed when `next` leaves scope — so
+        // the caller never frees it after this returns. The slow file open already ran off-lock in
+        // pureModeOpenDecodeSource; only the fast compat check + pointer-swap arm run here.
+        std::unique_ptr<FileDecodeSource> next(static_cast<FileDecodeSource*>(decoder));
         auto* session = static_cast<PureModeSession*>(engine);
-        if (session == nullptr || filePath == nullptr)
+        if (session == nullptr || next == nullptr)
         {
             return kNextTrackError;
         }
@@ -303,29 +325,26 @@ extern "C"
         {
             return kNextTrackError; // nothing playing to arm behind
         }
-
-        // Pre-open the next source off-RT. A failure (unreadable / unsupported / > 8 channels)
-        // leaves nothing armed and the RT path untouched.
-        auto next = std::make_unique<FileDecodeSource>();
-        if (!next->open(filePath))
-        {
-            return kNextTrackError;
-        }
-
         // Same-rate-only gapless: a rate/channel/float/bit-depth mismatch can't be straddled at the
-        // seam. Drop the source and tell the caller to reconfigure for the next track itself.
+        // seam. `next` is dropped (dtor joins its decode thread); the caller reconfigures instead.
         if (!AdaptiveSound::sameRateGaplessCompatible(*active, *next))
         {
-            return kNextTrackNeedsReconfigure; // `next` dtor joins its decode thread off-RT
+            return kNextTrackNeedsReconfigure;
         }
-
-        // Arm it. A second arm (one already pending) is refused → treat as error so the caller
-        // does not assume a gapless seam is queued. `next` ownership transfers only on success.
+        // Arm it. A second arm (one already pending) is refused → treat as error so the caller does
+        // not assume a gapless seam is queued. Ownership transfers into the engine only on success.
         if (!session->gapless->armNext(std::move(next)))
         {
             return kNextTrackError;
         }
         return kNextTrackArmed;
+    }
+
+    void pureModeDestroyDecodeSource(void* decoder) AUDIODSP_C_NOEXCEPT
+    {
+        // NULL-safe: `delete nullptr` is a no-op. The dtor joins the decode thread off-RT. Only for
+        // a decoder that was opened but never armed (e.g. the engine was torn down before arming).
+        delete static_cast<FileDecodeSource*>(decoder);
     }
 
     void pureModeEngineClearNextTrack(void* engine) AUDIODSP_C_NOEXCEPT

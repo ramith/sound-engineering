@@ -55,30 +55,7 @@ extension AudioEngineBridge {
         // track still plays, but via a fresh start (the brief reconfigure gap) when the VM sees
         // playbackEnded with a track still queued. result 0 = error (unreadable/unsupported).
         if activePathKind == .pure {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                DispatchQueue.global().async {
-                    // Borrow the handle UNDER stateLock so a concurrent device-loss teardown
-                    // (configChangeQueue) cannot free it mid-arm (S6 UAF-1). The pre-open inside
-                    // pureModeEngineSetNextTrack runs under the leaf lock: bounded (once per track
-                    // arm), non-re-entrant, off MainActor — at worst one coinciding 20 Hz poll tick
-                    // waits for the open. Log AFTER the lock; nil ⇒ no longer Pure ⇒ nothing to arm.
-                    if let url = fileURL {
-                        let didAccess = url.startAccessingSecurityScopedResource()
-                        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-                        let result = self.withPureEngine { engine in
-                            url.path.withCString { pureModeEngineSetNextTrack(engine, $0) }
-                        }
-                        if let result {
-                            logUX("pure setNextTrack '\(url.lastPathComponent)' → "
-                                + (result == 2 ? "armed (gapless)"
-                                    : result == 1 ? "needs-reconfigure (gap on advance)" : "error"))
-                        }
-                    } else {
-                        _ = self.withPureEngine { pureModeEngineClearNextTrack($0) }
-                    }
-                    continuation.resume()
-                }
-            }
+            await setPureNextTrack(fileURL)
             return
         }
 
@@ -103,6 +80,46 @@ extension AudioEngineBridge {
                 }
                 continuation.resume()
             }
+        }
+    }
+
+    /// Pure-path on-deck arm (S3 F3): open the next source OFF the leaf lock, then arm the
+    /// pre-opened decoder UNDER `withPureEngine` (the fast compat-check + pointer-swap, so a
+    /// concurrent device-loss teardown can't free the engine mid-arm). Split out of setNextTrack so
+    /// each transport path stays within the cyclomatic budget. result: 2 armed / 1 reconfigure / 0 error.
+    private func setPureNextTrack(_ fileURL: URL?) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                guard let url = fileURL else {
+                    _ = self.withPureEngine { pureModeEngineClearNextTrack($0) }
+                    continuation.resume()
+                    return
+                }
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                // Open OFF the leaf lock (the network-slow step); arm UNDER it (fast).
+                guard let decoder = url.path.withCString({ pureModeOpenDecodeSource($0) }) else {
+                    logUX("pure setNextTrack '\(url.lastPathComponent)' → error (open failed)")
+                    continuation.resume()
+                    return
+                }
+                // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder off-lock.
+                if let result = self.withPureEngine({ pureModeEngineArmOpenedNextTrack($0, decoder) }) {
+                    logUX("pure setNextTrack '\(url.lastPathComponent)' → \(Self.pureArmLabel(result))")
+                } else {
+                    pureModeDestroyDecodeSource(decoder)
+                }
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Label for a `pureModeEngineArmOpenedNextTrack` result (2 armed / 1 reconfigure / 0 error).
+    private static func pureArmLabel(_ result: Int32) -> String {
+        switch result {
+        case 2: return "armed (gapless)"
+        case 1: return "needs-reconfigure (gap on advance)"
+        default: return "error"
         }
     }
 
