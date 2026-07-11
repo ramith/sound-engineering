@@ -138,7 +138,7 @@ extension AudioEngineBridge {
 
     /// Reset every stored field to its post-shutdown idle value and destroy the loudness meter.
     private func resetGraphStateAfterShutdown() {
-        dspAudioUnit = nil
+        setDspAudioUnit(nil)
         spatialAudioUnit = nil
         avEngine = nil
         playerNode = nil

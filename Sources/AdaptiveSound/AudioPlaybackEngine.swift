@@ -45,7 +45,7 @@ extension AudioPlaybackEngine {
     func publishIntensity(_: Float) {}
 
     /// Default: no-op. Conformers that host the DSP AU override this.
-    func publishCrossfeed(enabled _: Bool, strength _: CrossfeedStrength) async {}
+    func publishCrossfeed(enabled _: Bool, strength _: CrossfeedStrength) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -169,8 +169,9 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     func publishIntensity(_ intensity: Float)
 
     /// Publish a crossfeed state change to the live DSP AU (QW1 §3).
-    /// No-op if the AU is not yet instantiated. Default impl: no-op.
-    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) async
+    /// No-op if the AU is not yet instantiated. Default impl: no-op. Synchronous + off-RT: it
+    /// borrows the AU under the leaf lock and hands the state to the kernel (no suspension point).
+    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength)
 
     // MARK: Device Enumeration
 

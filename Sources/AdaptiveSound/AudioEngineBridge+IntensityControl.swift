@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Intensity control plane
@@ -18,11 +19,12 @@ extension AudioEngineBridge {
     /// the `publishIntensity` C-ABI (S6 §1.5). No-op when the AU is not yet instantiated.
     /// Must be called from a single control thread (the `@MainActor`).
     func publishIntensity(_ intensity: Float) {
-        guard let handle = dspAudioUnitHandle else {
+        // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
+        guard let unit = dspAudioUnitRef else {
             logUX("[QW1] bridge.publishIntensity SKIP — no DSP AU handle (intensity=\(intensity))")
             return
         }
         logUX("[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
-        CIntensityABI.publish(handle, intensity)
+        CIntensityABI.publish(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(), intensity)
     }
 }

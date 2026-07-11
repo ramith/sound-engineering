@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import os
 
@@ -190,5 +191,28 @@ extension AudioEngineBridge {
             activePath = .enhanced
             return session
         }
+    }
+
+    // MARK: - dspAudioUnit (cross-domain effects-AU reference)
+
+    // `dspAudioUnit` is declared on the main class body. It is WRITTEN on the arbitrary
+    // `AVAudioUnit.instantiate` completion queue (`+Graph`) and nil'd on `engineQueue` teardown
+    // (`+Lifecycle`), while the MainActor control-plane publishers (publishEQGains /
+    // publishIntensity / publishCrossfeed / publishChannelLayout) read it. Those accesses MUST go
+    // through the accessors below so the field is serialized on the leaf lock AND the reader holds a
+    // STRONG ref for the whole C-ABI publish — otherwise a teardown-nil that drops the last ref
+    // between the reader's load and its use is a use-after-free (S3 review finding F1). The
+    // engineQueue-local reads (tap install/remove, teardown detach) stay direct: they are the owning
+    // domain and are already ordered after the instantiate write and serialized with the nil.
+
+    /// Thread-safe write of the effects-AU reference (instantiate-completion + teardown).
+    func setDspAudioUnit(_ value: AVAudioUnit?) {
+        withStateLock { dspAudioUnit = value }
+    }
+
+    /// Thread-safe strong borrow of the effects AU (nil when not instantiated). The returned strong
+    /// ref keeps the AU alive across the caller's C-ABI publish even if teardown nils the field.
+    var dspAudioUnitRef: AVAudioUnit? {
+        withStateLock { dspAudioUnit }
     }
 }

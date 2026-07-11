@@ -25,7 +25,7 @@ extension AudioEngineBridge {
         AVAudioUnit.instantiate(with: effectsDescription, options: []) { [weak self] effectsUnit, error in
             guard let self else { completion(false); return }
             guard let effectsUnit, error == nil else { completion(false); return }
-            self.dspAudioUnit = effectsUnit
+            self.setDspAudioUnit(effectsUnit)
             engine.attach(effectsUnit)
 
             let spatialDescription = spatialRendererComponentDescription()

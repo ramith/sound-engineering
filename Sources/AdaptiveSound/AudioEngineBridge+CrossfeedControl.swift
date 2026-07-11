@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Crossfeed control plane
@@ -22,8 +23,9 @@ extension AudioEngineBridge {
     /// - Parameters:
     ///   - enabled: `true` activates the crossfeed stage; `false` passes audio through bit-exactly.
     ///   - strength: The `CrossfeedStrength` preset, which resolves to a (level, presetIndex) pair.
-    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) async {
-        guard let handle = dspAudioUnitHandle else {
+    func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) {
+        // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
+        guard let unit = dspAudioUnitRef else {
             logUX("[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle "
                 + "(enabled=\(enabled) strength=\(strength))")
             return
@@ -31,6 +33,7 @@ extension AudioEngineBridge {
         let enabledFlag: UInt32 = enabled ? 1 : 0
         logUX("[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
             + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
-        CCrossfeedABI.publish(handle, enabledFlag, strength.dspLevel, strength.presetIndex)
+        CCrossfeedABI.publish(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(),
+                              enabledFlag, strength.dspLevel, strength.presetIndex)
     }
 }
