@@ -11,8 +11,11 @@
 // Enforces a true-peak ceiling (default −1 dBTP) transparently. Quality-first
 // design (CPU/RAM assumed abundant — see docs/sprints/04-sprint-4-loudness-safety-plan.md):
 //
-//   1. Look-ahead delay (3 ms / 144 frames @ 48 kHz) via a per-channel ring,
-//      so the gain envelope reaches target before the transient arrives.
+//   1. Look-ahead delay — a fixed 3 ms (kLimiterLookaheadSeconds), converted to a
+//      frame count per sample rate in initialize() (144 @ 48 kHz) via a per-channel
+//      ring, so the gain envelope reaches target before the transient arrives at
+//      EVERY rate. A fixed frame count would shrink the look-ahead TIME as fs rises
+//      and let hi-res peaks slip the ceiling (Stage-1 review AC-2).
 //
 //   2. Inter-sample (true-peak) detection — **8× polyphase windowed-sinc FIR**
 //      (Kaiser β=8, 24 taps/phase), sidechain-only. For each new input sample
@@ -41,12 +44,13 @@
 //
 // Ring sizing
 // ===========
-// The look-ahead ring is sized ringSize_ = kLimiterLookaheadFrames + maxFrames_,
-// allocated in initialize() as a heap vector per channel (so it scales with the
-// host's maximumFramesToRender rather than being stuck at the compile-time
-// kDefaultMaxFrames=512). At maxFrames_=512 the geometry is identical to the
-// former compile-time kLimiterRingSize = lookahead + 512, preserving bit-exactness.
-// grBuf_ is likewise a heap vector sized to maxFrames_ in initialize().
+// The look-ahead ring is sized ringSize_ = lookaheadFrames_ + maxFrames_, where
+// lookaheadFrames_ = round(kLimiterLookaheadSeconds · fs) is computed in initialize()
+// (so the look-ahead TIME is constant across rates — AC-2). Allocated as a heap vector
+// per channel (so it scales with the host's maximumFramesToRender rather than being
+// stuck at the compile-time kDefaultMaxFrames=512). At maxFrames_=512 / 48 kHz the
+// geometry is identical to the former compile-time kLimiterRingSize = 144 + 512,
+// preserving bit-exactness. grBuf_ is likewise a heap vector sized to maxFrames_.
 //
 // Parameters (LimiterParams, published via DoubleBufferSnapshot)
 // =============================================================
@@ -101,9 +105,12 @@ namespace AdaptiveSound
     static constexpr double kLfHoldThresholdDb = 0.5; // GR depth that arms LF hold
     static constexpr float kLfHoldSeconds = 0.05F;    // hold span (≈ 2 periods @ 40 Hz)
 
-    // Monotonic-deque capacity: window of kLimiterLookaheadFrames pair-peaks plus one
-    // transient slot between push-back and front-evict.
-    static constexpr uint32_t kPeakDequeCapacity = kLimiterLookaheadFrames + 1U;
+    // Monotonic-deque capacity: window of look-ahead pair-peaks plus one transient slot
+    // between push-back and front-evict. Sized to the MAX supported rate's look-ahead
+    // (kMaxLimiterLookaheadFrames) so the fixed-capacity deque never overflows at any
+    // sample rate; dequeCount_ is tracked explicitly, so a larger-than-needed capacity at
+    // lower rates is harmless and does not change the window-max sequence (AC-2).
+    static constexpr uint32_t kPeakDequeCapacity = kMaxLimiterLookaheadFrames + 1U;
 
     class LimiterModule
     {
@@ -126,12 +133,22 @@ namespace AdaptiveSound
             sampleRate_ = sampleRate;
             maxFrames_ = maxFrames;
 
-            // Ring size: lookahead window + one full host buffer.
-            // At maxFrames_=512 this equals the former kLimiterRingSize (656),
-            // preserving GoldenMaster_StereoN2_v1 bit-exactness.
-            ringSize_ = kLimiterLookaheadFrames + maxFrames_;
-
             const float fs = static_cast<float>(sampleRate);
+
+            // Look-ahead is a fixed TIME (kLimiterLookaheadSeconds); derive the frame count
+            // from fs so the gain envelope always has enough attack time-constants to
+            // converge before the transient arrives — the −1 dBTP ceiling then holds at
+            // every rate, not just ≤48 kHz (Stage-1 review AC-2). At 48 kHz this is exactly
+            // 144 (== kLimiterLookaheadFrames), so GoldenMaster_StereoN2_v1 stays bit-exact.
+            // Clamped to the fixed-capacity deque's max-rate bound.
+            lookaheadFrames_ =
+                std::min<uint32_t>(static_cast<uint32_t>(std::lround(
+                                       static_cast<double>(kLimiterLookaheadSeconds) * fs)),
+                                   kMaxLimiterLookaheadFrames);
+
+            // Ring size: lookahead window + one full host buffer. At maxFrames_=512 / 48 kHz
+            // this equals the former kLimiterRingSize (656), preserving bit-exactness.
+            ringSize_ = lookaheadFrames_ + maxFrames_;
             attackCoeff_ = onePoleCoeff(kLimiterAttackMs, fs);
             releaseFastCoeff_ = onePoleCoeff(kLimiterFastReleaseMs, fs);
             releaseSlowCoeff_ = onePoleCoeff(kLimiterSlowReleaseMs, fs);
@@ -146,7 +163,7 @@ namespace AdaptiveSound
             }
 
             readHead_ = 0U;
-            writeHead_ = kLimiterLookaheadFrames;
+            writeHead_ = lookaheadFrames_;
 
             envFastDb_ = 0.0;
             envSlowDb_ = 0.0;
@@ -420,7 +437,7 @@ namespace AdaptiveSound
             ++dequeCount_;
 
             while (dequeCount_ > 0U &&
-                   peakDeque_[dequeHead_].index + kLimiterLookaheadFrames <= sampleCounter_)
+                   peakDeque_[dequeHead_].index + lookaheadFrames_ <= sampleCounter_)
             {
                 dequeHead_ = (dequeHead_ + 1U) % kPeakDequeCapacity;
                 --dequeCount_;
@@ -496,6 +513,9 @@ namespace AdaptiveSound
         uint32_t holdFrames_ = 0U;    // LF hold span (computed in initialize())
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
+        // Look-ahead frame count, derived from kLimiterLookaheadSeconds · fs in initialize()
+        // (AC-2). Defaults to the 48 kHz value; always ≤ kMaxLimiterLookaheadFrames.
+        uint32_t lookaheadFrames_ = kLimiterLookaheadFrames;
         uint32_t ringSize_ = kLimiterLookaheadFrames + kDefaultMaxFrames; // set in initialize()
     };
 

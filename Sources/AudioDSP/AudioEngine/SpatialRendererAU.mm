@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AudioConstants.h"
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
+#include "../include/FlushToZero.h"                 // shared FPCR.FZ helper (AR-1)
 #include "../include/MultichannelView.h"
 #include "../Spatial/SpatialRenderKernel.h"
 #include <cstddef>
@@ -29,21 +30,6 @@ namespace
     // device channel counts, which is exactly how the spike showed width is negotiated.
     constexpr NSInteger kAnyChannelCount = -1;
 
-    // FPCR flush-to-zero (FZ) bit on AArch64 (FPCR.FZ, bit 24 — ARM DDI 0487 §A1.4.3).
-    constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U;
-
-    // Enable flush-to-zero on the calling thread (must be called at render-block entry).
-    // FPCR is a per-thread register; this sets it on the render thread independently of
-    // the control-thread call in SpatialRenderKernel::initialize(). Mirrors AUAudioUnit.mm.
-    inline void setRenderThreadFTZ() noexcept
-    {
-#ifdef __aarch64__
-        uint64_t fpcr = 0U;
-        __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-        fpcr |= kFpcrFlushToZeroBit;
-        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
-    }
 } // namespace
 
 // Non-interleaved float32 scratch buffer for the pulled input. Owns its storage via std::vector
@@ -198,7 +184,7 @@ namespace
         (void)events; // MIDI not used by this AU
 
         // Set FPCR.FZ on this render thread so subnormals are flushed to zero (~1 cycle on M1).
-        setRenderThreadFTZ();
+        enableFlushToZero();
 
         // No upstream to pull, or scratch not yet allocated — nothing valid to render.
         if (pull == nullptr) { return kAudioUnitErr_NoConnection; }

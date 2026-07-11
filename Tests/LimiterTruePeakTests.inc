@@ -506,7 +506,12 @@ static auto testLimiterIspDetectorAccuracy() -> void
             // Compare output[n] to input[n - lookahead] in the settled region; the gain must
             // be ≈ 1.0 (no reduction) since the signal never approaches the ceiling.
             const size_t frames = sig.size() / kOracleStereo;
-            const uint32_t look = AdaptiveSound::kLimiterLookaheadFrames;
+            // Look-ahead is now a fixed TIME converted per sample rate (AC-2): the limiter
+            // delays by round(kLimiterLookaheadSeconds · fs), which is 144 @ 48 kHz but 132
+            // @ 44.1 kHz. Align the transparency comparison to that actual delay, not the
+            // fixed 48 kHz frame count (which would misalign the sine at 44.1 kHz).
+            const uint32_t look = static_cast<uint32_t>(
+                std::lround(static_cast<double>(AdaptiveSound::kLimiterLookaheadSeconds) * fs));
             double maxReductionDb = 0.0;
             for (size_t n = kTpWarmupFrames; n < frames; ++n)
             {

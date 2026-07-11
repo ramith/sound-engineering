@@ -1,4 +1,5 @@
 #include "include/DSPKernel.h"
+#include "include/FlushToZero.h"
 #include "include/MultichannelView.h"
 #include "EQ/EQModule.h"
 #include "Clarity/ClarityModule.h"
@@ -35,31 +36,8 @@ DSPKernel::DSPKernel() = default;
 
 DSPKernel::~DSPKernel() = default;
 
-// Enable flush-to-zero on the calling thread.
-//
-// On AArch64 (Apple Silicon) there is a single FPCR.FZ flag (bit 24) that flushes
-// both input and output subnormals to zero — equivalent to the combined x86
-// FTZ + DAZ pair. The x86 MXCSR.DAZ (denormals-are-zero for inputs) has no
-// separate counterpart in AArch64; FPCR.FZ covers both directions.
-//
-// This must be called on EVERY thread that runs DSP code (the render thread and any
-// Audio-Workgroup worker threads), because FPCR is a per-thread register. The kernel
-// initialize() call covers the control/init thread; the AU render block sets it on
-// the render thread at entry (see AUAudioUnit.mm).
-//
-// Reference: ARM DDI 0487, §A1.4.3 (FPCR); Apple Silicon LLVM inline-asm guide.
-static constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U; // FPCR.FZ
-static void enableFlushToZero() noexcept
-{
-#ifdef __aarch64__
-    uint64_t fpcr = 0;
-    __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
-    fpcr |= kFpcrFlushToZeroBit; // flush subnormal inputs and outputs to zero
-    __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
-#endif
-    // On x86_64 (CI / simulator) Accelerate/vDSP already sets FTZ/DAZ internally;
-    // we leave MXCSR alone rather than depend on <xmmintrin.h> / _MM_SET_FLUSH_ZERO_MODE.
-}
+// Flush-to-zero (FPCR.FZ) lives in include/FlushToZero.h — one definition shared by every
+// DSP thread (control/init here, the AU + spatial render threads, the loudness worker).
 
 void DSPKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept {
     sampleRate_ = sampleRate;
@@ -192,14 +170,10 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
         // Snap to exactly 1.0 (see the x==0 branch): keeps the in-place chain bit-exact and the
         // ramp genuinely settled despite the float32 one-pole asymptote.
         intensityRamp_.current = 1.0F;
-        eqModule_->process(state.eq, block);
-        clarityModule_->process(state.clarity, block);
-        brirModule_->process(state.brir, block);
-        // Crossfeed sits in the wet region after BRIR (QW1 §2). Default-off → bit-exact
-        // pass-through (the module early-returns on enabled==0), so the golden master holds.
-        crossfeedModule_->process(state.crossfeed, block);
-        loudnessModule_->process(state.loudness, block);
-        limiterModule_->process(state.limiter, block);
+        // Full chain in place, byte-identical to the legacy path (golden master). Crossfeed
+        // (in the coloration chain, after BRIR) is default-off → bit-exact pass-through.
+        runColorationChain(state, block);
+        runSafetyChain(state, block);
         return;
     }
 
@@ -219,12 +193,8 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
 
     // (b) Run the coloration chain in place → the block now holds the "wet" signal. Crossfeed is
     //     part of the wet region (after BRIR), so the equal-power blend below scales it by the
-    //     Reimagine intensity — at 0% (bypass) crossfeed is off too (QW1 §2). Default-off keeps
-    //     this byte-identical to the pre-QW1 chain.
-    eqModule_->process(state.eq, block);
-    clarityModule_->process(state.clarity, block);
-    brirModule_->process(state.brir, block);
-    crossfeedModule_->process(state.crossfeed, block);
+    //     Reimagine intensity — at 0% (bypass) crossfeed is off too (QW1 §2).
+    runColorationChain(state, block);
 
     // (c) Equal-power crossfade BEFORE Loudness+Limiter. The intensity ramp is advanced
     //     PER SAMPLE (one tick per frame) into a smoothed value r[i]; the gains are derived
@@ -232,6 +202,13 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
     //     per-block constant) is chosen for click-free correctness — a per-block gain would
     //     step at block boundaries during a sweep, and resources are abundant (founder:
     //     quality first). One ramp drives all channels (intensity is channel-independent).
+    //
+    //     LAW CHOICE (Stage-1 AC-5): equal-POWER (sin/cos) is the correct law for
+    //     UNCORRELATED signals; a dry/wet pair is correlated for lightly-processed material,
+    //     where equal-power adds up to +3 dB at the r=0.5 midpoint. That is intentional and
+    //     acceptable here: the wet chain (BRIR spatialization + crossfeed) decorrelates toward
+    //     the equal-power regime, and the downstream Loudness stage normalizes to the LUFS
+    //     target, absorbing any residual midpoint bump before output.
     const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
     for (uint32_t i = 0U; i < safeCount; ++i) {
         const float ramped = intensityRamp_.tick();
@@ -253,6 +230,26 @@ void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexce
     // (d) Loudness then Limiter on the BLENDED signal: loudness makeup converges on the
     //     actual output, and the true-peak limiter guards the final blended output so the
     //     −1 dBTP ceiling always holds at intermediate intensities.
+    runSafetyChain(state, block);
+}
+
+// Wet-region coloration chain, in place: EQ → Clarity → BRIR → Crossfeed. Crossfeed sits in
+// the wet region after BRIR (QW1 §2); default-off → bit-exact pass-through (the module
+// early-returns on enabled==0). Shared by the settled-at-1 and mid-ramp branches so the chain
+// order lives in ONE place (Stage-1 review AR-4).
+void DSPKernel::runColorationChain(const TargetState& state,
+                                   const MultichannelView& block) noexcept {
+    eqModule_->process(state.eq, block);
+    clarityModule_->process(state.clarity, block);
+    brirModule_->process(state.brir, block);
+    crossfeedModule_->process(state.crossfeed, block);
+}
+
+// Safety chain, in place: Loudness normalization → true-peak Limiter. Always applied whenever
+// the kernel is not fully bypassed, so the limiter guards the final output and loudness
+// measures what the listener hears.
+void DSPKernel::runSafetyChain(const TargetState& state,
+                               const MultichannelView& block) noexcept {
     loudnessModule_->process(state.loudness, block);
     limiterModule_->process(state.limiter, block);
 }
