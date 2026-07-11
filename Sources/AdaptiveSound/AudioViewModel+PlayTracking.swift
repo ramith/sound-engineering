@@ -32,8 +32,11 @@ extension AudioViewModel {
     ///
     /// Errors (including "store not ready yet" and a write failure) are swallowed via
     /// `logUX`, never thrown — a play-count write must never stall or fail the audio path.
+    ///
+    /// S3 F5: this is the ONE audio→library edge — it reaches the store through the injected
+    /// `library` peer (`library?.store`) rather than owning the store itself.
     private func countPlayCompletion(url: URL) {
-        guard let store else {
+        guard let store = library?.store else {
             logUX("countPlayCompletion: store not ready; skipping play-count for \(url.lastPathComponent)")
             return
         }

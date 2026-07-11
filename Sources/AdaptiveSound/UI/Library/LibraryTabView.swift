@@ -18,7 +18,7 @@ import SwiftUI
 /// (same window-owning failure mode).
 struct LibraryTabView: View {
     @Environment(LibraryBrowseModel.self) private var model
-    @Environment(AudioViewModel.self) private var audio
+    @Environment(LibraryModel.self) private var library
 
     var body: some View {
         HStack(spacing: 0) {
@@ -39,7 +39,7 @@ struct LibraryTabView: View {
         // Live-fill the grid as a scan / metadata pass / reconcile completes while the tab is
         // open. Coalesced to `libraryRevision` (bumped when metadata builds the album rows) — not
         // per metadata tick, and not the earlier `lastScanResult` (design §7; review B1).
-        .onChange(of: audio.libraryRevision) { _, _ in
+        .onChange(of: library.libraryRevision) { _, _ in
             Task { await model.reloadIfScanChanged() }
         }
     }

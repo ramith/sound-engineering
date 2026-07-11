@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import LibraryScan
 
-// MARK: - AudioViewModel volume monitor (S8.4 slice 5b — eject/remount handling)
+// MARK: - LibraryModel volume monitor (S8.4 slice 5b — was AudioViewModel+VolumeMonitor)
 
 //
 // FSEvents pauses when a watched external/NAS volume unmounts and does not reliably announce a
@@ -13,9 +13,9 @@ import LibraryScan
 // the reconcile precheck. The data-loss SAFETY does not depend on any of this — it is the
 // empty-walk backstop (slice 3); this layer is responsiveness + identity hygiene.
 
-extension AudioViewModel {
+extension LibraryModel {
     /// Subscribe to NSWorkspace mount/unmount. Called once from `makeLibraryStore`; tokens are
-    /// removed in `shutdown()`. The block is non-isolated `@Sendable` (AudioViewModel is a
+    /// removed in `shutdown()`. The block is non-isolated `@Sendable` (LibraryModel is a
     /// @MainActor class, hence Sendable) and hops to @MainActor before touching any state.
     func startVolumeMonitor() {
         guard volumeMonitorTokens.isEmpty else { return }

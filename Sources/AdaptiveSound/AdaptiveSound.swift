@@ -8,6 +8,7 @@ struct AdaptiveSound: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var audioViewModel: AudioViewModel
     @State private var eqViewModel: EQViewModel
+    @State private var library: LibraryModel
     @State private var libraryModel: LibraryBrowseModel
 
     init() {
@@ -15,13 +16,25 @@ struct AdaptiveSound: App {
         // building any @State or touching the audio engine (no two engines fighting one device).
         guard SingleInstanceGuard.acquire() else { exit(0) }
 
-        // Build the single AudioViewModel once and share it with EQViewModel + LibraryBrowseModel.
+        // Build the model peers once and wire the two edges between the audio VM and the library
+        // subsystem (S3 F5 — the God-object split). `library` owns the store + scan/reconcile;
+        // `audio` owns playback/engine. They are peers, NOT nested.
         let audio = AudioViewModel()
+        let lib = LibraryModel()
+        // Edge 1 (audio → library): the play-count write-back reaches the store through this
+        // non-owning reference (see `AudioViewModel.countPlayCompletion`).
+        audio.library = lib
+        // Edge 2 (library → shell, via the composition root): surface library failures in the same
+        // shell error banner the audio VM uses, WITHOUT giving LibraryModel a back-reference to the
+        // audio VM (it stays testable in isolation). Mirrors the `onEngineReady` hook pattern.
+        lib.onError = { [weak audio] message in audio?.errorMessage = message }
         _audioViewModel = State(initialValue: audio)
+        _library = State(initialValue: lib)
         _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio))
         // S9.4: the browse model is owned HERE (above the tab switch) and injected, so Library
-        // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed).
-        _libraryModel = State(initialValue: LibraryBrowseModel(audio: audio))
+        // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed). It
+        // composes BOTH peers — library reads + audio play verbs.
+        _libraryModel = State(initialValue: LibraryBrowseModel(audio: audio, library: lib))
     }
 
     var body: some Scene {
@@ -29,14 +42,17 @@ struct AdaptiveSound: App {
             ContentView()
                 .environment(audioViewModel)
                 .environment(eqViewModel)
+                .environment(library)
                 .environment(libraryModel)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
                     // was the fire-and-forget shutdown that couldn't complete at quit). Wire the
-                    // terminate-time teardown owner and start the engine here (single-window app,
-                    // so this runs once); teardown runs in `AppDelegate.applicationShouldTerminate`.
+                    // terminate-time teardown owners (both peers — the library tears down BEFORE
+                    // the engine, see AppDelegate) and start the engine here (single-window app, so
+                    // this runs once); teardown runs in `AppDelegate.applicationShouldTerminate`.
                     appDelegate.audioViewModel = audioViewModel
+                    appDelegate.libraryModel = library
                     audioViewModel.initializeEngine()
                 }
         }

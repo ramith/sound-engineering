@@ -2,7 +2,7 @@ import Foundation
 import LibraryScan
 import LibraryStore
 
-// MARK: - AudioViewModel library-scan seam (S8.2b — ADDITIVE)
+// MARK: - LibraryModel library-scan seam (S8.2b — was AudioViewModel+LibraryScan)
 
 //
 // The store-population path for adding a music folder. Adding a folder SCANS it into the
@@ -17,11 +17,10 @@ import LibraryStore
 // (`shutdown()`) cancels it, making `LibraryScanner`'s per-file `checkCancellation()`
 // throw and SKIP its sweep (no wrongful delete).
 
-extension AudioViewModel {
+extension LibraryModel {
     /// Construct the persistent store off-main at init (design §7). Failure is
-    /// non-fatal: `store` stays nil, the in-memory playlist path is untouched, and a
-    /// note is surfaced. Called from `init`'s Task so the async initializer never
-    /// blocks the main actor.
+    /// non-fatal: `store` stays nil, the audio path is untouched, and a note is surfaced.
+    /// Called from `init`'s Task so the async initializer never blocks the main actor.
     func makeLibraryStore() async {
         do {
             let url = try LibraryStore.defaultStoreURL()
@@ -49,7 +48,7 @@ extension AudioViewModel {
 
     /// Scan `url` INTO the persistent library store (the browse UI's source of truth). Cancels
     /// any prior scan, then off-main: reject nested/overlapping roots (surfaced via
-    /// `errorMessage`), `addRoot`, then walk + reconcile with a progress closure that hops to
+    /// `onError`), `addRoot`, then walk + reconcile with a progress closure that hops to
     /// `@MainActor` to publish state.
     ///
     /// Never touches the play queue (S9 IA change) — adding a folder only scans.
@@ -75,7 +74,7 @@ extension AudioViewModel {
     /// reference, so a queued or currently-playing track from this folder keeps playing. Cancels
     /// any pending/queued reconcile for the root BEFORE the delete so a late reconcile can't
     /// re-insert its rows (design §5 / AC-14), then re-points the FSEvents watcher and bumps
-    /// `libraryRevision`. ADDITIVE: never touches `playlist`/`selectedTrackIndex`/`pendingNextIndex`/engine.
+    /// `libraryRevision`. ADDITIVE: never touches the play queue/engine (those live on the audio VM).
     func removeLibraryFolder(id folderID: Int64) async {
         guard let store else { return }
         // Cancel an in-flight ADD scan of THIS folder before deleting its row: otherwise the
@@ -99,7 +98,7 @@ extension AudioViewModel {
             libraryRevision &+= 1 // browse reloads and drops the folder's albums/songs
             logUX("removeLibraryFolder: removed root \(folderID)")
         } catch {
-            errorMessage = "Couldn't remove folder: \(error.localizedDescription)"
+            onError?("Couldn't remove folder: \(error.localizedDescription)")
             logUX("removeLibraryFolder: FAILED for root \(folderID) — \(error)")
         }
     }
@@ -107,7 +106,7 @@ extension AudioViewModel {
     /// Validates the root, registers it, then walks + reconciles. Runs on the main
     /// actor (extension inheritance) but AWAITS `LibraryScanner`'s `nonisolated` walk,
     /// so the heavy per-file work executes off the main actor; progress + the final
-    /// result are published on the main actor. Errors are surfaced via `errorMessage`;
+    /// result are published on the main actor. Errors are surfaced via `onError`;
     /// a `CancellationError` is silent (an expected re-trigger/teardown), leaving
     /// committed batches valid.
     private func performScan(_ url: URL, store: LibraryStore) async {
@@ -153,7 +152,7 @@ extension AudioViewModel {
         } catch {
             await MainActor.run { [weak self] in
                 self?.scanProgress = nil
-                self?.errorMessage = "Library scan failed: \(error.localizedDescription)"
+                self?.onError?("Library scan failed: \(error.localizedDescription)")
             }
         }
     }
@@ -172,8 +171,8 @@ extension AudioViewModel {
     private func publishScanRejection(_ conflict: NestedRootConflict) {
         scanProgress = nil
         let relation = conflict.kind == .descendantOfExisting ? "inside" : "contains"
-        errorMessage = "Folder \(relation) an existing library folder — "
-            + "'\(conflict.newRoot)' overlaps '\(conflict.existingRoot)'"
+        onError?("Folder \(relation) an existing library folder — "
+            + "'\(conflict.newRoot)' overlaps '\(conflict.existingRoot)'")
         logUX("scanFolderIntoLibrary: rejected nested root \(conflict.kind) "
             + "(new='\(conflict.newRoot)' existing='\(conflict.existingRoot)')")
     }
