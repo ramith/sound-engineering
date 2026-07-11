@@ -65,11 +65,6 @@ namespace AdaptiveSound
     inline constexpr float kUnityGainLinear = 1.0F;
     inline constexpr float kLoudnessUnmeasuredLufs = -200.0F; // telemetry sentinel
 
-    // Member order is constrained by RAII: measurementThread_ MUST be declared last
-    // so it is destroyed (request_stop()+join()) before the ring/meter it touches.
-    // That ordering prevents the size-optimal layout, but there is a single
-    // long-lived instance, so the padding is irrelevant.
-    // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding) PERMANENT reason="deliberate RT struct layout"
     class LoudnessModule
     {
       public:
@@ -109,53 +104,57 @@ namespace AdaptiveSound
         void updateMakeupGain(uint32_t newGatedBlocks) noexcept;
         void publishTelemetry() noexcept;
 
-        // --- Atomic hand-offs (asserted is_always_lock_free in the .mm) ---
+        // Data members are ordered by DESCENDING alignment (largest first) so the struct
+        // packs with minimal padding (clang-analyzer optin.performance.Padding), with two
+        // hard constraints that override pure size-optimality:
+        //   1. sampleRing_ is first — SpscRing is cache-line aligned (alignas(64), false-
+        //      sharing avoidance), so it drives the struct's 64-byte alignment; placing it
+        //      at offset 0 wastes the least.
+        //   2. measurementThread_ is LAST — it must be destroyed FIRST (request_stop()+join())
+        //      so the worker stops before the ring/meter it touches are torn down (reverse
+        //      declaration order). Role annotations are kept per-member below.
+
+        // --- RT-owned lock-free ring (SPSC: RT producer → measurement worker consumer) ---
+        SpscRing<float, kLoudnessRingElems> sampleRing_;
+
+        // --- 8-byte-aligned members ---
+        std::atomic<uint64_t> droppedFrames_{0U}; // RT→diagnostics
+        double currentMakeupDb_ = 0.0;            // worker-owned (measurementThread_ only)
+        // Per-sample gain scratch and interleave scratch: heap-allocated to maxFrames_ (and
+        // maxFrames_*kMaxChannels) in initialize() so they scale with the host's
+        // maximumFramesToRender. process() asserts frameCount <= maxFrames_ and never
+        // allocates. The SPSC ring and workerChunk_ are sized independently of maxFrames_.
+        std::vector<float> rampBuf_; // maxFrames_ elements, heap-allocated in initialize()
+        std::vector<float> pushBuf_; // maxFrames_ * kMaxChannels elements, ditto
+        // Generation-parity double buffer for BS.1770-5 per-channel weights. Single-producer
+        // (control thread via publishChannelLayout), single-consumer (measurement worker):
+        //   publish: write into layoutWeights_[(gen+1) & 1], then release-store gen+1.
+        //   consume: acquire-load gen; read from layoutWeights_[gen & 1].
+        // The parity ensures the consumer always reads the buffer NOT being written (producer
+        // increments gen with release AFTER the write; consumer sees the new gen with acquire).
+        // No torn double-slot reads: exactly one producer and one consumer.
+        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{}; // double buffer
+        LufsMeter meter_; // worker-owned (measurementThread_ only)
+
+        // --- 4-byte-aligned members ---
+        // Atomic hand-offs (asserted is_always_lock_free in the .cpp).
         std::atomic<float> makeupGainLinear_{kUnityGainLinear}; // worker→RT (audible)
         std::atomic<float> targetLufs_{kDefaultLufsTarget};     // RT→worker (control)
-        std::atomic<uint8_t> enabled_{1U};                      // RT→worker (control)
         std::atomic<uint32_t> channelCount_{2U};                // RT→worker (channel N)
         std::atomic<float> measuredLufsIntegrated_{kLoudnessUnmeasuredLufs}; // worker→UI
         std::atomic<float> measuredLufsShortTerm_{kLoudnessUnmeasuredLufs};  // worker→UI
         std::atomic<float> measuredLufsMomentary_{kLoudnessUnmeasuredLufs};  // worker→UI
-        std::atomic<uint64_t> droppedFrames_{0U};                            // RT→diagnostics
-
-        // --- Generation-parity double buffer for BS.1770-5 per-channel weights ---
-        //
-        // Single-producer (control thread via publishChannelLayout), single-consumer
-        // (measurement worker via runMeasurementLoop).  Protocol:
-        //   publish: write into layoutWeights_[(gen+1) & 1], then release-store gen+1.
-        //   consume: acquire-load gen; read from layoutWeights_[gen & 1].
-        // The parity ensures the consumer always reads from the buffer that is NOT
-        // being written: the producer increments gen AFTER the write is complete
-        // (release), so the consumer only sees the new gen after the write has
-        // propagated (acquire).  No torn double-slot reads are possible because there
-        // is exactly one producer and one consumer.
-        std::atomic<uint32_t> layoutGen_{0U};                              // control→worker
-        std::array<std::array<double, kMaxChannels>, 2U> layoutWeights_{}; // double buffer
-
-        // --- RT-owned state ---
-        SpscRing<float, kLoudnessRingElems> sampleRing_;
-        ParameterRamp makeupGainRamp_{};
-        // Per-sample gain scratch and interleave scratch: heap-allocated to
-        // maxFrames_ (and maxFrames_*kMaxChannels) in initialize() so they scale
-        // with the host's maximumFramesToRender. process() asserts frameCount <=
-        // maxFrames_ and never allocates. The SPSC ring and workerChunk_ are sized
-        // independently of maxFrames_ and are not affected by this change.
-        std::vector<float> rampBuf_; // maxFrames_ elements, heap-allocated in initialize()
-        std::vector<float>
-            pushBuf_; // maxFrames_ * kMaxChannels elements, heap-allocated in initialize()
-
-        // --- Worker-owned state (touched only on measurementThread_) ---
-        LufsMeter meter_;
-        double currentMakeupDb_ = 0.0;
-        uint32_t lastGatedBlocks_ = 0U;
-        std::array<float, kWorkerChunkElems> workerChunk_{};
-
+        std::atomic<uint32_t> layoutGen_{0U};                                // control→worker
+        uint32_t lastGatedBlocks_ = 0U;                                      // worker-owned
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
+        ParameterRamp makeupGainRamp_{};                     // RT-owned (3 floats)
+        std::array<float, kWorkerChunkElems> workerChunk_{}; // worker-owned drain scratch
 
-        // MUST be the last member: destroyed FIRST, so request_stop()+join() run
-        // before the ring/meter it touches are torn down (reverse declaration order).
+        // --- 1-byte-aligned member ---
+        std::atomic<uint8_t> enabled_{1U}; // RT→worker (control)
+
+        // --- RAII: MUST be the last member (destroyed first; see constraint 2 above) ---
         std::jthread measurementThread_;
     };
 

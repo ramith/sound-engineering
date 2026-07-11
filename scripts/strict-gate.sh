@@ -87,16 +87,14 @@ if [[ "$HAVE_CPPCHECK" == "1" ]]; then
   step "cppcheck (supplementary C++ analysis)"
   # Start strict-but-useful: warnings/style/perf/portability, not --enable=all (which is
   # noisy on Obj-C++ / Apple SDK interaction). inline-suppr honours // cppcheck-suppress.
-  # useStlAlgorithm is an ADVISORY style nag ("prefer std::find_if/accumulate over a raw
-  # loop"). The few sites it flags are clear as-is in RT-adjacent DSP code and reduce to
-  # lambda noise if rewritten — not a correctness/safety issue. Suppressed to keep cppcheck
-  # "strict but useful, not noisy" (guide §13). All warning/perf/portability checks stay on.
+  # NO blanket --suppress flags: the useStlAlgorithm sites were rewritten to real std
+  # algorithms (std::ranges::max/find_if, std::array::fill) and missingIncludeSystem never
+  # fires under this --enable set. Any future finding is fixed in source or carries an inline
+  # // cppcheck-suppress with a reason (enforced by the suppression-policy gate above).
   cppcheck \
     --enable=warning,style,performance,portability \
     --error-exitcode=1 \
     --inline-suppr \
-    --suppress=missingIncludeSystem \
-    --suppress=useStlAlgorithm \
     --std=c++23 \
     --quiet \
     Sources/AudioDSP Sources/AudioDSPTestBridge

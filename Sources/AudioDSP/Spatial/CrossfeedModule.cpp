@@ -23,10 +23,7 @@ namespace AdaptiveSound
 
         // Clear both cross-path delay lines + LPF memory so the first buffer starts from silence
         // (off-RT; the RT path never touches this state's size).
-        for (auto& path : crossPaths_)
-        {
-            path = CrossPath{};
-        }
+        crossPaths_.fill(CrossPath{});
 
         // Configure the enable/level ramp and SNAP it to the initial (off) value, so a fresh module
         // starts fully dry (bit-exact pass-through) and the first enable ramps in click-free rather

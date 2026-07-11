@@ -16,6 +16,7 @@
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
 
+#include "../include/AsLog.h"
 #include "../include/HALOutputEngine.h"
 #include "../include/PureModeFormat.h"
 #include "../include/PureModeSource.h"
@@ -25,14 +26,11 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <format>
 #include <unistd.h> // getpid
 #include <vector>
-
-// Control-plane logging only (configure/start/stop); never on the RT audio thread.
-// NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) PERMANENT reason="platform varargs logging API (NSLog/os_log/fprintf)"
 
 using namespace AdaptiveSound;
 
@@ -97,14 +95,17 @@ namespace
         }
         if (printable)
         {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="control-plane logging helper"
-            std::snprintf(buf.data(), buf.size(), "'%c%c%c%c'", bytes[0], bytes[1], bytes[2],
-                          bytes[3]);
+            const auto res =
+                std::format_to_n(buf.data(), buf.size() - 1U, "'{}{}{}{}'",
+                                 static_cast<char>(bytes[0]), static_cast<char>(bytes[1]),
+                                 static_cast<char>(bytes[2]), static_cast<char>(bytes[3]));
+            *res.out = '\0';
         }
         else
         {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="control-plane logging helper"
-            std::snprintf(buf.data(), buf.size(), "%d", static_cast<int>(code));
+            const auto res =
+                std::format_to_n(buf.data(), buf.size() - 1U, "{}", static_cast<int>(code));
+            *res.out = '\0';
         }
         return buf.data();
     }
@@ -130,13 +131,13 @@ namespace
         const bool isAlignedHigh = (asbd.mFormatFlags & kAudioFormatFlagIsAlignedHigh) != 0U;
         const bool isBigEndian = (asbd.mFormatFlags & kAudioFormatFlagIsBigEndian) != 0U;
         FourCCBuffer fid{};
-        fprintf(stderr,
-                "[HALOutputEngine]   %s: id=%s rate=%.1f ch=%u bits=%u bytes/frame=%u "
-                "type=%s%s packed=%s alignedHigh=%s endian=%s\n",
-                label, fourcc(static_cast<OSStatus>(asbd.mFormatID), fid), asbd.mSampleRate,
-                asbd.mChannelsPerFrame, asbd.mBitsPerChannel, asbd.mBytesPerFrame,
-                sampleTypeLabel(isPCM, isFloat), (isPCM && !isFloat && isSignedInt) ? " signed" : "",
-                isPacked ? "yes" : "no", isAlignedHigh ? "yes" : "no", isBigEndian ? "big" : "little");
+        AdaptiveSound::log::line(
+            "[HALOutputEngine]   {}: id={} rate={:.1f} ch={} bits={} bytes/frame={} "
+            "type={}{} packed={} alignedHigh={} endian={}",
+            label, fourcc(static_cast<OSStatus>(asbd.mFormatID), fid), asbd.mSampleRate,
+            asbd.mChannelsPerFrame, asbd.mBitsPerChannel, asbd.mBytesPerFrame,
+            sampleTypeLabel(isPCM, isFloat), (isPCM && !isFloat && isSignedInt) ? " signed" : "",
+            isPacked ? "yes" : "no", isAlignedHigh ? "yes" : "no", isBigEndian ? "big" : "little");
     }
 
     // First OUTPUT-scope stream of a device, used for physical/virtual format queries. Returns
@@ -358,9 +359,9 @@ class HALOutputEngine::Impl
             }
             else
             {
-                fprintf(stderr,
-                        "[HALOutputEngine] hog mode denied (device %u); continuing in shared mode\n",
-                        deviceID_);
+                AdaptiveSound::log::line(
+                    "[HALOutputEngine] hog mode denied (device {}); continuing in shared mode",
+                    deviceID_);
             }
         }
 
@@ -373,10 +374,9 @@ class HALOutputEngine::Impl
             }
             else
             {
-                fprintf(stderr,
-                        "[HALOutputEngine] rate change to %.1f Hz did not take; continuing at %.1f "
-                        "Hz\n",
-                        eval.targetDeviceRate, getNominalRate(deviceID_));
+                AdaptiveSound::log::line("[HALOutputEngine] rate change to {:.1f} Hz did not take; "
+                                         "continuing at {:.1f} Hz",
+                                         eval.targetDeviceRate, getNominalRate(deviceID_));
             }
         }
         achieved_.achievedRate = getNominalRate(deviceID_);
@@ -393,10 +393,10 @@ class HALOutputEngine::Impl
             const double rateDelta = achieved_.achievedRate - eval.targetDeviceRate;
             if (rateDelta > kRateEpsilonHz || rateDelta < -kRateEpsilonHz)
             {
-                fprintf(stderr,
-                        "[HALOutputEngine] device rate %.1f Hz != file rate %.1f Hz — rate-match not "
-                        "achievable (e.g. HDMI 48 kHz lock); declining Pure so Enhanced resamples\n",
-                        achieved_.achievedRate, eval.targetDeviceRate);
+                AdaptiveSound::log::line(
+                    "[HALOutputEngine] device rate {:.1f} Hz != file rate {:.1f} Hz — rate-match "
+                    "not achievable (e.g. HDMI 48 kHz lock); declining Pure so Enhanced resamples",
+                    achieved_.achievedRate, eval.targetDeviceRate);
                 teardown();
                 return false;
             }
@@ -426,7 +426,7 @@ class HALOutputEngine::Impl
         // 6) Initialize the unit (allocates its render resources).
         if (AudioUnitInitialize(unit_) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] AudioUnitInitialize failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] AudioUnitInitialize failed");
             teardown();
             return false;
         }
@@ -447,7 +447,7 @@ class HALOutputEngine::Impl
         }
         if (AudioOutputUnitStart(unit_) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] AudioOutputUnitStart failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] AudioOutputUnitStart failed");
             return false;
         }
         started_ = true;
@@ -527,12 +527,12 @@ class HALOutputEngine::Impl
         AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
         if (comp == nullptr)
         {
-            fprintf(stderr, "[HALOutputEngine] HAL output component not found\n");
+            AdaptiveSound::log::line("[HALOutputEngine] HAL output component not found");
             return false;
         }
         if (AudioComponentInstanceNew(comp, &unit_) != noErr || unit_ == nullptr)
         {
-            fprintf(stderr, "[HALOutputEngine] AudioComponentInstanceNew failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] AudioComponentInstanceNew failed");
             return false;
         }
 
@@ -540,7 +540,7 @@ class HALOutputEngine::Impl
         if (AudioUnitSetProperty(unit_, kAudioOutputUnitProperty_CurrentDevice,
                                  kAudioUnitScope_Global, 0, &dev, sizeof(dev)) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] set CurrentDevice failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] set CurrentDevice failed");
             return false;
         }
         return true;
@@ -572,9 +572,9 @@ class HALOutputEngine::Impl
         AudioObjectID stream = firstOutputStream(deviceID_);
         if (stream == kAudioObjectUnknown)
         {
-            fprintf(stderr, "[HALOutputEngine] FullBitPerfect: no output stream on device %u; "
-                            "falling back to the AU native (float) format\n",
-                    deviceID_);
+            AdaptiveSound::log::line("[HALOutputEngine] FullBitPerfect: no output stream on device "
+                                     "{}; falling back to the AU native (float) format",
+                                     deviceID_);
             return applyFloatFormat();
         }
 
@@ -583,10 +583,10 @@ class HALOutputEngine::Impl
         const bool haveCurrent = getStreamPhysicalFormat(stream, currentPhys);
         AudioStreamBasicDescription currentVirt{};
         const bool haveVirt = getStreamVirtualFormat(stream, currentVirt);
-        fprintf(stderr,
-                "[HALOutputEngine] FullBitPerfect on device %u, stream %u: targetRate=%.1f Hz, "
-                "channels=%u\n",
-                deviceID_, stream, targetRate, channels);
+        AdaptiveSound::log::line(
+            "[HALOutputEngine] FullBitPerfect on device {}, stream {}: targetRate={:.1f} Hz, "
+            "channels={}",
+            deviceID_, stream, targetRate, channels);
         if (haveCurrent)
         {
             logASBD("CURRENT physical", currentPhys);
@@ -600,8 +600,8 @@ class HALOutputEngine::Impl
         const bool haveList = getAvailablePhysicalFormats(stream, available);
         if (haveList)
         {
-            fprintf(stderr, "[HALOutputEngine]   available physical formats (%zu):\n",
-                    available.size());
+            AdaptiveSound::log::line("[HALOutputEngine]   available physical formats ({}):",
+                                     available.size());
             for (const AudioStreamBasicDescription& fmt : available)
             {
                 logASBD("  avail", fmt);
@@ -609,8 +609,8 @@ class HALOutputEngine::Impl
         }
         else
         {
-            fprintf(stderr, "[HALOutputEngine]   (could not enumerate available physical "
-                            "formats)\n");
+            AdaptiveSound::log::line(
+                "[HALOutputEngine]   (could not enumerate available physical formats)");
         }
 
         // Choose the best integer physical format at the target rate.
@@ -620,11 +620,11 @@ class HALOutputEngine::Impl
                                                   chosen);
         if (!picked)
         {
-            fprintf(stderr,
-                    "[HALOutputEngine]   no integer physical format matched (rate=%.1f Hz, ch=%u); "
-                    "graceful fallback to the AU native (float) format — device will still play, "
-                    "but NOT bit-perfect\n",
-                    targetRate, channels);
+            AdaptiveSound::log::line(
+                "[HALOutputEngine]   no integer physical format matched (rate={:.1f} Hz, ch={}); "
+                "graceful fallback to the AU native (float) format — device will still play, "
+                "but NOT bit-perfect",
+                targetRate, channels);
             return applyFloatFormat();
         }
         logASBD("CHOSEN  physical", chosen);
@@ -632,11 +632,11 @@ class HALOutputEngine::Impl
         // Set the device's physical stream format (hog is held -> permitted).
         if (!setStreamPhysicalFormat(stream, chosen))
         {
-            fprintf(stderr, "[HALOutputEngine]   set physical format FAILED; graceful fallback to "
-                            "the AU native (float) format\n");
+            AdaptiveSound::log::line("[HALOutputEngine]   set physical format FAILED; graceful "
+                                     "fallback to the AU native (float) format");
             return applyFloatFormat();
         }
-        fprintf(stderr, "[HALOutputEngine]   set physical format OK\n");
+        AdaptiveSound::log::line("[HALOutputEngine]   set physical format OK");
 
         // The AU's output-scope format now reflects the new physical format. Query it (do NOT set
         // it), then match the AU input scope to it exactly so the AU does zero internal conversion.
@@ -645,8 +645,8 @@ class HALOutputEngine::Impl
         if (AudioUnitGetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0,
                                  &auOut, &size) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine]   query AU output StreamFormat FAILED after physical "
-                            "set\n");
+            AdaptiveSound::log::line(
+                "[HALOutputEngine]   query AU output StreamFormat FAILED after physical set");
             return false;
         }
         logASBD("AU output (post-set)", auOut);
@@ -654,10 +654,12 @@ class HALOutputEngine::Impl
         if (AudioUnitSetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0,
                                  &auOut, sizeof(auOut)) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine]   set AU input StreamFormat (= AU output) FAILED\n");
+            AdaptiveSound::log::line(
+                "[HALOutputEngine]   set AU input StreamFormat (= AU output) FAILED");
             return false;
         }
-        fprintf(stderr, "[HALOutputEngine]   set AU input StreamFormat OK (matches output)\n");
+        AdaptiveSound::log::line(
+            "[HALOutputEngine]   set AU input StreamFormat OK (matches output)");
 
         // Read back the ACTUAL negotiated input format and cache its decoded flags for the RT path.
         AudioStreamBasicDescription actual{};
@@ -665,7 +667,7 @@ class HALOutputEngine::Impl
         if (AudioUnitGetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0,
                                  &actual, &size) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine]   read-back AU input StreamFormat FAILED\n");
+            AdaptiveSound::log::line("[HALOutputEngine]   read-back AU input StreamFormat FAILED");
             return false;
         }
         logASBD("AU input (cached)", actual);
@@ -684,7 +686,7 @@ class HALOutputEngine::Impl
         if (AudioUnitGetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0,
                                  &fmt, &size) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] query AU native output StreamFormat failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] query AU native output StreamFormat failed");
             return false;
         }
         logASBD("AU native output", fmt);
@@ -693,7 +695,7 @@ class HALOutputEngine::Impl
         if (AudioUnitSetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0,
                                  &fmt, sizeof(fmt)) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] set AU input StreamFormat (= native) failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] set AU input StreamFormat (= native) failed");
             return false;
         }
 
@@ -703,7 +705,7 @@ class HALOutputEngine::Impl
         if (AudioUnitGetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0,
                                  &actual, &size) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] read-back AU input StreamFormat failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] read-back AU input StreamFormat failed");
             return false;
         }
         logASBD("AU input (cached)", actual);
@@ -753,7 +755,7 @@ class HALOutputEngine::Impl
         if (AudioUnitSetProperty(unit_, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input,
                                  0, &cb, sizeof(cb)) != noErr)
         {
-            fprintf(stderr, "[HALOutputEngine] set render callback failed\n");
+            AdaptiveSound::log::line("[HALOutputEngine] set render callback failed");
             return false;
         }
         return true;
@@ -891,9 +893,9 @@ class HALOutputEngine::Impl
             {
                 if (!setNominalRate(deviceID_, originalRate_))
                 {
-                    fprintf(stderr, "[HALOutputEngine] WARNING: failed to restore nominal rate %.1f "
-                                    "Hz\n",
-                            originalRate_);
+                    AdaptiveSound::log::line(
+                        "[HALOutputEngine] WARNING: failed to restore nominal rate {:.1f} Hz",
+                        originalRate_);
                 }
             }
             if (weHogged_)
@@ -973,5 +975,3 @@ AchievedOutputState HALOutputEngine::achievedState() const
 {
     return impl_->achievedState();
 }
-
-// NOLINTEND(cppcoreguidelines-pro-type-vararg)
