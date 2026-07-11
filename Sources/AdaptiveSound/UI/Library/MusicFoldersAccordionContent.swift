@@ -18,7 +18,7 @@ import SwiftUI
 /// re-triggers the `.task` for a fresh read.
 struct MusicFoldersAccordionContent: View {
     @Environment(LibraryBrowseModel.self) private var model
-    @Environment(AudioViewModel.self) private var audio
+    @Environment(LibraryModel.self) private var library
     @State private var removeTarget: LibraryFolder?
 
     var body: some View {
@@ -49,8 +49,8 @@ struct MusicFoldersAccordionContent: View {
         .task { await model.loadRoots() }
         // Re-read as scans/adds/removes land: a freshly-added root (and its per-row "Scanning…"
         // hint) appears once its scan starts; libraryRevision covers completion.
-        .onChange(of: audio.scanProgress?.folderID) { _, _ in Task { await model.loadRoots() } }
-        .onChange(of: audio.libraryRevision) { _, _ in Task { await model.loadRoots() } }
+        .onChange(of: library.scanProgress?.folderID) { _, _ in Task { await model.loadRoots() } }
+        .onChange(of: library.libraryRevision) { _, _ in Task { await model.loadRoots() } }
         .alert(
             removeTarget.map { "Remove \"\(abbreviatedPath($0.path))\" from your library?" } ?? "",
             isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }),

@@ -2,7 +2,7 @@ import Foundation
 import LibraryScan
 import LibraryStore
 
-// MARK: - AudioViewModel metadata-pass seam (S8.3 — ADDITIVE)
+// MARK: - LibraryModel metadata-pass seam (S8.3 — was AudioViewModel+LibraryMetadata)
 
 //
 // The enrichment half, chained after `performScan` (design §6): once the structural scan
@@ -13,7 +13,7 @@ import LibraryStore
 // on the actor. Only `Sendable` types cross. Cancellation (a re-trigger/teardown cancelling
 // `scanTask`) makes the pass throw and SKIP its end-of-pass artwork orphan sweep.
 
-extension AudioViewModel {
+extension LibraryModel {
     /// Run the metadata pass over the store's pending-metadata tracks, reusing the scan's
     /// `generation`. No-op if the artwork cache never built (store construction failed).
     func runMetadataPass(_ store: LibraryStore, generation: Int64) async {
@@ -38,9 +38,9 @@ extension AudioViewModel {
             metadataProgress = nil
             // Log the FULL error (not just localizedDescription, which drops the cause): a store
             // failure — e.g. a schema-drift `no such column: metadata_scanned` on a DB created by
-            // a pre-S8.3 build — surfaces HERE, in Console, instead of vanishing into errorMessage.
+            // a pre-S8.3 build — surfaces HERE, in Console, instead of vanishing into the banner.
             logUX("runMetadataPass: FAILED — \(error)")
-            errorMessage = "Metadata pass failed: \(error.localizedDescription)"
+            onError?("Metadata pass failed: \(error.localizedDescription)")
         }
     }
 }

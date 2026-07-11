@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Wired once the window appears (see AdaptiveSound.swift). Weak because the view model is
     /// owned by the App's `@State` for the whole process lifetime — it is still alive at quit.
     weak var audioViewModel: AudioViewModel?
+    /// The library subsystem peer (S3 F5), also owned by the App's `@State`. Torn down BEFORE the
+    /// engine at quit so no scan/reconcile writes to the store while the C audio handles are freed.
+    weak var libraryModel: LibraryModel?
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         // Last window closed (the red traffic-light button): retreat to the menu bar — hide the
@@ -41,9 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ⌘Q AND the menu-bar Quit (both call `NSApp.terminate`); NOT on window-close (which retreats
     /// to the menu bar instead).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let audioViewModel else { return .terminateNow }
+        guard audioViewModel != nil || libraryModel != nil else { return .terminateNow }
         Task { @MainActor in
-            await audioViewModel.shutdown()
+            // Ordered teardown across the two peers (S3 F5): tear the LIBRARY down first — stop the
+            // FSEvents watcher + volume monitor and cancel any in-flight scan/reconcile — so nothing
+            // writes to the store while the engine tears down; THEN the audio engine (its own ordered
+            // stop → engine.shutdown P2-C sequence). This preserves the ordering the pre-F5
+            // single-model `shutdown()` enforced inline.
+            libraryModel?.shutdown()
+            await audioViewModel?.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

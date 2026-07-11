@@ -7,9 +7,10 @@ import SwiftUI
 
 // MARK: - LibraryBrowseModel (S9.4 — the browse view-model)
 
-/// Owns all Library-tab browse state and is the single seam between the browse UI (reads +
-/// selection) and `AudioViewModel` (playback + queue). `@Observable` + `@MainActor`, a peer
-/// of `EQViewModel`. ★ Owned as `@State` in the `App` and injected via `.environment` — NOT
+/// Owns all Library-tab browse state and is the seam between the browse UI (reads + selection) and
+/// the two model peers it composes: `LibraryModel` (the store + scan/reconcile state it READS) and
+/// `AudioViewModel` (the playback + queue verbs it PLAYS through). `@Observable` + `@MainActor`, a
+/// peer of `EQViewModel`. ★ Owned as `@State` in the `App` and injected via `.environment` — NOT
 /// `@State` in `LibraryTabView`, because the tab area is a `switch` that destroys the view on
 /// every tab change (design §2/§7), which would otherwise reset selection/scroll/loaded data.
 @MainActor
@@ -133,12 +134,16 @@ final class LibraryBrowseModel {
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
 
-    // `audio` / `store` / `showQueueToast` are `internal` (not `private`) so the same-type
-    // `LibraryBrowseModel+Facets` extension (a separate file, for file length) can reach them —
-    // an extension of this type IS this type, and the app is a single module.
+    /// `audio` / `library` / `store` / `showQueueToast` are `internal` (not `private`) so the
+    /// same-type `LibraryBrowseModel+Facets` extension (a separate file, for file length) can reach
+    /// them — an extension of this type IS this type, and the app is a single module.
     let audio: AudioViewModel
+    /// The library subsystem this browse layer READS (store, scan/reconcile progress, revision).
+    /// A peer of `audio`, kept as a separate dependency so playback verbs and library reads route
+    /// to the right owner (S3 F5 — the God-object split).
+    let library: LibraryModel
     private var artwork: ArtworkThumbnailStore?
-    /// The `audio.libraryRevision` last loaded, so `reloadIfScanChanged` reloads exactly once
+    /// The `library.libraryRevision` last loaded, so `reloadIfScanChanged` reloads exactly once
     /// per library-content change (scan / metadata pass / reconcile).
     private var lastLoadedRevision = 0
     /// Monotonic load token — only the newest in-flight `loadAlbums` may publish, guarding the
@@ -153,43 +158,44 @@ final class LibraryBrowseModel {
     var artistsLoadEpoch = 0
     var genresLoadEpoch = 0
 
-    init(audio: AudioViewModel) {
+    init(audio: AudioViewModel, library: LibraryModel) {
         self.audio = audio
+        self.library = library
     }
 
     // MARK: - Store access
 
-    /// The store once `AudioViewModel` has finished building it (async at launch); nil early.
-    /// `internal` — the +Facets loaders read it (see the `audio` note above).
+    /// The store once `LibraryModel` has finished building it (async at launch); nil early.
+    /// `internal` — the +Facets loaders read it (see the `audio`/`library` note above).
     var store: LibraryStore? {
-        audio.store
+        library.store
     }
 
     /// Whether the async-built store is ready. Drives the grid's initial load so a Library-tab
     /// visit BEFORE the store finishes constructing isn't stuck on a spinner (review S2).
     var isStoreReady: Bool {
-        audio.store != nil
+        library.store != nil
     }
 
     /// Whether a scan / metadata pass / live reconcile is currently populating the library — lets
     /// the browse UI show a truthful "scanning" affordance instead of a permanent one for a
-    /// genuinely empty result (review S1). Reactive: reads published `AudioViewModel` state.
+    /// genuinely empty result (review S1). Reactive: reads published `LibraryModel` state.
     var isPopulating: Bool {
-        audio.scanProgress != nil || audio.metadataProgress != nil || audio.isReconciling
+        library.scanProgress != nil || library.metadataProgress != nil || library.isReconciling
     }
 
     /// A short, phase-aware status line for the sidebar scan strip, or nil when idle. Coarse by
     /// design (one line per phase, not per tick).
     var scanStatusText: String? {
-        if let scan = audio.scanProgress { return "Scanning… \(scan.filesSeenSoFar) files" }
-        if audio.metadataProgress != nil { return "Reading tags…" }
-        if audio.isReconciling { return "Updating library…" }
+        if let scan = library.scanProgress { return "Scanning… \(scan.filesSeenSoFar) files" }
+        if library.metadataProgress != nil { return "Reading tags…" }
+        if library.isReconciling { return "Updating library…" }
         return nil
     }
 
     /// The root currently being scanned (for a per-row "scanning…" hint), or nil.
     var scanningRootID: Int64? {
-        audio.scanProgress?.folderID
+        library.scanProgress?.folderID
     }
 
     /// Lazily build the thumbnail store once the async `store` exists (used by the Artwork
@@ -215,13 +221,13 @@ final class LibraryBrowseModel {
     /// add path shared by the sidebar footer, the Music Folders popover, and the first-run CTA,
     /// so scan-only + nested-root rejection can't drift between entry points.
     func addFolder(_ url: URL) {
-        audio.scanFolderIntoLibrary(url)
+        library.scanFolderIntoLibrary(url)
     }
 
     /// Remove a registered root and refresh the list. Deletes the folder's library rows (files on
-    /// disk + the queue are untouched — see `AudioViewModel.removeLibraryFolder`).
+    /// disk + the queue are untouched — see `LibraryModel.removeLibraryFolder`).
     func removeFolder(id: Int64) async {
-        await audio.removeLibraryFolder(id: id)
+        await library.removeLibraryFolder(id: id)
         await loadRoots()
     }
 
@@ -344,13 +350,13 @@ final class LibraryBrowseModel {
     }
 
     /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + songs
-    /// + art fill in live). Coalesced to `audio.libraryRevision` — one reload per pass, NOT per
+    /// + art fill in live). Coalesced to `library.libraryRevision` — one reload per pass, NOT per
     /// metadata tick (design §7; review B1 — the revision bumps when metadata builds the rows, not
     /// at the earlier `lastScanResult` set, so a fresh scan's content actually appears). Both lists
     /// refresh (each epoch-guarded independently); the visible one shows cached rows same-frame.
     func reloadIfScanChanged() async {
-        guard audio.libraryRevision != lastLoadedRevision else { return }
-        lastLoadedRevision = audio.libraryRevision
+        guard library.libraryRevision != lastLoadedRevision else { return }
+        lastLoadedRevision = library.libraryRevision
         await loadAlbums()
         await loadSongs()
         // The facet lists refresh on the same revision bump (each epoch-guarded), else the
