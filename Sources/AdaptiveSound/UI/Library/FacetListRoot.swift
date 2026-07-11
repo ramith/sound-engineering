@@ -1,11 +1,14 @@
 import LibraryBrowseKit
 import SwiftUI
 
-// MARK: - Facet list-root scaffold (S9.6 — shared by Artists / Genres / Years)
+// MARK: - Facet list-root scaffold (S9.6 — the Genres text list; Artists is a tile grid, Years cut)
 
-/// The list-root for a facet category: the load-state machine (spinner / first-run / scanning /
-/// facet-empty / failed) over a selectable, type-selectable `List` whose rows show "name · N songs",
-/// open the detail on double-click / Return, and carry the whole-facet queue context menu.
+/// The list-root for a text-list facet category: the load-state machine (spinner / first-run /
+/// scanning / facet-empty / failed) over a `List` whose rows are plain Buttons showing "name ·
+/// N songs" that OPEN the detail on single-click, and carry the whole-facet queue context menu.
+/// (Buttons, not List(selection:)+gesture: on macOS a custom row gesture races the List's built-in
+/// selection — the source of an inconsistent select-vs-navigate bug — whereas a Button always fires;
+/// this mirrors `AlbumGridView`.)
 ///
 /// A pure VIEW scaffold parameterized by small closures — deliberately generic (unlike the loaders,
 /// which are explicit per gate R1) because there is NO hidden concurrency invariant here, only the
@@ -24,7 +27,6 @@ struct FacetListRoot<Item: Identifiable>: View {
     let load: () async -> Void
 
     @Environment(LibraryBrowseModel.self) private var model
-    @State private var selection: Item.ID?
 
     var body: some View {
         // Keyed on store-readiness so a Library visit BEFORE the async store finishes building
@@ -54,31 +56,30 @@ struct FacetListRoot<Item: Identifiable>: View {
     }
 
     private var list: some View {
-        List(selection: $selection) {
+        List {
             ForEach(items) { item in row(item) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .onKeyPress(.return) { openSelected(); return .handled }
     }
 
+    /// Each row is a plain `Button` — the same pattern `AlbumGridView` uses. A Button's single-click
+    /// action ALWAYS fires and can't race the List's built-in selection gesture (that race was the
+    /// inconsistent select-vs-navigate bug; SwiftUI-on-macOS List selection + a custom row gesture
+    /// don't cooperate). Single-click OPENS the facet detail — consistent with Albums + Artists tiles.
     private func row(_ item: Item) -> some View {
-        FacetRowLabel(name: name(item), count: count(item))
-            // simultaneousGesture (NOT onTapGesture): the List keeps its native single-click
-            // selection/highlight underneath, while a double-click also opens the detail.
-            .simultaneousGesture(TapGesture(count: 2).onEnded { model.path.append(route(item)) })
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(name(item)), \(FacetCountLabel.songs(count: count(item)))")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { model.path.append(route(item)) } // VoiceOver activate → open
-            .accessibilityAction(named: "Play") { Task { await model.playFacet(ref(item)) } }
-            .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(ref(item)) } }
-            .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(ref(item)) } }
-            .contextMenu { FacetQueueActions(ref: ref(item)) }
-    }
-
-    private func openSelected() {
-        guard let id = selection, let item = items.first(where: { $0.id == id }) else { return }
-        model.path.append(route(item))
+        Button {
+            model.path.append(route(item))
+        } label: {
+            FacetRowLabel(name: name(item), count: count(item))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name(item)), \(FacetCountLabel.songs(count: count(item)))")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Play") { Task { await model.playFacet(ref(item)) } }
+        .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(ref(item)) } }
+        .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(ref(item)) } }
+        .contextMenu { FacetQueueActions(ref: ref(item)) }
     }
 }
