@@ -90,7 +90,10 @@ final class AudioViewModel {
         didSet {
             let clamped = max(0, min(1, intensity))
             logUX("intensity → \(Int(clamped * 100)) %")
-            Task { engine.publishIntensity(clamped) }
+            // Synchronous, off-RT control-plane call (borrows the AU under the leaf lock). No Task:
+            // publishIntensity has no suspension point, and an unstructured Task only risks applying
+            // an earlier value after a later one under rapid slider drags (S3 finding F4).
+            engine.publishIntensity(clamped)
         }
     }
 
@@ -101,7 +104,7 @@ final class AudioViewModel {
     var crossfeedEnabled: Bool = false {
         didSet {
             logUX("crossfeed → \(crossfeedEnabled ? "on" : "off") [\(crossfeedStrength.displayName)]")
-            Task { await engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength) }
+            engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength)
         }
     }
 
@@ -110,7 +113,7 @@ final class AudioViewModel {
         didSet {
             guard crossfeedEnabled else { return }
             logUX("crossfeed strength → \(crossfeedStrength.displayName)")
-            Task { await engine.publishCrossfeed(enabled: true, strength: crossfeedStrength) }
+            engine.publishCrossfeed(enabled: true, strength: crossfeedStrength)
         }
     }
 

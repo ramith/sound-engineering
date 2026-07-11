@@ -278,7 +278,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         return analyzers[channel].doubleBuffer.read(into: &out)
     }
 
-    // EQ control plane (dspAudioUnitHandle + publishEQGains) lives in AudioEngineBridge+EQControl.swift.
+    // EQ control plane (dspAudioUnitRef + publishEQGains) lives in AudioEngineBridge+EQControl.swift.
 
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter?.handle else { return .unmeasured }

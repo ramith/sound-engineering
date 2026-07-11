@@ -13,7 +13,7 @@ import Foundation
 ///    tag derived from the channel count so the kernel still gets correct BS.1770-5 weights).
 /// 2. `publishChannelLayout(_:)` — the thin wrapper over the C-ABI `publishChannelLayoutTag`
 ///    (reachable through `DeviceBridge.h` -> `AudioUnitRegistrationBridge.h`), addressed at the
-///    live effects AU via the same `dspAudioUnitHandle` accessor `publishEQGains` uses.
+///    live effects AU via the same `dspAudioUnitRef` borrow `publishEQGains` uses.
 /// 3. `configureGraphForSource(channelCount:channelLayout:)` — the combined load-time step:
 ///    re-width the graph to the source's channel count, THEN publish the resolved layout tag.
 ///
@@ -48,10 +48,11 @@ extension AudioEngineBridge {
     }
 
     /// Publish `tag` to the live effects AU's loudness kernel (off-RT control plane). No-op if the
-    /// AU is not instantiated yet (`dspAudioUnitHandle` is nil), mirroring `publishEQGains`.
+    /// AU is not instantiated yet (`dspAudioUnitRef` is nil), mirroring `publishEQGains`.
     func publishChannelLayout(_ tag: AudioChannelLayoutTag) {
-        guard let handle = dspAudioUnitHandle else { return }
-        publishChannelLayoutTag(handle, tag)
+        // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
+        guard let unit = dspAudioUnitRef else { return }
+        publishChannelLayoutTag(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(), tag)
     }
 
     /// Load-time graph step (M2-d): re-width the graph to the source's channel count, THEN publish
