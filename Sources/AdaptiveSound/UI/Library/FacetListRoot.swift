@@ -25,8 +25,14 @@ struct FacetListRoot<Item: Identifiable>: View {
     let ref: (Item) -> LibraryBrowseModel.FacetRef
     let route: (Item) -> LibraryRoute
     let load: () async -> Void
+    /// The Filter-field placeholder + the count noun ("Filter Genres" / "genre").
+    let filterPlaceholder: String
+    let noun: String
 
     @Environment(LibraryBrowseModel.self) private var model
+    /// In-view filter text (narrows the loaded list in place; not sticky across tab switches — the
+    /// Apple Music Filter-field behavior).
+    @State private var filter = ""
 
     var body: some View {
         // Keyed on store-readiness so a Library visit BEFORE the async store finishes building
@@ -40,10 +46,10 @@ struct FacetListRoot<Item: Identifiable>: View {
             if items.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                list
+                filteredList
             }
         case .loaded:
-            if items.isEmpty { empty } else { list }
+            if items.isEmpty { empty } else { filteredList }
         case .firstRun:
             LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
         case .empty:
@@ -55,9 +61,31 @@ struct FacetListRoot<Item: Identifiable>: View {
         }
     }
 
+    /// Filter header + the narrowed list (or a "no results" state when the filter matches nothing).
+    private var filteredList: some View {
+        VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: filterPlaceholder)
+            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
+            if filteredItems.isEmpty {
+                ContentUnavailableView.search(text: filter)
+            } else {
+                list
+            }
+        }
+    }
+
+    private var filteredItems: [Item] {
+        filter.isEmpty ? items : items.filter { FacetTextFilter.matches(name($0), query: filter) }
+    }
+
+    private var countLine: String {
+        let shown = filteredItems.count
+        return "\(shown) \(noun)\(shown == 1 ? "" : "s")"
+    }
+
     private var list: some View {
         List {
-            ForEach(items) { item in row(item) }
+            ForEach(filteredItems) { item in row(item) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)

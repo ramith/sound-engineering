@@ -22,7 +22,9 @@ struct GenresListView: View {
             count: \.trackCount,
             ref: { .genre($0.id) },
             route: { .genre($0.id) },
-            load: { await model.loadGenres() }
+            load: { await model.loadGenres() },
+            filterPlaceholder: "Filter Genres",
+            noun: "genre"
         )
     }
 }
