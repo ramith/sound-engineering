@@ -1,4 +1,4 @@
-// LoudnessMeterBridge.mm
+// LoudnessMeterBridge.cpp
 //
 // C-ABI wrapper around the validated BS.1770-5 LufsMeter so the Swift playback
 // tap can drive real loudness meters without reimplementing the DSP in Swift.
@@ -52,7 +52,8 @@ void loudnessMeterDestroy(void* meter) AUDIODSP_C_NOEXCEPT
     delete static_cast<LoudnessMeterHandle*>(meter);
 }
 
-void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames) AUDIODSP_C_NOEXCEPT
+void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames)
+    AUDIODSP_C_NOEXCEPT
 {
     auto* handle = static_cast<LoudnessMeterHandle*>(meter);
     if (handle == nullptr || left == nullptr)

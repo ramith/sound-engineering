@@ -1,4 +1,4 @@
-// EQTestBridge.mm — Obj-C++ implementation of EQTestBridge.h
+// EQTestBridge.cpp — C++ implementation of EQTestBridge.h
 //
 // Calls the real AdaptiveSound::EQModule and AdaptiveSound::EQModuleCoefficients
 // from within an XCTest target.  The pure-C header (EQTestBridge.h) is what
