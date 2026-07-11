@@ -1,4 +1,4 @@
-// ChannelLayoutDecoder.mm
+// ChannelLayoutDecoder.cpp
 // OFF-RT decoder: CoreAudio AudioChannelLayoutTag → ChannelLayout.
 //
 // Control-thread only.  Allocation-free, noexcept, pure.

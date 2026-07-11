@@ -12,7 +12,7 @@ namespace AdaptiveSound
 {
 
     // All RT⇄worker hand-offs must be genuinely lock-free or the RT-safety guarantee
-    // is void. Enforce at compile time (mirrors EQModule.mm).
+    // is void. Enforce at compile time (mirrors EQModule.cpp).
     static_assert(std::atomic<float>::is_always_lock_free,
                   "LoudnessModule requires lock-free float atomics for RT safety");
     static_assert(std::atomic<uint8_t>::is_always_lock_free,
