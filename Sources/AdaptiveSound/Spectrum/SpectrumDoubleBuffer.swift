@@ -4,6 +4,7 @@
 
 import Accelerate
 import Foundation
+import Synchronization
 
 // MARK: - Lock-free Double Buffer
 
@@ -19,24 +20,24 @@ import Foundation
 /// lock-free handoff. `write(_:)` is called ONLY from the audio tap thread (the sole
 /// writer); `read(into:)` is called ONLY from the MainActor (the sole reader). Both
 /// `slots` are pre-sized at `init` and NEVER reallocated — they are only overwritten
-/// in place via `withUnsafeMutableBufferPointer`. Cross-thread coordination is the
-/// wrapping `publishedGeneration` counter, published via an aligned `Int` store
-/// (single-instruction, atomic on arm64 for aligned 64-bit stores). No lock or queue
+/// in place via `withUnsafeMutableBufferPointer`. Cross-thread ORDERING is carried by the
+/// `publishedGeneration` atomic: the writer RELEASE-stores it AFTER filling the slot and the
+/// reader ACQUIRE-loads it BEFORE copying the slot out — so a reader that observes the new
+/// generation is guaranteed to see the fully-written slot (no torn frame). No lock or queue
 /// is ever taken on either side; adding one would put synchronization on the RT writer
 /// (priority-inversion risk) — forbidden. This is the actual RT→UI boundary, so an
 /// audited `@unchecked Sendable` is the correct tool here.
 final class SpectrumDoubleBuffer: @unchecked Sendable {
     private let count: Int
     private var slots: [[Float]] // [slot0, slot1]
-    private var generation: Int = 0 // written only on audio thread; read on main
+    private var generation: Int = 0 // audio-thread-local write counter (sole writer)
 
-    /// `pendingGeneration` is the generation value last written.
-    /// Using a plain Int stored via an UnsafeAtomic-equivalent pattern:
-    /// we rely on the fact that Int writes are atomic on LP64 (arm64) for
-    /// aligned 64-bit stores, and the audio thread is the sole writer.
-    /// For a production-grade alternative, use AtomicRepresentable from
-    /// swift-atomics (SE-0282).
-    private var publishedGeneration: Int = -1 // read on main, written on audio thread
+    /// The last-published generation — the SPSC seam. RELEASE-stored by the writer AFTER the slot
+    /// copy, ACQUIRE-loaded by the reader BEFORE its copy, so the slot write happens-before the
+    /// reader's read whenever the reader observes the new value (no torn frame). Matches the C++ RT
+    /// snapshot's named-atomic acquire/release. `Atomic` is from the stdlib `Synchronization` module
+    /// (macOS 15+; the package targets macOS 26).
+    private let publishedGeneration = Atomic<Int>(-1)
 
     /// Generation the reader last copied out. Accessed ONLY on the main thread (the sole reader),
     /// so it needs no cross-thread synchronization. Lets `read(into:)` honour its documented "new
@@ -64,14 +65,16 @@ final class SpectrumDoubleBuffer: @unchecked Sendable {
             dstBase.update(from: srcBase, count: count)
         }
         generation = generation &+ 1 // wrapping add; sole writer on audio thread
-        publishedGeneration = generation // arm64: aligned Int write is single instruction
+        // RELEASE: publish the slot copy above before the new generation becomes visible.
+        publishedGeneration.store(generation, ordering: .releasing)
     }
 
     /// Main thread: copy the latest published slot into `out`.
     /// Returns `true` if new data was available since the last call.
     @discardableResult
     func read(into out: inout [Float]) -> Bool {
-        let gen = publishedGeneration // read once
+        // ACQUIRE: pair with the writer's release so the slot copy below is fully visible.
+        let gen = publishedGeneration.load(ordering: .acquiring)
         guard gen >= 0 else { return false }
         // No frame published since the last read → nothing new to copy (F2: the return value now
         // honestly means "new data", so callers can skip redundant UI work).
