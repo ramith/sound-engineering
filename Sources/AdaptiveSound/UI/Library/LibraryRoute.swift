@@ -12,5 +12,4 @@ enum LibraryRoute: Hashable {
     case album(Int64)
     case artist(Int64)
     case genre(Int64)
-    case year(Int)
 }

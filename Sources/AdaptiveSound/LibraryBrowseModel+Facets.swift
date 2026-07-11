@@ -5,15 +5,15 @@ import LibraryStore
 // MARK: - LibraryBrowseModel facet loading + reads + play verbs (S9.6)
 
 //
-// The Artists/Genres/Years list loaders, facet-detail reads, and whole-facet play verbs — split
-// from LibraryBrowseModel for file length (the list state lives on the primary decl; it is
-// `internal` precisely so this same-type extension can write it).
+// The Artists/Genres list loaders, facet-detail reads, and whole-facet play verbs — split from
+// LibraryBrowseModel for file length (the list state lives on the primary decl; it is `internal`
+// precisely so this same-type extension can write it).
 //
 // Each loader is an EXPLICIT copy of `loadAlbums`'s epoch / isStoreReady / firstRun-vs-empty
 // discipline — deliberately NOT folded into a generic (gate R1). The load-bearing invariant is the
 // newest-wins re-guard after BOTH suspension points (the list read AND the `roots()` read): a
 // generic that captured a stale epoch could publish a superseded `.empty`/`.firstRun` flash, and
-// the headless gate can't model that race. Three plain copies keep the invariant visible per facet.
+// the headless gate can't model that race. Plain copies keep the invariant visible per facet.
 
 @MainActor
 extension LibraryBrowseModel {
@@ -72,32 +72,6 @@ extension LibraryBrowseModel {
         }
     }
 
-    /// Load the Years list (`yearFacets()` — per-year song counts; same discipline).
-    func loadYears() async {
-        guard let store else {
-            yearsState = .loading
-            return
-        }
-        yearsLoadEpoch &+= 1
-        let epoch = yearsLoadEpoch
-        if years.isEmpty { yearsState = .loading }
-        do {
-            let loaded = try await store.yearFacets()
-            guard epoch == yearsLoadEpoch else { return }
-            years = loaded
-            if loaded.isEmpty {
-                let hasRoots = try await !store.roots().isEmpty
-                guard epoch == yearsLoadEpoch else { return }
-                yearsState = hasRoots ? .empty : .firstRun
-            } else {
-                yearsState = .loaded
-            }
-        } catch {
-            guard epoch == yearsLoadEpoch else { return }
-            yearsState = .failed(error.localizedDescription)
-        }
-    }
-
     // MARK: Detail reads (mirror album(id:)/tracks(inAlbum:); loaded into the detail's local state)
 
     func artist(id: Int64) async -> ArtistFacet? {
@@ -117,26 +91,18 @@ extension LibraryBrowseModel {
         (try? await store?.tracksDisplay(inGenre: id)) ?? []
     }
 
-    /// Songs whose TRACK year is `year` (`tracks.year`; the Years tab is track-year based).
-    func tracks(inYear year: Int) async -> [LibraryTrackDisplay] {
-        (try? await store?.tracksDisplay(inYear: year)) ?? []
-    }
-
     // MARK: Whole-facet play verbs (list-row context menus — read-then-enqueue, mirror playAlbum*)
 
-    /// A browse-facet reference for the list-row queue verbs. An enum (not `(kind, Int64)`) because
-    /// a year is `Int` while artist/genre are `Int64`; the switch absorbs that asymmetry.
+    /// A browse-facet reference for the list-row queue verbs.
     enum FacetRef {
         case artist(Int64)
         case genre(Int64)
-        case year(Int)
     }
 
     private func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
         switch ref {
         case let .artist(id): return await tracks(byArtist: id)
         case let .genre(id): return await tracks(inGenre: id)
-        case let .year(year): return await tracks(inYear: year)
         }
     }
 
