@@ -14,7 +14,7 @@ struct LibraryCategoryRoot: View {
         case .songs:
             SongsView()
         case .artists:
-            LibraryPlaceholderView(title: "Artists", detail: "Artist browsing arrives in a later update.")
+            ArtistsListView()
         case .genres:
             LibraryPlaceholderView(title: "Genres", detail: "Genre browsing arrives in a later update.")
         case .years:
@@ -35,8 +35,8 @@ struct LibraryRouteView: View {
         switch route {
         case let .album(id):
             AlbumDetailView(albumID: id)
-        case .artist:
-            LibraryPlaceholderView(title: "Artist", detail: "Artist detail arrives in a later update.")
+        case let .artist(id):
+            ArtistDetailView(artistID: id)
         case .genre:
             LibraryPlaceholderView(title: "Genre", detail: "Genre detail arrives in a later update.")
         case let .year(year):
