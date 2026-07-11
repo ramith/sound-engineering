@@ -1,118 +1,23 @@
-// ChecksBrowseReads — S9.1 browse/search DAO reads (design §3, test plan §10).
+// ChecksBrowseReads — the S9.1/S9.6 FACET browse-read DAO checks (design §3, test plan §10).
 //
-// Drives the REAL LibraryStore on a REAL temp store built from `seedFixtureLibrary`,
-// asserting the S9.1 read additions against DERIVED `FixtureExpectations` sets (never
-// magic numbers). Same VerifyAUGraph idiom (Bool return, one numbered PASS line each):
-//   BR1  artwork-path batched map (hash→cache_path) + on-disk thumbnail convention.
-//   BR1b a key with no artwork row is ABSENT from the map (no throw); others resolve.
-//   BR1c a key set > 999 is chunked and returns the full correct map.
+// Drives the REAL LibraryStore on a REAL temp store built from `seedFixtureLibrary`, asserting the
+// facet drill-down / count reads against DERIVED `FixtureExpectations` sets (never magic numbers).
+// Same VerifyAUGraph idiom (Bool return, one numbered PASS line each):
 //   BR2  albums/tracksDisplay(byArtist:) sets + order + resolved artist/album names.
 //   BR2b albums/tracksDisplay(inGenre:) sets via track_genres JOIN, no fan-out.
-//   BR2c years() distinct-desc + albums(inYear:) that year's albums.
-//   BR3  album(id:)/artist(id:) equal the matching list entry.
+//   BR2c years()/yearFacets()/albums(inYear:)/tracksDisplay(inYear:) sets + counts (TRACK-year).
+//   BR3  album(id:)/artist(id:)/genre(id:) equal the matching list entry; a nonexistent id → nil.
 //   BR3b artist reads never surface the id-0 unknown-artist sentinel.
 //   BR4  pagination window: adjacent pages no dup/gap; limit == nil == unbounded.
-//   BR5  EXPLAIN QUERY PLAN of the hot reads: USING INDEX, never SCAN TABLE tracks.
+//   BR7  ArtistFacet.trackCount (track-artist lens) == detail == fixture; 0-song album-artist.
+//   BR8  null-year omission + 0-song genre reachability (ad-hoc stores).
+//
+// Sibling concerns split into their own files: BR1 artwork-path map → ChecksArtworkMap; BR5 EXPLAIN
+// query-plan tripwire + the shared `detailUsesIndex`/`detailIsTracksTableScan` helpers → ChecksQueryPlan.
 
-import CoreGraphics
 import Foundation
-import ImageIO
 import LibraryScan
 import LibraryStore
-
-// MARK: - BR1 — artwork-path batched map + on-disk thumbnail convention
-
-func checkBrowseArtworkMap(number: Int, url: URL) async -> Bool {
-    let cacheDir = url.deletingLastPathComponent()
-        .appendingPathComponent("br-artwork-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: cacheDir) }
-    do {
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        let cache = ArtworkCache(directory: cacheDir)
-        guard let png = makeSolidPNG(width: 400, height: 400) else {
-            printFail(number, "BR1: could not synthesize a test PNG"); return false
-        }
-        let link = try cache.store(imageData: png, uti: "public.png")
-        try await store.linkArtwork(
-            contentHash: link.contentHash, cachePath: link.cachePath,
-            size: link.pixelSize, byteSize: link.byteSize
-        )
-        let map = try await store.artworkCachePaths(forKeys: [link.contentHash])
-        guard let resolved = map[link.contentHash], resolved == link.cachePath, map.count == 1 else {
-            printFail(number, "BR1: batched map did not return the exact hash→cache_path"); return false
-        }
-        // Derive the thumbnail path the same way S9 will, and assert on-disk convention.
-        let thumbPath = ArtworkCache.thumbnailPath(forOriginal: resolved)
-        guard thumbPath.hasSuffix(".thumb.jpg"), FileManager.default.fileExists(atPath: thumbPath) else {
-            printFail(number, "BR1: derived thumbnail path off-convention or missing on disk"); return false
-        }
-        // The single-key convenience wraps the batched form.
-        guard try await store.artworkCachePath(forKey: link.contentHash) == link.cachePath else {
-            printFail(number, "BR1: single-key convenience disagreed with the batched map"); return false
-        }
-        printPass(number, "BR1: artworkCachePaths returns the exact hash→cache_path map; the derived "
-            + ".thumb.jpg thumbnail exists on disk (ArtworkCache.thumbnailPath convention)")
-        return true
-    } catch {
-        printFail(number, "BR1 threw: \(error)"); return false
-    }
-}
-
-// MARK: - BR1b — cache-miss key is absent (no throw)
-
-func checkBrowseArtworkMiss(number: Int, url: URL) async -> Bool {
-    do {
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        try await store.linkArtwork(contentHash: "hash-present", cachePath: "/cache/present.jpg",
-                                    size: .zero, byteSize: 100)
-        let map = try await store.artworkCachePaths(forKeys: ["hash-present", "hash-absent"])
-        guard map["hash-present"] == "/cache/present.jpg" else {
-            printFail(number, "BR1b: present key did not resolve"); return false
-        }
-        guard map["hash-absent"] == nil, map.count == 1 else {
-            printFail(number, "BR1b: a key with no artwork row leaked into the map"); return false
-        }
-        guard try await store.artworkCachePath(forKey: "hash-absent") == nil else {
-            printFail(number, "BR1b: single-key convenience did not return nil for a miss"); return false
-        }
-        printPass(number, "BR1b: a key with no artwork row is simply ABSENT from the map (no throw); "
-            + "present keys resolve")
-        return true
-    } catch {
-        printFail(number, "BR1b threw: \(error)"); return false
-    }
-}
-
-// MARK: - BR1c — IN-list chunking (> 999 keys)
-
-func checkBrowseArtworkChunking(number: Int, url: URL) async -> Bool {
-    do {
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        // > 999 synthetic artwork rows → forces multiple IN-list chunks.
-        let count = 1100
-        let keys = (0 ..< count).map { "synth-hash-\($0)" }
-        for (index, key) in keys.enumerated() {
-            try await store.linkArtwork(contentHash: key, cachePath: "/cache/\(key).jpg",
-                                        size: .zero, byteSize: Int64(index))
-        }
-        // Query all keys PLUS one miss, in one call — must chunk and return the full map.
-        let map = try await store.artworkCachePaths(forKeys: keys + ["not-a-hash"])
-        guard map.count == count else {
-            printFail(number, "BR1c: chunked map has \(map.count) entries, expected \(count)"); return false
-        }
-        for key in keys where map[key] != "/cache/\(key).jpg" {
-            printFail(number, "BR1c: chunked map wrong/missing value for \(key)"); return false
-        }
-        guard map["not-a-hash"] == nil else {
-            printFail(number, "BR1c: the miss leaked into the chunked map"); return false
-        }
-        printPass(number, "BR1c: a \(count)-key IN-list is chunked (limit 32766) and returns the full "
-            + "correct hash→cache_path map; the miss stays absent")
-        return true
-    } catch {
-        printFail(number, "BR1c threw: \(error)"); return false
-    }
-}
 
 // MARK: - BR2 — artist drill-down (albums + display tracks, names resolved)
 
@@ -279,12 +184,51 @@ func checkBrowseYearFacet(number: Int, url: URL) async -> Bool {
                 printFail(number, "BR2c: albums(inYear: \(year)) returned an off-year album"); return false
             }
         }
+        guard try await checkYearFacetsAndTracks(store, expected: expected, number: number) else {
+            return false
+        }
         printPass(number, "BR2c: years() = distinct non-null track years descending \(years); "
-            + "albums(inYear:) returns exactly that year's albums")
+            + "albums(inYear:) that year's albums; yearFacets()/tracksDisplay(inYear:) counts + sets match")
         return true
     } catch {
         printFail(number, "BR2c threw: \(error)"); return false
     }
+}
+
+/// `yearFacets()` counts + `tracksDisplay(inYear:)` sets/order/no-fan-out, all TRACK-year
+/// (`tracks.year`). The list count (`YearFacet.trackCount`) must equal the detail length and
+/// the derived fixture count; the facet year order must equal `years()`; and the counts must
+/// sum to every non-null-year track.
+private func checkYearFacetsAndTracks(
+    _ store: LibraryStore, expected: FixtureExpectations, number: Int
+) async throws -> Bool {
+    let facets = try await store.yearFacets()
+    guard facets.map(\.year) == expected.yearsDescending else {
+        printFail(number, "BR2c: yearFacets() years \(facets.map(\.year)) != years() descending")
+        return false
+    }
+    for facet in facets {
+        let tracks = try await store.tracksDisplay(inYear: facet.year)
+        let albumIDs = tracks.compactMap { $0.albumID.map(Int.init) }
+        guard Set(tracks.map(\.title)) == (expected.tracksByYear[facet.year] ?? []),
+              tracks.count == Set(tracks.map(\.id)).count else {
+            printFail(number, "BR2c: tracksDisplay(inYear: \(facet.year)) set/fan-out wrong"); return false
+        }
+        guard albumIDs.count == tracks.count, isNonDecreasing(albumIDs),
+              tracks.allSatisfy({ $0.year == facet.year }) else {
+            printFail(number, "BR2c: tracksDisplay(inYear: \(facet.year)) order/off-year wrong"); return false
+        }
+        guard facet.trackCount == tracks.count,
+              facet.trackCount == (expected.yearTrackCounts[facet.year] ?? -1) else {
+            printFail(number, "BR2c: yearFacet(\(facet.year)) count \(facet.trackCount) != "
+                + "detail/fixture"); return false
+        }
+    }
+    let facetSum = facets.reduce(0) { $0 + $1.trackCount }
+    guard facetSum == expected.yearTrackCounts.values.reduce(0, +) else {
+        printFail(number, "BR2c: sum(yearFacet counts) \(facetSum) != non-null-year total"); return false
+    }
+    return true
 }
 
 // MARK: - BR3 — single-facet reads equal the list entry
@@ -303,10 +247,16 @@ func checkBrowseSingleFacet(number: Int, url: URL) async -> Bool {
                 printFail(number, "BR3: artist(id: \(artist.id)) != its list entry"); return false
             }
         }
-        guard try await store.album(id: 999_999) == nil, try await store.artist(id: 999_999) == nil else {
+        for genre in try await store.genres() {
+            guard try await store.genre(id: genre.id) == genre else {
+                printFail(number, "BR3: genre(id: \(genre.id)) != its list entry"); return false
+            }
+        }
+        guard try await store.album(id: 999_999) == nil, try await store.artist(id: 999_999) == nil,
+              try await store.genre(id: 999_999) == nil else {
             printFail(number, "BR3: a nonexistent id did not resolve to nil"); return false
         }
-        printPass(number, "BR3: album(id:)/artist(id:) each equal the matching list entry "
+        printPass(number, "BR3: album(id:)/artist(id:)/genre(id:) each equal the matching list entry "
             + "(shared builder); a nonexistent id → nil")
         return true
     } catch {
@@ -390,83 +340,104 @@ private func checkAlbumPagination(_ store: LibraryStore, number: Int) async thro
     return true
 }
 
-// MARK: - BR5 — EXPLAIN QUERY PLAN: index-driven, never SCAN TABLE tracks
+// MARK: - BR7 — ArtistFacet.trackCount (track-artist lens) + the 0-song album-artist
 
-func checkBrowseQueryPlan(number: Int, url: URL) async -> Bool {
+func checkBrowseArtistCount(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
-        _ = try await seedFixtureLibrary(store)
-        // BR5 is a PORTABLE plan tripwire: it holds because NO `ANALYZE` / `sqlite_stat1` /
-        // `PRAGMA optimize` is ever run, so the planner picks indexes from the schema (not
-        // row-count stats) even on this tiny fixture — the store runs none of those.
-        let targets: [(LibraryStore.HotRead, String)] = [
-            (.tracksDisplayByArtist, "tracksDisplay(byArtist:)"),
-            (.tracksDisplayInAlbum, "tracksDisplay(inAlbum:)"),
-            (.tracksDisplayInGenre, "tracksDisplay(inGenre:)"),
-            (.albumsInYear, "albums(inYear:)"),
-            (.albumsInGenre, "albums(inGenre:)"),
-        ]
-        for (target, label) in targets {
-            let details = try await store.explainQueryPlan(for: target)
-            guard details.contains(where: detailUsesIndex) else {
-                printFail(number, "BR5: \(label) plan has no USING INDEX: \(details)"); return false
-            }
-            guard !details.contains(where: detailIsTracksTableScan) else {
-                printFail(number, "BR5: \(label) SCANs the tracks table: \(details)"); return false
+        let expected = try await seedFixtureLibrary(store)
+        for artist in try await store.artists() {
+            let detailCount = try await store.tracksDisplay(byArtist: artist.id).count
+            guard artist.trackCount == detailCount,
+                  artist.trackCount == (expected.artistTrackCounts[artist.name] ?? 0) else {
+                printFail(number, "BR7: artist \(artist.name) count \(artist.trackCount) != "
+                    + "tracksDisplay(byArtist:) \(detailCount) / fixture"); return false
             }
         }
-        printPass(number, "BR5: EXPLAIN QUERY PLAN for tracksDisplay(byArtist:/inAlbum:/inGenre:) + "
-            + "albums(inYear:/inGenre:) is SEARCH … USING INDEX — never SCAN TABLE tracks (aliases t/t2)")
+        // An album-artist-only artist ("Various Artists", never a track-artist) lists with
+        // trackCount 0 and an EMPTY drill-down — the DAO keeps it reachable (the UI hides it).
+        guard let va = try await store.artists().first(where: { $0.name == "Various Artists" }) else {
+            printFail(number, "BR7: seed missing the Various Artists album-artist"); return false
+        }
+        guard va.trackCount == 0, try await store.tracksDisplay(byArtist: va.id).isEmpty else {
+            printFail(number, "BR7: Various Artists not 0-song/empty (count=\(va.trackCount))"); return false
+        }
+        printPass(number, "BR7: ArtistFacet.trackCount == tracksDisplay(byArtist:).count == fixture "
+            + "(track-artist lens); an album-artist-only artist lists with 0 songs + empty drill-down")
         return true
     } catch {
-        printFail(number, "BR5 threw: \(error)"); return false
+        printFail(number, "BR7 threw: \(error)"); return false
     }
 }
 
-// MARK: - EXPLAIN plan parsing helpers
+// MARK: - BR8 — null-year omission + 0-song genre (ad-hoc store, shared fixture untouched)
 
-/// True if a plan `detail` row is an index-driven access (SEARCH … USING [COVERING] INDEX).
-/// Internal (not private) so the S9.5 Songs-sort plan check reuses the SAME definition.
-func detailUsesIndex(_ detail: String) -> Bool {
-    let upper = detail.uppercased()
-    return upper.contains("USING INDEX") || upper.contains("USING COVERING INDEX")
+func checkBrowseYearNullAndEmptyGenre(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let root = try await store.addRoot(URL(fileURLWithPath: "/AdHoc"))
+        let gen = try await store.beginScanGeneration()
+        let ids = try await store.upsert(
+            [makeScanned(path: "/AdHoc/dated.flac", name: "dated"),
+             makeScanned(path: "/AdHoc/yearless.flac", name: "yearless")],
+            folderID: root, generation: gen
+        )
+        guard ids.count == 2 else { printFail(number, "BR8: ad-hoc seed failed"); return false }
+        // Dated: year 2021, genre "Ghost" (orphaned below). Yearless: year nil, genre "Keep".
+        try await store.applyMetadata(
+            TrackMetadata(title: "Dated", artistName: "AH", albumTitle: "AH Album",
+                          albumArtistName: "AH", year: 2021, trackNo: 1, genres: ["Ghost"]),
+            forTrack: ids[0]
+        )
+        try await store.applyMetadata(
+            TrackMetadata(title: "Yearless", artistName: "AH", albumTitle: "AH Album",
+                          albumArtistName: "AH", year: nil, trackNo: 2, genres: ["Keep"]),
+            forTrack: ids[1]
+        )
+        // Orphan "Ghost": re-tag Dated to drop it → a genre row with 0 tracks remains.
+        try await store.applyMetadata(
+            TrackMetadata(title: "Dated", artistName: "AH", albumTitle: "AH Album",
+                          albumArtistName: "AH", year: 2021, trackNo: 1, genres: []),
+            forTrack: ids[0]
+        )
+        guard try await checkNullYearOmitted(store, number: number),
+              try await checkZeroSongGenre(store, number: number) else { return false }
+        printPass(number, "BR8: a null-year track is absent from years()/yearFacets()/tracksDisplay(inYear:)"
+            + " yet present in allTracksDisplay; a 0-song genre lists with count 0 + empty drill-down")
+        return true
+    } catch {
+        printFail(number, "BR8 threw: \(error)"); return false
+    }
 }
 
-/// True if a plan `detail` row is a FULL SCAN of the `tracks` table — the tripwire. An
-/// index SCAN (`SCAN t USING [COVERING] INDEX …`) is fine; a legacy `SCAN TABLE tracks`
-/// is also caught. `tracks` appears as alias `t` in the display reads and `t2` inside
-/// `albums(inGenre:)`'s membership sub-select — flag BOTH, else a `SCAN t2` slips through
-/// and the genre coverage is illusory. Internal (not private) so the S9.5 Songs-sort plan
-/// check reuses the SAME tripwire definition (one source of truth, no drift).
-func detailIsTracksTableScan(_ detail: String) -> Bool {
-    let upper = detail.uppercased()
-    guard upper.hasPrefix("SCAN"), !detailUsesIndex(detail) else { return false }
-    var tokens = upper.split(separator: " ").map(String.init)
-    tokens.removeFirst() // drop "SCAN"
-    if tokens.first == "TABLE" { tokens.removeFirst() } // legacy "SCAN TABLE tracks"
-    guard let target = tokens.first else { return false }
-    return ["T", "T2", "TRACKS"].contains(target)
+/// The null-year track is omitted from every year read but present in the full list.
+private func checkNullYearOmitted(_ store: LibraryStore, number: Int) async throws -> Bool {
+    let years = try await store.years()
+    let facets = try await store.yearFacets()
+    guard years == [2021], facets.map(\.year) == [2021], facets.first?.trackCount == 1 else {
+        printFail(number, "BR8: null-year leaked into years()/yearFacets() (\(years))"); return false
+    }
+    guard try await store.tracksDisplay(inYear: 2021).map(\.title) == ["Dated"] else {
+        printFail(number, "BR8: tracksDisplay(inYear:2021) != [Dated]"); return false
+    }
+    guard try Set(await store.allTracksDisplay().map(\.title)) == ["Dated", "Yearless"] else {
+        printFail(number, "BR8: the yearless track is missing from allTracksDisplay"); return false
+    }
+    return true
 }
 
-// MARK: - Synthetic image helper (CoreGraphics/ImageIO)
-
-/// A solid-color RGBA PNG of the given size, or nil if CoreGraphics is unavailable.
-private func makeSolidPNG(width: Int, height: Int) -> Data? {
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
-    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
-    guard let context = CGContext(
-        data: nil, width: width, height: height, bitsPerComponent: 8,
-        bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo
-    ) else { return nil }
-    context.setFillColor(red: 0.3, green: 0.6, blue: 0.9, alpha: 1.0)
-    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-    guard let image = context.makeImage() else { return nil }
-
-    let data = NSMutableData()
-    guard let destination = CGImageDestinationCreateWithData(
-        data as CFMutableData, "public.png" as CFString, 1, nil
-    ) else { return nil }
-    CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { return nil }
-    return data as Data
+/// The orphaned genre lists with count 0 and an empty drill-down; a live genre still counts.
+private func checkZeroSongGenre(_ store: LibraryStore, number: Int) async throws -> Bool {
+    let genres = try await store.genres()
+    guard let ghost = genres.first(where: { $0.name == "Ghost" }) else {
+        printFail(number, "BR8: orphaned genre Ghost not listed"); return false
+    }
+    guard ghost.trackCount == 0, try await store.tracksDisplay(inGenre: ghost.id).isEmpty,
+          try await store.genre(id: ghost.id) == ghost else {
+        printFail(number, "BR8: Ghost not 0-song/empty (count=\(ghost.trackCount))"); return false
+    }
+    guard genres.first(where: { $0.name == "Keep" })?.trackCount == 1 else {
+        printFail(number, "BR8: live genre Keep count != 1"); return false
+    }
+    return true
 }

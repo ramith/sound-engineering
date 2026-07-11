@@ -55,6 +55,16 @@ struct FixtureExpectations {
     let tracksByGenre: [String: Set<String>]
     /// album year → album titles released that year (`albums(inYear:)`).
     let albumsByYear: [Int: Set<String>]
+
+    // --- S9.6 derived sets (BR2c year facets, BR7 artist counts) ---
+
+    /// track year → track display titles (`tracksDisplay(inYear:)`). TRACK-year (non-null).
+    let tracksByYear: [Int: Set<String>]
+    /// track year → track COUNT (`yearFacets().trackCount`, COUNT(*) semantics).
+    let yearTrackCounts: [Int: Int]
+    /// track-artist NAME → track COUNT (`ArtistFacet.trackCount`, track-artist lens; an
+    /// album-artist-only name like "Various Artists" is ABSENT here → expected count 0).
+    let artistTrackCounts: [String: Int]
 }
 
 // MARK: - Seed
@@ -263,7 +273,9 @@ private func computeExpectations(
         genreTrackCounts: derived.genreTrackCounts,
         yearsDescending: derived.yearsDescending, albumsByAlbumArtist: derived.albumsByAlbumArtist,
         tracksByArtist: derived.tracksByArtist, albumsByGenre: derived.albumsByGenre,
-        tracksByGenre: derived.tracksByGenre, albumsByYear: derived.albumsByYear
+        tracksByGenre: derived.tracksByGenre, albumsByYear: derived.albumsByYear,
+        tracksByYear: derived.tracksByYear, yearTrackCounts: derived.yearTrackCounts,
+        artistTrackCounts: derived.artistTrackCounts
     )
 }
 
@@ -276,6 +288,9 @@ private struct DerivedFacetSets {
     let albumsByGenre: [String: Set<String>]
     let tracksByGenre: [String: Set<String>]
     let albumsByYear: [Int: Set<String>]
+    let tracksByYear: [Int: Set<String>]
+    let yearTrackCounts: [Int: Int]
+    let artistTrackCounts: [String: Int]
 }
 
 /// Build every derived facet set in one pass over `defs` — the single source the
@@ -287,13 +302,24 @@ private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
     var albumsByGenre: [String: Set<String>] = [:]
     var tracksByGenre: [String: Set<String>] = [:]
     var albumsByYear: [Int: Set<String>] = [:]
+    var tracksByYear: [Int: Set<String>] = [:]
+    var yearTrackCounts: [Int: Int] = [:]
+    var artistTrackCounts: [String: Int] = [:]
     for def in defs {
-        if let artist = def.artist { tracksByArtist[artist, default: []].insert(def.title) }
+        if let artist = def.artist {
+            tracksByArtist[artist, default: []].insert(def.title)
+            artistTrackCounts[artist, default: 0] += 1
+        }
         if let album = def.album {
             if let albumArtist = def.albumArtist {
                 albumsByAlbumArtist[albumArtist, default: []].insert(album)
             }
             albumsByYear[def.year ?? 0, default: []].insert(album)
+        }
+        // TRACK-year facet sets (non-null years only — mirrors `WHERE year IS NOT NULL`).
+        if let year = def.year {
+            tracksByYear[year, default: []].insert(def.title)
+            yearTrackCounts[year, default: 0] += 1
         }
         for genre in Set(def.genres) {
             genreTrackCounts[genre, default: 0] += 1
@@ -305,7 +331,9 @@ private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
         genreTrackCounts: genreTrackCounts,
         yearsDescending: Set(defs.compactMap(\.year)).sorted(by: >),
         albumsByAlbumArtist: albumsByAlbumArtist, tracksByArtist: tracksByArtist,
-        albumsByGenre: albumsByGenre, tracksByGenre: tracksByGenre, albumsByYear: albumsByYear
+        albumsByGenre: albumsByGenre, tracksByGenre: tracksByGenre, albumsByYear: albumsByYear,
+        tracksByYear: tracksByYear, yearTrackCounts: yearTrackCounts,
+        artistTrackCounts: artistTrackCounts
     )
 }
 

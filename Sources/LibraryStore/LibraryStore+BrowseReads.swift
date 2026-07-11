@@ -48,6 +48,9 @@ public extension LibraryStore {
 
     internal static let displayByArtistWhere = "WHERE t.artist_id = ?"
     internal static let displayInAlbumWhere = "WHERE t.album_id = ?"
+    /// TRACK-year filter for the Years tab (`tracks.year`; distinct from an album's `al.year`,
+    /// which drives `albums(inYear:)`). `idx_tracks_year` makes it a SEEK (BR5).
+    internal static let displayInYearWhere = "WHERE t.year = ?"
     /// Album → disc → track ordering for a multi-album track list (byArtist / inGenre).
     internal static let displayAlbumDiscTrackOrder =
         "t.album_id ASC, t.disc_no ASC, t.track_no ASC, t.id ASC"
@@ -193,6 +196,17 @@ public extension LibraryStore {
             order: LibraryStore.displayAlbumDiscTrackOrder, limited: false
         )
         return try fetchDisplayTracks(sql) { try $0.bind(genreID, at: 1) }
+    }
+
+    /// Display rows for the tracks whose TRACK year is `year` (`tracks.year`; distinct from an
+    /// album's `year` — the Years tab is track-year based), in album/disc/track order. Uses
+    /// `idx_tracks_year` as a SEEK (BR5).
+    func tracksDisplay(inYear year: Int) throws -> [LibraryTrackDisplay] {
+        let sql = LibraryStore.displayTracksSQL(
+            whereClause: LibraryStore.displayInYearWhere,
+            order: LibraryStore.displayAlbumDiscTrackOrder, limited: false
+        )
+        return try fetchDisplayTracks(sql) { try $0.bind(Int64(year), at: 1) }
     }
 
     // MARK: - Artwork cache-path map (batched, chunked IN-list)
@@ -378,6 +392,7 @@ public extension LibraryStore {
         case tracksDisplayByArtist
         case tracksDisplayInAlbum
         case tracksDisplayInGenre
+        case tracksDisplayInYear
         case albumsInYear
         case albumsInGenre
     }
@@ -401,6 +416,11 @@ public extension LibraryStore {
         case .tracksDisplayInGenre:
             return try collectQueryPlan(LibraryStore.displayTracksSQL(
                 join: LibraryStore.displayInGenreJoin, whereClause: LibraryStore.displayInGenreWhere,
+                order: LibraryStore.displayAlbumDiscTrackOrder, limited: false
+            ))
+        case .tracksDisplayInYear:
+            return try collectQueryPlan(LibraryStore.displayTracksSQL(
+                whereClause: LibraryStore.displayInYearWhere,
                 order: LibraryStore.displayAlbumDiscTrackOrder, limited: false
             ))
         case .albumsInYear:
