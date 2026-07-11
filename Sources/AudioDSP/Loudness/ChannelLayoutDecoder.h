@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_CHANNEL_LAYOUT_DECODER_H
-#define ADAPTIVE_SOUND_CHANNEL_LAYOUT_DECODER_H
+#pragma once
 
 // ChannelLayoutDecoder — OFF-RT decoder: CoreAudio AudioChannelLayoutTag → ChannelLayout.
 //
@@ -51,5 +50,3 @@ namespace AdaptiveSound
     [[nodiscard]] auto decodeChannelLayout(AudioChannelLayoutTag tag) noexcept -> ChannelLayout;
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_CHANNEL_LAYOUT_DECODER_H

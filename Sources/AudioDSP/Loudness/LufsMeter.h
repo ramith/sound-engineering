@@ -1,5 +1,4 @@
-#ifndef LUFS_METER_H
-#define LUFS_METER_H
+#pragma once
 
 // LufsMeter — ITU-R BS.1770-5 / EBU R128 gated loudness measurement.
 //
@@ -53,6 +52,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 
 #include "../include/AudioConstants.h"
 
@@ -102,7 +102,11 @@ namespace AdaptiveSound
     // ---------------------------------------------------------------------------
     struct LufsBiquad
     {
-        double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
+        double b0 = 1.0;
+        double b1 = 0.0;
+        double b2 = 0.0;
+        double a1 = 0.0;
+        double a2 = 0.0;
         double z1 = 0.0, z2 = 0.0;
 
         [[nodiscard]] auto processSample(double input) noexcept -> double
@@ -422,7 +426,7 @@ namespace AdaptiveSound
         // state (z1, z2) differs per channel.
         void computeShelf() noexcept
         {
-            const double warp = std::tan(M_PI * kKwShelfF0Hz / sampleRate_);
+            const double warp = std::tan(std::numbers::pi * kKwShelfF0Hz / sampleRate_);
             const double Vh = std::pow(kDecibelBase, kKwShelfGainDb / kDbAmplitudeScale);
             const double Vb = std::pow(Vh, kKwShelfVbExponent);
             const double a0 = 1.0 + (warp / kKwShelfQ) + (warp * warp);
@@ -442,7 +446,7 @@ namespace AdaptiveSound
         // Same copy-broadcast pattern as computeShelf().
         void computeRlb() noexcept
         {
-            const double warp = std::tan(M_PI * kKwRlbF0Hz / sampleRate_);
+            const double warp = std::tan(std::numbers::pi * kKwRlbF0Hz / sampleRate_);
             const double a0 = 1.0 + (warp / kKwRlbQ) + (warp * warp);
             chanK_[0].rlb.b0 = 1.0 / a0;
             chanK_[0].rlb.b1 = -2.0 / a0;
@@ -491,4 +495,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif // LUFS_METER_H

@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_SPSC_RING_H
-#define ADAPTIVE_SOUND_SPSC_RING_H
+#pragma once
 
 // SpscRing — bounded, lock-free, allocation-free single-producer / single-consumer
 // ring buffer (rigtorp/SPSCQueue design).
@@ -138,4 +137,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif // ADAPTIVE_SOUND_SPSC_RING_H

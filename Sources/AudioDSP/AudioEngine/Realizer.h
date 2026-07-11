@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_REALIZER_H
-#define ADAPTIVE_SOUND_REALIZER_H
+#pragma once
 
 #include "../EQ/EQModuleCoefficients.h" // computeBiquadCascade (off-main EQ design)
 #include "../include/DSPKernel.h"
@@ -9,6 +8,7 @@
 #include <cstdint>
 #include <dispatch/dispatch.h>
 #include <memory>
+#include <mutex>
 #include <type_traits>
 
 namespace AdaptiveSound
@@ -35,10 +35,12 @@ namespace AdaptiveSound
     // publishTargetState ONCE. The intensity slot is separate from the EQ slot, so an
     // interleaved intensity intent is never dropped.
     //
-    // Threading: the entry points are called from a single control thread today (the
-    // @MainActor — see AudioUnitRegistrationBridge.h). The slot writes are therefore
-    // un-guarded. If a second control thread ever calls in, guard the slots with a small
-    // off-RT mutex (NOT an atomic) — see the design doc §1.3.
+    // Threading: the control-plane entry points are called from a single control thread (the
+    // @MainActor — see AudioUnitRegistrationBridge.h), but drain() runs on the serial queue — a
+    // DIFFERENT thread — and coalescing means a slot can be rewritten WITHOUT re-posting a drain
+    // block, so a control-thread slot write can race an in-flight drain's read. The slot access is
+    // therefore guarded by a small off-RT mutex (slotMutex_, NOT an atomic — the payload is a
+    // multi-word POD), per design §1.3 (Stage-2 review OWN-2). Never taken on the RT thread.
     //
     // Feed-forward vs feedback (design §1, founder decision 1): the Realizer is the sole
     // producer of feed-FORWARD control in TargetState (EQ coeffs, intensity, ...).
@@ -163,6 +165,11 @@ namespace AdaptiveSound
         dispatch_queue_t queue_ = nullptr;  // serial, off-main; sole publisher
         TargetState canonical_{};           // canonical feed-forward state (moved out of the AU)
 
+        // Guards the coalescing slots below against the control-thread-write / drain-read race
+        // (OWN-2). Off-RT only. Held only for the brief slot read/write, never across the EQ
+        // cascade design or publish.
+        std::mutex slotMutex_;
+
         // Coalescing slots, written on the control thread, read-and-cleared in drain().
         PendingEqGains pendingEqGains_{};
         PendingIntensity pendingIntensity_{};
@@ -180,5 +187,3 @@ namespace AdaptiveSound
                   "Realizer::PendingCrossfeed must be trivially copyable");
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_REALIZER_H

@@ -66,13 +66,6 @@ namespace AdaptiveSound
         // Fully populate a DeviceCapability for the given device (Pure-Mode model).
         static DeviceCapability queryCapability(AudioDeviceID deviceID);
 
-        // Device listener callback type (called off-RT, safe for light work)
-        using DeviceListenerCallback = void (*)(AudioDeviceID deviceID, void* context);
-
-        // Add/remove device listeners
-        static bool addDefaultDeviceListener(DeviceListenerCallback callback, void* context);
-        static bool removeDefaultDeviceListener();
-
       private:
         // Helper: Convert device ID to name
         static std::string deviceNameFromID(AudioDeviceID deviceID);
@@ -85,19 +78,6 @@ namespace AdaptiveSound
         static uint32_t getUInt32Property(AudioObjectID objectID,
                                           const AudioObjectPropertyAddress& address,
                                           uint32_t defaultValue = 0);
-
-        // Static listener state
-        static DeviceListenerCallback gListenerCallback;
-        static void* gListenerContext;
-
-        // Core Audio listener callback trampoline. The C-array parameter is
-        // mandated by the Core Audio listener ABI and cannot be changed.
-        // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
-        static void listenerCallback(AudioObjectID objectID,
-                                     UInt32 numberAddresses,
-                                     const AudioObjectPropertyAddress inAddresses[],
-                                     void* clientData);
-        // NOLINTEND(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
 
         // Non-instantiable
         CoreAudioDevice() = delete;

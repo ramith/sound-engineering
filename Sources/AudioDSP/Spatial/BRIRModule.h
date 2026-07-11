@@ -1,5 +1,4 @@
-#ifndef BRIR_MODULE_H
-#define BRIR_MODULE_H
+#pragma once
 #include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
@@ -20,4 +19,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif

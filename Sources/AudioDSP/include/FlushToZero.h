@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_FLUSH_TO_ZERO_H
-#define ADAPTIVE_SOUND_FLUSH_TO_ZERO_H
+#pragma once
 
 #include <cstdint>
 
@@ -38,5 +37,3 @@ namespace AdaptiveSound
     }
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_FLUSH_TO_ZERO_H

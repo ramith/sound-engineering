@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_RT_SWAPPABLE_RESOURCE_H
-#define ADAPTIVE_SOUND_RT_SWAPPABLE_RESOURCE_H
+#pragma once
 
 #include <atomic>
 #include <memory>
@@ -141,5 +140,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_RT_SWAPPABLE_RESOURCE_H

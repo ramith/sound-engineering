@@ -189,7 +189,7 @@ let package = Package(
             name: "AudioDSPTestBridge",
             dependencies: ["AudioDSP"],
             path: "Sources/AudioDSPTestBridge",
-            sources: ["EQTestBridge.mm"],
+            sources: ["EQTestBridge.cpp"],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("../AudioDSP"),

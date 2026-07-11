@@ -23,18 +23,8 @@
 // Every returned pointer is owned by the handle and valid ONLY until ffmpegCloseMetadata.
 //
 
+#include "CApiNoexcept.h"
 #include <stdint.h>
-
-// A noexcept-specifier for the extern "C" bridge functions under C++ (a C++ exception must
-// never unwind across the C ABI into Swift — that is UB / std::terminate). Expands to nothing
-// for the C compiler Swift's bridging uses, where `noexcept` is not a keyword.
-#ifndef AUDIODSP_C_NOEXCEPT
-#ifdef __cplusplus
-#define AUDIODSP_C_NOEXCEPT noexcept
-#else
-#define AUDIODSP_C_NOEXCEPT
-#endif
-#endif
 
 // Scalar metadata read in one call into a caller-allocated POD (no allocation crosses the
 // ABI). `tagCount`/`artLength` bound the pointer accessors below.
