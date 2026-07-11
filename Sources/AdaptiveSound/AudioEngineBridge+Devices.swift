@@ -149,7 +149,7 @@ extension AudioEngineBridge {
             // FOLLOW: target the newly-connected default and re-establish playback on it.
             logUX("device change: FOLLOW — adopt default=\(currentDefault) (was \(selectedDeviceID))")
             setCurrentDeviceID(currentDefault)
-            if let engine = avEngine {
+            if let engine = avEngineRef {
                 configChangeQueue.async { [weak self] in
                     self?.reestablishEnhancedAfterConfigChange(engine: engine)
                 }

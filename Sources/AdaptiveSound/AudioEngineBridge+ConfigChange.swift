@@ -13,10 +13,10 @@ extension AudioEngineBridge {
         ) { [weak self] _ in
             guard let self else { return }
             self.configChangeQueue.async {
-                guard let engine = self.avEngine else { return }
+                guard let engine = self.avEngineRef else { return }
                 let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
                 logUX("config-change fired: path=\(self.activePathKind == .pure ? "Pure" : "Enhanced") "
-                    + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNode?.isPlaying ?? false) "
+                    + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNodeRef?.isPlaying ?? false) "
                     + "intent=\(intentSnap) default=\(getDefaultOutputDeviceID()) "
                     + "selected=\(self.currentDeviceID)")
                 // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
@@ -72,7 +72,7 @@ extension AudioEngineBridge {
         // "connect Sony WH-1000XM4 → it disconnects" bug). The engine is (re)started only when there
         // is a live play intent to resume; idle == engine-stopped is the launch invariant, and
         // nothing renders or meters when idle anyway. Guard MUST precede engine.start().
-        guard wasPlaying, let player = playerNode else {
+        guard wasPlaying, let player = playerNodeRef else {
             logUX("config-change: idle (no play intent) — leaving engine stopped, not seizing the device")
             return
         }
