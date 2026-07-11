@@ -1,5 +1,4 @@
-#ifndef EQ_MODULE_H
-#define EQ_MODULE_H
+#pragma once
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
 #include "../include/ParameterRamp.h"
@@ -138,4 +137,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-#endif

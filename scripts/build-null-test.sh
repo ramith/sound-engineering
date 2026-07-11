@@ -140,12 +140,12 @@ xcrun clang++ \
     ${RELEASE_STRICT_FLAGS[@]+"${RELEASE_STRICT_FLAGS[@]}"} \
     -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
     -I"$EBUR128_DIR" \
-    "$REPO_ROOT/Sources/AudioDSP/DSPKernel.mm" \
-    "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.mm" \
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.mm" \
-    "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.mm" \
-    "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.mm" \
-    "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.mm" \
+    "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp" \

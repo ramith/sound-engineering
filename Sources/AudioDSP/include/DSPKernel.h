@@ -1,5 +1,6 @@
-// F4: was an unnamespaced `#ifndef DSP_KERNEL_H` (collision-prone); switched to `#pragma once`
-// to match the plurality convention in this include tree and remove the bare-macro risk.
+// `#pragma once` is the standardized include-guard convention across this include tree
+// (Stage-2 review IDM-2 — the tree was a mix of `#pragma once` and bare, collision-prone
+// `#ifndef` guards; unified on `#pragma once`, which also removes the bare-macro risk).
 #pragma once
 
 #include "AudioConstants.h"

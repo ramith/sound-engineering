@@ -258,7 +258,7 @@ extern "C" {
 
 // MARK: AU registration (in-process v3 instantiation; off-RT, main-thread during setup)
 
-AudioComponentDescription adaptiveAudioUnitComponentDescription(void) {
+AudioComponentDescription adaptiveAudioUnitComponentDescription(void) AUDIODSP_C_NOEXCEPT {
     AudioComponentDescription desc = {};
     desc.componentType = kComponentType;
     desc.componentSubType = kComponentSubType;
@@ -268,7 +268,7 @@ AudioComponentDescription adaptiveAudioUnitComponentDescription(void) {
     return desc;
 }
 
-void registerAdaptiveAudioUnitSubclass(void) {
+void registerAdaptiveAudioUnitSubclass(void) AUDIODSP_C_NOEXCEPT {
     // registerSubclass: must run exactly once per process; dispatch_once guards against
     // double registration when engine setup repeats (e.g. device re-init).
     static dispatch_once_t onceToken;
@@ -282,7 +282,7 @@ void registerAdaptiveAudioUnitSubclass(void) {
 
 // MARK: Device enumeration
 
-uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) {
+uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) AUDIODSP_C_NOEXCEPT {
     if (outDevices == nullptr || maxCount == 0) {
         return 0;
     }
@@ -310,13 +310,13 @@ uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) {
     return written;
 }
 
-uint32_t getDefaultOutputDeviceID() {
+uint32_t getDefaultOutputDeviceID() AUDIODSP_C_NOEXCEPT {
     AudioDeviceID id = AdaptiveSound::CoreAudioDevice::getDefaultOutputDevice();
     // kAudioObjectUnknown == 0 on all Apple platforms; return 0 to signal "none".
     return (id == kAudioObjectUnknown) ? 0U : static_cast<uint32_t>(id);
 }
 
-int selectOutputDeviceC(uint32_t deviceID) {
+int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
     if (deviceID == 0) { return 0; }
     // Verify the device ID resolves to a real device before accepting it.
     std::string name = AdaptiveSound::CoreAudioDevice::getDeviceName(static_cast<AudioDeviceID>(deviceID));
@@ -341,7 +341,7 @@ int selectOutputDeviceC(uint32_t deviceID) {
     return 1;
 }
 
-void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) {
+void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t bufferFrames) AUDIODSP_C_NOEXCEPT {
     // Attach into the AVAudioEngine graph is driven Swift-side via AVAudioUnit.instantiate()
     // using adaptiveAudioUnitComponentDescription(); this direct-alloc path remains for callers
     // that want the subclass instance directly.
@@ -362,7 +362,7 @@ void* createAdaptiveAudioUnit(void* audioEngine, uint32_t sampleRate, uint32_t b
     return (__bridge_retained void*)audioUnit;
 }
 
-void destroyAdaptiveAudioUnit(void* auUnit) {
+void destroyAdaptiveAudioUnit(void* auUnit) AUDIODSP_C_NOEXCEPT {
     if (auUnit == nullptr) { return; }
     // Reclaim the +1 reference handed out by createAdaptiveAudioUnit(); ARC releases
     // when this transferred reference goes out of scope.
@@ -371,7 +371,7 @@ void destroyAdaptiveAudioUnit(void* auUnit) {
     audioUnit = nil;
 }
 
-bool setAUParameter(void* auUnit, uint64_t paramID, float value) {
+bool setAUParameter(void* auUnit, uint64_t paramID, float value) AUDIODSP_C_NOEXCEPT {
     if (auUnit == nullptr) { return false; }
     (void)paramID;
     (void)value;
@@ -385,7 +385,7 @@ bool setAUParameter(void* auUnit, uint64_t paramID, float value) {
     return false;
 }
 
-float getAUParameter(void* auUnit, uint64_t paramID) {
+float getAUParameter(void* auUnit, uint64_t paramID) AUDIODSP_C_NOEXCEPT {
     if (auUnit == nullptr) { return 0.0F; }
     (void)paramID;
     // No readable parameter store yet — see setAUParameter. Part of the stable
@@ -393,7 +393,7 @@ float getAUParameter(void* auUnit, uint64_t paramID) {
     return 0.0F;
 }
 
-bool publishTargetState(void* auUnit, const void* state) {
+bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT {
     if (auUnit == nullptr || state == nullptr) { return false; }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     const TargetState* targetState = static_cast<const TargetState*>(state);
@@ -401,7 +401,7 @@ bool publishTargetState(void* auUnit, const void* state) {
     return true;
 }
 
-bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) {
+bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) AUDIODSP_C_NOEXCEPT {
     // S6 Tier-3 (3a): re-pointed to set the Realizer's pending-EQ slot and post a drain,
     // instead of synchronously computing the cascade + publishing here. The cascade design
     // (computeBiquadCascade) now runs OFF-MAIN inside the Realizer's drain, bursts coalesce to
@@ -424,7 +424,7 @@ bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, 
     return realizer->setPendingEqGains(bandGainsDb, count, sampleRate);
 }
 
-void publishIntensity(void* auUnit, float intensity) {
+void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     // S6 Tier-3 (3a): the single intensity control surface (design §1.5). Clamps to [0,1]
     // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
     // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
@@ -446,7 +446,7 @@ void publishIntensity(void* auUnit, float intensity) {
     }
 }
 
-void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) {
+void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) AUDIODSP_C_NOEXCEPT {
     // QW1 §3: the single crossfeed control surface. Sets the Realizer's pending-crossfeed slot
     // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain on a
     // clean->dirty transition; the off-RT coefficient derivation, the canonical read-modify-write,
@@ -471,7 +471,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     }
 }
 
-void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) {
+void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) AUDIODSP_C_NOEXCEPT {
     if (auHandle == nullptr) { return; }
     // Resolve the AU from the borrowed handle exactly as publishEQBandGains does (non-owning
     // __bridge borrow; no retain/release). The method decodes off-RT and publishes lock-free.

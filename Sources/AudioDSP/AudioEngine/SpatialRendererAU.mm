@@ -331,7 +331,7 @@ namespace
 
 extern "C" {
 
-AudioComponentDescription spatialRendererComponentDescription(void) {
+AudioComponentDescription spatialRendererComponentDescription(void) AUDIODSP_C_NOEXCEPT {
     AudioComponentDescription desc = {};
     desc.componentType = kComponentType;
     desc.componentSubType = kComponentSubType;
@@ -341,7 +341,7 @@ AudioComponentDescription spatialRendererComponentDescription(void) {
     return desc;
 }
 
-void registerSpatialRendererAUSubclass(void) {
+void registerSpatialRendererAUSubclass(void) AUDIODSP_C_NOEXCEPT {
     // registerSubclass: must run exactly once per process; dispatch_once guards against double
     // registration when engine setup repeats (e.g. device re-init).
     static dispatch_once_t onceToken;
@@ -353,7 +353,7 @@ void registerSpatialRendererAUSubclass(void) {
     });
 }
 
-void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels) {
+void configureSpatialChannels(void* auHandle, uint32_t inChannels, uint32_t outChannels) AUDIODSP_C_NOEXCEPT {
     if (auHandle == nullptr) { return; }
     SpatialRendererAU* audioUnit = (__bridge SpatialRendererAU*)auHandle; // non-owning borrow
     [audioUnit configureInputChannels:inChannels outputChannels:outChannels];

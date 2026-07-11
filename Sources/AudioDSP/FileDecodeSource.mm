@@ -1019,6 +1019,10 @@ namespace AdaptiveSound
         {
             stop_.store(false, std::memory_order_release);
             finished_.store(false, std::memory_order_release);
+            // std::thread's ctor throws std::system_error on OS thread-exhaustion; in this noexcept
+            // context that calls std::terminate. That is the INTENDED stance (Stage-2 review OWN-4):
+            // failing to spawn the decoder is unrecoverable for playback, and the AudioDSP TU is
+            // built -fno-exceptions, so there is no meaningful recovery path to surface either way.
             decodeThread_ = std::thread([this] { decodeLoop(); });
         }
 

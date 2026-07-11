@@ -37,7 +37,7 @@ namespace
                   "Loudness readout requires lock-free double atomics");
 } // namespace
 
-void* loudnessMeterCreate(double sampleRate)
+void* loudnessMeterCreate(double sampleRate) AUDIODSP_C_NOEXCEPT
 {
     auto* handle = new (std::nothrow) LoudnessMeterHandle();
     if (handle != nullptr)
@@ -47,12 +47,12 @@ void* loudnessMeterCreate(double sampleRate)
     return handle;
 }
 
-void loudnessMeterDestroy(void* meter)
+void loudnessMeterDestroy(void* meter) AUDIODSP_C_NOEXCEPT
 {
     delete static_cast<LoudnessMeterHandle*>(meter);
 }
 
-void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames)
+void loudnessMeterAddStereo(void* meter, const float* left, const float* right, uint32_t frames) AUDIODSP_C_NOEXCEPT
 {
     auto* handle = static_cast<LoudnessMeterHandle*>(meter);
     if (handle == nullptr || left == nullptr)
@@ -78,7 +78,7 @@ void loudnessMeterAddStereo(void* meter, const float* left, const float* right, 
     handle->peakDb.store(peakDecibels, std::memory_order_release);
 }
 
-CLoudnessReadout loudnessMeterRead(void* meter)
+CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT
 {
     CLoudnessReadout out{kUnmeasuredLufs, kUnmeasuredLufs, kUnmeasuredLufs, kPeakFloorDb};
     auto* handle = static_cast<LoudnessMeterHandle*>(meter);

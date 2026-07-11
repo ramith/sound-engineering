@@ -1,5 +1,4 @@
-#ifndef ADAPTIVE_SOUND_SPATIAL_RENDER_KERNEL_H
-#define ADAPTIVE_SOUND_SPATIAL_RENDER_KERNEL_H
+#pragma once
 
 // SpatialRenderKernel — host-agnostic C++ DSP core for SpatialRendererAU.
 //
@@ -57,7 +56,7 @@ namespace AdaptiveSound
         // the control/setup thread before any process() call; safe to call again
         // on sample-rate or buffer-size change.
         // -----------------------------------------------------------------------
-        void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
+        auto initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept -> void;
 
         // -----------------------------------------------------------------------
         // Off-RT: set channel routing.
@@ -65,7 +64,7 @@ namespace AdaptiveSound
         // Clamps both counts to [0, kMaxChannels].  Call from the control thread
         // whenever the source or device channel layout changes.
         // -----------------------------------------------------------------------
-        void configure(uint32_t inChannels, uint32_t outChannels) noexcept;
+        auto configure(uint32_t inChannels, uint32_t outChannels) noexcept -> void;
 
         // -----------------------------------------------------------------------
         // RT: process one block.  NON-IN-PLACE.  const: no mutable state touched.
@@ -81,7 +80,8 @@ namespace AdaptiveSound
         //   - input.frames() == output.frames() and both > 0.
         //   - inChannels_ == 0 or outChannels_ == 0  → silent output (vDSP_vclr).
         // -----------------------------------------------------------------------
-        void process(const MultichannelView& input, const MultichannelView& output) const noexcept;
+        auto process(const MultichannelView& input, const MultichannelView& output) const noexcept
+            -> void;
 
         // -----------------------------------------------------------------------
         // Read-only accessors (off-RT convenience; not used from process()).
@@ -111,5 +111,3 @@ namespace AdaptiveSound
     };
 
 } // namespace AdaptiveSound
-
-#endif // ADAPTIVE_SOUND_SPATIAL_RENDER_KERNEL_H
