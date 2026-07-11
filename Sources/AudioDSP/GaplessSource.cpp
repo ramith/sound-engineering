@@ -55,6 +55,7 @@
 
 #include "include/GaplessSource.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -108,14 +109,10 @@ namespace AdaptiveSound
         assert(armedNext_.load(std::memory_order_acquire) == nullptr);
         const Track* active = active_.load(std::memory_order_acquire);
         const Track* retired = retired_.load(std::memory_order_acquire);
-        for (Track& track : tracks_)
-        {
-            if (&track != active && &track != retired)
-            {
-                return &track;
-            }
-        }
-        return nullptr;
+        Track* const slot = std::ranges::find_if(tracks_,
+                                                 [active, retired](const Track& track)
+                                                 { return &track != active && &track != retired; });
+        return slot != tracks_.end() ? slot : nullptr;
     }
 
     bool GaplessSource::armNext(std::unique_ptr<FileDecodeSource> source) noexcept

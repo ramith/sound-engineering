@@ -1,5 +1,6 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
+#include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
 #include "../include/AudioConstants.h"
 #include "../include/AudioUnitBridge.h" // enforce extern "C" signature agreement for AU functions
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
@@ -334,9 +335,9 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
     const OSStatus status = AudioObjectSetPropertyData(
         kAudioObjectSystemObject, &addr, 0, nullptr, sizeof(dev), &dev);
     if (status != noErr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[selectOutputDeviceC] could not set default output device %u (status %d)", deviceID,
-              static_cast<int>(status));
+        AdaptiveSound::log::line(
+            "[selectOutputDeviceC] could not set default output device {} (status {})", deviceID,
+            static_cast<int>(status));
     }
     return 1;
 }
@@ -407,18 +408,16 @@ bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, 
     // (computeBiquadCascade) now runs OFF-MAIN inside the Realizer's drain, bursts coalesce to
     // a single publish, and the Realizer is the sole caller of publishTargetState. The slot
     // setter validates the 31-band/SR/non-null contract and returns false on mismatch.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-    NSLog(@"[QW1] C-ABI publishEQBandGains count=%u sampleRate=%.1f", count, sampleRate);
+    AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains count={} sampleRate={:.1f}", count,
+                             sampleRate);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishEQBandGains SKIP — auUnit == nullptr");
+        AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains SKIP — auUnit == nullptr");
         return false;
     }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishEQBandGains SKIP — realizer == nil");
+        AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains SKIP — realizer == nil");
         return false;
     }
     return realizer->setPendingEqGains(bandGainsDb, count, sampleRate);
@@ -429,11 +428,9 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
     // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
     // interleaved intensity intent is never dropped by an EQ burst. Off-RT; no-op if null.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-    NSLog(@"[QW1] C-ABI publishIntensity intensity=%.4f", intensity);
+    AdaptiveSound::log::line("[QW1] C-ABI publishIntensity intensity={:.4f}", intensity);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishIntensity SKIP — auUnit == nullptr");
+        AdaptiveSound::log::line("[QW1] C-ABI publishIntensity SKIP — auUnit == nullptr");
         return;
     }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
@@ -441,8 +438,7 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     if (realizer != nullptr) {
         realizer->setPendingIntensity(intensity);
     } else {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishIntensity SKIP — realizer == nil");
+        AdaptiveSound::log::line("[QW1] C-ABI publishIntensity SKIP — realizer == nil");
     }
 }
 
@@ -453,11 +449,10 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
     // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
     // The design coefficient sample rate is the kernel's current rate. Off-RT; no-op if null.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-    NSLog(@"[QW1] C-ABI publishCrossfeed enabled=%u level=%.4f preset=%u", enabled, level, preset);
+    AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed enabled={} level={:.4f} preset={}",
+                             enabled, level, preset);
     if (auUnit == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
+        AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
         return;
     }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
@@ -466,8 +461,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
         const double sampleRate = [audioUnit kernelSampleRate];
         (void)realizer->setPendingCrossfeed(enabled, level, preset, sampleRate);
     } else {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform logging API"
-        NSLog(@"[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
+        AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
     }
 }
 

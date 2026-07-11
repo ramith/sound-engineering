@@ -88,10 +88,14 @@ WarningsAsErrors: "*"
 #                                         leading-return-type declarations throughout. Not a
 #                                         safety/correctness check — promoting it would force
 #                                         a repo-wide rewrite with zero behavioural benefit.
-#   modernize-use-std-print               fprintf(stderr,…) is the documented off-RT-thread
-#                                         diagnostic-logging convention (DEVELOPMENT.md).
-#                                         std::print is not guaranteed on the Apple libc++
-#                                         deployment target and the rewrite adds no value.
+#   modernize-use-std-print               Production diagnostics go through the AsLog seam
+#                                         (std::format + std::fwrite to stderr, AsLog.h); the only
+#                                         remaining printf-family calls are stdout CLIs in Tests.
+#                                         std::print is NOT guaranteed on the Apple libc++
+#                                         deployment target — the seam avoids it deliberately — so
+#                                         promoting this check would only push future production
+#                                         logging toward an unavailable API. Kept disabled on
+#                                         purpose (a documented convention, not a bare suppression).
 #   modernize-use-using                   } Purely STYLISTIC modernize checks. The codebase
 #   modernize-use-designated-initializers } predates them (typedef, {}-init, private-unimpl
 #   modernize-use-equals-delete           } special members, <stdio.h>). ~150 pre-existing

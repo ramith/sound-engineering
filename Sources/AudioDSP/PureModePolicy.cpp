@@ -31,12 +31,13 @@ namespace AdaptiveSound
 
     double DeviceCapability::maxRate() const
     {
-        double best = 0.0;
-        for (const double rate : availableRates)
+        // Sample rates are always positive, so the largest advertised rate IS the max; an empty
+        // list has no rate and returns the 0 sentinel (see supportsRate() / the header contract).
+        if (availableRates.empty())
         {
-            best = std::max(best, rate);
+            return 0.0;
         }
-        return best;
+        return std::ranges::max(availableRates);
     }
 
     const char* pureModeReasonString(PureModeReason reason)
