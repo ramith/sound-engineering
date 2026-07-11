@@ -56,7 +56,7 @@ namespace AdaptiveSound
         // the control/setup thread before any process() call; safe to call again
         // on sample-rate or buffer-size change.
         // -----------------------------------------------------------------------
-        auto initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept -> void;
+        auto initialize(uint32_t sampleRate, uint32_t maxFramesToRender) noexcept -> void;
 
         // -----------------------------------------------------------------------
         // Off-RT: set channel routing.
@@ -64,7 +64,7 @@ namespace AdaptiveSound
         // Clamps both counts to [0, kMaxChannels].  Call from the control thread
         // whenever the source or device channel layout changes.
         // -----------------------------------------------------------------------
-        auto configure(uint32_t inChannels, uint32_t outChannels) noexcept -> void;
+        auto configure(uint32_t numInChannels, uint32_t numOutChannels) noexcept -> void;
 
         // -----------------------------------------------------------------------
         // RT: process one block.  NON-IN-PLACE.  const: no mutable state touched.

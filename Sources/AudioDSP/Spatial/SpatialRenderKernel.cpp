@@ -108,10 +108,11 @@ namespace AdaptiveSound
     // Off-RT: initialize
     // ---------------------------------------------------------------------------
 
-    auto SpatialRenderKernel::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept -> void
+    auto SpatialRenderKernel::initialize(uint32_t sampleRate, uint32_t maxFramesToRender) noexcept
+        -> void
     {
         sampleRate_ = sampleRate;
-        maxFrames_ = maxFrames;
+        maxFrames_ = maxFramesToRender;
 
         // FTZ on the control/init thread.  The AU render block sets it independently
         // on the render thread (matching DSPKernel's pattern).
@@ -122,10 +123,11 @@ namespace AdaptiveSound
     // Off-RT: configure
     // ---------------------------------------------------------------------------
 
-    auto SpatialRenderKernel::configure(uint32_t inChannels, uint32_t outChannels) noexcept -> void
+    auto SpatialRenderKernel::configure(uint32_t numInChannels, uint32_t numOutChannels) noexcept
+        -> void
     {
-        inChannels_ = std::min(inChannels, kMaxChannels);
-        outChannels_ = std::min(outChannels, kMaxChannels);
+        inChannels_ = std::min(numInChannels, kMaxChannels);
+        outChannels_ = std::min(numOutChannels, kMaxChannels);
     }
 
     // ---------------------------------------------------------------------------
