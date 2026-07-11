@@ -215,4 +215,33 @@ extension AudioEngineBridge {
     var dspAudioUnitRef: AVAudioUnit? {
         withStateLock { dspAudioUnit }
     }
+
+    // MARK: - avEngine / playerNode (cross-domain graph references)
+
+    // Like `dspAudioUnit`, these are WRITTEN on `engineQueue` (initialize / teardown) but READ from
+    // OFF-domain paths — the `AVAudioEngineConfigurationChange` handler and the CoreAudio device
+    // listeners (configChangeQueue / the device-list listener queue). Those off-domain reads MUST go
+    // through the strong-borrow accessors so a teardown-nil cannot free the engine/player between an
+    // already-enqueued block's load and its use (S3 review finding BS1). engineQueue-local reads
+    // (Graph/Lifecycle/Playback/...) stay direct: the owning domain, serialized with the writes.
+
+    /// Thread-safe write of the AVAudioEngine reference (initialize / teardown).
+    func setAvEngine(_ value: AVAudioEngine?) {
+        withStateLock { avEngine = value }
+    }
+
+    /// Thread-safe strong borrow of the AVAudioEngine (nil when torn down). Held for the caller's use.
+    var avEngineRef: AVAudioEngine? {
+        withStateLock { avEngine }
+    }
+
+    /// Thread-safe write of the player-node reference (initialize / teardown).
+    func setPlayerNode(_ value: AVAudioPlayerNode?) {
+        withStateLock { playerNode = value }
+    }
+
+    /// Thread-safe strong borrow of the player node (nil when torn down). Held for the caller's use.
+    var playerNodeRef: AVAudioPlayerNode? {
+        withStateLock { playerNode }
+    }
 }

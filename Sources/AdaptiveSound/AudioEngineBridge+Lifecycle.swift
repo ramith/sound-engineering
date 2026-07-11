@@ -35,7 +35,7 @@ extension AudioEngineBridge {
                 self.setCurrentDeviceID(getDefaultOutputDeviceID())
 
                 let engine = AVAudioEngine()
-                self.avEngine = engine
+                self.setAvEngine(engine)
                 self.observeConfigurationChanges(of: engine)
 
                 // Refresh the device picker when devices are added/removed (BT connect/disconnect).
@@ -52,7 +52,7 @@ extension AudioEngineBridge {
                 // the effects AU below. Connecting player -> mixer too would create a second (dry)
                 // signal path into the mixer.
                 let player = AVAudioPlayerNode()
-                self.playerNode = player
+                self.setPlayerNode(player)
                 engine.attach(player)
 
                 // Instantiate both AUs and build the two-AU graph; the (nested) completion handlers
@@ -140,8 +140,8 @@ extension AudioEngineBridge {
     private func resetGraphStateAfterShutdown() {
         setDspAudioUnit(nil)
         spatialAudioUnit = nil
-        avEngine = nil
-        playerNode = nil
+        setAvEngine(nil)
+        setPlayerNode(nil)
         referenceToneBuffer = nil
         spectrumAnalyzer = nil
         beforeAnalyzers = []

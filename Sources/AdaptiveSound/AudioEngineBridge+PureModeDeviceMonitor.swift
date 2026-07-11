@@ -89,10 +89,10 @@ extension AudioEngineBridge {
         // (off resampleQueue), so the sync is deadlock-safe.
         resampleQueue.sync { enhancedPlayIntent = false }
         tearDownPure() // stops + destroys the Pure engine, unregisters the alive listener
-        if let player = playerNode, player.isPlaying {
+        if let player = playerNodeRef, player.isPlaying {
             player.stop()
         }
-        if let engine = avEngine, engine.isRunning {
+        if let engine = avEngineRef, engine.isRunning {
             engine.stop()
         }
         // activePath is .enhanced after tearDownPure; flag the interruption for the view model.
