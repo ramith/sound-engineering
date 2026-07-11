@@ -13,9 +13,9 @@ namespace AdaptiveSound
     //
     // Coefficient: α = 1 - exp(-1 / (τ · fs))
     //   where τ is the 1/e time constant (seconds) and fs is the sample rate.
-    //   This follows directly from the bilinear approximation of the RC circuit,
-    //   but uses the exact discrete-time solution (Julius O. Smith, CCRMA,
-    //   "Introduction to Digital Filters", §1.3.1).
+    //   This is the matched-Z / impulse-invariant pole placement (pole = exp(-1/(τ·fs))),
+    //   the exact discrete-time solution of the RC step response — NOT the bilinear
+    //   transform (Julius O. Smith, CCRMA, "Introduction to Digital Filters", §1.3.1).
     //   At 32 ms / 48 kHz: α ≈ 0.000648, giving ~98% of the step in 5τ ≈ 160 ms.
     //
     // RT-safety: tick() is noexcept with no allocation; target is written off-RT

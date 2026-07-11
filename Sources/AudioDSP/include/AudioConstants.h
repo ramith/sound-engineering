@@ -17,9 +17,19 @@ namespace AdaptiveSound
     constexpr size_t kCacheLineBytes = 64; // ARM64 / Apple Silicon cache line
     constexpr float kTruePeakCeilingLinear =
         0.891F; // approx -1 dBTP (10^(-1/20)=0.8913; literal is approximate)
-    constexpr uint32_t kLimiterLookaheadFrames =
-        144U;                                   // look-ahead window in frames (3 ms @ 48 kHz)
-    constexpr float kDefaultLufsTarget = -16.F; // integrated loudness target (dB LUFS)
+    // True-peak limiter look-ahead is a fixed TIME, not a fixed frame count: the gain
+    // envelope must reach target within a constant number of attack time-constants
+    // regardless of sample rate, or the −1 dBTP ceiling is exceeded at hi-res rates
+    // (Stage-1 review AC-2). LimiterModule derives the actual frame count as
+    // round(kLimiterLookaheadSeconds · fs) in initialize(). kLimiterLookaheadFrames is
+    // the value AT THE DEFAULT 48 kHz rate — the reference the golden-master/limiter
+    // tests prime with, and the pre-initialize() default. kMaxLimiterLookaheadFrames
+    // bounds the fixed-capacity peak deque at the highest supported rate.
+    constexpr float kLimiterLookaheadSeconds = 0.003F; // 3 ms true-peak look-ahead
+    constexpr uint32_t kMaxSupportedSampleRate = 192000U;
+    constexpr uint32_t kLimiterLookaheadFrames = 144U;     // = round(3 ms · 48 kHz)
+    constexpr uint32_t kMaxLimiterLookaheadFrames = 576U;  // = round(3 ms · 192 kHz)
+    constexpr float kDefaultLufsTarget = -16.F;            // integrated loudness target (dB LUFS)
     constexpr float kClarityDefaultThresholdLinear = 0.1F; // compressor threshold (linear)
     constexpr float kClarityDefaultKneeWidthLinear =
         0.1F; // soft-knee half-width (linear) -- DISTINCT from threshold
