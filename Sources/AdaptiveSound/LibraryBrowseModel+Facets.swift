@@ -9,66 +9,62 @@ import LibraryStore
 // LibraryBrowseModel for file length (the list state lives on the primary decl; it is `internal`
 // precisely so this same-type extension can write it).
 //
-// Each loader is an EXPLICIT copy of `loadAlbums`'s epoch / isStoreReady / firstRun-vs-empty
-// discipline — deliberately NOT folded into a generic (gate R1). The load-bearing invariant is the
-// newest-wins re-guard after BOTH suspension points (the list read AND the `roots()` read): a
-// generic that captured a stale epoch could publish a superseded `.empty`/`.firstRun` flash, and
-// the headless gate can't model that race. Plain copies keep the invariant visible per facet.
+// Artists/Genres are the two FLAT facets (no per-item side hook), so they fold into one
+// `loadFlatFacet` generic (S3 F6): the load-bearing newest-wins re-guard after BOTH suspension
+// points (the list read AND the `roots()` read) is now written ONCE, correct-by-construction,
+// rather than hand-copied per facet — which is precisely the drift gate R1 originally feared. Albums
+// and Songs keep their bespoke loaders because they have EXTRA steps a generic would obscure (Albums
+// calls ensureArtwork(); Songs' `songs` setter drives refreshVisible()).
 
 @MainActor
 extension LibraryBrowseModel {
-    // MARK: Loaders (mirror loadAlbums, incl. the SECOND-await epoch re-guard — R1)
+    // MARK: Loaders
 
     /// Load the Artists list. `firstRun` when no roots are registered, `empty` when roots exist
     /// but no artists yet (mid-scan / untagged), `failed` on error.
     func loadArtists() async {
-        guard let store else {
-            artistsState = .loading // store still building; reloads on isStoreReady
-            return
-        }
-        artistsLoadEpoch &+= 1
-        let epoch = artistsLoadEpoch
-        if artists.isEmpty { artistsState = .loading }
-        do {
-            let loaded = try await store.artists()
-            guard epoch == artistsLoadEpoch else { return } // superseded after the list read
-            artists = loaded
-            if loaded.isEmpty {
-                let hasRoots = try await !store.roots().isEmpty
-                guard epoch == artistsLoadEpoch else { return } // superseded after the roots read
-                artistsState = hasRoots ? .empty : .firstRun
-            } else {
-                artistsState = .loaded
-            }
-        } catch {
-            guard epoch == artistsLoadEpoch else { return }
-            artistsState = .failed(error.localizedDescription)
-        }
+        await loadFlatFacet(into: \.artists, state: \.artistsState, epoch: \.artistsLoadEpoch,
+                            read: { try await $0.artists() })
     }
 
-    /// Load the Genres list (same discipline as `loadArtists`).
+    /// Load the Genres list (same flat-facet discipline as `loadArtists`).
     func loadGenres() async {
+        await loadFlatFacet(into: \.genres, state: \.genresState, epoch: \.genresLoadEpoch,
+                            read: { try await $0.genres() })
+    }
+
+    /// Shared loader for the flat facet lists (Artists, Genres). Bumps the facet's epoch, publishes
+    /// an optimistic `.loading` while the list is empty, reads, then re-guards the epoch after the
+    /// list read AND again after the `roots()` read so a superseded load can never publish a stale
+    /// `.empty`/`.firstRun` flash (R1). Written ONCE so that newest-wins invariant is correct across
+    /// both facets by construction.
+    private func loadFlatFacet<T>(
+        into arrayKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, [T]>,
+        state stateKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, LoadState>,
+        epoch epochKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, Int>,
+        read: (LibraryStore) async throws -> [T]
+    ) async {
         guard let store else {
-            genresState = .loading
+            self[keyPath: stateKeyPath] = .loading // store still building; reloads on isStoreReady
             return
         }
-        genresLoadEpoch &+= 1
-        let epoch = genresLoadEpoch
-        if genres.isEmpty { genresState = .loading }
+        self[keyPath: epochKeyPath] &+= 1
+        let epoch = self[keyPath: epochKeyPath]
+        if self[keyPath: arrayKeyPath].isEmpty { self[keyPath: stateKeyPath] = .loading }
         do {
-            let loaded = try await store.genres()
-            guard epoch == genresLoadEpoch else { return }
-            genres = loaded
+            let loaded = try await read(store)
+            guard epoch == self[keyPath: epochKeyPath] else { return } // superseded after list read
+            self[keyPath: arrayKeyPath] = loaded
             if loaded.isEmpty {
                 let hasRoots = try await !store.roots().isEmpty
-                guard epoch == genresLoadEpoch else { return }
-                genresState = hasRoots ? .empty : .firstRun
+                guard epoch == self[keyPath: epochKeyPath] else { return } // superseded after roots
+                self[keyPath: stateKeyPath] = hasRoots ? .empty : .firstRun
             } else {
-                genresState = .loaded
+                self[keyPath: stateKeyPath] = .loaded
             }
         } catch {
-            guard epoch == genresLoadEpoch else { return }
-            genresState = .failed(error.localizedDescription)
+            guard epoch == self[keyPath: epochKeyPath] else { return }
+            self[keyPath: stateKeyPath] = .failed(error.localizedDescription)
         }
     }
 
