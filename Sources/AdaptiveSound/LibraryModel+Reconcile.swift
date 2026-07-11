@@ -20,7 +20,7 @@ enum ReconcileState: Equatable {
     case catchingUp // a reconcile is running
 }
 
-// MARK: - AudioViewModel live folder-watch + reconcile seam (S8.4 slice 5a)
+// MARK: - LibraryModel live folder-watch + reconcile seam (S8.4 slice 5a — was AudioViewModel+Reconcile)
 
 //
 // Replaces the old non-recursive DispatchSource monitor: ONE recursive FSEvents `LibraryWatcher`
@@ -30,7 +30,7 @@ enum ReconcileState: Equatable {
 // (S9 IA change), so a disk change never rewrites it. The watcher's `@Sendable` sink hops to
 // @MainActor FIRST (the SIGTRAP lesson) before touching any state.
 
-extension AudioViewModel {
+extension LibraryModel {
     /// Build + start the FSEvents watcher (idempotent). Called once from `makeLibraryStore`.
     func startLibraryWatcher() {
         guard libraryWatcher == nil else { return }
