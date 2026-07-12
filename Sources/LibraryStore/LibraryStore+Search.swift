@@ -1,16 +1,17 @@
-// LibraryStore+Search — the S9.2 full-text search read (design §4).
+// LibraryStore+Search — the S9.2 full-text search read (design §4), GRDB-backed.
 //
-// Queries the `tracks_fts` FTS5 index (maintained by LibraryStore+SearchIndex) and
-// returns bm25-ranked track hits plus the deduped albums/artists those hits belong
-// to (for the sectioned search-results UI). Like every read: actor-isolated,
-// synchronous, Sendable returns, no filesystem access.
+// Queries the `tracks_fts` FTS5 index (maintained by LibraryStore+SearchIndex) and returns
+// bm25-ranked track hits plus the deduped albums/artists those hits belong to (for the
+// sectioned search-results UI). One `dbWriter.read` snapshot covers the hits AND the facet
+// resolution, so the sections are consistent.
 //
-// Injection-safety lives in `ftsMatchQuery`: raw user input is reduced to
-// alphanumeric tokens (stripping ALL FTS5 syntax specials) then wrapped as quoted
-// prefix terms, so a query can never be a syntax error or an unintended full-table
-// match — and an empty / all-punctuation query yields `.empty`, never everything.
+// Injection-safety lives in `ftsMatchQuery`: raw user input is reduced to alphanumeric tokens
+// (stripping ALL FTS5 syntax specials) then wrapped as quoted prefix terms, so a query can
+// never be a syntax error or an unintended full-table match — and an empty / all-punctuation
+// query yields `.empty`, never everything.
 
 import Foundation
+import GRDB
 
 /// The grouped result of a library search: bm25-ranked track hits plus the deduped
 /// albums/artists those hits belong to (the sectioned Songs/Albums/Artists UI).
@@ -30,19 +31,14 @@ public struct SearchResults: Sendable {
 }
 
 public extension LibraryStore {
-    /// The token characters — letters (incl. accented + CJK) and decimal digits. This
-    /// deliberately mirrors what `unicode61` treats as token characters, and is TIGHTER
-    /// than `CharacterSet.alphanumerics` (which also admits category No/Nl like "½"/"①"
-    /// that `unicode61` would drop, yielding a zero-token phrase that can error).
+    /// The token characters — letters (incl. accented + CJK) and decimal digits. Mirrors what
+    /// `unicode61` treats as token characters, and is TIGHTER than `CharacterSet.alphanumerics`.
     private static let ftsTokenCharacters = CharacterSet.letters.union(.decimalDigits)
 
-    /// Build an FTS5 `MATCH` expression from raw user input, or `nil` when nothing
-    /// searchable remains (→ empty results; never a full-table match, never a syntax
-    /// error). The query is **split on non-token boundaries** — mirroring `unicode61`,
-    /// so each maximal letters/digits run becomes its own term (e.g. "AC/DC" →
-    /// `"ac"* "dc"*`, matching the index's `["ac","dc"]`; a whitespace-only strip would
-    /// instead FUSE to "acdc" and never match). Each term is a quoted prefix; terms are
-    /// implicit-ANDed. `unicode61 remove_diacritics 2` folds case + accents.
+    /// Build an FTS5 `MATCH` expression from raw user input, or `nil` when nothing searchable
+    /// remains (→ empty results; never a full-table match, never a syntax error). Split on
+    /// non-token boundaries (mirroring `unicode61`), each maximal run a quoted prefix term;
+    /// terms are implicit-ANDed. `unicode61 remove_diacritics 2` folds case + accents.
     internal static func ftsMatchQuery(for raw: String) -> String? {
         let tokens = raw.unicodeScalars
             .split(whereSeparator: { !ftsTokenCharacters.contains($0) })
@@ -52,100 +48,85 @@ public extension LibraryStore {
     }
 
     /// The shared `MATCH` predicate text — ONE source of truth so `search()` and
-    /// `searchMatchingIDs()` can never diverge on membership. FTS5's `MATCH` operator takes
-    /// the FTS table by NAME (`tracks_fts`), never an alias.
+    /// `searchMatchingIDs()` can never diverge. FTS5's `MATCH` takes the FTS table by NAME.
     internal static let ftsMatchWhere = "WHERE tracks_fts MATCH ?"
 
-    /// The IDs-only membership read behind the Songs "filter-preserves-sort" filter (S9.5
-    /// §4, A2 LOCKED). It is `search()`'s predicate with EVERYTHING presentational removed:
-    /// `SELECT rowid` (== `tracks.id`), NO `ORDER BY bm25`, NO `LIMIT`, and NO joins — so it
-    /// touches neither `tracks` nor the artist/album joins, and can only ever return the SAME
-    /// membership `search()` would. This ONE constant drives both the read and its EXPLAIN
-    /// (no drift), and shares `ftsMatchWhere` with `search()`.
+    /// The IDs-only membership read behind the Songs "filter-preserves-sort" filter (S9.5 §4,
+    /// A2 LOCKED): `search()`'s predicate with EVERYTHING presentational removed — `SELECT rowid`
+    /// (== `tracks.id`), NO `ORDER BY bm25`, NO `LIMIT`, NO joins.
     internal static let searchMatchingIDsSQL = """
     SELECT rowid
     FROM tracks_fts
     \(LibraryStore.ftsMatchWhere);
     """
 
-    /// Full-text search across track title/artist/album/genre. Returns bm25-ranked
-    /// track hits (capped at `limit`) plus the deduped albums/artists the hits belong
-    /// to, in first-hit order. An empty / all-stripped query yields `.empty`.
-    ///
-    /// The default cap is a BOUNDED 400 (S9.5 D4/OD-3): high enough that the incremental
-    /// filter over a medium (~2k–20k) library shows a complete-feeling result set, low
-    /// enough to stay off the scale cliff. `ftsMatchQuery`'s injection/diacritics/prefix
-    /// behaviour is unchanged. Callers may still pass an explicit `limit`.
-    func search(_ query: String, limit: Int = 400) throws -> SearchResults {
+    /// The bm25-ranked track-hit read behind `search()`. FTS5's `MATCH` + `bm25()` take the FTS
+    /// table by NAME (not alias), so this FROM starts at `tracks_fts` and can't reuse
+    /// `displayTracksSQL`; it interpolates the shared `displayTrackColumns`/`displayArtistAlbumJoins`
+    /// /`ftsMatchWhere` constants so the projection + joins live in ONE place.
+    private static let searchTracksSQL = """
+    SELECT \(LibraryStore.displayTrackColumns)
+    FROM tracks_fts
+    JOIN tracks t ON t.id = tracks_fts.rowid
+    \(LibraryStore.displayArtistAlbumJoins)
+    \(LibraryStore.ftsMatchWhere)
+    ORDER BY bm25(tracks_fts)
+    LIMIT ?;
+    """
+
+    /// Full-text search across track title/artist/album/genre. Returns bm25-ranked track hits
+    /// (capped at `limit`, default a bounded 400) plus the deduped albums/artists the hits
+    /// belong to, in first-hit order. An empty / all-stripped query yields `.empty`.
+    func search(_ query: String, limit: Int = 400) async throws -> SearchResults {
         guard let match = LibraryStore.ftsMatchQuery(for: query) else { return .empty }
-        // NB: FTS5's MATCH operator + bm25() take the FTS table by NAME, not by alias —
-        // `tracks_fts` is referenced unaliased (an alias trips "no such column"). This FROM
-        // clause can't reuse `displayTracksSQL` (it starts from `tracks_fts`, not `tracks`),
-        // so it interpolates the shared `displayArtistAlbumJoins` constant instead of
-        // hand-rolling the join text — see that constant's doc for why (S9.5 §12.1 drift).
-        let sql = """
-        SELECT \(LibraryStore.displayTrackColumns)
-        FROM tracks_fts
-        JOIN tracks t ON t.id = tracks_fts.rowid
-        \(LibraryStore.displayArtistAlbumJoins)
-        \(LibraryStore.ftsMatchWhere)
-        ORDER BY bm25(tracks_fts)
-        LIMIT ?;
-        """
-        let tracks = try fetchDisplayTracks(sql) { statement in
-            try statement.bind(match, at: 1)
-            try statement.bind(Int64(max(0, limit)), at: 2)
-        }
-        guard !tracks.isEmpty else { return .empty }
+        return try await dbWriter.read { db in
+            let tracks = try LibraryTrackDisplay.fetchAll(
+                db, sql: LibraryStore.searchTracksSQL, arguments: [match, Int64(max(0, limit))]
+            )
+            guard !tracks.isEmpty else { return .empty }
 
-        // Deduped albums/artists the hits belong to, preserving first-hit (bm25) order,
-        // via the S9.1 single-facet reads. The id-0 unknown-artist sentinel is skipped.
-        var albums: [AlbumFacet] = []
-        var seenAlbums = Set<Int64>()
-        var artists: [ArtistFacet] = []
-        var seenArtists = Set<Int64>()
-        for track in tracks {
-            if let albumID = track.albumID, seenAlbums.insert(albumID).inserted,
-               let facet = try album(id: albumID) {
-                albums.append(facet)
+            // Deduped albums/artists the hits belong to, preserving first-hit (bm25) order, via
+            // the SAME shared facet builders as the single-facet reads. The id-0 sentinel skipped.
+            var albums: [AlbumFacet] = []
+            var seenAlbums = Set<Int64>()
+            var artists: [ArtistFacet] = []
+            var seenArtists = Set<Int64>()
+            for track in tracks {
+                if let albumID = track.albumID, seenAlbums.insert(albumID).inserted,
+                   let facet = try Self.fetchAlbums(
+                       db, whereClause: "WHERE al.id = ?", order: LibraryStore.albumTitleOrder,
+                       limited: false, arguments: [albumID]
+                   ).first {
+                    albums.append(facet)
+                }
+                if let artistID = track.artistID, artistID != unknownArtistID,
+                   seenArtists.insert(artistID).inserted,
+                   let facet = try Self.fetchArtists(
+                       db, extraWhere: "AND ar.id = ?", order: LibraryStore.artistNameOrder,
+                       limited: false, arguments: [artistID]
+                   ).first {
+                    artists.append(facet)
+                }
             }
-            if let artistID = track.artistID, artistID != unknownArtistID,
-               seenArtists.insert(artistID).inserted, let facet = try artist(id: artistID) {
-                artists.append(facet)
-            }
+            return SearchResults(tracks: tracks, albums: albums, artists: artists)
         }
-        return SearchResults(tracks: tracks, albums: albums, artists: artists)
     }
 
-    /// The set of `tracks.id`s matching `query` — the IDs-only membership read behind the
-    /// Songs "filter-preserves-sort" filter (S9.5 §4, A2 LOCKED). Reuses the SAME
-    /// `ftsMatchQuery` sanitizer and the SAME `WHERE tracks_fts MATCH ?` predicate as
-    /// `search()` (via `searchMatchingIDsSQL`), so the two can never diverge on membership;
-    /// it differs ONLY by `SELECT rowid` (== `tracks.id`), no `ORDER BY bm25`, no `LIMIT`,
-    /// and no joins.
-    ///
-    /// Junk / all-stripped input (`ftsMatchQuery → nil`) returns an EMPTY set — mirroring how
-    /// `search()` yields `.empty` for the same input — NEVER all rows and never a throw for
-    /// that reason. `nil` (i.e. "not filtering") is the CALLER's concept; this read only ever
-    /// returns a concrete set. The ≥2-char gate is likewise the caller's job.
-    func searchMatchingIDs(_ query: String) throws -> Set<Int64> {
+    /// The set of `tracks.id`s matching `query` — the IDs-only membership read behind the Songs
+    /// filter (S9.5 §4). Reuses the SAME `ftsMatchQuery` sanitizer and `searchMatchingIDsSQL`
+    /// predicate as `search()`, so the two can never diverge on membership. Junk / all-stripped
+    /// input returns an EMPTY set, never all rows and never a throw.
+    func searchMatchingIDs(_ query: String) async throws -> Set<Int64> {
         guard let match = LibraryStore.ftsMatchQuery(for: query) else { return [] }
-        let statement = try connection.prepare(LibraryStore.searchMatchingIDsSQL)
-        defer { statement.finalize() }
-        try statement.bind(match, at: 1)
-        var ids = Set<Int64>()
-        while try statement.step() {
-            ids.insert(statement.columnInt64(0))
+        return try await dbWriter.read { db in
+            try Int64.fetchSet(db, sql: LibraryStore.searchMatchingIDsSQL, arguments: [match])
         }
-        return ids
     }
 
-    /// The `EXPLAIN QUERY PLAN` `detail` rows for `searchMatchingIDs`, EXPLAINing the EXACT
-    /// `searchMatchingIDsSQL` the read prepares (same constant, so no drift). The plan is
-    /// independent of the (unbound) `MATCH` value. Diagnostic/verification hook (like
-    /// `explainQueryPlan(for:)`/`explainAllTracksDisplayPlan`), NOT browse-facing: it lets the
-    /// gate prove the membership read visits `tracks_fts` ONLY and never scans `tracks`.
-    func explainSearchMatchingIDsPlan() throws -> [String] {
-        try collectQueryPlan(LibraryStore.searchMatchingIDsSQL)
+    /// The `EXPLAIN QUERY PLAN` `detail` rows for `searchMatchingIDs` (same `searchMatchingIDsSQL`
+    /// constant, so no drift). Diagnostic/verification hook: proves the membership read visits
+    /// `tracks_fts` ONLY and never scans `tracks`.
+    func explainSearchMatchingIDsPlan() async throws -> [String] {
+        try await dbWriter.read { db in try Self.collectQueryPlan(db, LibraryStore.searchMatchingIDsSQL) }
     }
 }

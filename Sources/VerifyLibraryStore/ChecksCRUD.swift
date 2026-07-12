@@ -3,6 +3,7 @@
 // PASS/FAIL, temp DBs under test-data/). Drives the S8.1b DAO through the actor.
 
 import Foundation
+import GRDB
 import LibraryStore
 
 // MARK: - Small DAO fixture helpers
@@ -159,10 +160,11 @@ private func checkDateAddedIsEpoch(_ store: LibraryStore, url: URL, number: Int)
     let path = "/Music/DateAdded/da.flac"
     _ = try await store.upsert([makeScanned(path: path, name: "da")], folderID: root, generation: generation)
 
-    let reader = try SQLiteConnection(path: url.path)
-    defer { reader.close() }
+    let reader = try DatabaseQueue(path: url.path)
     let key = PathNormalizer.normalizedString(for: URL(fileURLWithPath: path))
-    guard let dateAdded = try reader.scalarInt("SELECT date_added FROM tracks WHERE url = ?;", bind: key) else {
+    guard let dateAdded = try await reader.read({ db in
+        try Int64.fetchOne(db, sql: "SELECT date_added FROM tracks WHERE url = ?;", arguments: [key])
+    }) else {
         printFail(number, "SF-1: could not read date_added"); return false
     }
     // Plausible epoch: after 2001-09-09 (1e9). Generations here are tiny counters.

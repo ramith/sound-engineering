@@ -6,13 +6,15 @@
 // are UUID-unique, and are cleaned up by the driver on overall success (kept on
 // failure for post-mortem).
 //
-// The harness drives the store's PUBLIC foundation directly (SQLiteConnection,
-// MigrationRunner, Schema, StoreQuarantine) to prove the runner mechanically —
-// exactly the "let the harness use SQLiteConnection directly" path the design
-// permits. The `LibraryStore` actor is exercised for the end-to-end open/repair
-// and durability paths.
+// The harness drives the store's persistence layer directly (GRDB `DatabaseQueue` +
+// `DatabaseMigrator` built from the production `Schema` migration bodies) to prove the
+// migration mechanics — exactly the "let the harness use the DB layer directly" path the
+// design permits. The `LibraryStore` end-to-end open/repair + durability paths are
+// exercised through its public API. GRDB tracks applied migrations in its own
+// `grdb_migrations` table; `schema_info.version` is our app-facing provenance mirror.
 
 import Foundation
+import GRDB
 import LibraryStore
 
 // MARK: - Shared fixture helpers
@@ -24,30 +26,46 @@ let testQuarantineStamp = "TESTSTAMP-00000000"
 /// A fixed timestamp for migrations so provenance rows are deterministic.
 let testTimestamp: Int64 = 1_700_000_000
 
-/// Seed `count` `folders` rows on an open connection (a persistent, FK-free
-/// fixture usable to prove migration/restart preserves data). Returns the paths.
+/// Seed `count` `folders` rows on an open `Database` (a persistent, FK-free fixture usable
+/// to prove migration/restart preserves data). Returns the paths.
 @discardableResult
-func seedFolders(_ connection: SQLiteConnection, count: Int, prefix: String) throws -> [String] {
+func seedFolders(_ db: Database, count: Int, prefix: String) throws -> [String] {
     var paths: [String] = []
-    let statement = try connection.prepare("INSERT INTO folders(path, is_root) VALUES (?, 1);")
-    defer { statement.finalize() }
     for index in 0 ..< count {
         let path = "/Music/\(prefix)-\(index)"
-        statement.reset()
-        statement.clearBindings()
-        try statement.bind(path, at: 1)
-        _ = try statement.step()
+        try db.execute(sql: "INSERT INTO folders(path, is_root) VALUES (?, 1);", arguments: [path])
         paths.append(path)
     }
     return paths
 }
 
-/// The v0→v1-only migration list — used by the SCHEMA-3/4 migration-mechanics
-/// checks to build a genuine v1 store, so they can then exercise the REAL v1→v2
-/// (now that v2 is a real production step, not a synthetic test one).
-func v1OnlyMigrations() -> [Migration] {
-    MigrationRunner.productionMigrations(appBuild: "verify", timestamp: testTimestamp)
-        .filter { $0.toVersion <= 1 }
+/// A `DatabaseMigrator` with ONLY the v1 (create-all) step — used by the SCHEMA-3/4
+/// migration-mechanics checks to build a genuine v1 store, so they can then exercise the
+/// REAL v1→v2 (built from the production `Schema` migration bodies).
+func v1OnlyMigrator() -> DatabaseMigrator {
+    var migrator = DatabaseMigrator()
+    migrator.registerMigration(Schema.MigrationID.v1) { db in
+        try Schema.migrateV0toV1(db, appBuild: "verify", timestamp: testTimestamp)
+    }
+    return migrator
+}
+
+/// The full v1→v2 migrator (create-all + the real FTS5 step) from the production `Schema`
+/// bodies. Uses the SAME `Schema.MigrationID` identifiers as `LibraryStore.makeMigrator`, so a
+/// v1 store it (or `v1OnlyMigrator`) builds can be handed to `LibraryStore` without tripping the
+/// `hasBeenSuperseded` downgrade guard.
+func fullMigrator() -> DatabaseMigrator {
+    var migrator = v1OnlyMigrator()
+    migrator.registerMigration(Schema.MigrationID.v2) { db in
+        try Schema.migrateV1toV2(db, appBuild: "verify", timestamp: testTimestamp)
+    }
+    return migrator
+}
+
+/// The app-facing schema version from `schema_info` (our provenance mirror; GRDB keeps the
+/// authoritative applied-migration state in `grdb_migrations`).
+func schemaInfoVersion(_ db: Database) throws -> Int {
+    try Int.fetchOne(db, sql: "SELECT version FROM schema_info WHERE id = 1;") ?? 0
 }
 
 // MARK: - SCHEMA-1 — fresh create
@@ -160,40 +178,41 @@ func checkMigrationPreservesData(number: Int, url: URL) -> Bool {
         // Bring an empty DB to v1 ONLY (so the real v1→v2 below is what we exercise), seed rows.
         let seededPaths: [String]
         do {
-            let connection = try SQLiteConnection(path: url.path)
-            defer { connection.close() }
-            try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
-            seededPaths = try seedFolders(connection, count: 5, prefix: "v1seed")
-            guard try connection.userVersion() == 1 else {
-                printFail(number, "migration preserves data: pre-migration version != 1")
+            let queue = try DatabaseQueue(path: url.path)
+            try v1OnlyMigrator().migrate(queue)
+            seededPaths = try queue.write { db in try seedFolders(db, count: 5, prefix: "v1seed") }
+            let version = try queue.read { db in try schemaInfoVersion(db) }
+            guard version == 1 else {
+                printFail(number, "migration preserves data: pre-migration version \(version) != 1")
                 return false
             }
         }
 
         // Reopen and run the REAL production v1 → v2 (FTS5 table + backfill).
-        let connection = try SQLiteConnection(path: url.path)
-        defer { connection.close() }
-        try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
+        let queue = try DatabaseQueue(path: url.path)
+        try fullMigrator().migrate(queue)
 
-        guard try connection.userVersion() == 2 else {
-            printFail(number, "migration preserves data: post-migration version != 2")
+        let (version, folderCount, ftsExists) = try queue.read { db in
+            try (schemaInfoVersion(db),
+                 Int.fetchOne(db, sql: "SELECT count(*) FROM folders;") ?? -1,
+                 Int.fetchOne(
+                     db, sql: "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
+                 ) ?? 0)
+        }
+        guard version == 2 else {
+            printFail(number, "migration preserves data: post-migration version \(version) != 2")
             return false
         }
-        let folderCount = try Int(connection.scalarInt("SELECT count(*) FROM folders;") ?? -1)
         guard folderCount == seededPaths.count else {
             printFail(number, "migration preserves data: \(folderCount) folders survived, "
                 + "expected \(seededPaths.count)")
             return false
         }
-        // v2 must have created the FTS search table.
-        let ftsExists = try Int(connection.scalarInt(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
-        ) ?? 0)
         guard ftsExists == 1 else {
             printFail(number, "migration preserves data: tracks_fts not created by the real v1->v2")
             return false
         }
-        printPass(number, "migration-runner preserves data: the REAL v1->v2 kept all "
+        printPass(number, "migrator preserves data: the REAL v1->v2 kept all "
             + "\(folderCount) seeded rows and created tracks_fts")
         return true
     } catch {
@@ -212,38 +231,39 @@ struct MigrationTestError: Error {}
 /// data and NO partial effect from the failed step (all-or-nothing).
 func checkMigrationTransactional(number: Int, url: URL) -> Bool {
     do {
-        let connection = try SQLiteConnection(path: url.path)
-        defer { connection.close() }
+        let queue = try DatabaseQueue(path: url.path)
         // Build a genuine v1 store (NOT v2 — we test a throwing v1→v2 below).
-        try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
-        let seededPaths = try seedFolders(connection, count: 3, prefix: "txn")
-        let preCount = try Int(connection.scalarInt("SELECT count(*) FROM folders;") ?? -1)
+        try v1OnlyMigrator().migrate(queue)
+        let seededPaths = try queue.write { db in try seedFolders(db, count: 3, prefix: "txn") }
+        let preCount = try queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM folders;") ?? -1 }
 
-        // A v1→v2 migration that makes a change, then throws mid-step.
-        let throwingStep = Migration(toVersion: 2) { conn in
-            _ = try seedFolders(conn, count: 2, prefix: "should-rollback")
-            try conn.exec("ALTER TABLE folders ADD COLUMN doomed TEXT;")
+        // A v1→v2 migration that makes a change, then throws mid-step. GRDB runs each
+        // migration in its own transaction, so the whole step must roll back atomically.
+        var throwingMigrator = v1OnlyMigrator()
+        throwingMigrator.registerMigration(Schema.MigrationID.v2) { db in
+            _ = try seedFolders(db, count: 2, prefix: "should-rollback")
+            try db.execute(sql: "ALTER TABLE folders ADD COLUMN doomed TEXT;")
             throw MigrationTestError()
         }
-        let migrations = v1OnlyMigrations() + [throwingStep]
 
         var threw = false
         do {
-            try MigrationRunner.migrate(connection, migrations: migrations, targetVersion: 2)
+            try throwingMigrator.migrate(queue)
         } catch {
             threw = true
         }
         guard threw else {
-            printFail(number, "transactional migration: runner did not propagate the step error")
+            printFail(number, "transactional migration: migrator did not propagate the step error")
             return false
         }
-        // user_version must still be 1 (the bump is inside the same rolled-back txn).
-        guard try connection.userVersion() == 1 else {
-            printFail(number, "transactional migration: user_version advanced despite rollback")
+        // schema_info.version must still be 1 (the v2 provenance write is inside the rolled-back txn).
+        let version = try queue.read { db in try schemaInfoVersion(db) }
+        guard version == 1 else {
+            printFail(number, "transactional migration: schema_info.version advanced to \(version) despite rollback")
             return false
         }
         // Row count must be the pre-migration count (the 2 inserted rows rolled back).
-        let postCount = try Int(connection.scalarInt("SELECT count(*) FROM folders;") ?? -1)
+        let postCount = try queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM folders;") ?? -1 }
         guard postCount == preCount, postCount == seededPaths.count else {
             printFail(number, "transactional migration: folder count \(postCount) != pre \(preCount) — "
                 + "partial migration leaked")
@@ -252,7 +272,7 @@ func checkMigrationTransactional(number: Int, url: URL) -> Bool {
         // The doomed column must NOT exist (its ADD COLUMN rolled back).
         var doomedExists = true
         do {
-            _ = try connection.scalarInt("SELECT count(doomed) FROM folders;")
+            _ = try queue.read { db in try Int.fetchOne(db, sql: "SELECT count(doomed) FROM folders;") }
         } catch {
             doomedExists = false
         }
@@ -260,7 +280,7 @@ func checkMigrationTransactional(number: Int, url: URL) -> Bool {
             printFail(number, "transactional migration: 'doomed' column persisted — ADD COLUMN not rolled back")
             return false
         }
-        printPass(number, "migration is transactional: a throwing v1->v2 left user_version=1, "
+        printPass(number, "migration is transactional: a throwing v1->v2 left schema_info.version=1, "
             + "\(postCount) rows intact, and NO partial column (all-or-nothing)")
         return true
     } catch {
