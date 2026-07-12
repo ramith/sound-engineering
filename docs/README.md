@@ -18,7 +18,7 @@ A macOS app that turns good-quality music into a **personal, perceptually-tuned,
 
 ## Phasing at a glance
 - **Phase 0** — local-file player MVP (the DSP spine, passthrough → first DSP)
-- **Phase 1** — mix-based core: perceptual clarity + correction + loudness-comp + adaptive engine + **BRIR immersion** + natural-language control + the **Reimagine** knob (mix range)
+- **Phase 1** — mix-based core: perceptual clarity + correction + loudness-comp + adaptive engine + **BRIR immersion** + the **Reimagine** knob (mix range)
 - **Phase 1.5** — **stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking (Reimagine knob, stem range)
 - **Phase 2** — system-wide via Core Audio process taps (mix-level), virtual-device fallback
 
