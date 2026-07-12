@@ -10,7 +10,7 @@ struct FormatBadgeView: View {
 
     var body: some View {
         Text(format)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DesignSystem.Font.micro)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(isSelected ? Color.asAccent.opacity(0.2) : Color.asCard)

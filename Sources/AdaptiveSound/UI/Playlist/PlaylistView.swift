@@ -55,7 +55,7 @@ private struct PlaylistHeaderView: View {
                     .foregroundStyle(Color.asLabelSecond)
 
                 Text("\(viewModel.playlist.count) \(viewModel.playlist.count == 1 ? "track" : "tracks")")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(DesignSystem.Font.monoSmall)
                     .foregroundStyle(Color.asLabelTertiary)
             }
 
