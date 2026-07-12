@@ -178,7 +178,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
-        + songsSortCheckCases()
+        + songsSortCheckCases() + decodeCoverageCheckCases()
 }
 
 /// S9.2 — FTS5 search: v1→v2 migration/backfill, the write-path sync seam (every
