@@ -7,6 +7,13 @@ let package = Package(
         .macOS(.v26),
     ],
     dependencies: [
+        // GRDB.swift — the SQLite toolkit the LibraryStore DAO is built on (GRDB refactor).
+        // The FIRST external SwiftPM dependency: it REVERSES the former "system SQLite only,
+        // zero external deps" posture (see the LibraryStore target note). Justified — GRDB links
+        // the SYSTEM libsqlite3 on Apple platforms (SQLite itself stays a system lib) and has NO
+        // swift-syntax macro plugin, so the toolchain-skew class that broke `swift test` does not
+        // apply. Pinned to 7.x (Swift 6 / strict-concurrency support).
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
     ],
     targets: [
         .executableTarget(
@@ -60,15 +67,19 @@ let package = Package(
                 ]),
             ]
         ),
-        // Persistent library store (Sprint 8, S8.1a). System SQLite ONLY (import SQLite3;
-        // .linkedLibrary("sqlite3")) — ZERO external SwiftPM deps, matching the CoreAudio/
-        // Accelerate system-lib idiom and avoiding the toolchain-skew class that broke
-        // `swift test`. Its own library target so BOTH the app (AdaptiveSound) and the offline
-        // gate (VerifyLibraryStore) link the identical store/schema/migration implementation —
-        // no drift. Off the audio path entirely (additive; S8.1 touches no DSP).
+        // Persistent library store (Sprint 8; rebuilt on GRDB.swift in the GRDB refactor).
+        // Built on GRDB.swift (DatabasePool, DatabaseMigrator, records, FTS5) over the SYSTEM
+        // libsqlite3 (GRDB links it on Apple platforms). This REVERSES the original "system SQLite
+        // only, zero external SwiftPM deps" stance — which existed to dodge the swift-syntax macro
+        // toolchain-skew that broke `swift test`; GRDB has NO macro plugin, so that risk does not
+        // apply. Its own library target so BOTH the app (AdaptiveSound) and the offline gate
+        // (VerifyLibraryStore) link the identical store/schema/migration implementation — no drift.
+        // Off the audio path entirely.
         .target(
             name: "LibraryStore",
-            dependencies: [],
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             path: "Sources/LibraryStore",
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
@@ -102,7 +113,14 @@ let package = Package(
         // (swift test is broken here; this is the runnable verification for the store path.)
         .executableTarget(
             name: "VerifyLibraryStore",
-            dependencies: ["LibraryStore", "LibraryScan"],
+            // GRDB directly: the migration-mechanics / concurrency / corruption checks drive the
+            // store's persistence layer at a low level (the design sanctions harness-level DB
+            // access — formerly via the SQLiteConnection wrapper, now via GRDB's DatabaseQueue/
+            // DatabaseMigrator). Production reads/writes go through the LibraryStore API as before.
+            dependencies: [
+                "LibraryStore", "LibraryScan",
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             path: "Sources/VerifyLibraryStore"
         ),
         // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact

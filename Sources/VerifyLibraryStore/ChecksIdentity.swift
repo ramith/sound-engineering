@@ -10,6 +10,7 @@
 // relative_path (not the stale old one, which was relative to the old root).
 
 import Foundation
+import GRDB
 import LibraryStore
 
 // MARK: - E — idempotency + identity
@@ -152,14 +153,15 @@ private func checkMoveTrackIdentity(
     }
     let destFolderID = try await store.addRoot(URL(fileURLWithPath: "/Music/E-dest"))
 
-    // Synthetic reference table + a reference row → this track (a second WAL reader
-    // connection; the actor's committed writes are visible to it).
-    let refConnection = try SQLiteConnection(path: url.path)
-    defer { refConnection.close() }
-    try refConnection.exec(
-        "CREATE TABLE IF NOT EXISTS synthetic_refs (ref_id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL);"
-    )
-    try refConnection.exec("INSERT INTO synthetic_refs(ref_id, track_id) VALUES (7, \(trackID));")
+    // Synthetic reference table + a reference row → this track (a second WAL connection;
+    // the store's committed writes are visible to it).
+    let refQueue = try DatabaseQueue(path: url.path)
+    try await refQueue.write { db in
+        try db.execute(
+            sql: "CREATE TABLE IF NOT EXISTS synthetic_refs (ref_id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL);"
+        )
+        try db.execute(sql: "INSERT INTO synthetic_refs(ref_id, track_id) VALUES (7, ?);", arguments: [trackID])
+    }
 
     // Move in place into the DIFFERENT root with a NEW relative_path.
     let newURL = URL(fileURLWithPath: "/Music/E-dest/moved/move-dst.flac")
@@ -189,9 +191,11 @@ private func checkMoveTrackIdentity(
         printFail(number, "M6: old url still resolves — the move copied instead of moving"); return false
     }
     // The synthetic reference still resolves to the moved track (join on track_id).
-    let joined = try refConnection.scalarInt(
-        "SELECT t.id FROM synthetic_refs r JOIN tracks t ON t.id = r.track_id WHERE r.ref_id = 7;"
-    )
+    let joined = try await refQueue.read { db in
+        try Int64.fetchOne(
+            db, sql: "SELECT t.id FROM synthetic_refs r JOIN tracks t ON t.id = r.track_id WHERE r.ref_id = 7;"
+        )
+    }
     guard joined == trackID else {
         printFail(number, "M6: synthetic reference no longer resolves to the moved track "
             + "(\(String(describing: joined)) != \(trackID))"); return false

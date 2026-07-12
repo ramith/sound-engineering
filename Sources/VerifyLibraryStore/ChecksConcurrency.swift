@@ -8,16 +8,18 @@
 // and RESOLVER RACE-SAFETY (two separate store instances resolving the same brand-new
 // artist/album/genre name concurrently → exactly one row each, neither throws).
 //
-// GENUINE concurrency needs multiple connections against the shared WAL file: within
-// ONE actor every call serialises, so the readers/writer here are SEPARATE
-// LibraryStore actor instances (each owns its own SQLiteConnection) opened on the
-// same on-disk file — exactly the multi-connection WAL configuration the store's
-// pragmas are designed for.
+// GENUINE concurrency needs multiple connections against the shared WAL file. Each
+// `LibraryStore` owns a GRDB `DatabasePool` (a single serialized writer + concurrent
+// readers); the readers/writer here are SEPARATE `LibraryStore` instances (separate
+// pools) opened on the same on-disk file — the multi-connection WAL configuration the
+// store's pragmas are designed for. The low-level BUSY / writer-abort probes use raw
+// GRDB `DatabaseQueue`s directly against the file.
 //
 // BOUNDED: every concurrent phase runs under a wall-clock deadline; a phase that
 // does not finish is a FAIL (a deadlock), never a skip.
 
 import Foundation
+import GRDB
 import LibraryStore
 
 /// The concurrent phases' wall-clock budget. Overrun ⇒ FAIL (deadlock), per §6-D.
@@ -175,29 +177,47 @@ private func runSnapshotProbe(
 /// typed BUSY — in NO case does it trap. We assert the typed-error path is reachable
 /// and non-crashing.
 private func checkBusyHandled(url: URL, number: Int) -> Bool {
-    do {
-        // Holder: a normal (5s) connection that opens and HOLDS a write transaction.
-        let holder = try SQLiteConnection(path: url.path)
-        defer { holder.close() }
-        try holder.exec("BEGIN IMMEDIATE;")
-
-        // Contender: a tiny-timeout connection; taking the write lock must fail fast
-        // with a typed BUSY (not hang past our patience, not crash).
-        let contender = try SQLiteConnection(path: url.path, busyTimeoutMillis: 50)
-        defer { contender.close() }
+    // A tiny reference box so the contender's outcome (set on a background thread, read
+    // after the semaphore) crosses the closure boundary without a data-race diagnostic —
+    // the DispatchSemaphore provides the happens-before ordering.
+    final class BusyOutcome: @unchecked Sendable {
         var sawBusy = false
-        do {
-            try contender.exec("BEGIN IMMEDIATE;")
-            // If it somehow acquired the lock, release it so the holder can roll back.
-            try? contender.exec("ROLLBACK;")
-        } catch let error as SQLiteError {
-            sawBusy = error.isBusy
-            guard sawBusy else {
-                printFail(number, "SQLITE_BUSY: contender threw a non-BUSY error: \(error)"); return false
+        var otherError: Error?
+    }
+    let outcome = BusyOutcome()
+    do {
+        // Holder: a normal (5 s busy timeout) connection that HOLDS a write transaction.
+        let holder = try DatabaseQueue(path: url.path)
+        // Contender: a tiny-timeout connection; taking the write lock while the holder has
+        // it must fail fast with a typed BUSY (not hang past our patience, not crash).
+        var contenderConfig = Configuration()
+        contenderConfig.busyMode = .timeout(0.05) // 50 ms
+        let contender = try DatabaseQueue(path: url.path, configuration: contenderConfig)
+
+        try holder.writeWithoutTransaction { db in
+            try db.beginTransaction(.immediate) // hold the write lock for the duration of this closure
+            let semaphore = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                do {
+                    try contender.writeWithoutTransaction { contenderDB in
+                        try contenderDB.beginTransaction(.immediate)
+                        try contenderDB.rollback()
+                    }
+                } catch let error as DatabaseError where error.resultCode.primaryResultCode == .SQLITE_BUSY {
+                    outcome.sawBusy = true
+                } catch {
+                    outcome.otherError = error
+                }
+                semaphore.signal()
             }
+            semaphore.wait()
+            try db.rollback()
         }
-        try holder.exec("ROLLBACK;")
-        guard sawBusy else {
+
+        if let other = outcome.otherError {
+            printFail(number, "SQLITE_BUSY: contender threw a non-BUSY error: \(other)"); return false
+        }
+        guard outcome.sawBusy else {
             printFail(number, "SQLITE_BUSY: expected a typed BUSY while the write lock was held")
             return false
         }
@@ -217,18 +237,19 @@ private func checkReaderSurvivesWriterAbort(
     let before = try await store.trackCount()
     let abortPath = "/Music/Conc/aborted-\(UUID().uuidString).flac"
 
-    // Writer connection: begin, insert, abort — all on a raw connection.
-    let writer = try SQLiteConnection(path: url.path)
-    defer { writer.close() }
-    try writer.exec("BEGIN IMMEDIATE;")
-    let insert = try writer.prepare(
-        "INSERT INTO tracks(url, name, format, file_size, mtime, date_added) "
-            + "VALUES (?, 'aborted', 'FLAC', 1, 1, 1);"
-    )
-    try insert.bind(abortPath, at: 1)
-    _ = try insert.step()
-    insert.finalize()
-    try writer.exec("ROLLBACK;")
+    // Writer connection: begin, insert, abort — on a raw GRDB queue via an explicit
+    // `.rollback` transaction (BEGIN IMMEDIATE → INSERT → ROLLBACK).
+    let writer = try DatabaseQueue(path: url.path)
+    try await writer.writeWithoutTransaction { db in
+        try db.inTransaction(.immediate) {
+            try db.execute(
+                sql: "INSERT INTO tracks(url, name, format, file_size, mtime, date_added) "
+                    + "VALUES (?, 'aborted', 'FLAC', 1, 1, 1);",
+                arguments: [abortPath]
+            )
+            return .rollback
+        }
+    }
 
     // Reader survives + sees the pre-abort state; integrity intact.
     let reader = try await LibraryStore(url: url, appBuild: "verify")
@@ -294,11 +315,12 @@ private func checkResolverRaceSafety(
 
 /// Assert exactly one artist, one album, and one genre row exist for the raced names.
 private func resolverRaceRowCountsOK(url: URL, number: Int) throws -> Bool {
-    let reader = try SQLiteConnection(path: url.path)
-    defer { reader.close() }
-    let artistRows = try reader.scalarInt("SELECT count(*) FROM artists WHERE name = ?;", bind: "Race Artist")
-    let albumRows = try reader.scalarInt("SELECT count(*) FROM albums WHERE title = ?;", bind: "Race Album")
-    let genreRows = try reader.scalarInt("SELECT count(*) FROM genres WHERE name = ?;", bind: "Race Genre")
+    let reader = try DatabaseQueue(path: url.path)
+    let (artistRows, albumRows, genreRows) = try reader.read { db in
+        try (Int.fetchOne(db, sql: "SELECT count(*) FROM artists WHERE name = ?;", arguments: ["Race Artist"]),
+             Int.fetchOne(db, sql: "SELECT count(*) FROM albums WHERE title = ?;", arguments: ["Race Album"]),
+             Int.fetchOne(db, sql: "SELECT count(*) FROM genres WHERE name = ?;", arguments: ["Race Genre"]))
+    }
     guard artistRows == 1 else {
         printFail(number, "resolver race: \(String(describing: artistRows)) 'Race Artist' rows, expected 1")
         return false

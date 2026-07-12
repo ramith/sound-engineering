@@ -2,6 +2,7 @@
 // (downgrade guard), and RESTART durability. Companion to Checks.swift / main.swift.
 
 import Foundation
+import GRDB
 import LibraryStore
 
 // MARK: - SCHEMA-5 — corrupt file → quarantine (+ sidecars) + rebuild
@@ -111,52 +112,53 @@ func checkActorAutoRepair(number: Int, url: URL) async -> Bool {
 
 // MARK: - SCHEMA-6 — downgrade guard
 
-/// SCHEMA-6: a store whose `user_version` is NEWER than the app quarantines +
-/// rebuilds rather than crashing or running an unknown-newer schema. First the
-/// runner is asserted to throw `.schemaTooNew`; then the actor is asserted to
-/// recover by quarantine + rebuild (defined, non-crashing behaviour).
+/// SCHEMA-6: a store written by a NEWER app quarantines + rebuilds rather than running an
+/// unknown-newer schema. GRDB's `DatabaseMigrator` records applied migrations in its
+/// `grdb_migrations` table; the store's open path calls `hasBeenSuperseded` — true when the
+/// file carries an applied migration id this build does not know. We simulate that by
+/// injecting a future migration id, then assert the open path quarantines + rebuilds fresh.
 func checkDowngradeGuard(number: Int, url: URL) async -> Bool {
+    let fileManager = FileManager.default
     do {
-        // 1. Build a valid v1 store, then force its user_version far into the future.
+        // 1. Build a valid store + seed rows, then INJECT a future migration id into
+        //    grdb_migrations (an applied id the app's 2-migration migrator does not know).
         do {
-            let connection = try SQLiteConnection(path: url.path)
-            defer { connection.close() }
-            try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
-            _ = try seedFolders(connection, count: 2, prefix: "future")
-            try connection.setUserVersion(currentSchemaVersion + 99)
+            let store = try await LibraryStore(url: url, appBuild: "verify")
+            _ = try await store.seedFolderRow(path: "/Music/future-A")
+            _ = try await store.seedFolderRow(path: "/Music/future-B")
+        }
+        do {
+            let tamper = try DatabaseQueue(path: url.path)
+            try await tamper.write { db in
+                try db.execute(sql: "INSERT INTO grdb_migrations(identifier) VALUES ('v9999-from-the-future');")
+            }
         }
 
-        // 2. The runner MUST refuse (schemaTooNew), never silently proceed.
-        var runnerRefused = false
-        do {
-            let connection = try SQLiteConnection(path: url.path)
-            defer { connection.close() }
-            try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
-        } catch let error as SQLiteError {
-            if case .schemaTooNew = error { runnerRefused = true }
-        }
-        guard runnerRefused else {
-            printFail(number, "downgrade guard: runner did not throw schemaTooNew for a newer store")
-            return false
-        }
-
-        // 3. The actor MUST recover (quarantine + rebuild) — defined, non-crashing.
+        // 2. Reopening MUST recover (quarantine + rebuild to the app's schema), never run the
+        //    unknown-newer store — `hasBeenSuperseded` fires, the file is quarantined, rebuilt fresh.
         let store = try await LibraryStore(url: url, appBuild: "verify")
         let version = await store.schemaVersion()
         guard version == currentSchemaVersion, try await store.integrityCheck() else {
-            printFail(number, "downgrade guard: actor did not rebuild to v\(currentSchemaVersion) "
-                + "(got v\(version))")
+            printFail(number, "downgrade guard: store did not rebuild to v\(currentSchemaVersion) (got v\(version))")
             return false
         }
-        // The rebuilt store is fresh (only the sentinel artist; the future rows are
-        // quarantined away, not silently carried into an unknown schema).
+        // The rebuilt store is fresh — the future rows were quarantined away, not carried forward.
         let folderCount = try await store.countRows(inTable: "folders")
         guard folderCount == 0 else {
             printFail(number, "downgrade guard: rebuilt store unexpectedly has \(folderCount) folders")
             return false
         }
-        printPass(number, "downgrade guard: newer user_version (v\(currentSchemaVersion + 99)) → runner "
-            + "throws schemaTooNew AND the actor quarantines + rebuilds a fresh v\(version); no crash")
+        // A quarantine artifact for this store's stem must exist (the superseded file preserved).
+        let directory = url.deletingLastPathComponent()
+        let stem = url.deletingPathExtension().lastPathComponent
+        let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+        let quarantined = contents.filter { $0.hasPrefix(stem) && $0.contains(".corrupt-") }
+        guard !quarantined.isEmpty else {
+            printFail(number, "downgrade guard: no quarantine artifact produced for the superseded store")
+            return false
+        }
+        printPass(number, "downgrade guard: an unknown-newer migration id → hasBeenSuperseded fires, "
+            + "the store is quarantined + rebuilt fresh to v\(version); no crash")
         return true
     } catch {
         printFail(number, "downgrade guard threw: \(error)")

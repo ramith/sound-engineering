@@ -14,18 +14,24 @@
 // Metadata columns exist now but are populated later (S8.3), so there is no
 // S8.1→S8.3 migration. Playlist tables are deferred (M7); they will be the first
 // real V1→V2 migration.
+//
+// GRDB refactor: the migration bodies run inside a GRDB `DatabaseMigrator` step (one
+// registered migration per version), so they take a `Database` and use `db.execute`.
+// `DatabaseMigrator` owns the applied-migration bookkeeping (its `grdb_migrations`
+// table) — `schema_info` is kept purely as app-facing provenance (version/build/dates).
 
 import Foundation
+import GRDB
 
-/// The schema version this build of `LibraryStore` targets. The migration runner
-/// brings any older store up to this; a store newer than this triggers the
-/// downgrade guard (quarantine + rebuild).
+/// The schema version this build of `LibraryStore` targets — recorded in `schema_info`
+/// by the migrations and asserted by the verify harness. GRDB's `DatabaseMigrator` brings any
+/// older store up to the latest registered migration; a store carrying a migration id this
+/// build does not know trips the downgrade guard (`hasBeenSuperseded` → quarantine + rebuild).
 ///
-/// v2 (S9.2) adds the `tracks_fts` FTS5 full-text search table + its v1→v2
-/// backfill — the first real V1→V2 migration. Bumping this constant and adding the
-/// `toVersion: 2` step to `MigrationRunner.productionMigrations` MUST happen in one
-/// change: bump-without-step → `.migrationMissing` (store fails to open, not
-/// quarantined); step-without-bump → `tracks_fts` is silently never created.
+/// v2 (S9.2) adds the `tracks_fts` FTS5 table + its v1→v2 backfill. Adding a future version
+/// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
+/// whose body writes `schema_info` at the new version, AND bump this constant — the migration
+/// creates/backfills the schema; this constant is the value the harness expects to read back.
 public let currentSchemaVersion = 2
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
@@ -33,6 +39,19 @@ public let unknownArtistID: Int64 = 0
 
 /// Static schema DDL + the v0→v1 migration.
 public enum Schema {
+    /// The GRDB `DatabaseMigrator` step identifiers, shared between the production migrator
+    /// (`LibraryStore.makeMigrator`) and the verification harness. They MUST match: GRDB's
+    /// downgrade guard (`hasBeenSuperseded`) treats a file carrying an applied identifier the
+    /// current migrator does not know as "written by a newer app" → quarantine + rebuild. A
+    /// harness that seeds a v1 store and then hands it to `LibraryStore` must therefore use the
+    /// SAME identifier for v1, or the store would wrongly quarantine the seeded fixture.
+    public enum MigrationID {
+        /// v0 → v1: create every table + index and seed the unknown-artist sentinel.
+        public static let v1 = "v1-create-all"
+        /// v1 → v2: the `tracks_fts` FTS5 table + backfill (S9.2).
+        public static let v2 = "v2-fts5"
+    }
+
     /// The complete set of `CREATE` statements for schema v1, ordered so a
     /// referenced table is created before its referrers (SQLite tolerates forward
     /// FK references, but explicit ordering keeps intent clear and pragma-safe).
@@ -176,12 +195,12 @@ public enum Schema {
     ///   - connection: the open connection (already inside a transaction).
     ///   - appBuild: an optional build identifier stored in `schema_info.app_build`.
     ///   - timestamp: creation/migration Unix epoch seconds (injected for testability).
-    public static func migrateV0toV1(_ connection: SQLiteConnection, appBuild: String?, timestamp: Int64) throws {
+    public static func migrateV0toV1(_ db: Database, appBuild: String?, timestamp: Int64) throws {
         for statement in createV1Statements {
-            try connection.exec(statement)
+            try db.execute(sql: statement)
         }
-        try seedSentinelArtist(connection)
-        try writeSchemaInfo(connection, version: 1, appBuild: appBuild,
+        try seedSentinelArtist(db)
+        try writeSchemaInfo(db, version: 1, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 
@@ -225,73 +244,79 @@ public enum Schema {
     /// migration calls this first and throws a clear error rather than failing
     /// cryptically at `CREATE VIRTUAL TABLE`. (System libsqlite3 on macOS ships FTS5;
     /// this is cheap insurance against a future toolchain regression.)
-    public static func fts5IsAvailable(_ connection: SQLiteConnection) -> Bool {
+    /// Create the throwaway temp virtual table used to probe for the FTS5 extension.
+    private static let fts5ProbeCreateSQL = "CREATE VIRTUAL TABLE temp.__as_fts5_probe USING fts5(x);"
+    /// Drop the FTS5 probe temp table.
+    private static let fts5ProbeDropSQL = "DROP TABLE temp.__as_fts5_probe;"
+
+    public static func fts5IsAvailable(_ db: Database) -> Bool {
         do {
-            try connection.exec("CREATE VIRTUAL TABLE temp.__as_fts5_probe USING fts5(x);")
-            try connection.exec("DROP TABLE temp.__as_fts5_probe;")
+            try db.execute(sql: fts5ProbeCreateSQL)
+            try db.execute(sql: fts5ProbeDropSQL)
             return true
         } catch {
             return false
         }
     }
 
-    /// Migrate v1 → v2: create `tracks_fts` and backfill it. Runs inside the migration
-    /// runner's single `BEGIN IMMEDIATE` — so it uses `connection.exec` DIRECTLY and
-    /// must NOT open its own transaction. `fts5Available` is injectable so the harness
-    /// can force the unavailable path (CAP); production passes the real probe.
+    /// Migrate v1 → v2: create `tracks_fts` and backfill it. Runs inside the migrator's
+    /// single migration transaction — so it uses `db.execute` DIRECTLY and must NOT open
+    /// its own transaction. `fts5Available` is injectable so the harness can force the
+    /// unavailable path (CAP); production passes the real probe. (GRDB on Apple platforms
+    /// links SQLite with FTS5, so the probe effectively always passes — kept as cheap
+    /// insurance + the harness's injection seam.)
     public static func migrateV1toV2(
-        _ connection: SQLiteConnection,
+        _ db: Database,
         appBuild: String?,
         timestamp: Int64,
-        fts5Available: (SQLiteConnection) -> Bool = fts5IsAvailable
+        fts5Available: (Database) -> Bool = fts5IsAvailable
     ) throws {
-        guard fts5Available(connection) else {
+        guard fts5Available(db) else {
             throw SQLiteError.fts5Unavailable
         }
-        try connection.exec(createV2FtsStatement)
-        try connection.exec(backfillV2FtsStatement)
+        try db.execute(sql: createV2FtsStatement)
+        try db.execute(sql: backfillV2FtsStatement)
         // Refresh provenance to v2; `created_at` is preserved by the ON CONFLICT SET.
-        try writeSchemaInfo(connection, version: 2, appBuild: appBuild,
+        try writeSchemaInfo(db, version: 2, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 
+    /// Seed the reserved `artists(id=0)` sentinel (`INSERT OR IGNORE` keeps it idempotent).
+    private static let seedSentinelArtistSQL =
+        "INSERT OR IGNORE INTO artists(id, name, sort_name) VALUES (?, ?, ?);"
+
     /// Seed the reserved `artists(id=0)` "unknown artist" sentinel backing the M1
     /// total album key. `INSERT OR IGNORE` keeps it idempotent.
-    public static func seedSentinelArtist(_ connection: SQLiteConnection) throws {
-        let statement = try connection.prepare(
-            "INSERT OR IGNORE INTO artists(id, name, sort_name) VALUES (?, ?, ?);"
+    public static func seedSentinelArtist(_ db: Database) throws {
+        try db.execute(
+            sql: seedSentinelArtistSQL,
+            arguments: [unknownArtistID, "Unknown Artist", "Unknown Artist"]
         )
-        defer { statement.finalize() }
-        try statement.bind(unknownArtistID, at: 1)
-        try statement.bind("Unknown Artist", at: 2)
-        try statement.bind("Unknown Artist", at: 3)
-        _ = try statement.step()
     }
+
+    /// Upsert the single `schema_info` row (id = 1). `created_at` is preserved on re-migration
+    /// (out of the ON CONFLICT SET); `version`/`migrated_at`/`app_build` are refreshed.
+    private static let writeSchemaInfoSQL = """
+    INSERT INTO schema_info(id, version, app_build, created_at, migrated_at)
+    VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+        version = excluded.version,
+        app_build = excluded.app_build,
+        migrated_at = excluded.migrated_at;
+    """
 
     /// Upsert the single `schema_info` row (id = 1). `created_at` is preserved on
     /// re-migration; `version`/`migrated_at`/`app_build` are refreshed.
     public static func writeSchemaInfo(
-        _ connection: SQLiteConnection,
+        _ db: Database,
         version: Int,
         appBuild: String?,
         createdAt: Int64,
         migratedAt: Int64
     ) throws {
-        let statement = try connection.prepare(
-            """
-            INSERT INTO schema_info(id, version, app_build, created_at, migrated_at)
-            VALUES (1, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                version = excluded.version,
-                app_build = excluded.app_build,
-                migrated_at = excluded.migrated_at;
-            """
+        try db.execute(
+            sql: writeSchemaInfoSQL,
+            arguments: [Int64(version), appBuild, createdAt, migratedAt]
         )
-        defer { statement.finalize() }
-        try statement.bind(Int64(version), at: 1)
-        try statement.bind(appBuild, at: 2)
-        try statement.bind(createdAt, at: 3)
-        try statement.bind(migratedAt, at: 4)
-        _ = try statement.step()
     }
 }

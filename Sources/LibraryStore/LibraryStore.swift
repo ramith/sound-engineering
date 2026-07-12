@@ -1,74 +1,94 @@
-// LibraryStore — the actor front door to the persistent library database.
+// LibraryStore — the front door to the persistent library database (GRDB-backed).
 //
-// S8.1a FOUNDATION + S8.1b DAO. This file owns: open/create + migrate, the
-// App-Support default location, `schemaVersion()`, `integrityCheck()`, and the
-// corruption/first-run/downgrade handling (quarantine + rebuild). It also exposes
-// a narrow set of verification hooks (`countRows`, `seedFolderRow`) so the
-// headless harness can prove migration-preserves-data and restart durability
-// without reaching into the connection.
+// Rebuilt on GRDB.swift (the GRDB refactor). The former hand-rolled SQLite wrapper
+// (SQLiteConnection/SQLiteStatement) + MigrationRunner are gone; this is now a thin
+// `Sendable` facade over a GRDB `DatabaseWriter`:
+//   • FILE stores use a `DatabasePool` — WAL, a single serialized writer, and REAL
+//     concurrent reads (the single-connection actor never had these).
+//   • IN-MEMORY stores (":memory:", tests) use a `DatabaseQueue` — a pool can't back
+//     an in-memory database (its connections can't share the same memory).
 //
-// The S8.1b DAO (upsert / moveTrack / facets / loose-file / classify / roots) lives
-// in the `LibraryStore+DAO.swift`, `LibraryStore+Reads.swift`, and
-// `LibraryStore+Facets.swift` extensions (this file kept small). Those extensions
-// use the module-internal `connection` directly — it is never exposed publicly and
-// never escapes the actor.
+// Concurrency (design §4): GRDB's writer serializes writes and multiplexes reads, so
+// the store no longer needs an `actor` to serialize access. Every DB touch is a
+// self-contained `dbWriter.read { db in … }` / `.write { db in … }` closure — each
+// write closure IS one transaction (GRDB opens IMMEDIATE), which makes the old
+// "no `await` between two connection calls" invariant structurally impossible: there
+// is no long-lived connection handle to interleave, and a closure body is synchronous.
+// Only `Sendable` value types cross the boundary; no `Database`/handle ever escapes.
 //
-// Concurrency contract (design §4): `LibraryStore` is an `actor`. Only `Sendable`
-// value types cross its boundary; the `SQLiteConnection` (and its raw `sqlite3*`)
-// NEVER escapes. Single writer by construction (actor isolation), WAL-backed
-// concurrent reads.
+// The library store is a REBUILDABLE CACHE of on-disk files (design §2a): corruption is
+// quarantined + rebuilt, and a schema change simply recreates the database
+// (`eraseDatabaseOnSchemaChange`) — there are no users whose state must be preserved.
 
 import Foundation
+import GRDB
+import Synchronization
 
-/// Actor-isolated front door to the SQLite-backed library store.
-public actor LibraryStore {
-    /// The open connection. Module-internal + actor-isolated so the DAO extensions
-    /// (same module) can use it; never exposed publicly, never escapes the actor.
-    ///
-    /// INVARIANT: every method touching this connection must run FULLY synchronously —
-    /// no `await` between two connection calls, or the actor's serialization guarantee
-    /// breaks under THREADSAFE=2 (a suspended method could interleave a second caller's
-    /// statements on the same handle).
-    let connection: SQLiteConnection
+/// `Sendable` facade over the SQLite-backed library store (GRDB `DatabaseWriter`).
+public final class LibraryStore: Sendable {
+    /// The GRDB writer. Module-internal so the DAO extensions (same module) can open
+    /// `read`/`write` transactions on it; never exposed publicly, no `Database` escapes.
+    /// A `DatabasePool` for file stores (concurrent reads), a `DatabaseQueue` in-memory.
+    let dbWriter: any DatabaseWriter
 
-    /// The schema version the store is at after open/migrate.
+    /// The schema version reached after migrate (read back from `schema_info`).
     private let version: Int
 
     /// A count of FTS `SearchIndex` write operations (sync/delete) performed this
     /// session — a verification hook so the harness can prove a no-op re-scan does
-    /// ZERO FTS writes (the `.new`-only-seed idempotency contract, design §4).
-    /// Module-internal so the `LibraryStore+SearchIndex` extension increments it.
-    var searchIndexWrites = 0
+    /// ZERO FTS writes (the idempotency contract, design §4). A `Mutex` because writes
+    /// run on GRDB's writer thread while `searchIndexWriteCount()` may read from another.
+    let searchIndexWrites = Mutex(0)
 
-    /// Open (creating if absent) and migrate the store at `url` to the current
-    /// schema. Corruption / `integrity_check` failure / a newer-than-app schema
-    /// all trigger quarantine (file + `-wal`/`-shm` sidecars) followed by a fresh
-    /// create — never a crash, never a silent delete (design §5).
+    // MARK: - SQL
+
+    /// `PRAGMA integrity_check(1);` — "ok" iff the database file is intact.
+    private static let integrityCheckSQL = "PRAGMA integrity_check(1);"
+    /// The live `journal_mode` (expected "wal" for a file store).
+    private static let journalModePragmaSQL = "PRAGMA journal_mode;"
+    /// Whether `foreign_keys` enforcement is ON.
+    private static let foreignKeysPragmaSQL = "PRAGMA foreign_keys;"
+    /// The live `busy_timeout` in milliseconds.
+    private static let busyTimeoutPragmaSQL = "PRAGMA busy_timeout;"
+    /// Seed-a-`folders`-row fixture (verification hook, NOT `addRoot`).
+    private static let seedFolderRowSQL = "INSERT INTO folders(path, is_root) VALUES (?, ?);"
+    /// Set a track's reserved user-state columns (verification hook).
+    private static let setUserStateSQL =
+        "UPDATE tracks SET play_count = ?, loved = ?, rating = ? WHERE id = ?;"
+    /// Read a track's reserved user-state columns (verification hook).
+    private static let selectUserStateSQL = "SELECT play_count, loved, rating FROM tracks WHERE id = ?;"
+    /// Count one natural-completion play — a SINGLE atomic URL-keyed accumulate (§12.3).
+    private static let incrementPlayCountSQL =
+        "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?;"
+    /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
+    private static let selectSchemaVersionSQL = "SELECT version FROM schema_info WHERE id = 1;"
+
+    /// Count rows in `table` (verification hook). `table` is caller-validated against the known
+    /// schema table set before interpolation, keeping the identifier injection-safe.
+    private static func countRowsSQL(table: String) -> String {
+        "SELECT count(*) FROM \(table);"
+    }
+
+    /// Open (creating if absent) and migrate the store at `url`. Corruption / a failed
+    /// integrity check quarantine the file (+ its `-wal`/`-shm` sidecars) and rebuild
+    /// fresh; a schema change recreates the database. Never crashes, never silently
+    /// deletes (design §5).
     ///
     /// - Parameters:
-    ///   - url: the store file URL (parent directory must already exist for a
-    ///     bespoke URL; `defaultStoreURL()` creates App-Support for you).
+    ///   - url: the store file URL (`:memory:` for an in-memory database).
     ///   - appBuild: optional build identifier stored in `schema_info.app_build`.
     public init(url: URL, appBuild: String? = nil) async throws {
-        let opened = try LibraryStore.openMigratingAndRepairing(
-            url: url,
-            appBuild: appBuild,
-            stamp: StoreQuarantine.defaultStamp()
+        (dbWriter, version) = try LibraryStore.openMigratingAndRepairing(
+            url: url, appBuild: appBuild, stamp: StoreQuarantine.defaultStamp()
         )
-        connection = opened.connection
-        version = opened.version
     }
 
     /// The default store location: `~/Library/Application Support/AdaptiveSound/
-    /// library.sqlite3`. Creates the `AdaptiveSound` directory if needed (sandbox
-    /// neutral — App Support is inside the container either way, design §7).
+    /// library.sqlite3`. Creates the `AdaptiveSound` directory if needed.
     public static func defaultStoreURL() throws -> URL {
         let fileManager = FileManager.default
         let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
         let directory = appSupport.appendingPathComponent("AdaptiveSound", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -77,15 +97,10 @@ public actor LibraryStore {
 
     /// The default artwork cache directory — `~/Library/Application Support/
     /// AdaptiveSound/artwork/`, a sibling of the store (design §4). Created if needed.
-    /// The S8.3 metadata pass writes `<hash>.<ext>` originals + `<hash>.thumb.jpg`
-    /// thumbnails here; tests pass a temp dir instead so App Support is never touched.
     public static func defaultArtworkCacheURL() throws -> URL {
         let fileManager = FileManager.default
         let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
         let directory = appSupport
             .appendingPathComponent("AdaptiveSound", isDirectory: true)
@@ -95,224 +110,199 @@ public actor LibraryStore {
     }
 
     /// The schema version the store is currently at.
-    public func schemaVersion() -> Int {
+    public func schemaVersion() async -> Int {
         version
     }
 
     /// Run `PRAGMA integrity_check` on the live store; `true` iff SQLite says "ok".
-    public func integrityCheck() throws -> Bool {
-        try connection.integrityCheck()
+    public func integrityCheck() async throws -> Bool {
+        try await dbWriter.read { db in
+            try String.fetchOne(db, sql: Self.integrityCheckSQL) == "ok"
+        }
     }
 
     // MARK: - Pragma inspection (verification hooks)
 
-    /// The live `journal_mode` (expected "wal") — asserted by the harness.
-    public func journalMode() throws -> String {
-        try connection.journalMode()
+    /// The live `journal_mode` (expected "wal" for a file store) — asserted by the harness.
+    public func journalMode() async throws -> String {
+        try await dbWriter.read { db in try String.fetchOne(db, sql: Self.journalModePragmaSQL) ?? "unknown" }
     }
 
     /// Whether `foreign_keys` enforcement is ON — asserted by the harness.
-    public func foreignKeysEnabled() throws -> Bool {
-        try connection.foreignKeysEnabled()
+    public func foreignKeysEnabled() async throws -> Bool {
+        try await dbWriter.read { db in try (Int.fetchOne(db, sql: Self.foreignKeysPragmaSQL) ?? 0) == 1 }
     }
 
     /// The live `busy_timeout` in milliseconds — asserted by the harness.
-    public func busyTimeout() throws -> Int {
-        try connection.busyTimeout()
+    public func busyTimeout() async throws -> Int {
+        try await dbWriter.read { db in try Int.fetchOne(db, sql: Self.busyTimeoutPragmaSQL) ?? 0 }
     }
 
-    // MARK: - Verification hooks (NOT the S8.1b DAO)
+    // MARK: - Verification hooks (NOT the DAO)
 
     /// Count rows in `table`. A minimal read hook so the harness can prove
-    /// migration-preserves-data and restart durability without a full DAO.
-    /// `table` is validated against the known schema table set to keep the
-    /// interpolated identifier injection-safe.
-    public func countRows(inTable table: String) throws -> Int {
+    /// migration-preserves-data and restart durability. `table` is validated against
+    /// the known schema table set to keep the interpolated identifier injection-safe.
+    public func countRows(inTable table: String) async throws -> Int {
         guard Schema.expectedTables.contains(table) || table == Schema.ftsTableName else {
             throw SQLiteError.internalError(message: "unknown table for countRows: \(table)")
         }
-        return try Int(connection.scalarInt("SELECT count(*) FROM \(table);") ?? 0)
+        return try await dbWriter.read { db in try Int.fetchOne(db, sql: Self.countRowsSQL(table: table)) ?? 0 }
     }
 
     /// The number of FTS `SearchIndex` write ops (sync/delete) since open — a
     /// verification hook (NOT the DAO) used to prove a no-op re-scan writes nothing.
-    public func searchIndexWriteCount() -> Int {
-        searchIndexWrites
+    public func searchIndexWriteCount() async -> Int {
+        searchIndexWrites.withLock { $0 }
     }
 
-    /// Seed a `folders` row (a persistent, FK-free row usable as a durable fixture
-    /// for the migration/restart harness checks). Returns the new rowid. This is a
-    /// verification hook, NOT the S8.1b `addRoot` DAO op.
+    /// Seed a `folders` row (a durable fixture for the migration/restart harness checks).
+    /// Returns the new rowid. A verification hook, NOT the `addRoot` DAO op.
     @discardableResult
-    public func seedFolderRow(path: String, isRoot: Bool = true) throws -> Int64 {
-        let statement = try connection.prepare(
-            "INSERT INTO folders(path, is_root) VALUES (?, ?);"
-        )
-        defer { statement.finalize() }
-        try statement.bind(PathNormalizer.normalizedString(forPath: path), at: 1)
-        try statement.bind(Int64(isRoot ? 1 : 0), at: 2)
-        _ = try statement.step()
-        return connection.lastInsertRowID()
+    public func seedFolderRow(path: String, isRoot: Bool = true) async throws -> Int64 {
+        try await dbWriter.write { db in
+            try db.execute(
+                sql: Self.seedFolderRowSQL,
+                arguments: [PathNormalizer.normalizedString(forPath: path), isRoot ? 1 : 0]
+            )
+            return db.lastInsertedRowID
+        }
     }
 
     /// Set a track's reserved user-state columns (`play_count`/`loved`/`rating`). A
-    /// VERIFICATION HOOK, not the DAO: `loved`/`rating` writes are still an S10 concern.
-    /// `play_count` now has a REAL production writer — `incrementPlayCount` (§12.3, S9.5,
-    /// pulled forward from S10) — so this hook is no longer the only way `play_count`
-    /// changes; it remains for the harness's move-match assertion below and for
-    /// seeding/asserting `loved`/`rating` directly. Used by the harness to prove these
-    /// durable, id-keyed values SURVIVE a move-match (S8.4 Gate-2 — the whole point of
-    /// preserving `tracks.id` across a move).
-    public func setUserState(trackID: Int64, playCount: Int64, loved: Bool, rating: Int64?) throws {
-        let statement = try connection.prepare(
-            "UPDATE tracks SET play_count = ?, loved = ?, rating = ? WHERE id = ?;"
-        )
-        defer { statement.finalize() }
-        try statement.bind(playCount, at: 1)
-        try statement.bind(Int64(loved ? 1 : 0), at: 2)
-        try statement.bind(rating, at: 3)
-        try statement.bind(trackID, at: 4)
-        _ = try statement.step()
+    /// VERIFICATION HOOK, not the DAO. Used to prove these id-keyed values SURVIVE a
+    /// move-match (the whole point of preserving `tracks.id` across a move).
+    public func setUserState(trackID: Int64, playCount: Int64, loved: Bool, rating: Int64?) async throws {
+        try await dbWriter.write { db in
+            try db.execute(
+                sql: Self.setUserStateSQL,
+                arguments: [playCount, loved ? 1 : 0, rating, trackID]
+            )
+        }
     }
 
-    /// Read a track's reserved user-state columns — the read side of `setUserState`, so
-    /// the harness can assert they survived a move. Verification hook, not the DAO. `nil`
-    /// if no such track.
-    public func userState(trackID: Int64) throws -> TrackUserState? {
-        let statement = try connection.prepare(
-            "SELECT play_count, loved, rating FROM tracks WHERE id = ?;"
-        )
-        defer { statement.finalize() }
-        try statement.bind(trackID, at: 1)
-        guard try statement.step() else { return nil }
-        let playCount = statement.columnInt64(0)
-        let loved = statement.columnInt64(1) == 1
-        let rating = statement.columnIsNull(2) ? nil : statement.columnInt64(2)
-        return TrackUserState(playCount: playCount, loved: loved, rating: rating)
+    /// Read a track's reserved user-state columns — the read side of `setUserState`.
+    /// Verification hook, not the DAO. `nil` if no such track.
+    public func userState(trackID: Int64) async throws -> TrackUserState? {
+        try await dbWriter.read { db in
+            guard let row = try Row.fetchOne(
+                db, sql: Self.selectUserStateSQL, arguments: [trackID]
+            ) else { return nil }
+            return TrackUserState(playCount: row[0], loved: (row[1] as Int64) == 1, rating: row[2])
+        }
     }
 
     // MARK: - Play tracking (§12.3, S9.5 — pulled forward from S10)
 
     /// Count one natural-completion play for the track at `url`: a SINGLE atomic
     /// `UPDATE … SET play_count = play_count + 1, last_played = ?` — no read-modify-write
-    /// race, no id round-trip (URL-keyed, normalized via `PathNormalizer` like every other
-    /// write/read keyed on `url`). Increments commute, so callers may fire this
-    /// fire-and-forget with no ordering requirement between concurrent completions.
+    /// race, no id round-trip (URL-keyed, normalized via `PathNormalizer`). Increments
+    /// commute, so callers may fire this fire-and-forget with no ordering requirement.
     ///
-    /// A `url` with no matching row (a file not in the library) is a SILENT no-op — zero
-    /// rows affected, NOT an error — because a play-count write must never throw into the
-    /// audio path (`AudioViewModel.countPlayCompletion`).
-    public func incrementPlayCount(url: URL, playedAt: Int64) throws {
+    /// A `url` with no matching row is a SILENT no-op (zero rows affected, NOT an error) —
+    /// a play-count write must never throw into the audio path.
+    public func incrementPlayCount(url: URL, playedAt: Int64) async throws {
         let key = PathNormalizer.normalizedString(for: url)
-        let statement = try connection.prepare(
-            "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?;"
-        )
-        defer { statement.finalize() }
-        try statement.bind(playedAt, at: 1)
-        try statement.bind(key, at: 2)
-        _ = try statement.step()
+        try await dbWriter.write { db in
+            try db.execute(
+                sql: Self.incrementPlayCountSQL,
+                arguments: [playedAt, key]
+            )
+        }
     }
 
     // MARK: - Open / repair pipeline
 
-    /// The result of an open: the live connection plus the schema version reached.
-    private struct OpenResult {
-        let connection: SQLiteConnection
-        let version: Int
+    /// The GRDB `Configuration` shared by every store connection: WAL is implied by
+    /// `DatabasePool`; `foreign_keys` ON (design §5); a 5 s busy timeout so a writer
+    /// waits under contention rather than failing with `SQLITE_BUSY` immediately.
+    private static func makeConfiguration() -> Configuration {
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        config.busyMode = .timeout(5)
+        return config
     }
 
-    /// Open, integrity-check, and migrate the store at `url`. On ANY
-    /// rebuild-recoverable condition — the file cannot be opened as a database
-    /// (garbage header / SQLITE_NOTADB / SQLITE_CORRUPT), `integrity_check` fails,
-    /// or the schema is newer than this app (downgrade guard) — the file (+ its
-    /// `-wal`/`-shm` sidecars) is quarantined and a fresh store is rebuilt. Never
-    /// crashes, never silently deletes (design §5). Static so it can run before the
-    /// actor's stored properties are initialized.
+    /// Open + migrate the store at `url`. On a rebuild-recoverable failure for a
+    /// PRE-EXISTING file — it cannot be opened/queried as a database, or `integrity_check`
+    /// fails — the file (+ its `-wal`/`-shm` sidecars) is quarantined and a fresh store is
+    /// rebuilt. Never crashes, never silently deletes (design §5). A schema change is
+    /// handled inside GRDB by `eraseDatabaseOnSchemaChange` (rebuildable cache, no users).
     private static func openMigratingAndRepairing(
-        url: URL,
-        appBuild: String?,
-        stamp: String
-    ) throws -> OpenResult {
+        url: URL, appBuild: String?, stamp: String
+    ) throws -> (any DatabaseWriter, Int) {
+        let migrator = makeMigrator(appBuild: appBuild)
+
         // In-memory stores can't be corrupt/quarantined; open + migrate directly.
-        if url.absoluteString == "file::memory:" || url.path == ":memory:" {
-            let connection = try SQLiteConnection(path: url.path)
-            try MigrationRunner.migrateToCurrent(connection, appBuild: appBuild, timestamp: nowSeconds())
-            return try OpenResult(connection: connection, version: connection.userVersion())
+        if url.path == ":memory:" || url.absoluteString == "file::memory:" {
+            let queue = try DatabaseQueue(configuration: makeConfiguration())
+            try migrator.migrate(queue)
+            return try (queue, readSchemaVersion(queue))
         }
 
         let fileExisted = FileManager.default.fileExists(atPath: url.path)
         do {
-            return try openAndMigrate(url: url, appBuild: appBuild, treatFailuresAsCorruption: fileExisted)
-        } catch let error as StoreOpenFailure where error == .rebuildRecoverable {
-            // A pre-existing file was unusable (corrupt / newer schema). Quarantine
-            // it (+ sidecars) and rebuild fresh — the library is a rebuildable cache.
-            return try quarantineAndRebuild(url: url, appBuild: appBuild, stamp: stamp)
+            let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
+            if fileExisted {
+                // A pre-existing file must be intact AND not written by a newer app (the
+                // downgrade guard — `hasBeenSuperseded` sees a migration id we don't know)
+                // before we trust it. GRDB tracks applied migrations in `grdb_migrations`.
+                let intact = try pool.read { db in
+                    try String.fetchOne(db, sql: Self.integrityCheckSQL) == "ok"
+                }
+                let superseded = try pool.read { db in try migrator.hasBeenSuperseded(db) }
+                if !intact || superseded { throw StoreOpenFailure.rebuildRecoverable }
+            }
+            try migrator.migrate(pool)
+            return try (pool, readSchemaVersion(pool))
+        } catch let error where fileExisted && isRebuildRecoverable(error) {
+            // A pre-existing file was unusable (corrupt / failed integrity / newer schema).
+            // Quarantine it (+ sidecars) and rebuild fresh — the library is a rebuildable cache.
+            try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
+            let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
+            try migrator.migrate(pool)
+            return try (pool, readSchemaVersion(pool))
         }
     }
 
-    /// A sentinel distinguishing "quarantine + rebuild" from a genuine, propagate
-    /// error, so `openMigratingAndRepairing` only recovers from the intended cases.
+    /// A sentinel distinguishing "quarantine + rebuild" from a genuine, propagate error.
     private enum StoreOpenFailure: Error, Equatable {
         case rebuildRecoverable
     }
 
-    /// Open the connection, integrity-check a pre-existing file, and migrate. When
-    /// `treatFailuresAsCorruption` is true (the file already existed), an open-time
-    /// corruption code, a failed integrity check, or a too-new schema are all mapped
-    /// to `StoreOpenFailure.rebuildRecoverable`; any other error propagates as-is.
-    private static func openAndMigrate(
-        url: URL,
-        appBuild: String?,
-        treatFailuresAsCorruption: Bool
-    ) throws -> OpenResult {
-        let connection: SQLiteConnection
-        do {
-            connection = try SQLiteConnection(path: url.path)
-        } catch let error as SQLiteError where treatFailuresAsCorruption && error.indicatesCorruption {
-            // sqlite3_open succeeds lazily, but the opening PRAGMAs hit the garbage
-            // header and fail with SQLITE_NOTADB/SQLITE_CORRUPT — treat as corrupt.
-            throw StoreOpenFailure.rebuildRecoverable
-        }
-
-        // A pre-existing file must pass integrity before we trust it. A freshly
-        // created file has no header yet, so skip the check on first run.
-        if treatFailuresAsCorruption {
-            let intact = (try? connection.integrityCheck()) ?? false
-            if !intact {
-                connection.close()
-                throw StoreOpenFailure.rebuildRecoverable
-            }
-        }
-
-        do {
-            try MigrationRunner.migrateToCurrent(connection, appBuild: appBuild, timestamp: nowSeconds())
-        } catch let error as SQLiteError {
-            connection.close()
-            // Downgrade guard OR mid-migration corruption on an existing file → rebuild.
-            if treatFailuresAsCorruption, error.isRebuildRecoverable {
-                throw StoreOpenFailure.rebuildRecoverable
-            }
-            throw error
-        }
-
-        return try OpenResult(connection: connection, version: connection.userVersion())
+    /// Whether an open/migrate error means the file is not a usable database (so a
+    /// quarantine + rebuild recovers): the explicit sentinel, or a GRDB `DatabaseError`
+    /// with a corruption/not-a-db result code.
+    private static func isRebuildRecoverable(_ error: Error) -> Bool {
+        if error as? StoreOpenFailure == .rebuildRecoverable { return true }
+        guard let dbError = error as? DatabaseError else { return false }
+        let code = dbError.resultCode.primaryResultCode
+        return code == .SQLITE_CORRUPT || code == .SQLITE_NOTADB
     }
 
-    /// Quarantine the store at `url` (+ sidecars) and create a fresh, migrated one.
-    private static func quarantineAndRebuild(
-        url: URL,
-        appBuild: String?,
-        stamp: String
-    ) throws -> OpenResult {
-        try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
-        let connection = try SQLiteConnection(path: url.path)
-        try MigrationRunner.migrateToCurrent(connection, appBuild: appBuild, timestamp: nowSeconds())
-        return try OpenResult(connection: connection, version: connection.userVersion())
+    /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
+    private static func readSchemaVersion(_ writer: any DatabaseWriter) throws -> Int {
+        try writer.read { db in try Int.fetchOne(db, sql: Self.selectSchemaVersionSQL) ?? 0 }
+    }
+
+    /// The GRDB `DatabaseMigrator` bringing a fresh/older store to `currentSchemaVersion`.
+    /// `eraseDatabaseOnSchemaChange` recreates the database whenever a registered
+    /// migration's definition changes — the rebuildable-cache "drop-and-recreate on schema
+    /// change" discipline (design §5; no users to preserve).
+    static func makeMigrator(appBuild: String?) -> DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+        migrator.eraseDatabaseOnSchemaChange = true
+        migrator.registerMigration(Schema.MigrationID.v1) { db in
+            try Schema.migrateV0toV1(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
+        migrator.registerMigration(Schema.MigrationID.v2) { db in
+            try Schema.migrateV1toV2(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
+        return migrator
     }
 
     /// Current Unix epoch seconds (whole seconds — mtime discipline, design §3).
-    /// Module-internal (not private) so the DAO extension can stamp `date_added`
-    /// with a real timestamp on insert (SF-1), sharing one definition of "now".
+    /// Module-internal so the DAO extension can stamp `date_added` on insert.
     static func nowSeconds() -> Int64 {
         Int64(Date().timeIntervalSince1970)
     }

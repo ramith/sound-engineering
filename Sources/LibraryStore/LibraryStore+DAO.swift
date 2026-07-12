@@ -1,135 +1,189 @@
-// LibraryStore+DAO — the write side of the S8.1b DAO (design §4).
+// LibraryStore+DAO — the write side of the DAO (design §4), GRDB-backed.
 //
-// Single writer by construction: every mutation runs on the actor-isolated
-// connection, and multi-row work is wrapped in one `BEGIN IMMEDIATE … COMMIT`
-// (SQLiteConnection.transaction). Only `Sendable` value types cross the boundary.
+// Single writer by construction: every mutation runs in a `dbWriter.write { db in … }`
+// closure, which IS one transaction (GRDB opens IMMEDIATE) — so multi-statement work is
+// atomic without a hand-rolled `BEGIN`, and the private `*Locked`-style helpers simply
+// take a `Database` and run inside the caller's write closure. Only `Sendable` value
+// types cross the boundary; no `Database` handle escapes.
 //
 // Identity model (design §2): `tracks.id` is the durable reference identity;
 // `tracks.url` (UNIQUE) is the mutable scan key. `upsert` keys on `url`
-// (`ON CONFLICT(url) DO UPDATE`); `moveTrack` is a DISTINCT id-keyed update that
-// changes the url in place, preserving id + any references. A URL collision surfaces
-// as a typed `URLConflict` (M6).
-//
-// FS-divergence (design §2a): these writes are the reconciliation primitives
-// (classify / upsert / moveTrack / sweepOrphans) S8.4 uses to correct a store that
-// diverged from the filesystem. None of them asserts file existence.
+// (`ON CONFLICT(url) DO UPDATE`); `moveTrack` is a DISTINCT id-keyed update that changes
+// the url in place, preserving id + references. A URL collision surfaces as a typed
+// `URLConflict` (M6), mapped from GRDB's `DatabaseError(SQLITE_CONSTRAINT)`.
 
 import Foundation
+import GRDB
+
+// MARK: - LibraryFolder row decoding (FetchableRecord)
+
+extension LibraryFolder: FetchableRecord {
+    /// Decode a `folders` row projected as `id, path, …` (only id/path are mapped).
+    public init(row: Row) {
+        self.init(id: row[0], path: row[1] ?? "")
+    }
+}
 
 public extension LibraryStore {
+    // MARK: - SQL
+
+    /// Resolve a folder id by its normalised path.
+    private static let selectFolderIDByPathSQL = "SELECT id FROM folders WHERE path = ?;"
+    /// Insert a new ROOT folder (is_root = 1) with its bookmark + `(dev, inode)` identity.
+    private static let insertRootFolderSQL =
+        "INSERT INTO folders(path, is_root, bookmark, dev, inode) VALUES (?, 1, ?, ?, ?);"
+    /// The rowid of an existing ROOT for the same on-disk `(dev, inode)` identity (QS3).
+    private static let selectExistingRootIDSQL =
+        "SELECT id FROM folders WHERE is_root = 1 AND dev = ? AND inode = ? LIMIT 1;"
+    /// Every registered scan root, path-ordered.
+    private static let selectRootsSQL =
+        "SELECT id, path, parent_id, is_root, bookmark, last_scanned FROM folders "
+            + "WHERE is_root = 1 ORDER BY path COLLATE NOCASE ASC, id ASC;"
+    /// `max(last_seen_scan)` over `tracks` (the next scan generation is this + 1).
+    private static let nextScanGenerationSQL = "SELECT max(last_seen_scan) FROM tracks;"
+    /// The `(id, file_size, mtime)` signature probe behind `classify`.
+    private static let classifyTrackByURLSQL = "SELECT id, file_size, mtime FROM tracks WHERE url = ?;"
+    /// Resolve a track id by its unique url (move-conflict pre-flight + post-upsert id lookup).
+    private static let selectTrackIDByURLSQL = "SELECT id FROM tracks WHERE url = ?;"
+    /// Whether a row already holds `url` (the new-vs-update discriminator in `upsertOne`).
+    private static let selectTrackExistsByURLSQL = "SELECT 1 FROM tracks WHERE url = ?;"
+    /// Relocate a track in place (url/folder/relative_path) by its stable id (M6).
+    private static let moveTrackSQL =
+        "UPDATE tracks SET url = ?, folder_id = ?, relative_path = ? WHERE id = ?;"
+    /// Refresh ONLY `last_seen_scan` for the row at `url` (liveness, not content).
+    private static let stampLastSeenSQL = "UPDATE tracks SET last_seen_scan = ? WHERE url = ?;"
+    /// The ids of tracks directly in a folder (captured before a folder delete).
+    private static let selectTrackIDsInFolderSQL = "SELECT id FROM tracks WHERE folder_id = ?;"
+    /// Delete a single track row by its stable id.
+    private static let deleteTrackByIDSQL = "DELETE FROM tracks WHERE id = ?;"
+    /// Delete the `folders` row (`ON DELETE SET NULL` detaches its tracks to loose).
+    private static let deleteFolderByIDSQL = "DELETE FROM folders WHERE id = ?;"
+
+    /// Upsert ONE scanned file, keyed on `url` (`ON CONFLICT(url) DO UPDATE`). The conflict SET
+    /// fires ONLY when a content field differs (idempotency); `last_seen_scan` is stamped
+    /// separately (see `stampLastSeen`). dev + inode are the move-signature — bound on insert AND
+    /// set on the conflict UPDATE, but DELIBERATELY absent from the no-bump WHERE predicate.
+    private static let upsertTrackSQL = """
+    INSERT INTO tracks(
+        url, folder_id, relative_path, name, format,
+        file_size, mtime, inode, dev, date_added, last_seen_scan)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(url) DO UPDATE SET
+        folder_id = excluded.folder_id,
+        relative_path = excluded.relative_path,
+        name = excluded.name,
+        format = excluded.format,
+        file_size = excluded.file_size,
+        mtime = excluded.mtime,
+        inode = excluded.inode,
+        dev = excluded.dev,
+        last_seen_scan = excluded.last_seen_scan,
+        metadata_scanned = 0
+    WHERE tracks.file_size <> excluded.file_size
+       OR tracks.mtime <> excluded.mtime
+       OR tracks.name <> excluded.name
+       OR tracks.format <> excluded.format
+       OR tracks.relative_path <> excluded.relative_path
+       OR tracks.folder_id IS NOT excluded.folder_id;
+    """
+
+    /// The folder-scoped orphan DELETE mirroring `deleteSearchRowsForSweep`. `placeholders` is the
+    /// `?,?,…` list for the folder ids (bound, never spliced); `last_seen_scan < ?` is the last bind.
+    private static func deleteTracksForSweepSQL(placeholders: String) -> String {
+        "DELETE FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?;"
+    }
+
     // MARK: - Scan roots
 
-    /// Register (or return the existing) scan-root folder for `url`. Idempotent two
-    /// ways: on the normalised path (`UNIQUE(path)`), AND — when `dev`/`inode` are
-    /// supplied (the caller's lstat of the root) — on the on-disk `(dev, inode)`
-    /// identity, so a case-variant or differently-spelled path for the SAME directory
-    /// on a case-insensitive volume returns the existing root instead of registering a
-    /// duplicate (QS3). `dev`/`inode` nil → path-only idempotency (unchanged).
+    /// Register (or return the existing) scan-root folder for `url`. Idempotent two ways:
+    /// on the normalised path (`UNIQUE(path)`), AND — when `dev`/`inode` are supplied (the
+    /// caller's lstat of the root) — on the on-disk `(dev, inode)` identity (QS3).
     /// `bookmark` is stored but reserved-unused under the Developer-ID posture (§8-D5).
     @discardableResult
-    func addRoot(_ url: URL, dev: Int64? = nil, inode: Int64? = nil, bookmark: Data? = nil) throws -> Int64 {
+    func addRoot(_ url: URL, dev: Int64? = nil, inode: Int64? = nil, bookmark: Data? = nil) async throws -> Int64 {
         let path = PathNormalizer.normalizedString(for: url)
-        if let existing = try connection.scalarInt("SELECT id FROM folders WHERE path = ?;", bind: path) {
-            return existing
+        return try await dbWriter.write { db in
+            if let existing = try Int64.fetchOne(db, sql: Self.selectFolderIDByPathSQL, arguments: [path]) {
+                return existing
+            }
+            // Same on-disk directory (by lstat identity) already a root? → idempotent.
+            if let dev, let inode, let existing = try Self.existingRootID(db, forDev: dev, inode: inode) {
+                return existing
+            }
+            try db.execute(
+                sql: Self.insertRootFolderSQL,
+                arguments: [path, bookmark, dev, inode]
+            )
+            return db.lastInsertedRowID
         }
-        // Same on-disk directory (by lstat identity) already a root? → idempotent.
-        if let dev, let inode, let existing = try existingRootID(forDev: dev, inode: inode) {
-            return existing
-        }
-        let statement = try connection.prepare(
-            "INSERT INTO folders(path, is_root, bookmark, dev, inode) VALUES (?, 1, ?, ?, ?);"
-        )
-        defer { statement.finalize() }
-        try statement.bind(path, at: 1)
-        try statement.bind(bookmark, at: 2)
-        try statement.bind(dev, at: 3)
-        try statement.bind(inode, at: 4)
-        _ = try statement.step()
-        return connection.lastInsertRowID()
     }
 
     /// The rowid of an existing ROOT registered for the same on-disk directory (matched
     /// on the lstat `(dev, inode)` identity), or nil. Roots with a NULL dev/inode never
-    /// match (SQL `= NULL` is never true), so a caller that omits the signature is
-    /// unaffected. Underlies `addRoot`'s case-insensitive-volume dedup (QS3).
-    private func existingRootID(forDev dev: Int64, inode: Int64) throws -> Int64? {
-        let statement = try connection.prepare(
-            "SELECT id FROM folders WHERE is_root = 1 AND dev = ? AND inode = ? LIMIT 1;"
+    /// match (SQL `= NULL` is never true). Underlies `addRoot`'s case-insensitive dedup (QS3).
+    internal static func existingRootID(_ db: Database, forDev dev: Int64, inode: Int64) throws -> Int64? {
+        try Int64.fetchOne(
+            db, sql: selectExistingRootIDSQL,
+            arguments: [dev, inode]
         )
-        defer { statement.finalize() }
-        try statement.bind(dev, at: 1)
-        try statement.bind(inode, at: 2)
-        guard try statement.step() else { return nil }
-        return statement.columnInt64(0)
     }
 
     /// Every registered scan root, path-ordered.
-    func roots() throws -> [LibraryFolder] {
-        let statement = try connection.prepare(
-            "SELECT id, path, parent_id, is_root, bookmark, last_scanned FROM folders "
-                + "WHERE is_root = 1 ORDER BY path COLLATE NOCASE ASC, id ASC;"
-        )
-        defer { statement.finalize() }
-        var folders: [LibraryFolder] = []
-        while try statement.step() {
-            folders.append(LibraryFolder(
-                id: statement.columnInt64(0),
-                path: statement.columnText(1) ?? ""
-            ))
+    func roots() async throws -> [LibraryFolder] {
+        try await dbWriter.read { db in
+            try LibraryFolder.fetchAll(db, sql: Self.selectRootsSQL)
         }
-        return folders
     }
 
     /// Remove a scan root, KEEPING any playlist-referenced tracks as loose.
     ///
-    /// Locked semantics (design §8 "Remove folder"): removing a root must not delete
-    /// a track a playlist references — those detach to loose (`folder_id`→NULL) and
-    /// survive; only tracks NO playlist references are deleted. Mechanism, structured
-    /// so the S10 "in any playlist?" check slots in cleanly:
-    ///   1. capture the ids of the tracks directly in the folder (their memberships
-    ///      would be at stake);
-    ///   2. delete the folder — the `ON DELETE SET NULL` FK detaches those tracks to
-    ///      loose (id + any future memberships preserved) rather than cascading;
-    ///   3. delete the just-detached tracks that are unreferenced. With no playlist
-    ///      table yet, "unreferenced" is ALL of them; when S10 adds `playlist_tracks`,
-    ///      `unreferencedTrackIDs` gains the `NOT IN (SELECT track_id FROM
-    ///      playlist_tracks)` filter and referenced tracks simply stay loose.
-    func removeRoot(id folderID: Int64) throws {
-        try connection.transaction {
-            let detaching = try trackIDs(inFolder: folderID)
-            try deleteFolderRow(folderID)
-            let toDelete = unreferencedTrackIDs(among: detaching)
-            try deleteTrackRows(ids: toDelete)
-            _ = try sweepOrphanFacetsLocked() // SF-2: reap facets orphaned by the delete, same txn
+    /// Locked semantics (design §8 "Remove folder"): removing a root must not delete a
+    /// track a playlist references — those detach to loose (`folder_id`→NULL via
+    /// `ON DELETE SET NULL`) and survive; only tracks NO playlist references are deleted.
+    /// With no playlist table yet, "unreferenced" is ALL of them; when S10 adds
+    /// `playlist_tracks`, `unreferencedTrackIDs` gains the `NOT IN (…)` filter.
+    func removeRoot(id folderID: Int64) async throws {
+        try await dbWriter.write { db in
+            let detaching = try Self.trackIDs(db, inFolder: folderID)
+            try Self.deleteFolderRow(db, folderID)
+            let toDelete = Self.unreferencedTrackIDs(among: detaching)
+            try self.deleteTrackRows(db, ids: toDelete)
+            _ = try self.sweepOrphanFacetsLocked(db) // SF-2: reap facets orphaned by the delete, same txn
         }
     }
 
     // MARK: - Scan generation + classify
 
-    /// Begin a new scan generation: a monotonically increasing integer stamped onto
-    /// every row a scan touches (`last_seen_scan`). Orphan detection is then
-    /// `WHERE folder_id IN(:roots) AND last_seen_scan < :generation`. Derived as
-    /// `max(last_seen_scan) + 1` so it survives restarts without extra state.
-    func beginScanGeneration() throws -> Int64 {
-        let maximum = try connection.scalarInt("SELECT max(last_seen_scan) FROM tracks;") ?? 0
-        return maximum + 1
+    /// Begin a new scan generation: a monotonically increasing integer stamped onto every
+    /// row a scan touches (`last_seen_scan`). Derived as `max(last_seen_scan) + 1` so it
+    /// survives restarts without extra state.
+    func beginScanGeneration() async throws -> Int64 {
+        try await dbWriter.read { db in try Self.nextScanGeneration(db) }
     }
 
-    /// Classify `file` against the store from its `(fileSize, mtime)` signature
-    /// (design §6 M2): no stored row → `.new`; a stored row with an identical
-    /// signature → `.unchanged`; a stored row differing in EITHER field → `.modified`.
-    /// A pure read — no FS access, no mutation.
-    func classify(_ file: ScannedFile) throws -> TrackDelta {
+    /// `max(last_seen_scan) + 1` on `db` (1 on an empty table). Shared by `beginScanGeneration`
+    /// and the per-batch write paths that need a generation inside their own transaction.
+    internal static func nextScanGeneration(_ db: Database) throws -> Int64 {
+        try (Int64.fetchOne(db, sql: nextScanGenerationSQL) ?? 0) + 1
+    }
+
+    /// Classify `file` against the store from its `(fileSize, mtime)` signature (design §6
+    /// M2): no stored row → `.new`; identical signature → `.unchanged`; a differing row →
+    /// `.modified`. A pure read — no FS access, no mutation.
+    func classify(_ file: ScannedFile) async throws -> TrackDelta {
+        try await dbWriter.read { db in try Self.classify(db, file) }
+    }
+
+    /// The `Database`-scoped body of `classify`, callable inside a write closure (the
+    /// reconcile path probes deltas mid-transaction).
+    internal static func classify(_ db: Database, _ file: ScannedFile) throws -> TrackDelta {
         let key = PathNormalizer.normalizedString(for: file.url)
-        let statement = try connection.prepare(
-            "SELECT id, file_size, mtime FROM tracks WHERE url = ?;"
-        )
-        defer { statement.finalize() }
-        try statement.bind(key, at: 1)
-        guard try statement.step() else { return .new }
-        let id = statement.columnInt64(0)
-        let storedSize = statement.columnInt64(1)
-        let storedMtime = statement.columnInt64(2)
+        guard let row = try Row.fetchOne(
+            db, sql: Self.classifyTrackByURLSQL, arguments: [key]
+        ) else { return .new }
+        let id: Int64 = row[0]
+        let storedSize: Int64 = row[1]
+        let storedMtime: Int64 = row[2]
         if storedSize == file.fileSize, storedMtime == file.mtime {
             return .unchanged(id: id)
         }
@@ -142,74 +196,55 @@ public extension LibraryStore {
     /// `last_seen_scan = generation`, in ONE transaction. Keys on `url`
     /// (`ON CONFLICT(url) DO UPDATE`). Returns the rowids in input order.
     ///
-    /// IDEMPOTENT (design §6-E): an unchanged row is NOT bumped — the conflict update
-    /// only writes when a signature/name/format/folder field actually differs, so a
-    /// re-scan of a steady-state library leaves `mtime` (and every other column)
-    /// untouched. `last_seen_scan` is refreshed unconditionally (it is the liveness
-    /// stamp, not track content) so orphan detection stays correct across re-scans.
+    /// IDEMPOTENT (design §6-E): an unchanged row is NOT bumped — the conflict update only
+    /// writes when a signature/name/format/folder field actually differs; `last_seen_scan`
+    /// is refreshed unconditionally (liveness, not content) so orphan detection stays correct.
     @discardableResult
-    func upsert(_ files: [ScannedFile], folderID: Int64?, generation: Int64) throws -> [Int64] {
-        // One epoch for the whole batch: `date_added` is set on first insert only and
-        // reflects when the scan observed the file, not the scan-generation counter.
+    func upsert(_ files: [ScannedFile], folderID: Int64?, generation: Int64) async throws -> [Int64] {
         let now = LibraryStore.nowSeconds()
-        return try connection.transaction {
+        return try await dbWriter.write { db in
             var ids: [Int64] = []
             ids.reserveCapacity(files.count)
             for file in files {
-                try ids.append(upsertOne(file, folderID: folderID, generation: generation, dateAdded: now))
+                try ids.append(self.upsertOne(db, file, folderID: folderID, generation: generation, dateAdded: now))
             }
             return ids
         }
     }
 
-    /// Add a single LOOSE file (folder_id NULL) — the "play a file not in any scan
-    /// folder" path (Req 2). A convenience over `upsert([file], folderID: nil, …)`
-    /// with its own fresh generation. Adopting a loose file into a folder later is
-    /// just an `upsert` on the same url with a `folderID` (`ON CONFLICT DO UPDATE`).
+    /// Add a single LOOSE file (folder_id NULL) — the "play a file not in any scan folder"
+    /// path (Req 2). Adopting it into a folder later is just an `upsert` on the same url.
     @discardableResult
-    func addLooseFile(_ file: ScannedFile) throws -> Int64 {
-        let generation = try beginScanGeneration()
+    func addLooseFile(_ file: ScannedFile) async throws -> Int64 {
         let now = LibraryStore.nowSeconds()
-        return try connection.transaction {
-            try upsertOne(file, folderID: nil, generation: generation, dateAdded: now)
+        return try await dbWriter.write { db in
+            let generation = try Self.nextScanGeneration(db)
+            return try self.upsertOne(db, file, folderID: nil, generation: generation, dateAdded: now)
         }
     }
 
     // MARK: - moveTrack (M6 — id-preserving, DISTINCT from upsert)
 
-    /// Move a track IN PLACE to `newURL`/`newFolderID`, preserving its stable `id`
-    /// and every reference to it (playlist memberships, future play-counts). This is
-    /// DISTINCT from `upsert`: upsert keys on url and would create a NEW row for the
-    /// new path, orphaning references — the exact bug the identity model prevents
-    /// (design §4 M6). Moving onto a url another row already holds is a typed
+    /// Move a track IN PLACE to `newURL`/`newFolderID`, preserving its stable `id` and every
+    /// reference to it. DISTINCT from `upsert` (which keys on url and would create a NEW row,
+    /// orphaning references — design §4 M6). Moving onto a url another row holds is a typed
     /// `URLConflict` (a duplicate — normal per Req 5), NOT a silent merge.
-    ///
-    /// `newRelativePath` is bound DIRECTLY: it is relative to the NEW owning root, so
-    /// the caller supplies it (a loose move — `newFolderID` nil — passes ""). Keeping
-    /// the old `relative_path` on a cross-folder move would leave a path relative to
-    /// the OLD root, which then renders wrong.
-    func moveTrack(id trackID: Int64, newURL: URL, newFolderID: Int64?, newRelativePath: String) throws {
+    func moveTrack(id trackID: Int64, newURL: URL, newFolderID: Int64?, newRelativePath: String) async throws {
         let key = PathNormalizer.normalizedString(for: newURL)
-        try connection.transaction {
+        try await dbWriter.write { db in
             // Pre-flight the UNIQUE(url) collision so we can surface the occupant id.
-            if let occupant = try connection.scalarInt(
-                "SELECT id FROM tracks WHERE url = ?;", bind: key
-            ), occupant != trackID {
+            if let occupant = try Int64.fetchOne(db, sql: Self.selectTrackIDByURLSQL, arguments: [key]),
+               occupant != trackID {
                 throw URLConflict(existingID: occupant)
             }
-            let statement = try connection.prepare(
-                "UPDATE tracks SET url = ?, folder_id = ?, relative_path = ? WHERE id = ?;"
-            )
-            defer { statement.finalize() }
-            try statement.bind(key, at: 1)
-            try statement.bind(newFolderID, at: 2)
-            try statement.bind(newRelativePath, at: 3)
-            try statement.bind(trackID, at: 4)
             do {
-                _ = try statement.step()
-            } catch let error as SQLiteError where error.isConstraintViolation {
-                // Belt-and-braces: a racing insert between the pre-flight and the
-                // UPDATE would still trip UNIQUE(url); map it to the typed conflict.
+                try db.execute(
+                    sql: Self.moveTrackSQL,
+                    arguments: [key, newFolderID, newRelativePath, trackID]
+                )
+            } catch let error as DatabaseError where error.resultCode.primaryResultCode == .SQLITE_CONSTRAINT {
+                // Belt-and-braces: a racing insert between the pre-flight and the UPDATE would
+                // still trip UNIQUE(url); map it to the typed conflict.
                 throw URLConflict(existingID: nil)
             }
         }
@@ -217,202 +252,116 @@ public extension LibraryStore {
 
     // MARK: - Sweep + delete
 
-    /// Sweep orphans: delete tracks in `folderIDs` whose `last_seen_scan` is older
-    /// than `generation` (i.e. a scan of those folders did not re-see them). LOOSE
-    /// tracks (folder NULL) are NEVER swept — the `IN (:folders)` filter excludes
-    /// NULL by SQL semantics, so a loose track survives a sweep of any root (FS-4).
-    /// Returns the number of rows deleted.
-    ///
-    /// The `IN (?, ?, …)` list is built dynamically (one placeholder per folder)
-    /// because this is a SINGLE set-membership DELETE — one statement, one `changes()`
-    /// count for the whole sweep. That is DISTINCT from `deleteTrackRows`'s prepared
-    /// reset-loop, which fires a separate per-id DELETE (an unbounded id set it must
-    /// not splice into SQL).
+    /// Sweep orphans: delete tracks in `folderIDs` whose `last_seen_scan` is older than
+    /// `generation`. LOOSE tracks (folder NULL) are NEVER swept (the `IN (:folders)` filter
+    /// excludes NULL by SQL semantics, FS-4). Returns the number of rows deleted.
     @discardableResult
-    func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64) throws -> Int {
+    func sweepOrphans(inFolders folderIDs: [Int64], olderThan generation: Int64) async throws -> Int {
         guard !folderIDs.isEmpty else { return 0 }
-        return try connection.transaction {
+        return try await dbWriter.write { db in
             // Clear the FTS rows for the swept set FIRST — after the tracks DELETE the
             // sub-select would find nothing and the FTS rows would leak (design §4).
-            try deleteSearchRowsForSweep(inFolders: folderIDs, olderThan: generation)
-            let placeholders = folderIDs.map { _ in "?" }.joined(separator: ", ")
-            let statement = try connection.prepare(
-                "DELETE FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?;"
+            try self.deleteSearchRowsForSweep(db, inFolders: folderIDs, olderThan: generation)
+            let placeholders = databaseQuestionMarks(count: folderIDs.count)
+            try db.execute(
+                sql: Self.deleteTracksForSweepSQL(placeholders: placeholders),
+                arguments: StatementArguments(folderIDs + [generation])
             )
-            defer { statement.finalize() }
-            var index: Int32 = 1
-            for folderID in folderIDs {
-                try statement.bind(folderID, at: index)
-                index += 1
-            }
-            try statement.bind(generation, at: index)
-            _ = try statement.step()
-            return connection.changes()
+            return db.changesCount
         }
     }
 
-    /// Delete a single track by its stable id. FK `ON DELETE CASCADE` on
-    /// `track_genres` clears its genre links; playlist memberships (S10) will cascade
-    /// likewise. A no-op if `id` does not exist.
-    func delete(id trackID: Int64) throws {
-        // Two statements (FTS row + track row) → wrap in a transaction so they commit
-        // atomically (every other delete site is transactional; without this a failure
-        // between them could leave an orphaned/missing FTS row — benign today under the
-        // single-writer actor, but the atomicity invariant every delete path holds).
-        try connection.transaction {
-            try deleteSearchRows(ids: [trackID]) // FTS is not an FK — clear its row too
-            let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
-            defer { statement.finalize() }
-            try statement.bind(trackID, at: 1)
-            _ = try statement.step()
+    /// Delete a single track by its stable id. FK `ON DELETE CASCADE` on `track_genres`
+    /// clears its genre links. A no-op if `id` does not exist. The FTS row (not an FK) is
+    /// cleared explicitly; both statements commit atomically in the one write transaction.
+    func delete(id trackID: Int64) async throws {
+        try await dbWriter.write { db in
+            try self.deleteSearchRows(db, ids: [trackID]) // FTS is not an FK — clear its row too
+            try db.execute(sql: Self.deleteTrackByIDSQL, arguments: [trackID])
         }
     }
 
-    // MARK: - Private write helpers
+    // MARK: - Private write helpers (all take the caller's `Database`)
 
-    /// Upsert ONE file (inside the caller's transaction). See `upsert` for the
-    /// idempotency contract. `folderID` nil → loose. On a url collision the
-    /// `ON CONFLICT(url) DO UPDATE` refreshes the row in place. `dateAdded` (a real
-    /// epoch) is written ONLY on the first insert — it stays out of the conflict
-    /// update, so a re-scan never rewrites when the track first entered the library.
-    /// `internal` so the move-matching path (`LibraryStore+MoveMatch`) can fall back to it.
+    /// Upsert ONE file (inside the caller's write transaction). See `upsert` for the
+    /// idempotency contract. `dateAdded` (a real epoch) is written ONLY on the first insert
+    /// (out of the conflict SET). `internal` so the move-matching path can fall back to it.
     @discardableResult
-    func upsertOne(
-        _ file: ScannedFile, folderID: Int64?, generation: Int64, dateAdded: Int64
+    internal func upsertOne(
+        _ db: Database, _ file: ScannedFile, folderID: Int64?, generation: Int64, dateAdded: Int64
     ) throws -> Int64 {
         let key = PathNormalizer.normalizedString(for: file.url)
-        // Detect a genuine new insert (vs an ON CONFLICT update) so the FTS index is
-        // seeded ONLY for new rows — a no-op re-scan must do ZERO FTS writes (design §4).
-        let isNewRow = try connection.scalarInt("SELECT 1 FROM tracks WHERE url = ?;", bind: key) == nil
-        let statement = try connection.prepare(
-            """
-            INSERT INTO tracks(
-                url, folder_id, relative_path, name, format,
-                file_size, mtime, inode, dev, date_added, last_seen_scan)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(url) DO UPDATE SET
-                folder_id = excluded.folder_id,
-                relative_path = excluded.relative_path,
-                name = excluded.name,
-                format = excluded.format,
-                file_size = excluded.file_size,
-                mtime = excluded.mtime,
-                inode = excluded.inode,
-                dev = excluded.dev,
-                last_seen_scan = excluded.last_seen_scan,
-                metadata_scanned = 0
-            WHERE tracks.file_size <> excluded.file_size
-               OR tracks.mtime <> excluded.mtime
-               OR tracks.name <> excluded.name
-               OR tracks.format <> excluded.format
-               OR tracks.relative_path <> excluded.relative_path
-               OR tracks.folder_id IS NOT excluded.folder_id;
-            """
+        // Detect a genuine new insert (vs an ON CONFLICT update) so the FTS index is seeded
+        // ONLY for new rows — a no-op re-scan must do ZERO FTS writes (design §4).
+        let isNewRow = try Int64.fetchOne(db, sql: Self.selectTrackExistsByURLSQL, arguments: [key]) == nil
+        try db.execute(
+            sql: Self.upsertTrackSQL,
+            // dev + inode are the move-signature (M-B): bound on insert AND set on the conflict
+            // UPDATE, but DELIBERATELY absent from the no-bump WHERE predicate (which gates on
+            // CONTENT — size/mtime/name/format/path/folder — not the move-signature).
+            arguments: [
+                key, folderID, file.relativePath, file.name, file.format,
+                file.fileSize, file.mtime, file.inode, file.dev, dateAdded, generation,
+            ]
         )
-        defer { statement.finalize() }
-        try statement.bind(key, at: 1)
-        try statement.bind(folderID, at: 2)
-        try statement.bind(file.relativePath, at: 3)
-        try statement.bind(file.name, at: 4)
-        try statement.bind(file.format, at: 5)
-        try statement.bind(file.fileSize, at: 6)
-        try statement.bind(file.mtime, at: 7)
-        try statement.bind(file.inode, at: 8)
-        // dev + inode are move-signature (M-B): bound on insert AND set on the conflict
-        // UPDATE (a replaced file at this url can have a different dev/inode), but they
-        // are DELIBERATELY absent from the no-bump WHERE predicate above — that predicate
-        // gates on CONTENT (size/mtime/name/format/path/folder), not the move-signature.
-        try statement.bind(file.dev, at: 9)
-        try statement.bind(dateAdded, at: 10) // real epoch; first insert only (out of the conflict SET)
-        try statement.bind(generation, at: 11) // last_seen_scan
-        _ = try statement.step()
-
         // The conflict-update's WHERE means an UNCHANGED row makes no row-change, so
-        // last_seen_scan would NOT be refreshed by that path. Stamp it unconditionally
-        // (it is liveness, not content) so orphan detection stays correct — without
-        // bumping any content column (idempotency preserved).
-        try stampLastSeen(url: key, generation: generation)
-        let id = try rowID(forURL: key)
-        // Seed the search index for a brand-new track (findable by filename immediately).
-        // On an update we intentionally DON'T sync here: the FTS `title` falls back to the
-        // filename `name`, and `name` is a pure function of `url` (a rename is a NEW url →
-        // a new row here, or the reconcile move path `moveMatchedLocked` which re-syncs) —
-        // so on a same-url update no searchable field changes except via the metadata pass
-        // (tagged → applyMetadataLocked re-syncs; tagless → columns stay, row already correct).
-        if isNewRow { try syncSearchRow(trackID: id) }
+        // last_seen_scan would NOT be refreshed by that path. Stamp it unconditionally (it is
+        // liveness, not content) so orphan detection stays correct (idempotency preserved).
+        try Self.stampLastSeen(db, url: key, generation: generation)
+        let id = try Self.rowID(db, forURL: key)
+        // Seed the search index for a brand-new track (findable by filename immediately). On an
+        // update we intentionally DON'T sync: `name` is a pure function of `url`, so a same-url
+        // update changes no searchable field except via the metadata pass (which re-syncs).
+        if isNewRow { try syncSearchRow(db, trackID: id) }
         return id
     }
 
     /// Refresh ONLY `last_seen_scan` for the row at `url` (no content columns).
-    private func stampLastSeen(url key: String, generation: Int64) throws {
-        let statement = try connection.prepare("UPDATE tracks SET last_seen_scan = ? WHERE url = ?;")
-        defer { statement.finalize() }
-        try statement.bind(generation, at: 1)
-        try statement.bind(key, at: 2)
-        _ = try statement.step()
+    private static func stampLastSeen(_ db: Database, url key: String, generation: Int64) throws {
+        try db.execute(sql: stampLastSeenSQL, arguments: [generation, key])
     }
 
-    /// The stable id of the row at `url` (after an upsert, whether it inserted or
-    /// updated). Looked up by the unique url rather than `last_insert_rowid` (which
-    /// is unreliable across an `ON CONFLICT DO UPDATE`).
-    private func rowID(forURL key: String) throws -> Int64 {
-        guard let id = try connection.scalarInt("SELECT id FROM tracks WHERE url = ?;", bind: key) else {
+    /// The stable id of the row at `url` (after an upsert, whether it inserted or updated).
+    /// Looked up by the unique url rather than `lastInsertedRowID` (unreliable across an
+    /// `ON CONFLICT DO UPDATE`).
+    internal static func rowID(_ db: Database, forURL key: String) throws -> Int64 {
+        guard let id = try Int64.fetchOne(db, sql: selectTrackIDByURLSQL, arguments: [key]) else {
             throw SQLiteError.internalError(message: "upsert: row for url not found after write")
         }
         return id
     }
 
-    /// The ids of tracks directly in `folderID` (captured before a folder delete so
-    /// the detach-then-prune in `removeRoot` knows exactly which rows to consider).
-    private func trackIDs(inFolder folderID: Int64) throws -> [Int64] {
-        let statement = try connection.prepare("SELECT id FROM tracks WHERE folder_id = ?;")
-        defer { statement.finalize() }
-        try statement.bind(folderID, at: 1)
-        var ids: [Int64] = []
-        while try statement.step() {
-            ids.append(statement.columnInt64(0))
-        }
-        return ids
+    /// The ids of tracks directly in `folderID` (captured before a folder delete).
+    private static func trackIDs(_ db: Database, inFolder folderID: Int64) throws -> [Int64] {
+        try Int64.fetchAll(db, sql: selectTrackIDsInFolderSQL, arguments: [folderID])
     }
 
-    /// Delete the `folders` row. `ON DELETE SET NULL` detaches its tracks to loose
-    /// (NOT cascade) so playlist memberships survive; child folders cascade.
-    private func deleteFolderRow(_ folderID: Int64) throws {
-        let statement = try connection.prepare("DELETE FROM folders WHERE id = ?;")
-        defer { statement.finalize() }
-        try statement.bind(folderID, at: 1)
-        _ = try statement.step()
+    /// Delete the `folders` row. `ON DELETE SET NULL` detaches its tracks to loose (NOT
+    /// cascade) so playlist memberships survive; child folders cascade.
+    private static func deleteFolderRow(_ db: Database, _ folderID: Int64) throws {
+        try db.execute(sql: deleteFolderByIDSQL, arguments: [folderID])
     }
 
-    /// From `candidates`, the ids no playlist references (design §8 removeRoot). With
-    /// the playlist table deferred (M7) that is ALL of them; the S10 filter slots in
-    /// here as `... AND id NOT IN (SELECT track_id FROM playlist_tracks)`. A dedicated
-    /// hook (not inlined) so the "in any playlist?" predicate is a one-line change.
+    /// From `candidates`, the ids no playlist references (design §8 removeRoot). With the
+    /// playlist table deferred (M7) that is ALL of them; the S10 filter slots in here as
+    /// `... AND id NOT IN (SELECT track_id FROM playlist_tracks)`.
     ///
     /// ⚠️ HARD GATE (S10) — this stub returning ALL candidates is ONLY safe while no
-    /// `playlist_tracks` table exists. Removing a root today deletes every track in the folder
-    /// (nothing references them). BEFORE the S9/S10 playlist UI ships, this MUST gain the
+    /// `playlist_tracks` table exists. BEFORE the S9/S10 playlist UI ships, this MUST gain the
     /// `NOT IN (SELECT track_id FROM playlist_tracks)` filter, or `removeRoot` will delete
     /// playlist-referenced tracks → data loss. Tracked in docs/product/known-issues.md (SEQ-1).
-    private func unreferencedTrackIDs(among candidates: [Int64]) -> [Int64] {
+    private static func unreferencedTrackIDs(among candidates: [Int64]) -> [Int64] {
         candidates
     }
 
-    /// Delete the given track rows by id (inside the caller's transaction). Uses a
-    /// prepared reset-loop (one DELETE per id) rather than a dynamic `IN(...)`: the id
-    /// set is caller-supplied and potentially large, so it must never be spliced into
-    /// SQL (contrast `sweepOrphans`, whose bounded folder set is a single membership
-    /// DELETE).
-    private func deleteTrackRows(ids: [Int64]) throws {
+    /// Delete the given track rows by id (inside the caller's write transaction). One DELETE
+    /// per id (GRDB caches the prepared statement) rather than a dynamic `IN(...)`: the id set
+    /// is caller-supplied and potentially large, so it must never be spliced into SQL.
+    private func deleteTrackRows(_ db: Database, ids: [Int64]) throws {
         guard !ids.isEmpty else { return }
-        try deleteSearchRows(ids: ids) // FTS is not an FK — clear their rows too
-        let statement = try connection.prepare("DELETE FROM tracks WHERE id = ?;")
-        defer { statement.finalize() }
+        try deleteSearchRows(db, ids: ids) // FTS is not an FK — clear their rows too
         for id in ids {
-            statement.reset()
-            statement.clearBindings()
-            try statement.bind(id, at: 1)
-            _ = try statement.step()
+            try db.execute(sql: Self.deleteTrackByIDSQL, arguments: [id])
         }
     }
 }

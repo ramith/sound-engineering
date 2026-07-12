@@ -1,53 +1,44 @@
 // ChecksSearchMigration — S9.2 FTS5 v1→v2 migration/backfill + capability probe.
 //
-// Split from ChecksSearch (file-length budget). These cases seed a v1 store via RAW
-// SQL — bypassing the DAO, whose upsert now syncs FTS and needs the v2 table — to
-// recreate the real pre-v2 library a migration upgrades, then assert the backfill.
+// Split from ChecksSearch (file-length budget). These cases seed a v1 store via RAW SQL —
+// bypassing the DAO, whose upsert now syncs FTS and needs the v2 table — to recreate the
+// real pre-v2 library a migration upgrades, then assert the backfill. Seeding runs on a raw
+// GRDB `DatabaseQueue` migrated by `v1OnlyMigrator()`; because that migrator shares the
+// production `Schema.MigrationID` identifiers, the seeded v1 store can be handed to
+// `LibraryStore` (FTS-MIG1/2) without tripping the `hasBeenSuperseded` downgrade guard.
 
 import Foundation
+import GRDB
 import LibraryStore
 
 // MARK: - Raw v1 seeding (no FTS — the pre-v2 state a real migration upgrades)
 
-private func rawResolve(_ connection: SQLiteConnection, insert: String, select: String,
+private func rawResolve(_ db: Database, insert: String, select: String,
                         name: String, bindsTwo: Bool) throws -> Int64 {
-    let ins = try connection.prepare(insert)
-    defer { ins.finalize() }
-    try ins.bind(name, at: 1)
-    if bindsTwo { try ins.bind(name, at: 2) }
-    _ = try ins.step()
-    guard let id = try connection.scalarInt(select, bind: name) else {
+    try db.execute(sql: insert, arguments: bindsTwo ? [name, name] : [name])
+    guard let id = try Int64.fetchOne(db, sql: select, arguments: [name]) else {
         throw SQLiteError.internalError(message: "rawResolve: row not found after insert")
     }
     return id
 }
 
-private func rawResolveAlbum(_ connection: SQLiteConnection, title: String,
-                             artistID: Int64, year: Int64) throws -> Int64 {
-    let ins = try connection.prepare(
-        "INSERT INTO albums(title, album_artist_id, year) VALUES (?, ?, ?) "
-            + "ON CONFLICT(title, album_artist_id, year) DO NOTHING;"
+private func rawResolveAlbum(_ db: Database, title: String, artistID: Int64, year: Int64) throws -> Int64 {
+    try db.execute(
+        sql: "INSERT INTO albums(title, album_artist_id, year) VALUES (?, ?, ?) "
+            + "ON CONFLICT(title, album_artist_id, year) DO NOTHING;",
+        arguments: [title, artistID, year]
     )
-    defer { ins.finalize() }
-    try ins.bind(title, at: 1)
-    try ins.bind(artistID, at: 2)
-    try ins.bind(year, at: 3)
-    _ = try ins.step()
-    let sel = try connection.prepare(
-        "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND year = ?;"
-    )
-    defer { sel.finalize() }
-    try sel.bind(title, at: 1)
-    try sel.bind(artistID, at: 2)
-    try sel.bind(year, at: 3)
-    guard try sel.step() else {
+    guard let id = try Int64.fetchOne(
+        db, sql: "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND year = ?;",
+        arguments: [title, artistID, year]
+    ) else {
         throw SQLiteError.internalError(message: "rawResolveAlbum: row not found after insert")
     }
-    return sel.columnInt64(0)
+    return id
 }
 
-/// One raw v1 track to seed (a parameter object — keeps the seed helper's arg count
-/// within the lint budget while staying readable at the call sites).
+/// One raw v1 track to seed (a parameter object — keeps the seed helper's arg count within
+/// the lint budget while staying readable at the call sites).
 private struct RawTrackSeed {
     let url: String
     let name: String
@@ -59,40 +50,30 @@ private struct RawTrackSeed {
 }
 
 @discardableResult
-private func seedTrackRawAtV1(_ connection: SQLiteConnection, _ seed: RawTrackSeed) throws -> Int64 {
+private func seedTrackRawAtV1(_ db: Database, _ seed: RawTrackSeed) throws -> Int64 {
     let artistID = try rawResolve(
-        connection, insert: "INSERT OR IGNORE INTO artists(name, sort_name) VALUES (?, ?);",
+        db, insert: "INSERT OR IGNORE INTO artists(name, sort_name) VALUES (?, ?);",
         select: "SELECT id FROM artists WHERE name = ?;", name: seed.artist, bindsTwo: true
     )
-    let albumID = try rawResolveAlbum(connection, title: seed.album, artistID: artistID, year: seed.year)
-    let ins = try connection.prepare(
-        """
+    let albumID = try rawResolveAlbum(db, title: seed.album, artistID: artistID, year: seed.year)
+    try db.execute(
+        sql: """
         INSERT INTO tracks(url, relative_path, name, format, file_size, mtime,
                            title, album_id, artist_id, year, date_added, last_seen_scan)
         VALUES (?, '', ?, 'FLAC', 4096, 1000, ?, ?, ?, ?, 0, 0);
-        """
+        """,
+        arguments: [seed.url, seed.name, seed.title, albumID, artistID, seed.year]
     )
-    defer { ins.finalize() }
-    try ins.bind(seed.url, at: 1)
-    try ins.bind(seed.name, at: 2)
-    try ins.bind(seed.title, at: 3)
-    try ins.bind(albumID, at: 4)
-    try ins.bind(artistID, at: 5)
-    try ins.bind(seed.year, at: 6)
-    _ = try ins.step()
-    let trackID = connection.lastInsertRowID()
+    let trackID = db.lastInsertedRowID
     for genre in seed.genres {
         let genreID = try rawResolve(
-            connection, insert: "INSERT OR IGNORE INTO genres(name) VALUES (?);",
+            db, insert: "INSERT OR IGNORE INTO genres(name) VALUES (?);",
             select: "SELECT id FROM genres WHERE name = ?;", name: genre, bindsTwo: false
         )
-        let link = try connection.prepare(
-            "INSERT OR IGNORE INTO track_genres(track_id, genre_id) VALUES (?, ?);"
+        try db.execute(
+            sql: "INSERT OR IGNORE INTO track_genres(track_id, genre_id) VALUES (?, ?);",
+            arguments: [trackID, genreID]
         )
-        defer { link.finalize() }
-        try link.bind(trackID, at: 1)
-        try link.bind(genreID, at: 2)
-        _ = try link.step()
     }
     return trackID
 }
@@ -102,28 +83,28 @@ private func seedTrackRawAtV1(_ connection: SQLiteConnection, _ seed: RawTrackSe
 func checkFtsMigrationBackfill(number: Int, url: URL) async -> Bool {
     do {
         do {
-            let connection = try SQLiteConnection(path: url.path)
-            defer { connection.close() }
-            try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
-            try seedTrackRawAtV1(connection, RawTrackSeed(
-                url: "/m/dark.flac", name: "dark.flac", title: "Dark Side", artist: "Pink Floyd",
-                album: "The Wall", year: 1979, genres: ["Prog Rock", "Classic"]
-            ))
-            try seedTrackRawAtV1(connection, RawTrackSeed(
-                url: "/m/wish.flac", name: "wish.flac", title: "Wish You Were Here",
-                artist: "Pink Floyd", album: "The Wall", year: 1979, genres: ["Prog Rock"]
-            ))
-            // A BARE track: NULL artist/album, no genres, no title — proves the backfill's
-            // LEFT JOINs keep it (an INNER JOIN would silently drop it → the parity check fails).
-            let bare = try connection.prepare(
-                "INSERT INTO tracks(url, relative_path, name, format, file_size, mtime, "
-                    + "date_added, last_seen_scan) VALUES "
-                    + "('/m/bare.flac', '', 'baremononym.flac', 'FLAC', 4096, 1000, 0, 0);"
-            )
-            defer { bare.finalize() }
-            _ = try bare.step()
-            guard try connection.userVersion() == 1 else {
-                printFail(number, "FTS backfill: pre-migration version != 1"); return false
+            let queue = try DatabaseQueue(path: url.path)
+            try v1OnlyMigrator().migrate(queue)
+            try await queue.write { db in
+                try seedTrackRawAtV1(db, RawTrackSeed(
+                    url: "/m/dark.flac", name: "dark.flac", title: "Dark Side", artist: "Pink Floyd",
+                    album: "The Wall", year: 1979, genres: ["Prog Rock", "Classic"]
+                ))
+                try seedTrackRawAtV1(db, RawTrackSeed(
+                    url: "/m/wish.flac", name: "wish.flac", title: "Wish You Were Here",
+                    artist: "Pink Floyd", album: "The Wall", year: 1979, genres: ["Prog Rock"]
+                ))
+                // A BARE track: NULL artist/album, no genres, no title — proves the backfill's
+                // LEFT JOINs keep it (an INNER JOIN would silently drop it → the parity check fails).
+                try db.execute(
+                    sql: "INSERT INTO tracks(url, relative_path, name, format, file_size, mtime, "
+                        + "date_added, last_seen_scan) VALUES "
+                        + "('/m/bare.flac', '', 'baremononym.flac', 'FLAC', 4096, 1000, 0, 0);"
+                )
+            }
+            let version = try await queue.read { db in try schemaInfoVersion(db) }
+            guard version == 1 else {
+                printFail(number, "FTS backfill: pre-migration version \(version) != 1"); return false
             }
         }
         // Opening the store runs the real v1→v2 (FTS create + backfill).
@@ -162,21 +143,27 @@ func checkFtsMigrationBackfill(number: Int, url: URL) async -> Bool {
 
 func checkFtsMigrationIdempotent(number: Int, url: URL) async -> Bool {
     do {
-        let connection = try SQLiteConnection(path: url.path)
-        defer { connection.close() }
-        try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
-        try seedTrackRawAtV1(connection, RawTrackSeed(
-            url: "/m/a.flac", name: "a.flac", title: "Alpha", artist: "Band", album: "Rec",
-            year: 2020, genres: ["Jazz"]
-        ))
-        try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
-        let afterFirst = try Int(connection.scalarInt("SELECT count(*) FROM tracks_fts;") ?? -1)
-        // A second migrateToCurrent on the already-v2 store is a no-op (idempotent open).
-        try MigrationRunner.migrateToCurrent(connection, appBuild: "verify", timestamp: testTimestamp)
-        let afterSecond = try Int(connection.scalarInt("SELECT count(*) FROM tracks_fts;") ?? -2)
-        guard afterFirst == 1, afterSecond == 1, try connection.userVersion() == 2 else {
+        let queue = try DatabaseQueue(path: url.path)
+        try v1OnlyMigrator().migrate(queue)
+        try await queue.write { db in
+            try seedTrackRawAtV1(db, RawTrackSeed(
+                url: "/m/a.flac", name: "a.flac", title: "Alpha", artist: "Band", album: "Rec",
+                year: 2020, genres: ["Jazz"]
+            ))
+        }
+        // Run the real v1→v2 (backfill), then run the full migrator AGAIN (a no-op on a v2 store).
+        try fullMigrator().migrate(queue)
+        let afterFirst = try await queue.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM tracks_fts;") ?? -1
+        }
+        try fullMigrator().migrate(queue)
+        let afterSecond = try await queue.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM tracks_fts;") ?? -2
+        }
+        let version = try await queue.read { db in try schemaInfoVersion(db) }
+        guard afterFirst == 1, afterSecond == 1, version == 2 else {
             printFail(number, "FTS-MIG3: re-migration changed FTS row count (\(afterFirst)→\(afterSecond)) "
-                + "or version"); return false
+                + "or version (\(version))"); return false
         }
         printPass(number, "FTS-MIG3: re-running the migration on a v2 store is a no-op — "
             + "tracks_fts stays at 1 row (no duplicate backfill)")
@@ -190,14 +177,15 @@ func checkFtsMigrationIdempotent(number: Int, url: URL) async -> Bool {
 
 func checkFtsCapabilityProbe(number: Int, url: URL) async -> Bool {
     do {
-        let connection = try SQLiteConnection(path: url.path)
-        defer { connection.close() }
-        try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
+        let queue = try DatabaseQueue(path: url.path)
+        try v1OnlyMigrator().migrate(queue)
         // Force the unavailable path via the injectable predicate.
         var threwFTS5 = false
         do {
-            try Schema.migrateV1toV2(connection, appBuild: "verify", timestamp: testTimestamp,
-                                     fts5Available: { _ in false })
+            try await queue.write { db in
+                try Schema.migrateV1toV2(db, appBuild: "verify", timestamp: testTimestamp,
+                                         fts5Available: { _ in false })
+            }
         } catch SQLiteError.fts5Unavailable {
             threwFTS5 = true
         }
@@ -220,34 +208,34 @@ func checkFtsCapabilityProbe(number: Int, url: URL) async -> Bool {
 
 func checkFtsMigrationRollback(number: Int, url: URL) async -> Bool {
     do {
-        let connection = try SQLiteConnection(path: url.path)
-        defer { connection.close() }
-        try MigrationRunner.migrate(connection, migrations: v1OnlyMigrations(), targetVersion: 1)
-        // A v1→v2 step that runs the REAL FTS create + backfill, THEN throws — the runner's
-        // single transaction must roll back BOTH the virtual-table DDL and the backfill
-        // (SCHEMA-4 only proves this for a synthetic ALTER step).
-        let realThenThrow = Migration(toVersion: 2) { conn in
-            try Schema.migrateV1toV2(conn, appBuild: "verify", timestamp: testTimestamp)
+        let queue = try DatabaseQueue(path: url.path)
+        try v1OnlyMigrator().migrate(queue)
+        // A v1→v2 step that runs the REAL FTS create + backfill, THEN throws — GRDB runs each
+        // migration in its own transaction, so BOTH the virtual-table DDL and the backfill must
+        // roll back atomically (SCHEMA-4 only proves this for a synthetic ALTER step).
+        var throwingMigrator = v1OnlyMigrator()
+        throwingMigrator.registerMigration(Schema.MigrationID.v2) { db in
+            try Schema.migrateV1toV2(db, appBuild: "verify", timestamp: testTimestamp)
             throw MigrationTestError()
         }
         var threw = false
         do {
-            try MigrationRunner.migrate(
-                connection, migrations: v1OnlyMigrations() + [realThenThrow], targetVersion: 2
-            )
+            try throwingMigrator.migrate(queue)
         } catch {
             threw = true
         }
-        let version = (try? connection.userVersion()) ?? -1
-        let ftsExists = try Int(connection.scalarInt(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
-        ) ?? -1)
+        let (version, ftsExists) = try await queue.read { db in
+            try (schemaInfoVersion(db),
+                 Int.fetchOne(
+                     db, sql: "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
+                 ) ?? -1)
+        }
         guard threw, version == 1, ftsExists == 0 else {
             printFail(number, "FTS-MIG4: a throwing real v1->v2 did not fully roll back "
                 + "(version \(version), tracks_fts present=\(ftsExists))"); return false
         }
         printPass(number, "FTS-MIG4: a throwing REAL v1->v2 rolls back atomically — stays at v1 with "
-            + "NO tracks_fts (the FTS DDL + backfill run inside the runner's transaction)")
+            + "NO tracks_fts (the FTS DDL + backfill run inside the migrator's transaction)")
         return true
     } catch {
         printFail(number, "FTS-MIG4 threw: \(error)"); return false
