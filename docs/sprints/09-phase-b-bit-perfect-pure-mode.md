@@ -82,7 +82,7 @@ plus the correctness/UX work around it.
    hearing (Nyquist ≈ 22.05 / 24 kHz; music is band-limited to ~20 kHz). The fidelity win is
    **avoiding unnecessary resampling** (play the source at its native rate), not the number itself.
    A 44.1→48 resample through a good converter (ours) is audibly transparent. Higher rates
-   (96/192) give no audible playback benefit. See `docs/product/audiophile_dsp_apple_silicon_report.md`.
+   (96/192) give no audible playback benefit. See `docs/architecture/dsp-apple-silicon-survey.md`.
 
 7. **Device-selection model: app-selected device is authoritative.** Picking a device in the app
    sets the macOS default output, so both paths target it. On the active device disappearing,
