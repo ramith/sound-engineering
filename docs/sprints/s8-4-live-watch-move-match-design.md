@@ -9,7 +9,7 @@
 
 Three deliverables, one theme: **make the persistent store track the filesystem live, without ever losing durable track identity.**
 
-1. **Live-watch (FSEvents).** Recursively watch registered scan roots *while the app is open* and reconcile changes into `LibraryStore` in the background. Today only the on-demand full re-scan writes the store; the existing monitor ([AudioViewModel+FolderMonitor.swift](../../Sources/AdaptiveSound/AudioViewModel+FolderMonitor.swift)) is non-recursive and only refreshes the *in-memory* playlist.
+1. **Live-watch (FSEvents).** Recursively watch registered scan roots *while the app is open* and reconcile changes into `LibraryStore` in the background. At design time only the on-demand full re-scan wrote the store; the then-existing monitor (the pre-S8.4 in-memory `AudioViewModel` folder monitor, since **removed** — its role moved into `LibraryModel+Reconcile`/`+Scan`) was non-recursive and only refreshed the *in-memory* playlist.
 2. **Move-matching.** Consume the `(dev,inode,size,mtime)` signature S8.2 already populates so a moved/renamed file reconciles via the id-preserving `moveTrack` — **not** delete+insert (which mints a new id and would silently drop the track from future playlists/counts). This is the explicit hard gate **SEQ-1 / Gate-2** ([known-issues.md](../product/known-issues.md)).
 3. **SF-2 `sweepOrphanFacets()`.** Reap zero-track `albums`/`artists`/`genres` left by move/retag/delete churn (preserving the `artists(id=0)` sentinel), mirroring the shipped `sweepOrphanArtwork`, so S9 browse shows no phantom empties.
 
@@ -50,7 +50,7 @@ Only watch *future* events; rely on the existing full re-scan (at addRoot / next
 
 ### 1.4 Swift-6 isolation + clean teardown (the SIGTRAP lesson, applied)
 
-The current monitor documents a hard runtime crash: a background-queue handler touching `@MainActor` state traps at quit (EXC_BREAKPOINT), invisible to build+lint ([AudioViewModel+FolderMonitor.swift:22-38](../../Sources/AdaptiveSound/AudioViewModel+FolderMonitor.swift)). Applied here:
+The pre-S8.4 monitor documented a hard runtime crash: a background-queue handler touching `@MainActor` state trapped at quit (EXC_BREAKPOINT), invisible to build+lint. Applied here:
 
 - The FSEvents C callback is a top-level `@convention(c)` function; it copies the C `char**`/flags into a `Sendable [WatcherEvent]` synchronously on the watcher's **serial** queue and hands it to a stored `@Sendable (WatcherEventBatch) -> Void` sink. **No `@MainActor` state is touched on the background queue.**
 - The VM's sink does `Task { @MainActor [weak self] in … }` *first*, then debounces — exactly `scheduleFolderReload`'s pattern.
