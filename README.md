@@ -15,20 +15,6 @@ A personal, open-source audio enhancement app for macOS that turns any good-qual
 
 ---
 
-## Project at a glance
-
-| | |
-|---|---|
-| **Platform** | macOS 26 (Tahoe) · Apple Silicon · Swift 6.2 (Swift 6 mode) · C++23 |
-| **Code** | ~20.7k lines Swift (150 files) · ~11.2k lines C/C++/Obj-C++ (55 files) |
-| **Tests** | 120 C++ DSP null-tests (golden master `0xE7267654BA01D315`) · 71 Swift `@Test` cases · headless `VerifyAUGraph` + `VerifyLibraryStore` gates |
-| **Gate** | `make gate` (C++ null-test + AU/library verify); `make strict-gate` adds build + `swift test` + clang-tidy + ASan/UBSan/TSan |
-| **Commits** | 241 |
-| **Coverage** | not tracked yet — the DSP is gated by a C++ golden-master harness and Swift by `swift test`; a unified coverage % isn't wired up |
-| **License** | TBD — personal / open-source (deferred to post-MVP) |
-
----
-
 ## Requirements
 
 - **macOS**: 26 (Tahoe) or later
