@@ -13,6 +13,10 @@ struct SaveCustomPresetView: View {
     @Binding var isPresented: Bool
 
     @State private var presetName: String = ""
+    /// Suppresses the global Space accelerator while the name field is focused (S4 SW1) — else a
+    /// space typed into the preset name would toggle playback instead of inserting a space.
+    @Environment(KeyboardTransportFocus.self) private var keyboardFocus
+    @FocusState private var nameFocused: Bool
 
     private var canSave: Bool {
         !presetName.trimmingCharacters(in: .whitespaces).isEmpty
@@ -25,6 +29,11 @@ struct SaveCustomPresetView: View {
 
             TextField("Preset name", text: $presetName)
                 .textFieldStyle(.roundedBorder)
+                .focused($nameFocused)
+                .onChange(of: nameFocused) { _, focused in
+                    keyboardFocus.isTextEntryFocused = focused
+                }
+                .onDisappear { keyboardFocus.isTextEntryFocused = false }
                 .onSubmit {
                     commitSave()
                 }
