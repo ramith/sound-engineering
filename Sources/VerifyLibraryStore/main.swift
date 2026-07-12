@@ -187,6 +187,7 @@ func hardeningCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "sp-single-pool-concurrency", run: checkSinglePoolConcurrency),
         CheckCase(label: "erase-on-schema-change", run: checkEraseOnSchemaChange),
+        CheckCase(label: "foreign-schema-rebuild", run: checkForeignSchemaRebuild),
     ]
 }
 

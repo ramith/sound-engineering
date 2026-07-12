@@ -253,11 +253,23 @@ public final class LibraryStore: Sendable {
                 let superseded = try pool.read { db in try migrator.hasBeenSuperseded(db) }
                 if !intact || superseded { throw StoreOpenFailure.rebuildRecoverable }
             }
-            try migrator.migrate(pool)
+            do {
+                try migrator.migrate(pool)
+            } catch {
+                // A PRE-EXISTING file whose on-disk schema the current migrator cannot apply —
+                // e.g. a store from a prior, non-GRDB migration scheme (app tables present but NOT
+                // recorded in `grdb_migrations`, so `migrate` re-runs v1 and collides with the
+                // existing tables), or any partially-migrated file. The library is a REBUILDABLE
+                // CACHE, so quarantine + rebuild rather than fail to open. A FRESH file that fails
+                // to migrate is a genuine bug → propagate.
+                guard fileExisted else { throw error }
+                throw StoreOpenFailure.rebuildRecoverable
+            }
             return try (pool, readSchemaVersion(pool))
         } catch let error where fileExisted && isRebuildRecoverable(error) {
-            // A pre-existing file was unusable (corrupt / failed integrity / newer schema).
-            // Quarantine it (+ sidecars) and rebuild fresh — the library is a rebuildable cache.
+            // A pre-existing file was unusable (corrupt / failed integrity / newer schema / a
+            // schema the migrator can't apply). Quarantine it (+ sidecars) and rebuild fresh —
+            // the library is a rebuildable cache.
             try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
             let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
             try migrator.migrate(pool)

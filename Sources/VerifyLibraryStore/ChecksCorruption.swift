@@ -269,3 +269,55 @@ func checkEraseOnSchemaChange(number: Int, url: URL) async -> Bool {
         return false
     }
 }
+
+// MARK: - FOREIGN-SCHEMA — a store with app tables but no grdb_migrations records → rebuild
+
+/// FOREIGN-SCHEMA REBUILD (regression guard for the pre-GRDB → GRDB transition): a pre-existing
+/// store whose app tables are present but NOT recorded in GRDB's `grdb_migrations` (a store from
+/// the prior, `user_version`-based migration scheme). GRDB's migrator would re-run `v1-create-all`
+/// and collide with the existing tables (`CREATE TABLE … already exists`) — the open path must
+/// treat that as a rebuildable-cache mismatch → quarantine + rebuild, NEVER a failed open (which
+/// bricked "add music folders" on an upgraded install).
+func checkForeignSchemaRebuild(number: Int, url: URL) async -> Bool {
+    let fileManager = FileManager.default
+    do {
+        // 1. Build a valid store + seed a row, then ERASE grdb_migrations so the app tables exist
+        //    with NO recorded migrations — the exact shape a pre-GRDB store presents to the migrator.
+        do {
+            let store = try await LibraryStore(url: url, appBuild: "verify")
+            _ = try await store.seedFolderRow(path: "/Music/foreign-A")
+        }
+        do {
+            let tamper = try DatabaseQueue(path: url.path)
+            try await tamper.write { db in try db.execute(sql: "DELETE FROM grdb_migrations;") }
+        }
+
+        // 2. Reopening MUST quarantine + rebuild fresh — migrate re-runs v1, the CREATE collides,
+        //    and the open path recovers (rather than propagating the SQLITE_ERROR and failing open).
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let version = await store.schemaVersion()
+        guard version == currentSchemaVersion, try await store.integrityCheck() else {
+            printFail(number, "foreign-schema rebuild: store did not rebuild to v\(currentSchemaVersion) "
+                + "(got v\(version))"); return false
+        }
+        let folderCount = try await store.countRows(inTable: "folders")
+        guard folderCount == 0 else {
+            printFail(number, "foreign-schema rebuild: rebuilt store unexpectedly has \(folderCount) folders")
+            return false
+        }
+        let directory = url.deletingLastPathComponent()
+        let stem = url.deletingPathExtension().lastPathComponent
+        let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+        guard contents.contains(where: { $0.hasPrefix(stem) && $0.contains(".corrupt-") }) else {
+            printFail(number, "foreign-schema rebuild: no quarantine artifact produced for the foreign store")
+            return false
+        }
+        printPass(number, "foreign-schema rebuild: a store with app tables but NO grdb_migrations records "
+            + "(a pre-GRDB / foreign-migration file) is quarantined + rebuilt fresh to v\(version), "
+            + "never a failed open")
+        return true
+    } catch {
+        printFail(number, "foreign-schema rebuild threw: \(error)")
+        return false
+    }
+}
