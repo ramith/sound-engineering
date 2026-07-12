@@ -63,27 +63,30 @@ struct ArtistsGridView: View {
     }
 
     /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
+    /// `filteredArtists` is computed ONCE here and threaded down — previously the count line, the empty
+    /// check, and the `ForEach` each re-ran it, and each run re-filtered `visibleArtists` too (so ~6
+    /// O(n) passes per body evaluation).
     private var gridWithFilter: some View {
-        VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: "Filter Artists")
+        let artists = filteredArtists
+        return VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLabel(artists.count), filter: $filter, placeholder: "Filter Artists")
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if filteredArtists.isEmpty {
+            if artists.isEmpty {
                 ContentUnavailableView.search(text: filter)
             } else {
-                grid
+                grid(artists)
             }
         }
     }
 
-    private var countLine: String {
-        let shown = filteredArtists.count
-        return "\(shown) artist\(shown == 1 ? "" : "s")"
+    private func countLabel(_ shown: Int) -> String {
+        "\(shown) artist\(shown == 1 ? "" : "s")"
     }
 
-    private var grid: some View {
+    private func grid(_ artists: [ArtistFacet]) -> some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(filteredArtists) { artist in
+                ForEach(artists) { artist in
                     ArtistGridItem(artist: artist, side: side)
                 }
             }

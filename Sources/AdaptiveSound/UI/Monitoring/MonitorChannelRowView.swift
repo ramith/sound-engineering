@@ -81,30 +81,21 @@ struct MonitorChannelRowView: View {
     }
 
     private var spectraRow: some View {
-        GeometryReader { proxy in
-            HStack(spacing: 0) {
-                // BEFORE spectrum (left half)
-                SpectrumMiniView(
-                    bands: beforeBands,
-                    color: beforeColor,
-                    isActive: isActive
-                )
-                .frame(width: (proxy.size.width - Layout.hairlineWidth) / 2)
+        // Two equal halves separated by a hairline. `.frame(maxWidth: .infinity)` splits the width
+        // 50/50 natively — no `GeometryReader` (which forced a layout pass per channel row just to
+        // compute the halves by hand).
+        HStack(spacing: 0) {
+            SpectrumMiniView(bands: beforeBands, color: beforeColor, isActive: isActive)
+                .frame(maxWidth: .infinity)
 
-                // Hairline divider
-                Rectangle()
-                    .fill(DesignSystem.Color.hairline)
-                    .frame(width: Layout.hairlineWidth)
+            Rectangle()
+                .fill(DesignSystem.Color.hairline)
+                .frame(width: Layout.hairlineWidth)
 
-                // AFTER spectrum (right half)
-                SpectrumMiniView(
-                    bands: afterBands,
-                    color: afterColor,
-                    isActive: isActive
-                )
-                .frame(width: (proxy.size.width - Layout.hairlineWidth) / 2)
-            }
+            SpectrumMiniView(bands: afterBands, color: afterColor, isActive: isActive)
+                .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
         .frame(height: Layout.rowHeight)
     }
 

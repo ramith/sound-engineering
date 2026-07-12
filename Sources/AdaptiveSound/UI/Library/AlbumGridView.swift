@@ -52,14 +52,17 @@ struct AlbumGridView: View {
     }
 
     /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
+    /// `filteredAlbums` is computed ONCE here and threaded down — previously the count line, the empty
+    /// check, and the `ForEach` each re-ran it (three O(n) filter passes per body evaluation).
     private var gridWithFilter: some View {
-        VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: "Filter Albums")
+        let albums = filteredAlbums
+        return VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLabel(albums.count), filter: $filter, placeholder: "Filter Albums")
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if filteredAlbums.isEmpty {
+            if albums.isEmpty {
                 ContentUnavailableView.search(text: filter)
             } else {
-                grid
+                grid(albums)
             }
         }
     }
@@ -71,15 +74,14 @@ struct AlbumGridView: View {
             : model.albums.filter { FacetTextFilter.matches([$0.title, $0.albumArtist], query: filter) }
     }
 
-    private var countLine: String {
-        let shown = filteredAlbums.count
-        return "\(shown) album\(shown == 1 ? "" : "s")"
+    private func countLabel(_ shown: Int) -> String {
+        "\(shown) album\(shown == 1 ? "" : "s")"
     }
 
-    private var grid: some View {
+    private func grid(_ albums: [AlbumFacet]) -> some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(filteredAlbums) { album in
+                ForEach(albums) { album in
                     AlbumGridItem(album: album, side: side)
                 }
             }
