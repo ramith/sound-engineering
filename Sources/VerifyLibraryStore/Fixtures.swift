@@ -120,10 +120,10 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
 
     return computeExpectations(
         allDefs: popTracks + jazzTracks + rockTracks + rockAndRollTracks,
-        looseGenres: looseGenres, looseArtist: looseArtist, looseAlbum: looseAlbum,
-        looseTitle: looseTitle, looseYear: looseYear,
-        rockRootID: rockRootID, rockCount: rockTracks.count,
-        rockAndRollRootID: rockAndRollRootID, rockAndRollCount: rockAndRollTracks.count
+        loose: LooseTrackSpec(title: looseTitle, artist: looseArtist, album: looseAlbum,
+                              year: looseYear, genres: looseGenres),
+        rockRoot: GenreRootExpectation(rootID: rockRootID, trackCount: rockTracks.count),
+        rockAndRollRoot: GenreRootExpectation(rootID: rockAndRollRootID, trackCount: rockAndRollTracks.count)
     )
 }
 
@@ -219,19 +219,33 @@ private func rockAndRollFixtureTracks() -> [FixtureTrack] {
 
 // MARK: - Expectation computation
 
-// PERMANENT reason="test fixture expectation builder (Verify tool)"
-// swiftlint:disable:next function_parameter_count
+/// The one loose (folder-less) fixture track's metadata — shared by the store write and the
+/// derived expectations so both compute from a single source of truth.
+private struct LooseTrackSpec {
+    let title: String
+    let artist: String
+    let album: String
+    let year: Int
+    let genres: [String]
+}
+
+/// A genre-root folder's expected drill-down: its folder id and its track count.
+private struct GenreRootExpectation {
+    let rootID: Int64
+    let trackCount: Int
+}
+
 private func computeExpectations(
-    allDefs: [FixtureTrack], looseGenres: [String], looseArtist: String, looseAlbum: String,
-    looseTitle: String, looseYear: Int,
-    rockRootID: Int64, rockCount: Int,
-    rockAndRollRootID: Int64, rockAndRollCount: Int
+    allDefs: [FixtureTrack],
+    loose: LooseTrackSpec,
+    rockRoot: GenreRootExpectation,
+    rockAndRollRoot: GenreRootExpectation
 ) -> FixtureExpectations {
     // Fold the loose track into ONE definition list so every derived set is computed
     // uniformly (the loose track participates in artist/album/genre/year facets too).
     let looseDef = FixtureTrack(
-        fileName: "loose-single.flac", title: looseTitle, artist: looseArtist,
-        album: looseAlbum, albumArtist: looseArtist, year: looseYear, trackNo: 1, genres: looseGenres
+        fileName: "loose-single.flac", title: loose.title, artist: loose.artist,
+        album: loose.album, albumArtist: loose.artist, year: loose.year, trackNo: 1, genres: loose.genres
     )
     let everyDef = allDefs + [looseDef]
     let totalTracks = everyDef.count
@@ -260,8 +274,8 @@ private func computeExpectations(
     return FixtureExpectations(
         totalTracks: totalTracks, albumCount: albumCount, artistCount: artistCount,
         genreCount: derived.tracksByGenre.count, untaggedAlbumTrackCount: untaggedCount,
-        rockRootID: rockRootID, rockRootTrackCount: rockCount,
-        rockAndRollRootID: rockAndRollRootID, rockAndRollRootTrackCount: rockAndRollCount,
+        rockRootID: rockRoot.rootID, rockRootTrackCount: rockRoot.trackCount,
+        rockAndRollRootID: rockAndRollRoot.rootID, rockAndRollRootTrackCount: rockAndRollRoot.trackCount,
         genreTrackCounts: derived.genreTrackCounts,
         albumsByAlbumArtist: derived.albumsByAlbumArtist,
         tracksByArtist: derived.tracksByArtist, albumsByGenre: derived.albumsByGenre,

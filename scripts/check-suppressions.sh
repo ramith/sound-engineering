@@ -29,7 +29,13 @@
 #   5. Expiry — PERMANENT: forbidden. TEMP: expiry=YYYY-MM-DD (fail if past) or issue=… .
 #   6. Range balance — every NOLINTBEGIN(rules) has a matching NOLINTEND(rules) (same file,
 #      same rule set); swiftlint:disable <rule> has a matching swiftlint:enable <rule>.
-#   7. Redundancy — a suppressed rule already globally disabled in .clang-tidy is dead → fail.
+#   7. Liveness (clang-tidy NOLINT only) — every suppressed rule must be in the EFFECTIVE
+#      clang-tidy enabled set for that file's directory, resolved via `clang-tidy --list-checks`
+#      (which honors the nearest .clang-tidy upward, incl. the Tests/ and AudioDSPTestBridge/
+#      InheritParentConfig overrides). A token that is disabled there, belongs to a never-enabled
+#      family (e.g. hicpp-*), or is misspelled suppresses NOTHING → dead → fail. Requires
+#      clang-tidy; skipped with a note if absent (CI always has it). Strictly stronger than the
+#      former "disabled at repo root only" redundancy check it replaces.
 #
 # NOLINTEND / swiftlint:enable are closers: exempt from metadata, checked only for balance.
 set -euo pipefail
@@ -40,10 +46,13 @@ cd "$repo_root"
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 required for check-suppressions.sh" >&2; exit 1; }
 
 python3 - "$@" <<'PY'
-import os, re, sys, subprocess, datetime
+import os, re, sys, subprocess, datetime, shutil
 
 REPO = os.getcwd()
-CODE_EXT = ('.swift', '.c', '.cc', '.cpp', '.mm', '.h', '.hpp')
+# .inc included: the C++ test fragments (#included into a .cpp TU) carry LIVE clang-tidy
+# NOLINT suppressions, so the accountability grammar must reach them too — not just the
+# standalone .cpp/.mm/.h files.
+CODE_EXT = ('.swift', '.c', '.cc', '.cpp', '.mm', '.h', '.hpp', '.inc')
 # First-party only — mirror .semgrepignore. Vendored/build/asset trees are not ours.
 EXCLUDE_DIRS = {'.build', '.swiftpm', '.git', 'third_party', 'docs', 'research', 'assets'}
 EXCLUDE_PATH_SUBSTR = ('Tests/Fixtures/', 'scripts/hal-spike')
@@ -68,23 +77,41 @@ def owner_for(path):
             return owner
     return DEFAULT_OWNER
 
-def globally_disabled_rules():
-    """Rule ids disabled in .clang-tidy Checks: (lines like `-some-check`)."""
-    disabled = set()
-    try:
-        with open(os.path.join(REPO, '.clang-tidy')) as fh:
-            text = fh.read()
-    except OSError:
-        return disabled
-    # Only scan the Checks: block (up to the next top-level key).
-    m = re.search(r'^Checks:\s*[>|]?\s*\n(.*?)^\S', text, re.S | re.M)
-    block = m.group(1) if m else text
-    for tok in re.findall(r'-([a-z][a-z0-9.\-]+)', block):
-        if tok != '*':
-            disabled.add(tok)
-    return disabled
+def _resolve_clang_tidy():
+    """Prefer keg-only Homebrew LLVM (matches strict-gate/pre-commit), fall back to PATH."""
+    cand = '/opt/homebrew/opt/llvm/bin/clang-tidy'
+    if os.path.isfile(cand) and os.access(cand, os.X_OK):
+        return cand
+    return shutil.which('clang-tidy')
 
-DISABLED = globally_disabled_rules()
+CLANG_TIDY = _resolve_clang_tidy()
+_CT_WARNED = [False]
+_enabled_cache = {}
+
+def enabled_checks_for(dirpath):
+    """The EFFECTIVE clang-tidy enabled-check set for dirpath. `clang-tidy --list-checks` run
+    with cwd=dirpath resolves the nearest .clang-tidy upward (honoring the Tests/ and
+    AudioDSPTestBridge/ InheritParentConfig overrides) exactly as it would when analysing a file
+    there. Cached per directory. Returns None when clang-tidy is unavailable OR its output can't
+    be parsed → the liveness check is skipped rather than risking a false accusation."""
+    if CLANG_TIDY is None:
+        return None
+    key = os.path.abspath(dirpath)
+    if key in _enabled_cache:
+        return _enabled_cache[key]
+    checks = set()
+    try:
+        out = subprocess.run([CLANG_TIDY, '--list-checks'], cwd=key,
+                             capture_output=True, text=True, timeout=120)
+        # Format: "Enabled checks:\n" then 4-space-indented check names, one per line.
+        for ln in out.stdout.splitlines():
+            if ln[:1].isspace() and ln.strip():
+                checks.add(ln.strip())
+    except Exception:
+        checks = set()
+    result = checks or None   # empty = exec/parse failure → treat as unavailable, never false-flag
+    _enabled_cache[key] = result
+    return result
 
 def iter_files():
     for root, dirs, files in os.walk(REPO):
@@ -117,7 +144,7 @@ def err(rel, ln, msg):
 def split_rules(s):
     return [r.strip() for r in s.split(',') if r.strip()]
 
-def validate_meta(rel, ln, rules, tail, kind_label):
+def validate_meta(rel, ln, rules, tail, kind_label, is_clang_tidy=False):
     tail = tail or ''
     perm = 'PERMANENT' in tail
     temp = 'TEMP' in tail
@@ -145,10 +172,21 @@ def validate_meta(rel, ln, rules, tail, kind_label):
                 err(rel, ln, f"{kind_label}: malformed expiry (want YYYY-MM-DD).")
     # Owner always resolves via the path map; explicit owner= just overrides.
     _ = owner_for(rel)
-    # Redundancy: any suppressed rule already globally disabled in .clang-tidy is dead.
-    for r in rules:
-        if r in DISABLED:
-            err(rel, ln, f"{kind_label}: rule '{r}' is already globally disabled in .clang-tidy — redundant suppression, remove it.")
+    # Liveness (clang-tidy NOLINT only): every suppressed rule must be in the EFFECTIVE enabled
+    # set for this file's directory. A token disabled there, from a never-enabled family (hicpp-*),
+    # or misspelled suppresses nothing → dead.
+    if is_clang_tidy:
+        enabled = enabled_checks_for(os.path.dirname(os.path.join(REPO, rel)) or REPO)
+        if enabled is None:
+            if not _CT_WARNED[0]:
+                print("  (note: clang-tidy unavailable — NOLINT liveness check skipped)", file=sys.stderr)
+                _CT_WARNED[0] = True
+        else:
+            for r in rules:
+                if r not in enabled:
+                    err(rel, ln, f"{kind_label}: rule '{r}' is not in the effective clang-tidy enabled set for "
+                                 f"this path (disabled in a .clang-tidy, a never-enabled family like hicpp-*, or "
+                                 f"misspelled) — dead suppression, remove it.")
 
 for rel, full in iter_files():
     try:
@@ -182,7 +220,7 @@ for rel, full in iter_files():
                 else:
                     err(rel, i, f"NOLINTEND({','.join(rules)}) has no matching NOLINTBEGIN.")
                 continue
-            validate_meta(rel, i, rules, m.group('tail'), f"NOLINT{kind or ''}")
+            validate_meta(rel, i, rules, m.group('tail'), f"NOLINT{kind or ''}", is_clang_tidy=True)
             if kind == 'BEGIN':
                 open_nolint[frozenset(rules)] = i
             continue

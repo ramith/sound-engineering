@@ -24,9 +24,7 @@ static auto testIntensityZeroIsBitExact() -> void
     DSPKernel kernel;
     kernel.initialize(TestConstants::kSampleRate48k, kFrames);
 
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(TestConstants::kSeedBypassSingle);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-TestConstants::kNoiseUnit,
                                                TestConstants::kNoiseUnit);
 
@@ -98,9 +96,7 @@ static auto testIntensityZeroMultiChunk() -> void
         kernel.process(warm.abl(), kFrames);
     }
 
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(TestConstants::kSeedBypassMulti);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-TestConstants::kNoiseUnit,
                                                TestConstants::kNoiseUnit);
 
@@ -143,9 +139,7 @@ static auto testWhiteNoiseBypasses() -> void
     DSPKernel kernel;
     kernel.initialize(TestConstants::kSampleRate48k, kFrames);
 
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(TestConstants::kSeedWhiteNoise);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-TestConstants::kNoiseHalf,
                                                TestConstants::kNoiseHalf);
 
@@ -319,9 +313,7 @@ static auto testMultiChunkStatePreservation() -> void
     DSPKernel kernel;
     kernel.initialize(TestConstants::kSampleRate48k, kFrames);
 
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(TestConstants::kSeedMultiChunk);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-TestConstants::kNoiseUnit,
                                                TestConstants::kNoiseUnit);
 

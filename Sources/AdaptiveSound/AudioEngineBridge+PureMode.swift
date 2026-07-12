@@ -308,9 +308,13 @@ extension AudioEngineBridge {
         let frameCount = AVAudioFrameCount(totalFrames - targetFrame)
         player.stop()
         audioFile.framePosition = targetFrame
-        // PERMANENT reason="AVFoundation scheduleSegment call reads best on one line"
-        // swiftlint:disable:next line_length
-        player.scheduleSegment(audioFile, startingFrame: targetFrame, frameCount: frameCount, at: nil, completionCallbackType: .dataPlayedBack) { [weak self, weak player] _ in
+        player.scheduleSegment(
+            audioFile,
+            startingFrame: targetFrame,
+            frameCount: frameCount,
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self, weak player] _ in
             guard let self, let livePlayer = player else { return }
             self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
         }

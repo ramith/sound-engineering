@@ -486,7 +486,6 @@ static auto testLimiterHotNoiseSoakN8() -> void
     // Use 8 distinct seeds so each channel carries a different noise sequence,
     // maximising the chance of independent inter-sample peaks that stress the
     // fan-in max() and the ring wrap across 8 slots.
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     constexpr std::array<uint32_t, kNumCh> kSeeds = {0xA1B2C3D4U,
                                                      0xE5F60718U,
                                                      0x29304152U,
@@ -495,7 +494,6 @@ static auto testLimiterHotNoiseSoakN8() -> void
                                                      0xEBFC0D1EU,
                                                      0x2F304152U,
                                                      0x73849506U};
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     const std::string err =
         limiterHotNoiseSoakBody(kNumCh, 50U, kSeeds.data(), /*printInfo=*/true, kName);
     if (!err.empty())
