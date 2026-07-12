@@ -1,6 +1,6 @@
 # S9 — Implementation Plan
 
-Status: **DRAFT — pending final gate (architect challenge + the-fool) + founder sign-off.**
+Status: **✅ SHIPPED (S9) — execution record.** ⚠️ Superseded in detail by the shipped code + [s9-5-songs-search-design.md](s9-5-songs-search-design.md); kept for the ordering/rationale provenance.
 Execution layer for [s9-browse-search-ui-design.md](s9-browse-search-ui-design.md) (the vetted spec).
 This plan is *how* we build it: ordering, safety discipline, per-slice file manifest + gate, and the
 decisions that need a founder call before code starts.

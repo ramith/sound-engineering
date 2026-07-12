@@ -1,5 +1,7 @@
 # Sprint Planning & Kanban Model — Adaptive Sound
 
+> **⚠️ HISTORICAL / SUPERSEDED.** This is an early copy of the sprint methodology (same `SPRINT-ASE-001`). The authoritative version now lives at [../sprints/00-sprint-model.md](../sprints/00-sprint-model.md); retained for provenance.
+
 **Document ID:** SPRINT-ASE-001  
 **Version:** 1.0 — locked (2026-06-13)  
 **Date:** 2026-06-13  

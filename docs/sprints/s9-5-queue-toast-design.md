@@ -1,6 +1,6 @@
 # S9.5 — Queue toast + truthful counts (design)
 
-Status: **DRAFT — brainstormed; pending expert review (swiftui-pro · architect-reviewer · qa-expert) → founder manual-review → questions → implement (SMEs) → refactoring-specialist regression review → retro.** Companion to [s9-5-songs-search-design.md](s9-5-songs-search-design.md) §10.4 (the locked UX spec), decision #4 (visibility-gated toast) + OD-2 (truthful post-dedup count), and its [test plan](s9-5-songs-search-test-plan.md) §2.2 (TOAST-1/2/3, VM-Q-13/14/15).
+Status: **✅ SHIPPED (S9.5) — design record.** Companion to [s9-5-songs-search-design.md](s9-5-songs-search-design.md) §10.4 (the locked UX spec), decision #4 (visibility-gated toast) + OD-2 (truthful post-dedup count), and its [test plan](s9-5-songs-search-test-plan.md) §2.2 (TOAST-1/2/3, VM-Q-13/14/15).
 
 ## 1. What this is
 

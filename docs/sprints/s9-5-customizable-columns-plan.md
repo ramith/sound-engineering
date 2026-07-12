@@ -1,6 +1,6 @@
 # S9.5 — Customizable Songs columns (implementation plan)
 
-Status: **DRAFT — pending expert review (swiftui-pro + inline architecture) → founder manual-review → implement → refactoring-specialist + QA → gate → make-run.** Execution layer for the **already-locked** design in [s9-5-songs-search-design.md](s9-5-songs-search-design.md) §11 (spec) + §12 (founder decisions D-A/B/C + play-tracking) + §12.5 (pre-change reviews). This doc is the *how* — the SwiftUI wiring, persistence, the one backend delta, and the risks.
+Status: **✅ SHIPPED (S9.5) — execution record.** Execution layer for the **already-locked** design in [s9-5-songs-search-design.md](s9-5-songs-search-design.md) §11 (spec) + §12 (founder decisions D-A/B/C + play-tracking) + §12.5 (pre-change reviews). This doc is the *how* — the SwiftUI wiring, persistence, the one backend delta, and the risks.
 
 ## 1. What's already true (so this is mostly UI)
 

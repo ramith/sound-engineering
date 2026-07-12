@@ -1,5 +1,7 @@
 # Sprint 2: Mix-Based Core (Phase 1)
 
+> **⚠️ HISTORICAL (early Sprint-2 plan, concept-era phasing).** Superseded by the shipped engine + the forward [../sprints/sprint-plan.md](../sprints/sprint-plan.md). Retained for provenance.
+
 **Story:** FEAT-P1-001 — Foundation EQ, clarity, loudness-compensation, and adaptive binaural rendering (BRIR) for the own-player with Reimagine intensity knob.
 
 **Estimate:** 8 sp / ~10 days  
