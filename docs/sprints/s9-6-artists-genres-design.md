@@ -1,4 +1,6 @@
-# S9.6 — Artists / Genres / Years (finish S9 browse)
+# S9.6 — Artists / Genres (finish S9 browse)
+
+> **Note (2026-07-11):** the **Years** tab in this design was **cut during founder review** — a track-year index added little; all Years DAO/gate/UI were removed and the doc renamed accordingly. This design shipped as Artists + Genres only.
 
 **Status:** DESIGN (for expert panel + architect/the-fool gate)
 **Author:** main + Explore map (2026-07-10)
