@@ -1,6 +1,6 @@
 # S9.5 — Songs search + sortable columns (design)
 
-Status: **DRAFT — brainstormed + research-grounded; pending expert review (architect-reviewer · the-fool) → founder manual-review → questions → implement.** Companion to [s9-5-songs-search-design.md](s9-5-songs-search-design.md) (the authoritative S9.5 spec) and its [test plan](s9-5-songs-search-test-plan.md). This doc covers the **search + sortable-headers slice** (slice 4 + the sort-header half of slice 3) and **supersedes the relevance-order choice in §10.2** of the main design (see §2).
+Status: **✅ SHIPPED (S9.5) — design record.** Companion to [s9-5-songs-search-design.md](s9-5-songs-search-design.md) (the authoritative S9.5 spec) and its [test plan](s9-5-songs-search-test-plan.md). This doc covers the **search + sortable-headers slice** (slice 4 + the sort-header half of slice 3) and **supersedes the relevance-order choice in §10.2** of the main design (see §2).
 
 ---
 

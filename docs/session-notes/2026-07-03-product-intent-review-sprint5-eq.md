@@ -1,5 +1,7 @@
 # Product-intent review of failing tests — Sprint 5 EQ + auto-advance
 
+> **⚠️ HISTORICAL (2026-07-03 product-intent review).** Point-in-time review; retained for the intent/rationale provenance.
+
 Reviewer: product-manager. Scope: is the ASSERTED behavior the behavior the product
 SHOULD have. No code changes made.
 
