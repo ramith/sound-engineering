@@ -145,7 +145,7 @@ func checkFtsMigrationIdempotent(number: Int, url: URL) async -> Bool {
     do {
         let queue = try DatabaseQueue(path: url.path)
         try v1OnlyMigrator().migrate(queue)
-        try await queue.write { db in
+        _ = try await queue.write { db in
             try seedTrackRawAtV1(db, RawTrackSeed(
                 url: "/m/a.flac", name: "a.flac", title: "Alpha", artist: "Band", album: "Rec",
                 year: 2020, genres: ["Jazz"]
