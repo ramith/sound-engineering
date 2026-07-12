@@ -70,9 +70,7 @@ namespace
         const double amp = std::pow(10.0, peakDbfs / 20.0);
         const auto frames = static_cast<size_t>(seconds * sampleRate);
         std::vector<float> buf(frames * kOracleStereo);
-        // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
         std::mt19937 gen(seed);
-        // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
         std::uniform_real_distribution<double> dist(-amp, amp);
         for (size_t n = 0; n < frames; ++n)
         {
@@ -89,9 +87,7 @@ namespace
     {
         const auto frames = static_cast<size_t>(seconds * sampleRate);
         std::vector<float> mono(frames);
-        // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
         std::mt19937 gen(seed);
-        // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
         std::uniform_real_distribution<double> dist(-1.0, 1.0);
         constexpr int kRows = 16;
         std::array<double, kRows> rows{};

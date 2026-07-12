@@ -27,9 +27,7 @@ static auto testLimiterBypassIsIdentity() -> void
     DSPKernel kernel;
     kernel.initialize(TestConstants::kSampleRate48k, kFrames);
 
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(0xABCD1234U);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-TestConstants::kNoiseUnit,
                                                TestConstants::kNoiseUnit);
 
@@ -327,9 +325,7 @@ static auto limiterHotNoiseSoakBody(uint32_t numCh,
         TestABLN abl(numCh, kFrames);
         for (uint32_t ch = 0U; ch < numCh; ++ch)
         {
-            // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
             std::mt19937 gen(seeds[ch] + blk); // shift seed per block for variety
-            // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
             std::uniform_real_distribution<float> dist(-0.999F, 0.999F);
             for (uint32_t frm = 0U; frm < kFrames; ++frm)
             {
@@ -380,9 +376,7 @@ static auto limiterHotNoiseSoakBody(uint32_t numCh,
 static auto testLimiterHotNoiseSoak() -> void
 {
     static const char* const kName = "Limiter_HotNoiseSoak";
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     constexpr std::array<uint32_t, 2U> kSeeds = {0x515D7E57U, 0x515D7E58U};
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     const std::string err =
         limiterHotNoiseSoakBody(2U, 100U, kSeeds.data(), /*printInfo=*/false, kName);
     if (!err.empty())

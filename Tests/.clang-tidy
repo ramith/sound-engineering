@@ -10,6 +10,8 @@ Checks: >
   -cert-flp37-c,
   -cert-err33-c,
   -bugprone-random-generator-seed,
+  -cert-msc32-c,
+  -cert-msc51-cpp,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
@@ -29,7 +31,11 @@ Checks: >
 #
 # Rationale (all standard, intentional null-test patterns):
 #   - memcmp on float arrays  -> bit-exact null-test comparison is the whole point
-#   - fixed RNG seeds         -> reproducible test signals
+#   - fixed RNG seeds         -> reproducible test signals. This covers BOTH
+#                                bugprone-random-generator-seed AND cert-msc32-c/cert-msc51-cpp
+#                                (seeding a PRNG with a compile-time constant): deterministic
+#                                seeding is the INTENT in tests, never a security concern — so
+#                                the whole test tree opts out here rather than per-line NOLINTs.
 #   - non-const global        -> the test result accumulator
 #   - magic numbers / short names / parens / std::max / redundant init
 #                             -> ordinary test-fixture ergonomics

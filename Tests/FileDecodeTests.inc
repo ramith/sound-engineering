@@ -405,7 +405,6 @@ namespace
             bytes.push_back(static_cast<uint8_t>((packed >> 16U) & 0xFFU));
         }
 
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) -- balanced fopen/fclose, no leak.
         std::FILE* handle = std::fopen(path, "wb");
         if (handle == nullptr)
         {
@@ -583,9 +582,7 @@ static auto testFileDecodeOpenFailurePaths() -> void
     // (c) random non-audio bytes.
     {
         constexpr uint32_t kGarbageBytes = 256U;
-        // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
         std::mt19937 gen(0x6A726B73U);
-        // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
         std::uniform_int_distribution<int> dist(0, 0xFF);
         std::vector<uint8_t> garbage;
         garbage.reserve(kGarbageBytes);
@@ -593,7 +590,6 @@ static auto testFileDecodeOpenFailurePaths() -> void
         {
             garbage.push_back(static_cast<uint8_t>(dist(gen)));
         }
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         std::FILE* handle = std::fopen(kPathGarbage, "wb");
         if (handle == nullptr)
         {
