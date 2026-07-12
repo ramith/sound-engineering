@@ -105,365 +105,17 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 
 > **Note:** User journeys are documented in detail in `docs/product/user-journeys.md`. That document is the authoritative reference; the journeys below are extracted here for requirements traceability. **Several of these journeys describe not-yet-built behavior** (onboarding, hearing calibration, the automatic adaptivity engine, environment/mic sensing, natural-language tuning, Phase-2 system-wide capture); see the per-journey **Status** lines in `user-journeys.md` and the "Implementation status" note at the head of §3 below for what the current build actually does.
 
-### Journey 2.1 — First-Run Onboarding
-
-**Actor:** New user, app just launched for the first time.  
-**Goal:** Reach a working listening state with a meaningful default sound profile in under 3 minutes.
-
-```
-Step 1 — Welcome Screen
-  App launches → shows welcome screen with a single CTA: "Get Started"
-  No login, no account wall.
-
-Step 2 — Output Device Detection
-  App enumerates available output devices via Core Audio property API.
-  Auto-selects the active default output device (headphones if connected, otherwise built-in speakers).
-  Displays detected device name and type (e.g., "AirPods Pro detected — Headphone mode active").
-  [If no device detected → show inline error with troubleshooting link]
-
-Step 3 — Hearing Profile Prompt
-  App asks: "Would you like a quick hearing check to personalise your experience?"
-  Options: [Start Hearing Check] [Skip for Now]
-  If skipped → uses a neutral default profile; reminder surfaced in Settings after 3 listening sessions.
-
-Step 4 — Microphone Permission (Environment Sensing)
-  System dialog requests microphone access.
-  App explains in plain language: "Used only to sense room noise — never recorded or transmitted."
-  If denied → environment sensing disabled; adaptive ambient-noise feature inactive; user notified with non-blocking banner.
-
-Step 5 — Profile Load and Playback Ready (Phase 1 — Own Player)
-  App loads default DSP profile for detected device.
-  Opens media browser / file importer.
-  User selects a track and presses Play.
-  Adaptivity engine begins processing; visual VU/analysis meter shows activity.
-
-Step 6 — First Listening Moment
-  After 10 seconds of playback, a subtle non-blocking tooltip appears:
-  "Sound is adapting to your headphones and room — no action needed."
-```
-
-**Success Condition:** User is listening to music with the adaptivity engine active within 3 minutes of first launch, with no technical errors.
-
----
-
-### Journey 2.2 — Hearing Profile Calibration
-
-**Actor:** User who chose to run or re-run the hearing check.  
-**Goal:** Generate a personal hearing profile that the DSP engine uses for equalisation compensation.
-
-```
-Step 1 — Pre-Check Instructions
-  App displays: headphone requirement notice, estimated time (~5 minutes), quiet environment recommendation.
-  Volume is automatically set to a safe calibration level (~65 dBSPL target, not app-adjustable during test).
-
-Step 2 — Tone Playback Sequence
-  App plays pure tones at discrete frequencies across both ears (500 Hz, 1 kHz, 2 kHz, 3 kHz, 4 kHz, 6 kHz, 8 kHz — minimum; extended range optional).
-  User presses and holds "I can hear this" button for each tone; minimum presentation threshold derived.
-  Audiogram-style result graph displayed.
-  [Open Question OQ-07: Should this conform to a recognised audiological standard such as ISO 8253-1?]
-
-Step 3 — Profile Saved
-  Hearing profile stored locally (encrypted, not synced by default).
-  Profile applied immediately to DSP engine.
-  User can label the profile (e.g., "My AirPods", "Office Headphones") and link it to a specific output device.
-
-Step 4 — Ongoing Prompt
-  App offers to re-run calibration if output device changes to a new device category not yet profiled.
-```
-
-**Success Condition:** A stored hearing profile exists, is linked to the active output device, and measurably alters EQ curves in the DSP chain.
-
----
-
-### Journey 2.3 — Normal Listening Session (Phase 1 — Own Player)
-
-**Actor:** Returning user with a configured profile.  
-**Goal:** Listen to a music playlist with seamless adaptive enhancement.
-
-```
-Step 1 — App Launch / Resume
-  App opens to last state (queue, volume, playback position if paused).
-  Detects currently active output device; loads matching profile automatically.
-
-Step 2 — Track Playback
-  User presses Play.
-  Audio routed through DSP chain: EQ → spatialization → dynamics → output.
-  Adaptivity engine begins analysis; adapts over first 2–5 seconds per track.
-
-Step 3 — Genre / Spectral Analysis
-  Content analyser runs on audio buffer (on a non-real-time thread).
-  Derived spectral profile / genre classification communicated to DSP via lock-free parameter update.
-  DSP gradually cross-fades to genre-appropriate tonal curve (no abrupt change).
-
-Step 4 — Volume Adjustment
-  User changes volume (system slider or in-app).
-  Adaptivity engine applies Fletcher-Munson equal-loudness compensation:
-    — Low volume → boosts bass and treble to preserve perceived balance.
-    — High volume → reduces over-compensation to avoid over-emphasis.
-
-Step 5 — Track Skip / Change
-  New track begins; content analyser re-evaluates within 2–5 seconds.
-  DSP parameters smoothed across track boundary; no audible click or abrupt shift.
-
-Step 6 — Session End
-  User pauses/closes app.
-  Session state (queue, position, active profile) persisted.
-```
-
-**Success Condition:** User experiences no audible glitches across a 1-hour session; adaptive parameters visibly change between tracks of different genres in the analysis display.
-
----
-
-### Journey 2.4 — Switching Output Device Mid-Session
-
-**Actor:** User listening on AirPods who unplugs or switches to laptop speakers.  
-**Goal:** Sound continues without interruption; DSP profile switches automatically.
-
-```
-Step 1 — Device Change Detected
-  App registers an AudioObjectAddPropertyListenerBlock callback on
-  kAudioHardwarePropertyDefaultOutputDevice.
-  Callback fires on device change (runs on non-real-time thread).
-
-Step 2 — Profile Resolution
-  App looks up the profile associated with the new device.
-  If a profile exists → loads it.
-  If no profile exists → loads generic profile for the device category (headphones vs. speakers).
-
-Step 3 — DSP Reconfiguration
-  DSP parameters pushed to audio thread via lock-free atomic/ring-buffer mechanism.
-  Old DSP state fades out, new state fades in over a configurable crossfade window (default: 200 ms).
-  No audio dropout; ring buffer absorbs the gap.
-
-Step 4 — User Notification
-  Non-blocking banner: "Switched to Built-in Speakers — Speaker profile loaded."
-  Banner includes shortcut: [Edit Profile].
-
-Step 5 — Spatialization Mode Change
-  AirPods → binaural HRTF / head-tracked mode active.
-  Built-in speakers → crossfeed / stereo widening mode; HRTF disabled (already physical stereo).
-```
-
-**Success Condition:** Device switch results in no audio dropout longer than 50 ms and the correct profile is applied within 500 ms of the detected change.
-
----
-
-### Journey 2.5 — Environment Change (Room Gets Noisy) *(revised per LD-6: on-demand)*
-
-**Actor:** User listening in a room that has become noisier (e.g., construction starts outside).  
-**Goal:** User triggers a one-shot environment sample; app adapts DSP to compensate, then releases the mic.
-
-```
-Step 1 — User Triggers Environment Sample
-  The room gets noisy; the user taps "Adapt to my environment" (control strip / menu).
-  App opens the mic for a short window (~3 s), computes an A-weighted SPL estimate, then releases the mic.
-  No continuous monitoring; the mic is not held open between samples.
-  [Open Question OQ-03: exact sample-window length and smoothing to be specified by audio engineer]
-
-Step 2 — Noise Level Classification
-  Classifies ambient level into bands: Quiet (<40 dBA), Moderate (40–65 dBA), Loud (>65 dBA).
-  Hysteresis applied: must remain in new band for >3 seconds before triggering adaptation
-  (avoids hunting on transient noise spikes).
-
-Step 3 — DSP Adaptation
-  Noise level change communicated to DSP thread via atomic parameter update.
-  Adaptivity engine adjusts:
-    — Dynamic range (reduces compression ratio in louder environments to improve clarity).
-    — Low-frequency gain (slight boost to maintain bass perception over masking noise).
-    — Optional: activates or deepens noise-aware loudness compensation.
-  Changes applied gradually over ~1 second to avoid jarring shifts.
-
-Step 4 — Visual Feedback
-  Ambient noise indicator in status bar / control strip updates (e.g., icon changes from green to amber).
-  Tooltip on hover: "Loud environment detected — audio adapted."
-
-Step 5 — Noise Decreases
-  Same hysteresis logic applies to returning to quieter state.
-  DSP parameters return to prior state gradually.
-
-Step 6 — Mic Permission Denied Fallback
-  If mic access unavailable, ambient noise adaptation is skipped entirely.
-  All other adaptation paths (volume, device, content) remain active.
-```
-
-**Success Condition:** In a controlled test, raising ambient noise by 25 dBA causes measurable DSP parameter change (verifiable in engineering debug view) within 5 seconds, with no audio artifacts during the transition.
-
----
-
-### Journey 2.6 — Phase 2: Enabling System-Wide Enhancement
-
-**Actor:** User who wants to enable the Phase 2 system-wide enhancement (free, no paywall — LD-9).  
-**Goal:** All system audio (Spotify, Apple Music, YouTube, etc.) routed through the DSP engine.
-
-> **Architecture note (prior-art ADR-002, Proposed — see `docs/session-notes/prior-art.md`):** The primary mechanism for macOS 14.2/14.4+ is a **Core Audio process tap** (no driver, no admin password, no coreaudiod restart). The AudioServerPlugIn virtual device (FALLBACK PATH) is used when the tap path is unavailable (macOS < 14.2) or when the user specifically wants a persistent, selectable output device. Both paths are described below; the app selects the primary path automatically.
-
-```
-─── PRIMARY PATH: Core Audio Process Tap (macOS 14.2+) ─────────────────────────
-
-Step 1 — Permission Request (TCC consent only)
-  App detects macOS 14.2+ (or 14.4+ — verify minimum in AudioHardwareTapping.h headers;
-  see CON-10 / OQ-07).
-  App presents a plain-language explanation:
-    "To enhance all apps, Adaptive Sound needs permission to capture audio output.
-     You'll see a one-time macOS permission dialog. No admin password needed."
-  User acknowledges with [Enable System Enhancement] or [Not Now].
-  macOS presents the standard audio-capture TCC consent dialog
-  (NSAudioCaptureUsageDescription; purple mic-like indicator while tap is active).
-
-Step 2 — Tap Activation (no install, no restart)
-  App creates a CATapDescription for global output, creates an AudioHardwareTap,
-  and constructs a private aggregate device that reads the tap and mutes the original
-  output device. All audio now flows: [any app] → tap capture → DSP engine → physical
-  output device.
-  No HAL plug-in installed. No coreaudiod restart. No audio interruption.
-
-Step 3 — Physical Output Selection
-  App confirms or lets the user select the physical output device for processed audio
-  (defaults to the current system default output).
-
-Step 4 — Verification
-  App plays a brief internal test tone through the chain.
-  User confirms they can hear it; setup wizard closes.
-  App enters menu-bar mode (always-on background processing).
-  Purple audio-capture indicator visible in menu bar while tap is active.
-
-Step 5 — Disable / Revoke
-  User navigates to Settings → System Enhancement → Disable, or revokes audio-capture
-  permission in System Settings → Privacy & Security → Microphone (or equivalent).
-  App stops the tap; original output device is unmuted automatically.
-  No residual audio routing or installed files left behind.
-
-─── FALLBACK PATH: AudioServerPlugIn Virtual Device (macOS < 14.2 or user preference) ──
-
-Step 1 — Pre-Install Notice (driver path)
-  App presents a plain-language explanation:
-    "To enhance all apps on this macOS version, we install a virtual audio device.
-     This requires your administrator password and briefly interrupts system audio (~2 s)."
-  User acknowledges with [Install System Enhancer] or [Not Now].
-
-Step 2 — Privileged Installer
-  A signed, notarised privileged helper (SMAppService / ServiceManagement framework)
-  is invoked.
-  Helper copies the AudioServerPlugIn bundle to /Library/Audio/Plug-Ins/HAL/.
-  Helper restarts coreaudiod.
-  Audio interruption is expected; app shows a "Restarting audio system…" overlay.
-
-Step 3 — Virtual Device Activation
-  coreaudiod loads the new plug-in.
-  App detects the virtual device appears in the device list.
-  App instructs the user (or does so automatically with permission) to set the virtual
-  device as the macOS System Output in System Settings → Sound.
-  [Open Question OQ-01: auto-switch vs. manual selection — see §7.]
-
-Step 4 — Physical Output Selection
-  Within the app, user selects the real physical output device.
-  App configures the DSP engine to read from the virtual device and write to the
-  selected physical device.
-
-Step 5 — Verification (same as tap path Step 4 above)
-
-Step 6 — Uninstall Path
-  User navigates to Settings → System Enhancer → Remove.
-  Privileged helper removes the plug-in bundle, restarts coreaudiod.
-  System Output automatically reverts to built-in speakers (or previous device).
-  No residual audio routing left behind.
-```
-
-**Success Condition:** After Phase 2 setup (either path), music from Spotify sounds measurably different (enhancement active vs. disabled) with no additional audio latency perceptible to the user (< 10 ms round-trip added, per NFR-PERF-05). On the tap path, no admin password was required and no files were installed.
-
----
-
-### Journey 2.7 — Giving Natural-Language Feedback Mid-Listen (Conversational Tuning)
-
-**Actor:** Returning user actively listening to music.  
-**Goal:** Adjust the sound by typing what they hear in plain language, without touching EQ controls.
-
-```
-Step 1 — Opening the Conversational Tuning Input
-  User notices the sound feels off (e.g., bass is too weak).
-  User clicks the "Tell us what you hear" button in the Now Playing view
-  (or activates via keyboard shortcut).
-  A compact text field slides in below the Now Playing view.
-  Placeholder text reads: "e.g. 'bass is too low' or 'voices are hard to hear'"
-
-Step 2 — Entering Feedback
-  User types: "bass is too low"
-  No submit button required; user presses Return or clicks "Apply".
-  The app accepts the raw text and passes it to the Conversational Tuning
-  subsystem for intent derivation.
-  A subtle processing indicator appears (spinner or pulsing waveform icon)
-  while intent is being derived — target: < 1 500 ms.
-
-Step 3 — Intent Derived, Change Applied
-  The subsystem determines intent: raise low-frequency gain (60–250 Hz), moderate
-  magnitude, positive direction.
-  Change is communicated to the DSP thread via the existing lock-free parameter
-  path (FR-ADAPT-02 / FR-ADAPT-03); gain ramps smoothly (≥ 50 ms, per FR-ADAPT-03).
-  The text field clears; a confirmation card appears:
-    "Boosted bass (60–250 Hz) +3 dB  — does that feel better?
-     [Yes, keep it]  [Undo]  [Adjust more]"
-
-Step 4 — User Confirms or Reverts
-  Path A — User taps [Yes, keep it]:
-    The change is stored as a user preference (tagged to current profile + device).
-    Confirmation card dismisses after 2 s.
-  Path B — User taps [Undo]:
-    DSP parameters revert to pre-feedback values via the same smooth ramp.
-    Card dismisses; text field is offered again in case user wants to re-try.
-  Path C — User taps [Adjust more]:
-    Text field re-opens pre-filled with the previous input; user can refine.
-
-Step 5 — Ambiguity / Low-Confidence Path (branching from Step 3)
-  If the intent derivation cannot reach a high-confidence mapping
-  (e.g., "the sound is a bit weird"):
-    No DSP change is made.
-    The app replies with a clarifying question displayed in the card:
-      "Could you describe what you mean? For example:
-       'too much bass', 'too bright', 'voices are muffled', 'sounds too harsh'"
-    User answers the clarifying question; loop returns to Step 3.
-  Maximum clarification rounds: 2; if still unresolved, the app replies:
-    "I'm not sure how to adjust that — try the EQ panel for manual control."
-    and offers a deep-link to the EQ panel (FR-TONAL-01).
-
-Step 6 — Urgent / Protective Path ("it hurts my ear")
-  User types: "bass is too much, it hurts my ear"
-  The subsystem detects a discomfort / pain signal.
-  Immediate DSP action before confirmation card:
-    — Bass (60–250 Hz) is reduced by a protective floor cut (target: −6 dB minimum).
-    — True-peak limiter threshold tightened (FR-TONAL-07).
-  A distinct, higher-urgency card appears:
-    "Reduced bass immediately for your comfort.
-     Consider also lowering your volume.  [Undo]  [Keep it]"
-  This change is always applied; it is NOT held pending confidence threshold.
-
-Step 7 — Instrument / Source Requests (e.g., "I can't hear the guitar")
-  The subsystem recognises a source/instrument name — an "indirect" phrase on the
-  unified DSP action-space directness spectrum (LD-8, OQ-12 resolved).
-  Phase 1 handling (baseline — fully shippable):
-    Derive a DSP action vector targeting the band region where the named source dominates.
-    For guitar: boost the guitar body/presence region (250 Hz–4 kHz).
-    Surface a note in the confirmation card:
-      "Boosted guitar presence region (250 Hz–4 kHz) — better?
-       Note: this affects the full mix in that range, not guitar alone."
-  Optional future enhancement (later phase — not on critical path):
-    ML source separation (e.g., Demucs/HTDemucs) may increase per-instrument
-    isolation precision, but band approximation remains the production baseline.
-
-Step 8 — Transparency: What Changed and Why
-  After any confirmed change, the Transparency view (FR-ADAPT-07) adds a new row:
-    "Natural-language feedback | 'bass is too low' | +3 dB at 60–250 Hz | [Undo]"
-  This row persists in the session history so the user can review all text-driven
-  changes made during the session.
-
-Step 9 — Session End / Preference Persistence
-  At session end, confirmed text-driven changes are written to the active profile
-  as a signed preference delta (frequency bands + magnitude).
-  Changes tagged as "one-off" (user did not tap [Yes, keep it]) are discarded.
-  On next launch with the same profile + device, the persisted delta is silently
-  re-applied on top of the baseline profile.
-```
-
-**Success Condition:** A user who types "bass is too low" hears a measurable bass boost within 2 seconds and can confirm or undo it with a single tap; the confirmed change persists to the next session. A user who types "it hurts my ear" receives an immediate protective bass reduction without needing to confirm first.
+Full step-by-step flows, per-journey **Phase** and **Status** (built / partially built / planned) lines, and success conditions live in [`user-journeys.md`](user-journeys.md) — the authoritative source. Summarised here for requirements traceability only:
+
+| Journey | Actor | Goal | Steps |
+|---------|-------|------|-------|
+| 2.1 — First-Run Onboarding | New user, first launch | Reach a working listening state with a meaningful default profile in under 3 min | [→ user-journeys.md](user-journeys.md#journey-21--first-run-onboarding) |
+| 2.2 — Hearing Profile Calibration | User running / re-running the hearing check | Generate a personal hearing profile the DSP engine uses for EQ compensation | [→ user-journeys.md](user-journeys.md#journey-22--hearing-profile-calibration) |
+| 2.3 — Normal Listening Session | Returning user with a configured profile | Listen to a playlist with seamless adaptive enhancement | [→ user-journeys.md](user-journeys.md#journey-23--normal-listening-session-phase-1--own-player) |
+| 2.4 — Switching Output Device Mid-Session | User who unplugs AirPods / switches to laptop speakers | Sound continues uninterrupted; DSP profile switches automatically | [→ user-journeys.md](user-journeys.md#journey-24--switching-output-device-mid-session) |
+| 2.5 — Environment Change (Room Gets Noisy) | User in a room that has become noisier | One-shot on-demand mic sample adapts DSP, then releases the mic (LD-6) | [→ user-journeys.md](user-journeys.md#journey-25--environment-change-room-gets-noisy) |
+| 2.6 — Phase 2: System-Wide Enhancement | User enabling system-wide enhancement | Route all system audio through the DSP engine (tap primary / driver fallback) | [→ user-journeys.md](user-journeys.md#journey-26--phase-2-enabling-system-wide-enhancement) |
+| 2.7 — Natural-Language Feedback (Conversational Tuning) | Returning user actively listening | Adjust the sound by typing plain-language feedback, no EQ controls (→ FR-NLT-*) | [→ user-journeys.md](user-journeys.md#journey-27--giving-natural-language-feedback-mid-listen-conversational-tuning) |
 
 ---
 
@@ -475,11 +127,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 
 ---
 
-> **Implementation status (as-built vs. specified) — audit snapshot.** This PRD specifies *target* behavior: "shall" is a requirement, not a claim that the behavior exists today. Verified against `Sources/` on `main` as of this audit, the current build is a Phase-0 own-player implementing only a **subset** of what follows. The unbuilt requirements remain valid and STAY, but are **planned, not current** — confirm against the code before assuming any behavior is live.
->
-> - **Implemented (live own-player path):** local-file playback + queue with shuffle/repeat + metadata/art (FR-PLAY-01..04); a **31-band graphic EQ** with named + per-device-recalled presets (FR-TONAL-01 — built as *graphic*, not the *parametric ±20 dB / adjustable-Q* spec; see OQ flag in the audit return); LUFS loudness normalization + auto makeup gain (FR-TONAL-05 default chain); a true-peak limiter (FR-TONAL-07); opt-in headphone **crossfeed**, off by default (FR-SPAT-03); a **Reimagine "Intensity"** control = mix-level wet/dry blend with bit-perfect bypass at 0 % (FR-REIMAGINE-01/02 only); output-device enumeration/selection/auto-switch + sample-rate negotiation (FR-DEVICE-01/02/06); a **Monitoring** view (per-channel before/after spectra + BS.1770-5 meters); a bit-perfect **Pure Mode** HAL path; gapless playback; N-channel (≤ 7.1) processing; dark mode + a Now-Playing spectrum (FR-UI-01/06).
-> - **Present in source but STUBBED (no-op):** the **Clarity** and **BRIR** DSP modules and the device-boundary **spatial render** stage are stubs (identity / channel-truncation, S4 deferred) — so BRIR/HRTF binaural (FR-SPAT-01/02/05), head-tracking (FR-SPAT-04), and speaker M/S width (FR-SPAT-06) are **not** built.
-> - **Not built (designed / future):** first-run onboarding (FR-UI-04); the entire **Adaptivity Engine** — content/genre classification, Fletcher-Munson volume compensation, ambient-noise sensing, transparency, adaptation-strength (FR-ADAPT-01/04/05/07/08); **hearing calibration/profile** (FR-HEAR-*, FR-ADAPT-06); loudness-compensated EQ (FR-TONAL-03); device correction EQ (FR-TONAL-02); psychoacoustic bass enhancement (FR-TONAL-04); named DSP profiles + import/export (FR-DEVICE-04/05); menu-bar mode (FR-UI-03); **Conversational Tuning / natural language** (all FR-NLT-*, §3.9.1); the **stem engine** + stem-range Reimagine (FR-STEM-*, FR-REIMAGINE-03 stem range / 04); and **Phase 2 system-wide** capture (all FR-SYS-*).
+> **Implementation status (as-built vs. specified) — audit snapshot.** This PRD specifies *target* behavior: "shall" is a requirement, not a claim that the behavior exists today. Verified against `Sources/` on `main` as of this audit, the current build is a Phase-0 own-player implementing only a **subset** of what follows. The unbuilt requirements remain valid and STAY, but are **planned, not current** — confirm against the code before assuming any behavior is live. For what is actually built vs. planned, see `sprint-plan.md` §Status + the source — this section does not enumerate it.
 
 ---
 
@@ -594,6 +242,8 @@ The app shall automatically choose spatial processing mode based on device type 
 
 **FR-TONAL-01** — Parametric EQ Engine (P1) *(revised per LD-12/LD-13)*  
 The app shall provide a parametric EQ (≥10 bands; adjustable frequency, gain ±20 dB, Q). The canonical tonal target is a composable curve realized **off-RT** as **minimum-phase biquads by default**; **linear/mixed-phase FIR is opt-in or selected by content** (transient-dense material stays minimum-phase to avoid pre-ringing — LD-13). The RT kernel runs finished coefficients only (no design/fitting on the audio thread).
+
+> **⚠ Deviation (as-built):** the shipped EQ is a **31-band graphic** EQ (fixed bands, ±12 dB), not the parametric ≥10-band / ±20 dB / adjustable-Q engine specified here. The parametric spec stays as the target; the graphic build meets the live / accurate / resettable intent. Reconcile graphic-vs-parametric — see backlog US-TON-01.
 
 > Given the user sets band 3 to 200 Hz, +6 dB, Q=1.0,  
 > When audio plays,  
@@ -1482,6 +1132,8 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 
 ## 7. Open Questions and Requirement Gaps
 
+This is the single authoritative Open-Questions register; backlog.md Open Items and user-journeys.md defer here.
+
 The following items are unresolved and require founder/product-owner decisions before the relevant requirements can be finalised.
 
 | ID | Area | Question / Gap | Impact if Unresolved | Priority |
@@ -1526,6 +1178,8 @@ The following items are unresolved and require founder/product-owner decisions b
 | FR-NLT | Conversational Tuning — Natural-Language Sound Feedback |
 | FR-REIMAGINE | Reimagine Intensity Control |
 | FR-STEM | Stem-Based Object Engine (Phase 1.5) |
+| FR-LIB | *(reserved namespace)* Library domain — multiple scan folders, single-file play, durable track identity, cross-folder duplicates. No FR text/AC authored yet; currently specified as **EP-LIBRARY** stories (US-LIB-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. |
+| FR-PLIST | *(reserved namespace)* Playlist domain — many-to-many ordered membership, DnD reference-add vs. folder-move, built-in "current" queue, naming. No FR text/AC authored yet; currently specified as **EP-PLAYLIST** stories (US-PLIST-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. |
 | NFR-PERF | Performance |
 | NFR-QUAL | Audio Quality |
 | NFR-PRIV | Privacy |
