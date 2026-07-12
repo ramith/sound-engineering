@@ -89,7 +89,6 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 **"Won't, this horizon"** — kept on the backlog as the future roadmap, out of this plan's window:
 
-- **Natural-language / conversational tuning (EP-NLT)** — the vision's endgame; needs the full adaptive stack (S14–S18) to have anything to steer. (Blocked on SPIKE-NLT-ARCH / OQ-11.)
 - **Stem separation / object engine (EP-STEM, Phase 1.5)** — high compute/artifact risk; revisit only after the mix-based thesis is validated and loved.
 - **System-wide capture / virtual device (EP-SYSWIDE, EP-VDEVICE)** — different product surface; our story is *this Mac → this DAC, bit-perfect*.
 - **Off-thesis player features:** streaming integration (Qobuz/Tidal — licensing, off-limits for non-commercial solo dev), CD ripping, DLNA/UPnP/multi-zone, SACD ISO.
@@ -99,7 +98,7 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 ## 6. Backlog re-anchor — DONE
 
-The one-time re-anchor this section mandated (back-fill shipped work as Done stories; tag EP-STEM/SYSWIDE/VDEVICE/NLT + DSD as "Won't, this horizon"; close the sprint-plan doc gap) has been executed — see [../product/backlog.md](../product/backlog.md) (now a forward backlog + a shipped-traceability index) and its change-log. The deviation flags it recorded (shipped EQ is 31-band not 10; signal-path transparency ≠ the unbuilt adaptation-transparency US-ADAPT-04; Opus replaced OGG) live in the backlog and are not restated here.
+The one-time re-anchor this section mandated (back-fill shipped work as Done stories; tag EP-STEM/SYSWIDE/VDEVICE + DSD as "Won't, this horizon"; close the sprint-plan doc gap) has been executed — see [../product/backlog.md](../product/backlog.md) (now a forward backlog + a shipped-traceability index) and its change-log. The deviation flags it recorded (shipped EQ is 31-band not 10; signal-path transparency ≠ the unbuilt adaptation-transparency US-ADAPT-04; Opus replaced OGG) live in the backlog and are not restated here.
 
 ---
 

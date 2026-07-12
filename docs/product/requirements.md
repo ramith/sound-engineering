@@ -2,7 +2,7 @@
 ## Adaptive Sound — Object-Based Spatial Music Renderer (macOS)
 
 **Document ID:** PRD-ASE-001  
-**Version:** 0.6 — aligned to architecture.md v0.3 (architecture is the source of truth)  
+**Version:** 0.7 — aligned to architecture.md v0.3 (architecture is the source of truth)  
 **Date:** 2026-06-13  
 **Author:** Business Analyst (Lead)  
 **Status:** Open for stakeholder review  
@@ -40,6 +40,8 @@
 > - **Tap consent — amends FR-SYS-07/08, NFR-PRIV:** the muted global tap is a **high-consent, captures-everything** capability (TCC + purple indicator; all apps incl. calls) — explicit consent UX, **auto-exclude communication apps**, tapped audio **never persisted** and never fed to stem separation.
 > - **Hardware (LD-18) / power / app-shape (LD-19) / persona:** floor M1 Pro/16 GB (M4/M5 far above); foreground sole-occupancy; max-quality on AC, lighter on battery; full-window listening app + menu-bar extra; primary persona **Ramith** (developer-audiophile). Risk R-3 → Low; perf spike is tuning, not a gate.
 
+> **v0.7 (2026-07-12): removed natural-language tuning (FR-NLT, LD-8) and hearing personalization (FR-HEAR, FR-ADAPT-06) from scope — founder decision.** Both features are withdrawn (neither was built) and may be re-added later. Also withdrawn as wholly-dependent on those features: FR-STEM-04 (per-stem NL targeting), OQ-05/OQ-11/OQ-12/OQ-13/OQ-14/OQ-15, ASM-09, Journeys 2.2 and 2.7, and the associated §5 matrix / stakeholder / glossary / registry rows. Prior specs remain in git history. Historical change notes (v0.2–v0.6) are left intact as a changelog and still name the withdrawn IDs.
+
 ---
 
 ## 0. Locked Decisions (as of 2026-06-13)
@@ -56,10 +58,10 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 | LD-4 | MVP source | **Local files only** in Phase 1 (resolves OQ-06). Streaming enhancement deferred to Phase 2. |
 | LD-5 | Content classifier | **Phased** (resolves OQ-09): DSP heuristics first; Core ML genre/mood model (off-RT; trained via Create ML) layered in during Phase 1. Real-time ML inference uses BNNS Graph only. |
 | LD-6 | Ambient mic sensing | **On-demand sampling only** — no continuous/always-on mic. See revised FR-ADAPT-04 and Journey 2.5. |
-| LD-7 | Spatial + hearing profile | **BRIR-first** (superseded by LD-14): default binaural = BRIR (HRTF + early reflections + late reverb); dry HRTF = minimal mode; SADIE II (Apache-2.0) is the anechoic HRIR core. Calibration framed strictly as a **"listening preference" tool, not a medical device** (resolves OQ-05). Custom HRTF measurement deferred. |
-| LD-8 | Conversational Tuning — unified DSP action-space, governing principle, and phase | (a) **In scope at Phase 1 launch** as a supporting/discovery feature. (b) **Governing principle:** a confirmed user natural-language instruction is a governing principle that the Adaptivity Engine adapts *around*, never against. Automatic adaptation (volume, content, ambient noise) is subordinate to the user's stated intent for the targeted aspect for the remainder of the session, or until the user explicitly undoes the change. Session-scoped by default; the user must explicitly tap [Yes, keep it] to persist beyond the session (mirrors FR-NLT-06 persistence model). (c) **Unified DSP action-space:** every natural-language utterance — whether naming a frequency ("bass too low"), an instrument ("can't hear guitar"), or an aesthetic/emotional quality ("sounds boring / bland") — resolves to the same fundamental output: a **DSP action vector** comprising per-band gain changes across the frequency spectrum, plus optional dynamics (compression/transient) adjustments and spatial (width/crossfeed) moves. There is one shared action-space; phrases differ only in how directly they map onto it. (d) **Directness spectrum:** Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation of where that source dominates) | Abstract (aesthetic/emotional descriptors → combination of spectral, dynamic, and/or spatial moves). (e) **Band approximation is the baseline and is shippable at Phase 1.** ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement for instrument-named requests, deferred to a later phase — it is NOT a prerequisite and NOT on the critical path (resolves OQ-12). (f) **Aesthetic/emotional descriptors are first-class inputs** handled by the same action-space model; see FR-NLT-12 and §3.9.1 (resolves OQ-15a via governing-principle framing). (g) **Per-stem targeting (Phase 1.5):** once the stem object engine exists, an NL macro may target a specific stem ("bring up the guitar"); at Phase 1 (mix-level), instrument requests use band approximation. (h) The interpretation mechanism remains deferred (OQ-11). |
+| LD-7 | Spatial | **BRIR-first** (superseded by LD-14): default binaural = BRIR (HRTF + early reflections + late reverb); dry HRTF = minimal mode; SADIE II (Apache-2.0) is the anechoic HRIR core. Custom HRTF measurement deferred. |
+| LD-8 | *Withdrawn 2026-07-12* | Natural-language / conversational tuning removed from scope (founder decision); may be re-added. |
 | LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. |
-| LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic, hearing profile) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
+| LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
 | **LD-11** | Source quality & non-goals | Assume good-quality sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise/de-clip/upsample to "fix" bad audio). Network may be used for non-sensitive, latency-tolerant work; core playback + RT DSP stay **offline-capable**. |
 | **LD-12** | Perceptual tonal model | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial); the dB curve is a realization/interchange format only. |
 | **LD-13** | Phase realization | **Minimum-phase by default**; phase mode chosen by content (transient density from pre-analysis); linear/mixed-phase opt-in or band-limited where it genuinely helps (pre-ringing, not latency, is the real cost). |
@@ -87,7 +89,6 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 
 | ID | Stakeholder | Role | Primary Need |
 |----|-------------|------|--------------|
-| STK-05 | Hearing-impaired Listener | End User (accessibility) | Personalized hearing compensation profile; intelligibility improvement |
 | STK-06 | Developers / Engineering Team | Implementer | Clear, testable specifications; real-time safety constraints documented |
 | STK-07 | Beta / QA Testers | Validator | Reproducible acceptance criteria per requirement |
 | STK-08 | Streaming Service Providers (Spotify, Apple, YouTube) | Indirect | No TOS violation from system-wide processing (Phase 2) |
@@ -97,25 +98,24 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 - STK-01 and STK-02: Sound should be noticeably better immediately after install; personalization should be opt-in and progressive, not a barrier.
 - STK-03: Phase 1 (own player) must ship fast enough to validate the adaptivity engine before Phase 2 (virtual device) effort. As a personal/open-source project the goal is working software and community value, not commercial revenue.
 - STK-04: All entitlements, privacy strings, and signing/notarization must be correct before any public release.
-- STK-05: Hearing profile must be distinct from aesthetic preferences — hearing compensation is accessibility, not a premium feature.
 
 ---
 
 ## 2. User Journeys and Workflows
 
-> **Note:** User journeys are documented in detail in `docs/product/user-journeys.md`. That document is the authoritative reference; the journeys below are extracted here for requirements traceability. **Several of these journeys describe not-yet-built behavior** (onboarding, hearing calibration, the automatic adaptivity engine, environment/mic sensing, natural-language tuning, Phase-2 system-wide capture); see the per-journey **Status** lines in `user-journeys.md` and the "Implementation status" note at the head of §3 below for what the current build actually does.
+> **Note:** User journeys are documented in detail in `docs/product/user-journeys.md`. That document is the authoritative reference; the journeys below are extracted here for requirements traceability. **Several of these journeys describe not-yet-built behavior** (onboarding, the automatic adaptivity engine, environment/mic sensing, Phase-2 system-wide capture); see the per-journey **Status** lines in `user-journeys.md` and the "Implementation status" note at the head of §3 below for what the current build actually does.
 
 Full step-by-step flows, per-journey **Phase** and **Status** (built / partially built / planned) lines, and success conditions live in [`user-journeys.md`](user-journeys.md) — the authoritative source. Summarised here for requirements traceability only:
 
 | Journey | Actor | Goal | Steps |
 |---------|-------|------|-------|
 | 2.1 — First-Run Onboarding | New user, first launch | Reach a working listening state with a meaningful default profile in under 3 min | [→ user-journeys.md](user-journeys.md#journey-21--first-run-onboarding) |
-| 2.2 — Hearing Profile Calibration | User running / re-running the hearing check | Generate a personal hearing profile the DSP engine uses for EQ compensation | [→ user-journeys.md](user-journeys.md#journey-22--hearing-profile-calibration) |
+| 2.2 | — | *Withdrawn 2026-07-12 (hearing personalization removed from scope; may be re-added)* | — |
 | 2.3 — Normal Listening Session | Returning user with a configured profile | Listen to a playlist with seamless adaptive enhancement | [→ user-journeys.md](user-journeys.md#journey-23--normal-listening-session-phase-1--own-player) |
 | 2.4 — Switching Output Device Mid-Session | User who unplugs AirPods / switches to laptop speakers | Sound continues uninterrupted; DSP profile switches automatically | [→ user-journeys.md](user-journeys.md#journey-24--switching-output-device-mid-session) |
 | 2.5 — Environment Change (Room Gets Noisy) | User in a room that has become noisier | One-shot on-demand mic sample adapts DSP, then releases the mic (LD-6) | [→ user-journeys.md](user-journeys.md#journey-25--environment-change-room-gets-noisy) |
 | 2.6 — Phase 2: System-Wide Enhancement | User enabling system-wide enhancement | Route all system audio through the DSP engine (tap primary / driver fallback) | [→ user-journeys.md](user-journeys.md#journey-26--phase-2-enabling-system-wide-enhancement) |
-| 2.7 — Natural-Language Feedback (Conversational Tuning) | Returning user actively listening | Adjust the sound by typing plain-language feedback, no EQ controls (→ FR-NLT-*) | [→ user-journeys.md](user-journeys.md#journey-27--giving-natural-language-feedback-mid-listen-conversational-tuning) |
+| 2.7 | — | *Withdrawn 2026-07-12 (natural-language / conversational tuning removed from scope; may be re-added)* | — |
 
 ---
 
@@ -195,11 +195,11 @@ When a headphone output is detected, the app shall apply **binaural room-respons
 **Pass overall:** Both Stage 1 and Stage 2 must pass. If Stage 1 fails, investigate BRIR implementation before proceeding to Stage 2. If Stage 2 fails, evaluate BRIR quality vs. competing algorithms (e.g., dry HRTF + room synthesis alternatives) and iterate.
 
 **FR-SPAT-02** — HRTF Profile Selection (P2)  
-The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA dataset library (e.g., SADIE II subjects offering generic, small-head, and large-head approximations) and indicate which is recommended given the user's hearing calibration data. Profile selection loads a different SOFA HRIR set; it does not switch to a platform-provided spatialization API.
+The app shall provide at least 3 selectable HRTF profiles drawn from the SOFA dataset library (e.g., SADIE II subjects offering generic, small-head, and large-head approximations). Profile selection loads a different SOFA HRIR set; it does not switch to a platform-provided spatialization API.
 
-> Given the hearing calibration is complete,  
-> When the HRTF profile selector is opened,  
-> Then the app highlights a recommended profile based on measured ear characteristics and the active HRTF (loaded from the SOFA dataset) renders immediately on selection without requiring restart.
+> Given the HRTF profile selector is opened,  
+> When the user selects a different profile,  
+> Then the active HRTF (loaded from the SOFA dataset) renders immediately on selection without requiring restart.
 
 **FR-SPAT-03** — Crossfeed for Headphones (P3, opt-in / off by default) *(revised per LD-14)*  
 The app shall offer adjustable crossfeed to reduce unnatural extreme stereo panning on headphones. Crossfeed is **opt-in and off by default** — it is largely subsumed by the BRIR path (a BRIR is a physically-correct crossfeed-plus-room). The Bauer-style algorithm is reimplemented in-house pending the libbs2b license check (OQ-17).
@@ -344,12 +344,7 @@ The app shall monitor the current playback volume level continuously and compute
 > When the volume change is detected,  
 > Then compensation EQ parameters update within 100 ms without audio dropout.
 
-**FR-ADAPT-06** — Personal Hearing Profile Integration (P1)  
-The adaptivity engine shall incorporate the user's stored hearing profile to apply personalised gain correction per frequency band as a component of the overall EQ computation.
-
-> Given a hearing profile indicates a 15 dB threshold elevation at 4 kHz in the right ear,  
-> When the profile is active and a track plays,  
-> Then the DSP chain adds compensating gain at 4 kHz (right channel) in proportion to the measured deficit, without the user needing to adjust anything manually.
+**FR-ADAPT-06** — *Withdrawn 2026-07-12* — hearing-profile integration removed from scope (founder decision). Prior spec is in git history; may be re-added. (ID retained; not reused.)
 
 **FR-ADAPT-07** — Adaptation Transparency Mode (P2)  
 The app shall provide a "Transparency" debug/analysis view showing a real-time visualisation of which signals are driving which DSP changes (e.g., "Volume → +4 dB bass", "Ambient: Loud → Ratio 3:1").
@@ -415,40 +410,7 @@ The app shall query the preferred sample rate of the active output device and co
 
 ### 3.6 Personalization and Hearing Profile (FR-HEAR)
 
-**FR-HEAR-01** — Guided Hearing Calibration (P1)  
-The app shall include a guided hearing test that measures the user's hearing thresholds at a minimum of 7 audiometric frequencies (500 Hz, 1 kHz, 2 kHz, 3 kHz, 4 kHz, 6 kHz, 8 kHz) per ear.
-
-> Given the user starts the hearing test with headphones,  
-> When each tone is presented and the user responds,  
-> Then thresholds are recorded per ear per frequency and stored in a structured hearing profile.
-
-**FR-HEAR-02** — Hearing Profile Privacy (P1)  
-Hearing profile data shall be stored exclusively on-device in an encrypted local database. It shall never be transmitted to any remote server without explicit, separately confirmed user consent.
-
-> Given a hearing profile is saved,  
-> When network traffic is inspected during the session (e.g., via Charles Proxy),  
-> Then no hearing profile data appears in any outbound request.
-
-**FR-HEAR-03** — Multiple Profile Support (P2)  
-The app shall support storing and switching between multiple hearing profiles (e.g., for different family members sharing a Mac) linked to different output devices or user accounts.
-
-> Given two hearing profiles exist ("Alice" and "Bob"),  
-> When "Bob" is selected as the active profile,  
-> Then the DSP hearing compensation curve changes to match Bob's thresholds and the UI confirms "Bob's profile active."
-
-**FR-HEAR-04** — Hearing Profile Age / Retest Prompt (P2)  
-The app shall prompt users to rerun hearing calibration if the existing profile is older than 12 months (configurable), given that hearing can change over time.
-
-> Given a hearing profile was created 366 days ago,  
-> When the app launches,  
-> Then a non-blocking prompt appears suggesting recalibration, which the user can dismiss or act on.
-
-**FR-HEAR-05** — Safe Volume Guard (P1)  
-The app shall enforce a maximum safe output level during hearing calibration (target: equivalent to 65 dBSPL at 1 kHz on reference headphones) regardless of system volume setting.
-
-> Given the system volume is set to 100%,  
-> When the hearing test is active,  
-> Then the app overrides the test tone level to a safe limit and cannot be bypassed by the user during the test.
+> **Withdrawn 2026-07-12** — hearing personalization removed from scope (founder decision). Prior FR-HEAR-* specs are in git history; may be re-added.
 
 ---
 
@@ -583,208 +545,7 @@ The AudioServerPlugIn bundle shall be implemented in pure C/C++ with no Objectiv
 
 ### 3.9 Conversational Tuning — Natural-Language Sound Feedback (FR-NLT)
 
-> **Scope note:** The Conversational Tuning subsystem accepts free-text input from the user, derives an audio adjustment intent from that text, and applies the adjustment via the existing lock-free/smoothed DSP parameter path (FR-ADAPT-02, FR-ADAPT-03). How text is interpreted (rule engine, on-device model, cloud LLM, or a hybrid) is explicitly **deferred** — see OQ-11. All requirements below are specified at the behavioral level: input → intended outcome.
-
----
-
-**FR-NLT-01** — Free-Text Feedback Input (P1)  
-The app shall provide a dedicated text input control, accessible from the Now Playing view (and via a keyboard shortcut), through which the user can type a natural-language description of what they are hearing. The control shall accept Unicode text up to 280 characters and impose no structured form or category selection.
-
-> Given a track is playing,  
-> When the user activates the Conversational Tuning input (click or keyboard shortcut),  
-> Then a text field appears, is focused automatically, and accepts free-form typed input without requiring the user to select a category or frequency band.
-
-> Given the user has typed feedback and presses Return (or clicks Apply),  
-> When the input is submitted,  
-> Then the raw text is passed to the intent-derivation subsystem within 100 ms of submission, and a processing indicator is visible to the user.
-
----
-
-**FR-NLT-02** — Intent Derivation: DSP Action Vector Output (P1) *(hearing-safety clamps locked; Phase 0 UX validation via SPIKE-HEARING-SAFETY-VALIDATION)*  
-The intent-derivation subsystem shall parse submitted text and produce a **typed multi-band macro** as its output: `{ eq_bands[], dynamics?, transient?, spatial?, target_stem?, confidence }` — (a) per-band gain deltas (direction + magnitude from language intensity markers), (b) optional dynamics, (c) optional transient, (d) optional spatial (width/crossfeed/placement), (e) an optional **target stem** (Phase 1.5; e.g., "the guitar"), and (f) a confidence score. Every phrase type — frequency-referencing, instrument-naming, or aesthetic/emotional — maps to this same macro; they differ only in directness (LD-8, §3.9.1). Mappings shall be seeded from descriptor priors (SAFE-DB / SocialEQ-style) and be **per-user-adaptable** (cross-user agreement on terms like "warm" is low). If an embedding/LLM back-end is used, descriptor→effect **monotonicity shall be validated** before shipping (some embeddings invert "warm"). The `context` passed to the interpreter shall **exclude** audio buffers and hearing-profile data (privacy). The mechanism that converts text → macro is deferred (OQ-11).
-
-**Hearing-Safety Clamps (Arbiter enforcement, architecture §11):** All NL interpreter output is schema-validated + numerically clamped before forwarding to DSP: **per-band boost cap +10 dB (hard clamp +12 dB); per-band cut cap −12 dB (hard −15 dB); low-confidence magnitude cap ±3 dB; confirmation gate triggers at +8 dB per band; cumulative NL loudness-change cap +12 dB total; session-integrated loudness cap −9 LUFS (gated)**. These bounds prevent hearing damage (NIOSH/WHO-ITU H.870 basis) and prompt-injection. UX validation in Phase 0 (SPIKE-HEARING-SAFETY-VALIDATION) will measure whether +10 dB is appropriately responsive to "MUCH louder" requests or requires adjustment.
-
-> Given the user submits "bass is too low",  
-> When intent derivation completes,  
-> Then the output DSP action vector specifies: per-band gain delta = increase, target bands = 60–250 Hz, magnitude = moderate; and this vector is forwarded to the DSP parameter update path (FR-ADAPT-02/FR-ADAPT-03).
-
-> Given the user submits "the sound is slightly too bright",  
-> When intent derivation completes,  
-> Then the output DSP action vector specifies: per-band gain delta = decrease, target bands = 6–12 kHz, magnitude = subtle (the word "slightly" is a low-intensity qualifier); no dynamics or spatial components are included in the vector.
-
-> Given the user submits "the music sounds boring",  
-> When intent derivation completes,  
-> Then the output DSP action vector includes a combination of moves: presence boost (2–5 kHz), air shelf boost (10–15 kHz), transient/dynamics enhancement, and optionally a stereo width increase — all resolved through the same action-space, not through a separate structural pathway.
-
----
-
-**FR-NLT-03** — DSP Change via Existing Lock-Free Path (P1)  
-All DSP parameter changes resulting from Conversational Tuning shall be applied exclusively through the lock-free parameter update mechanism defined in FR-ADAPT-02 and smoothed per FR-ADAPT-03. No new cross-thread synchronisation primitive shall be introduced for this feature.
-
-> Given the intent-derivation subsystem produces a parameter update (e.g., low-frequency gain +3 dB),  
-> When the update is forwarded to the DSP engine,  
-> Then it is delivered via the existing lock-free ring buffer / atomic path and ramped over ≥ 50 ms — no mutex or blocking call occurs on the audio thread, verifiable by Thread State Trace in Instruments.
-
----
-
-**FR-NLT-04** — Confirmation Feedback and Conversational Reply (P1)  
-After a DSP change is applied from a natural-language input, the app shall display a non-blocking confirmation card stating (a) what was changed in plain language, (b) the approximate DSP action taken — summarising **all components** when the change spans multiple bands, dynamics, or spatial moves (e.g., an abstract phrase such as "sounds boring") — and (c) two primary actions — confirm or undo. The card shall auto-dismiss after 8 seconds if neither action is taken (treating the user's inaction as implicit acceptance without persisting the change).
-
-> Given the user submits "bass is too low" and intent is derived at high confidence,  
-> When the DSP change is applied,  
-> Then a confirmation card appears within 1 500 ms of submission reading, for example: "Boosted bass (60–250 Hz) — does that feel better?" with [Yes, keep it] and [Undo] actions visible.
-
-> Given the confirmation card is displayed and the user takes no action for 8 seconds,  
-> When the card auto-dismisses,  
-> Then the DSP change remains active but is NOT written to the persistent profile preference delta.
-
-> Given the user submits an abstract phrase such as "music sounds boring" and a multi-component action vector is derived,  
-> When the confirmation card appears,  
-> Then it summarises the combined change in plain language (e.g., "Added presence, air, and a bit more punch — better?") rather than naming a single band.
-
----
-
-**FR-NLT-05** — One-Tap Undo / Revert (P1)  
-The user shall be able to revert any Conversational Tuning DSP change with a single tap/click of an Undo action, available both on the confirmation card immediately after application and in the session history list in the Transparency view (FR-ADAPT-07). Reverting shall restore the exact pre-feedback DSP parameter values via a smooth ramp (≥ 50 ms, per FR-ADAPT-03).
-
-> Given a Conversational Tuning change has been applied (bass +3 dB),  
-> When the user taps [Undo] on the confirmation card,  
-> Then DSP parameters return to their pre-feedback values over ≥ 50 ms; no audible click occurs, and the confirmation card is replaced by a "Change undone" notice that dismisses after 3 seconds.
-
-> Given the confirmation card has already dismissed,  
-> When the user opens the Transparency view and taps [Undo] next to the NLT history row,  
-> Then the same revert behaviour is triggered; the history row is removed from the session log.
-
----
-
-**FR-NLT-06** — Preference Persistence vs. One-Off Change (P1)  
-A Conversational Tuning change shall be persisted to the active DSP profile only when the user explicitly confirms it (taps [Yes, keep it]). Changes that auto-dismiss or are undone shall not be written to the profile. Persisted changes shall be stored as a signed delta on the baseline profile (not as a new stand-alone profile) and shall survive app restart, applying silently on next load of the same profile and output device.
-
-> Given the user taps [Yes, keep it] on the confirmation card for a bass boost,  
-> When the app restarts and the same profile and device are active,  
-> Then the bass boost delta is silently re-applied on top of the baseline profile without prompting the user.
-
-> Given the user does not tap [Yes, keep it] (card auto-dismisses),  
-> When the app restarts,  
-> Then no residual DSP delta from that interaction is applied.
-
----
-
-**FR-NLT-07** — Transparency: Show What Changed and Why (P1)  
-Every confirmed Conversational Tuning DSP change shall be recorded as a row in the Transparency view (FR-ADAPT-07) with the original text input, the derived DSP action (plain-language + technical notation, listing **all components** for multi-band/dynamics/spatial action vectors), the timestamp, and an Undo link. This session log shall persist within a session and be clearable by the user.
-
-> Given a Conversational Tuning change has been confirmed,  
-> When the user opens the Transparency view,  
-> Then a row appears showing, for example: "NLT | 'bass is too low' | +3 dB at 60–250 Hz | 14:32 | [Undo]".
-
-> Given a confirmed change came from an abstract phrase ("sounds boring") that produced a multi-component vector,  
-> When the user opens the Transparency view,  
-> Then the row lists every component, for example: "NLT | 'sounds boring' | +3 dB presence (2–5 kHz), +2 dB air (12 kHz), +transient punch, +width | 14:35 | [Undo]".
-
-> Given the user taps "Clear session log",  
-> When confirmed,  
-> Then all NLT history rows are removed from the Transparency view; the DSP changes already applied to the profile are not affected.
-
----
-
-**FR-NLT-08** — Ambiguity Handling: Clarifying Question (P1)  
-When the intent-derivation subsystem cannot produce a high-confidence structured intent from the submitted text, it shall NOT apply any DSP change. Instead, it shall display a clarifying question to the user suggesting more specific phrasing examples. The clarifying dialogue shall support a maximum of two rounds; if intent remains unresolvable after two rounds, the app shall acknowledge the limitation and offer a deep-link to the manual EQ panel.
-
-> Given the user submits "the sound is a bit weird",  
-> When intent derivation cannot reach a high-confidence mapping,  
-> Then no DSP change is applied, and the app displays: "Could you describe what you mean? For example: 'too much bass', 'too bright', 'voices are muffled', 'sounds too harsh', or 'sounds dull / boring'."
-
-> Given two clarifying rounds have completed and intent remains unresolved,  
-> When the second clarification fails,  
-> Then the app displays "I'm not sure how to adjust that — try the EQ panel for manual control" and presents a tappable link to the DSP Controls Panel (FR-UI-02).
-
----
-
-**FR-NLT-09** — Urgent Protective Reduction ("it hurts") (P1)  
-When submitted text contains signals of immediate auditory discomfort or pain (e.g., "it hurts", "hurts my ear", "too painful", "damaging"), the app shall apply an immediate protective DSP reduction — without waiting for confirmation — and present a distinct high-urgency card. The protective action shall: (a) reduce the frequency region associated with the discomfort by a minimum of −6 dB, and (b) tighten the true-peak limiter threshold. This path bypasses the normal confidence-check gate and applies immediately.
-
-> Given the user submits any phrase containing a discomfort or pain signal (e.g., "bass is too much, it hurts my ear"),  
-> When the text is submitted,  
-> Then within 500 ms the associated frequency region is reduced by ≥ −6 dB and the true-peak limiter is tightened, before any confirmation card is rendered.
-
-> Given the protective reduction has been applied,  
-> When the high-urgency card appears,  
-> Then it displays a distinct visual treatment (e.g., amber/warning colour), states what was reduced, recommends the user also lower volume, and offers [Undo] and [Keep it] — with [Keep it] as the default focus.
-
----
-
-**FR-NLT-10** — Instrument / Source Requests: Indirect Mapping via Band-Region Approximation (P1)  
-Instrument and vocal-source requests (e.g., "guitar", "voices", "drums", "vocals") are an **indirect** point on the shared DSP action-space directness spectrum (see LD-8): the source name identifies the frequency region where that instrument or source typically dominates, and the intent-derivation subsystem outputs a DSP action vector targeting that band region. This band-region approximation is the **baseline behaviour and is fully shippable at Phase 1 launch** — it is not a degraded fallback. The confirmation card shall surface a plain-language note that the full mix in that band is being adjusted, not the isolated instrument. ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement that may increase per-instrument isolation accuracy in a later phase but is NOT a prerequisite for this requirement — see LD-8(e) and OQ-12 (resolved).
-
-> Given the user submits "I can't hear the guitar clearly",  
-> When intent is derived,  
-> Then the DSP action vector targets the guitar-dominant band region (250 Hz–4 kHz) with a moderate positive gain delta, and the confirmation card reads: "Boosted guitar presence region (250 Hz–4 kHz) — better? Note: this affects the full mix in that range, not guitar alone."
-
-> Given the user submits "I can't hear voices",  
-> When intent is derived,  
-> Then the DSP action vector targets the vocal intelligibility / presence band (2–4 kHz) with a moderate positive gain delta, and the confirmation card notes: "Raised vocal clarity (2–4 kHz) — does that help?"
-
----
-
-**FR-NLT-11** — VoiceOver and Keyboard Accessibility (P1)  
-The Conversational Tuning text field, confirmation card, and all actions ([Yes, keep it], [Undo], [Adjust more], clarifying question responses) shall be fully operable via VoiceOver and keyboard alone, consistent with FR-UI-05 and NFR-ACC-01/02.
-
-> Given VoiceOver is enabled and the Conversational Tuning input is active,  
-> When the user navigates to the confirmation card via keyboard,  
-> Then VoiceOver announces: the plain-language description of what changed, and all available actions with their keyboard shortcuts.
-
----
-
-**FR-NLT-12** — Abstract / Aesthetic Descriptors as First-Class Inputs (P1)  
-Abstract and aesthetic/emotional descriptors (e.g., "boring", "bland", "lifeless", "dull", "muffled", "warm", "punchy", "wide", "muddy", "boomy", "thin", "harsh", "sibilant") shall be treated as **first-class inputs** to the Conversational Tuning subsystem. They are not a special or lower-priority category: they resolve through the same unified DSP action-space as frequency-referencing and instrument-naming phrases (per LD-8), producing a DSP action vector that may include a *combination* of per-band gain changes, dynamics adjustments (compression ratio, transient enhancement), and spatial moves (stereo width, crossfeed). The interpretation mechanism is not specified here — see OQ-11. The confirmation card shall describe the resulting combination of moves in plain language so the user understands what changed.
-
-> Given the user submits "the music sounds boring" (or "bland" or "lifeless"),  
-> When intent derivation completes,  
-> Then the DSP action vector includes at minimum: a presence boost (2–5 kHz), an air shelf boost (10–15 kHz), and a transient/dynamics enhancement; optional stereo width increase may be included; the confirmation card reads, for example: "Added presence, air, and punch — does that help?" with [Yes, keep it] and [Undo] actions.
-
-> Given the user submits "sounds dull" or "sounds muffled" or "sounds veiled",  
-> When intent derivation completes,  
-> Then the DSP action vector includes a treble shelf boost (above 6 kHz) and often a low-mid cut (250–500 Hz); the confirmation card describes both moves in plain language.
-
-> Given the user submits "make it wider" or "sounds like it's stuck in my head" or "more spacious",  
-> When intent derivation completes,  
-> Then the DSP action vector includes a spatial move (stereo width increase and/or crossfeed adjustment) as its primary component, communicated to the DSP engine via FR-ADAPT-02/FR-ADAPT-03; the confirmation card confirms the spatial change applied.
-
-> Given a confirmed abstract/aesthetic change has been applied,  
-> When the user opens the Transparency view (FR-ADAPT-07),  
-> Then a row appears showing the original phrase, all DSP components of the action vector applied (plain-language + technical notation), and an Undo link — consistent with FR-NLT-07.
-
----
-
-#### 3.9.1 Phrase → Interpreted Intent → DSP Action Mapping Table
-
-The table below documents how representative natural-language phrases map to audio intent and DSP action. This table is normative for test case design and intent-derivation validation. The interpretation mechanism that produces this mapping is not specified here (see OQ-11). Frequency band definitions follow the audio grounding established by the product team.
-
-**Unified action-space model (LD-8):** Every phrase — regardless of whether it references a frequency, an instrument, or an aesthetic/emotional quality — resolves to the same output: a **DSP action vector** over the shared parameter space (per-band gain deltas + optional dynamics + optional spatial). The columns below reflect this: "DSP Action" always describes a combination of moves within that single space. Phrases differ only in directness of mapping: Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation) | Abstract (aesthetic/emotional → combination of moves). There is no structurally different processing pathway for any category.
-
-| Phrase (example) | Directness | Audio Aspect Identified | Direction | Magnitude Hint | Target Frequency Band(s) / Dynamics / Spatial | DSP Action (action vector components) | Notes / Edge Cases |
-|---|---|---|---|---|---|---|---|
-| "bass is too low" | Direct | Low-frequency level | Increase | Moderate | 60–250 Hz (bass / warmth) | Per-band gain: +boost 60–250 Hz | Sub-bass (20–60 Hz) may also be lifted slightly if device can reproduce it |
-| "bass is too much, it hurts my ear" | Direct | Low-frequency level + discomfort signal | Decrease (urgent) | Strong (protective) | 60–250 Hz | Per-band gain: ≥ −6 dB cut 60–250 Hz; dynamics: true-peak limiter tightened | Triggers FR-NLT-09 urgent path; discomfort keywords override confidence gate |
-| "I can't hear voices" / "vocals too quiet" | Indirect | Vocal intelligibility | Increase | Moderate | 2–4 kHz (vocal presence / intelligibility); optional 500 Hz–2 kHz (vocal body) | Per-band gain: +boost 2–4 kHz; optional +boost 500 Hz–2 kHz | Source approximation — affects full mix; note surfaced per FR-NLT-10 |
-| "I think the guitar sound is not audible clearly" | Indirect | Guitar presence | Increase | Moderate | 250 Hz–2 kHz (body) + 2–4 kHz (attack/presence) | Per-band gain: +boost across guitar-dominant range | Source approximation — full mix affected; note surfaced per FR-NLT-10 |
-| "too harsh" / "it's painful in the high mids" | Direct | Harshness / ear fatigue | Decrease | Moderate–Strong | 3–5 kHz (harshness / fatigue) | Per-band gain: −cut 3–5 kHz; if "painful" present, also dynamics: limiter tightened | "Painful" is a discomfort signal regardless of magnitude qualifier; triggers FR-NLT-09 |
-| "too muddy" / "sounds muddy" | Direct/Abstract | Low-mid mud | Decrease | Moderate | 250–500 Hz (low-mid mud) | Per-band gain: −cut 250–500 Hz | Often co-occurs with a request to clarify bass — present change transparently |
-| "too sharp" / "too sibilant" / "too much hiss" | Direct | Sibilance / high-frequency harshness | Decrease | Moderate | 6–8 kHz (sibilance / de-ess zone) | Per-band gain: −cut 6–8 kHz | May also partially address 4–6 kHz if "sharp" is used broadly |
-| "music sounds flat / distant" | Abstract | Presence / air | Increase | Moderate | 2–4 kHz (presence) + 6–12 kHz (air / sparkle) | Per-band gain: +lift presence and air bands | "Flat" may also indicate a spatial issue — transparency card should suggest checking spatialization mode |
-| "too boomy" / "too much low end" | Direct | Sub-bass / bass excess | Decrease | Moderate | 20–60 Hz (sub-bass) + 60–250 Hz (bass) | Per-band gain: −cut broadly across low end | Distinguish from "muddy" (250–500 Hz); if user also says "it hurts", trigger FR-NLT-09 |
-| "a little more warmth" / "slightly warmer" | Abstract | Low-frequency warmth | Increase | Subtle | 100–300 Hz (warmth); optional gentle high-frequency cut | Per-band gain: +gentle boost 100–300 Hz (≤ +2 dB for subtle qualifier); optional −slight high cut | Magnitude hint = subtle; scale ramp down for low-intensity qualifiers |
-| "I can't hear the drums clearly" | Indirect | Drum attack / transients | Increase | Moderate | 60–100 Hz (kick body) + 2–5 kHz (snare attack) | Per-band gain: +boost low-frequency body; +boost presence for snare attack | Multi-band approximation; note surfaced per FR-NLT-10 |
-| "boring" / "bland" / "lifeless" / "flat" (when not spatial) | Abstract | Lack of excitement / engagement | Increase (excite) | Moderate | 2–5 kHz (presence) + 10–15 kHz (air, high shelf); dynamics: transient/punch; optional spatial: +stereo width | Per-band gain: +presence 2–5 kHz, +air shelf 10–15 kHz; dynamics: transient enhancement / subtle compression punch; optional spatial: +stereo width | Multi-component action vector. "Flat" used spatially → see "distant" row above. Confirm card describes all components. Optional subtle harmonic excitation. |
-| "dull" / "muffled" / "veiled" | Abstract | Treble deficit + low-mid excess | Increase treble / Decrease low-mid | Moderate | Above 6 kHz (treble shelf); often also 250–500 Hz (low-mid cut) | Per-band gain: +treble shelf >6 kHz; often −low-mid 250–500 Hz | Distinguish from "muffled" (primarily low-mid) vs. "dull" (primarily treble deficit) — both map to same vector components but relative magnitudes may differ |
-| "boomy" / "too much bass weight" | Abstract/Direct | Bass excess | Decrease | Moderate | 80–200 Hz (boomy sub-bass) | Per-band gain: −cut 80–200 Hz | Narrower than "too much low end" — boomy typically centres 80–200 Hz vs. broader sub-bass |
-| "boxy" | Abstract | Upper-bass / low-mid resonance | Decrease | Moderate | 400–600 Hz (boxy resonance zone) | Per-band gain: −cut 400–600 Hz | Narrow Q cut often more effective than broad shelf |
-| "honky" / "nasal" | Abstract | Upper-mid resonance | Decrease | Moderate | 1–2 kHz (nasal/honky zone) | Per-band gain: −cut 1–2 kHz | Often a room or headphone resonance artifact; narrow Q |
-| "thin" / "tinny" | Abstract | Low-frequency deficit | Increase | Moderate | 80–250 Hz (bass / low-mid body); often also −upper-mid | Per-band gain: +boost 80–250 Hz; optional −slight upper-mid cut | "Tinny" on small speakers may also benefit from psychoacoustic bass enhancement (FR-TONAL-04) |
-| "punchy" / "more punch" | Abstract | Transient impact + bass body | Increase | Moderate | 60–120 Hz (kick / punch body); dynamics: transient enhancement | Per-band gain: +bass 60–120 Hz; dynamics: transient enhancement (attack sharpening) | Primarily a dynamics move with bass support; confirm card names both components |
-| "wide" / "spacious" / "sounds too narrow" / "in my head" | Abstract | Spatial impression | Increase width | Moderate | Spatial: stereo width / crossfeed reduction | Spatial: +stereo width and/or −crossfeed (headphones) or +mid-side width (speakers) | Primarily a spatial action vector component; minimal or no per-band EQ unless combined with tonal descriptor |
-| "can't hear voices" / "vocal intelligibility" | Indirect | Vocal presence + consonant clarity | Increase | Moderate | 2–4 kHz (presence / intelligibility); 4–6 kHz (consonant clarity) | Per-band gain: +boost 2–4 kHz; optional +4–6 kHz consonant range | Same target as "can't hear voices" above; listed separately to document 4–6 kHz consonant component |
+> **Withdrawn 2026-07-12** — natural-language / conversational tuning removed from scope (founder decision). Prior FR-NLT-* specs and the §3.9.1 phrase→intent mapping table are in git history; may be re-added.
 
 ---
 
@@ -849,12 +610,7 @@ Masking/clarity shall be computed **between stems** (ERB/Bark, LD-12) so that a 
 > When unmasking is active,
 > Then the vocal stem is raised / competing stems dipped in the masked ERB bands, measurably improving vocal prominence.
 
-**FR-STEM-04** — Per-Stem Natural-Language Targeting (P1 for Phase 1.5)  
-NL macros (FR-NLT) shall be able to target a specific stem ("bring up the guitar", "move the vocals forward").
-
-> Given the user says "bring up the guitar",
-> When intent is derived with the stem engine active,
-> Then the guitar stem's level/placement is adjusted (governing principle, LD-8), confirmed in the transparency view.
+**FR-STEM-04** — *Withdrawn 2026-07-12* — per-stem natural-language targeting removed from scope, as it was wholly dependent on the withdrawn natural-language tuning feature (FR-NLT / LD-8). Direct (non-NL) per-stem control remains covered by FR-STEM-02. Prior spec is in git history; may be re-added. (ID retained; not reused.)
 
 **FR-STEM-05** — Quality-Gating + Graceful Fallback (P1 for Phase 1.5)  
 6-stem separation (esp. guitar/piano) is the least-robust case. The app shall **quality-gate** separated stems and gracefully fall back (fewer stems; route poorly-separated content to "other") rather than expose bad stems. Confidence shall bound how far the stem-range / per-stem moves are allowed for that track.
@@ -964,11 +720,10 @@ The app shall present a clear, user-readable NSMicrophoneUsageDescription string
 > When the app continues to run,  
 > Then all features except ambient-noise adaptation function normally and the user is informed via a persistent but dismissable banner.
 
-**NFR-PRIV-03** — Hearing Profile Data (P1)  
-Hearing profile data shall be stored in an encrypted local database (AES-256 or platform Keychain/Data Protection). It shall not be backed up to iCloud by default (set NSURLIsExcludedFromBackupKey). Remote transmission requires explicit opt-in consent with a separate dialog.
+**NFR-PRIV-03** — *Withdrawn 2026-07-12* — governed hearing-profile data storage; removed with hearing personalization (founder decision). May be re-added. Prior text in git.
 
 **NFR-PRIV-04** — Telemetry and Analytics (P2)  
-If the app collects any usage telemetry, it shall be strictly opt-in, clearly described at onboarding, and limited to anonymous quality and diagnostics data (e.g., crash-free rate, audio-engine error counts). It shall exclude any audio content, hearing data, or personal identifiers. There is no conversion-oriented or commercial analytics purpose — this is a personal/open-source project (LD-9). Users shall be able to review and delete their telemetry data. An open-source project may choose to omit telemetry entirely; this requirement applies only if telemetry is implemented.
+If the app collects any usage telemetry, it shall be strictly opt-in, clearly described at onboarding, and limited to anonymous quality and diagnostics data (e.g., crash-free rate, audio-engine error counts). It shall exclude any audio content or personal identifiers. There is no conversion-oriented or commercial analytics purpose — this is a personal/open-source project (LD-9). Users shall be able to review and delete their telemetry data. An open-source project may choose to omit telemetry entirely; this requirement applies only if telemetry is implemented.
 
 > Given the user opts out of telemetry,  
 > When network traffic is monitored,  
@@ -1065,12 +820,8 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | **Output Device Type** | Core Audio device classification | Psychoacoustic bass enhancement | Enabled for small speakers / in-ear headphones; reduced for large over-ear or external speakers | Small transducers cannot reproduce sub-bass fundamentals; harmonic synthesis creates perceptual bass without excursion risk. |
 | **Content / Genre Classification** | Non-RT spectral + rhythm analyser | Tonal EQ curve | Classical → subtle curve (preserve dynamics); Electronic → bass + sub emphasis; Vocal/Acoustic → presence boost; Rock → controlled low-mid | Each genre has distinct spectral energy distribution and listener expectation; genre-tuned curves complement rather than override device correction. |
 | **Content / Genre Classification** | Non-RT spectral analyser | Dynamic range compressor ratio + attack/release | Classical → low ratio (≤ 1.5:1), slow attack; Electronic → moderate ratio (2–3:1), fast attack; Podcast/Speech → higher ratio (3:1+), very fast attack | Dynamic range of source content varies enormously by genre; mismatched compression destroys either musical impact (over-compress) or intelligibility in noise (under-compress). |
-| **Personal Hearing Profile (per-frequency threshold)** | Stored hearing calibration | Per-band EQ gain (both channels independently) | Frequency where threshold elevation detected → proportional gain addition | Compensates for individual sensorineural hearing loss pattern; restores perceived frequency balance to that of normal hearing at the listening level. |
-| **Personal Hearing Profile (threshold elevation magnitude)** | Stored hearing calibration | Compression ratio at affected frequencies | Higher threshold elevation → lower ratio at that frequency | Hyperacusis / recruitment: at frequencies with elevated thresholds, loudness growth is non-linear; reduced dynamic processing prevents over-amplification of loud transients. |
 | **AirPods Head Orientation (quaternion)** | CoreMotion / AirPods motion API | HRTF virtual source azimuth + elevation offset | Real-time counter-rotation: offset = –(head yaw, pitch) | Stabilises virtual soundstage in world space so it does not move when user turns head; mimics natural localisation of external sound sources. |
 | **AirPods Head Orientation (quaternion)** | CoreMotion | Head-tracking update rate gate | Only update HRTF when orientation delta > 1 degree | Avoids unnecessary DSP parameter churn from sensor noise; <1 degree change is below perceptual threshold. |
-| **User Natural-Language Feedback — Taste / Preference** | Conversational Tuning subsystem (FR-NLT-01 / FR-NLT-02); text submitted by user at will | DSP action vector: per-band EQ gain deltas (one or more bands per derived intent); optional dynamics (compression/transient) adjustment; optional spatial (width/crossfeed) adjustment — all via FR-ADAPT-02/03 lock-free ramp | Direction and magnitude derived from text: increase or decrease target parameter(s) by a moderate default step (e.g., ±3 dB for "moderate", ±1–2 dB for "subtle", ±6 dB or more for "strong"). Abstract/aesthetic descriptors produce multi-component vectors (see §3.9.1). | **Governing principle (LD-8):** A confirmed user natural-language instruction is a governing principle — the Adaptivity Engine adapts *around* it, never against it. Once confirmed, automatic adaptation (volume-based Fletcher-Munson, content/genre curves, ambient-noise adjustments) targeting the same DSP parameter(s) is subordinate to the user's stated intent for the remainder of the session or until the user explicitly undoes the change. Session-scoped by default; persists beyond the session only when the user taps [Yes, keep it] (FR-NLT-06). Reconciliation with the hearing profile is additive: the NLT delta is layered on top of the hearing-compensation curve, not merged into it. |
-| **User Natural-Language Feedback — Urgent / Protective ("it hurts")** | Conversational Tuning subsystem (FR-NLT-09); discomfort or pain keywords detected in submitted text | Per-band EQ gain (60–250 Hz or the stated region); true-peak limiter threshold | Immediate reduction: ≥ −6 dB on the implicated band; true-peak limiter threshold tightened by ≥ 3 dBTP; applied before user confirmation and before normal confidence-gating | **Safety governing principle (LD-8):** This protective action is the highest-priority governing principle in the system. No other adaptation signal — automatic or manual — shall counteract or delay this reduction during the same session without an explicit user [Undo] action. Discomfort / pain language is treated as a protective trigger analogous in urgency to an over-level event. The Adaptivity Engine is locked out of the affected DSP parameter(s) in the opposing direction for the session unless the user explicitly undoes the change. |
 
 ---
 
@@ -1088,7 +839,7 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | ASM-06 | The content/genre classifier runs as a lightweight on-device ML model (Core ML) or a signal-processing heuristic, not a cloud inference call. | Cloud inference would violate real-time requirements, add latency, and raise privacy concerns. |
 | ASM-07 | Apple will not revoke or restrict AudioServerPlugIn entitlements for independent developers between now and Phase 2 launch. | Apple has not announced changes, but policy can shift; monitor Apple Developer Forums. |
 | ASM-08 | The AirPods motion data API (CMHeadphoneMotionManager) is accessible from a sandboxed companion app without additional entitlements beyond the standard headphone motion permission. | Additional entitlement requirement would delay feature. |
-| ASM-09 | The Conversational Tuning subsystem (FR-NLT) can meet the < 1 500 ms response latency target (FR-NLT-04) for the chosen interpretation mechanism, whether on-device or external — **including the harder case of resolving an abstract/aesthetic phrase (FR-NLT-12) into a multi-component action vector**, not just a single-band lookup. This assumption must be validated once the interpretation approach is selected (OQ-11). | If the chosen mechanism cannot meet the latency target (especially for multi-component derivation), the acceptance criterion in FR-NLT-04 must be revised or the mechanism reconsidered. |
+| ASM-09 | *Withdrawn 2026-07-12* — this assumption concerned natural-language tuning latency (FR-NLT), a now-withdrawn feature. May be re-added with the feature. (ID retained; not reused.) | — |
 
 ### 6.2 Constraints
 
@@ -1142,17 +893,17 @@ The following items are unresolved and require founder/product-owner decisions b
 | OQ-02 | ~~Monetization / Feature Gating~~ | ✓ **Resolved — removed (LD-9).** The project is personal / open-source and non-commercial. There is no business model, no paid tier, no paywall, and no feature-gating. All features are free. Feature-flag or entitlement-check logic for paid access is not required anywhere in the codebase. | Resolved — no action required. | ✓ Resolved |
 | OQ-03 | Adaptivity Engine — Ambient Sensing | What is the required update cadence and smoothing window for ambient noise estimation? The current draft says "every 2 seconds" with 3-second hysteresis, but an audio engineer must validate whether this produces acceptable latency vs. stability trade-off. | NFR-PERF-04 and FR-ADAPT-04 acceptance criteria cannot be finalised without this specification. | High |
 | OQ-04 | HRTF / Spatialization | Which HRTF data set(s) will ship in Phase 1? | FR-SPAT-01 and FR-SPAT-02 scope and timeline depend on this decision. | ✓ Resolved (LD-7 + prior-art pass): **SADIE II (Apache-2.0)** is the default dataset; custom HRTF measurement deferred. IRCAM Listen avoided (unverifiable license). Rendering is custom SOFA-HRIR partitioned convolution (libmysofa + FFTConvolver) — Apple PHASE/AVAudioEnvironmentNode HRTFs are non-replaceable. See DEP-06 and FR-SPAT-01. |
-| OQ-05 | Hearing Calibration — Medical/Audiological Standards | Should the hearing calibration claim clinical accuracy (requiring ISO 8253-1 compliance and potentially a medical device regulatory pathway) or be explicitly positioned as a "listening preference" tool for entertainment only? The distinction has significant legal, regulatory, and marketing implications. | Incorrect positioning risks regulatory exposure (FDA, CE marking). Correct positioning shapes all FR-HEAR-* requirements and marketing copy. | ✓ Resolved (LD-7): "listening preference" tool, not a medical device |
+| OQ-05 | *Withdrawn 2026-07-12 (feature removed from scope)* | Hearing personalization removed (founder decision); the hearing-calibration positioning question no longer applies. May be re-added with the feature. | — | — |
 | OQ-06 | Phase 1 Scope — Streaming Sources | Does Phase 1 (own player) include any streaming source integration (Spotify Connect, Apple Music API, YouTube Music)? Or is Phase 1 strictly local file playback only? The question materially affects FR-PLAY-* and the breadth of source support. | A Spotify Connect or MusicKit integration is weeks of additional work; must be scoped before sprint planning. | ✓ Resolved (LD-4): local files only in Phase 1 |
 | OQ-07 | macOS Version — Minimum Deployment Target | The draft assumes macOS 14 for AirPods CoreMotion. Is this acceptable, or does the market require macOS 13 (or 12) support? Lowering the target eliminates head-tracking and may affect other API choices. Additional constraint from prior-art pass: the **process-tap primary Phase 2 path requires macOS 14.2 or later** (CON-10); the exact floor (14.2 vs. 14.4) must be confirmed in `<CoreAudio/AudioHardwareTapping.h>` before Phase 2 engineering begins. If the minimum OS is set below 14.2, the driver fallback path (FR-SYS-01..06) becomes the Phase 2 mechanism for those users. | Determines which APIs are available, whether the tap primary path is viable for the target user base, and the Phase 2 installer approach. | Medium |
 | OQ-08 | Device Correction Library — Scope | How many headphone/speaker models will be included in the correction library at launch? Who owns ongoing library curation? | FR-TONAL-02 cannot be validated without knowing the minimum supported device count. | ✓ Resolved (prior-art pass): **AutoEq computed parametric curves (MIT + attribution)** are the source. Raw measurement databases are not shipped (provenance uncertain). Ongoing per-model provenance verification is required (see DEP-07 and CON-12). Minimum model count and curation owner remain to be confirmed in SPIKE-DEVCORRLIB. |
 | OQ-09 | Content / Genre Classifier — Approach | Will the content classifier be a Core ML model (requires training data, model management, CoreML conversion pipeline) or a DSP heuristic (spectral centroid, BPM estimation, onset detection)? The ML approach is more accurate but has higher cold-start and maintenance cost. | FR-ADAPT-01 acceptance criteria and engineering estimates differ substantially between the two approaches. | ✓ Resolved (LD-5): heuristics in Phase 1, Core ML later |
 | OQ-10 | Telemetry and Crash Reporting | Will the app use a third-party crash reporting SDK (e.g., Sentry, Firebase Crashlytics)? If so, which one, and how does this interact with the App Store privacy label and NFR-PRIV-04? | Data residency, privacy disclosure, and SDK dependency must be confirmed before SDK is integrated. | Medium |
-| OQ-11 *(NLT — DEFERRED ARCHITECTURE)* | Conversational Tuning — Text Interpretation Mechanism | How is user-submitted natural-language text converted into a structured audio intent (direction + aspect + magnitude)? Candidate approaches include: (a) deterministic rule/keyword engine (fast, on-device, no external dependency, limited coverage), (b) on-device small language model (broader coverage, privacy-safe, hardware/model size constraints), (c) cloud LLM API (broadest coverage, adds latency, network dependency, privacy implications, ongoing cost). This decision has cascading implications for privacy disclosure, offline behaviour, latency SLA (FR-NLT-04 target of < 1 500 ms), App Store compliance, and cost model. **This question is explicitly deferred — do not resolve in requirements.** | Affects implementation approach for FR-NLT-01 through FR-NLT-08; privacy policy; NFR-PRIV telemetry posture; offline/airplane-mode behaviour; latency acceptance criteria in FR-NLT-04. Cannot finalise engineering estimates until resolved. | Critical (deferred by design) |
-| OQ-12 *(NLT)* ✓ RESOLVED (LD-8, Decision A) | Conversational Tuning — Instrument Source Separation: Approach and Phase | ~~FR-NLT-10 specifies band approximation as the near-term behaviour for instrument/source requests ("guitar", "vocals", "drums"). The confirmation card surfaces a caveat that the full mix in that band is affected. Two questions require founder input: (a) Is the band-approximation + caveat acceptable for Phase 1, or does the founder consider the caveat a user-experience deal-breaker that blocks the feature? (b) If full ML source separation (e.g., Demucs, HTDemucs) is on the roadmap, which phase is it targeted for, and is real-time source separation (high compute cost) required, or is a near-real-time / pre-analysis approach acceptable?~~ **RESOLVED:** Band-region approximation is the confirmed baseline and is fully shippable at Phase 1 — it is not a degraded fallback and the caveat in the confirmation card is acceptable UX. Instrument-naming requests are an "indirect" point on the unified DSP action-space directness spectrum (LD-8); they resolve to the same action vector as all other phrase types. ML source separation (e.g., Demucs/HTDemucs) is an optional precision enhancement for a later phase. It is NOT a prerequisite and NOT on the critical path. The instrument-naming branch of Conversational Tuning is unblocked for Phase 1. (See also FR-NLT-10 reframe.) | Resolved — no further action required. | High |
-| OQ-13 *(NLT)* | Conversational Tuning — Ambiguity and Clarification UX | FR-NLT-08 specifies a maximum of two clarification rounds before the app falls back to directing the user to the EQ panel. The following sub-questions require product decisions: (a) Is a two-round limit correct, or should it be one round (to avoid the interaction feeling tedious)? (b) Should unanswered clarification prompts that time out be treated as "no action" or as "cancel input"? (c) Should the app offer suggested auto-complete phrases as the user types (predictive suggestions), and if so, is this limited to a fixed vocabulary or powered by the same mechanism as intent derivation? | The two-round limit and auto-complete decision affect acceptance criteria for FR-NLT-08 and the UI specification for FR-NLT-01. Auto-complete requires design and — depending on mechanism choice (OQ-11) — additional engineering scope. | Medium |
-| OQ-14 *(NLT)* | Conversational Tuning — Multilingual Support | All phrase examples in §3.9.1 and FR-NLT-* are specified in English. Two decisions are required: (a) Is Conversational Tuning English-only at launch, with multilingual support deferred? (b) If multilingual support is in scope (even future-phase), should the system auto-detect the language of the input, or require the user to set a preferred language? The answer affects the interpretation mechanism (OQ-11), the set of example phrases and vocabulary lists, and NFR-L10N-01 string externalisation scope for dynamic reply strings. | English-only at launch is the lowest-risk position; committing to multilingual support at launch substantially increases scope of the interpretation mechanism and QA effort. If deferred, the UI must be designed to handle future addition without rework. | Medium |
-| OQ-15 *(NLT)* — partially resolved | Conversational Tuning — Reconciliation of Learned Text Preferences with Automatic Adaptation and Hearing Profile | FR-NLT-06 specifies that confirmed text-driven changes are stored as a delta on the active profile. Three reconciliation scenarios: **(a) RESOLVED (LD-8, Decision B — governing principle):** A confirmed NLT instruction is a governing principle. The automatic Adaptivity Engine (volume-based Fletcher-Munson, content/genre curves, ambient-noise adjustments) is subordinate to the user's stated intent for the targeted DSP parameter(s) for the session or until undone. Composition model: automatic adaptation continues to operate on *other* bands not targeted by the NLT instruction; for the targeted band(s), the NLT delta is the floor and the engine does not push changes that would counteract it. Session-scoped by default; persists only on explicit [Yes, keep it] confirmation. **(b) PENDING CONFIRMATION — recommended default:** When the user re-runs hearing calibration (FR-HEAR-01) and the new profile shifts a band that has an existing NLT delta, the NLT delta should be **surfaced for review** rather than silently preserved or discarded. Recommended UX: post-calibration, the app presents a summary of any NLT deltas that conflict with the new hearing profile and asks the user to confirm, adjust, or discard each. This recommendation is pending founder confirmation before being locked into FR-NLT-06 and FR-HEAR-01. **(c) PENDING CONFIRMATION — recommended default:** A per-band accumulated NLT delta cap of **±12 dB** is recommended to prevent runaway drift from repeated one-directional feedback across many sessions. The cap should be surfaced to the user (e.g., "You've reached the maximum bass boost — try the EQ panel for further adjustment") rather than silently clamped. This recommendation is pending founder confirmation before being locked as a hard constraint in the profile-delta storage specification. | (a) resolved; (b) and (c) pending founder confirmation of recommended defaults — not deferred. Engineering must not proceed on profile-delta storage design until (b) and (c) are confirmed. | High |
+| OQ-11 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language / conversational tuning removed (founder decision); the text-interpretation-mechanism question no longer applies. May be re-added with the feature. | — | — |
+| OQ-12 | *Withdrawn 2026-07-12 (feature removed from scope)* | Concerned instrument source-separation for NL requests; NL tuning removed (founder decision). Source separation for the stem engine remains covered by FR-STEM-*. May be re-added with the feature. | — | — |
+| OQ-13 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language tuning removed (founder decision); the ambiguity/clarification-UX question no longer applies. May be re-added with the feature. | — | — |
+| OQ-14 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language tuning removed (founder decision); the multilingual-support question no longer applies. May be re-added with the feature. | — | — |
+| OQ-15 | *Withdrawn 2026-07-12 (feature removed from scope)* | Concerned reconciliation of NL text preferences with automatic adaptation and the hearing profile; both features removed (founder decision). May be re-added with them. | — | — |
 | OQ-16 | Patents — Psychoacoustic Bass Enhancement IP Review | CON-11 requires formal IP review before any public release of FR-TONAL-04. Specific items: (a) Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on it. (b) Verify the mono-summed NLD approach is clearly outside Waves US-11,102,577 (active, ~2038). (c) Check whether any Xperi/SRS virtual-bass patents are still active and whether the mono-summed design avoids them. This is a formal legal/IP task, not a technical investigation — requires qualified IP counsel. Engineering may proceed with the mono-summed design; public release is blocked until this review is complete. | Public release of FR-TONAL-04 is blocked without IP review sign-off. Engineering is unblocked (use mono-summed design per CON-11). | High — blocks public release |
 | OQ-17 | libbs2b License Dispute | `docs/session-notes/prior-art.md` §5 notes conflicting reports on the libbs2b licence: one source found MIT in source headers; another reported GPL-2.0+. This must be resolved before libbs2b is shipped (CON-12). Action: open the canonical `LICENSE` / source header in the upstream repo. If not clearly MIT, reimplement the Bauer crossfeed algorithm from the public specification (a small number of biquad filters + delay — trivial to reimplement cleanly). FR-SPAT-03 / US-DEVICE-07 are blocked on this resolution. | FR-SPAT-03 (crossfeed) cannot be shipped with libbs2b until confirmed permissive. Reimplementation unblocks the feature if licence is not clear. | Medium — blocks crossfeed shipping |
 | OQ-18 | DSP — Phase realization per content | Minimum-phase is the default (LD-13). Open: should transient-dense content force minimum-phase even where linear/mixed-phase is otherwise selected, and what transient-density threshold triggers the switch? Resolve before the Realizer is implemented. | Realizer design + FR-TONAL-01 acceptance. | High |
@@ -1172,10 +923,8 @@ The following items are unresolved and require founder/product-owner decisions b
 | FR-TONAL | Tonal and Dynamic Optimization |
 | FR-ADAPT | Adaptivity Engine |
 | FR-DEVICE | Device and Profile Management |
-| FR-HEAR | Personalization / Hearing Profile |
 | FR-UI | UI and Controls |
 | FR-SYS | Phase 2 System-Wide Enhancement |
-| FR-NLT | Conversational Tuning — Natural-Language Sound Feedback |
 | FR-REIMAGINE | Reimagine Intensity Control |
 | FR-STEM | Stem-Based Object Engine (Phase 1.5) |
 | FR-LIB | *(reserved namespace)* Library domain — multiple scan folders, single-file play, durable track identity, cross-folder duplicates. No FR text/AC authored yet; currently specified as **EP-LIBRARY** stories (US-LIB-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. |
@@ -1199,15 +948,7 @@ The following items are unresolved and require founder/product-owner decisions b
 
 | Term | Definition |
 |------|-----------|
-| Conversational Tuning | The FR-NLT feature set that allows users to describe what they hear in plain language and have the app translate that description into a DSP action vector applied through the existing DSP engine. |
-| Intent Derivation | The process (mechanism unspecified — see OQ-11) by which a natural-language phrase is converted into a DSP action vector (per-band gain deltas + optional dynamics + optional spatial). The output target is always the unified action-space regardless of phrase type (frequency-referencing, instrument-naming, or aesthetic/emotional). |
-| DSP Action Vector | The structured output of intent derivation: a set of parameter changes over the shared DSP action-space — per-band gain deltas across the frequency spectrum, optional dynamics (compression ratio / transient enhancement), and optional spatial (stereo width / crossfeed) moves. Every phrase type resolves to this common representation (LD-8). |
-| NLT Delta | The signed per-band gain adjustment (and any dynamics/spatial changes) accumulated from confirmed Conversational Tuning interactions, stored as a layer on top of the baseline DSP profile. Capped at a recommended ±12 dB per band pending founder confirmation (OQ-15c). |
-| Discomfort / Pain Signal | A keyword or phrase in user-submitted text that indicates immediate auditory discomfort or pain (e.g., "it hurts", "painful"), triggering the urgent protective reduction path (FR-NLT-09) without waiting for confidence-gating. |
-| Band Approximation | The Phase 1 baseline and confirmed shippable approach for instrument/source requests (FR-NLT-10, OQ-12 resolved): the DSP action vector targets the frequency region where the named instrument or source typically dominates, without true per-source isolation. This is the production behaviour, not a temporary workaround. |
-| Source Separation | An ML technique (e.g., Demucs / HTDemucs) that isolates individual instruments or vocal tracks from a mixed audio signal. An optional precision enhancement for a later phase — NOT a prerequisite for instrument-naming requests (OQ-12 resolved, LD-8). |
-| Governing Principle (NLT) | A confirmed user natural-language instruction that the Adaptivity Engine must adapt around, not against. Automatic adaptation signals (volume, content, ambient noise) are subordinate to the user's stated intent on the targeted DSP parameter(s) for the session duration or until explicitly undone (LD-8, OQ-15a resolved). |
-| Directness Spectrum | The continuum along which natural-language phrases map to DSP action vectors: Direct (frequency words → 1:1 band gain) | Indirect (instrument names → band-region approximation) | Abstract (aesthetic/emotional → combination of spectral, dynamic, and spatial moves). All points on the spectrum share the same action-space output (LD-8). |
+| Source Separation | An ML technique (e.g., Demucs / HTDemucs) that isolates individual instruments or vocal tracks from a mixed audio signal. Used by the stem-based object engine (FR-STEM, Phase 1.5). |
 | AudioServerPlugIn | Apple's mechanism for a virtual audio device that runs inside the coreaudiod process. Required for system-wide audio interception. |
 | AUHAL | Audio Unit Hardware Abstraction Layer. The Core Audio API for direct device I/O in a developer's own process. |
 | HRTF | Head-Related Transfer Function. A pair of filters (left/right ear) that encode the spectral and temporal cues the brain uses for spatial hearing. Used to render binaural audio on headphones. |

@@ -15,9 +15,8 @@ This document defines the core user journeys (workflows) for Adaptive Sound. Eac
 **Journeys are organized by persona and phase:**
 - **Journeys 2.1–2.5:** Phase 0 & Phase 1 (own-player focus)
 - **Journey 2.6:** Phase 2 (system-wide, two implementation paths)
-- **Journey 2.7:** Natural-language steering (Conversational Tuning, applies across phases)
 
-> **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching. Each journey below carries a **Status** line marking how much is built. Onboarding, hearing calibration, the automatic adaptivity engine, environment/mic sensing, natural-language tuning, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior.
+> **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching. Each journey below carries a **Status** line marking how much is built. Onboarding, the automatic adaptivity engine, environment/mic sensing, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior.
 
 ---
 
@@ -41,7 +40,7 @@ Every journey below follows one template — reuse it for new use-cases:
 **Actor:** New user, app just launched for the first time.  
 **Goal:** Reach a working listening state with a meaningful default sound profile in under 3 minutes.  
 **Phase:** Phase 0 (Player MVP).  
-**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, hearing-profile prompt, mic-permission step, or first-run tooltip.
+**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, mic-permission step, or first-run tooltip.
 
 **Steps:**
 
@@ -56,23 +55,18 @@ Step 2 — Output Device Detection
   Displays detected device name and type (e.g., "AirPods Pro detected — Headphone mode active").
   [If no device detected → show inline error with troubleshooting link]
 
-Step 3 — Hearing Profile Prompt
-  App asks: "Would you like a quick hearing check to personalise your experience?"
-  Options: [Start Hearing Check] [Skip for Now]
-  If skipped → uses a neutral default profile; reminder surfaced in Settings after 3 listening sessions.
-
-Step 4 — Microphone Permission (Environment Sensing)
+Step 3 — Microphone Permission (Environment Sensing)
   System dialog requests microphone access.
   App explains in plain language: "Used only to sense room noise — never recorded or transmitted."
   If denied → environment sensing disabled; adaptive ambient-noise feature inactive; user notified with non-blocking banner.
 
-Step 5 — Profile Load and Playback Ready
+Step 4 — Profile Load and Playback Ready
   App loads default DSP profile for detected device.
   Opens media browser / file importer.
   User selects a track and presses Play.
   Adaptivity engine begins processing; visual VU/analysis meter shows activity.
 
-Step 6 — First Listening Moment
+Step 5 — First Listening Moment
   After 10 seconds of playback, a subtle non-blocking tooltip appears:
   "Sound is adapting to your headphones and room — no action needed."
 ```
@@ -81,35 +75,8 @@ Step 6 — First Listening Moment
 
 ---
 
-## Journey 2.2 — Hearing Profile Calibration
-
-**Actor:** User who chose to run or re-run the hearing check.  
-**Goal:** Generate a personal hearing profile that the DSP engine uses for equalisation compensation.  
-**Phase:** Phase 0 onwards (optional, skippable).  
-**Status:** NOT YET BUILT (planned). No hearing test, tone sequence, audiogram, or stored hearing profile exists; the only "hearing"-adjacent code is the unrelated EQ cumulative-gain safety clamp.
-
-**Steps:**
-
-```
-Step 1 — Pre-Check Instructions
-  App displays: headphone requirement notice, estimated time (~5 minutes), quiet environment recommendation.
-  Volume is automatically set to a safe calibration level (~65 dBSPL target, not app-adjustable during test).
-
-Step 2 — Tone Playback Sequence
-  App plays pure tones at discrete frequencies across both ears (500 Hz, 1 kHz, 2 kHz, 3 kHz, 4 kHz, 6 kHz, 8 kHz — minimum; extended range optional).
-  User presses and holds "I can hear this" button for each tone; minimum presentation threshold derived.
-  Audiogram-style result graph displayed.
-
-Step 3 — Profile Saved
-  Hearing profile stored locally (encrypted, not synced by default).
-  Profile applied immediately to DSP engine.
-  User can label the profile (e.g., "My AirPods", "Office Headphones") and link it to a specific output device.
-
-Step 4 — Ongoing Prompt
-  App offers to re-run calibration if output device changes to a new device category not yet profiled.
-```
-
-**Success Condition:** A stored hearing profile exists, is linked to the active output device, and measurably alters EQ curves in the DSP chain.
+## Journey 2.2 — Hearing Profile Calibration — *withdrawn 2026-07-12*
+> Hearing personalization removed from scope (founder decision); prior journey in git, may be re-added.
 
 ---
 
@@ -325,42 +292,8 @@ Step 6 — Uninstall Path
 
 ---
 
-## Journey 2.7 — Giving Natural-Language Feedback Mid-Listen (Conversational Tuning)
-
-**Actor:** Returning user actively listening to music.  
-**Goal:** Adjust the sound by typing what they hear in plain language, without touching EQ controls.  
-**Phase:** Phase 1 onwards (NL tuning, mechanism deferred per OQ-11).  
-**Status:** NOT YET BUILT (planned; mechanism deferred, OQ-11). There is no text-input control, intent-derivation subsystem, confirmation card, or transparency log in the code — no natural-language path of any kind exists yet.
-
-**Steps:**
-
-```
-Step 1 — Opening the Conversational Tuning Input
-  User notices the sound feels off (e.g., bass is too weak).
-  User clicks the "Tell us what you hear" button in the Now Playing view
-  (or activates via keyboard shortcut).
-  A compact text field slides in below the Now Playing view.
-  Placeholder text reads: "e.g. 'bass is too low' or 'voices are hard to hear'"
-
-Step 2 — Entering Feedback
-  User types: "bass is too low"
-  No submit button required; user presses Return or clicks "Apply".
-  The app accepts the raw text and passes it to the Conversational Tuning
-  subsystem for intent derivation.
-  A subtle processing indicator appears (spinner or pulsing waveform icon)
-  while intent is being derived — target: < 1 500 ms.
-
-Step 3 — Intent Derived, Change Applied
-  The subsystem determines intent: raise low-frequency gain (60–250 Hz), moderate
-  magnitude, positive direction.
-  Change is communicated to the DSP thread via the existing lock-free parameter
-  path (FR-ADAPT-02 / FR-ADAPT-03); gain ramps smoothly (≥ 50 ms, per FR-ADAPT-03).
-  The text field clears; a confirmation card appears:
-    "Boosted bass (60–250 Hz) +3 dB  — does that feel better?
-     [Yes, keep it]  [Undo]  [Adjust more]"
-```
-
-**Success Condition:** User receives an audible change within 500 ms of typing, with a confidence-driven confirmation card reflecting the system's interpretation of the user's intent.
+## Journey 2.7 — Giving Natural-Language Feedback Mid-Listen (Conversational Tuning) — *withdrawn 2026-07-12*
+> Natural-language feedback removed from scope (founder decision); prior journey in git, may be re-added.
 
 ---
 
@@ -376,7 +309,5 @@ Step 3 — Intent Derived, Change Applied
 
 - **OQ-01:** First-run onboarding — auto-switch virtual device vs. manual?
 - **OQ-03:** Environment sampling window length and SPL smoothing (Journey 2.5).
-- **OQ-07:** Hearing profile — ISO 8253-1 conformance (Journey 2.2)?
-- **OQ-11:** Conversational Tuning architecture (Journey 2.7 mechanism — deferred).
 
 See `docs/product/requirements.md` §7 for full open-questions list with impact & priority.
