@@ -3,6 +3,7 @@
 
 **Document ID:** BACKLOG-ASE-001
 **Version:** 2.5 — QW1 (crossfeed / Reimagine intensity knob / tonal presets) back-filled as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Change note (2026-07-12):** Removed natural-language tuning (EP-NLT/US-NLT-*/SPIKE-NLT-ARCH) and hearing personalization stories from scope — founder decision; git has the prior text.
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
 **Status:** Draft — Pending sprint planning review
@@ -73,8 +74,8 @@ Anything estimated at 13+ is flagged as an epic and must be split into smaller s
 Phase tags organize stories by architectural scope and dependency depth. They are **not** lifecycle gates; sprints may span phases and phases may overlap.
 
 - **Phase 0** — Player MVP: the DSP spine (playback through the kernel, param bus, passthrough → first DSP)
-- **Phase 1** — Mix-based core: perceptual clarity/correction, loudness-comp, adaptive engine, **BRIR** immersion, NL (typed-macro, mix-level), **Reimagine** knob (mix range)
-- **Phase 1.5** — **Stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, Reimagine (stem range) — own-player-only
+- **Phase 1** — Mix-based core: perceptual clarity/correction, loudness-comp, adaptive engine, **BRIR** immersion, **Reimagine** knob (mix range)
+- **Phase 1.5** — **Stem-based object engine**: offline 6-stem separation, per-stem chains + spatial placement, between-stem unmasking, Reimagine (stem range) — own-player-only
 - **Phase 2** — System-wide via Core Audio process taps (mix-level), virtual-device fallback
 
 **Phase ordering principle:** Enablers and foundational work (Phase 0) typically precede higher phases, but sprint sequencing is determined in `docs/sprints/sprint-plan.md`, not by phase alone.
@@ -118,20 +119,18 @@ A story is done when:
 | EP-TONAL | **(reframed)** Correction-to-target EQ (AutoEq), loudness-comp (fractional contour-diff + SPL calibration), **no-program-DRC** dynamics + true-peak limiter, psychoacoustic bass (mono-sum) | 1 | FR-TONAL-02..07, LD-17 | "Sounds better" > 70%; dropouts < 0.1% |
 | EP-IMMERSION | **(was EP-SPAT + EP-HEADTRACK)** BRIR-first binaural (HRTF + room reflections/reverb), room synthesis, head-tracking (opt-in), speaker M/S + ambience (mono-safe) | 1 | FR-SPAT-01..07, LD-14, DEP-03 | Externalisation works (ABX vs dry-HRTF); spatial adoption |
 | EP-ADAPT | **(absorbs EP-AMBIENT)** Pre-analysis pipeline (look-ahead, cached), content/genre, on-demand ambient, conservative cadence | 1 | FR-ADAPT-01/04..08, NFR-PERF-02/04 | Adaptation imperceptible-as-motion; adapts with foresight |
-| EP-HEAR | Guided calibration, hearing-profile contributor, safe-volume guard | 1 | FR-HEAR-01..05, FR-ADAPT-06, NFR-PRIV-03 | Calibration completion > 25% |
-| EP-NLT | **(reframed)** Conversational Tuning — typed-macro interface, governing principle, **per-stem targeting (1.5)**, SAFE/SocialEQ priors + validation harness — **⛔ Won't, this horizon (re-anchor 2026-06-19; incl. OQ-14 multilingual)** | 1 (per-stem 1.5) | FR-NLT-01..12, LD-8 | NLT weekly active > 30%; phrase success > 75%; discomfort < 300 ms |
 | EP-REIMAGINE | **(new)** The single intensity control (0 = bit-faithful → full reimagine); mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
-| EP-PROFILE | Named profiles, device↔profile binding, A/B mode, session NL principles | 1 | FR-DEVICE-04/05, FR-HEAR-03/04 | D30 active-use > 40% |
+| EP-PROFILE | Named profiles, device↔profile binding, A/B mode | 1 | FR-DEVICE-04/05 | D30 active-use > 40% |
 | EP-UI | Now Playing, DSP + **Reimagine** controls, onboarding, dark mode, accessibility, l10n-ready | 0→1 | FR-UI-01..07, NFR-ACC-01..04, NFR-L10N-01/03 | Rating > 4.3; onboarding < 3 min |
-| EP-PRIVACY | Mic permission (on-demand), hearing-data encryption, **cloud-LLM context exclusions**, sandbox | 1 | NFR-PRIV-01..05 | No mic/hearing data in outbound traffic |
-| EP-STEM | **(new — Phase 1.5)** Stem object engine: offline 6-stem separation + SSD cache, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, quality-gating — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | **1.5** | FR-STEM-01..06, FR-REIMAGINE (stem range), NFR-PERF-06 | Separation quality-gate pass; per-stem unmasking measurable; render budget held |
+| EP-PRIVACY | Mic permission (on-demand), sandbox | 1 | NFR-PRIV-01..05 | No mic data in outbound traffic |
+| EP-STEM | **(new — Phase 1.5)** Stem object engine: offline 6-stem separation + SSD cache, per-stem chains + spatial placement, between-stem unmasking, quality-gating — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | **1.5** | FR-STEM-01..06, FR-REIMAGINE (stem range), NFR-PERF-06 | Separation quality-gate pass; per-stem unmasking measurable; render budget held |
 | EP-SYSWIDE | System-wide via **Core Audio process tap (primary, macOS 14.2+)** + libASPL fallback; **mix-level only** — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-07/08/01..06, NFR-PERF-05 | System-wide adoption; no admin password on tap path |
 | EP-VDEVICE | AudioServerPlugIn **fallback** (older macOS / driver preference) — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-01..06, NFR-INSTALL-02..04 | Driver install success > 90% |
 | EP-QA | **(Shipped)** DSP-gate hardening: automated regression gates for every shipped DSP stage, validated against independent oracles where possible (libebur128 LUFS/TP, limiter TP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak) | 0 | NFR-QUAL-01..04, NFR-PERF-01/03, CON-01/02 | Every shipped DSP stage gated against an independent oracle where one exists (proven-by the EP-QA per-stage gates) |
 | EP-LIBRARY | **(new — v2.4, 2026-07-02)** Persistent library: multiple scan folders, single-file (non-library) play, stable durable track identity across moves/retags, cross-folder duplicates treated as normal distinct files (not deduped) | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S8)* | Library survives a scan-folder move/rescan with zero broken playlist references; duplicates across folders never silently collapsed |
 | EP-PLAYLIST | **(new — v2.4, 2026-07-02)** Playlists: many-to-many ordered membership, single non-library file added to a playlist, DnD reference-add (playlist) vs. potential real move (folder→folder), user/auto naming, built-in "current" queue playlist | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S9/S10)* | Zero filesystem side-effects from playlist add/remove; a track survives in all its playlists across a folder→folder move |
 
-> **Re-anchor note (v2.3, 2026-06-19):** Several Phase-0/Phase-1 epics now carry shipped Done stories (back-filled from the two-path engine, Pure Mode, decode, EQ, limiter, loudness, gapless, device-resilience, signal-path transparency). **EP-STEM**, **EP-SYSWIDE**, **EP-VDEVICE**, and **EP-NLT** are tagged **⛔ Won't, this horizon** per sprint-plan.md §6B — entries retained as the future roadmap, marked out-of-window. **DSD** (a feature, not an epic) is deferred post-R2, gated on acquiring a DSD DAC. See the v2.3 change note.
+> **Re-anchor note (v2.3, 2026-06-19):** Several Phase-0/Phase-1 epics now carry shipped Done stories (back-filled from the two-path engine, Pure Mode, decode, EQ, limiter, loudness, gapless, device-resilience, signal-path transparency). **EP-STEM**, **EP-SYSWIDE**, and **EP-VDEVICE** are tagged **⛔ Won't, this horizon** per sprint-plan.md §6B — entries retained as the future roadmap, marked out-of-window. **DSD** (a feature, not an epic) is deferred post-R2, gated on acquiring a DSD DAC. See the v2.3 change note.
 
 > **Epic migration note (v2.0):** `EP-SPAT` + `EP-HEADTRACK` → **`EP-IMMERSION`** (BRIR-first); `EP-AMBIENT` → folded into **`EP-ADAPT`**; perceptual decision-making split out into **`EP-PERCEPTUAL`**. Existing `US-SPAT-*` / `US-AMBIENT-*` stories below now live under the renamed epics; affected stories are annotated rather than rewritten.
 
@@ -591,7 +590,7 @@ As a **Tom** I want to open a debug/analysis view that shows exactly which signa
 **Acceptance Criteria:**
 - See FR-ADAPT-07 Given/When/Then: adaptivity engine active; Transparency view open; each active signal listed with current value and DSP adjustment; updates at ≥ 2 Hz.
 - View shows at minimum: Volume level → bass/treble gain; Genre → EQ curve name; Device type → spatialisation mode.
-- Each row has an inline Undo link (required for Phase 1 NLT history rows — future-proofing the data model now).
+- Each row has an inline Undo link.
 - View is accessible via VoiceOver (NFR-ACC-01).
 
 **Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ADAPT-02, US-ADAPT-03
@@ -795,7 +794,6 @@ As a **Ramith** I want a first-run wizard that detects my output device, explain
 - See FR-UI-04 Given/When/Then: user skips all steps; main player view reached within 10 seconds with default settings active.
 - Journey 2.1: Steps 1–6 implemented; device detected and displayed; skip available at every step.
 - Mic permission dialog uses NSMicrophoneUsageDescription string explaining purpose in plain English (NFR-PRIV-02).
-- Hearing check step present but skippable (FR-HEAR-01 hearing test itself is Phase 1; onboarding step is a placeholder with "coming soon" or skip-always in Phase 0).
 - Onboarding state persisted; wizard does not re-run on subsequent launches.
 
 **Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-PLAY-01
@@ -859,7 +857,7 @@ As a **Marcus** I want subtle visual feedback when the adaptivity engine changes
 
 ### EP-PRIVACY — Privacy, Permissions, and Sandbox Compliance
 
-**Epic goal:** Ensure mic permission is handled transparently, hearing data is encrypted locally, telemetry is opt-in, and the app is sandbox compliant for App Store submission.
+**Epic goal:** Ensure mic permission is handled transparently, telemetry is opt-in, and the app is sandbox compliant for App Store submission.
 
 ---
 
@@ -899,7 +897,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 **Acceptance Criteria:**
 - See NFR-PRIV-04 Given/When/Then: user opts out; no analytics events sent after opt-out (verified by Charles Proxy).
 - Opt-in dialog at first launch; default is opted-out.
-- Telemetry excludes any audio content, hearing profile data, or personal identifiers.
+- Telemetry excludes any audio content or personal identifiers.
 - Crash reporting SDK selection deferred to SPIKE-TELEMETRY resolution (OQ-10).
 
 **Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-UI-03, SPIKE-TELEMETRY
@@ -1185,13 +1183,13 @@ As a **Marcus** I want binaural HRTF rendering that places the soundstage outsid
 
 #### US-SPAT-02 — HRTF profile selection (3 presets: generic, small-head, large-head)
 
-As a **Marcus** I want to choose from at least 3 HRTF profiles and see a recommended one based on my hearing calibration, so that I can pick the one that sounds most natural for my head shape.
+As a **Marcus** I want to choose from at least 3 HRTF profiles, so that I can pick the one that sounds most natural for my head shape.
 
 **Acceptance Criteria:**
-- See FR-SPAT-02 Given/When/Then: calibration complete; HRTF selector open; recommended profile highlighted; renders immediately on selection, no restart.
+- See FR-SPAT-02 Given/When/Then: HRTF selector open; renders immediately on selection, no restart.
 - Non-medical framing: profiles labelled as "listening preference" variants, not audiological recommendations.
 
-**Priority:** Should | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-SPAT-01, US-HEAR-01
+**Priority:** Should | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-SPAT-01
 **Traceability:** FR-SPAT-02, LD-7
 
 ---
@@ -1231,49 +1229,7 @@ As a **Marcus** I want the HRTF soundstage to remain fixed in space when I turn 
 
 ### EP-HEAR — Guided Hearing Calibration
 
----
-
-#### US-HEAR-01 — Guided hearing calibration test
-
-As a **Tom** I want to run a guided hearing test that plays tones at 7 audiometric frequencies per ear and stores a personal hearing profile, so that the app can compensate for my specific hearing characteristics.
-
-**Acceptance Criteria:**
-- See FR-HEAR-01 Given/When/Then: headphones on; each tone presented; user responds; thresholds recorded per ear per frequency; stored in structured hearing profile.
-- See FR-HEAR-05 Given/When/Then: system volume 100% during test; app overrides to safe level; cannot be bypassed.
-- Journey 2.2 implemented: pre-check, tone sequence, graph, save, label, device link.
-- Profile stored encrypted (AES-256 or platform Data Protection) — NFR-PRIV-03.
-- Profile not transmitted remotely; network traffic verified (FR-HEAR-02 AC).
-- Non-medical framing: all UI copy describes this as a "listening preference" test, not a clinical audiogram (LD-7).
-
-**Priority:** Should | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-ENG-01, US-DEVICE-03
-**Traceability:** FR-HEAR-01, FR-HEAR-02, FR-HEAR-05, NFR-PRIV-03, LD-7
-
----
-
-#### US-HEAR-02 — Hearing profile DSP integration
-
-As a **Tom** I want the app to apply personalised per-frequency gain correction based on my hearing profile automatically, so that frequencies where my hearing is weaker are boosted to restore balance.
-
-**Acceptance Criteria:**
-- See FR-ADAPT-06 Given/When/Then: 15 dB threshold elevation at 4 kHz right ear; profile active; compensating gain added at 4 kHz right channel proportional to deficit; no manual adjustment needed.
-- Hearing compensation is additive on top of the base profile; does not replace it.
-- Profile can be toggled on/off from the DSP controls panel.
-
-**Priority:** Should | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-HEAR-01, US-ENG-02, US-ENG-04
-**Traceability:** FR-ADAPT-06
-
----
-
-#### US-HEAR-03 — Multiple hearing profiles and retest prompt
-
-As a **Tom** I want to store separate hearing profiles for different family members and be reminded to re-test after 12 months, so that the app remains accurate as my hearing changes.
-
-**Acceptance Criteria:**
-- See FR-HEAR-03 Given/When/Then: two profiles exist; "Bob" selected; DSP curve changes; UI confirms.
-- See FR-HEAR-04 Given/When/Then: profile 366 days old; launch shows non-blocking prompt; dismissable.
-
-**Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-HEAR-01
-**Traceability:** FR-HEAR-03, FR-HEAR-04
+> **EP-HEAR — withdrawn 2026-07-12** (hearing personalization / hearing-profile stories removed from scope; may be re-added).
 
 ---
 
@@ -1311,10 +1267,9 @@ As a **Tom** I want to sync my profiles across my Macs via iCloud and export/imp
 - Profile JSON export/import (US-DEVICE-05 extended to iCloud).
 - iCloud sync using NSUbiquitousKeyValueStore or CloudKit (decision: choose simpler option for Phase 1, document in ADR).
 - Sync conflict resolution: last-write-wins with a merge prompt if profiles differ.
-- Hearing profiles NOT synced by default (NFR-PRIV-03 — remote transmission requires explicit opt-in).
 
 **Priority:** Should | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-05
-**Traceability:** FR-DEVICE-05, NFR-PRIV-03
+**Traceability:** FR-DEVICE-05
 
 ---
 
@@ -1333,189 +1288,22 @@ As a **Tom** I want to quickly toggle between enhanced and bypassed audio with l
 
 ---
 
-### EP-NLT — Conversational Tuning ⛔ Won't, this horizon (re-anchor 2026-06-19)
+### EP-NLT — Conversational Tuning
 
-> **⛔ Won't, this horizon (re-anchor v2.3, 2026-06-19):** Natural-language / conversational tuning — the vision's endgame — is out of this plan's window (sprint-plan.md §5, §6B). It needs the full adaptive stack (loudness-comp + Clarity + Reimagine, S14–S18) to have anything to steer, and is blocked on SPIKE-NLT-ARCH / OQ-11. Multilingual scope (OQ-14) is likewise out-of-window. **All US-NLT-* stories below and SPIKE-NLT-ARCH are tagged Won't, this horizon** — entries kept as the future roadmap, not scheduled.
-
-**Epic goal:** Ship the full Conversational Tuning feature (FR-NLT-01 through FR-NLT-12) as a supporting/discovery feature at Phase 1 launch. The interpretation mechanism (OQ-11) is resolved via a Spike before engineering begins. All stories are architecture-agnostic; they specify behavior, not mechanism.
-
-> **Blocker resolved:** The previously flagged OQ-02 blocker (monetization / feature-gating model affecting whether NLT and other Phase 1 features could be gated) is fully resolved. The project is personal / open-source and non-commercial (LD-9). No feature-flag or entitlement-check layer is needed; all features ship unconditionally.
+> **EP-NLT — withdrawn 2026-07-12** (natural-language tuning removed from scope; may be re-added).
 
 ---
 
-#### US-NLT-00 [Enabler] — Intent derivation subsystem scaffold
-
-As a **developer** I want a Conversational Tuning subsystem module that accepts raw text, calls the interpretation mechanism (whichever is chosen via SPIKE-NLT-ARCH), and returns a typed DSP action vector for forwarding to the lock-free parameter bus, so that all NLT stories have a stable, testable integration point.
-
-**Acceptance Criteria:**
-- Module exposes a single async interface: `deriveIntent(text: String) async -> DSPActionVector?`
-- DSP action vector type encodes: per-band gain deltas (array of frequency band + direction + magnitude), optional dynamics delta, optional spatial delta.
-- Module is mockable; unit tests stub the interpretation mechanism independently of the chosen approach.
-- Processing indicator visible to user within 100 ms of submission (FR-NLT-01 second AC).
-- Total round-trip from submission to DSP parameter applied ≤ 1500 ms for the chosen mechanism (FR-NLT-04 / ASM-09).
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** SPIKE-NLT-ARCH, US-ENG-03, US-ENG-04
-**Traceability:** FR-NLT-01, FR-NLT-02, FR-NLT-03, ASM-09
-
----
-
-#### US-NLT-01 — Free-text input field in Now Playing view
-
-As a **Ramith** I want a "Tell us what you hear" text field accessible from the Now Playing view by clicking a button or pressing a keyboard shortcut, so that I can describe the sound problem in plain English without needing to find an EQ slider.
-
-**Acceptance Criteria:**
-- See FR-NLT-01 Given/When/Then (both ACs): field appears and focuses on activation; accepts free-form Unicode up to 280 chars; raw text passed to intent subsystem within 100 ms of submission; processing indicator visible.
-- Placeholder text: "e.g. 'bass is too low' or 'voices are hard to hear'" (Journey 2.7 Step 1).
-- Field operable via keyboard alone and via VoiceOver (FR-NLT-11).
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-00, US-UI-01
-**Traceability:** FR-NLT-01, FR-NLT-11, NFR-ACC-01
-
----
-
-#### US-NLT-02 — Intent derivation: DSP action vector for direct frequency phrases
-
-As a **Marcus** I want phrases like "bass is too low" and "slightly too bright" to map directly to EQ band adjustments with the right magnitude, so that simple corrections happen immediately without multiple clarification rounds.
-
-**Acceptance Criteria:**
-- See FR-NLT-02 Given/When/Then (first two ACs): "bass is too low" → increase 60–250 Hz, moderate; "slightly too bright" → decrease 6–12 kHz, subtle (intensity qualifier respected).
-- Magnitude scale: subtle ≤ ±2 dB, moderate ~±3 dB, strong ≥ ±6 dB.
-- DSP change delivered via FR-ADAPT-02/FR-ADAPT-03 lock-free ramp (FR-NLT-03 AC verified by Thread State Trace).
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00
-**Traceability:** FR-NLT-02, FR-NLT-03, LD-8
-
----
-
-#### US-NLT-03 — Intent derivation: abstract and aesthetic descriptor phrases
-
-As a **Ramith** I want phrases like "sounds boring," "dull," "muffled," "boxy," or "make it wider" to produce meaningful multi-component DSP adjustments, so that I can express dissatisfaction in natural everyday language without knowing any audio vocabulary.
-
-**Acceptance Criteria:**
-- See FR-NLT-12 Given/When/Then (all ACs): "sounds boring" → presence +2–5 kHz + air shelf +10–15 kHz + transient enhancement + optional stereo width; "dull/muffled" → treble shelf + low-mid cut; "wider/spacious" → spatial move (stereo width / crossfeed).
-- See FR-NLT-02 third AC: "music sounds boring" → multi-component action vector.
-- All descriptors in §3.9.1 mapping table produce a non-null action vector.
-- Confirmation card summarises combined changes in plain language (not band numbers alone).
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 8 sp | **Dependencies:** US-NLT-00
-**Traceability:** FR-NLT-02, FR-NLT-12, LD-8
-
----
-
-#### US-NLT-04 — Intent derivation: instrument and source requests (band approximation)
-
-As a **Tom** I want "I can't hear the guitar" or "vocals too quiet" to boost the frequency region where that source dominates, with an honest note in the confirmation that the full mix in that range is being adjusted, so that I get a quick directional fix with clear expectations.
-
-**Acceptance Criteria:**
-- See FR-NLT-10 Given/When/Then (both ACs): "can't hear guitar" → 250 Hz–4 kHz boost; confirmation reads "Boosted guitar presence region (250 Hz–4 kHz) — better? Note: this affects the full mix in that range, not guitar alone." "can't hear voices" → 2–4 kHz boost; note surfaced.
-- Source-to-frequency mapping covers at minimum: vocals, guitar, bass, drums (§3.9.1 table rows).
-- No ML source separation required or used — band approximation is the production baseline (LD-8, OQ-12 resolved).
-
-**Priority:** Should (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00
-**Traceability:** FR-NLT-10, LD-8
-
----
-
-#### US-NLT-05 — Urgent protective reduction for discomfort phrases
-
-As a **Marcus** I want "it hurts my ears" or "too painful" to immediately reduce the offending frequency range by at least -6 dB and tighten the limiter before any confirmation is shown, so that I am never left in auditory discomfort waiting for the app to respond.
-
-**Acceptance Criteria:**
-- See FR-NLT-09 Given/When/Then (both ACs): discomfort phrase submitted; ≥ -6 dB reduction on implicated band within 500 ms; true-peak limiter tightened; applied before confirmation card renders.
-- High-urgency card: amber/warning colour, states what was reduced, recommends volume reduction, [Undo] and [Keep it] (default focus on [Keep it]).
-- Discomfort keyword list is hard-coded in-app independent of interpretation mechanism (PRD Risk Register: "priority list of known discomfort signals").
-- Discomfort path bypasses confidence-check gate entirely (FR-NLT-09).
-- KPI: discomfort phrase response latency < 300 ms measured end-to-end (Phase 1 KPI).
-
-**Priority:** Must (ships with US-NLT-02 — non-deferrable per LD-8 / P1-15) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-00, US-ENG-05
-**Traceability:** FR-NLT-09, LD-8, NFR-QUAL-02
-
----
-
-#### US-NLT-06 — Confirmation card, one-tap undo, and governing principle persistence
-
-As a **Marcus** I want a confirmation card after every NLT adjustment showing what changed and why, with one-tap undo and an explicit "Yes, keep it" to persist, and I want the engine to respect my instruction for the rest of the session, so that I stay in control of the sound and can correct the engine when needed.
-
-**Acceptance Criteria:**
-- See FR-NLT-04 Given/When/Then (all ACs): confirmation card appears within 1500 ms; auto-dismisses after 8 s as implicit acceptance without persisting; multi-component changes summarised in plain language.
-- See FR-NLT-05 Given/When/Then (both ACs): undo from card; undo from Transparency view; DSP reverts over ≥ 50 ms; no audible click.
-- See FR-NLT-06 Given/When/Then (both ACs): [Yes, keep it] → delta persists across restart; auto-dismiss → no residual delta on restart.
-- Governing principle: once confirmed, automatic adaptation does not counteract the NLT-stated parameter direction for the session (LD-8 / Adaptivity Signal Matrix NLT row).
-- Session-scoped by default; persists only on explicit [Yes, keep it] (LD-8).
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 5 sp | **Dependencies:** US-NLT-02, US-NLT-03, US-ADAPT-04
-**Traceability:** FR-NLT-04, FR-NLT-05, FR-NLT-06, LD-8
-
----
-
-#### US-NLT-07 — Ambiguity handling and clarifying question flow
-
-As a **Ramith** I want the app to ask me a clarifying question when it cannot understand my phrase (up to two rounds), and then offer me the EQ panel if it still cannot help, so that I am never left with no path forward.
-
-**Acceptance Criteria:**
-- See FR-NLT-08 Given/When/Then (both ACs): low-confidence phrase → no DSP change; clarifying question displayed with examples; after two failed rounds → EQ panel deep-link offered.
-- Journey 2.7 Step 5 (ambiguity/low-confidence path) implemented.
-- Clarifying question text follows example phrasing in FR-NLT-08.
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-00, US-UI-02
-**Traceability:** FR-NLT-08
-
----
-
-#### US-NLT-08 — NLT transparency history in Transparency view
-
-As a **Tom** I want every confirmed NLT change to appear as a row in the Transparency view with the original phrase, the full DSP action (plain language + technical notation), timestamp, and an undo link, so that I can review every text-driven change made in the session.
-
-**Acceptance Criteria:**
-- See FR-NLT-07 Given/When/Then (all ACs): single-band row example; multi-component row lists all components; "Clear session log" clears history rows without affecting persisted profile delta.
-- Journey 2.7 Step 8: row persists in session history.
-- Transparency view row format consistent with US-ADAPT-04 row format for existing signals.
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** US-NLT-06, US-ADAPT-04
-**Traceability:** FR-NLT-07, FR-ADAPT-07
-
----
-
-#### US-NLT-09 — "Reset all NLT adjustments" control
-
-As a **Marcus** I want a single "Reset all NLT adjustments" button (and a spoken "undo everything" phrase) that reverts all Conversational Tuning changes made in the session in one action, so that I can start fresh when I have been iterating and lost track of the baseline.
-
-**Acceptance Criteria:**
-- Reset button visible in the Transparency view and in the NLT input area.
-- "undo everything" or "reset all adjustments" as an NLT phrase triggers the same action.
-- All session governing principles cleared; DSP parameters return to pre-NLT baseline via smooth ramp.
-- Session NLT history cleared from Transparency view.
-- Persisted profile deltas (from previous sessions' [Yes, keep it] confirmations) are NOT affected by this action; it resets only the current session.
-
-**Priority:** Should | **Phase:** 1 | **Estimate:** 2 sp | **Dependencies:** US-NLT-06
-**Traceability:** FR-NLT-05, FR-NLT-06, LD-8
-
----
-
-#### US-NLT-10 — NLT VoiceOver and keyboard accessibility
-
-As a **developer** I want all NLT UI elements (text field, confirmation card, all action buttons) to be fully operable via VoiceOver and keyboard alone, so that the feature meets the same accessibility bar as the rest of the app.
-
-**Acceptance Criteria:**
-- See FR-NLT-11 Given/When/Then: VoiceOver enabled; Conversational Tuning input active; keyboard navigation to confirmation card; VoiceOver announces description of change and all available actions with keyboard shortcuts.
-- Text field, [Yes keep it], [Undo], [Adjust more], clarifying question response — all keyboard-accessible.
-
-**Priority:** Must (if NLT ships) | **Phase:** 1 | **Estimate:** 2 sp | **Dependencies:** US-NLT-01, US-NLT-06
-**Traceability:** FR-NLT-11, NFR-ACC-01, NFR-ACC-02
-
----
-
----
 
 ## Phase 1 Stories (Continued) — Perceptual Engine & Reimagine
 
 ### EP-PERCEPTUAL — Typed Contributors, Perceptual Arbiter, Off-RT Realizer
 
 **US-PERC-01 | Typed-contributor model + Arbiter** [Enabler]
-As a **developer** I want an Arbiter that composes **typed** contributions (EQ-curve + per-band dynamic + transient + spatial) in the **ERB/Bark** domain with a masking + partial-loudness model and enforces governing-principle clamps, producing a per-stem TargetState, so that clarity/adaptive/NL moves compose correctly.
-Acceptance: LD-12; governing-principle clamp (LD-8) verified — an auto-contributor cannot counteract a confirmed NL move in its band.
+As a **developer** I want an Arbiter that composes **typed** contributions (EQ-curve + per-band dynamic + transient + spatial) in the **ERB/Bark** domain with a masking + partial-loudness model and enforces governing-principle clamps, producing a per-stem TargetState, so that clarity/adaptive moves compose correctly.
+Acceptance: LD-12; governing-principle clamp verified — an auto-contributor cannot counteract a confirmed user move in its band.
 Priority: Must | Phase: 1 | Estimate: 8 sp | Dependencies: US-ENG-03, SPIKE-MASKING-MODEL
-Traceability: LD-12, LD-8, FR-ADAPT-02/03, FR-NLT
+Traceability: LD-12, FR-ADAPT-02/03
 
 **US-PERC-02 | Off-RT Realizer (min-phase default; FIR opt-in)** [Enabler]
 As a **developer** I want an off-RT Realizer that turns a TargetState into finished coefficients — **minimum-phase biquads by default**, linear/mixed-phase FIR opt-in or content-selected — so the RT kernel only ramps & runs.
@@ -1586,11 +1374,7 @@ Acceptance: FR-STEM-03; masking computed between stems (ERB/Bark); measurable im
 Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 8 sp | Dependencies: US-STEM-02, US-PERC-03
 Traceability: FR-STEM-03, LD-12
 
-**US-STEM-05 | Per-stem natural-language targeting**
-As **Tom** I want to say "bring up the guitar" / "move the vocals forward" and have it act on that stem.
-Acceptance: FR-STEM-04; NL macro targets a stem (governing principle, LD-8); shown in transparency view.
-Priority: Should (Phase 1.5) | Phase: 1.5 | Estimate: 5 sp | Dependencies: US-STEM-02, EP-NLT
-Traceability: FR-STEM-04, FR-NLT, LD-8
+**US-STEM-05 — withdrawn 2026-07-12** (per-stem natural-language targeting removed with the natural-language tuning feature; may be re-added).
 
 **US-STEM-06 | Quality-gating + graceful fallback**
 As **Ramith** I want the app to never present an obviously-broken separated stem.
@@ -1741,23 +1525,6 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 
 ---
 
-#### SPIKE-NLT-ARCH — Conversational Tuning interpretation mechanism selection ⛔ Won't, this horizon (re-anchor 2026-06-19)
-
-> **⛔ Won't, this horizon (re-anchor v2.3, 2026-06-19):** Gating spike for EP-NLT (tagged Won't, this horizon). Out of this plan's window; not scheduled.
-
-**Goal:** Evaluate the three candidate approaches for text-to-DSP-intent derivation (a) deterministic keyword/rule engine, (b) on-device small language model, (c) cloud LLM API) against the acceptance criteria in FR-NLT-04 (< 1500 ms), NFR-PRIV-01..05, offline/airplane-mode behaviour, App Store compliance, and ongoing cost. This is OQ-11 and is explicitly deferred by design — do not resolve without founder input.
-
-**Outputs:**
-- Written comparison of all three approaches against criteria
-- Latency benchmark (prototype or reference data) for the chosen mechanism especially for multi-component abstract phrases (ASM-09)
-- Privacy implications per mechanism documented for App Store privacy label
-- Recommended approach with founder sign-off
-- Engineering effort delta per approach
-
-**Time-box:** 5 days | **Phase:** 1 (must complete before US-NLT-00) | **Estimate:** 5 sp
-**Traceability:** FR-NLT-01..12, NFR-PRIV-01..05, ASM-09, OQ-11
-
----
 
 #### SPIKE-AMBNOISE — Ambient noise sensing: sample window and smoothing specification
 
@@ -1874,7 +1641,7 @@ Time-box: 3 days | Estimate: 3 sp | Refs: FR-REIMAGINE-03/04, OQ-21
 
 #### SPIKE-MASKING-MODEL — Moore-Glasberg roex excitation-pattern implementation + validation
 **Goal (locked model choice, 2026-06-13):** Implement the roex(p) excitation-pattern masking model on the ERB-rate scale (34 bands, 50 Hz–16 kHz) as locked in architecture.md §4 (ADR-006 amendment). Prototype on vDSP to confirm off-RT cost; unit-test masking-aware clarity decisions (before/after) on 8–10 representative tracks; document the roex parameter fitting and the absolute-threshold floor (ISO 226); validate arbitration logic (governing-principle locks + additive composition + proportional clamping) in the Arbiter unit tests.
-**Output:** (1) vDSP implementation of roex convolution + masked-threshold per-frame computation; (2) unit tests (masking-aware EQ vs. naive level-match A/B); (3) arbitration code + tests for LD-8 governing-principle locks and multi-contributor composition; (4) off-RT cost profile (sec/frame, vDSP utilization); (5) documentation of roex parameters and ISO 226 absolute threshold application.
+**Output:** (1) vDSP implementation of roex convolution + masked-threshold per-frame computation; (2) unit tests (masking-aware EQ vs. naive level-match A/B); (3) arbitration code + tests for governing-principle locks (confirmed-user-move clamps) and multi-contributor composition; (4) off-RT cost profile (sec/frame, vDSP utilization); (5) documentation of roex parameters and ISO 226 absolute threshold application.
 Time-box: 4 days | Estimate: 5 sp | Refs: architecture.md §4 (Moore-Glasberg roex lock, arbitration rules), LD-12 (masking domain), US-PERC-01/03 (Arbiter + clarity contributor), US-STEM-04 (between-stem unmasking)
 
 #### SPIKE-BRIR — BRIR room synthesis + externalisation validation
@@ -1896,18 +1663,6 @@ Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 
 ---
 
-#### SPIKE-OQ15BC — NLT delta cap and hearing-profile reconciliation defaults (OQ-15b / OQ-15c)
-
-**Goal:** Obtain founder confirmation on the two pending OQ-15 recommendations: (b) post-calibration NLT delta review UX; (c) ±12 dB per-band accumulated delta cap. Engineering must not proceed on profile-delta storage design (FR-NLT-06, FR-HEAR-01) until both are confirmed. This spike is a facilitated decision session, not a technical investigation.
-
-**Outputs:**
-- Written founder confirmation of OQ-15b (post-calibration review UX) and OQ-15c (±12 dB cap)
-- Updated acceptance criteria for FR-NLT-06 and FR-HEAR-01
-
-**Time-box:** 1 day (decision session + write-up) | **Phase:** 1 (before profile-delta storage design) | **Estimate:** 1 sp
-**Traceability:** FR-NLT-06, FR-HEAR-01, OQ-15
-
----
 
 ---
 
@@ -1924,15 +1679,10 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | Item | Blocks | Urgency |
 |------|--------|---------|
 | SPIKE-LOUDNESS-COMP-TUNING — FR-TONAL-03 loudness-compensation fraction validation | Phase 0 Polish: determine whether 50% (provisional) is the correct fraction; test frequency-variable fractions; validate gain caps (+6 dB bass, +4 dB treble). MUSHRA-style listening test, 10+ listeners, 4–6 tracks at −15 dB and −25 dB SPL offsets. Audio-dsp endorses 50% as provisional with precedent (THX Loudness Plus, broadcast 40–60% range); Phase 0 testing will lock final value (likely 40–55%). | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with provisional values. |
-| SPIKE-HEARING-SAFETY-VALIDATION — FR-NLT-02 numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user requests ("MUCH louder" should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. |
-| OQ-11 — NLT interpretation mechanism | SPIKE-NLT-ARCH → all US-NLT-* stories | ⛔ Won't, this horizon (re-anchor 2026-06-19) — EP-NLT is out-of-window; not a near-term blocker |
-| OQ-15b — post-calibration NLT delta review UX | SPIKE-OQ15BC → FR-NLT-06, FR-HEAR-01 | ⚠️ **PENDING founder confirmation** — see the authoritative register, [requirements.md](requirements.md) §7 OQ-15(b). *(A prior "Resolved 2026-06-13" claim here cited a requirements "v0.6 change note" that does not exist and FR-NLT-06 AC that do not encode the post-recalibration review UX; corrected 2026-07-12. Confirm if a decision was in fact made.)* |
-| OQ-15c — ±12 dB NLT delta cap | SPIKE-OQ15BC → FR-NLT-06 | ⚠️ **PENDING founder confirmation** — see the authoritative register, [requirements.md](requirements.md) §7 OQ-15(c). *(The per-utterance hearing-safety clamps (+12 dB cumulative etc.) ARE locked in FR-NLT-02 / architecture §11, but the per-band **accumulated-across-sessions** NLT-delta cap that OQ-15c asks about is not yet confirmed. Prior "Resolved" claim corrected 2026-07-12.)* |
+| SPIKE-HEARING-SAFETY-VALIDATION — per-band gain / loudness-safety numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user gain requests (a large boost should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. |
 | ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
 | OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-SYSWIDE/EP-VDEVICE, which are out-of-window |
 | OQ-07 — macOS minimum deployment target | ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice | Medium — before Phase 0 Sprint 1; critical for Phase 2 tap-vs-driver decision |
-| OQ-13 — NLT clarification round limit | US-NLT-07 acceptance criteria (1 round vs. 2?) | Medium — blocks US-NLT-07 |
-| OQ-14 — Conversational Tuning multilingual support scope | FR-NLT-* scope, NFR-L10N-01 | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gated on EP-NLT, which is out-of-window |
 | OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this |
 | OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design |
 | OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 | Medium — blocks US-DEVICE-07; clean-room reimplement is ready fallback |

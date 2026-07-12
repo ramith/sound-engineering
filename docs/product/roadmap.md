@@ -63,9 +63,9 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 
 ## Deferred / out-of-window
 
+- **Removed from scope (2026-07-12, founder decision):** **natural-language / conversational tuning** and **hearing personalization** (hearing-test → profile → compensation) were cut from the vision entirely — not deferred, removed. May be re-added later. Prior specs are in git history.
 - **DSD playback (DoP + native)** — deferred past R2, gated on acquiring a DSD DAC (keeps every feature by-ear verifiable).
 - **"Won't, this horizon"** — kept on the [backlog](backlog.md) as future vision, out of this plan's window:
-  - **Natural-language / conversational tuning** — the vision's endgame; needs the full adaptive stack (S14–S18) to have anything to steer.
   - **Stem separation / object engine (Phase 1.5)** — high compute/artifact risk; revisit only after the mix-based thesis is validated and loved.
   - **System-wide capture / virtual device (Phase 2 system-wide)** — a different product surface; our story stays *this Mac → this DAC, bit-perfect*.
   - Off-thesis player features (streaming integration, CD ripping, DLNA/UPnP/multi-zone, SACD ISO) and cheap nice-to-haves (tag write-back, smart playlists, scrobbling, sleep timer) — opportunistic only, never planned scope.
