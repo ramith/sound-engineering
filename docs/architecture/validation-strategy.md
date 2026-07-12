@@ -77,7 +77,7 @@ clang-tidy --checks=readability-*,cppcoreguidelines-* \
 
 ### Gate 5: Library Store Verify (S8+ persistent store)
 
-The library store (`LibraryStore`, system SQLite) has no place in the DSP null-test; it is gated by its own headless harness — a `swift run` executable that mirrors the `VerifyAUGraph` idiom (headless-gate parity, not XCTest):
+The library store (`LibraryStore`, GRDB.swift over system libsqlite3) has no place in the DSP null-test; it is gated by its own headless harness — a `swift run` executable that mirrors the `VerifyAUGraph` idiom (headless-gate parity, not XCTest):
 
 ```bash
 swift run VerifyLibraryStore     # or: make library-store-verify

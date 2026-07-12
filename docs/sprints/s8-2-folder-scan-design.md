@@ -2,7 +2,7 @@
 
 **Document ID:** S8.2-DESIGN-001
 **Status:** DESIGN — architect verdict **GO-WITH-CHANGES** (M-A..M-D applied below); founder decisions confirmed (reject nested roots · re-scan reconciles deletions · metadata-browse/root-only). Ready to implement.
-**Chunk of:** S8 (library spine). Consumes the shipped, review-hardened S8.1 store (`LibraryStore` actor + DAO). See [s8-1-persistent-store-design.md](s8-1-persistent-store-design.md).
+**Chunk of:** S8 (library spine). Consumes the shipped, review-hardened S8.1 store (`LibraryStore` + DAO — now GRDB-backed, `final class … Sendable`; see the SUPERSEDED note in [s8-1-persistent-store-design.md](s8-1-persistent-store-design.md) §Decisions). See [s8-1-persistent-store-design.md](s8-1-persistent-store-design.md).
 **Authored by:** team — business-analyst (scope/stories US-LIB-10..17), swift-expert (scanner/signature/integration), qa-expert (real-FS test plan), synthesized by the orchestrator.
 
 ## What S8.2 does

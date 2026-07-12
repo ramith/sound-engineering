@@ -6,6 +6,8 @@
 **Owner**: Product (ramith@wso2.com)
 **Phase**: Concept-era vision doc (2026-06-13), **reframed 2026-07-05 to lead with the player-maturity-first thesis** (see §1 / §3 / §4). Build is well underway — current status & sprint sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) + [`backlog.md`](backlog.md). The vision, personas, KPIs, locked decisions, and risks remain the north star — now **sequenced behind the player, not abandoned**; treat phase/status specifics here as historical.
 
+> **⚠️ Two "Phase" vocabularies — do not conflate.** This PRD's **Phase 0 / 1 / 1.5 / 2** is the *product-capability* axis: player MVP → mix-based core → stem object engine → system-wide. The **roadmap / sprint-plan** use **Phase 1 / Phase 2** for the *execution / release* axis: player-maturity parity → the differentiation pivot (S15–S18). They are **not** the same numbering. Rosetta: this PRD's "Phase 1 mix-core" and "Phase 1.5 stem engine" ship across execution **S15–S18** (roadmap Phase 2); this PRD's "Phase 2 system-wide" is **"Won't, this horizon"** on the execution roadmap. When in doubt, execution sequencing is authoritative in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).
+
 **Related Documents:**
 - `docs/product/user-journeys.md` — detailed user journeys and workflows (authoritative reference)
 - `docs/product/requirements.md` — detailed functional and non-functional requirements
