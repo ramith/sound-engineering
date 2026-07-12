@@ -63,20 +63,29 @@ enum DesignSystem {
         static let statusWarning = SwiftUI.Color(red: 1.0, green: 0.623, blue: 0.039) // #FF9F0A
     }
 
-    // MARK: Typography (5-rung scale; replaces scattered Font.system(size:) calls)
+    // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
 
+    ///
+    /// Each rung maps to a `Font.TextStyle` (not a fixed `.system(size:)`) so ALL text built from
+    /// these tokens scales with the macOS Accessibility → Display → Text size setting (A-M2). This
+    /// is also what makes the `.dynamicTypeSize(.small ... .xxLarge)` clamps on the fixed-row-height
+    /// surfaces (Songs table, footer) actually bound anything. The `// ~N` sizes are each style's
+    /// macOS default at the standard content size — close to the previous fixed sizes, except `body`
+    /// /`bodyMedium` shift 14 → 13 (macOS `.body`). `trackTitle`/`.headline` and `displayTitle`/
+    /// `.title` carry the style's own weight. (Ad-hoc `Font.system(size:)` call sites elsewhere are a
+    /// separate migration — some are SF Symbols / proportional glyph sizes, not text.)
     enum Font {
-        static let displayTitle = SwiftUI.Font.system(size: 22, weight: .bold)
-        static let sectionTitle = SwiftUI.Font.system(size: 15, weight: .semibold)
-        static let body = SwiftUI.Font.system(size: 14, weight: .regular)
-        static let bodyMedium = SwiftUI.Font.system(size: 14, weight: .medium)
-        static let caption = SwiftUI.Font.system(size: 12, weight: .regular)
+        static let displayTitle = SwiftUI.Font.system(.title, weight: .bold) // ~22
+        static let sectionTitle = SwiftUI.Font.system(.title3, weight: .semibold) // ~15
+        static let body = SwiftUI.Font.system(.body) // ~13
+        static let bodyMedium = SwiftUI.Font.system(.body, weight: .medium) // ~13
+        static let caption = SwiftUI.Font.system(.callout) // ~12
         /// Uppercase section labels — pair with `.tracking(0.5).textCase(.uppercase)`.
-        static let micro = SwiftUI.Font.system(size: 11, weight: .semibold)
-        static let monoSmall = SwiftUI.Font.system(size: 11, weight: .regular, design: .monospaced)
+        static let micro = SwiftUI.Font.system(.subheadline, weight: .semibold) // ~11
+        static let monoSmall = SwiftUI.Font.system(.subheadline, design: .monospaced) // ~11 mono
         /// Compact now-playing pairing (footer transport / mini-player): title over subtitle.
-        static let trackTitle = SwiftUI.Font.system(size: 13, weight: .semibold)
-        static let trackSubtitle = SwiftUI.Font.system(size: 11, weight: .regular)
+        static let trackTitle = SwiftUI.Font.system(.headline) // ~13 semibold
+        static let trackSubtitle = SwiftUI.Font.system(.subheadline) // ~11
     }
 
     // MARK: Spacing (single rhythm scale)
