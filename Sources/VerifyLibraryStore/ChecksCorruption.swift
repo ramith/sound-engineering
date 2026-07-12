@@ -214,3 +214,58 @@ func checkRestartDurability(number: Int, url: URL) async -> Bool {
         return false
     }
 }
+
+// MARK: - ERASE — eraseDatabaseOnSchemaChange recreates on a migration-body change
+
+/// ERASE: the store sets `eraseDatabaseOnSchemaChange = true` (rebuildable cache; no users), so
+/// changing a registered migration's DEFINITION must recreate the database from scratch, not
+/// attempt an in-place alter. Proven directly on a GRDB `DatabaseMigrator` with that config:
+/// migrate + seed under one migration body, then reopen with the SAME identifier but a CHANGED
+/// body — the seeded rows are gone and the new schema is in force (locks the "drop-and-recreate
+/// on schema change" discipline against a future GRDB/config regression).
+func checkEraseOnSchemaChange(number: Int, url: URL) async -> Bool {
+    do {
+        do {
+            var migrator = DatabaseMigrator()
+            migrator.eraseDatabaseOnSchemaChange = true
+            migrator.registerMigration("demo") { db in
+                try db.execute(sql: "CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT);")
+                try db.execute(sql: "INSERT INTO demo(v) VALUES ('original');")
+            }
+            let queue = try DatabaseQueue(path: url.path)
+            try migrator.migrate(queue)
+            let count = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM demo;") ?? -1 }
+            guard count == 1 else {
+                printFail(number, "eraseOnSchemaChange: setup seeded \(count) rows, expected 1"); return false
+            }
+        }
+        // Reopen with the SAME identifier but a CHANGED body (an added column) → GRDB detects the
+        // schema mismatch and recreates the DB from scratch rather than altering in place.
+        var changed = DatabaseMigrator()
+        changed.eraseDatabaseOnSchemaChange = true
+        changed.registerMigration("demo") { db in
+            try db.execute(sql: "CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT, extra INTEGER);")
+        }
+        let queue = try DatabaseQueue(path: url.path)
+        try changed.migrate(queue)
+        let rowCount = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM demo;") ?? -1 }
+        var hasExtraColumn = true
+        do {
+            _ = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(extra) FROM demo;") }
+        } catch {
+            hasExtraColumn = false
+        }
+        guard rowCount == 0, hasExtraColumn else {
+            printFail(number, "eraseOnSchemaChange: DB not recreated "
+                + "(rows=\(rowCount), new column present=\(hasExtraColumn))")
+            return false
+        }
+        printPass(number, "eraseOnSchemaChange: changing a registered migration's body recreated the DB "
+            + "(old rows dropped, new schema applied) — locks the rebuildable-cache "
+            + "'drop-and-recreate on schema change' discipline")
+        return true
+    } catch {
+        printFail(number, "eraseOnSchemaChange threw: \(error)")
+        return false
+    }
+}
