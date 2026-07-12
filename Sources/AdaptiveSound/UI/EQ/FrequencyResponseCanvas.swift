@@ -18,6 +18,16 @@ struct FrequencyResponseCanvas: View {
     /// Tracks the last touched band within a drag stroke for gap-fill interpolation.
     @State private var lastBandIndex: Int?
 
+    /// The band the keyboard arrow keys currently target, and whether the canvas holds keyboard
+    /// focus (A-H1). The mouse drag and VoiceOver each edit independently of this cursor — it exists
+    /// purely so a sighted keyboard-only user can see and move the band they're about to adjust. A
+    /// highlight ring is drawn on this band only while `canvasFocused`.
+    @State private var keyboardBand = 15
+    @FocusState private var canvasFocused: Bool
+
+    /// Per-keystroke / per-VoiceOver-swipe gain increment (dB).
+    private let gainStep: Float = 1.0
+
     var body: some View {
         Canvas { context, size in
             let width = size.width
@@ -44,6 +54,13 @@ struct FrequencyResponseCanvas: View {
 
             drawFrequencyResponseCurve(context: &context, eqValues: eqValues, geometry: geometry)
             drawISOOctaveDots(context: &context, eqValues: eqValues, geometry: geometry)
+
+            // Keyboard-editing cursor (A-H1): a vertical guide + ring on the targeted band, drawn
+            // only while the canvas holds keyboard focus, so an arrow-key user can see which band
+            // they're adjusting. Reuses the same log-x / linear-y mapping as `drawISOOctaveDots`.
+            if canvasFocused {
+                drawKeyboardCursor(context: &context, geometry: geometry, bandIndex: keyboardBand)
+            }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .gesture(
@@ -60,15 +77,74 @@ struct FrequencyResponseCanvas: View {
         .overlay {
             RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5)
         }
+        // Keyboard editing (A-H1): Tab focuses the canvas, ← / → move the band cursor, ↑ / ↓ adjust
+        // the targeted band's gain by ±`gainStep` dB. Coexists with the mouse `DragGesture` above.
+        .focusable()
+        .focused($canvasFocused)
+        .onKeyPress(.leftArrow) { moveKeyboardCursor(-1); return .handled }
+        .onKeyPress(.rightArrow) { moveKeyboardCursor(1); return .handled }
+        .onKeyPress(.upArrow) { adjustBand(keyboardBand, by: gainStep); return .handled }
+        .onKeyPress(.downArrow) { adjustBand(keyboardBand, by: -gainStep); return .handled }
+        .accessibilityElement()
         .accessibilityLabel("Frequency Response Curve")
         .accessibilityValue(
             "EQ Preset: \(eqViewModel.selectedPresetName), "
                 + "Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")"
         )
-        .accessibilityHint(
-            "Interactive frequency response visualization with 31 ISO 1/3-octave bands "
-                + "from 20Hz to 20kHz. Click or drag to adjust."
-        )
+        .accessibilityHint("Adjust each band from the elements inside, or drag the curve with a pointer.")
+        // VoiceOver editing (A-H1): synthetic, a11y-only children — NOT rendered and NOT hit-tested,
+        // so they can't intercept the mouse `DragGesture`. Each is an adjustable element: VoiceOver
+        // focuses a band and swipes up/down to change its gain ("1 kilohertz, +3 decibels"). Before
+        // this, the curve was a single read-only element editable only by dragging — unreachable by
+        // VoiceOver (grep-verified: no other per-band input path exists).
+        .accessibilityChildren {
+            ForEach(EQPreset.isoFrequencies.indices, id: \.self) { index in
+                Rectangle()
+                    .accessibilityLabel(Text(bandFrequencyLabel(index)))
+                    .accessibilityValue(Text(bandGainLabel(index)))
+                    .accessibilityAdjustableAction { direction in
+                        adjustBand(index, by: direction == .increment ? gainStep : -gainStep)
+                    }
+            }
+        }
+    }
+
+    // MARK: - Accessible / keyboard band editing (A-H1)
+
+    /// Move the keyboard-cursor band, clamped to 0…30.
+    private func moveKeyboardCursor(_ delta: Int) {
+        keyboardBand = max(0, min(EQPreset.isoFrequencies.count - 1, keyboardBand + delta))
+    }
+
+    /// Nudge one band's gain (keyboard ↑/↓ or a VoiceOver increment/decrement) and commit. Unlike
+    /// the drag path — which persists once at `.onEnded` — each discrete step both dispatches to the
+    /// DSP (`commitCustomBandEdits` clamps + marks custom) and persists, since there is no stroke end.
+    private func adjustBand(_ index: Int, by delta: Float) {
+        guard eqViewModel.bandGains.indices.contains(index) else { return }
+        eqViewModel.bandGains[index] = max(-12.0, min(12.0, eqViewModel.bandGains[index] + delta))
+        eqViewModel.commitCustomBandEdits()
+        eqViewModel.persistLiveState()
+    }
+
+    /// VoiceOver-spoken band frequency ("1 kilohertz" / "3150 hertz") — words, not "kHz"/"Hz",
+    /// which VoiceOver would spell out letter by letter.
+    private func bandFrequencyLabel(_ index: Int) -> String {
+        let hz = EQPreset.isoFrequencies[index]
+        if hz >= 1000 {
+            let kHz = hz / 1000
+            let value = kHz.truncatingRemainder(dividingBy: 1) < 0.001
+                ? "\(Int(kHz))"
+                : kHz.formatted(.number.precision(.fractionLength(1)))
+            return "\(value) kilohertz"
+        }
+        return "\(Int(hz)) hertz"
+    }
+
+    /// VoiceOver-spoken band gain ("+3 decibels" / "-4.5 decibels" / "0 decibels").
+    private func bandGainLabel(_ index: Int) -> String {
+        let gain = (eqViewModel.bandGains[index] * 10).rounded() / 10
+        let sign = gain > 0 ? "+" : ""
+        return "\(sign)\(gain.formatted(.number.precision(.fractionLength(1)))) decibels"
     }
 
     // MARK: - Gesture Handler
