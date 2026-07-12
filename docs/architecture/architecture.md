@@ -74,7 +74,9 @@ graph TB
 
 ## 2.5 Shipped pipeline (Sprints 4–5b + Pure Mode + gapless)
 
-This section documents what is **actually built and merged** on the `feat/sprint-5-eq-wiring` line, as distinct from the target architecture in §2 and the phased design in §3–§16. Source of truth: `Sources/AdaptiveSound/` + `Sources/AudioDSP/`; sprint records in [../sprints/](../sprints/) (esp. [04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md), [05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md), [05-sprint-5b-multichannel-epic-plan.md](../sprints/05-sprint-5b-multichannel-epic-plan.md), [09-phase-b-bit-perfect-pure-mode.md](../sprints/09-phase-b-bit-perfect-pure-mode.md)).
+This section documents what is **actually built**, as distinct from the target architecture in §2 and the phased design in §3–§16. **Source of truth: the code** (`Sources/AdaptiveSound/` + `Sources/AudioDSP/`); sprint records in [../sprints/](../sprints/). **Rule: if this section and the source disagree, the source wins and this section is stale — file a doc fix** (this section is a convenience snapshot, not a status board).
+
+**Library spine (S8+, a separate subsystem — not in the audio graph above):** a persistent, **GRDB.swift-backed** `LibraryStore` (`final class … Sendable` over a GRDB `DatabaseWriter`; folder scan → metadata/artwork → FSEvents watch → id-preserving move-match) plus the S9 browse/search UI now back the player. Detail: `Sources/LibraryStore/` + [../sprints/s8-1-persistent-store-design.md](../sprints/s8-1-persistent-store-design.md) (note its SUPERSEDED storage-engine decision).
 
 ### Two output paths (mutually exclusive per playback start)
 
@@ -349,46 +351,11 @@ The ambition (6 stems × per-stem EQ/dynamics/**BRIR convolution** + masking) is
 | **1.5 — Stem object engine** | Offline 6-stem separation + per-stem chains + spatial placement; between-stem masking; per-stem NL; **Reimagine knob (stem range)** |
 | **2 — System-wide** | Process-tap path (mix-level), libASPL fallback |
 
-### Phase 1 — Sprint-based breakdown (Mix-level DSP core)
+### Phase 1 — sprint breakdown
 
-Phase 1 is implemented as three integrated sprints, each shipping a complete feature wired end-to-end into the real-time kernel. **Status:** Sprint 4 **DONE + merged**; Sprint 5 / 5b **DONE + merged** (EQ wiring + multichannel two-AU pipeline + Monitoring tab) — and **EQ is now driven live from the UI** (drag-the-curve canvas → `EQViewModel` → `publishEQGains` → `Realizer`, §2.5). The S6 architecture-review gate also shipped (review + three tiers of fixes; see [../sprints/sprint-plan.md](../sprints/sprint-plan.md) S6). The **perceptual** Arbiter / clarity / loudness-compensation work (the original "Sprint 6" content) is **not yet shipped** and now sits in Phase 2 (S15–S17 of the sprint plan).
+> **Sprint sequencing and status are NOT tracked here.** The authoritative forward schedule (and the single prose status surface) is [../sprints/sprint-plan.md](../sprints/sprint-plan.md); the historical per-sprint design records live in [../sprints/](../sprints/). This section previously re-narrated Sprints 4/5/6 in the **old** numbering, which collides with the forward S-scheme — the old "Sprint 6" adaptive-clarity is **not** the forward-plan S6.
 
-**Sprint 4: Loudness Safety & Transparent Dynamics — DONE (merged)**
-- **True-peak limiter** (≥4× oversampling, −1 dBTP ceiling, ~1 ms look-ahead) as the final safety stage
-- **LUFS normalization** (ITU-R BS.1770-5) with transparent makeup gain (no artifacts, fidelity-preserving)
-- **Hearing-safety numeric clamps** (cumulative ≤ +12 dB, proportional scaling)
-- **Validation:** Loudness accuracy ±0.1 LUFS, true-peak enforcement, 1-hour soak test, listening panel
-- **See:** [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md) for detailed design, RT implementation, and acceptance criteria
-
-**Sprint 5 / 5b: Minimum-Phase EQ Wiring & Spectral Correction — DONE (merged)**
-
-> Shipped reality: the EQ module + biquad-cascade design + the two-AU N-channel graph + Monitoring tab ship and pass the C++ harness, and **EQ gains ARE driven from a live UI** — the drag-the-curve `FrequencyResponseCanvas` → `EQViewModel.dispatchAllBands` → `AudioViewModel.publishEQGains` → `publishEQBandGains` C-ABI → the control-plane `Realizer`. See §2.5.
-
-- **EQ module** wired into RT chain: 31-band ISO parametric, biquad cascade (min-phase, LD-13), real-time parameter automation
-- **Before/after spectrum taps** showing input + DSP effect (visual proof)
-- **AutoEq device-correction profiles** (5 common headphones: Sony WH-1000XM5, AirPods Pro, Sennheiser HD 600, Apple Studio, Generic)
-- **Master gain relocation** (post-DSP, after Limiter) so volume is independent of processing
-- **Validation:** Frequency response ±1 dB, null-test bit-exact @ 0 dB, THD+N ≤ −90 dB, perceptual listening panel
-- **See:** [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md) for detailed design, EQ realization algorithm, and acceptance criteria
-
-**Sprint 6: Adaptive Clarity & Loudness Compensation — NOT YET SHIPPED**
-- **Clarity module** (masking-aware per-band gain, roex filter on ERB-rate grid, ≤ +3 dB/band phase-1 conservative)
-- **Loudness compensation** (fractional contour-difference, ISO 226, 40% per-band adjustment)
-- **Arbiter control plane** composes device + loudness + clarity + content + user intent into unified TargetState
-- **Conversational tuning basic** (text → Claude API → EQ curve, spline interpolation to 31 bands, no graphical curves in Phase 1)
-- **Content-aware adaptation** (spectral profile detection, smooth EQ transitions per genre, hysteresis to prevent hunting)
-- **Validation:** Masking model ±1 dB accuracy, clarity gains conservative, listening panel A/B, 2-hour adaptive soak test
-- **See:** [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md) for detailed design, Arbiter composition, and acceptance criteria
-
-### Phase 1b Part B — Critical-path prerequisite
-
-Before Phase 1c (Sprints 4–6), the following enablers had to ship — **✅ all shipped** (retained for historical context):
-- **Progress bar + polling** (playback position display)
-- **Seek implementation** (drag to position, resume smoothly)
-- **Auto-play next track** (completion listener, respects repeat mode)
-- **DSP test gate** — the **C++ null-test harness** (`bash scripts/build-null-test.sh`, 120 tests, stereo golden master `0xE7267654BA01D315`) validates the coefficient math + bit-exact bypass. NOTE: the DSP correctness gate is this C++ harness; `swift test` (native swift-testing) also runs in `make strict-gate` but is not the DSP golden-master gate. See [validation-strategy.md](validation-strategy.md).
-
-**See:** [../sprints/07-phase-1b-part-b-kickoff.md](../sprints/07-phase-1b-part-b-kickoff.md) for action items and acceptance criteria
+**Old-numbering → forward-plan mapping** (this Phase model to the sprint plan): the Phase-0/1 player + mix-core work shipped across the old Sprints 4/5/5b and the forward S6–S9 (loudness safety, 31-band live EQ, N-channel two-AU graph, Monitoring, Pure Mode + gapless, the library spine + browse UI). The perceptual **Clarity + Arbiter + loudness-compensation** — the original "Sprint 6" content — now sits in the forward plan at **S14** (loudness-comp) and **S15–S16** (masking model + Clarity/Realizer). Its engineering design is §4 / §11 of this document + [../sprints/06-sprint-6-adaptive-clarity.md](../sprints/06-sprint-6-adaptive-clarity.md) (⚠️ superseded numbering; design retained).
 
 ### Validation framework
 
