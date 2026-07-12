@@ -79,11 +79,7 @@ struct AdaptiveSound: App {
                 // A menu key-equivalent wins over the queue's .onKeyPress, so spacebar MUST match
                 // the footer's play button — otherwise the two global transports contradict.
                 Button(audioViewModel.isPlaying ? "Pause" : "Play") {
-                    if audioViewModel.isPlaying {
-                        audioViewModel.pause()
-                    } else {
-                        audioViewModel.play()
-                    }
+                    audioViewModel.togglePlayPause()
                 }
                 .keyboardShortcut(.space, modifiers: [])
                 // A modifier-less menu key-equivalent is matched BEFORE the focused field editor,

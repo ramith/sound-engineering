@@ -62,14 +62,17 @@ struct FacetListRoot<Item: Identifiable>: View {
     }
 
     /// Filter header + the narrowed list (or a "no results" state when the filter matches nothing).
+    /// `filteredItems` is computed ONCE here and threaded down — previously the count line, the empty
+    /// check, and the `ForEach` each re-ran it (three O(n) filter passes per body evaluation).
     private var filteredList: some View {
-        VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLine, filter: $filter, placeholder: filterPlaceholder)
+        let shown = filteredItems
+        return VStack(spacing: 0) {
+            LibraryFilterHeader(count: countLabel(shown.count), filter: $filter, placeholder: filterPlaceholder)
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if filteredItems.isEmpty {
+            if shown.isEmpty {
                 ContentUnavailableView.search(text: filter)
             } else {
-                list
+                list(shown)
             }
         }
     }
@@ -78,14 +81,13 @@ struct FacetListRoot<Item: Identifiable>: View {
         filter.isEmpty ? items : items.filter { FacetTextFilter.matches(name($0), query: filter) }
     }
 
-    private var countLine: String {
-        let shown = filteredItems.count
-        return "\(shown) \(noun)\(shown == 1 ? "" : "s")"
+    private func countLabel(_ shown: Int) -> String {
+        "\(shown) \(noun)\(shown == 1 ? "" : "s")"
     }
 
-    private var list: some View {
+    private func list(_ shown: [Item]) -> some View {
         List {
-            ForEach(filteredItems) { item in row(item) }
+            ForEach(shown) { item in row(item) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)

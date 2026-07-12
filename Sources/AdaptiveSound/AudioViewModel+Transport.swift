@@ -49,6 +49,13 @@ extension AudioViewModel {
         Task { await performPause() }
     }
 
+    /// Position-preserving transport toggle — the single entry point every UI play/pause control
+    /// (footer, Controls menu, queue, menu bar) routes through, so the behaviour can't drift between
+    /// them. `pause()` keeps the playhead; `play()` resumes from it.
+    func togglePlayPause() {
+        if isPlaying { pause() } else { play() }
+    }
+
     /// Skip to the next track, honouring shuffle + repeat (VM-2). Routes through the same
     /// `computeNextIndex` the auto-advance path uses, with `manualSkip: true` so repeat-one steps
     /// to the next track instead of repeating the current one. When shuffle is on the next track is

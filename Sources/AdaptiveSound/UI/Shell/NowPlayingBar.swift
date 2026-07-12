@@ -155,7 +155,7 @@ private struct FooterTransportControls: View {
     /// circle when idle (same 34pt frame, so no reflow between states).
     private var playButton: some View {
         Button {
-            if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+            viewModel.togglePlayPause()
         } label: {
             Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: DesignSystem.Footer.playSymbol, weight: .semibold))
@@ -390,7 +390,7 @@ private struct FooterSignalSlot: View {
         if info.interrupted { return "Playback paused, output device disconnected" }
         let pathStr = info.path == .pure ? "Pure mode" : "Enhanced mode"
         let rate = info.achievedSampleRate > 0
-            ? info.formattedRate.replacingOccurrences(of: " kHz", with: " kilohertz")
+            ? info.formattedRate.replacing(" kHz", with: " kilohertz")
             : "unknown rate"
         return "\(pathStr), \(rate)"
     }

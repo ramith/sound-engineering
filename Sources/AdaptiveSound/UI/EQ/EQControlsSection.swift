@@ -54,21 +54,24 @@ struct EQControlsSection: View {
     /// correct by construction, not by width arithmetic (§11.3).
     private var threeRow: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
-            HStack {
-                controlLabel("Interpolation")
-                Spacer(minLength: DesignSystem.Spacing.small)
+            // `LabeledContent` (as in `leadingCluster`), NOT an HStack + `.accessibilityElement`
+            // `.combine`: `.combine` merges the label and the operable Picker into one element, which
+            // can collapse the picker's adjustability for VoiceOver. LabeledContent associates the
+            // label with the control while leaving it independently operable (review L9). Each control
+            // is alone on its row here, so it has ample width.
+            LabeledContent {
                 EQInterpolationPickerView(isUsingDiscreteSteps: $isUsingDiscreteSteps)
                     .fixedSize()
+            } label: {
+                controlLabel("Interpolation")
             }
-            .accessibilityElement(children: .combine)
 
-            HStack {
-                controlLabel("Preset")
-                Spacer(minLength: DesignSystem.Spacing.small)
+            LabeledContent {
                 EQPresetPickerView(eqViewModel: eqViewModel)
                     .frame(minWidth: 140)
+            } label: {
+                controlLabel("Preset")
             }
-            .accessibilityElement(children: .combine)
 
             HStack {
                 Spacer()

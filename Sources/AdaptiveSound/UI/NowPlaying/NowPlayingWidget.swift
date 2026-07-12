@@ -228,7 +228,7 @@ private struct SignalPathBadge: View {
 
         let pathStr = info.path == .pure ? "Pure mode" : "Enhanced mode"
         let rateVal = info.achievedSampleRate > 0
-            ? info.formattedRate.replacingOccurrences(of: " kHz", with: " kilohertz")
+            ? info.formattedRate.replacing(" kHz", with: " kilohertz")
             : "unknown rate"
         var parts = [pathStr, rateVal]
 

@@ -204,13 +204,13 @@ private struct PlaylistItemList: View {
                     }
                     .onKeyPress(.return) {
                         if viewModel.selectedTrackIndex == index {
-                            if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                            viewModel.togglePlayPause()
                         }
                         return .handled
                     }
                     .onKeyPress(.space) {
                         if viewModel.selectedTrackIndex == index {
-                            if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                            viewModel.togglePlayPause()
                         }
                         return .handled
                     }
@@ -244,14 +244,14 @@ private struct PlaylistItemList: View {
             }
             .onKeyPress(.return) {
                 if viewModel.selectedTrackIndex != nil {
-                    if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                    viewModel.togglePlayPause()
                     return .handled
                 }
                 return .ignored
             }
             .onKeyPress(.space) {
                 if viewModel.selectedTrackIndex != nil {
-                    if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                    viewModel.togglePlayPause()
                     return .handled
                 }
                 return .ignored

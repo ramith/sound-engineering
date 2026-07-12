@@ -20,7 +20,7 @@ struct MenuBarView: View {
         if let track = currentTrack {
             Text(track.name)
             Button(viewModel.isPlaying ? "Pause" : "Play") {
-                if viewModel.isPlaying { viewModel.pause() } else { viewModel.play() }
+                viewModel.togglePlayPause()
             }
             Button("Next Track") { viewModel.nextTrack() }
             Button("Previous Track") { viewModel.previousTrack() }
