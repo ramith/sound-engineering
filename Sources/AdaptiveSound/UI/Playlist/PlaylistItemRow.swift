@@ -13,11 +13,22 @@ struct PlaylistItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(index + 1, format: .number.grouping(.never))
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                .lineLimit(1)
-                .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
-                .frame(width: numberColumnWidth, alignment: .trailing)
+            // Non-color now-playing cue (A-M3): the currently-playing row shows a ▶ glyph in place
+            // of its number, so "now playing" is not signalled by the row tint alone (colorblind /
+            // VoiceOver users get no cue from the background opacity otherwise).
+            Group {
+                if isNowPlaying {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.asAccent)
+                } else {
+                    Text(index + 1, format: .number.grouping(.never))
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .lineLimit(1)
+                        .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
+                }
+            }
+            .frame(width: numberColumnWidth, alignment: .trailing)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
@@ -49,5 +60,18 @@ struct PlaylistItemRow: View {
                 : Color.clear
         )
         .contentShape(Rectangle())
+        // One VoiceOver element per row (A-M3): a clean label (title · format · duration — NOT the
+        // noisy `relativePath` the auto-composed label pulled in), with now-playing/selected exposed
+        // as a value + trait rather than color alone. `.isButton` is added by the enclosing list.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(isNowPlaying ? "Now playing" : "")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [file.name, file.format]
+        if file.durationSeconds > 0 { parts.append(formatDuration(file.durationSeconds)) }
+        return parts.joined(separator: ", ")
     }
 }

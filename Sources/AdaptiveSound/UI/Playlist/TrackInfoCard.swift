@@ -194,9 +194,8 @@ private struct TrackMetadata {
 
         // --- File size ---
         if let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            fileSize = .value(formatter.string(fromByteCount: bytes))
+            // Matches SongsTable's `fileSize.formatted(.byteCount(style: .file))` (S4 SW5).
+            fileSize = .value(bytes.formatted(.byteCount(style: .file)))
         } else {
             fileSize = .unavailable
         }
@@ -224,7 +223,8 @@ private struct TrackMetadata {
             if kHz.truncatingRemainder(dividingBy: 1) < 0.001 {
                 sampleRate = .value("\(Int(kHz)) kHz")
             } else {
-                sampleRate = .value(String(format: "%.1f kHz", kHz))
+                // Swift-native formatting, not C `String(format:)` (S4 SW5 / swift.md).
+                sampleRate = .value("\(kHz.formatted(.number.precision(.fractionLength(1)))) kHz")
             }
         } else {
             sampleRate = .value("\(Int(rateHz)) Hz")
