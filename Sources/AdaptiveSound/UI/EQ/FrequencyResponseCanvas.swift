@@ -25,7 +25,7 @@ struct FrequencyResponseCanvas: View {
     /// The band the keyboard arrow keys currently target, and whether the canvas holds keyboard
     /// focus (A-H1). The mouse drag and VoiceOver each edit independently of this cursor — it exists
     /// purely so a sighted keyboard-only user can see and move the band they're about to adjust. A
-    /// highlight ring is drawn on this band only while `canvasFocused`.
+    /// vertical column highlight marks this band only while `canvasFocused`.
     @State private var keyboardBand = 15
     @FocusState private var canvasFocused: Bool
 
@@ -59,9 +59,9 @@ struct FrequencyResponseCanvas: View {
             drawFrequencyResponseCurve(context: &context, eqValues: eqValues, geometry: geometry)
             drawISOOctaveDots(context: &context, eqValues: eqValues, geometry: geometry)
 
-            // Keyboard-editing cursor (A-H1): a vertical guide + ring on the targeted band, drawn
-            // only while the canvas holds keyboard focus, so an arrow-key user can see which band
-            // they're adjusting. Reuses the same log-x / linear-y mapping as `drawISOOctaveDots`.
+            // Keyboard-editing cursor (A-H1): a vertical "selected frequency column" highlight on the
+            // targeted band, drawn only while the canvas holds keyboard focus, so an arrow-key user
+            // can see which band they're adjusting (the band's own dot sits within the column).
             if canvasFocused {
                 drawKeyboardCursor(context: &context, geometry: geometry, bandIndex: keyboardBand)
             }
