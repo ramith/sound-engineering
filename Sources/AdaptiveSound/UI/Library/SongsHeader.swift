@@ -9,6 +9,8 @@ import SwiftUI
 /// re-sums the total.
 struct SongsHeader: View {
     @Environment(LibraryBrowseModel.self) private var model
+    /// Suppresses the global Space accelerator while this filter field is focused (S4 SW1).
+    @Environment(KeyboardTransportFocus.self) private var keyboardFocus
     /// Drives ⌘F focus + Escape defocus of the filter field (design §3.2/§8).
     @FocusState private var filterFocused: Bool
     /// The SAME per-column state the table binds (identical `@AppStorage` key → no drift with the
@@ -52,6 +54,10 @@ struct SongsHeader: View {
                 .font(DesignSystem.Font.body)
                 .foregroundStyle(DesignSystem.Color.label)
                 .focused($filterFocused)
+                .onChange(of: filterFocused) { _, focused in
+                    keyboardFocus.isTextEntryFocused = focused
+                }
+                .onDisappear { keyboardFocus.isTextEntryFocused = false }
                 .onExitCommand {
                     query.wrappedValue = ""
                     filterFocused = false

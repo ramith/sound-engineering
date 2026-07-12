@@ -91,7 +91,9 @@ struct FacetTrackListView: View {
                 Label("Play", systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .tint(DesignSystem.Color.accent)
+            // accentDeep, not accent: white-on-accent is only ~2.5:1 (below WCAG AA); the deeper
+            // teal lifts it to ~4.3:1 (S4 A-M6). Final light-palette tuning is the founder make-run.
+            .tint(DesignSystem.Color.accentDeep)
             .disabled(tracks.isEmpty)
 
             Button {
@@ -162,7 +164,10 @@ struct FacetTrackListView: View {
 
     private func row(for track: LibraryTrackDisplay, leadingNumber: Int?, secondary: String) -> some View {
         TrackRow(track: track, leadingNumber: leadingNumber, secondary: secondary)
-            .onTapGesture(count: 2) { playFromRow(track) }
+            // `.simultaneousGesture` (not `.onTapGesture`) so the double-click recognizer doesn't
+            // claim exclusive priority over the List's selection gesture — the documented macOS
+            // drop-click race (S4 SW2; mirrors PlaylistItemList's rationale).
+            .simultaneousGesture(TapGesture(count: 2).onEnded { playFromRow(track) })
             // Named actions so VoiceOver/keyboard reach every verb (the album template exposes these
             // only in .contextMenu, which the rotor can't see — swiftui review #2).
             .accessibilityAction(named: "Play") { playFromRow(track) }

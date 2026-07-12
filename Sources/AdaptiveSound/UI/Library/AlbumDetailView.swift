@@ -4,7 +4,8 @@ import SwiftUI
 // MARK: - Album detail (S9.4)
 
 /// Large-art header + metadata + visible Play / ⋯ actions, over a `List(selection:)` track
-/// list in disc/track order. Row: double-click / context-menu Play (single-click selects).
+/// list in disc/track order. Row: double-click OR Return plays (single-click selects); the queue
+/// verbs are exposed as named VoiceOver/keyboard actions as well as the context menu (S4 A-M4).
 struct AlbumDetailView: View {
     let albumID: Int64
 
@@ -41,6 +42,7 @@ struct AlbumDetailView: View {
             .buttonStyle(.borderless)
             .foregroundStyle(DesignSystem.Color.accent)
             .accessibilityLabel("Back to Albums")
+            .keyboardShortcut("[", modifiers: .command) // consistent with FacetTrackListView (S4 L7)
 
             Spacer()
         }
@@ -76,7 +78,9 @@ struct AlbumDetailView: View {
                 Label("Play", systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .tint(DesignSystem.Color.accent)
+            // accentDeep, not accent: white-on-accent is only ~2.5:1 (below WCAG AA); the deeper
+            // teal lifts it to ~4.3:1 (S4 A-M6). Final light-palette tuning is the founder make-run.
+            .tint(DesignSystem.Color.accentDeep)
             .disabled(tracks.isEmpty)
 
             Menu {
@@ -95,10 +99,17 @@ struct AlbumDetailView: View {
         List(selection: $selection) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                 TrackRow(track: track, leadingNumber: track.trackNo ?? (index + 1))
-                    .onTapGesture(count: 2) { model.play(tracks, startAt: index) }
-                    // VoiceOver/keyboard activation mirrors the mouse double-click (review a11y):
-                    // double-click is otherwise the only way to play a row.
+                    // `.simultaneousGesture` (not `.onTapGesture`) so the double-click recognizer
+                    // doesn't claim exclusive priority over the List's selection gesture — the
+                    // documented macOS drop-click race (S4 SW2; mirrors PlaylistItemList's rationale).
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { model.play(tracks, startAt: index) })
+                    // Default action = Play (VoiceOver double-tap); the other verbs are named rotor
+                    // actions so they're reachable without the mouse-only .contextMenu (S4 A-M4 —
+                    // mirrors SongsTable). Return plays the selection (see `.onKeyPress` below).
                     .accessibilityAction { model.play(tracks, startAt: index) }
+                    .accessibilityAction(named: "Play Next") { model.playNext([track]) }
+                    .accessibilityAction(named: "Add to Queue") { model.append([track]) }
+                    .accessibilityAction(named: "Info") { infoTarget = track }
                     .contextMenu {
                         Button("Play") { model.play(tracks, startAt: index) }
                         Button("Play Next") { model.playNext([track]) }
@@ -119,6 +130,14 @@ struct AlbumDetailView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .onKeyPress(.return) { playSelected(); return .handled } // keyboard play (S4 A-M4)
+    }
+
+    /// Play the album starting at the selected row — the keyboard Return path (double-click is
+    /// mouse-only in AppKit). Mirrors `FacetTrackListView.playSelected` (S4 A-M4).
+    private func playSelected() {
+        guard let id = selection.first, let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+        model.play(tracks, startAt: index)
     }
 
     private var subtitleLine: String {

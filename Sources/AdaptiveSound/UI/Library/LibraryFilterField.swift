@@ -9,6 +9,8 @@ import SwiftUI
 struct LibraryFilterField: View {
     @Binding var query: String
     let placeholder: String
+    /// Suppresses the global Space accelerator while this filter field is focused (S4 SW1).
+    @Environment(KeyboardTransportFocus.self) private var keyboardFocus
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -20,6 +22,10 @@ struct LibraryFilterField: View {
                 .font(DesignSystem.Font.body)
                 .foregroundStyle(DesignSystem.Color.label)
                 .focused($focused)
+                .onChange(of: focused) { _, isFocused in
+                    keyboardFocus.isTextEntryFocused = isFocused
+                }
+                .onDisappear { keyboardFocus.isTextEntryFocused = false }
                 .onExitCommand { // macOS Cancel (Escape): clear then defocus
                     query = ""
                     focused = false

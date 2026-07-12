@@ -10,6 +10,8 @@ struct AdaptiveSound: App {
     @State private var eqViewModel: EQViewModel
     @State private var library: LibraryModel
     @State private var libraryModel: LibraryBrowseModel
+    /// Suppresses the global Space play/pause accelerator while a text field is focused (S4 SW1).
+    @State private var keyboardFocus = KeyboardTransportFocus()
 
     init() {
         // Single instance only: if another copy already holds the lock, raise it and exit before
@@ -44,6 +46,7 @@ struct AdaptiveSound: App {
                 .environment(eqViewModel)
                 .environment(library)
                 .environment(libraryModel)
+                .environment(keyboardFocus)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
@@ -83,7 +86,11 @@ struct AdaptiveSound: App {
                     }
                 }
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(audioViewModel.selectedTrackIndex == nil)
+                // A modifier-less menu key-equivalent is matched BEFORE the focused field editor,
+                // so disable it while a text field is being edited — otherwise a space typed into a
+                // Library filter (or the Save-Preset field) toggles playback instead of inserting a
+                // space, breaking multi-word filtering (S4 SW1). Disabling lets the key fall through.
+                .disabled(audioViewModel.selectedTrackIndex == nil || keyboardFocus.isTextEntryFocused)
 
                 Divider()
 

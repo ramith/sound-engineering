@@ -89,11 +89,24 @@ private struct PeakMeterBar: View {
                 }
             }
             .frame(height: 4)
+
+            // Non-color clip cue (A-M5): the bar turning red is the only over-level signal
+            // otherwise — invisible to colorblind + VoiceOver users. The word "CLIP" carries it.
+            if isHot {
+                Text("CLIP")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.red)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Peak level")
-        .accessibilityValue(peakDb > -100
-            ? "\(peakDb.formatted(.number.precision(.fractionLength(1)))) dBFS"
-            : "silent")
+        .accessibilityValue(peakValueDescription)
+    }
+
+    /// Spoken peak level, with the clip state folded into the VoiceOver value (A-M5).
+    private var peakValueDescription: String {
+        guard peakDb > -100 else { return "silent" }
+        let level = "\(peakDb.formatted(.number.precision(.fractionLength(1)))) dBFS"
+        return isHot ? "\(level), clipping" : level
     }
 }
