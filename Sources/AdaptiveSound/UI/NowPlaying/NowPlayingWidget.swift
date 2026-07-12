@@ -36,12 +36,12 @@ private struct TrackCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(track.name)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DesignSystem.Font.trackTitle)
                         .foregroundStyle(Color.asLabel)
                         .lineLimit(1)
 
                     Text("Unknown Artist")
-                        .font(.system(size: 12))
+                        .font(DesignSystem.Font.caption)
                         .foregroundStyle(Color.asLabelSecond)
                         .lineLimit(1)
                 }
@@ -73,12 +73,12 @@ private struct EmptyTrackCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No track selected")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DesignSystem.Font.trackTitle)
                         .foregroundStyle(Color.asLabelSecond)
                         .lineLimit(1)
 
                     Text("Click a track to play")
-                        .font(.system(size: 12))
+                        .font(DesignSystem.Font.caption)
                         .foregroundStyle(Color.asLabelTertiary)
                         .lineLimit(1)
                 }
@@ -120,7 +120,7 @@ private struct SignalPathBadge: View {
                 .font(.system(size: 10))
                 .foregroundStyle(DesignSystem.Color.statusWarning)
             Text("Device disconnected")
-                .font(.system(size: 11, weight: .medium))
+                .font(DesignSystem.Font.trackSubtitle.weight(.medium))
                 .foregroundStyle(Color.asLabelSecond)
         }
     }
@@ -160,20 +160,20 @@ private struct SignalPathBadge: View {
             ForEach(Array(segments.enumerated()), id: \.offset) { idx, segment in
                 if idx > 0 {
                     Text("·")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(DesignSystem.Font.trackSubtitle.weight(.medium))
                         .foregroundStyle(Color.asLabelTertiary)
                 }
                 Text(segment.text)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DesignSystem.Font.trackSubtitle.weight(.medium))
                     .foregroundStyle(segment.color)
             }
 
             if info.fellBackToEnhanced {
                 Text("·")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DesignSystem.Font.trackSubtitle.weight(.medium))
                     .foregroundStyle(Color.asLabelTertiary)
                 Text("(Pure unavailable)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DesignSystem.Font.trackSubtitle.weight(.medium))
                     .foregroundStyle(Color.asLabelTertiary)
             }
         }

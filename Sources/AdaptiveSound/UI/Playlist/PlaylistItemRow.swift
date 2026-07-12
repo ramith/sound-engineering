@@ -23,7 +23,7 @@ struct PlaylistItemRow: View {
                         .foregroundStyle(Color.asAccent)
                 } else {
                     Text(index + 1, format: .number.grouping(.never))
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .font(DesignSystem.Font.monoSmall)
                         .lineLimit(1)
                         .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
                 }
@@ -32,12 +32,12 @@ struct PlaylistItemRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                    .font(DesignSystem.Font.body.weight(isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.asAccent : Color.asLabel)
                     .lineLimit(1)
 
                 Text(file.relativePath)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(DesignSystem.Font.monoSmall)
                     .foregroundStyle(Color.asLabelTertiary)
                     .lineLimit(1)
             }
@@ -47,7 +47,7 @@ struct PlaylistItemRow: View {
             FormatBadgeView(format: file.format, isSelected: isSelected)
 
             Text(file.durationSeconds > 0 ? formatDuration(file.durationSeconds) : "--:--")
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(Color.asLabelTertiary)
                 .frame(width: 42, alignment: .trailing)
         }
