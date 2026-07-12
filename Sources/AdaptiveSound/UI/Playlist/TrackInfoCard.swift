@@ -47,7 +47,7 @@ struct TrackInfoCard: View {
                 .clipShape(.rect(cornerRadius: 8))
 
             Text(file.name)
-                .font(.system(size: 14, weight: .semibold))
+                .font(DesignSystem.Font.trackTitle)
                 .foregroundStyle(Color.asLabel)
                 .lineLimit(nil) // show the FULL title — wrap to as many lines as needed, never truncate
                 .fixedSize(horizontal: false, vertical: true)
@@ -95,7 +95,7 @@ struct TrackInfoCard: View {
 
             Text(file.absoluteURL.path)
                 .textSelection(.enabled)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(Color.asLabelTertiary)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
@@ -113,12 +113,12 @@ struct TrackInfoCard: View {
     private func metaRow(key: String, value: some View) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(key)
-                .font(.system(size: 12, weight: .regular))
+                .font(DesignSystem.Font.caption)
                 .foregroundStyle(Color.asLabelSecond)
                 .frame(width: 96, alignment: .leading)
 
             value
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .font(DesignSystem.Font.monoSmall)
         }
     }
 

@@ -44,11 +44,11 @@ private struct LoudnessReadoutRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 12))
+                .font(DesignSystem.Font.caption)
                 .foregroundStyle(Color.asLabelSecond)
             Spacer()
             Text(valueText)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(DesignSystem.Font.monoSmall.weight(.medium))
                 .monospacedDigit()
                 .foregroundStyle(Color.asLabel)
         }
@@ -77,7 +77,7 @@ private struct PeakMeterBar: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("Peak")
-                .font(.system(size: 12))
+                .font(DesignSystem.Font.caption)
                 .foregroundStyle(Color.asLabelSecond)
 
             GeometryReader { geo in
@@ -94,7 +94,7 @@ private struct PeakMeterBar: View {
             // otherwise — invisible to colorblind + VoiceOver users. The word "CLIP" carries it.
             if isHot {
                 Text("CLIP")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(DesignSystem.Font.micro.weight(.bold))
                     .foregroundStyle(Color.red)
             }
         }

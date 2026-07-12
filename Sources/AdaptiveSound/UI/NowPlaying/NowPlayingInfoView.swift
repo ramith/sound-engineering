@@ -31,7 +31,7 @@ private struct ReimagineSectionView: View {
         let percentText = Text(
             "\(Int((bvm.intensity * 100).rounded())) %"
         )
-        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+        .font(DesignSystem.Font.monoSmall.weight(.semibold))
         .foregroundStyle(isPureBypassed ? Color.asLabelTertiary : Color.asLabelSecond)
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -46,7 +46,7 @@ private struct ReimagineSectionView: View {
 
                 if isPureBypassed {
                     Text("Pure (bypassed)")
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(Color.asLabelTertiary)
                 } else {
                     percentText
@@ -62,11 +62,11 @@ private struct ReimagineSectionView: View {
 
             HStack {
                 Text("Bypass")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(DesignSystem.Font.trackSubtitle)
                     .foregroundStyle(Color.asLabelTertiary)
                 Spacer()
                 Text("Full Blend")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(DesignSystem.Font.trackSubtitle)
                     .foregroundStyle(Color.asLabelTertiary)
             }
         }
@@ -97,7 +97,7 @@ private struct HeadphonesSectionView: View {
                 Text("Connect headphones to enable. (On a speaker device the only consequence "
                     + "of crossfeed is a mild, reversible centre-image change — crossfeed is "
                     + "offered here, not auto-applied.)")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(DesignSystem.Font.trackSubtitle)
                     .foregroundStyle(Color.asLabelTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -125,7 +125,7 @@ private struct CrossfeedToggleRow: View {
     var body: some View {
         Toggle(isOn: $crossfeedEnabled) {
             Label("Crossfeed", systemImage: "ear.and.waveform")
-                .font(.system(size: 13, weight: .regular))
+                .font(DesignSystem.Font.body)
                 .foregroundStyle(Color.asLabel)
         }
         .toggleStyle(.switch)

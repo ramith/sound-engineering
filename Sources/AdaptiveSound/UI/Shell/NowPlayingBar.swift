@@ -290,7 +290,7 @@ private struct FooterScrubber: View {
         let half = DesignSystem.Footer.tooltipHalfWidth
         let clampedX = min(max(offset, half), trackWidth - half)
         return Text(formatDuration(dragFraction * viewModel.duration))
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .font(DesignSystem.Font.monoSmall.weight(.semibold))
             .monospacedDigit()
             .foregroundStyle(DesignSystem.Color.label)
             .padding(.horizontal, 6)

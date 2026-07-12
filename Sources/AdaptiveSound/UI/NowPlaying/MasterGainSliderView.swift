@@ -20,7 +20,7 @@ struct MasterGainSliderView: View {
 
                 let dbValue = Double(vm.masterGain) * 20 - 10
                 Text("\(Text(dbValue, format: .number.precision(.fractionLength(1)))) dB")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(DesignSystem.Font.monoSmall.weight(.semibold))
                     .foregroundStyle(Color.asLabelSecond)
             }
 
