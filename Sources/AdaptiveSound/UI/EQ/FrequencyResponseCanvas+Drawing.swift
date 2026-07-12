@@ -167,9 +167,13 @@ extension FrequencyResponseCanvas {
         _ freq: Double,
         from isoPoints: [(freq: Double, gain: Double)]
     ) -> Double {
-        guard freq >= 20 && freq <= 20000 else { return 0 }
-
-        let logFreq = log10(freq)
+        // Clamp into the plotted range rather than returning 0 outside it. The interpolation's
+        // boundary frequency is `pow(10, log10(20000))`, which a floating-point round-trip can nudge
+        // a hair ABOVE 20000 (and the 20 Hz end below 20). The old `guard … else { return 0 }` then
+        // pinned the 20 kHz / 20 Hz endpoint to 0 dB regardless of the band's real gain — so the
+        // curve ended at 0 in the corner while the control dot sat at the dragged value. Clamping
+        // makes the endpoint follow the actual first/last band gain, i.e. the curve ends at the dot.
+        let logFreq = log10(min(max(freq, 20.0), 20000.0))
         var lower = isoPoints[0]
         var upper = isoPoints.last ?? isoPoints[0]
 
