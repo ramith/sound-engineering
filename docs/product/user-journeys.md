@@ -21,12 +21,27 @@ This document defines the core user journeys (workflows) for Adaptive Sound. Eac
 
 ---
 
+## Journey format (template)
+
+Every journey below follows one template — reuse it for new use-cases:
+
+- **Actor:** who is acting.
+- **Goal:** the measurable outcome they want.
+- **Phase:** the PRD product-capability phase (0 / 1 / 1.5 / 2 — *not* the execution roadmap; see the Phase Rosetta in [PRD.md](PRD.md)).
+- **Status:** `BUILT` | `PARTIALLY BUILT` | `NOT YET BUILT (planned)`, plus one clause on what is / isn't realized. Keep it **coarse — do not cite specific source files** (they drift; the code is the source of truth for build state).
+- **Steps:** a fenced `Step 1…N` interaction flow.
+- **Success Condition:** the measurable pass criterion.
+
+> These journeys are *specifications*, not claims of shipped behavior. For what is actually built vs. planned, see [../sprints/sprint-plan.md](../sprints/sprint-plan.md) §Status + the source.
+
+---
+
 ## Journey 2.1 — First-Run Onboarding
 
 **Actor:** New user, app just launched for the first time.  
 **Goal:** Reach a working listening state with a meaningful default sound profile in under 3 minutes.  
 **Phase:** Phase 0 (Player MVP).  
-**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, hearing-profile prompt, mic-permission step, or first-run tooltip in the code (`ContentView.swift` → `ToolbarView` + `TabContentView`).
+**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, hearing-profile prompt, mic-permission step, or first-run tooltip.
 
 **Steps:**
 
@@ -71,7 +86,7 @@ Step 6 — First Listening Moment
 **Actor:** User who chose to run or re-run the hearing check.  
 **Goal:** Generate a personal hearing profile that the DSP engine uses for equalisation compensation.  
 **Phase:** Phase 0 onwards (optional, skippable).  
-**Status:** NOT YET BUILT (planned). No hearing test, tone sequence, audiogram, or stored hearing profile exists in the code; the only "hearing" reference is the EQ cumulative-gain safety clamp (`EQSafetyClamp.swift`), which is unrelated.
+**Status:** NOT YET BUILT (planned). No hearing test, tone sequence, audiogram, or stored hearing profile exists; the only "hearing"-adjacent code is the unrelated EQ cumulative-gain safety clamp.
 
 **Steps:**
 

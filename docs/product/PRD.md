@@ -260,7 +260,7 @@ Design principles:
 
 ### Phase 0 — Local-File Player MVP (DSP Spine)
 
-**Goal**: Prove the DSP spine end-to-end. Ship fast with zero driver complexity. Target: 8–12 weeks to private beta.
+**Goal**: Prove the DSP spine end-to-end. Ship fast with zero driver complexity.
 **Architecture**: AVAudioEngine + one custom AUAudioUnit v3 (C++ DSP kernel) + SwiftUI. Swift/C++ interop. No virtual audio device, no sudo, no driver complexity. Passthrough → first DSP as the gate.
 
 #### Features
@@ -292,7 +292,7 @@ Design principles:
 
 ### Phase 1 — Mix-Based Core
 
-**Goal**: Ship the full mix-level immersive and adaptive story. Perceptual clarity/correction, BRIR immersion, adaptive engine, loudness-comp, NL (typed-macro, mix-level), and the Reimagine knob (mix range). Target: 16–24 weeks after Phase 0 launch.
+**Goal**: Ship the full mix-level immersive and adaptive story. Perceptual clarity/correction, BRIR immersion, adaptive engine, loudness-comp, NL (typed-macro, mix-level), and the Reimagine knob (mix range).
 **Architecture**: All Phase 0 plus CMHeadphoneMotionManager (head tracking, macOS 14+), BRIR convolution engine (room synthesis or CC0/CC-BY IRs; libmysofa BSD-3; vDSP/FFTConvolver MIT), full Arbiter (typed contributors, ERB/Bark, masking model), off-RT Realizer (min-phase biquad default; FIR opt-in).
 
 #### Features
@@ -519,14 +519,14 @@ The exact curve from knob position to processing parameters (how fast clarity ra
 ## Appendix: Phasing Summary
 
 ```
-Phase 0 (Weeks 0–12):     Local-file player MVP — prove the DSP spine
+Phase 0 — Player MVP:     Local-file player MVP — prove the DSP spine
                             AVAudioEngine + custom AUv3 (C++ kernel) + SwiftUI
                             No virtual device, no sudo, no streaming apps
                             BRIR and stem separation explicitly NOT in Phase 0
                             Success gates: > 50% D7 retention, > 70% "sounds better",
                                           < 10% of sessions flagging adaptive EQ as perceptible
 
-Phase 1 (Weeks 13–36):    Mix-based core — full immersive + adaptive story
+Phase 1 — Mix-based core: Mix-based core — full immersive + adaptive story
                             BRIR-first binaural (LD-14) + head tracking
                             Perceptual clarity/correction (ERB/Bark, LD-12)
                             Adaptive engine: loudness-comp, content-aware, ambient
@@ -553,7 +553,7 @@ Phase 1.5 (gated on perf spike):
                                           > 20% per-stem NL adoption,
                                           render budget < 60% of per-buffer deadline
 
-Phase 2 (Weeks 37+):       System-wide via Core Audio process tap (primary, macOS 14.2+)
+Phase 2 — System-wide:     System-wide via Core Audio process tap (primary, macOS 14.2+)
                             No driver, no sudo, no coreaudiod restart on primary path
                             Same C++ DSP kernel, BoundedLatency profile, mix-level only
                             AudioServerPlugIn virtual device (libASPL) as fallback
@@ -569,4 +569,4 @@ Phase 2 (Weeks 37+):       System-wide via Core Audio process tap (primary, macO
 
 ---
 
-*Document owner: Ramith (ramith@wso2.com). Architecture source of truth: `docs/architecture/architecture.md` (v0.3). Next PRD review: 2026-07-13. Approval required from founder before Phase 0 engineering kickoff.*
+*Document owner: Ramith (ramith@wso2.com). Architecture source of truth: `docs/architecture/architecture.md`. This is the concept-era vision/why doc; execution status & sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).*
