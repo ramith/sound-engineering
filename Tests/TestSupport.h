@@ -56,7 +56,6 @@ using namespace AdaptiveSound;
 #ifndef ADAPTIVESOUND_TEST_DATA_DIR
 // A macro (not a constexpr) is REQUIRED: fixture paths use compile-time string-literal
 // concatenation — `ADAPTIVESOUND_TEST_DATA_DIR "/name.wav"` — which only works with literal tokens.
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage) PERMANENT reason="test assertion macro"
 #define ADAPTIVESOUND_TEST_DATA_DIR "test-data"
 #endif
 
@@ -74,12 +73,10 @@ namespace TestConstants
     constexpr uint32_t kChunks10 = 10U;
 
     // RNG seeds: fixed for deterministic test sequences (intentional, not a security concern).
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp) PERMANENT reason="deterministic seeded RNG for reproducible test signal"
     constexpr uint32_t kSeedWhiteNoise = 42U;
     constexpr uint32_t kSeedMultiChunk = 99U;
     constexpr uint32_t kSeedBypassSingle = 0xDEADBEEFU;
     constexpr uint32_t kSeedBypassMulti = 0xCAFEBABEU;
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
 
     constexpr float kNoiseHalf = 0.5F;   // noise amplitude +-0.5
     constexpr float kNoiseUnit = 1.0F;   // noise amplitude +-1.0
@@ -101,9 +98,7 @@ namespace TestConstants
     // leakage ≈ 0 (rectangular-window DFT orthogonality). Bins chosen to be non-harmonic,
     // all well within the audible band: 34,59,89,116,149,173,211,251 × (48000/8192).
     constexpr uint32_t kPerChTestFrames = 8192U; // ~170 ms @ 48 kHz — must be power-of-2
-    // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays) PERMANENT reason="CoreAudio C-array ABI (AudioObjectPropertyAddress[])"
     constexpr uint32_t kPerChBins[] = {34U, 59U, 89U, 116U, 149U, 173U, 211U, 251U};
-    // NOLINTEND(cppcoreguidelines-avoid-c-arrays)
 
     // Pure-Mode policy (Phase B — B1). Sample rates measured on the founder's Mac.
     constexpr double kRate16k = 16000.0;
@@ -131,7 +126,7 @@ namespace TestConstants
 } // namespace TestConstants
 
 // ---------------------------------------------------------------------------
-// Test result counter — struct avoids cppcoreguidelines-avoid-non-const-globals
+// Test result counter — pass/fail tallies for the harness (single-TU internal-linkage state).
 // ---------------------------------------------------------------------------
 
 namespace
@@ -142,26 +137,20 @@ namespace
         std::atomic<int> failed{0};
     };
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     Results gResults;
 
     // Per-thread output buffer for parallel mode: each test accumulates its
     // stdout/stderr lines here, then flushes them atomically under gOutputMutex.
     // In serial mode this buffer is unused (logPass/logFail write directly).
-    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     thread_local std::string tlOutputBuf;
     thread_local bool tlTestPassed{true};
     // tlTestPending: set by logPending so runOneTest does not count the test as pass or fail.
     thread_local bool tlTestPending{false};
-    // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     std::mutex gOutputMutex;
 
     // When non-null, output goes to tlOutputBuf instead of directly to the stream.
-    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     thread_local bool tlBuffering{false};
-    // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -291,8 +280,7 @@ struct AudioBufferList2
 // at construction time; only those buffers are wired to channel vectors.
 struct AudioBufferListN
 {
-    AudioBufferList head; // mNumberBuffers + mBuffers[0]
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays) PERMANENT reason="CoreAudio flexible-array layout"
+    AudioBufferList head;                               // mNumberBuffers + mBuffers[0]
     std::array<AudioBuffer, kMaxChannels - 1U> extra{}; // mBuffers[1..kMaxChannels-1]
 
     explicit AudioBufferListN(uint32_t numCh) : head{}, extra{}

@@ -24,9 +24,7 @@ namespace
     constexpr uint32_t kSpatialMaxFrames = 512U;
     constexpr uint32_t kSpatialSoakBuffers = 200U;
     constexpr float kSpatialNoiseAmpl = 0.5F;
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     constexpr uint32_t kSpatialSoakSeedBase = 0xBEEF1234U;
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -45,9 +43,7 @@ namespace
 // Fill `numCh` channels of `abl` with deterministic per-channel noise.
 static auto spatialFillNoise(TestABLN& abl, uint32_t numCh, uint32_t seed) -> void
 {
-    // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
     std::mt19937 gen(seed);
-    // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
     std::uniform_real_distribution<float> dist(-kSpatialNoiseAmpl, kSpatialNoiseAmpl);
     for (uint32_t ch = 0U; ch < numCh; ++ch)
     {

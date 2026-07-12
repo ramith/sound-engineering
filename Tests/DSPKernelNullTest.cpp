@@ -72,7 +72,6 @@
 
 namespace
 {
-    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals) PERMANENT reason="single-TU test harness state"
     constexpr std::array<TestEntry, 121U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
@@ -263,7 +262,6 @@ namespace
          testSnapshotTripleBufferWholePayloadNoTear,
          true},
     }};
-    // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 } // namespace
 
 // ---------------------------------------------------------------------------

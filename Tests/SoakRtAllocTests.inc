@@ -44,10 +44,8 @@ namespace
     // global atomic counter. Defined in the unnamed namespace of this single TU; the operator
     // new/delete overrides below reference them at namespace scope via these accessors.
     // -----------------------------------------------------------------------------------------
-    // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-globals)
     thread_local bool rtGuardArmed = false;
     std::atomic<uint64_t> rtAllocCount{0U};
-    // NOLINTEND(cppcoreguidelines-avoid-non-const-globals)
 
     // RAII arm/disarm so an early return inside a soak can never leave the guard armed.
     struct RtGuardScope
@@ -79,6 +77,7 @@ namespace
 // std::abort() (equivalent to the runtime's terminate-on-bad_alloc under -fno-exceptions).
 // ---------------------------------------------------------------------------------------------
 
+// NOLINTBEGIN(cppcoreguidelines-no-malloc,readability-named-parameter,readability-inconsistent-declaration-parameter-name) PERMANENT reason="RT-alloc guard machinery: test-only global operator new/delete + malloc helpers call malloc/free directly and must match libc++'s reserved (unnamed) operator parameter names"
 namespace
 {
     inline auto rtGuardedMalloc(std::size_t size) -> void*
@@ -89,8 +88,7 @@ namespace
         }
         // malloc(0) may return nullptr legitimately; normalise to a 1-byte request so a valid,
         // freeable pointer is always returned (matches the standard new's "non-null" contract).
-        void* ptr = std::malloc(size == 0U ? 1U : size); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-        if (ptr == nullptr)
+        void* ptr = std::malloc(size == 0U ? 1U : size);        if (ptr == nullptr)
         {
             std::abort(); // -fno-exceptions: cannot throw std::bad_alloc; terminate like the runtime.
         }
@@ -114,7 +112,6 @@ namespace
     }
 } // namespace
 
-// NOLINTBEGIN(readability-named-parameter,readability-inconsistent-declaration-parameter-name)
 // Global operator new/delete overrides intentionally use unnamed params: they cannot match
 // libc++'s reserved declaration parameter names (e.g. __sz / __align), so readability-named-parameter
 // and readability-inconsistent-declaration-parameter-name are mutually unsatisfiable for this idiom.
@@ -130,16 +127,14 @@ auto operator new(std::size_t size, const std::nothrow_t&) noexcept -> void*
     {
         rtAllocCount.fetch_add(1U, std::memory_order_relaxed);
     }
-    return std::malloc(size == 0U ? 1U : size); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-}
+    return std::malloc(size == 0U ? 1U : size);}
 auto operator new[](std::size_t size, const std::nothrow_t&) noexcept -> void*
 {
     if (rtGuardArmed)
     {
         rtAllocCount.fetch_add(1U, std::memory_order_relaxed);
     }
-    return std::malloc(size == 0U ? 1U : size); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-}
+    return std::malloc(size == 0U ? 1U : size);}
 
 // Aligned forms (C++17 over-aligned new). The toolchain emits these for over-aligned types.
 auto operator new(std::size_t size, std::align_val_t align) -> void*
@@ -152,17 +147,7 @@ auto operator new[](std::size_t size, std::align_val_t align) -> void*
 }
 
 // Matching delete forms — all route to std::free (malloc/posix_memalign are both free-able).
-void operator delete(void* ptr) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete[](void* ptr) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete[](void* ptr, std::align_val_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); } // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-// NOLINTEND(readability-named-parameter,readability-inconsistent-declaration-parameter-name)
+void operator delete(void* ptr) noexcept { std::free(ptr); }void operator delete[](void* ptr) noexcept { std::free(ptr); }void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); }void operator delete[](void* ptr, std::align_val_t) noexcept { std::free(ptr); }void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }// NOLINTEND(cppcoreguidelines-no-malloc,readability-named-parameter,readability-inconsistent-declaration-parameter-name)
 
 namespace
 {

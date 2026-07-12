@@ -468,9 +468,7 @@ static auto testCrossfeedNoNaNInf() -> void
     {
         std::vector<float> nL(kFrames);
         std::vector<float> nR(kFrames);
-        // NOLINTBEGIN(cert-msc32-c,cert-msc51-cpp)
         std::mt19937 gen(0xBADF00DU);
-        // NOLINTEND(cert-msc32-c,cert-msc51-cpp)
         std::uniform_real_distribution<float> dist(-0.9F, 0.9F);
         for (uint32_t i = 0U; i < kFrames; ++i)
         {

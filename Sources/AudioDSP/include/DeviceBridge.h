@@ -50,7 +50,7 @@ typedef struct
     // 256 bound trips a worse check under C11 — a macro fires macro-to-enum, and a plain enum
     // fires performance-enum-size (which wants a uint16_t base type, a C23 feature). So the bound
     // stays a literal and avoid-magic-numbers rides on the same already-required suppression.
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,hicpp-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers) PERMANENT reason="C11 ABI name buffer: std::array/named-bound unavailable in ISO C11 (see comment)"
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers) PERMANENT reason="C11 ABI name buffer: std::array/named-bound unavailable in ISO C11 (see comment)"
     char name[256]; ///< Device name (UTF-8, null-terminated)
 } CDeviceInfo;
 
