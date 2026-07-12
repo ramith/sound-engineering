@@ -7,8 +7,12 @@ struct FrequencyResponseCanvas: View {
     let isUsingDiscreteSteps: Bool
 
     // Plot-margin constants — single source of truth for drawing and gesture handler.
+    // The right inset is wide (was 20): the 20 kHz band sits at `plotRight`, and the whole
+    // right inset maps to that last band, so a roomier inset both un-crowds the dot from the
+    // window edge and enlarges its drag/hit zone (the far-right point was easy to miss). The
+    // left inset already doubles as the dB-label gutter.
     private let plotLeftInset: CGFloat = 50
-    private let plotRightInset: CGFloat = 20
+    private let plotRightInset: CGFloat = 44
     private let plotTopInset: CGFloat = 20
     private let plotBottomInset: CGFloat = 40
 

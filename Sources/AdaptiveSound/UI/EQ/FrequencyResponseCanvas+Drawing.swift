@@ -193,7 +193,12 @@ extension FrequencyResponseCanvas {
         let halfTap = tapCount / 2
         var smoothed = gains
 
-        for idx in 0 ..< gains.count {
+        // Preserve the first and last samples (freq 20 Hz / 20 kHz) so the drawn curve reaches the
+        // boundary control dots EXACTLY. A moving average over a shrinking boundary window pulls the
+        // endpoint toward its inner neighbour, which left a sharp edge band (e.g. a 20 kHz cut or
+        // boost) with the curve visibly short of its dot — most obvious once the keyboard cursor
+        // ring sits precisely on that dot. Interior points still smooth as before.
+        for idx in 1 ..< (gains.count - 1) {
             var sum = 0.0
             var count = 0
 
