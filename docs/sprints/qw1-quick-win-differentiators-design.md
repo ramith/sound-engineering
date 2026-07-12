@@ -1,8 +1,8 @@
 # QW1 — Quick-Win Differentiators: Sprint Design
 
 **Document ID:** QW1-DESIGN-001
-**Version:** 0.2 — team-reviewed; **architect verdict: GO-WITH-CHANGES** (all required changes applied, §9). Awaiting founder sign-off, then implement.
-**Status:** Design — reviewed. Inserted as a one-off **exception** in [sprint-plan.md](sprint-plan.md): a differentiator burst before resuming the maturity arc at S8 (founder decision 2026-06-19).
+**Version:** 0.2 — team-reviewed; **architect verdict: GO-WITH-CHANGES** (all required changes applied, §9).
+**Status:** ✅ SHIPPED (QW1) — design record (crossfeed DSP + UI, Reimagine-intensity UI, tonal presets). Founder by-ear verification still pending. Inserted as a one-off **exception** in [sprint-plan.md](sprint-plan.md): a differentiator burst before resuming the maturity arc at S8 (founder decision 2026-06-19).
 **Authored by:** AdaptiveSound team — audio-dsp-agent (crossfeed DSP), modern-cplus-plus-expert (C++ integration), swiftui-pro (UI/UX); test strategy by qa-expert (§7); structure review by refactoring-specialist (§8); **final verdict by architect-reviewer (§9)**.
 
 ---

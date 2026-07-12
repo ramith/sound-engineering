@@ -1,8 +1,6 @@
 # Phase B — Bit-Perfect "Pure Mode" + Enhanced-path resampling (status & learnings)
 
-Status: **✅ SHIPPED — historical record (Phase B, shipped & merged).** **Phase B effectively complete** (2026-06-18) — all code on `feat/sprint-5-eq-wiring`,
-pending only the founder's on-hardware smoke of the integer bit-perfect path (a **USB DAC** or a
-48 kHz source — see "HDMI reality" below). Authoritative plan: `~/.claude/plans/functional-floating-bonbon.md`. The authoritative forward sprint schedule is now [sprint-plan.md](sprint-plan.md).
+Status: **✅ SHIPPED — historical record (Phase B, shipped & merged).** **Open forward item:** the founder's on-hardware by-ear smoke of the integer bit-perfect path (needs a **USB DAC** or a 48 kHz source — see "HDMI reality" below) is still owed. Forward schedule: [sprint-plan.md](sprint-plan.md).
 
 This phase came out of the deep pipeline review whose headline finding was: **`AVAudioEngine`
 cannot be bit-perfect** (fixed 48 kHz Float32 graph, hidden SRC, no exclusive/hog mode, no
