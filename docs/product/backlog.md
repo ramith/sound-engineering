@@ -7,24 +7,18 @@
 **Author:** Lead Business Analyst
 **Status:** Draft — Pending sprint planning review
 
-> **v1.1 change note (2026-06-12 — prior-art refinement pass):** Folded in findings from `docs/session-notes/prior-art.md`. (A) EP-VDEVICE reframed as driver **fallback path** only; EP-SYSWIDE updated to lead with tap-primary path, drive-fallback secondary; US-SYS-01..05 annotated accordingly. (B) SPIKE-HRTF updated: largely resolved to SADIE II (Apache-2.0) + libmysofa (BSD-3) + custom SOFA-HRIR convolution; remaining work is performance benchmark and integration. (C) US-SPAT-01 and US-SPAT-01a/b/c updated to reference custom SOFA convolution. (D) US-TON-04 updated with mono-summed constraint (CON-11). (E) SPIKE-VDEVICE updated to include tap-path prototype as primary workstream. (F) Added SPIKE-IPREVIEW (OQ-16 — patent IP review for bass enhancement). (G) Added SPIKE-LIBBS2B (OQ-17 — libbs2b licence dispute). (H) Updated Open Items table with OQ-16 and OQ-17.
+> **Change history:** see `git log` + [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) §6. **Current:** backlog re-anchored to shipped reality; QW1 + library/playlist epics back-filled.
 
-> **v2.0 change note (2026-06-13 — architecture v0.2 alignment):** Major revamp to align with `docs/architecture/architecture.md` v0.2 (source of truth) and requirements v0.5. Adopted the **four-phase scheme (0 / 1 / 1.5 / 2)**. Epics restructured: added **EP-PERCEPTUAL** (typed contributors + ERB/Bark masking); **EP-SPAT → EP-IMMERSION** (BRIR-first); **EP-TONAL** reframed (min-phase default, no program DRC, loudness-comp method); **EP-NLT** reframed (typed-macro + per-stem); added **EP-REIMAGINE** (intensity control) and **EP-STEM** (Phase 1.5 object engine). New spikes: **SPIKE-PERF-BUDGET** (gates Phase 1.5), **SPIKE-SEP-QUALITY**, **SPIKE-REIMAGINE-MAP**, **SPIKE-MASKING-MODEL**, **SPIKE-BRIR** (kept SPIKE-IPREVIEW, SPIKE-LIBBS2B). Open Items updated with OQ-18–22. Existing Phase 0/1 stories are retained; affected ones are annotated rather than rewritten.
+## How to Read Status
 
-> **v2.1 change note (2026-06-13 — architecture v0.3 sync):** Folded in the expert-panel review ([review-v0.2.md](../session-notes/review-v0.2.md)) + founder decisions: **re-sum mixbus** (ADR-011) onto US-STEM-02; **bass/lead-vocal spatial exemptions**; **shared late-reverb** + content-adaptive room; masking = **ERB excitation-pattern** subset; gate stems on **perceptual artifacts, not SDR**; **MLX-primary** + **weights auto-download on first run**; Reimagine defaults (low-mid / dead-band / loudness-matched); NL **on-device-lean + output-clamping** (mechanism still deferred); **ADR-004 RT-ML → contingent**; tap **high-consent + comms-exclusion + never-persist**. Hardware floor **M1 Pro/16 GB** (M4/M5 above) → **Risk R-3 Low**, SPIKE-PERF-BUDGET is a **tuning** spike (sets QualityProfile caps, not a go/no-go). Persona → **Ramith**. **Removed outdated:** Class-1/2a/2b labels and the M1/M2 runtime-gating stub (US-SYSW-04 — superseded by the Phase-1.5 stem engine); MacBook-Air/8 GB baselines → M1 Pro/16 GB floor.
+Every story carries a **Status**, one of exactly four values:
 
-> **v2.2 change note (2026-06-19 — gapless follow-up):** Added **US-PLAY-07** (gapless trimming of lossy AAC/MP3 encoder delay/padding on the FFmpeg decode path; **Could**, deferred). Context: gapless / continuous playback shipped after v2.1 outside this backlog — Enhanced-path gapless + auto-advance (`cf33e5d`) and Pure-path same-rate gapless (`2e2242a`); see `../sprints/09-phase-b-bit-perfect-pure-mode.md`. US-PLAY-07 is the remaining refinement (lossy gapless on the FFmpeg backend; Apple backend + lossless already gapless) plus the deferred compressed-vs-uncompressed format-match-predicate edge case. The broader gapless/Pure-Mode feature is not yet otherwise back-filled into this backlog.
+- **Planned** — not yet built; the full story body + acceptance criteria are authoritative.
+- **Shipped** — built and live in the codebase; collapsed to a one-line status row in place.
+- **Won't-this-horizon** — out of this plan's window; kept as future roadmap, not scheduled.
+- **Superseded** — replaced by a different decision; kept for provenance.
 
-> **v2.3 change note (2026-06-19 — backlog re-anchor to shipped reality):** Executed the re-anchor mandated by [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) §6 (and S6/S7, which have since shipped). The backlog had drifted: it described a single mix-level DSP graph, while what actually shipped is the **two-path Pure/Enhanced engine + bit-perfect HAL Pure Mode + runtime FFmpeg-or-Apple decode + 31-band live EQ + true-peak limiter + BS.1770-5 loudness/LUFS-normalization + gapless + device-resilience + signal-path transparency UI** — none of it reflected as Done stories. Changes in this pass:
-> - **Back-filled as DONE** (citing commits): bit-perfect Pure Mode (**new US-ENG-07**); two-path Pure/Enhanced engine (**new US-ENG-08**); runtime FFmpeg-or-Apple decode (**amended US-PLAY-01**); 31-band live UI-driven EQ ±12 dB (**amended US-TON-01** — ⚠ deviation flag: backlog specified **10-band**); true-peak limiter (**US-ENG-05** marked Done); BS.1770-5 loudness meter + LUFS normalization (**new US-ENG-09**); gapless + auto-advance (**new US-PLAY-08 / US-PLAY-09**); device-resilience + pin/follow connect-behavior (**new US-DEVICE-09**); signal-path transparency UI (**new US-ADAPT-06** — ⚠ deviation flag: this is the **signal-path** transparency, distinct from the still-unbuilt **adaptation**-transparency view US-ADAPT-04 — do **not** conflate).
-> - **Marked DONE the two new completed sprints** as enabler stories: **S6** architecture review & hardening (**new US-ARCH-01**) and **S7** DSP-gate hardening (**new US-QA-01..06**, grouped under a new **EP-QA** epic). Both cite [`../sprints/s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md), [`../sprints/s6-tier3-spine-design.md`](../sprints/s6-tier3-spine-design.md), and the S7 row of sprint-plan.md.
-> - **Tagged "Won't — this horizon"** (entries kept, marked out-of-window): EP-STEM + its stories, EP-SYSWIDE / EP-VDEVICE + their stories, EP-NLT (incl. OQ-14 multilingual) + its stories, US-PROF-01 (iCloud sync), and the gating spikes (SPIKE-VDEVICE, SPIKE-PERF-BUDGET, SPIKE-SEP-QUALITY, SPIKE-NLT-ARCH). **DSD** is tagged "deferred — post-R2, gated on a DSD DAC."
-> - **Deviation flags recorded** (for traceability honesty): (1) shipped EQ is **31-band**, backlog said 10-band (US-TON-01 / US-ENG-02); (2) the shipped transparency UI is **signal-path** transparency (Pure vs Enhanced, rate, decode backend), **not** the adaptation-transparency view (US-ADAPT-04) — these are two distinct features.
-> - **Doc-gap closed:** `sprint-plan.md` now exists (it was referenced-but-missing). All backlog references to "`00-sprint-model.md` for sprint assignments" have been pointed at `sprint-plan.md`.
-
-> **v2.4 change note (2026-07-02 — library/playlist domain rules formalized):** Added two new Phase-0 epics, back-filling the founder's stated library/playlist use cases as formal requirements ahead of the S8 library-spine build so the persistent store schema is designed against them from day one rather than retrofitted. **EP-LIBRARY** (8 stories, US-LIB-01..08) — multiple independent scan folders; single-file play outside any scan folder; a track lives in exactly one scan folder, with cross-folder duplicates treated as normal distinct files (never silently deduped); a filesystem move updates a track's location in place while its durable identity (and therefore playlist membership) survives the move; stable durable track identity as the thing every future reference (playlist entry, play count) points at, not the file path. **EP-PLAYLIST** (8 stories, US-PLIST-01..08) — many-to-many, user-ordered playlist membership; adding a single non-library file to a playlist; drag-and-drop into a playlist is always a reference-add, never a filesystem move; drag-and-drop folder-to-folder is potentially a real filesystem move (routed through EP-LIBRARY's move-in-place handling so membership survives); user-provided playlist naming with "untitled-N" auto-naming; the built-in non-deletable "current" playlist as the play queue. Every story is tagged with the sprint-chunk it belongs to (S8.1 store schema / S8.2 scan / S8.4 rescan-move / S9 browse / S10 queue-playlists) per [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md), which is being updated in step to accommodate these rules (nullable `folder_id` for loose files, the stable integer `tracks.id` as the durable reference, and new playlist/playlist_entry tables). No FR/NFR IDs exist yet for library/playlist domain rules (requirements.md predates this feature); stories trace to the design doc and to sprint-plan.md's S8–S10 scope instead, per the same precedent set by the EP-QA stories (US-QA-01..06) tracing to sprint docs. These stories are Draft/Ready-for-sprint-planning, not Done — no code has been touched.
-
-> **v2.5 change note (2026-07-05 — QW1 back-fill):** Marked three stories **✅ DONE** that shipped in the founder-approved **QW1 Quick-Win Differentiators** burst (sprint-plan.md §3, the "exception, before S8") but were never back-filled here: **US-TON-06** (tonal presets), **US-DEVICE-07** (crossfeed), and **US-RMG-01** (the single Reimagine intensity control, 0 = bit-faithful). Status mirrors sprint-plan.md's QW1 framing exactly — **code-complete, founder by-ear verification pending**; evidence (code files + QW1 gate: null-test 117/0, golden master `0xE7267654BA01D315` held) is cited per story. **US-RMG-02** (the full intensity→parameter *mapping*) stays **not-done** — `ClarityModule`/`BRIRModule` are still empty stubs, so there is nothing to widen/unmask yet (that mapping is S15–S17). No re-prioritization performed. *Reconciled 2026-07-05:* sprint-plan.md's **S12/S13** rows have been updated to note these items (preset save/load per-output, the Reimagine intensity-knob wiring, crossfeed) were delivered early in QW1.
+**Rule:** a Shipped story collapses to a one-line status row *in place* — `**Status:** Shipped · proven-by: <stable module / verify-gate name>` — keeping its `#### US-XXX` header, its `As a …` line, and its `Traceability:` field. The **proven-by** anchor is a stable module name or verify-gate (e.g. `LoudnessModule` + libebur128 oracle gate; `GaplessController` conformance suite), **never** a commit hash, a gate count, or a point-in-time metric — those live in `git` + `sprint-plan.md` and must not be re-imported here (that re-import is exactly the drift this pass removes). Planned / forward stories keep their full bodies and acceptance criteria.
 
 ---
 
@@ -133,7 +127,7 @@ A story is done when:
 | EP-STEM | **(new — Phase 1.5)** Stem object engine: offline 6-stem separation + SSD cache, per-stem chains + spatial placement, between-stem unmasking, per-stem NL, quality-gating — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | **1.5** | FR-STEM-01..06, FR-REIMAGINE (stem range), NFR-PERF-06 | Separation quality-gate pass; per-stem unmasking measurable; render budget held |
 | EP-SYSWIDE | System-wide via **Core Audio process tap (primary, macOS 14.2+)** + libASPL fallback; **mix-level only** — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-07/08/01..06, NFR-PERF-05 | System-wide adoption; no admin password on tap path |
 | EP-VDEVICE | AudioServerPlugIn **fallback** (older macOS / driver preference) — **⛔ Won't, this horizon (re-anchor 2026-06-19)** | 2 | FR-SYS-01..06, NFR-INSTALL-02..04 | Driver install success > 90% |
-| EP-QA | **(new — re-anchor 2026-06-19) ✅ Done** DSP-gate hardening: automated regression gates for every shipped DSP stage, validated against independent oracles where possible (libebur128 LUFS/TP, limiter TP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak) | 0 | NFR-QUAL-01..04, NFR-PERF-01/03, CON-01/02 | Null-test 105/0; golden master held; meter conformant ±0.047 LU vs libebur128 |
+| EP-QA | **(Shipped)** DSP-gate hardening: automated regression gates for every shipped DSP stage, validated against independent oracles where possible (libebur128 LUFS/TP, limiter TP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak) | 0 | NFR-QUAL-01..04, NFR-PERF-01/03, CON-01/02 | Every shipped DSP stage gated against an independent oracle where one exists (proven-by the EP-QA per-stage gates) |
 | EP-LIBRARY | **(new — v2.4, 2026-07-02)** Persistent library: multiple scan folders, single-file (non-library) play, stable durable track identity across moves/retags, cross-folder duplicates treated as normal distinct files (not deduped) | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S8)* | Library survives a scan-folder move/rescan with zero broken playlist references; duplicates across folders never silently collapsed |
 | EP-PLAYLIST | **(new — v2.4, 2026-07-02)** Playlists: many-to-many ordered membership, single non-library file added to a playlist, DnD reference-add (playlist) vs. potential real move (folder→folder), user/auto naming, built-in "current" queue playlist | 0 | *(no FR/NFR yet — traces to `s8-1-persistent-store-design.md` + sprint-plan.md S9/S10)* | Zero filesystem side-effects from playlist add/remove; a track survives in all its playlists across a folder→folder move |
 
@@ -214,18 +208,11 @@ As a **developer** I want every DSP parameter change applied via a per-block lin
 
 ---
 
-#### US-ENG-05 [Enabler] — True-peak limiter (final DSP stage) ✅ DONE
+#### US-ENG-05 [Enabler] — True-peak limiter (final DSP stage)
 
 As a **developer** I want a transparent true-peak limiter as the final stage in the DSP chain, so that no upstream gain change can cause the output to exceed -1 dBTP and damage hearing or clip the DAC.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped as the final stage of the Enhanced DSP chain (EQ → loudness → limiter → spatial-passthrough) with **8× ISP (inter-sample-peak) oversampling**. Validated in S7 under a dual-oracle true-peak gate: the −1 dBTP ceiling holds, including at intermediate steerable-intensity `x` (S6 Tier-3 steerable wet/dry primitive). Limiter threshold is adjustable by the control plane. (Pure Mode bypasses the limiter entirely — bit-perfect by design.) See sprint-plan.md §2 and the S7 row.
-
-**Acceptance Criteria:**
-- See FR-TONAL-07 Given/When/Then: +6 dB upstream gain on a 0 dBFS signal; output TP ≤ -1 dBTP verified by reference meter. ✅
-- Limiter introduces no perceptible colouration at normal listening levels (verify by bypass A/B with white noise at -18 dBFS). ✅
-- Limiter threshold is adjustable by the adaptivity engine (for FR-NLT-09 urgent path, Phase 1). ✅ (control-plane adjustable)
-
-**Priority:** Must | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-02 | **Status:** ✅ DONE (S7-gated)
+**Status:** Shipped · proven-by: Enhanced-chain true-peak limiter stage (8× ISP oversampling, control-plane-adjustable threshold; bypassed in Pure Mode) + dual-oracle true-peak gate
 **Traceability:** FR-TONAL-07, NFR-QUAL-01
 
 ---
@@ -244,150 +231,98 @@ As a **developer** I want the DSP chain to query the output device's preferred s
 
 ---
 
-#### US-ENG-07 [Enabler] — Bit-perfect Pure Mode (CoreAudio HAL-direct, hog mode, per-track rate-match) ✅ DONE
+#### US-ENG-07 [Enabler] — Bit-perfect Pure Mode (CoreAudio HAL-direct, hog mode, per-track rate-match)
 
 As a **Ramith** I want a bit-perfect playback path that drives the DAC directly through the CoreAudio HAL, takes the device into hog mode, matches the device's physical sample rate to each track, and bypasses all DSP, so that the bits I bought reach the DAC unaltered — something Apple Music itself does not do on macOS.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped as the **Pure** path of the two-path engine: HAL-direct output (`HALOutputEngine`), device hog mode, per-track sample-rate match (sets the device physical format, not a forced AU output rate), DSP fully bypassed. Phase A done; Phase B1/B2a/B2b done & pushed (`d59b853`); see `../sprints/09-phase-b-bit-perfect-pure-mode.md` and sprint-plan.md §2. **A real differentiator** — Apple Music is not bit-perfect on macOS. *By-ear verification on a USB DAC is still pending (offline null-test verified; founder owns the audible check).* Remaining items B3/B4/B5/A2 are tracked in the Pure-Mode sprint doc, not here.
-
-**Acceptance Criteria:**
-- HAL output renders directly to the default/selected device; DSP chain bypassed; output is sample-identical to source on a rate-matched device (offline null-test). ✅
-- Device is taken into hog mode for exclusive bit-exact access; released cleanly on stop/teardown/device-loss. ✅
-- Per-track sample-rate negotiation sets the device **physical** format to match the source (44.1/48/88.2/96/176.4/192 kHz) with a rate-match gate + diagnostics. ✅
-- Bit-exactness is the verifiable contract: the S6 golden master (`0xE7267654BA01D315`) holds under the C++ null-test gate. ✅
-- *Deferred (not part of Done):* by-ear confirmation on a USB DAC; B3/B4/B5/A2 polish.
-
-**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ENG-01, US-ENG-06 | **Status:** ✅ DONE (`d59b853`; A2/B3–B5 deferred)
+**Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
 
-#### US-ENG-08 [Enabler] — Two-path Pure / Enhanced engine ✅ DONE
+#### US-ENG-08 [Enabler] — Two-path Pure / Enhanced engine
 
 As a **developer** I want a runtime engine that selects between the bit-perfect **Pure** path and the DSP **Enhanced** path (with automatic fallback) on a per-session/per-track basis, so that the listener gets bit-exact output when no processing is requested and the full N-channel DSP graph when it is.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** The shipped engine is **two-path**, not the single mix-level graph this backlog originally described: **Pure** (HAL-direct, bit-perfect — US-ENG-07) and **Enhanced** (`AVAudioEngine` two-AU **N-channel** graph, ≤7.1, 48 kHz float: EQ → loudness → limiter → spatial-passthrough). Path selection + fallback model was reviewed in S6 and called "production-quality"; the S6 Tier-3 spine work (`RtSwappableResource<T>`, control-plane `Realizer`, steerable equal-power wet/dry intensity, `GaplessController` conformance suite) confirmed the spine is Phase-2-ready. See sprint-plan.md §2 + the S6 row, `../sprints/s6-tier3-spine-design.md`.
-
-**Acceptance Criteria:**
-- Engine exposes both paths; selects Pure when DSP is off / intensity-0 and a rate-match is achievable, else Enhanced. ✅
-- Enhanced path is a two-AU N-channel graph (≤7.1, no naive downmix), 48 kHz float, chain order EQ → loudness → limiter → spatial-passthrough. ✅
-- Automatic, glitch-tolerant fallback Pure→Enhanced when bit-exact conditions cannot be met. ✅
-- intensity-0 on Enhanced is the bit-exact anchor (S6 Tier-3 steerable intensity; settled-ramp byte-identity verified in S7). ✅
-- S6-reviewed for RT-safety, concurrency (engineQueue + leaf lock + device-loss serialization), and gain staging; all three tiers of fixes shipped. ✅
-
-**Priority:** Must | **Phase:** 0 | **Estimate:** 8 sp | **Dependencies:** US-ENG-07, US-ENG-01, US-ENG-02 | **Status:** ✅ DONE (S6-hardened)
+**Status:** Shipped · proven-by: two-path engine (Pure = US-ENG-07; Enhanced = two-AU N-channel graph ≤7.1, 48 kHz float, EQ → loudness → limiter → spatial-passthrough) on the Tier-3 DSP spine (`Realizer` + `RtSwappableResource<T>` + steerable equal-power wet/dry intensity, intensity-0 = bit-exact anchor)
 **Traceability:** FR-PLAY-01, NFR-QUAL-01..04, NFR-PERF-01, CON-01, CON-02
 
 ---
 
-#### US-ENG-09 [Enabler] — BS.1770-5 loudness meter + LUFS normalization ✅ DONE
+#### US-ENG-09 [Enabler] — BS.1770-5 loudness meter + LUFS normalization
 
 As a **Marcus** I want the engine to measure program loudness to the BS.1770-5 standard and normalize playback toward a target LUFS, so that tracks and albums play back at a consistent perceived level without me riding the volume knob.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped as the loudness stage of the Enhanced chain: a **BS.1770-5** integrated-loudness meter with active **LUFS normalization** (makeup gain). The architecture review (S6) noted the loudness module routes makeup gain through its own off-RT worker + double-buffer (a "canary" that motivated the Tier-3 `Realizer`). S7 validated the meter against the **libebur128** oracle (vendored test-only): conformant to **±0.047 LU**. We are *ahead* of most players on loudness. See sprint-plan.md §2 + the S7 row.
-
-**Acceptance Criteria:**
-- Integrated-loudness measurement conforms to ITU-R BS.1770-5 (K-weighting, gating); verified ±0.047 LU vs libebur128. ✅
-- LUFS normalization applies a ramped makeup gain toward the target with no zipper noise; feeds the limiter for safe ceilings. ✅
-- Meter runs off the RT thread; no audio-thread allocations (RT-allocation soak, S7). ✅
-- Pure Mode does not apply normalization (bit-perfect). ✅
-
-**Priority:** Should | **Phase:** 0/1 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-ENG-05 | **Status:** ✅ DONE (S7-gated vs libebur128)
+**Status:** Shipped · proven-by: `LoudnessModule` (BS.1770-5 integrated-loudness meter + ramped LUFS-normalization makeup gain, off-RT; not applied in Pure Mode) + libebur128 oracle gate
 **Traceability:** FR-TONAL-07, NFR-QUAL-01, NFR-PERF-04
 
 ---
 
-#### US-ARCH-01 [Enabler] — Technical architecture review & hardening (S6 gate) ✅ DONE
+#### US-ARCH-01 [Enabler] — Technical architecture review & hardening (S6 gate)
 
 As a **developer** I want a comprehensive multi-discipline review of the shipped codebase before any new feature work, with the agreed fixes landed and the C++ gate green, so that we harden the foundation and confirm the DSP spine carries the Phase-2 adaptive vision before building eight sprints on it.
 
-> **Status: ✅ DONE (S6 gate — GREEN, 2026-06-19; back-filled by re-anchor v2.3).** A 4-discipline read-only review (system architecture, C++ RT-safety/lock-free, Swift concurrency & engine lifecycle, DSP correctness & gain staging) produced [`../sprints/s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md). **All three tiers of fixes shipped:** **Tier 1** RT-safety/lifecycle (e.g. P1-A full Schur-Cohn biquad-stability fix, P1-D HAL render-format RT corruption fix); **Tier 2** concurrency consolidation (engineQueue + leaf lock + device-loss serialization — P1-B/P1-C/P2-B/P2-C); **Tier 3 DSP spine** ([`../sprints/s6-tier3-spine-design.md`](../sprints/s6-tier3-spine-design.md)): `RtSwappableResource<T>` extracted (EQ migrated) + a control-plane **`Realizer`** (off-RT owner of the canonical `TargetState`, off-main EQ-cascade design, EQ+intensity coalescing, sole publisher, queue-draining teardown) + **steerable equal-power wet/dry intensity** (intensity-0 = bit-exact anchor) + a **`GaplessController`** conformance suite (Pure/Enhanced position-re-zero parity). **Gate-verified:** C++ null-test **93/0**, golden master `0xE7267654BA01D315` held. The spine is now confirmed Phase-2-ready (S15→S16→S17 build directly on it).
-
-**Acceptance Criteria:**
-- Findings document produced, grounded in file:line, founder-triaged. ✅
-- P1 fixes (the one live bug + concurrency races + RT memory-safety edges) landed. ✅
-- DSP spine architecture decided and built (off-RT Realizer, single canonical TargetState, steerable intensity, gapless contract). ✅
-- C++ null-test green (93/0); golden master held. ✅
-
-**Priority:** Must | **Phase:** 0 (gate) | **Estimate:** 8 sp | **Dependencies:** shipped codebase | **Status:** ✅ DONE (gate GREEN)
+**Status:** Shipped · proven-by: [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md) (4-discipline review, all three fix tiers landed) + the Tier-3 DSP spine (`Realizer` + `RtSwappableResource<T>` + steerable intensity + `GaplessController`) per [`s6-tier3-spine-design.md`](../sprints/s6-tier3-spine-design.md) + C++ null-test gate
 **Traceability:** NFR-PERF-01/03, NFR-QUAL-01..03, CON-01, CON-02
 
 ---
 
-### EP-QA — DSP-Gate Hardening *(new — re-anchor v2.3, 2026-06-19)*
+### EP-QA — DSP-Gate Hardening
 
-**Epic goal:** Give every shipped DSP stage an automated regression gate, validated against an independent oracle where one exists. Shipped as **S7** (✅ DONE, 2026-06-19): null-test **105/0**, golden master held. Cheap, pure safety; precedes any further DSP-touching work. Citations: sprint-plan.md S7 row + [`../sprints/s7-soak-instruments-procedure.md`](../sprints/s7-soak-instruments-procedure.md).
+**Epic goal:** Give every shipped DSP stage an automated regression gate, validated against an independent oracle where one exists. **Status:** Shipped · proven-by the per-stage gates below (procedure: [`s7-soak-instruments-procedure.md`](../sprints/s7-soak-instruments-procedure.md)) — cheap, pure safety that precedes any further DSP-touching work.
 
 ---
 
-#### US-QA-01 — libebur128 LUFS/TP conformance oracle ✅ DONE
+#### US-QA-01 — libebur128 LUFS/TP conformance oracle
 
 As a **developer** I want the BS.1770-5 loudness meter validated against the libebur128 reference, so that our LUFS/true-peak numbers are trustworthy.
 
-> **Status: ✅ DONE (S7).** libebur128 vendored **test-only**; meter conformant **±0.047 LU** vs the oracle. Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** integrated-loudness + TP measured against libebur128 over a fixture set; deviation within tolerance (±0.047 LU achieved). ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1.5 sp | **Dependencies:** US-ENG-09 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: libebur128 LUFS/TP conformance oracle (vendored test-only)
 **Traceability:** NFR-QUAL-01, FR-TONAL-07
 
 ---
 
-#### US-QA-02 — EQ 31-band FR sweep + bit-transparent-bypass ✅ DONE
+#### US-QA-02 — EQ 31-band FR sweep + bit-transparent-bypass
 
 As a **developer** I want every one of the 31 EQ bands swept for frequency-response accuracy and the flat/bypass case proven bit-transparent, so that the EQ is provably correct end-to-end (incl. near-Nyquist).
 
-> **Status: ✅ DONE (S7).** All 31 bands FR-accurate including near-Nyquist — clears the S6 P1-A Schur-Cohn stability concern; flat EQ verified bit-transparent. Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** per-band FR within tolerance across the audible range incl. near-Nyquist; flat = bit-identical. ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1.5 sp | **Dependencies:** US-TON-01, US-ARCH-01 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: `VerifyAUGraph` 31-band FR sweep + bit-transparent-bypass test (clears the S6 P1-A Schur-Cohn stability concern)
 **Traceability:** FR-TONAL-01, NFR-QUAL-03
 
 ---
 
-#### US-QA-03 — Limiter −1 dBTP guarantee + ISP-detector accuracy ✅ DONE
+#### US-QA-03 — Limiter −1 dBTP guarantee + ISP-detector accuracy
 
 As a **developer** I want the true-peak limiter's −1 dBTP ceiling proven under a dual-oracle true-peak gate, including at intermediate steerable-intensity values, so that no gain configuration can breach the ceiling.
 
-> **Status: ✅ DONE (S7).** Ceiling held under a dual-oracle TP gate; intermediate-intensity true-peak verified (S6 Tier-3 steerable intensity). Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** output TP ≤ −1 dBTP across worst-case gain + intermediate intensity `x`; ISP detector accuracy validated. ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1.5 sp | **Dependencies:** US-ENG-05 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: dual-oracle true-peak (ISP) gate (worst-case gain + intermediate steerable-intensity `x`)
 **Traceability:** FR-TONAL-07, NFR-QUAL-01
 
 ---
 
-#### US-QA-04 — SRC alias / stopband / imaging ✅ DONE
+#### US-QA-04 — SRC alias / stopband / imaging
 
 As a **developer** I want the sample-rate converter's alias/imaging products measured, so that rate conversion meets the quality bar.
 
-> **Status: ✅ DONE (S7).** SRC imaging ≤ **−83.7 dBFS** via `SRCQualityMeasure`. Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** alias/imaging products below the stopband target (≤ −83.7 dBFS achieved). ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1 sp | **Dependencies:** US-ENG-06 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: `SRCQualityMeasure` alias/imaging/stopband gate
 **Traceability:** NFR-QUAL-04
 
 ---
 
-#### US-QA-05 — Gapless-seam regression (both paths) ✅ DONE
+#### US-QA-05 — Gapless-seam regression (both paths)
 
 As a **developer** I want automated gapless-seam tests on both the Pure and Enhanced paths, so that the sample-accurate join is protected against regression.
 
-> **Status: ✅ DONE (S7).** 14 gapless-seam tests covering both paths. Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** seam join sample-accurate on both paths under the conformance suite. ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1.5 sp | **Dependencies:** US-PLAY-08, US-ARCH-01 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: `GaplessController` gapless-seam conformance suite (Pure + Enhanced)
 **Traceability:** NFR-QUAL-03, FR-PLAY-01
 
 ---
 
-#### US-QA-06 — RT-allocation soak + Instruments XRun procedure ✅ DONE
+#### US-QA-06 — RT-allocation soak + Instruments XRun procedure
 
 As a **developer** I want a soak test proving zero audio-thread allocations and a documented on-hardware XRun procedure, so that real-time safety is continuously verified.
 
-> **Status: ✅ DONE (S7).** Soak proves zero audio-thread allocations (fast default; full 1-hr via `SOAK_FULL=1`) + an Instruments XRun procedure ([`../sprints/s7-soak-instruments-procedure.md`](../sprints/s7-soak-instruments-procedure.md)) for the on-hardware half. Citations: sprint-plan.md S7 row.
-
-**Acceptance Criteria:** zero RT-thread allocations over the soak window; documented Instruments procedure for XRun verification. ✅
-**Priority:** Must | **Phase:** 0 | **Estimate:** ~1 sp | **Dependencies:** US-ARCH-01 | **Status:** ✅ DONE
+**Status:** Shipped · proven-by: RT-allocation soak (fast default; full 1-hr via `SOAK_FULL=1`) + [`s7-soak-instruments-procedure.md`](../sprints/s7-soak-instruments-procedure.md) XRun procedure
 **Traceability:** CON-01, CON-02, NFR-PERF-03
 
 ---
@@ -398,18 +333,11 @@ As a **developer** I want a soak test proving zero audio-thread allocations and 
 
 ---
 
-#### US-PLAY-01 — Local file import and supported-format playback ✅ DONE (decode shipped)
+#### US-PLAY-01 — Local file import and supported-format playback
 
 As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files into the app and hear them immediately, so that I can load my existing library without format conversion.
 
-> **Status: decode path ✅ DONE — runtime FFmpeg-or-Apple decode (back-filled by re-anchor v2.3, 2026-06-19).** Shipped as a runtime-selected `FileDecodeSource`: **FFmpeg via `dlopen` (with a baked major-version guard) or Apple's `ExtAudioFile`**, covering FLAC / ALAC / WAV / AIFF / Opus / MP3 / AAC. The decode backend is reported in the signal-path UI (US-ADAPT-06). See sprint-plan.md §2 and `../sprints/09-phase-b-bit-perfect-pure-mode.md`. *(The broader player UX — flat in-memory playlist + folder monitor — is shipped; persistent library/browse/queue is the still-unbuilt critical path, see sprint-plan.md §2 "biggest credibility gap" and S8–S10.)* Opus replaces OGG-Vorbis on the shipped list.
-
-**Acceptance Criteria:**
-- See FR-PLAY-01 Given/When/Then: file added to queue, Play pressed, audio within 500 ms, routed through the selected (Pure or Enhanced) path. ✅
-- Drag-and-drop from Finder and from macOS Open panel both work. ✅
-- Decode handled by runtime FFmpeg-or-Apple backend (FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC); FFmpeg loaded via `dlopen` behind a baked major-version guard; unsupported formats surface FR-PLAY-06 rather than silent failure. ✅
-
-**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-01 | **Status:** ✅ DONE (decode); library UX pending (S8–S10)
+**Status:** Shipped (decode path) · proven-by: `FileDecodeSource` (runtime FFmpeg-via-`dlopen` with baked major-version guard, or Apple `ExtAudioFile`; FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC). ⚠ Deviation: **Opus** replaced OGG-Vorbis on the shipped list. Broader player UX (flat in-memory playlist + folder monitor) is shipped; persistent library/browse/queue remains the unbuilt critical path (S8–S10).
 **Traceability:** FR-PLAY-01, FR-PLAY-06
 
 ---
@@ -500,35 +428,20 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 
 ---
 
-#### US-PLAY-08 — Gapless / continuous playback ✅ DONE (Enhanced full + Pure same-rate)
+#### US-PLAY-08 — Gapless / continuous playback
 
 As a **Marcus** I want consecutive tracks to play without a gap at the boundary, so that albums mastered to flow together (live recordings, DJ mixes, concept albums) play seamlessly.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped in two stages: **Stage 1 — Enhanced-path gapless (full)** (`cf33e5d`); **Stage 2a — Pure-path same-rate gapless** via the lock-free C++ `GaplessSource` (`2e2242a`). S6 unified the **contract** across both paths via a `GaplessController` conformance suite (Pure/Enhanced position-re-zero parity); S7 added 14 gapless-seam regression tests (both paths). *Pure same-rate gapless by-ear verification needs a USB DAC (offline-verified; founder owns the audible check).* The remaining refinement — lossy AAC/MP3 encoder-delay trimming on the FFmpeg backend + the compressed/uncompressed format-match-predicate edge case — is **US-PLAY-07** (Could, deferred). See `../sprints/09-phase-b-bit-perfect-pure-mode.md` and sprint-plan.md §2.
-
-**Acceptance Criteria:**
-- Enhanced path: consecutive tracks play with no inserted silence at the boundary. ✅
-- Pure path: consecutive **same-rate** tracks play gaplessly via the lock-free `GaplessSource` (no audio-thread allocations). ✅
-- A `GaplessController` contract + shared conformance test suite runs against both paths; position semantics re-zero correctly at the seam. ✅ (S6/S7)
-- *Deferred (US-PLAY-07):* lossy encoder-delay trim on the FFmpeg backend; cross-format same-rate predicate edge case.
-
-**Priority:** Should | **Phase:** 0/1 | **Estimate:** 8 sp | **Dependencies:** US-ENG-07, US-ENG-08, US-PLAY-01 | **Status:** ✅ DONE (`cf33e5d`, `2e2242a`; lossy trim → US-PLAY-07)
+**Status:** Shipped · proven-by: `GaplessController` conformance suite + lock-free `GaplessSource` (Enhanced-path full + Pure-path same-rate). Deferred refinement — lossy AAC/MP3 encoder-delay trim on the FFmpeg backend + the compressed/uncompressed format-match-predicate edge case — is **US-PLAY-07** (Could).
 **Traceability:** FR-PLAY-01, FR-PLAY-03, NFR-QUAL-03, NFR-QUAL-04
 
 ---
 
-#### US-PLAY-09 — Auto-advance to next track ✅ DONE
+#### US-PLAY-09 — Auto-advance to next track
 
 As a **Marcus** I want playback to advance automatically to the next track in the queue when the current one ends, so that an album or playlist plays through without my intervention.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped alongside gapless (`cf33e5d`). S6 flagged a drift edge case (advance-by-one-per-tick on very short files / UI stalls — finding P2-I); the fix (advance by the actual transition delta) was folded into the Tier-2 concurrency hardening. See sprint-plan.md §2 + the S6 row.
-
-**Acceptance Criteria:**
-- On track end, playback advances to the next queue entry without a manual skip. ✅
-- Advance is by the actual transition delta, robust to multiple boundaries per UI tick (S6 P2-I fix). ✅
-- Honours repeat-one / repeat-all / shuffle when set (US-PLAY-03). ✅
-
-**Priority:** Should | **Phase:** 0 | **Estimate:** 2 sp | **Dependencies:** US-PLAY-08, US-PLAY-03 | **Status:** ✅ DONE (`cf33e5d`; P2-I fixed)
+**Status:** Shipped · proven-by: transition-delta auto-advance path (robust to multiple boundaries per UI tick — S6 P2-I fix; honours repeat/shuffle per US-PLAY-03)
 **Traceability:** FR-PLAY-02, FR-PLAY-03
 
 ---
@@ -539,19 +452,11 @@ As a **Marcus** I want playback to advance automatically to the next track in th
 
 ---
 
-#### US-TON-01 — 31-band live UI-driven EQ with real-time visualisation ✅ DONE *(⚠ deviation: spec said 10-band)*
+#### US-TON-01 — 31-band live UI-driven EQ with real-time visualisation *(⚠ deviation: spec said 10-band)*
 
 As a **Tom** I want a graphic EQ where I can drag the response curve per band and see the resulting curve update in real time, so that I can fine-tune the sound to my preference as a manual escape hatch.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped as a **real, live, UI-driven 31-band** graphic EQ — drag the response curve directly, ±12 dB, kernel-clamped. **⚠ Deviation flag:** this backlog (US-TON-01 and the US-ENG-02 scaffold) specified a **10-band parametric** EQ; what shipped is a **31-band graphic** EQ. The deviation is recorded for traceability honesty; the band count and interaction model changed, the FR-TONAL-01 intent (live, accurate, resettable per-band tonal control) is met. The EQ was migrated onto the S6 Tier-3 `RtSwappableResource<T>` and its off-RT cascade realization moved into the control-plane `Realizer` (no biquad design on the audio thread). S7 validated **all 31 bands** for FR accuracy including near-Nyquist (clears the S6 P1-A Schur-Cohn stability concern) and confirmed bit-transparent bypass. **Still missing (not part of this Done):** EQ **presets**, **parametric** bands, and **device-correction / AutoEq import** — those are S12 (US-TON-02, US-TON-06) and tonal-parity scope. See sprint-plan.md §2 + the S6/S7 rows.
-
-**Acceptance Criteria:**
-- See FR-TONAL-01 Given/When/Then: band at 200 Hz, +6 dB; FFT output shows +6 dB peak centred at the band ±0.5 dB. ✅ (validated across all 31 bands incl. near-Nyquist, S7)
-- EQ curve visualisation updates within one render cycle of any band change (< 23 ms at 512 frames / 44.1 kHz — FR-UI-02). ✅
-- User can reset all bands to 0 dB; at flat the EQ is bit-transparent (S7 bypass test). ✅
-- *Deferred (not Done):* presets (US-TON-06), parametric bands + AutoEq import (S12 / US-TON-02), device-correction auto-load (US-TON-02 / S13).
-
-**Priority:** Should | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-ENG-02, US-ENG-03, US-ENG-04 | **Status:** ✅ DONE (31-band; presets/PEQ/AutoEq pending → S12)
+**Status:** Shipped · proven-by: 31-band EQ path (migrated onto Tier-3 `RtSwappableResource<T>` + off-RT `Realizer` cascade realization) + `VerifyAUGraph` 31-band FR sweep. ⚠ Deviation: this backlog (here + the US-ENG-02 scaffold) specified a **10-band parametric** EQ; what shipped is a **31-band graphic** EQ — recorded for traceability honesty (band count + interaction model changed; FR-TONAL-01 intent still met). Still missing (not this Done): EQ **presets** (US-TON-06), **parametric** bands + **device-correction/AutoEq import** (US-TON-02) → S12/S13.
 **Traceability:** FR-TONAL-01, FR-UI-02
 
 ---
@@ -616,18 +521,11 @@ As a **Marcus** I want the app to apply appropriate compression per content type
 
 ---
 
-#### US-TON-06 — Tonal preset library (8+ named presets) ✅ DONE
+#### US-TON-06 — Tonal preset library (8+ named presets)
 
 As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Boost, Podcast, Film, Classical, Electronic) and save custom variations, so that I can quickly switch tonal characters without manual EQ work.
 
-> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** Shipped in the **QW1 Quick-Win Differentiators** burst (sprint-plan.md §3): tonal **house-curve presets + Save-as-Custom + per-output recall** — `Sources/AdaptiveSound/UI/EQ/EQPresetPickerView.swift`, `UI/EQ/SaveCustomPresetView.swift`, `EQViewModel+Persistence.swift`. QW1 gate: null-test 117/0, golden master held.
-
-**Acceptance Criteria:**
-- See FR-TONAL-06 Given/When/Then: "Electronic" preset selected; EQ parameters update within one render cycle; "Save as Custom" appears on any subsequent adjustment.
-- At least 8 named presets shipped.
-- Custom presets are stored in the profile system (FR-DEVICE-04) and survive app restarts.
-
-**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-TON-01, US-DEVICE-04
+**Status:** Shipped (QW1) · proven-by: `EQPresetPickerView` + `SaveCustomPresetView` + `EQViewModel+Persistence` (house-curve presets + Save-as-Custom + per-output recall). Founder by-ear verification still pending.
 **Traceability:** FR-TONAL-06, FR-DEVICE-04
 
 ---
@@ -715,18 +613,11 @@ As a **Tom** I want a master Adaptation Strength slider (0–100%) that lets me 
 
 ---
 
-#### US-ADAPT-06 — Signal-path transparency UI (Pure vs Enhanced, rate, decode backend) ✅ DONE *(⚠ distinct from US-ADAPT-04)*
+#### US-ADAPT-06 — Signal-path transparency UI (Pure vs Enhanced, rate, decode backend) *(⚠ distinct from US-ADAPT-04)*
 
 As a **Ramith** I want a Roon-style readout of exactly how the engine is handling the current track — bit-perfect Pure vs DSP Enhanced, the active sample rate, and which decode backend is in use — so that I can trust the playback path and confirm bit-exactness at a glance.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped: a **signal-path transparency** readout (Pure vs Enhanced path, current sample rate, decode backend = FFmpeg or Apple). This is a parity feature mature players (Roon, Audirvana) nail. **⚠ Scope-distinction flag:** this is the **SIGNAL-PATH** transparency view — it is *not* the **ADAPTATION**-transparency view of **US-ADAPT-04** (which shows which signals drive which DSP changes and remains unbuilt). The two are deliberately separated in the backlog to keep requirements traceability honest. See sprint-plan.md §2.
-
-**Acceptance Criteria:**
-- View shows the active path (Pure / Enhanced), current sample rate, and decode backend (FFmpeg / Apple). ✅
-- Reflects per-track changes (e.g. a rate change or a Pure→Enhanced fallback) without restart. ✅
-- *Out of scope (→ US-ADAPT-04):* signal→DSP-adjustment attribution rows; adaptive-engine activity.
-
-**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp | **Dependencies:** US-ENG-07, US-ENG-08, US-PLAY-01 | **Status:** ✅ DONE (signal-path; adaptation transparency = US-ADAPT-04, unbuilt)
+**Status:** Shipped · proven-by: signal-path transparency readout (Pure/Enhanced path · active rate · decode backend, updated per-track without restart). ⚠ Scope-distinction: this is the **SIGNAL-PATH** transparency view — *not* the **ADAPTATION**-transparency view (US-ADAPT-04, which attributes signals→DSP changes and remains unbuilt). Kept separate for traceability honesty; do **not** conflate.
 **Traceability:** FR-UI-01, FR-ADAPT-07 (signal-path subset; full FR-ADAPT-07 → US-ADAPT-04)
 
 ---
@@ -823,19 +714,11 @@ As a **Ramith** I want the app to automatically switch to stereo widening mode w
 
 ---
 
-#### US-DEVICE-07 — Basic crossfeed for headphones ✅ DONE
+#### US-DEVICE-07 — Basic crossfeed for headphones
 
 As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed on headphones so that hard-panned elements feel less fatiguing and more natural over long listening sessions.
 
-> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** Shipped in the **QW1** burst (sprint-plan.md §3) as a knob-scaled, headphone-gated **crossfeed DSP stage** (Bauer/bs2b) + crossfeed UI — `Sources/AudioDSP/Spatial/CrossfeedModule.h`, `AudioEngineBridge+CrossfeedControl.swift`, `Models/CrossfeedStrength.swift`; 12 null tests, golden master held. *Not re-verified in this audit: the OQ-17 / SPIKE-LIBBS2B licence gate below — presumed resolved by shipping (Bauer/bs2b), but the written spike outcome was not confirmed against code.*
-
-**Acceptance Criteria:**
-- See FR-SPAT-03 Given/When/Then: hard-panned stereo on headphones; crossfeed enabled at default (~700 Hz crossover); channel separation measurably reduced via FFT; no perceived image collapse.
-- Crossfeed is automatically active when device is classified as headphones (any type); disabled for speakers.
-- Crossfeed level is adjustable in the DSP controls panel (0 = off, default = moderate Bauer level).
-- **Licence gate (OQ-17 / CON-12):** If SPIKE-LIBBS2B confirms libbs2b is MIT, use it. If not clearly permissive, the implementation shall be a clean-room reimplementation of the Bauer algorithm from the public specification (biquad filters + delay). This story is blocked on SPIKE-LIBBS2B resolution.
-
-**Priority:** Should | **Phase:** 0 | **Estimate:** 3 sp (or +2 sp if clean-room reimplement is needed) | **Dependencies:** US-DEVICE-03, US-ENG-02, SPIKE-LIBBS2B
+**Status:** Shipped (QW1) · proven-by: `CrossfeedModule` (Bauer/bs2b, knob-scaled, headphone-gated) + `AudioEngineBridge+CrossfeedControl` + `CrossfeedStrength`. Founder by-ear verification still pending. ⚠ Open caveat: the **OQ-17 / SPIKE-LIBBS2B** licence gate (libbs2b MIT vs clean-room Bauer reimpl) is presumed resolved by shipping but its written spike outcome was **not** confirmed against code in this audit — see the OQ-17 row.
 **Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
 
 ---
@@ -861,18 +744,11 @@ As a **Marcus** I want the app to detect my Bluetooth device's native sample rat
 
 ---
 
-#### US-DEVICE-09 — Device-loss resilience + pin/follow connect-behavior ✅ DONE
+#### US-DEVICE-09 — Device-loss resilience + pin/follow connect-behavior
 
 As a **Marcus** I want playback to survive a device disappearing (BT/USB unplug, sleep) and a setting that controls whether playback **follows** a newly-connected device or **pins** to the current one, so that an accidental disconnect doesn't kill the session and I decide what happens when a new DAC appears.
 
-> **Status: ✅ DONE (back-filled by re-anchor v2.3, 2026-06-19).** Shipped: device-loss resilience (pause/recover on disconnect) on both paths + a **pin/follow connect-behavior setting** (`cf33e5d`). This path was a primary focus of the **S6** review — it surfaced a device-disconnect double-handler race (P1-B) and unsynchronized shared state (P1-C); the **Tier-2** concurrency consolidation (engineQueue + leaf lock + **device-loss serialization**) and Tier-1 RT-safety/lifecycle fixes resolved them and shipped. See sprint-plan.md §2 + the S6 row + `../sprints/s6-architecture-review-findings.md` (P1-B/P1-C).
-
-**Acceptance Criteria:**
-- On device loss (BT/USB unplug, sleep), playback pauses cleanly and recovers without a crash or `-10875` storm; HAL hog mode released. ✅
-- Connect-behavior setting: **follow** (switch to the newly-connected device) or **pin** (stay on the current device). ✅
-- Device-loss + config-change handlers are serialized (no double-handler race); shared transport state is confined/guarded (S6 Tier-1/Tier-2 fixes). ✅
-
-**Priority:** Must | **Phase:** 0 | **Estimate:** 5 sp | **Dependencies:** US-DEVICE-01, US-DEVICE-02, US-ENG-07, US-ENG-08 | **Status:** ✅ DONE (`cf33e5d`; S6-hardened P1-B/P1-C)
+**Status:** Shipped · proven-by: engine device-loss serialization (engineQueue + leaf lock; pause/recover, HAL hog-mode release, no `-10875` storm) + pin/follow connect-behavior setting (S6 P1-B/P1-C hardening, see [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md))
 **Traceability:** FR-DEVICE-01, FR-DEVICE-02, NFR-REL-01, NFR-REL-03
 
 ---
@@ -1664,13 +1540,10 @@ Traceability: LD-12, FR-ADAPT, OQ-22
 
 ### EP-REIMAGINE — Intensity Control
 
-**US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful) ✅ DONE**
+**US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful)**
 As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can dial how much the app transforms my music.
 
-> **Status: ✅ DONE (code) — back-filled by re-anchor v2.5, 2026-07-05; founder by-ear verification pending.** The steerable **equal-power wet/dry intensity** primitive landed in S6 Tier-3 (intensity-0 = the bit-exact anchor; see US-ENG-08), and the **Reimagine intensity knob UI** shipped in QW1 (sprint-plan.md §3) — `Sources/AdaptiveSound/AudioEngineBridge+IntensityControl.swift`, `UI/NowPlaying/NowPlayingWidget.swift`. **US-RMG-02** (the full intensity→parameter *mapping* across clarity/widening) stays **not-done** — `ClarityModule`/`BRIRModule` are still empty stubs (S15–S17).
-
-Acceptance: FR-REIMAGINE-01/02; at 0% the engine is bypassed and output is MD5-identical to source (NFR-QUAL-03).
-Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-ENG-02, US-UI-02
+**Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + `NowPlayingWidget` knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
 
 **US-RMG-02 | Intensity→parameter mapping (mix-range)**
