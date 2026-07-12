@@ -34,36 +34,28 @@ struct FrequencyResponseCanvas: View {
 
     var body: some View {
         Canvas { context, size in
-            let width = size.width
-            let height = size.height
-
             let bgPath = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 9)
             context.fill(bgPath, with: .color(Color.asCard))
 
             let borderPath = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 9)
             context.stroke(borderPath, with: .color(Color.asHairline), lineWidth: 0.5)
 
-            let geometry = PlotGeometry(
-                left: plotLeftInset,
-                right: width - plotRightInset,
-                top: plotTopInset,
-                bottom: height - plotBottomInset
-            )
+            let map = plotMap(for: size)
 
-            drawGridAndLabels(context: &context, geometry: geometry)
+            drawGridAndLabels(context: &context, map: map)
 
             let eqValues: [(freq: Double, gain: Double)] = EQPreset.isoFrequencies
                 .enumerated()
                 .map { index, freq in (freq, Double(eqViewModel.bandGains[index])) }
 
-            drawFrequencyResponseCurve(context: &context, eqValues: eqValues, geometry: geometry)
-            drawISOOctaveDots(context: &context, eqValues: eqValues, geometry: geometry)
+            drawFrequencyResponseCurve(context: &context, eqValues: eqValues, map: map)
+            drawISOOctaveDots(context: &context, eqValues: eqValues, map: map)
 
             // Keyboard-editing cursor (A-H1): a vertical "selected frequency column" highlight on the
             // targeted band, drawn only while the canvas holds keyboard focus, so an arrow-key user
             // can see which band they're adjusting (the band's own dot sits within the column).
             if canvasFocused {
-                drawKeyboardCursor(context: &context, geometry: geometry, bandIndex: keyboardBand)
+                drawKeyboardCursor(context: &context, map: map, bandIndex: keyboardBand)
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
@@ -151,25 +143,31 @@ struct FrequencyResponseCanvas: View {
         return "\(sign)\(gain.formatted(.number.precision(.fractionLength(1)))) decibels"
     }
 
+    // MARK: - Plot map
+
+    /// The plot's coordinate map for the given canvas size (same insets the `Canvas` uses). Built
+    /// here too so the drag hit-test picks bands with the SAME math the dots are drawn with.
+    private func plotMap(for size: CGSize) -> EQPlotMap {
+        EQPlotMap(
+            left: plotLeftInset,
+            right: size.width - plotRightInset,
+            top: plotTopInset,
+            bottom: size.height - plotBottomInset
+        )
+    }
+
     // MARK: - Gesture Handler
 
     private func updateEQFromDrag(location: CGPoint) {
         guard canvasSize.width > 0, canvasSize.height > 0 else { return }
+        let map = plotMap(for: canvasSize)
+        guard map.width > 0, map.height > 0 else { return }
 
-        let plotLeft = plotLeftInset
-        let plotRight = canvasSize.width - plotRightInset
-        let plotBottom = canvasSize.height - plotBottomInset
-        let plotWidth = plotRight - plotLeft
-        let plotHeight = plotBottom - plotTopInset
-        guard plotWidth > 0, plotHeight > 0 else { return }
-
-        let relativeX = max(0.0, min(1.0, (location.x - plotLeft) / plotWidth))
-        let bandIndex = max(0, min(30, Int((relativeX * 30.0).rounded())))
-
-        let relativeY = max(0.0, min(1.0, (plotBottom - location.y) / plotHeight))
-        // Clamp to the DSP range [-12, +12] dB (the kernel's hard limit), not the
-        // ±20 visual span — the canvas must never write out-of-range gains.
-        let cursorGain = Float(max(-12.0, min(12.0, relativeY * 40.0 - 20.0)))
+        // Same coordinate map as the drawing: the picked band is the dot nearest the pointer, and the
+        // gain is the pointer's position on the visual axis, clamped to the DSP range [-12, +12] dB
+        // (the kernel's hard limit — the canvas must never write out-of-range gains).
+        let bandIndex = map.nearestBand(toX: location.x)
+        let cursorGain = Float(max(-12.0, min(12.0, map.gain(forY: location.y))))
 
         if let previousIndex = lastBandIndex, abs(bandIndex - previousIndex) > 1 {
             fillGapBetweenBands(
@@ -216,7 +214,7 @@ struct FrequencyResponseCanvas: View {
         for (offset, weight) in neighborWeights {
             for sign in [-1, 1] {
                 let neighborIndex = centerIndex + offset * sign
-                guard neighborIndex >= 0, neighborIndex <= 30 else { continue }
+                guard eqViewModel.bandGains.indices.contains(neighborIndex) else { continue }
                 let existing = eqViewModel.bandGains[neighborIndex]
                 let blended = existing + (targetGain - existing) * weight
                 eqViewModel.bandGains[neighborIndex] = max(-12.0, min(12.0, blended))
