@@ -13,15 +13,30 @@ This directory contains the sprint methodology, the forward sprint schedule, and
 
 Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. Early-sprint material (Sprint 0–3 plans/test-plans, kickoffs, the Phase-0 team sprints, the team fixing plans, the Phase-1b-Part-A postmortem) lives in [`../session-notes/`](../session-notes/), where it is date-prefixed (`YYYY-MM-DD-*.md`). This directory holds the methodology, the forward schedule, and the shipped-sprint records.
 
-### Historical per-sprint records (this directory)
-- **04-sprint-4-loudness-safety{,-plan,-test-plan,-retro}.md** — Loudness safety (BS.1770-5 meter + true-peak limiter) — ✅ shipped (merged)
+### Sprint & design records (this directory)
+
+> **Current status is not narrated here** — a doc's ✅/⏸/⚠️ marker is a coarse *provenance* tag, not a live status board. What actually shipped and works is the source + git; what's next is [`sprint-plan.md`](sprint-plan.md). These records exist for their **design rationale and decisions**, which code does not carry.
+
+**Old-numbering per-sprint records** (`{NN}-…`, the historical 04/05/06 scheme):
+- **04-sprint-4-loudness-safety{,-plan,-test-plan,-retro}.md** — Loudness safety (BS.1770-5 meter + true-peak limiter) — ✅ shipped
 - **05-sprint-5-eq-foundation{,-plan}.md**, **05-sprint-5-monitoring-tab-design.md**, **05-sprint-5-au-graph-spike-notes.md** — EQ foundation + Monitoring tab — ✅ shipped
-- **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md** — N-channel multichannel pipeline (S0–S3 + M4 shipped) — ✅ shipped
-- **05-sprint-5b-s4-binaural-design.md** — Apple-native binaural design — ⏸ deferred; folded into `sprint-plan.md` Phase 2 (S17 BRIR)
-- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded by `sprint-plan.md` (loudness-comp → S14; clarity → S16, spike S15)
-- **07-phase-1b-part-b-kickoff.md** — critical-path kickoff — ✅ completed (historical)
-- **08-gui-design-review.md** — GUI design review — ✅ historical
-- **09-phase-b-bit-perfect-pure-mode.md** — bit-perfect "Pure Mode" + gapless: status & learnings — ✅ shipped
+- **05-sprint-5b-multichannel-{epic-plan,pipeline-plan,qa-plan}.md** — N-channel multichannel pipeline — ✅ shipped
+- **05-sprint-5b-s4-binaural-design.md** — Apple-native binaural design — ⏸ deferred → `sprint-plan.md` Phase 2 (S18 BRIR)
+- **06-sprint-6-adaptive-clarity.md** — pre-pivot "Sprint 6" adaptive-clarity spec — ⚠️ superseded (loudness-comp → S14; clarity → S16, spike S15). **Not** the forward-plan S6.
+- **07-phase-1b-part-b-kickoff.md** — critical-path kickoff — ✅ historical
+- **08-gui-design-review.md** — GUI design review — ✅ historical (superseded by the Stage-4 GUI review + layout redesign)
+- **09-phase-b-bit-perfect-pure-mode.md** — bit-perfect "Pure Mode" + gapless: learnings (incl. the "AVAudioEngine cannot be bit-perfect" finding) — ✅ shipped
+
+**Forward S-series records** (`s{N}[.{sub}]-…`, the sprint-plan S6+ scheme):
+- **s6-architecture-review-findings.md**, **s6-tier3-spine-design.md** — S6 arch-review gate + Tier-3 DSP-spine rework — ✅ shipped (rationale-bearing; do not lose)
+- **s7-soak-instruments-procedure.md** — on-hardware RT-allocation soak procedure (reusable how-to) — ✅ live procedure
+- **s8-1-persistent-store-design.md**, **s8-2-folder-scan-design.md**, **s8-3-metadata-art-design.md**, **s8-4-live-watch-move-match-design.md** — S8 library-spine design (store now **GRDB-backed** — see the SUPERSEDED note in s8-1) — ✅ shipped
+- **s9-browse-search-ui-design.md**, **s9-library-ia-queue-design.md**, **s9-5-songs-search-design.md** (+ `-test-plan`), **s9-6-artists-genres-design.md** — S9 browse/search design — ✅ shipped
+- **s9-implementation-plan.md**, **s9-5-search-sort-design.md**, **s9-5-queue-toast-design.md**, **s9-5-customizable-columns-plan.md** — S9.5 execution/companion fragments — ⚠️ superseded/folded into `s9-5-songs-search-design.md`
+- **qw1-quick-win-differentiators-design.md** — QW1 crossfeed + Reimagine-intensity + tonal presets (crossfeed↔BRIR exclusivity invariant) — ✅ shipped
+
+**Cross-sprint topical design docs** (`{feature}-{design|plan}.md`, not owned by one sprint):
+- **layout-architecture-design.md**, **layout-implementation-plan.md**, **l3-footer-transport-design.md**, **eq-controls-redesign.md**, **music-folders-accordion.md** — GUI layout / control designs
 
 ### How tests actually run
 The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). `swift test` runs the Swift suites headless (native swift-testing) as part of `make strict-gate`. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
@@ -32,30 +47,19 @@ The **library store** (S8+) has its own headless gate — `swift run VerifyLibra
 
 ## Naming Convention
 
-**Format:** `{SPRINT_NUMBER}-{FEATURE}-{DOCUMENT_TYPE}.md`
+The naming has evolved across three eras. **All three are sanctioned** — do not mass-rename older files to a newer scheme (it breaks cross-links + `git blame` for cosmetic gain). Rename a file only when its name asserts something **false** (e.g. `s9-6-artists-genres-years-design` → `…-artists-genres-design` after the Years tab was cut). New docs use the era that fits.
 
-- **{SPRINT_NUMBER}:** `00`, `01`, `02`, etc. (numeric prefix for sorting)
-- **{FEATURE}:** Short descriptor (`bootstrap`, `engine`, `stem-separation`, `dsp-core`, etc.)
-- **{DOCUMENT_TYPE}:** (optional)
-  - `-plan.md` — Implementation plan, architecture, acceptance criteria
-  - `-test-plan.md` — QA strategy, test breakdown, pass criteria
-  - `-retro.md` — Post-sprint retrospective (lessons learned)
+**Era 1 — old-numbering per-sprint records:** `{NN}-{feature}-{type}.md`
+- **{NN}:** `00`–`09` numeric prefix (sorts naturally; avoids "Sprint 10 before Sprint 2"). This numbering is **frozen** — the forward plan restarted at `S6` (see the sprint-numbering note above; the old `06-sprint-6` is *not* the forward-plan S6).
+- **{type}** ∈ `-plan` (implementation plan / AC) · `-test-plan` (QA strategy) · `-retro` (retrospective). Examples: `04-sprint-4-loudness-safety-plan.md`, `04-sprint-4-loudness-safety-retro.md`.
 
-**Examples:**
-```
-00-bootstrap-plan.md
-00-bootstrap-retro.md
-01-engine-plan.md
-01-engine-test-plan.md
-01-engine-retro.md
-02-stem-separation-plan.md
-02-stem-separation-test-plan.md
-```
+**Era 2 — forward S-series records:** `s{N}[.{sub}]-{feature}-{doctype}.md`
+- Matches the forward `sprint-plan.md` numbering (`s6`, `s8-1`, `s9-5`, …). `{doctype}` in practice ∈ `-design` · `-plan` · `-test-plan` · `-findings` · `-procedure`. Examples: `s6-architecture-review-findings.md`, `s8-1-persistent-store-design.md`, `s9-5-songs-search-test-plan.md`.
 
-**Why numeric prefixes?**
-- Sorts naturally in file explorers (VSCode, Finder, etc.)
-- Prevents accidental sorting like "Sprint 10" before "Sprint 2"
-- Consistent across all sprints
+**Era 3 — cross-sprint topical design docs:** `{feature}-{design|plan}.md`
+- For designs not owned by a single sprint (GUI layout, controls). Examples: `layout-architecture-design.md`, `eq-controls-redesign.md`.
+
+**Special files:** `sprint-plan.md` (authoritative forward schedule), `00-sprint-model.md` (methodology), `qw1-quick-win-differentiators-design.md` (the QW1 exception burst).
 
 ---
 
@@ -151,5 +155,5 @@ Each sprint includes three documents:
 
 ---
 
-**Last Updated:** 2026-06-19  
+**Last Updated:** 2026-07-12  
 **Maintainer:** AdaptiveSound Team
