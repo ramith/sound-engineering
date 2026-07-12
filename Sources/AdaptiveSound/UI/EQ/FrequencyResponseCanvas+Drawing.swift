@@ -111,27 +111,29 @@ extension FrequencyResponseCanvas {
         }
     }
 
-    /// Highlight the keyboard-targeted band (A-H1): a full-height guide plus a ring around its dot,
-    /// using the same log-frequency-x / linear-gain-y mapping as `drawISOOctaveDots`.
+    /// Highlight the keyboard-targeted band (A-H1) as a vertical "selected frequency column" — NOT a
+    /// ring on the data point. A ring drawn at the band's (x, gain) sits correctly on that band's dot,
+    /// but when the band's gain differs from its neighbours it reads as a mark floating away from the
+    /// flat cluster. A full-height column at the band's x reads as a column selection regardless of
+    /// gain (the band's own dot sits within it), so it can never look detached. Uses the same
+    /// log-frequency x-mapping as `drawISOOctaveDots`.
     func drawKeyboardCursor(context: inout GraphicsContext, geometry: PlotGeometry, bandIndex: Int) {
         guard EQPreset.isoFrequencies.indices.contains(bandIndex) else { return }
         let freq = EQPreset.isoFrequencies[bandIndex]
-        let gain = Double(eqViewModel.bandGains[bandIndex])
         let xPos = geometry.left
             + (log10(freq) - log10(20.0)) / (log10(20000.0) - log10(20.0)) * geometry.width
-        let yPos = geometry.bottom - ((gain + 20.0) / 40.0) * geometry.height
 
-        var guide = Path()
-        guide.move(to: CGPoint(x: xPos, y: geometry.top))
-        guide.addLine(to: CGPoint(x: xPos, y: geometry.bottom))
-        context.stroke(guide, with: .color(Color.asAccent.opacity(0.4)), lineWidth: 1)
-
-        let ringRadius: CGFloat = 7
-        let ring = Path(ellipseIn: CGRect(
-            x: xPos - ringRadius, y: yPos - ringRadius,
-            width: ringRadius * 2, height: ringRadius * 2
+        let stripWidth: CGFloat = 10
+        let strip = Path(CGRect(
+            x: xPos - stripWidth / 2, y: geometry.top,
+            width: stripWidth, height: geometry.height
         ))
-        context.stroke(ring, with: .color(Color.asAccent), lineWidth: 2)
+        context.fill(strip, with: .color(Color.asAccent.opacity(0.15)))
+
+        var centerLine = Path()
+        centerLine.move(to: CGPoint(x: xPos, y: geometry.top))
+        centerLine.addLine(to: CGPoint(x: xPos, y: geometry.bottom))
+        context.stroke(centerLine, with: .color(Color.asAccent.opacity(0.6)), lineWidth: 1)
     }
 
     // MARK: - Interpolation & Smoothing
