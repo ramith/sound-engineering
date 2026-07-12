@@ -339,9 +339,9 @@ func checkFtsReadDuringWrite(number: Int, url: URL) async -> Bool {
             collected += try await store.upsert([scanned], folderID: root, generation: generation)
         }
         let ids = collected // immutable snapshot — safe to share into the concurrent writer
-        // Concurrently: a writer re-tagging tracks while a reader searches. The actor
-        // serializes both on one connection — reads must see committed rows, never a
-        // torn row or a deadlock, and integrity must hold.
+        // Concurrently: a writer re-tagging tracks while a reader searches, both on the SAME
+        // store (one GRDB DatabasePool — a serialized writer + concurrent reader connections).
+        // Reads must see committed rows, never a torn row or a deadlock, and integrity must hold.
         async let writes: Void = {
             for id in ids {
                 try await store.applyMetadata(TrackMetadata(title: "Concurrent \(id)"), forTrack: id)

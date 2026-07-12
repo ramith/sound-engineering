@@ -178,7 +178,16 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
-        + songsSortCheckCases() + decodeCoverageCheckCases()
+        + songsSortCheckCases() + decodeCoverageCheckCases() + hardeningCheckCases()
+}
+
+/// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
+/// eraseDatabaseOnSchemaChange recreate-on-body-change guard.
+func hardeningCheckCases() -> [CheckCase] {
+    [
+        CheckCase(label: "sp-single-pool-concurrency", run: checkSinglePoolConcurrency),
+        CheckCase(label: "erase-on-schema-change", run: checkEraseOnSchemaChange),
+    ]
 }
 
 /// S9.2 — FTS5 search: v1→v2 migration/backfill, the write-path sync seam (every

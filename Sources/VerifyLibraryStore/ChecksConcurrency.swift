@@ -78,7 +78,7 @@ private func checkPragmasSet(_ store: LibraryStore, number: Int) async throws ->
     return true
 }
 
-/// Multiple reader connections (separate actor instances) read the same store
+/// Multiple reader connections (separate store instances) read the same store
 /// concurrently without error, under a deadline.
 private func checkConcurrentReaders(url: URL, number: Int) async throws -> Bool {
     let completed = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
@@ -387,6 +387,88 @@ private func runStress(
                 for _ in 0 ..< readsPerReader {
                     _ = try await reader.trackCount()
                     _ = try await reader.allTracks(sortedBy: .name)
+                }
+            }
+        }
+        try await group.waitForAll()
+    }
+}
+
+// MARK: - D-SP — single-pool concurrency (GRDB DatabasePool intra-pool isolation)
+
+/// A torn / out-of-bounds count observed by a reader during the single-pool stress.
+private struct TornReadError: Error {
+    let observed: Int
+    let bounds: ClosedRange<Int>
+}
+
+/// SINGLE-POOL CONCURRENCY: unlike `checkConcurrency` (which uses SEPARATE store instances =
+/// separate DatabasePools on the shared file), this races a writer and four readers on ONE
+/// `LibraryStore`, so it exercises a single GRDB `DatabasePool`'s real behaviour — one serialized
+/// writer + concurrent reader connections. Each upsert commits exactly one row, so every reader's
+/// `trackCount()` must stay within `[baseline, baseline + writes]`; a value outside that is a torn
+/// / uncommitted read. The ledger must reconcile and integrity must hold. Bounded by the deadline.
+func checkSinglePoolConcurrency(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let root = try await store.addRoot(URL(fileURLWithPath: "/Music/SP"))
+        let baseline = try await store.trackCount()
+        let writes = 300
+        let readsPerReader = 300
+        let bounds = baseline ... (baseline + writes)
+
+        let finished = try await withDeadline(seconds: concurrencyDeadlineSeconds) {
+            try await runSinglePoolStress(
+                store: store, root: root, writes: writes, readsPerReader: readsPerReader, bounds: bounds
+            )
+            return true
+        }
+        guard finished == true else {
+            printFail(number, "single-pool concurrency: N-writes ‖ M-reads on one pool did NOT complete "
+                + "within \(concurrencyDeadlineSeconds)s (deadlock)"); return false
+        }
+        let final = try await store.trackCount()
+        guard final == baseline + writes else {
+            printFail(number, "single-pool concurrency: ledger mismatch — final \(final) != baseline "
+                + "\(baseline) + \(writes)"); return false
+        }
+        guard try await store.integrityCheck() else {
+            printFail(number, "single-pool concurrency: integrity_check NOT ok after the stress loop"); return false
+        }
+        printPass(number, "single-pool concurrency: \(writes) writes ‖ \(4 * readsPerReader) reads on ONE "
+            + "DatabasePool (not separate instances) — every read ∈ [\(baseline),\(baseline + writes)] "
+            + "(never torn), ledger reconciles (\(final)), integrity ok")
+        return true
+    } catch let torn as TornReadError {
+        printFail(number, "single-pool concurrency: torn read \(torn.observed) outside \(torn.bounds)"); return false
+    } catch {
+        printFail(number, "single-pool concurrency threw: \(error)"); return false
+    }
+}
+
+/// The single-pool stress body: one writer performing `writes` upserts alongside four readers
+/// each doing `readsPerReader` count + list reads, ALL on the same `store` (one DatabasePool). A
+/// reader that observes a count outside `bounds` throws `TornReadError`. Extracted so
+/// `checkSinglePoolConcurrency` stays within the cyclomatic-complexity budget.
+private func runSinglePoolStress(
+    store: LibraryStore, root: Int64, writes: Int, readsPerReader: Int, bounds: ClosedRange<Int>
+) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        // ONE writer on the shared store/pool.
+        group.addTask {
+            for index in 0 ..< writes {
+                let file = makeScanned(path: "/Music/SP/sp-\(index).flac", name: "sp-\(index)")
+                let generation = try await store.beginScanGeneration()
+                _ = try await store.upsert([file], folderID: root, generation: generation)
+            }
+        }
+        // Four readers on the SAME store — DatabasePool serves these as concurrent reads.
+        for _ in 0 ..< 4 {
+            group.addTask {
+                for _ in 0 ..< readsPerReader {
+                    let seen = try await store.trackCount()
+                    guard bounds.contains(seen) else { throw TornReadError(observed: seen, bounds: bounds) }
+                    _ = try await store.allTracksDisplay(sortedBy: .name, limit: 50, offset: 0)
                 }
             }
         }
