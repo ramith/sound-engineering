@@ -1,5 +1,7 @@
 # Sprint 2 Phase 1a: AUAudioUnit + Param Bus Infrastructure
 
+> **⚠️ HISTORICAL (Sprint-2 Phase-1a kickoff).** Retained for provenance; the shipped param-bus/AU infrastructure is the source of truth.
+
 **🚀 KICKOFF: 2026-06-14**  
 **Duration:** 2.5 days (~1 week)  
 **Goal:** Build the foundational audio engine infrastructure so DSP modules can plug in cleanly.

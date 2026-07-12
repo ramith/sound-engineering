@@ -1,5 +1,7 @@
 # Sprint 2 Phase 1b: UI/UX Redesign (Before DSP Implementation)
 
+> **⚠️ HISTORICAL (Sprint-2 Phase-1b UI planning).** Superseded by the shipped UI + the Stage-4 GUI review + layout redesign. Retained for provenance.
+
 **📋 PLANNING: 2026-06-15**  
 **Duration:** 2.5 days (~1 sprint week) — **BLOCKING:** Must complete validation before DSP implementation  
 **Goal:** Redesign the GUI to eliminate wasted space, introduce tab-based navigation, and implement interactive EQ curve editing.
