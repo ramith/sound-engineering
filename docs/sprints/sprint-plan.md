@@ -22,24 +22,13 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 ---
 
-## 2. Where we are today (verified current state)
+## 2. Where we are today
 
-**Shipped & solid (the engine is genuinely strong — in places ahead of the field):**
+> **Current status is the source + git, not this prose** (see the §Status line under the table for the one-line "what shipped / what's next"). This section is the forward *gap list*, not a shipped-feature ledger.
 
-- Bit-perfect **Pure Mode** — CoreAudio HAL-direct, hog mode, per-track sample-rate match, DSP fully bypassed. (*Apple Music itself is not bit-perfect on macOS — this is a real differentiator.*)
-- **Enhanced** path — `AVAudioEngine` two-AU N-channel graph (≤7.1), 48 kHz float, EQ → loudness → limiter → spatial-passthrough.
-- Runtime **FFmpeg-or-Apple decode** (dlopen, baked major-version guard) — FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC.
-- **31-band EQ** — real, live, UI-driven (drag the response curve), ±12 dB, kernel-clamped.
-- **True-peak limiter** (8× ISP) + **BS.1770-5 loudness meter** with active LUFS normalization (we are *ahead* of most players on loudness).
-- **Gapless** — Enhanced (full) + Pure (same-rate); auto-advance; device-resilience + pin/follow connect-behavior setting.
-- **Signal-path transparency UI** (Roon-style: Pure vs Enhanced, sample rate, decode backend).
+**Shipped baseline (S6–S9):** bit-perfect Pure-Mode HAL + the Enhanced two-AU N-channel graph (≤7.1), 31-band live EQ, BS.1770 loudness + true-peak limiter, gapless + device-resilience, the QW1 differentiators (crossfeed · Reimagine-intensity · tonal presets), and the **GRDB-backed** library spine + full browse/search UI (Songs · Albums · Artists · Genres). Pipeline snapshot: [architecture.md](../architecture/architecture.md) §2.5.
 
-**Half-built / stubs (the gap list):**
-
-- EQ has **no device-correction** (AutoEq import) and **no parametric bands** (31-band graphic only). **Clarity** (masking-aware) module is an empty stub. **BRIR/spatial render** is a stub. **Loudness compensation** (ISO-226 equal-loudness) not built. The perceptual **Arbiter** is not built (the control-plane `Realizer` scaffold landed in S6). *(Since shipped in QW1 — see §3: tonal presets, the Reimagine intensity-knob UI, and crossfeed.)*
-- **QA gaps (at authoring):** no libebur128 conformance oracle, no EQ 31-band FR sweep, no THD+N, no ISP-detector accuracy test, no SRC alias test. *(All shipped in S7 except THD+N, which remains the open gap.)*
-
-**The biggest credibility gap (the linchpin):** we are a **playlist/folder player, not a library player.** There is no persistent music library, no album/artist/genre browse, no search, no cover-art grid — just a flat in-memory playlist + folder monitor. *This is the single largest distance between us and a mature player, and it gates the entire lean-back browse/queue UX.* **(Update 2026-07-05: the S8 library spine — persistent store + scan + move-match — has since largely landed; the remaining gap is the browse/search/queue UX, S9–S10.)**
+**Still ahead (mapped to the schedule below):** parametric EQ + AutoEq device-correction (S12–S13), CUE + format hardening (S11), loudness compensation (S14), masking-aware Clarity + Arbiter + Realizer v1 (S15–S16), full Reimagine mapping (S17), BRIR spatial render (S18). **Open QA gap:** THD+N (the one S7 oracle not yet built). The perceptual `Realizer` scaffold and the steerable intensity anchor landed in S6/QW1; the `Clarity`/`BRIR` modules are still stubs.
 
 ---
 
@@ -49,18 +38,14 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 **Execution order (founder decisions §8.2, §8.6):** **review and harden the architecture first** (gate — no implementation begins until it's green), then harden the QA gate (cheap, pure safety, must precede any DSP-touching work), then build the library spine as one focused block (the credibility critical path), then the sound-parity sprints.
 
-> **Gate status (2026-06-19): S6 is ✅ DONE — the architecture-review gate is GREEN.** The 4-discipline review + all three tiers of fixes shipped (Tier 1 RT-safety/lifecycle; Tier 2 concurrency consolidation; Tier 3 DSP spine), gate-verified (null-test 93/0, golden master held). Feature work (S7+) is unblocked. See the S6 row below and [s6-architecture-review-findings.md](s6-architecture-review-findings.md).
->
-> **S7 (DSP-gate hardening): ✅ DONE (2026-06-19).** All six QA stories shipped (null-test 105/0, golden master held): libebur128 loudness oracle, limiter true-peak, EQ 31-band FR sweep, SRC alias/imaging, gapless-seam regression, RT-allocation soak. Every shipped DSP stage now has an automated regression gate validated against an independent oracle where possible. See the S7 row.
->
-> **QW1 — Quick-Win Differentiators (exception, before S8): ✅ DONE (code) — founder by-ear verification pending.** A founder-approved one-off differentiator burst leveraging the S6 spine: **crossfeed** DSP stage (Bauer/bs2b, knob-scaled, 12 null tests, golden master held), **Reimagine intensity knob** UI, **crossfeed UI** (headphone-gated), **tonal presets** (house curves + Save-as-Custom + per-output recall). Team-designed + architect-reviewed (GO-WITH-CHANGES, all required changes applied) → [qw1-quick-win-differentiators-design.md](qw1-quick-win-differentiators-design.md). Gate: null-test 117/0, golden master `0xE7267654BA01D315` held; swift build + swiftlint clean. Remaining: founder by-ear/by-hand verification (knob blend, crossfeed on headphones, presets), then resume the maturity arc at **S8 (library spine)**.
+> **Gate provenance (rationale kept; status is code+git):** **S6** arch-review gate — findings in [s6-architecture-review-findings.md](s6-architecture-review-findings.md), Tier-3 DSP-spine rework in [s6-tier3-spine-design.md](s6-tier3-spine-design.md). **S7** DSP-gate hardening — the six regression oracles. **QW1** differentiators (the founder-approved burst before S8) — [qw1-quick-win-differentiators-design.md](qw1-quick-win-differentiators-design.md); founder by-ear verification still pending. The DSP spine is confirmed Phase-2-ready, so S15→S16→S17 build directly on it.
 
 | Sprint | Title | SP | Scope | Depends on |
 |---|---|---|---|---|
-| **S6 ✅ DONE** | Technical architecture review & hardening *(gate — first & foremost; §8.6)* | 8† | Comprehensive multi-discipline review of the **shipped codebase before any feature work**: system architecture & module boundaries (the two-path Pure/Enhanced engine; the Swift↔C++ boundary; **whether the DSP spine — `TargetState` / lock-free param bus / off-RT worker — genuinely supports the Phase 2 adaptive vision**); C++ RT-safety & lock-free correctness (`DoubleBufferSnapshot`, `SpscRing`, `GaplessSource` atomics + memory ordering; no alloc/lock/syscall on the audio thread); Swift concurrency & engine lifecycle (dispatch queues, `@MainActor` isolation, data races, retain cycles, `AVAudioEngine` teardown); DSP correctness & gain staging (chain order, master-gain-vs-limiter, makeup-gain placement, headroom budget, gapless seam); and verification-coverage gaps. **Outcome:** the 4-discipline review produced [s6-architecture-review-findings.md](s6-architecture-review-findings.md), and **all three tiers of fixes shipped**: **Tier 1** RT-safety/lifecycle, **Tier 2** concurrency consolidation (engineQueue + leaf lock + device-loss serialization), **Tier 3 spine** ([s6-tier3-spine-design.md](s6-tier3-spine-design.md)) — `RtSwappableResource<T>` extracted (EQ migrated) + a **control-plane `Realizer`** (off-RT owner of the canonical `TargetState`, off-main EQ-cascade design, EQ+intensity coalescing, sole publisher, queue-draining teardown) + **steerable equal-power wet/dry intensity** (intensity-0 stays the bit-exact anchor) + a `GaplessController` conformance suite (Pure/Enhanced position-re-zero parity). **Gate-verified:** C++ null-test 93/0, golden master `0xE7267654BA01D315` held. The DSP spine is now confirmed ready, so Phase 2 (S15 spike → S16 Clarity/perceptual-Realizer → S17 Reimagine) builds directly on it. S7's DSP-gate stories were seeded with new intensity tests (true-peak at intermediate `x`, equal-power conformance, settled-ramp byte-identity). | shipped codebase |
-| **S7 ✅ DONE** | DSP-gate hardening | 8 | libebur128 LUFS/TP conformance oracle; EQ 31-band FR sweep + bit-transparent-bypass; limiter −1 dBTP guarantee + ISP-detector accuracy; SRC alias/stopband; gapless-seam regression (both paths); RT-allocation soak. (BA US-QA-01..06) **Outcome:** all six shipped — libebur128 vendored test-only (meter conformant ±0.047 LU vs oracle); limiter ceiling held under a dual-oracle true-peak gate; all 31 EQ bands FR-accurate incl. near-Nyquist (clears the S6 Schur-Cohn concern); SRC imaging ≤ −83.7 dBFS via `SRCQualityMeasure`; 14 gapless-seam tests; RT-allocation soak proves zero audio-thread allocations (fast default; full 1-hr via `SOAK_FULL=1`) + an Instruments XRun procedure ([s7-soak-instruments-procedure.md](s7-soak-instruments-procedure.md)) for the on-hardware half. Gate: null-test 105/0, golden master held. | S6 |
-| **S8 ✅ DONE** | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art extraction, incremental rescan, persistent store (SQLite), art cache. **Status:** shipped & merged — `LibraryScan` + `LibraryStore` (schema: folders/tracks/artists/albums/genres/artwork/track_genres; S8.4 id-preserving move-match), headless-gated by `swift run VerifyLibraryStore` (77/77). Gate 1 (playlist filter — known-issues SEQ-1) stays open until S10 ships the playlist table. | S6 (foundation) |
-| **S9 ✅ DONE** | Browse & search UI | 8 | Album-grid; Artist/Album/Genre/Year views; incremental search; cover-art rendering; click-to-queue. **Shipped (PRs #28–#31):** S9.1 DAO reads + `LibraryTrackDisplay`, S9.2 FTS5 search (schema v2), S9-Q1/Q2 queue/advance core (`PlaybackQueueKit`), S9.4 Albums grid+detail, **S9.5** Songs list + incremental filter (preserves the column sort — native macOS paradigm) + sortable/**customizable** full-catalog columns + queue-add toast + row artwork + play-tracking + full VoiceOver a11y + type-to-select. **S9.6 (2026-07-11):** **Artists** (tile grid — representative album cover + name + N songs, single-click opens a grouped-by-album detail) + **Genres** (text list → flat song-list detail); context-menu queue verbs (Play · Play Next · Add to Queue · Shuffle), 0-song facets hidden, VoiceOver a11y — gated by `VerifyLibraryStore` (BR7/BR8) + `LibraryBrowseKit` unit tests. *(The Years tab was cut during founder review — a track-year index added little; all year DAO/gate/UI removed.)* **Deferred to S10:** true drag-to-queue (rides the S10 queue-drag infra) and the A–Z jump rail. | S8 |
+| **S6** ✅ | Technical architecture review & hardening *(gate — §8.6)* | 8† | Multi-discipline review of the shipped codebase; RT-safety/lifecycle + concurrency consolidation + the Tier-3 DSP spine (`Realizer`, `RtSwappableResource`, steerable equal-power intensity with intensity-0 the bit-exact anchor, `GaplessController`). Confirmed the spine is Phase-2-ready. **Rationale:** [s6-architecture-review-findings.md](s6-architecture-review-findings.md), [s6-tier3-spine-design.md](s6-tier3-spine-design.md). | shipped codebase |
+| **S7** ✅ | DSP-gate hardening | 8 | Regression oracles for every shipped DSP stage: libebur128 LUFS/TP, limiter −1 dBTP + ISP accuracy, 31-band EQ FR sweep + bit-transparent bypass, SRC alias/stopband, gapless-seam, RT-allocation soak (US-QA-01..06). **Open follow-up:** THD+N. | S6 |
+| **S8** ✅ | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art, incremental rescan, persistent **GRDB**-backed store, art cache; S8.4 id-preserving move-match. Headless-gated by `VerifyLibraryStore`. **Forward:** Gate 1 (playlist filter, known-issues SEQ-1) stays open until S10 ships the playlist table. | S6 |
+| **S9** ✅ | Browse & search UI | 8 | Album grid + detail; Songs (filter-preserves-sort + customizable columns); Artists (tile grid) + Genres; FTS5 incremental search; queue/advance core (`PlaybackQueueKit`); cover art; a11y. *(Years tab cut.)* **Deferred → S10:** true drag-to-queue + the A–Z jump rail. | S8 |
 | **S10** | Queue + playlists + macOS control | 8 | Queue reorder/save/play-next/history; playlist create/edit + **M3U/M3U8** import-export; **media keys + Now-Playing/Control Center** (`MPNowPlayingInfoCenter`); keyboard shortcuts; folder-browse mode. | S8, S9 |
 | **S11** | CUE sheets + format hardening | 7 | External + embedded **CUE** → virtual tracks (reuse gapless); FLAC seektable/fast-seek verification; enable WavPack/APE if free via FFmpeg; full metadata-display panel; close **gapless Stage 2b** (lossy AAC/MP3 encoder-delay trim — US-PLAY-07). | S8, gapless |
 | **S12** | Tonal parity + finish half-built | 9 | **Parametric EQ** bands alongside the 31-band graphic; **AutoEq/oratory1990 `ParametricEQ.txt` import**; **A/B LUFS-matched bypass** toggle. *(preset save/load per-output + Reimagine intensity-knob wiring were delivered early in QW1 — the latter closed the NFR-QUAL-03 demonstrability gap.)* | S7, EQ (have) |
@@ -75,7 +60,9 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 **Critical path:** S6 (architecture gate) → S8 → S9 → S10 (library spine) — the architecture review gates everything; after it, the library spine is the highest-leverage and most-underestimated stretch.
 
-**Status (2026-07-11):** S6 / S7 / **S8** ✅ done; **S9** ✅ **DONE** — all slices incl. S9.6 (Artists tile grid + Genres) shipped. **Next: S10 (queue + playlists + macOS control) → Release R1.** (Also merged earlier: a TSan-verifiable wait-free SPSC parameter-snapshot transport that replaced the fence-based seqlock; and the strict-gate `periphery` hardening.)
+### Status
+
+**S6–S9 ✅ shipped · S10 next → Release R1.** S9 browse is complete (Songs · Albums · Artists · Genres). **This line is the single prose status surface for the project** — README/roadmap defer here; everything finer-grained lives in the source + git log (which are authoritative if they disagree with this).
 
 ---
 
@@ -110,15 +97,9 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 ---
 
-## 6. Backlog re-anchor (prerequisite — the backlog has drifted from shipped reality)
+## 6. Backlog re-anchor — DONE
 
-The backlog (v2.2) describes a single mix-level DSP graph; what shipped is the two-path Pure/Enhanced engine + gapless + decode — **none of it reflected as Done stories.** Before/alongside S6, re-anchor so the plan stays traceable:
-
-**6A — Back-fill as DONE** (cite commits): Bit-perfect Pure Mode (new US-ENG-07); two-path engine (US-ENG-08); runtime FFmpeg-or-Apple decode (amend US-PLAY-01); **31-band** live UI-driven EQ (amend US-TON-01 — *deviation: backlog says 10-band*); true-peak limiter (US-ENG-05); BS.1770-5 meter + LUFS normalization (new); gapless + auto-advance (new US-PLAY-08/09); device-resilience + pin/follow (new US-DEVICE-09); **signal-path** transparency UI (new US-ADAPT-06 — *deviation: distinct from the still-unbuilt **adaptation**-transparency US-ADAPT-04; do not conflate*).
-
-**6B — Tag "Won't — this horizon":** EP-STEM, EP-SYSWIDE, EP-VDEVICE, EP-NLT (incl. multilingual), US-PROF-01 (iCloud sync), and their gating spikes — keep entries, mark out-of-window. DSD: tag "deferred — post-R2, gated on DSD DAC."
-
-**6C — Doc gap closed:** `00-sprint-model.md` references this `sprint-plan.md` (which did not exist until now). This document closes that gap; update the three backlog references + the model's "Related Documents" to point here.
+The one-time re-anchor this section mandated (back-fill shipped work as Done stories; tag EP-STEM/SYSWIDE/VDEVICE/NLT + DSD as "Won't, this horizon"; close the sprint-plan doc gap) has been executed — see [../product/backlog.md](../product/backlog.md) (now a forward backlog + a shipped-traceability index) and its change-log. The deviation flags it recorded (shipped EQ is 31-band not 10; signal-path transparency ≠ the unbuilt adaptation-transparency US-ADAPT-04; Opus replaced OGG) live in the backlog and are not restated here.
 
 ---
 
@@ -145,4 +126,4 @@ The backlog (v2.2) describes a single mix-level DSP graph; what shipped is the t
 
 ---
 
-**Last updated:** 2026-07-11 (S9 ✅ DONE incl. S9.6 Artists tile grid + Genres; Years cut; S10 next) · **Maintained by:** AdaptiveSound team · **Methodology:** [00-sprint-model.md](00-sprint-model.md) · **Backlog:** [../product/backlog.md](../product/backlog.md)
+**Last updated:** 2026-07-12 (docs-cleanup pass: done-narration thinned to pointers; §Status is now the single prose status surface; S10 next) · **Maintained by:** AdaptiveSound team · **Methodology:** [00-sprint-model.md](00-sprint-model.md) · **Backlog:** [../product/backlog.md](../product/backlog.md)
