@@ -1,12 +1,12 @@
 # Adaptive Sound — Product Roadmap
 ## Phase Timeline & Release Plan
 
-**Status:** 🟢 IN ACTIVE DEVELOPMENT
-**Last Updated:** 2026-07-05
 **Strategy:** *Player-maturity first → differentiate later* (founder-reviewed 2026-06-19)
 **Release model:** GitHub releases R1 → R2 → R3, effort-driven (no calendar pressure)
 
-> **This is the high-altitude product view.** The authoritative, detailed sprint sequence lives in [../sprints/sprint-plan.md](../sprints/sprint-plan.md) (S6–S18). Where the two overlap, sprint-plan.md wins.
+> **This is the high-altitude product view.** The authoritative, detailed sprint sequence — and the only place that narrates **what has shipped vs. what's next** — is [../sprints/sprint-plan.md](../sprints/sprint-plan.md) (S6–S18) + the source/git. Where the two overlap, sprint-plan.md wins.
+>
+> **Phase vocabulary:** this roadmap's **Phase 1 / Phase 2** is the *execution / release* axis (player-maturity parity → differentiation pivot). The PRD's **Phase 0 / 1 / 1.5 / 2** is a different, *product-capability* axis — see the Rosetta note in [PRD.md](PRD.md).
 
 ---
 
@@ -16,34 +16,21 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 
 ---
 
-## What's shipped (verified against code)
-
-- **Sprint 4 — Loudness safety (✅ Shipped, merged):** BS.1770-5 loudness meter + true-peak limiter (8× ISP) with active LUFS normalization.
-- **Sprint 5 / 5b — EQ + multichannel (✅ Shipped):** live 31-band UI-driven EQ (drag the response curve, ±12 dB, kernel-clamped), N-channel two-AU Enhanced graph (≤7.1, EQ → loudness → limiter → spatial-passthrough), Monitoring tab.
-- **Bit-perfect "Pure Mode" + gapless (✅ Shipped — pipeline-review additions):** CoreAudio HAL-direct output (hog mode, per-track sample-rate match, DSP bypassed), runtime FFmpeg-or-Apple decode (FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC), gapless (Enhanced full + Pure same-rate), auto-advance, device-resilience + pin/follow, signal-path transparency UI.
-- **S6 — Architecture-review gate (✅ Shipped):** 4-discipline review + Tier 1/2/3 fixes — control-plane `Realizer`, steerable equal-power wet/dry intensity (intensity-0 = bit-exact anchor), `RtSwappableResource`, `GaplessController` contract. Gate green.
-- **S7 — DSP-gate hardening (✅ Shipped):** regression oracles for every shipped DSP stage — libebur128 loudness/TP, limiter −1 dBTP, 31-band EQ FR sweep, SRC alias/imaging, gapless-seam, RT-allocation soak.
-- **QW1 — Quick-Win Differentiators (✅ Shipped — code; founder by-ear pending):** crossfeed DSP + UI (headphone-gated), Reimagine intensity knob UI, tonal presets (house curves + Save-as-Custom + per-output recall).
-
-**Current focus → 🟢 S9 DONE; S10 next.** S8 (the library spine) and all of S9 have **shipped**: DAO reads, FTS5 search, the queue/advance core (`PlaybackQueueKit`), the **Albums** grid+detail, the full **Songs** view (filter-preserves-sort, customizable columns, queue toast, artwork, play-tracking, a11y), and now **S9.6** — the **Artists** tab (a tile grid: representative album cover + name + N songs → grouped-by-album detail) and **Genres** (list → flat song-list detail), with context-menu Play/Play Next/Add to Queue/Shuffle, 0-song facets hidden, VoiceOver a11y. *(The Years tab was cut during founder review.)* The library surface is now a complete browse: Songs · Albums · Artists · Genres. **Next: S10** (queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse) — where the deferred **drag-to-queue** + A–Z jump rail also land → then **Release R1**.
-
----
-
 ## Phase 1 — Player maturity / competitive parity (S8–S14)
 
 **Exit criterion:** a listener can point the app at their music folders and live in it daily — browse, search, queue, play bit-perfect with art / tags / media keys, CUE albums, headphone correction, loudness compensation — on a QA gate we trust. This is the GitHub release that earns the right to differentiate.
 
-| Sprint | Scope | Status |
-|--------|-------|--------|
-| **S8** | **Library spine: scan + persistent DB** | ✅ Shipped |
-| **S9** | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue | ✅ Shipped — Songs · Albums · Artists · Genres all browse (S9.6 = Artists tile grid + Genres; Years cut) |
-| S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center | Planned |
-| S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim | Planned |
-| S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass | Planned |
-| S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export | Planned |
-| S14 | Loudness compensation (ISO-226) — the lowest-risk first taste of the adaptive thesis | Planned |
+| Sprint | Scope |
+|--------|-------|
+| S8 | Library spine: scan + persistent DB |
+| S9 | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue |
+| S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center |
+| S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim |
+| S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass |
+| S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export |
+| S14 | Loudness compensation (ISO-226) — the lowest-risk first taste of the adaptive thesis |
 
-*(Preset save/load, the Reimagine intensity-knob wiring, and crossfeed — originally scoped in S12/S13 — were delivered early in QW1.)*
+*(Preset save/load, the Reimagine intensity-knob wiring, and crossfeed — originally scoped in S12/S13 — were delivered early in the QW1 differentiators burst.)*
 
 ---
 
@@ -51,12 +38,12 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 
 Built on the mature base, enabler-first, lowest-artifact-risk first. This is the thesis that no static competitor (including Apple's ASAF) can match — it adapts every buffer to content, level, device, and hearing.
 
-| Sprint | Scope | Status |
-|--------|-------|--------|
-| S15 | SPIKE: masking model + arbitration (roex + Arbiter logic; de-risks the thesis) | Planned |
-| S16 | Clarity (masking-aware) — Arbiter + Realizer v1; the core perceptual differentiator | Planned |
-| S17 | Reimagine intensity — full mapping (0→1 across loudness-comp + clarity + crossfeed) | Planned |
-| S18 | SPIKE-BRIR + BRIR spatial render v1 — highest artifact risk → sequenced last | Planned |
+| Sprint | Scope |
+|--------|-------|
+| S15 | SPIKE: masking model + arbitration (roex + Arbiter logic; de-risks the thesis) |
+| S16 | Clarity (masking-aware) — Arbiter + Realizer v1; the core perceptual differentiator |
+| S17 | Reimagine intensity — full mapping (0→1 across loudness-comp + clarity + crossfeed) |
+| S18 | SPIKE-BRIR + BRIR spatial render v1 — highest artifact risk → sequenced last |
 
 ---
 
@@ -68,7 +55,7 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 | **R2 — "audiophile-credible"** | S14 | Parity (unlocks Phase 2) | CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green |
 | **R3 — "differentiated"** | S17 | The thesis | Clarity + steerable Reimagine — demonstrable and comparable |
 
-**Critical path:** S6 (gate, done) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8 — the highest-leverage and most-underestimated stretch in the plan.
+**Critical path:** S6 (gate) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8 — the highest-leverage and most-underestimated stretch in the plan.
 
 **Opinionated guardrail (PM + BA agree):** do not start Phase 2 until S8–S10 ship and the app has been the daily driver for a week. The adaptive DSP is more fun than catalog plumbing — the differentiators only earn attention once the table-stakes are invisible-because-they-just-work.
 
@@ -108,5 +95,4 @@ Details: [../architecture/validation-strategy.md](../architecture/validation-str
 
 ---
 
-**Status:** 🟢 In active development
-**Next step:** 🟢 **S10 — queue + playlists + macOS control** (S9 browse is complete: Songs · Albums · Artists · Genres). Queue reorder/save/history, M3U import-export, media keys + Now-Playing/Control Center, keyboard shortcuts, folder-browse — plus the deferred drag-to-queue + A–Z rail — the credibility critical path toward release **R1**. Adaptive clarity, the full Reimagine mapping, and BRIR spatial are Phase 2 (S15–S18), not next. Detailed sequencing: [../sprints/sprint-plan.md](../sprints/sprint-plan.md).
+**For current status and "what's next," see [../sprints/sprint-plan.md](../sprints/sprint-plan.md) §Status + the source/git.** This roadmap intentionally does not track per-sprint state — it is the high-altitude arc (Phase 1 parity → Phase 2 differentiation, R1 → R2 → R3).
