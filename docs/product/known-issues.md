@@ -8,9 +8,9 @@ auto-alerts when the underlying behavior changes.
 
 ## SEQ-1 — Hard sequencing gates before S9/S10 playlists ship (library data integrity)
 
-**Status:** OPEN (enforced sequencing constraint, not a defect in current behavior). Surfaced by
-the S6 full-team review (E1/E2). Both gates are safe to leave open *only* because no playlist table
-or playlist UI exists yet; shipping S9/S10 without closing them causes data loss.
+**Status:** CLOSED (both gates landed). Surfaced by the S6 full-team review (E1/E2). Gate 2 closed
+with S8.4 (move-match); **Gate 1 closed with S10.1** (the `playlist_entries` filter). Kept here as
+the record of why the sequencing mattered.
 
 **Verified current state (2026-07-03):** `removeRoot` (LibraryStore+DAO) already implements the
 design §8 detach-to-loose flow correctly — it deletes the `folders` row (the `folder_id … ON DELETE
@@ -18,13 +18,33 @@ SET NULL` FK detaches the folder's tracks to loose), then deletes only the *unre
 loose-file path is wired (nullable `folder_id`, `addLooseFile`, and VerifyLibraryStore FS-4 proves a
 loose track survives an unrelated root's removal). No code change was needed for E1.
 
-**Gate 1 — `unreferencedTrackIDs` playlist filter (S10).** The hook currently returns ALL
-candidates (no `playlist_tracks` table yet), so removing a root deletes every track in that folder.
-BEFORE the S10 playlist UI ships it MUST gain `AND id NOT IN (SELECT track_id FROM playlist_tracks)`,
-or `removeRoot` will delete playlist-referenced tracks. Marked with a ⚠️ HARD GATE comment at the
-call site.
+**Gate 1 — `unreferencedTrackIDs` playlist filter — CLOSED (S10.1).** `unreferencedTrackIDs` now
+filters candidates against `SELECT DISTINCT track_id FROM playlist_entries`, so `removeRoot` spares
+any playlist-referenced track (it detaches to loose, `folder_id → NULL`, entries + FTS rows intact)
+and deletes only the genuinely-unreferenced ones. Proven by `VerifyLibraryStore` `pl-gate1-*` checks
+(referenced-kept + unreferenced-swept). (Table named `playlist_entries`, not the earlier
+`playlist_tracks` sketch.)
 
-**Gate 2 — S8.4 id-preserving move-match — CLOSED (landed on `main`).** A filesystem move reconciles as an id-preserving move (signature match on `(dev,inode,size,mtime)` + format), keeping `tracks.id` and durable user-state (play_count/loved/rating). Proven by `VerifyLibraryStore` move checks (`LibraryStore+MoveMatch.swift`); this is now code truth, not a doc claim. **Known limitation (still forward):** a copy-then-delete move (cross-volume drag, rsync) gets a new inode and is NOT matched (id lost) — `content_hash` is the deferred escape hatch. Traces to EP-LIBRARY (US-LIB move-in-place) + EP-PLAYLIST in [backlog.md](backlog.md). **So the one remaining open gate before S10 is Gate 1 (above).**
+**Gate 2 — S8.4 id-preserving move-match — CLOSED (landed on `main`).** A filesystem move reconciles as an id-preserving move (signature match on `(dev,inode,size,mtime)` + format), keeping `tracks.id` and durable user-state (play_count/loved/rating). Proven by `VerifyLibraryStore` move checks (`LibraryStore+MoveMatch.swift`); this is now code truth, not a doc claim. **Known limitation (still forward):** a copy-then-delete move (cross-volume drag, rsync) gets a new inode and is NOT matched (id lost) — `content_hash` is the deferred escape hatch. Traces to EP-LIBRARY (US-LIB move-in-place) + EP-PLAYLIST in [backlog.md](backlog.md). **Both gates are now closed.**
+
+---
+
+## DUR-1 — Playlist durability across schema change (⚠️ HARD GATE before R1)
+
+**Status:** OPEN (deferred by founder decision — S10.1 design §0.1; keep it simple pre-release).
+
+The store keeps `eraseDatabaseOnSchemaChange = true` (the rebuildable-cache "drop-and-recreate on
+schema change" discipline). That is correct for the track/album **cache** but **playlists are
+user-authored data that cannot be rebuilt from the filesystem.** Two failure modes once real users
+have playlists: (a) a schema change **erases** them; (b) worse, a full rebuild **reassigns
+`tracks.id` in scan order**, so surviving `playlist_entries.track_id` would point at the **wrong
+song** — silent corruption. Harmless pre-release (no real playlists yet), which is why S10.1 ships
+with it deferred.
+
+**⚠️ HARD GATE — MUST be resolved before Release R1 ships playlists to users.** The likely fix
+(from the S10.1 design + gate): a real additive migration posture + `eraseDatabaseOnSchemaChange`
+off in release (dev keeps a `make reset-db`), plus a migration-immutability guard so an edited
+shipped migration can't silently corrupt. Revisit as its own scoped task before R1.
 
 ---
 
