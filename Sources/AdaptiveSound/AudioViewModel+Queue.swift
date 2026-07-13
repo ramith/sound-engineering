@@ -28,6 +28,7 @@ extension AudioViewModel {
         let start = min(max(0, index), tracks.count - 1)
         logUX("playNow: \(tracks.count) track(s), startAt=\(start)")
         queue = tracks.map { QueueItem(file: $0) }
+        scheduleQueueMirror()
         playTrack(at: start)
     }
 
@@ -46,6 +47,7 @@ extension AudioViewModel {
         let insertAt = min(current + 1, queue.count)
         logUX("playNext: \(tracks.count) track(s) after index \(current) (playing=\(isPlaying))")
         queue.insert(contentsOf: tracks.map { QueueItem(file: $0) }, at: insertAt)
+        scheduleQueueMirror()
         // Playing → arm the inserted slot as the on-deck (single-slot override, honors
         // shuffle). Paused → the insert alone plays it next under LINEAR order (resume's
         // primeGaplessPipeline derives computeNextIndex(current) = current+1).
@@ -81,6 +83,7 @@ extension AudioViewModel {
         case let .insertAndPlay(removeAt, insertAt):
             if let removeAt { queue.remove(at: removeAt) }
             queue.insert(QueueItem(file: track), at: insertAt)
+            scheduleQueueMirror()
             logUX("playTrackNextNow: '\(track.name)' → index \(insertAt)"
                 + (removeAt.map { " (moved from \($0))" } ?? "") + " (playing=\(isPlaying))")
             // playTrack overwrites selectedTrackIndex and re-primes the on-deck, so the stale
@@ -100,6 +103,7 @@ extension AudioViewModel {
         let oldCount = queue.count
         logUX("appendToQueue: \(tracks.count) track(s) (was \(oldCount))")
         queue.append(contentsOf: tracks.map { QueueItem(file: $0) })
+        scheduleQueueMirror()
         guard isPlaying, let current = selectedTrackIndex else { return tracks.count }
         if let armIndex = QueueAdvance.appendArmIndex(
             current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
