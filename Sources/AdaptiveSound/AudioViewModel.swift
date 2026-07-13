@@ -169,7 +169,18 @@ final class AudioViewModel {
 
     // MARK: - Playlist State
 
-    var playlist: [AudioFile] = []
+    /// The play queue (S10.2). Each slot is a `QueueItem` (stable UUID identity), so the same
+    /// track may appear more than once. `selectedTrackIndex`/`pendingNextIndex` are plain `Int`
+    /// offsets into this array (the engine's index math is unchanged).
+    var queue: [QueueItem] = []
+
+    /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
+    /// need slot identity (menu-bar, now-playing widget, transport). Queue *edits* go through the
+    /// `queue`-mutating verbs; this shim just keeps the many read sites working unchanged.
+    var playlist: [AudioFile] {
+        queue.map(\.file)
+    }
+
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int?
