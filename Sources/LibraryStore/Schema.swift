@@ -32,7 +32,7 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 2
+public let currentSchemaVersion = 3
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -50,6 +50,10 @@ public enum Schema {
         public static let v1 = "v1-create-all"
         /// v1 → v2: the `tracks_fts` FTS5 table + backfill (S9.2).
         public static let v2 = "v2-fts5"
+        /// v2 → v3: the `playlists` + `playlist_entries` tables + the seeded built-in
+        /// "current" queue playlist (S10.1). Durability across schema change is DEFERRED
+        /// (design §0.1): `eraseDatabaseOnSchemaChange` stays true pre-R1.
+        public static let v3 = "v3-playlists"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
@@ -185,6 +189,8 @@ public enum Schema {
     public static let expectedTables: [String] = [
         "schema_info", "folders", "artists", "genres", "artwork", "albums",
         "tracks", "track_genres",
+        // v3 (S10.1): playlists + ordered entries.
+        "playlists", "playlist_entries",
     ]
 
     /// Migrate an empty (v0) database to v1: create every table + index, then seed
@@ -278,6 +284,64 @@ public enum Schema {
         try db.execute(sql: backfillV2FtsStatement)
         // Refresh provenance to v2; `created_at` is preserved by the ON CONFLICT SET.
         try writeSchemaInfo(db, version: 2, appBuild: appBuild,
+                            createdAt: timestamp, migratedAt: timestamp)
+    }
+
+    // MARK: - v3: playlists + ordered entries (S10.1, design §3)
+
+    /// The reserved name of the built-in, non-deletable "current" playlist — the play queue
+    /// (design §0.3). `is_builtin = 1`; exempt from the user-name UNIQUE index.
+    public static let builtinCurrentPlaylistName = "current"
+
+    /// The `CREATE` statements for schema v3 (design §3). `playlists` first (referenced by
+    /// `playlist_entries`). `playlist_entries` carries its OWN id + `position`, so the same
+    /// `track_id` may appear multiple times in one playlist (US-PLIST-01). Name uniqueness is
+    /// scoped to user playlists (`WHERE is_builtin = 0`) so the reserved "current" can't collide
+    /// (design §0.4). `track_id → tracks.id ON DELETE CASCADE`: a genuinely-deleted track (file
+    /// gone / explicit delete) drops out of its playlists (design §0.2).
+    public static let createV3Statements: [String] = [
+        """
+        CREATE TABLE playlists (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            is_builtin INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL);
+        """,
+        // At most ONE built-in playlist, enforced as a DB invariant (idempotent bootstrap).
+        "CREATE UNIQUE INDEX idx_playlists_one_builtin ON playlists(is_builtin) WHERE is_builtin = 1;",
+        // Duplicate USER playlist names prevented (design §0.4); the built-in is exempt.
+        "CREATE UNIQUE INDEX idx_playlists_name_user ON playlists(name) WHERE is_builtin = 0;",
+        """
+        CREATE TABLE playlist_entries (
+            id INTEGER PRIMARY KEY,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL,
+            added_at INTEGER NOT NULL);
+        """,
+        "CREATE INDEX idx_playlist_entries_playlist ON playlist_entries(playlist_id, position);",
+        "CREATE INDEX idx_playlist_entries_track ON playlist_entries(track_id);",
+    ]
+
+    /// Seed the built-in "current" queue playlist. `INSERT OR IGNORE` on the single-builtin
+    /// invariant (`idx_playlists_one_builtin`) keeps it idempotent, like `seedSentinelArtist`.
+    private static let seedBuiltinCurrentPlaylistSQL =
+        "INSERT OR IGNORE INTO playlists(name, is_builtin, created_at) VALUES (?, 1, ?);"
+
+    public static func seedBuiltinCurrentPlaylist(_ db: Database, timestamp: Int64) throws {
+        try db.execute(sql: seedBuiltinCurrentPlaylistSQL,
+                       arguments: [builtinCurrentPlaylistName, timestamp])
+    }
+
+    /// Migrate v2 → v3: create the playlist tables + indexes, then seed the built-in "current"
+    /// queue playlist. Runs inside the migrator's single migration transaction (uses `db.execute`
+    /// directly; opens no transaction of its own). Additive — no `tracks` backfill.
+    public static func migrateV2toV3(_ db: Database, appBuild: String?, timestamp: Int64) throws {
+        for statement in createV3Statements {
+            try db.execute(sql: statement)
+        }
+        try seedBuiltinCurrentPlaylist(db, timestamp: timestamp)
+        try writeSchemaInfo(db, version: 3, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 
