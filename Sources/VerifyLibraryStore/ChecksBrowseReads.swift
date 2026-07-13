@@ -303,6 +303,47 @@ func checkBrowseArtistCount(number: Int, url: URL) async -> Bool {
     }
 }
 
+// MARK: - BR9 — tracksDisplay(ids:) batched hydration read (S10.2 2c)
+
+/// The queue-hydration batch read: a set of ids → `id`→row map, reusing the display projection so
+/// a restored queue carries the SAME metadata (incl. duration) as a live one. Pins the properties
+/// the QA break-it pass flagged: duplicate ids COLLAPSE, a missing id is ABSENT (not a throw),
+/// empty input → empty map, and each row equals its `allTracksDisplay` row with `durationMs`
+/// projected (the "--:--" relaunch-regression guard).
+func checkBrowseTracksDisplayByIDs(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        _ = try await seedFixtureLibrary(store)
+        let all = try await store.allTracksDisplay(sortedBy: .name)
+        guard all.count >= 2 else { printFail(number, "BR9: fixture too small"); return false }
+        let trackA = all[0], trackB = all[1]
+        let missing = Int64(999_999)
+        // Duplicate `trackA.id` must COLLAPSE in the map; `missing` must be ABSENT.
+        let map = try await store.tracksDisplay(ids: [trackA.id, trackB.id, trackA.id, missing])
+        guard Set(map.keys) == Set([trackA.id, trackB.id]) else {
+            printFail(number, "BR9: id-map keys \(Set(map.keys)) != {\(trackA.id),\(trackB.id)} "
+                + "(missing id present or dup not collapsed)"); return false
+        }
+        // Each resolved row equals its allTracksDisplay row — SAME metadata incl. duration.
+        guard let rowA = map[trackA.id], rowA.id == trackA.id, rowA.title == trackA.title,
+              rowA.url == trackA.url, rowA.durationMs == trackA.durationMs,
+              map[trackB.id]?.durationMs == trackB.durationMs else {
+            printFail(number, "BR9: resolved row != allTracksDisplay row (metadata/duration drift)")
+            return false
+        }
+        // Empty input → empty map; a lone unknown id → empty map.
+        guard try await store.tracksDisplay(ids: []).isEmpty,
+              try await store.tracksDisplay(ids: [missing]).isEmpty else {
+            printFail(number, "BR9: empty/unknown ids did not return an empty map"); return false
+        }
+        printPass(number, "BR9: tracksDisplay(ids:) batched read — dup ids collapse, missing id "
+            + "absent, empty→empty, each row == its allTracksDisplay row (durationMs projected)")
+        return true
+    } catch {
+        printFail(number, "BR9 threw: \(error)"); return false
+    }
+}
+
 // MARK: - BR8 — 0-song genre reachability (ad-hoc store, shared fixture untouched)
 
 func checkBrowseEmptyGenre(number: Int, url: URL) async -> Bool {
