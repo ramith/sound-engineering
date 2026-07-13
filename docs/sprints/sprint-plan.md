@@ -44,9 +44,15 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 |---|---|---|---|---|
 | **S6** ✅ | Technical architecture review & hardening *(gate — §8.6)* | 8† | Multi-discipline review of the shipped codebase; RT-safety/lifecycle + concurrency consolidation + the Tier-3 DSP spine (`Realizer`, `RtSwappableResource`, steerable equal-power intensity with intensity-0 the bit-exact anchor, `GaplessController`). Confirmed the spine is Phase-2-ready. **Rationale:** [s6-architecture-review-findings.md](s6-architecture-review-findings.md), [s6-tier3-spine-design.md](s6-tier3-spine-design.md). | shipped codebase |
 | **S7** ✅ | DSP-gate hardening | 8 | Regression oracles for every shipped DSP stage: libebur128 LUFS/TP, limiter −1 dBTP + ISP accuracy, 31-band EQ FR sweep + bit-transparent bypass, SRC alias/stopband, gapless-seam, RT-allocation soak (US-QA-01..06). **Open follow-up:** THD+N. | S6 |
-| **S8** ✅ | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art, incremental rescan, persistent **GRDB**-backed store, art cache; S8.4 id-preserving move-match. Headless-gated by `VerifyLibraryStore`. **Forward:** Gate 1 (playlist filter, known-issues SEQ-1) stays open until S10 ships the playlist table. | S6 |
-| **S9** ✅ | Browse & search UI | 8 | Album grid + detail; Songs (filter-preserves-sort + customizable columns); Artists (tile grid) + Genres; FTS5 incremental search; queue/advance core (`PlaybackQueueKit`); cover art; a11y. *(Years tab cut.)* **Deferred → S10:** true drag-to-queue + the A–Z jump rail. | S8 |
-| **S10** | Queue + playlists + macOS control | 8 | Queue reorder/save/play-next/history; playlist create/edit + **M3U/M3U8** import-export; **media keys + Now-Playing/Control Center** (`MPNowPlayingInfoCenter`); keyboard shortcuts; folder-browse mode. | S8, S9 |
+| **S8** ✅ | Library spine: scan + persistent DB | 9 | Folder scan/watch, metadata + embedded-art, incremental rescan, persistent **GRDB**-backed store, art cache; S8.4 id-preserving move-match. Headless-gated by `VerifyLibraryStore`. **Forward:** Gate 1 (playlist filter, known-issues SEQ-1) stays open until **S10.1** ships the playlist table. | S6 |
+| **S9** ✅ | Browse & search UI | 8 | Album grid + detail; Songs (filter-preserves-sort + customizable columns); Artists (tile grid) + Genres; FTS5 incremental search; queue/advance core (`PlaybackQueueKit`); cover art; a11y. *(Years tab cut.)* **Deferred → S10:** true drag-to-queue (→ S10.2) + the A–Z jump rail (→ S10.5). | S8 |
+| **S10.1** | Playlist/queue persistence spine | 8 | `playlists` + `playlist_entries` tables (GRDB, keyed on `tracks.id` + position); create/rename/delete + ordered-membership DAO; built-in non-deletable **"current"** queue playlist; `untitled-N` naming. **Closes Gate 1** (SEQ-1). `VerifyLibraryStore`-gated. | S8 |
+| **S10.2** | Queue UX | 6 | The "current" playlist surfaced as the play queue: reorder / play-next / add-to-queue / history; lands the deferred **drag-to-queue**. | S10.1 |
+| **S10.3** | Playlists UX + **M3U/M3U8** import-export | 9 | Playlist browse/edit (create/rename/delete, scales to hundreds); drag → playlist = **reference-add** (never a file move); add a single non-library file; M3U/M3U8 import+export; the US-PLIST-08 move-survival seam test. | S10.1 |
+| **S10.4** | macOS system control | 5 | **Media keys + Now-Playing/Control Center** (`MPNowPlayingInfoCenter` / `MPRemoteCommandCenter`); app-wide keyboard shortcuts. *(independent of the store)* | S9 |
+| **S10.5** | Browse polish | 3 | Folder-browse mode; the deferred **A–Z jump rail** from S9. *(polish — not an R1 gate)* | S9 |
+
+*S10 expands into the five individual done-done sprints above (~31 SP total — the playlist domain alone is ~26 SP); each runs the full dev process. Sub-numbered `S10.x` to avoid renumbering S11–S18 and the R1/R2/R3 anchors. Breakdown: [s10-queue-playlists-macos-plan.md](s10-queue-playlists-macos-plan.md).*
 | **S11** | CUE sheets + format hardening | 7 | External + embedded **CUE** → virtual tracks (reuse gapless); FLAC seektable/fast-seek verification; enable WavPack/APE if free via FFmpeg; full metadata-display panel; close **gapless Stage 2b** (lossy AAC/MP3 encoder-delay trim — US-PLAY-07). | S8, gapless |
 | **S12** | Tonal parity + finish half-built | 9 | **Parametric EQ** bands alongside the 31-band graphic; **AutoEq/oratory1990 `ParametricEQ.txt` import**; **A/B LUFS-matched bypass** toggle. *(preset save/load per-output + Reimagine intensity-knob wiring were delivered early in QW1 — the latter closed the NFR-QUAL-03 demonstrability gap.)* | S7, EQ (have) |
 | **S13** | Headphone + device parity | 7 | **device-correction EQ** auto-load by identified device; profile JSON import/export. *(crossfeed was delivered in QW1.)* | S7, S12 |
@@ -54,15 +60,15 @@ The rationale is sound: **an audiophile player lives or dies on library + playba
 
 †S6 is review + fixes; it may spill beyond 8 SP if the review surfaces heavy structural issues — that's expected and acceptable, since the whole point is to fix the foundation before building on it.
 
-*After **S10** we are already a credible daily-driver (minimum-credible release R1). S11–S14 add the audiophile-credible layer.*
+*After the **S10.x** sprints we are already a credible daily-driver (minimum-credible release R1). S11–S14 add the audiophile-credible layer.*
 
-**Phase 1 total:** ~72 SP across 9 sprints. Realistic to release in two waves (R1 after S10, R2 after S14).
+**Phase 1 total:** ~95 SP (S10 expanded into 5 sprints S10.1–S10.5). Realistic to release in two waves (R1 after S10.1–S10.4; S10.5 is polish; R2 after S14).
 
-**Critical path:** S6 (architecture gate) → S8 → S9 → S10 (library spine) — the architecture review gates everything; after it, the library spine is the highest-leverage and most-underestimated stretch.
+**Critical path:** S6 (architecture gate) → S8 → S9 → **S10.1** (playlist/queue spine, also closes Gate 1) → S10.2/S10.3 → S10.4 — the architecture review gates everything; after it, the library/queue spine is the highest-leverage and most-underestimated stretch.
 
 ### Status
 
-**S6–S9 ✅ shipped · S10 next → Release R1.** S9 browse is complete (Songs · Albums · Artists · Genres). **This line is the single prose status surface for the project** — README/roadmap defer here; everything finer-grained lives in the source + git log (which are authoritative if they disagree with this).
+**S6–S9 ✅ shipped · S10.1 next → Release R1.** S9 browse is complete (Songs · Albums · Artists · Genres); S10 now runs as five individual sprints S10.1–S10.5 (start with S10.1, the playlist/queue spine). **This line is the single prose status surface for the project** — README/roadmap defer here; everything finer-grained lives in the source + git log (which are authoritative if they disagree with this).
 
 ---
 
@@ -105,8 +111,8 @@ The one-time re-anchor this section mandated (back-fill shipped work as Done sto
 ## 7. Release milestones & critical path
 
 - **Gate:** S6 (architecture review & hardening) — **no feature sprint starts until this is green.**
-- **Critical path:** S6 (gate) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8, the highest-leverage and most-underestimated feature sprint in the plan.
-- **Release R1 ("a real player"):** after **S10** — daily-driver: library, browse, search, queue, media keys, bit-perfect playback.
+- **Critical path:** S6 (gate) → S8 → S9 → **S10.1 → S10.2/S10.3 → S10.4** (queue/playlist spine + UX + system control). Everything browse/queue hangs off S8, the highest-leverage and most-underestimated stretch in the plan.
+- **Release R1 ("a real player"):** after **S10.1–S10.4** (S10.5 polish can follow) — daily-driver: library, browse, search, queue, playlists, media keys, bit-perfect playback.
 - **Release R2 ("audiophile-credible"):** after **S14** — CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green. **This is the parity milestone that unlocks Phase 2.**
 - **Release R3 ("differentiated"):** after **S17** — Clarity + steerable Reimagine. The Adaptive Sound thesis, demonstrable and comparable.
 
