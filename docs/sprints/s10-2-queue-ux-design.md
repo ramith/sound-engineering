@@ -1,7 +1,7 @@
 # S10.2 — Queue UX (design)
 
 **Document ID:** S10.2-DESIGN-001
-**Status:** DESIGN — team-vetted (BA · swift-expert · swiftui-pro) + **architect + the-fool gate: GO-WITH-CHANGES** (7 must-fixes folded in). **Pending founder brainstorm BEFORE implementation** (§0). Then implement → QA break-it pass → founder manual test → retro.
+**Status:** DESIGN — team-vetted + architect/the-fool gate + **founder brainstorm 2026-07-13: decisions LOCKED to the §0 recommendations** — queue persists · **restore-PAUSED** · **allow duplicates** · **session History, Clear Queue keeps it** (separate Clear History) · DUR-1-reaches-queue acknowledged · file-deleted → tolerate. **Ready to implement.** Then QA break-it pass → founder manual test → retro.
 **Sprint:** S10.2, second of the S10 series — see [s10-queue-playlists-macos-plan.md](s10-queue-playlists-macos-plan.md). **Depends on S10.1** (playlist store spine + the built-in "current" playlist).
 **Authored by:** AdaptiveSound team — business-analyst, swift-expert, swiftui-pro, architect-reviewer + the-fool (gate), synthesized by the orchestrator.
 

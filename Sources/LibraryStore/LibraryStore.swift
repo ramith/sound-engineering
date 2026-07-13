@@ -60,6 +60,9 @@ public final class LibraryStore: Sendable {
     /// Count one natural-completion play — a SINGLE atomic URL-keyed accumulate (§12.3).
     private static let incrementPlayCountSQL =
         "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?;"
+    /// The durable-id-keyed accumulate (S10.2 — closes the S9.5 url→id play-count seam).
+    private static let incrementPlayCountByIDSQL =
+        "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE id = ?;"
     /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
     private static let selectSchemaVersionSQL = "SELECT version FROM schema_info WHERE id = 1;"
 
@@ -208,6 +211,15 @@ public final class LibraryStore: Sendable {
                 sql: Self.incrementPlayCountSQL,
                 arguments: [playedAt, key]
             )
+        }
+    }
+
+    /// Count one play by durable `tracks.id` (S10.2 — the queue carries the id, so play-tracking
+    /// no longer needs the `url→id` lookup). Silent no-op if the id is absent (never throws into
+    /// the audio path).
+    public func incrementPlayCount(id trackID: Int64, playedAt: Int64) async throws {
+        try await dbWriter.write { db in
+            try db.execute(sql: Self.incrementPlayCountByIDSQL, arguments: [playedAt, trackID])
         }
     }
 

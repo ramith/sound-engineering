@@ -22,6 +22,9 @@ func playlistSpineCheckCases() -> [CheckCase] {
         CheckCase(label: "pl-remove-foreign-scoped", run: checkPlaylistRemoveForeignScoped),
         CheckCase(label: "pl-append-notfound", run: checkPlaylistAppendNotFound),
         CheckCase(label: "pl-name-validation", run: checkPlaylistNameValidation),
+        CheckCase(label: "pl-replace-entries", run: checkPlaylistReplaceEntries),
+        CheckCase(label: "pl-clear-entries", run: checkPlaylistClearEntries),
+        CheckCase(label: "pl-playcount-by-id", run: checkPlaylistPlayCountByID),
         CheckCase(label: "pl-untitled-lowest-unused", run: checkPlaylistUntitledNaming),
         CheckCase(label: "pl-dup-name-rejected", run: checkPlaylistDuplicateNameRejected),
         CheckCase(label: "pl-loose-add", run: checkPlaylistLooseAdd),
@@ -481,4 +484,70 @@ func checkPlaylistNameValidation(number: Int, url: URL) async -> Bool {
         printPass(number, "empty/whitespace + reserved 'current' (any case) rejected with .invalidName (D5/D6)")
         return true
     } catch { printFail(number, "pl-name-validation threw: \(error)"); return false }
+}
+
+/// pl-replace-entries (S10.2 snapshot primitive): replaceEntries overwrites contents in order with
+/// dense positions; an empty snapshot clears; a track may repeat.
+func checkPlaylistReplaceEntries(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/RPL", paths: ["/M/RPL/a.flac", "/M/RPL/b.flac", "/M/RPL/c.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let pid = try await store.createPlaylist(name: "RPL")
+        _ = try await store.appendEntries(playlistID: pid, trackIDs: [t[0], t[1]])
+        // Snapshot to a new order incl. a duplicate.
+        try await store.replaceEntries(playlistID: pid, trackIDs: [t[2], t[0], t[0]])
+        let after = try await store.entries(inPlaylist: pid)
+        guard after.map(\.trackID) == [t[2], t[0], t[0]], after.map(\.position) == [0, 1, 2] else {
+            printFail(number, "replaceEntries wrong contents/positions: \(after.map { ($0.trackID, $0.position) })")
+            return false
+        }
+        try await store.replaceEntries(playlistID: pid, trackIDs: [])
+        guard try await store.entries(inPlaylist: pid).isEmpty else {
+            printFail(number, "empty replaceEntries did not clear"); return false
+        }
+        printPass(number, "replaceEntries: snapshot overwrite in order (dense positions, dup ok); empty clears")
+        return true
+    } catch { printFail(number, "pl-replace-entries threw: \(error)"); return false }
+}
+
+/// pl-clear-entries: clearEntries empties one playlist without touching another.
+func checkPlaylistClearEntries(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/CLR", paths: ["/M/CLR/a.flac", "/M/CLR/b.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let plA = try await store.createPlaylist(name: "CA")
+        let plB = try await store.createPlaylist(name: "CB")
+        _ = try await store.appendEntries(playlistID: plA, trackIDs: t)
+        _ = try await store.appendEntry(playlistID: plB, trackID: t[0])
+        try await store.clearEntries(playlistID: plA)
+        guard try await store.entries(inPlaylist: plA).isEmpty,
+              try await store.entries(inPlaylist: plB).count == 1 else {
+            printFail(number, "clearEntries emptied the wrong playlist or left rows"); return false
+        }
+        printPass(number, "clearEntries empties only the target playlist")
+        return true
+    } catch { printFail(number, "pl-clear-entries threw: \(error)"); return false }
+}
+
+/// pl-playcount-by-id (S10.2): the durable-id incrementPlayCount overload accumulates + stamps,
+/// and a nonexistent id is a silent no-op.
+func checkPlaylistPlayCountByID(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/PC", paths: ["/M/PC/a.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        try await store.incrementPlayCount(id: t[0], playedAt: 1000)
+        try await store.incrementPlayCount(id: t[0], playedAt: 2000)
+        guard let state = try await store.userState(trackID: t[0]), state.playCount == 2 else {
+            printFail(number, "incrementPlayCount(id:) did not accumulate to 2"); return false
+        }
+        try await store.incrementPlayCount(id: 999_999, playedAt: 3000) // silent no-op
+        guard try await store.userState(trackID: t[0])?.playCount == 2 else {
+            printFail(number, "nonexistent-id play-count was not a no-op"); return false
+        }
+        printPass(number, "incrementPlayCount(id:) accumulates + stamps; absent id is a silent no-op")
+        return true
+    } catch { printFail(number, "pl-playcount-by-id threw: \(error)"); return false }
 }
