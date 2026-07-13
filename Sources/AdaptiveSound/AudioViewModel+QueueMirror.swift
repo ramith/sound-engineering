@@ -23,6 +23,7 @@ extension AudioViewModel {
     /// Schedule a debounced snapshot of `queue` into the built-in "current" playlist. Cancels any
     /// pending mirror so only the settled queue is written. Call from every queue-EDITING verb.
     func scheduleQueueMirror() {
+        hasUserEditedQueue = true // a real edit — supersedes any not-yet-run launch hydration
         queueMirrorTask?.cancel()
         queueMirrorTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.queueMirrorDebounce)

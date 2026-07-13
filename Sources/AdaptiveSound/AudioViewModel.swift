@@ -186,6 +186,14 @@ final class AudioViewModel {
     /// queue is written. Advance does NOT mirror (rows don't change). Not UI-bound.
     var queueMirrorTask: Task<Void, Never>?
 
+    /// True once the user has edited the queue this session (any play verb / reorder / remove /
+    /// clear — set in `scheduleQueueMirror`). Guards launch hydration: if the user acted BEFORE
+    /// the store became ready, their queue wins and the persisted one is NOT restored over it
+    /// (the hydration "superseded" state). Not UI-bound.
+    var hasUserEditedQueue = false
+    /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
+    var queueHydrated = false
+
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int?

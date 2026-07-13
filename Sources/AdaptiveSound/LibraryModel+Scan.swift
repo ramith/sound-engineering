@@ -30,6 +30,7 @@ extension LibraryModel {
                 metadataArtworkCache = ArtworkCache(directory: cacheURL)
             }
             logUX("libraryStore: ready at '\(Self.makeDisplayPath(url))'")
+            onStoreReady?() // S10.2 2c: store is live — let the audio VM hydrate the queue
         } catch {
             // Additive seam — the app runs without the store; only the parallel
             // store-population is unavailable until the next successful construction.

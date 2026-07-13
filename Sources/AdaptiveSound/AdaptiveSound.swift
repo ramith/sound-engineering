@@ -30,6 +30,9 @@ struct AdaptiveSound: App {
         // shell error banner the audio VM uses, WITHOUT giving LibraryModel a back-reference to the
         // audio VM (it stays testable in isolation). Mirrors the `onEngineReady` hook pattern.
         lib.onError = { [weak audio] message in audio?.errorMessage = message }
+        // Edge 3 (S10.2 2c): when the store finishes building, restore the persistent queue
+        // (RESTORE-PAUSED). Same one-directional hook pattern as `onError` — no back-reference.
+        lib.onStoreReady = { [weak audio] in audio?.hydrateQueueOnLaunch() }
         _audioViewModel = State(initialValue: audio)
         _library = State(initialValue: lib)
         _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio))

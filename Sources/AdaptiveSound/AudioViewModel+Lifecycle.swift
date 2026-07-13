@@ -80,6 +80,14 @@ extension AudioViewModel {
     /// C handles). Being `async` also lets callers sequence teardown deterministically.
     func shutdown() async {
         logUX("shutdown — was playing=\(isPlaying)")
+        // S10.2 2c quit-flush: persist the now-playing cursor and write the FINAL queue snapshot
+        // BEFORE `performStop()` zeroes `playbackPosition` — so a clean quit restores exactly where
+        // you left off. Cancel any pending debounced mirror first (this write supersedes it). The
+        // library peer's own teardown has already run (AppDelegate ordering), but its `store` is
+        // still live here, so this last SQLite write lands.
+        persistQueueCursor()
+        queueMirrorTask?.cancel()
+        await mirrorQueueNow()
         // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls
         // the engine and could otherwise touch handles we're about to tear down).
         stopSpectrumTimer()
