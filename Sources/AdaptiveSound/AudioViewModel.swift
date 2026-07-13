@@ -181,6 +181,11 @@ final class AudioViewModel {
         queue.map(\.file)
     }
 
+    /// Debounce handle for the queue→"current"-playlist snapshot mirror (S10.2, `+QueueMirror`).
+    /// A queue edit schedules a mirror; a newer edit cancels the pending one so only the settled
+    /// queue is written. Advance does NOT mirror (rows don't change). Not UI-bound.
+    var queueMirrorTask: Task<Void, Never>?
+
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int?

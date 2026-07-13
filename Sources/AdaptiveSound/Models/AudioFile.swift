@@ -25,6 +25,13 @@ struct AudioFile: Identifiable {
 
     /// Duration in seconds. Populated as 0 until Part 2c metadata extraction.
     let durationSeconds: Double
+
+    /// Durable `tracks.id` of the backing library row, when this file came from the library
+    /// (`nil` for a file with no store row — e.g. a loose file). Carried so the queue can be
+    /// mirrored to the persistent "current" playlist and play-counts attributed by id (S10.2).
+    /// Does NOT affect `id` (still the URL) — purely metadata; defaulted so existing callers
+    /// that build an `AudioFile` without a library row are unaffected.
+    var trackID: Int64? = nil
 }
 
 // MARK: - Comparable (locale-aware name sort)

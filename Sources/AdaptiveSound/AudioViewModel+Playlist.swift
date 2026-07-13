@@ -14,6 +14,7 @@ extension AudioViewModel {
         if let movedID {
             selectedTrackIndex = queue.firstIndex(where: { $0.id == movedID })
         }
+        scheduleQueueMirror()
     }
 
     /// Remove a track from the queue.
@@ -23,6 +24,7 @@ extension AudioViewModel {
 
         let removingCurrent = (selectedTrackIndex == index)
         queue.remove(at: index)
+        scheduleQueueMirror()
 
         adjustPendingNextIndexAfterRemoval(removedIndex: index)
 
@@ -73,6 +75,7 @@ extension AudioViewModel {
     func clearPlaylist() {
         logUX("clearPlaylist: removing \(queue.count) track(s)")
         queue.removeAll()
+        scheduleQueueMirror()
         selectedTrackIndex = nil
         pendingNextIndex = nil
         stopPlayback()
