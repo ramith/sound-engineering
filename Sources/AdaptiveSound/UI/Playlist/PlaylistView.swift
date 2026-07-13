@@ -122,9 +122,10 @@ private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var jumpToCurrentRequestID: Int
 
-    /// Non-nil while the "Info" popover is showing; identifies which row's card is open.
+    /// Non-nil while the "Info" popover is showing; identifies which row's card is open by its
+    /// stable `QueueItem.id` (dups-safe — keying on the URL popped the card on every duplicate row).
     /// Only one row presents at a time — the per-row `Binding<Bool>` is derived from this.
-    @State private var infoTarget: AudioFile?
+    @State private var infoTarget: QueueItem?
 
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
@@ -142,9 +143,9 @@ private struct PlaylistItemList: View {
                 // gained a conditional `RandomAccessCollection` conformance with its own opaque
                 // index type, and that combination silently prevented `.onMove` from initiating a
                 // drag here — this is the "reliable" pattern for a reorderable, indexed `ForEach`.
-                ForEach(Array(viewModel.playlist.enumerated()), id: \.element.id) { index, file in
+                ForEach(Array(viewModel.queue.enumerated()), id: \.element.id) { index, item in
                     PlaylistItemRow(
-                        file: file,
+                        file: item.file,
                         index: index,
                         isSelected: viewModel.selectedTrackIndex == index,
                         isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
@@ -167,7 +168,7 @@ private struct PlaylistItemList: View {
                     .accessibilityAddTraits(.isButton)
                     .contextMenu {
                         Button("Info", systemImage: "info.circle") {
-                            infoTarget = file
+                            infoTarget = item
                         }
                         Divider()
                         Button("Remove from Queue", systemImage: "trash") {
@@ -179,12 +180,12 @@ private struct PlaylistItemList: View {
                     }
                     .popover(
                         isPresented: Binding(
-                            get: { infoTarget?.id == file.id },
+                            get: { infoTarget?.id == item.id },
                             set: { if !$0 { infoTarget = nil } }
                         ),
                         arrowEdge: .trailing
                     ) {
-                        TrackInfoCard(file: file)
+                        TrackInfoCard(file: item.file)
                     }
                     .onKeyPress(.delete) {
                         viewModel.removeTrack(at: index)
@@ -223,7 +224,7 @@ private struct PlaylistItemList: View {
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
             // so a stale target can't match — and re-present on — a different row.
-            .onChange(of: viewModel.playlist.map(\.id)) { _, _ in
+            .onChange(of: viewModel.queue.map(\.id)) { _, _ in
                 infoTarget = nil
             }
             // Global keyboard shortcuts for the playlist

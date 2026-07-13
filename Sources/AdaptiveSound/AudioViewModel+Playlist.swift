@@ -6,22 +6,23 @@ extension AudioViewModel {
     /// Reorder playlist items via drag-and-drop.
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
         logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
+        // Re-anchor the current selection by the moved slot's stable UUID (dups-safe).
         let movedID = selectedTrackIndex.flatMap { current in
-            source.contains(current) ? playlist[current].id : nil
+            source.contains(current) ? queue[current].id : nil
         }
-        playlist.move(fromOffsets: source, toOffset: destination)
+        queue.move(fromOffsets: source, toOffset: destination)
         if let movedID {
-            selectedTrackIndex = playlist.firstIndex(where: { $0.id == movedID })
+            selectedTrackIndex = queue.firstIndex(where: { $0.id == movedID })
         }
     }
 
-    /// Remove a track from the playlist.
+    /// Remove a track from the queue.
     func removeTrack(at index: Int) {
-        guard index >= 0, index < playlist.count else { return }
-        logUX("removeTrack: index=\(index) '\(playlist[index].name)'")
+        guard index >= 0, index < queue.count else { return }
+        logUX("removeTrack: index=\(index) '\(queue[index].file.name)'")
 
         let removingCurrent = (selectedTrackIndex == index)
-        playlist.remove(at: index)
+        queue.remove(at: index)
 
         adjustPendingNextIndexAfterRemoval(removedIndex: index)
 
@@ -29,12 +30,12 @@ extension AudioViewModel {
             logUX("removeTrack: removed currently-playing track, stopping")
             pendingNextIndex = nil
             stopPlayback()
-            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
+            selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
             return
         }
 
         if selectedTrackIndex == index {
-            selectedTrackIndex = index < playlist.count ? index : (index > 0 ? index - 1 : nil)
+            selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
         } else if let cur = selectedTrackIndex, cur > index {
             selectedTrackIndex = cur - 1
         }
@@ -53,12 +54,12 @@ extension AudioViewModel {
             // currently-playing track was AFTER the removed slot its index is now one lower.
             let rawCurrent = selectedTrackIndex ?? 0
             let currentIdx = rawCurrent > removedIndex ? rawCurrent - 1 : rawCurrent
-            let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: playlist.count)
+            let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: queue.count)
             pendingNextIndex = newNextIdx
             Task { [weak self] in
                 guard let self else { return }
-                if let newIdx = newNextIdx, newIdx < playlist.count {
-                    await engine.setNextTrack(playlist[newIdx].absoluteURL)
+                if let newIdx = newNextIdx, newIdx < queue.count {
+                    await engine.setNextTrack(queue[newIdx].file.absoluteURL)
                 } else {
                     await engine.setNextTrack(nil)
                 }
@@ -70,8 +71,8 @@ extension AudioViewModel {
 
     /// Clear the entire playlist. Stops playback and clears the on-deck track.
     func clearPlaylist() {
-        logUX("clearPlaylist: removing \(playlist.count) track(s)")
-        playlist.removeAll()
+        logUX("clearPlaylist: removing \(queue.count) track(s)")
+        queue.removeAll()
         selectedTrackIndex = nil
         pendingNextIndex = nil
         stopPlayback()
