@@ -36,6 +36,12 @@ final class LibraryModel {
     /// the same contract as `AudioViewModel.onEngineReady`.
     var onError: ((String) -> Void)?
 
+    /// Fired once, on the main actor, when the persistent store finishes construction and `store`
+    /// is non-nil (S10.2 2c). Wired by the composition root to `AudioViewModel.hydrateQueueOnLaunch`
+    /// so the queue restores from the "current" playlist as soon as the store is available; `nil`
+    /// in tests. Same set-and-invoke-on-`@MainActor` contract as `onError`.
+    var onStoreReady: (() -> Void)?
+
     // MARK: - Library Store + Scan State (S8.2b)
 
     /// The persistent library store (S8.1). Constructed off-main at init from
