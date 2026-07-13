@@ -24,7 +24,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 |--------|-------|
 | S8 | Library spine: scan + persistent DB |
 | S9 | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue |
-| S10 | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center |
+| S10 *(runs as S10.1–S10.5)* | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center. Split into five individual sprints — see [sprint-plan.md](../sprints/sprint-plan.md) + [s10 plan](../sprints/s10-queue-playlists-macos-plan.md). |
 | S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim |
 | S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass |
 | S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export |
@@ -51,11 +51,11 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 
 | Release | After | Theme | Content |
 |---------|-------|-------|---------|
-| **R1 — "a real player"** | S10 | Daily-driver | Library, browse, search, queue, media keys, bit-perfect playback |
+| **R1 — "a real player"** | S10.1–S10.4 | Daily-driver | Library, browse, search, queue, playlists, media keys, bit-perfect playback |
 | **R2 — "audiophile-credible"** | S14 | Parity (unlocks Phase 2) | CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green |
 | **R3 — "differentiated"** | S17 | The thesis | Clarity + steerable Reimagine — demonstrable and comparable |
 
-**Critical path:** S6 (gate) → S8 → S9 → S10 (library spine). Everything browse/queue hangs off S8 — the highest-leverage and most-underestimated stretch in the plan.
+**Critical path:** S6 (gate) → S8 → S9 → S10.1–S10.4 (queue/playlist spine + UX + system control). Everything browse/queue hangs off S8 — the highest-leverage and most-underestimated stretch in the plan.
 
 **Opinionated guardrail (PM + BA agree):** do not start Phase 2 until S8–S10 ship and the app has been the daily driver for a week. The adaptive DSP is more fun than catalog plumbing — the differentiators only earn attention once the table-stakes are invisible-because-they-just-work.
 
