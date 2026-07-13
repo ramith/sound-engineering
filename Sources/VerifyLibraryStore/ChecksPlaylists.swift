@@ -17,6 +17,11 @@ func playlistSpineCheckCases() -> [CheckCase] {
         CheckCase(label: "pl-reorder", run: checkPlaylistReorder),
         CheckCase(label: "pl-insert-at", run: checkPlaylistInsertAt),
         CheckCase(label: "pl-remove-entries", run: checkPlaylistRemoveEntries),
+        CheckCase(label: "pl-reorder-partial", run: checkPlaylistReorderPartial),
+        CheckCase(label: "pl-loose-add-existing", run: checkPlaylistLooseAddExisting),
+        CheckCase(label: "pl-remove-foreign-scoped", run: checkPlaylistRemoveForeignScoped),
+        CheckCase(label: "pl-append-notfound", run: checkPlaylistAppendNotFound),
+        CheckCase(label: "pl-name-validation", run: checkPlaylistNameValidation),
         CheckCase(label: "pl-untitled-lowest-unused", run: checkPlaylistUntitledNaming),
         CheckCase(label: "pl-dup-name-rejected", run: checkPlaylistDuplicateNameRejected),
         CheckCase(label: "pl-loose-add", run: checkPlaylistLooseAdd),
@@ -206,11 +211,11 @@ func checkPlaylistRemoveEntries(number: Int, url: URL) async -> Bool {
         let t = seeded.trackIDs
         let pid = try await store.createPlaylist(name: "RM")
         let entryIDs = try await store.appendEntries(playlistID: pid, trackIDs: t)
-        try await store.removeEntry(id: entryIDs[1])
+        try await store.removeEntry(id: entryIDs[1], playlistID: pid)
         guard try await store.entries(inPlaylist: pid).map(\.id) == [entryIDs[0], entryIDs[2]] else {
             printFail(number, "removeEntry left wrong survivors"); return false
         }
-        try await store.removeEntries(ids: [entryIDs[0], entryIDs[2]])
+        try await store.removeEntries(ids: [entryIDs[0], entryIDs[2]], playlistID: pid)
         guard try await store.entries(inPlaylist: pid).isEmpty else {
             printFail(number, "removeEntries did not clear the playlist"); return false
         }
@@ -367,4 +372,113 @@ func checkPlaylistPersistAcrossReopen(number: Int, url: URL) async -> Bool {
         printPass(number, "persistence: playlist + ordered entries survive a store reopen (no schema change)")
         return true
     } catch { printFail(number, "pl-persist-reopen threw: \(error)"); return false }
+}
+
+/// pl-reorder-partial (D1): a PARTIAL reorder list renumbers the WHOLE playlist — omitted entries
+/// keep their relative order and positions stay collision-free (a foreign id is ignored).
+func checkPlaylistReorderPartial(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/RP", paths: ["/M/RP/a.flac", "/M/RP/b.flac", "/M/RP/c.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let pid = try await store.createPlaylist(name: "RP")
+        let entryIDs = try await store.appendEntries(playlistID: pid, trackIDs: t)
+        try await store.reorderPlaylist(id: pid, entryIDsInOrder: [entryIDs[2], 999_999])
+        let after = try await store.entries(inPlaylist: pid)
+        guard after.map(\.id) == [entryIDs[2], entryIDs[0], entryIDs[1]] else {
+            printFail(number, "partial reorder scrambled order: \(after.map(\.id))"); return false
+        }
+        guard Set(after.map(\.position)).count == after.count else {
+            printFail(number, "partial reorder left colliding positions: \(after.map(\.position))"); return false
+        }
+        printPass(number, "partial/foreign reorder renumbers the whole playlist — no position collision (D1)")
+        return true
+    } catch { printFail(number, "pl-reorder-partial threw: \(error)"); return false }
+}
+
+/// pl-loose-add-existing (D2): adding a URL that is already a FOLDER track reuses the row — it does
+/// NOT null its folder_id or create a duplicate.
+func checkPlaylistLooseAddExisting(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/LE", paths: ["/M/LE/song.flac"])
+        let store = seeded.store
+        let rootID = seeded.rootID
+        let t = seeded.trackIDs
+        let tracksBefore = try await store.countRows(inTable: "tracks")
+        let inFolderBefore = try await store.tracks(inFolder: rootID).count
+        let pid = try await store.createPlaylist(name: "LE")
+        let file = makeScanned(path: "/M/LE/song.flac", name: "song.flac")
+        let result = try await store.addLooseFileToPlaylist(file, playlistID: pid)
+        guard result.trackID == t[0],
+              try await store.countRows(inTable: "tracks") == tracksBefore,
+              try await store.tracks(inFolder: rootID).count == inFolderBefore,
+              try await store.entries(inPlaylist: pid).map(\.trackID) == [t[0]] else {
+            printFail(number, "loose-add of an existing folder track duplicated it or detached its folder (D2)")
+            return false
+        }
+        printPass(number, "loose-add of an already-library track reuses the row (no dup, folder intact) (D2)")
+        return true
+    } catch { printFail(number, "pl-loose-add-existing threw: \(error)"); return false }
+}
+
+/// pl-remove-foreign-scoped (D3): removeEntry(ies) is playlist-scoped — a foreign entry id can't
+/// delete from another playlist.
+func checkPlaylistRemoveForeignScoped(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/RF", paths: ["/M/RF/a.flac", "/M/RF/b.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let plA = try await store.createPlaylist(name: "A")
+        let plB = try await store.createPlaylist(name: "B")
+        _ = try await store.appendEntry(playlistID: plA, trackID: t[0])
+        let bEntry = try await store.appendEntry(playlistID: plB, trackID: t[1])
+        try await store.removeEntries(ids: [bEntry], playlistID: plA)
+        try await store.removeEntry(id: bEntry, playlistID: plA)
+        guard try await store.entries(inPlaylist: plB).map(\.id) == [bEntry] else {
+            printFail(number, "DATA-LOSS: a foreign entry id deleted from another playlist (D3)"); return false
+        }
+        printPass(number, "removeEntry(ies) is playlist-scoped — a foreign id can't delete elsewhere (D3)")
+        return true
+    } catch { printFail(number, "pl-remove-foreign-scoped threw: \(error)"); return false }
+}
+
+/// pl-append-notfound (D4): appending to a nonexistent playlist throws typed .notFound, not raw GRDB.
+func checkPlaylistAppendNotFound(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/NF", paths: ["/M/NF/a.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        var typed = false
+        do {
+            _ = try await store.appendEntry(playlistID: 999_999, trackID: t[0])
+        } catch PlaylistMutationError.notFound {
+            typed = true
+        }
+        guard typed else {
+            printFail(number, "append to a nonexistent playlist did not throw typed .notFound (D4)"); return false
+        }
+        printPass(number, "append to a nonexistent playlist throws typed .notFound (D4)")
+        return true
+    } catch { printFail(number, "pl-append-notfound threw: \(error)"); return false }
+}
+
+/// pl-name-validation (D5/D6): empty / whitespace-only names and the reserved 'current' (any case)
+/// are rejected with .invalidName.
+func checkPlaylistNameValidation(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        for bad in ["", "   ", "current", "Current", "CURRENT"] {
+            var rejected = false
+            do {
+                _ = try await store.createPlaylist(name: bad)
+            } catch PlaylistMutationError.invalidName {
+                rejected = true
+            }
+            guard rejected else {
+                printFail(number, "invalid/reserved name \"\(bad)\" was accepted (D5/D6)"); return false
+            }
+        }
+        printPass(number, "empty/whitespace + reserved 'current' (any case) rejected with .invalidName (D5/D6)")
+        return true
+    } catch { printFail(number, "pl-name-validation threw: \(error)"); return false }
 }
