@@ -72,12 +72,14 @@ public struct PlaylistNameConflict: Error, Sendable, Equatable {
     }
 }
 
-/// Defensive guards for built-in / missing playlists.
+/// Defensive guards for built-in / missing / mis-named playlists.
 public enum PlaylistMutationError: Error, Sendable, Equatable {
     /// Rename/delete of the built-in "current" playlist is rejected.
     case builtinImmutable(id: Int64)
-    /// No playlist row for the given id.
+    /// No playlist row for the given id (append/insert/reorder/rename/delete).
     case notFound(id: Int64)
+    /// Empty / whitespace-only name, or the reserved built-in name "current".
+    case invalidName(String)
 }
 
 // MARK: - Row decoding
@@ -130,7 +132,9 @@ public extension LibraryStore {
         "SELECT COALESCE(MAX(position), -1) FROM playlist_entries WHERE playlist_id = ?;"
     private static let insertEntrySQL =
         "INSERT INTO playlist_entries(playlist_id, track_id, position, added_at) VALUES (?, ?, ?, ?);"
-    private static let deleteEntryByIDSQL = "DELETE FROM playlist_entries WHERE id = ?;"
+    private static let deleteEntryByIDSQL = "DELETE FROM playlist_entries WHERE id = ? AND playlist_id = ?;"
+    private static let selectPlaylistExistsSQL = "SELECT 1 FROM playlists WHERE id = ?;"
+    private static let selectTrackIDByURLForLooseSQL = "SELECT id FROM tracks WHERE url = ?;"
     private static let selectEntryIDsInOrderSQL =
         "SELECT id FROM playlist_entries WHERE playlist_id = ? ORDER BY position ASC, id ASC;"
     private static let updateEntryPositionSQL =
@@ -143,14 +147,26 @@ public extension LibraryStore {
     /// WHERE is_builtin=0` index is the backstop). Returns the new id.
     @discardableResult
     func createPlaylist(name: String) async throws -> Int64 {
-        try await dbWriter.write { db in
-            if let existing = try Int64.fetchOne(db, sql: Self.selectUserNameConflictSQL, arguments: [name]) {
-                throw PlaylistNameConflict(name: name, existingID: existing)
+        let validated = try Self.validatedUserName(name)
+        return try await dbWriter.write { db in
+            if let existing = try Int64.fetchOne(db, sql: Self.selectUserNameConflictSQL, arguments: [validated]) {
+                throw PlaylistNameConflict(name: validated, existingID: existing)
             }
             try db.execute(sql: Self.insertUserPlaylistSQL,
-                           arguments: [name, LibraryStore.nowSeconds()])
+                           arguments: [validated, LibraryStore.nowSeconds()])
             return db.lastInsertedRowID
         }
+    }
+
+    /// Validate a user-supplied playlist name: reject empty / whitespace-only (D6) and the
+    /// reserved built-in name "current", case-insensitively (D5). Returns the trimmed name to store.
+    static func validatedUserName(_ name: String) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PlaylistMutationError.invalidName(name) }
+        if trimmed.caseInsensitiveCompare(Schema.builtinCurrentPlaylistName) == .orderedSame {
+            throw PlaylistMutationError.invalidName(trimmed)
+        }
+        return trimmed
     }
 
     /// Create a playlist with an Apple-style default name ("New Playlist", then "New Playlist 2",
@@ -180,16 +196,17 @@ public extension LibraryStore {
     /// Rename a playlist. Rejects the built-in ("current") with `.builtinImmutable`, a missing id
     /// with `.notFound`, and a user-name collision with `PlaylistNameConflict`.
     func renamePlaylist(id: Int64, to name: String) async throws {
+        let validated = try Self.validatedUserName(name)
         try await dbWriter.write { db in
             guard let isBuiltin = try Int64.fetchOne(db, sql: Self.selectIsBuiltinSQL, arguments: [id]) else {
                 throw PlaylistMutationError.notFound(id: id)
             }
             if isBuiltin != 0 { throw PlaylistMutationError.builtinImmutable(id: id) }
-            if let existing = try Int64.fetchOne(db, sql: Self.selectUserNameConflictSQL, arguments: [name]),
+            if let existing = try Int64.fetchOne(db, sql: Self.selectUserNameConflictSQL, arguments: [validated]),
                existing != id {
-                throw PlaylistNameConflict(name: name, existingID: existing)
+                throw PlaylistNameConflict(name: validated, existingID: existing)
             }
-            try db.execute(sql: Self.renamePlaylistSQL, arguments: [name, id])
+            try db.execute(sql: Self.renamePlaylistSQL, arguments: [validated, id])
         }
     }
 
@@ -267,6 +284,10 @@ public extension LibraryStore {
     }
 
     private func appendEntryLocked(_ db: Database, playlistID: Int64, trackID: Int64) throws -> Int64 {
+        // Typed .notFound rather than a raw GRDB FK constraint error for a deleted/absent playlist (D4).
+        guard try Int64.fetchOne(db, sql: Self.selectPlaylistExistsSQL, arguments: [playlistID]) != nil else {
+            throw PlaylistMutationError.notFound(id: playlistID)
+        }
         let maxPos = try Int64.fetchOne(db, sql: Self.maxPositionSQL, arguments: [playlistID]) ?? -1
         let nextPos = maxPos + 1
         try db.execute(sql: Self.insertEntrySQL,
@@ -290,26 +311,37 @@ public extension LibraryStore {
         }
     }
 
-    func removeEntry(id entryID: Int64) async throws {
-        try await dbWriter.write { db in try db.execute(sql: Self.deleteEntryByIDSQL, arguments: [entryID]) }
+    /// Remove one entry. **Playlist-scoped** (`AND playlist_id = ?`) so a stale/foreign entry id
+    /// can never delete from another playlist (D3).
+    func removeEntry(id entryID: Int64, playlistID: Int64) async throws {
+        try await dbWriter.write { db in
+            try db.execute(sql: Self.deleteEntryByIDSQL, arguments: [entryID, playlistID])
+        }
     }
 
-    /// Remove several entries by id (one DELETE per id — ids bound, never spliced).
-    func removeEntries(ids entryIDs: [Int64]) async throws {
+    /// Remove several entries by id (one scoped DELETE per id — ids bound, never spliced).
+    func removeEntries(ids entryIDs: [Int64], playlistID: Int64) async throws {
         guard !entryIDs.isEmpty else { return }
         try await dbWriter.write { db in
             for id in entryIDs {
-                try db.execute(sql: Self.deleteEntryByIDSQL, arguments: [id])
+                try db.execute(sql: Self.deleteEntryByIDSQL, arguments: [id, playlistID])
             }
         }
     }
 
-    /// Reorder a playlist by rewriting each listed entry's `position` to its index (dense
-    /// `0..n-1`). `entryIDsInOrder` must be the playlist's entries; unknown ids are ignored by
-    /// the `AND playlist_id = ?` guard.
+    /// Reorder a playlist. Renumbers the **whole** playlist to dense `0..n-1`: supplied ids that
+    /// belong to the playlist take the given order (deduped; foreign ids ignored), and any entries
+    /// omitted from `ids` are appended in their prior relative order. This never leaves a subset
+    /// with stale, colliding positions (D1) — the counterpart to `insertEntry`'s full renumber.
     func reorderPlaylist(id playlistID: Int64, entryIDsInOrder ids: [Int64]) async throws {
         try await dbWriter.write { db in
-            try Self.renumberLocked(db, playlistID: playlistID, entryIDsInOrder: ids)
+            let current = try Int64.fetchAll(db, sql: Self.selectEntryIDsInOrderSQL, arguments: [playlistID])
+            let currentSet = Set(current)
+            var seen = Set<Int64>()
+            var finalOrder = ids.filter { currentSet.contains($0) && seen.insert($0).inserted }
+            let placed = Set(finalOrder)
+            finalOrder.append(contentsOf: current.filter { !placed.contains($0) })
+            try Self.renumberLocked(db, playlistID: playlistID, entryIDsInOrder: finalOrder)
         }
     }
 
@@ -321,15 +353,23 @@ public extension LibraryStore {
 
     // MARK: - Loose-file add
 
-    /// Add a (possibly non-library) file to a playlist: create its `tracks` row (folder_id NULL)
-    /// if new — reusing the internal `upsertOne` (URL-idempotent + FTS-seeding) — then append an
-    /// entry. Atomic in one write txn.
+    /// Add a (possibly non-library) file to a playlist. If the URL is **already** a track (loose or
+    /// in a scan folder) the existing row is **reused as-is** — we never re-`upsertOne` it, which
+    /// would null a folder track's `folder_id`/`relative_path` and reset `metadata_scanned` (D2).
+    /// Only a genuinely-new URL inserts a loose (`folder_id = NULL`) row. Then append an entry.
+    /// Atomic in one write txn.
     @discardableResult
     func addLooseFileToPlaylist(_ file: ScannedFile, playlistID: Int64) async throws -> LooseAddResult {
         try await dbWriter.write { db in
-            let generation = try Self.nextScanGeneration(db)
-            let trackID = try self.upsertOne(db, file, folderID: nil, generation: generation,
+            let key = PathNormalizer.normalizedString(for: file.url)
+            let trackID: Int64
+            if let existing = try Int64.fetchOne(db, sql: Self.selectTrackIDByURLForLooseSQL, arguments: [key]) {
+                trackID = existing
+            } else {
+                let generation = try Self.nextScanGeneration(db)
+                trackID = try self.upsertOne(db, file, folderID: nil, generation: generation,
                                              dateAdded: LibraryStore.nowSeconds())
+            }
             let entryID = try self.appendEntryLocked(db, playlistID: playlistID, trackID: trackID)
             return LooseAddResult(trackID: trackID, entryID: entryID)
         }
