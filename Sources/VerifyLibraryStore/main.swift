@@ -267,6 +267,7 @@ func browseReadsCheckCases() -> [CheckCase] {
         CheckCase(label: "br5-explain-plan", run: checkBrowseQueryPlan),
         CheckCase(label: "br7-artist-count", run: checkBrowseArtistCount),
         CheckCase(label: "br8-empty-genre", run: checkBrowseEmptyGenre),
+        CheckCase(label: "br9-tracksdisplay-by-ids", run: checkBrowseTracksDisplayByIDs),
     ]
 }
 

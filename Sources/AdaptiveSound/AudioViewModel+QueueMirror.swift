@@ -38,6 +38,14 @@ extension AudioViewModel {
     func mirrorQueueNow() async {
         guard let store = library?.store else { return }
         let trackIDs = queue.compactMap(\.file.trackID)
+        // A queue slot with no library id (a loose file) cannot be persisted by the id-only
+        // snapshot and WON'T survive a relaunch. There is no loose-file queue entry point in the
+        // UI today, so this is latent — but never drop it silently (QA break-it #6). If a loose
+        // entry point lands, route it through addLooseFileToPlaylist (which mints a trackID) first.
+        if trackIDs.count != queue.count {
+            logUX("queue mirror: \(queue.count - trackIDs.count) loose slot(s) without a library id "
+                + "will NOT persist across relaunch")
+        }
         do {
             let playlistID = try await store.currentPlaylistID()
             try await store.replaceEntries(playlistID: playlistID, trackIDs: trackIDs)
