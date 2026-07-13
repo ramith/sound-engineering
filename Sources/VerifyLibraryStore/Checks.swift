@@ -59,6 +59,9 @@ func fullMigrator() -> DatabaseMigrator {
     migrator.registerMigration(Schema.MigrationID.v2) { db in
         try Schema.migrateV1toV2(db, appBuild: "verify", timestamp: testTimestamp)
     }
+    migrator.registerMigration(Schema.MigrationID.v3) { db in
+        try Schema.migrateV2toV3(db, appBuild: "verify", timestamp: testTimestamp)
+    }
     return migrator
 }
 
@@ -199,8 +202,8 @@ func checkMigrationPreservesData(number: Int, url: URL) -> Bool {
                      db, sql: "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'tracks_fts';"
                  ) ?? 0)
         }
-        guard version == 2 else {
-            printFail(number, "migration preserves data: post-migration version \(version) != 2")
+        guard version == currentSchemaVersion else {
+            printFail(number, "migration preserves data: post-migration version \(version) != \(currentSchemaVersion)")
             return false
         }
         guard folderCount == seededPaths.count else {

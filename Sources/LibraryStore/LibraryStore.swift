@@ -310,6 +310,9 @@ public final class LibraryStore: Sendable {
         migrator.registerMigration(Schema.MigrationID.v2) { db in
             try Schema.migrateV1toV2(db, appBuild: appBuild, timestamp: nowSeconds())
         }
+        migrator.registerMigration(Schema.MigrationID.v3) { db in
+            try Schema.migrateV2toV3(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
         return migrator
     }
 
