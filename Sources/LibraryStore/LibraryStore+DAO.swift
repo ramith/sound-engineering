@@ -140,13 +140,12 @@ public extension LibraryStore {
     /// Locked semantics (design §8 "Remove folder"): removing a root must not delete a
     /// track a playlist references — those detach to loose (`folder_id`→NULL via
     /// `ON DELETE SET NULL`) and survive; only tracks NO playlist references are deleted.
-    /// With no playlist table yet, "unreferenced" is ALL of them; when S10 adds
-    /// `playlist_tracks`, `unreferencedTrackIDs` gains the `NOT IN (…)` filter.
+    /// S10.1 (Gate 1 / SEQ-1): `unreferencedTrackIDs` now filters against `playlist_entries`.
     func removeRoot(id folderID: Int64) async throws {
         try await dbWriter.write { db in
             let detaching = try Self.trackIDs(db, inFolder: folderID)
             try Self.deleteFolderRow(db, folderID)
-            let toDelete = Self.unreferencedTrackIDs(among: detaching)
+            let toDelete = try Self.unreferencedTrackIDs(db, among: detaching)
             try self.deleteTrackRows(db, ids: toDelete)
             _ = try self.sweepOrphanFacetsLocked(db) // SF-2: reap facets orphaned by the delete, same txn
         }
@@ -342,16 +341,22 @@ public extension LibraryStore {
         try db.execute(sql: deleteFolderByIDSQL, arguments: [folderID])
     }
 
-    /// From `candidates`, the ids no playlist references (design §8 removeRoot). With the
-    /// playlist table deferred (M7) that is ALL of them; the S10 filter slots in here as
-    /// `... AND id NOT IN (SELECT track_id FROM playlist_tracks)`.
+    /// The DISTINCT set of track ids referenced by ANY playlist entry (Gate-1 filter).
+    private static let selectReferencedTrackIDsSQL =
+        "SELECT DISTINCT track_id FROM playlist_entries;"
+
+    /// From `candidates`, the ids NO playlist entry references (design §5, removeRoot).
     ///
-    /// ⚠️ HARD GATE (S10) — this stub returning ALL candidates is ONLY safe while no
-    /// `playlist_tracks` table exists. BEFORE the S9/S10 playlist UI ships, this MUST gain the
-    /// `NOT IN (SELECT track_id FROM playlist_tracks)` filter, or `removeRoot` will delete
-    /// playlist-referenced tracks → data loss. Tracked in docs/product/known-issues.md (SEQ-1).
-    private static func unreferencedTrackIDs(among candidates: [Int64]) -> [Int64] {
-        candidates
+    /// S10.1 closes SEQ-1 Gate 1: a playlist-referenced track is NEVER returned here, so
+    /// `removeRoot` leaves it in place (detached to loose via `folder_id → NULL`) instead of
+    /// deleting it — its `playlist_entries` and FTS rows survive. The candidate ids stay bound
+    /// (fetch-the-referenced-set + filter in Swift), never spliced into SQL — same rule as
+    /// `deleteTrackRows`. The referenced set is bounded by total tracks (trivial at library
+    /// scale) and backed by `idx_playlist_entries_track`.
+    private static func unreferencedTrackIDs(_ db: Database, among candidates: [Int64]) throws -> [Int64] {
+        guard !candidates.isEmpty else { return [] }
+        let referenced = try Set(Int64.fetchAll(db, sql: selectReferencedTrackIDsSQL))
+        return candidates.filter { !referenced.contains($0) }
     }
 
     /// Delete the given track rows by id (inside the caller's write transaction). One DELETE

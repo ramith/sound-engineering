@@ -109,8 +109,8 @@ func checkFtsMigrationBackfill(number: Int, url: URL) async -> Bool {
         }
         // Opening the store runs the real v1→v2 (FTS create + backfill).
         let store = try await LibraryStore(url: url, appBuild: "verify")
-        guard await store.schemaVersion() == 2 else {
-            printFail(number, "FTS backfill: store did not reach v2"); return false
+        guard await store.schemaVersion() == currentSchemaVersion else {
+            printFail(number, "FTS backfill: store did not reach v\(currentSchemaVersion)"); return false
         }
         let byTitle = try await store.search("dark").tracks
         let byArtist = try await store.search("floyd").tracks
@@ -161,7 +161,7 @@ func checkFtsMigrationIdempotent(number: Int, url: URL) async -> Bool {
             try Int.fetchOne(db, sql: "SELECT count(*) FROM tracks_fts;") ?? -2
         }
         let version = try await queue.read { db in try schemaInfoVersion(db) }
-        guard afterFirst == 1, afterSecond == 1, version == 2 else {
+        guard afterFirst == 1, afterSecond == 1, version == currentSchemaVersion else {
             printFail(number, "FTS-MIG3: re-migration changed FTS row count (\(afterFirst)→\(afterSecond)) "
                 + "or version (\(version))"); return false
         }
