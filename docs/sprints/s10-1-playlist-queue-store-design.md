@@ -1,23 +1,20 @@
 # S10.1 — Playlist/queue persistence spine (design)
 
 **Document ID:** S10.1-DESIGN-001
-**Status:** DESIGN — team-vetted (BA · swift-expert · qa-expert) + **architect + the-fool gate: GO-WITH-CHANGES** (must-fixes folded in below). **Pending founder brainstorm + sign-off BEFORE implementation** (§0). Then implement → founder bug-fix + manual test → retro.
+**Status:** DESIGN — team-vetted + architect/the-fool gate + **founder brainstorm 2026-07-13: decisions LOCKED (§0). Ready to implement.** Then → founder bug-fix + manual test → retro.
 **Sprint:** S10.1, first of the S10 series — see [s10-queue-playlists-macos-plan.md](s10-queue-playlists-macos-plan.md) + [sprint-plan.md](sprint-plan.md).
 **Authored by:** AdaptiveSound team — business-analyst (scope/stories), swift-expert (schema/DAO/concurrency/migration), qa-expert (headless gate), architect-reviewer + the-fool (gate verdict), synthesized by the orchestrator.
 **Builds on:** the shipped GRDB-backed `LibraryStore` (S8). Current code anchors cited throughout.
 
 ---
 
-## 0. Decisions needing the founder (brainstorm these before code)
+## 0. Decisions (founder brainstorm, 2026-07-13) — LOCKED
 
-**Two are load-bearing (1 + 2); the rest are micro-defaults you can rubber-stamp or overrule.**
-
-1. **⭐ Persistence durability — narrows the delete-rebuild policy.** Playlists are **user-authored data that cannot be rebuilt from the filesystem** — unlike the track/album cache. The store today uses GRDB `eraseDatabaseOnSchemaChange = true` (drop-and-recreate on any schema change), fine for "a rebuildable cache of on-disk files" but wrong for playlists: it would **erase** them on a schema-edit, and worse, a rebuild **reassigns `tracks.id` in scan order** so `playlist_entries.track_id` would point at the **wrong song** — silent corruption. **Recommendation (revised after the gate): set `eraseDatabaseOnSchemaChange = false` *uniformly* (dev + release) and add a one-command `make reset-db`** to replace the automatic wipe in your dev loop. *(The gate showed a DEBUG-only-erase gate would let an accidental edit to a shipped migration pass green in dev but silently no-op / corrupt in release — the uniform-false option removes that dev-vs-release divergence and makes the CI gate exercise the real posture.)* Playlist tables ship as a **real additive `v3-playlists` migration**; new rule **never edit a migration that already shipped** — enforced by a migration-immutability check in the gate (§6), not by discipline alone. → This **narrows [delete-rebuild-dev-db]** from "auto-wipe always" to "manual `make reset-db` in dev; durable in release," so it needs your OK. *(Rejected: DEBUG-only erase — divergence risk; JSON export or a separate playlist DB — neither fixes the `tracks.id`-churn corruption.)*
-2. **⭐ `sweepOrphans` on a file gone from disk — spare, or drop?** *(Gate's top catch.)* Closing Gate-1 protects the **rare** explicit "remove folder" path. But `sweepOrphans` runs at the end of **every scan**; a partially-reachable root (flaky mount, one album deleted, permission glitch) passes the empty-walk guard and, with `ON DELETE CASCADE`, would **silently drop the playlist entries** of any unseen track. **Recommendation: SPARE** — a playlist-referenced track whose file vanished is kept as a *loose* row (its entries survive), and a later rescan re-adopts it by URL with its `id` intact (the identity-model payoff). This uses the **same** `NOT IN (SELECT track_id FROM playlist_entries)` filter as Gate-1, so it's near-zero extra work → **fold it into S10.1** (don't defer). *(Alt: drop-on-CASCADE — simpler, but silent irreversible loss on a frequent path; not recommended for an R1 that ships playlists.)*
-3. **Queue = the built-in "current" playlist?** Confirm the play queue is literally the `is_builtin=1` "current" row (so reorder/clear/play-next map to `playlist_entries`). **Ship the v3 tables now but seed the builtin lazily at S10.2** (via `bootstrapBuiltinCurrentPlaylist()`), not in the migration — so we don't commit an unvalidated queue model to an unshippable-to-edit artifact before S10.2 validates it.
-4. **Micro-decisions (recommended defaults; overrule freely):**
-   - **Duplicate playlist name** → `UNIQUE(name) WHERE is_builtin=0` + reject with a typed error; UI (S10.3) chooses auto-suffix vs. inline "name taken". *(Alt: allow duplicates like Apple Music — drop it.)*
-   - **`untitled-N`** → lowest-unused N (1,2,3; delete 2 → next is 2). *(Alt: monotonic counter.)*
+1. **Durability = keep it simple, deferred.** Leave `eraseDatabaseOnSchemaChange = true` as-is. Pre-first-release, a schema change just drops-and-recreates the DB (playlists included) — accepted; no real users yet. **No** additive-migration discipline, **no** `make reset-db`, **no** migration-immutability guard in S10.1. Real playlist durability (survive a schema change without corruption — the `tracks.id`-churn issue the gate flagged) is a **deferred item to revisit before R1 ships to users** — tracked as a new known-issue, NOT built now.
+2. **A file gone from disk → removed from playlists** (`track_id ON DELETE CASCADE`; the per-scan `sweepOrphans` simply drops it — no playlist-spare filter on the sweep). *Distinct from removing a scan **folder***, which still keeps its tracks as loose per the locked EP-LIBRARY rule (Gate-1, §5).
+3. **The play queue IS the built-in `is_builtin=1` "current" playlist** — seeded in the v3 migration. (S10.2 builds the queue UX on it.)
+4. **Duplicate playlist names prevented** — `UNIQUE(name) WHERE is_builtin=0`; a create/rename to an existing name is rejected with a typed error; the UI (S10.3) decides auto-suffix vs. inline "name taken".
+5. **New-playlist default name = Apple-style** — "New Playlist", "New Playlist 2", … (lowest-unused number), which also satisfies (4) since auto-generated names are always unique.
 
 ---
 
@@ -31,8 +28,8 @@
 | DAO: create/rename/delete, ordered add/insert/remove/reorder, loose-file add | Playlist browse/edit UI, drag-to-playlist, M3U → **S10.3** |
 | Built-in non-deletable **"current"** playlist (store side) | Media keys / Now-Playing → **S10.4** |
 | `untitled-N` naming; duplicate-name handling | — |
-| **Closes Gate 1 (SEQ-1)** — `removeRoot` **and** `sweepOrphans` both spare playlist-referenced tracks (§0.2 — the symmetric fix) | — |
-| **Durability**: additive v3 migration + `eraseDatabaseOnSchemaChange=false` (uniform) + `make reset-db`; a migration-immutability guard in the gate | — |
+| **Closes Gate 1 (SEQ-1)** — `removeRoot` spares playlist-referenced tracks (kept loose; the locked EP-LIBRARY rule) | Playlist durability across schema change (§0.1) → deferred, new known-issue |
+| v3 migration adds the tables + seeds the builtin "current"; `eraseDatabaseOnSchemaChange` stays **true** (durability deferred) | — |
 | New `VerifyLibraryStore` playlist checks | — |
 
 Naming: the join table is **`playlist_entries`** (authoritative in the plan + backlog). The stale `playlist_tracks` in `LibraryStore+DAO.swift:347-353`, `known-issues.md` SEQ-1, and the S9 docs get reconciled to `playlist_entries` as part of this sprint. Schema goes **v2 → v3** (FTS5 was v2).
@@ -64,7 +61,7 @@ CREATE UNIQUE INDEX idx_playlists_one_builtin ON playlists(is_builtin) WHERE is_
 CREATE TABLE playlist_entries (
     id          INTEGER PRIMARY KEY,          -- OWN identity -> a track can repeat
     playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-    track_id    INTEGER NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,  -- §0.3
+    track_id    INTEGER NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,  -- §0.2 (file gone -> drop)
     position    INTEGER NOT NULL,             -- ordering key, not required contiguous
     added_at    INTEGER NOT NULL);
 
@@ -72,7 +69,7 @@ CREATE INDEX idx_playlist_entries_playlist ON playlist_entries(playlist_id, posi
 CREATE INDEX idx_playlist_entries_track    ON playlist_entries(track_id);
 ```
 
-Migration mirrors the shipped v1→v2 FTS migration (`Schema.swift:262-282`): bump `currentSchemaVersion = 3`, add `MigrationID.v3`, add `"playlists"`/`"playlist_entries"` to `expectedTables`, `createV3Statements`, `migrateV2toV3` — **structural only (tables + indexes, no seed)**; the builtin `current` is seeded lazily by `bootstrapBuiltinCurrentPlaylist()` at S10.2 (§0.3), so the migration commits no unvalidated queue semantics. Additive → **no erase, existing `tracks.id` preserved** (GRDB only erases when an *already-applied* migration's body changes, not when a new one is added). Alongside this, `makeMigrator` sets `eraseDatabaseOnSchemaChange = false` (uniform — §0.1). `position` is a non-contiguous ordering key (append = `MAX(position)+1`; reorder renormalizes to dense `0..n-1` in one txn; no `UNIQUE(playlist_id,position)` so transient reorder collisions don't fail).
+Migration mirrors the shipped v1→v2 FTS migration (`Schema.swift:262-282`): bump `currentSchemaVersion = 3`, add `MigrationID.v3`, add `"playlists"`/`"playlist_entries"` to `expectedTables`, `createV3Statements`, `migrateV2toV3` (create the tables + indexes, then seed the builtin `current` playlist via `INSERT OR IGNORE`, idempotent like `seedSentinelArtist`). `eraseDatabaseOnSchemaChange` **stays `true`** (§0.1 — keep it simple; a pre-R1 schema change drops-and-recreates, playlists included). Adding v3 to a store already at v2 is additive so it won't erase in practice; but we are **not** relying on that for durability — durability is deferred. `position` is a non-contiguous ordering key (append = `MAX(position)+1`; reorder renormalizes to dense `0..n-1` in one txn; no `UNIQUE(playlist_id,position)` so transient reorder collisions don't fail).
 
 ## 4. DAO API (new `LibraryStore+Playlists.swift`)
 
@@ -97,13 +94,13 @@ let referenced = try Set(Int64.fetchAll(db, sql: "SELECT DISTINCT track_id FROM 
 return candidates.filter { !referenced.contains($0) }   // candidate ids bound, never spliced
 ```
 
-**Symmetric fix — `sweepOrphans` (§0.2, the gate's top catch):** the *same* filter goes on the per-scan orphan sweep (`LibraryStore+DAO.swift:258-272`, fired every scan by `LibraryScanner.swift:102`) — `DELETE … WHERE <orphan> AND id NOT IN (SELECT track_id FROM playlist_entries)` — so a partially-reachable rescan spares playlist-referenced tracks (kept as loose, re-adopted by URL on a later scan) instead of silently CASCADE-dropping their entries. Without this, Gate-1 only plugs the rare explicit path and leaves the frequent automatic one open.
+**`sweepOrphans` is left as-is (§0.2 — file gone → drop):** the per-scan orphan sweep keeps no playlist filter, so a track whose file genuinely disappeared is CASCADE-dropped from playlists (the founder's call). *Known edge (deferred, note-only):* a **partially**-reachable root (flaky mount) can look like "files gone" to the sweep and drop entries; the existing empty-walk guard (`RootUnreachableError` on `filesSeen==0`) covers the fully-unreachable case but not the partial one — revisit with durability (§0.1) if it bites.
 
 Flip known-issues SEQ-1 **Gate 1 → CLOSED** and correct the SQL wording to `playlist_entries`.
 
 ## 6. Tests / gate (qa) — new `VerifyLibraryStore` checks
 
-`pl-*` checks mirroring the existing `ChecksMoveMatch`/`ChecksCRUD` idiom (`Bool`-returning, registered via `playlistSpineCheckCases()` in `main.swift`, real `LibraryStore`, temp DBs under `test-data/`): CRUD; built-in "current" rename/delete rejected; ordered membership + **same-track-twice**; insert/remove/**reorder** — asserting the resulting **`ORDER BY position` sequence** (not a literal contiguous 0..n-1 vector — positions are a non-contiguous ordering key, §3); loose-file add; `untitled-N` lowest-unused; duplicate-name collision; **zero FS side-effects**; **Gate-1 keep + inverse-sweep pair** (`pl-gate1-referenced-track-kept` + `pl-gate1-unreferenced-track-swept`); **`pl-sweep-referenced-track-kept`** (the §0.2 symmetric fix — a referenced track unseen in a partial rescan is spared, not CASCADE-dropped); multi-playlist reference; **restart durability across a real process boundary** (`--restart-write-playlists`/`--restart-read-playlists` — guards §0.1: playlists survive quit/relaunch, and the additive v2→v3 migration preserves `tracks.id`); **migration-immutability guard** (fingerprint each shipped migration's DDL + id; fail if a shipped migration body changes — the machine enforcement of "never edit a shipped migration"); **US-PLIST-08 seam** (membership survives a folder→folder move — store-provable now that S8.4 shipped, ties `LibraryStore+MoveMatch` to real `playlist_entries`).
+`pl-*` checks mirroring the existing `ChecksMoveMatch`/`ChecksCRUD` idiom (`Bool`-returning, registered via `playlistSpineCheckCases()` in `main.swift`, real `LibraryStore`, temp DBs under `test-data/`): CRUD; built-in "current" rename/delete rejected; ordered membership + **same-track-twice**; insert/remove/**reorder** — asserting the resulting **`ORDER BY position` sequence** (not a literal contiguous 0..n-1 vector — positions are a non-contiguous ordering key, §3); loose-file add; Apple-style default name + **lowest-unused numbering**; **duplicate-name rejected** (`PlaylistNameConflict`); **zero FS side-effects**; **Gate-1 keep + inverse-sweep pair** (`pl-gate1-referenced-track-kept` — a playlist-referenced track survives `removeRoot` as loose; `pl-gate1-unreferenced-track-swept` — an unreferenced sibling is deleted); **file-gone drop** (`sweepOrphans` CASCADE-drops a referenced track whose file vanished — the §0.2 behavior); multi-playlist reference; basic **persistence across store reopen** (no schema change); **US-PLIST-08 seam** (membership survives a folder→folder move — store-provable now that S8.4 shipped, ties `LibraryStore+MoveMatch` to real `playlist_entries`).
 
 **Manual testing (founder, later):** playlist create/reorder/queue by hand + quit-relaunch durability — reserved for after S10.2/S10.3 wire the UI.
 
