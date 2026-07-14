@@ -73,6 +73,9 @@ struct RecentlyPlayedRow: View {
     }
 
     private func relativeString(fromEpochSeconds seconds: Int64) -> String {
-        Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(.relative(presentation: .named))
+        // Clamp a future / clock-skewed stamp so it never renders "in 3 minutes" in a
+        // *recently-played* list (display-only; the score's backward-clamp is separate).
+        guard seconds < Int64(Date().timeIntervalSince1970) else { return "just now" }
+        return Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(.relative(presentation: .named))
     }
 }

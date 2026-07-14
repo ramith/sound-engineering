@@ -36,6 +36,15 @@ extension AudioViewModel {
 
         refreshDuration(for: fileURL)
 
+        // A fresh start (not a pause/resume seek) begins a NEW ≥60% play-through (S10.6). Reset
+        // SYNCHRONOUSLY here, BEFORE the async Task below: on a manual switch `selectedTrackIndex`
+        // is already the new track, and the 20 Hz tick fires while the Task is parked at
+        // `await engine.startAudio`. If the reset were deferred into the Task, those ticks would
+        // keep accruing the OUTGOING track's `heardSeconds` and could cross the threshold — counting
+        // the play against the newly-selected track (QA break-it #1). A pause-resume (resumeFrom !=
+        // nil) continues the same play-through — no reset.
+        if resumeFrom == nil { resetPlayTracking() }
+
         // Snapshot index and mode for use inside the Task (avoids capturing `self` for
         // values that could change between now and when the Task body runs).
         let startIndex = selectedTrackIndex
@@ -52,9 +61,6 @@ extension AudioViewModel {
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
                 isPlaying = true
                 errorMessage = nil
-                // A fresh start (not a pause/resume seek) begins a NEW ≥60% play-through (S10.6).
-                // A pause-resume (resumeFrom != nil) continues the same play-through — no reset.
-                if resumeFrom == nil { resetPlayTracking() }
             } catch {
                 errorMessage = "Playback failed: \(error.localizedDescription)"
                 isPlaying = false
