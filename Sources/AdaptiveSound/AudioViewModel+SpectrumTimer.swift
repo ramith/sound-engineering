@@ -60,6 +60,9 @@ extension AudioViewModel {
         } else if pausedResumePosition == nil {
             playbackPosition = 0
         }
+        // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
+        // accrues only while playing → a pause/stall/seek never mis-counts).
+        accruePlayThrough()
         loudness = engine.currentLoudness()
         var freshPath = engine.currentSignalPath()
         // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
@@ -103,7 +106,7 @@ extension AudioViewModel {
                     logUX("playbackEnded — advancing to queued track[\(nextIdx)] (reconfigure gap)")
                     // §12.3: count the OUTGOING track (pre-advance selectedTrackIndex) before it
                     // reassigns below — the Pure cross-rate reconfigure natural-completion site.
-                    countOutgoingTrackCompletion()
+                    countPlayIfNaturalEndQualifies()
                     selectedTrackIndex = nextIdx
                     // Clear the trigger SYNCHRONOUSLY before the async startPlayback: `playbackEnded()`
                     // stays true until startPlayback's Task runs `pureModeEngineStart` (≤ a few ticks
@@ -116,7 +119,7 @@ extension AudioViewModel {
                     logUX("playbackEnded — no next track, stopping")
                     // §12.3: true end-of-queue / single-track completion — count the track that
                     // just finished before clearing isPlaying below.
-                    countOutgoingTrackCompletion()
+                    countPlayIfNaturalEndQualifies()
                     isPlaying = false
                     playbackPosition = 0
                 }
