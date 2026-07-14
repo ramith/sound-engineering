@@ -11,14 +11,30 @@ struct PlaylistView: View {
     /// current track into view (UI-2). A monotonic request-ID (not a Bool) so repeated presses
     /// re-fire even when the value would otherwise be unchanged.
     @State private var jumpToCurrentRequestID = 0
+    /// Up Next (the live queue) vs. History (this session's plays). Local view state — the panel
+    /// simply switches which list it shows (S10.2 3a).
+    @State private var panelMode: QueuePanelMode = .upNext
 
     var body: some View {
         VStack(spacing: 12) {
-            PlaylistHeaderView(jumpToCurrentRequestID: $jumpToCurrentRequestID)
-            if viewModel.playlist.isEmpty {
-                emptyQueue
-            } else {
-                PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+            PlaylistHeaderView(jumpToCurrentRequestID: $jumpToCurrentRequestID, panelMode: $panelMode)
+            Picker("View", selection: $panelMode) {
+                ForEach(QueuePanelMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch panelMode {
+            case .upNext:
+                if viewModel.playlist.isEmpty {
+                    emptyQueue
+                } else {
+                    PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+                }
+            case .history:
+                QueueHistoryList()
             }
         }
     }
@@ -44,24 +60,37 @@ struct PlaylistView: View {
 private struct PlaylistHeaderView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var jumpToCurrentRequestID: Int
+    @Binding var panelMode: QueuePanelMode
+
+    /// Mode-aware subtitle: the queue's track count, or the number of session plays.
+    private var subtitle: String {
+        switch panelMode {
+        case .upNext:
+            let count = viewModel.playlist.count
+            return "\(count) \(count == 1 ? "track" : "tracks")"
+        case .history:
+            let count = viewModel.sessionHistory.count
+            return "\(count) played"
+        }
+    }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Queue")
+                Text(panelMode == .history ? "History" : "Queue")
                     .font(.caption.weight(.semibold))
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundStyle(Color.asLabelSecond)
 
-                Text("\(viewModel.playlist.count) \(viewModel.playlist.count == 1 ? "track" : "tracks")")
+                Text(subtitle)
                     .font(DesignSystem.Font.monoSmall)
                     .foregroundStyle(Color.asLabelTertiary)
             }
 
             Spacer()
 
-            PlaylistControlsView(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+            PlaylistControlsView(jumpToCurrentRequestID: $jumpToCurrentRequestID, panelMode: $panelMode)
         }
     }
 }
@@ -71,9 +100,20 @@ private struct PlaylistHeaderView: View {
 private struct PlaylistControlsView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var jumpToCurrentRequestID: Int
+    @Binding var panelMode: QueuePanelMode
 
     var body: some View {
         HStack(spacing: 8) {
+            // Clear Queue — Up Next only, and only when there's something to clear. Immediate
+            // (no confirm, founder §3): the queue is cheap to rebuild and History is left intact.
+            if panelMode == .upNext, !viewModel.playlist.isEmpty {
+                Button("Clear Queue", systemImage: "trash", action: viewModel.clearPlaylist)
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.asLabelSecond)
+                    .help("Clear the queue (keeps History)")
+            }
+
             // Shuffle toggle
             Button(
                 "Shuffle",

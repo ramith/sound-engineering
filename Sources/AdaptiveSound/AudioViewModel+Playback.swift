@@ -26,7 +26,8 @@ extension AudioViewModel {
             return
         }
 
-        let fileURL = playlist[selectedIndex].absoluteURL
+        let startFile = playlist[selectedIndex]
+        let fileURL = startFile.absoluteURL
         // Show the resume point immediately (avoid a scrubber flash to 0 before the seek lands).
         playbackPosition = resumeFrom ?? 0
         logUX("play: track[\(selectedIndex)] '\(playlist[selectedIndex].name)' "
@@ -51,6 +52,8 @@ extension AudioViewModel {
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
                 isPlaying = true
                 errorMessage = nil
+                // A fresh start (not a pause/resume seek) logs a session-history play (S10.2 3a).
+                if resumeFrom == nil { recordPlayStart(startFile) }
             } catch {
                 errorMessage = "Playback failed: \(error.localizedDescription)"
                 isPlaying = false
