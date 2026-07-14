@@ -52,8 +52,13 @@ extension AudioViewModel {
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
                 isPlaying = true
                 errorMessage = nil
-                // A fresh start (not a pause/resume seek) logs a session-history play (S10.2 3a).
-                if resumeFrom == nil { recordPlayStart(startFile) }
+                // A fresh start (not a pause/resume seek) logs a session-history play (S10.2 3a)
+                // and begins a NEW ≥60% play-through (S10.6). A pause-resume (resumeFrom != nil)
+                // continues the same play-through — no reset.
+                if resumeFrom == nil {
+                    recordPlayStart(startFile)
+                    resetPlayTracking()
+                }
             } catch {
                 errorMessage = "Playback failed: \(error.localizedDescription)"
                 isPlaying = false

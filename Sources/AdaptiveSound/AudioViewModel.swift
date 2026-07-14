@@ -1,4 +1,5 @@
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel
 
@@ -193,6 +194,18 @@ final class AudioViewModel {
     var hasUserEditedQueue = false
     /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
     var queueHydrated = false
+
+    /// The ≥60%-heard play-through detector (S10.6). Pure state (PlaybackQueueKit); the transport
+    /// tick feeds it monotonic playback-time deltas. When it crosses the threshold the current
+    /// track's play is recorded (once per play-through). Not UI-bound.
+    var playThroughTracker = PlayThroughTracker()
+    /// Monotonic reference (suspend-stopping uptime nanos) for the play-through accrual — advanced
+    /// EVERY tick, consumed only while playing (FIX-3), so a pause/stall/seek never mis-accrues.
+    /// `nil` reseeds on the next tick. Not UI-bound.
+    var lastPlayThroughMonoNanos: UInt64?
+    /// Bumped (on the main actor) AFTER a play-count write commits (S10.6 R4) so the Recently-Played
+    /// view can reload without racing the detached store write. UI-bound.
+    var playCountRevision = 0
 
     /// The session play-history (`+History`), newest LAST — the History view shows it reversed.
     /// A track is appended when it BEGINS a genuine new play (manual start / gapless auto-advance);

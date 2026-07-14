@@ -179,6 +179,7 @@ let package = Package(
                 "QueueAdvanceTests.swift",
                 "QueueOpsTests.swift",
                 "QueueInsertTests.swift",
+                "PlayThroughTrackerTests.swift",
             ]
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed
