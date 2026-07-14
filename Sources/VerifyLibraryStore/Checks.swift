@@ -62,6 +62,9 @@ func fullMigrator() -> DatabaseMigrator {
     migrator.registerMigration(Schema.MigrationID.v3) { db in
         try Schema.migrateV2toV3(db, appBuild: "verify", timestamp: testTimestamp)
     }
+    migrator.registerMigration(Schema.MigrationID.v4) { db in
+        try Schema.migrateV3toV4(db, appBuild: "verify", timestamp: testTimestamp)
+    }
     return migrator
 }
 

@@ -190,6 +190,23 @@ public extension LibraryStore {
         }
     }
 
+    /// Recently-Played display rows (S10.6): tracks played at least once, ordered by frecency
+    /// (recency-weighted play frequency). `WHERE t.play_count > 0` excludes never-played;
+    /// `ORDER BY t.frecency_rank DESC, t.id DESC` is **index-driven** (the `idx_tracks_frecency_rank`
+    /// index carries the rowid as its trailing key → no temp b-tree) and needs no `now` — the stored
+    /// projected rank is order-equivalent to current frecency at any read time. A legacy row with
+    /// `play_count > 0` but a NULL rank sorts LAST (NULLs last in DESC), never mis-ordering real
+    /// rows. `limit` caps the shelf (default 200). Reuses the shared display projection + the
+    /// `AudioFile(_:)` adapter — no new row decoding.
+    func frecencyTracksDisplay(limit: Int? = 200, offset: Int = 0) async throws -> [LibraryTrackDisplay] {
+        let sql = LibraryStore.displayTracksSQL(
+            whereClause: "WHERE t.play_count > 0",
+            order: "t.frecency_rank DESC, t.id DESC", limited: limit != nil
+        )
+        let args = StatementArguments(LibraryStore.paginationArgs(limit: limit, offset: offset))
+        return try await dbWriter.read { db in try LibraryTrackDisplay.fetchAll(db, sql: sql, arguments: args) }
+    }
+
     // MARK: - Artwork cache-path map (batched, chunked IN-list)
 
     /// Resolve artwork `content_hash` → `cache_path` for `keys` in one batched map. The IN-list
@@ -362,6 +379,17 @@ public extension LibraryStore {
     func explainAllTracksDisplayPlan(sortedBy sort: TrackSort) async throws -> [String] {
         let sql = LibraryStore.displayTracksSQL(
             whereClause: "", order: LibraryStore.trackOrder(sort, prefix: "t."), limited: false
+        )
+        return try await dbWriter.read { db in try Self.collectQueryPlan(db, sql) }
+    }
+
+    /// EXPLAIN QUERY PLAN for the Recently-Played frecency read (S10.6 FR7): must be INDEX-driven
+    /// on `idx_tracks_frecency_rank` with NO `USE TEMP B-TREE FOR ORDER BY` (the projected-rank +
+    /// rowid-carrying index removes the filesort).
+    func explainFrecencyTracksDisplayPlan() async throws -> [String] {
+        let sql = LibraryStore.displayTracksSQL(
+            whereClause: "WHERE t.play_count > 0",
+            order: "t.frecency_rank DESC, t.id DESC", limited: false
         )
         return try await dbWriter.read { db in try Self.collectQueryPlan(db, sql) }
     }
