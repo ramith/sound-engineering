@@ -39,6 +39,7 @@ extension AudioViewModel {
         countOutgoingTrackCompletion()
 
         selectedTrackIndex = nextIdx
+        recordPlayStart(advancedTrack) // the incoming track begins playing — log it (S10.2 3a)
         playbackPosition = 0
         duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
 

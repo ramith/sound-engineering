@@ -15,8 +15,8 @@ extension AudioViewModel {
     /// branches) so none of their call sites' own guard adds to that function's
     /// cyclomatic complexity.
     func countOutgoingTrackCompletion() {
-        guard let completedIdx = selectedTrackIndex, completedIdx < playlist.count else { return }
-        countPlayCompletion(url: playlist[completedIdx].absoluteURL)
+        guard let completedIdx = selectedTrackIndex, completedIdx < queue.count else { return }
+        countPlayCompletion(file: queue[completedIdx].file)
     }
 
     /// Count a natural-completion play for the track at `url`: fires a detached,
@@ -35,15 +35,23 @@ extension AudioViewModel {
     ///
     /// S3 F5: this is the ONE audio→library edge — it reaches the store through the injected
     /// `library` peer (`library?.store`) rather than owning the store itself.
-    private func countPlayCompletion(url: URL) {
+    private func countPlayCompletion(file: AudioFile) {
         guard let store = library?.store else {
-            logUX("countPlayCompletion: store not ready; skipping play-count for \(url.lastPathComponent)")
+            logUX("countPlayCompletion: store not ready; skipping play-count for \(file.absoluteURL.lastPathComponent)")
             return
         }
         let playedAt = Int64(Date().timeIntervalSince1970)
+        let trackID = file.trackID
+        let url = file.absoluteURL
         Task.detached(priority: .utility) {
             do {
-                try await store.incrementPlayCount(url: url, playedAt: playedAt)
+                // Prefer the durable id (S10.2 — the queue carries it, no url→id lookup);
+                // fall back to url for a slot with no library row.
+                if let trackID {
+                    try await store.incrementPlayCount(id: trackID, playedAt: playedAt)
+                } else {
+                    try await store.incrementPlayCount(url: url, playedAt: playedAt)
+                }
             } catch {
                 logUX("countPlayCompletion: write failed for \(url.lastPathComponent) — \(error)")
             }

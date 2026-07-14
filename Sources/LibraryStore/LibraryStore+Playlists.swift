@@ -133,6 +133,7 @@ public extension LibraryStore {
     private static let insertEntrySQL =
         "INSERT INTO playlist_entries(playlist_id, track_id, position, added_at) VALUES (?, ?, ?, ?);"
     private static let deleteEntryByIDSQL = "DELETE FROM playlist_entries WHERE id = ? AND playlist_id = ?;"
+    private static let deleteAllEntriesSQL = "DELETE FROM playlist_entries WHERE playlist_id = ?;"
     private static let selectPlaylistExistsSQL = "SELECT 1 FROM playlists WHERE id = ?;"
     private static let selectTrackIDByURLForLooseSQL = "SELECT id FROM tracks WHERE url = ?;"
     private static let selectEntryIDsInOrderSQL =
@@ -348,6 +349,29 @@ public extension LibraryStore {
     private static func renumberLocked(_ db: Database, playlistID: Int64, entryIDsInOrder ids: [Int64]) throws {
         for (index, entryID) in ids.enumerated() {
             try db.execute(sql: updateEntryPositionSQL, arguments: [Int64(index), entryID, playlistID])
+        }
+    }
+
+    /// Replace a playlist's entire contents with `trackIDs` (in order), dense `0..n-1`, in ONE
+    /// transaction — the snapshot primitive behind the S10.2 queue mirror. An empty `trackIDs`
+    /// just clears it. Throws `.notFound` for an absent playlist.
+    func replaceEntries(playlistID: Int64, trackIDs: [Int64]) async throws {
+        try await dbWriter.write { db in
+            guard try Int64.fetchOne(db, sql: Self.selectPlaylistExistsSQL, arguments: [playlistID]) != nil else {
+                throw PlaylistMutationError.notFound(id: playlistID)
+            }
+            try db.execute(sql: Self.deleteAllEntriesSQL, arguments: [playlistID])
+            let now = LibraryStore.nowSeconds()
+            for (index, trackID) in trackIDs.enumerated() {
+                try db.execute(sql: Self.insertEntrySQL, arguments: [playlistID, trackID, Int64(index), now])
+            }
+        }
+    }
+
+    /// Delete every entry of a playlist (explicit Clear Queue), one txn.
+    func clearEntries(playlistID: Int64) async throws {
+        try await dbWriter.write { db in
+            try db.execute(sql: Self.deleteAllEntriesSQL, arguments: [playlistID])
         }
     }
 
