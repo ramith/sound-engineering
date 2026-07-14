@@ -10,7 +10,6 @@
 
 import Foundation
 import GRDB
-import LibraryScan
 import LibraryStore
 
 private let frecencyEps = 1e-6

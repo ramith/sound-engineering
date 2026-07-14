@@ -75,6 +75,15 @@ final class LibraryBrowseModel {
     ]
     private(set) var songsState: LoadState = .idle
 
+    /// Recently-Played (frecency) rows (S10.6) — the DAO returns them already frecency-ordered
+    /// (recency-weighted play frequency). Loaded when the Recently-Played tab appears and refreshed
+    /// when a play crosses the ≥60% threshold (`AudioViewModel.playCountRevision`). Declared
+    /// `internal` (not `private(set)`) because the loader lives in a same-type extension
+    /// (`LibraryBrowseModel+History`).
+    var history: [LibraryTrackDisplay] = []
+    var historyState: LoadState = .idle
+    var historyLoadEpoch = 0
+
     // Songs filter (S9.5 chunk 2b — "filter-preserves-sort", design §3.3/§5). The filter NARROWS
     // the already-`songSort`-ordered `songs` in place (A2): it never touches `songSort`/`sortOrder`,
     // so the sort triangle is preserved and headers keep re-sorting the filtered subset.
