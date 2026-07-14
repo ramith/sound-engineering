@@ -445,6 +445,21 @@ As a **Marcus** I want playback to advance automatically to the next track in th
 
 ---
 
+#### US-PLAY-10 — Recently Played (frecency-ranked play history)
+
+As a **Marcus** I want a "Recently Played" view that lists each track once with how many times I've played it, ordered so what I've been into lately floats to the top, so that I can jump back into recent listening without scrolling a noisy log of every play.
+
+**Acceptance criteria:**
+- The view lists each track **once** (de-duplicated), with an **all-time play count** that persists across app restarts — never a row-per-play (the S10.2 session log is replaced).
+- A play is counted when **≥60% of the track has been heard, capped at ~4 minutes** (whichever comes first), counted **once per play-through**; a skip/scrub before that does not count (see FR — the ≥60% rule).
+- Ordered by **frecency** (recency-weighted frequency, 7-day half-life): a track played recently outranks one merely played more times long ago; total count breaks ties among similar-recency tracks. Never-played tracks are excluded.
+- Each row shows the play count + a relative last-played time ("12 plays · 2h ago") so the ranking reads as intentional; tapping a row plays it now (non-destructive, like the Songs list).
+- Rework of the S10.2 History tab. Design: [recently-played-frecency-design.md](../sprints/recently-played-frecency-design.md). Data model: a decayed-score accumulator column (`frecency_score`, schema v4); the durable `play_count`/`last_played` are unchanged.
+
+**Priority:** Should | **Phase:** 1 | **Sprint-chunk:** S10.6 | **Estimate:** 5 sp | **Dependencies:** US-PLAY-05 (session state), S10.2 (queue/History surface)
+
+---
+
 ### EP-TONAL — Tonal and Dynamic Optimization
 
 **Epic goal:** Implement the parametric EQ, device correction profiles, Fletcher-Munson loudness compensation, psychoacoustic bass enhancement, adaptive dynamics, and preset library.
