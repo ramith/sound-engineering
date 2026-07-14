@@ -194,6 +194,12 @@ final class AudioViewModel {
     /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
     var queueHydrated = false
 
+    /// The session play-history (`+History`), newest LAST — the History view shows it reversed.
+    /// A track is appended when it BEGINS a genuine new play (manual start / gapless auto-advance);
+    /// dups allowed. Session-scoped + in-memory: NOT persisted across relaunch, and Clear Queue
+    /// leaves it untouched (founder §3a). UI-bound (the History list observes it).
+    var sessionHistory: [HistoryItem] = []
+
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int? {
