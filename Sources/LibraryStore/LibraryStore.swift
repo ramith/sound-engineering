@@ -57,12 +57,20 @@ public final class LibraryStore: Sendable {
         "UPDATE tracks SET play_count = ?, loved = ?, rating = ? WHERE id = ?;"
     /// Read a track's reserved user-state columns (verification hook).
     private static let selectUserStateSQL = "SELECT play_count, loved, rating FROM tracks WHERE id = ?;"
-    /// Count one natural-completion play — a SINGLE atomic URL-keyed accumulate (§12.3).
-    private static let incrementPlayCountSQL =
-        "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE url = ?;"
-    /// The durable-id-keyed accumulate (S10.2 — closes the S9.5 url→id play-count seam).
-    private static let incrementPlayCountByIDSQL =
-        "UPDATE tracks SET play_count = play_count + 1, last_played = ? WHERE id = ?;"
+    /// Recently-Played frecency (S10.6): read the prior accumulator + last-play, then write the
+    /// updated play_count / last_played / decayed score / projected rank in ONE write transaction
+    /// (a read-modify-write — the score/rank are Swift-computed, so this can't be a bare UPDATE;
+    /// the single serialized `DatabaseWriter` makes the in-closure read+write atomic, no TOCTOU).
+    private static let selectFrecencyStateByIDSQL =
+        "SELECT frecency_score, last_played FROM tracks WHERE id = ?;"
+    private static let selectFrecencyStateByURLSQL =
+        "SELECT frecency_score, last_played FROM tracks WHERE url = ?;"
+    private static let recordPlayByIDSQL =
+        "UPDATE tracks SET play_count = play_count + 1, last_played = ?, "
+            + "frecency_score = ?, frecency_rank = ? WHERE id = ?;"
+    private static let recordPlayByURLSQL =
+        "UPDATE tracks SET play_count = play_count + 1, last_played = ?, "
+            + "frecency_score = ?, frecency_rank = ? WHERE url = ?;"
     /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
     private static let selectSchemaVersionSQL = "SELECT version FROM schema_info WHERE id = 1;"
 
@@ -207,10 +215,14 @@ public final class LibraryStore: Sendable {
     public func incrementPlayCount(url: URL, playedAt: Int64) async throws {
         let key = PathNormalizer.normalizedString(for: url)
         try await dbWriter.write { db in
-            try db.execute(
-                sql: Self.incrementPlayCountSQL,
-                arguments: [playedAt, key]
-            )
+            guard let row = try Row.fetchOne(db, sql: Self.selectFrecencyStateByURLSQL, arguments: [key]) else {
+                return // no matching row — silent no-op (never throw into the audio path)
+            }
+            let prevScore: Double = row["frecency_score"] ?? 0
+            let lastPlayed: Int64? = row["last_played"]
+            let updated = Self.frecencyAfterPlay(prevScore: prevScore, lastPlayed: lastPlayed, now: playedAt)
+            try db.execute(sql: Self.recordPlayByURLSQL,
+                           arguments: [playedAt, updated.score, updated.rank, key])
         }
     }
 
@@ -219,7 +231,37 @@ public final class LibraryStore: Sendable {
     /// the audio path).
     public func incrementPlayCount(id trackID: Int64, playedAt: Int64) async throws {
         try await dbWriter.write { db in
-            try db.execute(sql: Self.incrementPlayCountByIDSQL, arguments: [playedAt, trackID])
+            guard let row = try Row.fetchOne(db, sql: Self.selectFrecencyStateByIDSQL, arguments: [trackID]) else {
+                return // absent id — silent no-op (never throw into the audio path)
+            }
+            let prevScore: Double = row["frecency_score"] ?? 0
+            let lastPlayed: Int64? = row["last_played"]
+            let updated = Self.frecencyAfterPlay(prevScore: prevScore, lastPlayed: lastPlayed, now: playedAt)
+            try db.execute(sql: Self.recordPlayByIDSQL,
+                           arguments: [playedAt, updated.score, updated.rank, trackID])
+        }
+    }
+
+    /// The raw frecency state of a track (S10.6 verification hook). A struct (not a tuple) to stay
+    /// within the large-tuple lint bound.
+    public struct FrecencyState: Sendable {
+        public let playCount: Int64
+        public let score: Double
+        public let rank: Double?
+        public let lastPlayed: Int64?
+    }
+
+    /// Verification hook (S10.6): the raw frecency state for a track id, for `VerifyLibraryStore`
+    /// to assert the accumulator/rank against `frecencyAfterPlay`. `nil` if the id is absent.
+    public func frecencyState(id trackID: Int64) async throws -> FrecencyState? {
+        try await dbWriter.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT play_count, frecency_score, frecency_rank, last_played FROM tracks WHERE id = ?;",
+                arguments: [trackID]
+            ) else { return nil }
+            return FrecencyState(playCount: row["play_count"], score: row["frecency_score"] ?? 0,
+                                 rank: row["frecency_rank"], lastPlayed: row["last_played"])
         }
     }
 
@@ -325,6 +367,9 @@ public final class LibraryStore: Sendable {
         migrator.registerMigration(Schema.MigrationID.v3) { db in
             try Schema.migrateV2toV3(db, appBuild: appBuild, timestamp: nowSeconds())
         }
+        migrator.registerMigration(Schema.MigrationID.v4) { db in
+            try Schema.migrateV3toV4(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
         return migrator
     }
 
@@ -332,5 +377,29 @@ public final class LibraryStore: Sendable {
     /// Module-internal so the DAO extension can stamp `date_added` on insert.
     static func nowSeconds() -> Int64 {
         Int64(Date().timeIntervalSince1970)
+    }
+
+    /// Half-life for the Recently-Played frecency decay (design D5): 7 days, in seconds.
+    public static let frecencyHalfLifeSeconds: Double = 7 * 24 * 60 * 60
+
+    /// Pure frecency update (S10.6 R2/R7): the new `(score, rank)` after a play at `now`, given the
+    /// prior decayed `score` + `lastPlayed`.
+    /// - `score = prevScore·2^(−max(0, now−lp)/H) + 1` — first play (`lp == nil`) → `1`; the
+    ///   `max(0,…)` clamp blocks a backward clock jump from inflating the decay factor.
+    /// - `rank = now + (H/ln2)·ln(score)` — the projected instant at which the score decays to 1;
+    ///   `score ≥ 1` always ⇒ `ln ≥ 0` (no domain error), and ordering by `rank` equals ordering by
+    ///   current frecency `score·2^(−(t−lp)/H)` at ANY read time `t` (Mozilla-Places projected-rank).
+    /// Pure + `internal` so `VerifyLibraryStore` / `swift test` can prove the algorithm directly.
+    public static func frecencyAfterPlay(prevScore: Double, lastPlayed: Int64?, now: Int64,
+                                         halfLife: Double = frecencyHalfLifeSeconds) -> (score: Double, rank: Double) {
+        let score: Double
+        if let lastPlayed {
+            let age = Double(max(0, now - lastPlayed))
+            score = prevScore * pow(2.0, -age / halfLife) + 1.0
+        } else {
+            score = 1.0
+        }
+        let rank = Double(now) + (halfLife / log(2.0)) * log(score)
+        return (score, rank)
     }
 }

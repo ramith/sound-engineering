@@ -32,7 +32,7 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 3
+public let currentSchemaVersion = 4
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -54,6 +54,12 @@ public enum Schema {
         /// "current" queue playlist (S10.1). Durability across schema change is DEFERRED
         /// (design §0.1): `eraseDatabaseOnSchemaChange` stays true pre-R1.
         public static let v3 = "v3-playlists"
+        /// v3 → v4: `tracks.frecency_score` + `tracks.frecency_rank` (+ index) for the
+        /// Recently-Played frecency ordering (S10.6). ADDITIVE (ALTER ADD COLUMN); play counts
+        /// reset in practice via the delete-rebuild posture (founder D9). `frecency_rank` is
+        /// nullable so a legacy/never-scored played row sorts last (NULLs last in DESC) rather
+        /// than corrupting the order.
+        public static let v4 = "v4-frecency"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
@@ -342,6 +348,30 @@ public enum Schema {
         }
         try seedBuiltinCurrentPlaylist(db, timestamp: timestamp)
         try writeSchemaInfo(db, version: 3, appBuild: appBuild,
+                            createdAt: timestamp, migratedAt: timestamp)
+    }
+
+    /// The `ALTER`/`CREATE` statements for schema v4 (S10.6): the frecency ordering columns on
+    /// `tracks`. `frecency_score` is the decayed-play accumulator; `frecency_rank` is the derived,
+    /// INDEXED read key (`last_played + (H/ln2)·ln(score)` — the Mozilla-Places projected-rank
+    /// trick: current frecency is monotonic in it, so `ORDER BY frecency_rank DESC` is the exact
+    /// order with no read-time decay math + no `now`). `frecency_rank` is nullable → a never-played
+    /// / legacy-unscored row sorts LAST (NULLs last in DESC), never mis-ordering real rows. The
+    /// plain index carries the rowid as its trailing key, so `ORDER BY frecency_rank DESC, id DESC`
+    /// is index-driven (no temp b-tree).
+    public static let createV4Statements: [String] = [
+        "ALTER TABLE tracks ADD COLUMN frecency_score REAL NOT NULL DEFAULT 0;",
+        "ALTER TABLE tracks ADD COLUMN frecency_rank REAL;",
+        "CREATE INDEX idx_tracks_frecency_rank ON tracks(frecency_rank);",
+    ]
+
+    /// Migrate v3 → v4: add the frecency columns + index. Additive — no `tracks` backfill (counts
+    /// reset via the delete-rebuild posture; the nullable rank keeps the read correct either way).
+    public static func migrateV3toV4(_ db: Database, appBuild: String?, timestamp: Int64) throws {
+        for statement in createV4Statements {
+            try db.execute(sql: statement)
+        }
+        try writeSchemaInfo(db, version: 4, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 

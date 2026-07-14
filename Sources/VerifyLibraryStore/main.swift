@@ -268,6 +268,15 @@ func browseReadsCheckCases() -> [CheckCase] {
         CheckCase(label: "br7-artist-count", run: checkBrowseArtistCount),
         CheckCase(label: "br8-empty-genre", run: checkBrowseEmptyGenre),
         CheckCase(label: "br9-tracksdisplay-by-ids", run: checkBrowseTracksDisplayByIDs),
+        // S10.6 Recently-Played frecency (FR1–FR8): the algorithm gate.
+        CheckCase(label: "fr1-first-play", run: checkFrecencyFirstPlay),
+        CheckCase(label: "fr2-decay-accumulation", run: checkFrecencyDecayAccumulation),
+        CheckCase(label: "fr3-burst-vs-spread", run: checkFrecencyBurstVsSpread),
+        CheckCase(label: "fr4-recency-outweighs-count", run: checkFrecencyRecencyOutweighsCount),
+        CheckCase(label: "fr5-never-played-excluded", run: checkFrecencyNeverPlayedExcluded),
+        CheckCase(label: "fr6-order-equivalence", run: checkFrecencyOrderEquivalence),
+        CheckCase(label: "fr7-backward-clock-clamp", run: checkFrecencyBackwardClockClamp),
+        CheckCase(label: "fr8-read-indexed", run: checkFrecencyReadIndexed),
     ]
 }
 
