@@ -1,7 +1,7 @@
 # S10 — Queue + playlists + macOS control (five sprints S10.1–S10.5)
 
 **Document ID:** S10-PLAN-001
-**Status:** Planning — S10 runs as **five individual done-done sprints** (S10.1–S10.5). Each is a full sprint that runs the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). Not yet started; start with S10.1.
+**Status:** S10.1 ✅ + S10.2 ✅ shipped & merged; **S10.3 next**. S10 runs as **five individual done-done sprints** (S10.1–S10.5), each via the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). *(Authoritative project status: [sprint-plan.md §Status](sprint-plan.md). Deprioritized 2026-07-14: drag-from-Library-into-queue + M3U/M3U8 import-export.)*
 **Relates to:** [sprint-plan.md](sprint-plan.md) — the S10.x sprint series, the last work before **Release R1**.
 **Depends on:** S8 (library spine, GRDB store) ✅, S9 (browse/search) ✅.
 
@@ -13,9 +13,9 @@
 
 | Sprint | SP | Scope (line item) | Key stories | Depends on |
 |---|---|---|---|---|
-| **S10.1** | 8 | **Playlist/queue persistence spine** — `playlists` + `playlist_entries` tables (GRDB, delete-rebuild migration; keyed on `tracks.id` with a `position` + own entry id so a track can repeat); DAO for create/rename/delete + ordered add/remove/reorder + loose-file add; the built-in non-deletable **"current"** playlist; `untitled-N` lowest-unused naming; **closes Gate 1** (`unreferencedTrackIDs` gains `AND id NOT IN (SELECT track_id FROM playlist_entries)`). Gated by `VerifyLibraryStore`. | US-PLIST-01, -05, -06 (store), -07; known-issues **SEQ-1 Gate 1** | S8.1 store |
-| **S10.2** | 6 | **Queue UX** — the "current" playlist surfaced as the play queue: reorder (drag), play-next, add-to-queue, history; wires to `PlaybackQueueKit`. Lands the **deferred drag-to-queue** from S9 (rides the queue-drag infra). | US-PLIST-06 (UI), US-PLAY reorder/history | S10.1 |
-| **S10.3** | 9 | **Playlists UX + M3U/M3U8 import-export** — playlist browse/sidebar (create/edit/rename/delete, scales to hundreds); drag songs → playlist as a **reference-add, never a file move** (separate handler from folder-move); add a single non-library file; **M3U/M3U8** import + export. | US-PLIST-02, -03, -04; + the US-PLIST-08 cross-seam test | S10.1 (+ S8.4 ✅ for -08) |
+| **S10.1** ✅ | 8 | **Playlist/queue persistence spine** — `playlists` + `playlist_entries` tables (GRDB, delete-rebuild migration; keyed on `tracks.id` with a `position` + own entry id so a track can repeat); DAO for create/rename/delete + ordered add/remove/reorder + loose-file add; the built-in non-deletable **"current"** playlist; `untitled-N` lowest-unused naming; **closes Gate 1** (`unreferencedTrackIDs` gains `AND id NOT IN (SELECT track_id FROM playlist_entries)`). Gated by `VerifyLibraryStore`. | US-PLIST-01, -05, -06 (store), -07; known-issues **SEQ-1 Gate 1** | S8.1 store |
+| **S10.2** ✅ | 6 | **Queue UX** — persistent play queue (the "current" playlist; survives quit/relaunch, restore-paused); Up Next｜History + session history; Clear Queue; reorder (grip-drag + context-menu + keyboard); wires to `PlaybackQueueKit`. *(drag-from-Library-into-queue deprioritized 2026-07-14 — Play Next / Add to Queue verbs cover add.)* | US-PLIST-06 (UI), US-PLAY reorder/history | S10.1 |
+| **S10.3** | 6 | **Playlists UX** — playlist browse/sidebar (create/edit/rename/delete, scales to hundreds); add songs → playlist as a **reference-add, never a file move** (separate handler from folder-move); add a single non-library file. *(M3U/M3U8 import-export deprioritized 2026-07-14.)* | US-PLIST-02, -03, -04; + the US-PLIST-08 cross-seam test | S10.1 (+ S8.4 ✅ for -08) |
 | **S10.4** | 5 | **macOS system control** — media keys + Now-Playing / Control Center (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`); app-wide keyboard shortcuts. Independent of the persistence spine. | (new — trace to sprint-plan S10.4) | S9 |
 | **S10.5** | 3 | **Browse polish** — folder-browse mode; the **deferred A–Z jump rail** from S9. *(Polish — not an R1 gate.)* | (S9 carry-overs) | S9 |
 
