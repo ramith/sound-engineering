@@ -10,9 +10,22 @@ struct PlaylistItemRow: View {
     /// Width of the track-number column, sized by the caller to the widest number in the
     /// list so 3-/4-digit indices (track 100+) fit on one line instead of wrapping.
     var numberColumnWidth: CGFloat = 22
+    /// When non-nil, the row shows a leading drag-handle whose hover state is reported here. The
+    /// queue list uses it to gate `.moveDisabled` (drag-reorder is enabled ONLY while the pointer
+    /// is over the grip) — the documented macOS fix for the row-tap-vs-`.onMove` conflict
+    /// (FB7367473). Nil (History) shows no handle and is not reorderable.
+    var onDragHandleHover: ((Bool) -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
+            if let onDragHandleHover {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.asLabelTertiary)
+                    .onHover { onDragHandleHover($0) }
+                    .help("Drag to reorder")
+                    .accessibilityHidden(true) // the context-menu Move commands are the a11y path
+            }
             // Non-color now-playing cue (A-M3): the currently-playing row shows a ▶ glyph in place
             // of its number, so "now playing" is not signalled by the row tint alone (colorblind /
             // VoiceOver users get no cue from the background opacity otherwise).

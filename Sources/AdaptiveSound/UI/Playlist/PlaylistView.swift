@@ -167,6 +167,10 @@ private struct PlaylistItemList: View {
     /// Only one row presents at a time — the per-row `Binding<Bool>` is derived from this.
     @State private var infoTarget: QueueItem?
 
+    /// The row whose drag-handle the pointer is currently over. Gates `.moveDisabled` so exactly
+    /// that row is drag-reorderable while its grip is hovered (see the row's `.moveDisabled`).
+    @State private var dragHandleHoverIndex: Int?
+
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
     private var numberColumnWidth: CGFloat {
@@ -189,13 +193,20 @@ private struct PlaylistItemList: View {
                         index: index,
                         isSelected: viewModel.selectedTrackIndex == index,
                         isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
-                        numberColumnWidth: numberColumnWidth
+                        numberColumnWidth: numberColumnWidth,
+                        onDragHandleHover: { hovering in
+                            dragHandleHoverIndex = hovering
+                                ? index
+                                : (dragHandleHoverIndex == index ? nil : dragHandleHoverIndex)
+                        }
                     )
                     .id(index)
-                    // `.simultaneousGesture` (not `.onTapGesture`) so this tap recognizer doesn't
-                    // claim exclusive priority over the mouseDown/mouseDragged stream — exclusive
-                    // claim is what prevented the List's native row-drag (`.onMove` below) from ever
-                    // getting a chance to recognize a drag on macOS.
+                    // Drag-to-reorder vs. tap-to-play conflict (FB7367473: a row tap action kills
+                    // `.onMove` drag on macOS). Fix per nilcoalescing: keep the row `.moveDisabled`
+                    // by DEFAULT — so the tap recognizer below owns the click — and re-enable move
+                    // ONLY while the pointer is over the leading grip handle, so a drag starts from
+                    // there. `.onHover` isn't updated mid-drag, so the row stays draggable until drop.
+                    .moveDisabled(dragHandleHoverIndex != index)
                     .simultaneousGesture(
                         TapGesture().onEnded {
                             // Single-click plays the row, so the now-playing card always matches the
@@ -207,6 +218,23 @@ private struct PlaylistItemList: View {
                     )
                     .accessibilityAddTraits(.isButton)
                     .contextMenu {
+                        Button("Move to Top", systemImage: "arrow.up.to.line") {
+                            viewModel.moveTrackToTop(index)
+                        }
+                        .disabled(index == 0)
+                        Button("Move Up", systemImage: "arrow.up") {
+                            viewModel.moveTrackUp(index)
+                        }
+                        .disabled(index == 0)
+                        Button("Move Down", systemImage: "arrow.down") {
+                            viewModel.moveTrackDown(index)
+                        }
+                        .disabled(index >= viewModel.playlist.count - 1)
+                        Button("Move to Bottom", systemImage: "arrow.down.to.line") {
+                            viewModel.moveTrackToBottom(index)
+                        }
+                        .disabled(index >= viewModel.playlist.count - 1)
+                        Divider()
                         Button("Info", systemImage: "info.circle") {
                             infoTarget = item
                         }

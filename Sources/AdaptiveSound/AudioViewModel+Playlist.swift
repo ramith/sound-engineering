@@ -17,6 +17,33 @@ extension AudioViewModel {
         scheduleQueueMirror()
     }
 
+    /// Explicit single-row reorder (the context-menu / discoverable path, so reordering doesn't
+    /// depend on the finicky native row-drag). Each routes through `movePlaylistItems`, so it
+    /// re-anchors the current selection by `QueueItem.id` and mirrors the settled queue.
+    /// `toOffset` uses SwiftUI's pre-removal `move(fromOffsets:toOffset:)` convention (move-down is
+    /// `index + 2`). Boundary calls (up at 0, down at the end) are no-ops.
+    func moveTrackToTop(_ index: Int) {
+        reorderTrack(at: index, toOffset: 0)
+    }
+
+    func moveTrackUp(_ index: Int) {
+        reorderTrack(at: index, toOffset: index - 1)
+    }
+
+    func moveTrackDown(_ index: Int) {
+        reorderTrack(at: index, toOffset: index + 2)
+    }
+
+    func moveTrackToBottom(_ index: Int) {
+        reorderTrack(at: index, toOffset: queue.count)
+    }
+
+    private func reorderTrack(at index: Int, toOffset destination: Int) {
+        guard index >= 0, index < queue.count, destination >= 0, destination <= queue.count,
+              destination != index, destination != index + 1 else { return }
+        movePlaylistItems(from: IndexSet(integer: index), to: destination)
+    }
+
     /// Remove a track from the queue.
     func removeTrack(at index: Int) {
         guard index >= 0, index < queue.count else { return }

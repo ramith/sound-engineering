@@ -28,7 +28,12 @@ run: build
 		for i in $$(seq 1 20); do pgrep -x AdaptiveSound >/dev/null 2>&1 || break; sleep 0.25; done; \
 		pkill -x AdaptiveSound >/dev/null 2>&1 || true; \
 	fi
-	@APP_PATH=$$(cat /tmp/adaptive-sound-app-path); open "$$APP_PATH"
+	@# `open` returns -600 (_LSOpenURLsWithCompletionHandler procNotFound) for this app even on a
+	@# SUCCESSFUL launch, so its exit code is not a reliable launch signal. Assert the REAL outcome
+	@# instead: launch, then confirm the process actually came up.
+	@APP_PATH=$$(cat /tmp/adaptive-sound-app-path); open "$$APP_PATH" >/dev/null 2>&1 || true; \
+		for i in $$(seq 1 40); do pgrep -x AdaptiveSound >/dev/null 2>&1 && { echo "✅ Running: $$APP_PATH"; exit 0; }; sleep 0.25; done; \
+		echo "❌ AdaptiveSound failed to launch (open '$$APP_PATH')" >&2; exit 1
 
 # Optimized release build + bundle. `swift build --show-bin-path` yields the exact,
 # config-specific release bin dir, so the bundle path is unambiguous (unlike the debug
