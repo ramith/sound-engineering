@@ -133,4 +133,58 @@ Covers the founder's three targets — **counters, sort order, ≥60% accounting
 - **"Reset Play Count" affordance** — flagged in UX (§4); build only if the founder wants a "forget this" action (needs confirm/undo; the only write from this view).
 
 ### Files
-`AudioViewModel+SpectrumTimer.swift` (tick detector), `+PlayTracking.swift` (counting entry), `+Playback.swift`/`+AutoAdvance.swift` (reset sites), `AudioViewModel.swift` (state), new `PlayThroughTracker` (pure); delete `+History.swift`/`Models/HistoryItem.swift`; `UI/Playlist/QueueHistoryList.swift` + new `RecentlyPlayedRow`, `PlaylistView.swift` (label/subtitle); `LibraryBrowseModel.swift` (`loadHistory`); `LibraryStore/Schema.swift` (v4), `LibraryStore.swift` (write DAO + `prepareDatabase` decay fn), `LibraryStore+BrowseReads.swift` (`frecencyTracksDisplay`); `VerifyLibraryStore/` (FR checks) + `swift test` (`PlayThroughTracker`).
+`AudioViewModel+SpectrumTimer.swift` (tick detector), `+PlayTracking.swift` (counting entry), `+Playback.swift`/`+AutoAdvance.swift` (reset sites), `AudioViewModel.swift` (state), new `PlayThroughTracker` (pure); delete `+History.swift`/`Models/HistoryItem.swift`; `UI/Playlist/QueueHistoryList.swift` + new `RecentlyPlayedRow`, `PlaylistView.swift` (label/subtitle); `LibraryBrowseModel.swift` (`loadHistory`); `LibraryStore/Schema.swift` (v4), `LibraryStore.swift` (write DAO), `LibraryStore+BrowseReads.swift` (`frecencyTracksDisplay`); `VerifyLibraryStore/` (FR checks) + `swift test` (`PlayThroughTracker`).
+
+---
+
+## 8. Fool-gate resolutions — research-grounded (2026-07-15)
+
+The pre-implementation Fool pass raised 10 concerns. Researched against **Last.fm scrobbling** ([spec](https://www.last.fm/api/scrobbling)), **Mozilla Places frecency** ([Firefox ranking docs](https://firefox-source-docs.mozilla.org/browser/urlbar/ranking.html)), and the **`fre`** frecency tool ([repo](https://github.com/camdencheek/fre)). Two findings *improve* the design (R1, R2), not just patch it. These resolutions **supersede** the corresponding mechanics in §1–§3.
+
+### R1 — Play detection: monotonic elapsed-while-playing, not position-delta (fixes Fool #2 + #9)
+Replace the per-tick **position-delta** accrual (which had to reject seeks *and* wrongly discarded real playback during UI-tick stalls) with the industry-standard scrobble measure — **cumulative playback time**. Accrue `heardSeconds` from a **monotonic clock** delta (`ContinuousClock` / `DispatchTime.uptimeNanoseconds`) between ticks **while `isPlaying`**:
+- immune to UI-tick stalls (a stalled tick's monotonic delta = the real elapsed playtime → correctly accrued, never rejected);
+- immune to seeks (a seek adds ~0 wall-time between ticks — no position term to reject);
+- immune to wall-clock skew (a monotonic clock never jumps).
+
+Matches Last.fm ("played for at least half its duration" = playback time). Threshold `= min(0.60·duration, 240 s)`, plus Last.fm's **≥30 s minimum track duration** (sub-30 s clips / gapless fragments never count). Pure `PlayThroughTracker(monotonicDelta, isPlaying, duration)` → fully unit-testable (stall / seek / pause / short / long / ≥30 s floor). The natural-end fallback + `didCount` idempotency stay.
+
+### R2 — Read model: Firefox's stored projected-rank, not decay-at-read (fixes Fool #4, removes the registered-function concern)
+Mozilla Places stores per item `frecency_rank = last_played + (H/ln2)·ln(score)` — the epoch instant at which the score decays to 1. Current frecency `= score·2^(−(now−lp)/H)` is **monotonic in that stored value** (all rows share `now` at read), so **`ORDER BY frecency_rank DESC` gives exact frecency order with no `now`, no per-row decay, no custom SQL function — and it is INDEXABLE** (plain REAL column + index → **no filesort**). All decay math moves to the **write**.
+- **Schema v4** adds `frecency_score REAL` (write-time accumulator) + `frecency_rank REAL` (indexed read key) + an index on `frecency_rank`. `play_count` / `last_played` unchanged. **Drops** the planned `prepareDatabase` custom decay function entirely.
+- **Write** (one atomic UPDATE per counted play): `score = score·2^(−max(0, now−last_played)/H) + 1` (first play → `1`); `last_played = now`; `frecency_rank = now + (H/ln2)·ln(score)`; `play_count += 1`.
+- **Read**: `WHERE play_count > 0 ORDER BY frecency_rank DESC, id DESC LIMIT 200` — indexed, deterministic, `now`-free. (`frecencyTracksDisplay` no longer takes `now`.)
+
+Supersedes §2 (the accumulator + registered function) and §3 (the filesort). `fre` validates the single-stored-number accumulator; Firefox validates the projected-rank sort.
+
+### R3 — Clock skew (fixes Fool #1)
+Time now enters only the **write**: clamp `age = max(0, now − last_played)` in the accumulate. A backward wall-clock jump can't inflate a score, and the read is time-free so ordering can't be inflated. (Cross-session recency needs wall-clock `last_played` — monotonic clocks reset per boot — so the clamp is the correct guard.)
+
+### R4 — Refresh (Fool #3/#4)
+Bump `playCountRevision` **after** the detached store write commits, and **debounce** the History reload (coalesce a burst of counted plays during album playback into one refetch). The read is now a cheap indexed sort, so even a thrashed refresh is inexpensive.
+
+### R5 — Repeat-one (Fool #7)
+Accept each qualifying play as a count — exactly Last.fm's behavior (repeats scrobble). No per-day cap (deferred; revisit only if it reads as broken in use).
+
+### R6 — QA seam (Fool #5)
+The monotonic `PlayThroughTracker` is pure + time-injectable → ≥60% / cap / stall / seek / pause / short-track / ≥30 s-floor are all headlessly unit-tested. Add a VM-level `countCurrentPlay()` idempotency test (once-per-play across the four fold-in sites). The store write (accumulate + rank + `play_count`) and the indexed read are `VerifyLibraryStore`-gated (FR1–FR8; FR2/FR3 expectations **computed from the formula** in-test, epsilon only for float tolerance). The one seam that stays manual/by-ear: the tracker firing → the detached store write (engine-coupled). Stated, not hand-waved.
+
+### Accepted / deferred
+- **Fool #6** — verify the move-match path is an UPDATE (not delete+reinsert) so `frecency_score`/`frecency_rank`/`last_played` survive a move; FR-move gates it.
+- **Fool #8** — keep "Recently Played"; it lists ≥60 %-heard tracks (narrower than "everything started"). Accepted.
+- **Fool #10** — the v3→v4 wipe also zeroes the Songs "Play Count" column + `.playCountDesc` sort (added to D8).
+- **Half-life** — Firefox uses 30 d; we keep **7 d** (D5), deliberately more recency-aggressive for "what I've been into lately" than browser history.
+
+### R7 — Final decisions + fixes locked after the expert+Fool review (2026-07-15)
+
+Reviewed by **architect-reviewer** (R2 monotonicity proven analytically + numerically; no-filesort confirmed empirically via `EXPLAIN` on 10k rows with the real joins; move-preserve traced) + **qa-expert** (both proofs; full edge matrix) + a **Fool** frame pass. Founder decisions + the resulting fixes — these are the build spec:
+
+- **Founder D9 — v4 rollout:** RESET counts on the v4 bump (delete-rebuild posture, [[feedback-delete-rebuild-dev-db]]) **AND** make the read NULL-tolerant: `ORDER BY COALESCE(frecency_rank, last_played) DESC, id DESC` — so any legacy/edge row with `play_count>0` but a NULL `frecency_rank` still sorts sanely (as score≈1 at its `last_played`). Cheap insurance independent of when the wipe fires (GRDB `eraseDatabaseOnSchemaChange` triggers on a CHANGED migration body, not on merely ADDING one — so don't rely on the additive v4 erasing).
+- **Founder D10 — empty state:** when nothing has been played ≥60% yet, show the empty state ("Tracks you finish will appear here."). No recent-starts fallback.
+- **Founder D11 — proceed now, production-grade, no corners.**
+- **FIX-1 (natural-end gate):** the four fold-in completion sites must NOT count unconditionally. Route natural-end through the SAME gate — count only if `duration ≥ 30 ∧ heardSeconds ≥ min(0.60·duration, 240)` — else a scrub-to-end or a sub-30 s full-play would count (violates D2/D3). Its real purpose (a genuine full-listen whose threshold tick was missed at a gapless seam, where `heardSeconds ≈ duration`) still works.
+- **FIX-2 (clock):** use a **suspend-stopping monotonic clock** (`SuspendingClock` / `DispatchTime.uptimeNanoseconds`), NOT `ContinuousClock` — audio isn't heard during system sleep.
+- **FIX-3 (monotonic reference):** advance `lastMono` on EVERY tick (the tick is always-on), accrue only while `isPlaying`. This makes during-pause ticks move the reference without accruing, cleanly resolving pause-vs-stall; clamp the per-tick delta to a max-plausible bound as belt-and-braces.
+- **FIX-4 (write):** a read-modify-write inside ONE `dbWriter.write { }` transaction (read old `score`+`last_played` → compute in Swift → UPDATE), first play → `score=1, rank=now` (no NULL arithmetic); clamp `age=max(0, now−last_played)` (backward skew). Forward clock jump = accept + log (rare, self-heals). H is baked into stored ranks → changing H later needs a full rank recompute.
+- **FIX-5 (QA plan):** FR7 asserts **index-driven / no `USE TEMP B-TREE FOR ORDER BY`** (not "accepted filesort"); FR-schema checks BOTH columns + the `frecency_rank` index; `frecencyTracksDisplay` is `now`-free (drop the param in §3/§5); the ≥60% test table is in monotonic-clock vocabulary + adds the stall / <30 s-floor / 30–31 s boundary / duration-0-then-resolves / pause-edge cases; add explicit checks for R2 rank≡decay-at-read equivalence (multiple `now`), accumulator≡events identity, first-play NULL guard, and backward/forward clock jumps.
+- **FIX-6 (index):** a plain index on `frecency_rank` suffices (rowid is carried as the trailing key → the `id DESC` tiebreak needs no extra sort). Optional partial `WHERE play_count>0` micro-opt.
