@@ -3,17 +3,20 @@ import Foundation
 // MARK: - AudioViewModel playlist editing
 
 extension AudioViewModel {
-    /// Reorder playlist items via drag-and-drop.
+    /// Reorder playlist items (drag-drop or the context-menu Move commands).
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
         logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
-        // Re-anchor the current selection by the moved slot's stable UUID (dups-safe).
-        let movedID = selectedTrackIndex.flatMap { current in
-            source.contains(current) ? queue[current].id : nil
-        }
+        // Capture the identities of the now-playing pointer AND the armed gapless on-deck BEFORE
+        // the move, then re-find them by id after — so a reorder that shifts (not just moves) the
+        // selected row keeps `selectedTrackIndex` on the right track, and `pendingNextIndex` keeps
+        // pointing at the SAME track the engine already armed (`engine.setNextTrack`). Doing
+        // neither desynced audio ⟂ the ▶/History ⟂ play-count at the gapless seam (QA: reorder a
+        // playing queue → wrong next track). Dups-safe (QueueItem.id, not URL/index).
+        let selID = selectedTrackIndex.flatMap { $0 < queue.count ? queue[$0].id : nil }
+        let pendingID = pendingNextIndex.flatMap { $0 < queue.count ? queue[$0].id : nil }
         queue.move(fromOffsets: source, toOffset: destination)
-        if let movedID {
-            selectedTrackIndex = queue.firstIndex(where: { $0.id == movedID })
-        }
+        selectedTrackIndex = selID.flatMap { id in queue.firstIndex { $0.id == id } }
+        pendingNextIndex = pendingID.flatMap { id in queue.firstIndex { $0.id == id } }
         scheduleQueueMirror()
     }
 
@@ -42,6 +45,17 @@ extension AudioViewModel {
         guard index >= 0, index < queue.count, destination >= 0, destination <= queue.count,
               destination != index, destination != index + 1 else { return }
         movePlaylistItems(from: IndexSet(integer: index), to: destination)
+    }
+
+    /// Drag-reorder drop handler: move the dragged row (resolved by its stable `QueueItem.id`, so a
+    /// mid-drag queue shift can't mistarget it) so it lands AT the drop row `toIndex` — dragging
+    /// DOWN inserts after the target, UP before it. Returns whether a move happened.
+    @discardableResult
+    func moveByDrop(fromID: UUID, toIndex: Int) -> Bool {
+        guard let from = queue.firstIndex(where: { $0.id == fromID }),
+              toIndex >= 0, toIndex < queue.count, from != toIndex else { return false }
+        movePlaylistItems(from: IndexSet(integer: from), to: from < toIndex ? toIndex + 1 : toIndex)
+        return true
     }
 
     /// Remove a track from the queue.

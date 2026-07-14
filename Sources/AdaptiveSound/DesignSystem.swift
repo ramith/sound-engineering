@@ -61,6 +61,12 @@ enum DesignSystem {
 
         /// Status (NEW — warning had no semantic token). System-vibrant; read on both.
         static let statusWarning = SwiftUI.Color(red: 1.0, green: 0.623, blue: 0.039) // #FF9F0A
+
+        /// Row-fill tints for a selectable list row (queue / History): the now-playing row reads
+        /// stronger than a merely-selected one. Accent-derived, so appearance-independent like
+        /// `accent`. (Formerly inline `accent.opacity(0.25 / 0.12)` literals at the row.)
+        static let rowNowPlaying = accent.opacity(0.25)
+        static let rowSelected = accent.opacity(0.12)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
@@ -204,5 +210,17 @@ enum DesignSystem {
         static let searchFieldMinWidth: CGFloat = 180 // filter field, trailing in the header (§10.2)
         static let searchFieldIdealWidth: CGFloat = 240
         static let artwork: CGFloat = 28 // leading row thumbnail (§10.1; denser than the 44pt footer)
+    }
+
+    // MARK: Queue / playlist row metrics (S10.2)
+
+    /// Sizing for the queue (Up Next) + History rows and the drag-reorder grip handle. The queue
+    /// is a `ScrollView`/`LazyVStack` (a List row's `.dropDestination` never fires), so the row
+    /// owns its own insets via these tokens rather than `List`'s `.listRow*`.
+    enum QueueRow {
+        static let durationWidth: CGFloat = 42 // trailing mm:ss column
+        static let gripSymbol: CGFloat = 13 // drag-handle glyph point size
+        static let gripHitWidth: CGFloat = 22 // grip hover/drag hit target
+        static let gripHitHeight: CGFloat = 26
     }
 }
