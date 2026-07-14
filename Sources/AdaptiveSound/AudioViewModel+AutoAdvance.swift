@@ -39,7 +39,6 @@ extension AudioViewModel {
         countPlayIfNaturalEndQualifies()
 
         selectedTrackIndex = nextIdx
-        recordPlayStart(advancedTrack) // the incoming track begins playing — log it (S10.2 3a)
         resetPlayTracking() // the gapless seam / repeat-one begins a NEW ≥60% play-through (S10.6)
         playbackPosition = 0
         duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
