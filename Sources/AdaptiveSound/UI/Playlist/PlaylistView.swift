@@ -20,7 +20,7 @@ struct PlaylistView: View {
             PlaylistHeaderView(jumpToCurrentRequestID: $jumpToCurrentRequestID, panelMode: $panelMode)
             Picker("View", selection: $panelMode) {
                 ForEach(QueuePanelMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+                    Text(mode.pickerLabel).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
@@ -59,25 +59,26 @@ struct PlaylistView: View {
 
 private struct PlaylistHeaderView: View {
     @Environment(AudioViewModel.self) var viewModel
+    @Environment(LibraryBrowseModel.self) var library
     @Binding var jumpToCurrentRequestID: Int
     @Binding var panelMode: QueuePanelMode
 
-    /// Mode-aware subtitle: the queue's track count, or the number of session plays.
+    /// Mode-aware subtitle: the queue's track count, or the number of recently-played tracks.
     private var subtitle: String {
         switch panelMode {
         case .upNext:
             let count = viewModel.queue.count
             return "\(count) \(count == 1 ? "track" : "tracks")"
         case .history:
-            let count = viewModel.sessionHistory.count
-            return "\(count) played"
+            let count = library.history.count
+            return "\(count) \(count == 1 ? "track" : "tracks")"
         }
     }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(panelMode == .history ? "History" : "Queue")
+                Text(panelMode == .history ? "Recently Played" : "Queue")
                     .font(.caption.weight(.semibold))
                     .tracking(0.5)
                     .textCase(.uppercase)
