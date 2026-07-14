@@ -1,7 +1,7 @@
-# S10 — Queue + playlists + macOS control (five sprints S10.1–S10.5)
+# S10 — Queue + playlists + macOS control (sub-sprints S10.1–S10.6)
 
 **Document ID:** S10-PLAN-001
-**Status:** S10.1 ✅ + S10.2 ✅ shipped & merged; **S10.3 next**. S10 runs as **five individual done-done sprints** (S10.1–S10.5), each via the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). *(Authoritative project status: [sprint-plan.md §Status](sprint-plan.md). Deprioritized 2026-07-14: drag-from-Library-into-queue + M3U/M3U8 import-export.)*
+**Status:** S10.1 ✅ + S10.2 ✅ shipped & merged; **S10.6 (Recently Played) in design → then S10.4**; S10.3 still open. S10 runs as **individual done-done sub-sprints** (S10.1–S10.6), each via the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). *(Authoritative project status: [sprint-plan.md §Status](sprint-plan.md). Deprioritized 2026-07-14: drag-from-Library-into-queue + M3U/M3U8 import-export.)*
 **Relates to:** [sprint-plan.md](sprint-plan.md) — the S10.x sprint series, the last work before **Release R1**.
 **Depends on:** S8 (library spine, GRDB store) ✅, S9 (browse/search) ✅.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## The five sprints
+## The sub-sprints
 
 | Sprint | SP | Scope (line item) | Key stories | Depends on |
 |---|---|---|---|---|
@@ -18,6 +18,7 @@
 | **S10.3** | 6 | **Playlists UX** — playlist browse/sidebar (create/edit/rename/delete, scales to hundreds); add songs → playlist as a **reference-add, never a file move** (separate handler from folder-move); add a single non-library file. *(M3U/M3U8 import-export deprioritized 2026-07-14.)* | US-PLIST-02, -03, -04; + the US-PLIST-08 cross-seam test | S10.1 (+ S8.4 ✅ for -08) |
 | **S10.4** | 5 | **macOS system control** — media keys + Now-Playing / Control Center (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`); app-wide keyboard shortcuts. Independent of the persistence spine. | (new — trace to sprint-plan S10.4) | S9 |
 | **S10.5** | 3 | **Browse polish** — folder-browse mode; the **deferred A–Z jump rail** from S9. *(Polish — not an R1 gate.)* | (S9 carry-overs) | S9 |
+| **S10.6** | 5 | **Recently Played (frecency)** — rework the S10.2 History tab into an all-time, per-track, **frecency-ranked** "Recently Played": persisted play count (a play = **≥60% heard, ~4-min cap**, cumulative), decayed-score accumulator column (`frecency_score`, schema v4, 7-day half-life), dedicated read + `RecentlyPlayedRow`. Design: [recently-played-frecency-design.md](recently-played-frecency-design.md). *(Added 2026-07-14; enhancement, not an R1 gate.)* | US-PLAY-10 | S10.2 |
 
 ---
 

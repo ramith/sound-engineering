@@ -24,7 +24,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 |--------|-------|
 | S8 | Library spine: scan + persistent DB |
 | S9 | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue |
-| S10 *(runs as S10.1–S10.5)* | Queue + playlists + macOS control — queue/history, media keys + Now-Playing/Control Center. Split into five individual sprints — see [sprint-plan.md](../sprints/sprint-plan.md) + [s10 plan](../sprints/s10-queue-playlists-macos-plan.md). *(M3U/M3U8 import-export deferred — see below.)* |
+| S10 *(runs as S10.1–S10.6)* | Queue + playlists + macOS control — queue, recently-played (frecency), media keys + Now-Playing/Control Center. Split into individual sub-sprints — see [sprint-plan.md](../sprints/sprint-plan.md) + [s10 plan](../sprints/s10-queue-playlists-macos-plan.md). *(M3U/M3U8 import-export deferred — see below.)* |
 | S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim |
 | S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass |
 | S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export |
