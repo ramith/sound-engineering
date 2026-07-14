@@ -169,10 +169,52 @@ final class AudioViewModel {
 
     // MARK: - Playlist State
 
-    var playlist: [AudioFile] = []
+    /// The play queue (S10.2). Each slot is a `QueueItem` (stable UUID identity), so the same
+    /// track may appear more than once. `selectedTrackIndex`/`pendingNextIndex` are plain `Int`
+    /// offsets into this array (the engine's index math is unchanged).
+    var queue: [QueueItem] = []
+
+    /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
+    /// need slot identity (menu-bar, now-playing widget, transport). Queue *edits* go through the
+    /// `queue`-mutating verbs; this shim just keeps the many read sites working unchanged.
+    var playlist: [AudioFile] {
+        queue.map(\.file)
+    }
+
+    /// Debounce handle for the queue→"current"-playlist snapshot mirror (S10.2, `+QueueMirror`).
+    /// A queue edit schedules a mirror; a newer edit cancels the pending one so only the settled
+    /// queue is written. Advance does NOT mirror (rows don't change). Not UI-bound.
+    var queueMirrorTask: Task<Void, Never>?
+
+    /// True once the user has edited the queue this session (any play verb / reorder / remove /
+    /// clear — set in `scheduleQueueMirror`). Guards launch hydration: if the user acted BEFORE
+    /// the store became ready, their queue wins and the persisted one is NOT restored over it
+    /// (the hydration "superseded" state). Not UI-bound.
+    var hasUserEditedQueue = false
+    /// One-shot guard so launch hydration (`+QueueHydration`) runs at most once. Not UI-bound.
+    var queueHydrated = false
+
+    /// The session play-history (`+History`), newest LAST — the History view shows it reversed.
+    /// A track is appended when it BEGINS a genuine new play (manual start / gapless auto-advance);
+    /// dups allowed. Session-scoped + in-memory: NOT persisted across relaunch, and Clear Queue
+    /// leaves it untouched (founder §3a). UI-bound (the History list observes it).
+    var sessionHistory: [HistoryItem] = []
+
     /// Track selection (does NOT auto-play). Selection and playback are separate.
     /// Use playTrack() or startPlayback() to actually play the selected track.
-    var selectedTrackIndex: Int?
+    var selectedTrackIndex: Int? {
+        didSet {
+            // Selecting a DIFFERENT track invalidates any position-preserving resume point (D2):
+            // the paused offset belonged to the previously-selected track, so it must not seek the
+            // newly-selected one. Centralizes the "explicit new-track action clears the resume
+            // point" contract that arrow-key reselection previously skipped — and which S10.2 2c's
+            // launch RESTORE-PAUSED would otherwise let leak onto whatever the user arrows to
+            // before pressing Play (QA break-it #1). A same-value re-assignment (re-selecting the
+            // paused track) preserves the resume point. Not self-assignment → no @Observable
+            // didSet recursion.
+            if selectedTrackIndex != oldValue { pausedResumePosition = nil }
+        }
+    }
 
     // MARK: - Library (S3 F5 — extracted to the LibraryModel peer)
 

@@ -157,6 +157,39 @@ public extension LibraryStore {
         return try await dbWriter.read { db in try LibraryTrackDisplay.fetchAll(db, sql: sql, arguments: [genreID]) }
     }
 
+    /// Display rows for an arbitrary set of track ids, as an `id`→row map (S10.2 2c queue
+    /// hydration). ONE query per ≤`artworkKeyChunkSize` chunk instead of N per-id round-trips —
+    /// so restoring a large queue on launch is a single read, not hundreds of serial suspensions
+    /// (QA break-it #4). A missing id is simply ABSENT (never a throw); duplicate ids collapse in
+    /// the map, and the caller re-keys by queue order so a queue holding the same track twice
+    /// resolves both slots from the one row. Reuses `LibraryTrackDisplay` so a restored queue
+    /// carries the SAME metadata (incl. duration) the live queue was built with (QA break-it #5a).
+    func tracksDisplay(ids: [Int64]) async throws -> [Int64: LibraryTrackDisplay] {
+        guard !ids.isEmpty else { return [:] }
+        return try await dbWriter.read { db in
+            var result: [Int64: LibraryTrackDisplay] = [:]
+            result.reserveCapacity(ids.count)
+            var start = ids.startIndex
+            while start < ids.endIndex {
+                let end = ids.index(
+                    start, offsetBy: LibraryStore.artworkKeyChunkSize, limitedBy: ids.endIndex
+                ) ?? ids.endIndex
+                let chunk = Array(ids[start ..< end])
+                let placeholders = databaseQuestionMarks(count: chunk.count)
+                let sql = LibraryStore.displayTracksSQL(
+                    whereClause: "WHERE t.id IN (\(placeholders))",
+                    order: LibraryStore.displayDiscTrackOrder, limited: false
+                )
+                let rows = try LibraryTrackDisplay.fetchAll(db, sql: sql, arguments: StatementArguments(chunk))
+                for row in rows {
+                    result[row.id] = row
+                }
+                start = end
+            }
+            return result
+        }
+    }
+
     // MARK: - Artwork cache-path map (batched, chunked IN-list)
 
     /// Resolve artwork `content_hash` → `cache_path` for `keys` in one batched map. The IN-list
