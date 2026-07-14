@@ -24,7 +24,7 @@ An audiophile player lives or dies on **library + playback maturity, not on its 
 |--------|-------|
 | S8 | Library spine: scan + persistent DB |
 | S9 | Browse & search UI — album grid; Artist/Album/Genre; incremental search; cover art; click-to-queue |
-| S10 *(runs as S10.1–S10.5)* | Queue + playlists + macOS control — queue/history, M3U import-export, media keys + Now-Playing/Control Center. Split into five individual sprints — see [sprint-plan.md](../sprints/sprint-plan.md) + [s10 plan](../sprints/s10-queue-playlists-macos-plan.md). |
+| S10 *(runs as S10.1–S10.5)* | Queue + playlists + macOS control — queue/history, media keys + Now-Playing/Control Center. Split into five individual sprints — see [sprint-plan.md](../sprints/sprint-plan.md) + [s10 plan](../sprints/s10-queue-playlists-macos-plan.md). *(M3U/M3U8 import-export deferred — see below.)* |
 | S11 | CUE sheets + format hardening — CUE→virtual tracks, FLAC fast-seek, WavPack/APE, lossy gapless trim |
 | S12 | Tonal parity — parametric EQ + AutoEq/oratory1990 import + A/B LUFS-matched bypass |
 | S13 | Headphone + device parity — device-correction EQ auto-load + profile JSON import/export |
@@ -64,6 +64,7 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 ## Deferred / out-of-window
 
 - **Removed from scope (2026-07-12, founder decision):** **natural-language / conversational tuning** and **hearing personalization** (hearing-test → profile → compensation) were cut from the vision entirely — not deferred, removed. May be re-added later. Prior specs are in git history.
+- **Deprioritized (2026-07-14, founder decision):** **drag-from-Library-into-queue** and **playlist file import/export (M3U/M3U8)** — judged not useful enough to plan now. Not removed from the vision; revisit opportunistically post-R1. Add-to-queue is already covered by the Play Next / Add to Queue verbs; playlist portability (M3U) can return if a real need appears. R1 no longer depends on either.
 - **DSD playback (DoP + native)** — deferred past R2, gated on acquiring a DSD DAC (keeps every feature by-ear verifiable).
 - **"Won't, this horizon"** — kept on the [backlog](backlog.md) as future vision, out of this plan's window:
   - **Stem separation / object engine (Phase 1.5)** — high compute/artifact risk; revisit only after the mix-based thesis is validated and loved.
