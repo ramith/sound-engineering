@@ -29,20 +29,24 @@ struct QueueHistoryList: View {
         if viewModel.sessionHistory.isEmpty {
             emptyHistory
         } else {
-            List {
-                // Newest first: reverse the append-ordered log. `rank` is the recency position
-                // (0 → "1" = most recent) shown in the row's number column. Keyed on the stable
-                // `HistoryItem.id` so replaying a track (a duplicate entry) stays distinct.
-                ForEach(Array(viewModel.sessionHistory.reversed().enumerated()), id: \.element.id) { rank, item in
-                    PlaylistItemRow(file: item.file, index: rank, isSelected: false, isNowPlaying: false)
-                        // Same tap pattern as PlaylistItemList — `simultaneousGesture` so the
-                        // recognizer doesn't claim exclusive priority (proven on macOS lists here).
-                        .simultaneousGesture(
-                            TapGesture().onEnded { viewModel.playFromHistory(item) }
-                        )
+            // ScrollView/LazyVStack (not List) so it shares the queue's self-styled
+            // `PlaylistItemRow` rendering exactly (the queue left List for drag-reorder; keeping
+            // History on List would double-style the row via `.listRow*`). No reorder here.
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Newest first: reverse the append-ordered log. `rank` is the recency position
+                    // (0 → "1" = most recent) shown in the row's number column. Keyed on the stable
+                    // `HistoryItem.id` so replaying a track (a duplicate entry) stays distinct.
+                    ForEach(Array(viewModel.sessionHistory.reversed().enumerated()), id: \.element.id) { rank, item in
+                        PlaylistItemRow(file: item.file, index: rank, isSelected: false, isNowPlaying: false)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityAction { viewModel.playFromHistory(item) }
+                            .simultaneousGesture(
+                                TapGesture().onEnded { viewModel.playFromHistory(item) }
+                            )
+                    }
                 }
             }
-            .listStyle(.plain)
             .frame(maxHeight: .infinity)
         }
     }

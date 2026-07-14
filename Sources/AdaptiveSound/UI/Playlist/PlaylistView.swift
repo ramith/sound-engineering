@@ -28,7 +28,7 @@ struct PlaylistView: View {
 
             switch panelMode {
             case .upNext:
-                if viewModel.playlist.isEmpty {
+                if viewModel.queue.isEmpty {
                     emptyQueue
                 } else {
                     PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
@@ -66,7 +66,7 @@ private struct PlaylistHeaderView: View {
     private var subtitle: String {
         switch panelMode {
         case .upNext:
-            let count = viewModel.playlist.count
+            let count = viewModel.queue.count
             return "\(count) \(count == 1 ? "track" : "tracks")"
         case .history:
             let count = viewModel.sessionHistory.count
@@ -106,7 +106,7 @@ private struct PlaylistControlsView: View {
         HStack(spacing: 8) {
             // Clear Queue — Up Next only, and only when there's something to clear. Immediate
             // (no confirm, founder §3): the queue is cheap to rebuild and History is left intact.
-            if panelMode == .upNext, !viewModel.playlist.isEmpty {
+            if panelMode == .upNext, !viewModel.queue.isEmpty {
                 Button("Clear Queue", systemImage: "trash", action: viewModel.clearPlaylist)
                     .labelStyle(.iconOnly)
                     .font(.system(size: 14))
@@ -167,169 +167,157 @@ private struct PlaylistItemList: View {
     /// Only one row presents at a time — the per-row `Binding<Bool>` is derived from this.
     @State private var infoTarget: QueueItem?
 
-    /// The row whose drag-handle the pointer is currently over. Gates `.moveDisabled` so exactly
-    /// that row is drag-reorderable while its grip is hovered (see the row's `.moveDisabled`).
-    @State private var dragHandleHoverIndex: Int?
+    /// The row a reorder drag is currently hovering over (drives the drop-target border). Nil when
+    /// no drag is in progress.
+    @State private var dropTargetIndex: Int?
+
+    /// Keyboard-command focus for the scroll area. `List` owned key focus for free; a
+    /// ScrollView/LazyVStack does not, so the ↑/↓/Return/Space/Delete shortcuts are bound to this
+    /// (`.focused` + default + set-on-tap) — the same pattern `FrequencyResponseCanvas` uses.
+    @FocusState private var queueFocused: Bool
 
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
     private var numberColumnWidth: CGFloat {
-        let digits = max(2, String(viewModel.playlist.count).count)
+        let digits = max(2, String(viewModel.queue.count).count)
         return CGFloat(digits) * 8 + 6
     }
 
     var body: some View {
         ScrollViewReader { proxy in
-            List {
-                // Materialized to `Array` (rather than iterating the raw `.enumerated()` sequence)
-                // so `Data.Index` is a plain `Int`, matching what `List`'s native macOS row-drag
-                // reordering has always been tested against. `EnumeratedSequence` only recently
-                // gained a conditional `RandomAccessCollection` conformance with its own opaque
-                // index type, and that combination silently prevented `.onMove` from initiating a
-                // drag here — this is the "reliable" pattern for a reorderable, indexed `ForEach`.
-                ForEach(Array(viewModel.queue.enumerated()), id: \.element.id) { index, item in
-                    PlaylistItemRow(
-                        file: item.file,
-                        index: index,
-                        isSelected: viewModel.selectedTrackIndex == index,
-                        isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
-                        numberColumnWidth: numberColumnWidth,
-                        onDragHandleHover: { hovering in
-                            dragHandleHoverIndex = hovering
-                                ? index
-                                : (dragHandleHoverIndex == index ? nil : dragHandleHoverIndex)
-                        }
-                    )
-                    .id(index)
-                    // Drag-to-reorder vs. tap-to-play conflict (FB7367473: a row tap action kills
-                    // `.onMove` drag on macOS). Fix per nilcoalescing: keep the row `.moveDisabled`
-                    // by DEFAULT — so the tap recognizer below owns the click — and re-enable move
-                    // ONLY while the pointer is over the leading grip handle, so a drag starts from
-                    // there. `.onHover` isn't updated mid-drag, so the row stays draggable until drop.
-                    .moveDisabled(dragHandleHoverIndex != index)
-                    .simultaneousGesture(
-                        TapGesture().onEnded {
-                            // Single-click plays the row, so the now-playing card always matches the
-                            // audio (no select-without-play state). Re-clicking the track that's
-                            // already playing is a no-op so it doesn't restart from the top.
-                            guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
-                            viewModel.playTrack(at: index)
-                        }
-                    )
-                    .accessibilityAddTraits(.isButton)
-                    .contextMenu {
-                        Button("Move to Top", systemImage: "arrow.up.to.line") {
-                            viewModel.moveTrackToTop(index)
-                        }
-                        .disabled(index == 0)
-                        Button("Move Up", systemImage: "arrow.up") {
-                            viewModel.moveTrackUp(index)
-                        }
-                        .disabled(index == 0)
-                        Button("Move Down", systemImage: "arrow.down") {
-                            viewModel.moveTrackDown(index)
-                        }
-                        .disabled(index >= viewModel.playlist.count - 1)
-                        Button("Move to Bottom", systemImage: "arrow.down.to.line") {
-                            viewModel.moveTrackToBottom(index)
-                        }
-                        .disabled(index >= viewModel.playlist.count - 1)
-                        Divider()
-                        Button("Info", systemImage: "info.circle") {
-                            infoTarget = item
-                        }
-                        Divider()
-                        Button("Remove from Queue", systemImage: "trash") {
-                            viewModel.removeTrack(at: index)
-                        }
-                        Button("Clear Queue", systemImage: "clear") {
-                            viewModel.clearPlaylist()
-                        }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(viewModel.queue.enumerated()), id: \.element.id) { index, item in
+                        queueRow(index: index, item: item)
                     }
-                    .popover(
-                        isPresented: Binding(
-                            get: { infoTarget?.id == item.id },
-                            set: { if !$0 { infoTarget = nil } }
-                        ),
-                        arrowEdge: .trailing
-                    ) {
-                        TrackInfoCard(file: item.file)
-                    }
-                    .onKeyPress(.delete) {
-                        viewModel.removeTrack(at: index)
-                        return .handled
-                    }
-                    .onKeyPress(.upArrow) {
-                        if index > 0 {
-                            viewModel.selectedTrackIndex = index - 1
-                        }
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        if index < viewModel.playlist.count - 1 {
-                            viewModel.selectedTrackIndex = index + 1
-                        }
-                        return .handled
-                    }
-                    .onKeyPress(.return) {
-                        if viewModel.selectedTrackIndex == index {
-                            viewModel.togglePlayPause()
-                        }
-                        return .handled
-                    }
-                    .onKeyPress(.space) {
-                        if viewModel.selectedTrackIndex == index {
-                            viewModel.togglePlayPause()
-                        }
-                        return .handled
-                    }
-                }
-                .onMove { source, destination in
-                    viewModel.movePlaylistItems(from: source, to: destination)
                 }
             }
-            .listStyle(.plain)
+            // The queue moved off `List` because a List row's `.dropDestination` never fires (an
+            // Apple limitation, forum 730367) — so grip drag-and-drop reorder works here.
+            // `.focusable` + `.focused` + `.defaultFocus` restore the key-command target that
+            // `List` provided for free (a row tap also sets it); `.focusEffectDisabled` suppresses
+            // the focus ring on the scroll area (the selection tint is the cue).
+            .focusable()
+            .focused($queueFocused)
+            .defaultFocus($queueFocused, true)
+            .focusEffectDisabled()
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
             // so a stale target can't match — and re-present on — a different row.
             .onChange(of: viewModel.queue.map(\.id)) { _, _ in
                 infoTarget = nil
             }
-            // Global keyboard shortcuts for the playlist
-            .onKeyPress(.upArrow) {
-                if let current = viewModel.selectedTrackIndex, current > 0 {
-                    viewModel.selectedTrackIndex = current - 1
-                    return .handled
-                }
-                return .ignored
-            }
-            .onKeyPress(.downArrow) {
-                if let current = viewModel.selectedTrackIndex,
-                   current < viewModel.playlist.count - 1 {
-                    viewModel.selectedTrackIndex = current + 1
-                    return .handled
-                }
-                return .ignored
-            }
-            .onKeyPress(.return) {
-                if viewModel.selectedTrackIndex != nil {
-                    viewModel.togglePlayPause()
-                    return .handled
-                }
-                return .ignored
-            }
-            .onKeyPress(.space) {
-                if viewModel.selectedTrackIndex != nil {
-                    viewModel.togglePlayPause()
-                    return .handled
-                }
-                return .ignored
+            .onKeyPress(.upArrow) { moveSelection(by: -1) }
+            .onKeyPress(.downArrow) { moveSelection(by: 1) }
+            .onKeyPress(.return) { togglePlayIfSelected() }
+            .onKeyPress(.space) { togglePlayIfSelected() }
+            .onKeyPress(.delete) {
+                guard let index = viewModel.selectedTrackIndex else { return .ignored }
+                viewModel.removeTrack(at: index)
+                return .handled
             }
             // Scroll the current track into view when the header's "Jump to Now Playing" fires (UI-2).
+            // Target the row's stable id (matches `.id(item.id)`), not a positional index.
             .onChange(of: jumpToCurrentRequestID) { _, _ in
-                guard let index = viewModel.selectedTrackIndex else { return }
-                withAnimation { proxy.scrollTo(index, anchor: .center) }
+                guard let index = viewModel.selectedTrackIndex, index < viewModel.queue.count else { return }
+                withAnimation { proxy.scrollTo(viewModel.queue[index].id, anchor: .center) }
             }
         } // ScrollViewReader
+    }
+
+    private func queueRow(index: Int, item: QueueItem) -> some View {
+        PlaylistItemRow(
+            file: item.file,
+            index: index,
+            isSelected: viewModel.selectedTrackIndex == index,
+            isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
+            numberColumnWidth: numberColumnWidth,
+            dragPayload: QueueDragItem(id: item.id),
+            isDropTarget: dropTargetIndex == index
+        )
+        // Identity is the stable `QueueItem.id` (matches the `ForEach` key) so reorders re-render
+        // the RIGHT rows — a positional `.id(index)` fought the ForEach key and left stale
+        // now-playing highlights + un-refreshed rows after a move. `scrollTo` uses this id too.
+        .id(item.id)
+        // Reorder: the grip is the `.draggable` source, each row a `.dropDestination` that lands
+        // the dragged item at its position. This is why the queue is a LazyVStack, not a List.
+        .dropDestination(for: QueueDragItem.self) { payloads, _ in
+            dropTargetIndex = nil
+            guard let fromID = payloads.first?.id else { return false }
+            return viewModel.moveByDrop(fromID: fromID, toIndex: index)
+        } isTargeted: { targeted in
+            dropTargetIndex = targeted ? index : (dropTargetIndex == index ? nil : dropTargetIndex)
+        }
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                queueFocused = true // a click on a row focuses the queue for the keyboard shortcuts
+                // Single-click plays the row, so the now-playing card always matches the audio (no
+                // select-without-play state). Re-clicking the playing track is a no-op (no restart).
+                guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
+                viewModel.playTrack(at: index)
+            }
+        )
+        .accessibilityAddTraits(.isButton)
+        // VoiceOver "activate" — the tap is a gesture VO can't trigger, so bind the play action.
+        .accessibilityAction { viewModel.playTrack(at: index) }
+        .contextMenu { queueRowMenu(index: index, item: item) }
+        .popover(
+            isPresented: Binding(
+                get: { infoTarget?.id == item.id },
+                set: { if !$0 { infoTarget = nil } }
+            ),
+            arrowEdge: .trailing
+        ) {
+            TrackInfoCard(file: item.file)
+        }
+    }
+
+    @ViewBuilder
+    private func queueRowMenu(index: Int, item: QueueItem) -> some View {
+        Button("Move to Top", systemImage: "arrow.up.to.line") {
+            viewModel.moveTrackToTop(index)
+        }
+        .disabled(index == 0)
+        Button("Move Up", systemImage: "arrow.up") {
+            viewModel.moveTrackUp(index)
+        }
+        .disabled(index == 0)
+        Button("Move Down", systemImage: "arrow.down") {
+            viewModel.moveTrackDown(index)
+        }
+        .disabled(index >= viewModel.queue.count - 1)
+        Button("Move to Bottom", systemImage: "arrow.down.to.line") {
+            viewModel.moveTrackToBottom(index)
+        }
+        .disabled(index >= viewModel.queue.count - 1)
+        Divider()
+        Button("Info", systemImage: "info.circle") {
+            infoTarget = item
+        }
+        Divider()
+        Button("Remove from Queue", systemImage: "trash") {
+            viewModel.removeTrack(at: index)
+        }
+        Button("Clear Queue", systemImage: "clear") {
+            viewModel.clearPlaylist()
+        }
+    }
+
+    /// Move the selection by `delta` rows, clamped to the queue (keyboard ↑/↓). `.ignored` when
+    /// there's no selection or the move would leave the queue, so the event can bubble.
+    private func moveSelection(by delta: Int) -> KeyPress.Result {
+        guard let current = viewModel.selectedTrackIndex else { return .ignored }
+        let next = current + delta
+        guard next >= 0, next < viewModel.queue.count else { return .ignored }
+        viewModel.selectedTrackIndex = next
+        return .handled
+    }
+
+    /// Toggle play/pause for the selected row (keyboard Return/Space). `.ignored` when nothing is
+    /// selected so the key can do its default thing.
+    private func togglePlayIfSelected() -> KeyPress.Result {
+        guard viewModel.selectedTrackIndex != nil else { return .ignored }
+        viewModel.togglePlayPause()
+        return .handled
     }
 }
