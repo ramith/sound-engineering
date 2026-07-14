@@ -24,7 +24,7 @@ extension AudioViewModel {
             // completed naturally — count it before returning (a playlist-shrank-after-
             // arming edge; the normal end-of-queue path below is what usually counts the
             // final track).
-            countOutgoingTrackCompletion()
+            countPlayIfNaturalEndQualifies()
             pendingNextIndex = nil
             isPlaying = false
             playbackPosition = 0
@@ -36,10 +36,11 @@ extension AudioViewModel {
 
         // §12.3: count the OUTGOING track (pre-advance selectedTrackIndex) before it
         // reassigns below — this IS the gapless-seam natural-completion site.
-        countOutgoingTrackCompletion()
+        countPlayIfNaturalEndQualifies()
 
         selectedTrackIndex = nextIdx
         recordPlayStart(advancedTrack) // the incoming track begins playing — log it (S10.2 3a)
+        resetPlayTracking() // the gapless seam / repeat-one begins a NEW ≥60% play-through (S10.6)
         playbackPosition = 0
         duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
 
