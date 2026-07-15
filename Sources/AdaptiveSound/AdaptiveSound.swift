@@ -56,10 +56,14 @@ struct AdaptiveSound: App {
             guard let store = lib?.store,
                   let display = (try? await store.tracksDisplay(ids: [id]))?[id] else { return nil }
             return ResolvedTrackMeta(
-                artist: display.artistName, album: display.albumName, artworkKey: display.artworkKey
+                artist: display.artistName.isEmpty ? nil : display.artistName,
+                album: display.albumName,
+                artworkKey: display.artworkKey
             )
         }
         np.loadArtwork = { [weak browse] key in await browse?.artworkImage(forKey: key, maxPixel: 512) }
+        // Loose (non-library) files have no store row → read their embedded tags directly (S10.4 FN-5).
+        np.resolveLooseMetadata = { url in await EmbeddedMetadataReader.read(url) }
         audio.onNowPlayingRefresh = { [weak np] in np?.scheduleRefresh() }
         _nowPlaying = State(initialValue: np)
     }
