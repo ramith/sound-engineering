@@ -17,6 +17,12 @@ final class AudioViewModel {
     /// engine's `onOutputDevicesChanged`; this is NOT a device-recall callback. Set and
     /// invoked on the main actor (`@MainActor` isolation), so no `@Sendable` is required.
     var onEngineReady: (() -> Void)?
+
+    /// Fired (on the main actor) when Now-Playing–relevant state changes — track / play-pause /
+    /// seek / resolved-duration — so the composition-root-wired `NowPlayingController` refreshes
+    /// Control Center + the Now Playing widget (S10.4). One-directional hook (mirrors
+    /// `onEngineReady`/`onError`); `nil` in tests. NEVER fired from the 20 Hz tick.
+    var onNowPlayingRefresh: (() -> Void)?
     /// Re-entrant `initialize()` guard. `true` from the moment an init is kicked off
     /// (`initializeEngine()` / `retryInitialization()`) until its `Task` finishes (success OR
     /// failure). A second init while one is in-flight would race the retry's teardown over the
@@ -24,7 +30,14 @@ final class AudioViewModel {
     /// Internal (NOT private) so the `+Lifecycle` / `+Devices` extensions (separate files) can
     /// read/write it; `@MainActor` isolation makes the flag check/set race-free. Not UI-bound.
     var isInitializing = false
-    var isPlaying = false
+    var isPlaying = false {
+        didSet {
+            // Every play/pause/stop/end-of-queue/device-loss transition → refresh Now Playing
+            // (rate + elapsed + playbackState). Guarded on change; not self-assignment (S10.4).
+            if isPlaying != oldValue { onNowPlayingRefresh?() }
+        }
+    }
+
     /// Selected top-level tab. Owned here (not in `ContentView` `@State`) so deep views — e.g.
     /// a double-click on the Now Playing spectrum — can navigate without binding-plumbing.
     var selectedTab: TabSelection = .nowPlaying {
@@ -219,8 +232,24 @@ final class AudioViewModel {
             // before pressing Play (QA break-it #1). A same-value re-assignment (re-selecting the
             // paused track) preserves the resume point. Not self-assignment → no @Observable
             // didSet recursion.
-            if selectedTrackIndex != oldValue { pausedResumePosition = nil }
+            if selectedTrackIndex != oldValue {
+                pausedResumePosition = nil
+                onNowPlayingRefresh?() // track change (incl. gapless advance) → refresh Now Playing (S10.4)
+            }
         }
+    }
+
+    /// Whether a manual Next would advance (honors shuffle / repeat / end-of-queue) — the single
+    /// source of truth with `nextTrack()`, used for the remote command's `.isEnabled` (S10.4).
+    var canGoNext: Bool {
+        guard let current = selectedTrackIndex else { return !queue.isEmpty }
+        return computeNextIndex(current: current, playlistCount: queue.count, manualSkip: true) != nil
+    }
+
+    /// Whether a manual Previous would move — mirrors `previousTrack()`.
+    var canGoPrevious: Bool {
+        guard let current = selectedTrackIndex else { return false }
+        return computePreviousIndex(current: current, playlistCount: queue.count) != nil
     }
 
     // MARK: - Library (S3 F5 — extracted to the LibraryModel peer)

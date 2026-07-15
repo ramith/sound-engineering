@@ -10,6 +10,9 @@ struct AdaptiveSound: App {
     @State private var eqViewModel: EQViewModel
     @State private var library: LibraryModel
     @State private var libraryModel: LibraryBrowseModel
+    /// S10.4: macOS system control (Control Center / media keys / Now Playing widget). A peer, not a
+    /// view — held in `@State` only for its lifetime; it reads the audio VM + calls its transport verbs.
+    @State private var nowPlaying: NowPlayingController
     /// Suppresses the global Space play/pause accelerator while a text field is focused (S4 SW1).
     @State private var keyboardFocus = KeyboardTransportFocus()
 
@@ -39,7 +42,26 @@ struct AdaptiveSound: App {
         // S9.4: the browse model is owned HERE (above the tab switch) and injected, so Library
         // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed). It
         // composes BOTH peers — library reads + audio play verbs.
-        _libraryModel = State(initialValue: LibraryBrowseModel(audio: audio, library: lib))
+        let browse = LibraryBrowseModel(audio: audio, library: lib)
+        _libraryModel = State(initialValue: browse)
+        // Edge 4 (S10.4): macOS system control. `NowPlayingController` reads `audio` + calls its
+        // transport verbs from MPRemoteCommandCenter handlers, and pushes Now Playing on the VM's
+        // `onNowPlayingRefresh` hook — same one-directional closure pattern as the edges above (no
+        // back-reference). Store/artwork access is injected as closures so the controller imports
+        // neither the store nor the artwork cache: metadata resolves through `lib.store`, artwork
+        // reuses the browse model's thumbnail cache.
+        let np = NowPlayingController()
+        np.audio = audio
+        np.resolveMetadata = { [weak lib] id in
+            guard let store = lib?.store,
+                  let display = (try? await store.tracksDisplay(ids: [id]))?[id] else { return nil }
+            return ResolvedTrackMeta(
+                artist: display.artistName, album: display.albumName, artworkKey: display.artworkKey
+            )
+        }
+        np.loadArtwork = { [weak browse] key in await browse?.artworkImage(forKey: key, maxPixel: 512) }
+        audio.onNowPlayingRefresh = { [weak np] in np?.scheduleRefresh() }
+        _nowPlaying = State(initialValue: np)
     }
 
     var body: some Scene {
@@ -59,6 +81,10 @@ struct AdaptiveSound: App {
                     // this runs once); teardown runs in `AppDelegate.applicationShouldTerminate`.
                     appDelegate.audioViewModel = audioViewModel
                     appDelegate.libraryModel = library
+                    appDelegate.nowPlaying = nowPlaying
+                    // Register the remote-command handlers once (marks the app a media app so the
+                    // media keys + Control Center transport route here). Idempotent.
+                    nowPlaying.registerCommands()
                     audioViewModel.initializeEngine()
                 }
         }
