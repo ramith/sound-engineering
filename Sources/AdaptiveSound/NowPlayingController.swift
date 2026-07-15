@@ -7,9 +7,11 @@ import PlaybackQueueKit
 
 /// Display metadata for the current track (artist / album / artwork key), returned by the injected
 /// `resolveMetadata` closure. A struct, not a tuple, so it stays under the `large_tuple` lint (same
-/// reason `FrecencyState` is a struct).
+/// reason `FrecencyState` is a struct). `artist` is optional (nil = unknown → the footer falls back
+/// to "Unknown Artist"); `artworkKey` is the library cache key (nil for loose files, whose artwork
+/// is applied directly as an image).
 struct ResolvedTrackMeta {
-    let artist: String
+    let artist: String?
     let album: String?
     let artworkKey: String?
 }
@@ -35,6 +37,9 @@ final class NowPlayingController {
     var resolveMetadata: ((Int64) async -> ResolvedTrackMeta?)?
     /// Load a cover image by artwork cache key. Called on the main actor. Nil = no image.
     var loadArtwork: ((String) async -> NSImage?)?
+    /// Read a loose (non-library) file's embedded artist/album/artwork off-main (the `trackID == nil`
+    /// path — S10.4 FN-5). Injected so the controller doesn't import AVFoundation. Nil = unreadable.
+    var resolveLooseMetadata: ((URL) async -> LooseTrackMetadata?)?
 
     /// Cached resolved metadata + artwork, keyed by the current track token, so play/pause/seek
     /// pushes reuse them (only a track CHANGE re-resolves).
@@ -160,13 +165,32 @@ final class NowPlayingController {
         updateCommandEnablement(audio)
 
         // Track changed → resolve metadata + artwork asynchronously, then re-push (stale-guarded).
-        if metaToken != token, let trackID = file.trackID {
-            resolveAndRepush(trackID: trackID, token: token)
-        } else if file.trackID == nil, metaToken != token {
-            // Loose file: title-only. Only write on an actual track change — else a same-value
-            // rewrite every play/pause push thrashes the @Observable footer/widget (S10.4 QA #5).
+        if metaToken != token {
+            // Claim the token now (title-only immediately) so a same-value rewrite every play/pause
+            // push doesn't thrash the @Observable footer/widget, and a slower loose-file read isn't
+            // re-triggered on each push before it lands (S10.4 QA #5).
             metaToken = token
             meta = nil
+            if let trackID = file.trackID {
+                resolveAndRepush(trackID: trackID, token: token)
+            } else {
+                resolveLooseAndApply(url: file.absoluteURL, token: token) // loose file: embedded tags
+            }
+        }
+    }
+
+    /// Read a loose file's embedded tags off-main, then apply artist/album + build the cover
+    /// `NSImage` from the Sendable `Data` on the main actor — stale-guarded like the library path.
+    private func resolveLooseAndApply(url: URL, token: String) {
+        Task { @MainActor [weak self] in
+            guard let self, let loose = await resolveLooseMetadata?(url) else { return }
+            guard isStillCurrent(token), metaToken == token else { return }
+            meta = ResolvedTrackMeta(artist: loose.artist, album: loose.album, artworkKey: nil)
+            if let data = loose.artworkData, let image = NSImage(data: data) {
+                artworkToken = token
+                artwork = image
+            }
+            refresh() // re-push with embedded artist/album/art
         }
     }
 

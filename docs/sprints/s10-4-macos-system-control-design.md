@@ -10,7 +10,7 @@ Media keys + Now Playing / Control Center (MediaPlayer) + a couple of app-wide k
 |---|---|---|
 | D1 | New shortcuts | **Stop (⌘.)** + **Jump to Now Playing (⌘0)**. No seek/volume shortcuts (system volume keys own volume; `masterGain` is a distinct DSP gain). |
 | D2 | Footer/mini-player metadata | **Fold the fix into S10.4** — reuse the new resolver so `NowPlayingBar`/`NowPlayingWidget` show real artist/album/artwork instead of the hardcoded "Unknown Artist" + placeholder. |
-| D3 | Loose (non-library) files | Now Playing shows **title only** (`trackID == nil` → no artist/album/art). |
+| D3 | Loose (non-library) files | ~~Now Playing shows **title only** (`trackID == nil` → no artist/album/art).~~ **REVERSED (founder, 2026-07-15):** loose files now read their **embedded ID3/MP4 tags** (artist/album/cover) via `EmbeddedMetadataReader`, so drag-dropped tracks show full metadata too. Falls back to title-only only when the file has no usable tags. |
 | D4 | M4A duration | **Two-push** (track-change push may carry duration 0, `refreshDuration` completion re-pushes the real duration) rather than delaying playback. |
 | D5 | ⌘←/⌘→ latent bug | **Fix in passing** — add the `keyboardFocus.isTextEntryFocused` guard to Next/Prev (today ⌘← steals "move to line start" while typing). |
 
@@ -88,7 +88,8 @@ is thin and its correctness is a manual-verify concern (does Control Center rend
 
 ## 10. Files (as built)
 New: `Sources/AdaptiveSound/NowPlayingController.swift` (`@Observable @MainActor` impure shell — also
-the single resolved-metadata source the footer/widget read, D2); `Sources/PlaybackQueueKit/NowPlayingSnapshot.swift`
+the single resolved-metadata source the footer/widget read, D2); `Sources/AdaptiveSound/EmbeddedMetadataReader.swift`
+(loose-file ID3/MP4 read, D3-reversed); `Sources/PlaybackQueueKit/NowPlayingSnapshot.swift`
 (pure) + `NowPlayingSnapshotTests.swift`. Edit: `AudioViewModel.swift` (`onNowPlayingRefresh`,
 `isPlaying.didSet`, `selectedTrackIndex.didSet` fire, `canGoNext`/`canGoPrevious`),
 `AudioViewModel+Playback.swift` (fire in `seek`/`refreshDuration`), `AdaptiveSound.swift` (own+wire
