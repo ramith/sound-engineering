@@ -51,8 +51,8 @@ public enum Schema {
         /// v1 → v2: the `tracks_fts` FTS5 table + backfill (S9.2).
         public static let v2 = "v2-fts5"
         /// v2 → v3: the `playlists` + `playlist_entries` tables + the seeded built-in
-        /// "current" queue playlist (S10.1). Durability across schema change is DEFERRED
-        /// (design §0.1): `eraseDatabaseOnSchemaChange` stays true pre-R1.
+        /// "current" queue playlist (S10.1). User data now DURABLE across schema change
+        /// (S10.3): `eraseDatabaseOnSchemaChange = false` + additive-only migrations.
         public static let v3 = "v3-playlists"
         /// v3 → v4: `tracks.frecency_score` + `tracks.frecency_rank` (+ index) for the
         /// Recently-Played frecency ordering (S10.6). ADDITIVE (ALTER ADD COLUMN); play counts
