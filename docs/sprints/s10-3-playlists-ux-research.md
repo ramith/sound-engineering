@@ -1,0 +1,35 @@
+# S10.3 Playlists UX — market research (cited)
+
+Deep-research pass (2026-07-15) across audiophile/local-library players (Roon, MusicBee, Audirvana, foobar2000) + mainstream references (Apple Music/iTunes, Spotify). 19 sources fetched → 73 claims → 25 verified (3-vote adversarial) → **23 confirmed, 2 refuted**. This memo grounds the S10.3 design; the team folds it in before locking.
+
+## Per-axis findings (dominant pattern · divergences · confidence)
+
+1. **IA / placement — HIGH.** Dominant: a **dedicated left-sidebar Playlists section, SEPARATE from library browse** (Songs/Albums/Artists/Genres), *not* mixed into the browse categories (Roon, MusicBee "Playlists node", Apple Music, Audirvana). → **Shifts our design: a distinct sidebar section beats a "5th browse category."** Also validates the Fool's coherence concern (mutable curation ≠ read-only facet). [roonlabs blog; apple support; musicbee wiki; audirvana forum]
+2. **IA / hierarchy — HIGH.** **Playlist folders with nesting** are a category norm (Roon, Apple Music, MusicBee — MusicBee mirrors them to real disk folders). **Currently OUT of S10.3 scope → strongest candidate to reconsider** (or design the schema so a parent-folder id can be added later). [roonlabs; apple; musicbee]
+3. **Membership semantics — HIGH.** Universally **reference-based (pointer); NO researched local player moves a file on playlist-add.** The only copy behavior is iTunes/Apple Music's *separate* library-import "copy to media folder" (copies, never moves; original untouched). → **Fully validates our hard "add never moves a file" requirement.** [musicbee wiki; apple discussions]
+4. **Add-to-playlist affordance — HIGH.** Dominant = **context menu / 3-dots "Add to Playlist"** everywhere; drag-and-drop is secondary (**Roon reserves drag for REORDER, not add**). Scaling: no confirmed in-picker search precedent, but the **failure mode is documented** — Audirvana's sidebar shows only ~2 playlists → users call it "almost a dealbreaker." → **Sidebar must scroll/show all; a searchable picker for many playlists; a flat all-playlists submenu won't scale.** [roon KB; audirvana forum]
+5. **Play semantics — HIGH.** Playlist and queue are **distinct**; playing a playlist **feeds the single active queue**, it is not itself the playback surface. Mature players use **verb-based actions with an explicit destructive-vs-non-destructive split**: Roon *Play Now / Add Next / Add to Queue*; Apple *Play Next / Play Last*. → **Validates our hidden current-queue-as-playback-surface; expose Play (replace) + Play Next (insert) + Add to Queue (append).** [roon KB "the queue"; apple support; roon community]
+6. **Play pitfall + a differentiation opening — MEDIUM.** A recurring real frustration: the **default play is destructive (replaces the queue) and over-enqueues**, destroying a hand-built queue (Roon staff-confirmed complaint). **No comparable was found to offer an undo / "restore previous queue."** → Make queue-replace **explicit + reversible (undo toast)** — a genuine differentiator, and it matches the earlier design recommendation. [roon community x2; howtogeek]
+7. **Reorder within a playlist — LOW (thin).** Drag-handle model (Roon drag = reorder-only). Aligns with our planned custom `LazyVStack` + grip `.draggable` (macOS SwiftUI `List` can't row-drop). [roon KB]
+8. **Delete / remove reversibility — HIGH.** Players **carefully distinguish "remove from playlist" (drops the pointer) from "delete the file"** — MusicBee relabels Delete→Remove inside a playlist and *prompts* which is meant. → **Remove must be non-destructive to file+library by default, clearly labeled; undo toast is a low-risk safety win; any file-delete path gated behind a distinct confirm.** [musicbee wiki; apple discussions]
+9. **Missing / dead files — HIGH (crucial for a local player).** Dead entries get a **visible indicator (MusicBee faded + `(!)`; iTunes `!`), are NEVER silently self-healed, and playing errors/skips (not halts)**; players provide **Locate + bulk relink/remap + bulk "remove dead links"** cleanup. → **Mark unavailable entries, SKIP-on-play, offer Locate + "remove missing" + (bulk relink later).** Well-precedented + expected. [musicbee wiki + Relink page; apple discussions]
+10. **Smart / auto (rules-based) playlists — HIGH.** A **first-class, near-universal norm** (~10 apps: MusicBee, Audirvana, Roon, foobar2000, Plex, iTunes/Apple, JRiver, Swinsian, Kodi; only VOX lacks). **OUT of S10.3 scope → a real but defensible-for-now gap;** frame as planned-later, keep schema amenable to a future rules table. [musicbee wiki]
+
+## Unverified / open (no surviving evidence — treat as open)
+- **Duplicates (axis 6):** whether apps allow the same track twice / warn / dedupe — unverified. (Our store already *allows* dupes by design; iTunes/MusicBee believed to allow, unconfirmed here.)
+- **Naming (axis 10):** duplicate-name reject vs auto-suffix; default/untitled names — unverified. (Our store already decided: **reject** + lowest-unused "New Playlist [N]".)
+- **In-picker search / recents / pinning** at scale — only the failure mode (Audirvana truncation) is evidenced, not the positive patterns.
+- **Undo/restore-previous-queue** — none found; likely genuinely absent (→ our differentiation opening).
+
+## Refuted (do NOT rely on)
+- "Roon playlists sit at the bottom with no folders" (0-3 — Roon *does* have folders + a redesigned sortable section).
+- "Spotify: selecting a new song replaces the queue" (1-2, unsettled).
+
+## What the research changes vs design rev.2
+- **IA (biggest shift):** move from "5th browse category" → a **dedicated Playlists section in the existing left `LibrarySidebar`** (its own section, separate from the Songs/Albums/Artists/Genres category rail and the Music Folders accordion). Matches the category norm *and* resolves the Fool's coherence concern. Sidebar section must scroll.
+- **Confirms unchanged:** reference-add-only (type-level), hidden current-queue, custom LazyVStack drag, skip-on-play for dead files, undo for destructive queue-replace + delete.
+- **New scope questions for the founder:** playlist **folders/nesting** and **smart/auto playlists** are category norms currently out of scope — keep out for R1 (defensible) but make the schema forward-compatible, or pull one in.
+- **Verb set:** adopt Play (replace, reversible) / Play Next / Add to Queue for "playing" a playlist.
+
+## Sources (quality)
+Primary: roonlabs blog + KB (playlist-enhancements, creating-playlists, the-queue), apple support (playlist folders, queue). Forum/community (real friction): audirvana community (sidebar truncation), roon community (Play Now/Add Next/Add to Queue; destructive-replace complaint), apple discussions (missing-file `!`, copy-on-import, remove-vs-delete). Secondary: MusicBee Fandom wiki (Playlists, Relink Music File Paths) — corroborated by the official getmusicbee.com forum (WebFetch was 402/403-blocked on fandom + getmusicbee, so those leaned on search-snippet extraction). Blog: howtogeek (Spotify queue).
