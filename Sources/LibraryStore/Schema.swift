@@ -32,7 +32,7 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 4
+public let currentSchemaVersion = 5
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -60,6 +60,11 @@ public enum Schema {
         /// nullable so a legacy/never-scored played row sorts last (NULLs last in DESC) rather
         /// than corrupting the order.
         public static let v4 = "v4-frecency"
+        /// v4 → v5: playlist FOLDERS (S10.3). ADDITIVE — a `playlist_folders` adjacency-list tree
+        /// + a nullable `playlists.folder_id`. Deleting a folder CASCADEs to its subfolders +
+        /// playlists + entries (D-folder-delete "folder owns its contents"; undo is an app-layer
+        /// subtree snapshot). This migration is now DURABLE (erase=false) — it never wipes.
+        public static let v5 = "v5-playlist-folders"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
@@ -197,6 +202,8 @@ public enum Schema {
         "tracks", "track_genres",
         // v3 (S10.1): playlists + ordered entries.
         "playlists", "playlist_entries",
+        // v5 (S10.3): playlist folders (nesting tree).
+        "playlist_folders",
     ]
 
     /// Migrate an empty (v0) database to v1: create every table + index, then seed
@@ -412,5 +419,41 @@ public enum Schema {
             sql: writeSchemaInfoSQL,
             arguments: [Int64(version), appBuild, createdAt, migratedAt]
         )
+    }
+}
+
+// MARK: - Schema v5 (S10.3 playlist folders)
+
+/// v5 schema lives in an extension to keep the main `Schema` body under the type-body-length
+/// limit; the members are still `Schema.createV5Statements` / `Schema.migrateV4toV5`.
+public extension Schema {
+    /// v5 (S10.3): playlist FOLDERS — an adjacency-list tree (`parent_id` self-ref) plus a nullable
+    /// `playlists.folder_id`. Both FKs are `ON DELETE CASCADE` so deleting a folder removes its
+    /// subfolders + the playlists it holds (+ their entries via the existing `playlist_entries`
+    /// cascade) — the "folder owns its contents" delete (undo = an app-layer subtree snapshot).
+    /// `folder_id` is added by `ALTER ADD COLUMN` with a NULL default, so the `REFERENCES` clause
+    /// is permitted (SQLite allows it only when the added column defaults to NULL).
+    static let createV5Statements: [String] = [
+        """
+        CREATE TABLE playlist_folders (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER REFERENCES playlist_folders(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL);
+        """,
+        "ALTER TABLE playlists ADD COLUMN folder_id INTEGER REFERENCES playlist_folders(id) ON DELETE CASCADE;",
+        "CREATE INDEX idx_playlist_folders_parent ON playlist_folders(parent_id);",
+        "CREATE INDEX idx_playlists_folder ON playlists(folder_id);",
+    ]
+
+    /// Migrate v4 → v5: add the playlist-folders tree + `playlists.folder_id`. Additive — existing
+    /// playlists stay at the root (`folder_id = NULL`). Durable (erase=false): never wipes.
+    static func migrateV4toV5(_ db: Database, appBuild: String?, timestamp: Int64) throws {
+        for statement in createV5Statements {
+            try db.execute(sql: statement)
+        }
+        try writeSchemaInfo(db, version: 5, appBuild: appBuild,
+                            createdAt: timestamp, migratedAt: timestamp)
     }
 }

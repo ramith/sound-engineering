@@ -382,6 +382,9 @@ public final class LibraryStore: Sendable {
         migrator.registerMigration(Schema.MigrationID.v4) { db in
             try Schema.migrateV3toV4(db, appBuild: appBuild, timestamp: nowSeconds())
         }
+        migrator.registerMigration(Schema.MigrationID.v5) { db in
+            try Schema.migrateV4toV5(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
         return migrator
     }
 
