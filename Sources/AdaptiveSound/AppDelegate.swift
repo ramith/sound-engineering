@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The library subsystem peer (S3 F5), also owned by the App's `@State`. Torn down BEFORE the
     /// engine at quit so no scan/reconcile writes to the store while the C audio handles are freed.
     weak var libraryModel: LibraryModel?
+    /// S10.4: macOS system control, also owned by the App's `@State`. Cleared at quit so the Now
+    /// Playing widget / Control Center don't keep showing a stopped track after the app exits.
+    weak var nowPlaying: NowPlayingController?
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         // Last window closed (the red traffic-light button): retreat to the menu bar — hide the
@@ -45,6 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// to the menu bar instead).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard audioViewModel != nil || libraryModel != nil else { return .terminateNow }
+        // Clear Now Playing synchronously (cheap, no await) so the widget / Control Center drop the
+        // track the instant quit begins, rather than lingering through the async engine teardown.
+        nowPlaying?.clear()
         Task { @MainActor in
             // Ordered teardown across the two peers (S3 F5): tear the LIBRARY down first — stop the
             // FSEvents watcher + volume monitor and cancel any in-flight scan/reconcile — so nothing

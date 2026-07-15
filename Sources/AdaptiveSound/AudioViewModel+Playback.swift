@@ -83,6 +83,9 @@ extension AudioViewModel {
             await MainActor.run { [computedDuration] in
                 self?.duration = computedDuration
                 logUX("\(logLabel) = \(secs(computedDuration))s")
+                // The real (async) duration landed — re-push Now Playing so Control Center's
+                // scrubber shows the true length (closes the M4A 0-length flash, S10.4 D4).
+                self?.onNowPlayingRefresh?()
             }
         }
     }
@@ -115,6 +118,7 @@ extension AudioViewModel {
             + "(from \(secs(playbackPosition))s, dur \(secs(duration))s, "
             + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"))")
         playbackPosition = seconds
+        onNowPlayingRefresh?() // re-anchor the Control Center scrubber to the new position (S10.4)
         Task {
             await engine.seek(to: seconds)
         }
