@@ -215,57 +215,54 @@ func checkRestartDurability(number: Int, url: URL) async -> Bool {
     }
 }
 
-// MARK: - ERASE — eraseDatabaseOnSchemaChange recreates on a migration-body change
+// MARK: - ADDITIVE — an appended migration PRESERVES user data (eraseDatabaseOnSchemaChange = false)
 
-/// ERASE: the store sets `eraseDatabaseOnSchemaChange = true` (rebuildable cache; no users), so
-/// changing a registered migration's DEFINITION must recreate the database from scratch, not
-/// attempt an in-place alter. Proven directly on a GRDB `DatabaseMigrator` with that config:
-/// migrate + seed under one migration body, then reopen with the SAME identifier but a CHANGED
-/// body — the seeded rows are gone and the new schema is in force (locks the "drop-and-recreate
-/// on schema change" discipline against a future GRDB/config regression).
-func checkEraseOnSchemaChange(number: Int, url: URL) async -> Bool {
+/// ADDITIVE: the store sets `eraseDatabaseOnSchemaChange = false` (S10.3) because it holds
+/// non-rebuildable USER data — playlists/entries + the track user-state columns
+/// (`play_count`/`loved`/`rating`/`last_played`/`frecency_*`). So a schema change must be an
+/// APPENDED migration that PRESERVES existing rows, never a wipe-and-recreate (a break-it pass
+/// showed the old erase-on-schema-change rule silently destroyed that user data). Proven directly
+/// on a GRDB `DatabaseMigrator` configured like production: seed under migration `m1`, then reopen
+/// with `m1` FROZEN plus an APPENDED `m2` — the seeded row SURVIVES and `m2`'s new table appears.
+/// Locks the additive-only posture against a future regression that flips the flag back to `true`.
+func checkAdditiveMigrationPreservesData(number: Int, url: URL) async -> Bool {
+    func migrator(withM2: Bool) -> DatabaseMigrator {
+        var mig = DatabaseMigrator()
+        mig.eraseDatabaseOnSchemaChange = false
+        mig.registerMigration("m1") { db in
+            try db.execute(sql: "CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT);")
+            try db.execute(sql: "INSERT INTO demo(v) VALUES ('kept');")
+        }
+        if withM2 {
+            mig.registerMigration("m2") { db in
+                try db.execute(sql: "CREATE TABLE demo2(id INTEGER PRIMARY KEY);")
+            }
+        }
+        return mig
+    }
     do {
         do {
-            var migrator = DatabaseMigrator()
-            migrator.eraseDatabaseOnSchemaChange = true
-            migrator.registerMigration("demo") { db in
-                try db.execute(sql: "CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT);")
-                try db.execute(sql: "INSERT INTO demo(v) VALUES ('original');")
-            }
             let queue = try DatabaseQueue(path: url.path)
-            try migrator.migrate(queue)
-            let count = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM demo;") ?? -1 }
-            guard count == 1 else {
-                printFail(number, "eraseOnSchemaChange: setup seeded \(count) rows, expected 1"); return false
-            }
+            try migrator(withM2: false).migrate(queue)
         }
-        // Reopen with the SAME identifier but a CHANGED body (an added column) → GRDB detects the
-        // schema mismatch and recreates the DB from scratch rather than altering in place.
-        var changed = DatabaseMigrator()
-        changed.eraseDatabaseOnSchemaChange = true
-        changed.registerMigration("demo") { db in
-            try db.execute(sql: "CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT, extra INTEGER);")
-        }
+        // Reopen: `m1` FROZEN + an APPENDED `m2`. With erase=false, GRDB runs only the new `m2`,
+        // leaving `m1`'s seeded rows intact — the opposite of the former drop-and-recreate.
         let queue = try DatabaseQueue(path: url.path)
-        try changed.migrate(queue)
-        let rowCount = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM demo;") ?? -1 }
-        var hasExtraColumn = true
-        do {
-            _ = try await queue.read { db in try Int.fetchOne(db, sql: "SELECT count(extra) FROM demo;") }
-        } catch {
-            hasExtraColumn = false
+        try migrator(withM2: true).migrate(queue)
+        let kept = try await queue.read { db in try String.fetchOne(db, sql: "SELECT v FROM demo LIMIT 1;") }
+        let hasDemo2 = try await queue.read { db in
+            try Bool.fetchOne(db, sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='demo2';") ?? false
         }
-        guard rowCount == 0, hasExtraColumn else {
-            printFail(number, "eraseOnSchemaChange: DB not recreated "
-                + "(rows=\(rowCount), new column present=\(hasExtraColumn))")
+        guard kept == "kept", hasDemo2 else {
+            printFail(number, "additive-preserve: appended migration wiped or skipped "
+                + "(kept=\(kept ?? "nil"), demo2=\(hasDemo2))")
             return false
         }
-        printPass(number, "eraseOnSchemaChange: changing a registered migration's body recreated the DB "
-            + "(old rows dropped, new schema applied) — locks the rebuildable-cache "
-            + "'drop-and-recreate on schema change' discipline")
+        printPass(number, "additive-preserve: appending a migration PRESERVES seeded user data and runs the "
+            + "new migration (erase=false) — locks the additive-only posture")
         return true
     } catch {
-        printFail(number, "eraseOnSchemaChange threw: \(error)")
+        printFail(number, "additive-preserve threw: \(error)")
         return false
     }
 }
