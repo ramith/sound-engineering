@@ -19,6 +19,7 @@ import SwiftUI
 struct LibraryTabView: View {
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(LibraryModel.self) private var library
+    @Environment(PlaylistsModel.self) private var playlists
 
     var body: some View {
         HStack(spacing: 0) {
@@ -41,6 +42,9 @@ struct LibraryTabView: View {
         // per metadata tick, and not the earlier `lastScanResult` (design §7; review B1).
         .onChange(of: library.libraryRevision) { _, _ in
             Task { await model.reloadIfScanChanged() }
+            // Playlist entry counts move when a track deletion CASCADE-drops entries (S10.3) — keep
+            // the sidebar counts + any open detail truthful on the same coalesced revision bump.
+            Task { await playlists.reloadOnLibraryChange() }
         }
     }
 

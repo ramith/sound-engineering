@@ -10,6 +10,10 @@ struct AdaptiveSound: App {
     @State private var eqViewModel: EQViewModel
     @State private var library: LibraryModel
     @State private var libraryModel: LibraryBrowseModel
+    /// S10.3: the Playlists view-model (sidebar tree + open detail), a peer over the SAME store as
+    /// `library` (one store — D-store rev.5). Owned here (above the tab switch) so its loaded tree
+    /// survives tab changes, like `libraryModel`.
+    @State private var playlistsModel: PlaylistsModel
     /// S10.4: macOS system control (Control Center / media keys / Now Playing widget). A peer, not a
     /// view — held in `@State` only for its lifetime; it reads the audio VM + calls its transport verbs.
     @State private var nowPlaying: NowPlayingController
@@ -44,6 +48,9 @@ struct AdaptiveSound: App {
         // composes BOTH peers — library reads + audio play verbs.
         let browse = LibraryBrowseModel(audio: audio, library: lib)
         _libraryModel = State(initialValue: browse)
+        // S10.3: the Playlists model reads the same store `lib` owns (one store). Only `library` is
+        // wired now (tree + detail reads); the `audio` play verbs join in Chunk C with their UI.
+        _playlistsModel = State(initialValue: PlaylistsModel(library: lib))
         // Edge 4 (S10.4): macOS system control. `NowPlayingController` reads `audio` + calls its
         // transport verbs from MPRemoteCommandCenter handlers, and pushes Now Playing on the VM's
         // `onNowPlayingRefresh` hook — same one-directional closure pattern as the edges above (no
@@ -75,6 +82,7 @@ struct AdaptiveSound: App {
                 .environment(eqViewModel)
                 .environment(library)
                 .environment(libraryModel)
+                .environment(playlistsModel)
                 .environment(nowPlaying) // S10.4 D2: footer + widget read the resolved metadata
                 .environment(keyboardFocus)
                 .onAppear {
