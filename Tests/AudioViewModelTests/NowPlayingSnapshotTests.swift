@@ -44,4 +44,25 @@ struct NowPlayingSnapshotTests {
         #expect(snapshot.artworkKey == "abc")
         #expect(snapshot.trackToken == "t1")
     }
+
+    // MARK: isStopped — the "clear Now Playing" decision (S10.4 FN-1)
+
+    @Test("NP-05: stopped = not playing, at 0, no resume point (Stop / end-of-queue / fresh restore)")
+    func stoppedState() {
+        #expect(NowPlayingSnapshot.isStopped(isPlaying: false, elapsedSeconds: 0, hasResumePoint: false))
+    }
+
+    @Test("NP-06: playing is never stopped, even at position 0")
+    func playingNotStopped() {
+        #expect(!NowPlayingSnapshot.isStopped(isPlaying: true, elapsedSeconds: 0, hasResumePoint: false))
+        #expect(!NowPlayingSnapshot.isStopped(isPlaying: true, elapsedSeconds: 42, hasResumePoint: false))
+    }
+
+    @Test("NP-07: paused-mid-track is not stopped — a resume point OR a non-zero position keeps it shown")
+    func pausedNotStopped() {
+        // Pause records a resume point (even a resume point of 0 → paused at the very start).
+        #expect(!NowPlayingSnapshot.isStopped(isPlaying: false, elapsedSeconds: 0, hasResumePoint: true))
+        // Or a non-zero elapsed (paused mid-track).
+        #expect(!NowPlayingSnapshot.isStopped(isPlaying: false, elapsedSeconds: 90, hasResumePoint: false))
+    }
 }

@@ -75,7 +75,9 @@ glue (`push()` mapping snapshot→MP keys 1:1; the command→verb table; `update
 is thin and its correctness is a manual-verify concern (does Control Center render / drive).
 
 - **Pure (`swift test`):** `NowPlayingSnapshot` — rate 0/1 by state, artist omitted when empty,
-  album omitted when nil/empty, title/duration/elapsed/artworkKey/token passthrough (NP-01..04).
+  album omitted when nil/empty, title/duration/elapsed/artworkKey/token passthrough (NP-01..04);
+  `isStopped()` — the clear-Now-Playing decision for Stop / end-of-queue / fresh-restore vs
+  playing vs paused-mid-track (NP-05..07, the S10.4 FN-1 fix).
 - **VerifyLibraryStore:** none new (only reads the already-gated `tracksDisplay(ids:)`).
 - **Manual / by-ear (founder):** appears in Control Center + the menu-bar Now Playing widget; media
   keys (F7/F8/F9) + Control Center buttons + scrubber drive playback; artwork + title/artist/album

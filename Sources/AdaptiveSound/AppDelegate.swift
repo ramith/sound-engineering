@@ -48,9 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// to the menu bar instead).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard audioViewModel != nil || libraryModel != nil else { return .terminateNow }
-        // Clear Now Playing synchronously (cheap, no await) so the widget / Control Center drop the
-        // track the instant quit begins, rather than lingering through the async engine teardown.
-        nowPlaying?.clear()
+        // Tear down Now Playing synchronously (cheap, no await): latch off further refreshes THEN
+        // clear, so the widget / Control Center drop the track the instant quit begins and the
+        // async engine teardown's isPlaying flip can't re-push it back (S10.4 QA #3 / Fool FN-2).
+        nowPlaying?.prepareForTermination()
         Task { @MainActor in
             // Ordered teardown across the two peers (S3 F5): tear the LIBRARY down first — stop the
             // FSEvents watcher + volume monitor and cancel any in-flight scan/reconcile — so nothing
