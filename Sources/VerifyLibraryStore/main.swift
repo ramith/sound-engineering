@@ -183,11 +183,11 @@ func allCheckCases() -> [CheckCase] {
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
-/// eraseDatabaseOnSchemaChange recreate-on-body-change guard.
+/// the additive-only (erase=false) data-preservation guard (S10.3).
 func hardeningCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "sp-single-pool-concurrency", run: checkSinglePoolConcurrency),
-        CheckCase(label: "erase-on-schema-change", run: checkEraseOnSchemaChange),
+        CheckCase(label: "additive-preserve-schema-bump", run: checkAdditiveMigrationPreservesData),
         CheckCase(label: "foreign-schema-rebuild", run: checkForeignSchemaRebuild),
     ]
 }

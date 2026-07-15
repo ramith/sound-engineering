@@ -16,9 +16,13 @@
 // is no long-lived connection handle to interleave, and a closure body is synchronous.
 // Only `Sendable` value types cross the boundary; no `Database`/handle ever escapes.
 //
-// The library store is a REBUILDABLE CACHE of on-disk files (design §2a): corruption is
-// quarantined + rebuilt, and a schema change simply recreates the database
-// (`eraseDatabaseOnSchemaChange`) — there are no users whose state must be preserved.
+// The library store holds TWO kinds of data: a rebuildable CACHE of on-disk files (scan-built
+// track/album/artist/genre/FTS rows) AND non-rebuildable USER data (playlists/entries + the track
+// user-state columns play_count/loved/rating/last_played/frecency_*). Because of the latter,
+// `eraseDatabaseOnSchemaChange` is FALSE (S10.3) — a schema change is an ADDITIVE, frozen-body
+// migration that PRESERVES user data; the cache is rebuilt by a re-scan, never by wiping the file.
+// Corruption is still quarantined + rebuilt (a genuinely-unreadable file) — the deferred backup/
+// export is the durability answer for user data on that last-resort path.
 
 import Foundation
 import GRDB
@@ -82,8 +86,8 @@ public final class LibraryStore: Sendable {
 
     /// Open (creating if absent) and migrate the store at `url`. Corruption / a failed
     /// integrity check quarantine the file (+ its `-wal`/`-shm` sidecars) and rebuild
-    /// fresh; a schema change recreates the database. Never crashes, never silently
-    /// deletes (design §5).
+    /// fresh; a schema change is an ADDITIVE migration that PRESERVES data (erase=false,
+    /// S10.3). Never crashes, never silently deletes (design §5).
     ///
     /// - Parameters:
     ///   - url: the store file URL (`:memory:` for an in-memory database).
@@ -280,8 +284,8 @@ public final class LibraryStore: Sendable {
     /// Open + migrate the store at `url`. On a rebuild-recoverable failure for a
     /// PRE-EXISTING file — it cannot be opened/queried as a database, or `integrity_check`
     /// fails — the file (+ its `-wal`/`-shm` sidecars) is quarantined and a fresh store is
-    /// rebuilt. Never crashes, never silently deletes (design §5). A schema change is
-    /// handled inside GRDB by `eraseDatabaseOnSchemaChange` (rebuildable cache, no users).
+    /// rebuilt. Never crashes, never silently deletes (design §5). A schema change is an
+    /// ADDITIVE, frozen-body migration that PRESERVES user data (erase=false, S10.3).
     private static func openMigratingAndRepairing(
         url: URL, appBuild: String?, stamp: String
     ) throws -> (any DatabaseWriter, Int) {
@@ -352,12 +356,20 @@ public final class LibraryStore: Sendable {
     }
 
     /// The GRDB `DatabaseMigrator` bringing a fresh/older store to `currentSchemaVersion`.
-    /// `eraseDatabaseOnSchemaChange` recreates the database whenever a registered
-    /// migration's definition changes — the rebuildable-cache "drop-and-recreate on schema
-    /// change" discipline (design §5; no users to preserve).
+    ///
+    /// `eraseDatabaseOnSchemaChange = FALSE` (S10.3, reversed from the earlier drop-and-recreate
+    /// posture): this DB holds NON-rebuildable USER data — playlists/entries, and the track
+    /// user-state columns `play_count`/`loved`/`rating`/`last_played`/`frecency_*` — NOT just a
+    /// cache of on-disk files. A break-it pass showed the old "wipe on any schema change" rule
+    /// silently destroyed that user data (and a separate never-erased store keyed by the reused
+    /// `tracks.id` rowid mis-resolved playlists after a rebuild — worse). So migrations are
+    /// **additive-only** and every shipped migration body is **frozen** (a schema change is a NEW
+    /// appended migration — proven-safe: appending never erases). The DERIVED cache (scan-built
+    /// track/album/artist/genre/FTS rows) is still rebuildable — by a RE-SCAN (delete rows +
+    /// re-scan), not by wiping the file. Dev reset: add a migration, or delete the DB file by hand.
     static func makeMigrator(appBuild: String?) -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
-        migrator.eraseDatabaseOnSchemaChange = true
+        migrator.eraseDatabaseOnSchemaChange = false
         migrator.registerMigration(Schema.MigrationID.v1) { db in
             try Schema.migrateV0toV1(db, appBuild: appBuild, timestamp: nowSeconds())
         }
