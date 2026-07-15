@@ -186,7 +186,14 @@ final class AudioViewModel {
     /// The play queue (S10.2). Each slot is a `QueueItem` (stable UUID identity), so the same
     /// track may appear more than once. `selectedTrackIndex`/`pendingNextIndex` are plain `Int`
     /// offsets into this array (the engine's index math is unchanged).
-    var queue: [QueueItem] = []
+    var queue: [QueueItem] = [] {
+        // A size change can flip `canGoNext`/`canGoPrevious` (the remote-command enable state)
+        // without touching `selectedTrackIndex`/`isPlaying` — e.g. append/remove-after-current
+        // while paused (S10.4 QA #1). Refresh so Control Center's enable flags don't go stale. A
+        // pure reorder keeps the count and re-anchors `selectedTrackIndex` (whose didSet fires), so
+        // count is the right, non-spammy trigger.
+        didSet { if queue.count != oldValue.count { onNowPlayingRefresh?() } }
+    }
 
     /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
     /// need slot identity (menu-bar, now-playing widget, transport). Queue *edits* go through the
@@ -242,7 +249,9 @@ final class AudioViewModel {
     /// Whether a manual Next would advance (honors shuffle / repeat / end-of-queue) — the single
     /// source of truth with `nextTrack()`, used for the remote command's `.isEnabled` (S10.4).
     var canGoNext: Bool {
-        guard let current = selectedTrackIndex else { return !queue.isEmpty }
+        // No selection → `nextTrack()` no-ops, so Next must read as disabled too (single source of
+        // truth with the verb — S10.4 CG-4; matches `canGoPrevious`).
+        guard let current = selectedTrackIndex else { return false }
         return computeNextIndex(current: current, playlistCount: queue.count, manualSkip: true) != nil
     }
 
@@ -264,11 +273,17 @@ final class AudioViewModel {
 
     // MARK: - Playback Modes (WinAmp Style)
 
-    /// Shuffle mode: when enabled, plays tracks in random order
-    var shuffleEnabled = false
+    /// Shuffle mode: when enabled, plays tracks in random order.
+    /// didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
+    /// enable state (S10.4 QA #1) — else Control Center's Next/Prev stay stale until the next play.
+    var shuffleEnabled = false {
+        didSet { if shuffleEnabled != oldValue { onNowPlayingRefresh?() } }
+    }
 
     /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
-    var repeatMode: Int = 0
+    var repeatMode: Int = 0 {
+        didSet { if repeatMode != oldValue { onNowPlayingRefresh?() } }
+    }
 
     // MARK: - Gapless / Auto-Advance State
 

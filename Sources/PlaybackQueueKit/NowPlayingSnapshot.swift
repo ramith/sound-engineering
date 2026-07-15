@@ -50,4 +50,13 @@ public struct NowPlayingSnapshot: Sendable, Equatable {
         self.artworkKey = artworkKey
         self.trackToken = trackToken
     }
+
+    /// Whether the transport is "stopped / finished / never-started" — NOT playing, at position 0,
+    /// with no resume point. Now Playing should be CLEARED in this state, not shown as a phantom
+    /// paused-at-0:00 track (S10.4 FN-1; covers ⌘. Stop, end-of-queue, and a fresh restored cursor).
+    /// A paused-mid-track session keeps a resume point (or a non-zero position), so it is NOT
+    /// stopped and stays shown.
+    public static func isStopped(isPlaying: Bool, elapsedSeconds: Double, hasResumePoint: Bool) -> Bool {
+        !isPlaying && elapsedSeconds == 0 && !hasResumePoint
+    }
 }
