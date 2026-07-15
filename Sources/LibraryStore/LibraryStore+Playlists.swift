@@ -80,6 +80,9 @@ public enum PlaylistMutationError: Error, Sendable, Equatable {
     case notFound(id: Int64)
     /// Empty / whitespace-only name, or the reserved built-in name "current".
     case invalidName(String)
+    /// A folder reparent that would make a folder its own ancestor (target == the node or is in
+    /// its subtree). Distinct from `.invalidName` so the UI can message the move, not the name.
+    case wouldCreateCycle(id: Int64, newParentID: Int64)
 }
 
 // MARK: - Row decoding
