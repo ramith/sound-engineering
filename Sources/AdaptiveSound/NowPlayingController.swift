@@ -24,6 +24,7 @@ struct ResolvedTrackMeta {
 /// injected closures so this stays store-agnostic + the pure display logic lives in
 /// `PlaybackQueueKit.NowPlayingSnapshot`.
 @MainActor
+@Observable
 final class NowPlayingController {
     /// Non-owning reference to pull snapshot state + call transport verbs from command handlers.
     weak var audio: AudioViewModel?
@@ -46,6 +47,31 @@ final class NowPlayingController {
     private var refreshScheduled = false
     private var commandTokens: [(command: MPRemoteCommand, token: Any)] = []
     private var commandsRegistered = false
+
+    // MARK: UI display (D2 — footer / Now Playing widget read these)
+
+    /// The single resolved metadata source the footer + Now Playing widget read (D2 — instead of a
+    /// hardcoded "Unknown Artist"), so the id→display resolve happens ONCE here, not duplicated in
+    /// the views. All three are token-guarded: they return nil unless the resolved value belongs to
+    /// the track currently selected, so the async-resolve gap never flashes the previous track's
+    /// metadata. nil → the view shows its own fallback.
+    var currentArtist: String? {
+        liveMeta?.artist
+    }
+
+    var currentAlbum: String? {
+        liveMeta?.album
+    }
+
+    var currentArtwork: NSImage? {
+        guard let artworkToken, isStillCurrent(artworkToken) else { return nil }
+        return artwork
+    }
+
+    private var liveMeta: ResolvedTrackMeta? {
+        guard let metaToken, isStillCurrent(metaToken) else { return nil }
+        return meta
+    }
 
     // MARK: Command registration (once, at launch)
 
