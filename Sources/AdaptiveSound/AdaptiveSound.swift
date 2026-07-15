@@ -71,6 +71,7 @@ struct AdaptiveSound: App {
                 .environment(eqViewModel)
                 .environment(library)
                 .environment(libraryModel)
+                .environment(nowPlaying) // S10.4 D2: footer + widget read the resolved metadata
                 .environment(keyboardFocus)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
@@ -119,13 +120,28 @@ struct AdaptiveSound: App {
 
                 Divider()
 
+                // D5: ⌘→/⌘← also carry text-navigation ("move to line end/start"). Guard on
+                // isTextEntryFocused like Play/Pause above so they fall through to the field editor
+                // while a Library filter / Save-Preset field is focused, instead of skipping tracks.
                 Button("Next Track") { audioViewModel.nextTrack() }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
-                    .disabled(audioViewModel.selectedTrackIndex == nil)
+                    .disabled(audioViewModel.selectedTrackIndex == nil || keyboardFocus.isTextEntryFocused)
 
                 Button("Previous Track") { audioViewModel.previousTrack() }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
+                    .disabled(audioViewModel.selectedTrackIndex == nil || keyboardFocus.isTextEntryFocused)
+
+                Divider()
+
+                // D1: Stop (⌘.) resets the playhead to 0 (distinct from position-preserving Pause);
+                // Jump to Now Playing (⌘0) switches the shell to the Now Playing tab. Both ⌘-combos
+                // produce no text, so no focus guard is needed.
+                Button("Stop") { audioViewModel.stopPlayback() }
+                    .keyboardShortcut(".", modifiers: .command)
                     .disabled(audioViewModel.selectedTrackIndex == nil)
+
+                Button("Jump to Now Playing") { audioViewModel.selectedTab = .nowPlaying }
+                    .keyboardShortcut("0", modifiers: .command)
             }
         }
 

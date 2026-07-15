@@ -62,9 +62,34 @@ Register commands + build the controller at launch. First `nowPlayingInfo` push 
 Extend `CommandMenu("Controls")`: **Stop (⌘.)** → `stopPlayback()`; **Jump to Now Playing (⌘0)** → `selectedTab = .nowPlaying`. Both ⌘-combos produce no text → no focus guard needed. **Fix D5:** add `|| keyboardFocus.isTextEntryFocused` to the existing Next (⌘→) / Prev (⌘←) `.disabled` so they don't steal text-navigation while a field is focused.
 
 ## 9. Testability + QA
-- **Pure (PlaybackQueueKit, `swift test`):** `NowPlayingSnapshot` + `infoDictionary()` (snapshot → MP key/value dict: correct types, artist omitted when empty, album when nil, artwork never in the pure dict, rate 0/1, elapsed passthrough); `RemoteCommandIntent` mapping (command + positionTime → intent); enable-flag computation; the stale-artwork token compare. `canGoNext`/`canGoPrevious` mirror-tested.
-- **VerifyLibraryStore:** none new (only reads the already-gated `tracksDisplay(ids:)`).
-- **Manual / by-ear (founder):** appears in Control Center + the menu-bar Now Playing widget; media keys (F7/F8/F9) + Control Center buttons + scrubber drive playback; artwork + title/artist/album render; scrubber tracks smoothly (extrapolation) + re-anchors on seek; the footer/mini-player now show real metadata; behavior while menu-bar-only (`.accessory`). **The system-integration itself is manual-verify — no headless test proves "appears in Control Center".** A qa-expert + Fool break-it runs on the impl.
 
-## 10. Files
-New: `Sources/AdaptiveSound/NowPlayingController.swift` (impure shell); `Sources/PlaybackQueueKit/NowPlayingSnapshot.swift` + `RemoteCommandIntent.swift` (pure) + tests. Edit: `AudioViewModel.swift` (`onNowPlayingRefresh`, `isPlaying.didSet`, `canGoNext`/`canGoPrevious`), `AudioViewModel+Playback.swift` (fire in `seek`/`refreshDuration`), `AdaptiveSound.swift` (own+wire controller; extend Controls menu; D5 guard), `AppDelegate.swift` (weak controller + `clear()`), `NowPlayingBar.swift` + `NowPlayingWidget.swift` (real metadata, D2).
+**As-built note (deviation from the pre-impl plan, recorded not excised):** the planned pure
+`infoDictionary()` + `RemoteCommandIntent` types were NOT created. The MP dict needs MediaPlayer key
+constants, so it can only live in the executable `AdaptiveSound` target — which SPM cannot
+`@testable import` (the same constraint that forces every `AudioViewModel` test through a mock
+mirror). Extracting them buys no testable surface over the inline code. All *decision-bearing* pure
+logic — rate 0/1, artist-omitted-when-empty, album-omitted-when-nil, elapsed/duration passthrough —
+is isolated in `NowPlayingSnapshot` (PlaybackQueueKit, library) and IS unit-tested. The remaining
+glue (`push()` mapping snapshot→MP keys 1:1; the command→verb table; `updateCommandEnablement`;
+`canGoNext`/`canGoPrevious` `!= nil` wrappers over the already-tested `computeNext/PreviousIndex`)
+is thin and its correctness is a manual-verify concern (does Control Center render / drive).
+
+- **Pure (`swift test`):** `NowPlayingSnapshot` — rate 0/1 by state, artist omitted when empty,
+  album omitted when nil/empty, title/duration/elapsed/artworkKey/token passthrough (NP-01..04).
+- **VerifyLibraryStore:** none new (only reads the already-gated `tracksDisplay(ids:)`).
+- **Manual / by-ear (founder):** appears in Control Center + the menu-bar Now Playing widget; media
+  keys (F7/F8/F9) + Control Center buttons + scrubber drive playback; artwork + title/artist/album
+  render; scrubber tracks smoothly (extrapolation) + re-anchors on seek; the footer/mini-player now
+  show real metadata; behavior while menu-bar-only (`.accessory`). **The system-integration itself
+  is manual-verify — no headless test proves "appears in Control Center".** A qa-expert + Fool
+  break-it runs on the impl.
+
+## 10. Files (as built)
+New: `Sources/AdaptiveSound/NowPlayingController.swift` (`@Observable @MainActor` impure shell — also
+the single resolved-metadata source the footer/widget read, D2); `Sources/PlaybackQueueKit/NowPlayingSnapshot.swift`
+(pure) + `NowPlayingSnapshotTests.swift`. Edit: `AudioViewModel.swift` (`onNowPlayingRefresh`,
+`isPlaying.didSet`, `selectedTrackIndex.didSet` fire, `canGoNext`/`canGoPrevious`),
+`AudioViewModel+Playback.swift` (fire in `seek`/`refreshDuration`), `AdaptiveSound.swift` (own+wire
+controller as Edge 4; inject into environment; extend Controls menu with Stop ⌘. + Jump ⌘0; D5
+guard on ⌘←/⌘→), `AppDelegate.swift` (weak controller + `clear()`), `NowPlayingBar.swift` +
+`NowPlayingWidget.swift` (real artist + artwork via the controller's token-guarded accessors, D2).
