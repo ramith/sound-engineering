@@ -41,6 +41,9 @@ final class LibraryBrowseModel {
 
     var path: [LibraryRoute] = []
 
+    // Sidebar selection (S10.3) lives in `LibraryBrowseModel+Sidebar` (a same-type extension, split
+    // for file length): `sidebarSelection` + `selectCategory`/`selectPlaylist`.
+
     // Albums (S9.4).
     private(set) var albums: [AlbumFacet] = []
     var albumSort: FacetSort = .title // S9.5 adds a "Recently Added" album sort (needs a DAO read)
