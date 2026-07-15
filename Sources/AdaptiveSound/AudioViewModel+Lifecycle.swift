@@ -146,6 +146,10 @@ extension AudioViewModel {
             isPlaying = false
             playbackPosition = 0
             duration = 0
+            // Stop from an ALREADY-paused state is an `isPlaying` self-assign → its didSet's
+            // `!= oldValue` guard suppresses the Now Playing hook, so Control Center would keep
+            // showing the paused track. Fire explicitly so the clear rule runs (S10.4 QA #2).
+            onNowPlayingRefresh?()
         } catch {
             errorMessage = "Stop playback failed: \(error.localizedDescription)"
         }

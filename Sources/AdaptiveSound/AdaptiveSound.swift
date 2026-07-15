@@ -78,8 +78,11 @@ struct AdaptiveSound: App {
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
                     // was the fire-and-forget shutdown that couldn't complete at quit). Wire the
                     // terminate-time teardown owners (both peers — the library tears down BEFORE
-                    // the engine, see AppDelegate) and start the engine here (single-window app, so
-                    // this runs once); teardown runs in `AppDelegate.applicationShouldTerminate`.
+                    // the engine, see AppDelegate) and start the engine here. In the resident
+                    // `.accessory` model this `onAppear` re-fires when a closed window reopens, so
+                    // every call below is idempotent by guard (`initializeEngine` on `!isEngineReady`,
+                    // `registerCommands` on `commandsRegistered`); teardown runs in
+                    // `AppDelegate.applicationShouldTerminate`.
                     appDelegate.audioViewModel = audioViewModel
                     appDelegate.libraryModel = library
                     appDelegate.nowPlaying = nowPlaying

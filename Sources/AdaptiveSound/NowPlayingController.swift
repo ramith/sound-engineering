@@ -47,20 +47,21 @@ final class NowPlayingController {
     private var refreshScheduled = false
     private var commandTokens: [(command: MPRemoteCommand, token: Any)] = []
     private var commandsRegistered = false
+    /// Latched at quit (`prepareForTermination`). Blocks all further refreshes so the async engine
+    /// teardown — whose `performStop()` fires `isPlaying=false` → the refresh hook — cannot re-push
+    /// the track AFTER `clear()` cleared it (S10.4 QA #3 / Fool FN-2).
+    private var isTerminating = false
 
     // MARK: UI display (D2 — footer / Now Playing widget read these)
 
     /// The single resolved metadata source the footer + Now Playing widget read (D2 — instead of a
     /// hardcoded "Unknown Artist"), so the id→display resolve happens ONCE here, not duplicated in
-    /// the views. All three are token-guarded: they return nil unless the resolved value belongs to
-    /// the track currently selected, so the async-resolve gap never flashes the previous track's
-    /// metadata. nil → the view shows its own fallback.
+    /// the views. Both are token-guarded: they return nil unless the resolved value belongs to the
+    /// track currently selected, so the async-resolve gap never flashes the previous track's
+    /// metadata. nil → the view shows its own fallback. (Album goes only to Control Center via the
+    /// snapshot's `albumName`; the compact in-app footer/widget show artist only.)
     var currentArtist: String? {
         liveMeta?.artist
-    }
-
-    var currentAlbum: String? {
-        liveMeta?.album
     }
 
     var currentArtwork: NSImage? {
@@ -113,7 +114,7 @@ final class NowPlayingController {
     /// Coalesce a refresh onto the next runloop turn so the `didSet` burst at a track start
     /// (selectedTrackIndex, then isPlaying) becomes ONE push carrying final state.
     func scheduleRefresh() {
-        guard !refreshScheduled else { return }
+        guard !refreshScheduled, !isTerminating else { return }
         refreshScheduled = true
         Task { @MainActor [weak self] in
             self?.refreshScheduled = false
@@ -122,8 +123,21 @@ final class NowPlayingController {
     }
 
     private func refresh() {
+        guard !isTerminating else { return }
         guard let audio, let index = audio.selectedTrackIndex, index < audio.queue.count else {
             clear() // no current track → clear Now Playing
+            return
+        }
+        // Stopped / finished / never-started: Stop (⌘.), end-of-queue, or a fresh restored cursor
+        // all leave the track SELECTED but at position 0 with no resume point. That's not an active
+        // or paused-mid-track session, so clear Now Playing rather than push a phantom paused-at-0:00
+        // track (design §3/§7; S10.4 FN-1). A Pause keeps `pausedResumePosition`, so it stays shown.
+        if NowPlayingSnapshot.isStopped(
+            isPlaying: audio.isPlaying,
+            elapsedSeconds: audio.playbackPosition,
+            hasResumePoint: audio.pausedResumePosition != nil
+        ) {
+            clear()
             return
         }
         let file = audio.queue[index].file
@@ -148,8 +162,10 @@ final class NowPlayingController {
         // Track changed → resolve metadata + artwork asynchronously, then re-push (stale-guarded).
         if metaToken != token, let trackID = file.trackID {
             resolveAndRepush(trackID: trackID, token: token)
-        } else if file.trackID == nil {
-            metaToken = token // loose file: title-only, don't re-resolve every push
+        } else if file.trackID == nil, metaToken != token {
+            // Loose file: title-only. Only write on an actual track change — else a same-value
+            // rewrite every play/pause push thrashes the @Observable footer/widget (S10.4 QA #5).
+            metaToken = token
             meta = nil
         }
     }
@@ -191,12 +207,21 @@ final class NowPlayingController {
         center.playbackState = playbackState(snapshot.state) // macOS: MUST be set explicitly
     }
 
-    /// Clear Now Playing (stop / no track / quit). Also called from `AppDelegate` teardown.
+    /// Clear Now Playing (stopped / no track). Latch-free so the stopped-state path in `refresh()`
+    /// can call it repeatedly without disabling future refreshes.
     func clear() {
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = nil
         center.playbackState = .stopped
         metaToken = nil; meta = nil; artworkToken = nil; artwork = nil
+    }
+
+    /// Quit teardown: latch OFF all further refreshes, THEN clear — so the async engine shutdown
+    /// (which flips `isPlaying` and fires the refresh hook) can't re-push the track after this
+    /// clears it (S10.4 QA #3 / Fool FN-2). Called synchronously from `applicationShouldTerminate`.
+    func prepareForTermination() {
+        isTerminating = true
+        clear()
     }
 
     private func updateCommandEnablement(_ audio: AudioViewModel) {
