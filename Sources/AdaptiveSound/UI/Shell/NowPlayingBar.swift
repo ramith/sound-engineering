@@ -44,12 +44,21 @@ struct NowPlayingBar: View {
 
 private struct NowPlayingInfoRegion: View {
     @Environment(AudioViewModel.self) private var viewModel
+    // S10.4 D2: the current track's resolved artist/artwork (nil until resolved / for loose files).
+    @Environment(NowPlayingController.self) private var nowPlaying
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: AudioFile?
     @State private var hovering = false
 
     private var isLoaded: Bool {
         track != nil
+    }
+
+    /// The footer subtitle: the resolved artist when known, else the honest "Unknown Artist"
+    /// fallback (a loose file or a track with no artist tag), else the idle prompt.
+    private var subtitle: String {
+        guard isLoaded else { return "Select a track to play" }
+        return nowPlaying.currentArtist ?? "Unknown Artist"
     }
 
     var body: some View {
@@ -64,7 +73,7 @@ private struct NowPlayingInfoRegion: View {
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(isLoaded ? "Unknown Artist" : "Select a track to play")
+                    Text(subtitle)
                         .font(DesignSystem.Font.trackSubtitle)
                         .foregroundStyle(subtitleColor)
                         .lineLimit(1)
@@ -96,17 +105,28 @@ private struct NowPlayingInfoRegion: View {
         .accessibilityHint(isLoaded ? "Opens the Now Playing tab" : "")
     }
 
-    private var artThumb: some View {
-        Image(systemName: "music.note")
-            .font(.system(size: 18))
-            .foregroundStyle(DesignSystem.Color.labelTertiary)
-            .frame(width: DesignSystem.Artwork.thumb, height: DesignSystem.Artwork.thumb)
-            .background(DesignSystem.Color.card)
-            .clipShape(.rect(cornerRadius: DesignSystem.Radius.control, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignSystem.Radius.control, style: .continuous)
-                    .strokeBorder(DesignSystem.Color.hairline, lineWidth: 0.5)
+    @ViewBuilder private var artThumb: some View {
+        let side = DesignSystem.Artwork.thumb
+        Group {
+            // Real cover when resolved (S10.4 D2); the music.note placeholder otherwise.
+            if let artwork = nowPlaying.currentArtwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 18))
+                    .foregroundStyle(DesignSystem.Color.labelTertiary)
+                    .frame(width: side, height: side)
+                    .background(DesignSystem.Color.card)
             }
+        }
+        .frame(width: side, height: side)
+        .clipShape(.rect(cornerRadius: DesignSystem.Radius.control, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.control, style: .continuous)
+                .strokeBorder(DesignSystem.Color.hairline, lineWidth: 0.5)
+        }
     }
 
     private var titleColor: Color {
@@ -119,7 +139,7 @@ private struct NowPlayingInfoRegion: View {
 
     private var accessibilityLabel: String {
         guard let track else { return "Nothing playing" }
-        return "Now Playing, \(track.name), Unknown Artist"
+        return "Now Playing, \(track.name), \(nowPlaying.currentArtist ?? "Unknown Artist")"
     }
 }
 

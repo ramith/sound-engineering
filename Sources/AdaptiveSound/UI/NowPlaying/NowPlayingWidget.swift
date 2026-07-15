@@ -22,17 +22,14 @@ struct NowPlayingWidget: View {
 
 private struct TrackCard: View {
     @Environment(AudioViewModel.self) private var viewModel
+    // S10.4 D2: the current track's resolved artist/artwork (nil until resolved / for loose files).
+    @Environment(NowPlayingController.self) private var nowPlaying
     let track: AudioFile
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: "music.note")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Color.asAccent)
-                    .frame(width: 52, height: 52)
-                    .background(Color.asWindow)
-                    .clipShape(.rect(cornerRadius: 8))
+                artwork
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(track.name)
@@ -40,7 +37,7 @@ private struct TrackCard: View {
                         .foregroundStyle(Color.asLabel)
                         .lineLimit(1)
 
-                    Text("Unknown Artist")
+                    Text(nowPlaying.currentArtist ?? "Unknown Artist")
                         .font(DesignSystem.Font.caption)
                         .foregroundStyle(Color.asLabelSecond)
                         .lineLimit(1)
@@ -54,6 +51,25 @@ private struct TrackCard: View {
         }
         .padding(12)
         .background(Color.asWindow)
+        .clipShape(.rect(cornerRadius: 8))
+    }
+
+    /// Real cover when resolved (S10.4 D2); the music.note placeholder otherwise.
+    private var artwork: some View {
+        Group {
+            if let image = nowPlaying.currentArtwork {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.asAccent)
+                    .frame(width: 52, height: 52)
+                    .background(Color.asWindow)
+            }
+        }
+        .frame(width: 52, height: 52)
         .clipShape(.rect(cornerRadius: 8))
     }
 }
