@@ -1,7 +1,7 @@
 # S10 — Queue + playlists + macOS control (sub-sprints S10.1–S10.6)
 
 **Document ID:** S10-PLAN-001
-**Status:** S10.1 ✅ + S10.2 ✅ + S10.6 ✅ shipped & merged; **S10.4 in progress → then S10.3** closes R1. S10 runs as **individual done-done sub-sprints** (S10.1–S10.6), each via the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). *(Authoritative project status: [sprint-plan.md §Status](sprint-plan.md). Deprioritized 2026-07-14: drag-from-Library-into-queue + M3U/M3U8 import-export.)*
+**Status:** S10.1 ✅ + S10.2 ✅ + S10.6 ✅ shipped & merged; **S10.4 in review (PR #58 — gated + break-it-hardened, awaiting founder by-ear/merge) → then S10.3** closes R1. S10 runs as **individual done-done sub-sprints** (S10.1–S10.6), each via the **usual development process** (vetted design → multi-SME review panel → architect + the-fool gate → build-enforced gate + commit). *(Authoritative project status: [sprint-plan.md §Status](sprint-plan.md). Deprioritized 2026-07-14: drag-from-Library-into-queue + M3U/M3U8 import-export.)*
 **Relates to:** [sprint-plan.md](sprint-plan.md) — the S10.x sprint series, the last work before **Release R1**.
 **Depends on:** S8 (library spine, GRDB store) ✅, S9 (browse/search) ✅.
 
