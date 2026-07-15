@@ -22,7 +22,7 @@ struct LibraryCategoryRoot: View {
     }
 }
 
-/// The destination for a pushed `LibraryRoute` (album / artist / genre detail).
+/// The destination for a pushed `LibraryRoute` (album / artist / genre detail, or a selected playlist).
 struct LibraryRouteView: View {
     let route: LibraryRoute
 
@@ -34,6 +34,8 @@ struct LibraryRouteView: View {
             ArtistDetailView(artistID: id)
         case let .genre(id):
             GenreDetailView(genreID: id)
+        case let .playlist(id):
+            PlaylistDetailView(playlistID: id)
         }
     }
 }
