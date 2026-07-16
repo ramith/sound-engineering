@@ -34,6 +34,10 @@ final class PlaylistsModel {
     /// non-owning like `LibraryBrowseModel.library` (S3 F5 — the God-object split).
     let library: LibraryModel
 
+    /// The playback VM the play verbs route through (Play/Next/Queue + restore-queue undo). Added in
+    /// Chunk C alongside its UI consumers so it isn't a dead dependency.
+    let audio: AudioViewModel
+
     // Sidebar tree (flat in B; folder rows join in D).
     private(set) var playlists: [Playlist] = []
     private(set) var treeState: LoadState = .idle
@@ -52,8 +56,9 @@ final class PlaylistsModel {
     /// once per library-content change (a track deletion CASCADE-drops entries → counts move).
     private var lastLoadedRevision = 0
 
-    init(library: LibraryModel) {
+    init(library: LibraryModel, audio: AudioViewModel) {
         self.library = library
+        self.audio = audio
     }
 
     // MARK: - Store access
@@ -194,6 +199,91 @@ final class PlaylistsModel {
     var openPlaylist: Playlist? {
         guard let openPlaylistID else { return nil }
         return playlists.first { $0.id == openPlaylistID }
+    }
+
+    // MARK: - Play verbs (delegate to AudioViewModel; C)
+
+    /// Resolved (playable) entries of the open playlist, in order. Unresolved (missing) entries are
+    /// dropped — that IS skip-on-play for C; Chunk F adds the unavailable badge + Locate.
+    private var resolvedEntries: [PlaylistDetailEntry] {
+        detail.filter { $0.display != nil }
+    }
+
+    private func playableFiles() -> [AudioFile] {
+        resolvedEntries.compactMap(\.display).map { AudioFile($0) }
+    }
+
+    /// Play the open playlist NOW — REPLACES the queue, with a one-level "Restore previous queue"
+    /// undo (D-play). Starts at `entryID` (a tapped row) or the top. Returns whether it actually
+    /// replaced (false if nothing is playable) so the caller only raises the undo toast on a replace.
+    @discardableResult
+    func playPlaylist(startingAt entryID: Int64? = nil) -> Bool {
+        let entries = resolvedEntries
+        let files = entries.compactMap(\.display).map { AudioFile($0) }
+        guard !files.isEmpty else { return false }
+        let start = entryID.flatMap { id in entries.firstIndex { $0.id == id } } ?? 0
+        audio.playNowWithUndo(files, startAt: start)
+        return true
+    }
+
+    /// Insert the WHOLE open playlist's tracks right after the current one (header Play Next).
+    @discardableResult
+    func playPlaylistNext() -> Int {
+        let files = playableFiles()
+        guard !files.isEmpty else { return 0 }
+        return audio.playNext(files)
+    }
+
+    /// Insert a SINGLE entry's track right after the current one (per-row "Play Next"). Returns count.
+    @discardableResult
+    func playEntryNext(_ entryID: Int64) -> Int {
+        guard let display = resolvedEntries.first(where: { $0.id == entryID })?.display else { return 0 }
+        return audio.playNext([AudioFile(display)])
+    }
+
+    /// Append the open playlist's tracks to the end of the queue (Add to Queue). Returns the count.
+    @discardableResult
+    func appendPlaylist() -> Int {
+        let files = playableFiles()
+        guard !files.isEmpty else { return 0 }
+        return audio.appendToQueue(files)
+    }
+
+    /// Whether a "Restore previous queue" undo is available (a Play-replace happened).
+    var canRestorePreviousQueue: Bool {
+        audio.canRestorePreviousQueue
+    }
+
+    /// Restore the queue that a "Play" replaced (one-level undo).
+    func restorePreviousQueue() {
+        audio.restorePreviousQueue()
+    }
+
+    // MARK: - Entry mutation (C)
+
+    /// Remove one entry from the open playlist, then reload the detail AND the tree (the sidebar
+    /// count badge doesn't ride `libraryRevision`, so an entry mutation must reload it — design §8).
+    func removeEntry(_ entryID: Int64) async {
+        guard let store, let playlistID = openPlaylistID else { return }
+        do {
+            try await store.removeEntry(id: entryID, playlistID: playlistID)
+            await loadDetail(id: playlistID)
+            await loadTree()
+        } catch {
+            detailState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Reorder the open playlist to `orderedEntryIDs` (dense renumber in the DAO), then reload the
+    /// detail. Count is unchanged, so the tree isn't reloaded.
+    func reorderEntries(_ orderedEntryIDs: [Int64]) async {
+        guard let store, let playlistID = openPlaylistID else { return }
+        do {
+            try await store.reorderPlaylist(id: playlistID, entryIDsInOrder: orderedEntryIDs)
+            await loadDetail(id: playlistID)
+        } catch {
+            detailState = .failed(error.localizedDescription)
+        }
     }
 }
 
