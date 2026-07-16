@@ -164,6 +164,9 @@ struct FacetTrackListView: View {
 
     private func row(for track: LibraryTrackDisplay, leadingNumber: Int?, secondary: String) -> some View {
         TrackRow(track: track, leadingNumber: leadingNumber, secondary: secondary)
+            // Drag a track onto a sidebar playlist (US-PLIST-03) — reference-add by id, never a file
+            // move. A List row's drag SOURCE works (only its .dropDestination doesn't).
+            .draggable(LibraryTrackDragItem(trackID: track.id))
             // `.simultaneousGesture` (not `.onTapGesture`) so the double-click recognizer doesn't
             // claim exclusive priority over the List's selection gesture — the documented macOS
             // drop-click race (S4 SW2; mirrors PlaylistItemList's rationale).

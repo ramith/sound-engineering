@@ -102,6 +102,25 @@ if ! grep -qE 'eraseDatabaseOnSchemaChange[[:space:]]*=[[:space:]]*false' "$migr
 fi
 green "migrator posture ok (eraseDatabaseOnSchemaChange pinned false; never-erase)."
 
+step "Playlist add/drop path must never move or copy files (US-PLIST-04 reference-add)"
+# Adding a track to a playlist — via context menu, the picker sheet, or a drag-drop — is a
+# REFERENCE-ADD by track id; it must NEVER touch the filesystem. Belt (on top of the type-level
+# PlaylistDropRouter add-only outcome + the typed LibraryTrackDragItem drop a file-URL can't match):
+# forbid FileManager move/copy anywhere in the playlist UI + model + drop-router + playlist DAO.
+playlist_add_paths=(
+  "Sources/AdaptiveSound/UI/Library/LibrarySidebar.swift"
+  "Sources/AdaptiveSound/UI/Playlist/AddToPlaylistMenu.swift"
+  "Sources/AdaptiveSound/PlaylistsModel.swift"
+  "Sources/LibraryBrowseKit/PlaylistDropRouter.swift"
+  "Sources/LibraryStore/LibraryStore+Playlists.swift"
+)
+if grep -nE '\.(moveItem|copyItem)\(' "${playlist_add_paths[@]}"; then
+  red "ERROR: a playlist add/drop path references moveItem/copyItem — playlist membership is a"
+  red "       reference-add by track id and must NEVER move or copy a file on disk (US-PLIST-04)."
+  exit 1
+fi
+green "playlist add/drop path ok (no moveItem/copyItem — reference-add only)."
+
 if [[ "$HAVE_CPPCHECK" == "1" ]]; then
   step "cppcheck (supplementary C++ analysis)"
   # Start strict-but-useful: warnings/style/perf/portability, not --enable=all (which is

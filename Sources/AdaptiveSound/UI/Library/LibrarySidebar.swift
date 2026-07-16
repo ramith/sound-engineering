@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -13,23 +14,26 @@ import UniformTypeIdentifiers
 /// `LibraryBrowseModel` (survives the tab-switch teardown); the capsule is `Color.rowSelected`. ↑/↓
 /// walk the unified row order via `.onKeyPress` + `@FocusState` (the `List` freebie, re-created).
 struct LibrarySidebar: View {
-    @Environment(LibraryBrowseModel.self) private var model
-    @Environment(PlaylistsModel.self) private var playlists
-    /// Suppresses the global Space accelerator while the inline-rename field is focused (S4 SW1).
-    @Environment(KeyboardTransportFocus.self) private var keyboardFocus
+    // `internal` (not `private`) so the same-type `LibrarySidebar+Rename` extension (split out for
+    // file/type-body length) can reach them — an extension of this type IS this type.
+    @Environment(LibraryBrowseModel.self) var model
+    @Environment(PlaylistsModel.self) var playlists
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showFolderImporter = false
 
     // Inline-rename state (design §4: editing id in parent @State). `editDraft` is the field text;
     // `renameError` shows an inline conflict message and keeps the field open.
-    @State private var editingPlaylistID: Int64?
-    @State private var editDraft = ""
-    @State private var renameError: String?
-    @FocusState private var renameFieldFocused: Bool
+    @State var editingPlaylistID: Int64?
+    @State var editDraft = ""
+    @State var renameError: String?
+    /// The playlist row a library-track drag is hovering over (drop highlight), or nil.
+    @State private var dropTargetPlaylistID: Int64?
+    @FocusState var renameFieldFocused: Bool
 
     /// Keyboard-command focus for the scroll area (a ScrollView/LazyVStack doesn't own key focus the
     /// way a `List` does — same `.focusable`/`.focused`/`.defaultFocus` pattern the queue uses).
-    @FocusState private var sidebarFocused: Bool
+    /// `internal` for the same-type `LibrarySidebar+Rename` extension (focus yield/restore).
+    @FocusState var sidebarFocused: Bool
 
     /// Music Folders accordion expand/collapse — persisted across launches and view recreation
     /// (design §8), matching the `.v1`-key `@AppStorage` convention `EQTabView` uses.
@@ -158,8 +162,22 @@ struct LibrarySidebar: View {
                             .foregroundStyle(DesignSystem.Color.labelTertiary)
                     }
                 }
+                .overlay( // drop-target ring while a library track is dragged over this row
+                    RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
+                        .stroke(DesignSystem.Color.accent,
+                                lineWidth: dropTargetPlaylistID == playlist.id ? 1.5 : 0)
+                )
             }
             .buttonStyle(.plain)
+            // Drop a dragged library track (US-PLIST-03) → reference-ADD by id (PlaylistDropRouter is
+            // add-only by construction; no file move/copy). A file-URL/audio drag can't match the
+            // `LibraryTrackDragItem` type, so it never reaches here.
+            .dropDestination(for: LibraryTrackDragItem.self) { items, _ in
+                handleTrackDrop(items, onto: playlist)
+            } isTargeted: { targeted in
+                dropTargetPlaylistID = targeted ? playlist.id
+                    : (dropTargetPlaylistID == playlist.id ? nil : dropTargetPlaylistID)
+            }
             // Double-click to rename (Finder/Music convention) — the discoverable gesture alongside
             // the context-menu Rename + the Return key. `.simultaneousGesture` so it coexists with
             // the Button's single-click select (plain Buttons in a LazyVStack, not a List — no race).
@@ -234,34 +252,19 @@ struct LibrarySidebar: View {
 
     // MARK: - Actions
 
-    /// Create a new untitled playlist, select it, and drop straight into inline-rename (Apple-style).
-    private func createAndBeginRename() async {
-        guard let id = await playlists.createPlaylist() else { return }
-        model.selectPlaylist(id)
-        if let created = playlists.playlists.first(where: { $0.id == id }) { beginRename(created) }
-    }
-
-    private func beginRename(_ playlist: Playlist) {
-        // Re-entry guard: a rename already in progress for THIS playlist must NOT restart — that would
-        // reset `editDraft` and wipe the user's in-progress typing (observed: a hijacked Return
-        // re-invoked this and clobbered the name; see the editing-gated `.onKeyPress` handlers).
-        guard editingPlaylistID != playlist.id else { return }
-        editDraft = playlist.name
-        renameError = nil
-        editingPlaylistID = playlist.id
-        // Yield the sidebar's key focus so the rename TextField (focused in its own `.onAppear`) owns
-        // Return/arrows — otherwise the ScrollView's `.onKeyPress` handlers intercept them. Restored
-        // on the keyboard close paths (`commitRename`/`onExitCommand`) so ↑/↓ stay alive after.
-        sidebarFocused = false
-    }
-
-    /// Begin renaming the selected playlist (keyboard Return). `.ignored` unless a playlist row is
-    /// the current selection, so the event bubbles for categories / drill-downs.
-    private func renameSelectedPlaylist() -> KeyPress.Result {
-        guard case let .playlist(id) = model.sidebarSelection,
-              let playlist = playlists.playlists.first(where: { $0.id == id }) else { return .ignored }
-        beginRename(playlist)
-        return .handled
+    /// Reference-add dropped library tracks to `playlist` (US-PLIST-03/04). Routes through the
+    /// add-only `PlaylistDropRouter` (no file op is representable), then confirms with a toast.
+    private func handleTrackDrop(_ items: [LibraryTrackDragItem], onto playlist: Playlist) -> Bool {
+        dropTargetPlaylistID = nil
+        guard case let .addTracks(ids) = PlaylistDropRouter.route(droppedTrackIDs: items.map(\.trackID)),
+              !ids.isEmpty else { return false }
+        Task {
+            let added = await playlists.addTracks(ids, toPlaylist: playlist.id)
+            if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: playlist.name) {
+                model.showToast(message)
+            }
+        }
+        return true
     }
 
     /// Delete a playlist; if it was the open/selected one, redirect nav back to the current category
@@ -273,60 +276,6 @@ struct LibrarySidebar: View {
             let deleted = await playlists.deletePlaylist(id: playlist.id)
             if deleted, wasSelected { model.selectCategory(model.selectedCategory ?? .songs) }
         }
-    }
-
-    /// Commit the rename from a draft captured synchronously at submit time (`proposed`). Empty or
-    /// unchanged → cancel (no write). On a duplicate name (D-names: globally unique): when committing
-    /// via Return (`keepOpenOnConflict`) the field stays open with an inline message; on click-away
-    /// it reverts silently (don't trap a user who's leaving). Guarded so a stale/torn-down field
-    /// can't commit.
-    private func commitRename(_ playlist: Playlist, proposed: String, keepOpenOnConflict: Bool) {
-        guard editingPlaylistID == playlist.id else { return }
-        let name = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
-        // `keepOpenOnConflict` distinguishes the KEYBOARD paths (Return) from click-away, so it
-        // doubles as "restore list focus on close" — a keyboard close keeps ↑/↓/Return alive.
-        guard !name.isEmpty, name != playlist.name else {
-            finishRename(restoreListFocus: keepOpenOnConflict)
-            return
-        }
-        Task {
-            do {
-                try await playlists.renamePlaylist(id: playlist.id, to: name)
-                // The user may have begun renaming ANOTHER row during the await — only close if THIS
-                // playlist is still the one being edited (QA break-it #5).
-                if editingPlaylistID == playlist.id { finishRename(restoreListFocus: keepOpenOnConflict) }
-            } catch let conflict as PlaylistNameConflict where keepOpenOnConflict {
-                showRenameError("“\(conflict.name)” already exists.")
-            } catch PlaylistMutationError.invalidName where keepOpenOnConflict {
-                showRenameError("That name can’t be used.") // reserved ("current") — empty is pre-guarded
-            } catch {
-                if keepOpenOnConflict {
-                    showRenameError("Couldn’t rename this playlist.")
-                } else {
-                    cancelRename() // leaving the field: revert rather than trap on the error
-                }
-            }
-        }
-    }
-
-    /// Close the rename field; on a KEYBOARD close (Return/Escape) restore list focus so ↑/↓ stay
-    /// alive — NOT on click-away, where the user intentionally moved focus elsewhere (focus-audit).
-    private func finishRename(restoreListFocus: Bool) {
-        cancelRename()
-        if restoreListFocus { sidebarFocused = true }
-    }
-
-    /// Surface an inline rename error + keep the field open/focused for a retry.
-    private func showRenameError(_ message: String) {
-        renameError = message
-        renameFieldFocused = true
-    }
-
-    private func cancelRename() {
-        editingPlaylistID = nil
-        editDraft = ""
-        renameError = nil
-        keyboardFocus.isTextEntryFocused = false
     }
 
     /// Move the unified selection by `delta` rows through `selectables` (keyboard ↑/↓). `.ignored`
