@@ -126,7 +126,7 @@ struct FacetTrackListView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .onKeyPress(.return) { playSelected(); return .handled }
+        .onKeyPress(.return) { selection.isEmpty ? .ignored : { playSelected(); return .handled }() }
     }
 
     private var groupedList: some View {
@@ -143,7 +143,7 @@ struct FacetTrackListView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .onKeyPress(.return) { playSelected(); return .handled }
+        .onKeyPress(.return) { selection.isEmpty ? .ignored : { playSelected(); return .handled }() }
     }
 
     private func sectionHeader(_ section: FacetAlbumSection<LibraryTrackDisplay>) -> some View {

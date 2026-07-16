@@ -211,7 +211,9 @@ private struct PlaylistItemList: View {
             .onKeyPress(.upArrow) { moveSelection(by: -1) }
             .onKeyPress(.downArrow) { moveSelection(by: 1) }
             .onKeyPress(.return) { togglePlayIfSelected() }
-            .onKeyPress(.space) { togglePlayIfSelected() }
+            // No `.onKeyPress(.space)`: the Controls-menu Space key-equivalent is matched first
+            // (disabled only while a text field is focused), so this handler was dead — Return
+            // already covers keyboard toggle here (focus-audit nit).
             .onKeyPress(.delete) {
                 guard let index = viewModel.selectedTrackIndex else { return .ignored }
                 viewModel.removeTrack(at: index)
