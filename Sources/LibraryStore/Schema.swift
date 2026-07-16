@@ -32,7 +32,7 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 5
+public let currentSchemaVersion = 6
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -65,6 +65,12 @@ public enum Schema {
         /// playlists + entries (D-folder-delete "folder owns its contents"; undo is an app-layer
         /// subtree snapshot). This migration is now DURABLE (erase=false) — it never wipes.
         public static let v5 = "v5-playlist-folders"
+        /// v5 → v6: playlist-name uniqueness becomes CASE-INSENSITIVE (S10.3 break-it). The v3 index
+        /// was a binary compare, so "Rock" and "rock" could coexist — yet the reserved-name guard
+        /// (`validatedUserName`) and the sidebar sort are already NOCASE. This drops the binary index
+        /// and recreates it `COLLATE NOCASE`. ADDITIVE + data-preserving (it fails loudly, rolling
+        /// back, only if two case-colliding names already exist — impossible before real user data).
+        public static let v6 = "v6-playlist-name-nocase"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
@@ -454,6 +460,24 @@ public extension Schema {
             try db.execute(sql: statement)
         }
         try writeSchemaInfo(db, version: 5, appBuild: appBuild,
+                            createdAt: timestamp, migratedAt: timestamp)
+    }
+
+    /// v6 (S10.3): recreate the user-playlist-name unique index `COLLATE NOCASE` so uniqueness is
+    /// case-insensitive (matching the reserved-name guard + the NOCASE sort). Drop-then-create is
+    /// the standard index-collation change; it's a data-preserving APPENDED migration (never edits
+    /// v3's body). Throws + rolls back only if two case-colliding user names already exist.
+    static let createV6Statements: [String] = [
+        "DROP INDEX IF EXISTS idx_playlists_name_user;",
+        "CREATE UNIQUE INDEX idx_playlists_name_user ON playlists(name COLLATE NOCASE) WHERE is_builtin = 0;",
+    ]
+
+    /// Migrate v5 → v6: case-insensitive user-playlist-name uniqueness. Additive/data-preserving.
+    static func migrateV5toV6(_ db: Database, appBuild: String?, timestamp: Int64) throws {
+        for statement in createV6Statements {
+            try db.execute(sql: statement)
+        }
+        try writeSchemaInfo(db, version: 6, appBuild: appBuild,
                             createdAt: timestamp, migratedAt: timestamp)
     }
 }

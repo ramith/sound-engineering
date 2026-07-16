@@ -26,6 +26,14 @@ extension LibraryModel {
             let url = try LibraryStore.defaultStoreURL()
             let created = try await LibraryStore(url: url, appBuild: appBuildIdentifier)
             store = created
+            // A quarantine-rebuild means the on-disk DB was damaged and reset — and it held
+            // user data (playlists + play history) a rebuild can't recover. Surface it (don't wipe
+            // in silence, S10.3 break-it); the derived library re-populates on the next scan.
+            if let quarantined = created.quarantinedFrom {
+                onError?("Your library database was damaged and was reset. Playlists and play "
+                    + "history couldn't be recovered. The previous file was saved to "
+                    + "\(quarantined.path).")
+            }
             if let cacheURL = try? LibraryStore.defaultArtworkCacheURL() {
                 metadataArtworkCache = ArtworkCache(directory: cacheURL)
             }
