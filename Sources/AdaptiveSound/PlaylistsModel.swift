@@ -1,4 +1,5 @@
 import Foundation
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -82,8 +83,10 @@ final class PlaylistsModel {
         let epoch = treeEpoch
         if playlists.isEmpty { treeState = .loading }
         do {
-            // Built-in exclusion (is_builtin=0) — the "current" queue playlist is never a user row.
-            let loaded = try await store.playlists().filter { !$0.isBuiltin }
+            // Built-in exclusion (the "current" queue playlist never appears) via the pure,
+            // unit-tested `PlaylistBrowseVisibility` — not an inline filter (design §5).
+            let all = try await store.playlists()
+            let loaded = PlaylistBrowseVisibility.userVisible(all)
             guard epoch == treeEpoch else { return } // a newer load superseded this one
             playlists = loaded
             treeState = loaded.isEmpty ? .empty : .loaded
@@ -131,15 +134,20 @@ final class PlaylistsModel {
     }
 
     /// Delete a playlist and reload. Clears the open detail if it was the deleted one (so a stale
-    /// detail can't linger after its playlist is gone). Built-in deletion never reaches here (filtered).
-    func deletePlaylist(id: Int64) async {
-        guard let store else { return }
+    /// detail can't linger after its playlist is gone). Built-in deletion never reaches here
+    /// (filtered). RETURNS whether the delete succeeded, so the caller only redirects nav on success
+    /// (a failed delete leaves the row + surfaces via `treeState`, and nav must not jump away).
+    @discardableResult
+    func deletePlaylist(id: Int64) async -> Bool {
+        guard let store else { return false }
         do {
             try await store.deletePlaylist(id: id)
             if openPlaylistID == id { closeDetail() }
             await loadTree()
+            return true
         } catch {
             treeState = .failed(error.localizedDescription)
+            return false
         }
     }
 
@@ -172,8 +180,11 @@ final class PlaylistsModel {
         }
     }
 
-    /// Drop the open detail (playlist deselected / deleted).
+    /// Drop the open detail (playlist deselected / deleted). Bumps `detailEpoch` so an IN-FLIGHT
+    /// `loadDetail` (whose store read may have snapshotted the rows before the delete committed)
+    /// can't resume and republish the gone playlist's rows into `detail` (QA break-it #1).
     func closeDetail() {
+        detailEpoch &+= 1
         openPlaylistID = nil
         detail = []
         detailState = .idle

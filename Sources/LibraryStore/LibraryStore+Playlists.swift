@@ -121,8 +121,10 @@ public extension LibraryStore {
     private static let selectEntriesSQL =
         "SELECT id, playlist_id, track_id, position, added_at FROM playlist_entries "
             + "WHERE playlist_id = ? ORDER BY position ASC, id ASC;"
+    /// Case-INSENSITIVE conflict probe (v6): matches the NOCASE unique index + the reserved-name
+    /// guard, so "Rock" and "rock" collide (D-names: globally unique, case-insensitive).
     private static let selectUserNameConflictSQL =
-        "SELECT id FROM playlists WHERE name = ? AND is_builtin = 0 LIMIT 1;"
+        "SELECT id FROM playlists WHERE name = ? COLLATE NOCASE AND is_builtin = 0 LIMIT 1;"
     private static let selectIsBuiltinSQL = "SELECT is_builtin FROM playlists WHERE id = ?;"
     private static let selectBuiltinIDSQL = "SELECT id FROM playlists WHERE is_builtin = 1 LIMIT 1;"
     private static let selectUntitledNamesSQL =
