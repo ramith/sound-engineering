@@ -13,9 +13,13 @@ import SwiftUI
 /// (show/hide/reorder/resize + persistence, §11) via `columnCustomization`.
 struct SongsTable: View {
     @Environment(LibraryBrowseModel.self) private var model
+    @Environment(PlaylistsModel.self) private var playlists
     @State private var selection = Set<LibraryTrackDisplay.ID>()
     /// The track whose Info popover is open (mirrors the album-detail affordance).
     @State private var infoTarget: LibraryTrackDisplay?
+    /// Non-nil while the searchable "Add to Playlist…" picker is open (S10.3) — the host owns the
+    /// sheet because a context menu can't present one.
+    @State private var addToPlaylistTarget: AddToPlaylistTarget?
     /// Per-column show/hide + order + width (§11.4). VIEW-side `@AppStorage` via the NATIVE
     /// `TableColumnCustomization` overload (macOS 14+ — NO Codable/JSON bridge): survives the
     /// tab-`switch` teardown AND persists across launches by re-reading `UserDefaults`; an
@@ -70,6 +74,10 @@ struct SongsTable: View {
         // would hijack the ⌘F search focus and the expected click-to-focus flow.
         .onKeyPress(.return) {
             playSingleTrack(startingAt: selection) ? .handled : .ignored
+        }
+        // Host the searchable "Add to Playlist…" picker (the context-menu submenu can't own it).
+        .sheet(item: $addToPlaylistTarget) { target in
+            PlaylistPickerSheet(trackIDs: target.trackIDs)
         }
         // Header click → re-map to a `TrackSort` + DAO re-read. Two-param form (the one-param is
         // deprecated); no `initial:` — firing on the seed would clobber the composite anchor, and
@@ -172,13 +180,24 @@ struct SongsTable: View {
             Button("Play Next") { model.playNext(tracks) }
             Button("Add to Queue") { model.append(tracks) }
             Divider()
+            addToPlaylistMenu(trackIDs: tracks.map(\.id))
+            Divider()
             Button("Info", systemImage: "info.circle") { infoTarget = tracks.first }
         } else if let track = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: ids) {
             Button("Play") { model.playTrackNextNow(track) } // single track: insert next + jump
             Button("Play Next") { model.playNext([track]) }
             Button("Add to Queue") { model.append([track]) }
             Divider()
+            addToPlaylistMenu(trackIDs: [track.id])
+            Divider()
             Button("Info", systemImage: "info.circle") { infoTarget = track }
+        }
+    }
+
+    /// The reference-add "Add to Playlist" submenu (S10.3); overflow opens the searchable picker.
+    private func addToPlaylistMenu(trackIDs: [Int64]) -> some View {
+        AddToPlaylistMenu(trackIDs: trackIDs) {
+            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: trackIDs)
         }
     }
 }

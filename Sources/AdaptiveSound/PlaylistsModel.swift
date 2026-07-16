@@ -156,6 +156,43 @@ final class PlaylistsModel {
         }
     }
 
+    // MARK: - Add to playlist (US-PLIST-02 — reference-add, never a file move)
+
+    /// Append tracks (by id — a REFERENCE-add, never a file move/copy) to a playlist, de-duplicating
+    /// the incoming selection. Reloads the tree (count badge) + the open detail if it's the target.
+    /// Returns the number appended so the caller can raise a truthful toast.
+    @discardableResult
+    func addTracks(_ trackIDs: [Int64], toPlaylist playlistID: Int64) async -> Int {
+        let ids = PlaylistAddDecision.trackIDsToAdd(trackIDs)
+        guard let store, !ids.isEmpty else { return 0 }
+        do {
+            let entryIDs = try await store.appendEntries(playlistID: playlistID, trackIDs: ids)
+            await loadTree()
+            if openPlaylistID == playlistID { await loadDetail(id: playlistID) }
+            return entryIDs.count
+        } catch {
+            treeState = .failed(error.localizedDescription)
+            return 0
+        }
+    }
+
+    /// Create a new untitled playlist containing `trackIDs` (the "New Playlist" add path) and reload.
+    /// Returns the new id so the sidebar can select it (+ drop into rename). De-dupes the selection.
+    @discardableResult
+    func createPlaylist(withTracks trackIDs: [Int64]) async -> Int64? {
+        guard let store else { return nil }
+        let ids = PlaylistAddDecision.trackIDsToAdd(trackIDs)
+        do {
+            let id = try await store.createUntitledPlaylist()
+            if !ids.isEmpty { _ = try await store.appendEntries(playlistID: id, trackIDs: ids) }
+            await loadTree()
+            return id
+        } catch {
+            treeState = .failed(error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - Detail loading
 
     /// Load a playlist's entries in position order, resolving each to its library track. An entry
