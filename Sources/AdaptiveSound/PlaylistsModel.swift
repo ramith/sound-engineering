@@ -52,6 +52,10 @@ final class PlaylistsModel {
     private(set) var detailState: LoadState = .idle
     private var detailEpoch = 0
 
+    /// A transient per-ACTION error (Locate / Remove-missing) shown as an alert — never routed through
+    /// `detailState` (a failed row-action mustn't blow the whole pane into load-error; F review).
+    private(set) var actionError: String?
+
     /// The `library.libraryRevision` last folded in, so `reloadOnLibraryChange` refreshes exactly
     /// once per library-content change (a track deletion CASCADE-drops entries → counts move).
     private var lastLoadedRevision = 0
@@ -213,8 +217,14 @@ final class PlaylistsModel {
         do {
             let entries = try await store.entries(inPlaylist: id)
             let byID = try await store.tracksDisplay(ids: entries.map(\.trackID))
+            // File-existence is a disk stat per row — resolve it OFF the main actor so a large
+            // playlist doesn't jank (F). A resolved track whose file is gone = "unavailable".
+            let availableIDs = await Self.availableEntryIDs(entries: entries, displays: byID)
             guard epoch == detailEpoch else { return } // a newer open/reload superseded this one
-            detail = entries.map { PlaylistDetailEntry(entry: $0, display: byID[$0.trackID]) }
+            detail = entries.map {
+                PlaylistDetailEntry(entry: $0, display: byID[$0.trackID],
+                                    isAvailable: availableIDs.contains($0.id))
+            }
             detailState = detail.isEmpty ? .empty : .loaded
         } catch {
             guard epoch == detailEpoch else { return }
@@ -240,10 +250,11 @@ final class PlaylistsModel {
 
     // MARK: - Play verbs (delegate to AudioViewModel; C)
 
-    /// Resolved (playable) entries of the open playlist, in order. Unresolved (missing) entries are
-    /// dropped — that IS skip-on-play for C; Chunk F adds the unavailable badge + Locate.
+    /// Playable entries of the open playlist, in order — the AVAILABLE ones (track resolved AND file
+    /// on disk). Unavailable (missing-file) entries are SKIPPED on play, never halting (F); the UI
+    /// still shows them, badged, with Locate / Remove.
     private var resolvedEntries: [PlaylistDetailEntry] {
-        detail.filter { $0.display != nil }
+        detail.filter(\.isAvailable)
     }
 
     private func playableFiles() -> [AudioFile] {
@@ -322,6 +333,49 @@ final class PlaylistsModel {
             detailState = .failed(error.localizedDescription)
         }
     }
+
+    // MARK: - Dead/missing-file handling (F)
+
+    /// Remove ALL unavailable (missing-file) entries from the open playlist (bulk "Remove missing").
+    /// Returns the count removed; reloads detail + tree.
+    @discardableResult
+    func removeMissingEntries() async -> Int {
+        guard let store, let playlistID = openPlaylistID else { return 0 }
+        let missing = detail.filter { !$0.isAvailable }.map(\.entry.id)
+        guard !missing.isEmpty else { return 0 }
+        do {
+            try await store.removeEntries(ids: missing, playlistID: playlistID)
+            await loadDetail(id: playlistID)
+            await loadTree()
+            return missing.count
+        } catch {
+            actionError = "Couldn’t remove the missing tracks: \(error.localizedDescription)"
+            return 0
+        }
+    }
+
+    func clearActionError() {
+        actionError = nil
+    }
+
+    /// Locate: re-point a missing entry's TRACK to a user-chosen file, preserving the track id (so
+    /// every playlist referencing it is fixed at once), then reload so it resolves. Reuses the
+    /// id-preserving `moveTrack` seam; the file becomes loose (`folder_id = nil`) until a rescan
+    /// re-associates it — a full metadata re-scan is out of F scope. A URL already owned by another
+    /// track throws `URLConflict` (caught → surfaced via `detailState`).
+    func relocateEntry(_ entryID: Int64, to url: URL) async {
+        guard let store, let playlistID = openPlaylistID,
+              let trackID = detail.first(where: { $0.id == entryID })?.entry.trackID else { return }
+        do {
+            try await store.moveTrack(id: trackID, newURL: url, newFolderID: nil, newRelativePath: "")
+            await loadDetail(id: playlistID)
+        } catch is URLConflict {
+            // The picked file is already another track's — a per-row failure, NOT a pane-wide error.
+            actionError = "That file is already in your library under a different track."
+        } catch {
+            actionError = "Couldn’t relocate the file: \(error.localizedDescription)"
+        }
+    }
 }
 
 // MARK: - Detail row model
@@ -333,6 +387,10 @@ final class PlaylistsModel {
 struct PlaylistDetailEntry: Identifiable {
     let entry: PlaylistEntry
     let display: LibraryTrackDisplay?
+    /// True when the track resolved AND its file exists on disk (S10.3 F). False = "unavailable":
+    /// the file moved/was deleted (a loose file gone, or a move not yet reconciled) or the track row
+    /// is absent — the row is badged, SKIPPED on play (never halts), and offered Locate / Remove.
+    let isAvailable: Bool
 
     var id: Int64 {
         entry.id

@@ -59,11 +59,11 @@ Adjacency-list `playlist_folders(id, parent_id NULL self-ref, name, position, cr
 - **A0** — ✅ DONE: `library.sqlite3` → `eraseDatabaseOnSchemaChange = false` (additive-only, protects playlists + track user-state) + the `additive-preserve-schema-bump` green-gate. *(The separate-store detour was built then reverted per the QA break-it — §0.)*
 - **A** — ✅ DONE (7392b1e): `playlist_folders` additive v5 migration + folder DAO (CRUD/reparent/cycle-guard/cascade-delete-with-subtree-snapshot for undo). (Deleted-track cleanup is the same-file FK cascade.) `PlaylistsModel` moved to B (kept with its UI consumer so it isn't dead code under Periphery).
 - **B** — ✅ DONE (8277ab8): `PlaylistsModel` peer + composition wiring + sidebar Playlists section (one ScrollView/LazyVStack, unified selection enum, built-in filtered, scroll, select→detail, create/inline-rename/delete) + read-only `PlaylistDetailView`. Plus the A+B review-fix batch (§8).
-- **C** — `PlaylistDetailList` (queue-row reuse): play (verbs + undo), remove, reorder; `ForEach` on entry id.
-- **D** — folders UI: flattened disclosure tree, create/rename/delete(+undo), drag-reparent, cycle-guard, depth cap.
-- **E** — add-to-playlist: context menu + searchable sheet (US-PLIST-02 incl. loose file) + `LibraryTrackDragItem` UTType + drops (US-PLIST-03/04); `PlaylistDropRouter` + FileMover-spy + strict-gate grep **here**.
-- **F** — dead/loose: skip-on-play + unavailable indicator + Locate + remove-missing + orphan-sweep UI.
-- **G** — US-PLIST-08 real-scanner seam + `pl-reorder-isolation`/`pl-explain-plan`/`pl-write-during-scan` + strict-gate.
+- **C** — ✅ DONE (e79dd44, in #59): `PlaylistDetailView` (queue-row reuse) — play verbs + restore-queue undo, remove, reorder; `ForEach` on entry id.
+- **D** — ❌ CUT 2026-07-16 (founder): "don't need folder structures for playlists." The folder DATA LAYER (v5 migration + DAO + checks) already shipped in #59 and is left DORMANT (harmless, additive, tested; re-enabling is free). No folders UI is built. The review-deferred sidebar items (single `SidebarEdit` owner, source-of-truth collapse, `keyboardListNavigation` scaffold) are moot without a second inline editor.
+- **E** — ✅ DONE (E1 d6bcc34 + E2 cd4179c + add-everywhere b540423, in #59): add-to-playlist on every surface (Songs/detail/tiles context menu + searchable picker + drag-to-sidebar) + `LibraryTrackDragItem` + pure add-only `PlaylistDropRouter` + the strict-gate no-file-move grep.
+- **F** — ⏳ IN PROGRESS (`sprint/s10-3-f-dead-files`): entry `isAvailable` resolution (track resolved + file on disk, checked off-main) → skip-missing-on-play, unavailable badge, Locate (id-preserving `moveTrack`), bulk remove-missing. (No orphan-sweep — deleted *library* tracks cascade; the real dead case is a loose file gone.)
+- **G** — US-PLIST-08 real-scanner seam + `pl-reorder-isolation`/`pl-explain-plan`/`pl-write-during-scan` + strict-gate. (Follow-up PR with F.)
 
 ## 7. Open sub-decisions (recommend + proceed unless vetoed)
 - **Play a folder** — *recommended:* plays all descendant playlists' tracks in tree order (bounded by a queue-size safety cap). Same for a multi-playlist selection.
