@@ -126,6 +126,7 @@ struct PlaylistDetailView: View {
         }
         .focusable()
         .focused($listFocused)
+        .defaultFocus($listFocused, true)
         .focusEffectDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onKeyPress(.upArrow) { moveSelection(by: -1) }
@@ -274,8 +275,9 @@ struct PlaylistDetailView: View {
     private func removeSelected() -> KeyPress.Result {
         guard let id = selectedEntryID else { return .ignored }
         // Pre-select the neighbor (next, else previous) so selection lands there — not back at the
-        // top — once the async remove + reload lands (the neighbor id survives the reload).
-        let ids = model.detail.map(\.id)
+        // top — once the async remove + reload lands. Use the SAME resolved-row set `moveSelection`
+        // traverses, so the neighbor is a selectable row (not an unavailable placeholder).
+        let ids = model.detail.filter { $0.display != nil }.map(\.id)
         if let index = ids.firstIndex(of: id) {
             selectedEntryID = index + 1 < ids.count ? ids[index + 1]
                 : (index - 1 >= 0 ? ids[index - 1] : nil)
