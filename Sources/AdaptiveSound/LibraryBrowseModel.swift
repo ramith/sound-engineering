@@ -392,63 +392,30 @@ final class LibraryBrowseModel {
         (try? await store?.tracksDisplay(inAlbum: albumID)) ?? []
     }
 
-    // MARK: - Play actions (delegate to AudioViewModel's queue verbs)
-
-    /// Play the album now, starting from `startAt` within its (disc/track-ordered) tracks.
-    func playAlbum(_ albumID: Int64, startAt index: Int = 0) async {
-        let files = await tracks(inAlbum: albumID).map(AudioFile.init)
-        guard !files.isEmpty else { return }
-        audio.playNow(files, startAt: index)
-    }
-
-    func playAlbumNext(_ albumID: Int64) async {
-        let files = await tracks(inAlbum: albumID).map(AudioFile.init)
-        guard !files.isEmpty else { return }
-        showQueueToast(.playNext, added: audio.playNext(files))
-    }
-
-    func appendAlbum(_ albumID: Int64) async {
-        let files = await tracks(inAlbum: albumID).map(AudioFile.init)
-        guard !files.isEmpty else { return }
-        showQueueToast(.addToQueue, added: audio.appendToQueue(files))
-    }
-
-    /// Play a specific set of already-loaded display tracks now (album-detail row tap).
-    func play(_ tracks: [LibraryTrackDisplay], startAt index: Int) {
-        let files = tracks.map(AudioFile.init)
-        guard !files.isEmpty else { return }
-        audio.playNow(files, startAt: index)
-    }
-
-    func playNext(_ tracks: [LibraryTrackDisplay]) {
-        guard !tracks.isEmpty else { return } // empty selection → nothing submitted, no toast
-        showQueueToast(.playNext, added: audio.playNext(tracks.map(AudioFile.init)))
-    }
-
-    func append(_ tracks: [LibraryTrackDisplay]) {
-        guard !tracks.isEmpty else { return } // empty selection → nothing submitted, no toast
-        showQueueToast(.addToQueue, added: audio.appendToQueue(tracks.map(AudioFile.init)))
-    }
-
-    /// Insert a single track right after the current one and jump to play it NOW (Songs-list
-    /// double-click / Return / single-row "Play"), preserving the rest of the existing queue.
-    /// Converts `LibraryTrackDisplay → AudioFile` at this seam (like `play`/`playNext`/`append`)
-    /// and delegates to `AudioViewModel.playTrackNextNow`.
-    func playTrackNextNow(_ track: LibraryTrackDisplay) {
-        audio.playTrackNextNow(AudioFile(track))
-    }
+    // Play actions (playAlbum / play / playNext / append / playTrackNextNow) live in
+    // `LibraryBrowseModel+Play` (a same-type extension, split for file length).
 
     // MARK: - Queue toast (S9.5 §10.4)
 
-    /// Raise the visibility-gated queue-add toast for a completed add. Silent for Play Now, on the Now
-    /// Playing tab, or whenever `QueueToastDecision` suppresses it. Coalesces: a new toast replaces the
-    /// text and resets the ~2 s timer (single cancellable task; the post-sleep guard prevents a
-    /// superseded task from clearing the newer toast). The token bumps every raise so the view
-    /// re-announces even an identical string.
+    /// Raise the visibility-gated queue-add toast for a completed add. Silent for Play Now, on the
+    /// Now Playing tab, or whenever `QueueToastDecision` suppresses it (see `raiseToast` for the
+    /// coalesce/auto-dismiss mechanics).
     func showQueueToast(_ verb: QueueVerb, added: Int) {
         guard let message = QueueToastDecision.message(
             verb: verb, addedCount: added, isNowPlayingTab: audio.selectedTab == .nowPlaying
         ) else { return }
+        raiseToast(message)
+    }
+
+    /// Raise a plain-message toast on the shell surface (S10.3 playlist-add "Added N songs to …").
+    func showToast(_ message: String) {
+        raiseToast(message)
+    }
+
+    /// Shared raise+coalesce+auto-dismiss for the shell toast (queue add / playlist add): replaces
+    /// the text + resets the ~2 s timer (single cancellable task; post-sleep guard prevents a
+    /// superseded task clearing the newer toast); the token re-announces even an identical string.
+    private func raiseToast(_ message: String) {
         queueToastToken &+= 1
         queueToast = QueueToastState(message: message, token: queueToastToken)
         queueToastDismissTask?.cancel()
