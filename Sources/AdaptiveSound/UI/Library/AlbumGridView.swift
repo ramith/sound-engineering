@@ -152,5 +152,8 @@ struct AlbumQueueActions: View {
         Button("Play") { Task { await model.playAlbum(albumID) } }
         Button("Play Next") { Task { await model.playAlbumNext(albumID) } }
         Button("Add to Queue") { Task { await model.appendAlbum(albumID) } }
+        // Reference-add the whole album to a playlist; ids resolved on demand (the tile has no loaded
+        // tracks). No searchable-picker overflow here — a tile menu has no sheet host (S10.3).
+        AddToPlaylistMenu(resolveTrackIDs: { await model.tracks(inAlbum: albumID).map(\.id) })
     }
 }
