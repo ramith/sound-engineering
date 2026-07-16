@@ -1,5 +1,6 @@
 import LibraryStore
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Playlist detail (S10.3 — the open-playlist content pane)
 
@@ -8,20 +9,27 @@ import SwiftUI
 /// (with a `PlaylistEntryDragItem` grip). Chunk C: the three play verbs (Play replaces the queue
 /// with a one-level restore-queue undo; Play Next / Add to Queue), tap-to-play-from-row, grip-drag
 /// reorder, remove, and ↑/↓/Return/⌫ keys — the same scaffold the queue's `PlaylistItemList` uses.
-/// Chunk F renders the unavailable state for an entry whose file moved/was deleted.
+/// Chunk F renders the unavailable state for an entry whose file moved/was deleted. Several members
+/// are `internal` (not `private`) so the same-type `PlaylistDetailView+Actions` extension (split out
+/// for type-body length) can reach them.
 struct PlaylistDetailView: View {
     let playlistID: Int64
-    @Environment(PlaylistsModel.self) private var model
+    @Environment(PlaylistsModel.self) var model
 
     /// Keyboard-selected row (a ScrollView/LazyVStack doesn't own key focus like a `List`).
-    @State private var selectedEntryID: Int64?
+    @State var selectedEntryID: Int64?
     /// The entry a reorder drag is hovering over (drop-target border). Nil when no drag is active.
     @State private var dropTargetEntryID: Int64?
     @FocusState private var listFocused: Bool
     /// Transient "Restore previous queue" affordance after a Play-replace; the token re-triggers the
     /// auto-dismiss even on a repeated Play.
-    @State private var restoreToastToken: Int?
-    @State private var restoreDismissTask: Task<Void, Never>?
+    @State var restoreToastToken: Int?
+    @State var restoreDismissTask: Task<Void, Never>?
+    /// The entry being re-pointed via Locate… (drives the file importer); nil when closed (F).
+    /// `internal` so the `+Actions` extension's `missingRowActions` can set it.
+    @State var locatingEntryID: Int64?
+    /// Confirm before the irreversible bulk "Remove missing" (no undo — F review).
+    @State private var confirmingRemoveMissing = false
 
     /// Track-number column sized to the widest index, so a 3-digit position never wraps (queue idiom).
     private var numberColumnWidth: CGFloat {
@@ -38,6 +46,37 @@ struct PlaylistDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(DesignSystem.Color.window)
         .overlay(alignment: .bottom) { restoreToast }
+        // Locate… (F): pick the moved file → re-point the track (id preserved) → it resolves.
+        .fileImporter(
+            isPresented: Binding(get: { locatingEntryID != nil },
+                                 set: { if !$0 { locatingEntryID = nil } }),
+            allowedContentTypes: [.audio]
+        ) { result in
+            if case let .success(url) = result, let id = locatingEntryID {
+                Task { await model.relocateEntry(id, to: url) }
+            }
+            locatingEntryID = nil
+        }
+        // A per-action failure (Locate URL-conflict, remove-missing) — a transient alert, NOT the
+        // pane-wide load-error state (F review).
+        .alert("Couldn’t Complete That", isPresented: Binding(
+            get: { model.actionError != nil },
+            set: { if !$0 { model.clearActionError() } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.actionError ?? "")
+        }
+        // Bulk remove is irreversible → confirm (F review).
+        .confirmationDialog(
+            "Remove \(model.missingEntryCount) missing \(model.missingEntryCount == 1 ? "track" : "tracks")?",
+            isPresented: $confirmingRemoveMissing, titleVisibility: .visible
+        ) {
+            Button("Remove Missing", role: .destructive) { Task { await model.removeMissingEntries() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The playlist entries for files that are missing from disk will be removed. This can’t be undone.")
+        }
         // Reload whenever the selected playlist changes (a new sidebar selection reuses this view).
         .task(id: playlistID) { await model.loadDetail(id: playlistID) }
     }
@@ -82,13 +121,29 @@ struct PlaylistDetailView: View {
             }
             .labelStyle(.iconOnly)
             .help("Add to Queue")
+            // Bulk "Remove missing" (F) — only when some entries' files are gone. Disabled during a
+            // scan/reconcile (availability is unreliable then — files flicker to "missing").
+            if model.missingEntryCount > 0 {
+                Menu {
+                    Button("Remove \(model.missingEntryCount) Missing", systemImage: "trash", role: .destructive) {
+                        confirmingRemoveMissing = true
+                    }
+                    .disabled(model.isLibraryPopulating)
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .labelStyle(.iconOnly)
+                .help(missingHelp)
+            }
         }
         .disabled(model.detailState != .loaded)
     }
 
     private var countLine: String {
-        let count = model.detail.count
-        return "\(count.formatted(.number)) \(count == 1 ? "track" : "tracks")"
+        let total = model.detail.count
+        let base = "\(total.formatted(.number)) \(total == 1 ? "track" : "tracks")"
+        let missing = model.missingEntryCount
+        return missing > 0 ? "\(base) · \(missing) unavailable" : base
     }
 
     // MARK: Content
@@ -137,7 +192,7 @@ struct PlaylistDetailView: View {
 
     @ViewBuilder
     private func detailRow(index: Int, row: PlaylistDetailEntry) -> some View {
-        if let display = row.display {
+        if row.isAvailable, let display = row.display {
             PlaylistItemRow(
                 file: AudioFile(display),
                 index: index,
@@ -170,24 +225,49 @@ struct PlaylistDetailView: View {
                 }
             }
         } else {
-            unavailableRow(index: index)
+            unavailableRow(index: index, row: row)
         }
     }
 
-    private func unavailableRow(index: Int) -> some View {
+    /// A missing-file entry (F): its metadata dimmed, with a trailing warning-badge MENU (Locate /
+    /// Remove) — a visible, click-and-keyboard-reachable affordance, not just right-click (review).
+    /// Not tappable-to-play (skipped on play). VoiceOver reads it as one element + the same actions.
+    private func unavailableRow(index: Int, row: PlaylistDetailEntry) -> some View {
         HStack(spacing: 12) {
             Text(index + 1, format: .number.grouping(.never))
                 .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
                 .frame(width: numberColumnWidth, alignment: .trailing)
-            Text("Track unavailable")
-                .font(DesignSystem.Font.body)
-                .foregroundStyle(DesignSystem.Color.labelTertiary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.display?.title ?? "Unknown Track")
+                    .font(DesignSystem.Font.body)
+                    .foregroundStyle(DesignSystem.Color.labelSecondary)
+                    .lineLimit(1)
+                if let artist = row.display?.artistName, !artist.isEmpty {
+                    Text(artist)
+                        .font(DesignSystem.Font.caption)
+                        .foregroundStyle(DesignSystem.Color.labelTertiary)
+                        .lineLimit(1)
+                }
+            }
             Spacer()
+            Menu {
+                missingRowActions(row)
+            } label: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("File missing — moved or deleted. Locate… to re-point it, or remove it.")
         }
         .padding(.vertical, DesignSystem.Spacing.xSmall)
         .padding(.horizontal, DesignSystem.Spacing.small)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .contextMenu { missingRowActions(row) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(row.display?.title ?? "Unknown Track"), unavailable — file missing")
+        .accessibilityActions { missingRowActions(row) }
     }
 
     // MARK: Restore-queue undo toast
@@ -212,77 +292,5 @@ struct PlaylistDetailView: View {
             .padding(.bottom, DesignSystem.Spacing.large)
             .transition(.opacity)
         }
-    }
-
-    // MARK: Actions
-
-    /// Play the playlist (replace queue, undoable), optionally from a tapped row, and raise the
-    /// transient restore-queue affordance — ONLY if a replace actually happened (an all-unavailable
-    /// playlist no-ops, and must not resurface a stale toast from an earlier real Play).
-    private func playNow(startingAt entryID: Int64? = nil) {
-        if model.playPlaylist(startingAt: entryID) { raiseRestoreToast() }
-    }
-
-    private func raiseRestoreToast() {
-        let token = (restoreToastToken ?? 0) &+ 1
-        restoreToastToken = token
-        restoreDismissTask?.cancel()
-        restoreDismissTask = Task { [token] in
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled, restoreToastToken == token else { return }
-            restoreToastToken = nil
-        }
-    }
-
-    private func dismissRestoreToast() {
-        restoreDismissTask?.cancel()
-        restoreToastToken = nil
-    }
-
-    /// Move `fromID` to land AT `toEntryID`'s row and persist the new order — matching the queue's
-    /// convention (`AudioViewModel.moveByDrop`): dragging DOWN inserts AFTER the target, UP before
-    /// it, so the last slot is reachable and the two lists behave identically.
-    private func moveEntry(fromID: Int64, toEntryID: Int64) -> Bool {
-        var ids = model.detail.map(\.id)
-        guard let from = ids.firstIndex(of: fromID), let to = ids.firstIndex(of: toEntryID),
-              from != to else { return false }
-        ids.move(fromOffsets: IndexSet(integer: from), toOffset: from < to ? to + 1 : to)
-        Task { await model.reorderEntries(ids) }
-        return true
-    }
-
-    /// ↑/↓ traverse only the RESOLVED (playable) rows — the "unavailable" placeholders are
-    /// non-interactive until Chunk F, so selection never lands on one.
-    private func moveSelection(by delta: Int) -> KeyPress.Result {
-        let ids = model.detail.filter { $0.display != nil }.map(\.id)
-        guard !ids.isEmpty else { return .ignored }
-        guard let current = selectedEntryID, let index = ids.firstIndex(of: current) else {
-            selectedEntryID = ids.first
-            return .handled
-        }
-        let next = index + delta
-        guard next >= 0, next < ids.count else { return .ignored }
-        selectedEntryID = ids[next]
-        return .handled
-    }
-
-    private func playSelected() -> KeyPress.Result {
-        guard let id = selectedEntryID else { return .ignored }
-        playNow(startingAt: id)
-        return .handled
-    }
-
-    private func removeSelected() -> KeyPress.Result {
-        guard let id = selectedEntryID else { return .ignored }
-        // Pre-select the neighbor (next, else previous) so selection lands there — not back at the
-        // top — once the async remove + reload lands. Use the SAME resolved-row set `moveSelection`
-        // traverses, so the neighbor is a selectable row (not an unavailable placeholder).
-        let ids = model.detail.filter { $0.display != nil }.map(\.id)
-        if let index = ids.firstIndex(of: id) {
-            selectedEntryID = index + 1 < ids.count ? ids[index + 1]
-                : (index - 1 >= 0 ? ids[index - 1] : nil)
-        }
-        Task { await model.removeEntry(id) }
-        return .handled
     }
 }
