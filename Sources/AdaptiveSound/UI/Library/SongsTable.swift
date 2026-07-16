@@ -13,7 +13,6 @@ import SwiftUI
 /// (show/hide/reorder/resize + persistence, §11) via `columnCustomization`.
 struct SongsTable: View {
     @Environment(LibraryBrowseModel.self) private var model
-    @Environment(PlaylistsModel.self) private var playlists
     @State private var selection = Set<LibraryTrackDisplay.ID>()
     /// The track whose Info popover is open (mirrors the album-detail affordance).
     @State private var infoTarget: LibraryTrackDisplay?

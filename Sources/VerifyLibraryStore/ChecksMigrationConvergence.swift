@@ -11,7 +11,6 @@
 
 import Foundation
 import GRDB
-import LibraryStore
 
 // MARK: - Registration
 
