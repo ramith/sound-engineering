@@ -70,7 +70,11 @@ public extension LibraryStore {
     private static let maxFolderPositionSQL =
         "SELECT COALESCE(MAX(position), -1) FROM playlist_folders WHERE parent_id IS ?;"
     private static let renameFolderSQL = "UPDATE playlist_folders SET name = ? WHERE id = ?;"
-    private static let reparentFolderSQL = "UPDATE playlist_folders SET parent_id = ? WHERE id = ?;"
+    /// A reparent sets BOTH parent and position: a moved folder is appended to the END of its NEW
+    /// sibling group (its old position is meaningless there — a drag-drop expects "append").
+    private static let reparentFolderSQL =
+        "UPDATE playlist_folders SET parent_id = ?, position = ? WHERE id = ?;"
+    private static let selectFolderParentSQL = "SELECT parent_id FROM playlist_folders WHERE id = ?;"
     private static let deleteFolderSQL = "DELETE FROM playlist_folders WHERE id = ?;"
     private static let folderExistsSQL = "SELECT 1 FROM playlist_folders WHERE id = ?;"
     /// Distinguishes an absent playlist (→ `.notFound`) from the built-in (→ `.builtinImmutable`)
@@ -163,7 +167,12 @@ public extension LibraryStore {
                     throw PlaylistMutationError.wouldCreateCycle(id: id, newParentID: newParentID)
                 }
             }
-            try db.execute(sql: Self.reparentFolderSQL, arguments: [newParentID, id])
+            // Re-position ONLY when the parent actually changes (a same-parent "reparent" is a no-op
+            // and must not jump the folder to the end of its own group). `parent_id` NULL = root.
+            let currentParent = try Int64.fetchOne(db, sql: Self.selectFolderParentSQL, arguments: [id])
+            guard currentParent != newParentID else { return }
+            let maxPos = try Int64.fetchOne(db, sql: Self.maxFolderPositionSQL, arguments: [newParentID]) ?? -1
+            try db.execute(sql: Self.reparentFolderSQL, arguments: [newParentID, maxPos + 1, id])
         }
     }
 

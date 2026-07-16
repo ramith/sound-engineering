@@ -12,6 +12,9 @@ func playlistFolderCheckCases() -> [CheckCase] {
         CheckCase(label: "pl-folder-crud", run: checkFolderCRUD),
         CheckCase(label: "pl-folder-reparent-cycle-reject", run: checkFolderReparentCycle),
         CheckCase(label: "pl-folder-cascade-delete-restore", run: checkFolderCascadeDeleteRestore),
+        CheckCase(label: "pl-folder-restore-conflict-rolls-back", run: checkFolderRestoreConflictRollsBack),
+        CheckCase(label: "pl-set-playlist-folder-rejects", run: checkSetPlaylistFolderRejects),
+        CheckCase(label: "pl-folder-edge-cases", run: checkFolderEdgeCases),
     ]
 }
 
@@ -122,4 +125,114 @@ func checkFolderCascadeDeleteRestore(number: Int, url: URL) async -> Bool {
             + "ids + entry order preserved")
         return true
     } catch { printFail(number, "pl-folder-cascade-delete-restore threw: \(error)"); return false }
+}
+
+/// pl-folder-restore-conflict-rolls-back: if the world changed between delete and undo (a deleted
+/// playlist's NAME is reused before restore), `restoreFolderSubtree` must THROW and leave the store
+/// UNCHANGED — never a half-inserted subtree (the single-txn + deferred-FK contract; QA break-it #2).
+func checkFolderRestoreConflictRollsBack(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let folder = try await store.createFolder(name: "F", parentID: nil)
+        let p1 = try await store.createPlaylist(name: "Keeper")
+        try await store.setPlaylistFolder(playlistID: p1, folderID: folder)
+        let snapshot = try await store.deleteFolder(id: folder) // p1 + folder gone (cascade)
+        // Reuse the deleted playlist's name on a NEW playlist → restore's INSERT must hit the
+        // (NOCASE) unique index and roll the whole restore back.
+        _ = try await store.createPlaylist(name: "keeper") // NOCASE collision with "Keeper"
+        let foldersBefore = try await store.folders().map(\.id).sorted()
+        let playlistsBefore = try await store.playlists().map(\.id).sorted()
+        var threw = false
+        do { try await store.restoreFolderSubtree(snapshot) } catch { threw = true }
+        guard threw else { printFail(number, "restore did not throw on a name collision"); return false }
+        let foldersAfter = try await store.folders().map(\.id).sorted()
+        let playlistsAfter = try await store.playlists().map(\.id).sorted()
+        guard foldersAfter == foldersBefore, playlistsAfter == playlistsBefore else {
+            printFail(number, "restore left PARTIAL state after a rolled-back conflict "
+                + "(folders \(foldersBefore)->\(foldersAfter), playlists \(playlistsBefore)->\(playlistsAfter))")
+            return false
+        }
+        printPass(number, "restore THROWS + rolls back cleanly on a NOCASE name collision — no partial subtree")
+        return true
+    } catch { printFail(number, "pl-folder-restore-conflict-rolls-back threw: \(error)"); return false }
+}
+
+/// pl-set-playlist-folder-rejects: `setPlaylistFolder` rejects the built-in "current" playlist
+/// (`.builtinImmutable`) and a missing playlist / missing folder (`.notFound`) — not a silent no-op.
+func checkSetPlaylistFolderRejects(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        let builtinID = try await store.bootstrapBuiltinCurrentPlaylist()
+        let folder = try await store.createFolder(name: "F", parentID: nil)
+        var builtinRejected = false
+        do {
+            try await store.setPlaylistFolder(playlistID: builtinID, folderID: folder)
+        } catch PlaylistMutationError.builtinImmutable {
+            builtinRejected = true
+        }
+        var missingPlaylist = false
+        do {
+            try await store.setPlaylistFolder(playlistID: 999_999, folderID: folder)
+        } catch PlaylistMutationError.notFound {
+            missingPlaylist = true
+        }
+        let p1 = try await store.createPlaylist(name: "P1")
+        var missingFolder = false
+        do {
+            try await store.setPlaylistFolder(playlistID: p1, folderID: 999_999)
+        } catch PlaylistMutationError.notFound {
+            missingFolder = true
+        }
+        guard builtinRejected, missingPlaylist, missingFolder else {
+            printFail(number, "setPlaylistFolder guards wrong (builtin=\(builtinRejected) "
+                + "missingPlaylist=\(missingPlaylist) missingFolder=\(missingFolder))")
+            return false
+        }
+        printPass(number, "setPlaylistFolder rejects the built-in (.builtinImmutable) + missing "
+            + "playlist/folder (.notFound)")
+        return true
+    } catch { printFail(number, "pl-set-playlist-folder-rejects threw: \(error)"); return false }
+}
+
+/// pl-folder-edge-cases: empty-folder delete+restore; reparent-to-nil (back to root); and a deep
+/// (40-level) chain delete → cascade snapshot → verbatim restore (recursion + ordering under depth).
+func checkFolderEdgeCases(number: Int, url: URL) async -> Bool {
+    do {
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        // Empty-folder delete + restore.
+        let empty = try await store.createFolder(name: "Empty", parentID: nil)
+        let emptySnap = try await store.deleteFolder(id: empty)
+        guard try await store.folders().first(where: { $0.id == empty }) == nil else {
+            printFail(number, "empty folder not deleted"); return false
+        }
+        try await store.restoreFolderSubtree(emptySnap)
+        guard try await store.folders().contains(where: { $0.id == empty }) else {
+            printFail(number, "empty folder not restored"); return false
+        }
+        // reparent-to-nil: a nested folder moves back to root.
+        let parent = try await store.createFolder(name: "P", parentID: nil)
+        let child = try await store.createFolder(name: "C", parentID: parent)
+        try await store.reparentFolder(id: child, newParentID: nil)
+        guard try await store.folders().first(where: { $0.id == child })?.parentID == nil else {
+            printFail(number, "reparent-to-nil did not move to root"); return false
+        }
+        // Deep chain: 40 nested levels, delete the root → whole chain cascades + restores.
+        var parentID: Int64?
+        var deepIDs: [Int64] = []
+        for level in 0 ..< 40 {
+            let id = try await store.createFolder(name: "L\(level)", parentID: parentID)
+            deepIDs.append(id); parentID = id
+        }
+        let deepSnap = try await store.deleteFolder(id: deepIDs[0])
+        guard deepSnap.folders.count == 40 else {
+            printFail(number, "deep-nest snapshot has \(deepSnap.folders.count) folders, expected 40"); return false
+        }
+        try await store.restoreFolderSubtree(deepSnap)
+        let restored = try await store.folders()
+        guard deepIDs.allSatisfy({ id in restored.contains(where: { $0.id == id }) }) else {
+            printFail(number, "deep-nest restore incomplete"); return false
+        }
+        printPass(number, "folder edge cases: empty delete+restore, reparent-to-nil, 40-level cascade+restore")
+        return true
+    } catch { printFail(number, "pl-folder-edge-cases threw: \(error)"); return false }
 }

@@ -57,8 +57,8 @@ Adjacency-list `playlist_folders(id, parent_id NULL self-ref, name, position, cr
 
 ## 6. Chunking (phased, build-gated)
 - **A0** — ✅ DONE: `library.sqlite3` → `eraseDatabaseOnSchemaChange = false` (additive-only, protects playlists + track user-state) + the `additive-preserve-schema-bump` green-gate. *(The separate-store detour was built then reverted per the QA break-it — §0.)*
-- **A** — `playlist_folders` schema as an **additive v5 migration** + folder DAO (CRUD/reparent/cycle-guard/cascade-delete-with-subtree-snapshot for undo) + `PlaylistsModel` peer over `library.store`. (Deleted-track cleanup is the same-file FK cascade — no sweep needed.)
-- **B** — sidebar Playlists section (flat first): one ScrollView/LazyVStack, unified selection enum, built-in filtered, scroll, select→detail, create/inline-rename/delete.
+- **A** — ✅ DONE (7392b1e): `playlist_folders` additive v5 migration + folder DAO (CRUD/reparent/cycle-guard/cascade-delete-with-subtree-snapshot for undo). (Deleted-track cleanup is the same-file FK cascade.) `PlaylistsModel` moved to B (kept with its UI consumer so it isn't dead code under Periphery).
+- **B** — ✅ DONE (8277ab8): `PlaylistsModel` peer + composition wiring + sidebar Playlists section (one ScrollView/LazyVStack, unified selection enum, built-in filtered, scroll, select→detail, create/inline-rename/delete) + read-only `PlaylistDetailView`. Plus the A+B review-fix batch (§8).
 - **C** — `PlaylistDetailList` (queue-row reuse): play (verbs + undo), remove, reorder; `ForEach` on entry id.
 - **D** — folders UI: flattened disclosure tree, create/rename/delete(+undo), drag-reparent, cycle-guard, depth cap.
 - **E** — add-to-playlist: context menu + searchable sheet (US-PLIST-02 incl. loose file) + `LibraryTrackDragItem` UTType + drops (US-PLIST-03/04); `PlaylistDropRouter` + FileMover-spy + strict-gate grep **here**.
@@ -68,6 +68,21 @@ Adjacency-list `playlist_folders(id, parent_id NULL self-ref, name, position, cr
 ## 7. Open sub-decisions (recommend + proceed unless vetoed)
 - **Play a folder** — *recommended:* plays all descendant playlists' tracks in tree order (bounded by a queue-size safety cap). Same for a multi-playlist selection.
 - **Backup/export of user data** — *recommended:* out of R1 scope, but note as the belt-and-braces follow-up (the corruption/quarantine rebuild of `library.sqlite3` still loses user data — erase=false only protects the schema-change path, not corruption). Not blocking.
+
+## 8. Break-it outcomes (A+B, 2026-07-16) + founder decisions
+Chunks A+B passed swift-expert + swiftui-pro reviews and a qa-expert + architect/Fool break-it. Both reviewers **steelmanned the one-store reversal + the sidebar rebuild as correct**. Fixes landed in the A+B review-fix batch; founder decisions locked:
+- **Migrator enforcement (was: no guard on the REAL migrator — the additive-preserve check only proved GRDB's semantics):** the strict-gate now GREPs to forbid `eraseDatabaseOnSchemaChange = true` and assert `= false` (Attack A), and the `additive-migration-convergence` VerifyLibraryStore check pins a golden schema fingerprint + staged==fresh convergence (Attack B — an edited shipped migration body silently diverging existing users). The `makeMigrator` invariant is reworded to **data-preserving, append-never-edit** (+ the 12-step table-rebuild escape hatch for destructive changes).
+- **Corruption/quarantine (was: silent total wipe):** a quarantine-rebuild now surfaces the shell error banner (`LibraryStore.quarantinedFrom` → `LibraryModel.onError`), naming the saved file. The whole-DB `VACUUM INTO` sibling-backup is a documented **FAST-FOLLOW** (the remaining belt-and-braces for the corruption path).
+- **D-names → case-INSENSITIVE:** v6 migration recreates `idx_playlists_name_user` `COLLATE NOCASE` + a NOCASE conflict probe (matches the reserved-name guard + the NOCASE sort). "Rock" == "rock".
+- **Folder DAO hardened (swift-expert):** dedicated `.wouldCreateCycle`; `setPlaylistFolder` throws `.notFound`/`.builtinImmutable`; `reparentFolder` re-positions to end-of-new-group; restore-undo best-effort (throws-not-corrupts) doc. New checks: `pl-folder-restore-conflict-rolls-back`, `pl-set-playlist-folder-rejects`, `pl-folder-edge-cases` (empty / reparent-nil / 40-level). Built-in exclusion extracted to the pure, unit-tested `PlaylistBrowseVisibility`.
+- **App fixes (swiftui-pro + qa):** `closeDetail` bumps the detail epoch (no ghost republish); delete redirects nav only on confirmed success; rename captures the draft synchronously + re-checks the row after the await + a reserved-name message; click-away commits (reverts on conflict); deferred rename-focus; VoiceOver selection traits; ↑/↓ ignored during a drill-down.
+
+### Deferred to later chunks (carry forward)
+- **Chunk C:** generalize `PlaylistItemRow`'s drag payload (hardwired to `QueueDragItem`; playlist reorder needs `PlaylistEntryDragItem`) + model playlist "now playing" as an explicit `activeEntryID` (not the queue-cursor `isNowPlaying`).
+- **Chunk C/E:** a playlist-internal mutation (add/remove/reorder) MUST call `loadTree()` — entry-count badges don't ride `libraryRevision`.
+- **Before Chunk D:** collapse the dual source of truth for "which playlist is open" (`LibraryBrowseModel.path.last` vs `PlaylistsModel.openPlaylistID`) so a folder cascade-delete can't orphan a ghost detail (D also clears `openPlaylistID` for a deleted subtree via the snapshot ids). The `closeDetail` epoch bump mitigates the model-state inconsistency in the interim.
+- **Chunk F:** replace `PlaylistDetailEntry.display == nil` with an explicit `resolution: .ok | .missing` — a moved file keeps its id (resolves) and a deleted track's entry is cascade-dropped, so nil-display is near-vestigial; the real dead case is a LOOSE file gone from disk.
+- **Watch:** the `LoadState`/epoch pattern is duplicated across `LibraryBrowseModel`/`PlaylistsModel` — extract at the 3rd copy (smart playlists).
 
 ---
 

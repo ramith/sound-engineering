@@ -180,6 +180,7 @@ func allCheckCases() -> [CheckCase] {
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
         + songsSortCheckCases() + decodeCoverageCheckCases() + hardeningCheckCases()
         + playlistSpineCheckCases() + playlistFolderCheckCases()
+        + migrationConvergenceCheckCases()
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +

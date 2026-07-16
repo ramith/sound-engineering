@@ -83,6 +83,25 @@ semgrep scan --config .semgrep.yml --error --quiet
 step "Suppression policy (owner/reason/expiry accountability)"
 bash scripts/check-suppressions.sh
 
+step "Migrator posture guard (user data must never be erased on a schema change)"
+# S10.3 ONE-STORE posture: LibraryStore holds NON-rebuildable USER data (playlists/folders + the
+# track user-state columns), so a schema change must NEVER wipe it. Forbid ever re-enabling GRDB's
+# eraseDatabaseOnSchemaChange, and assert the intended `= false` line is present — so a merge or
+# refactor can't silently resurrect the old drop-and-recreate posture (break-it "Attack A"). The
+# companion `additive-migration-convergence` VerifyLibraryStore check covers "Attack B" (an edited
+# shipped migration body silently diverging existing users' schema).
+migrator_src="Sources/LibraryStore/LibraryStore.swift"
+if grep -nE 'eraseDatabaseOnSchemaChange[[:space:]]*=[[:space:]]*true' "$migrator_src"; then
+  red "ERROR: eraseDatabaseOnSchemaChange = true in $migrator_src — this WIPES all user data on a"
+  red "       schema change. Forbidden (S10.3 one-store posture holds playlists + track user-state)."
+  exit 1
+fi
+if ! grep -qE 'eraseDatabaseOnSchemaChange[[:space:]]*=[[:space:]]*false' "$migrator_src"; then
+  red "ERROR: '$migrator_src' must explicitly pin 'eraseDatabaseOnSchemaChange = false' (S10.3)."
+  exit 1
+fi
+green "migrator posture ok (eraseDatabaseOnSchemaChange pinned false; never-erase)."
+
 if [[ "$HAVE_CPPCHECK" == "1" ]]; then
   step "cppcheck (supplementary C++ analysis)"
   # Start strict-but-useful: warnings/style/perf/portability, not --enable=all (which is

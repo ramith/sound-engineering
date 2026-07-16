@@ -250,11 +250,12 @@ struct LibrarySidebar: View {
 
     /// Delete a playlist; if it was the open/selected one, redirect nav back to the current category
     /// so the detail pane doesn't orphan on a `.playlist(deletedID)` route that resolves to nothing.
+    /// Only redirects on a CONFIRMED delete — a failed delete leaves the row, so nav must stay put.
     private func deletePlaylist(_ playlist: Playlist) {
         let wasSelected = model.sidebarSelection == .playlist(playlist.id)
         Task {
-            await playlists.deletePlaylist(id: playlist.id)
-            if wasSelected { model.selectCategory(model.selectedCategory ?? .songs) }
+            let deleted = await playlists.deletePlaylist(id: playlist.id)
+            if deleted, wasSelected { model.selectCategory(model.selectedCategory ?? .songs) }
         }
     }
 
@@ -270,9 +271,14 @@ struct LibrarySidebar: View {
         Task {
             do {
                 try await playlists.renamePlaylist(id: playlist.id, to: name)
-                cancelRename()
+                // The user may have begun renaming ANOTHER row during the await — only close if THIS
+                // playlist is still the one being edited (QA break-it #5).
+                if editingPlaylistID == playlist.id { cancelRename() }
             } catch let conflict as PlaylistNameConflict where keepOpenOnConflict {
                 renameError = "“\(conflict.name)” already exists."
+                renameFieldFocused = true
+            } catch PlaylistMutationError.invalidName where keepOpenOnConflict {
+                renameError = "That name can’t be used." // reserved ("current") — empty is pre-guarded
                 renameFieldFocused = true
             } catch {
                 if keepOpenOnConflict {

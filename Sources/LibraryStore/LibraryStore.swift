@@ -38,6 +38,11 @@ public final class LibraryStore: Sendable {
     /// The schema version reached after migrate (read back from `schema_info`).
     private let version: Int
 
+    /// The quarantined path when a PRE-EXISTING file was corrupt/unusable and this store was rebuilt
+    /// fresh (nil on a normal open). The rebuild loses NON-rebuildable user data (playlists / track
+    /// state), so the app surfaces this to the user instead of wiping silently (S10.3 break-it).
+    public let quarantinedFrom: URL?
+
     /// A count of FTS `SearchIndex` write operations (sync/delete) performed this
     /// session — a verification hook so the harness can prove a no-op re-scan does
     /// ZERO FTS writes (the idempotency contract, design §4). A `Mutex` because writes
@@ -93,9 +98,12 @@ public final class LibraryStore: Sendable {
     ///   - url: the store file URL (`:memory:` for an in-memory database).
     ///   - appBuild: optional build identifier stored in `schema_info.app_build`.
     public init(url: URL, appBuild: String? = nil) async throws {
-        (dbWriter, version) = try LibraryStore.openMigratingAndRepairing(
+        let opened = try LibraryStore.openMigratingAndRepairing(
             url: url, appBuild: appBuild, stamp: StoreQuarantine.defaultStamp()
         )
+        dbWriter = opened.writer
+        version = opened.version
+        quarantinedFrom = opened.quarantinedFrom
     }
 
     /// The default store location: `~/Library/Application Support/AdaptiveSound/
@@ -286,16 +294,25 @@ public final class LibraryStore: Sendable {
     /// fails — the file (+ its `-wal`/`-shm` sidecars) is quarantined and a fresh store is
     /// rebuilt. Never crashes, never silently deletes (design §5). A schema change is an
     /// ADDITIVE, frozen-body migration that PRESERVES user data (erase=false, S10.3).
+    /// Result of opening/migrating a store: the writer, the schema version reached, and — when a
+    /// pre-existing corrupt file was quarantined + rebuilt — the quarantined path (else nil). A
+    /// struct (not a 3-tuple) to stay within the large-tuple lint bound.
+    private struct OpenedStore {
+        let writer: any DatabaseWriter
+        let version: Int
+        let quarantinedFrom: URL?
+    }
+
     private static func openMigratingAndRepairing(
         url: URL, appBuild: String?, stamp: String
-    ) throws -> (any DatabaseWriter, Int) {
+    ) throws -> OpenedStore {
         let migrator = makeMigrator(appBuild: appBuild)
 
         // In-memory stores can't be corrupt/quarantined; open + migrate directly.
         if url.path == ":memory:" || url.absoluteString == "file::memory:" {
             let queue = try DatabaseQueue(configuration: makeConfiguration())
             try migrator.migrate(queue)
-            return try (queue, readSchemaVersion(queue))
+            return try OpenedStore(writer: queue, version: readSchemaVersion(queue), quarantinedFrom: nil)
         }
 
         let fileExisted = FileManager.default.fileExists(atPath: url.path)
@@ -323,15 +340,17 @@ public final class LibraryStore: Sendable {
                 guard fileExisted else { throw error }
                 throw StoreOpenFailure.rebuildRecoverable
             }
-            return try (pool, readSchemaVersion(pool))
+            return try OpenedStore(writer: pool, version: readSchemaVersion(pool), quarantinedFrom: nil)
         } catch let error where fileExisted && isRebuildRecoverable(error) {
             // A pre-existing file was unusable (corrupt / failed integrity / newer schema / a
-            // schema the migrator can't apply). Quarantine it (+ sidecars) and rebuild fresh —
-            // the library is a rebuildable cache.
-            try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
+            // schema the migrator can't apply). Quarantine it (+ sidecars) and rebuild fresh — the
+            // DERIVED cache re-scans, but this file ALSO held user data (playlists / track state)
+            // that a rebuild CANNOT recover, so the quarantined path is surfaced (S10.3 break-it):
+            // the caller warns the user + points at the saved file rather than wiping in silence.
+            let quarantined = try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
             let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
             try migrator.migrate(pool)
-            return try (pool, readSchemaVersion(pool))
+            return try OpenedStore(writer: pool, version: readSchemaVersion(pool), quarantinedFrom: quarantined.first)
         }
     }
 
@@ -363,8 +382,14 @@ public final class LibraryStore: Sendable {
     /// cache of on-disk files. A break-it pass showed the old "wipe on any schema change" rule
     /// silently destroyed that user data (and a separate never-erased store keyed by the reused
     /// `tracks.id` rowid mis-resolved playlists after a rebuild — worse). So migrations are
-    /// **additive-only** and every shipped migration body is **frozen** (a schema change is a NEW
-    /// appended migration — proven-safe: appending never erases). The DERIVED cache (scan-built
+    /// DATA-PRESERVING + APPEND-NEVER-EDIT (not merely "additive"): NEVER edit a shipped migration
+    /// body — GRDB keys bookkeeping on the IDENTIFIER, so an edit never re-runs on an already-migrated
+    /// store (fresh installs get it, existing users don't → their schema silently diverges,
+    /// `no such column` for upgraders only). A change is ALWAYS a NEW appended migration. This is NOT
+    /// "columns-only": a genuinely DESTRUCTIVE change is an APPENDED migration using SQLite's 12-step
+    /// table rebuild (new table → copy → drop → rename) — still data-preserving + append-only.
+    /// ENFORCED: the strict-gate grep pins `= false`; the `additive-migration-convergence` check pins
+    /// the schema fingerprint (an edited shipped body fails it). The DERIVED cache (scan-built
     /// track/album/artist/genre/FTS rows) is still rebuildable — by a RE-SCAN (delete rows +
     /// re-scan), not by wiping the file. Dev reset: add a migration, or delete the DB file by hand.
     static func makeMigrator(appBuild: String?) -> DatabaseMigrator {
@@ -384,6 +409,9 @@ public final class LibraryStore: Sendable {
         }
         migrator.registerMigration(Schema.MigrationID.v5) { db in
             try Schema.migrateV4toV5(db, appBuild: appBuild, timestamp: nowSeconds())
+        }
+        migrator.registerMigration(Schema.MigrationID.v6) { db in
+            try Schema.migrateV5toV6(db, appBuild: appBuild, timestamp: nowSeconds())
         }
         return migrator
     }
