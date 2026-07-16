@@ -180,6 +180,7 @@ func allCheckCases() -> [CheckCase] {
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
         + songsSortCheckCases() + decodeCoverageCheckCases() + hardeningCheckCases()
         + playlistSpineCheckCases() + playlistFolderCheckCases()
+        + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
 }
 

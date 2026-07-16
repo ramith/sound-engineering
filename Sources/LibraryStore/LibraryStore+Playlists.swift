@@ -242,6 +242,16 @@ public extension LibraryStore {
         try await dbWriter.read { db in try Int(Int64.fetchOne(db, sql: Self.selectPlaylistCountSQL) ?? 0) }
     }
 
+    /// EXPLAIN QUERY PLAN rows for the two playlist reads (list-with-count + entries) — the scale
+    /// tripwire (G / design §5): `playlist_entries` must be reached via `idx_playlist_entries_playlist`,
+    /// never a full table scan (a long playlist / hundreds of playlists would otherwise degrade).
+    func explainPlaylistReadsPlan() async throws -> [String] {
+        try await dbWriter.read { db in
+            try Self.collectQueryPlan(db, Self.selectPlaylistsSQL)
+                + Self.collectQueryPlan(db, Self.selectEntriesSQL)
+        }
+    }
+
     func entries(inPlaylist id: Int64) async throws -> [PlaylistEntry] {
         try await dbWriter.read { db in try PlaylistEntry.fetchAll(db, sql: Self.selectEntriesSQL, arguments: [id]) }
     }
