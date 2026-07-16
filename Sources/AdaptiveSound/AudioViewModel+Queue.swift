@@ -18,8 +18,50 @@ import PlaybackQueueKit
 // track may appear more than once — the S9 dedupe-on-add contract is retired. Reorder identity
 // is `QueueItem.id` (see `movePlaylistItems`).
 
+/// A one-level restore point for the "Play (replace queue)" undo (S10.3): the queue slots + the
+/// selected index, snapshotted before a destructive replace.
+struct QueueRestorePoint {
+    let items: [QueueItem]
+    let index: Int?
+}
+
 @MainActor
 extension AudioViewModel {
+    /// Replace the queue with `tracks` and start playing from `startAt`, first SNAPSHOTTING the
+    /// current queue so the caller can offer a one-level "Restore previous queue" undo (S10.3
+    /// D-play). Use this for the playlist "Play" verb; plain `playNow` stays the un-undoable path.
+    func playNowWithUndo(_ tracks: [AudioFile], startAt index: Int = 0) {
+        guard !tracks.isEmpty else { return }
+        queueRestorePoint = QueueRestorePoint(items: queue, index: selectedTrackIndex)
+        playNow(tracks, startAt: index)
+    }
+
+    /// Whether a "Restore previous queue" undo is available.
+    var canRestorePreviousQueue: Bool {
+        queueRestorePoint != nil
+    }
+
+    /// Restore the queue captured by the last `playNowWithUndo` (one-level). An empty previous queue
+    /// clears; otherwise the slots are restored and playback resumes at the previously selected track
+    /// (a pragmatic one-level undo — position within the track is not preserved). A previous queue
+    /// with NO selection is restored with the engine stopped (never left playing a gone track).
+    func restorePreviousQueue() {
+        guard let point = queueRestorePoint else { return }
+        queueRestorePoint = nil
+        guard !point.items.isEmpty else {
+            clearPlaylist()
+            return
+        }
+        queue = point.items
+        scheduleQueueMirror()
+        if let index = point.index, index < queue.count {
+            playTrack(at: index) // resume at the previously-selected track
+        } else {
+            selectedTrackIndex = nil
+            stopPlayback() // no prior selection — restore the slots, stop the engine (no gone-track playback)
+        }
+    }
+
     /// Replace the queue with `tracks` and start playing from `startAt` (clamped).
     /// The destructive "play this album/these results now" action. `startPlayback`
     /// (via `playTrack`) re-primes the gapless on-deck.
