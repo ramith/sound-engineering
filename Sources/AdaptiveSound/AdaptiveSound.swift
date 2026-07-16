@@ -48,9 +48,9 @@ struct AdaptiveSound: App {
         // composes BOTH peers — library reads + audio play verbs.
         let browse = LibraryBrowseModel(audio: audio, library: lib)
         _libraryModel = State(initialValue: browse)
-        // S10.3: the Playlists model reads the same store `lib` owns (one store). Only `library` is
-        // wired now (tree + detail reads); the `audio` play verbs join in Chunk C with their UI.
-        _playlistsModel = State(initialValue: PlaylistsModel(library: lib))
+        // S10.3: the Playlists model reads the same store `lib` owns (one store) and plays through
+        // the shared `audio` VM (Play/Next/Queue + restore-queue undo — Chunk C).
+        _playlistsModel = State(initialValue: PlaylistsModel(library: lib, audio: audio))
         // Edge 4 (S10.4): macOS system control. `NowPlayingController` reads `audio` + calls its
         // transport verbs from MPRemoteCommandCenter handlers, and pushes Now Playing on the VM's
         // `onNowPlayingRefresh` hook — same one-directional closure pattern as the edges above (no

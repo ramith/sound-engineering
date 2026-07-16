@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Playlist Item Row
 
-struct PlaylistItemRow: View {
+struct PlaylistItemRow<DragPayload: Transferable>: View {
     let file: AudioFile
     let index: Int
     let isSelected: Bool
@@ -12,9 +12,11 @@ struct PlaylistItemRow: View {
     var numberColumnWidth: CGFloat = 22
     /// When non-nil, the row shows a leading grip that is the DRAG SOURCE for reordering
     /// (`.draggable`). Making only the grip draggable — not the whole row — keeps tap-to-play
-    /// unambiguous (the row-wide gesture conflict is what killed `.onMove`, FB7367473). Nil
-    /// (History) shows no handle and is not reorderable.
-    var dragPayload: QueueDragItem?
+    /// unambiguous (the row-wide gesture conflict is what killed `.onMove`, FB7367473). Nil shows
+    /// no handle and is not reorderable. Generic over the payload so the queue reuses this row with
+    /// a `QueueDragItem` and the playlist detail with a `PlaylistEntryDragItem` (S10.3, architect
+    /// review) — one row, no fork.
+    var dragPayload: DragPayload?
     /// True while a reorder drag is hovering over THIS row (the drop target). Draws an accent
     /// border so the drop point is visible during the drag (macOS drop-zone affordance).
     var isDropTarget: Bool = false
