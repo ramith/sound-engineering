@@ -14,6 +14,9 @@ struct FacetQueueActions: View {
         Button("Play") { Task { await model.playFacet(ref) } }
         Button("Play Next") { Task { await model.playFacetNext(ref) } }
         Button("Add to Queue") { Task { await model.appendFacet(ref) } }
+        // Reference-add the whole artist/genre to a playlist; ids resolved on demand. No picker
+        // overflow — a tile menu has no sheet host (S10.3).
+        AddToPlaylistMenu(resolveTrackIDs: { await model.facetTrackIDs(ref) })
     }
 }
 

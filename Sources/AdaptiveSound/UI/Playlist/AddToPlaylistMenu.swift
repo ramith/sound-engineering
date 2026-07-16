@@ -4,14 +4,17 @@ import SwiftUI
 
 // MARK: - Add to Playlist (S10.3 US-PLIST-02 — context-menu submenu + searchable picker)
 
-/// A reusable "Add to Playlist" submenu for a library-row context menu. Reference-adds the given
-/// `trackIDs` (by id — NEVER a file move) via `PlaylistsModel`, with a confirmation toast. Inline:
-/// New Playlist + the first few playlists; overflow routes to the searchable `PlaylistPickerSheet`
-/// through `onChooseMore` (a context menu can't own a sheet — the host presents it).
+/// A reusable "Add to Playlist" submenu for any library context menu (Songs row, album/artist/genre
+/// detail, AND the browse tiles). Reference-adds by track id — NEVER a file move. The ids are
+/// resolved LAZILY (`resolveTrackIDs`, async) when an action fires, so a TILE can load its
+/// album/facet tracks on demand while a detail row just returns its ids. Inline: New Playlist + the
+/// first few playlists; the searchable-picker overflow shows only when `onChooseMore` is provided (a
+/// context menu can't own a sheet — the host presents it; tile menus pass nil).
 struct AddToPlaylistMenu: View {
-    let trackIDs: [Int64]
-    /// Called when the user picks "Add to Playlist…" — the host opens `PlaylistPickerSheet`.
-    let onChooseMore: () -> Void
+    let resolveTrackIDs: () async -> [Int64]
+    /// Called with the resolved ids when the user picks "Add to Playlist…"; nil (default, for tile
+    /// menus with no sheet host) hides that item — inline playlists + New Playlist only.
+    var onChooseMore: (([Int64]) -> Void)? = nil
     @Environment(PlaylistsModel.self) private var playlists
     @Environment(LibraryBrowseModel.self) private var library
 
@@ -26,26 +29,27 @@ struct AddToPlaylistMenu: View {
                 ForEach(playlists.playlists.prefix(inlineLimit)) { playlist in
                     Button(playlist.name) { Task { await add(to: playlist) } }
                 }
-                if playlists.playlists.count > inlineLimit {
+                if let onChooseMore, playlists.playlists.count > inlineLimit {
                     Divider()
-                    Button("Add to Playlist…") { onChooseMore() }
+                    Button("Add to Playlist…") { Task { onChooseMore(await resolveTrackIDs()) } }
                 }
             }
         }
-        .disabled(trackIDs.isEmpty)
     }
 
     private func add(to playlist: Playlist) async {
-        let added = await playlists.addTracks(trackIDs, toPlaylist: playlist.id)
+        let ids = await resolveTrackIDs()
+        let added = await playlists.addTracks(ids, toPlaylist: playlist.id)
         if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: playlist.name) {
             library.showToast(message)
         }
     }
 
     private func createAndAdd() async {
-        guard let id = await playlists.createPlaylist(withTracks: trackIDs) else { return }
+        let ids = await resolveTrackIDs()
+        guard let id = await playlists.createPlaylist(withTracks: ids) else { return }
         let name = playlists.playlists.first { $0.id == id }?.name ?? "New Playlist"
-        let added = PlaylistAddDecision.trackIDsToAdd(trackIDs).count
+        let added = PlaylistAddDecision.trackIDsToAdd(ids).count
         if let message = PlaylistAddDecision.toastMessage(added: added, playlistName: name) {
             library.showToast(message)
         }

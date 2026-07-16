@@ -15,6 +15,8 @@ struct AlbumDetailView: View {
     @State private var selection = Set<LibraryTrackDisplay.ID>()
     /// The track whose info popover is open (mirrors the Now Playing playlist's Info affordance).
     @State private var infoTarget: LibraryTrackDisplay?
+    /// Non-nil while the searchable "Add to Playlist…" picker is open (the host owns the sheet).
+    @State private var addToPlaylistTarget: AddToPlaylistTarget?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -86,6 +88,7 @@ struct AlbumDetailView: View {
             Menu {
                 Button("Play Next") { model.playNext(tracks) }
                 Button("Add to Queue") { model.append(tracks) }
+                addToPlaylistMenu(trackIDs: tracks.map(\.id)) // whole album
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }
@@ -117,6 +120,7 @@ struct AlbumDetailView: View {
                         Button("Play") { model.play(tracks, startAt: index) }
                         Button("Play Next") { model.playNext([track]) }
                         Button("Add to Queue") { model.append([track]) }
+                        addToPlaylistMenu(trackIDs: [track.id])
                         Divider()
                         Button("Info", systemImage: "info.circle") { infoTarget = track }
                     }
@@ -135,6 +139,14 @@ struct AlbumDetailView: View {
         .scrollContentBackground(.hidden)
         // Keyboard play (S4 A-M4); `.ignored` on an empty selection so Return bubbles (focus-audit nit).
         .onKeyPress(.return) { selection.isEmpty ? .ignored : { playSelected(); return .handled }() }
+        .sheet(item: $addToPlaylistTarget) { PlaylistPickerSheet(trackIDs: $0.trackIDs) }
+    }
+
+    /// The reference-add "Add to Playlist" submenu (S10.3); overflow opens the searchable picker.
+    private func addToPlaylistMenu(trackIDs: [Int64]) -> some View {
+        AddToPlaylistMenu(resolveTrackIDs: { trackIDs }, onChooseMore: { ids in
+            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
+        })
     }
 
     /// Play the album starting at the selected row — the keyboard Return path (double-click is

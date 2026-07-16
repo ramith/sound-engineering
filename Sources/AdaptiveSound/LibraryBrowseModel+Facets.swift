@@ -102,6 +102,12 @@ extension LibraryBrowseModel {
         }
     }
 
+    /// The track ids of a whole facet (artist/genre) — for a tile's reference-add to a playlist
+    /// (S10.3). Wraps the private `facetTracks` read; empty facet → empty (a no-op add).
+    func facetTrackIDs(_ ref: FacetRef) async -> [Int64] {
+        await facetTracks(ref).map(\.id)
+    }
+
     /// Replace the queue with the whole facet and play (silent, like Play Now everywhere).
     func playFacet(_ ref: FacetRef) async {
         let files = await facetTracks(ref).map(AudioFile.init)

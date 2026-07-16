@@ -196,9 +196,9 @@ struct SongsTable: View {
 
     /// The reference-add "Add to Playlist" submenu (S10.3); overflow opens the searchable picker.
     private func addToPlaylistMenu(trackIDs: [Int64]) -> some View {
-        AddToPlaylistMenu(trackIDs: trackIDs) {
-            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: trackIDs)
-        }
+        AddToPlaylistMenu(resolveTrackIDs: { trackIDs }, onChooseMore: { ids in
+            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
+        })
     }
 }
 

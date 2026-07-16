@@ -24,6 +24,8 @@ struct FacetTrackListView: View {
     @Environment(LibraryBrowseModel.self) private var model
     @State private var selection = Set<LibraryTrackDisplay.ID>()
     @State private var infoTarget: LibraryTrackDisplay?
+    /// Non-nil while the searchable "Add to Playlist…" picker is open (the host owns the sheet).
+    @State private var addToPlaylistTarget: AddToPlaylistTarget?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,6 +41,14 @@ struct FacetTrackListView: View {
                 if groupByAlbum { groupedList } else { flatList }
             }
         }
+        .sheet(item: $addToPlaylistTarget) { PlaylistPickerSheet(trackIDs: $0.trackIDs) }
+    }
+
+    /// The reference-add "Add to Playlist" submenu (S10.3); overflow opens the searchable picker.
+    private func addToPlaylistMenu(trackIDs: [Int64]) -> some View {
+        AddToPlaylistMenu(resolveTrackIDs: { trackIDs }, onChooseMore: { ids in
+            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
+        })
     }
 
     // MARK: Back bar (⌘[ / in-content — the window toolbar is hidden under the custom chrome)
@@ -107,6 +117,7 @@ struct FacetTrackListView: View {
             Menu {
                 Button("Play Next") { model.playNext(tracks) }
                 Button("Add to Queue") { model.append(tracks) }
+                addToPlaylistMenu(trackIDs: tracks.map(\.id)) // the whole artist/genre
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }
@@ -181,6 +192,7 @@ struct FacetTrackListView: View {
                 Button("Play") { playFromRow(track) }
                 Button("Play Next") { model.playNext([track]) }
                 Button("Add to Queue") { model.append([track]) }
+                addToPlaylistMenu(trackIDs: [track.id])
                 Divider()
                 Button("Info", systemImage: "info.circle") { infoTarget = track }
             }
