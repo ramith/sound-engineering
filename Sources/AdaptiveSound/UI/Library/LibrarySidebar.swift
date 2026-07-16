@@ -156,6 +156,10 @@ struct LibrarySidebar: View {
                 }
             }
             .buttonStyle(.plain)
+            // Double-click to rename (Finder/Music convention) — the discoverable gesture alongside
+            // the context-menu Rename + the Return key. `.simultaneousGesture` so it coexists with
+            // the Button's single-click select (plain Buttons in a LazyVStack, not a List — no race).
+            .simultaneousGesture(TapGesture(count: 2).onEnded { beginRename(playlist) })
             .contextMenu {
                 Button("Rename") { beginRename(playlist) }
                 Button("Delete", role: .destructive) { deletePlaylist(playlist) }
@@ -183,6 +187,10 @@ struct LibrarySidebar: View {
                     }
                 }
                 .onDisappear { keyboardFocus.isTextEntryFocused = false }
+                // Focus HERE, in the field's own onAppear — reliable post-insertion (the field is in
+                // the hierarchy), unlike a @FocusState set from beginRename which bounced on a
+                // freshly-inserted LazyVStack row and let the blur handler self-close the field.
+                .onAppear { renameFieldFocused = true }
                 // Capture the draft SYNCHRONOUSLY at submit: a later blur/teardown that clears
                 // `editDraft` must not race the async rename into an empty/stale name.
                 .onSubmit { commitRename(playlist, proposed: editDraft, keepOpenOnConflict: true) }
@@ -233,10 +241,8 @@ struct LibrarySidebar: View {
         editDraft = playlist.name
         renameError = nil
         editingPlaylistID = playlist.id
-        // Defer the focus set: the `TextField` only enters the hierarchy BECAUSE `editingPlaylistID`
-        // just changed, and focusing a not-yet-inserted field can bounce `@FocusState` back to false
-        // → the blur handler self-closes the rename. Setting it next runloop targets a live field.
-        Task { renameFieldFocused = true }
+        // Focus is set by the rename field's own `.onAppear` (reliable once it's in the hierarchy) —
+        // NOT here, where the field doesn't exist yet and @FocusState would bounce + self-close.
     }
 
     /// Begin renaming the selected playlist (keyboard Return). `.ignored` unless a playlist row is
