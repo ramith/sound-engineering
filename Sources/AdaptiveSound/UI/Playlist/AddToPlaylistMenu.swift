@@ -85,7 +85,7 @@ struct PlaylistPickerSheet: View {
             }
             .padding(DesignSystem.Spacing.medium)
 
-            LibraryFilterField(query: $filter, placeholder: "Filter playlists")
+            LibraryFilterField(query: $filter, placeholder: "Filter playlists", focusesOnAppear: true)
                 .padding(.horizontal, DesignSystem.Spacing.medium)
 
             Button {

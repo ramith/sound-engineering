@@ -59,11 +59,15 @@ struct LibrarySidebar: View {
             .focused($sidebarFocused)
             .defaultFocus($sidebarFocused, true)
             .focusEffectDisabled()
-            .onKeyPress(.upArrow) { moveSelection(by: -1) }
-            .onKeyPress(.downArrow) { moveSelection(by: 1) }
+            // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still
+            // in the focus chain) HIJACKS the keys from the focused TextField: Return hit
+            // `renameSelectedPlaylist` (re-entrant `beginRename` → wiped the typed draft) instead of
+            // the field's `onSubmit`, and arrows moved the sidebar selection instead of the cursor.
+            .onKeyPress(.upArrow) { editingPlaylistID == nil ? moveSelection(by: -1) : .ignored }
+            .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1) : .ignored }
             // Return renames the selected playlist (Finder/Music convention + keyboard discoverability
             // for an action otherwise only in the right-click menu). Categories ignore it (bubbles).
-            .onKeyPress(.return) { renameSelectedPlaylist() }
+            .onKeyPress(.return) { editingPlaylistID == nil ? renameSelectedPlaylist() : .ignored }
         }
         // A sidebar material so the column reads as a source list now that `.listStyle(.sidebar)` is
         // gone (the plain ScrollView doesn't imply it).
@@ -172,21 +176,18 @@ struct LibrarySidebar: View {
             TextField("Playlist name", text: $editDraft)
                 .textFieldStyle(.plain)
                 .font(DesignSystem.Font.body)
-                .focused($renameFieldFocused)
-                // Suppress the global Space accelerator while editing (S4 SW1) — the same inline
-                // trio `LibraryFilterField`/`SongsHeader` use; Chunk E extracts it to a modifier.
+                // Applies `.focused($renameFieldFocused)` AND the transport-Space gate in one place.
+                .suppressesTransportSpace(while: $renameFieldFocused)
                 // Click-away COMMITS (Finder/Music convention — silent revert is surprising data
                 // loss). Guarded on `wasFocused` so the deferred-focus arrival (false→true) can't
                 // self-commit, and on `editingPlaylistID` so a post-teardown blur is a no-op.
                 // Escape (`.onExitCommand`) is the sole cancel and niles `editingPlaylistID` first,
                 // so a blur it triggers is guarded out (no commit-on-Escape).
                 .onChange(of: renameFieldFocused) { wasFocused, isFocused in
-                    keyboardFocus.isTextEntryFocused = isFocused
                     if wasFocused, !isFocused, editingPlaylistID == playlist.id {
                         commitRename(playlist, proposed: editDraft, keepOpenOnConflict: false)
                     }
                 }
-                .onDisappear { keyboardFocus.isTextEntryFocused = false }
                 // Focus HERE, in the field's own onAppear — reliable post-insertion (the field is in
                 // the hierarchy), unlike a @FocusState set from beginRename which bounced on a
                 // freshly-inserted LazyVStack row and let the blur handler self-close the field.
@@ -194,7 +195,10 @@ struct LibrarySidebar: View {
                 // Capture the draft SYNCHRONOUSLY at submit: a later blur/teardown that clears
                 // `editDraft` must not race the async rename into an empty/stale name.
                 .onSubmit { commitRename(playlist, proposed: editDraft, keepOpenOnConflict: true) }
-                .onExitCommand { cancelRename() }
+                .onExitCommand {
+                    cancelRename()
+                    sidebarFocused = true // keyboard close → keep ↑/↓/Return alive (focus-audit MAJOR)
+                }
                 .padding(.horizontal, DesignSystem.Spacing.small)
                 .padding(.vertical, 5)
             if let renameError {
@@ -238,11 +242,17 @@ struct LibrarySidebar: View {
     }
 
     private func beginRename(_ playlist: Playlist) {
+        // Re-entry guard: a rename already in progress for THIS playlist must NOT restart — that would
+        // reset `editDraft` and wipe the user's in-progress typing (observed: a hijacked Return
+        // re-invoked this and clobbered the name; see the editing-gated `.onKeyPress` handlers).
+        guard editingPlaylistID != playlist.id else { return }
         editDraft = playlist.name
         renameError = nil
         editingPlaylistID = playlist.id
-        // Focus is set by the rename field's own `.onAppear` (reliable once it's in the hierarchy) —
-        // NOT here, where the field doesn't exist yet and @FocusState would bounce + self-close.
+        // Yield the sidebar's key focus so the rename TextField (focused in its own `.onAppear`) owns
+        // Return/arrows — otherwise the ScrollView's `.onKeyPress` handlers intercept them. Restored
+        // on the keyboard close paths (`commitRename`/`onExitCommand`) so ↑/↓ stay alive after.
+        sidebarFocused = false
     }
 
     /// Begin renaming the selected playlist (keyboard Return). `.ignored` unless a playlist row is
@@ -273,28 +283,43 @@ struct LibrarySidebar: View {
     private func commitRename(_ playlist: Playlist, proposed: String, keepOpenOnConflict: Bool) {
         guard editingPlaylistID == playlist.id else { return }
         let name = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != playlist.name else { cancelRename(); return }
+        // `keepOpenOnConflict` distinguishes the KEYBOARD paths (Return) from click-away, so it
+        // doubles as "restore list focus on close" — a keyboard close keeps ↑/↓/Return alive.
+        guard !name.isEmpty, name != playlist.name else {
+            finishRename(restoreListFocus: keepOpenOnConflict)
+            return
+        }
         Task {
             do {
                 try await playlists.renamePlaylist(id: playlist.id, to: name)
                 // The user may have begun renaming ANOTHER row during the await — only close if THIS
                 // playlist is still the one being edited (QA break-it #5).
-                if editingPlaylistID == playlist.id { cancelRename() }
+                if editingPlaylistID == playlist.id { finishRename(restoreListFocus: keepOpenOnConflict) }
             } catch let conflict as PlaylistNameConflict where keepOpenOnConflict {
-                renameError = "“\(conflict.name)” already exists."
-                renameFieldFocused = true
+                showRenameError("“\(conflict.name)” already exists.")
             } catch PlaylistMutationError.invalidName where keepOpenOnConflict {
-                renameError = "That name can’t be used." // reserved ("current") — empty is pre-guarded
-                renameFieldFocused = true
+                showRenameError("That name can’t be used.") // reserved ("current") — empty is pre-guarded
             } catch {
                 if keepOpenOnConflict {
-                    renameError = "Couldn’t rename this playlist."
-                    renameFieldFocused = true
+                    showRenameError("Couldn’t rename this playlist.")
                 } else {
                     cancelRename() // leaving the field: revert rather than trap on the error
                 }
             }
         }
+    }
+
+    /// Close the rename field; on a KEYBOARD close (Return/Escape) restore list focus so ↑/↓ stay
+    /// alive — NOT on click-away, where the user intentionally moved focus elsewhere (focus-audit).
+    private func finishRename(restoreListFocus: Bool) {
+        cancelRename()
+        if restoreListFocus { sidebarFocused = true }
+    }
+
+    /// Surface an inline rename error + keep the field open/focused for a retry.
+    private func showRenameError(_ message: String) {
+        renameError = message
+        renameFieldFocused = true
     }
 
     private func cancelRename() {

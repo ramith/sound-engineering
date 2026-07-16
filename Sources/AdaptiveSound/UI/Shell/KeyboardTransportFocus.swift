@@ -18,13 +18,16 @@ import SwiftUI
 /// ## Why a single flag is safe
 /// These fields are never focused simultaneously — the Library filter fields live in mutually
 /// exclusive tabs/sections and the Save-Preset field is a modal sheet — so there is never a second
-/// focused field whose state a shared flag could clobber. Each field mirrors its `@FocusState` into
-/// this flag on change AND clears it on `.onDisappear`, so a field that is torn down while focused
-/// (a tab switch destroys the Library subtree) still releases the gate.
+/// focused field whose state a shared flag could clobber.
+///
+/// ## Wiring
+/// Fields wire this via the `.suppressesTransportSpace(while:)` modifier (see
+/// `TransportSpaceSuppressing`), which owns the `.focused` + `.onChange` + `.onDisappear` trio in one
+/// place so a field can't half-wire it. (A later hardening could make this a `Set<FieldID>` or derive
+/// it from the AppKit first responder to also close the focus-handoff transposition race — focus-audit.)
 @MainActor
 @Observable
 final class KeyboardTransportFocus {
-    /// True while a text-entry field holds keyboard focus. Set by each field's `.onChange(of:)`
-    /// and cleared on `.onDisappear`.
+    /// True while a text-entry field holds keyboard focus. Driven by `.suppressesTransportSpace(while:)`.
     var isTextEntryFocused = false
 }

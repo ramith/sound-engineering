@@ -130,7 +130,8 @@ struct AlbumDetailView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
-        .onKeyPress(.return) { playSelected(); return .handled } // keyboard play (S4 A-M4)
+        // Keyboard play (S4 A-M4); `.ignored` on an empty selection so Return bubbles (focus-audit nit).
+        .onKeyPress(.return) { selection.isEmpty ? .ignored : { playSelected(); return .handled }() }
     }
 
     /// Play the album starting at the selected row — the keyboard Return path (double-click is
