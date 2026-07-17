@@ -9,37 +9,41 @@ import Foundation
 // MARK: - Spec
 
 public enum GlowFieldSpec {
-    /// One ambient glow: its color pair and its geometry in UNIT space (center anchor as a
-    /// fraction of the container; ellipse sizes in points from the 8a spec).
+    /// One ambient glow: its color pair and its geometry ENTIRELY in UNIT space — center
+    /// anchor AND ellipse size as fractions of the container (founder round-1 decision,
+    /// 2026-07-17: proportional sizing reproduces the mock's coverage at any window size;
+    /// fixed point-sizes read as three subtle pools on a large window).
     public struct Glow: Sendable, Equatable {
         public let color: AppearancePair
-        public let width: Double
-        public let height: Double
+        public let unitWidth: Double
+        public let unitHeight: Double
         public let unitCenterX: Double
         public let unitCenterY: Double
 
-        public init(color: AppearancePair, width: Double, height: Double,
+        public init(color: AppearancePair, unitWidth: Double, unitHeight: Double,
                     unitCenterX: Double, unitCenterY: Double) {
             self.color = color
-            self.width = width
-            self.height = height
+            self.unitWidth = unitWidth
+            self.unitHeight = unitHeight
             self.unitCenterX = unitCenterX
             self.unitCenterY = unitCenterY
         }
     }
 
-    /// The three 8a glows, centers DERIVED FROM THE MOCK'S CSS (PR-2 design review: the
-    /// mock's radial-gradient offsets on its 1120×720 card, translated into tab space —
-    /// blue is an INTERIOR midfield glow at ~0.63/0.62, not an edge bleed). Order is render
-    /// order (teal under lime under blue). Founder-tunable in the by-eye rounds; the R4
-    /// geometric audit re-runs against whatever lands here.
+    /// The three 8a glows, centers AND sizes DERIVED FROM THE MOCK'S CSS (its 1120×720 card
+    /// → our 1120×596 tab space; blue is an INTERIOR midfield glow, not an edge bleed).
+    /// Order is render order (teal under lime under blue). Founder-tunable in the by-eye
+    /// rounds; the R4 geometric audit re-runs against whatever lands here.
     /// PR-6 forward note: when the shell bands go glass, the field migrates to a
     /// shell-level mount; the equivalent WINDOW-space centers are teal (0.214, 0.139),
     /// lime (0.786, 0.889), blue (0.634, 0.597).
     public static let glows: [Glow] = [
-        Glow(color: Palette.glowTeal, width: 720, height: 560, unitCenterX: 0.214, unitCenterY: 0.067),
-        Glow(color: Palette.glowLime, width: 760, height: 600, unitCenterX: 0.786, unitCenterY: 0.973),
-        Glow(color: Palette.glowBlue, width: 420, height: 380, unitCenterX: 0.634, unitCenterY: 0.621),
+        Glow(color: Palette.glowTeal, unitWidth: 0.643, unitHeight: 0.940,
+             unitCenterX: 0.214, unitCenterY: 0.067),
+        Glow(color: Palette.glowLime, unitWidth: 0.679, unitHeight: 1.007,
+             unitCenterX: 0.786, unitCenterY: 0.973),
+        Glow(color: Palette.glowBlue, unitWidth: 0.375, unitHeight: 0.638,
+             unitCenterX: 0.634, unitCenterY: 0.621),
     ]
 
     /// The falloff profile — EXACT-LINEAR to match the mock's CSS `radial-gradient(
@@ -77,8 +81,10 @@ public enum GlowFieldSpec {
         let pointX = unitX * containerWidth
         let pointY = unitY * containerHeight
         for glow in glows {
-            let deltaX = (pointX - glow.unitCenterX * containerWidth) / (glow.width / 2)
-            let deltaY = (pointY - glow.unitCenterY * containerHeight) / (glow.height / 2)
+            let halfWidth = glow.unitWidth * containerWidth / 2
+            let halfHeight = glow.unitHeight * containerHeight / 2
+            let deltaX = (pointX - glow.unitCenterX * containerWidth) / halfWidth
+            let deltaY = (pointY - glow.unitCenterY * containerHeight) / halfHeight
             let t = (deltaX * deltaX + deltaY * deltaY).squareRoot()
             let fraction = falloffFraction(at: t)
             guard fraction > 0 else { continue }
@@ -90,12 +96,13 @@ public enum GlowFieldSpec {
 
     /// Normalized elliptical distance from the TEAL glow's center at a unit point — the
     /// tertiary placement rule's geometry (§3.3: labelTertiary never inside the teal CORE,
-    /// core = t ≤ falloffMidStop).
+    /// core = t ≤ falloffMidStop). With fully-proportional geometry this is container-size-
+    /// independent, but the size parameters stay so the audit reads one calling convention.
     public static func tealDistance(unitX: Double, unitY: Double,
                                     containerWidth: Double, containerHeight: Double) -> Double {
         let teal = glows[0]
-        let deltaX = (unitX * containerWidth - teal.unitCenterX * containerWidth) / (teal.width / 2)
-        let deltaY = (unitY * containerHeight - teal.unitCenterY * containerHeight) / (teal.height / 2)
+        let deltaX = (unitX - teal.unitCenterX) * containerWidth / (teal.unitWidth * containerWidth / 2)
+        let deltaY = (unitY - teal.unitCenterY) * containerHeight / (teal.unitHeight * containerHeight / 2)
         return (deltaX * deltaX + deltaY * deltaY).squareRoot()
     }
 }
