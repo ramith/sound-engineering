@@ -84,7 +84,7 @@ private struct PeakMeterBar: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.asCard)
                     Capsule()
-                        .fill(isHot ? Color.red : Color.asAccent)
+                        .fill(isHot ? DesignSystem.Color.statusError : Color.asAccent)
                         .frame(width: geo.size.width * CGFloat(fraction))
                 }
             }
@@ -95,7 +95,7 @@ private struct PeakMeterBar: View {
             if isHot {
                 Text("CLIP")
                     .font(DesignSystem.Font.micro.weight(.bold))
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(DesignSystem.Color.statusError)
             }
         }
         .accessibilityElement(children: .ignore)

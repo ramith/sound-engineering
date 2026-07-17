@@ -20,7 +20,7 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
-                "LibraryBrowseKit",
+                "LibraryBrowseKit", "DesignTokenKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -150,6 +150,16 @@ let package = Package(
             dependencies: ["LibraryStore"],
             path: "Sources/LibraryBrowseKit"
         ),
+        // Design-token data + pure surface/accessibility resolvers (S10.7 R0). Same rationale
+        // as PlaybackQueueKit/LibraryBrowseKit: extracted from the non-importable app target so
+        // the token values, the RT/IC resolution, and the WCAG contrast audit are headlessly
+        // gated forever. ZERO SwiftUI/AppKit imports (strict-gate purity guard) — the app-side
+        // DesignSystemGlass.swift bridges this data into SwiftUI values (single source).
+        .target(
+            name: "DesignTokenKit",
+            dependencies: [],
+            path: "Sources/DesignTokenKit"
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
@@ -197,6 +207,14 @@ let package = Package(
             name: "LibraryBrowseKitTests",
             dependencies: ["LibraryBrowseKit", "LibraryStore"],
             path: "Tests/LibraryBrowseKitTests"
+        ),
+        // S10.7 rig (design §7): RES resolver cube, TOK palette invariants, the PERMANENT R4
+        // contrast audit (pure WCAG math over Kit data), and the SlotFit truncation net. The
+        // TEST target may import AppKit (font measurement); the Kit itself may not.
+        .testTarget(
+            name: "DesignTokenKitTests",
+            dependencies: ["DesignTokenKit"],
+            path: "Tests/DesignTokenKitTests"
         ),
         // Obj-C++ bridge: wraps EQModule and EQModuleCoefficients in a pure-C
         // interface (EQTestBridge.h) for Swift test consumption.
