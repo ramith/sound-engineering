@@ -49,7 +49,7 @@ private struct AppLogoView: View {
 
             Image(systemName: "music.note")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(DesignSystem.Color.onAccent)
         }
         .accessibilityHidden(true)
     }

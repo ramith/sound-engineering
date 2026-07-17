@@ -300,6 +300,7 @@ private struct FooterScrubber: View {
         Circle()
             .fill(DesignSystem.Color.label)
             .frame(width: DesignSystem.Footer.thumbSize, height: DesignSystem.Footer.thumbSize)
+            // nosemgrep: ui-no-color-literal TEMP reason="shadow becomes a Glass token in PR 6" expiry=2026-08-01
             .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 1)
             .scaleEffect(isHovered || isDragging ? 1.15 : 1.0)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered || isDragging)

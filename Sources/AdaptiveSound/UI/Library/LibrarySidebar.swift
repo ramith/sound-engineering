@@ -75,6 +75,7 @@ struct LibrarySidebar: View {
         }
         // A sidebar material so the column reads as a source list now that `.listStyle(.sidebar)` is
         // gone (the plain ScrollView doesn't imply it).
+        // nosemgrep: ui-no-adhoc-material TEMP reason="Glass-token adoption = S10.8 sweep" expiry=2026-08-15
         .background(.bar)
         .safeAreaInset(edge: .bottom) { footer }
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
@@ -361,6 +362,7 @@ private extension LibrarySidebar {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        // nosemgrep: ui-no-adhoc-material TEMP reason="Glass-token adoption = S10.8 sweep" expiry=2026-08-15
         .background(.bar)
     }
 }

@@ -121,6 +121,26 @@ if grep -nE '\.(moveItem|copyItem)\(' "${playlist_add_paths[@]}"; then
 fi
 green "playlist add/drop path ok (no moveItem/copyItem — reference-add only)."
 
+step "S10.7 layer-policy guards (Kit purity + fixed-band Dynamic Type clamp)"
+# DesignTokenKit's testability contract IS its zero-UI-imports purity (design §3.2 R0): the
+# moment it imports SwiftUI/AppKit, the headless RES/TOK/R4 tests stop meaning anything.
+if grep -rnE '^import (SwiftUI|AppKit)' Sources/DesignTokenKit/; then
+  red "ERROR: DesignTokenKit imports a UI framework — the Kit must stay headless (s10-7 design §3.2)."
+  exit 1
+fi
+# A fixed ShellMetrics band must clamp text scale or accessibility text sizes overflow the
+# band (A-M2). NowPlayingBar carries the clamp today; ChromeBar joins this list in PR 6.
+clamped_bands=(
+  "Sources/AdaptiveSound/UI/Shell/NowPlayingBar.swift"
+)
+for f in "${clamped_bands[@]}"; do
+  if ! grep -q '\.dynamicTypeSize(' "$f"; then
+    red "ERROR: $f lost its .dynamicTypeSize clamp — a fixed band overflows at accessibility text sizes."
+    exit 1
+  fi
+done
+green "layer-policy guards ok (Kit headless; fixed-band clamps present)."
+
 if [[ "$HAVE_CPPCHECK" == "1" ]]; then
   step "cppcheck (supplementary C++ analysis)"
   # Start strict-but-useful: warnings/style/perf/portability, not --enable=all (which is
