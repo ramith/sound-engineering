@@ -78,8 +78,8 @@ enum DesignSystem {
 
         /// Status. `statusWarning` #FF9F0A (system-vibrant orange). `statusError` is NEW in
         /// S10.7 (PR 1a): the clipping/over-level red the loudness meters previously
-        /// hand-painted as `Color.red` — same per-appearance values, so the swap is
-        /// pixel-invisible (its light-mode AA shortfall is pre-existing; PR-6 restyle).
+        /// hand-painted as `Color.red` — the macOS-26 palette-red values (#FF383C/#FF4245),
+        /// so the swap is pixel-invisible (its AA shortfalls are pre-existing; PR-6 restyle).
         static let statusWarning = from(Palette.statusWarning)
         static let statusError = from(Palette.statusError)
 
@@ -134,11 +134,12 @@ enum DesignSystem {
     // MARK: Gradient
 
     enum Gradient {
-        /// App-mark squircle / play-button fill (subtle teal).
+        /// App-mark squircle / play-button fill (subtle teal). Stops from the Kit palette
+        /// (#3FD0BA → #1FA893 → accentDeep) — no RGBA literals on the app side (§3.2).
         static let iconFill = LinearGradient(
             gradient: SwiftUI.Gradient(colors: [
-                SwiftUI.Color(red: 0.247, green: 0.816, blue: 0.729), // #3FD0BA
-                SwiftUI.Color(red: 0.122, green: 0.659, blue: 0.576), // #1FA893
+                Color.from(Palette.iconFillTop),
+                Color.from(Palette.iconFillMid),
                 Color.accentDeep,
             ]),
             startPoint: .top,

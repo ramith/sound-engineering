@@ -49,7 +49,9 @@ struct TokenInvariantTests {
         #expect(Palette.rowNowPlaying.light == accent.opacity(0.25))
         #expect(Palette.rowSelected.light == accent.opacity(0.12))
         #expect(Palette.rowNowPlaying.light == Palette.rowNowPlaying.dark,
-                "row tints are appearance-independent (accent-derived)")
+                "rowNowPlaying is appearance-independent (accent-derived)")
+        #expect(Palette.rowSelected.light == Palette.rowSelected.dark,
+                "rowSelected is appearance-independent (accent-derived)")
     }
 
     /// The audit engine's ground truth: opaque-over-anything is itself; results go opaque.

@@ -57,17 +57,27 @@ public enum Palette {
     public static let statusWarning = AppearancePair(both: RGBAColor(red: 1.0, green: 0.623, blue: 0.039)) // #FF9F0A
     /// NEW in S10.7 (PR 1a): the clipping/over-level red the loudness meters previously
     /// hand-painted as `Color.red` (design §3.1 disposition). Values are SwiftUI's palette
-    /// red per appearance, so the token swap is pixel-invisible. The light value fails AA
-    /// on light surfaces (pre-existing look) — scheduled for the PR-6 footer/meters restyle.
+    /// red AS RESOLVED ON macOS 26 — #FF383C light / #FF4245 dark, exact fractions
+    /// (empirically probed: `Color.red.resolve(in:)` ≡ `NSColor.systemRed`; the classic
+    /// pre-26 #FF3B30/#FF453A is a visible hue shift — review BLOCKER-1). Pixel-invisible
+    /// swap. The light value fails AA on light surfaces (pre-existing look) — PR-6 restyle.
     public static let statusError = AppearancePair(
-        light: RGBAColor(red: 1.0, green: 0.231, blue: 0.188),
-        dark: RGBAColor(red: 1.0, green: 0.271, blue: 0.227)
+        light: RGBAColor(red: 1.0, green: 56.0 / 255.0, blue: 60.0 / 255.0),
+        dark: RGBAColor(red: 1.0, green: 66.0 / 255.0, blue: 69.0 / 255.0)
     )
 
     // MARK: Row tints (derived from accent — appearance-independent)
 
     public static let rowNowPlaying = AppearancePair(both: accent.light.opacity(0.25))
     public static let rowSelected = AppearancePair(both: accent.light.opacity(0.12))
+
+    // MARK: Icon-fill gradient stops (app-mark squircle / play button — appearance-independent)
+
+    /// The two upper stops of `DesignSystem.Gradient.iconFill` (#3FD0BA, #1FA893 as the
+    /// shipped rounded doubles — byte-identity to the pre-Kit literals beats hex purity);
+    /// the third stop is `accentDeep`.
+    public static let iconFillTop = AppearancePair(both: RGBAColor(red: 0.247, green: 0.816, blue: 0.729))
+    public static let iconFillMid = AppearancePair(both: RGBAColor(red: 0.122, green: 0.659, blue: 0.576))
 
     // MARK: Registry (drives the invariant + audit tests — a token missing here is untested)
 
@@ -79,6 +89,7 @@ public enum Palette {
         ("accent", accent), ("accentDeep", accentDeep), ("onAccent", onAccent), ("blue", blue),
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
+        ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
     ]
 }
 

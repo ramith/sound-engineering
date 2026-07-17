@@ -28,21 +28,6 @@ public enum OverlaySubstrate: Equatable, Sendable, CaseIterable {
     case bar
 }
 
-// MARK: - Accessibility flags
-
-/// The environment flags surface resolution answers to. `increasedContrast` implies the
-/// opaque path even if `reduceTransparency` is false (macOS couples IC→RT at the OS level,
-/// but the resolver must not depend on the OS doing it — design §7 RES-02).
-public struct AccessibilityFlags: Equatable, Sendable {
-    public let reduceTransparency: Bool
-    public let increasedContrast: Bool
-
-    public init(reduceTransparency: Bool, increasedContrast: Bool) {
-        self.reduceTransparency = reduceTransparency
-        self.increasedContrast = increasedContrast
-    }
-}
-
 // MARK: - Resolution result
 
 /// What the modifier paints. `.systemMaterial` = the system owns the fallback behavior
@@ -55,17 +40,23 @@ public enum ResolvedSurface: Equatable, Sendable {
 
 // MARK: - Resolver
 
-/// Pure resolution: role × appearance × flags → what to paint. Deterministic, total.
+/// Pure resolution: role × appearance × accessibility flags → what to paint. Deterministic,
+/// total. Contract notes the fill roles will honor (asserted then by RES-01/02): a
+/// translucent fill goes opaque when `reduceTransparency` is true, AND when
+/// `increasedContrast` is true even with `reduceTransparency` false — macOS couples IC→RT at
+/// the OS level, but the resolver must never depend on the OS doing it (design §7 RES-02).
 public func resolveSurface(role: SurfaceRole,
                            appearance: TokenAppearance,
-                           flags: AccessibilityFlags) -> ResolvedSurface {
+                           reduceTransparency: Bool,
+                           increasedContrast: Bool) -> ResolvedSurface {
     switch role {
     case let .overlay(substrate):
         // Native-adaptation ownership: Material self-adapts to RT/IC/appearance, so the
         // resolver returns the substrate unconditionally — asserted for the full flag
-        // cube in RES tests. (`appearance` participates for the fill roles to come.)
+        // cube in RES tests. (The parameters participate once the fill roles land.)
         _ = appearance
-        _ = flags
+        _ = reduceTransparency
+        _ = increasedContrast
         return .systemMaterial(substrate)
     }
 }

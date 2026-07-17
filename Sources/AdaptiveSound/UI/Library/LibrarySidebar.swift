@@ -222,7 +222,7 @@ struct LibrarySidebar: View {
             if let renameError {
                 Text(renameError)
                     .font(DesignSystem.Font.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(DesignSystem.Color.statusError)
                     .padding(.horizontal, DesignSystem.Spacing.small)
             }
         }
