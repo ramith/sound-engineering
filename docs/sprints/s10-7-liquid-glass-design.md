@@ -1,4 +1,4 @@
-# S10.7 — Liquid Glass UI polish (design)
+# S10.7 — Liquid Glass release UX (design)
 
 > Status lives in [sprint-plan.md §Status](sprint-plan.md#status), not here. This doc carries the
 > sprint's scope, architecture, chunk plan, decisions, and QA plan.
@@ -7,44 +7,61 @@
 > from), `Player Layout Variants.dc.html` **card 8a** (release target = 7a glass + production
 > polish), `now-playing-base.html` (base layout), `NowPlayingView.swift` (visual reference — NOT a
 > drop-in; the repo has a governed UI layer).
+> **Review provenance:** researched online 2026-07-17 (Apple docs/HIG/WWDC25-26 + an SDK-verified
+> API inventory against MacOSX26.5); SME panel: swiftui-pro + macos-design + qa-expert (rig);
+> gate: architect + the-fool. Their findings are folded in below, not appended.
 
 ## 1. Goal
 
-Adopt the founder-approved **8a "Liquid Glass"** design on the **Now Playing tab + the global
-shell** (chrome bar, footer transport) with a **HIG-correct layer policy**: system Liquid Glass
-only where macOS provides it (we never imitate system chrome), and the app's own "glass-look"
-surfaces built as token-governed content-layer styling — no hand-painted `rgba` in views, no
-appearance hacks, no accessibility regressions. Other tabs pick up the same tokens as a
-fast-follow sprint; nothing here may fork a second styling system.
+Ship the founder-approved **8a "Liquid Glass"** design on the **Now Playing tab + the global
+shell** (chrome bar, footer transport) as **the release UX**. Founder 2026-07-17: the current UI
+is elementary and **not releasable** — this is a design-from-scratch sprint for the product's
+face, not a polish pass, and **R1 now gates on it** (plus the S10.8 tab sweep). Longer term the
+**entire GUI redesigns around Liquid Glass**: the `DesignSystem.Glass` token layer built in PR 1
+is the permanent foundation of that system, so it is designed for the whole app, not just the
+five surfaces this sprint touches.
+
+The implementation posture is a **HIG-correct layer policy**: system Liquid Glass only where
+macOS provides it (we never imitate system chrome), the app's own "glass-look" surfaces built as
+token-governed content-layer styling — no hand-painted `rgba` in views, no appearance hacks, no
+accessibility regressions.
 
 Founder directives binding on this sprint: architecture must be **clean, no hacks**, grounded in
-current Apple guidance (researched online 2026-07-17, §3.0); **the-fool** red-teams the design
-and every chunk for hack-smells; **qa-expert + the-fool** evolve the test rig for visual work (§7).
+current Apple guidance (§3.0); **the-fool** red-teams the design and every chunk for hack-smells;
+**qa-expert + the-fool** evolve the test rig for visual work (§7).
 
 ## 2. Scope — locked founder decisions
 
 | # | Decision (LOCKED) | Consequence |
 |---|---|---|
-| **D1** | Scope = **Now Playing + global shell** | EQ/Library/Monitoring/Settings only inherit tokens later (fast-follow); their layouts don't change in S10.7. |
+| **D1** | Scope = **Now Playing + global shell** | Library/EQ/Monitoring/Settings keep their layouts; they adopt the proven tokens in **S10.8** (surfaces/controls/type only — per-tab layout redesigns are post-R1 waves of the full Liquid-Glass redesign). |
 | **D2** | Inspector = **trailing 260pt glass column** (8a) | `NowPlayingTabView` leaves the 50/50 `containerRelativeFrame` split → queue-flex + fixed-260 inspector (§5). |
-| **D3** | **Transport stays in the footer** (`NowPlayingBar`, L3) | 8a's in-hero transport pill + scrubber are NOT implemented; the footer gets the glass-look restyle instead. |
-| **D4** | **Chrome stays a band**, not 8a's floating detached capsule | Preserves the L2 window-drag setup + the "fixed top-left" invariant; the band keeps the window surface, its CONTROLS restyle via tokens. |
+| **D3** | **Transport stays in the footer** (`NowPlayingBar`, L3) | 8a's in-hero transport pill + scrubber are NOT implemented; the footer gets the glass-look restyle instead. The hero is recomposed for its transport-less reality (§5.1). |
+| **D4** | **Chrome stays a band**, not 8a's floating detached capsule | Preserves the L2 window-drag setup + the "fixed top-left" invariant; the band keeps a quiet window surface + its existing solid hairline (NO glass slab, NO added elevation); its CONTROLS restyle via tokens. |
+| **D11** | **R1 gates on S10.7 + S10.8** | "Nothing elementary ships." S10.8 = token sweep across the remaining tabs after this sprint proves the tokens. |
 
 Non-goals (this sprint): album-art-sampled glow colors (D8 fast-follow); 8a's queue filter field
 (D7); any change to `ShellMetrics`/`Footer` metrics or window minimums; any playback-engine work;
 **an overlay-bar shell** (making content scroll UNDER a true-glass footer is the one place real
-refraction would earn its keep — Apple's showcase pattern — but it reverses the L1 decision that
-moved AppShell from `safeAreaInset` to explicit frames precisely because content rendered behind
-chrome, and glass over a 20 Hz animating backdrop has no published perf evidence. Revisit post-R1
-as its own design if wanted.)
+refraction would earn its keep — Apple's showcase pattern, sanctioned hook = `safeAreaBar`
+(§3.5) — but it reverses the L1 decision that moved AppShell from `safeAreaInset` to explicit
+frames precisely because content rendered behind chrome, and glass over a 20 Hz animating
+backdrop has no published perf evidence. Revisit post-R1 as its own design if wanted.)
+
+**Known deltas vs the 8a mock (founder: accept up front, by-eye at PR 2/3 confirms):** the top of
+the window is a quiet band, not a floating glass capsule (D4); the hero is title + badges, not a
+transport cockpit (D3); and without a backdrop-saturation API (§3.5) the panels run slightly less
+vivid than the browser mock unless the accent-chroma compensation knob (§3.2) is adopted.
+Expected fidelity ≈ 85% — the visual thesis (glow field, lens, inspector, teal light) survives
+intact.
 
 ## 3. Materials architecture
 
 ### 3.0 Research grounding (online pass, 2026-07-17)
 
-Two research sweeps ground this section: a native-API inventory and an adoption-pitfalls survey
-of Apple docs/HIG, WWDC25/26 sessions, and named-author engineering write-ups. Load-bearing
-findings, cited where they change our design:
+Two research sweeps ground this section: a native-API inventory (SDK-verified, §3.5) and an
+adoption-pitfalls survey of Apple docs/HIG, WWDC25/26 sessions, and named-author engineering
+write-ups. Load-bearing findings, cited where they change our design:
 
 1. **Apple's adoption order is "recompile → subtract → add":** system components pick up the new
    look automatically; the first *active* step is REMOVING custom backgrounds that fight system
@@ -83,9 +100,6 @@ findings, cited where they change our design:
    chrome silently ignore user preference
    ([MacRumors](https://www.macrumors.com/2026/06/08/apple-announces-liquid-glass-improvements/)).
 
-*(§3.0 API-name footnotes — exact shipping signatures for `glassEffect`/`GlassEffectContainer`/
-concentric-corner APIs — finalized from the API-inventory sweep; see §3.5.)*
-
 ### 3.1 The layer policy (the core idea)
 
 The 8a design was authored in CSS, where "glass" is one thing. On macOS 26 it decomposes into
@@ -96,99 +110,178 @@ three different implementation regimes, and picking the right regime per surface
   context menus), popovers, sheets, tooltips, and the native segmented control's own macOS 26
   look. We take these for free, and we **subtract interference** (no custom fills/skins fighting
   them). We do NOT hand-apply `glassEffect` anywhere this sprint — every candidate surface fails
-  the HIG placement test below.
+  the placement test below.
 - **Regime B — app "glass-look" panels: token-governed content-layer styling.** The analyzer
-  lens, inspector column, device pill, badges, and both shell bands are **flow-layout structure**
-  in this app: `AppShell` stacks bands and panes; *nothing ever renders beneath these surfaces
-  except the app's own static glow field* (§3.3). Backdrop-sampling machinery (`glassEffect` OR
-  `Material`) over a self-owned static backdrop is ghost glass (§3.0-3) plus cost plus manual
-  accessibility branching — for pixels identical to a translucent **fill**. So Regime B is:
-  dynamic translucent fills + edge decoration (specular top rim, hairline, bottom light bleed,
-  shadow) composed by ONE modifier from `DesignSystem.Glass` tokens. Deterministic in both
-  appearances, zero backdrop layers, and *we* own the Reduce-Transparency/Increase-Contrast
-  fallbacks in one place. ("Edges matter more than surfaces" is the documented craft insight for
-  exactly this kind of panel — [Klarity](https://www.klaritydisk.com/blog/building-liquid-glass-ui-macos).)
+  lens, inspector column, device pill, and badges are **flow-layout structure**: *nothing ever
+  renders beneath these surfaces except the app's own static glow field* (§3.3).
+  Backdrop-sampling machinery (`glassEffect` OR `Material`) over a self-owned static backdrop is
+  ghost glass (§3.0-3) plus cost plus manual accessibility branching — for pixels identical to a
+  translucent **fill**. So Regime B is: dynamic translucent fills + edge decoration (specular top
+  rim, hairline, bottom light bleed, shadow) composed by ONE modifier from `DesignSystem.Glass`
+  tokens. Deterministic in both appearances, zero backdrop layers, and *we* own the
+  Reduce-Transparency/Increase-Contrast fallbacks in one place. ("Edges matter more than
+  surfaces" — [Klarity](https://www.klaritydisk.com/blog/building-liquid-glass-ui-macos).)
+  The SHELL BANDS are **not** Regime B: per D4 they keep quiet window/panel surfaces + solid
+  hairlines; only the controls sitting on them restyle.
   *Considered alternative:* HIG does sanction standard `Material`s for content-layer structure —
   a material substrate under the same decoration would auto-track system translucency settings at
   the cost of determinism and an extra backdrop pass. Because the role modifier hides the choice,
   swapping fills → material later touches ZERO call sites; we start with fills (simpler,
-  deterministic, nothing variable to blur) and let the founder's PR-2/3 by-eye + the SME panel
+  deterministic, nothing variable to blur) and let the founder's PR-2/3 by-eye + panel judgment
   overturn it if the look reads flat. The 8a CSS `saturate(1.5)` backdrop boost is dropped
   outright — SwiftUI has no public backdrop-filter API (§3.5), and approximating it would be
-  exactly the kind of hack this sprint bans.
+  exactly the kind of hack this sprint bans. The sanctioned vividness knob is §3.2's
+  accent-chroma compensation.
 - **Regime C — plain content styling.** Ambient glows, queue-row tints, title halo,
-  gradient-fade dividers, meter fills: ordinary fills/gradients from tokens. Queue **rows** stay
+  gradient-fade hairlines (content-internal separators ONLY — band seams keep the full-width
+  solid `Hairline`), meter fills: ordinary fills/gradients from tokens. Queue **rows** stay
   opacity-tinted fills (`rowNowPlaying`/`rowSelected`) — per-row surfaces are both a HIG
   violation and the canonical perf trap (§3.0-2/-4).
 
 **The placement test (mechanical, fool-checkable):** *does variable content render beneath this
-surface at runtime?* No → Regime B/C (fills). Yes → it must be system glass — and if we can't use
-system glass there, we don't build the surface. Today NOTHING in the app answers "yes" (stacked
-bands, flow panels) — which is why this sprint ships zero hand-applied `glassEffect` and zero
-`Material` usage, and why the one future "yes" candidate (an overlay footer with the queue
-scrolling beneath) is explicitly parked in §2 as a post-R1 design.
+surface at runtime?* No → Regime B/C (fills). Yes → system glass or system Material — and if
+neither fits, we don't build the surface.
 
-This is not a rejection of Liquid Glass — it's the HIG's own assignment of our surfaces to the
-content layer, using the content layer's sanctioned tools (§3.0-2), while every system-owned
-surface (menus/sheets/controls) renders true glass untouched.
+**Applying the test to the codebase today (tripwire dry-run evidence, §7):** the bands and Now
+Playing panels all answer "no" — which is why this sprint ships zero hand-applied `glassEffect`
+and zero NEW backdrop-sampling surfaces. Six pre-existing sites need a stated disposition:
+three surfaces answer **"yes" and correctly use `.ultraThinMaterial` already** — the floating
+error banner ([ErrorBanner.swift](../../Sources/AdaptiveSound/UI/Shell/ErrorBanner.swift)), the
+queue toast ([QueueToast.swift](../../Sources/AdaptiveSound/UI/Shell/QueueToast.swift)), and the
+EQ recall banner ([EQTabView.swift](../../Sources/AdaptiveSound/UI/Tabs/EQTabView.swift)) — all
+transient overlays floating OVER variable tab content. In PR 1 they migrate to
+`.glassPanel(.overlay)` — a role whose IMPLEMENTATION keeps `.ultraThinMaterial` (zero pixel
+change, now token-routed), making the token layer, not call sites, the place Material is
+sanctioned. Three Library `.background(.bar)` sites are out of D1 scope and carry the house
+TEMP suppression until S10.8. (`SpectrumColorPalette.swift` computes interpolated `Color(red:)`
+— a token SOURCE, excluded as a definition file.)
 
 ### 3.2 `DesignSystem.Glass` — the only place glass-look is defined
 
-PR 1 adds a `Glass` namespace to `DesignSystem.swift` (same governance as `Footer`/`QueueRow`):
+PR 1 adds a `Glass` namespace to `DesignSystem.swift` (same governance as `Footer`/`QueueRow`) —
+and because the entire GUI eventually redesigns around these tokens, roles are named for the
+whole app (a Library table header and an EQ canvas must find their role here later, not invent
+one):
 
 - **Surface roles, not ad-hoc values:** a `.glassPanel(_ role:)` ViewModifier with roles
-  `panel` (inspector, radius 22), `lens` (analyzer, radius 20), `control` (pills, radius h/2),
-  `badge` (radius 10–11). A view says *what it is*, never *how glass looks*. The modifier owns
-  fill + rim + hairline + bleed + shadow composition and the accessibility fallbacks.
+  `panel` (inspector + future side panels, radius 22), `lens` (analyzer + future visualizer
+  frames, radius 20), `control` (pills, radius h/2), `badge` (radius 10–11), and `overlay`
+  (the ONE Material-backed role — transient floating surfaces with variable content genuinely
+  beneath: today's error banner / queue toast / EQ recall banner, §3.1). A view says *what
+  it is*, never *how glass looks*. The modifier owns fill + rim + hairline + bleed + shadow
+  composition and the accessibility fallbacks. Edge decoration composes as distinct strata —
+  top-edge-only 1px specular highlight (never a full-perimeter stroke), a separate full 1px
+  hairline, a wide soft bottom-only inner bleed, and a soft deep drop shadow (large radius, low
+  alpha — never tight/dark). That layering, not the fill, is what separates Mac glass from a
+  web card.
+- **`DesignTokenKit` (R0, §7 — the testability spine):** the app is an `executableTarget`, so
+  tests cannot import it (the constraint that already produced `PlaybackQueueKit` and
+  `LibraryBrowseKit`). PR 1 puts the sprint's pure visual core in a small library target:
+  token DATA (light/dark RGBA pairs, radii, decoration constants, slot widths — plain structs,
+  zero SwiftUI imports), the RT/IC resolver as a pure function
+  (`resolveSurface(role:appearance:reduceTransparency:increasedContrast:)`), and later
+  `PeakHoldTracker` + the animation-gating predicate. `DesignSystemGlass.swift` builds its
+  SwiftUI values FROM Kit data (single source, no hand-mirror drift); `DesignSystem.Color`
+  keeps its API. This is what makes R2/R4 real tests instead of aspirations.
 - **Token'd decoration:** rim/hairline/bleed/shadow values + the three ambient-glow colors from
   the 8a spec as `DesignSystem.Glass.*` constants; every fill via the existing
-  `DesignSystem.Color.dynamic(light:dark:)` — 8a's values are the dark side; light appearance is
-  a first-class variant (white-based fills + dark hairlines), tuned in the founder's `make run`.
-- **Increased-contrast variants** for accent/tint tokens (§3.0-5): the dynamic provider already
-  resolves per-appearance; it extends to the high-contrast appearance names so Increase Contrast
-  gets stronger hairlines/borders without view-level branching.
-- **Typography:** `DesignSystem.Font.heroTitle` (Dynamic-Type-mapped large-title style, heavy
-  weight — the 8a 28/800 hero) added beside the existing rungs.
-- **Radii concentricity:** the 8a concentric map (window 22 → panel 22 → lens 20 → pills h/2 →
-  rows 12 → badges 10–11) recorded as `Glass.Radius` tokens; if the shipping concentric-corner
-  API (§3.5) fits our fixed-band shell, roles adopt it instead of constants — decided in PR 1
-  review, not per call site.
-- **Accessibility inside the modifier, not call sites:** Reduce Transparency (which macOS also
-  forces on under Increase Contrast) swaps translucent fills → opaque `Color.panel`-family
-  tokens. Reduce Motion is consumed by the two animated accents (§3.4), which are the only
-  motion this sprint adds.
+  `DesignSystem.Color.dynamic(light:dark:)`.
+- **The dark base (D10):** 8a is tuned against window `#0e1013`; the shipping dark window is
+  `#1E1E1E` — twice as light. Every glow alpha, panel fill, and rim value assumes the deep base.
+  D10 (§9) decides re-basing the dark surface stack (window → ≈`#0e1013`–`#121418`, card/panel
+  re-checked) **app-wide** in PR 2 — one base per app is non-negotiable, and S10.8 inherits it.
+  The R4 contrast audit runs against whichever base D10 picks.
+- **Light appearance — mandated translation grammar (never invert):**
+  1. Specular top rim STAYS white but visibly brighter than the fill (~.5–.6) — a highlight,
+     never a gray stroke.
+  2. The 1px hairline FLIPS to dark (black .08–.12).
+  3. Bottom light-bleed is DROPPED in light (depth in light mode comes from shadow, not
+     emission).
+  4. Shadows lighter and tighter (~half the dark opacity, slightly smaller radius).
+  5. Glows at ~1/3 alpha with larger blur radius-equivalents — ambience, not smears.
+  6. Teal title halo + slider glow are DARK-ONLY (≤.10 or off in light); carved-track inner
+     shadows .4 → ~.15.
+  The founder tunes VALUES in `make run`; this grammar is not up for per-PR reinterpretation.
+- **Accent-chroma compensation (sanctioned vividness knob):** the dropped `saturate(1.5)` boost
+  made 8a's glows read *more vivid through* panels than beside them. The token-level, hack-free
+  equivalent: ~4–6% accent chroma mixed into the panel fill tokens (or a very-low-alpha accent
+  wash as a decoration stratum inside `.glassPanel`). Named here so PR 3 doesn't rediscover it
+  ad hoc; founder by-eye decides whether it's needed.
+- **Increased-contrast variants (mechanism verified):** the dynamic provider's
+  `bestMatch(from: [.aqua, .darkAqua])` extends with the two
+  `NSAppearanceNameAccessibilityHighContrast*` names; optional `lightHC:`/`darkHC:` parameters
+  default to the base values so existing call sites compile unchanged. STRUCTURAL
+  increase-contrast responses (thicker hairline, added border — Apple's own IC treatment adds
+  borders) live in the `.glassPanel` modifier reading `@Environment(\.colorSchemeContrast)`,
+  not in color tokens. Because macOS forces Reduce Transparency on under IC, the IC variants
+  always composite over the opaque RT-fallback fills.
+- **Typography:** `DesignSystem.Font.heroTitle` = `.largeTitle` + `.heavy` (Dynamic-Type-mapped;
+  macOS default ~26pt vs the mock's 28px — accepted; a fixed `.system(size: 28)` would break
+  Dynamic Type and is banned). Badge/axis type floors: informational badge text ≥ 10pt;
+  sub-10px sizes only for a11y-hidden decorative axis labels.
+- **Radii:** fixed tokens (panel 22 / lens 20 / rows 12 / badges 10–11, all `.continuous`,
+  pills h/2). The concentric-corner API is skipped deliberately: these panels are inset
+  mid-content and never meet a window corner (bands are full-bleed), so container-relative
+  radii buy nothing (§3.5).
+- **Accessibility inside the modifier, not call sites:** Reduce Transparency swaps translucent
+  fills → opaque `Color.panel`-family tokens. Reduce Motion is consumed by the animated accents
+  (§3.4), which are the only motion this sprint adds. Opaquing fills is the RT path ONLY — it is
+  never the fix for a contrast failure (that's a token-value fix; see §7 R4).
 
-**Enforcement (rig, §7 R1):** a static tripwire bans `Material`/`.ultraThinMaterial`,
-`glassEffect`, `NSVisualEffectView`, and `Color(red:` literals in `Sources/AdaptiveSound/UI/**`
-outside the DesignSystem/Glass files — the token layer is load-bearing, so it gets a tripwire
-like every other invariant in this repo. (The ban on `glassEffect` is deliberate: per §3.1 any
-future use must arrive together with an under-content surface, i.e. through a design review that
-also updates this doc and the tripwire — not ad hoc.)
+**Enforcement (rig, §7 R1):** four semgrep tripwires over ALL of `Sources/AdaptiveSound`
+(ad-hoc materials incl. `.background(.bar)`, frozen Liquid Glass APIs, hand-painted color
+literals, per-view appearance branching), excepting ONLY the four governed definition files
+(`DesignSystem.swift`, `DesignSystemGlass.swift`, `Color+Brand.swift`,
+`SpectrumColorPalette.swift`) — never call sites. The §3.1 overlay migration lands WITH the
+rules so they are green from day one. Any future `glassEffect` must arrive together with an
+under-content surface, i.e. through a design review that updates this doc and the rule — not
+ad hoc.
 
 ### 3.3 Ambient glow field (content layer)
 
-A `GlowField` background ZStack behind `NowPlayingTabView` content: three blurred radial
-gradients (teal top-left ~720×560 / lime bottom-right ~760×600 / blue mid-right ~420×380, blurs
-28–34) over the window base. Static brand colors this sprint (D8). Dark appearance per spec;
-light appearance gets deliberately subtler variants. This is what the Regime-B translucent fills
-visibly sit over — it's what makes them read as glass — so it lands (PR 2) before the panels
-(PR 3+). Pure decoration → `accessibilityHidden(true)`, no motion, and under Reduce Transparency
-it flattens to the plain window color (translucency semantics, owned by the same token layer).
+A `GlowField` background behind `NowPlayingTabView` content: three radial gradients (teal
+top-left ~720×560 / lime bottom-right ~760×600 / blue mid-right ~420×380) over the D10 window
+base. **Construction (no `.blur` at all):** each glow is an `Ellipse` filled with a 3-stop eased
+`RadialGradient` (peak → ~35% of peak @ ~0.55 → clear @ 1) — a gradient already IS a smooth
+falloff; authoring the falloff in the stops is visually equivalent to blurring a hard shape and
+costs zero filter passes under a 20 Hz-invalidating subtree. Mounted via `.background { }` on the
+tab content (not a layout-participating sibling — a ~760pt glow would inflate the tab's ideal
+size), `.allowsHitTesting(false)` + `accessibilityHidden(true)`. Static brand colors this sprint
+(D8). Dark per spec; light per the §3.2 grammar (~1/3 alpha). Under Reduce Transparency the field
+flattens to the plain window color. PR-2 eyeball checklist: gradient banding on wide-gamut
+displays; `AppShell`'s `.clipped()` hard-cutting glows at the band seams (mostly hidden under the
+hairlines — verify).
 
 ### 3.4 Motion & state rules
 
-- ENHANCED badge pulsing dot (1.6s opacity 1→0.4) and the active-queue-row 3-bar equalizer
-  animate **only while playing** and **only when Reduce Motion is off** — same gating the
-  spectrum already uses (`SpectrumAnalyzerView` dims to 0.4 on pause; keep that).
-- No animated panel properties (no fill/shadow animation — documented fallback-stack smell);
-  transitions stay the existing `.easeInOut(0.2)` tab-level ones.
-- Hovers per 8a (rows white 5%, pills 10–12%) via tokens.
+- ENHANCED badge pulsing dot (1.6s cycle, opacity 1→0.4) and the active-queue-row 3-bar
+  equalizer animate **only while playing** and **only when Reduce Motion is off** — same gating
+  the spectrum already uses (dims to 0.4 on pause; keep that).
+- **Pulse implementation (mandated pattern):** a conditional `phaseAnimator([1.0, 0.4])` with
+  `.easeInOut(duration: 0.8)` per phase, mounted only while `isPlaying && !reduceMotion` — the
+  `if` swap removes it → deterministic stop at full opacity, no zombie animation, immune to
+  `@Observable` invalidation restarts. The `.animation(.repeatForever)`+`onAppear` idiom is
+  BANNED (keeps animating after gating flips; freezes mid-phase) — PR-4 review checks for it.
+- **3-bar row equalizer:** derive the three bars from the real `spectrumBars` low/mid/high bands
+  (the data is already on the main thread 20×/s) rather than a fake sine loop — the difference
+  between an instrument and a GIF. Reduce Motion / paused → static bars.
+- **Micro-transitions (all Reduce-Motion-gated):** hero title/artist crossfade on track change
+  (`.contentTransition(.opacity)`); ENHANCED badge appear/disappear crossfade when the path
+  flips Pure↔Enhanced (never a pop); device-pill sample-rate `numericText` transition (D5);
+  visible accent focus rings on panels (verified in PR-5's traversal check).
+- No animated panel properties (no fill/shadow animation); transitions stay the existing
+  `.easeInOut(0.2)` tab-level ones. Hovers per 8a (rows white 5%, pills 10–12%) via tokens; the
+  lens gets a hover state (slight rim brighten + pointer + existing `.help`) for its
+  double-click→Monitoring affordance — with the stated a11y position: the spectrum stays
+  `accessibilityHidden`, the shortcut is unreachable by VO/keyboard, acceptable ONLY because the
+  Monitoring tab remains reachable via the tab picker.
 
 ### 3.5 Native-API footnotes (SDK-verified inventory, macOS 26.5 SDK, 2026-07-17)
 
 The API research pass pulled Apple's doc JSON and cross-verified every signature against the
 installed `MacOSX26.5.sdk` swiftinterfaces — these are SHIPPING names (several beta-era spellings
-died; do not copy blog code unchecked). Recorded so any future Regime-A adoption starts verified:
+died; do not copy blog code unchecked). The swiftui-pro panel re-verified the list against the
+SDK independently: no corrections. Recorded so any future Regime-A adoption starts verified:
 
 - `glassEffect(_ glass: Glass = .regular, in shape: some Shape = DefaultGlassEffectShape())`
   (default shape = Capsule). **No `isEnabled:` parameter ships** — conditional disabling is
@@ -210,8 +303,7 @@ died; do not copy blog code unchecked). Recorded so any future Regime-A adoption
   app-owned band per D4, so none of this applies until/unless the shell ever migrates.)
 - Concentric corners: **`.containerConcentric` never shipped** — the shipping API is
   `ConcentricRectangle` / `Edge.Corner.Style.concentric(minimum:)` / `.rect(corners:isUniform:)`,
-  resolved against a `containerShape`. PR 1 review decides tokens-vs-concentric for our inset
-  panels (they don't hug the window container, so fixed tokens are the likely fit).
+  resolved against a `containerShape`. Skipped for our inset panels (§3.2 Radii).
 - Accessibility (native glass): Reduce Transparency → frostier; Increase Contrast →
   black/white + border (and macOS force-enables RT under IC); Reduce Motion → damped effects —
   automatic for the MATERIAL, while app-triggered animations and custom overlays remain ours.
@@ -219,17 +311,18 @@ died; do not copy blog code unchecked). Recorded so any future Regime-A adoption
   slider — system materials track these, app-owned fills legitimately don't (content design).
 - `Material` (e.g. `.ultraThinMaterial`) blurs **in-app** content only; HIG sanctions standard
   materials for content-layer structure. There is **no public backdrop-filter API** in SwiftUI
-  (the 8a CSS `saturate(1.5)` boost is not reproducible and is dropped from the recipe).
+  (the 8a CSS `saturate(1.5)` boost is not reproducible; §3.2 names the sanctioned substitute).
 - `NSGlassEffectView`/`NSGlassEffectContainerView` exist for AppKit (regular/clear only;
   `effectIsInteractive` is macOS 27); `NSVisualEffectView` = the standard-materials system
-  (behind-window blending), NOT Liquid Glass — remains banned in `UI/**` (§3.2).
+  (behind-window blending), NOT Liquid Glass — banned in `UI/**` (§3.2).
 
 ## 4. What already matches (don't rebuild)
 
 `SpectrumColorPalette` (exact Teal→Lime + 0.82 vertical darken), spectrum pause-dim + Reduce
 Motion handling, real FFT source (`AudioViewModel.spectrumBars` ~20 Hz), `AppShell` band
 architecture, WCAG-audited dynamic label palette, `FormatBadgeView`, loudness meters, queue row
-tint tokens, the 5-tab set. The sprint restyles; it does not re-derive any of these.
+tint tokens, the 5-tab set, and the three §3.1-allowlisted Material overlays. The sprint
+restyles; it does not re-derive any of these.
 
 ## 5. Target Now Playing layout (the one structural change — PR 5)
 
@@ -239,103 +332,305 @@ info/meters/intensity/crossfeed | `RightPanelView`: queue).
 Target (8a, transport-less per D3):
 
 ```
-ZStack {
-  GlowField (Regime C, PR 2)
-  VStack(spacing: 0)                      // inside AppShell's bounded content region
-  ├─ HeroBand                             // title/artist/badges left … analyzer lens right
-  │    ├─ VStack: heroTitle (28/800 + teal halo), artist, badge row
-  │    │          [FormatBadge · ENHANCED(pulsing dot) · sample-rate]
-  │    └─ SpectrumAnalyzerView in .glassPanel(.lens)  — 400×122 w/ dB grid,
-  │         0 dB label, 20 Hz–20 kHz scale, peak-hold caps        (D6)
-  └─ HStack(spacing: 0)
-       ├─ Queue (flex)                    // PlaylistView, unchanged internals
-       └─ InspectorColumn (fixed 260, .glassPanel(.panel))         (D2)
-            master gain · Reimagine intensity · loudness meters · crossfeed
-            (moved from LeftPanelView/NowPlayingInfoView; scrolls if short window)
-}
+NowPlayingTabView                          // inside AppShell's bounded content region
+ .background { GlowField() }               // Regime C, PR 2 — not a layout sibling
+ VStack(spacing: 0)
+ ├─ HeroBand                               // fixed intrinsic height ≈ 154pt (lens 122 + padding)
+ │    ├─ VStack: heroTitle (28/800-equiv + dark-only teal halo), artist,
+ │    │          badge row  [signal-path badge set · format · sample-rate]
+ │    │          — the block CENTERED VERTICALLY against the lens (no lower-left void)
+ │    └─ SpectrumAnalyzerView in .glassPanel(.lens)                    (D6)
+ │         flex width min 400 → max ~560, height 122; dB grid, 0 dB label,
+ │         20 Hz–20 kHz scale, peak-hold caps; beyond max-width, whitespace
+ │         is legitimate hero negative space
+ └─ HStack(spacing: 0)
+      ├─ Queue (flex)                      // PlaylistView, unchanged internals + OWN scroll
+      └─ InspectorColumn (fixed 260)                                    (D2)
+           .glassPanel(.panel) on the COLUMN CONTAINER, its content in an
+           inner ScrollView (rim/hairline must not scroll away)
+           master gain · Reimagine intensity · decoder/bit-depth detail ·
+           loudness meters · crossfeed
 ```
 
-Notes: the lens is a Regime-B fill **behind** the bars — never anything sampling over them
-(§3.0-4). Window min 880×640 holds — the queue *gains* width (~590 vs today's 440 at minimum);
-the inspector top aligns with the queue header (8a alignment grid: 16pt panel insets, 26pt text
-gutter). Sliders adopt the 8a carved look (5pt inset track, 14pt knob, teal glow fill) via ONE
-shared slider primitive — extracted from the existing custom `FooterScrubber` drag logic rather
-than a second hand-rolled slider (one control, two consumers). Crossfeed keeps its existing
-disabled semantics (55% block opacity + caption — already implemented). `LeftPanelView` /
-`RightPanelView` dissolve into `HeroBand` + `InspectorColumn`; the double-click-spectrum →
-Monitoring affordance moves onto the lens.
+**Scrolling architecture (mandated):** NO outer ScrollView — an unbounded height proposal would
+materialize every queue row (virtualization dead) and break `scrollTo`/jump-to-now-playing. The
+HeroBand hugs intrinsic height; the queue keeps its internal `ScrollView`+`LazyVStack`; the
+inspector scrolls its own content INSIDE the panel chrome. At the 880×640 minimum the content
+region is 516pt → hero ~154 leaves ~362: the inspector (~400pt+ of content) is EXPECTED to
+scroll near minimum height — that's the design, not a defect. PR-5 acceptance tests 880×640
+exactly.
+
+**Geometry rules:** pad-inside-then-frame for the inspector (`.padding` before
+`.frame(width: 260)` widens the column to 292 and silently steals queue width — the S9
+lesson mutates with explicit frames: the symptom flips from clipping to theft). "Inspector top
+aligns with queue header" is implemented as a shared top-padding token on both panes, never
+cross-sibling alignment guides. The queue pane's current `.padding(16)` + `Color.asCard` fill +
+leading hairline (NowPlayingTabView:17–24) do NOT carry over — the queue sits directly on the
+glow field (rows carry their own tints); the inspector panel + hairline tokens replace the old
+pane treatment.
+
+**Hero badge row — signal-path state mapping (required before the widget retires):**
+`NowPlayingWidget`/`SignalPathBadge` today surface Pure/Enhanced, the "(Pure unavailable)"
+fallback, interrupted/device-disconnected, decoder (Apple/FFmpeg), bit depth, intensity %, and
+crossfeed. The hero badge row maps ALL states: `PURE` badge (accent-less, monochrome) when
+bit-perfect; `ENHANCED` + pulsing dot when the DSP path is active; `PURE UNAVAILABLE →
+ENHANCED` fallback keeps the warning affordance (statusWarning tint); interrupted state shows
+the footer's interrupted treatment at hero scale. Decoder + bit-depth move to a small
+`InspectorColumn` detail line (the audiophile home for them); the footer's condensed signal slot
+is untouched. Badge heights via `@ScaledMetric(relativeTo: .subheadline)` (fixed 22pt clips
+under Dynamic Type); the hero band hugs intrinsic height — no `.dynamicTypeSize` clamp unless
+the badge ROW alone needs one.
+
+**Empty / first-launch state (designed, not endured):** placeholder title ("Nothing playing")
+in `labelSecondary`, NO halo; badge row HIDDEN (not grayed) until a track loads; the lens ships
+its frame + dB grid + axis labels with flat bars, dimmed — the instrument-at-rest is the
+audiophile empty state; geometry identical to the loaded state so nothing reflows on first play
+(mirror the footer's existing behavior). The existing empty-queue view restyles onto the glow
+field in the same PR.
+
+**Focus & traversal (stated decision):** structural order hero → queue → inspector gives the VO
+reading order; this REVERSES today's controls-before-queue tab order, and the queue's
+`.defaultFocus` keeps first focus. Accepted — the queue is the tab's primary object. PR-5
+re-verifies `.defaultFocus` resolution in the new hierarchy + visible focus treatment on all
+inspector controls.
+
+**Carved sliders — one primitive, two commit policies:** extract `CarvedSliderTrack` (visuals:
+5pt inset track, 14pt knob, dark-only teal glow; drag → fraction stream + edit-phase callback,
+shaped like `Slider(value:onEditingChanged:)`). Two thin consumers choose policy: the footer
+scrubber stays DEFERRED-commit (local fraction, seek on release, tooltip/time labels stay in
+`FooterScrubber`'s composition); gain/intensity are LIVE-commit (audible while dragging, step
+0.01). **A11y parity is acceptance, not aspiration:** focusable with visible focus treatment,
+←/→ ± step when focused, `.accessibilityAdjustableAction` + spoken `accessibilityValue` on all
+three consumers — a keyboard user who can Tab to the gain slider but cannot change it is a PR
+failure. (Native `Slider` restyling on macOS cannot produce the carved look — `.tint` only —
+so the custom track is justified, and this parity clause is the price.)
+
+`LeftPanelView`/`RightPanelView` dissolve into `HeroBand` + `InspectorColumn`; the
+double-click-spectrum → Monitoring affordance moves onto the lens (hover per §3.4).
 
 ## 6. Chunk plan (6 PRs, each independently shippable + gated)
 
 | PR | Deliverable | Key files | Acceptance (beyond the standard gate) |
 |---|---|---|---|
-| **1. Glass tokens** | `DesignSystem.Glass` roles/tokens + `.glassPanel(_:)` modifier (fills + edge decoration; RT/IC fallbacks inside) + `heroTitle` font + glow colors + radii; **zero call sites** | `DesignSystem.swift` (+ `DesignSystemGlass.swift` peer file) | No visual change (`make run` before/after identical); token-scope tripwire lands in the same PR (§7 R1) |
-| **2. Ambient glow** | `GlowField` behind Now Playing content; dark + subtler light variants; RT → flat window color | `NowPlayingTabView` (+ small `GlowField.swift`) | Founder eyeball both appearances; Reduce Transparency flattens |
-| **3. Analyzer lens** | Lens panel (Regime B) around the spectrum: dB gridlines (4 hairlines), 0 dB label, 20 Hz–20 kHz scale, **peak-hold caps** (2px, bar color @50%, 4px above bar, ~600 ms hold then decay) | `SpectrumAnalyzerView.swift` + `PeakHoldTracker` (pure, unit-tested) + small overlay views | Caps freeze on pause + honor Reduce Motion; `PeakHoldTracker` swift-testing cases green; heights still sourced from `spectrumBars` |
-| **4. Hero** | `HeroBand`: heroTitle + halo, artist line, badge row (`FormatBadgeView` capsule variant, ENHANCED pulsing dot, fixed 22pt badge height) | `NowPlayingInfoView.swift` → `HeroBand` (widget card retires here) | Pulse gated on `isPlaying && !reduceMotion`; badges identical height; long-title truncation |
-| **5. Inspector column** | The §5 restructure: queue-flex + fixed-260 inspector; carved-slider primitive shared w/ footer scrubber; meters restyle | `NowPlayingTabView`, new `InspectorColumn.swift`, `MasterGainSliderView`, `NowPlayingInfoView` split, `LoudnessMetersView` | Keyboard/VO traversal order sane; 880pt window: no truncated readouts (the S9 LUFS-clip lesson); inspector scrolls on short windows |
-| **6. Chrome + footer restyle** | Band surfaces stay window/panel colors (no fake glass slabs); device pill restyled via tokens (+ sample-rate readout, D5); tab selector per D9; footer regions restyled via tokens; subtract-interference audit (nothing fights system menus/popovers) | `ChromeBar.swift`, `NowPlayingBar.swift` | `ShellMetrics`/`Footer` metrics byte-identical; window-drag on chrome still works (L2); media-key/transport behavior untouched |
+| **1. Glass tokens + Kit + rig** | **R0 `DesignTokenKit`** (token data + pure RT/IC resolver + tests); `DesignSystem.Glass` roles/tokens + `.glassPanel(_:)` modifier (fills + edge-decoration strata; RT/IC inside; Material-backed `.overlay` role) + `heroTitle` font + glow colors + radii + HC-variant provider extension; the four R1 semgrep rules + clamp guard + §3.1 overlay migration + Library TEMP suppressions; matrix template committed | `Package.swift`, `Sources/DesignTokenKit/`, `Tests/DesignTokenKitTests/`, `DesignSystem.swift` (+ `DesignSystemGlass.swift`), `.semgrep.yml`, `strict-gate.sh`, `docs/sprints/s10-7-visual-matrix.md` | **Zero visual change** (matrix A,B before/after identical); rules GREEN from day one; RES/TOK/ContrastAudit(existing surfaces)/SlotFit tests green |
+| **2. Ambient glow + base re-tune (D10)** | `GlowField` (stop-authored gradients, no blur); dark-base re-tune app-wide per D10; light variants per §3.2 grammar | `NowPlayingTabView` (+ `GlowField.swift`), `DesignSystem.Color` | Founder eyeball both appearances **against the 8a mock**; RT flattens; band-seam clipping + banding checked; R4 composite audit re-run against the new base |
+| **3. Analyzer lens (size-agnostic)** | Lens fill via `.glassPanel(.lens)` + **peak-hold caps**: pure `PeakHoldTracker` (hold ~600ms → decay), fed from the existing 20 Hz `tickSpectrum()` in `AudioViewModel`, published as `peakCaps` beside `spectrumBars`, drawn by ONE overlay view (not 88 extra diffed siblings) | `SpectrumAnalyzerView.swift`, `AudioViewModel+SpectrumTimer.swift`, `PeakHoldTracker.swift` + tests | Caps freeze on pause + no implicit animation under Reduce Motion; tracker cases green (R2); heights still sourced from `spectrumBars`; NO grid/scale yet (they need the D6 frame — PR 5) |
+| **4. Hero** | `HeroBand`: heroTitle + dark-only halo, artist, full signal-path badge mapping (§5), pulsing dot via conditional `phaseAnimator`, `@ScaledMetric` badge heights, empty/first-launch state, title/badge micro-transitions | `NowPlayingInfoView.swift` → `HeroBand.swift` (widget card retires; decoder/bits relocation stubbed for PR 5) | All four signal-path states render (Pure/Enhanced/fallback/interrupted); pulse stops deterministically when gating flips; long-title truncation + `.help`; empty state per §5 |
+| **5. Inspector column + lens placement (D6)** | The §5 restructure: hero-right lens (400→560 flex ×122) + dB grid/0 dB/axis scale; queue-flex + fixed-260 inspector w/ own scroll; `CarvedSliderTrack` + gain/intensity consumers; decoder/bits detail line; meters restyle | `NowPlayingTabView`, `HeroBand`, `InspectorColumn.swift`, `MasterGainSliderView`, `LoudnessMetersView`, `CarvedSliderTrack.swift` | 880×640 exact: no truncation, queue virtualization intact (`scrollTo` works), inspector scrolls inside chrome; keyboard operability per §5 (arrows adjust, focus visible, VO adjustable); traversal decision verified |
+| **6. Chrome + footer restyle** | Band surfaces stay quiet (window color + existing hairline — no slab, no elevation); device pill restyled via tokens + sample-rate readout w/ `numericText` (D5); tab selector per D9 (native); footer restyle w/ M4 contrast rules; `FooterScrubber` adopts `CarvedSliderTrack` HERE (not PR 5); subtract-interference audit | `ChromeBar.swift`, `NowPlayingBar.swift` | `ShellMetrics`/`Footer` metrics byte-identical; window-drag intact (L2); media-keys/transport regression-checked (scrubber re-plumb happens in the PR whose acceptance watches the footer); non-text 3:1 contrast (track/knob/meters/toggle) both appearances |
+| — **S10.8 (own sprint):** Library/EQ/Monitoring/Settings token sweep on the proven tokens — surfaces/controls/type only. R1 gates on it (D11). | | | |
 
-Order: 1→2→3→4→5→6. PRs 2–4 are restyles inside the current split (they do NOT wait for the
-restructure); PR 5 is the only layout change; PR 6 touches shared shell last, once the token
-layer has been proven on lower-risk surfaces. Every PR: the standard loop — SME review
-(swiftui-pro + macos-design), `scripts/strict-gate.sh` green, founder `make run` matrix (§7 R6).
+Order: 1→2→3→4→5→6, **strictly incremental (founder directive):** each PR is a
+founder-verifiable milestone — build green → SME review (swiftui-pro + macos-design) →
+strict-gate → **founder runs it, screenshots the PR's matrix cells, feeds them back for
+vs-mock review → sign-off → merge**. PRs 2–4 are restyles inside the current split (they do
+NOT wait for the restructure); PR 5 is the only layout change; PR 6 touches shared shell last,
+once the token layer has been proven on lower-risk surfaces.
 
-## 7. Test-rig evolution (qa-expert + the-fool own this — seeded, not final)
+## 7. Test-rig evolution (qa-expert + the-fool — DECIDED)
 
 The rig today (strict-gate: format/lint/semgrep/periphery/migrator+drop-path greps/build/test/
 C++ gates; VerifyLibraryStore; `make run` = the only visual check) verifies none of what this
-sprint changes. Proposed additions for the QA panel to accept/reject/replace:
+sprint changes. Panel verdicts (qa-expert, dry-run against the tree; the-fool's counters in
+§7.4), with the structural prerequisite first. The founder's testing mode for this sprint:
+**manual, incremental — the founder screenshots the required matrix cells at every milestone
+and feeds them back for vs-mock review before sign-off** (the run-and-screenshot loop).
 
-- **R1 — token-scope tripwire (static, in strict-gate):** ban `Material`/`.ultraThinMaterial`,
-  `glassEffect`, `NSVisualEffectView`, and `Color(red:` literals in `UI/**` outside
-  DesignSystem/Glass files (§3.2). Same pattern as the migrator-posture/drop-path greps.
-- **R2 — pure-logic extraction + unit tests:** `PeakHoldTracker` (hold/decay math), the
-  RT-fallback resolution (given the flag, the modifier resolves opaque), the pulse-gating
-  predicate — plain swift-testing cases (no UI harness needed).
-- **R3 — snapshot testing (evaluate, don't assume):** pointfree `swift-snapshot-testing` over
-  `NSHostingView` offscreen renders for HeroBand/InspectorColumn/lens. Because Regime B is plain
-  fills (no Materials), offscreen renders are **deterministic** — the classic
-  materials-don't-render-off-window objection doesn't apply. Open question for the panel:
-  cross-macOS-build brittleness vs value in a founder-eyeballs-every-PR loop.
-- **R4 — contrast re-audit against composites:** the label palette was WCAG-audited against
-  SOLID surfaces; Regime B makes the effective backdrop = fill ⊕ glow ⊕ window. Because all
-  three are app-owned tokens, worst-case composite colors are computable — re-verify AA for
-  label/labelSecondary on the lightest composite in both appearances (+ Increase Contrast
-  forced-RT state). VoiceOver traversal after the PR-5 restructure.
-- **R5 — performance sanity:** a documented manual Instruments pass (or a cheap FPS probe) on
-  the Now Playing tab while playing, dark mode, after PR 3 and PR 5. Regime B removed the
-  backdrop-sampling cost by construction, so the budget (no sustained dropped frames at 120 Hz)
-  should hold trivially — verify, don't assume.
-- **R6 — founder visual matrix as a committed checklist:** per-PR: {dark, light} ×
-  {Reduce Transparency on/off} × {Reduce Motion on/off} spot-grid (8 cells, ~4 that matter per
-  PR) so "looks right" is a repeatable pass, not vibes.
+**R0 — `DesignTokenKit` extraction (NEW; prerequisite for R2/R4; lands in PR 1).** See §3.2.
+Token DATA + the pure RT/IC resolver + (later) `PeakHoldTracker` and the animation-gate
+predicate live in a library target with `Tests/DesignTokenKitTests` — headless, deterministic,
+in `swift test` → strict-gate → CI forever. Zero visual change.
+
+**R1 — token-scope tripwires: ACCEPT, revised + hardened (PR 1; semgrep, house style).**
+Four `pattern-regex` rules over `Sources/AdaptiveSound`, excluding only the four definition
+files (§3.2):
+1. `ui-no-adhoc-material` — bans `.*Material`, `Material.`, `NSVisualEffectView`,
+   `.background(.bar)`; message routes to `.glassPanel(_:)`.
+2. `no-liquid-glass-api` — freezes `glassEffect*`, `GlassEffectContainer`,
+   `NSGlassEffectView*`, `buttonStyle(.glass…)` — NO exceptions, incl. DesignSystem (any
+   future use re-opens this doc).
+3. `ui-no-color-literal` — bans `Color/NSColor(red:|white:|hue:|srgbRed:…)`, `#colorLiteral`,
+   named/string colors outside the definition files.
+4. `ui-no-appearance-branching` — bans `\.colorScheme` reads, `.preferredColorScheme(`,
+   `NSApp.appearance =` (appearance is owned by the dynamic token layer — S9-T).
+Dry-run evidence: 6 pre-existing hits — 3 overlays migrate to `.glassPanel(.overlay)` in PR 1
+(zero pixel change, §3.1); 3 Library `.background(.bar)` sites get the house TEMP suppression
+(`// nosemgrep: … reason="Library token adoption = S10.8" expiry=…`, enforced by
+check-suppressions.sh). `docs/`/`research/` already semgrep-ignored (the 8a reference file's
+`glassEffect` stays out of scope); no `#Preview` blocks exist, so no carve-out. Accepted
+posture: these are drift nets, not security boundaries (same as the migrator grep) — helper
+indirection can evade them; review owns that seam (§7.4-1).
+Plus ONE strict-gate bash guard (presence assertion, migrator-grep idiom): fixed-band
+Dynamic-Type-clamp guard — `NowPlayingBar.swift` must keep `.dynamicTypeSize(` (a fixed 64pt
+band overflows at accessibility sizes); ChromeBar joins the list in PR 6.
+
+**R2 — pure-logic unit tests: ACCEPT (requires R0). House style: `@Suite` + ID'd `@Test`s,
+derived expectations, never magic numbers.**
+- `PeakHoldTracker` — time-FED (`update(bars:elapsed:)`, never wall-clock; the S10.6
+  monotonic-while-playing lesson), config `(hold: 0.6s, decayPerSecond: r)`:
+  PH-01 cap ≥ live bar (rising re-latches) · PH-02 holds latched value for exactly `hold`
+  fed-seconds · PH-03 then decays linearly (derived from config) · PH-04 floors at
+  max(live, 0) · PH-05 higher bar re-latches + restarts hold · PH-06 no feed → no decay
+  (pause is structural) · PH-07 `reset()` on track change · PH-08 band-count reconfigure ·
+  PH-09 hostile input (negative elapsed clamps; NaN/∞/out-of-range bars clamp).
+- RT/IC resolver — RES-01 all roles × both appearances: RT off → translucent role token; RT
+  on → alpha 1.0 opaque token · RES-02 IC=true implies the opaque result EVEN IF the RT flag
+  is false (never depend on the OS coupling) · RES-03 IC hairline/border strength ≥ default
+  (derived comparison) · RES-04 GlowField under RT resolves to the flat window token.
+- Animation gate — PG-01..04: the 2×2 `(isPlaying, reduceMotion)` truth table; animate only
+  `(true, false)`; pause-dim (1.0/0.4) derived from the same predicate.
+- Token invariants — TOK-01 radii chain monotonic (window ≥ panel ≥ lens ≥ rows ≥ badges) ·
+  TOK-02 translucent fill alphas ∈ (0,1) · TOK-03 every dynamic token has both appearance
+  values.
+
+**R3 — snapshot testing: REJECT for S10.7; adopt-later ONLY behind entry criteria.** The
+Regime-B fills are deterministic, but: (1) the views read `@Environment(AudioViewModel.self)`
+inside the non-importable executable target — a snapshot test cannot even construct them
+without a UI-library extraction this sprint doesn't budget; (2) the panels are TEXT-heavy and
+font rasterization drifts across machines/OS-runner images (CI = GitHub-hosted `macos-26`,
+image bumps on GitHub's cadence → "regenerate and rubber-stamp" rot); (3) in-sprint it only
+re-verifies what the founder's screenshot loop just verified; (4) new external dependency
+(per-dependency justification bar). Entry criteria to revisit post-R1: fast-follow sprints
+restyle surfaces the founder no longer eyeballs per-PR, AND the check is scoped to TEXT-FREE
+decoration (`.glassPanel` over a fixed gray rect from Kit data — deterministic in fact), AND
+references are recorded on the CI runner image. (Known-good recipe recorded for that day:
+window-free `NSHostingView` + `layoutSubtreeIfNeeded` + `cacheDisplay` into a fixed-size 1x
+bitmap, explicit `NSAppearance(named:)` per appearance.)
+
+**R4 — contrast audit: ACCEPT, upgraded to a PERMANENT unit test**
+(`DesignTokenKitTests/ContrastAuditTests`; lands PR 1, extends PR 2/3/5/6). ~40 lines of pure
+Swift: sRGB alpha-over compositing + WCAG relative luminance; thresholds derived (≥4.5:1 text
+AA, ≥3:1 non-text per WCAG 1.4.11). Backdrop set per surface = worst-case ENUMERATION: window
+alone; window ⊕ each glow at token max alpha; window ⊕ each PAIRWISE glow overlap (overlaps
+composite lighter); then ⊕ the surface fill (blur falloff modeled conservatively as
+max-alpha). Required pairs, each × {light, dark} × {default, IC-resolved}: (1) glow composite
+directly × `label` (hero title sits straight on the glow — most exposed); (2) `lens` ×
+`label`/`labelSecondary` (0 dB + axis text); (3) `panel` × `label`/`labelSecondary`/
+`labelTertiary`; (4) `control` × `label` + the device-pill readout (PR 6); (5) `badge` fills ×
+their text; (6) `rowNowPlaying`/`rowSelected` ⊕ panel composite × `label`; (7) IC state:
+RT-opaque surfaces × all labels + hairline-vs-surface ≥3:1 non-text. Scope guard: audits the
+surfaces THIS sprint touches — it does not retro-gate shipped choices (found in passing:
+`onAccent` white-on-teal computes ≈2.5:1 today — pre-existing, flagged to the founder
+separately, not a gate). VoiceOver traversal is NOT R4 — it's manual (R6/PR 5).
+
+**R5 — performance: REVISE — a documented manual Instruments recipe as matrix rows; REJECT
+an in-app FPS probe and xctrace automation** (no public frame-drop API; a homegrown probe
+measures main-thread congestion, not render throughput — false confidence; headless xctrace
+parsing rots). When: after PR 3 (caps over the 20 Hz spectrum — the real risk), after PR 5
+(restructure), and at the sprint-end break-it. Recipe (verbatim in the matrix template):
+`make run` → play 96 kHz → Now Playing, dark → Instruments Core Animation FPS / Metal System
+Trace → 60 s steady + 30 s resize/tab-flip while playing. Budget: zero SUSTAINED dropped
+frames at the display's refresh; GPU frame time p95 < ~50% budget; one-frame blips on tab
+switch acceptable. The observed number is recorded in the PR's matrix block.
+
+**R6 — founder visual matrix: ACCEPT, concretized + bound to the screenshot loop.** The
+TEMPLATE is committed once as `docs/sprints/s10-7-visual-matrix.md` (PR 1); each PR's FILLED
+matrix is pasted into the PR description with the founder's screenshots attached — **the
+founder screenshots each required cell at every milestone and feeds them back; the vs-mock
+review of those screenshots happens before founder sign-off; merge requires the filled block
++ sign-off.** States: A dark/default · B light/default · C dark/RT · D light/RT · E dark/IC ·
+F light/IC · G dark/RM-while-playing · H live-toggle (appearance AND RT flipped mid-playback
+on the visible tab — catches cached-resolution bugs no static check can see). Required cells:
+PR 1 → A,B (assert NO visual change); PR 2 → A,B,C,D,H vs the 8a mock; PR 3 → A,B,C,G +
+Instruments row; PR 4 → A,B,E,G + long-title cell; PR 5 → A,B,C,E + 880×640-min cell +
+inspector-scroll cell + the written VO/keyboard traversal script + Instruments row; PR 6 →
+A,B,E + window-drag cell + system-surfaces cell (device menu + a context menu render true
+glass over our bands). Sprint end: the full A–H grid + the §10 break-it list. (Template
+documents the Settings toggles incl. IC force-enabling RT.)
+
+### 7.1 Additions beyond the seeds
+
+- **SlotFitTests (headless, Kit):** widest legitimate readout strings vs slot tokens
+  (`"88:88"` vs `Footer.timeLabelWidth`; `"-88.8 LUFS"`; `"176.4 kHz"` pill readout;
+  `"+12.0 dB"` gain) measured via `NSFont.preferredFont(forTextStyle:)` — honestly documented
+  as a gross-misfit net (the SwiftUI↔NSFont metric seam), catching exactly the S9
+  LUFS-truncation class. Plus a PR-5 layout-arithmetic test: inspector 260 + insets + queue
+  minimum ≤ 880 (turns §5's width prose into an asserted derivation).
+- **Dead code on dissolution (LeftPanelView/RightPanelView/NowPlayingWidget):** already
+  covered — Periphery runs in strict-gate on the hostile config; the PRs must delete, not
+  orphan. No new rig.
+- **Launch smoke:** consciously not automated beyond `make run`'s existing pgrep assertion;
+  a GUI launch in hosted CI is a flake generator.
+- **VO/keyboard traversal (PR 5): explicitly manual** — a written expected-traversal script
+  in the matrix template (hero → lens → queue → inspector: gain → intensity → meters →
+  crossfeed; footer reachable; Monitoring affordance's stated a11y position §3.4). No
+  XCUITest (SwiftPM, no xcodeproj; osascript needs TCC and rots). Automation theater is
+  worse than an honest manual step.
+
+### 7.2 Per-PR acceptance flow
+
+Every PR: `make strict-gate` locally + identical hosted CI — which after PR 1 includes the
+four R1 rules (also in fast `make lint`), the clamp guard, and all Kit tests via `swift test`.
+No new Makefile targets or CI steps — nothing to forget to run. On top, per PR:
+
+| PR | Automated (new, in-gate) | Founder-manual (screenshots → review → sign-off in PR body) |
+|---|---|---|
+| 1 | R1 rules green (6 sites migrated/TEMP'd); RES/TOK/fit tests | A,B — no visual change |
+| 2 | R4 glow⊕window composites (incl. pairwise overlaps) | A,B,C,D,H vs mock |
+| 3 | PH-01..09; PG-01..04; R4 lens pairs | A,B,C,G + Instruments |
+| 4 | R4 hero/badge pairs; badge/truncation fit cases | A,B,E,G + long-title |
+| 5 | Layout-arithmetic; inspector fit tests | A,B,C,E + min-window + scroll + VO script + Instruments |
+| 6 | Pill fit test; clamp guard extends to ChromeBar; metrics byte-identical | A,B,E + window-drag + system-surfaces |
+
+End of sprint: full A–H on the finished tab; qa+fool break-it round (§10); rig retro (which
+rules fired / false-positived; TEMP suppressions re-dated or resolved).
+
+**Explicitly founder-owned forever (never claimed by automation):** whether it looks right
+(all matrix cells, via the screenshot loop), perceived glassiness of Regime-B fills (the §8
+escalation trigger), Instruments numbers, VO/keyboard feel, Pure-mode/audio unaffectedness by
+ear.
+
+### 7.3 CI note
+
+CI is GitHub-hosted `macos-26` (strict-ci.yml). Runner-image cadence is GitHub's — a
+standing argument against pixel-reference checks (R3) and for token-math checks (R4).
+
+### 7.4 Standing attack brief for the-fool (the rig's own weakest points)
+
+1. Regex tripwires have escape routes (helper returning `some ShapeStyle`, laundered `let s:
+   Material`, asset-catalog colors, future Apple material tokens) — drift net + review is the
+   accepted posture; enumerate holes so review knows them.
+2. The R4 composite model is a model (pairwise max-alpha, no blur falloff shape, no triple
+   overlap, sRGB-vs-P3) — probe whether matrix cells C–F would catch what the math misses.
+3. Resolver-to-modifier wiring is untested headlessly — a `.glassPanel` that ignores the env
+   flags passes every unit test; matrix cells C/D/E/H are the only net — is a subtly-still-
+   translucent RT fallback actually SEEN?
+4. Fit tests ride the font-metric seam — the safety margin can mask a real 1–2 pt clip.
+5. The heaviest risks have only manual nets, and manual nets are skippable (branch protection
+   can't parse a pasted matrix; post-sprint, no pixel net exists at all — pressure-test the R3
+   entry criteria).
 
 ## 8. Risks
 
 | Risk | Mitigation |
 |---|---|
-| 8a look drifts from what fills-without-materials can express (founder judges it "not glassy enough") | The glow field is what sells the effect (§3.3 lands early); PR 2+3 give the founder the earliest possible by-eye check; escalation path is a REAL under-content surface (§2 overlay-footer, post-R1), never fake backdrop stacks |
-| Legibility on translucent fills (light mode especially) | Labels stay the explicit WCAG palette; R4 composite re-audit; Increase Contrast (forces RT on macOS) verified per PR |
-| PR-5 restructure regresses keyboard/VO or the S9 truncation fixes | PR-5 acceptance explicitly re-runs those checks; swiftui-pro review on the restructure |
-| Chrome/footer restyle disturbs L2 window-drag or `.clipped()` shadows at band seams | D4 keeps band structure; shadows kept inside the content region via spacing tokens; PR-6 last |
-| System-glass drift (macOS updates re-tune menus/controls while our token surfaces stay fixed) | Regime split is explicit: system surfaces are never skinned, so they track the OS; token surfaces are app content design (like album-art UI), legitimately stable |
-| Scope creep into other tabs ("just one more surface") | D1: tokens only; any non-Now-Playing layout change is out of sprint |
+| 8a look drifts from what fills can express (founder judges it "not glassy enough") | D10 deep base + glow field land FIRST (PR 2 = earliest by-eye vs the mock); §3.2 accent-chroma knob is the sanctioned vividness lever; escalation is a REAL under-content surface (§2 overlay-footer, post-R1), never fake backdrop stacks |
+| Legibility on translucent fills (light mode especially) | §3.2 light grammar mandated; R4 composite audit incl. non-text 3:1; IC forced-RT state verified per PR |
+| PR-5 restructure regresses keyboard/VO, queue virtualization, or the S9 truncation fixes | §5 mandates the scrolling architecture + keyboard-parity acceptance; 880×640-exact check; swiftui-pro review on the restructure |
+| Custom slider primitive loses native-Slider a11y | §5 parity clause IS the acceptance; deferred/live commit split keeps scrubber semantics intact |
+| Chrome/footer restyle disturbs L2 window-drag or `.clipped()` shadows at band seams | D4 keeps band structure quiet; shadows inside content region via tokens; scrubber re-plumb moved to PR 6 where footer acceptance lives |
+| Base re-tune (D10) shifts every tab mid-sprint | Deliberate: one base per app; S10.8 sweeps the tabs onto it; R4 re-runs against the new base in PR 2 |
+| Scope creep into other tabs ("just one more surface") | D1: layouts untouched; S10.8 owns the sweep; any layout redesign is a post-R1 wave |
 
 ## 9. Open decisions for the founder (recommendations first)
 
 | # | Question | Recommendation |
 |---|---|---|
-| **D5** | Device pill sample-rate readout ("44.1 kHz", live)? | **Yes** — audiophile-signal, data already flows through the signal-path readout; small (PR 6). |
-| **D6** | Analyzer placement: 8a hero-right lens (400×122) vs today's full-width 50pt strip under the hero? | **Adopt 8a hero-right** — it's the design's centerpiece and the lens treatment reads best as a framed panel (PR 5 layout; PR 3 styling works either way). |
-| **D7** | 8a's queue filter field? | **Defer** — the queue is a working set, not a library; Library surfaces already have filter fields. Revisit post-R1 if queues run long. |
-| **D8** | Glow colors: static brand teal/lime/blue vs album-art-sampled? | **Static now**, art-sampled as a fast-follow (needs dominant-color extraction + caching design of its own). |
-| **D9** | Tab selector: keep the native segmented control vs build 8a's custom tab capsule (teal-gradient active pill)? | **Keep native** — free macOS 26 styling + full a11y/keyboard behavior tracks the OS; a custom capsule is bespoke-control debt for a brand accent. Revisit only if the founder judges the native look breaks the design. |
+| **D5** | Device pill sample-rate readout ("44.1 kHz", live)? | **Yes** — audiophile-signal, data already flows through the signal-path readout; small (PR 6, with `numericText` transition). |
+| **D6** | Analyzer placement: 8a hero-right lens vs today's full-width 50pt strip? | **Adopt 8a hero-right, flexing 400→~560 ×122** (macos-design: a framed instrument bounds the screen's continuous motion; a fixed lens would strand in whitespace on large windows). Grid/scale styling follows the frame in PR 5. |
+| **D7** | 8a's queue filter field? | **Defer** — the queue is a working set, not a library; Library surfaces already have filter fields. Revisit post-R1. |
+| **D8** | Glow colors: static brand teal/lime/blue vs album-art-sampled? | **Static now**, art-sampled as a fast-follow (needs dominant-color extraction + caching design; `backgroundExtensionEffect` is the related future hero-art hook). |
+| **D9** | Tab selector: native segmented control vs 8a's custom teal-gradient capsule? | **Keep native, firmly** (macos-design: the teal capsule is 8a's most web-like element, not its identity — no Apple app brand-colors its selected segment; identity lives in the glow/lens/teal light; native buys macOS-26 styling + a11y + future OS re-tunes free). |
+| **D10** | Re-base the dark surface stack app-wide to the 8a deep base (window `#1E1E1E` → ≈`#0e1013`–`#121418`) in PR 2? | **Yes** — every 8a value is tuned against the deep base; over `#1E1E1E` the glows wash out and PR 2's by-eye fails; one base per app, S10.8 inherits it, R4 re-audits against it. This IS the release look (founder 2026-07-17). |
 
 ## 10. Definition of done
 
-All six PRs merged with green gates; founder visual matrix passed per PR; qa-expert + the-fool
-break-it round on the finished tab (focus: appearance switching mid-play, Reduce-* toggles at
-runtime, window at min size, empty queue/no-track, long titles/many badges, tab-switch churn
-while playing); rig additions from §7 landed or explicitly rejected in this doc; sprint-plan
-§Status updated; retro captured.
+All six PRs merged with green gates; founder visual matrix passed per PR via the screenshot
+loop (PR 2/3 include the vs-mock check); qa-expert + the-fool break-it round on the finished
+tab (focus: appearance
+switching mid-play, Reduce-*/IC toggles at runtime, window at min size 880×640, empty queue /
+no-track / first-launch, long titles/many badges under Dynamic Type, signal-path state flips
+Pure↔Enhanced↔fallback↔interrupted mid-play, tab-switch churn while playing, queue
+virtualization + jump-to-now-playing after the restructure); rig additions from §7 landed or
+explicitly rejected in this doc; sprint-plan §Status updated; S10.8 sweep sprint defined from
+the proven tokens; retro captured.
