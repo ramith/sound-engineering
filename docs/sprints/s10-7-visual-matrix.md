@@ -80,6 +80,37 @@ The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard
 
 ## Ledger
 
+### PR 5 — accepted 2026-07-18
+
+The 8a restructure (hero-right lens, queue-flex + 260pt inspector, queue filter) + the
+swiftui-pro review round (`bbf36cb`) + the crossfeed one-row fix (`67a25ee`).
+
+Cells captured (dark unless noted): A (playing — hero-left short badge set + lens at 560max
+with 0 dB/axis/gridlines/caps; queue rows directly on the glow; both carved sliders), B
+(light — white-glass grammar), C (Reduce Transparency — glow field suppressed to flat base,
+lens/inspector/badges all opaque; the resolver's RT→opaque swap verified LIVE), E (Increase
+Contrast — opaque + visibly STRONGER hairlines around lens/inspector/every badge, the
+glassHairline HC variant confirmed), H (live dark↔light toggle — both directions re-resolve
+clean), min-window (~880×668 true minimum — native titlebar adds ~28pt outside the enforced
+880×640 CONTENT; six queue rows + full inspector + no truncation) at default AND 42pt text
+(hero grows + tail-truncates, badge row scales without clipping, queue full).
+
+Keyboard/VO walk (keyboard-nav ON) — all green:
+1. Return on the focused lens OPENS Monitoring (the one behavior reading couldn't prove).
+2. Jump-to-Now-Playing with the playing track filtered OUT: clears the filter AND scrolls.
+3. Escape in the filter: clears + ↑/↓ move the queue immediately (focus handed back).
+4. Grab the gain knob at min/max without dragging: value does NOT jump on mouse-down.
+5. Focused sliders: ←/→ step the value one increment.
+
+Review-fix riders all verified: no bits/decoder capsules in the hero; grip behaviour and
+inspector corners hold. Founder change during the round: crossfeed toggle + strength picker
+now share one inspector row (`67a25ee`).
+
+Findings routed to PR 6 (that PR owns the surface, not a PR-5 defect):
+- The signal badge + footer show `-- kHz` under Enhanced — `achievedSampleRate` is populated
+  only by the Pure-mode path; Enhanced leaves it 0. PR 6 (D5 sample-rate readout) wires the
+  Enhanced rate and adds the footer slot to SlotFitTests.
+
 ### PR 3 — accepted 2026-07-17
 
 Cells captured: A (dark, playing — lens + caps read as an instrument), B (light — white-glass
