@@ -92,102 +92,128 @@ struct ContrastAuditTests {
 
     // MARK: Glow-field composites (PR 2 — §7 R4 pairs 1 + 6)
 
-    // MODEL (geometry-refined after the first run failed 9 pairs at naive full-alpha-
-    // everywhere — the audit's first catch on NEW work, 2026-07-17):
-    //   * SINGLE-glow cores at token MAX alpha — small text genuinely can sit on a core.
-    //   * PAIRWISE overlaps at the MID-STOP attenuation (falloffMidAlphaFactor of peak) —
-    //     the three core regions are geometrically disjoint (teal top-left, lime bottom-
-    //     right, blue mid-right); only the faded tails overlap, and mid-stop-×-mid-stop is
-    //     still conservative versus the real tail-×-tail.
-    //   * PLACEMENT RULE (the 8a mock's own behavior — its CSS puts only the HERO, large
-    //     text at 3:1, over the teal core): labelTertiary small text must NEVER sit inside
-    //     the TEAL core. Encoded here as: tertiary is audited at max alpha on lime/blue
-    //     cores + everywhere-attenuated, and at MID-STOP on teal. Review owns keeping
-    //     tertiary text out of the top-left core (post-PR-5 all tertiary lives in the
-    //     inspector, right side). Full-alpha teal × tertiary measures 3.98:1 dark — the
-    //     number that forced this rule; a waiver was not taken, a placement constraint was.
+    // GEOMETRIC MODEL (v2, per the PR-2 design review "Option B"): the audit SAMPLES the
+    // REAL three-glow composite from `GlowFieldSpec.compositeBackdrop` on a grid, at the
+    // reference tab geometry AND the min-window geometry (overlaps grow as the container
+    // shrinks). This replaced an abstract cores+overlaps model whose worst cases were
+    // geometrically impossible — and it re-verifies AUTOMATICALLY whenever the founder
+    // tunes glow centers, because render and audit read the same Kit data.
+    //
+    // DARK ONLY: the resolver suppresses the glow field outside dark appearance (RES-04),
+    // so light pairs would audit pixels that never render.
+    //
+    // PLACEMENT RULE (§3.3, unchanged): labelTertiary small text never sits inside the
+    // TEAL core (t ≤ midStop) — the 8a mock puts only the HERO (large text, 3:1) there.
+    // Full-alpha teal × tertiary measures 3.98:1 — the number that forced the rule.
 
-    private static let glowPairs = [("teal", Palette.glowTeal), ("lime", Palette.glowLime),
-                                    ("blue", Palette.glowBlue)]
+    /// Tab geometries to sample: (reference 1120×596, min-window 880×516 content region).
+    private static let glowGeometries: [(width: Double, height: Double)] = [(1120, 596), (880, 516)]
 
-    private static func attenuated(_ pair: AppearancePair, _ appearance: TokenAppearance) -> RGBAColor {
-        let value = pair.value(for: appearance)
-        return value.opacity(value.alpha * GlowFieldSpec.falloffMidAlphaFactor)
-    }
+    /// Grid resolution — fine enough that a core (~250pt across) spans many samples.
+    private static let gridColumns = 24
+    private static let gridRows = 16
 
-    /// Single cores at MAX alpha (for label/labelSecondary; lime/blue also for tertiary).
-    private static func coreBackdrops(_ appearance: TokenAppearance) -> [(name: String, color: RGBAColor)] {
-        let window = Palette.window.value(for: appearance)
-        return glowPairs.map { name, pair in
-            ("core:\(name)", pair.value(for: appearance).over(window))
-        }
-    }
-
-    /// Pairwise overlaps at mid-stop attenuation + the teal core at mid-stop (the tertiary
-    /// placement rule's audited surface).
-    private static func attenuatedBackdrops(_ appearance: TokenAppearance) -> [(name: String, color: RGBAColor)] {
-        let window = Palette.window.value(for: appearance)
-        var backdrops: [(String, RGBAColor)] = [
-            ("mid:teal", attenuated(Palette.glowTeal, appearance).over(window)),
-        ]
-        for first in 0 ..< glowPairs.count {
-            for second in (first + 1) ..< glowPairs.count {
-                let composite = attenuated(glowPairs[second].1, appearance)
-                    .over(attenuated(glowPairs[first].1, appearance).over(window))
-                backdrops.append(("mid:\(glowPairs[first].0)⊕\(glowPairs[second].0)", composite))
+    private static func gridPoints() -> [(x: Double, y: Double)] {
+        (0 ... gridRows).flatMap { row in
+            (0 ... gridColumns).map { column in
+                (Double(column) / Double(gridColumns), Double(row) / Double(gridRows))
             }
         }
-        return backdrops
     }
 
-    /// Pair 1a: label + labelSecondary clear AA on EVERY core at max alpha and every
-    /// attenuated overlap — no placement restriction on primary/secondary text.
-    @Test("R4-GLOW-01: label + labelSecondary clear AA on all cores and overlaps")
+    /// Pair 1a: label + labelSecondary clear AA at EVERY sampled point of the real glow
+    /// field — no placement restriction on primary/secondary text.
+    @Test("R4-GLOW-01: label + labelSecondary clear AA across the sampled glow field (dark)")
     func primaryLabelsOnGlowField() {
-        for appearance in TokenAppearance.allCases {
-            let backdrops = Self.coreBackdrops(appearance) + Self.attenuatedBackdrops(appearance)
-            for backdrop in backdrops {
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() {
+                let backdrop = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
                 for (name, label) in [("label", Palette.label),
                                       ("labelSecondary", Palette.labelSecondary)] {
-                    let ratio = Self.ratio(label: label, on: backdrop.color, appearance)
+                    let ratio = Self.ratio(label: label, on: backdrop, .dark)
                     #expect(ratio >= Self.textAA,
-                            "\(name) on \(backdrop.name) (\(appearance)) = \(ratio) < \(Self.textAA)")
+                            "\(name) @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
                 }
             }
         }
     }
 
-    /// Pair 1b: labelTertiary under the placement rule — lime/blue cores at max, teal at
-    /// mid-stop, all overlaps attenuated.
-    @Test("R4-GLOW-04: labelTertiary clears AA everywhere its placement rule allows")
+    /// Pair 1b: labelTertiary clears AA at every sampled point OUTSIDE the teal core (its
+    /// placement rule's whole allowed domain).
+    @Test("R4-GLOW-04: labelTertiary clears AA everywhere outside the teal core (dark)")
     func tertiaryOnGlowField() {
-        for appearance in TokenAppearance.allCases {
-            let allowed = Self.coreBackdrops(appearance).filter { $0.name != "core:teal" }
-                + Self.attenuatedBackdrops(appearance)
-            for backdrop in allowed {
-                let ratio = Self.ratio(label: Palette.labelTertiary, on: backdrop.color, appearance)
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() {
+                let tealT = GlowFieldSpec.tealDistance(unitX: point.x, unitY: point.y,
+                                                       containerWidth: geometry.width,
+                                                       containerHeight: geometry.height)
+                guard tealT > GlowFieldSpec.falloffMidStop else { continue }
+                let backdrop = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let ratio = Self.ratio(label: Palette.labelTertiary, on: backdrop, .dark)
                 #expect(ratio >= Self.textAA,
-                        "labelTertiary on \(backdrop.name) (\(appearance)) = \(ratio) < \(Self.textAA)")
+                        "labelTertiary @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
             }
         }
     }
 
-    /// Pair 6: queue-row tints over the glow field (post-PR-5 the queue sits centre-right —
-    /// lime/blue cores + attenuated everything; never the top-left teal core).
-    @Test("R4-GLOW-02: label clears AA on row tints over the queue's glow backdrops")
+    /// Pair 6: queue-row tints over the glow field. The queue occupies the RIGHT region
+    /// (today's 50/50 pane; post-PR-5 queue-flex) — never the top-left teal core.
+    @Test("R4-GLOW-02: label clears AA on row tints over the queue region's glow field (dark)")
     func labelsOnRowTintsOverGlow() {
-        for appearance in TokenAppearance.allCases {
-            let backdrops = Self.coreBackdrops(appearance).filter { $0.name != "core:teal" }
-                + Self.attenuatedBackdrops(appearance)
-            for backdrop in backdrops {
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() where point.x >= 0.5 {
+                let backdrop = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
                 for (name, tint) in [("rowNowPlaying", Palette.rowNowPlaying),
                                      ("rowSelected", Palette.rowSelected)] {
-                    let tinted = tint.value(for: appearance).over(backdrop.color)
-                    let ratio = Self.ratio(label: Palette.label, on: tinted, appearance)
+                    let tinted = tint.value(for: .dark).over(backdrop)
+                    let ratio = Self.ratio(label: Palette.label, on: tinted, .dark)
                     #expect(ratio >= Self.textAA,
-                            "label on \(name)⊕\(backdrop.name) (\(appearance)) = \(ratio) < \(Self.textAA)")
+                            "label on \(name) @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
                 }
             }
+        }
+    }
+
+    /// PR-2 review MAJOR 5: the right pane paints `card` OVER the glow field until PR 5
+    /// restyles the panes — the white veil BRIGHTENS the backdrop. label/labelSecondary
+    /// must clear AA on the card⊕glow composite outright; tertiary FAILS near the lime
+    /// core today (measured 4.23) — one defect, pinned as one known issue, resolved by
+    /// the PR-5 pane restyle (the 8a inspector glass darkens instead of brightening).
+    @Test("R4-GLOW-05: labels on card⊕glow (interim pane); tertiary pinned to PR 5")
+    func labelsOnCardOverGlow() {
+        var worstTertiary = Double.infinity
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() where point.x >= 0.5 {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let backdrop = Palette.card.dark.over(glow)
+                for (name, label) in [("label", Palette.label),
+                                      ("labelSecondary", Palette.labelSecondary)] {
+                    let ratio = Self.ratio(label: label, on: backdrop, .dark)
+                    #expect(ratio >= Self.textAA,
+                            "\(name) on card⊕glow @(\(point.x),\(point.y)) = \(ratio)")
+                }
+                worstTertiary = min(worstTertiary,
+                                    Self.ratio(label: Palette.labelTertiary, on: backdrop, .dark))
+            }
+        }
+        withKnownIssue("tertiary on card⊕glow (queue pane over the lime core) — interim until the PR-5 pane restyle") {
+            #expect(worstTertiary >= Self.textAA)
         }
     }
 }

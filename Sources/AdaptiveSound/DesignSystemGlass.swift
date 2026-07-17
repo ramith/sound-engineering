@@ -50,6 +50,25 @@ extension View {
     }
 }
 
+/// The sanctioned environment→resolver wiring for the glow field (this file is the one
+/// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
+/// `glowFieldIsVisible` resolver says so (dark + no reduced-transparency request).
+struct GlowFieldGate<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    var body: some View {
+        if glowFieldIsVisible(appearance: colorScheme == .dark ? .dark : .light,
+                              reduceTransparency: reduceTransparency,
+                              increasedContrast: colorSchemeContrast == .increased) {
+            content
+        }
+    }
+}
+
 private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
     let role: SurfaceRole
     let shape: PanelShape
