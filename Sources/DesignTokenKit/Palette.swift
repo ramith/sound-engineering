@@ -56,16 +56,37 @@ public enum Palette {
 
     // MARK: Status
 
+    //
+    // S10.7 PR 6 (founder decision — "split text vs fill"): the vivid `status*` tokens are the
+    // FILL/indicator colors (meter hot-bar, status dots — non-text, WCAG 3:1); a `status*Text`
+    // variant carries the darker, AA-legible shade for TEXT/glyph sites (4.5:1). On DARK the
+    // vivid value already clears text AA (R4-LEG-03 dark / R4-BADGE-01 dark), so the text
+    // variant differs only in LIGHT — where vivid orange/red on near-white is illegible.
+
     public static let statusWarning = AppearancePair(both: RGBAColor(red: 1.0, green: 0.623, blue: 0.039)) // #FF9F0A
     /// NEW in S10.7 (PR 1a): the clipping/over-level red the loudness meters previously
     /// hand-painted as `Color.red` (design §3.1 disposition). Values are SwiftUI's palette
     /// red AS RESOLVED ON macOS 26 — #FF383C light / #FF4245 dark, exact fractions
     /// (empirically probed: `Color.red.resolve(in:)` ≡ `NSColor.systemRed`; the classic
-    /// pre-26 #FF3B30/#FF453A is a visible hue shift — review BLOCKER-1). Pixel-invisible
-    /// swap. The light value fails AA on light surfaces (pre-existing look) — PR-6 restyle.
+    /// pre-26 #FF3B30/#FF453A is a visible hue shift — review BLOCKER-1). This is the FILL
+    /// value (meter hot-bar, non-text 3:1); text sites use `statusErrorText`.
     public static let statusError = AppearancePair(
         light: RGBAColor(red: 1.0, green: 56.0 / 255.0, blue: 60.0 / 255.0),
         dark: RGBAColor(red: 1.0, green: 66.0 / 255.0, blue: 69.0 / 255.0)
+    )
+    /// The TEXT/glyph variant of the error red (PR 6, D-split). Light = a dark red that clears
+    /// AA text on the darkest audited light surface (window ≈ 0.848 L); dark = the vivid value
+    /// (already AA on the deep base). #A3000F light.
+    public static let statusErrorText = AppearancePair(
+        light: RGBAColor(red: 163.0 / 255.0, green: 0.0, blue: 15.0 / 255.0),
+        dark: RGBAColor(red: 1.0, green: 66.0 / 255.0, blue: 69.0 / 255.0)
+    )
+    /// The TEXT/glyph variant of the warning orange (PR 6, D-split). Light = a dark amber that
+    /// clears AA text on the light badge fill (≈ 0.737 L, the worst warning-text backdrop);
+    /// dark = the vivid orange (already AA there). #6E4400 light.
+    public static let statusWarningText = AppearancePair(
+        light: RGBAColor(red: 110.0 / 255.0, green: 68.0 / 255.0, blue: 0.0),
+        dark: RGBAColor(red: 1.0, green: 0.623, blue: 0.039)
     )
 
     // MARK: Row tints (derived from accent — appearance-independent)
@@ -136,6 +157,7 @@ public enum Palette {
         ("labelDisabled", labelDisabled),
         ("accent", accent), ("accentDeep", accentDeep), ("onAccent", onAccent), ("blue", blue),
         ("statusWarning", statusWarning), ("statusError", statusError),
+        ("statusWarningText", statusWarningText), ("statusErrorText", statusErrorText),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),

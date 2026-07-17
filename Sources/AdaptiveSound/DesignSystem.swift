@@ -76,12 +76,16 @@ enum DesignSystem {
         static let labelTertiary = from(Palette.labelTertiary)
         static let labelDisabled = from(Palette.labelDisabled)
 
-        /// Status. `statusWarning` #FF9F0A (system-vibrant orange). `statusError` is NEW in
-        /// S10.7 (PR 1a): the clipping/over-level red the loudness meters previously
-        /// hand-painted as `Color.red` — the macOS-26 palette-red values (#FF383C/#FF4245),
-        /// so the swap is pixel-invisible (its AA shortfalls are pre-existing; PR-6 restyle).
+        /// Status FILL/indicator colors (non-text 3:1): `statusWarning` #FF9F0A vibrant orange,
+        /// `statusError` the macOS-26 palette red (#FF383C/#FF4245). PR 6 (founder "split text
+        /// vs fill"): TEXT/glyph sites use the darker AA-legible variants below instead — the
+        /// vivid values are for the meter hot-bar and status dots.
         static let statusWarning = from(Palette.statusWarning)
         static let statusError = from(Palette.statusError)
+        /// Status TEXT/glyph variants (AA 4.5:1). Differ from the fill values only in LIGHT
+        /// (on the deep dark base the vivid values already clear text AA).
+        static let statusWarningText = from(Palette.statusWarningText)
+        static let statusErrorText = from(Palette.statusErrorText)
 
         /// Row-fill tints for a selectable list row (queue / History): the now-playing row reads
         /// stronger than a merely-selected one. Accent-derived (the derivation is asserted by

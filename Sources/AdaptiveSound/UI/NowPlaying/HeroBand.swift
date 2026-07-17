@@ -86,7 +86,7 @@ private struct SignalBadgeRow: View {
                 BadgeCapsule(height: badgeHeight) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(DesignSystem.Color.statusWarning)
+                        .foregroundStyle(DesignSystem.Color.statusWarningText)
                     Text("Device disconnected")
                         .badgeText(DesignSystem.Color.label)
                 }
@@ -113,7 +113,7 @@ private struct SignalBadgeRow: View {
                 if info.fellBackToEnhanced {
                     BadgeCapsule(height: badgeHeight) {
                         Text("Pure unavailable")
-                            .badgeText(DesignSystem.Color.statusWarning)
+                            .badgeText(DesignSystem.Color.statusWarningText)
                     }
                 }
             }
