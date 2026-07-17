@@ -129,9 +129,10 @@ if grep -rnE '^import (SwiftUI|AppKit)' Sources/DesignTokenKit/; then
   exit 1
 fi
 # A fixed ShellMetrics band must clamp text scale or accessibility text sizes overflow the
-# band (A-M2). NowPlayingBar carries the clamp today; ChromeBar joins this list in PR 6.
+# band (A-M2). Both shell bands carry the clamp (ChromeBar joined in PR 6).
 clamped_bands=(
   "Sources/AdaptiveSound/UI/Shell/NowPlayingBar.swift"
+  "Sources/AdaptiveSound/UI/Shell/ChromeBar.swift"
 )
 for f in "${clamped_bands[@]}"; do
   if ! grep -q '\.dynamicTypeSize(' "$f"; then
