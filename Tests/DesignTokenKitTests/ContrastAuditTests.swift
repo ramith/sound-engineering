@@ -13,6 +13,8 @@ import Testing
 struct ContrastAuditTests {
     /// AA threshold for text (WCAG 1.4.3).
     private static let textAA = 4.5
+    /// Non-text contrast threshold (WCAG 1.4.11) — meter fills, indicator bars.
+    private static let nonTextAA = 3.0
 
     /// The surfaces labels sit on today: the window itself, and card/panel composited over
     /// the window (they are translucent in dark mode — compositing IS the audit's point).
@@ -64,28 +66,22 @@ struct ContrastAuditTests {
         }
     }
 
-    /// statusError aliases the shipped Color.red look (macOS-26 palette-red values). History:
-    /// at the OLD #1E1E1E base only the dark WINDOW pair cleared AA (dark card/panel were
-    /// 4.28/4.09) — the D10 deep base (PR 2) flipped BOTH dark pins "unexpectedly passed"
-    /// and they were promoted to hard assertions below. The three LIGHT pairs (≈3.05–3.57)
-    /// stay individually pinned (the light palette is untouched until the PR-6 meters/footer
-    /// restyle — a token-value fix).
-    @Test("R4-LEG-03: statusError clears AA on ALL dark surfaces; light pinned to PR 6")
-    func statusErrorText() {
-        // Dark: every surface must pass outright on the deep base (promoted from pins, PR 2).
-        for surface in Self.surfaces(.dark) {
-            let text = Palette.statusError.dark.over(surface.color)
-            let ratio = RGBAColor.contrastRatio(text, surface.color)
-            #expect(ratio >= Self.textAA,
-                    "statusError on \(surface.name) (dark) = \(ratio) < \(Self.textAA)")
-        }
-        // Light: pre-existing shortfalls — tracked PER PAIR (a partial fix must flip its own
-        // pair loud), not silently passed, not silently fixed.
-        for surface in Self.surfaces(.light) {
-            let text = Palette.statusError.light.over(surface.color)
-            let ratio = RGBAColor.contrastRatio(text, surface.color)
-            withKnownIssue("statusError light/\(surface.name) fails AA — pre-existing; PR-6 restyle") {
-                #expect(ratio >= Self.textAA)
+    /// PR 6 (founder "split text vs fill", retires the light pins): the vivid `statusError`
+    /// is now the meter-hot FILL (WCAG 3:1 non-text — the "CLIP" word carries the meaning for
+    /// colorblind/VO users, A-M5, so the bar only needs to be visible); TEXT sites use
+    /// `statusErrorText`, whose LIGHT value is a dark red that clears AA by design. The old
+    /// light-fails-AA pins are gone because vivid-as-text is gone. History: the dark pairs
+    /// promoted to hard assertions when the D10 deep base (PR 2) lifted them.
+    @Test("R4-LEG-03: statusErrorText clears AA text + statusError fill clears non-text, all surfaces")
+    func statusErrorLegibility() {
+        for appearance in TokenAppearance.allCases {
+            for surface in Self.surfaces(appearance) {
+                let text = Palette.statusErrorText.value(for: appearance).over(surface.color)
+                #expect(RGBAColor.contrastRatio(text, surface.color) >= Self.textAA,
+                        "statusErrorText on \(surface.name) (\(appearance)) < \(Self.textAA)")
+                let fill = Palette.statusError.value(for: appearance).over(surface.color)
+                #expect(RGBAColor.contrastRatio(fill, surface.color) >= Self.nonTextAA,
+                        "statusError fill on \(surface.name) (\(appearance)) < \(Self.nonTextAA)")
             }
         }
     }
@@ -243,9 +239,12 @@ struct ContrastAuditTests {
     /// Hierarchy on a chip comes from the capsule, not from dimming its text.
     @Test("R4-BADGE-01: badge text clears AA on the badge fill over its real backdrops")
     func badgeTextOnBadges() {
+        // PR 6 split: badge text is `label` or `statusWarningText` (the AA variant) — the
+        // vivid `statusWarning` is only the path DOT (non-text, decorative reinforcement of
+        // the adjacent label, so not audited at 3:1). This retires the light-badge pin.
         let texts: [(String, AppearancePair)] = [
             ("label", Palette.label),
-            ("statusWarning", Palette.statusWarning),
+            ("statusWarningText", Palette.statusWarningText),
         ]
         // Dark: badge ⊕ glow-field composite, sampled across the field.
         for geometry in Self.glowGeometries {
@@ -263,20 +262,12 @@ struct ContrastAuditTests {
                 }
             }
         }
-        // Light + RT/IC opaque fallbacks. statusWarning-orange on light surfaces is the
-        // same PRE-EXISTING class as the meters red (shipped look; the warning triangle
-        // already renders it today) — pinned, scheduled with the PR-6/S10.8 status-token
-        // unification, never silently excluded.
+        // Light badge: both text colors clear AA outright now (statusWarningText's light value
+        // is the dark amber sized for exactly this backdrop) — the pin is retired.
         let lightBadge = Palette.badgeFill.light.over(Palette.window.light)
         for (name, text) in texts {
             let ratio = Self.ratio(label: text, on: lightBadge, .light)
-            if name == "statusWarning" {
-                withKnownIssue("statusWarning on light badge fails AA — pre-existing orange; PR-6/S10.8") {
-                    #expect(ratio >= Self.textAA)
-                }
-            } else {
-                #expect(ratio >= Self.textAA, "\(name) on light badge = \(ratio)")
-            }
+            #expect(ratio >= Self.textAA, "\(name) on light badge = \(ratio)")
         }
         for appearance in TokenAppearance.allCases {
             let opaque = Palette.badgeFill.value(for: appearance)

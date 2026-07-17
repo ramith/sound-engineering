@@ -56,7 +56,7 @@ struct ErrorBanner: View {
     private func card(message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.small) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(DesignSystem.Color.statusWarning)
+                .foregroundStyle(DesignSystem.Color.statusWarningText)
                 .accessibilityHidden(true) // the message Text carries the meaning
 
             Text(message)

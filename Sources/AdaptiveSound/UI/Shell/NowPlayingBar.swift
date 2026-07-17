@@ -383,7 +383,7 @@ private struct FooterSignalSlot: View {
         if info.interrupted {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 10))
-                .foregroundStyle(DesignSystem.Color.statusWarning)
+                .foregroundStyle(DesignSystem.Color.statusWarningText)
             Text("Disconnected")
                 .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(DesignSystem.Color.labelSecondary)

@@ -95,7 +95,7 @@ private struct PeakMeterBar: View {
             if isHot {
                 Text("CLIP")
                     .font(DesignSystem.Font.micro.weight(.bold))
-                    .foregroundStyle(DesignSystem.Color.statusError)
+                    .foregroundStyle(DesignSystem.Color.statusErrorText) // text → AA variant (fill above stays vivid)
             }
         }
         .accessibilityElement(children: .ignore)
