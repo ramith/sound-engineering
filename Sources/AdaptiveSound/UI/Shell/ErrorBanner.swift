@@ -82,7 +82,10 @@ struct ErrorBanner: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.medium)
         .padding(.vertical, DesignSystem.Spacing.small)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container))
+        // Regime A/`.overlay` (S10.7 §3.1): a transient banner floating OVER variable tab
+        // content — the one Material-sanctioned role; substrate/fallbacks owned by the token
+        // layer, shape + hairline stay site-owned.
+        .glassPanel(.overlay(.ultraThin), in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container))
         .overlay(
             RoundedRectangle(cornerRadius: DesignSystem.Radius.container)
                 .stroke(DesignSystem.Color.hairline, lineWidth: DesignSystem.ShellMetrics.hairline)
