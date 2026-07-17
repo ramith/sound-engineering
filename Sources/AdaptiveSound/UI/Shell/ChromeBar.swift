@@ -36,6 +36,10 @@ struct ChromeBar: View {
         // left edge lines up with the content below. Height, window background, and the bottom
         // hairline are owned by AppShell — deliberately not set here.
         .padding(.horizontal, 16)
+        // Fixed 60pt band (like the footer): clamp text scale so accessibility sizes don't
+        // overflow the chrome (the device pill + segmented tabs grow with type). PR 6 — the
+        // strict-gate clamp guard asserts this stays present.
+        .dynamicTypeSize(.small ... .xLarge)
     }
 }
 
