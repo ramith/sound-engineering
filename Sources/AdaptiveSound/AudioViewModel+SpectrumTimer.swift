@@ -144,5 +144,13 @@ extension AudioViewModel {
             let weight = frac - Float(lower)
             spectrumBars[bar] = spectrumScratch[lower] * (1 - weight) + spectrumScratch[upper] * weight
         }
+        // Peak-hold caps (S10.7 PR 3): fed the SAME tick, nominal 20 Hz step — belt-and-
+        // braces isPlaying gate so caps freeze even if the engine keeps producing frames
+        // while paused (the tracker itself freezes structurally when unfed). Both arrays
+        // mutate in one run-loop turn → one @Observable invalidation.
+        if isPlaying {
+            peakTracker.update(bars: spectrumBars.map(Double.init), elapsed: 1.0 / 20.0)
+            peakCaps = peakTracker.caps.map(Float.init)
+        }
     }
 }

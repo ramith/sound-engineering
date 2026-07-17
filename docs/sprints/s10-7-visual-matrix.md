@@ -53,6 +53,18 @@ the tab content. A keyboard user who can reach but not OPERATE a control = PR fa
 
 ## Ledger
 
+### PR 2 — accepted 2026-07-17 (glow tokens FROZEN per the §8 stopping rule)
+
+Round 1: founder screenshots A (dark, all five tabs) + B (light, unchanged as designed) —
+deep base verified app-wide, other tabs readable (material-plate pop pre-briefed); glow field
+correct but under-covered → founder decision: PROPORTIONAL sizing (mock's coverage fractions).
+Round 2: coverage matches the mock's ambient wash — ACCEPTED. Geometry/alphas frozen; only an
+R4 failure may reopen them.
+
+Deferred cells (TEMP, expiry = sprint end 2026-08-15):
+- C/D (Reduce Transparency dark/light) — reason="not captured; RES-04 + the resolver tests cover the suppression path headlessly; eyeball rides a later PR's C cell"
+- H (live-toggle) — reason="not captured; single-run A/B discipline stands for later PRs"
+
 ### PR 1a — accepted 2026-07-17
 
 Captured: A (dark/default, full Now Playing); B (light/default — Now Playing playing + paused,

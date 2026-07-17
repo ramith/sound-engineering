@@ -216,4 +216,47 @@ struct ContrastAuditTests {
             #expect(worstTertiary >= Self.textAA)
         }
     }
+
+    // MARK: Lens composites (PR 3 — §7 R4 pair 2)
+
+    /// The lens fill sits over the glow field; its future axis text (PR 5) and any in-lens
+    /// labels must clear AA on the fill⊕glow composite — sampled across the field in dark
+    /// (the lens is currently full-width; the D6 frame narrows it in PR 5, a subset of
+    /// these points). Light: the lens is white-glass over the plain light window. RT/IC:
+    /// the resolver's OPAQUE fallback is audited explicitly.
+    @Test("R4-LENS-01: label hierarchy clears AA on the lens fill over its real backdrops")
+    func labelsOnLens() {
+        // Dark: lens ⊕ glow-field composite, sampled.
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let lens = Palette.lensFill.dark.over(glow)
+                for (name, label) in [("label", Palette.label),
+                                      ("labelSecondary", Palette.labelSecondary)] {
+                    let ratio = Self.ratio(label: label, on: lens, .dark)
+                    #expect(ratio >= Self.textAA,
+                            "\(name) on lens⊕glow @(\(point.x),\(point.y)) = \(ratio)")
+                }
+            }
+        }
+        // Light: lens over the plain window (glows are suppressed in light).
+        let lightLens = Palette.lensFill.light.over(Palette.window.light)
+        for (name, label) in [("label", Palette.label), ("labelSecondary", Palette.labelSecondary)] {
+            let ratio = Self.ratio(label: label, on: lightLens, .light)
+            #expect(ratio >= Self.textAA, "\(name) on light lens = \(ratio)")
+        }
+        // RT/IC opaque fallbacks, both appearances.
+        for appearance in TokenAppearance.allCases {
+            let opaque = Palette.lensFill.value(for: appearance)
+                .over(Palette.window.value(for: appearance))
+            for (name, label) in [("label", Palette.label), ("labelSecondary", Palette.labelSecondary)] {
+                let ratio = Self.ratio(label: label, on: opaque, appearance)
+                #expect(ratio >= Self.textAA, "\(name) on opaque lens (\(appearance)) = \(ratio)")
+            }
+        }
+    }
 }

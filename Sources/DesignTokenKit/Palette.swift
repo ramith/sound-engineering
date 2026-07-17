@@ -81,6 +81,17 @@ public enum Palette {
     public static let iconFillTop = AppearancePair(both: RGBAColor(red: 0.247, green: 0.816, blue: 0.729))
     public static let iconFillMid = AppearancePair(both: RGBAColor(red: 0.122, green: 0.659, blue: 0.576))
 
+    // MARK: Glass-look fills (Regime B — design §3.1; staged per consumer)
+
+    /// The analyzer lens fill (8a: `rgba(16,18,21,.42)` — a darker inset against the glowed
+    /// field). Light per the §3.2 grammar: white-based glass. Under Reduce Transparency /
+    /// Increase Contrast the resolver serves the OPAQUE composite (fill over window),
+    /// derived — never a third hand-kept value.
+    public static let lensFill = AppearancePair(
+        light: .gray(1.0, alpha: 0.55),
+        dark: RGBAColor(red: 16.0 / 255.0, green: 18.0 / 255.0, blue: 21.0 / 255.0, alpha: 0.42)
+    )
+
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
@@ -112,6 +123,9 @@ public enum Palette {
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
+        ("lensFill", lensFill),
+        ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
+        ("glassShadow", GlassDecor.shadowColor),
     ]
 }
 

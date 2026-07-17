@@ -1,3 +1,4 @@
+import DesignTokenKit
 import Foundation
 import PlaybackQueueKit
 
@@ -166,6 +167,12 @@ final class AudioViewModel {
     /// Updated on the main thread at ~20 Hz by `spectrumTimer`.
     /// Index 0 = lowest frequency band; index 87 = highest.
     var spectrumBars: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
+    /// Peak-hold caps above the bars (S10.7 PR 3): published beside `spectrumBars` from the
+    /// same 20 Hz tick so `@Observable` coalesces both into ONE view invalidation. Values
+    /// resolve in `DesignTokenKit.PeakHoldTracker` (pure, time-fed — freeze-on-pause is
+    /// structural: no feed, no decay).
+    var peakCaps: [Float] = .init(repeating: 0, count: SpectrumConstants.displayBarCount)
+    var peakTracker = PeakHoldTracker(bandCount: SpectrumConstants.displayBarCount)
 
     /// Retained so we can invalidate on shutdown.
     /// Internal (not private) so `AudioViewModel+SpectrumTimer.swift` can read and invalidate it.

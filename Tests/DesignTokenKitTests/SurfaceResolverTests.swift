@@ -39,4 +39,32 @@ struct SurfaceResolverOverlayTests {
             }
         }
     }
+
+    @Test("RES-01: lens resolves to its translucent token fill when transparency is allowed")
+    func lensTranslucent() {
+        for appearance in TokenAppearance.allCases {
+            let resolved = resolveSurface(role: .lens, appearance: appearance,
+                                          reduceTransparency: false, increasedContrast: false)
+            #expect(resolved == .fill(Palette.lensFill.value(for: appearance)))
+        }
+    }
+
+    @Test("RES-02: lens goes OPAQUE (fill⊕window) under RT — and under IC even without RT")
+    func lensOpaqueFallback() {
+        for point in Self.cube where point.reduceTransparency || point.increasedContrast {
+            let resolved = resolveSurface(role: .lens,
+                                          appearance: point.appearance,
+                                          reduceTransparency: point.reduceTransparency,
+                                          increasedContrast: point.increasedContrast)
+            let fill = Palette.lensFill.value(for: point.appearance,
+                                              increasedContrast: point.increasedContrast)
+            let window = Palette.window.value(for: point.appearance,
+                                              increasedContrast: point.increasedContrast)
+            let expected = fill.over(window)
+            #expect(resolved == .fill(expected), "lens stayed translucent under \(point)")
+            if case let .fill(color) = resolved {
+                #expect(color.alpha == 1.0, "RT/IC fallback must be fully opaque")
+            }
+        }
+    }
 }
