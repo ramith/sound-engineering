@@ -254,7 +254,7 @@ struct PlaylistDetailView: View {
             Menu {
                 missingRowActions(row)
             } label: {
-                // nosemgrep: ui-no-color-literal TEMP reason="unify onto statusWarning in S10.8" expiry=2026-08-15
+                // nosemgrep: ui-no-color-literal TEMP reason="→ statusWarningText not fill, S10.8" expiry=2026-08-15
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
             .menuStyle(.borderlessButton)
