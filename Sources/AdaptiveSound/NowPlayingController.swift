@@ -224,7 +224,19 @@ final class NowPlayingController {
         if let artist = snapshot.artist { info[MPMediaItemPropertyArtist] = artist }
         if let album = snapshot.album { info[MPMediaItemPropertyAlbumTitle] = album }
         if let artwork {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+            // The request handler MUST be nonisolated: MediaPlayer invokes it on ITS OWN
+            // serial queue ("accessQueue") when serializing artwork (e.g. a Control Center
+            // render after a device switch). Defined inside this @MainActor class, the
+            // closure INHERITS MainActor isolation, and Swift 6's dynamic isolation check
+            // (dispatch_assert_queue) TRAPS off-main — the 2026-07-17 founder crashes
+            // (EXC_BREAKPOINT, thread "*/accessQueue"). `@Sendable` severs the inference;
+            // the closure captures only the image value and touches no controller state.
+            // (NSImage is safely readable cross-thread as long as nobody mutates it — this
+            // one is a fully-decoded artwork instance owned by the closure.)
+            let image = artwork
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in
+                image
+            }
         }
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = info
