@@ -104,6 +104,10 @@ private struct DevicePillView: View {
                     .contentTransition(.numericText())
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
                     .lineLimit(1)
+                    // The slot fits every rate at default size (SLOT-02); a 9-char hi-res rate
+                    // ("176.4 kHz") at the clamped .xLarge max shrinks to fit rather than
+                    // truncating away the "kHz" unit.
+                    .minimumScaleFactor(0.7)
                     .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
                     .accessibilityHidden(true) // folded into the pill's own a11y value below
             }

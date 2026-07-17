@@ -66,19 +66,29 @@ struct ContrastAuditTests {
         }
     }
 
-    /// PR 6 (founder "split text vs fill", retires the light pins): the vivid `statusError`
-    /// is now the meter-hot FILL (WCAG 3:1 non-text — the "CLIP" word carries the meaning for
-    /// colorblind/VO users, A-M5, so the bar only needs to be visible); TEXT sites use
-    /// `statusErrorText`, whose LIGHT value is a dark red that clears AA by design. The old
-    /// light-fails-AA pins are gone because vivid-as-text is gone. History: the dark pairs
-    /// promoted to hard assertions when the D10 deep base (PR 2) lifted them.
-    @Test("R4-LEG-03: statusErrorText clears AA text + statusError fill clears non-text, all surfaces")
-    func statusErrorLegibility() {
+    /// PR 6 (founder "split text vs fill", retires the light pins): the `status*Text` variants
+    /// carry every text/glyph site (WCAG 4.5:1) — their LIGHT values are the dark red/amber
+    /// that clear AA by design; DARK == the vivid value (already AA on the deep base). The
+    /// vivid `statusError` is the meter-hot FILL (3:1 non-text — the "CLIP" word carries the
+    /// meaning, A-M5, so the bar only needs to be visible). The vivid `statusWarning` is used
+    /// ONLY as the decorative status dot (reinforcing adjacent text), so it is deliberately
+    /// NOT audited at 3:1 here (it does not clear it on light, by design — the text beside it
+    /// carries the meaning). History: the dark pairs promoted to hard assertions when the D10
+    /// deep base (PR 2) lifted them; the old light-fails-AA pins are gone because vivid-as-text
+    /// is gone.
+    @Test("R4-LEG-03: status text variants clear AA + the error fill clears non-text, all surfaces")
+    func statusLegibility() {
+        let textTokens: [(name: String, pair: AppearancePair)] = [
+            ("statusErrorText", Palette.statusErrorText),
+            ("statusWarningText", Palette.statusWarningText),
+        ]
         for appearance in TokenAppearance.allCases {
             for surface in Self.surfaces(appearance) {
-                let text = Palette.statusErrorText.value(for: appearance).over(surface.color)
-                #expect(RGBAColor.contrastRatio(text, surface.color) >= Self.textAA,
-                        "statusErrorText on \(surface.name) (\(appearance)) < \(Self.textAA)")
+                for token in textTokens {
+                    let text = token.pair.value(for: appearance).over(surface.color)
+                    #expect(RGBAColor.contrastRatio(text, surface.color) >= Self.textAA,
+                            "\(token.name) on \(surface.name) (\(appearance)) < \(Self.textAA)")
+                }
                 let fill = Palette.statusError.value(for: appearance).over(surface.color)
                 #expect(RGBAColor.contrastRatio(fill, surface.color) >= Self.nonTextAA,
                         "statusError fill on \(surface.name) (\(appearance)) < \(Self.nonTextAA)")
