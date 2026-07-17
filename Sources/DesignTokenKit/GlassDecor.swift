@@ -44,6 +44,9 @@ public enum GlassDecor {
     /// over the knob's inset travel) and the visuals must share ONE value; a drift between
     /// them re-creates the mouse-down value-jump at the track extremes.
     public static let sliderKnobSize: Double = 14
+    /// Carved groove (track) height — shared by the inspector sliders AND the footer scrubber
+    /// (PR 6) so the two carved surfaces are visually identical.
+    public static let carvedTrackHeight: Double = 5
     /// Carved track base fill (the groove).
     public static let carvedTrack = AppearancePair(
         light: .gray(0.0, alpha: 0.10),

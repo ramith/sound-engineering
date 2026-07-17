@@ -75,29 +75,31 @@ private struct HeroTitleModifier: ViewModifier {
 
 // MARK: - Carved slider visuals (S10.7 PR 5 — the 8a track/knob recipe)
 
-/// The 8a carved slider's VISUALS (5pt inset track, teal fill with a dark-only glow, 14pt
-/// knob with a bottom inner shade) — appearance-aware, so it lives in this sanctioned file;
-/// `CarvedSlider` (UI/Controls) owns interaction and consumes this for its body.
-struct CarvedTrack: View {
-    /// Filled fraction in [0, 1].
-    let fraction: Double
+/// The 8a carved GROOVE (track): a token-filled base with a top inner shade (the inset
+/// shadow) and a teal progress fill with a dark-only glow (grammar rule 6). Appearance-aware,
+/// so it lives in this sanctioned file. Shared by the inspector `CarvedSlider` AND the footer
+/// scrubber (PR 6) — one carved surface, two consumers. Vertically centered in whatever height
+/// the caller frames it to; the knob/thumb is the caller's concern.
+struct CarvedGroove: View {
+    /// The teal-filled portion, as a fraction [0, 1] of the track width.
+    let fillFraction: Double
+    /// Track (groove) thickness.
+    var height: CGFloat = .init(GlassDecor.carvedTrackHeight)
+    /// The progress-fill color (accent for the sliders; the scrubber passes its play/pause/
+    /// interrupted state color).
+    var fillColor: SwiftUI.Color = DesignSystem.Color.accent
+    /// Whether the fill carries the dark-only teal glow (off when the fill isn't the accent —
+    /// e.g. the scrubber paused/interrupted — so a teal glow never sits under a grey fill).
+    var glow: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private enum Metrics {
-        static let trackHeight: CGFloat = 5
-        /// From the Kit: `CarvedSlider`'s pointer→fraction mapping uses the SAME value to
-        /// map over the knob's inset travel — sharing it is what keeps mouse-down at the
-        /// extremes value-neutral.
-        static let knobSize = CGFloat(GlassDecor.sliderKnobSize)
-        static let innerShade: CGFloat = 2
-    }
+    private static let innerShade: CGFloat = 2
 
     var body: some View {
         let dark = colorScheme == .dark
         GeometryReader { geo in
-            let usable = max(geo.size.width - Metrics.knobSize, 0)
-            let knobX = usable * CGFloat(min(max(fraction, 0), 1))
+            let clamped = CGFloat(min(max(fillFraction, 0), 1))
             ZStack(alignment: .leading) {
                 // Carved base: token fill + a top inner shade (the 8a inset shadow).
                 Capsule()
@@ -108,32 +110,66 @@ struct CarvedTrack: View {
                                     : GlassDecor.carvedShadeLight), .clear],
                             startPoint: .top, endPoint: .bottom
                         )
-                        .frame(height: Metrics.innerShade)
+                        .frame(height: Self.innerShade)
                     }
                     .clipShape(Capsule())
-                    .frame(height: Metrics.trackHeight)
+                    .frame(height: height)
 
-                // Teal fill — the glow is DARK-ONLY (grammar rule 6).
                 Capsule()
-                    .fill(DesignSystem.Color.accent)
-                    .frame(width: knobX + Metrics.knobSize / 2, height: Metrics.trackHeight)
-                    .shadow(color: dark ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
+                    .fill(fillColor)
+                    .frame(width: geo.size.width * clamped, height: height)
+                    .shadow(color: (dark && glow) ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
                             radius: 5)
-
-                // 14pt knob with a bottom inner shade.
-                Circle()
-                    .fill(SwiftUI.Color(token: GlassDecor.knobFill.value(for: dark ? .dark : .light)))
-                    .overlay(alignment: .bottom) {
-                        LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
-                                       startPoint: .center, endPoint: .bottom)
-                            .clipShape(Circle())
-                    }
-                    .frame(width: Metrics.knobSize, height: Metrics.knobSize)
-                    .offset(x: knobX)
             }
             .frame(maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: Metrics.knobSize)
+    }
+}
+
+/// The 8a carved knob/thumb: a token-filled circle with a bottom inner shade (the physical
+/// cue, both appearances). Shared by the slider knob and the footer scrubber's hover thumb.
+struct CarvedKnob: View {
+    var size: CGFloat = .init(GlassDecor.sliderKnobSize)
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        Circle()
+            .fill(SwiftUI.Color(token: GlassDecor.knobFill.value(for: dark ? .dark : .light)))
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
+                               startPoint: .center, endPoint: .bottom)
+                    .clipShape(Circle())
+            }
+            .frame(width: size, height: size)
+    }
+}
+
+/// The inspector slider's track+knob (S10.7 PR 5). Composes the shared `CarvedGroove` (fill to
+/// the knob CENTER, so the teal meets the knob at every position) + a `CarvedKnob` at the
+/// knob's inset travel position. `CarvedSlider` (UI/Controls) owns interaction.
+struct CarvedTrack: View {
+    /// Filled fraction in [0, 1].
+    let fraction: Double
+
+    private static let knobSize = CGFloat(GlassDecor.sliderKnobSize)
+
+    var body: some View {
+        GeometryReader { geo in
+            let usable = max(geo.size.width - Self.knobSize, 0)
+            let knobX = usable * CGFloat(min(max(fraction, 0), 1))
+            // The teal reaches the knob's CENTER at every position (identical to the PR-5
+            // fill width `knobX + knobSize/2`, expressed as a fraction of the track width).
+            let fillFraction = Double((knobX + Self.knobSize / 2) / max(geo.size.width, 1))
+            ZStack(alignment: .leading) {
+                CarvedGroove(fillFraction: fillFraction)
+                CarvedKnob()
+                    .offset(x: knobX)
+                    .frame(maxHeight: .infinity, alignment: .center)
+            }
+        }
+        .frame(height: Self.knobSize)
     }
 }
 

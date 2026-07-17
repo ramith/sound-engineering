@@ -222,9 +222,10 @@ enum DesignSystem {
         static let skipButton: CGFloat = 30 // hit target
         static let skipSymbol: CGFloat = 15
         static let scrubberTrackMinWidth: CGFloat = 120
-        static let scrubberTrackHeight: CGFloat = 3
         static let scrubberHitHeight: CGFloat = 20
-        static let thumbSize: CGFloat = 10
+        /// The scrubber's carved groove uses GlassDecor.carvedTrackHeight (5pt, shared with the
+        /// inspector sliders); the thumb is a 14pt CarvedKnob (PR 6). No local track-height.
+        static let thumbSize: CGFloat = 14
         /// Re-exported from the Kit so SlotFitTests can assert "88:88" fits headlessly (§7.1).
         static let timeLabelWidth: CGFloat = .init(SlotWidths.footerTimeLabel)
         static let signalSlotWidth: CGFloat = 120

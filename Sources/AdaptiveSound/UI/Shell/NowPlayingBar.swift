@@ -263,20 +263,14 @@ private struct FooterScrubber: View {
         GeometryReader { geo in
             let trackWidth = geo.size.width
             ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(DesignSystem.Color.card)
-                    .frame(height: DesignSystem.Footer.scrubberTrackHeight)
-                    .frame(maxHeight: .infinity, alignment: .center)
-
-                Capsule()
-                    .fill(fillColor)
-                    .frame(
-                        width: max(trackWidth * CGFloat(fraction), 0),
-                        height: DesignSystem.Footer.scrubberTrackHeight
-                    )
-                    .frame(maxHeight: .infinity, alignment: .center)
-                    // Ease the play→pause fill shift (accent ↔ accent·0.5); position width is
-                    // NOT animated (it tracks playback). Reduce-Motion gated.
+                // The shared 8a carved groove (PR 6 — same surface as the inspector sliders).
+                // Fill follows playback; the dark-only teal glow shows only while actually
+                // playing (paused = dim teal, interrupted = grey — no mismatched glow).
+                CarvedGroove(fillFraction: fraction,
+                             fillColor: fillColor,
+                             glow: viewModel.isPlaying && !isInterrupted)
+                    // Ease the play→pause fill-color shift (accent ↔ accent·0.5); the width
+                    // tracks playback and is not animated. Reduce-Motion gated.
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: viewModel.isPlaying)
 
                 // Thumb reveals on hover/drag only (cleaner than an always-on thumb).
@@ -296,12 +290,10 @@ private struct FooterScrubber: View {
         }
     }
 
+    /// The hover/drag thumb: the shared carved knob (its bottom-shade cue replaces the old
+    /// hand-painted drop shadow — the PR-1 shadow literal is retired by adoption, not tokenised).
     private var thumbView: some View {
-        Circle()
-            .fill(DesignSystem.Color.label)
-            .frame(width: DesignSystem.Footer.thumbSize, height: DesignSystem.Footer.thumbSize)
-            // nosemgrep: ui-no-color-literal TEMP reason="shadow becomes a Glass token in PR 6" expiry=2026-08-01
-            .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 1)
+        CarvedKnob(size: DesignSystem.Footer.thumbSize)
             .scaleEffect(isHovered || isDragging ? 1.15 : 1.0)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovered || isDragging)
     }
