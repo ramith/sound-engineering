@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive Sound — Now Playing (variant 5a)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #101113; font-family: -apple-system, system-ui, 'SF Pro Text', sans-serif; display: flex; justify-content: center; padding: 40px 20px; }
+  .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+  @keyframes asBar { 0%,100% { transform: scaleY(.34); } 50% { transform: scaleY(1); } }
+
+  .window { width: 1120px; height: 720px; display: flex; flex-direction: column; background: #17181b; border-radius: 14px; overflow: hidden; box-shadow: 0 40px 90px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.08); }
+
+  /* toolbar */
+  .toolbar { height: 52px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: rgba(32,34,38,.75); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,.06); }
+  .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(160deg,#3fd0ba,#14897a); display: flex; align-items: center; justify-content: center; }
+  .device { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 13px; border-radius: 16px; background: rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 1px 6px rgba(0,0,0,.25); font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.92); border: none; cursor: pointer; font-family: inherit; }
+  .tabs { display: flex; gap: 2px; padding: 3px; border-radius: 16px; background: rgba(0,0,0,.35); box-shadow: inset 0 1px 2px rgba(0,0,0,.4); }
+  .tab { height: 26px; display: flex; align-items: center; padding: 0 13px; border-radius: 13px; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.65); border: none; background: transparent; cursor: pointer; font-family: inherit; }
+  .tab.active { background: rgba(41,182,164,.92); color: #0c1413; box-shadow: 0 1px 5px rgba(31,168,147,.45); }
+
+  /* hero */
+  .hero { flex: none; display: flex; gap: 20px; padding: 20px 22px 18px; border-bottom: 1px solid rgba(255,255,255,.06); background: linear-gradient(180deg, rgba(41,182,164,.08), rgba(41,182,164,0)); }
+  .hero-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .title { font-size: 28px; font-weight: 800; letter-spacing: -.02em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .artist { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,.7); }
+  .badge { font-size: 9.5px; font-weight: 700; letter-spacing: .05em; padding: 3px 8px; border-radius: 7px; }
+  .badge.teal { color: #6fe0d0; background: rgba(41,182,164,.18); }
+  .badge.gray { color: rgba(255,255,255,.6); background: rgba(255,255,255,.08); }
+  .transport-row { display: flex; align-items: center; gap: 14px; }
+  .pill { display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 30px; background: rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 10px rgba(0,0,0,.3); flex: none; }
+  .tbtn { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; }
+  .tbtn:hover { background: rgba(255,255,255,.08); }
+  .play { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(160deg,#3fd0ba,#1fa893 60%,#14897a); display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; box-shadow: 0 8px 20px -6px rgba(31,168,147,.8), inset 0 1px 0 rgba(255,255,255,.35); }
+  .play:hover { filter: brightness(1.08); }
+  .time { font-size: 11px; color: rgba(255,255,255,.55); }
+  .track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); cursor: pointer; }
+  .fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; background: linear-gradient(90deg,#1fa893,#3fd0ba); }
+  .knob { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 5px rgba(0,0,0,.55); }
+
+  /* analyzer */
+  .analyzer { width: 400px; flex: none; position: relative; height: 122px; border-radius: 16px; background: rgba(0,0,0,.34); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 0 0 1px rgba(255,255,255,.05); overflow: hidden; }
+  .bars { position: absolute; top: 10px; left: 12px; right: 12px; bottom: 16px; display: flex; align-items: flex-end; gap: 2px; }
+  .bars > div { flex: 1 1 0; min-width: 1px; border-radius: 1.5px 1.5px 0 0; transform-origin: bottom; animation: asBar var(--dur) ease-in-out var(--delay) infinite; }
+  .freq { position: absolute; bottom: 4px; left: 12px; right: 12px; display: flex; justify-content: space-between; font-size: 8.5px; color: rgba(255,255,255,.35); }
+
+  /* lower stage */
+  .lower { flex: 1; min-height: 0; display: flex; }
+  .queue-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .queue-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px 22px; flex: none; }
+  .queue-title { font-size: 14px; font-weight: 700; letter-spacing: -.01em; color: rgba(255,255,255,.94); }
+  .queue-count { font-size: 11px; color: rgba(255,255,255,.38); }
+  .filter { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: 14px; background: rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); margin-left: auto; font-size: 11.5px; color: rgba(255,255,255,.42); border: none; cursor: pointer; font-family: inherit; }
+  .queue-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px 14px; }
+  .queue-list::-webkit-scrollbar { width: 9px; }
+  .queue-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  .row { display: flex; align-items: center; gap: 11px; padding: 8px 12px; border-radius: 9px; cursor: pointer; }
+  .row:hover { background: rgba(255,255,255,.05); }
+  .row.active { background: rgba(41,182,164,.16); box-shadow: inset 0 0 0 1px rgba(41,182,164,.4); }
+  .row .n { width: 18px; flex: none; text-align: right; font-size: 11px; color: rgba(255,255,255,.32); }
+  .row .t { flex: 1; min-width: 0; font-size: 13px; color: rgba(255,255,255,.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row.active .t { color: #8af0e0; font-weight: 600; }
+  .row .fmt { flex: none; font-size: 9.5px; font-weight: 700; color: rgba(255,255,255,.45); background: rgba(255,255,255,.06); padding: 2px 5px; border-radius: 4px; }
+  .row.active .fmt { color: #6fe0d0; background: rgba(41,182,164,.18); }
+  .row .d { flex: none; width: 44px; text-align: right; font-size: 11px; color: rgba(255,255,255,.45); }
+  .eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .eq span { width: 2.5px; border-radius: 1px; background: #4fd2c0; height: 100%; transform-origin: bottom; animation: asBar .8s ease-in-out infinite; }
+  .eq span:nth-child(2) { animation-duration: .95s; animation-delay: .12s; }
+  .eq span:nth-child(3) { animation-duration: 1.1s; animation-delay: .24s; }
+
+  /* inspector */
+  .inspector-col { width: 274px; flex: none; padding: 12px 14px 12px 0; display: flex; }
+  .inspector { flex: 1; border-radius: 18px; background: rgba(26,28,32,.66); backdrop-filter: blur(22px); box-shadow: 0 16px 40px -12px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.1), inset 0 0 0 1px rgba(255,255,255,.05); display: flex; flex-direction: column; gap: 14px; padding: 18px 16px; }
+  .ins-label { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .ins-label b { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+  .ins-label span { font-size: 11.5px; color: rgba(255,255,255,.85); }
+  .slider { position: relative; height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); cursor: pointer; }
+  .divider { height: 1px; background: rgba(255,255,255,.09); }
+  .meter-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .meter-row label { width: 62px; flex: none; font-size: 11.5px; color: rgba(255,255,255,.72); }
+  .meter { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg,#1fa893,#4fd2c0); }
+  .meter.hot > div { background: linear-gradient(90deg,#1fa893,#4fd2c0 78%,#ffb347); }
+  .meter-row output { width: 38px; text-align: right; font-size: 10px; color: rgba(255,255,255,.85); }
+  .meter-row.hot output { color: #ffb347; }
+  .cross { display: flex; align-items: center; justify-content: space-between; }
+  .cross span { font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,.78); }
+  .toggle { width: 36px; height: 21px; border-radius: 11px; background: rgba(255,255,255,.16); box-shadow: inset 0 1px 2px rgba(0,0,0,.3); position: relative; }
+  .toggle i { position: absolute; left: 2px; top: 2px; width: 17px; height: 17px; border-radius: 50%; background: #b8b8b8; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .hint { font-size: 10.5px; line-height: 1.5; color: rgba(255,255,255,.42); }
+</style>
+</head>
+<body>
+<div class="window">
+  <!-- toolbar -->
+  <div class="toolbar">
+    <div class="mark"><svg width="14" height="14" viewBox="0 0 40 40" fill="#fff"><rect x="6" y="16" width="3.4" height="8" rx="1.7"/><rect x="12" y="11" width="3.4" height="18" rx="1.7"/><rect x="18" y="6" width="3.4" height="28" rx="1.7"/><rect x="24" y="13" width="3.4" height="14" rx="1.7"/><rect x="30" y="17" width="3.4" height="6" rx="1.7"/></svg></div>
+    <button class="device">MacBook Pro Speakers <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="tabs">
+      <button class="tab active">Now Playing</button>
+      <button class="tab">Library</button>
+      <button class="tab">EQ</button>
+      <button class="tab">Monitoring</button>
+      <button class="tab">Settings</button>
+    </div>
+  </div>
+
+  <!-- hero -->
+  <div class="hero">
+    <div class="hero-left">
+      <div>
+        <div class="title">Smells Like Teen Spirit</div>
+        <div class="meta">
+          <span class="artist">Nirvana</span>
+          <span class="badge teal">ENHANCED 20%</span>
+          <span class="badge gray">MP3 · 44.1 kHz</span>
+        </div>
+      </div>
+      <div class="transport-row">
+        <div class="pill">
+          <button class="tbtn" aria-label="Previous"><svg width="15" height="15" viewBox="0 0 24 24" fill="rgba(255,255,255,.9)"><path d="M6 5v14h2.2V5zM20 5l-9 7 9 7z"/></svg></button>
+          <button class="play" id="playBtn" aria-label="Play/Pause"><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg></button>
+          <button class="tbtn" aria-label="Next"><svg width="15" height="15" viewBox="0 0 24 24" fill="rgba(255,255,255,.9)"><path d="M17.8 5v14h-2.2V5zM4 5l9 7-9 7z"/></svg></button>
+        </div>
+        <span class="time mono">1:54</span>
+        <div class="track"><div class="fill" style="width:41%"></div><div class="knob" style="left:41%"></div></div>
+        <span class="time mono">4:38</span>
+      </div>
+    </div>
+    <div class="analyzer">
+      <div class="bars" id="bars"></div>
+      <div class="freq mono"><span>20 Hz</span><span>200</span><span>2 k</span><span>20 kHz</span></div>
+    </div>
+  </div>
+
+  <!-- lower stage -->
+  <div class="lower">
+    <div class="queue-col">
+      <div class="queue-head">
+        <span class="queue-title">Queue</span>
+        <span class="queue-count mono">41 tracks · 12:07:44</span>
+        <button class="filter"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Filter queue</button>
+      </div>
+      <div class="queue-list" id="queue"></div>
+    </div>
+    <div class="inspector-col">
+      <div class="inspector">
+        <div>
+          <div class="ins-label"><b>Master Gain</b><span class="mono">+4.0 dB</span></div>
+          <div class="slider"><div class="fill" style="width:70%"></div><div class="knob" style="left:70%"></div></div>
+        </div>
+        <div>
+          <div class="ins-label"><b>Intensity</b><span class="mono">20 %</span></div>
+          <div class="slider"><div class="fill" style="width:20%; background:#3fd0ba"></div><div class="knob" style="left:20%"></div></div>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <div class="ins-label" style="margin-bottom:10px"><b>Loudness</b></div>
+          <div class="meter-row"><label>Integrated</label><div class="meter"><div style="width:62%"></div></div><output class="mono">−15.1</output></div>
+          <div class="meter-row"><label>Short-term</label><div class="meter"><div style="width:48%"></div></div><output class="mono">−14.2</output></div>
+          <div class="meter-row hot" style="margin-bottom:0"><label>True peak</label><div class="meter hot"><div style="width:84%"></div></div><output class="mono">−0.8</output></div>
+        </div>
+        <div class="divider"></div>
+        <div class="cross"><span>Crossfeed</span><span class="toggle"><i></i></span></div>
+        <span class="hint">Connect headphones to enable.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- spectrum bars: teal → lime palette mapped to horizontal position ----
+const STOPS = [
+  [0.0, [0x1f,0x9d,0x8b]], [0.2, [0x36,0xc1,0xab]], [0.4, [0x4f,0xd2,0xc0]],
+  [0.6, [0x7f,0xe3,0xa8]], [0.8, [0xa8,0xec,0x84]], [1.0, [0xc8,0xf0,0x6a]],
+];
+const lerp = (a,b,t) => Math.round(a + (b-a)*t);
+function colorAt(t) {
+  let i = 0;
+  while (i < STOPS.length-2 && t > STOPS[i+1][0]) i++;
+  const [t0,c0] = STOPS[i], [t1,c1] = STOPS[i+1], k = (t-t0)/(t1-t0);
+  return c0.map((v,j) => lerp(v, c1[j], k));
+}
+const hex = c => '#' + c.map(v => v.toString(16).padStart(2,'0')).join('');
+const rnd = i => { const x = Math.sin(i*12.9898)*43758.5453; return x - Math.floor(x); };
+
+const barsEl = document.getElementById('bars');
+const N = 72;
+for (let i = 0; i < N; i++) {
+  const t = i/(N-1), c = colorAt(t), cd = c.map(v => Math.round(v*0.82));
+  const d = document.createElement('div');
+  d.style.height = (16 + Math.round(rnd(i)*76)) + '%';
+  d.style.background = `linear-gradient(180deg, ${hex(c)}, ${hex(cd)})`;
+  d.style.setProperty('--dur', (0.7 + rnd(i+50)*0.85).toFixed(2) + 's');
+  d.style.setProperty('--delay', (rnd(i+100)*1.3).toFixed(2) + 's');
+  barsEl.appendChild(d);
+}
+
+// ---- queue ----
+const TRACKS = [
+  ["Bruno Mars, Adele, Ed Sheeran, Maroon 5, Dua Lipa — Billboard Top 50 This Week","174:12",false],
+  ["Nirvana — Smells Like Teen Spirit (Official Music Video)","4:38",true],
+  ["Premasiri Kemadasa — Master Songs Collection","37:31",false],
+  ["Muse — Starlight (Official Music Video)","4:04",false],
+  ["Green Day — Boulevard Of Broken Dreams [4K Upgrade]","4:47",false],
+  ["Gotye — Somebody That I Used To Know (feat. Kimbra)","4:03",false],
+  ["PSY — Gangnam Style (M/V)","4:12",false],
+  ["Ed Sheeran, Rihanna, Selena Gomez — Billboard Hot 100","203:16",false],
+  ["LMFAO — Sexy and I Know It","3:23",false],
+  ["Beautiful South — Perfect 10","3:35",false],
+  ["Ed Sheeran — You Need Me, I Don't Need You","4:01",false],
+  ["Kasabian — Where Did All the Love Go (Video)","4:10",false],
+  ["Vanessa Carlton — A Thousand Miles","4:26",false],
+  ["Nickelback — Rockstar","4:15",false],
+  ["Red Hot Chili Peppers — Scar Tissue [HD Upgrade]","3:41",false],
+];
+const queueEl = document.getElementById('queue');
+TRACKS.forEach(([title, dur, active], i) => {
+  const row = document.createElement('div');
+  row.className = 'row' + (active ? ' active' : '');
+  row.title = '~/Music/Library/' + title.replace(/[^\w ]/g,'').slice(0,40) + '.mp3';
+  row.innerHTML =
+    (active
+      ? '<span class="n"><span class="eq"><span></span><span></span><span></span></span></span>'
+      : `<span class="n mono">${i+1}</span>`) +
+    `<span class="t">${title}</span><span class="fmt">MP3</span><span class="d mono">${dur}</span>`;
+  row.addEventListener('click', () => {
+    queueEl.querySelector('.row.active')?.classList.remove('active');
+    row.classList.add('active');
+  });
+  queueEl.appendChild(row);
+});
+</script>
+</body>
+</html>
