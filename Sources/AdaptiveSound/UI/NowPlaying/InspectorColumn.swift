@@ -133,9 +133,12 @@ struct HeadphonesSectionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            // ONE row (founder, PR-5 screenshot round): toggle leading, strength picker
+            // trailing — the picker joins the row only while crossfeed is on.
+            HStack(spacing: DesignSystem.Spacing.small) {
                 CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
                     .fixedSize()
+                Spacer(minLength: 0)
                 if bvm.crossfeedEnabled && isEnabled {
                     CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
                         .fixedSize()
