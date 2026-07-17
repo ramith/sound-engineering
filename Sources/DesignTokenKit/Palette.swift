@@ -100,6 +100,14 @@ public enum Palette {
         dark: .gray(1.0, alpha: 0.08)
     )
 
+    /// The inspector panel fill (8a: `rgba(30,33,38,.5)`). Light per the grammar: white-based
+    /// glass, one notch stronger than the lens so the column reads as the room's wall, not a
+    /// second lens. Same derived RT/IC-opaque contract.
+    public static let panelFill = AppearancePair(
+        light: .gray(1.0, alpha: 0.60),
+        dark: RGBAColor(red: 30.0 / 255.0, green: 33.0 / 255.0, blue: 38.0 / 255.0, alpha: 0.5)
+    )
+
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
@@ -131,7 +139,7 @@ public enum Palette {
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
-        ("lensFill", lensFill), ("badgeFill", badgeFill),
+        ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
     ]

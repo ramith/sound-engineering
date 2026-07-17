@@ -24,12 +24,11 @@ struct MasterGainSliderView: View {
                     .foregroundStyle(Color.asLabelSecond)
             }
 
-            Slider(value: $vm.masterGain, in: 0 ... 1, step: 0.01)
-                .tint(Color.asAccent)
-                .accessibilityLabel("Master Gain")
-                .accessibilityValue(
-                    "\(Double(vm.masterGain) * 20 - 10, format: .number.precision(.fractionLength(1))) decibels"
-                )
+            CarvedSlider(
+                value: $vm.masterGain,
+                accessibilityLabel: "Master Gain",
+                accessibilityValueText: String(format: "%.1f decibels", Double(vm.masterGain) * 20 - 10)
+            )
         }
     }
 }

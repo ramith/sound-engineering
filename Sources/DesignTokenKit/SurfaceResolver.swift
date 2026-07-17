@@ -24,6 +24,8 @@ public enum SurfaceRole: Equatable, Sendable {
     case lens
     /// Hero badge capsules (PR 4): the 8a small-control fill, same RT/IC contract as lens.
     case badge
+    /// The inspector column (PR 5): the 8a panel fill, same RT/IC contract.
+    case panel
 }
 
 /// The animation-gate predicate (design §3.4/§7 R2 PG-01..04): the pulsing dot and the
@@ -68,11 +70,15 @@ public func resolveSurface(role: SurfaceRole,
         // resolver returns the substrate unconditionally — asserted for the full flag
         // cube in RES tests.
         return .systemMaterial(substrate)
-    case .lens, .badge:
+    case .lens, .badge, .panel:
         // RES-01/02: translucent normally; opaque (fill composited over the window) when
         // transparency is reduced — and under Increase Contrast EVEN IF the RT flag is
         // false (never depend on the OS coupling IC→RT).
-        let pair = role == .lens ? Palette.lensFill : Palette.badgeFill
+        let pair = switch role {
+        case .lens: Palette.lensFill
+        case .badge: Palette.badgeFill
+        default: Palette.panelFill
+        }
         let fill = pair.value(for: appearance, increasedContrast: increasedContrast)
         if reduceTransparency || increasedContrast {
             let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)

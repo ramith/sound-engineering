@@ -59,6 +59,14 @@ struct TokenInvariantTests {
                 "rowSelected is appearance-independent (accent-derived)")
     }
 
+    /// The 8a concentric chain (§3.2): outer radii are never smaller than inner ones.
+    /// Grows as roles land (rows/badges join with their tokens).
+    @Test("TOK-01: the glass radii chain stays monotone (panel ≥ lens)")
+    func radiiChain() {
+        #expect(GlassDecor.panelRadius >= GlassDecor.lensRadius,
+                "panel \(GlassDecor.panelRadius) must be ≥ lens \(GlassDecor.lensRadius)")
+    }
+
     /// The audit engine's ground truth: opaque-over-anything is itself; results go opaque.
     @Test("TOK-05: compositing sanity — opaque identity + opaque results")
     func compositingGroundTruth() {

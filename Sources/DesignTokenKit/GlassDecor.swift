@@ -8,8 +8,10 @@
 import Foundation
 
 public enum GlassDecor {
-    // MARK: Radii (staged per consumer — TOK-01 chain test grows with them)
+    // MARK: Radii (staged per consumer — TOK-01 asserts the concentric chain stays monotone)
 
+    /// Inspector panel (8a: radius 22 — the outermost app panel).
+    public static let panelRadius: Double = 22
     /// Analyzer lens (8a: radius 20; PR 3's first consumer).
     public static let lensRadius: Double = 20
 
@@ -35,6 +37,23 @@ public enum GlassDecor {
 
     public static let bleedDark: RGBAColor = .gray(1.0, alpha: 0.12)
     public static let bleedHeight: Double = 24
+
+    // MARK: Carved sliders (PR 5 — 8a: 5pt inset tracks, 14pt knobs, dark-only teal glow)
+
+    /// Carved track base fill (the groove).
+    public static let carvedTrack = AppearancePair(
+        light: .gray(0.0, alpha: 0.10),
+        dark: .gray(1.0, alpha: 0.08)
+    )
+    /// The inset top shade inside the groove (8a `inset 0 1px 2px rgba(0,0,0,.4)`; light
+    /// per grammar: much fainter).
+    public static let carvedShadeDark: RGBAColor = .gray(0.0, alpha: 0.40)
+    public static let carvedShadeLight: RGBAColor = .gray(0.0, alpha: 0.15)
+    /// The teal fill's glow — DARK-ONLY (grammar rule 6), 8a `0 0 8-10px rgba(63,208,186,.45)`.
+    public static let sliderGlowDark = RGBAColor(red: 63.0 / 255.0, green: 208.0 / 255.0,
+                                                 blue: 186.0 / 255.0, alpha: 0.45)
+    /// The knob's bottom inner shade (both appearances — it's a physical cue, not emission).
+    public static let knobShade: RGBAColor = .gray(0.0, alpha: 0.25)
 
     // MARK: Hero (PR 4 — 8a: teal title halo, dark-only per grammar rule 6; pulsing dot)
 

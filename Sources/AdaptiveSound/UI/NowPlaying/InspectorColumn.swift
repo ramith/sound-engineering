@@ -1,39 +1,63 @@
+import DesignTokenKit
 import SwiftUI
 
-// MARK: - Now Playing Info
+// MARK: - Inspector Column (S10.7 PR 5 — founder decision D2: the 8a trailing glass column)
 
-/// The Now Playing hero (S10.7 PR 4 — replaces the compact widget card), live loudness
-/// meters, Reimagine intensity knob (QW-A), and headphone crossfeed controls (QW-C). Lives
-/// in the Now Playing left panel beneath the spectrum + master-gain controls; the meters/
-/// intensity/crossfeed move to the PR-5 inspector column. (Transport is the footer's, L3.)
-struct NowPlayingInfoView: View {
+/// The fixed-260pt trailing inspector: master gain, Reimagine intensity, the signal detail
+/// line (decoder/bit-depth — relocated from the hero badges per §5), loudness meters, and
+/// crossfeed. Content scrolls INSIDE the panel chrome (§5 mandated architecture: the panel's
+/// rim/hairline must never scroll away with the content), padded BEFORE the fixed frame (the
+/// S9 lesson's PR-5 form: pad-after-frame silently widens the column and steals queue width).
+/// Tertiary text is allowed here by the §3.3 placement rule (right side — never the teal core).
+struct InspectorColumn: View {
+    @Environment(AudioViewModel.self) private var viewModel
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HeroBand()
-            LoudnessMetersView()
-            ReimagineSectionView()
-            HeadphonesSectionView()
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
+                MasterGainSliderView()
+                ReimagineSectionView()
+                signalDetail
+                LoudnessMetersView()
+                HeadphonesSectionView()
+            }
+            .padding(14)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                                 style: .continuous))
+        .frame(width: CGFloat(NowPlayingLayout.inspectorWidth))
+    }
+
+    /// Decoder + bit-depth detail (§5: the audiophile home for what left the hero badges).
+    @ViewBuilder
+    private var signalDetail: some View {
+        let info = viewModel.signalPath
+        let parts: [String] = [
+            info.formattedBits,
+            info.path == .pure ? (info.decoder == .apple ? "Apple decoder"
+                : info.decoder == .ffmpeg ? "FFmpeg decoder" : nil) : nil,
+        ].compactMap(\.self)
+        if !parts.isEmpty {
+            Text(parts.joined(separator: " · "))
+                .font(DesignSystem.Font.monoSmall)
+                .foregroundStyle(DesignSystem.Color.labelTertiary)
+                .accessibilityLabel("Signal detail")
+                .accessibilityValue(parts.joined(separator: ", "))
+        }
     }
 }
 
-// MARK: - Reimagine Intensity Section
+// MARK: - Reimagine Intensity Section (moved from NowPlayingInfoView — QW-A)
 
-/// Horizontal slider for the global Reimagine intensity knob (QW-A).
-/// Matches the `MasterGainSliderView` layout pattern.
-private struct ReimagineSectionView: View {
+/// Horizontal carved slider for the global Reimagine intensity knob.
+struct ReimagineSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     var body: some View {
         @Bindable var bvm = viewModel
 
         let isPureBypassed = bvm.pureModeEngaged
-        let percentText = Text(
-            "\(Int((bvm.intensity * 100).rounded())) %"
-        )
-        .font(DesignSystem.Font.monoSmall.weight(.semibold))
-        .foregroundStyle(isPureBypassed ? Color.asLabelTertiary : Color.asLabelSecond)
+        let percent = Int((bvm.intensity * 100).rounded())
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -50,16 +74,17 @@ private struct ReimagineSectionView: View {
                         .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(Color.asLabelTertiary)
                 } else {
-                    percentText
+                    Text("\(percent) %")
+                        .font(DesignSystem.Font.monoSmall.weight(.semibold))
+                        .foregroundStyle(Color.asLabelSecond)
                 }
             }
 
-            Slider(value: $bvm.intensity, in: 0 ... 1, step: 0.01)
-                .tint(Color.asAccent)
+            CarvedSlider(value: $bvm.intensity,
+                         accessibilityLabel: "Reimagine Intensity",
+                         accessibilityValueText: "\(percent) percent")
                 .disabled(isPureBypassed)
                 .help(bvm.intensity == 0 ? "0 % = bit-perfect bypass" : "")
-                .accessibilityLabel("Reimagine Intensity")
-                .accessibilityValue("\(Int((bvm.intensity * 100).rounded())) percent")
 
             HStack {
                 Text("Bypass")
@@ -75,11 +100,10 @@ private struct ReimagineSectionView: View {
     }
 }
 
-// MARK: - Headphones Section
+// MARK: - Headphones Section (moved from NowPlayingInfoView — QW-C)
 
-/// Crossfeed toggle + strength picker shown when crossfeed is enabled (QW-C).
-/// Disabled and dimmed on non-headphone devices (wireless / USB heuristic).
-private struct HeadphonesSectionView: View {
+/// Crossfeed toggle + strength picker; disabled and dimmed on non-headphone devices.
+struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     var body: some View {
@@ -103,10 +127,9 @@ private struct HeadphonesSectionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
                 CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
                     .fixedSize()
-                Spacer(minLength: 12)
                 if bvm.crossfeedEnabled && isEnabled {
                     CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
                         .fixedSize()

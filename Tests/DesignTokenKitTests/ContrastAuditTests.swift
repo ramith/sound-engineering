@@ -186,36 +186,9 @@ struct ContrastAuditTests {
         }
     }
 
-    /// PR-2 review MAJOR 5: the right pane paints `card` OVER the glow field until PR 5
-    /// restyles the panes — the white veil BRIGHTENS the backdrop. label/labelSecondary
-    /// must clear AA on the card⊕glow composite outright; tertiary FAILS near the lime
-    /// core today (measured 4.23) — one defect, pinned as one known issue, resolved by
-    /// the PR-5 pane restyle (the 8a inspector glass darkens instead of brightening).
-    @Test("R4-GLOW-05: labels on card⊕glow (interim pane); tertiary pinned to PR 5")
-    func labelsOnCardOverGlow() {
-        var worstTertiary = Double.infinity
-        for geometry in Self.glowGeometries {
-            for point in Self.gridPoints() where point.x >= 0.5 {
-                let glow = GlowFieldSpec.compositeBackdrop(
-                    unitX: point.x, unitY: point.y,
-                    containerWidth: geometry.width, containerHeight: geometry.height,
-                    appearance: .dark
-                )
-                let backdrop = Palette.card.dark.over(glow)
-                for (name, label) in [("label", Palette.label),
-                                      ("labelSecondary", Palette.labelSecondary)] {
-                    let ratio = Self.ratio(label: label, on: backdrop, .dark)
-                    #expect(ratio >= Self.textAA,
-                            "\(name) on card⊕glow @(\(point.x),\(point.y)) = \(ratio)")
-                }
-                worstTertiary = min(worstTertiary,
-                                    Self.ratio(label: Palette.labelTertiary, on: backdrop, .dark))
-            }
-        }
-        withKnownIssue("tertiary on card⊕glow (queue pane over the lime core) — interim until the PR-5 pane restyle") {
-            #expect(worstTertiary >= Self.textAA)
-        }
-    }
+    // R4-GLOW-05 (card⊕glow, one pinned tertiary defect) was RETIRED in PR 5: the queue
+    // pane's card fill is gone — rows sit directly on the glow field, which R4-GLOW-02
+    // audits. The pin resolved by construction, not by waiver.
 
     // MARK: Lens composites (PR 3 — §7 R4 pair 2)
 
@@ -311,5 +284,78 @@ struct ContrastAuditTests {
             let ratio = Self.ratio(label: Palette.label, on: opaque, appearance)
             #expect(ratio >= Self.textAA, "label on opaque badge (\(appearance)) = \(ratio)")
         }
+    }
+
+    // MARK: Inspector panel composites (PR 5 — §7 R4 pair 3)
+
+    /// The inspector fill sits over the glow field on the RIGHT side (never the teal core —
+    /// the §3.3 placement rule's allowed domain), so tertiary is audited here too: the
+    /// column is tertiary text's designed home.
+    @Test("R4-PANEL-01: label hierarchy clears AA on the panel fill over its real backdrops")
+    func labelsOnPanel() {
+        let labels: [(String, AppearancePair)] = [
+            ("label", Palette.label), ("labelSecondary", Palette.labelSecondary),
+            ("labelTertiary", Palette.labelTertiary),
+        ]
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() where point.x >= 0.5 {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let panel = Palette.panelFill.dark.over(glow)
+                for (name, label) in labels {
+                    let ratio = Self.ratio(label: label, on: panel, .dark)
+                    #expect(ratio >= Self.textAA,
+                            "\(name) on panel⊕glow @(\(point.x),\(point.y)) = \(ratio)")
+                }
+            }
+        }
+        for appearance in TokenAppearance.allCases {
+            let opaque = Palette.panelFill.value(for: appearance)
+                .over(Palette.window.value(for: appearance))
+            let lightDirect = appearance == .light
+                ? Palette.panelFill.light.over(Palette.window.light) : opaque
+            for (name, label) in labels {
+                #expect(Self.ratio(label: label, on: opaque, appearance) >= Self.textAA,
+                        "\(name) on opaque panel (\(appearance))")
+                #expect(Self.ratio(label: label, on: lightDirect, appearance) >= Self.textAA,
+                        "\(name) on light panel")
+            }
+        }
+    }
+}
+
+// MARK: - Layout arithmetic (PR 5 — §7.1: the §5 width/height budget as assertions)
+
+@Suite("Now Playing layout arithmetic (LAY)")
+struct LayoutArithmeticTests {
+    @Test("LAY-01: at the 880pt window minimum, queue and hero-left keep their minimum widths")
+    func widthBudget() {
+        let contentWidth = NowPlayingLayout.windowMinWidth - 2 * NowPlayingLayout.contentInset
+        let queueWidth = contentWidth - NowPlayingLayout.regionGap - NowPlayingLayout.inspectorWidth
+        #expect(queueWidth >= NowPlayingLayout.queueMinWidth,
+                "queue gets \(queueWidth)pt at the minimum window")
+        let heroLeft = contentWidth - NowPlayingLayout.regionGap - NowPlayingLayout.lensMinWidth
+        #expect(heroLeft >= NowPlayingLayout.heroTextMinWidth,
+                "hero text gets \(heroLeft)pt at the minimum window")
+        #expect(NowPlayingLayout.lensMaxWidth >= NowPlayingLayout.lensMinWidth)
+    }
+
+    @Test("LAY-02: the hero row never starves the queue at the minimum window, max type included")
+    func heightBudget() {
+        let content = NowPlayingLayout.windowMinHeight
+            - NowPlayingLayout.chromeHeight - NowPlayingLayout.footerHeight
+        // Hero row height = the lens (its fixed height dominates the text block at default
+        // type) + vertical padding; the type headroom factor absorbs Dynamic-Type growth of
+        // the title/badge block past the lens height (§7.1 documented approximation).
+        let heroRow = (NowPlayingLayout.lensHeight + NowPlayingLayout.contentInset + 12)
+            * NowPlayingLayout.maxTypeHeadroom
+        let queueRegion = content - heroRow - NowPlayingLayout.contentInset
+        let minVisibleRows = 5.0
+        let rowHeight = 36.0 // SongsList.rowHeight-class row
+        #expect(queueRegion >= minVisibleRows * rowHeight,
+                "queue region \(queueRegion)pt < \(minVisibleRows) rows at max type")
     }
 }
