@@ -43,8 +43,8 @@ current Apple guidance (§3.0); **the-fool** red-teams the design and every chun
 | **D4** | **Chrome stays a band**, not 8a's floating detached capsule | Preserves the L2 window-drag setup + the "fixed top-left" invariant; the band keeps a quiet window surface + its existing solid hairline (NO glass slab, NO added elevation); its CONTROLS restyle via tokens. |
 | **D11** | **R1 gates on S10.7 + S10.8** | "Nothing elementary ships." S10.8 = token sweep across the remaining tabs after this sprint proves the tokens. |
 
-Non-goals (this sprint): album-art-sampled glow colors (D8 fast-follow); 8a's queue filter field
-(D7); any change to `ShellMetrics`/`Footer` metrics or window minimums; any playback-engine work;
+Non-goals (this sprint): any change to `ShellMetrics`/`Footer` metrics or window minimums; any
+playback-engine work;
 **an overlay-bar shell** (making content scroll UNDER a true-glass footer is the one place real
 refraction would earn its keep — Apple's showcase pattern, sanctioned hook = `safeAreaBar`
 (§3.5) — but it reverses the L1 decision that moved AppShell from `safeAreaInset` to explicit
@@ -283,11 +283,17 @@ base. **Construction (no `.blur` at all):** each glow is an `Ellipse` filled wit
 falloff; authoring the falloff in the stops is visually equivalent to blurring a hard shape and
 costs zero filter passes under a 20 Hz-invalidating subtree. Mounted via `.background { }` on the
 tab content (not a layout-participating sibling — a ~760pt glow would inflate the tab's ideal
-size), `.allowsHitTesting(false)` + `accessibilityHidden(true)`. Static brand colors this sprint
-(D8). Dark per spec; light per the §3.2 grammar (~1/3 alpha). Under Reduce Transparency the field
-flattens to the plain window color. PR-2 eyeball checklist: gradient banding on wide-gamut
-displays; `AppShell`'s `.clipped()` hard-cutting glows at the band seams (mostly hidden under the
-hairlines — verify).
+size), `.allowsHitTesting(false)` + `accessibilityHidden(true)`. Brand colors land first (PR 2);
+**per D8 (founder 2026-07-17: IN scope), PR 7 then makes the glow colors album-art-sampled** —
+dominant colors extracted from the current artwork (`NowPlayingController.currentArtwork`),
+**clamped into token-defined chroma/alpha ranges** (the §3.1 pre-binding: R4 keeps auditing
+bounded worst cases; a pathological cover can never blow the contrast budget), cached per
+track (the `ArtworkThumbnailStore` pattern), falling back to the brand colors for missing art,
+recoloring on track change as a DISCRETE restyle (crossfade gated on Reduce Motion — never a
+continuous animation). Dark per spec; light per the §3.2 grammar (~1/3 alpha). Under Reduce
+Transparency the field flattens to the plain window color. PR-2 eyeball checklist: gradient
+banding on wide-gamut displays; `AppShell`'s `.clipped()` hard-cutting glows at the band seams
+(mostly hidden under the hairlines — verify).
 
 ### 3.4 Motion & state rules
 
@@ -386,7 +392,7 @@ NowPlayingTabView                          // inside AppShell's bounded content 
  │         20 Hz–20 kHz scale, peak-hold caps; beyond max-width, whitespace
  │         is legitimate hero negative space
  └─ HStack(spacing: 0)
-      ├─ Queue (flex)                      // PlaylistView, unchanged internals + OWN scroll
+      ├─ Queue (flex)                      // PlaylistView + 8a filter field (D7) + OWN scroll
       └─ InspectorColumn (fixed 260)                                    (D2)
            .glassPanel(.panel) on the COLUMN CONTAINER, its content in an
            inner ScrollView (rim/hairline must not scroll away)
@@ -433,6 +439,14 @@ audiophile empty state; geometry identical to the loaded state so nothing reflow
 (mirror the footer's existing behavior). The existing empty-queue view restyles onto the glow
 field in the same PR.
 
+**Queue filter field (D7 — founder 2026-07-17: IN scope, PR 5):** the 8a filter field sits in
+the queue header, **view-local** (filters the visible list; never mutates the queue or
+playback), case/diacritic-insensitive on title+artist, Escape clears + returns focus to the
+queue, adopts `TransportSpaceSuppressing` (typing a space must never toggle playback — the
+S10.2 pattern), and does not steal the queue's `.defaultFocus`. Empty-result state: "No
+matches" + the clear affordance. Jump-to-now-playing ignores an active filter (clears it
+first) rather than silently failing.
+
 **Focus & traversal (stated decision):** structural order hero → queue → inspector gives the VO
 reading order; this REVERSES today's controls-before-queue tab order, and the queue's
 `.defaultFocus` keeps first focus. Accepted — the queue is the tab's primary object. PR-5
@@ -462,11 +476,12 @@ double-click-spectrum → Monitoring affordance moves onto the lens (hover per �
 | **2. Ambient glow + base re-tune (D10)** | `GlowField` (stop-authored gradients, no blur); dark-base re-tune app-wide per D10; light variants per §3.2 grammar | `NowPlayingTabView` (+ `GlowField.swift`), `DesignSystem.Color` | Founder eyeball both appearances **against the 8a mock**; RT flattens; band-seam clipping + banding checked; R4 composite audit re-run against the new base |
 | **3. Analyzer lens (size-agnostic)** | Lens fill via `.glassPanel(.lens)` + **peak-hold caps**: pure `PeakHoldTracker` (hold ~600ms → decay), fed from the existing 20 Hz `tickSpectrum()` in `AudioViewModel`, published as `peakCaps` beside `spectrumBars`, drawn by ONE overlay view (not 88 extra diffed siblings) | `SpectrumAnalyzerView.swift`, `AudioViewModel+SpectrumTimer.swift`, `PeakHoldTracker.swift` + tests | Caps freeze on pause + no implicit animation under Reduce Motion; tracker cases green (R2); heights still sourced from `spectrumBars`; NO grid/scale yet (they need the D6 frame — PR 5) |
 | **4. Hero** | `HeroBand`: heroTitle + dark-only halo, artist, full signal-path badge mapping (§5), pulsing dot via conditional `phaseAnimator`, `@ScaledMetric` badge heights, empty/first-launch state, title/badge micro-transitions | `NowPlayingInfoView.swift` → `HeroBand.swift` (widget card retires; decoder/bits relocation stubbed for PR 5) | All four signal-path states render (Pure/Enhanced/fallback/interrupted); pulse stops deterministically when gating flips; long-title truncation + `.help`; empty state per §5 |
-| **5. Inspector column + lens placement (D6)** | The §5 restructure: hero-right lens (400→560 flex ×122) + dB grid/0 dB/axis scale; queue-flex + fixed-260 inspector w/ own scroll; `CarvedSliderTrack` + gain/intensity consumers; decoder/bits detail line; meters restyle | `NowPlayingTabView`, `HeroBand`, `InspectorColumn.swift`, `MasterGainSliderView`, `LoudnessMetersView`, `CarvedSliderTrack.swift` | 880×640 exact: no truncation, queue virtualization intact (`scrollTo` works), inspector scrolls inside chrome; keyboard operability per §5 (arrows adjust, focus visible, VO adjustable); traversal decision verified |
+| **5. Inspector column + lens placement (D6) + queue filter (D7)** | The §5 restructure: hero-right lens (400→560 flex ×122) + dB grid/0 dB/axis scale; queue-flex + fixed-260 inspector w/ own scroll; the §5 queue filter field; `CarvedSliderTrack` + gain/intensity consumers; decoder/bits detail line; meters restyle | `NowPlayingTabView`, `HeroBand`, `InspectorColumn.swift`, `PlaylistView.swift` (filter), `MasterGainSliderView`, `LoudnessMetersView`, `CarvedSliderTrack.swift` | 880×640 exact (default + max type): no truncation, queue virtualization intact (`scrollTo` works), inspector scrolls inside chrome; keyboard operability per §5 (arrows adjust, focus visible, VO adjustable); filter: space-suppression + Escape + jump-clears-filter verified; traversal decision verified |
+| **7. Art-sampled glows (D8)** | Dominant-color extraction from current artwork → clamped into token chroma/alpha ranges (§3.3) → per-track glow recolor w/ RM-gated crossfade; per-track cache; brand-color fallback | `GlowField.swift`, small `ArtworkGlowSampler` (+ cache), `DesignTokenKit` clamp-range tokens | R4 re-runs against the CLAMP BOUNDS (not concrete albums) and stays green; matrix A,B,H + track-change transition cell; RM: recolor is a cut, not a crossfade; missing-art fallback cell |
 | **6. Chrome + footer restyle** | Band SURFACES unchanged (`AppShell` byte-untouched: chrome keeps `window`, footer keeps its existing `panel` + hairlines — no slab, no elevation); device pill restyled via tokens + sample-rate readout w/ `numericText` (D5); tab selector per D9 (native); footer CONTROLS restyle w/ the non-text contrast rules (incl. retiring the `NowPlayingBar:303` shadow literal → token); `FooterScrubber` adopts `CarvedSliderTrack` HERE (not PR 5); subtract-interference audit | `ChromeBar.swift`, `NowPlayingBar.swift` | `ShellMetrics`/`Footer` metrics byte-identical; window-drag intact (L2); media-keys/transport regression-checked (scrubber re-plumb happens in the PR whose acceptance watches the footer); non-text 3:1 contrast (track/knob/meters/toggle) both appearances; matrix H required |
 | — **S10.8 (own sprint):** Library/EQ/Monitoring/Settings token sweep on the proven tokens — surfaces/controls/type only. R1 gates on it (D11). | | | |
 
-Order: 1a→1b→2→3→4→5→6, **strictly incremental (founder directive):** each PR is a
+Order: 1a→1b→2→3→4→5→6→7, **strictly incremental (founder directive):** each PR is a
 founder-verifiable milestone — build green → SME review (swiftui-pro + macos-design) →
 strict-gate → **founder runs it, screenshots the PR's matrix cells, feeds them back for
 vs-mock review → sign-off → merge**. PRs 2–4 are restyles inside the current split (they do
@@ -682,18 +697,20 @@ standing argument against pixel-reference checks (R3) and for token-math checks 
 | Custom slider primitive loses native-Slider a11y | §5 parity clause IS the acceptance; deferred/live commit split keeps scrubber semantics intact |
 | Chrome/footer restyle disturbs L2 window-drag or `.clipped()` shadows at band seams | D4 keeps band structure quiet; shadows inside content region via tokens; scrubber re-plumb moved to PR 6 where footer acceptance lives |
 | Base re-tune (D10) shifts every tab mid-sprint | Deliberate: one base per app; S10.8 sweeps the tabs onto it; R4 re-runs against the new base in PR 2 |
+| D8 sampling: a pathological cover (near-black art, neon art, low-chroma art) produces ugly or illegible glows | Clamp-range tokens bound chroma/alpha/luminance (§3.3) — R4 audits the BOUNDS, so contrast can't break by construction; aesthetics verified by the founder's PR-7 screenshot cells incl. a worst-case-album set; brand-color fallback for missing/failed extraction |
 | Scope creep into other tabs ("just one more surface") | D1: layouts untouched; S10.8 owns the sweep; any layout redesign is a post-R1 wave |
 
-## 9. Open decisions for the founder (recommendations first)
+## 9. Decisions — RESOLVED (founder, 2026-07-17)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| **D5** | Device pill sample-rate readout ("44.1 kHz", live)? | **Yes** — audiophile-signal, data already flows through the signal-path readout; small (PR 6, with `numericText` transition). |
-| **D6** | Analyzer placement: 8a hero-right lens vs today's full-width 50pt strip? | **Adopt 8a hero-right, flexing 400→~560 ×122** (macos-design: a framed instrument bounds the screen's continuous motion; a fixed lens would strand in whitespace on large windows). Grid/scale styling follows the frame in PR 5. |
-| **D7** | 8a's queue filter field? | **Defer** — the queue is a working set, not a library; Library surfaces already have filter fields. Revisit post-R1. |
-| **D8** | Glow colors: static brand teal/lime/blue vs album-art-sampled? | **Static now**, art-sampled as a fast-follow (needs dominant-color extraction + caching design; `backgroundExtensionEffect` is the related future hero-art hook). |
-| **D9** | Tab selector: native segmented control vs 8a's custom teal-gradient capsule? | **Keep native, firmly** (macos-design: the teal capsule is 8a's most web-like element, not its identity — no Apple app brand-colors its selected segment; identity lives in the glow/lens/teal light; native buys macOS-26 styling + a11y + future OS re-tunes free). |
-| **D10** | Re-base the dark surface stack app-wide to the 8a deep base (window `#1E1E1E` → ≈`#0e1013`–`#121418`) in PR 2? | **Yes** — every 8a value is tuned against the deep base; over `#1E1E1E` the glows wash out and PR 2's by-eye fails; one base per app, S10.8 inherits it, R4 re-audits against it. This IS the release look (founder 2026-07-17). |
+| **D5** | Device pill sample-rate readout? | **YES** (per recommendation) — PR 6, `numericText` transition. |
+| **D6** | Analyzer placement? | **8a hero-right lens** (per recommendation) — flex 400→~560 ×122; grid/scale follow the frame in PR 5. |
+| **D7** | 8a's queue filter field? | **IN SCOPE** (founder overrode the defer recommendation) — PR 5, view-local, spec in §5. |
+| **D8** | Glow colors? | **Album-art-sampled IN SCOPE** (founder overrode the defer recommendation) — brand colors PR 2, sampling PR 7 with clamp-range tokens (§3.3); the §3.1 pre-binding + R4 clamp audit were designed for exactly this. |
+| **D9** | Tab selector? | **Native segmented control** (per recommendation, both SMEs firm) — revisit only if the PR-6 screenshots reject the neutral look. |
+| **D10** | Dark-base re-tune app-wide? | **YES** (per recommendation) — PR 2, with the interim story + base-compat micro-pass (§8) and the R4 legacy-pair audit as the net. |
+| **D11** | R1 gate | **S10.7 + S10.8** (locked earlier — "nothing elementary ships"). |
 
 ## 10. Definition of done
 
