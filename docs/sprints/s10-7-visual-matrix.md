@@ -44,12 +44,39 @@ one-frame blips on tab switch acceptable. Record the observed number in the PR's
 
 ## PR 5 — VO/keyboard traversal script (manual, once per PR-5 revision)
 
+**Prerequisite: System Settings → Keyboard → Keyboard navigation ON** — the custom
+`.focusable()` views (lens + both sliders) join Tab traversal only with it on; without it
+the walk fails for the wrong reason.
+
 Expected traversal: hero (title group) → lens frame ("Spectrum analyzer", carries the
 "Open Monitoring" accessibility action + keyboard activation) → queue (first focus via
 `.defaultFocus`; ↑/↓/Return work) → inspector: gain slider → intensity slider → meters →
 crossfeed toggle — each slider focusable with VISIBLE focus ring, ←/→ adjusts by one step,
 VoiceOver announces label + value and supports adjustable. Footer transport reachable after
 the tab content. A keyboard user who can reach but not OPERATE a control = PR failure.
+Lens activation is **Return** (Space is the transport toggle app-wide — by design); if Return
+on the focused lens does NOT open Monitoring, report it — that's the one genuinely uncertain
+macOS behavior here, and we'll wire it differently.
+
+## PR 5 — review-fix verification riders (check during the founder round)
+
+The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard cells:
+
+1. **Jump-vs-filter (was BLOCKER):** with the now-playing track filtered OUT, and again from
+   the No-Matches state, press Jump-to-Now-Playing — the filter must clear AND the row must
+   scroll-center (both halves, not just the clear).
+2. **Escape's landing:** Escape while editing the filter clears it and ↑/↓ work IMMEDIATELY
+   (focus hands to the queue, never strands).
+3. **Gain-knob grab:** grab the knob at min and at max without moving — the value must NOT
+   jump on mouse-down (live-commit audio control).
+4. **Hero badges:** bits/decoder capsules are GONE from the hero (rate/path/intensity/XF
+   remain); they live only in the inspector's signal-detail line.
+5. **Inspector corners:** while scrolled mid-content, nothing pokes square through the
+   radius-22 top/bottom corners.
+6. **Grip-while-filtered:** the drag grip disappears when the filter narrows the list
+   (context-menu moves still work); it returns when cleared.
+7. **Diacritics:** filter "beyonce"-style queries match accented titles if the library has
+   any (else skip).
 
 ## Ledger
 
