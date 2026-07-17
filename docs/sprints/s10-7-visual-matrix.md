@@ -53,6 +53,18 @@ the tab content. A keyboard user who can reach but not OPERATE a control = PR fa
 
 ## Ledger
 
+### PR 3 — accepted 2026-07-17
+
+Cells captured: A (dark, playing — lens + caps read as an instrument), B (light — white-glass
+lens), C (dark + RT: glow field suppressed to the flat base AND the lens went opaque — the
+resolver verified LIVE), D (light + RT: opaque lens), G (RM on — bars/caps render, data-driven).
+Review finding applied post-capture: the light lens SHADOW was too heavy (0.30 @ 18 read as a
+smudge) → tuned to 0.15 @ 12 / y 5; PR-4's B cell re-verifies.
+
+Deferred (TEMP, expiry = sprint end 2026-08-15):
+- Instruments row — reason="parked by the founder; any track works for the FPS pass (96 kHz was
+  the stress suggestion, not a requirement)"
+
 ### PR 2 — accepted 2026-07-17 (glow tokens FROZEN per the §8 stopping rule)
 
 Round 1: founder screenshots A (dark, all five tabs) + B (light, unchanged as designed) —
