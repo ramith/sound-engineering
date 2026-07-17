@@ -11,11 +11,13 @@ import Testing
 @Suite("Fixed-slot fit (S9 truncation class)")
 struct SlotFitTests {
     /// Measure a string in the app's monospaced small-readout style (`DesignSystem.Font
-    /// .monoSmall` = subheadline, monospaced design) with a semibold weight — the footer
-    /// time labels' actual configuration.
+    /// .monoSmall` = subheadline, monospaced design) at REGULAR weight — the footer time
+    /// labels' actual configuration (NowPlayingBar's slot-constrained labels use plain
+    /// `monoSmall`; the semibold variant is the scrubber tooltip, which is not
+    /// slot-constrained — review MINOR-1).
     private func monoSmallWidth(_ string: String) -> Double {
         let size = NSFont.preferredFont(forTextStyle: .subheadline).pointSize
-        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .semibold)
+        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         return NSAttributedString(string: string, attributes: [.font: font]).size().width
     }
 

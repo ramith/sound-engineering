@@ -64,8 +64,8 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
         let resolved = resolveSurface(
             role: role,
             appearance: colorScheme == .dark ? .dark : .light,
-            flags: AccessibilityFlags(reduceTransparency: reduceTransparency,
-                                      increasedContrast: colorSchemeContrast == .increased)
+            reduceTransparency: reduceTransparency,
+            increasedContrast: colorSchemeContrast == .increased
         )
         switch resolved {
         case .systemMaterial(.ultraThin):

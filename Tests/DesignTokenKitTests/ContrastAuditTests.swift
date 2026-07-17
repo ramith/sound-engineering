@@ -70,11 +70,14 @@ struct ContrastAuditTests {
         }
     }
 
-    /// statusError aliases today's Color.red look byte-for-byte (PR 1a is zero-visual-change),
-    /// and the audit shows that look was NEVER AA except on the dark window (its actual
-    /// placement today — the meters sit on the window, no card behind): measured 2026-07-17
-    /// dark card⊕window 4.32:1, dark panel⊕window 4.12:1, light all ≈3.0–3.5:1. All pinned
-    /// as known issues scheduled for the PR-6 meters/footer restyle (a token-value fix).
+    /// statusError aliases today's Color.red look byte-for-byte (PR 1a is zero-visual-change;
+    /// macOS-26 palette-red values per review BLOCKER-1), and the audit shows that look was
+    /// NEVER AA except on the dark window (its actual placement today — the meters sit on the
+    /// window, no card behind): measured 2026-07-17 dark card⊕window 4.28:1, dark
+    /// panel⊕window 4.09:1, light ≈3.05–3.57:1. Each shortfall is pinned INDIVIDUALLY
+    /// (review MAJOR-1: one shared withKnownIssue would let a partial fix — e.g. PR-2's
+    /// dark-composite shift — pass silently instead of flipping loud), all scheduled for the
+    /// PR-6 meters/footer restyle (a token-value fix).
     @Test("R4-LEG-03: statusError clears AA on its actual dark surface; rest pinned to PR 6")
     func statusErrorText() {
         // The real placement today: the meters render on the dark window — must pass outright.
@@ -83,15 +86,15 @@ struct ContrastAuditTests {
         #expect(onWindow >= Self.textAA, "statusError on window (dark) = \(onWindow) < \(Self.textAA)")
 
         // Worst-case sweep (dark card/panel composites + all light surfaces): pre-existing
-        // shortfalls — tracked, not silently passed, not silently fixed.
-        withKnownIssue("statusError off-window surfaces fail AA — pre-existing Color.red look; PR-6 restyle") {
-            for surface in Self.surfaces(.dark) where surface.name != "window" {
-                let text = Palette.statusError.dark.over(surface.color)
-                #expect(RGBAColor.contrastRatio(text, surface.color) >= Self.textAA)
-            }
-            for surface in Self.surfaces(.light) {
-                let text = Palette.statusError.light.over(surface.color)
-                #expect(RGBAColor.contrastRatio(text, surface.color) >= Self.textAA)
+        // shortfalls — tracked PER PAIR, not silently passed, not silently fixed.
+        for appearance in TokenAppearance.allCases {
+            for surface in Self.surfaces(appearance)
+                where !(appearance == .dark && surface.name == "window") {
+                let text = Palette.statusError.value(for: appearance).over(surface.color)
+                let ratio = RGBAColor.contrastRatio(text, surface.color)
+                withKnownIssue("statusError \(appearance)/\(surface.name) fails AA — pre-existing; PR-6 restyle") {
+                    #expect(ratio >= Self.textAA)
+                }
             }
         }
     }
