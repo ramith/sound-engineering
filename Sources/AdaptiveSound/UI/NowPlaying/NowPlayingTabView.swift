@@ -23,6 +23,8 @@ struct NowPlayingTabView: View {
                         .frame(width: 0.5)
                 }
         }
-        .background(Color.asWindow)
+        // The ambient glow field (S10.7 PR 2): paints the window base + the three 8a glows
+        // behind the whole tab. Other tabs keep the plain base until the S10.8 sweep (D1).
+        .background { GlowField() }
     }
 }

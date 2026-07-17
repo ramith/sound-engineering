@@ -13,10 +13,12 @@ import Foundation
 public enum Palette {
     // MARK: Surfaces (elevation stack)
 
-    /// Window base. Dark #1E1E1E pre-D10 (PR 2 re-bases toward the 8a deep base).
+    /// Window base. Dark = the 8a DEEP base #0e1013 (D10, PR 2 — the release look: every 8a
+    /// glow/fill/rim value is tuned against this; the pre-D10 #1E1E1E washed them out).
+    /// Light untouched (the light grammar re-derives, never inverts — design §3.2).
     public static let window = AppearancePair(
         light: .gray(0.93),
-        dark: RGBAColor(red: 0.118, green: 0.118, blue: 0.118)
+        dark: RGBAColor(red: 14.0 / 255.0, green: 16.0 / 255.0, blue: 19.0 / 255.0)
     )
     public static let card = AppearancePair(light: .gray(1.0), dark: .gray(1.0, alpha: 0.045))
     public static let panel = AppearancePair(light: .gray(1.0), dark: .gray(1.0, alpha: 0.06))
@@ -79,6 +81,25 @@ public enum Palette {
     public static let iconFillTop = AppearancePair(both: RGBAColor(red: 0.247, green: 0.816, blue: 0.729))
     public static let iconFillMid = AppearancePair(both: RGBAColor(red: 0.122, green: 0.659, blue: 0.576))
 
+    // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
+
+    /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
+    /// base); light alphas follow the §3.2 grammar rule 5 (~1/3 — ambience, not smears).
+    /// D8 pre-binding: when art-sampling lands (PR 7), sampled colors CLAMP into ranges
+    /// derived from these tokens, so the R4 audit keeps enumerating bounded worst cases.
+    public static let glowTeal = AppearancePair(
+        light: RGBAColor(red: 41.0 / 255.0, green: 182.0 / 255.0, blue: 164.0 / 255.0, alpha: 0.09),
+        dark: RGBAColor(red: 41.0 / 255.0, green: 182.0 / 255.0, blue: 164.0 / 255.0, alpha: 0.28)
+    )
+    public static let glowLime = AppearancePair(
+        light: RGBAColor(red: 200.0 / 255.0, green: 240.0 / 255.0, blue: 106.0 / 255.0, alpha: 0.04),
+        dark: RGBAColor(red: 200.0 / 255.0, green: 240.0 / 255.0, blue: 106.0 / 255.0, alpha: 0.12)
+    )
+    public static let glowBlue = AppearancePair(
+        light: RGBAColor(red: 79.0 / 255.0, green: 178.0 / 255.0, blue: 214.0 / 255.0, alpha: 0.033),
+        dark: RGBAColor(red: 79.0 / 255.0, green: 178.0 / 255.0, blue: 214.0 / 255.0, alpha: 0.10)
+    )
+
     // MARK: Registry (drives the invariant + audit tests — a token missing here is untested)
 
     /// Every pair above, by name. TOK tests iterate this; keep it in declaration order.
@@ -90,6 +111,7 @@ public enum Palette {
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
+        ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
     ]
 }
 
