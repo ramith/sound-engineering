@@ -31,12 +31,6 @@ public struct RGBAColor: Sendable, Equatable {
         RGBAColor(red: white, green: white, blue: white, alpha: alpha)
     }
 
-    /// True when r == g == b — the app-side bridge preserves the exact `Color(white:)`
-    /// construction path for grays (gray-colorspace vs sRGB middle-gray gamma differs).
-    public var isGray: Bool {
-        red == green && green == blue
-    }
-
     /// A copy with a different alpha (token derivations like the accent row tints).
     public func opacity(_ alpha: Double) -> RGBAColor {
         RGBAColor(red: red, green: green, blue: blue, alpha: alpha)
