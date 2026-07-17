@@ -29,4 +29,15 @@ struct SlotFitTests {
         #expect(measured <= SlotWidths.footerTimeLabel - 2,
                 "'88:88' measures \(measured)pt against the \(SlotWidths.footerTimeLabel)pt slot")
     }
+
+    /// D5 chrome readout: the widest legitimate rate `SignalPathInfo.rateString` emits is a
+    /// high-res fractional string — "176.4 kHz" (176 400 Hz, 9 chars). Literal here (the
+    /// formatter lives in the app target, out of the Kit test's reach); if the format string
+    /// ever changes, update both.
+    @Test("SLOT-02: the widest sample-rate string fits the chrome device-pill readout slot")
+    func chromeSampleRateFits() {
+        let measured = monoSmallWidth("176.4 kHz")
+        #expect(measured <= SlotWidths.chromeSampleRate - 2,
+                "'176.4 kHz' measures \(measured)pt against the \(SlotWidths.chromeSampleRate)pt slot")
+    }
 }

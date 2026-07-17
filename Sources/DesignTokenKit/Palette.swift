@@ -176,4 +176,7 @@ public enum Palette {
 public enum SlotWidths {
     /// Footer scrubber time label ("88:88" is the widest mm:ss).
     public static let footerTimeLabel: Double = 46
+    /// The chrome device-pill sample-rate readout (D5). Widest legitimate string is a
+    /// high-res fractional rate — "176.4 kHz" (9 chars); SLOT-02 asserts it fits.
+    public static let chromeSampleRate: Double = 66
 }
