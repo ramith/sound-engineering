@@ -90,6 +90,12 @@ extension AudioEngineBridge {
             }
         }
 
+        // Refresh the device rate: a config change can be a switch to a device running at a
+        // different rate, so the stored Enhanced snapshot's achievedSampleRate would otherwise
+        // go stale. One field only (mutate, not store) so fellBackToEnhanced/interrupted stand.
+        // On configChangeQueue here — the engine is settled, so this outputNode read is safe.
+        mutateSignalPath { $0.achievedSampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate }
+
         // Read resampleSession under the queue's lock so the branch decision is consistent with
         // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
         // or primeEnhancedResamplerLocked running concurrently).

@@ -106,9 +106,15 @@ extension AudioEngineBridge {
         setActivePath(.enhanced)
         resampleQueue.sync { enhancedPlayIntent = true }
         let fellBack = loadSignalPath().fellBackToEnhanced
+        // The device's actual output rate (the honest "device is running at" value, per the
+        // field's doc + the D5 device-pill readout). Enhanced processes internally at the graph
+        // rate; the outputNode format reflects the hardware, so a 48 kHz device reads "48 kHz".
+        // Captured on the engine queue (engine settled + playing here) — the same store-time
+        // discipline the Pure path uses via makeSignalPathInfo, never a MainActor engine read.
         storeSignalPath(SignalPathInfo(
             path: .enhanced,
             decision: .fallbackEnhanced,
+            achievedSampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate,
             fellBackToEnhanced: fellBack
         ))
     }
