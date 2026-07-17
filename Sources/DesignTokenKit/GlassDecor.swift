@@ -36,14 +36,17 @@ public enum GlassDecor {
     public static let bleedDark: RGBAColor = .gray(1.0, alpha: 0.12)
     public static let bleedHeight: Double = 24
 
-    // MARK: Drop shadow (grammar rule 4: light ≈ half opacity, tighter)
+    // MARK: Drop shadow (grammar rule 4: light = lighter AND tighter — tuned from the PR-3
+
+    // founder screenshots: the first pass at literal half-of-dark (0.30 @ 18) read as a
+    // gray smudge on the light window; native macOS light panels sit nearer 0.15)
 
     public static let shadowColor = AppearancePair(
-        light: .gray(0.0, alpha: 0.30),
+        light: .gray(0.0, alpha: 0.15),
         dark: .gray(0.0, alpha: 0.60)
     )
     public static let shadowRadiusDark: Double = 36
-    public static let shadowRadiusLight: Double = 18
+    public static let shadowRadiusLight: Double = 12
     public static let shadowOffsetYDark: Double = 14
-    public static let shadowOffsetYLight: Double = 7
+    public static let shadowOffsetYLight: Double = 5
 }
