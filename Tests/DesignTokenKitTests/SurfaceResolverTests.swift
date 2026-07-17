@@ -45,6 +45,7 @@ struct SurfaceResolverOverlayTests {
     private static let fillRoles: [(role: SurfaceRole, pair: AppearancePair)] = [
         (.lens, Palette.lensFill),
         (.badge, Palette.badgeFill),
+        (.panel, Palette.panelFill),
     ]
 
     @Test("RES-01: fill roles resolve to their translucent token when transparency is allowed")

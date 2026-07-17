@@ -73,6 +73,67 @@ private struct HeroTitleModifier: ViewModifier {
     }
 }
 
+// MARK: - Carved slider visuals (S10.7 PR 5 — the 8a track/knob recipe)
+
+/// The 8a carved slider's VISUALS (5pt inset track, teal fill with a dark-only glow, 14pt
+/// knob with a bottom inner shade) — appearance-aware, so it lives in this sanctioned file;
+/// `CarvedSlider` (UI/Controls) owns interaction and consumes this for its body.
+struct CarvedTrack: View {
+    /// Filled fraction in [0, 1].
+    let fraction: Double
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private enum Metrics {
+        static let trackHeight: CGFloat = 5
+        static let knobSize: CGFloat = 14
+        static let innerShade: CGFloat = 2
+    }
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        GeometryReader { geo in
+            let usable = max(geo.size.width - Metrics.knobSize, 0)
+            let knobX = usable * CGFloat(min(max(fraction, 0), 1))
+            ZStack(alignment: .leading) {
+                // Carved base: token fill + a top inner shade (the 8a inset shadow).
+                Capsule()
+                    .fill(SwiftUI.Color(token: GlassDecor.carvedTrack.value(for: dark ? .dark : .light)))
+                    .overlay(alignment: .top) {
+                        LinearGradient(
+                            colors: [SwiftUI.Color(token: dark ? GlassDecor.carvedShadeDark
+                                    : GlassDecor.carvedShadeLight), .clear],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                        .frame(height: Metrics.innerShade)
+                    }
+                    .clipShape(Capsule())
+                    .frame(height: Metrics.trackHeight)
+
+                // Teal fill — the glow is DARK-ONLY (grammar rule 6).
+                Capsule()
+                    .fill(DesignSystem.Color.accent)
+                    .frame(width: knobX + Metrics.knobSize / 2, height: Metrics.trackHeight)
+                    .shadow(color: dark ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
+                            radius: 5)
+
+                // 14pt knob with a bottom inner shade.
+                Circle()
+                    .fill(.white)
+                    .overlay(alignment: .bottom) {
+                        LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
+                                       startPoint: .center, endPoint: .bottom)
+                            .clipShape(Circle())
+                    }
+                    .frame(width: Metrics.knobSize, height: Metrics.knobSize)
+                    .offset(x: knobX)
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+        }
+        .frame(height: Metrics.knobSize)
+    }
+}
+
 /// The sanctioned environment→resolver wiring for the glow field (this file is the one
 /// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
 /// `glowFieldIsVisible` resolver says so (dark + no reduced-transparency request).

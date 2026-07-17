@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import SwiftUI
 
 // MARK: - Queue View (the current playback queue — S9 IA change)
@@ -5,6 +6,11 @@ import SwiftUI
 /// The Now Playing queue: ONLY the current play queue, built by the Library's Play / Play Next /
 /// Add to Queue verbs. Folder-loading moved to the Library section (design §4/§5), so there is no
 /// folder chooser or "~/…" chip here anymore, and choosing a folder never rewrites this list.
+///
+/// S10.7 PR 5 (founder decision D7): a VIEW-LOCAL filter field — narrows the visible rows by
+/// title/path (reusing `FacetTextFilter`, the S9.6 primitive), never mutates the queue or
+/// playback, suppresses the transport Space accelerator while focused, Escape clears, and
+/// Jump-to-Now-Playing clears it first rather than silently failing (§5).
 struct PlaylistView: View {
     @Environment(AudioViewModel.self) var viewModel
     /// Bumped by the header's "Jump to Now Playing" button; observed by the list to scroll the
@@ -14,6 +20,9 @@ struct PlaylistView: View {
     /// Up Next (the live queue) vs. History (this session's plays). Local view state — the panel
     /// simply switches which list it shows (S10.2 3a).
     @State private var panelMode: QueuePanelMode = .upNext
+    /// The D7 filter — view-local; empty means "filter off".
+    @State private var filterText = ""
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         VStack(spacing: 12) {
@@ -31,12 +40,81 @@ struct PlaylistView: View {
                 if viewModel.queue.isEmpty {
                     emptyQueue
                 } else {
-                    PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+                    filterField
+                    if filteredIndices.isEmpty {
+                        noMatches
+                    } else {
+                        PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID,
+                                         visibleIndices: filteredIndices,
+                                         reorderEnabled: !filterActive)
+                    }
                 }
             case .history:
                 QueueHistoryList()
             }
         }
+        // Jump-to-now-playing IGNORES an active filter by clearing it first (§5) — the list
+        // then scrolls on the same request-ID bump with every row visible again.
+        .onChange(of: jumpToCurrentRequestID) { _, _ in
+            filterText = ""
+        }
+    }
+
+    private var filterActive: Bool {
+        !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The visible queue positions under the filter (REAL indices — play/remove/menu actions
+    /// keep operating on the true queue positions).
+    private var filteredIndices: [Int] {
+        guard filterActive else { return Array(viewModel.queue.indices) }
+        return viewModel.queue.indices.filter { index in
+            let file = viewModel.queue[index].file
+            return FacetTextFilter.matches([file.name, file.relativePath], query: filterText)
+        }
+    }
+
+    private var filterField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.asLabelTertiary)
+            TextField("Filter queue", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(DesignSystem.Font.caption)
+                .suppressesTransportSpace(while: $filterFocused)
+                .onKeyPress(.escape) {
+                    guard filterActive || filterFocused else { return .ignored }
+                    filterText = ""
+                    filterFocused = false
+                    return .handled
+                }
+            if filterActive {
+                Button("Clear", systemImage: "xmark.circle.fill") {
+                    filterText = ""
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.asLabelTertiary)
+                .help("Clear the filter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .glassPanel(.badge, in: Capsule())
+        .accessibilityLabel("Filter queue")
+    }
+
+    private var noMatches: some View {
+        ContentUnavailableView {
+            Label("No Matches", systemImage: "magnifyingglass")
+        } description: {
+            Text("No queued track matches “\(filterText)”.")
+        } actions: {
+            Button("Clear Filter") { filterText = "" }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Shown whenever the queue is empty (fresh launch, or after Clear Queue). The queue is now
@@ -162,6 +240,12 @@ private struct PlaylistControlsView: View {
 private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
     @Binding var jumpToCurrentRequestID: Int
+    /// The REAL queue positions to render (the D7 filter narrows this; actions keep true
+    /// indices). Unfiltered = all indices.
+    let visibleIndices: [Int]
+    /// Reorder (grip drag + drop) is disabled while the filter narrows the list — moving a
+    /// row relative to HIDDEN neighbours is incoherent; the context-menu moves stay.
+    let reorderEnabled: Bool
 
     /// Non-nil while the "Info" popover is showing; identifies which row's card is open by its
     /// stable `QueueItem.id` (dups-safe — keying on the URL popped the card on every duplicate row).
@@ -188,8 +272,10 @@ private struct PlaylistItemList: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(viewModel.queue.enumerated()), id: \.element.id) { index, item in
-                        queueRow(index: index, item: item)
+                    ForEach(visibleIndices, id: \.self) { index in
+                        if index < viewModel.queue.count {
+                            queueRow(index: index, item: viewModel.queue[index])
+                        }
                     }
                 }
             }
@@ -244,11 +330,14 @@ private struct PlaylistItemList: View {
         .id(item.id)
         // Reorder: the grip is the `.draggable` source, each row a `.dropDestination` that lands
         // the dragged item at its position. This is why the queue is a LazyVStack, not a List.
+        // Disabled while the D7 filter narrows the list (moving relative to hidden rows is
+        // incoherent) — the guard makes a stray drop a no-op.
         .dropDestination(for: QueueDragItem.self) { payloads, _ in
             dropTargetIndex = nil
-            guard let fromID = payloads.first?.id else { return false }
+            guard reorderEnabled, let fromID = payloads.first?.id else { return false }
             return viewModel.moveByDrop(fromID: fromID, toIndex: index)
         } isTargeted: { targeted in
+            guard reorderEnabled else { return }
             dropTargetIndex = targeted ? index : (dropTargetIndex == index ? nil : dropTargetIndex)
         }
         .simultaneousGesture(
