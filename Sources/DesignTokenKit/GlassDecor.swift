@@ -36,6 +36,23 @@ public enum GlassDecor {
     public static let bleedDark: RGBAColor = .gray(1.0, alpha: 0.12)
     public static let bleedHeight: Double = 24
 
+    // MARK: Hero (PR 4 — 8a: teal title halo, dark-only per grammar rule 6; pulsing dot)
+
+    /// The hero title's teal text-halo — DARK-ONLY (light drops emissive cues, grammar
+    /// rule 6). A single constant, not a pair: the `.heroTitle()` modifier (the sanctioned
+    /// appearance reader) applies it only in dark.
+    public static let heroHaloDark = RGBAColor(red: 41.0 / 255.0, green: 182.0 / 255.0,
+                                               blue: 164.0 / 255.0, alpha: 0.25)
+    public static let heroHaloRadius: Double = 16
+    public static let heroHaloOffsetY: Double = 2
+
+    /// The ENHANCED badge's pulsing dot (8a: 1.6 s cycle, opacity 1 → 0.4) — the phase
+    /// animator runs each half-cycle.
+    public static let pulseHalfCycleSeconds: Double = 0.8
+    public static let pulseDimOpacity: Double = 0.4
+    /// Base badge capsule height (@ScaledMetric-scaled at the call site, 8a: 22pt).
+    public static let badgeBaseHeight: Double = 22
+
     // MARK: Drop shadow (grammar rule 4: light = lighter AND tighter — tuned from the PR-3
 
     // founder screenshots: the first pass at literal half-of-dark (0.30 @ 18) read as a

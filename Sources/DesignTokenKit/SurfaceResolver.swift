@@ -22,6 +22,14 @@ public enum SurfaceRole: Equatable, Sendable {
     /// The analyzer lens — the first Regime-B FILL role (PR 3): a token'd translucent fill
     /// + edge decoration; NEVER backdrop-sampling (design §3.1).
     case lens
+    /// Hero badge capsules (PR 4): the 8a small-control fill, same RT/IC contract as lens.
+    case badge
+}
+
+/// The animation-gate predicate (design §3.4/§7 R2 PG-01..04): the pulsing dot and the
+/// active-row equalizer animate ONLY while playing AND only when Reduce Motion is off.
+public func pulseIsActive(isPlaying: Bool, reduceMotion: Bool) -> Bool {
+    isPlaying && !reduceMotion
 }
 
 /// The blessed system-material substrates for `.overlay`. `.bar` exists solely for the
@@ -60,11 +68,12 @@ public func resolveSurface(role: SurfaceRole,
         // resolver returns the substrate unconditionally — asserted for the full flag
         // cube in RES tests.
         return .systemMaterial(substrate)
-    case .lens:
+    case .lens, .badge:
         // RES-01/02: translucent normally; opaque (fill composited over the window) when
         // transparency is reduced — and under Increase Contrast EVEN IF the RT flag is
         // false (never depend on the OS coupling IC→RT).
-        let fill = Palette.lensFill.value(for: appearance, increasedContrast: increasedContrast)
+        let pair = role == .lens ? Palette.lensFill : Palette.badgeFill
+        let fill = pair.value(for: appearance, increasedContrast: increasedContrast)
         if reduceTransparency || increasedContrast {
             let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)
             return .fill(fill.over(window))

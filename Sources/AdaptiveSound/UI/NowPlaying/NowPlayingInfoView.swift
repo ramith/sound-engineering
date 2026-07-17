@@ -2,13 +2,14 @@ import SwiftUI
 
 // MARK: - Now Playing Info
 
-/// The now-playing card, live loudness meters, Reimagine intensity knob (QW-A), and headphone
-/// crossfeed controls (QW-C). Lives in the Now Playing left panel beneath the spectrum +
-/// master-gain controls. (Transport + seek moved to the global footer bar in L3.)
+/// The Now Playing hero (S10.7 PR 4 — replaces the compact widget card), live loudness
+/// meters, Reimagine intensity knob (QW-A), and headphone crossfeed controls (QW-C). Lives
+/// in the Now Playing left panel beneath the spectrum + master-gain controls; the meters/
+/// intensity/crossfeed move to the PR-5 inspector column. (Transport is the footer's, L3.)
 struct NowPlayingInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            NowPlayingWidget()
+            HeroBand()
             LoudnessMetersView()
             ReimagineSectionView()
             HeadphonesSectionView()

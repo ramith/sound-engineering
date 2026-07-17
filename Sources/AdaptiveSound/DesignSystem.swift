@@ -102,6 +102,10 @@ enum DesignSystem {
     /// `.title` carry the style's own weight. (Ad-hoc `Font.system(size:)` call sites elsewhere are a
     /// separate migration — some are SF Symbols / proportional glyph sizes, not text.)
     enum Font {
+        /// The Now Playing hero title (8a: 28/800). Dynamic-Type-mapped `.largeTitle`
+        /// (~26pt macOS default) at heavy weight — a fixed 28pt would break text scaling
+        /// and is banned (S10.7 §3.2). Pair with `.heroTitle()` for the dark-only halo.
+        static let heroTitle = SwiftUI.Font.system(.largeTitle, weight: .heavy)
         static let displayTitle = SwiftUI.Font.system(.title, weight: .bold) // ~22
         static let sectionTitle = SwiftUI.Font.system(.title3, weight: .semibold) // ~15
         static let body = SwiftUI.Font.system(.body) // ~13
