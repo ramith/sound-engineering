@@ -40,11 +40,19 @@ public enum GlassDecor {
 
     // MARK: Carved sliders (PR 5 — 8a: 5pt inset tracks, 14pt knobs, dark-only teal glow)
 
+    /// Knob diameter — in the Kit because the interaction math (pointer→fraction mapping
+    /// over the knob's inset travel) and the visuals must share ONE value; a drift between
+    /// them re-creates the mouse-down value-jump at the track extremes.
+    public static let sliderKnobSize: Double = 14
     /// Carved track base fill (the groove).
     public static let carvedTrack = AppearancePair(
         light: .gray(0.0, alpha: 0.10),
         dark: .gray(1.0, alpha: 0.08)
     )
+    /// The knob fill. White on BOTH sides for now — a pair (not a constant) because the
+    /// PR-6 non-text-contrast pass owns the light-side value (white knob on the white-based
+    /// light panel is a known open item).
+    public static let knobFill = AppearancePair(both: .gray(1.0))
     /// The inset top shade inside the groove (8a `inset 0 1px 2px rgba(0,0,0,.4)`; light
     /// per grammar: much fainter).
     public static let carvedShadeDark: RGBAColor = .gray(0.0, alpha: 0.40)

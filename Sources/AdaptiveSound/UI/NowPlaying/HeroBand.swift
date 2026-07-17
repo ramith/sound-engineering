@@ -6,8 +6,9 @@ import SwiftUI
 /// The Now Playing hero: the 8a 28/800 title (dark-only teal halo), artist line, and the
 /// signal-path BADGE ROW — the full state mapping the retired `NowPlayingWidget` carried
 /// (design §5): `PURE` (monochrome) / `ENHANCED` + pulsing dot / the "(Pure unavailable)"
-/// fallback warning / the interrupted state — plus rate/bits/decoder/intensity/crossfeed
-/// segments as capsules. (Decoder/bits relocate to the inspector in PR 5.)
+/// fallback warning / the interrupted state — plus rate/intensity/crossfeed capsules.
+/// Decoder/bits live in the inspector's signal-detail line (PR 5 relocation, §5); the
+/// SPOKEN summary here deliberately keeps them — one VoiceOver stop for the whole path.
 ///
 /// First-launch/empty state is DESIGNED, not endured (§5): placeholder title in
 /// `labelSecondary`, NO halo, the badge row hidden-but-space-reserved so nothing reflows on
@@ -94,17 +95,9 @@ private struct SignalBadgeRow: View {
                 BadgeCapsule(height: badgeHeight) {
                     Text(info.formattedRate).badgeText(DesignSystem.Color.label)
                 }
-                if let bits = info.formattedBits {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text(bits).badgeText(DesignSystem.Color.label)
-                    }
-                }
-                if info.path == .pure, let decoder = info.decoder {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text(decoder == .apple ? "Apple" : "FFmpeg")
-                            .badgeText(DesignSystem.Color.label)
-                    }
-                }
+                // No bits/decoder capsules: relocated to the inspector's signal-detail
+                // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
+                // SHORT badge set.
                 if info.path == .enhanced, info.intensityLinear > 0 {
                     BadgeCapsule(height: badgeHeight) {
                         Text("\(Int((info.intensityLinear * 100).rounded())) %")

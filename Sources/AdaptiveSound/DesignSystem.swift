@@ -158,11 +158,15 @@ enum DesignSystem {
     /// `ToolbarView`), window min bumps to 880×640 for the footer transport + two Now Playing
     /// panes. No traffic-light inset — the native titlebar carries the window buttons in their
     /// own strip, so the chrome shares the content's left margin.
+    /// Band/window metrics FORWARD the Kit's `NowPlayingLayout` values (single-source
+    /// invariant): the §7.1 layout-arithmetic tests derive the min-window budget from the
+    /// Kit, so the shell must lay out from the same numbers — a local copy here would let
+    /// the tests keep passing against stale values.
     enum ShellMetrics {
-        static let chromeHeight: CGFloat = 60
-        static let footerHeight: CGFloat = 64
-        static let windowMinWidth: CGFloat = 880
-        static let windowMinHeight: CGFloat = 640
+        static let chromeHeight = CGFloat(NowPlayingLayout.chromeHeight)
+        static let footerHeight = CGFloat(NowPlayingLayout.footerHeight)
+        static let windowMinWidth = CGFloat(NowPlayingLayout.windowMinWidth)
+        static let windowMinHeight = CGFloat(NowPlayingLayout.windowMinHeight)
         static let hairline: CGFloat = 0.5
     }
 

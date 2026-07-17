@@ -18,9 +18,9 @@ public enum NowPlayingLayout {
     /// Minimum usable widths the arithmetic test asserts at the 880pt window minimum.
     public static let queueMinWidth: Double = 320
     public static let heroTextMinWidth: Double = 300
-    /// The shell's fixed bands (mirrors ShellMetrics — asserted equal by the app target's
-    /// consumption; duplicated VALUES would drift, so the app reads THESE for the min-window
-    /// content-height derivation used in §5's arithmetic).
+    /// The shell's fixed bands. `DesignSystem.ShellMetrics` FORWARDS these (single-source
+    /// invariant, PR 1a pattern): the shell lays out from the same values the §5 arithmetic
+    /// test derives from, so neither can drift behind the other.
     public static let windowMinWidth: Double = 880
     public static let windowMinHeight: Double = 640
     public static let chromeHeight: Double = 60

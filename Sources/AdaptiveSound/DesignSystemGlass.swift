@@ -86,7 +86,10 @@ struct CarvedTrack: View {
 
     private enum Metrics {
         static let trackHeight: CGFloat = 5
-        static let knobSize: CGFloat = 14
+        /// From the Kit: `CarvedSlider`'s pointer→fraction mapping uses the SAME value to
+        /// map over the knob's inset travel — sharing it is what keeps mouse-down at the
+        /// extremes value-neutral.
+        static let knobSize = CGFloat(GlassDecor.sliderKnobSize)
         static let innerShade: CGFloat = 2
     }
 
@@ -119,7 +122,7 @@ struct CarvedTrack: View {
 
                 // 14pt knob with a bottom inner shade.
                 Circle()
-                    .fill(.white)
+                    .fill(SwiftUI.Color(token: GlassDecor.knobFill.value(for: dark ? .dark : .light)))
                     .overlay(alignment: .bottom) {
                         LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
                                        startPoint: .center, endPoint: .bottom)

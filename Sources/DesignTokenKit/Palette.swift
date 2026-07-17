@@ -142,6 +142,7 @@ public enum Palette {
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
+        ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),
     ]
 }
 

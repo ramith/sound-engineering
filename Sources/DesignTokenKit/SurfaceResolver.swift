@@ -70,20 +70,34 @@ public func resolveSurface(role: SurfaceRole,
         // resolver returns the substrate unconditionally — asserted for the full flag
         // cube in RES tests.
         return .systemMaterial(substrate)
-    case .lens, .badge, .panel:
-        // RES-01/02: translucent normally; opaque (fill composited over the window) when
-        // transparency is reduced — and under Increase Contrast EVEN IF the RT flag is
-        // false (never depend on the OS coupling IC→RT).
-        let pair = switch role {
-        case .lens: Palette.lensFill
-        case .badge: Palette.badgeFill
-        default: Palette.panelFill
-        }
-        let fill = pair.value(for: appearance, increasedContrast: increasedContrast)
-        if reduceTransparency || increasedContrast {
-            let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)
-            return .fill(fill.over(window))
-        }
-        return .fill(fill)
+    // Every fill role names its pair EXPLICITLY (no `default:`) so a future role cannot
+    // silently inherit panelFill — it fails to compile until someone binds its token here.
+    case .lens:
+        return resolvedFill(Palette.lensFill, appearance: appearance,
+                            reduceTransparency: reduceTransparency,
+                            increasedContrast: increasedContrast)
+    case .badge:
+        return resolvedFill(Palette.badgeFill, appearance: appearance,
+                            reduceTransparency: reduceTransparency,
+                            increasedContrast: increasedContrast)
+    case .panel:
+        return resolvedFill(Palette.panelFill, appearance: appearance,
+                            reduceTransparency: reduceTransparency,
+                            increasedContrast: increasedContrast)
     }
+}
+
+/// RES-01/02 for every fill role: translucent normally; opaque (fill composited over the
+/// window) when transparency is reduced — and under Increase Contrast EVEN IF the RT flag
+/// is false (never depend on the OS coupling IC→RT).
+private func resolvedFill(_ pair: AppearancePair,
+                          appearance: TokenAppearance,
+                          reduceTransparency: Bool,
+                          increasedContrast: Bool) -> ResolvedSurface {
+    let fill = pair.value(for: appearance, increasedContrast: increasedContrast)
+    if reduceTransparency || increasedContrast {
+        let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)
+        return .fill(fill.over(window))
+    }
+    return .fill(fill)
 }
