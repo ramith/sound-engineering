@@ -22,7 +22,7 @@ struct GlowField: View {
                 GlowFieldGate {
                     GeometryReader { geo in
                         ForEach(0 ..< GlowFieldSpec.glows.count, id: \.self) { index in
-                            GlowEllipse(glow: GlowFieldSpec.glows[index])
+                            GlowEllipse(glow: GlowFieldSpec.glows[index], container: geo.size)
                                 .position(
                                     x: geo.size.width * GlowFieldSpec.glows[index].unitCenterX,
                                     y: geo.size.height * GlowFieldSpec.glows[index].unitCenterY
@@ -61,6 +61,15 @@ struct GlowField: View {
 
 private struct GlowEllipse: View {
     let glow: GlowFieldSpec.Glow
+    let container: CGSize
+
+    private var width: CGFloat {
+        container.width * glow.unitWidth
+    }
+
+    private var height: CGFloat {
+        container.height * glow.unitHeight
+    }
 
     var body: some View {
         // A CIRCULAR gradient scaled into the spec ellipse (PR-2 review BLOCKER 1: a circular
@@ -68,8 +77,8 @@ private struct GlowEllipse: View {
         // scaling the whole circle makes every gradient isoline the spec ellipse instead).
         Circle()
             .fill(radialFalloff)
-            .frame(width: glow.width, height: glow.width)
-            .scaleEffect(x: 1, y: glow.height / glow.width)
+            .frame(width: width, height: width)
+            .scaleEffect(x: 1, y: width > 0 ? height / width : 1)
     }
 
     /// The shared exact-linear profile, expressed as gradient stops: peak →
@@ -86,7 +95,7 @@ private struct GlowEllipse: View {
             ]),
             center: .center,
             startRadius: 0,
-            endRadius: glow.width / 2
+            endRadius: width / 2
         )
     }
 }
