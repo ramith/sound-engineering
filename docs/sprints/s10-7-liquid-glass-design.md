@@ -295,6 +295,16 @@ Transparency the field flattens to the plain window color. PR-2 eyeball checklis
 banding on wide-gamut displays; `AppShell`'s `.clipped()` hard-cutting glows at the band seams
 (mostly hidden under the hairlines — verify).
 
+**Tertiary-text placement rule (PR-2 audit finding, 2026-07-17):** the R4 audit's first run
+against the glow tokens failed `labelTertiary` on the teal core at spec alpha (3.98:1 dark) —
+and the 8a mock itself never puts small text there (its top-left core hosts only the HERO,
+large text at the 3:1 threshold). Rather than dilute the 8a alphas or waive the audit, the
+constraint is encoded: **labelTertiary small text never sits inside the teal core** (post-PR-5
+all tertiary lives in the inspector, right side); the audit models tertiary at lime/blue cores
+at max alpha + everything else at the mid-stop attenuation, and models pairwise glow overlaps
+at mid-stop (the three cores are geometrically disjoint — only faded tails overlap). Review
+owns the placement rule; R4-GLOW-01/02/04 own the math.
+
 ### 3.4 Motion & state rules
 
 - ENHANCED badge pulsing dot (1.6s cycle, opacity 1→0.4) and the active-queue-row 3-bar
