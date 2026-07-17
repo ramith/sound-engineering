@@ -80,9 +80,10 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     func body(content: Content) -> some View {
+        let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
         let resolved = resolveSurface(
             role: role,
-            appearance: colorScheme == .dark ? .dark : .light,
+            appearance: appearance,
             reduceTransparency: reduceTransparency,
             increasedContrast: colorSchemeContrast == .increased
         )
@@ -91,6 +92,47 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
             content.background(.ultraThinMaterial, in: shape)
         case .systemMaterial(.bar):
             content.background(.bar, in: shape)
+        case let .fill(fill):
+            decorated(content, fill: fill, appearance: appearance)
         }
+    }
+
+    /// The Regime-B strata (design §3.2): fill (+ dark-only bottom bleed) UNDER the content;
+    /// top-edge specular rim + full glass hairline as distinct strokes above; a soft deep
+    /// drop shadow (light = ~half opacity, tighter — grammar rule 4). The hairline token
+    /// carries real Increase-Contrast variants (the "stronger hairlines under IC" promise);
+    /// the resolver already handed us an OPAQUE fill under RT/IC.
+    private func decorated(_ content: Content, fill: RGBAColor,
+                           appearance: TokenAppearance) -> some View {
+        let increasedContrast = colorSchemeContrast == .increased
+        let rim = SwiftUI.Color(token: GlassDecor.rim.value(for: appearance))
+        let hairline = SwiftUI.Color(token: GlassDecor.glassHairline.value(
+            for: appearance, increasedContrast: increasedContrast
+        ))
+        let shadow = SwiftUI.Color(token: GlassDecor.shadowColor.value(for: appearance))
+        let dark = appearance == .dark
+        return content
+            .background {
+                ZStack(alignment: .bottom) {
+                    shape.fill(SwiftUI.Color(token: fill))
+                    if dark { // bottom light bleed is dark-only (grammar rule 3)
+                        LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.bleedDark)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: CGFloat(GlassDecor.bleedHeight))
+                            .clipShape(shape)
+                    }
+                }
+            }
+            .overlay { // specular top rim: a top-weighted stroke, never a full-perimeter ring
+                shape.strokeBorder(
+                    LinearGradient(colors: [rim, .clear], startPoint: .top, endPoint: .center),
+                    lineWidth: 1
+                )
+            }
+            .overlay { shape.strokeBorder(hairline, lineWidth: 1) }
+            .shadow(color: shadow,
+                    radius: CGFloat(dark ? GlassDecor.shadowRadiusDark : GlassDecor.shadowRadiusLight),
+                    x: 0,
+                    y: CGFloat(dark ? GlassDecor.shadowOffsetYDark : GlassDecor.shadowOffsetYLight))
     }
 }

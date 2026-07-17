@@ -23,8 +23,11 @@ struct LeftPanelView: View {
         // Transport (scrubber + play controls) moved to the global footer bar in L3.
         ScrollView(.vertical) {
             VStack(spacing: 0) {
+                // 66 = the pre-lens 50pt bar field + the lens's 8pt inner padding per side
+                // (S10.7 PR 3) — bar heights are unchanged; the D6 hero-right 400→560×122
+                // frame replaces this in PR 5.
                 SpectrumAnalyzerView()
-                    .frame(height: 50)
+                    .frame(height: 66)
                     .padding(.leading, Layout.leadingPad)
                     .padding(.trailing, Layout.trailingPad)
                     .padding(.vertical, Layout.spectrumVPad)

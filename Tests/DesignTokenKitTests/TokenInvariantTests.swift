@@ -28,16 +28,21 @@ struct TokenInvariantTests {
     /// So Increase Contrast can never resolve to an unset/garbage value.
     @Test("TOK-03: high-contrast variants default to base values until a token opts in")
     func highContrastDefaults() {
+        // Deliberate opt-ins (each names its design contract; anything NOT listed must
+        // still default — a new distinct HC variant fails here until added deliberately):
+        //   glassHairline — §3.2 "stronger hairlines under Increase Contrast" (PR 3).
+        let optedIn: Set = ["glassHairline"]
         for (name, pair) in Palette.all {
             for appearance in TokenAppearance.allCases {
                 let base = pair.value(for: appearance, increasedContrast: false)
                 let highContrast = pair.value(for: appearance, increasedContrast: true)
-                // Today NO token opts into a distinct HC variant (they arrive with the
-                // fill roles); equality asserts the defaulting path, the only wiring that
-                // exists yet. When a token opts in, remove it from this loop — this test
-                // failing IS the reminder to do so deliberately.
-                #expect(highContrast == base,
-                        "\(name).\(appearance): unexpected distinct HC variant — update this test if intentional")
+                if optedIn.contains(name) {
+                    #expect(highContrast.alpha > base.alpha,
+                            "\(name).\(appearance): an opted-in hairline must be STRONGER under IC")
+                } else {
+                    #expect(highContrast == base,
+                            "\(name).\(appearance): unexpected distinct HC variant — update this test if intentional")
+                }
             }
         }
     }

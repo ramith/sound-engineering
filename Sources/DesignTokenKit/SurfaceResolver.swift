@@ -19,6 +19,9 @@ public enum SurfaceRole: Equatable, Sendable {
     /// The substrate is token-governed but per-site (the S10.3 pill shipped on `.bar`);
     /// the shape is a call-site parameter on the app-side modifier.
     case overlay(OverlaySubstrate)
+    /// The analyzer lens — the first Regime-B FILL role (PR 3): a token'd translucent fill
+    /// + edge decoration; NEVER backdrop-sampling (design §3.1).
+    case lens
 }
 
 /// The blessed system-material substrates for `.overlay`. `.bar` exists solely for the
@@ -32,10 +35,12 @@ public enum OverlaySubstrate: Equatable, Sendable, CaseIterable {
 
 /// What the modifier paints. `.systemMaterial` = the system owns the fallback behavior
 /// (Reduce Transparency / Increase Contrast adaptation is NATIVE to Material — the resolver
-/// deliberately passes it through untouched, design §3.2 `.overlay` spec). Fill-based cases
-/// join with the fill roles.
+/// deliberately passes it through untouched, design §3.2 `.overlay` spec). `.fill` = a
+/// Regime-B token fill, already RT/IC-resolved (translucent normally; the OPAQUE
+/// fill-over-window composite when transparency is reduced — derived, never hand-kept).
 public enum ResolvedSurface: Equatable, Sendable {
     case systemMaterial(OverlaySubstrate)
+    case fill(RGBAColor)
 }
 
 // MARK: - Resolver
@@ -53,10 +58,17 @@ public func resolveSurface(role: SurfaceRole,
     case let .overlay(substrate):
         // Native-adaptation ownership: Material self-adapts to RT/IC/appearance, so the
         // resolver returns the substrate unconditionally — asserted for the full flag
-        // cube in RES tests. (The parameters participate once the fill roles land.)
-        _ = appearance
-        _ = reduceTransparency
-        _ = increasedContrast
+        // cube in RES tests.
         return .systemMaterial(substrate)
+    case .lens:
+        // RES-01/02: translucent normally; opaque (fill composited over the window) when
+        // transparency is reduced — and under Increase Contrast EVEN IF the RT flag is
+        // false (never depend on the OS coupling IC→RT).
+        let fill = Palette.lensFill.value(for: appearance, increasedContrast: increasedContrast)
+        if reduceTransparency || increasedContrast {
+            let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)
+            return .fill(fill.over(window))
+        }
+        return .fill(fill)
     }
 }
