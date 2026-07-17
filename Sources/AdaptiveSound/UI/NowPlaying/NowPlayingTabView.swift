@@ -76,6 +76,9 @@ private struct HeroRow: View {
             .onHover { lensHovered = $0 }
             .focusable()
             .focused($lensFocused)
+            // Return only — NOT Space: the transport's Space key-equivalent (Controls menu)
+            // is matched before any focused view's `onKeyPress`, so a Space handler here
+            // would be dead code (the same audit that removed the queue list's).
             .onKeyPress(.return) {
                 viewModel.selectedTab = .monitoring
                 return .handled
@@ -83,6 +86,8 @@ private struct HeroRow: View {
             .help("Double-click to open Monitoring")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Spectrum analyzer")
+            // Default action (VO-press works directly) + the named action in the rotor.
+            .accessibilityAction { viewModel.selectedTab = .monitoring }
             .accessibilityAction(named: "Open Monitoring") { viewModel.selectedTab = .monitoring }
     }
 }

@@ -23,6 +23,12 @@ struct InspectorColumn: View {
             }
             .padding(14)
         }
+        // Clip the SCROLLING content to the panel's shape: `.glassPanel` paints fill under
+        // and strokes over but never clips, so rows crossing the top/bottom edge would
+        // render square into the radius-22 corner cutouts (~6pt intrusion) — and this
+        // panel is EXPECTED to scroll at the 640pt window minimum.
+        .clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                    style: .continuous))
         .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
                                                  style: .continuous))
         .frame(width: CGFloat(NowPlayingLayout.inspectorWidth))
@@ -47,7 +53,7 @@ struct InspectorColumn: View {
     }
 }
 
-// MARK: - Reimagine Intensity Section (moved from NowPlayingInfoView — QW-A)
+// MARK: - Reimagine Intensity Section (QW-A)
 
 /// Horizontal carved slider for the global Reimagine intensity knob.
 struct ReimagineSectionView: View {
@@ -100,7 +106,7 @@ struct ReimagineSectionView: View {
     }
 }
 
-// MARK: - Headphones Section (moved from NowPlayingInfoView — QW-C)
+// MARK: - Headphones Section (QW-C)
 
 /// Crossfeed toggle + strength picker; disabled and dimmed on non-headphone devices.
 struct HeadphonesSectionView: View {

@@ -6,7 +6,7 @@
 - **Teal→Lime spectrum**: `UI/Spectrum/SpectrumColorPalette.swift` already implements the exact palette + 0.82 vertical darken; `SpectrumAnalyzerView` already dims to 0.4 when paused, respects Reduce Motion, and runs off real FFT (`AudioViewModel.spectrumBars`, ~20 Hz). ✔ matches design.
 - **Shell**: `AppShell` = fixed 60pt `ChromeBar` + bounded content + fixed 64pt footer `NowPlayingBar` (global transport). Native titlebar carries traffic lights.
 - **Chrome**: `ChromeBar` = logo squircle + fixed-200pt device pill (`Menu`) + segmented `TabSelectorView`.
-- **Now Playing tab**: `NowPlayingTabView` = 50/50 split; `LeftPanelView` (spectrum → master gain → track info, scrollable) + `RightPanelView` → `PlaylistView` (queue).
+- **Now Playing tab**: `NowPlayingTabView` = 50/50 split; `LeftPanelView` (spectrum → master gain → track info, scrollable) + `RightPanelView` → `PlaylistView` (queue). *[Superseded by S10.7 PR 5: the 8a restructure replaced the split with hero-row + queue-flex + 260pt inspector; `LeftPanelView`/`RightPanelView` deleted.]*
 - **Tokens**: `DesignSystem.swift` — dynamic light/dark colors (WCAG-audited), Dynamic Type fonts, spacing/radius scales, `ShellMetrics`, `Footer` metrics. New code must use these.
 - Loudness meters (`UI/Loudness/LoudnessMetersView.swift`), format badges, queue rows with now-playing/selected tints — all exist.
 

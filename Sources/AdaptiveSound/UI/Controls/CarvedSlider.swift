@@ -1,3 +1,4 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Carved Slider (S10.7 PR 5 — the shared 8a slider primitive)
@@ -29,26 +30,38 @@ struct CarvedSlider: View {
     var body: some View {
         GeometryReader { geo in
             CarvedTrack(fraction: fraction)
+                // Fill the GeometryReader (it top-aligns by default) so the contentShape —
+                // and therefore the drag — covers the FULL 20pt hit target, not just the
+                // track's own 14pt band.
+                .frame(width: geo.size.width, height: geo.size.height)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
-                            set(fraction: drag.location.x / max(geo.size.width, 1))
+                            // Map the pointer onto the KNOB'S travel ([knob/2, width−knob/2]
+                            // — the same inset `CarvedTrack` renders with), not the raw
+                            // width: this is a LIVE-commit audio control, so mouse-down on
+                            // the knob at either extreme must be value-neutral, never a jump.
+                            let knob = CGFloat(GlassDecor.sliderKnobSize)
+                            set(fraction: (drag.location.x - knob / 2) / max(geo.size.width - knob, 1))
                         }
                 )
         }
         .frame(height: 20) // hit target taller than the visual track
         .focusable()
         .focused($focused)
-        .onKeyPress(.leftArrow) { nudge(-step) }
-        .onKeyPress(.rightArrow) { nudge(step) }
+        // A focused slider OWNS its arrows (NSSlider parity): consume the key even at the
+        // bounds — a bubbled ← at min must not reach whatever the enclosing context binds
+        // arrows to (PR 6 puts a CarvedTrack scrubber next to the footer transport).
+        .onKeyPress(.leftArrow) { nudge(-step); return .handled }
+        .onKeyPress(.rightArrow) { nudge(step); return .handled }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValueText)
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: _ = nudge(step)
-            case .decrement: _ = nudge(-step)
+            case .increment: nudge(step)
+            case .decrement: nudge(-step)
             @unknown default: break
             }
         }
@@ -60,10 +73,7 @@ struct CarvedSlider: View {
         value = min(max(stepped.rounded() * step, range.lowerBound), range.upperBound)
     }
 
-    private func nudge(_ delta: Float) -> KeyPress.Result {
-        let next = min(max(value + delta, range.lowerBound), range.upperBound)
-        guard next != value else { return .ignored }
-        value = next
-        return .handled
+    private func nudge(_ delta: Float) {
+        value = min(max(value + delta, range.lowerBound), range.upperBound)
     }
 }
