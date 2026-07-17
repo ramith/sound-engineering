@@ -50,6 +50,29 @@ extension View {
     }
 }
 
+extension View {
+    /// The hero-title style (S10.7 PR 4): `heroTitle` font, primary label color, and the 8a
+    /// teal halo — DARK-ONLY (grammar rule 6: light drops emissive cues). Lives here because
+    /// this file is the sanctioned appearance reader.
+    func heroTitle() -> some View {
+        modifier(HeroTitleModifier())
+    }
+}
+
+private struct HeroTitleModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .font(DesignSystem.Font.heroTitle)
+            .foregroundStyle(DesignSystem.Color.label)
+            .shadow(color: colorScheme == .dark ? SwiftUI.Color(token: GlassDecor.heroHaloDark) : .clear,
+                    radius: CGFloat(GlassDecor.heroHaloRadius),
+                    x: 0,
+                    y: CGFloat(GlassDecor.heroHaloOffsetY))
+    }
+}
+
 /// The sanctioned environment→resolver wiring for the glow field (this file is the one
 /// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
 /// `glowFieldIsVisible` resolver says so (dark + no reduced-transparency request).

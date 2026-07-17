@@ -40,31 +40,49 @@ struct SurfaceResolverOverlayTests {
         }
     }
 
-    @Test("RES-01: lens resolves to its translucent token fill when transparency is allowed")
-    func lensTranslucent() {
-        for appearance in TokenAppearance.allCases {
-            let resolved = resolveSurface(role: .lens, appearance: appearance,
-                                          reduceTransparency: false, increasedContrast: false)
-            #expect(resolved == .fill(Palette.lensFill.value(for: appearance)))
+    /// The fill roles and their token pairs — one table drives RES-01/02 (new fill roles
+    /// join here, and only here).
+    private static let fillRoles: [(role: SurfaceRole, pair: AppearancePair)] = [
+        (.lens, Palette.lensFill),
+        (.badge, Palette.badgeFill),
+    ]
+
+    @Test("RES-01: fill roles resolve to their translucent token when transparency is allowed")
+    func fillTranslucent() {
+        for (role, pair) in Self.fillRoles {
+            for appearance in TokenAppearance.allCases {
+                let resolved = resolveSurface(role: role, appearance: appearance,
+                                              reduceTransparency: false, increasedContrast: false)
+                #expect(resolved == .fill(pair.value(for: appearance)), "\(role)")
+            }
         }
     }
 
-    @Test("RES-02: lens goes OPAQUE (fill⊕window) under RT — and under IC even without RT")
-    func lensOpaqueFallback() {
-        for point in Self.cube where point.reduceTransparency || point.increasedContrast {
-            let resolved = resolveSurface(role: .lens,
-                                          appearance: point.appearance,
-                                          reduceTransparency: point.reduceTransparency,
-                                          increasedContrast: point.increasedContrast)
-            let fill = Palette.lensFill.value(for: point.appearance,
+    @Test("RES-02: fill roles go OPAQUE (fill⊕window) under RT — and under IC even without RT")
+    func fillOpaqueFallback() {
+        for (role, pair) in Self.fillRoles {
+            for point in Self.cube where point.reduceTransparency || point.increasedContrast {
+                let resolved = resolveSurface(role: role,
+                                              appearance: point.appearance,
+                                              reduceTransparency: point.reduceTransparency,
                                               increasedContrast: point.increasedContrast)
-            let window = Palette.window.value(for: point.appearance,
-                                              increasedContrast: point.increasedContrast)
-            let expected = fill.over(window)
-            #expect(resolved == .fill(expected), "lens stayed translucent under \(point)")
-            if case let .fill(color) = resolved {
-                #expect(color.alpha == 1.0, "RT/IC fallback must be fully opaque")
+                let fill = pair.value(for: point.appearance,
+                                      increasedContrast: point.increasedContrast)
+                let window = Palette.window.value(for: point.appearance,
+                                                  increasedContrast: point.increasedContrast)
+                #expect(resolved == .fill(fill.over(window)), "\(role) stayed translucent under \(point)")
+                if case let .fill(color) = resolved {
+                    #expect(color.alpha == 1.0, "\(role) RT/IC fallback must be fully opaque")
+                }
             }
         }
+    }
+
+    @Test("PG-01..04: the pulse animates ONLY while playing with Reduce Motion off — full table")
+    func pulseGate() {
+        #expect(pulseIsActive(isPlaying: true, reduceMotion: false))
+        #expect(!pulseIsActive(isPlaying: true, reduceMotion: true))
+        #expect(!pulseIsActive(isPlaying: false, reduceMotion: false))
+        #expect(!pulseIsActive(isPlaying: false, reduceMotion: true))
     }
 }

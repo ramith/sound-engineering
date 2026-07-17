@@ -92,6 +92,14 @@ public enum Palette {
         dark: RGBAColor(red: 16.0 / 255.0, green: 18.0 / 255.0, blue: 21.0 / 255.0, alpha: 0.42)
     )
 
+    /// Hero badge capsules (8a "small controls": white 7–9% fills). Light per the grammar:
+    /// a faint dark wash + the glass hairline carries the edge. RT/IC → opaque composite,
+    /// derived by the resolver like every fill role.
+    public static let badgeFill = AppearancePair(
+        light: .gray(0.0, alpha: 0.06),
+        dark: .gray(1.0, alpha: 0.08)
+    )
+
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
@@ -123,7 +131,7 @@ public enum Palette {
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
-        ("lensFill", lensFill),
+        ("lensFill", lensFill), ("badgeFill", badgeFill),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
     ]

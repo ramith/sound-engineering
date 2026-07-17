@@ -259,4 +259,57 @@ struct ContrastAuditTests {
             }
         }
     }
+
+    // MARK: Hero badge composites (PR 4 — §7 R4 pair 5)
+
+    /// Badge capsules sit on the glow field (the hero region — the TEAL core included, so
+    /// this is the field's brightest text seat). RULE (the audit's third real catch,
+    /// 2026-07-17): badge text is the PRIMARY `label` or a status color, NEVER the dimmed
+    /// hierarchy — `labelSecondary` on badge⊕teal-core measures 4.26:1 (22 sampled points
+    /// fail); the white badge fill brightens the backdrop exactly like the card⊕lime case.
+    /// Hierarchy on a chip comes from the capsule, not from dimming its text.
+    @Test("R4-BADGE-01: badge text clears AA on the badge fill over its real backdrops")
+    func badgeTextOnBadges() {
+        let texts: [(String, AppearancePair)] = [
+            ("label", Palette.label),
+            ("statusWarning", Palette.statusWarning),
+        ]
+        // Dark: badge ⊕ glow-field composite, sampled across the field.
+        for geometry in Self.glowGeometries {
+            for point in Self.gridPoints() {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let badge = Palette.badgeFill.dark.over(glow)
+                for (name, text) in texts {
+                    let ratio = Self.ratio(label: text, on: badge, .dark)
+                    #expect(ratio >= Self.textAA,
+                            "\(name) on badge⊕glow @(\(point.x),\(point.y)) = \(ratio)")
+                }
+            }
+        }
+        // Light + RT/IC opaque fallbacks. statusWarning-orange on light surfaces is the
+        // same PRE-EXISTING class as the meters red (shipped look; the warning triangle
+        // already renders it today) — pinned, scheduled with the PR-6/S10.8 status-token
+        // unification, never silently excluded.
+        let lightBadge = Palette.badgeFill.light.over(Palette.window.light)
+        for (name, text) in texts {
+            let ratio = Self.ratio(label: text, on: lightBadge, .light)
+            if name == "statusWarning" {
+                withKnownIssue("statusWarning on light badge fails AA — pre-existing orange; PR-6/S10.8") {
+                    #expect(ratio >= Self.textAA)
+                }
+            } else {
+                #expect(ratio >= Self.textAA, "\(name) on light badge = \(ratio)")
+            }
+        }
+        for appearance in TokenAppearance.allCases {
+            let opaque = Palette.badgeFill.value(for: appearance)
+                .over(Palette.window.value(for: appearance))
+            let ratio = Self.ratio(label: Palette.label, on: opaque, appearance)
+            #expect(ratio >= Self.textAA, "label on opaque badge (\(appearance)) = \(ratio)")
+        }
+    }
 }
