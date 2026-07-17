@@ -1,3 +1,4 @@
+import DesignTokenKit
 import SwiftUI
 
 /// The app-owned chrome header (the shell's top band).
@@ -59,6 +60,13 @@ private struct AppLogoView: View {
 
 private struct DevicePillView: View {
     @Environment(AudioViewModel.self) private var viewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The device's live output rate (0 when idle → the readout slot stays empty). Enhanced
+    /// now publishes this too (PR 6), so it's populated on both paths while playing.
+    private var achievedRate: Double {
+        viewModel.signalPath.achievedSampleRate
+    }
 
     var body: some View {
         Menu {
@@ -72,31 +80,48 @@ private struct DevicePillView: View {
                 })
             }
         } label: {
-            Label(
-                viewModel.selectedDevice?.name ?? "No Device",
-                systemImage: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2"
-            )
-            .font(.callout.weight(.medium))
-            .foregroundStyle(Color.asLabel)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            HStack(spacing: 6) {
+                Image(systemName: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.asLabel)
+                Text(viewModel.selectedDevice?.name ?? "No Device")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.asLabel)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // D5: the device's sample rate, on the pill, animating its digits when it
+                // changes (track/device switch). Reserved fixed slot — shown only while a
+                // rate is known, so the pill's fixed width (and the tabs' x-origin) never move.
+                Text(achievedRate > 0 ? SignalPathInfo.rateString(achievedRate) : "")
+                    .font(DesignSystem.Font.monoSmall)
+                    .foregroundStyle(Color.asLabelSecond)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
+                    .lineLimit(1)
+                    .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
+                    .accessibilityHidden(true) // folded into the pill's own a11y value below
+            }
+            .padding(.horizontal, 12)
             // Fixed width (minWidth == maxWidth), not a range: the pill's width was tracking the
             // device NAME, which slid the tab control's left edge on every device change. Fixed →
             // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate.
-            .frame(minWidth: 200, maxWidth: 200, minHeight: 32, alignment: .leading)
-            .background(Color.asCard)
-            .clipShape(.rect(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.asHairline, lineWidth: 0.5)
-            }
+            .frame(minWidth: 252, maxWidth: 252, minHeight: 32, alignment: .leading)
+            // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
+            // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
+            .glassPanel(.badge, in: Capsule())
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel("Audio output device")
-        .accessibilityValue(viewModel.selectedDevice?.displayName ?? "No device selected")
+        .accessibilityValue(deviceAccessibilityValue)
         .accessibilityHint("Click to choose from available audio output devices")
+    }
+
+    private var deviceAccessibilityValue: String {
+        let name = viewModel.selectedDevice?.displayName ?? "No device selected"
+        guard achievedRate > 0 else { return name }
+        return "\(name), \(SignalPathInfo.rateString(achievedRate).replacing(" kHz", with: " kilohertz"))"
     }
 }
 
