@@ -80,6 +80,51 @@ The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard
 
 ## Ledger
 
+### PR 6 — accepted 2026-07-18
+
+Chrome + footer restyle (`b78b3ad..11bf514`): Enhanced sample-rate fix (the founder's
+`-- kHz` finding), status text/fill split (founder decision; retired ALL 4 contrast pins —
+`swift test` = 0 known issues since), glass device pill + D5 rate readout w/ numericText,
+footer scrubber on the shared carved groove (shadow-literal TEMP retired by adoption),
+ChromeBar Dynamic-Type clamp + gate guard, footer signal slot widened (SLOT-03).
+
+Founder rounds (3): caught the stale-binary trap, the footer "48 k…" truncation (fixed,
+SLOT-03), the pill readout never rendering (macOS Menu labels don't re-render on data
+change — readout moved beside the Menu, `030b6ad`), and the WRONG-SONG bug (device switch /
+48 kHz seek fired stale .dataPlayedBack completions into the armed gapless seam → epoch
+guard `92aef6b` + review hardening `11bf514`; swift-expert verdict APPROVE with the
+stale-session hole closed). Founder verified: pill rate rolls on device switch; scrubber
+"looks ok"; H clean — the light-mode teal play button is BY DESIGN (brand-gradient primary
+action, matches the logo + the 8a mock; prev/next correctly flip neutral); device switching
+now keeps the same song.
+
+Cells: A (dark, playing — pill + footer readouts live), B (light), H (live flip), inspector
+closeup (gain max + intensity 100%), light error banner (see below).
+
+Retired / relocated cells:
+- CLIP/statusError visual cell — RETIRED BY DESIGN RATIONALE: the Sprint-4 limiter enforces
+  a −1 dBTP ceiling and `isHot` fires at ≥ −1 dBFS, so red/CLIP is unreachable in normal
+  Enhanced playback (the founder pushed gain+intensity to max — bar pegged, never red).
+  The state is the safety-chain tripwire; light-mode legibility is proven by R4-LEG-03 math.
+- error-banner LIGHT cell (deferred since PR 1a) — CAPTURED this round ("Playback failed …
+  error 0" over light UI; statusWarningText dark-amber glyph rendering correctly).
+- 42pt chrome-clamp cell — DEFERRED to the sprint-end pass: content type-scaling was proven
+  in the PR-5 round; the clamp is gate-asserted (`clamped_bands`); the founder's Text size
+  is stuck in a per-app "Custom" state that doesn't apply system-wide (a Settings-side
+  issue, not app code). Founder: "maybe that's ok".
+
+Break-it-round items filed from this PR's rounds:
+1. error 0 (`engineNotInitialized`) after a BT disconnect → play (founder repro; pre-existing
+   engine-lifecycle race — avEngine/playerNode nil at play; only teardown nils them).
+2. Seam-review MINOR-2: capture-vs-schedule sub-ms window (transport vs config-change
+   overlap family — pre-existing, strictly improved by the epoch guard).
+3. Seam-review NIT-5: consider a headless decision-table test for the epoch-guard bumps.
+4. Seam-review NIT-6: pre-existing end-of-queue sentinel question — verify the
+   "playbackEnded — no next track, stopping" log fires at end-of-queue with repeat off.
+5. Scrub + natural-track-end riders: founder verified device switching; scrubbing and the
+   natural gapless ending are covered by the review's no-behavior-change proof — re-exercise
+   both explicitly in the break-it round.
+
 ### PR 5 — accepted 2026-07-18
 
 The 8a restructure (hero-right lens, queue-flex + 260pt inspector, queue filter) + the
