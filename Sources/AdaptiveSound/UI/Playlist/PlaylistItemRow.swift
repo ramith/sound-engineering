@@ -96,6 +96,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
             }
         }
         .contentShape(Rectangle())
+        // Full file-path tooltip (deviations §3) — the honest provenance readout on hover;
+        // `AudioFile.id` IS the absolute URL.
+        .help(file.id.path)
         // One VoiceOver element per row (A-M3): a clean label (title · format · duration — NOT the
         // noisy `relativePath` the auto-composed label pulled in), with now-playing/selected exposed
         // as a value + trait rather than color alone. `.isButton` is added by the enclosing list.

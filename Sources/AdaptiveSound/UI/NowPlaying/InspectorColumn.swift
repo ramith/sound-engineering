@@ -99,13 +99,15 @@ struct ReimagineSectionView: View {
                 .disabled(isPureBypassed)
                 .help(bvm.intensity == 0 ? "0 % = bit-perfect bypass" : "")
 
+            // 8a caption row: micro mono under the slider (nearest audited token to the
+            // spec's 32%-white is labelTertiary — a bespoke 32% token isn't worth the pair).
             HStack {
                 Text("Bypass")
-                    .font(DesignSystem.Font.trackSubtitle)
+                    .font(DesignSystem.Font.monoMicro)
                     .foregroundStyle(Color.asLabelTertiary)
                 Spacer()
                 Text("Full Blend")
-                    .font(DesignSystem.Font.trackSubtitle)
+                    .font(DesignSystem.Font.monoMicro)
                     .foregroundStyle(Color.asLabelTertiary)
             }
         }
@@ -132,12 +134,14 @@ struct HeadphonesSectionView: View {
                 .foregroundStyle(Color.asLabelSecond)
 
             if !isEnabled {
-                Text("Connect headphones to enable. (On a speaker device the only consequence "
-                    + "of crossfeed is a mild, reversible centre-image change — crossfeed is "
-                    + "offered here, not auto-applied.)")
+                // One line + tooltip (deviations §4): the full rationale lives in .help, not
+                // permanently on screen.
+                Text("Connect headphones to enable.")
                     .font(DesignSystem.Font.trackSubtitle)
                     .foregroundStyle(Color.asLabelTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help("On a speaker device the only consequence of crossfeed is a mild, "
+                        + "reversible centre-image change — crossfeed is offered here, not "
+                        + "auto-applied.")
             }
 
             // ONE row (founder, PR-5 screenshot round): toggle leading, strength picker
@@ -152,7 +156,7 @@ struct HeadphonesSectionView: View {
                 }
             }
         }
-        .opacity(isEnabled ? 1 : 0.5)
+        .opacity(isEnabled ? 1 : 0.55) // 8a disabled-block opacity
     }
 }
 

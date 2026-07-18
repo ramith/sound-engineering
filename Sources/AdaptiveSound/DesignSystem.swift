@@ -118,6 +118,8 @@ enum DesignSystem {
         /// Uppercase section labels — pair with `.tracking(0.5).textCase(.uppercase)`.
         static let micro = SwiftUI.Font.system(.subheadline, weight: .semibold) // ~11
         static let monoSmall = SwiftUI.Font.system(.subheadline, design: .monospaced) // ~11 mono
+        /// Micro mono captions (8a slider end-labels) — Dynamic-Type-mapped, never a fixed 9.5.
+        static let monoMicro = SwiftUI.Font.system(.caption2, design: .monospaced) // ~10 mono
         /// Compact now-playing pairing (footer transport / mini-player): title over subtitle.
         static let trackTitle = SwiftUI.Font.system(.headline) // ~13 semibold
         static let trackSubtitle = SwiftUI.Font.system(.subheadline) // ~11

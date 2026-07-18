@@ -19,7 +19,8 @@ struct MasterGainSliderView: View {
                 Spacer()
 
                 let dbValue = Double(vm.masterGain) * 20 - 10
-                Text("\(Text(dbValue, format: .number.precision(.fractionLength(1)))) dB")
+                // SIGNED readout (8a: "+4.0 dB" — gain direction matters on an audio control).
+                Text("\(Text(dbValue, format: .number.precision(.fractionLength(1)).sign(strategy: .always()))) dB")
                     .font(DesignSystem.Font.monoSmall.weight(.semibold))
                     .foregroundStyle(Color.asLabelSecond)
             }
@@ -27,7 +28,7 @@ struct MasterGainSliderView: View {
             CarvedSlider(
                 value: $vm.masterGain,
                 accessibilityLabel: "Master Gain",
-                accessibilityValueText: String(format: "%.1f decibels", Double(vm.masterGain) * 20 - 10)
+                accessibilityValueText: String(format: "%+.1f decibels", Double(vm.masterGain) * 20 - 10)
             )
         }
     }
