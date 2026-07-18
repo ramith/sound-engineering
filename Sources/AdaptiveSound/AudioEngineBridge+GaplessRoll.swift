@@ -159,6 +159,7 @@ extension AudioEngineBridge {
         player: AVAudioPlayerNode,
         resetFramePosition: Bool
     ) {
+        dispatchPrecondition(condition: .onQueue(resampleQueue))
         if resetFramePosition { file.framePosition = 0 }
         // Capture the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump —
         // a seam schedule replaces one whose completion already fired legitimately). A later
@@ -191,6 +192,12 @@ extension AudioEngineBridge {
     ) {
         guard let converter = makeConverter(for: nextFile, player: player) else {
             // Converter creation failed: fall back to scheduleFile (brief gap, chain preserved).
+            // Clear the OLD track's exhausted session first (the P1-2 rule, same as the
+            // empty-prime branch below): leaving it non-nil misroutes a later seek/reestablish
+            // to the resampler branch, whose stop() bumps only resampleGeneration — the live
+            // passthrough schedule would fire under an unbumped epoch and roll the seam
+            // (the wrong-song bug escaping through stale state; seam-fix review MAJOR-1).
+            resampleSession = nil
             // S-1: the .dataPlayedBack completion keeps onPassthroughEOF firing for the next seam.
             bumpTransitionCount(player: player)
             armPassthroughNextTrack(player: player)

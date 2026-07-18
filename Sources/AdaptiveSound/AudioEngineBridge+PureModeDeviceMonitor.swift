@@ -89,6 +89,13 @@ extension AudioEngineBridge {
         // (off resampleQueue), so the sync is deadlock-safe.
         resampleQueue.sync { enhancedPlayIntent = false }
         tearDownPure() // stops + destroys the Pure engine, unregisters the alive listener
+        // Belt-and-braces before the stop (review MINOR-3): normally Pure entry already
+        // cleared the hooks + bumped the epochs, but if a queued device-loss callback races
+        // a just-started Enhanced session, this player.stop() would fire a live-epoch
+        // completion with an armed hook → a stale seam roll while "interrupted". Clearing
+        // here makes the stop unconditionally roll-proof (configChangeQueue → sync is the
+        // P1-B-safe direction).
+        stopEnhancedResampler()
         if let player = playerNodeRef, player.isPlaying {
             player.stop()
         }
