@@ -9,12 +9,13 @@ struct FormatBadgeView: View {
     var isSelected: Bool = false
 
     var body: some View {
+        // 8a metrics (deviations §3): fixed 18pt capsule-ish chip, radius 9 (= height/2).
         Text(format)
             .font(DesignSystem.Font.micro)
             .padding(.horizontal, 6)
-            .padding(.vertical, 3)
+            .frame(height: 18)
             .background(isSelected ? Color.asAccent.opacity(0.2) : Color.asCard)
             .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelSecond)
-            .clipShape(.rect(cornerRadius: 4, style: .continuous))
+            .clipShape(.rect(cornerRadius: 9, style: .continuous))
     }
 }

@@ -48,11 +48,13 @@ struct ChromeBar: View {
 private struct AppLogoView: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            // Radius 9 squircle + the waveform brand mark (deviations §1 — the 8a mark is
+            // the 5-bar waveform, not a note glyph).
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(LinearGradient.asIconFill)
                 .frame(width: 30, height: 30)
 
-            Image(systemName: "music.note")
+            Image(systemName: "waveform")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DesignSystem.Color.onAccent)
         }
@@ -127,7 +129,9 @@ private struct DevicePillView: View {
         // device NAME, which slid the tab control's left edge on every device change. Fixed →
         // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate
         // (the text compresses before the spacer's 8pt minimum or the rate slot give way).
-        .frame(minWidth: 252, maxWidth: 252, minHeight: 32, alignment: .leading)
+        // 288 (was 252): the PR-6 rate slot squeezed the name area to ~140pt and truncated
+        // common device names ("MacBook Pr…") — the deviations audit's fresh catch.
+        .frame(minWidth: 288, maxWidth: 288, minHeight: 32, alignment: .leading)
         // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
         // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
         .glassPanel(.badge, in: Capsule())
