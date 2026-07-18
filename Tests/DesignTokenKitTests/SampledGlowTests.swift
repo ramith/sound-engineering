@@ -57,6 +57,10 @@ struct SampledGlowTests {
         // Grayer than the floor (spread below minChannelSpread).
         let gray = RGBAColor(red: 0.6, green: 0.6 - SampledGlow.minChannelSpread + 0.01, blue: 0.6)
         #expect(SampledGlow.clampedSampledColor(gray, slot: 0) == nil)
+        // POST-SCALE floor (review MINOR-4): a barely-chromatic bright sample whose spread
+        // collapses under the ceiling scale-down rejects — the floor judges what would RENDER.
+        let barelyChromatic = RGBAColor(red: 1.0, green: 0.95, blue: 0.95)
+        #expect(SampledGlow.clampedSampledColor(barelyChromatic, slot: 0) == nil)
         // An out-of-range slot is a programming error surfaced as fallback, never a crash.
         #expect(SampledGlow.clampedSampledColor(.gray(0.5), slot: 99) == nil)
     }

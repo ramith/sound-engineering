@@ -92,7 +92,10 @@ public enum GlowFieldSpec {
             let t = (deltaX * deltaX + deltaY * deltaY).squareRoot()
             let fraction = falloffFraction(at: t)
             guard fraction > 0 else { continue }
-            let color = overrideColors?[slot] ?? glow.color.value(for: appearance)
+            // Defensive length check: a short override array means brand for the tail slots
+            // (public Kit API — never trap on a caller's array shape).
+            let override = overrideColors.flatMap { slot < $0.count ? $0[slot] : nil }
+            let color = override ?? glow.color.value(for: appearance)
             backdrop = color.opacity(color.alpha * fraction).over(backdrop)
         }
         return backdrop

@@ -32,27 +32,35 @@ public enum SampledGlow {
     /// Clamp a sampled color into the slot's box: hue-preserving proportional scale-down
     /// (never per-channel truncation, which would shift the hue), with the slot's token
     /// DARK alpha forced (the glow field is dark-only, and alphas are never sampled —
-    /// they are the audited quantity). Returns `nil` when the sample fails the aesthetic
-    /// floors — the caller keeps the brand color for that slot.
+    /// they are the audited quantity). The aesthetic floors are evaluated on the SCALED
+    /// color — what would actually render (review MINOR-4: a barely-chromatic bright
+    /// sample whose spread collapses under the scale-down must reject, not render as a
+    /// sub-floor gray; this also makes the clamp genuinely idempotent). Returns `nil`
+    /// on rejection — the caller keeps the brand color for that slot.
     public static func clampedSampledColor(_ sampled: RGBAColor, slot: Int) -> RGBAColor? {
         guard slot >= 0, slot < GlowFieldSpec.glows.count else { return nil }
         let maxChannel = max(sampled.red, max(sampled.green, sampled.blue))
         let minChannel = min(sampled.red, min(sampled.green, sampled.blue))
-        guard maxChannel >= minMaxChannel, maxChannel - minChannel >= minChannelSpread else {
-            return nil
-        }
+        guard maxChannel > 0 else { return nil }
         let ceiling = channelMax[slot]
         let scale = maxChannel > ceiling ? ceiling / maxChannel : 1
+        let scaledMax = maxChannel * scale
+        let scaledMin = minChannel * scale
+        guard scaledMax >= minMaxChannel, scaledMax - scaledMin >= minChannelSpread else {
+            return nil
+        }
         return RGBAColor(red: sampled.red * scale,
                          green: sampled.green * scale,
                          blue: sampled.blue * scale,
                          alpha: GlowFieldSpec.glows[slot].color.dark.alpha)
     }
 
-    /// The admissible worst-case palette — each slot's ceiling-gray at its token dark
-    /// alpha. R4-GLOW-D8 folds the audit grid with THIS; every real clamped palette
-    /// composites strictly darker (channel monotonicity), so passing here proves the
-    /// whole sampled color space.
+    /// Each slot's ceiling-gray at its token dark alpha: the worst case of the slot's
+    /// SAMPLED space (channel monotonicity — no in-box color composites brighter). NOTE
+    /// the scope (review MAJOR-2): the corner does NOT dominate the slot's BRAND fallback
+    /// (brand teal's green/blue exceed the 0.62 teal ceiling; brand blue's blue channel
+    /// exceeds its 0.95 corner), so the reachable space is only covered by folding every
+    /// per-slot {corner, brand} combination — which is exactly what R4-GLOW-D8 does.
     public static var auditCornerPalette: [RGBAColor?] {
         GlowFieldSpec.glows.indices.map { slot in
             RGBAColor.gray(channelMax[slot],
@@ -122,7 +130,11 @@ public enum SampledGlow {
 
 public extension RGBAColor {
     /// A pixel sample from 8-bit RGBA image bytes (the app-side extractor's entry into the
-    /// Kit's color space — keeps raw component construction out of the app target).
+    /// Kit's color space — keeps raw component construction out of the app target). The
+    /// sampler's context is PREMULTIPLIED-alpha; the alpha byte is deliberately ignored:
+    /// fully transparent margins premultiply to ~black and are dropped by the vote value
+    /// floor, and partial alpha scales all channels uniformly — hue preserved, vote weight
+    /// naturally reduced.
     static func fromPixel(red: UInt8, green: UInt8, blue: UInt8) -> RGBAColor {
         RGBAColor(red: Double(red) / 255.0,
                   green: Double(green) / 255.0,

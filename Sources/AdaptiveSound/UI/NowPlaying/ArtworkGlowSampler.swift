@@ -60,6 +60,9 @@ final class ArtworkGlowSampler {
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
         guard let bytes = context.data else { return brandOnly }
 
+        // PREMULTIPLIED bytes read raw (see RGBAColor.fromPixel's contract): transparent
+        // margins premultiply toward black and are dropped by the Kit's vote value floor;
+        // partial alpha scales channels uniformly — hue kept, vote weight reduced.
         let buffer = bytes.bindMemory(to: UInt8.self, capacity: side * side * 4)
         var samples: [RGBAColor] = []
         samples.reserveCapacity(side * side)
