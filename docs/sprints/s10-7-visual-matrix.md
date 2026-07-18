@@ -80,6 +80,27 @@ The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard
 
 ## Ledger
 
+### PR 7 — accepted 2026-07-18 (final milestone)
+
+Art-sampled glows, D8 (`6ccd5a1` + review round `53e431b`). swiftui-pro verdict was
+request-changes; all findings applied — including the cache-key BLOCKER (relativePath is ""
+for every queue track → the first palette would have served the whole session; keyed by the
+file URL now) and a strengthened audit: R4-GLOW-D8 folds the FULL 2³ per-slot {clamp-corner,
+brand} lattice (the review's single extra fold under-covered brand-blue fallbacks), plus the
+panel⊕field pairs. Clamp floors now judge the SCALED color; loose-file art decodes capped at
+512px.
+
+Founder round: the first test track ("Sunn Raha Hai") exposed a perception trap, not a bug —
+the cover is teal-orange graded, so its sampled palette ≈ brand teal. DB-driven probe of the
+REAL artwork verified the pipeline (426/576 pixels vote → teal palette); probing all 43
+library covers: 41 sample, 2 brand-fallback by design (too dark / achromatic). A 6-track
+demo queue (rose/magenta/gold/red/blue covers, picked by probe) then showed per-track
+recolor unmistakably. Founder: "ok I see what you meant it changes." ACCEPTED.
+
+Riders on the sprint-end A–H pass (not re-verified separately): B light no-change, H live
+flip with a sampled palette active, missing-art brand fallback, crossfade-vs-flicker feel
+(the resolve-gap brand dip), Reduce-Motion cut.
+
 ### PR 6 — accepted 2026-07-18
 
 Chrome + footer restyle (`b78b3ad..11bf514`): Enhanced sample-rate fix (the founder's
