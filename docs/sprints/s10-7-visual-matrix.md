@@ -101,11 +101,14 @@ LEDGER-DISCIPLINE CORRECTION (fool): PR 5's required Instruments row was SILENTL
 recorded here retroactively; the row is now due at the sprint-end pass (below), expiry
 2026-08-15 with the rest of the cell debt.
 
+FOUNDER-VERIFIED live (2026-07-18, post-fix build): end-of-queue now STOPS ("queue ended" —
+the BLOCKER-1 fix confirmed on a real queue run-out).
+
 FILED, not fixed (dispositions):
-1. Queue ↑/↓ move the LIVE playback cursor (selection == playback index): now-playing
-   highlight, Control Center, and play-count/frecency crediting follow the arrows, worse
-   under a filter (steps through hidden rows). FOUNDER DECISION needed — recommendation:
-   a view-local highlight that commits on Return (S10.8-adjacent interaction change).
+1. Queue ↑/↓ move the LIVE playback cursor — FOUNDER DECIDED 2026-07-18: "arrows behaviour
+   is ok for me" → current behavior stands BY DESIGN (recommendation for a view-local
+   highlight declined). Caveat stays recorded: arrow-moving the cursor mid-play re-targets
+   play-count/frecency crediting and Control Center to the selected row.
 2. Epoch-guard headless test: extract a pure PassthroughEpochLedger (named bump/capture ops
    + decision-table test) into PlaybackQueueKit, and bundle qa's atomic bump/capture/schedule
    hardening (LEDGER-2 family) into the same refactor; a PlayerScheduling protocol seam over
