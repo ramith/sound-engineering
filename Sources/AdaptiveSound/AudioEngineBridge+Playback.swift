@@ -175,13 +175,21 @@ extension AudioEngineBridge {
             // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
             // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
             // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
+            // Capture the passthrough epoch this schedule is installed under (the
+            // `stopEnhancedResampler()` above bumped it, abandoning any completion the
+            // `playerNode.stop()` fired): a later stop/seek/reschedule bumps again, and this
+            // completion must then abandon instead of rolling the gapless seam (wrong-song bug).
+            let passthroughGen: UInt64 = resampleQueue.sync { passthroughGeneration }
             playerNode.scheduleFile(
                 audioFile,
                 at: nil,
                 completionCallbackType: .dataPlayedBack
             ) { [weak self, weak playerNode] _ in
                 guard let self, let livePlayer = playerNode else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+                self.resampleQueue.async {
+                    guard passthroughGen == self.passthroughGeneration else { return } // superseded
+                    self.onPassthroughEOF?(livePlayer)
+                }
             }
             playerNode.play()
             logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")

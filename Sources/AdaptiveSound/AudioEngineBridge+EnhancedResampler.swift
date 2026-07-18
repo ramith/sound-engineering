@@ -244,12 +244,14 @@ extension AudioEngineBridge {
     }
 
     /// Teardown body run WITHOUT dispatching — the caller MUST already be on `resampleQueue`.
-    /// Bumps the generation (in-flight read→convert→schedule iterations and pending completions
-    /// abandon themselves), drops the session, and clears both gapless EOF hooks. Used by the
-    /// gapless seam handlers (which run on resampleQueue); off-queue callers use
-    /// `stopEnhancedResampler()`, which wraps this in `resampleQueue.sync`.
+    /// Bumps BOTH generations (in-flight resampler iterations AND pending passthrough
+    /// `.dataPlayedBack` completions abandon themselves — `player.stop()` fires the latter,
+    /// indistinguishable from a real EOF), drops the session, and clears both gapless EOF
+    /// hooks. Used by the gapless seam handlers (which run on resampleQueue); off-queue
+    /// callers use `stopEnhancedResampler()`, which wraps this in `resampleQueue.sync`.
     func stopEnhancedResamplerLocked() {
         resampleGeneration &+= 1
+        passthroughGeneration &+= 1
         resampleSession = nil
         onResamplerEOF = nil
         onPassthroughEOF = nil
