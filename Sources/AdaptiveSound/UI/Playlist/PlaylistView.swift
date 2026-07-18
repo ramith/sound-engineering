@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import SwiftUI
 
 // MARK: - Queue View (the current playback queue — S9 IA change)
@@ -5,19 +6,32 @@ import SwiftUI
 /// The Now Playing queue: ONLY the current play queue, built by the Library's Play / Play Next /
 /// Add to Queue verbs. Folder-loading moved to the Library section (design §4/§5), so there is no
 /// folder chooser or "~/…" chip here anymore, and choosing a folder never rewrites this list.
+///
+/// S10.7 PR 5 (founder decision D7): a VIEW-LOCAL filter field — narrows the visible rows by
+/// TITLE (reusing `FacetTextFilter`, the S9.6 primitive; path was a dead candidate — see
+/// `filteredIndices`), never mutates the queue or playback, suppresses the transport Space
+/// accelerator while focused, Escape clears, and Jump-to-Now-Playing clears it first rather
+/// than silently failing (§5).
 struct PlaylistView: View {
     @Environment(AudioViewModel.self) var viewModel
-    /// Bumped by the header's "Jump to Now Playing" button; observed by the list to scroll the
-    /// current track into view (UI-2). A monotonic request-ID (not a Bool) so repeated presses
-    /// re-fire even when the value would otherwise be unchanged.
+    /// Observed by the list to scroll the current track into view (UI-2). A monotonic
+    /// request-ID (not a Bool) so repeated presses re-fire even when the value would
+    /// otherwise be unchanged. Bumped ONLY via `jumpToNowPlaying()` so an active filter is
+    /// cleared before the list is asked to scroll.
     @State private var jumpToCurrentRequestID = 0
     /// Up Next (the live queue) vs. History (this session's plays). Local view state — the panel
     /// simply switches which list it shows (S10.2 3a).
     @State private var panelMode: QueuePanelMode = .upNext
+    /// The D7 filter — view-local; empty means "filter off".
+    @State private var filterText = ""
+    @FocusState private var filterFocused: Bool
+    /// Key-command focus for the queue list — owned HERE (not by the list) so the filter
+    /// field's Escape can hand focus back to the queue (§5: ↑/↓ must work immediately).
+    @FocusState private var queueFocused: Bool
 
     var body: some View {
         VStack(spacing: 12) {
-            PlaylistHeaderView(jumpToCurrentRequestID: $jumpToCurrentRequestID, panelMode: $panelMode)
+            PlaylistHeaderView(onJumpToNowPlaying: jumpToNowPlaying, panelMode: $panelMode)
             Picker("View", selection: $panelMode) {
                 ForEach(QueuePanelMode.allCases) { mode in
                     Text(mode.pickerLabel).tag(mode)
@@ -31,12 +45,102 @@ struct PlaylistView: View {
                 if viewModel.queue.isEmpty {
                     emptyQueue
                 } else {
-                    PlaylistItemList(jumpToCurrentRequestID: $jumpToCurrentRequestID)
+                    filterField
+                    if filteredIndices.isEmpty {
+                        noMatches
+                    } else {
+                        PlaylistItemList(jumpToCurrentRequestID: jumpToCurrentRequestID,
+                                         visibleIndices: filteredIndices,
+                                         reorderEnabled: !filterActive,
+                                         queueFocused: $queueFocused)
+                    }
                 }
             case .history:
                 QueueHistoryList()
             }
         }
+    }
+
+    /// Jump-to-now-playing IGNORES an active filter (§5) — sequenced, not simultaneous:
+    /// clear the filter in THIS transaction (the full list mounts, every row id registered),
+    /// then bump the request-ID on the NEXT main-actor turn so the list's `onChange` +
+    /// `scrollTo` run against the full list. Bumping in the same transaction targeted the
+    /// FILTERED tree — a filtered-out (or No-Matches-unmounted) target row never scrolled,
+    /// and a matching row centered against the wrong (still-narrowed) layout.
+    private func jumpToNowPlaying() {
+        filterText = ""
+        Task { @MainActor in
+            jumpToCurrentRequestID += 1
+        }
+    }
+
+    /// Escape's landing (§5): clear, dismiss the field, and hand key focus to the queue so
+    /// ↑/↓/Return work immediately — focus must never strand on a defocused field.
+    private func clearFilterAndFocusQueue() {
+        filterText = ""
+        filterFocused = false
+        queueFocused = true
+    }
+
+    private var filterActive: Bool {
+        !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The visible queue positions under the filter (REAL indices — play/remove/menu actions
+    /// keep operating on the true queue positions). Matches on the display TITLE only:
+    /// `relativePath` is empty for library-queued tracks (the queue adapter never fills it —
+    /// break-it MINOR-5), so it was a dead candidate; artist isn't carried by `AudioFile`.
+    private var filteredIndices: [Int] {
+        guard filterActive else { return Array(viewModel.queue.indices) }
+        return viewModel.queue.indices.filter { index in
+            FacetTextFilter.matches(viewModel.queue[index].file.name, query: filterText)
+        }
+    }
+
+    private var filterField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.asLabelTertiary)
+            TextField("Filter queue", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(DesignSystem.Font.caption)
+                .suppressesTransportSpace(while: $filterFocused)
+                // `.onExitCommand` is the documented macOS cancel hook — the field editor's
+                // `cancelOperation` can consume Escape before `.onKeyPress` ever sees it.
+                // The key-press handler stays as belt-and-braces for paths where it does
+                // fire (it only fires focused, so no guard).
+                .onExitCommand(perform: clearFilterAndFocusQueue)
+                .onKeyPress(.escape) {
+                    clearFilterAndFocusQueue()
+                    return .handled
+                }
+            if filterActive {
+                Button("Clear", systemImage: "xmark.circle.fill") {
+                    filterText = ""
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.asLabelTertiary)
+                .help("Clear the filter")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .glassPanel(.badge, in: Capsule())
+        .accessibilityLabel("Filter queue")
+    }
+
+    private var noMatches: some View {
+        ContentUnavailableView {
+            Label("No Matches", systemImage: "magnifyingglass")
+        } description: {
+            Text("No queued track matches “\(filterText)”.")
+        } actions: {
+            Button("Clear Filter") { filterText = "" }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Shown whenever the queue is empty (fresh launch, or after Clear Queue). The queue is now
@@ -60,7 +164,9 @@ struct PlaylistView: View {
 private struct PlaylistHeaderView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Environment(LibraryBrowseModel.self) var library
-    @Binding var jumpToCurrentRequestID: Int
+    /// `PlaylistView.jumpToNowPlaying()` — the owner sequences filter-clear before the
+    /// scroll request (a raw binding-bump here raced the clear; review BLOCKER-1).
+    let onJumpToNowPlaying: () -> Void
     @Binding var panelMode: QueuePanelMode
 
     /// Mode-aware subtitle: the queue's track count, or the number of recently-played tracks.
@@ -91,7 +197,7 @@ private struct PlaylistHeaderView: View {
 
             Spacer()
 
-            PlaylistControlsView(jumpToCurrentRequestID: $jumpToCurrentRequestID, panelMode: $panelMode)
+            PlaylistControlsView(onJumpToNowPlaying: onJumpToNowPlaying, panelMode: $panelMode)
         }
     }
 }
@@ -100,7 +206,7 @@ private struct PlaylistHeaderView: View {
 
 private struct PlaylistControlsView: View {
     @Environment(AudioViewModel.self) var viewModel
-    @Binding var jumpToCurrentRequestID: Int
+    let onJumpToNowPlaying: () -> Void
     @Binding var panelMode: QueuePanelMode
 
     var body: some View {
@@ -141,17 +247,15 @@ private struct PlaylistControlsView: View {
             .accessibilityLabel("Repeat mode: \(["off", "all", "one"][viewModel.repeatMode])")
             .help(["Off", "All", "One"][viewModel.repeatMode])
 
-            // Jump to now-playing
+            // Jump to now-playing — the owner's sequenced action (clear filter, THEN bump
+            // the request-ID that triggers the list's scroll onChange).
             if viewModel.selectedTrackIndex != nil {
-                Button("Jump to Now Playing", systemImage: "play.circle.fill") {
-                    // Signal the list to scroll the current track into view (UI-2). The list owns
-                    // the ScrollViewReader proxy; bumping this request-ID triggers its onChange.
-                    jumpToCurrentRequestID += 1
-                }
-                .labelStyle(.iconOnly)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.asAccent)
-                .help("Jump to now playing")
+                Button("Jump to Now Playing", systemImage: "play.circle.fill",
+                       action: onJumpToNowPlaying)
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.asAccent)
+                    .help("Jump to now playing")
             }
         }
     }
@@ -161,7 +265,20 @@ private struct PlaylistControlsView: View {
 
 private struct PlaylistItemList: View {
     @Environment(AudioViewModel.self) var viewModel
-    @Binding var jumpToCurrentRequestID: Int
+    /// Read-only scroll request (the OWNER sequences filter-clear before bumping it);
+    /// observed via `onChange` to scroll the current track into view.
+    let jumpToCurrentRequestID: Int
+    /// The REAL queue positions to render (the D7 filter narrows this; actions keep true
+    /// indices). Unfiltered = all indices.
+    let visibleIndices: [Int]
+    /// Reorder (grip drag + drop) is disabled while the filter narrows the list — moving a
+    /// row relative to HIDDEN neighbours is incoherent; the context-menu moves stay.
+    let reorderEnabled: Bool
+    /// Keyboard-command focus for the scroll area. `List` owned key focus for free; a
+    /// ScrollView/LazyVStack does not, so the ↑/↓/Return/Delete shortcuts are bound to this
+    /// (`.focused` + default + set-on-tap). OWNED by `PlaylistView` so the filter field's
+    /// Escape can hand focus back here.
+    var queueFocused: FocusState<Bool>.Binding
 
     /// Non-nil while the "Info" popover is showing; identifies which row's card is open by its
     /// stable `QueueItem.id` (dups-safe — keying on the URL popped the card on every duplicate row).
@@ -172,11 +289,6 @@ private struct PlaylistItemList: View {
     /// no drag is in progress.
     @State private var dropTargetIndex: Int?
 
-    /// Keyboard-command focus for the scroll area. `List` owned key focus for free; a
-    /// ScrollView/LazyVStack does not, so the ↑/↓/Return/Space/Delete shortcuts are bound to this
-    /// (`.focused` + default + set-on-tap) — the same pattern `FrequencyResponseCanvas` uses.
-    @FocusState private var queueFocused: Bool
-
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
     private var numberColumnWidth: CGFloat {
@@ -184,12 +296,30 @@ private struct PlaylistItemList: View {
         return CGFloat(digits) * 8 + 6
     }
 
+    /// ForEach rows keyed by the STABLE `QueueItem.id` — a positional-Int key re-identifies
+    /// every row on reorder (moves render as content swaps, row-local state resets) — while
+    /// still carrying the REAL queue index the row's actions need.
+    private struct VisibleRow: Identifiable {
+        let index: Int
+        let item: QueueItem
+        var id: QueueItem.ID {
+            item.id
+        }
+    }
+
+    private var visibleRows: [VisibleRow] {
+        visibleIndices.compactMap { index in
+            guard index < viewModel.queue.count else { return nil }
+            return VisibleRow(index: index, item: viewModel.queue[index])
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(viewModel.queue.enumerated()), id: \.element.id) { index, item in
-                        queueRow(index: index, item: item)
+                    ForEach(visibleRows) { row in
+                        queueRow(index: row.index, item: row.item)
                     }
                 }
             }
@@ -199,8 +329,8 @@ private struct PlaylistItemList: View {
             // `List` provided for free (a row tap also sets it); `.focusEffectDisabled` suppresses
             // the focus ring on the scroll area (the selection tint is the cue).
             .focusable()
-            .focused($queueFocused)
-            .defaultFocus($queueFocused, true)
+            .focused(queueFocused)
+            .defaultFocus(queueFocused, true)
             .focusEffectDisabled()
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
@@ -216,6 +346,10 @@ private struct PlaylistItemList: View {
             // already covers keyboard toggle here (focus-audit nit).
             .onKeyPress(.delete) {
                 guard let index = viewModel.selectedTrackIndex else { return .ignored }
+                // Never remove a row the filter is HIDING (break-it MINOR-2): Delete on an
+                // invisible selection silently removed — and could stop — the playing track
+                // with no visible target. Visible rows only.
+                guard visibleIndices.contains(index) else { return .ignored }
                 viewModel.removeTrack(at: index)
                 return .handled
             }
@@ -235,25 +369,34 @@ private struct PlaylistItemList: View {
             isSelected: viewModel.selectedTrackIndex == index,
             isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
             numberColumnWidth: numberColumnWidth,
-            dragPayload: QueueDragItem(id: item.id),
+            // Nil payload while the filter narrows the list = NO grip (the row API's own
+            // non-reorderable state, built in S10.3): the affordance disappears with the
+            // capability instead of offering a dead-end drag. The drop guard below stays
+            // as belt-and-braces.
+            dragPayload: reorderEnabled ? QueueDragItem(id: item.id) : nil,
             isDropTarget: dropTargetIndex == index
         )
-        // Identity is the stable `QueueItem.id` (matches the `ForEach` key) so reorders re-render
-        // the RIGHT rows — a positional `.id(index)` fought the ForEach key and left stale
-        // now-playing highlights + un-refreshed rows after a move. `scrollTo` uses this id too.
+        // Identity is the stable `QueueItem.id` (matches the `ForEach` key via `VisibleRow`)
+        // so reorders re-render the RIGHT rows — a positional key re-identifies every row
+        // after a move. `scrollTo` targets this id too.
         .id(item.id)
         // Reorder: the grip is the `.draggable` source, each row a `.dropDestination` that lands
         // the dragged item at its position. This is why the queue is a LazyVStack, not a List.
         .dropDestination(for: QueueDragItem.self) { payloads, _ in
             dropTargetIndex = nil
-            guard let fromID = payloads.first?.id else { return false }
+            guard reorderEnabled, let fromID = payloads.first?.id else { return false }
             return viewModel.moveByDrop(fromID: fromID, toIndex: index)
         } isTargeted: { targeted in
+            // No reorderEnabled guard here (break-it NIT-1): typing a filter mid-drag flips
+            // reorder OFF, and a guard would swallow the un-target event — latching the
+            // highlight on a row until the next drag. Tracking the hover is always safe;
+            // only the DROP is gated (above).
             dropTargetIndex = targeted ? index : (dropTargetIndex == index ? nil : dropTargetIndex)
         }
         .simultaneousGesture(
             TapGesture().onEnded {
-                queueFocused = true // a click on a row focuses the queue for the keyboard shortcuts
+                // A click on a row focuses the queue for the keyboard shortcuts.
+                queueFocused.wrappedValue = true
                 // Single-click plays the row, so the now-playing card always matches the audio (no
                 // select-without-play state). Re-clicking the playing track is a no-op (no restart).
                 guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }

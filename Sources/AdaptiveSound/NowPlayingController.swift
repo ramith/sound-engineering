@@ -186,12 +186,29 @@ final class NowPlayingController {
             guard let self, let loose = await resolveLooseMetadata?(url) else { return }
             guard isStillCurrent(token), metaToken == token else { return }
             meta = ResolvedTrackMeta(artist: loose.artist, album: loose.album, artworkKey: nil)
-            if let data = loose.artworkData, let image = NSImage(data: data) {
+            if let data = loose.artworkData, let image = Self.decodedArtwork(from: data) {
                 artworkToken = token
                 artwork = image
             }
             refresh() // re-push with embedded artist/album/art
         }
+    }
+
+    /// Decode embedded loose-file art CAPPED at the library path's 512px (S10.7 PR-7 review:
+    /// `NSImage(data:)` deferred a FULL-RESOLUTION decode of e.g. a 3000²+ embedded cover to
+    /// first draw on the main actor — Control Center, the footer thumb, and the glow sampler
+    /// all need far less). `CGImageSourceCreateThumbnailAtIndex` decodes at the capped size
+    /// (subsampling/embedded thumbnails), not full-res-then-shrink.
+    private static func decodedArtwork(from data: Data, maxPixel: Int = 512) -> NSImage? {
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+        else { return NSImage(data: data) } // exotic containers: keep the old full decode
+        return NSImage(cgImage: thumb, size: NSSize(width: thumb.width, height: thumb.height))
     }
 
     /// Async-enrich the current track's metadata + artwork; apply each only if the track is still
@@ -224,7 +241,19 @@ final class NowPlayingController {
         if let artist = snapshot.artist { info[MPMediaItemPropertyArtist] = artist }
         if let album = snapshot.album { info[MPMediaItemPropertyAlbumTitle] = album }
         if let artwork {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+            // The request handler MUST be nonisolated: MediaPlayer invokes it on ITS OWN
+            // serial queue ("accessQueue") when serializing artwork (e.g. a Control Center
+            // render after a device switch). Defined inside this @MainActor class, the
+            // closure INHERITS MainActor isolation, and Swift 6's dynamic isolation check
+            // (dispatch_assert_queue) TRAPS off-main — the 2026-07-17 founder crashes
+            // (EXC_BREAKPOINT, thread "*/accessQueue"). `@Sendable` severs the inference;
+            // the closure captures only the image value and touches no controller state.
+            // (NSImage is safely readable cross-thread as long as nobody mutates it — this
+            // one is a fully-decoded artwork instance owned by the closure.)
+            let image = artwork
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in
+                image
+            }
         }
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = info

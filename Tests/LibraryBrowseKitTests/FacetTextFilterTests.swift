@@ -30,4 +30,11 @@ struct FacetTextFilterTests {
     func trimmed() {
         #expect(FacetTextFilter.matches("Jazz", query: "  jazz  "))
     }
+
+    @Test("diacritic-insensitive (S10.7 §5 queue-filter contract)")
+    func diacriticInsensitive() {
+        #expect(FacetTextFilter.matches("Beyoncé", query: "beyonce"))
+        #expect(FacetTextFilter.matches("Sigur Rós", query: "ros"))
+        #expect(FacetTextFilter.matches("Motörhead", query: "motorhead"))
+    }
 }

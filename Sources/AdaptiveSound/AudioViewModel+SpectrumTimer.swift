@@ -57,18 +57,13 @@ extension AudioViewModel {
         // scrubber at the paused spot. Only a genuine stop (not playing, not paused) zeroes it.
         if isPlaying {
             playbackPosition = engine.currentPlaybackPosition() ?? playbackPosition
-        } else if pausedResumePosition == nil {
+        } else if pausedResumePosition == nil, playbackPosition != 0 {
             playbackPosition = 0
         }
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
         // accrues only while playing → a pause/stall/seek never mis-counts).
         accruePlayThrough()
-        loudness = engine.currentLoudness()
-        var freshPath = engine.currentSignalPath()
-        // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
-        freshPath.intensityLinear = intensity
-        freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
-        signalPath = freshPath
+        pollEngineReadouts()
 
         // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
         // reflect it in the UI and prompt the user to pick a device.
@@ -130,9 +125,35 @@ extension AudioViewModel {
     /// Called at 20 Hz on the main thread by the SPECTRUM timer. Reads the latest band magnitudes
     /// from the double-buffer, interpolates 44 bands → 88 display bars, and writes into
     /// `spectrumBars` to trigger SwiftUI observation. Pure visualizer work — no transport state.
+    /// Poll loudness + the signal path, SUPPRESSING same-value writes (break-it MINOR-3):
+    /// Observation has no equality gate of its own, so unconditional assignment re-evaluated
+    /// every signalPath/loudness observer (pill, hero badges, inspector, footer slot) 20×/s
+    /// even while idle. These guards are what makes SignalPathInfo's "Equatable so redundant
+    /// renders are suppressed" doc comment actually true.
+    @MainActor
+    private func pollEngineReadouts() {
+        let freshLoudness = engine.currentLoudness()
+        if loudness != freshLoudness { loudness = freshLoudness }
+        var freshPath = engine.currentSignalPath()
+        // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
+        freshPath.intensityLinear = intensity
+        freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
+        if signalPath != freshPath { signalPath = freshPath }
+    }
+
     @MainActor
     func tickSpectrum() {
-        guard engine.readSpectrumBands(into: &spectrumScratch) else { return }
+        guard engine.readSpectrumBands(into: &spectrumScratch) else {
+            // Pure mode installs no spectrum tap (bit-perfect path) — without this reset the
+            // lens FROZE at the last Enhanced frame at full opacity, a static lie during the
+            // flagship mode (break-it). Zero once; the contains-check keeps it idempotent.
+            if signalPath.path == .pure, spectrumBars.contains(where: { $0 > 0 }) {
+                spectrumBars = [Float](repeating: 0, count: SpectrumConstants.displayBarCount)
+                peakCaps = [Float](repeating: 0, count: SpectrumConstants.displayBarCount)
+                peakTracker.reset(to: [])
+            }
+            return
+        }
         // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
         // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
         let bandCount = SpectrumConstants.bandCount
@@ -143,6 +164,14 @@ extension AudioViewModel {
             let upper = min(lower + 1, bandCount - 1)
             let weight = frac - Float(lower)
             spectrumBars[bar] = spectrumScratch[lower] * (1 - weight) + spectrumScratch[upper] * weight
+        }
+        // Peak-hold caps (S10.7 PR 3): fed the SAME tick, nominal 20 Hz step — belt-and-
+        // braces isPlaying gate so caps freeze even if the engine keeps producing frames
+        // while paused (the tracker itself freezes structurally when unfed). Both arrays
+        // mutate in one run-loop turn → one @Observable invalidation.
+        if isPlaying {
+            peakTracker.update(bars: spectrumBars.map(Double.init), elapsed: 1.0 / 20.0)
+            peakCaps = peakTracker.caps.map(Float.init)
         }
     }
 }

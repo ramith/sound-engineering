@@ -66,7 +66,7 @@ private struct SignalPathStatusCard: View {
             if info.fellBackToEnhanced {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(DesignSystem.Color.statusWarning)
+                        .foregroundStyle(DesignSystem.Color.statusWarningText)
                     Text("Pure requested but not available on this device/track — using Enhanced.")
                         .font(.caption)
                         .foregroundStyle(Color.asLabelSecond)

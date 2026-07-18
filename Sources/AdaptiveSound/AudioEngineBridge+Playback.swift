@@ -106,9 +106,15 @@ extension AudioEngineBridge {
         setActivePath(.enhanced)
         resampleQueue.sync { enhancedPlayIntent = true }
         let fellBack = loadSignalPath().fellBackToEnhanced
+        // The device's actual output rate (the honest "device is running at" value, per the
+        // field's doc + the D5 device-pill readout). Enhanced processes internally at the graph
+        // rate; the outputNode format reflects the hardware, so a 48 kHz device reads "48 kHz".
+        // Captured on the engine queue (engine settled + playing here) — the same store-time
+        // discipline the Pure path uses via makeSignalPathInfo, never a MainActor engine read.
         storeSignalPath(SignalPathInfo(
             path: .enhanced,
             decision: .fallbackEnhanced,
+            achievedSampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate,
             fellBackToEnhanced: fellBack
         ))
     }
@@ -169,13 +175,21 @@ extension AudioEngineBridge {
             // delay/padding via the file's edit list (kExtAudioFileProperty_ClientDataFormat +
             // kAFInfoDictionary_ApproximateDuration). Apple handles this automatically on this
             // path; we must NOT disable or override it. Pure/FFmpeg trim is Stage 2.
+            // Capture the passthrough epoch this schedule is installed under (the
+            // `stopEnhancedResampler()` above bumped it, abandoning any completion the
+            // `playerNode.stop()` fired): a later stop/seek/reschedule bumps again, and this
+            // completion must then abandon instead of rolling the gapless seam (wrong-song bug).
+            let passthroughGen: UInt64 = resampleQueue.sync { passthroughGeneration }
             playerNode.scheduleFile(
                 audioFile,
                 at: nil,
                 completionCallbackType: .dataPlayedBack
             ) { [weak self, weak playerNode] _ in
                 guard let self, let livePlayer = playerNode else { return }
-                self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+                self.resampleQueue.async {
+                    guard passthroughGen == self.passthroughGeneration else { return } // superseded
+                    self.firePassthroughEOFOrEnd(player: livePlayer)
+                }
             }
             playerNode.play()
             logUX("Enhanced started '\(fileURL.lastPathComponent)' (\(Int(graphRate)) passthrough)")
