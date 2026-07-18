@@ -104,6 +104,11 @@ recorded here retroactively; the row is now due at the sprint-end pass (below), 
 FOUNDER-VERIFIED live (2026-07-18, post-fix build): end-of-queue now STOPS ("queue ended" —
 the BLOCKER-1 fix confirmed on a real queue run-out).
 
+INSTRUMENTS/FPS ROW — CLOSED 2026-07-19: founder ran the R5 recipe on the finished build,
+"perf test is ok" (no sustained drops observed). The standing deferred rows from PR 3/PR 5
+are satisfied by this run. Baseline recorded BEFORE S10.8 adds animated views (capsule tab
+hovers, per-row equalizer).
+
 FILED, not fixed (dispositions):
 1. Queue ↑/↓ move the LIVE playback cursor — FOUNDER DECIDED 2026-07-18: "arrows behaviour
    is ok for me" → current behavior stands BY DESIGN (recommendation for a view-local
