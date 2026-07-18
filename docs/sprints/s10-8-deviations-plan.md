@@ -50,6 +50,10 @@ All new colors (#8AF0E0 active title, #FFB347 amber, capsule-tab gradient) enter
 
 ## C. Decisions needed (founder), with recommendations
 
+> **DECIDED (founder, 2026-07-19):** 1 = YES, build the capsule control ("switch to the
+> capsule"). 2 & 3 = proceeding per recommendation (fill strata, not blur; true-peak upgrade
+> before rename) — founder may veto. Perf baseline: founder ran Instruments, "perf test is ok."
+
 1. **D9 reopen — capsule tab control.** The design doc locked "native segmented; revisit
    only if PR-6 screenshots reject the look." Commissioning this audit effectively reopens
    it. **Recommend: YES, build PR-B** — it is the report's biggest visible gap and the 8a
