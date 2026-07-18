@@ -329,7 +329,7 @@ extension AudioEngineBridge {
             guard let self, let livePlayer = player else { return }
             self.resampleQueue.async {
                 guard gen == self.passthroughGeneration else { return } // superseded
-                self.onPassthroughEOF?(livePlayer)
+                self.firePassthroughEOFOrEnd(player: livePlayer)
             }
         }
         player.play()

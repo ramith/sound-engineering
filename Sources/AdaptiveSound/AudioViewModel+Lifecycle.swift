@@ -99,13 +99,16 @@ extension AudioViewModel {
         // P2-C: ordered teardown — `engine.shutdown()` runs only AFTER `performStop()` has fully
         // completed, so shutdown can't tear down `avEngine`/`loudnessMeter`/`pureEngine` while
         // `stopAudio()` is still mid-flight on another thread → use-after-free of the C handles.
+        // Close the play-verb gate FIRST (break-it): during the two awaits below, a play from
+        // the menu bar / Control Center could pass the `isEngineReady` guard and land on
+        // engineQueue AFTER the teardown block → "engine not initialized" at quit.
+        isEngineReady = false
         await performStop()
         do {
             try await engine.shutdown()
         } catch {
             errorMessage = "Engine shutdown failed: \(error.localizedDescription)"
         }
-        isEngineReady = false
         logUX("shutdown — complete")
     }
 

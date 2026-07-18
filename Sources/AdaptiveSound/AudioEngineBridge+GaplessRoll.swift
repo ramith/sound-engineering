@@ -102,13 +102,45 @@ extension AudioEngineBridge {
     /// intent), exactly as the inline EOF guards did. MUST be called on `resampleQueue`.
     private func consumeOnDeckURL(context: String) -> URL? {
         guard let nextURL = onDeckURL else {
-            gaplessPlaybackEnded = true
-            enhancedPlayIntent = false // queue exhausted — don't auto-resume on a later config change
-            logUX("gapless: \(context) EOF — no next track, playback ended")
+            markGaplessPlaybackEnded(reason: "\(context) EOF — no next track, playback ended")
             return nil
         }
         onDeckURL = nil // consume the armed URL
         return nextURL
+    }
+
+    /// Fire the passthrough EOF hook — or, when NO hook is armed under a LIVE epoch, surface
+    /// the ended state (break-it BLOCKER-1): `setNextTrack(nil)` clears the hook at the FINAL
+    /// seam and a single-track queue never arms one, so the last real EOF used to be
+    /// swallowed — `isPlaying` stayed true and the VM polled a silent engine forever (the
+    /// footer counted past the duration). A live-epoch completion with a nil hook is provably
+    /// a genuine EOF: every non-EOF stop (pause/stop/seek/track-change/Pure entry/device
+    /// loss/re-establish) bumps the epoch BEFORE its `player.stop()`. MUST be called on
+    /// `resampleQueue` with the epoch already validated by the caller.
+    func firePassthroughEOFOrEnd(player: AVAudioPlayerNode) {
+        if let hook = onPassthroughEOF {
+            hook(player)
+        } else {
+            markGaplessPlaybackEnded(reason: "passthrough EOF — no seam armed, playback ended")
+        }
+    }
+
+    /// The resampler twin: a `reachedEnd` session under a CURRENT generation with no
+    /// `onResamplerEOF` armed is the same genuine end. MUST be called on `resampleQueue`.
+    func fireResamplerEOFOrEnd(session: EnhancedResampleSession, player: AVAudioPlayerNode) {
+        if let hook = onResamplerEOF {
+            hook(session, player)
+        } else {
+            markGaplessPlaybackEnded(reason: "resampler EOF — no seam armed, playback ended")
+        }
+    }
+
+    /// The ONE ended-state surface (the channel `AudioViewModel.tickTransport` polls):
+    /// pioneered by `consumeOnDeckURL`'s empty branch, now shared by the nil-hook EOF paths.
+    private func markGaplessPlaybackEnded(reason: String) {
+        gaplessPlaybackEnded = true
+        enhancedPlayIntent = false // ended — don't auto-resume on a later config change
+        logUX("gapless: \(reason)")
     }
 
     /// Open `nextURL` for reading. On success returns the file (and releases the security scope,
@@ -172,7 +204,7 @@ extension AudioEngineBridge {
             guard let self, let livePlayer = player else { return }
             self.resampleQueue.async {
                 guard gen == self.passthroughGeneration else { return } // superseded
-                self.onPassthroughEOF?(livePlayer)
+                self.firePassthroughEOFOrEnd(player: livePlayer)
             }
         }
     }

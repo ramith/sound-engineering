@@ -44,10 +44,11 @@ extension AudioEngineBridge {
         // generation, so this session is stale — schedule nothing more (cleanly abandons chaining).
         guard isCurrent(generation: generation, session: session) else { return false }
         if session.reachedEnd {
-            // Current session is exhausted. Fire the gapless EOF hook (if armed by the gapless
-            // extension) so the next track can be scheduled without stopping the player. The hook
-            // runs here on resampleQueue, which is where all session state is serialized.
-            onResamplerEOF?(session, player)
+            // Current session is exhausted. Fire the gapless EOF hook so the next track can be
+            // scheduled without stopping the player — or, with NO hook armed (final track /
+            // single track), surface the ended state (break-it BLOCKER-1). Runs on
+            // resampleQueue, where all session state is serialized.
+            fireResamplerEOFOrEnd(session: session, player: player)
             return false
         }
 

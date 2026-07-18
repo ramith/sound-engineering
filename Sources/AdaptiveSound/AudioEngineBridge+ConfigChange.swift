@@ -96,6 +96,24 @@ extension AudioEngineBridge {
         // On configChangeQueue here — the engine is settled, so this outputNode read is safe.
         mutateSignalPath { $0.achievedSampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate }
 
+        // Re-validate the play INTENT immediately before touching the player (break-it
+        // MAJOR-2): a user Stop can complete on engineQueue between the read at the top of
+        // this function and here — re-scheduling after a deliberate stop is zombie audio
+        // under a stopped UI. The stop already tore playback down; undo our engine restart.
+        let intentStillLive = resampleQueue.sync { enhancedPlayIntent }
+        guard intentStillLive else {
+            engine.stop()
+            logUX("config-change: play intent cleared mid-reestablish — engine stopped, not resuming")
+            return
+        }
+
+        resumeEnhancedAfterReestablish(player: player, resumePos: resumePos)
+    }
+
+    /// The resume tail of `reestablishEnhancedAfterConfigChange` (split for the complexity
+    /// limit when the intent re-check joined): re-prime/re-schedule from the playhead per
+    /// sub-path. Runs on `configChangeQueue` with the engine already restarted.
+    private func resumeEnhancedAfterReestablish(player: AVAudioPlayerNode, resumePos: Double) {
         // Read resampleSession under the queue's lock so the branch decision is consistent with
         // any in-flight mutation on resampleQueue (avoids a TOCTOU race with seekEnhancedResampler
         // or primeEnhancedResamplerLocked running concurrently).

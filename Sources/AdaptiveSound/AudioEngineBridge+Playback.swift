@@ -188,7 +188,7 @@ extension AudioEngineBridge {
                 guard let self, let livePlayer = playerNode else { return }
                 self.resampleQueue.async {
                     guard passthroughGen == self.passthroughGeneration else { return } // superseded
-                    self.onPassthroughEOF?(livePlayer)
+                    self.firePassthroughEOFOrEnd(player: livePlayer)
                 }
             }
             playerNode.play()
