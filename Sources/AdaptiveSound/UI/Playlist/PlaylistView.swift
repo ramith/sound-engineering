@@ -8,9 +8,10 @@ import SwiftUI
 /// folder chooser or "~/…" chip here anymore, and choosing a folder never rewrites this list.
 ///
 /// S10.7 PR 5 (founder decision D7): a VIEW-LOCAL filter field — narrows the visible rows by
-/// title/path (reusing `FacetTextFilter`, the S9.6 primitive), never mutates the queue or
-/// playback, suppresses the transport Space accelerator while focused, Escape clears, and
-/// Jump-to-Now-Playing clears it first rather than silently failing (§5).
+/// TITLE (reusing `FacetTextFilter`, the S9.6 primitive; path was a dead candidate — see
+/// `filteredIndices`), never mutates the queue or playback, suppresses the transport Space
+/// accelerator while focused, Escape clears, and Jump-to-Now-Playing clears it first rather
+/// than silently failing (§5).
 struct PlaylistView: View {
     @Environment(AudioViewModel.self) var viewModel
     /// Observed by the list to scroll the current track into view (UI-2). A monotonic
@@ -86,12 +87,13 @@ struct PlaylistView: View {
     }
 
     /// The visible queue positions under the filter (REAL indices — play/remove/menu actions
-    /// keep operating on the true queue positions).
+    /// keep operating on the true queue positions). Matches on the display TITLE only:
+    /// `relativePath` is empty for library-queued tracks (the queue adapter never fills it —
+    /// break-it MINOR-5), so it was a dead candidate; artist isn't carried by `AudioFile`.
     private var filteredIndices: [Int] {
         guard filterActive else { return Array(viewModel.queue.indices) }
         return viewModel.queue.indices.filter { index in
-            let file = viewModel.queue[index].file
-            return FacetTextFilter.matches([file.name, file.relativePath], query: filterText)
+            FacetTextFilter.matches(viewModel.queue[index].file.name, query: filterText)
         }
     }
 
@@ -344,6 +346,10 @@ private struct PlaylistItemList: View {
             // already covers keyboard toggle here (focus-audit nit).
             .onKeyPress(.delete) {
                 guard let index = viewModel.selectedTrackIndex else { return .ignored }
+                // Never remove a row the filter is HIDING (break-it MINOR-2): Delete on an
+                // invisible selection silently removed — and could stop — the playing track
+                // with no visible target. Visible rows only.
+                guard visibleIndices.contains(index) else { return .ignored }
                 viewModel.removeTrack(at: index)
                 return .handled
             }
@@ -381,7 +387,10 @@ private struct PlaylistItemList: View {
             guard reorderEnabled, let fromID = payloads.first?.id else { return false }
             return viewModel.moveByDrop(fromID: fromID, toIndex: index)
         } isTargeted: { targeted in
-            guard reorderEnabled else { return }
+            // No reorderEnabled guard here (break-it NIT-1): typing a filter mid-drag flips
+            // reorder OFF, and a guard would swallow the un-target event — latching the
+            // highlight on a row until the next drag. Tracking the hover is always safe;
+            // only the DROP is gated (above).
             dropTargetIndex = targeted ? index : (dropTargetIndex == index ? nil : dropTargetIndex)
         }
         .simultaneousGesture(
