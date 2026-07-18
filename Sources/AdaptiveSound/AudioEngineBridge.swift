@@ -158,6 +158,15 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// set `gaplessPlaybackEnded`. Cleared on stop/seek so a stale handler cannot fire.
     var onPassthroughEOF: ((AVAudioPlayerNode) -> Void)?
 
+    /// Epoch for the 48 kHz passthrough schedules — the passthrough twin of `resampleGeneration`.
+    /// `player.stop()` FIRES any pending `.dataPlayedBack` completion, indistinguishable from a
+    /// real end-of-track: with a next track armed, the seam handler would consume it and start
+    /// the WRONG song on every stop that isn't an EOF (device-switch re-establish and passthrough
+    /// seek both stop+reschedule — the founder's wrong-song/stale-selection bug). Every schedule
+    /// site captures the epoch it was installed under; the completion abandons at fire time if a
+    /// stop/seek/reschedule has advanced it. Owned by `resampleQueue`, like all seam state.
+    var passthroughGeneration: UInt64 = 0
+
     /// Called on `resampleQueue` when the streaming resampler reaches EOF and is about to stop
     /// chaining. The gapless extension installs this to roll into the next track without a gap.
     /// The handler receives the session that just ended and the live player node. Cleared on stop /

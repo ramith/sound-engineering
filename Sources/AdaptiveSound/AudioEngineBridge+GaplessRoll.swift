@@ -160,11 +160,19 @@ extension AudioEngineBridge {
         resetFramePosition: Bool
     ) {
         if resetFramePosition { file.framePosition = 0 }
+        // Capture the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump —
+        // a seam schedule replaces one whose completion already fired legitimately). A later
+        // stop/seek/reschedule bumps the epoch, and this completion then abandons at fire time
+        // instead of rolling the seam off a non-EOF `player.stop()` (wrong-song bug).
+        let gen = passthroughGeneration
         player.scheduleFile(
             file, at: nil, completionCallbackType: .dataPlayedBack
         ) { [weak self, weak player] _ in
             guard let self, let livePlayer = player else { return }
-            self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+            self.resampleQueue.async {
+                guard gen == self.passthroughGeneration else { return } // superseded
+                self.onPassthroughEOF?(livePlayer)
+            }
         }
     }
 

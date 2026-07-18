@@ -306,6 +306,17 @@ extension AudioEngineBridge {
         guard targetFrame >= 0, targetFrame < totalFrames else { return }
 
         let frameCount = AVAudioFrameCount(totalFrames - targetFrame)
+        // Bump the passthrough epoch BEFORE the stop: `player.stop()` fires the superseded
+        // schedule's `.dataPlayedBack` completion, which — with a next track armed — would
+        // otherwise roll the gapless seam and start the WRONG song (the founder's device-switch
+        // bug; user seek on a 48 kHz file had the same hazard). The new segment is installed
+        // under the new epoch; the stale completion abandons on the mismatch. Callers run on
+        // engineQueue (seek) / configChangeQueue (re-establish) — never resampleQueue — so the
+        // sync is deadlock-safe (the stopEnhancedResampler direction, C-1 discipline).
+        let gen: UInt64 = resampleQueue.sync {
+            passthroughGeneration &+= 1
+            return passthroughGeneration
+        }
         player.stop()
         audioFile.framePosition = targetFrame
         player.scheduleSegment(
@@ -316,7 +327,10 @@ extension AudioEngineBridge {
             completionCallbackType: .dataPlayedBack
         ) { [weak self, weak player] _ in
             guard let self, let livePlayer = player else { return }
-            self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+            self.resampleQueue.async {
+                guard gen == self.passthroughGeneration else { return } // superseded
+                self.onPassthroughEOF?(livePlayer)
+            }
         }
         player.play()
     }
