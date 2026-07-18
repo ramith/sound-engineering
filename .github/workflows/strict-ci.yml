@@ -46,17 +46,33 @@ jobs:
           # /opt/homebrew/include so FileDecodeSource.mm's __has_include(<libavformat/...>)
           # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
           # (that branch is analyzed NOWHERE else in the merge path); the rest are
-          # formatters/linters/scanners.
-          brew install swiftformat swiftlint llvm semgrep cppcheck ffmpeg || true
+          # formatters/linters/scanners. SwiftFormat/SwiftLint are NOT brewed: they are PINNED
+          # below (brew-latest 0.62.x changed wrapIfStatementBodies and flagged 74 files the
+          # local 0.61.1 gate passes — PR #61 run 1); strict-gate.sh asserts the pins, so a
+          # skew fails loudly with instructions instead of red-herring style errors.
+          brew install llvm semgrep cppcheck ffmpeg || true
           # Periphery (Swift dead-code detection) lives in a tap, not core Homebrew — install it
           # separately so `make strict-gate`'s hostile `periphery scan` step has the binary.
           brew install peripheryapp/periphery/periphery || true
+          # Pinned style tools (versions MUST match strict-gate.sh's SWIFTFORMAT_PIN /
+          # SWIFTLINT_PIN; a deliberate upgrade bumps both places + reformats in one commit).
+          mkdir -p "$HOME/pinned-tools"
+          curl -fsSL -o /tmp/swiftformat.zip \
+            https://github.com/nicklockwood/SwiftFormat/releases/download/0.61.1/swiftformat.zip
+          unzip -o -q /tmp/swiftformat.zip -d "$HOME/pinned-tools"
+          curl -fsSL -o /tmp/swiftlint.zip \
+            https://github.com/realm/SwiftLint/releases/download/0.64.1/portable_swiftlint.zip
+          unzip -o -q /tmp/swiftlint.zip -d "$HOME/pinned-tools"
+          chmod +x "$HOME/pinned-tools/swiftformat" "$HOME/pinned-tools/swiftlint"
           # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the
           # runner default PATH (/usr/bin, where make lives). A step-level
           # `env: PATH: …:${{ env.PATH }}` does NOT work — the Actions env context has no PATH,
           # so it expanded to empty, dropped /usr/bin, and broke `make` (exit 127).
+          # pinned-tools is written LAST so it lands FIRST on PATH (each write prepends),
+          # shadowing any preinstalled brew swiftformat/swiftlint on the runner image.
           echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "$HOME/pinned-tools" >> "$GITHUB_PATH"
 
       - name: Run strict gate
         run: make strict-gate

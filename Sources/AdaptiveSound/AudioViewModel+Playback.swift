@@ -65,6 +65,13 @@ extension AudioViewModel {
                 errorMessage = "Playback failed: \(error.localizedDescription)"
                 isPlaying = false
                 pendingNextIndex = nil
+                // Self-heal (break-it): engine-not-ready is recoverable — rebuild the graph
+                // so the NEXT play press succeeds. `retryInitialization` is internally
+                // guarded against re-entry while an init is already in flight.
+                if case AudioBridgeError.engineNotInitialized = error {
+                    logUX("startPlayback: engine not initialized — self-healing via retryInitialization")
+                    retryInitialization()
+                }
             }
         }
     }

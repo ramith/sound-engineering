@@ -68,7 +68,8 @@ struct QueueToast: View {
             }
             .padding(.horizontal, DesignSystem.Spacing.medium)
             .padding(.vertical, DesignSystem.Spacing.small)
-            .background(.ultraThinMaterial, in: .capsule)
+            // Regime A/`.overlay` (S10.7 §3.1): transient toast floating over variable content.
+            .glassPanel(.overlay(.ultraThin), in: Capsule())
             .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: DesignSystem.ShellMetrics.hairline))
             .contentShape(Capsule())
         }

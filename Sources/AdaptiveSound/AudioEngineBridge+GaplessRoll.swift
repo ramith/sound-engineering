@@ -102,13 +102,45 @@ extension AudioEngineBridge {
     /// intent), exactly as the inline EOF guards did. MUST be called on `resampleQueue`.
     private func consumeOnDeckURL(context: String) -> URL? {
         guard let nextURL = onDeckURL else {
-            gaplessPlaybackEnded = true
-            enhancedPlayIntent = false // queue exhausted — don't auto-resume on a later config change
-            logUX("gapless: \(context) EOF — no next track, playback ended")
+            markGaplessPlaybackEnded(reason: "\(context) EOF — no next track, playback ended")
             return nil
         }
         onDeckURL = nil // consume the armed URL
         return nextURL
+    }
+
+    /// Fire the passthrough EOF hook — or, when NO hook is armed under a LIVE epoch, surface
+    /// the ended state (break-it BLOCKER-1): `setNextTrack(nil)` clears the hook at the FINAL
+    /// seam and a single-track queue never arms one, so the last real EOF used to be
+    /// swallowed — `isPlaying` stayed true and the VM polled a silent engine forever (the
+    /// footer counted past the duration). A live-epoch completion with a nil hook is provably
+    /// a genuine EOF: every non-EOF stop (pause/stop/seek/track-change/Pure entry/device
+    /// loss/re-establish) bumps the epoch BEFORE its `player.stop()`. MUST be called on
+    /// `resampleQueue` with the epoch already validated by the caller.
+    func firePassthroughEOFOrEnd(player: AVAudioPlayerNode) {
+        if let hook = onPassthroughEOF {
+            hook(player)
+        } else {
+            markGaplessPlaybackEnded(reason: "passthrough EOF — no seam armed, playback ended")
+        }
+    }
+
+    /// The resampler twin: a `reachedEnd` session under a CURRENT generation with no
+    /// `onResamplerEOF` armed is the same genuine end. MUST be called on `resampleQueue`.
+    func fireResamplerEOFOrEnd(session: EnhancedResampleSession, player: AVAudioPlayerNode) {
+        if let hook = onResamplerEOF {
+            hook(session, player)
+        } else {
+            markGaplessPlaybackEnded(reason: "resampler EOF — no seam armed, playback ended")
+        }
+    }
+
+    /// The ONE ended-state surface (the channel `AudioViewModel.tickTransport` polls):
+    /// pioneered by `consumeOnDeckURL`'s empty branch, now shared by the nil-hook EOF paths.
+    private func markGaplessPlaybackEnded(reason: String) {
+        gaplessPlaybackEnded = true
+        enhancedPlayIntent = false // ended — don't auto-resume on a later config change
+        logUX("gapless: \(reason)")
     }
 
     /// Open `nextURL` for reading. On success returns the file (and releases the security scope,
@@ -159,12 +191,21 @@ extension AudioEngineBridge {
         player: AVAudioPlayerNode,
         resetFramePosition: Bool
     ) {
+        dispatchPrecondition(condition: .onQueue(resampleQueue))
         if resetFramePosition { file.framePosition = 0 }
+        // Capture the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump —
+        // a seam schedule replaces one whose completion already fired legitimately). A later
+        // stop/seek/reschedule bumps the epoch, and this completion then abandons at fire time
+        // instead of rolling the seam off a non-EOF `player.stop()` (wrong-song bug).
+        let gen = passthroughGeneration
         player.scheduleFile(
             file, at: nil, completionCallbackType: .dataPlayedBack
         ) { [weak self, weak player] _ in
             guard let self, let livePlayer = player else { return }
-            self.resampleQueue.async { self.onPassthroughEOF?(livePlayer) }
+            self.resampleQueue.async {
+                guard gen == self.passthroughGeneration else { return } // superseded
+                self.firePassthroughEOFOrEnd(player: livePlayer)
+            }
         }
     }
 
@@ -183,6 +224,12 @@ extension AudioEngineBridge {
     ) {
         guard let converter = makeConverter(for: nextFile, player: player) else {
             // Converter creation failed: fall back to scheduleFile (brief gap, chain preserved).
+            // Clear the OLD track's exhausted session first (the P1-2 rule, same as the
+            // empty-prime branch below): leaving it non-nil misroutes a later seek/reestablish
+            // to the resampler branch, whose stop() bumps only resampleGeneration — the live
+            // passthrough schedule would fire under an unbumped epoch and roll the seam
+            // (the wrong-song bug escaping through stale state; seam-fix review MAJOR-1).
+            resampleSession = nil
             // S-1: the .dataPlayedBack completion keeps onPassthroughEOF firing for the next seam.
             bumpTransitionCount(player: player)
             armPassthroughNextTrack(player: player)

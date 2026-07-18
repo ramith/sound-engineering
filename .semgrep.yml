@@ -66,3 +66,74 @@ rules:
     paths:
       include: ['*.c', '*.cc', '*.cpp', '*.mm', '*.h', '*.hpp']
     pattern-regex: '\.detach\s*\('
+
+  # --- S10.7 layer-policy tripwires (docs/sprints/s10-7-liquid-glass-design.md §3.1/§3.2/§7 R1).
+  # Drift nets, not security boundaries (same posture as the migrator grep): helper indirection
+  # and legal-token recomposition can evade regexes — review owns that seam (design §7.4-1).
+  # The four DEFINITION files (DesignSystem, DesignSystemGlass, Color+Brand, SpectrumColorPalette)
+  # are the only exceptions — they are where color/material IS defined.
+
+  - id: ui-no-adhoc-material
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Backdrop-sampling material outside the token layer. App glass-look surfaces are
+      token-governed fills via .glassPanel(_:in:) (design §3.1 Regime B); the ONE sanctioned
+      Material use (a transient overlay with variable content genuinely beneath) is the
+      .overlay role inside DesignSystemGlass.swift. Declare a role, don't paint a material.
+    paths:
+      include: ['Sources/AdaptiveSound']
+      exclude: ['DesignSystem.swift', 'DesignSystemGlass.swift', 'Color+Brand.swift', 'SpectrumColorPalette.swift']
+    pattern-regex: '\.(ultraThin|thin|regular|thick|ultraThick)Material\b|\bMaterial\.|\bNSVisualEffectView\b|\.background\(\s*\.bar\b'
+
+  - id: no-liquid-glass-api
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Liquid Glass API use is FROZEN for S10.7 — no app surface has variable content beneath
+      it (design §3.1 placement test), so glassEffect would be cited "ghost glass". This rule
+      is NEVER suppressed: adopting real glass means EDITING THIS RULE in the same PR as the
+      design review that sanctions the under-content surface (see DesignSystemGlass.swift's
+      header). Suppression = hack; rule edit + design review = policy evolution.
+    paths:
+      include: ['Sources']
+    pattern-regex: '\.glassEffect(ID|Union|Transition)?\s*\(|\bGlassEffectContainer\b|\bNSGlassEffectView\b|buttonStyle\(\s*\.glass'
+
+  - id: ui-no-color-literal
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Hand-painted color in a view. All color comes from DesignTokenKit data via DesignSystem
+      tokens (light+dark pairs, permanently contrast-audited by R4) so appearance, Reduce
+      Transparency, and Increase Contrast stay correct everywhere. Add/extend a Palette token
+      instead. (Color.clear is deliberately allowed — absence of paint, not a color; hierarchical
+      styles like .secondary are vibrancy styles, not colors, and are also fine.)
+    paths:
+      include: ['Sources/AdaptiveSound']
+      # PATH-ANCHORED (break-it hardening): bare basenames matched ANY file with that name
+      # anywhere under the include — a new UI/Foo/DesignSystem.swift was silently exempt.
+      exclude:
+        - 'Sources/AdaptiveSound/DesignSystem.swift'
+        - 'Sources/AdaptiveSound/DesignSystemGlass.swift'
+        - 'Sources/AdaptiveSound/Color+Brand.swift'
+        - 'Sources/AdaptiveSound/UI/Spectrum/SpectrumColorPalette.swift'
+    pattern-either:
+      # Colorspace prefix generalized (break-it hardening): `Color(.displayP3, red:)` evaded
+      # the .sRGB-only group — and P3 is exactly what the R4 audit cannot model.
+      - pattern-regex: '\b(Color|NSColor)\(\s*(\.[A-Za-z0-9]+\s*,\s*)?(srgbRed|calibratedRed|deviceRed|red|white|hue)\s*:|#colorLiteral|\bColor\(\s*named:|\bColor\(\s*"'
+      - pattern-regex: '\.(foregroundStyle|foregroundColor|fill|tint|stroke|strokeBorder|background|overlay|border)\(\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
+      - pattern-regex: '\.shadow\(\s*color:\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
+      - pattern-regex: 'NSColor\.system(Red|Blue|Green|Orange|Yellow|Pink|Purple|Teal|Mint|Cyan|Indigo|Brown|Gray)\b'
+
+  - id: ui-no-appearance-branching
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Per-view appearance branching. Appearance is owned by the dynamic token layer (S9-T
+      posture, enforced since S10.7) and by the .glassPanel env->resolver shim in
+      DesignSystemGlass.swift; forcing preferredColorScheme breaks follow-the-system. Use
+      DesignSystem tokens.
+    paths:
+      include: ['Sources/AdaptiveSound']
+      exclude: ['DesignSystemGlass.swift']
+    pattern-regex: '\\\.colorScheme\b|\.preferredColorScheme\s*\(|NSApp\.appearance\s*='

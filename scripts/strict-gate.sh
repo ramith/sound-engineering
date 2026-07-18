@@ -46,6 +46,24 @@ require_tool make
 # resolve it via xcrun instead and fail hard if absent (this gate REQUIRES it).
 xcrun --find leaks >/dev/null 2>&1 || { red "ERROR: leaks(1) missing (Xcode CLT)"; exit 1; }
 
+# Tool-skew guard (S10.7 close-out): the gate is only meaningful if local and hosted CI run
+# IDENTICAL style tools — CI's brew-latest SwiftFormat 0.62.x changed wrapIfStatementBodies
+# and flagged 74 files the local 0.61.1 passes (PR #61's first run). Style-tool versions are
+# PINNED here and installed pinned in .github/workflows/strict-ci.yml; a deliberate upgrade
+# bumps BOTH pins and reformats/relints in the SAME commit.
+SWIFTFORMAT_PIN="0.61.1"
+SWIFTLINT_PIN="0.64.1"
+actual_swiftformat="$(swiftformat --version)"
+if [ "$actual_swiftformat" != "$SWIFTFORMAT_PIN" ]; then
+  red "ERROR: swiftformat $actual_swiftformat != pinned $SWIFTFORMAT_PIN (tool-skew guard — bump the pin + reformat in one commit, or install the pinned version)."
+  exit 1
+fi
+actual_swiftlint="$(swiftlint --version)"
+if [ "$actual_swiftlint" != "$SWIFTLINT_PIN" ]; then
+  red "ERROR: swiftlint $actual_swiftlint != pinned $SWIFTLINT_PIN (tool-skew guard — bump the pin + relint in one commit, or install the pinned version)."
+  exit 1
+fi
+
 # clang-tidy is keg-only under Homebrew LLVM; prefer that path, fall back to PATH. It is
 # REQUIRED (not skipped) so the pre-commit C++ static-analysis net is guaranteed to work.
 if [[ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
@@ -120,6 +138,27 @@ if grep -nE '\.(moveItem|copyItem)\(' "${playlist_add_paths[@]}"; then
   exit 1
 fi
 green "playlist add/drop path ok (no moveItem/copyItem — reference-add only)."
+
+step "S10.7 layer-policy guards (Kit purity + fixed-band Dynamic Type clamp)"
+# DesignTokenKit's testability contract IS its zero-UI-imports purity (design §3.2 R0): the
+# moment it imports SwiftUI/AppKit, the headless RES/TOK/R4 tests stop meaning anything.
+if grep -rnE '^import(\s+(struct|class|enum|protocol|func|typealias|var|let))?\s+(SwiftUI|AppKit)' Sources/DesignTokenKit/; then
+  red "ERROR: DesignTokenKit imports a UI framework — the Kit must stay headless (s10-7 design §3.2)."
+  exit 1
+fi
+# A fixed ShellMetrics band must clamp text scale or accessibility text sizes overflow the
+# band (A-M2). Both shell bands carry the clamp (ChromeBar joined in PR 6).
+clamped_bands=(
+  "Sources/AdaptiveSound/UI/Shell/NowPlayingBar.swift"
+  "Sources/AdaptiveSound/UI/Shell/ChromeBar.swift"
+)
+for f in "${clamped_bands[@]}"; do
+  if ! grep -q '\.dynamicTypeSize(' "$f"; then
+    red "ERROR: $f lost its .dynamicTypeSize clamp — a fixed band overflows at accessibility text sizes."
+    exit 1
+  fi
+done
+green "layer-policy guards ok (Kit headless; fixed-band clamps present)."
 
 if [[ "$HAVE_CPPCHECK" == "1" ]]; then
   step "cppcheck (supplementary C++ analysis)"

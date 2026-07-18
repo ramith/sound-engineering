@@ -44,8 +44,20 @@ extension AudioViewModel {
             let engineDeviceID = engine.currentOutputDeviceID()
             if let target = devices.first(where: { $0.id == engineDeviceID }) {
                 selectedDevice = target
-            } else if !(selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false) {
-                selectedDevice = devices.first
+            } else {
+                // Break-it MAJOR-1: the engine's target DIED (mid-play disconnect / PIN
+                // re-assert failure). Keep a listed selection (or fall to the first device)
+                // and PUSH it to the engine — otherwise the picker and engine diverge and
+                // every Pure viability check runs against the corpse id (permanent "Pure
+                // unavailable" until a manual re-pick). Converges: once re-asserted, the
+                // engine target is listed again and this branch stops firing.
+                if !(selectedDevice.map { sel in devices.contains { $0.id == sel.id } } ?? false) {
+                    selectedDevice = devices.first
+                }
+                if let chosen = selectedDevice {
+                    logUX("refreshDevices: engine target \(engineDeviceID) gone — re-asserting '\(chosen.name)'")
+                    selectDevice(chosen)
+                }
             }
             // QW-C: auto-disable crossfeed if the new selected device is not a headphone type.
             if crossfeedEnabled && !deviceIsHeadphones {

@@ -254,6 +254,7 @@ struct PlaylistDetailView: View {
             Menu {
                 missingRowActions(row)
             } label: {
+                // nosemgrep: ui-no-color-literal TEMP reason="→ statusWarningText not fill, S10.8" expiry=2026-08-15
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
             .menuStyle(.borderlessButton)
@@ -287,7 +288,10 @@ struct PlaylistDetailView: View {
             }
             .padding(.horizontal, DesignSystem.Spacing.medium)
             .padding(.vertical, DesignSystem.Spacing.small)
-            .background(.bar, in: Capsule())
+            // Regime A/`.overlay` (S10.7 §3.1): a restore-toast floating over the list. The
+            // `.bar` substrate preserves this pill's shipped look exactly (PR 1a is
+            // zero-visual-change); S10.8 may unify it onto `.ultraThin`.
+            .glassPanel(.overlay(.bar), in: Capsule())
             .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
             .padding(.bottom, DesignSystem.Spacing.large)
             .transition(.opacity)

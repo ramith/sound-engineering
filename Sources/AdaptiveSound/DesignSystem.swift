@@ -1,4 +1,5 @@
 import AppKit
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Design System (canonical visual tokens)
@@ -18,55 +19,79 @@ enum DesignSystem {
         /// An appearance-reactive color (S9-T): `dark` is served under `.darkAqua`, `light`
         /// otherwise, via an `NSColor` dynamic provider — so surfaces/labels follow the
         /// system appearance with NO per-view `colorScheme` checks (D2: build light+dark,
-        /// not dark-lock). `dark` values are the pre-S9-T look, unchanged; `light` values
-        /// are a first pass to tune during the founder `make run` in Light Appearance.
-        static func dynamic(light: SwiftUI.Color, dark: SwiftUI.Color) -> SwiftUI.Color {
+        /// not dark-lock). S10.7 extends the candidate set with the two high-contrast
+        /// appearance names, so a token can opt into Increase-Contrast variants (they
+        /// default to the base values — existing call sites are unchanged). STRUCTURAL
+        /// increase-contrast responses (thicker hairlines/borders) belong to the
+        /// `.glassPanel` modifier, not to color tokens.
+        static func dynamic(light: SwiftUI.Color, dark: SwiftUI.Color,
+                            lightHighContrast: SwiftUI.Color? = nil,
+                            darkHighContrast: SwiftUI.Color? = nil) -> SwiftUI.Color {
             let lightNS = NSColor(light)
             let darkNS = NSColor(dark)
+            let lightHCNS = NSColor(lightHighContrast ?? light)
+            let darkHCNS = NSColor(darkHighContrast ?? dark)
             return SwiftUI.Color(nsColor: NSColor(name: nil) { appearance in
-                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? darkNS : lightNS
+                switch appearance.bestMatch(from: [
+                    .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                ]) {
+                case .accessibilityHighContrastDarkAqua: darkHCNS
+                case .accessibilityHighContrastAqua: lightHCNS
+                case .darkAqua: darkNS
+                default: lightNS
+                }
             })
         }
 
-        // Accent — appearance-independent (the teal reads on both light + dark).
-        static let accent = SwiftUI.Color(red: 0.161, green: 0.714, blue: 0.643) // #29B6A4
-        static let accentDeep = SwiftUI.Color(red: 0.078, green: 0.537, blue: 0.478) // #148979
+        // S10.7 single-source invariant (design §3.2): every VALUE below lives in
+        // `DesignTokenKit.Palette` (plain RGBA data — headlessly contrast-audited and
+        // invariant-tested); this enum keeps the API and re-exports via `from(_:)`
+        // (DesignSystemGlass.swift). No RGBA literal may exist on this side — the former
+        // inline literals moved to the Kit byte-identically (PR 1a, zero visual change).
+
+        // Accent — appearance-independent (the teal reads on both light + dark). #29B6A4/#148979.
+        static let accent = from(Palette.accent)
+        static let accentDeep = from(Palette.accentDeep)
         /// Foreground drawn ON the accent (e.g. a play glyph over the teal fill). Appearance-
         /// independent like `accent` itself — white reads on the teal in both light + dark.
-        static let onAccent = SwiftUI.Color.white
+        static let onAccent = from(Palette.onAccent)
 
-        /// Alternates (swap into accent to change feel)
-        static let blue = SwiftUI.Color(red: 0.039, green: 0.518, blue: 1.0) // #0A84FF
+        /// Alternates (swap into accent to change feel). #0A84FF.
+        static let blue = from(Palette.blue)
 
-        /// Surfaces (elevation stack) — dark = pre-S9-T; light = first pass (gray base,
-        /// white raised cards, darker inset).
-        static let window = dynamic(light: SwiftUI.Color(white: 0.93),
-                                    dark: SwiftUI.Color(red: 0.118, green: 0.118, blue: 0.118)) // #1E1E1E
-        static let card = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.045))
-        static let panel = dynamic(light: SwiftUI.Color.white, dark: SwiftUI.Color.white.opacity(0.06))
-        static let hairline = dynamic(light: SwiftUI.Color.black.opacity(0.12),
-                                      dark: SwiftUI.Color.white.opacity(0.08))
+        /// Surfaces (elevation stack) — dark = pre-S9-T (#1E1E1E window, pre-D10); light =
+        /// first pass (gray base, white raised cards, darker inset).
+        static let window = from(Palette.window)
+        static let card = from(Palette.card)
+        static let panel = from(Palette.panel)
+        static let hairline = from(Palette.hairline)
 
         // Labels — secondary + tertiary lifted so BOTH clear WCAG AA (≥4.5:1) on the
         // stricter card/panel surface (not just the window), AND the secondary→tertiary
         // hierarchy stays perceptible (dark 0.92 > 0.55 > 0.48; light 0.90 > 0.62 > 0.55).
-        // `labelDisabled` is WCAG-exempt (disabled text). Light values still tune-in-make-run.
-        static let label = dynamic(light: SwiftUI.Color.black.opacity(0.90), dark: SwiftUI.Color.white.opacity(0.92))
-        static let labelSecondary = dynamic(light: SwiftUI.Color.black.opacity(0.62),
-                                            dark: SwiftUI.Color.white.opacity(0.55))
-        static let labelTertiary = dynamic(light: SwiftUI.Color.black.opacity(0.55),
-                                           dark: SwiftUI.Color.white.opacity(0.48))
-        static let labelDisabled = dynamic(light: SwiftUI.Color.black.opacity(0.28),
-                                           dark: SwiftUI.Color.white.opacity(0.25))
+        // `labelDisabled` is WCAG-exempt (disabled text). That audit is now a PERMANENT
+        // test: DesignTokenKitTests/ContrastAuditTests (R4).
+        static let label = from(Palette.label)
+        static let labelSecondary = from(Palette.labelSecondary)
+        static let labelTertiary = from(Palette.labelTertiary)
+        static let labelDisabled = from(Palette.labelDisabled)
 
-        /// Status (NEW — warning had no semantic token). System-vibrant; read on both.
-        static let statusWarning = SwiftUI.Color(red: 1.0, green: 0.623, blue: 0.039) // #FF9F0A
+        /// Status FILL/indicator colors (non-text 3:1): `statusWarning` #FF9F0A vibrant orange,
+        /// `statusError` the macOS-26 palette red (#FF383C/#FF4245). PR 6 (founder "split text
+        /// vs fill"): TEXT/glyph sites use the darker AA-legible variants below instead — the
+        /// vivid values are for the meter hot-bar and status dots.
+        static let statusWarning = from(Palette.statusWarning)
+        static let statusError = from(Palette.statusError)
+        /// Status TEXT/glyph variants (AA 4.5:1). Differ from the fill values only in LIGHT
+        /// (on the deep dark base the vivid values already clear text AA).
+        static let statusWarningText = from(Palette.statusWarningText)
+        static let statusErrorText = from(Palette.statusErrorText)
 
         /// Row-fill tints for a selectable list row (queue / History): the now-playing row reads
-        /// stronger than a merely-selected one. Accent-derived, so appearance-independent like
-        /// `accent`. (Formerly inline `accent.opacity(0.25 / 0.12)` literals at the row.)
-        static let rowNowPlaying = accent.opacity(0.25)
-        static let rowSelected = accent.opacity(0.12)
+        /// stronger than a merely-selected one. Accent-derived (the derivation is asserted by
+        /// TOK-04), so appearance-independent like `accent`.
+        static let rowNowPlaying = from(Palette.rowNowPlaying)
+        static let rowSelected = from(Palette.rowSelected)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
@@ -81,6 +106,10 @@ enum DesignSystem {
     /// `.title` carry the style's own weight. (Ad-hoc `Font.system(size:)` call sites elsewhere are a
     /// separate migration — some are SF Symbols / proportional glyph sizes, not text.)
     enum Font {
+        /// The Now Playing hero title (8a: 28/800). Dynamic-Type-mapped `.largeTitle`
+        /// (~26pt macOS default) at heavy weight — a fixed 28pt would break text scaling
+        /// and is banned (S10.7 §3.2). Pair with `.heroTitle()` for the dark-only halo.
+        static let heroTitle = SwiftUI.Font.system(.largeTitle, weight: .heavy)
         static let displayTitle = SwiftUI.Font.system(.title, weight: .bold) // ~22
         static let sectionTitle = SwiftUI.Font.system(.title3, weight: .semibold) // ~15
         static let body = SwiftUI.Font.system(.body) // ~13
@@ -113,11 +142,12 @@ enum DesignSystem {
     // MARK: Gradient
 
     enum Gradient {
-        /// App-mark squircle / play-button fill (subtle teal).
+        /// App-mark squircle / play-button fill (subtle teal). Stops from the Kit palette
+        /// (#3FD0BA → #1FA893 → accentDeep) — no RGBA literals on the app side (§3.2).
         static let iconFill = LinearGradient(
             gradient: SwiftUI.Gradient(colors: [
-                SwiftUI.Color(red: 0.247, green: 0.816, blue: 0.729), // #3FD0BA
-                SwiftUI.Color(red: 0.122, green: 0.659, blue: 0.576), // #1FA893
+                Color.from(Palette.iconFillTop),
+                Color.from(Palette.iconFillMid),
                 Color.accentDeep,
             ]),
             startPoint: .top,
@@ -132,11 +162,15 @@ enum DesignSystem {
     /// `ToolbarView`), window min bumps to 880×640 for the footer transport + two Now Playing
     /// panes. No traffic-light inset — the native titlebar carries the window buttons in their
     /// own strip, so the chrome shares the content's left margin.
+    /// Band/window metrics FORWARD the Kit's `NowPlayingLayout` values (single-source
+    /// invariant): the §7.1 layout-arithmetic tests derive the min-window budget from the
+    /// Kit, so the shell must lay out from the same numbers — a local copy here would let
+    /// the tests keep passing against stale values.
     enum ShellMetrics {
-        static let chromeHeight: CGFloat = 60
-        static let footerHeight: CGFloat = 64
-        static let windowMinWidth: CGFloat = 880
-        static let windowMinHeight: CGFloat = 640
+        static let chromeHeight = CGFloat(NowPlayingLayout.chromeHeight)
+        static let footerHeight = CGFloat(NowPlayingLayout.footerHeight)
+        static let windowMinWidth = CGFloat(NowPlayingLayout.windowMinWidth)
+        static let windowMinHeight = CGFloat(NowPlayingLayout.windowMinHeight)
         static let hairline: CGFloat = 0.5
     }
 
@@ -188,11 +222,14 @@ enum DesignSystem {
         static let skipButton: CGFloat = 30 // hit target
         static let skipSymbol: CGFloat = 15
         static let scrubberTrackMinWidth: CGFloat = 120
-        static let scrubberTrackHeight: CGFloat = 3
         static let scrubberHitHeight: CGFloat = 20
-        static let thumbSize: CGFloat = 10
-        static let timeLabelWidth: CGFloat = 46
-        static let signalSlotWidth: CGFloat = 120
+        /// The scrubber's carved groove uses GlassDecor.carvedTrackHeight (5pt, shared with the
+        /// inspector sliders); the thumb is a 14pt CarvedKnob (PR 6). No local track-height.
+        static let thumbSize: CGFloat = 14
+        /// Re-exported from the Kit so SlotFitTests can assert "88:88" fits headlessly (§7.1).
+        static let timeLabelWidth: CGFloat = .init(SlotWidths.footerTimeLabel)
+        /// Re-exported from the Kit (SLOT-03 asserts "Enhanced · 176.4 kHz" + dot fits).
+        static let signalSlotWidth: CGFloat = .init(SlotWidths.footerSignalSlot)
         static let regionGapInfoToControls: CGFloat = 20
         static let regionGap: CGFloat = 16 // controls→scrubber, scrubber→signal
         static let tooltipHalfWidth: CGFloat = 22 // half the drag tooltip width, for edge clamping

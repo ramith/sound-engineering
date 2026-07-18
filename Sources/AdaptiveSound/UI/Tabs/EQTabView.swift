@@ -90,7 +90,8 @@ private struct EQRecallBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: .capsule)
+        // Regime A/`.overlay` (S10.7 §3.1): transient recall banner floating over the EQ canvas.
+        .glassPanel(.overlay(.ultraThin), in: Capsule())
         .overlay(Capsule().stroke(Color.asHairline, lineWidth: 0.5))
     }
 }
