@@ -80,6 +80,51 @@ The swiftui-pro round (fixes in `bbf36cb`) added targeted riders to the standard
 
 ## Ledger
 
+### Break-it round — run 2026-07-18 (qa-expert + the-fool; fixes in `8b7f8ed` + `0c4ddae`)
+
+FIXED this round: end-of-queue never stopped (BLOCKER — hooks cleared at the final seam
+swallowed the last EOF; nil-hook-under-live-epoch now surfaces the ended state; empirically
+probe-grounded); engine/picker divergence after device death (permanent "Pure unavailable");
+Stop racing a config-change re-establish (zombie audio under a stopped UI); the error-0
+class (qa trace: the BT repro is NOT reachable on current code — the one reachable window,
+play-from-menu-bar during quit teardown, closed by gating isEngineReady first; LocalizedError
+copy; startPlayback self-heals engineNotInitialized); the Pure-mode lens freeze (fool —
+bars zeroed when the path is Pure); 20 Hz same-value observable writes; Delete-on-hidden-row;
+drop-target latch; dead filter path candidate; R4 domain drift (row tints now audited at
+EVERY grid point — the x≥0.5 guard modeled the pre-PR-5 split); the bleed stratum (REAL
+defect, tertiary 4.18 at rest → constraint ENCODED: inspector bottom inset == bleedHeight,
+same token); R4-CONTROL-01 (the §7 pair 4 owed since PR 6); semgrep/purity tripwire
+hardening (path-anchored excludes, displayP3, .overlay/.border, NSColor.systemX, scoped-
+import purity bypass); stale seamFeather comment.
+
+LEDGER-DISCIPLINE CORRECTION (fool): PR 5's required Instruments row was SILENTLY dropped —
+recorded here retroactively; the row is now due at the sprint-end pass (below), expiry
+2026-08-15 with the rest of the cell debt.
+
+FILED, not fixed (dispositions):
+1. Queue ↑/↓ move the LIVE playback cursor (selection == playback index): now-playing
+   highlight, Control Center, and play-count/frecency crediting follow the arrows, worse
+   under a filter (steps through hidden rows). FOUNDER DECISION needed — recommendation:
+   a view-local highlight that commits on Return (S10.8-adjacent interaction change).
+2. Epoch-guard headless test: extract a pure PassthroughEpochLedger (named bump/capture ops
+   + decision-table test) into PlaybackQueueKit, and bundle qa's atomic bump/capture/schedule
+   hardening (LEDGER-2 family) into the same refactor; a PlayerScheduling protocol seam over
+   AVAudioPlayerNode is the stage-2 (fake-player adversarial orders). Next sprint.
+3. Dynamic Type past ~1.5×: the filter field's fixed 26pt clips its own text; at ~3× the
+   queue region can starve inside the 640pt minimum (LAY-02's 1.4× is the modeled bound).
+   Founder-verify at the A–H pass; candidates for S10.8.
+4. Decorative/no-action: outgoing track's peak caps decay ~1s into the next track; glow
+   palette cache keyed by URL only (re-tagged art keeps its palette until relaunch);
+   redundant engine setParameter on slider nudge at bounds.
+5. §3.4 row-hover (white 5%) was never implemented — un-ledgered contract drop caught by
+   the fool; slot into S10.8's sweep.
+6. Process (fool): branch push + draft PR for CI (founder OK pending); the Instruments/FPS
+   run is the sprint's biggest unknown (founder, 10 min); light-mode ambience + flat-base
+   tabs are unsolved DESIGN questions inside S10.8 (recommend a 1-hour founder mock of one
+   tab before scoping); pull the R3 snapshot-test decision BEFORE S10.8 rather than inside
+   its DoD; matrix cell-debt TEMPs have no automated expiry (docs/ is outside
+   check-suppressions.sh) — tracked manually here, all expiry 2026-08-15.
+
 ### PR 7 — accepted 2026-07-18 (final milestone)
 
 Art-sampled glows, D8 (`6ccd5a1` + review round `53e431b`). swiftui-pro verdict was
