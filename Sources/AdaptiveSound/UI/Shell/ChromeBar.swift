@@ -73,57 +73,64 @@ private struct DevicePillView: View {
     }
 
     var body: some View {
-        Menu {
-            ForEach(viewModel.availableDevices) { device in
-                Button(action: { viewModel.selectDevice(device) }, label: {
-                    if device.id == viewModel.selectedDevice?.id {
-                        Label(device.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(device.displayName)
-                    }
-                })
+        // The rate readout lives OUTSIDE the Menu's label, beside it in the shared capsule:
+        // macOS does NOT reliably re-render a Menu's custom label when observed data changes
+        // (the founder's screenshots showed the rate stuck empty while the hero badge and
+        // footer — plain views on the same property — updated live; it refreshed only on a
+        // device switch, which rebuilds the menu). A sibling Text updates like any view.
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(viewModel.availableDevices) { device in
+                    Button(action: { viewModel.selectDevice(device) }, label: {
+                        if device.id == viewModel.selectedDevice?.id {
+                            Label(device.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(device.displayName)
+                        }
+                    })
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2")
+                    Text(viewModel.selectedDevice?.name ?? "No Device")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Color.asLabel)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color.asLabel)
-                Text(viewModel.selectedDevice?.name ?? "No Device")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color.asLabel)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                // D5: the device's sample rate, on the pill, animating its digits when it
-                // changes (track/device switch). Reserved fixed slot — shown only while a
-                // rate is known, so the pill's fixed width (and the tabs' x-origin) never move.
-                Text(achievedRate > 0 ? SignalPathInfo.rateString(achievedRate) : "")
-                    .font(DesignSystem.Font.monoSmall)
-                    .foregroundStyle(Color.asLabelSecond)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
-                    .lineLimit(1)
-                    // The slot fits every rate at default size (SLOT-02); a 9-char hi-res rate
-                    // ("176.4 kHz") at the clamped .xLarge max shrinks to fit rather than
-                    // truncating away the "kHz" unit.
-                    .minimumScaleFactor(0.7)
-                    .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
-                    .accessibilityHidden(true) // folded into the pill's own a11y value below
-            }
-            .padding(.horizontal, 12)
-            // Fixed width (minWidth == maxWidth), not a range: the pill's width was tracking the
-            // device NAME, which slid the tab control's left edge on every device change. Fixed →
-            // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate.
-            .frame(minWidth: 252, maxWidth: 252, minHeight: 32, alignment: .leading)
-            // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
-            // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
-            .glassPanel(.badge, in: Capsule())
+            .accessibilityLabel("Audio output device")
+            .accessibilityValue(deviceAccessibilityValue)
+            .accessibilityHint("Click to choose from available audio output devices")
+
+            Spacer(minLength: 8)
+
+            // D5: the device's live sample rate, digits rolling (`numericText`) when it
+            // changes. Reserved fixed slot — empty until a rate is known, so the pill's
+            // fixed width (and the tabs' x-origin) never move.
+            Text(achievedRate > 0 ? SignalPathInfo.rateString(achievedRate) : "")
+                .font(DesignSystem.Font.monoSmall)
+                .foregroundStyle(Color.asLabelSecond)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
+                .lineLimit(1)
+                // The slot fits every rate at default size (SLOT-02); a 9-char hi-res rate
+                // ("176.4 kHz") at the clamped .xLarge max shrinks to fit rather than
+                // truncating away the "kHz" unit.
+                .minimumScaleFactor(0.7)
+                .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
+                .accessibilityHidden(true) // folded into the Menu's a11y value above
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityLabel("Audio output device")
-        .accessibilityValue(deviceAccessibilityValue)
-        .accessibilityHint("Click to choose from available audio output devices")
+        .padding(.horizontal, 12)
+        // Fixed width (minWidth == maxWidth), not a range: the pill's width was tracking the
+        // device NAME, which slid the tab control's left edge on every device change. Fixed →
+        // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate
+        // (the text compresses before the spacer's 8pt minimum or the rate slot give way).
+        .frame(minWidth: 252, maxWidth: 252, minHeight: 32, alignment: .leading)
+        // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
+        // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
+        .glassPanel(.badge, in: Capsule())
     }
 
     private var deviceAccessibilityValue: String {
