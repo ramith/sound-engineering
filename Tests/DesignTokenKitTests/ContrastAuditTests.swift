@@ -368,26 +368,35 @@ struct LayoutArithmeticTests {
 // MARK: - D8 sampled-corner audit (own suite — the base suite is at the type-length limit)
 
 /// D8 (PR 7): the art-sampled worst case. Every sampled color is clamped into a per-slot
-/// channel-ceiling box with the slot's token alpha forced; sRGB compositing and relative
-/// luminance are monotone in source channels, so the box CORNER (ceiling-gray per slot,
-/// all slots at once) composites at least as bright as any admissible palette. Folding the
-/// grid with the corner and asserting the SAME pairs as R4-GLOW-01/02/04 (+ the lens and
-/// badge composites that sit over the field) therefore proves the ENTIRE sampled color
-/// space — no concrete album can break what this passes. Brand fallback needs no case
-/// here: the concrete-token R4-GLOW tests are its audit.
+/// channel-ceiling box with the slot's token alpha forced. PER SLOT, the box corner
+/// (ceiling-gray at token alpha) dominates every SAMPLED color — sRGB compositing and
+/// relative luminance are monotone in source channels — and the slot's other reachable
+/// state is the BRAND fallback, which the corner does NOT dominate (review MAJOR-2: brand
+/// teal's green/blue exceed the 0.62 teal ceiling; brand blue's blue channel exceeds its
+/// 0.95 corner). So the audit folds EVERY per-slot {corner, brand} combination — 2³ masks —
+/// which exactly covers the reachable palette union by per-slot monotonicity. Pairs match
+/// R4-GLOW-01/02/04 plus the lens/badge/panel composites that sit over the field (§7 R4
+/// table). The all-brand mask duplicates the concrete R4-GLOW tests — kept for the
+/// lattice's completeness argument.
 @Suite("Contrast audit — sampled glow corner (R4-GLOW-D8)")
 struct SampledCornerAuditTests {
-    @Test("R4-GLOW-D8: the clamp-corner palette clears every glow-field pair (dark)")
-    func sampledCornerOnGlowField() {
+    @Test("R4-GLOW-D8: every {corner, brand} fallback-lattice fold clears every pair (dark)")
+    func sampledCornerLatticeOnGlowField() {
         let corner = SampledGlow.auditCornerPalette
-        for geometry in ContrastAuditTests.glowGeometries {
-            for point in ContrastAuditTests.gridPoints() {
-                let backdrop = GlowFieldSpec.compositeBackdrop(
-                    unitX: point.x, unitY: point.y,
-                    containerWidth: geometry.width, containerHeight: geometry.height,
-                    appearance: .dark, overrideColors: corner
-                )
-                assertPairs(on: backdrop, point: point, geometry: geometry)
+        let slotCount = GlowFieldSpec.glows.count
+        for mask in 0 ..< (1 << slotCount) {
+            let palette: [RGBAColor?] = (0 ..< slotCount).map { slot in
+                (mask & (1 << slot)) == 0 ? corner[slot] : nil // nil ⇒ the brand token
+            }
+            for geometry in ContrastAuditTests.glowGeometries {
+                for point in ContrastAuditTests.gridPoints() {
+                    let backdrop = GlowFieldSpec.compositeBackdrop(
+                        unitX: point.x, unitY: point.y,
+                        containerWidth: geometry.width, containerHeight: geometry.height,
+                        appearance: .dark, overrideColors: palette
+                    )
+                    assertPairs(on: backdrop, point: point, geometry: geometry)
+                }
             }
         }
     }
@@ -431,6 +440,18 @@ struct SampledCornerAuditTests {
                               ("statusWarningText", Palette.statusWarningText)] {
             let ratio = ContrastAuditTests.ratio(label: label, on: badge, .dark)
             #expect(ratio >= textAA, "\(name) on badge⊕corner @(\(point.x),\(point.y)) = \(ratio)")
+        }
+        // R4-PANEL-01 pairs (review MAJOR-3): the inspector panel renders over the field on
+        // the RIGHT side — tertiary text's designed home (§3.3 placement rule), so ALL three
+        // label rungs are audited on panel⊕field there.
+        if point.x >= 0.5 {
+            let panel = Palette.panelFill.dark.over(backdrop)
+            for (name, label) in [("label", Palette.label),
+                                  ("labelSecondary", Palette.labelSecondary),
+                                  ("labelTertiary", Palette.labelTertiary)] {
+                let ratio = ContrastAuditTests.ratio(label: label, on: panel, .dark)
+                #expect(ratio >= textAA, "\(name) on panel⊕corner @(\(point.x),\(point.y)) = \(ratio)")
+            }
         }
     }
 }

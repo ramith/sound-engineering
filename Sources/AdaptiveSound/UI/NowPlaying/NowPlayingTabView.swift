@@ -46,11 +46,14 @@ struct NowPlayingTabView: View {
         }
     }
 
-    /// Cache identity for the current track (same file ⇒ same art ⇒ same palette).
+    /// Cache identity for the current track (same file ⇒ same art ⇒ same palette). Keyed by
+    /// the file's absolute URL (`AudioFile.id`) — NEVER `relativePath`, which the queue
+    /// adapter leaves empty for every track (review BLOCKER: one shared "" key served the
+    /// first album's palette to the whole session).
     private var currentTrackKey: String? {
         guard let index = viewModel.selectedTrackIndex,
               index < viewModel.playlist.count else { return nil }
-        return viewModel.playlist[index].relativePath
+        return viewModel.playlist[index].id.absoluteString
     }
 }
 
