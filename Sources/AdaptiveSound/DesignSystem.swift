@@ -228,7 +228,8 @@ enum DesignSystem {
         static let thumbSize: CGFloat = 14
         /// Re-exported from the Kit so SlotFitTests can assert "88:88" fits headlessly (§7.1).
         static let timeLabelWidth: CGFloat = .init(SlotWidths.footerTimeLabel)
-        static let signalSlotWidth: CGFloat = 120
+        /// Re-exported from the Kit (SLOT-03 asserts "Enhanced · 176.4 kHz" + dot fits).
+        static let signalSlotWidth: CGFloat = .init(SlotWidths.footerSignalSlot)
         static let regionGapInfoToControls: CGFloat = 20
         static let regionGap: CGFloat = 16 // controls→scrubber, scrubber→signal
         static let tooltipHalfWidth: CGFloat = 22 // half the drag tooltip width, for edge clamping

@@ -40,4 +40,16 @@ struct SlotFitTests {
         #expect(measured <= SlotWidths.chromeSampleRate - 2,
                 "'176.4 kHz' measures \(measured)pt against the \(SlotWidths.chromeSampleRate)pt slot")
     }
+
+    /// The footer signal slot renders `Circle(6pt) + HStack(spacing:5) + Text` (NowPlayingBar
+    /// R4); the widest legitimate text is the Enhanced path at a fractional hi-res rate.
+    /// The 120pt slot truncated "Enhanced · 48 kHz" to "48 k…" the moment Enhanced published
+    /// a real rate (founder screenshot, PR-6 round) — this asserts the full composition fits.
+    @Test("SLOT-03: the widest signal-path readout (+ status dot) fits the footer signal slot")
+    func footerSignalSlotFits() {
+        let dotAndGap = 6.0 + 5.0 // NowPlayingBar R4: 6pt status dot + HStack spacing 5
+        let measured = monoSmallWidth("Enhanced · 176.4 kHz") + dotAndGap
+        #expect(measured <= SlotWidths.footerSignalSlot - 2,
+                "dot + 'Enhanced · 176.4 kHz' measures \(measured)pt against the \(SlotWidths.footerSignalSlot)pt slot")
+    }
 }

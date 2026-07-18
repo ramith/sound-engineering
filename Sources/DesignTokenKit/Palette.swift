@@ -179,4 +179,9 @@ public enum SlotWidths {
     /// The chrome device-pill sample-rate readout (D5). Widest legitimate string is a
     /// high-res fractional rate — "176.4 kHz" (9 chars); SLOT-02 asserts it fits.
     public static let chromeSampleRate: Double = 66
+    /// The footer's condensed signal readout ("Enhanced · 176.4 kHz" + the 6pt status dot).
+    /// Was 120pt, which truncated even "Enhanced · 48 kHz" to "48 k…" the moment the Enhanced
+    /// path started publishing a real rate (founder screenshot, PR-6 round); SLOT-03 asserts
+    /// the widest legitimate content fits.
+    public static let footerSignalSlot: Double = 150
 }
