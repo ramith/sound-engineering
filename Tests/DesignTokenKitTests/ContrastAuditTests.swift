@@ -12,9 +12,9 @@ import Testing
 @Suite("Contrast audit — legacy surfaces (R4)")
 struct ContrastAuditTests {
     /// AA threshold for text (WCAG 1.4.3).
-    private static let textAA = 4.5
+    static let textAA = 4.5
     /// Non-text contrast threshold (WCAG 1.4.11) — meter fills, indicator bars.
-    private static let nonTextAA = 3.0
+    static let nonTextAA = 3.0
 
     /// The surfaces labels sit on today: the window itself, and card/panel composited over
     /// the window (they are translucent in dark mode — compositing IS the audit's point).
@@ -29,8 +29,8 @@ struct ContrastAuditTests {
 
     /// Effective text color = the (translucent) label composited onto its surface; the
     /// ratio is then between two opaque colors, per WCAG method.
-    private static func ratio(label: AppearancePair, on surface: RGBAColor,
-                              _ appearance: TokenAppearance) -> Double {
+    static func ratio(label: AppearancePair, on surface: RGBAColor,
+                      _ appearance: TokenAppearance) -> Double {
         let text = label.value(for: appearance).over(surface)
         return RGBAColor.contrastRatio(text, surface)
     }
@@ -113,13 +113,13 @@ struct ContrastAuditTests {
     // Full-alpha teal × tertiary measures 3.98:1 — the number that forced the rule.
 
     /// Tab geometries to sample: (reference 1120×596, min-window 880×516 content region).
-    private static let glowGeometries: [(width: Double, height: Double)] = [(1120, 596), (880, 516)]
+    static let glowGeometries: [(width: Double, height: Double)] = [(1120, 596), (880, 516)]
 
     /// Grid resolution — fine enough that a core (~250pt across) spans many samples.
     private static let gridColumns = 24
     private static let gridRows = 16
 
-    private static func gridPoints() -> [(x: Double, y: Double)] {
+    static func gridPoints() -> [(x: Double, y: Double)] {
         (0 ... gridRows).flatMap { row in
             (0 ... gridColumns).map { column in
                 (Double(column) / Double(gridColumns), Double(row) / Double(gridRows))
@@ -195,6 +195,10 @@ struct ContrastAuditTests {
     // R4-GLOW-05 (card⊕glow, one pinned tertiary defect) was RETIRED in PR 5: the queue
     // pane's card fill is gone — rows sit directly on the glow field, which R4-GLOW-02
     // audits. The pin resolved by construction, not by waiver.
+
+    // R4-GLOW-D8 (the sampled-palette corner audit) lives in its OWN suite at the bottom of
+    // this file — the base suite sits at the type-body-length limit; the D8 suite shares
+    // the fileprivate grid/ratio helpers so both audit the same geometry.
 
     // MARK: Lens composites (PR 3 — §7 R4 pair 2)
 
@@ -358,5 +362,75 @@ struct LayoutArithmeticTests {
         let rowHeight = 36.0 // SongsList.rowHeight-class row
         #expect(queueRegion >= minVisibleRows * rowHeight,
                 "queue region \(queueRegion)pt < \(minVisibleRows) rows at max type")
+    }
+}
+
+// MARK: - D8 sampled-corner audit (own suite — the base suite is at the type-length limit)
+
+/// D8 (PR 7): the art-sampled worst case. Every sampled color is clamped into a per-slot
+/// channel-ceiling box with the slot's token alpha forced; sRGB compositing and relative
+/// luminance are monotone in source channels, so the box CORNER (ceiling-gray per slot,
+/// all slots at once) composites at least as bright as any admissible palette. Folding the
+/// grid with the corner and asserting the SAME pairs as R4-GLOW-01/02/04 (+ the lens and
+/// badge composites that sit over the field) therefore proves the ENTIRE sampled color
+/// space — no concrete album can break what this passes. Brand fallback needs no case
+/// here: the concrete-token R4-GLOW tests are its audit.
+@Suite("Contrast audit — sampled glow corner (R4-GLOW-D8)")
+struct SampledCornerAuditTests {
+    @Test("R4-GLOW-D8: the clamp-corner palette clears every glow-field pair (dark)")
+    func sampledCornerOnGlowField() {
+        let corner = SampledGlow.auditCornerPalette
+        for geometry in ContrastAuditTests.glowGeometries {
+            for point in ContrastAuditTests.gridPoints() {
+                let backdrop = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark, overrideColors: corner
+                )
+                assertPairs(on: backdrop, point: point, geometry: geometry)
+            }
+        }
+    }
+
+    private func assertPairs(on backdrop: RGBAColor, point: (x: Double, y: Double),
+                             geometry: (width: Double, height: Double)) {
+        let textAA = ContrastAuditTests.textAA
+        // R4-GLOW-01 pairs: label + secondary everywhere.
+        for (name, label) in [("label", Palette.label),
+                              ("labelSecondary", Palette.labelSecondary)] {
+            let ratio = ContrastAuditTests.ratio(label: label, on: backdrop, .dark)
+            #expect(ratio >= textAA, "\(name) @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
+        }
+        // R4-GLOW-04 pair: tertiary outside the teal core (same placement rule).
+        let tealT = GlowFieldSpec.tealDistance(unitX: point.x, unitY: point.y,
+                                               containerWidth: geometry.width,
+                                               containerHeight: geometry.height)
+        if tealT > GlowFieldSpec.falloffMidStop {
+            let ratio = ContrastAuditTests.ratio(label: Palette.labelTertiary, on: backdrop, .dark)
+            #expect(ratio >= textAA,
+                    "labelTertiary @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
+        }
+        // R4-GLOW-02 pairs: row tints in the queue region.
+        if point.x >= 0.5 {
+            for (name, tint) in [("rowNowPlaying", Palette.rowNowPlaying),
+                                 ("rowSelected", Palette.rowSelected)] {
+                let tinted = tint.dark.over(backdrop)
+                let ratio = ContrastAuditTests.ratio(label: Palette.label, on: tinted, .dark)
+                #expect(ratio >= textAA, "label on \(name) @(\(point.x),\(point.y)) = \(ratio)")
+            }
+        }
+        // Lens + badge fills sit over the field: their text pairs at the corner too.
+        let lens = Palette.lensFill.dark.over(backdrop)
+        for (name, label) in [("label", Palette.label),
+                              ("labelSecondary", Palette.labelSecondary)] {
+            let ratio = ContrastAuditTests.ratio(label: label, on: lens, .dark)
+            #expect(ratio >= textAA, "\(name) on lens⊕corner @(\(point.x),\(point.y)) = \(ratio)")
+        }
+        let badge = Palette.badgeFill.dark.over(backdrop)
+        for (name, label) in [("label", Palette.label),
+                              ("statusWarningText", Palette.statusWarningText)] {
+            let ratio = ContrastAuditTests.ratio(label: label, on: badge, .dark)
+            #expect(ratio >= textAA, "\(name) on badge⊕corner @(\(point.x),\(point.y)) = \(ratio)")
+        }
     }
 }

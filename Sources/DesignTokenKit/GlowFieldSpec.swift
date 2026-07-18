@@ -73,14 +73,18 @@ public enum GlowFieldSpec {
 
     /// The composite glow color at a unit point in a container of the given size:
     /// every glow's falloff-attenuated color folded over the window base, in render order.
-    /// This is the function the R4 geometric audit samples.
+    /// This is the function the R4 geometric audit samples. `overrideColors` (D8, PR 7) is
+    /// the per-slot sampled-palette override — a `nil` slot keeps the brand token; entries
+    /// carry their OWN alpha (the clamp forces the slot's token alpha). The render side and
+    /// the audit fold pass the same overrides, so tuning either re-verifies the other.
     public static func compositeBackdrop(unitX: Double, unitY: Double,
                                          containerWidth: Double, containerHeight: Double,
-                                         appearance: TokenAppearance) -> RGBAColor {
+                                         appearance: TokenAppearance,
+                                         overrideColors: [RGBAColor?]? = nil) -> RGBAColor {
         var backdrop = Palette.window.value(for: appearance)
         let pointX = unitX * containerWidth
         let pointY = unitY * containerHeight
-        for glow in glows {
+        for (slot, glow) in glows.enumerated() {
             let halfWidth = glow.unitWidth * containerWidth / 2
             let halfHeight = glow.unitHeight * containerHeight / 2
             let deltaX = (pointX - glow.unitCenterX * containerWidth) / halfWidth
@@ -88,7 +92,7 @@ public enum GlowFieldSpec {
             let t = (deltaX * deltaX + deltaY * deltaY).squareRoot()
             let fraction = falloffFraction(at: t)
             guard fraction > 0 else { continue }
-            let color = glow.color.value(for: appearance)
+            let color = overrideColors?[slot] ?? glow.color.value(for: appearance)
             backdrop = color.opacity(color.alpha * fraction).over(backdrop)
         }
         return backdrop

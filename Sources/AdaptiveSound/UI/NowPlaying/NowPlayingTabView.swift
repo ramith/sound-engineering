@@ -13,6 +13,11 @@ import SwiftUI
 /// its content inside its panel chrome. Near the 880×640 minimum the inspector is EXPECTED
 /// to scroll — that's the design, not a defect.
 struct NowPlayingTabView: View {
+    @Environment(AudioViewModel.self) private var viewModel
+    @Environment(NowPlayingController.self) private var nowPlaying
+    /// D8 (PR 7): the sampler owns the per-track clamped palette the field renders.
+    @State private var glowSampler = ArtworkGlowSampler()
+
     var body: some View {
         VStack(spacing: 0) {
             HeroRow()
@@ -30,8 +35,22 @@ struct NowPlayingTabView: View {
             .padding(.bottom, CGFloat(NowPlayingLayout.contentInset))
         }
         // The ambient glow field (PR 2): window base + the three 8a glows behind the whole
-        // tab. Other tabs keep the plain base until the S10.8 sweep (D1).
-        .background { GlowField() }
+        // tab — art-tinted per D8 (PR 7). Other tabs keep the plain base until S10.8 (D1).
+        .background { GlowField(sampledPalette: glowSampler.palette) }
+        // D8: re-sample when the artwork resolves. `currentArtwork` is token-guarded — it
+        // reads nil during the resolve gap right after a track change, which resets the
+        // field to brand until the new art lands (the designed fallback, §3.3). `initial:
+        // true` covers mounting the tab with a track already playing (cache makes it cheap).
+        .onChange(of: nowPlaying.currentArtwork, initial: true) { _, artwork in
+            glowSampler.update(artwork: artwork, trackKey: currentTrackKey)
+        }
+    }
+
+    /// Cache identity for the current track (same file ⇒ same art ⇒ same palette).
+    private var currentTrackKey: String? {
+        guard let index = viewModel.selectedTrackIndex,
+              index < viewModel.playlist.count else { return nil }
+        return viewModel.playlist[index].relativePath
     }
 }
 

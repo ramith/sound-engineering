@@ -14,6 +14,14 @@ import SwiftUI
 /// static, dark-appearance-only, and suppressed under Reduce Transparency / Increase
 /// Contrast — all via the pure `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
+    /// D8 (PR 7): per-slot sampled-palette overrides — a nil slot (or nil array) keeps the
+    /// brand token. Every entry is CLAMPED by the Kit (`SampledGlow`), so whatever arrives
+    /// here is audit-admissible by construction; the render fold and the R4-GLOW-D8 audit
+    /// fold share the override convention.
+    var sampledPalette: [RGBAColor?]?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         // The window base always paints (AppShell's background is the same token; painting it
         // here too keeps the field self-contained wherever it's mounted).
@@ -22,7 +30,9 @@ struct GlowField: View {
                 GlowFieldGate {
                     GeometryReader { geo in
                         ForEach(0 ..< GlowFieldSpec.glows.count, id: \.self) { index in
-                            GlowEllipse(glow: GlowFieldSpec.glows[index], container: geo.size)
+                            GlowEllipse(glow: GlowFieldSpec.glows[index],
+                                        override: overrideColor(at: index),
+                                        container: geo.size)
                                 .position(
                                     x: geo.size.width * GlowFieldSpec.glows[index].unitCenterX,
                                     y: geo.size.height * GlowFieldSpec.glows[index].unitCenterY
@@ -33,11 +43,20 @@ struct GlowField: View {
                     // bands): fade the field out over the top/bottom edge runs so the flat
                     // chrome/footer never meet a lit pixel across a 0.5pt hairline.
                     .mask(seamFeatherMask)
+                    // D8 recolor on track change is a DISCRETE restyle: one crossfade,
+                    // gated on Reduce Motion (→ a cut) — never a continuous animation (§3.3).
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.6),
+                               value: sampledPalette)
                 }
             }
             .clipped() // ellipses deliberately bleed past the edges; never paint outside
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+
+    private func overrideColor(at index: Int) -> RGBAColor? {
+        guard let sampledPalette, index < sampledPalette.count else { return nil }
+        return sampledPalette[index]
     }
 
     private var seamFeatherMask: some View {
@@ -61,6 +80,9 @@ struct GlowField: View {
 
 private struct GlowEllipse: View {
     let glow: GlowFieldSpec.Glow
+    /// D8: the clamped sampled color for this slot (carries its own token alpha), or nil
+    /// for the brand token pair.
+    let override: RGBAColor?
     let container: CGSize
 
     private var width: CGFloat {
@@ -84,7 +106,7 @@ private struct GlowEllipse: View {
     /// The shared exact-linear profile, expressed as gradient stops: peak →
     /// `falloffFraction(midStop)` at the mid stop → clear at the edge.
     private var radialFalloff: RadialGradient {
-        let color = DesignSystem.Color.from(glow.color)
+        let color = override.map { SwiftUI.Color(token: $0) } ?? DesignSystem.Color.from(glow.color)
         let midStop = GlowFieldSpec.falloffMidStop
         return RadialGradient(
             gradient: Gradient(stops: [
