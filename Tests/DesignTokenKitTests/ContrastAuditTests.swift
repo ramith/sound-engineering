@@ -96,6 +96,26 @@ struct ContrastAuditTests {
         }
     }
 
+    /// Design §7 R4 pair 4 — owed since PR 6, break-it caught the gap: the chrome device
+    /// pill is a `.badge` fill over the WINDOW (the chrome band keeps the plain base, D4);
+    /// its name is `label`, its rate readout `labelSecondary`. Both appearances, plus the
+    /// RT/IC opaque composite the resolver serves.
+    @Test("R4-CONTROL-01: device-pill text clears AA on the badge fill over the chrome band")
+    func devicePillText() {
+        for appearance in TokenAppearance.allCases {
+            let window = Palette.window.value(for: appearance)
+            let translucent = Palette.badgeFill.value(for: appearance).over(window)
+            let opaque = Palette.badgeFill.value(for: appearance, increasedContrast: true).over(window)
+            for (name, label) in [("label", Palette.label),
+                                  ("labelSecondary", Palette.labelSecondary)] {
+                for surface in [translucent, opaque] {
+                    let ratio = Self.ratio(label: label, on: surface, appearance)
+                    #expect(ratio >= Self.textAA, "\(name) on pill (\(appearance)) = \(ratio)")
+                }
+            }
+        }
+    }
+
     // MARK: Glow-field composites (PR 2 — §7 R4 pairs 1 + 6)
 
     // GEOMETRIC MODEL (v2, per the PR-2 design review "Option B"): the audit SAMPLES the
@@ -172,10 +192,15 @@ struct ContrastAuditTests {
 
     /// Pair 6: queue-row tints over the glow field. The queue occupies the RIGHT region
     /// (today's 50/50 pane; post-PR-5 queue-flex) — never the top-left teal core.
+    /// Domain corrected at the break-it round: the original `x >= 0.5` guard modeled the
+    /// pre-PR-5 50/50 split, but the restructure moved the queue to the LEFT flex region —
+    /// where the teal core reaches — and jump-to-now-playing can center a tinted row
+    /// anywhere in it. Rows are audited at EVERY grid point (a superset of reachable row
+    /// positions — over-auditing is free, under-auditing was the hole).
     @Test("R4-GLOW-02: label clears AA on row tints over the queue region's glow field (dark)")
     func labelsOnRowTintsOverGlow() {
         for geometry in Self.glowGeometries {
-            for point in Self.gridPoints() where point.x >= 0.5 {
+            for point in Self.gridPoints() {
                 let backdrop = GlowFieldSpec.compositeBackdrop(
                     unitX: point.x, unitY: point.y,
                     containerWidth: geometry.width, containerHeight: geometry.height,
@@ -419,14 +444,13 @@ struct SampledCornerAuditTests {
             #expect(ratio >= textAA,
                     "labelTertiary @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
         }
-        // R4-GLOW-02 pairs: row tints in the queue region.
-        if point.x >= 0.5 {
-            for (name, tint) in [("rowNowPlaying", Palette.rowNowPlaying),
-                                 ("rowSelected", Palette.rowSelected)] {
-                let tinted = tint.dark.over(backdrop)
-                let ratio = ContrastAuditTests.ratio(label: Palette.label, on: tinted, .dark)
-                #expect(ratio >= textAA, "label on \(name) @(\(point.x),\(point.y)) = \(ratio)")
-            }
+        // R4-GLOW-02 pairs: row tints — EVERY point (post-PR-5 the queue is the LEFT flex
+        // region, reaching the teal core; the old x >= 0.5 guard was the audit's stale hole).
+        for (name, tint) in [("rowNowPlaying", Palette.rowNowPlaying),
+                             ("rowSelected", Palette.rowSelected)] {
+            let tinted = tint.dark.over(backdrop)
+            let ratio = ContrastAuditTests.ratio(label: Palette.label, on: tinted, .dark)
+            #expect(ratio >= textAA, "label on \(name) @(\(point.x),\(point.y)) = \(ratio)")
         }
         // Lens + badge fills sit over the field: their text pairs at the corner too.
         let lens = Palette.lensFill.dark.over(backdrop)
@@ -443,7 +467,12 @@ struct SampledCornerAuditTests {
         }
         // R4-PANEL-01 pairs (review MAJOR-3): the inspector panel renders over the field on
         // the RIGHT side — tertiary text's designed home (§3.3 placement rule), so ALL three
-        // label rungs are audited on panel⊕field there.
+        // label rungs are audited on panel⊕field there. The bottom BLEED stratum is NOT a
+        // text surface: folding it measured tertiary at 4.18 (break-it catch), so the
+        // constraint is ENCODED instead of diluted — `InspectorColumn`'s bottom content
+        // inset IS `GlassDecor.bleedHeight` (same token, cannot drift), meaning text never
+        // RESTS on the bleed run; transient scroll crossings are accepted (the seam-feather
+        // class).
         if point.x >= 0.5 {
             let panel = Palette.panelFill.dark.over(backdrop)
             for (name, label) in [("label", Palette.label),

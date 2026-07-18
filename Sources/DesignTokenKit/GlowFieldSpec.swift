@@ -67,8 +67,9 @@ public enum GlowFieldSpec {
 
     /// Seam feather (points): the glow fades to nothing over this run at the top/bottom
     /// edges so the flat chrome/footer bands don't meet a lit field across a 0.5pt hairline
-    /// (PR-2 review MAJOR 6: up to ΔRGB +39 otherwise). STOPGAP — removed in PR 6 when the
-    /// bands go glass and the field migrates to a shell-level mount.
+    /// (PR-2 review MAJOR 6: up to ΔRGB +39 otherwise). PERMANENT for this sprint: PR 6
+    /// deliberately kept the band SURFACES quiet (D4), so the "goes away when the bands go
+    /// glass" plan did not happen — revisit only with a shell-glass wave (post-R1).
     public static let seamFeather: Double = 24
 
     /// The composite glow color at a unit point in a container of the given size:

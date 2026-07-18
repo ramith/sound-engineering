@@ -110,11 +110,20 @@ rules:
       styles like .secondary are vibrancy styles, not colors, and are also fine.)
     paths:
       include: ['Sources/AdaptiveSound']
-      exclude: ['DesignSystem.swift', 'DesignSystemGlass.swift', 'Color+Brand.swift', 'SpectrumColorPalette.swift']
+      # PATH-ANCHORED (break-it hardening): bare basenames matched ANY file with that name
+      # anywhere under the include — a new UI/Foo/DesignSystem.swift was silently exempt.
+      exclude:
+        - 'Sources/AdaptiveSound/DesignSystem.swift'
+        - 'Sources/AdaptiveSound/DesignSystemGlass.swift'
+        - 'Sources/AdaptiveSound/Color+Brand.swift'
+        - 'Sources/AdaptiveSound/UI/Spectrum/SpectrumColorPalette.swift'
     pattern-either:
-      - pattern-regex: '\b(Color|NSColor)\(\s*(\.sRGB\s*,\s*)?(srgbRed|calibratedRed|deviceRed|red|white|hue)\s*:|#colorLiteral|\bColor\(\s*named:|\bColor\(\s*"'
-      - pattern-regex: '\.(foregroundStyle|foregroundColor|fill|tint|stroke|strokeBorder|background)\(\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
+      # Colorspace prefix generalized (break-it hardening): `Color(.displayP3, red:)` evaded
+      # the .sRGB-only group — and P3 is exactly what the R4 audit cannot model.
+      - pattern-regex: '\b(Color|NSColor)\(\s*(\.[A-Za-z0-9]+\s*,\s*)?(srgbRed|calibratedRed|deviceRed|red|white|hue)\s*:|#colorLiteral|\bColor\(\s*named:|\bColor\(\s*"'
+      - pattern-regex: '\.(foregroundStyle|foregroundColor|fill|tint|stroke|strokeBorder|background|overlay|border)\(\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
       - pattern-regex: '\.shadow\(\s*color:\s*(SwiftUI\.Color\.|Color\.|\.)(red|black|white|blue|green|orange|yellow|pink|purple|teal|mint|cyan|indigo|brown|gray)\b'
+      - pattern-regex: 'NSColor\.system(Red|Blue|Green|Orange|Yellow|Pink|Purple|Teal|Mint|Cyan|Indigo|Brown|Gray)\b'
 
   - id: ui-no-appearance-branching
     languages: [swift]

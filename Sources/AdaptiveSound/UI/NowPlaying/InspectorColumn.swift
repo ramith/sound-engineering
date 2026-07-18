@@ -21,7 +21,14 @@ struct InspectorColumn: View {
                 LoudnessMetersView()
                 HeadphonesSectionView()
             }
-            .padding(14)
+            .padding([.horizontal, .top], 14)
+            // Bottom inset == the bleed run (break-it R4 catch): the dark-only bottom light
+            // bleed brightens the panel fill enough that tertiary text RESTING on it fails
+            // AA (4.18 measured). Reading the same token as the bleed's height means text
+            // can never rest on the bleed and the two values cannot drift apart. (Rows still
+            // CROSS the run transiently while scrolling — accepted, same class as text
+            // passing under the seam feather.)
+            .padding(.bottom, CGFloat(GlassDecor.bleedHeight))
         }
         // Clip the SCROLLING content to the panel's shape: `.glassPanel` paints fill under
         // and strokes over but never clips, so rows crossing the top/bottom edge would
