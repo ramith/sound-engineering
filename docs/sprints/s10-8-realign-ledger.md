@@ -26,8 +26,9 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
    the S10.7 Kit).
 2. **onAccent** flipped white → #0C1413 app-wide (logo/play/tab glyphs) — realigned
    identity AND retires the flagged 2.5:1. Play-overlay glyphs in Library grids changed too.
-3. **Device pill width stays 288** (guide: ~240) — the founder-fixed truncation width from
-   the deviations audit is newer than the mock's estimate.
+3. **Device pill width 302, not the guide's ~240** — the founder-fixed no-truncation
+   posture from the deviations audit is newer than the mock's estimate (288 + 14pt for the
+   PR-B chevron, founder round 1).
 4. **Jump-to-now-playing chip kept** as a 4th header icon (mock shows 3) — function
    preservation; and the queue filter pill shows in Up Next only (a Recently-Played filter
    would be new function).
@@ -89,3 +90,14 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
 10. NEW `Loudness_MeterBridge_TruePeak`: the C-ABI bridge end-to-end (multi-buffer
     history continuity, MONO aliasing, dBTP mapping) — the harness now compiles
     LoudnessMeterBridge.cpp; 122 passed / 0 failed (1 pre-existing PENDING).
+
+## Founder round 1 (2026-07-19, live screenshot)
+
+- **Tab strip → RIGHT edge** of the chrome (mock `png/00`: logo + pill left, spacer, tabs
+  right; the implementation had kept the old left-packed order) — FIXED.
+- **Device pill re-truncated** ("MacBook Pro Spe…"): the PR-B chevron ate ~14pt of the
+  name area inside the fixed 288pt pill — the same squeeze class as the PR-6 rate slot.
+  Width 288 → 302 absorbs it — FIXED.
+- Otherwise the screenshot matches the target (hero chips incl. the live "-- kHz" empty
+  slot, one-row queue header, playing-row card + still bars, floating inspector with
+  meters at "—" while idle, styled bands, glossy play). Remaining cells still open.
