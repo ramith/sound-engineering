@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; background: #0c0d0f; }
+  a { color: #6fe0d0; } a:hover { color: #8af0e0; }
+  @keyframes asBar { 0%,100% { transform: scaleY(.34); } 50% { transform: scaleY(1); } }
+  @keyframes asDot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .q-row .drag { opacity: 0; transition: opacity .15s; }
+  .q-row:hover .drag { opacity: .45; }
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 34px 26px; overflow: auto; font-family: -apple-system, system-ui, 'SF Pro Text', sans-serif; -webkit-font-smoothing: antialiased;">
+<div data-shot="window" data-screen-label="Now Playing — Realigned" style="width: 1440px; flex: none; height: 920px; display: flex; flex-direction: column; background: #131418; border-radius: 14px; overflow: hidden; position: relative; box-shadow: 0 40px 90px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.07);">
+  <div style="position: absolute; top: -180px; left: 24%; width: 900px; height: 560px; background: radial-gradient(ellipse at center, rgba(41,182,164,.14), rgba(41,182,164,0) 65%); pointer-events: none;"></div>
+
+  <div style="flex: none; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 16px; position: relative;">
+    <span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span>
+    <span style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></span>
+    <span style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></span>
+    <span style="margin-left: 10px; font-size: 13px; font-weight: 700; color: rgba(255,255,255,.85);">Adaptive Sound</span>
+  </div>
+
+  <!-- PR-G: glass toolbar · PR-B: pill tab strip -->
+  <div data-shot="toolbar" style="flex: none; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 18px; position: relative; background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 -1px 0 rgba(0,0,0,.35);">
+    <div style="width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(160deg,#3fd0ba,#14897a); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 8px rgba(31,168,147,.35);">
+      <svg width="15" height="15" viewBox="0 0 15 15"><g stroke="#08221e" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="5.5" x2="3" y2="9.5"></line><line x1="6" y1="3.5" x2="6" y2="11.5"></line><line x1="9" y1="5" x2="9" y2="10"></line><line x1="12" y1="6.5" x2="12" y2="8.5"></line></g></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 1px 6px rgba(0,0,0,.3);">
+      <svg width="13" height="13" viewBox="0 0 13 13"><path d="M2 4.5v4h2.5L8 11V2L4.5 4.5H2z" fill="rgba(255,255,255,.75)"></path><path d="M9.5 4.5a3 3 0 0 1 0 4" stroke="rgba(255,255,255,.55)" stroke-width="1.2" fill="none" stroke-linecap="round"></path></svg>
+      <span style="font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.85);">MacBook Pro Speakers</span>
+      <svg width="9" height="9" viewBox="0 0 9 9"><path d="M2 3.5l2.5 2.5L7 3.5" stroke="rgba(255,255,255,.5)" stroke-width="1.4" fill="none" stroke-linecap="round"></path></svg>
+      <span style="font-size: 11px; color: rgba(255,255,255,.45); font-family: ui-monospace,'SF Mono',Menlo,monospace;">48 kHz</span>
+    </div>
+    <div style="margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 18px; background: rgba(0,0,0,.38); box-shadow: inset 0 1px 2px rgba(0,0,0,.45), inset 0 -1px 0 rgba(255,255,255,.04);">
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: 700; color: #0c1413; border: none; background: rgba(41,182,164,.94); box-shadow: 0 1px 8px rgba(31,168,147,.5), inset 0 1px 0 rgba(255,255,255,.3); cursor: pointer;">Now Playing</button>
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.6); border: none; background: transparent; cursor: pointer;" style-hover="color: rgba(255,255,255,.9); background: rgba(255,255,255,.06)">Library</button>
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.6); border: none; background: transparent; cursor: pointer;" style-hover="color: rgba(255,255,255,.9); background: rgba(255,255,255,.06)">EQ</button>
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.6); border: none; background: transparent; cursor: pointer;" style-hover="color: rgba(255,255,255,.9); background: rgba(255,255,255,.06)">Monitoring</button>
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.6); border: none; background: transparent; cursor: pointer;" style-hover="color: rgba(255,255,255,.9); background: rgba(255,255,255,.06)">Settings</button>
+    </div>
+  </div>
+
+  <!-- hero: title left, analyzer right (as built) -->
+  <div style="flex: none; display: flex; align-items: flex-end; gap: 28px; padding: 26px 26px 20px; position: relative;">
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div style="font-size: 38px; font-weight: 800; letter-spacing: -.02em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Yeh Jeevan Hai Is Jeevan Ka</div>
+        <div style="margin-top: 6px; font-size: 15px; font-weight: 500; color: rgba(255,255,255,.68);">Kishore Kumar</div>
+      </div>
+      <!-- PR-F: two badges -->
+      <div data-shot="badges" style="display: flex; gap: 8px;">
+        <span style="display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 5px 11px; border-radius: 9px; color: #6fe0d0; background: rgba(41,182,164,.16); box-shadow: inset 0 0 0 1px rgba(41,182,164,.28);"><span style="{{ dotStyle }}"></span>ENHANCED · 20%</span>
+        <span style="display: flex; align-items: center; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 5px 11px; border-radius: 9px; color: rgba(255,255,255,.6); background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); font-family: ui-monospace,'SF Mono',Menlo,monospace;">MP3 · 48 kHz</span>
+      </div>
+    </div>
+    <div style="width: 620px; flex: none; position: relative; height: 190px; border-radius: 16px; background: rgba(0,0,0,.34); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), inset 0 0 0 1px rgba(255,255,255,.05); overflow: hidden;">
+      <div style="position: absolute; inset: 12px 14px 24px; background: repeating-linear-gradient(180deg, rgba(255,255,255,.05) 0 1px, transparent 1px 38px);"></div>
+      <span style="position: absolute; top: 8px; right: 14px; font-size: 9.5px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace;">0 dB</span>
+      <div style="position: absolute; top: 14px; left: 14px; right: 14px; bottom: 24px; display: flex; align-items: flex-end; gap: 2px;">
+        <sc-for list="{{ bars }}" as="b" hint-placeholder-count="24">
+          <div style="flex: 1 1 0; min-width: 1px; border-radius: 1.5px 1.5px 0 0; transform-origin: bottom; height: {{ b.h }}%; background: {{ b.color }}; animation: {{ b.anim }};"></div>
+        </sc-for>
+      </div>
+      <div style="position: absolute; bottom: 6px; left: 14px; right: 14px; display: flex; justify-content: space-between; font-size: 9px; color: rgba(255,255,255,.35); font-family: ui-monospace,'SF Mono',Menlo,monospace;">
+        <span>20 Hz</span><span>200 Hz</span><span>2 kHz</span><span>20 kHz</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- lower stage -->
+  <div style="flex: 1; min-height: 0; display: flex; gap: 22px; padding: 0 26px 18px; position: relative;">
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+      <!-- PR-C: single compact queue header -->
+      <div data-shot="queuehead" style="flex: none; display: flex; align-items: center; gap: 12px; padding: 4px 4px 12px;">
+        <span style="font-size: 13px; font-weight: 800; letter-spacing: .08em; color: rgba(255,255,255,.92);">QUEUE</span>
+        <span style="font-size: 11.5px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace;">6 tracks</span>
+        <div style="display: flex; gap: 4px; margin-left: 6px;">
+          <button title="Clear queue" style="width: 28px; height: 28px; border-radius: 8px; border: none; background: rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: rgba(255,255,255,.1)"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M2.5 3.5h8M5 3.5V2.5h3v1M3.5 3.5l.6 7h4.8l.6-7" stroke="rgba(255,255,255,.6)" stroke-width="1.2" fill="none" stroke-linecap="round"></path></svg></button>
+          <button title="Shuffle" style="width: 28px; height: 28px; border-radius: 8px; border: none; background: rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: rgba(255,255,255,.1)"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M1.5 3.5h2l6 6h2m0 0-1.5-1.5M11.5 9.5 10 11M1.5 9.5h2l1.6-1.6M7.6 5.1 9.5 3.5h2m0 0L10 2m1.5 1.5L10 5" stroke="rgba(255,255,255,.6)" stroke-width="1.1" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+          <button title="Repeat" style="width: 28px; height: 28px; border-radius: 8px; border: none; background: rgba(41,182,164,.16); box-shadow: inset 0 0 0 1px rgba(41,182,164,.3); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M3 5a3.5 3.5 0 0 1 3.5-2h3m0 0L8 1.5M9.5 3 8 4.5M10 8a3.5 3.5 0 0 1-3.5 2h-3m0 0L5 11.5M3.5 10 5 8.5" stroke="#6fe0d0" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+        </div>
+        <div style="display: flex; gap: 2px; padding: 2px; border-radius: 13px; background: rgba(0,0,0,.35); box-shadow: inset 0 1px 2px rgba(0,0,0,.4); margin-left: 10px;">
+          <button style="height: 24px; padding: 0 12px; border-radius: 11px; font-size: 11.5px; font-weight: 700; color: rgba(255,255,255,.92); border: none; background: rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); cursor: pointer;">Up Next</button>
+          <button style="height: 24px; padding: 0 12px; border-radius: 11px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.55); border: none; background: transparent; cursor: pointer;" style-hover="color: rgba(255,255,255,.85)">Recent</button>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 7px; height: 28px; width: 190px; padding: 0 12px; border-radius: 14px; background: rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.08);">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="5" cy="5" r="3.4" stroke="rgba(255,255,255,.45)" stroke-width="1.3" fill="none"></circle><line x1="7.6" y1="7.6" x2="10.4" y2="10.4" stroke="rgba(255,255,255,.45)" stroke-width="1.3" stroke-linecap="round"></line></svg>
+          <span style="font-size: 12px; color: rgba(255,255,255,.4);">Filter queue</span>
+        </div>
+      </div>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 4px;">
+        <sc-for list="{{ tracks }}" as="tk" hint-placeholder-count="6">
+          <div class="q-row" style="display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 10px; cursor: pointer; background: {{ tk.bg }}; box-shadow: {{ tk.ring }};" style-hover="background: rgba(255,255,255,.05)">
+            <span class="drag" style="flex: none; width: 14px; color: rgba(255,255,255,.9); font-size: 12px; line-height: 1;">≡</span>
+            <span style="width: 22px; flex: none; display: flex; align-items: center; justify-content: flex-end;">
+              <sc-if value="{{ tk.playing }}" hint-placeholder-val="{{ false }}">
+                <span style="display: flex; align-items: flex-end; gap: 1.5px; height: 12px;">
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eqAnim1 }};"></span>
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eqAnim2 }};"></span>
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eqAnim3 }};"></span>
+                </span>
+              </sc-if>
+              <sc-if value="{{ tk.notPlaying }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 11.5px; color: rgba(255,255,255,.32); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ tk.n }}</span>
+              </sc-if>
+            </span>
+            <span style="flex: 1; min-width: 0; font-size: 13.5px; font-weight: {{ tk.weight }}; color: {{ tk.titleColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ tk.title }}</span>
+            <span style="flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; color: {{ tk.fmtColor }}; background: {{ tk.fmtBg }}; padding: 2px 6px; border-radius: 5px;">MP3</span>
+            <span style="flex: none; width: 42px; text-align: right; font-size: 11.5px; color: rgba(255,255,255,.45); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ tk.dur }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- PR-E: floating inspector, content-height, glow beneath -->
+    <div data-shot="inspector" style="width: 320px; flex: none; position: relative; align-self: flex-start;">
+      <div style="position: absolute; inset: 20px -10px -18px; background: radial-gradient(ellipse at 50% 20%, rgba(41,182,164,.22), rgba(41,182,164,0) 70%); filter: blur(18px); pointer-events: none;"></div>
+      <div style="position: relative; border-radius: 18px; background: rgba(30,32,37,.72); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px rgba(0,0,0,.6); padding: 18px 18px 20px; display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.55);">MASTER GAIN</span>
+            <span style="font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.9); font-family: ui-monospace,'SF Mono',Menlo,monospace;">+4.0 dB</span>
+          </div>
+          <div style="position: relative; height: 4px; border-radius: 2px; background: rgba(255,255,255,.13); margin-top: 12px;">
+            <div style="position: absolute; inset: 0 33% 0 0; border-radius: 2px; background: linear-gradient(90deg,#1fa893,#3fd0ba);"></div>
+            <div style="position: absolute; top: 50%; left: 67%; width: 15px; height: 15px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 5px rgba(0,0,0,.55);"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.55);">INTENSITY</span>
+            <span style="font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.9); font-family: ui-monospace,'SF Mono',Menlo,monospace;">20 %</span>
+          </div>
+          <div style="position: relative; height: 4px; border-radius: 2px; background: rgba(255,255,255,.13); margin-top: 12px;">
+            <div style="position: absolute; inset: 0 80% 0 0; border-radius: 2px; background: linear-gradient(90deg,#1fa893,#3fd0ba);"></div>
+            <div style="position: absolute; top: 50%; left: 20%; width: 15px; height: 15px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 5px rgba(0,0,0,.55);"></div>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 2px;">
+          <span style="font-size: 12.5px; color: rgba(255,255,255,.7);">Bypass</span>
+          <span style="font-size: 12px; font-weight: 600; color: rgba(255,255,255,.5);">Full Blend</span>
+        </div>
+        <div style="height: 1px; background: rgba(255,255,255,.07);"></div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.55);">LOUDNESS</span>
+          <sc-for list="{{ loudness }}" as="m" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 82px 1fr auto; align-items: center; gap: 10px;">
+              <span style="font-size: 12px; color: rgba(255,255,255,.65);">{{ m.label }}</span>
+              <span style="position: relative; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; display: block;">
+                <span style="position: absolute; top: 0; bottom: 0; left: 0; width: {{ m.pct }}%; border-radius: 2px; background: {{ m.meter }}; display: block;"></span>
+              </span>
+              <span style="font-size: 11.5px; font-weight: 600; color: {{ m.valColor }}; font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ m.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="height: 1px; background: rgba(255,255,255,.07);"></div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.55);">HEADPHONES</span>
+          <span style="font-size: 11.5px; color: rgba(255,255,255,.38);">Connect headphones to enable.</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; opacity: .5;">
+            <span style="font-size: 12.5px; color: rgba(255,255,255,.7);">Crossfeed</span>
+            <span style="width: 36px; height: 21px; border-radius: 11px; background: rgba(255,255,255,.14); position: relative; display: block;"><span style="position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,.8); display: block;"></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PR-G: glass transport bar -->
+  <div data-shot="transport" style="flex: none; height: 74px; display: flex; align-items: center; gap: 16px; padding: 0 20px; position: relative; background: linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 2px 12px rgba(0,0,0,.15);">
+    <div style="width: 46px; height: 46px; border-radius: 9px; background: linear-gradient(150deg,#2a3f56,#17222f); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center;">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path d="M12 3v8.2a2.6 2.6 0 1 1-1.4-2.3V5.2L7 6.2v6.5A2.6 2.6 0 1 1 5.6 10V4.6L12 3z" fill="rgba(255,255,255,.5)"></path></svg>
+    </div>
+    <div style="min-width: 0; width: 220px;">
+      <div style="font-size: 13.5px; font-weight: 700; color: rgba(255,255,255,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Yeh Jeevan Hai Is Jeevan Ka</div>
+      <div style="font-size: 11.5px; color: rgba(255,255,255,.55); margin-top: 2px;">Kishore Kumar</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <button style="width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: rgba(255,255,255,.08)"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M7.5 8 13 4.5v7L7.5 8zM6.5 4.5h-2v7h2v-7z" fill="rgba(255,255,255,.85)" transform="scale(-1,1) translate(-16,0)"></path></svg></button>
+      <button style="width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(160deg,#3fd0ba,#1fa893 60%,#14897a); border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 14px rgba(31,168,147,.45);" style-hover="filter: brightness(1.08)"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M4.5 3h2v9h-2zM8.5 3h2v9h-2z" fill="#08221e"></path></svg></button>
+      <button style="width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: rgba(255,255,255,.08)"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M7.5 8 13 4.5v7L7.5 8zM6.5 4.5h-2v7h2v-7z" fill="rgba(255,255,255,.85)"></path></svg></button>
+    </div>
+    <span style="font-size: 11.5px; color: rgba(255,255,255,.55); font-family: ui-monospace,'SF Mono',Menlo,monospace;">0:20</span>
+    <div style="position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); cursor: pointer;">
+      <div style="position: absolute; top: 0; bottom: 0; left: 0; width: 9%; border-radius: 2px; background: linear-gradient(90deg,#1fa893,#3fd0ba);"></div>
+      <div style="position: absolute; top: 50%; left: 9%; width: 13px; height: 13px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 5px rgba(0,0,0,.55);"></div>
+    </div>
+    <span style="font-size: 11.5px; color: rgba(255,255,255,.55); font-family: ui-monospace,'SF Mono',Menlo,monospace;">3:37</span>
+    <span style="display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.6);"><span style="{{ dotStyleSm }}"></span><span style="color: #6fe0d0;">Enhanced</span>· 48 kHz</span>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1500, &quot;height&quot;: 1000}, &quot;reduceMotion&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Motion&quot;}, &quot;peakHot&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Loudness&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const rm = this.props.reduceMotion ?? false;
+    const peakHot = this.props.peakHot ?? true;
+    const N = 72;
+    const bars = [];
+    for (let i = 0; i < N; i++) {
+      const x = i / (N - 1);
+      // musical-ish envelope: bass shelf + mid bump + presence bump, gentle HF rolloff
+      const env = 0.55 * Math.exp(-Math.pow((x - 0.08) / 0.18, 2)) + 0.85 * Math.exp(-Math.pow((x - 0.42) / 0.16, 2)) + 0.5 * Math.exp(-Math.pow((x - 0.78) / 0.14, 2));
+      const jitter = 0.82 + 0.18 * Math.sin(i * 12.9898) * Math.sin(i * 78.233);
+      const h = Math.max(6, Math.min(96, env * 100 * jitter + 8));
+      const hue = 172 - x * 88; // teal 172 -> lime ~84
+      const color = `linear-gradient(180deg, hsl(${hue} 72% 62%), hsl(${hue} 68% 44%))`;
+      const dur = (0.9 + ((i * 7) % 11) / 14).toFixed(2);
+      const delay = (-((i * 13) % 17) / 10).toFixed(2);
+      bars.push({ h: h.toFixed(1), color, anim: rm ? 'none' : `asBar ${dur}s ease-in-out ${delay}s infinite` });
+    }
+    const eq = (d, dur) => rm ? 'none' : `asBar ${dur}s ease-in-out ${d}s infinite`;
+    const teal = 'linear-gradient(90deg,#1fa893,#3fd0ba)';
+    const amber = 'linear-gradient(90deg,#3fd0ba 55%,#f0b429 92%,#f0b429)';
+    const data = [
+      { n: '1', title: 'Sunn Raha Hai', dur: '5:14' },
+      { n: '2', title: 'APT.', dur: '2:53' },
+      { n: '3', title: 'Take a Look Around', dur: '5:24' },
+      { n: '4', title: 'Careless Whisper', dur: '6:32' },
+      { n: '5', title: 'මනමාල කතා', dur: '4:22' },
+      { n: '6', title: 'Yeh Jeevan Hai Is Jeevan Ka', dur: '3:37', playing: true },
+    ];
+    const tracks = data.map(t => ({
+      ...t,
+      playing: !!t.playing,
+      notPlaying: !t.playing,
+      bg: t.playing ? 'rgba(41,182,164,.13)' : 'transparent',
+      ring: t.playing ? 'inset 0 0 0 1px rgba(41,182,164,.38)' : 'none',
+      titleColor: t.playing ? '#7ee8d8' : 'rgba(255,255,255,.82)',
+      weight: t.playing ? 650 : 450,
+      fmtColor: t.playing ? '#6fe0d0' : 'rgba(255,255,255,.45)',
+      fmtBg: t.playing ? 'rgba(41,182,164,.18)' : 'rgba(255,255,255,.06)',
+    }));
+    const loudness = [
+      { label: 'Integrated', value: '−15.9 LUFS', pct: 62, meter: teal, valColor: 'rgba(255,255,255,.85)' },
+      { label: 'Short-term', value: '−24.3 LUFS', pct: 41, meter: teal, valColor: 'rgba(255,255,255,.85)' },
+      peakHot
+        ? { label: 'True peak', value: '−0.8 dBTP', pct: 93, meter: amber, valColor: '#f0b429' }
+        : { label: 'True peak', value: '−3.2 dBTP', pct: 74, meter: teal, valColor: 'rgba(255,255,255,.85)' },
+    ];
+    const dotBase = 'display:inline-block;width:6px;height:6px;border-radius:50%;background:#3fd0ba;box-shadow:0 0 6px rgba(63,208,186,.8);';
+    const pulse = rm ? '' : 'animation:asDot 1.6s ease-in-out infinite;';
+    return {
+      bars, tracks, loudness,
+      eqAnim1: eq(-0.1, 0.8), eqAnim2: eq(-0.45, 1.05), eqAnim3: eq(-0.7, 0.9),
+      dotStyle: dotBase + pulse,
+      dotStyleSm: dotBase + pulse,
+    };
+  }
+}
+</script>
+</body>
+</html>

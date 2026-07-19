@@ -19,8 +19,17 @@ code 2026-07-19 (each ✗ below was re-checked in source, not assumed).
 
 ## B. REAL remaining deviations (the work), grouped into PRs
 
+> **TARGETS SUPERSEDED (2026-07-19):** the founder delivered a **Realigned Target** package —
+> [docs/design/now-playing-realigned/](../design/now-playing-realigned/README.md) (PNGs + live
+> HTML mock + REALIGN_GUIDE.md). It keeps THIS ladder (A–G, same scopes) but is now the visual
+> truth for every value: where the two disagree, the package wins. Deltas annotated per-PR
+> below, not excised. The package's literal `Color(hex:)`/`StyledGlassBar` code samples are
+> ADAPTED to the repo's token architecture (Palette pairs + R4 audit + `.glassPanel` roles) —
+> the samples predate the S10.7 Kit.
+
 Loop per PR unchanged: build + strict gate → SME review → founder screenshot cells → ledger.
-All new colors (#8AF0E0 active title, #FFB347 amber, capsule-tab gradient) enter as
+All new colors (#8AF0E0 → **#7EE8D8** active title, #FFB347 → **#F0B429** amber, #6FE0D0 teal
+text, #0C1413 on-teal, capsule-tab gradient) enter as
 **Palette tokens with light variants through the R4 audit** — never inline.
 
 - **PR-A — zero-risk batch (½ day):** device pill widened so common names don't truncate
@@ -38,6 +47,10 @@ All new colors (#8AF0E0 active title, #FFB347 amber, capsule-tab gradient) enter
   active title token (#8AF0E0 → Palette, audited); replace the ▶ glyph with the §3.4 3-bar
   mini equalizer driven by REAL `spectrumBars` low/mid/high (mandated: not a sine loop),
   playing+RM-gated. Also closes the ledger's "row-hover never implemented" §3.4 drop.
+  *(Realigned Target REVERSES the equalizer-source mandate: the package specifies the
+  deterministic sine `TimelineView` bars — durations 0.8/1.05/0.9 s, still at 0.34 scale when
+  paused/RM — NOT spectrum-driven. Values refined: fill 13% radius 10 ring 38%, title
+  #7EE8D8.)*
 - **PR-E — inspector float + meters:** panel hugs content height (stops stretching to the
   window; glow shows beneath), stays top-aligned with the queue header; loudness rows become
   label + 6pt gradient meter + right mono value; **peak row per decision 3**; gradient-fade
