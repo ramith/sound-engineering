@@ -104,8 +104,19 @@ public enum Palette {
 
     // MARK: Row tints (derived from accent — appearance-independent)
 
-    public static let rowNowPlaying = AppearancePair(both: accent.light.opacity(0.25))
+    /// S10.8 PR D (Realigned Target `png/04`): the heavy 25% band becomes a SUBTLE 13%
+    /// tinted card (radius-10 + ring at the call site); the teal `accentTitle` + mini
+    /// equalizer now carry the row's prominence instead of fill strength.
+    public static let rowNowPlaying = AppearancePair(both: accent.light.opacity(0.13))
     public static let rowSelected = AppearancePair(both: accent.light.opacity(0.12))
+
+    /// The playing row's TITLE teal (S10.8 PR D — realigned #7EE8D8; one step brighter than
+    /// `accentText` so the title reads above the row's chips). Light: the same deep-teal
+    /// text family as `accentText` (audited on the 13% tint, R4-ROW-01).
+    public static let accentTitle = AppearancePair(
+        light: RGBAColor(red: 11.0 / 255.0, green: 85.0 / 255.0, blue: 72.0 / 255.0),
+        dark: RGBAColor(red: 126.0 / 255.0, green: 232.0 / 255.0, blue: 216.0 / 255.0)
+    )
 
     // MARK: Icon-fill gradient stops (app-mark squircle / play button — appearance-independent)
 
@@ -204,6 +215,7 @@ public enum Palette {
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("controlHover", controlHover),
         ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
+        ("accentTitle", accentTitle),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
         ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),

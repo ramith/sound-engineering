@@ -52,7 +52,7 @@ struct TokenInvariantTests {
     @Test("TOK-04: derived accent tints stay derived from the accent")
     func rowTintsDeriveFromAccent() {
         let accent = Palette.accent.light
-        #expect(Palette.rowNowPlaying.light == accent.opacity(0.25))
+        #expect(Palette.rowNowPlaying.light == accent.opacity(0.13))
         #expect(Palette.rowSelected.light == accent.opacity(0.12))
         #expect(Palette.controlActiveFill.light == accent.opacity(0.16))
         for (name, pair) in [("rowNowPlaying", Palette.rowNowPlaying),

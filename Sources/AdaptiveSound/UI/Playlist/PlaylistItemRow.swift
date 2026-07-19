@@ -1,3 +1,4 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Playlist Item Row
@@ -6,7 +7,13 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
     let file: AudioFile
     let index: Int
     let isSelected: Bool
+    /// This row holds the CURRENT track (S10.8 PR D: the realigned tinted card persists
+    /// while paused — prominence no longer flips off with play state; only the equalizer
+    /// bars still).
     let isNowPlaying: Bool
+    /// Whether playback is actually running — drives the mini equalizer's animation gate
+    /// (`pulseIsActive`); the card treatment above ignores it.
+    var isPlaybackActive: Bool = false
     /// Width of the track-number column, sized by the caller to the widest number in the
     /// list so 3-/4-digit indices (track 100+) fit on one line instead of wrapping.
     var numberColumnWidth: CGFloat = 22
@@ -52,14 +59,14 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                     .help("Drag to reorder")
                     .accessibilityHidden(true) // the context-menu Move commands are the a11y path
             }
-            // Non-color now-playing cue (A-M3): the currently-playing row shows a ▶ glyph in place
-            // of its number, so "now playing" is not signalled by the row tint alone (colorblind /
-            // VoiceOver users get no cue from the background opacity otherwise).
+            // Non-color now-playing cue (A-M3), realigned (PR D): the current row shows the
+            // 3-bar mini equalizer in place of its number (animating only while playback
+            // runs and Reduce Motion is off — still bars remain the visible cue), so "now
+            // playing" is never signalled by the row tint alone.
             Group {
                 if isNowPlaying {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color.asAccent)
+                    MiniEqualizer(animating: pulseIsActive(isPlaying: isPlaybackActive,
+                                                           reduceMotion: reduceMotion))
                 } else {
                     Text(index + 1, format: .number.grouping(.never))
                         .font(DesignSystem.Font.monoSmall)
@@ -71,8 +78,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name)
-                    .font(DesignSystem.Font.body.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.asAccent : Color.asLabel)
+                    .font(DesignSystem.Font.body.weight(isSelected || isNowPlaying ? .semibold : .regular))
+                    .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentTitle
+                        : isSelected ? Color.asAccent : Color.asLabel)
                     .lineLimit(1)
 
                 Text(file.relativePath)
@@ -83,11 +91,11 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
 
             Spacer()
 
-            FormatBadgeView(format: file.format, isSelected: isSelected)
+            FormatBadgeView(format: file.format, isSelected: isSelected || isNowPlaying)
 
             Text(file.durationSeconds > 0 ? formatDuration(file.durationSeconds) : "--:--")
                 .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(Color.asLabelTertiary)
+                .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentText : Color.asLabelTertiary)
                 .frame(width: DesignSystem.QueueRow.durationWidth, alignment: .trailing)
         }
         // Self-styled row (padding + background) so it renders identically whether it sits in a
@@ -97,10 +105,20 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
         .padding(.vertical, DesignSystem.Spacing.xSmall)
         .padding(.horizontal, DesignSystem.Spacing.small)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(rowTint)
+        // Realigned card (PR D): the tint is a radius-10 card; the current row adds the
+        // subtle accent ring (13% fill + 38% ring replaces the old heavy 25% band).
+        .background(rowTint, in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container,
+                                                  style: .continuous))
+        .overlay {
+            if isNowPlaying {
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.container, style: .continuous)
+                    .strokeBorder(DesignSystem.Color.accent.opacity(0.38), lineWidth: 1)
+            }
+        }
         .overlay {
             if isDropTarget {
-                Rectangle().strokeBorder(DesignSystem.Color.accent, lineWidth: 2)
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.container, style: .continuous)
+                    .strokeBorder(DesignSystem.Color.accent, lineWidth: 2)
             }
         }
         .contentShape(Rectangle())
@@ -113,7 +131,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
         // as a value + trait rather than color alone. `.isButton` is added by the enclosing list.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(isNowPlaying ? "Now playing" : "")
+        .accessibilityValue(isNowPlaying ? (isPlaybackActive ? "Now playing" : "Current track, paused") : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -132,5 +150,50 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
         var parts = [file.name, file.format]
         if file.durationSeconds > 0 { parts.append(formatDuration(file.durationSeconds)) }
         return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - Mini equalizer (S10.8 PR D — realigned `png/04`)
+
+/// Three dancing bars in the current row's number slot. Deterministic sine motion (the
+/// Realigned Target's spec — supersedes the spectrum-driven plan, recorded in the deviations
+/// plan §B); ALL bars rest at `eqBarMinScale` whenever `animating` is false, so pause and
+/// Reduce Motion freeze to the same designed still state.
+private struct MiniEqualizer: View {
+    let animating: Bool
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: CGFloat(GlassDecor.eqBarSpacing)) {
+            ForEach(GlassDecor.eqBarDurations.indices, id: \.self) { bar in
+                EqBar(duration: GlassDecor.eqBarDurations[bar],
+                      phase: GlassDecor.eqBarPhases[bar],
+                      animating: animating)
+            }
+        }
+        .frame(height: CGFloat(GlassDecor.eqBarContainerHeight))
+        .accessibilityHidden(true) // the row's a11y value carries the playing state
+    }
+}
+
+/// One bar: `TimelineView(.animation(paused:))` + sin — pausing the schedule stops the
+/// clock AND the ternary pins the still height, so there is no zombie animation to gate
+/// (the §3.4 conditional-animator posture in TimelineView form).
+private struct EqBar: View {
+    let duration: Double
+    let phase: Double
+    let animating: Bool
+
+    var body: some View {
+        TimelineView(.animation(paused: !animating)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            let minScale = GlassDecor.eqBarMinScale
+            let scale = animating
+                ? minScale + (1 - minScale) * (0.5 + 0.5 * sin((time / duration + phase) * 2 * .pi))
+                : minScale
+            RoundedRectangle(cornerRadius: 1)
+                .fill(DesignSystem.Color.accentBright)
+                .frame(width: CGFloat(GlassDecor.eqBarWidth))
+                .scaleEffect(x: 1, y: scale, anchor: .bottom)
+        }
     }
 }
