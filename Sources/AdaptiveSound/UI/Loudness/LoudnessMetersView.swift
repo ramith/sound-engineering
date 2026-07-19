@@ -13,7 +13,12 @@ struct LoudnessMetersView: View {
 
     var body: some View {
         let snapshot = viewModel.loudness
-        let hot = snapshot.hasSignal && snapshot.truePeakDb > DesignSystem.Meters.hotThresholdDbtp
+        // The true-peak row keys on its OWN floor, never on `hasSignal` (break-it finding:
+        // integrated LUFS needs ≥400 ms of gated blocks, so a hot transient at track start
+        // — exactly when clipping risk peaks — would be suppressed by the LUFS gate; the
+        // old peak bar was always live).
+        let peakLive = snapshot.truePeakDb > DesignSystem.Meters.peakMeterFloorDb
+        let hot = peakLive && snapshot.truePeakDb > DesignSystem.Meters.hotThresholdDbtp
         VStack(alignment: .leading, spacing: 8) {
             Text("Loudness")
                 .font(.caption.weight(.semibold))
@@ -32,11 +37,12 @@ struct LoudnessMetersView: View {
                      hot: false,
                      spokenSuffix: "")
             MeterRow(label: "True peak",
-                     valueText: truePeakText(snapshot),
-                     fraction: truePeakFraction(snapshot),
+                     valueText: truePeakText(snapshot, live: peakLive, hot: hot),
+                     fraction: truePeakFraction(snapshot, live: peakLive),
                      hot: hot,
                      // Non-color cue for the hot state (A-M5 posture): the spoken value
-                     // names the ceiling; sighted users get the amber tail + value.
+                     // names the ceiling; sighted users get the ▲ glyph (shape, not hue)
+                     // beside the amber tail + value.
                      spokenSuffix: hot ? ", above the −1 dBTP ceiling" : "")
         }
         .accessibilityElement(children: .contain)
@@ -55,13 +61,16 @@ struct LoudnessMetersView: View {
         return min(max((lufs - floor) / (0 - floor), 0), 1)
     }
 
-    private func truePeakText(_ snapshot: LoudnessSnapshot) -> String {
-        guard snapshot.hasSignal else { return "—" }
-        return "\(snapshot.truePeakDb.formatted(.number.precision(.fractionLength(1)))) dBTP"
+    private func truePeakText(_ snapshot: LoudnessSnapshot, live: Bool, hot: Bool) -> String {
+        guard live else { return "—" }
+        let value = "\(snapshot.truePeakDb.formatted(.number.precision(.fractionLength(1)))) dBTP"
+        // ▲ = the VISIBLE non-color over-ceiling cue (A-M5 — the retired "CLIP" word's
+        // successor: a shape a colorblind user reads without the amber).
+        return hot ? "▲ \(value)" : value
     }
 
-    private func truePeakFraction(_ snapshot: LoudnessSnapshot) -> Double {
-        guard snapshot.hasSignal else { return 0 }
+    private func truePeakFraction(_ snapshot: LoudnessSnapshot, live: Bool) -> Double {
+        guard live else { return 0 }
         let floor = DesignSystem.Meters.truePeakFloorDb
         return min(max((snapshot.truePeakDb - floor) / (0 - floor), 0), 1)
     }

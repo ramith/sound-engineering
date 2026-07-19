@@ -42,9 +42,9 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
 9. **Amber** — meterHot #F0B429 landed as a NEW audited pair (dark) with a #B45309 light
    fill + statusWarningText-derived light text. Three amber family members now exist, each
    with one duty (statusWarning dot/badge, statusWarningText text, meterHot meter).
-10. **CLIP word retired** with the sample-peak bar; the hot state's non-color cue moved
-    into the spoken a11y value ("above the −1 dBTP ceiling"). Colorblind-sighted users get
-    the amber tail + amber value only — flag if that's not enough.
+10. **CLIP word retired** with the sample-peak bar; the hot state's cues are the amber
+    tail/value, a **▲ glyph prefixing the value** (the visible non-color cue — restored at
+    the break-it round, A-M5), and the spoken "above the −1 dBTP ceiling".
 11. **Hero format·rate chip text is primary label**, not the mock's white-60% —
     R4-BADGE-01's standing rule (dimmed hierarchy on a chip over the teal core fails AA).
 12. **Bands: light appearance keeps plain window + hairlines** (sheen is dark-only per
@@ -62,5 +62,30 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
 - TOK-04 extended to controlActiveFill; rowNowPlaying retune asserted at 13%.
 - LAY-01/02 re-verified with inspectorWidth 320.
 - C++: `Loudness_TruePeakKernel_InterSample` (fs/4 +45° sine recovers −6.02 dBTP ±0.35
-  where sample-peak under-reads 3 dB); full 122-test harness green; limiter oracle
-  (libebur128) still green through the extracted kernel.
+  where sample-peak under-reads 3 dB); limiter oracle (libebur128) still green through
+  the extracted kernel — the break-it round additionally verified the delegation is
+  LINE-IDENTICAL math and the golden-master hash unchanged (0xe7267654ba01d315).
+
+## Break-it round (2 reviewers: SwiftUI SME + adversarial QA) — all fixed same day
+
+1. QueueIconButton's 28pt chip wasn't clickable outside its 12pt glyph (frame/background
+   outside the Button never extend its hit region) → chip rebuilt inside the label.
+2. Queue header overflowed the 508pt minimum queue column worst-case → chips + switcher
+   `fixedSize()` (control labels never truncate), count subtitle = designated victim,
+   filter min 110 → 90.
+3. No Dynamic-Type headroom in the new header/badge (fixed 32/28/20/18pt frames) →
+   @ScaledMetric throughout (the tab strip's own pattern); FormatBadgeView radius follows.
+4. True-peak row was gated on the INTEGRATED-LUFS gate (≥400 ms of blocks) — a hot
+   transient at track start would be suppressed exactly when it matters → row keys on its
+   own −110 dB floor.
+5. An active filter silently survived queue-emptying (next queue arrived pre-narrowed,
+   reorder disabled) → emptying the queue clears the filter.
+6. Footer Pure-fallback state: amber warning dot beside teal "Enhanced" read as two
+   states → neutral label under fallback.
+7. Visible non-color hot cue restored (▲ prefix — deviation 10 above).
+8. Deprecated `foregroundColor` in new code → `foregroundStyle`; inert scrubber
+   play↔pause ease removed (erased style TYPES can't interpolate) with an honest comment.
+9. Mono tap path did 2× redundant ISP work → single-channel loop.
+10. NEW `Loudness_MeterBridge_TruePeak`: the C-ABI bridge end-to-end (multi-buffer
+    history continuity, MONO aliasing, dBTP mapping) — the harness now compiles
+    LoudnessMeterBridge.cpp; 122 passed / 0 failed (1 pre-existing PENDING).

@@ -43,7 +43,10 @@ struct PlaylistControlsView: View {
 }
 
 /// One 28×28 header chip: resting badge wash → hover lift → toggled-on accent tint with a
-/// ring and an `accentText` glyph (all token'd, audited by R4-CHIP-01).
+/// ring and an `accentText` glyph (all token'd, audited by R4-CHIP-01). The chip is built
+/// INSIDE the button's label (frame/background/contentShape wrapped around a Button never
+/// extend its hit region — break-it finding 1), and its height scales with Dynamic Type
+/// like the chrome tab strip (finding 3).
 struct QueueIconButton: View {
     let title: String
     let systemImage: String
@@ -55,40 +58,46 @@ struct QueueIconButton: View {
 
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .callout) private var chipSide = DesignSystem.QueueHeader.iconButton
 
     var body: some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .font(.system(size: DesignSystem.QueueHeader.iconSymbol, weight: .medium))
-            .foregroundStyle(isOn || accented ? DesignSystem.Color.accentText : Color.asLabelSecond)
-            .frame(width: DesignSystem.QueueHeader.iconButton,
-                   height: DesignSystem.QueueHeader.iconButton)
-            .background {
-                RoundedRectangle(cornerRadius: DesignSystem.Radius.control, style: .continuous)
-                    .fill(isOn ? DesignSystem.Color.controlActiveFill
-                        : hovering ? DesignSystem.Color.controlHover : DesignSystem.Color.hoverWash)
-            }
-            .overlay {
-                if isOn {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.system(size: DesignSystem.QueueHeader.iconSymbol, weight: .medium))
+                .foregroundStyle(isOn || accented ? DesignSystem.Color.accentText : Color.asLabelSecond)
+                .frame(width: chipSide, height: chipSide)
+                .background {
                     RoundedRectangle(cornerRadius: DesignSystem.Radius.control, style: .continuous)
-                        .strokeBorder(DesignSystem.Color.accent.opacity(0.3), lineWidth: 1)
+                        .fill(isOn ? DesignSystem.Color.controlActiveFill
+                            : hovering ? DesignSystem.Color.controlHover : DesignSystem.Color.hoverWash)
                 }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Radius.control,
-                                           style: .continuous))
-            .buttonStyle(.plain)
-            .onHover { hovering = $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
+                .overlay {
+                    if isOn {
+                        RoundedRectangle(cornerRadius: DesignSystem.Radius.control, style: .continuous)
+                            .strokeBorder(DesignSystem.Color.accent.opacity(0.3), lineWidth: 1)
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: DesignSystem.Radius.control,
+                                               style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
     }
 }
 
 // MARK: - Queue mode switcher (Up Next / Recent — the mini capsule pair)
 
 /// The realigned segmented pair: a small `tabTrack` capsule with a `segmentSelected` lift —
-/// the tab strip's grammar at header scale. Replaces `.pickerStyle(.segmented)`.
+/// the tab strip's grammar at header scale. Replaces `.pickerStyle(.segmented)`. The
+/// segment height is Dynamic-Type-scaled; the header row `fixedSize()`s this control so
+/// its labels can never be the header's truncation victim.
 struct QueueModeSwitcher: View {
     @Binding var panelMode: QueuePanelMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .callout)
+    private var segmentHeight = DesignSystem.QueueHeader.segmentHeight
 
     var body: some View {
         HStack(spacing: 2) {
@@ -102,7 +111,7 @@ struct QueueModeSwitcher: View {
                         .foregroundStyle(selected ? Color.asLabel : Color.asLabelSecond)
                         .lineLimit(1)
                         .padding(.horizontal, 10)
-                        .frame(height: DesignSystem.QueueHeader.segmentHeight)
+                        .frame(height: segmentHeight)
                         .background {
                             if selected {
                                 Capsule().fill(DesignSystem.Color.segmentSelected)
