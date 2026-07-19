@@ -12,14 +12,7 @@ enum TabSelection: String, CaseIterable {
     var id: String {
         rawValue
     }
-
-    var icon: String {
-        switch self {
-        case .nowPlaying: "play.circle.fill"
-        case .library: "square.grid.2x2"
-        case .eq: "slider.horizontal.3"
-        case .monitoring: "waveform.and.magnifyingglass"
-        case .settings: "gearshape.fill"
-        }
-    }
+    // No `icon`: the realigned tab strip (S10.8 PR B) is text-only capsules — the old
+    // per-tab SF Symbols were for the retired segmented Picker. Re-add with a consumer if
+    // a future surface (e.g. a menu) needs tab glyphs.
 }

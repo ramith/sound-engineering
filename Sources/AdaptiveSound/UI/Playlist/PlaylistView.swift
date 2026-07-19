@@ -242,6 +242,14 @@ private struct PlaylistItemList: View {
     /// no drag is in progress.
     @State private var dropTargetIndex: Int?
 
+    /// The keyboard-navigation cursor (a REAL queue index), DISTINCT from the now-playing
+    /// pointer `viewModel.selectedTrackIndex`. Arrow keys move THIS — never the now-playing
+    /// pointer — so navigating the queue no longer changes the hero / footer / Now Playing
+    /// (which all read `selectedTrackIndex`); only Return/click actually plays a row and
+    /// moves that pointer. Nil = no cursor yet (the first arrow seeds it). Drives the
+    /// `rowSelected` focus tint; the playing row keeps its own now-playing card independently.
+    @State private var cursorIndex: Int?
+
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
     private var numberColumnWidth: CGFloat {
@@ -287,25 +295,19 @@ private struct PlaylistItemList: View {
             .focusEffectDisabled()
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
-            // so a stale target can't match — and re-present on — a different row.
+            // so a stale target can't match — and re-present on — a different row. Also drop
+            // a now-out-of-range cursor (the queue shrank).
             .onChange(of: viewModel.queue.map(\.id)) { _, _ in
                 infoTarget = nil
+                if let cursor = cursorIndex, cursor >= viewModel.queue.count { cursorIndex = nil }
             }
-            .onKeyPress(.upArrow) { moveSelection(by: -1) }
-            .onKeyPress(.downArrow) { moveSelection(by: 1) }
-            .onKeyPress(.return) { togglePlayIfSelected() }
+            .onKeyPress(.upArrow) { moveCursor(by: -1, proxy: proxy) }
+            .onKeyPress(.downArrow) { moveCursor(by: 1, proxy: proxy) }
+            .onKeyPress(.return) { activateCursor() }
             // No `.onKeyPress(.space)`: the Controls-menu Space key-equivalent is matched first
             // (disabled only while a text field is focused), so this handler was dead — Return
-            // already covers keyboard toggle here (focus-audit nit).
-            .onKeyPress(.delete) {
-                guard let index = viewModel.selectedTrackIndex else { return .ignored }
-                // Never remove a row the filter is HIDING (break-it MINOR-2): Delete on an
-                // invisible selection silently removed — and could stop — the playing track
-                // with no visible target. Visible rows only.
-                guard visibleIndices.contains(index) else { return .ignored }
-                viewModel.removeTrack(at: index)
-                return .handled
-            }
+            // already covers keyboard play/toggle here (focus-audit nit).
+            .onKeyPress(.delete) { deleteCursorRow() }
             // Scroll the current track into view when the header's "Jump to Now Playing" fires (UI-2).
             // Target the row's stable id (matches `.id(item.id)`), not a positional index.
             .onChange(of: jumpToCurrentRequestID) { _, _ in
@@ -319,7 +321,10 @@ private struct PlaylistItemList: View {
         PlaylistItemRow(
             file: item.file,
             index: index,
-            isSelected: viewModel.selectedTrackIndex == index,
+            // `isSelected` follows the KEYBOARD CURSOR (the focus tint), not the now-playing
+            // pointer — so arrowing the queue highlights the focused row without disturbing
+            // the hero. The now-playing card is a separate cue below.
+            isSelected: cursorIndex == index,
             // PR D: the CURRENT row keeps its card while paused (prominence is no longer
             // tied to play state); `isPlaybackActive` gates only the equalizer motion.
             isNowPlaying: viewModel.selectedTrackIndex == index,
@@ -351,8 +356,10 @@ private struct PlaylistItemList: View {
         }
         .simultaneousGesture(
             TapGesture().onEnded {
-                // A click on a row focuses the queue for the keyboard shortcuts.
+                // A click on a row focuses the queue for the keyboard shortcuts and lands the
+                // cursor here (so subsequent arrows continue from where you clicked).
                 queueFocused.wrappedValue = true
+                cursorIndex = index
                 // Single-click plays the row, so the now-playing card always matches the audio (no
                 // select-without-play state). Re-clicking the playing track is a no-op (no restart).
                 guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
@@ -405,21 +412,53 @@ private struct PlaylistItemList: View {
         }
     }
 
-    /// Move the selection by `delta` rows, clamped to the queue (keyboard ↑/↓). `.ignored` when
-    /// there's no selection or the move would leave the queue, so the event can bubble.
-    private func moveSelection(by delta: Int) -> KeyPress.Result {
-        guard let current = viewModel.selectedTrackIndex else { return .ignored }
-        let next = current + delta
-        guard next >= 0, next < viewModel.queue.count else { return .ignored }
-        viewModel.selectedTrackIndex = next
+    /// Move the keyboard CURSOR by `delta` VISIBLE rows — never `selectedTrackIndex`, so the
+    /// hero/footer/Now Playing (which read that pointer) don't move while you navigate
+    /// (founder bug). Navigates the visible (filter-narrowed) set, so the cursor can't land
+    /// on a hidden row. Seeds onto the playing row when it's visible, else the first/last
+    /// visible row, on the first press; scrolls the cursor into view. `.ignored` when the
+    /// move would leave the list, so the event can bubble.
+    private func moveCursor(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !visibleIndices.isEmpty else { return .ignored }
+        let anchor: Int
+        if let cursor = cursorIndex, let pos = visibleIndices.firstIndex(of: cursor) {
+            anchor = pos
+        } else if let playing = viewModel.selectedTrackIndex,
+                  let pos = visibleIndices.firstIndex(of: playing) {
+            anchor = pos
+        } else {
+            // No cursor and the playing row isn't visible: the first ↓ lands on row 0, ↑ on
+            // the last row (a virtual anchor just off each end).
+            anchor = delta > 0 ? -1 : visibleIndices.count
+        }
+        let nextPos = anchor + delta
+        guard nextPos >= 0, nextPos < visibleIndices.count else { return .ignored }
+        let target = visibleIndices[nextPos]
+        cursorIndex = target
+        // Keep the cursor on screen (nil anchor = scroll the minimum needed, no jump).
+        proxy.scrollTo(viewModel.queue[target].id)
         return .handled
     }
 
-    /// Toggle play/pause for the selected row (keyboard Return/Space). `.ignored` when nothing is
-    /// selected so the key can do its default thing.
-    private func togglePlayIfSelected() -> KeyPress.Result {
-        guard viewModel.selectedTrackIndex != nil else { return .ignored }
-        viewModel.togglePlayPause()
+    /// Return: play the cursor row, or toggle play/pause when the cursor is already the
+    /// playing track (mirrors the row's tap semantics). `.ignored` with no cursor so the key
+    /// can bubble.
+    private func activateCursor() -> KeyPress.Result {
+        guard let index = cursorIndex, index < viewModel.queue.count else { return .ignored }
+        if viewModel.selectedTrackIndex == index {
+            viewModel.togglePlayPause()
+        } else {
+            viewModel.playTrack(at: index)
+        }
+        return .handled
+    }
+
+    /// Delete: remove the cursor row — visible-only, so a filter-hidden row (possibly the
+    /// playing track) can't be removed with no visible target (break-it MINOR-2). The next
+    /// row slides under the cursor position.
+    private func deleteCursorRow() -> KeyPress.Result {
+        guard let index = cursorIndex, visibleIndices.contains(index) else { return .ignored }
+        viewModel.removeTrack(at: index)
         return .handled
     }
 }
