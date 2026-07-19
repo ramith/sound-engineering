@@ -58,6 +58,15 @@ public enum Palette {
     /// Alternate accent (swap-in blue).
     public static let blue = AppearancePair(both: RGBAColor(red: 0.039, green: 0.518, blue: 1.0)) // #0A84FF
 
+    /// Teal TEXT/glyph on dark surfaces and tinted chips (S10.8 PR C — the Realigned
+    /// Target's `asTealText` #6FE0D0). Light per the split-text-vs-fill pattern
+    /// (statusWarningText precedent): a deep teal that clears AA on the accent-tinted chip
+    /// over the light window (R4-CHIP-01). #0B5548 light.
+    public static let accentText = AppearancePair(
+        light: RGBAColor(red: 11.0 / 255.0, green: 85.0 / 255.0, blue: 72.0 / 255.0),
+        dark: RGBAColor(red: 111.0 / 255.0, green: 224.0 / 255.0, blue: 208.0 / 255.0)
+    )
+
     // MARK: Status
 
     //
@@ -142,6 +151,24 @@ public enum Palette {
         dark: .gray(0.0, alpha: 0.38)
     )
 
+    // MARK: Small-control chips (S10.8 PR C — queue header; realigned `png/03`)
+
+    /// Hovered chip fill — one notch above the resting `badgeFill` wash.
+    public static let controlHover = AppearancePair(
+        light: .gray(0.0, alpha: 0.10),
+        dark: .gray(1.0, alpha: 0.12)
+    )
+    /// Toggled-on chip fill (repeat/shuffle active): accent-derived like the row tints
+    /// (TOK-04 asserts the derivation); the glyph on it is `accentText`.
+    public static let controlActiveFill = AppearancePair(both: accent.light.opacity(0.16))
+    /// The selected segment of the mini capsule pair (Up Next / Recent). Light is SOLID
+    /// white (the realigned light mock's raised segment — the grammar's white-card move),
+    /// dark the 8a white-12% lift.
+    public static let segmentSelected = AppearancePair(
+        light: .gray(1.0),
+        dark: .gray(1.0, alpha: 0.12)
+    )
+
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
@@ -175,7 +202,8 @@ public enum Palette {
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
-        ("tabTrack", tabTrack),
+        ("tabTrack", tabTrack), ("accentText", accentText), ("controlHover", controlHover),
+        ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
         ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),
