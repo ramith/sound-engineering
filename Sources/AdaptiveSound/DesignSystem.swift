@@ -60,10 +60,11 @@ enum DesignSystem {
         static let blue = from(Palette.blue)
 
         /// Surfaces (elevation stack) — dark = pre-S9-T (#1E1E1E window, pre-D10); light =
-        /// first pass (gray base, white raised cards, darker inset).
+        /// first pass (gray base, white raised cards, darker inset). (`panel` had one
+        /// consumer, the footer band background, which S10.8 PR G replaced with the
+        /// styled-glass strata; the Kit `Palette.panel` token stays for the R4 audit.)
         static let window = from(Palette.window)
         static let card = from(Palette.card)
-        static let panel = from(Palette.panel)
         static let hairline = from(Palette.hairline)
 
         // Labels — secondary + tertiary lifted so BOTH clear WCAG AA (≥4.5:1) on the
@@ -76,12 +77,13 @@ enum DesignSystem {
         static let labelTertiary = from(Palette.labelTertiary)
         static let labelDisabled = from(Palette.labelDisabled)
 
-        /// Status FILL/indicator colors (non-text 3:1): `statusWarning` #FF9F0A vibrant orange,
-        /// `statusError` the macOS-26 palette red (#FF383C/#FF4245). PR 6 (founder "split text
-        /// vs fill"): TEXT/glyph sites use the darker AA-legible variants below instead — the
-        /// vivid values are for the meter hot-bar and status dots.
+        /// Status FILL/indicator color (non-text 3:1): `statusWarning` #FF9F0A vibrant orange
+        /// (the Pure-fallback / interrupted dots). PR 6 (founder "split text vs fill"):
+        /// TEXT/glyph sites use the darker AA-legible variants below. (The `statusError` red
+        /// FILL lost its consumer when S10.8 PR E replaced the sample-peak CLIP bar with the
+        /// true-peak amber meter — `statusErrorText` still carries error TEXT in the sidebar;
+        /// the Kit `Palette.statusError` stays for the R4 audit.)
         static let statusWarning = from(Palette.statusWarning)
-        static let statusError = from(Palette.statusError)
         /// Status TEXT/glyph variants (AA 4.5:1). Differ from the fill values only in LIGHT
         /// (on the deep dark base the vivid values already clear text AA).
         static let statusWarningText = from(Palette.statusWarningText)
@@ -110,8 +112,9 @@ enum DesignSystem {
         /// (never a second #3FD0BA).
         static let accentBright = from(Palette.iconFillTop)
 
-        // S10.8 PR E — the true-peak hot state (realigned `png/05`); audited R4-METER-01.
-        static let meterHot = from(Palette.meterHot)
+        /// S10.8 PR E — the true-peak hot VALUE text (realigned `png/05`); audited
+        /// R4-METER-01. The hot FILL is `Gradient.meterHotFill` (which composes the Kit
+        /// `Palette.meterHot` stop inline), so there is no solid `meterHot` re-export.
         static let meterHotText = from(Palette.meterHotText)
     }
 
