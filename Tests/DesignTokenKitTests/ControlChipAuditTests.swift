@@ -42,4 +42,24 @@ struct ControlChipAuditTests {
                     "label on segmentSelected⊕track (\(appearance)) = \(segRatio)")
         }
     }
+
+    /// S10.8 PR F: the hero's realigned ENHANCED chip is the same `controlActiveFill` +
+    /// `accentText` pair, but it sits in the hero — the glow field's TEAL CORE (the
+    /// field's brightest text seat), so it gets the sampled-field audit like R4-BADGE-01.
+    @Test("R4-CHIP-02: hero teal chip text clears AA over the sampled glow field (dark)")
+    func heroTealChipOverGlow() {
+        for geometry in ContrastAuditTests.glowGeometries {
+            for point in ContrastAuditTests.gridPoints() {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                let chip = Palette.controlActiveFill.dark.over(glow)
+                let ratio = ContrastAuditTests.ratio(label: Palette.accentText, on: chip, .dark)
+                #expect(ratio >= ContrastAuditTests.textAA,
+                        "accentText on tealChip⊕glow @(\(point.x),\(point.y)) \(geometry.width)pt = \(ratio)")
+            }
+        }
+    }
 }

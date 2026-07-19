@@ -115,10 +115,10 @@ public enum GlassDecor {
     public static let heroHaloRadius: Double = 16
     public static let heroHaloOffsetY: Double = 2
 
-    /// The ENHANCED badge's pulsing dot (8a: 1.6 s cycle, opacity 1 → 0.4) — the phase
-    /// animator runs each half-cycle.
+    /// The ENHANCED badge's pulsing dot (realigned: 1.6 s cycle, opacity 1 → 0.35 — was
+    /// the 8a 0.4) — the phase animator runs each half-cycle.
     public static let pulseHalfCycleSeconds: Double = 0.8
-    public static let pulseDimOpacity: Double = 0.4
+    public static let pulseDimOpacity: Double = 0.35
     /// Base badge capsule height (@ScaledMetric-scaled at the call site, 8a: 22pt).
     public static let badgeBaseHeight: Double = 22
 
