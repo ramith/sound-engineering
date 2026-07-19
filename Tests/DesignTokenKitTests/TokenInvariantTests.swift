@@ -47,16 +47,20 @@ struct TokenInvariantTests {
         }
     }
 
-    /// rowNowPlaying/rowSelected are the accent at documented alphas, never drifting values.
-    @Test("TOK-04: derived row tints stay derived from the accent")
+    /// rowNowPlaying/rowSelected/controlActiveFill are the accent at documented alphas,
+    /// never drifting values.
+    @Test("TOK-04: derived accent tints stay derived from the accent")
     func rowTintsDeriveFromAccent() {
         let accent = Palette.accent.light
         #expect(Palette.rowNowPlaying.light == accent.opacity(0.25))
         #expect(Palette.rowSelected.light == accent.opacity(0.12))
-        #expect(Palette.rowNowPlaying.light == Palette.rowNowPlaying.dark,
-                "rowNowPlaying is appearance-independent (accent-derived)")
-        #expect(Palette.rowSelected.light == Palette.rowSelected.dark,
-                "rowSelected is appearance-independent (accent-derived)")
+        #expect(Palette.controlActiveFill.light == accent.opacity(0.16))
+        for (name, pair) in [("rowNowPlaying", Palette.rowNowPlaying),
+                             ("rowSelected", Palette.rowSelected),
+                             ("controlActiveFill", Palette.controlActiveFill)] {
+            #expect(pair.light == pair.dark,
+                    "\(name) is appearance-independent (accent-derived)")
+        }
     }
 
     /// The 8a concentric chain (§3.2): outer radii are never smaller than inner ones.

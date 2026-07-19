@@ -97,6 +97,12 @@ enum DesignSystem {
         /// white-8%/dark-6% wash the realigned mock uses for hovered chrome controls, so
         /// hover states never mint a second near-identical value.
         static let hoverWash = from(Palette.badgeFill)
+
+        // S10.8 PR C — queue-header control chips (realigned `png/03`); audited R4-CHIP-01.
+        static let accentText = from(Palette.accentText)
+        static let controlHover = from(Palette.controlHover)
+        static let controlActiveFill = from(Palette.controlActiveFill)
+        static let segmentSelected = from(Palette.segmentSelected)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
@@ -266,5 +272,24 @@ enum DesignSystem {
         static let gripSymbol: CGFloat = 13 // drag-handle glyph point size
         static let gripHitWidth: CGFloat = 22 // grip hover/drag hit target
         static let gripHitHeight: CGFloat = 26
+        /// Hover-revealed grip opacity (S10.8 PR C — realigned: no handles at rest).
+        static let gripHoverOpacity: Double = 0.45
+    }
+
+    // MARK: Queue header metrics (S10.8 PR C — the realigned single-row header, `png/03`)
+
+    /// Everything above the queue list collapses into ONE row of this height: title + count +
+    /// icon chips + the Up Next/Recent capsule pair + the right-aligned compact filter pill.
+    enum QueueHeader {
+        static let height: CGFloat = 32
+        static let iconButton: CGFloat = 28 // square chip, Radius.control corners
+        static let iconSymbol: CGFloat = 12
+        static let segmentHeight: CGFloat = 20 // + 2×segmentPadding = the 24pt pair
+        static let segmentPadding: CGFloat = 2
+        /// The filter pill: 190pt ideal (the mock), compressing to min so the header row
+        /// survives the LAY-01 minimum queue width.
+        static let filterIdealWidth: CGFloat = 190
+        static let filterMinWidth: CGFloat = 110
+        static let filterHeight: CGFloat = 28
     }
 }
