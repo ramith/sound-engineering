@@ -176,7 +176,7 @@ private struct SignalBadgeRow: View {
         BadgeCapsule(height: badgeHeight) {
             Text([format, info.formattedRate].compactMap(\.self).joined(separator: " · "))
                 .font(DesignSystem.Font.monoSmall.weight(.semibold))
-                .foregroundColor(DesignSystem.Color.label)
+                .foregroundStyle(DesignSystem.Color.label)
         }
     }
 }
@@ -215,7 +215,7 @@ private struct BadgeCapsule<Content: View>: View {
 
 private extension Text {
     func badgeText(_ color: SwiftUI.Color) -> Text {
-        font(DesignSystem.Font.micro).foregroundColor(color)
+        font(DesignSystem.Font.micro).foregroundStyle(color)
     }
 }
 

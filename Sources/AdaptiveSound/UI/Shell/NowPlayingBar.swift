@@ -267,13 +267,13 @@ private struct FooterScrubber: View {
                 // The shared 8a carved groove (PR 6 — same surface as the inspector sliders).
                 // Fill follows playback; while playing it carries the realigned teal
                 // gradient (S10.8 PR E — shared with sliders/meters), and the dark-only
-                // glow shows only then (paused = dim teal, interrupted = grey).
+                // glow shows only then (paused = dim teal, interrupted = grey). The state
+                // change swaps erased style TYPES (gradient ↔ solid), which SwiftUI cannot
+                // interpolate — the old play↔pause ease is gone by construction, so no
+                // animation modifier here (a hard swap either way).
                 CarvedGroove(fillFraction: fraction,
                              fillStyle: fillStyle,
                              glow: viewModel.isPlaying && !isInterrupted)
-                    // Ease the play→pause fill-color shift (accent ↔ accent·0.5); the width
-                    // tracks playback and is not animated. Reduce-Motion gated.
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: viewModel.isPlaying)
 
                 // Thumb reveals on hover/drag only (cleaner than an always-on thumb).
                 if viewModel.duration > 0, isHovered || isDragging {
@@ -390,11 +390,14 @@ private struct FooterSignalSlot: View {
             // pulsing with the same §3.4 gate (playing + Reduce Motion off); "Enhanced"
             // reads in accentText. Pure/fallback keep their established dot colors.
             statusDot(info)
+            // Teal "Enhanced" ONLY for the clean enhanced state: under Pure-fallback the
+            // dot is the amber warning, and brand-teal text beside it would read as two
+            // different states in 12pt of space (break-it finding) — neutral label there.
             (Text(info.path == .pure ? "Pure" : "Enhanced")
-                .foregroundColor(info.path == .pure ? DesignSystem.Color.labelSecondary
-                    : DesignSystem.Color.accentText)
+                .foregroundStyle(info.path == .enhanced && !info.fellBackToEnhanced
+                    ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
                 + Text(" · \(info.formattedRate)")
-                .foregroundColor(DesignSystem.Color.labelSecondary))
+                .foregroundStyle(DesignSystem.Color.labelSecondary))
                 .font(DesignSystem.Font.monoSmall)
                 .lineLimit(1)
                 .truncationMode(.tail)

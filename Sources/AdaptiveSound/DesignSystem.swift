@@ -319,6 +319,10 @@ enum DesignSystem {
         static let lufsFloor: Double = -42
         static let truePeakFloorDb: Double = -12
         static let hotThresholdDbtp: Double = -1.0
+        /// "The true-peak row has a live measurement" — the bridge's −120 dB sentinel, with
+        /// margin. Independent of the LUFS `hasSignal` gate (a start-of-track transient
+        /// must never wait 400 ms of gated blocks to warn).
+        static let peakMeterFloorDb: Double = -110
         static let labelColumnWidth: CGFloat = 82
     }
 
@@ -333,9 +337,10 @@ enum DesignSystem {
         static let segmentHeight: CGFloat = 20 // + 2×segmentPadding = the 24pt pair
         static let segmentPadding: CGFloat = 2
         /// The filter pill: 190pt ideal (the mock), compressing to min so the header row
-        /// survives the LAY-01 minimum queue width.
+        /// survives the LAY-01 minimum queue width (90: leaves the count subtitle ~50pt at
+        /// the 880pt window's worst case — the subtitle is the designated truncation victim).
         static let filterIdealWidth: CGFloat = 190
-        static let filterMinWidth: CGFloat = 110
+        static let filterMinWidth: CGFloat = 90
         static let filterHeight: CGFloat = 28
     }
 }

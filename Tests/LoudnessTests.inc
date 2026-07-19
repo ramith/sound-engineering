@@ -213,3 +213,53 @@ static auto testLoudnessTruePeakKernelInterSample() -> void
     }
     logPass(kName);
 }
+
+// The C-ABI surface under test below (the harness compiles LoudnessMeterBridge.cpp).
+#include "../Sources/AudioDSP/include/DeviceBridge.h"
+
+// Test: the C-ABI meter bridge end-to-end (S10.8 PR E break-it rider) — the tap-thread
+// path the kernel test above does NOT cover: per-sample shift-register continuity across
+// buffer boundaries, the MONO aliasing path (right == nullptr), and the dBTP mapping.
+// Same fs/4 +45° signal: the bridge's truePeakDb must recover −6.02 dBTP even though
+// every sample the bridge sees is 3 dB below the crest.
+static auto testLoudnessMeterBridgeTruePeak() -> void
+{
+    static const char* const kName = "Loudness_MeterBridge_TruePeak";
+    void* meter = loudnessMeterCreate(TestConstants::kSampleRate48k);
+    if (meter == nullptr)
+    {
+        logFail(kName, "loudnessMeterCreate returned null");
+        return;
+    }
+
+    constexpr double kAmp = 0.5; // −6.02 dBTP true peak
+    constexpr double kTruePeakDb = -6.0206;
+    constexpr uint32_t kChunk = 512U; // multiple buffers → history must carry across calls
+    std::array<float, kChunk> buf{};
+    uint32_t n = 0U;
+    for (uint32_t chunk = 0U; chunk < 8U; ++chunk)
+    {
+        for (uint32_t i = 0U; i < kChunk; ++i, ++n)
+        {
+            buf[i] = static_cast<float>(
+                kAmp
+                * std::sin((std::numbers::pi / 2.0 * static_cast<double>(n))
+                           + (std::numbers::pi / 4.0)));
+        }
+        loudnessMeterAddStereo(meter, buf.data(), nullptr, kChunk); // MONO path
+    }
+
+    const CLoudnessReadout out = loudnessMeterRead(meter);
+    loudnessMeterDestroy(meter);
+
+    // Decay headroom: the peak recurs every 4 samples, so per-buffer decay (0.85) never
+    // erodes the latch below the budget within a run this dense.
+    if (std::abs(out.truePeakDb - kTruePeakDb) > 0.4)
+    {
+        std::ostringstream oss;
+        oss << "bridge true peak: expected " << kTruePeakDb << " dBTP, read " << out.truePeakDb;
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}

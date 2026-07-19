@@ -72,7 +72,7 @@
 
 namespace
 {
-    constexpr std::array<TestEntry, 122U> kTests = {{
+    constexpr std::array<TestEntry, 123U> kTests = {{
         // Phase 0 bypass tests
         {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
         {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
@@ -95,6 +95,7 @@ namespace
         {"Loudness_RelativeGate", testLoudnessRelativeGate, true},
         {"Loudness_MakeupRoundTrip", testLoudnessMakeupRoundTrip, true},
         {"Loudness_TruePeakKernel_InterSample", testLoudnessTruePeakKernelInterSample, true},
+        {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, true},
         // EQ audibility tests (Sprint 5 — Milestone 2)
         {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, true},
         {"EQ_CoefficientSwapNoClick", testEQCoefficientSwapNoClick, true},

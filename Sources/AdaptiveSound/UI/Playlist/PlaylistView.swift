@@ -29,6 +29,10 @@ struct PlaylistView: View {
     /// Key-command focus for the queue list — owned HERE (not by the list) so the filter
     /// field's Escape can hand focus back to the queue (§5: ↑/↓ must work immediately).
     @FocusState private var queueFocused: Bool
+    /// The header row's Dynamic-Type-scaled minimum height (32pt at default size).
+    @ScaledMetric(relativeTo: .body) private var headerHeight = DesignSystem.QueueHeader.height
+    /// The filter pill's scaled height (28pt at default size).
+    @ScaledMetric(relativeTo: .callout) private var filterHeight = DesignSystem.QueueHeader.filterHeight
 
     var body: some View {
         VStack(spacing: 12) {
@@ -50,12 +54,24 @@ struct PlaylistView: View {
                 QueueHistoryList()
             }
         }
+        // A filter must not OUTLIVE the queue it narrowed (break-it finding: clear queue →
+        // pill unmounts with its text retained → the NEXT queue arrives pre-narrowed to a
+        // possibly-empty match set, with reorder silently disabled). Emptying the queue
+        // resets the filter; a mode round-trip keeps it (the visible pill carries it).
+        .onChange(of: viewModel.queue.isEmpty) { _, isEmpty in
+            if isEmpty { filterText = "" }
+        }
     }
 
     // MARK: Header (S10.8 PR C — the realigned SINGLE 32pt row, `png/03`)
 
     /// Title + count + icon chips + the Up Next/Recent capsule pair + the compact filter
     /// pill, replacing the stacked header block / segmented picker / full-width filter bar.
+    /// Width-deficit policy at the 880pt minimum (break-it finding 2): the title is
+    /// protected, the switcher/chips are rigid (`fixedSize` — a control label must never
+    /// truncate), the filter compresses to its minimum first, and the COUNT subtitle is
+    /// the designated truncation victim. Height is a scaled MINIMUM (finding 3) so larger
+    /// text sizes grow the row instead of clipping.
     private var headerRow: some View {
         HStack(spacing: 12) {
             Text(panelMode == .history ? "Recently Played" : "Queue")
@@ -64,6 +80,7 @@ struct PlaylistView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Color.asLabel)
                 .lineLimit(1)
+                .fixedSize()
                 .layoutPriority(1)
 
             Text(headerSubtitle)
@@ -72,8 +89,10 @@ struct PlaylistView: View {
                 .lineLimit(1)
 
             PlaylistControlsView(onJumpToNowPlaying: jumpToNowPlaying, panelMode: $panelMode)
+                .fixedSize()
 
             QueueModeSwitcher(panelMode: $panelMode)
+                .fixedSize()
 
             Spacer(minLength: DesignSystem.Spacing.small)
 
@@ -83,7 +102,7 @@ struct PlaylistView: View {
                 filterField
             }
         }
-        .frame(height: DesignSystem.QueueHeader.height)
+        .frame(minHeight: headerHeight)
     }
 
     /// Mode-aware count: the queue's track count, or the number of recently-played tracks.
@@ -163,7 +182,7 @@ struct PlaylistView: View {
         .frame(minWidth: DesignSystem.QueueHeader.filterMinWidth,
                idealWidth: DesignSystem.QueueHeader.filterIdealWidth,
                maxWidth: DesignSystem.QueueHeader.filterIdealWidth)
-        .frame(height: DesignSystem.QueueHeader.filterHeight)
+        .frame(height: filterHeight)
         .glassPanel(.badge, in: Capsule())
         .accessibilityLabel("Filter queue")
     }

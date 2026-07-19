@@ -287,11 +287,9 @@ namespace AdaptiveSound
             return 1.0 - std::exp(-1.0 / (tauSeconds * static_cast<double>(sampleRate)));
         }
 
-        // Modified Bessel I0(x) via series Σ ((x/2)^k / k!)² (libc++ lacks
-        // std::cyl_bessel_i). Pure, off-RT.
         // Build the 8×24 windowed-sinc polyphase upsampler into ispCoeffs_. The kernel
-        // math lives in TruePeakKernel (S10.8 PR E extraction — shared with the loudness
-        // meter's true-peak readout). Off-RT.
+        // math (incl. the Bessel-I0 Kaiser window) lives in TruePeakKernel (S10.8 PR E
+        // extraction — shared with the loudness meter's true-peak readout). Off-RT.
         void computePolyphaseCoeffs() noexcept
         {
             TruePeakKernel::computeCoefficients(ispCoeffs_);
