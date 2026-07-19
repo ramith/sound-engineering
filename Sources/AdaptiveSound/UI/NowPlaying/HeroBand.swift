@@ -59,6 +59,7 @@ struct HeroBand: View {
             // The badge row reserves its space even when hidden (empty state) so first
             // play never reflows the hero (§5).
             SignalBadgeRow(info: viewModel.signalPath,
+                           format: track?.format,
                            isPlaying: viewModel.isPlaying,
                            reduceMotion: reduceMotion,
                            badgeHeight: badgeHeight)
@@ -72,10 +73,15 @@ struct HeroBand: View {
 
 // MARK: - Signal badge row
 
-/// The §5 state mapping, as capsule badges. All colors/fills are tokens; the capsules are
-/// `.glassPanel(.badge)` fills (Regime B — the resolver owns RT/IC).
+/// The §5 state mapping, realigned to EXACTLY TWO core chips (S10.8 PR F — `png/02`):
+/// the teal path chip (`● ENHANCED · 20%` — dot + path + live intensity in ONE string) and
+/// the grey format·rate chip (`MP3 · 48 kHz` — the format segment is NEW to the hero).
+/// The extra STATES stay: PURE keeps its monochrome chip, crossfeed and the Pure-fallback
+/// warning keep theirs, interrupted replaces the row. All colors/fills are audited tokens.
 private struct SignalBadgeRow: View {
     let info: SignalPathInfo
+    /// The current track's file format ("MP3", "FLAC") — nil hides the segment.
+    let format: String?
     let isPlaying: Bool
     let reduceMotion: Bool
     let badgeHeight: CGFloat
@@ -92,18 +98,10 @@ private struct SignalBadgeRow: View {
                 }
             } else {
                 pathBadge
-                BadgeCapsule(height: badgeHeight) {
-                    Text(info.formattedRate).badgeText(DesignSystem.Color.label)
-                }
+                formatRateBadge
                 // No bits/decoder capsules: relocated to the inspector's signal-detail
                 // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
                 // SHORT badge set.
-                if info.path == .enhanced, info.intensityLinear > 0 {
-                    BadgeCapsule(height: badgeHeight) {
-                        Text("\(Int((info.intensityLinear * 100).rounded())) %")
-                            .badgeText(DesignSystem.Color.label)
-                    }
-                }
                 if info.intensityLinear > 0, let strength = info.crossfeedStrength {
                     BadgeCapsule(height: badgeHeight) {
                         Text("XF:\(strength.displayName)")
@@ -125,29 +123,78 @@ private struct SignalBadgeRow: View {
         .accessibilityValue(SignalPathAccessibility.value(for: info))
     }
 
-    /// PURE (accent dot, monochrome text) vs ENHANCED (pulsing dot — §3.4 pattern).
-    private var pathBadge: some View {
-        BadgeCapsule(height: badgeHeight) {
-            let pure = info.path == .pure
-            let dotColor = pure ? DesignSystem.Color.accent
-                : (info.fellBackToEnhanced ? DesignSystem.Color.statusWarning
-                    : DesignSystem.Color.labelTertiary)
-            let dot = Circle().fill(dotColor).frame(width: 5, height: 5)
-            if !pure, pulseIsActive(isPlaying: isPlaying, reduceMotion: reduceMotion) {
-                // Conditional phaseAnimator (§3.4): unmounting it IS the deterministic stop;
-                // the banned .repeatForever+onAppear idiom zombie-animates after gating flips.
-                dot.phaseAnimator([1.0, GlassDecor.pulseDimOpacity]) { view, opacity in
-                    view.opacity(opacity)
-                } animation: { _ in
-                    .easeInOut(duration: GlassDecor.pulseHalfCycleSeconds)
-                }
-            } else {
-                dot
+    /// PURE (accent dot, monochrome chip — untouched by the realign) vs ENHANCED: the
+    /// realigned TEAL chip carrying the pulsing dot + the live intensity in one string.
+    @ViewBuilder private var pathBadge: some View {
+        if info.path == .pure {
+            BadgeCapsule(height: badgeHeight) {
+                Circle().fill(DesignSystem.Color.accent).frame(width: 5, height: 5)
+                Text("PURE")
+                    .badgeText(DesignSystem.Color.label)
+                    .tracking(0.5)
             }
-            Text(pure ? "PURE" : "ENHANCED")
-                .badgeText(DesignSystem.Color.label)
-                .tracking(0.5)
+        } else {
+            TealBadgeCapsule(height: badgeHeight) {
+                pulsingDot
+                Text(enhancedText)
+                    .badgeText(DesignSystem.Color.accentText)
+                    .tracking(0.5)
+            }
         }
+    }
+
+    /// One string, live values (realigned): `ENHANCED · 20%`; plain `ENHANCED` at 0%
+    /// (bit-perfect blend — a zero reads as noise, not information).
+    private var enhancedText: String {
+        let percent = Int((info.intensityLinear * 100).rounded())
+        return percent > 0 ? "ENHANCED · \(percent)%" : "ENHANCED"
+    }
+
+    /// The 6pt dot: pulses via the §3.4 conditional phaseAnimator (unmounting IS the
+    /// deterministic stop); frozen at full opacity when paused or under Reduce Motion.
+    /// Amber when Pure fell back (the warning chip beside it carries the words).
+    @ViewBuilder private var pulsingDot: some View {
+        let dot = Circle()
+            .fill(info.fellBackToEnhanced ? DesignSystem.Color.statusWarning
+                : DesignSystem.Color.accentBright)
+            .frame(width: 6, height: 6)
+        if pulseIsActive(isPlaying: isPlaying, reduceMotion: reduceMotion) {
+            dot.phaseAnimator([1.0, GlassDecor.pulseDimOpacity]) { view, opacity in
+                view.opacity(opacity)
+            } animation: { _ in
+                .easeInOut(duration: GlassDecor.pulseHalfCycleSeconds)
+            }
+        } else {
+            dot
+        }
+    }
+
+    /// `MP3 · 48 kHz` — the grey mono chip. Text stays the PRIMARY label (not the mock's
+    /// white-60%): R4-BADGE-01's standing rule — dimmed hierarchy on a badge over the teal
+    /// glow core fails AA; hierarchy on a chip comes from the capsule, not dimmed text.
+    private var formatRateBadge: some View {
+        BadgeCapsule(height: badgeHeight) {
+            Text([format, info.formattedRate].compactMap(\.self).joined(separator: " · "))
+                .font(DesignSystem.Font.monoSmall.weight(.semibold))
+                .foregroundColor(DesignSystem.Color.label)
+        }
+    }
+}
+
+// MARK: - Teal badge capsule (the realigned ENHANCED chip)
+
+/// The accent-tinted chip: the audited `controlActiveFill` + accent ring pair (same family
+/// as the queue header's toggled-on chips; text/glyphs on it are `accentText`, R4-CHIP-02).
+private struct TealBadgeCapsule<Content: View>: View {
+    let height: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 5) { content }
+            .padding(.horizontal, 11)
+            .frame(height: height)
+            .background(Capsule().fill(DesignSystem.Color.controlActiveFill))
+            .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.28), lineWidth: 1))
     }
 }
 
