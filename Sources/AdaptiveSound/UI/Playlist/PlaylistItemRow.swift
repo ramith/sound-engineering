@@ -21,6 +21,12 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
     /// border so the drop point is visible during the drag (macOS drop-zone affordance).
     var isDropTarget: Bool = false
 
+    /// Row hover reveals the drag grip (S10.8 PR C — realigned: no handles at rest). The
+    /// grip stays MOUNTED at opacity 0 (hidden, not removed): it keeps its leading slot (no
+    /// reflow on hover) and stays a live drag source, so reorder works even mid-fade.
+    @State private var isRowHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 12) {
             if let dragPayload {
@@ -30,6 +36,8 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                     // Larger hit area than the thin glyph itself.
                     .frame(width: DesignSystem.QueueRow.gripHitWidth, height: DesignSystem.QueueRow.gripHitHeight)
                     .contentShape(Rectangle())
+                    .opacity(isRowHovered ? DesignSystem.QueueRow.gripHoverOpacity : 0)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isRowHovered)
                     .draggable(dragPayload) {
                         Text(file.name)
                             .font(DesignSystem.Font.body)
@@ -96,6 +104,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
             }
         }
         .contentShape(Rectangle())
+        .onHover { isRowHovered = $0 }
         // Full file-path tooltip (deviations §3) — the honest provenance readout on hover;
         // `AudioFile.id` IS the absolute URL.
         .help(file.id.path)
