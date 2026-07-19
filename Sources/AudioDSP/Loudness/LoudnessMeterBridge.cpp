@@ -78,14 +78,16 @@ void loudnessMeterAddStereo(void* meter, const float* left, const float* right, 
     // Inter-sample TRUE peak (8× polyphase ISP — the shared TruePeakKernel), with the
     // same per-buffer visual decay the old sample-peak readout used. Histories are
     // newest-first shift registers (24 doubles/channel; the shift is cheaper than the
-    // 8×24 dot products that follow it).
+    // 8×24 dot products that follow it). Mono runs ONE channel — the aliased right would
+    // reproduce channel 0's dot products exactly (break-it finding 7).
     using AdaptiveSound::TruePeakKernel::kNumTaps;
+    const uint32_t activeChannels = (right != nullptr) ? kTruePeakChannels : 1U;
     double peak = handle->truePeakLinear * kPeakDecayPerBuffer;
     for (uint32_t i = 0U; i < frames; ++i)
     {
         const std::array<double, kTruePeakChannels> samples{static_cast<double>(left[i]),
                                                             static_cast<double>(rightChannel[i])};
-        for (uint32_t ch = 0U; ch < kTruePeakChannels; ++ch)
+        for (uint32_t ch = 0U; ch < activeChannels; ++ch)
         {
             auto& hist = handle->histories[ch];
             for (uint32_t k = kNumTaps - 1U; k > 0U; --k)
