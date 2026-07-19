@@ -66,6 +66,20 @@ public enum GlassDecor {
     /// The knob's bottom inner shade (both appearances — it's a physical cue, not emission).
     public static let knobShade: RGBAColor = .gray(0.0, alpha: 0.25)
 
+    // MARK: Capsule tab strip (S10.8 PR B — Realigned Target `png/01-toolbar.png`)
+
+    /// The active tab capsule's teal glow — DARK-ONLY (grammar rule 6). Realigned spec:
+    /// `asTealMid 50%, radius 8, y 1` (#1FA893 = the iconFill mid stop).
+    public static let tabActiveGlowDark = RGBAColor(red: 31.0 / 255.0, green: 168.0 / 255.0,
+                                                    blue: 147.0 / 255.0, alpha: 0.5)
+    public static let tabActiveGlowRadius: Double = 8
+    public static let tabActiveGlowOffsetY: Double = 1
+    /// Track inner padding (track height = capsule + 2× this) and inter-tab spacing.
+    public static let tabTrackPadding: Double = 3
+    public static let tabSpacing: Double = 2
+    /// Base active-capsule height (@ScaledMetric-scaled at the call site, realigned: 28pt).
+    public static let tabCapsuleBaseHeight: Double = 28
+
     // MARK: Hero (PR 4 — 8a: teal title halo, dark-only per grammar rule 6; pulsing dot)
 
     /// The hero title's teal text-halo — DARK-ONLY (light drops emissive cues, grammar

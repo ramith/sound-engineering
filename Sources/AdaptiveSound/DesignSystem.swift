@@ -92,6 +92,11 @@ enum DesignSystem {
         /// TOK-04), so appearance-independent like `accent`.
         static let rowNowPlaying = from(Palette.rowNowPlaying)
         static let rowSelected = from(Palette.rowSelected)
+
+        /// The small-control hover wash (S10.8 PR B): re-exports the badge fill — the same
+        /// white-8%/dark-6% wash the realigned mock uses for hovered chrome controls, so
+        /// hover states never mint a second near-identical value.
+        static let hoverWash = from(Palette.badgeFill)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)

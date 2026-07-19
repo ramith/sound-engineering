@@ -48,9 +48,13 @@ public enum Palette {
 
     public static let accent = AppearancePair(both: RGBAColor(red: 0.161, green: 0.714, blue: 0.643)) // #29B6A4
     public static let accentDeep = AppearancePair(both: RGBAColor(red: 0.078, green: 0.537, blue: 0.478)) // #148979
-    /// Foreground ON the accent (play glyph over teal). Known ≈2.5:1 — pre-existing,
-    /// flagged to the founder (design §7 R4 scope guard), not gated here.
-    public static let onAccent = AppearancePair(both: .gray(1.0))
+    /// Foreground ON the accent (play glyph over teal, active-tab text). S10.8 PR B
+    /// (Realigned Target): the near-black teal #0C1413 replaces white — dark-on-teal is the
+    /// realigned identity AND retires the long-flagged ≈2.5:1 white-on-teal (now ≥4.5:1 on
+    /// the accent and the gradient's bright/mid stops — gated by R4-TAB-01).
+    public static let onAccent = AppearancePair(both: RGBAColor(
+        red: 12.0 / 255.0, green: 20.0 / 255.0, blue: 19.0 / 255.0
+    ))
     /// Alternate accent (swap-in blue).
     public static let blue = AppearancePair(both: RGBAColor(red: 0.039, green: 0.518, blue: 1.0)) // #0A84FF
 
@@ -129,6 +133,15 @@ public enum Palette {
         dark: RGBAColor(red: 30.0 / 255.0, green: 33.0 / 255.0, blue: 38.0 / 255.0, alpha: 0.5)
     )
 
+    /// The capsule tab-strip track (S10.8 PR B — Realigned Target): a carved dark capsule on
+    /// BOTH appearances (the realigned toolbar keeps a dark track in light mode; per the §3.2
+    /// grammar the light side is a LIGHTER dark wash — re-derived, never an inversion — so the
+    /// audited label hierarchy stays legible on it, R4-TAB-01).
+    public static let tabTrack = AppearancePair(
+        light: .gray(0.0, alpha: 0.22),
+        dark: .gray(0.0, alpha: 0.38)
+    )
+
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
@@ -162,6 +175,7 @@ public enum Palette {
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
+        ("tabTrack", tabTrack),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
         ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),

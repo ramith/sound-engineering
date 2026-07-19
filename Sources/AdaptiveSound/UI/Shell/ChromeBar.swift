@@ -97,6 +97,11 @@ private struct DevicePillView: View {
                     Text(viewModel.selectedDevice?.name ?? "No Device")
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    // Realigned (png/01): an explicit dropdown chevron between the name and
+                    // the rate readout — the borderless Menu label shows no indicator of its own.
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Color.asLabelTertiary)
                 }
                 .font(.callout.weight(.medium))
                 .foregroundStyle(Color.asLabel)
@@ -146,26 +151,59 @@ private struct DevicePillView: View {
 
 // MARK: - Tab Selector
 
+/// The realigned capsule tab strip (S10.8 PR B, D9 reopened — founder 2026-07-19): a carved
+/// dark track holding one teal-gradient capsule for the active tab; inactive tabs lighten on
+/// hover. Replaces `.pickerStyle(.segmented)`. Each tab is a real `Button` (keyboard Tab +
+/// Space/Return activation — the picker's arrow-key model is traded for standard button
+/// focus, with the selection exposed via the `.isSelected` trait). Selection movement is
+/// animated (`.snappy`), Reduce-Motion gated like the picker's old easing.
 private struct TabSelectorView: View {
     @Binding var selectedTab: TabSelection
     let reduceMotion: Bool
 
+    @State private var hoveredTab: TabSelection?
+    /// Realigned: 28pt capsule in a 34pt track — scaled with Dynamic Type (the chrome band
+    /// clamps at .xLarge) so the strip never clips its labels.
+    @ScaledMetric(relativeTo: .callout)
+    private var capsuleHeight = CGFloat(GlassDecor.tabCapsuleBaseHeight)
+
     var body: some View {
-        Picker(
-            selection: $selectedTab.animation(reduceMotion ? nil : .easeInOut(duration: 0.2))
-        ) {
+        HStack(spacing: CGFloat(GlassDecor.tabSpacing)) {
             ForEach(TabSelection.allCases, id: \.id) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
-                    .tag(tab)
+                tabButton(tab)
             }
-        } label: {
-            EmptyView() // no picker label at all — the VoiceOver name comes from .accessibilityLabel below
         }
-        .pickerStyle(.segmented)
-        // Lock the segmented control to its intrinsic size so the tabs never stretch with the
-        // window or compress — a stable, fixed-size chrome control (layoutPriority is now moot).
-        .fixedSize()
+        .padding(CGFloat(GlassDecor.tabTrackPadding))
+        .background(TabTrackCapsule())
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: selectedTab)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Tab Navigation")
         .accessibilityValue(selectedTab.rawValue)
+    }
+
+    private func tabButton(_ tab: TabSelection) -> some View {
+        let active = tab == selectedTab
+        return Button {
+            selectedTab = tab
+        } label: {
+            Text(tab.rawValue)
+                .font(.callout.weight(active ? .bold : .semibold))
+                .foregroundStyle(active ? DesignSystem.Color.onAccent
+                    : hoveredTab == tab ? DesignSystem.Color.label : DesignSystem.Color.labelSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, 15)
+                .frame(height: capsuleHeight)
+                .background {
+                    if active {
+                        ActiveTabCapsule()
+                    } else if hoveredTab == tab {
+                        Capsule().fill(DesignSystem.Color.hoverWash)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveredTab = $0 ? tab : nil }
+        .accessibilityAddTraits(active ? [.isSelected] : [])
     }
 }

@@ -173,6 +173,56 @@ struct CarvedTrack: View {
     }
 }
 
+// MARK: - Capsule tab strip visuals (S10.8 PR B — the realigned 8a tab selector)
+
+/// The tab strip's carved track: the `tabTrack` token fill + the shared carved top inner
+/// shade (the same inset-shadow cue as `CarvedGroove` — one carved grammar, two consumers).
+/// Appearance-aware, so it lives in this sanctioned file.
+struct TabTrackCapsule: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        Capsule()
+            .fill(SwiftUI.Color(token: Palette.tabTrack.value(for: dark ? .dark : .light)))
+            .overlay(alignment: .top) {
+                LinearGradient(
+                    colors: [SwiftUI.Color(token: dark ? GlassDecor.carvedShadeDark
+                            : GlassDecor.carvedShadeLight), .clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 2)
+            }
+            .clipShape(Capsule())
+    }
+}
+
+/// The active tab's teal capsule: the brand `iconFill` gradient (the realigned "teal button"
+/// IS this gradient — byte-identical stops), the shared specular top rim, and a dark-only
+/// teal glow (grammar rule 6: light drops emissive cues).
+struct ActiveTabCapsule: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
+        Capsule()
+            .fill(DesignSystem.Gradient.iconFill)
+            .overlay {
+                Capsule().strokeBorder(
+                    LinearGradient(
+                        colors: [SwiftUI.Color(token: GlassDecor.rim.value(for: appearance)), .clear],
+                        startPoint: .top, endPoint: .center
+                    ),
+                    lineWidth: 1
+                )
+            }
+            .shadow(color: appearance == .dark ? SwiftUI.Color(token: GlassDecor.tabActiveGlowDark) : .clear,
+                    radius: CGFloat(GlassDecor.tabActiveGlowRadius),
+                    x: 0,
+                    y: CGFloat(GlassDecor.tabActiveGlowOffsetY))
+    }
+}
+
 /// The sanctioned environment→resolver wiring for the glow field (this file is the one
 /// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
 /// `glowFieldIsVisible` resolver says so (dark + no reduced-transparency request).
