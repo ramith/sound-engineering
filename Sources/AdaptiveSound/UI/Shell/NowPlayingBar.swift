@@ -1,3 +1,4 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Now Playing Bar (footer transport — L3)
@@ -171,8 +172,9 @@ private struct FooterTransportControls: View {
         .accessibilityLabel(label)
     }
 
-    /// Play/Pause — the app's signature gradient circle when loaded; a flat, disabled card
-    /// circle when idle (same 34pt frame, so no reflow between states).
+    /// Play/Pause — the glossy teal circle when loaded (S10.8 PR G: the shared `TealGloss`
+    /// — inner top highlight + dark-only teal glow, same recipe as the active tab); a flat,
+    /// disabled card circle when idle (same 34pt frame, so no reflow between states).
     private var playButton: some View {
         Button {
             viewModel.togglePlayPause()
@@ -183,12 +185,11 @@ private struct FooterTransportControls: View {
                 .frame(width: DesignSystem.Footer.playButton, height: DesignSystem.Footer.playButton)
                 .background {
                     if isLoaded {
-                        Circle().fill(DesignSystem.Gradient.iconFill)
+                        TealGloss(shape: Circle())
                     } else {
                         Circle().fill(DesignSystem.Color.card)
                     }
                 }
-                .clipShape(Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(FooterControlButtonStyle())
@@ -359,6 +360,7 @@ private struct FooterScrubber: View {
 
 private struct FooterSignalSlot: View {
     @Environment(AudioViewModel.self) private var viewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isLoaded: Bool
 
     var body: some View {
@@ -384,21 +386,42 @@ private struct FooterSignalSlot: View {
                 .foregroundStyle(DesignSystem.Color.labelSecondary)
                 .lineLimit(1)
         } else {
-            Circle()
-                .fill(dotColor(info))
-                .frame(width: 6, height: 6)
-            Text("\(info.path == .pure ? "Pure" : "Enhanced") · \(info.formattedRate)")
+            // Realigned (S10.8 PR G, `png/06`): the Enhanced dot is the hero chip's teal,
+            // pulsing with the same §3.4 gate (playing + Reduce Motion off); "Enhanced"
+            // reads in accentText. Pure/fallback keep their established dot colors.
+            statusDot(info)
+            (Text(info.path == .pure ? "Pure" : "Enhanced")
+                .foregroundColor(info.path == .pure ? DesignSystem.Color.labelSecondary
+                    : DesignSystem.Color.accentText)
+                + Text(" · \(info.formattedRate)")
+                .foregroundColor(DesignSystem.Color.labelSecondary))
                 .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+        }
+    }
+
+    @ViewBuilder private func statusDot(_ info: SignalPathInfo) -> some View {
+        let dot = Circle()
+            .fill(dotColor(info))
+            .frame(width: 6, height: 6)
+        if info.path == .enhanced, !info.fellBackToEnhanced,
+           pulseIsActive(isPlaying: viewModel.isPlaying, reduceMotion: reduceMotion) {
+            // Conditional phaseAnimator (§3.4) — unmounting IS the deterministic stop.
+            dot.phaseAnimator([1.0, GlassDecor.pulseDimOpacity]) { view, opacity in
+                view.opacity(opacity)
+            } animation: { _ in
+                .easeInOut(duration: GlassDecor.pulseHalfCycleSeconds)
+            }
+        } else {
+            dot
         }
     }
 
     private func dotColor(_ info: SignalPathInfo) -> Color {
         if info.fellBackToEnhanced || info.interrupted { return DesignSystem.Color.statusWarning }
         if info.path == .pure { return DesignSystem.Color.accent }
-        return DesignSystem.Color.labelTertiary
+        return DesignSystem.Color.accentBright
     }
 
     private var accessibilityValue: String {
