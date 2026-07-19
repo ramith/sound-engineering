@@ -295,7 +295,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         return LoudnessSnapshot(
             integratedLufs: readout.integratedLufs,
             shortTermLufs: readout.shortTermLufs,
-            peakDb: readout.peakDb
+            truePeakDb: readout.truePeakDb
         )
     }
 
