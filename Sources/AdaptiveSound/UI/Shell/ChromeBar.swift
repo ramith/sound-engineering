@@ -27,9 +27,11 @@ struct ChromeBar: View {
 
             DevicePillView()
 
-            TabSelectorView(selectedTab: $selectedTab, reduceMotion: reduceMotion)
-
             Spacer(minLength: 8)
+
+            // Realigned (`png/00`/`png/01`, founder round 1): the tab strip sits on the
+            // chrome's RIGHT edge — logo + device pill left, spacer between.
+            TabSelectorView(selectedTab: $selectedTab, reduceMotion: reduceMotion)
         }
         // Shares the content's leading margin: with the native titlebar restored, the window
         // buttons live in their own strip, so the chrome no longer insets to clear them — its
@@ -134,9 +136,11 @@ private struct DevicePillView: View {
         // device NAME, which slid the tab control's left edge on every device change. Fixed →
         // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate
         // (the text compresses before the spacer's 8pt minimum or the rate slot give way).
-        // 288 (was 252): the PR-6 rate slot squeezed the name area to ~140pt and truncated
-        // common device names ("MacBook Pr…") — the deviations audit's fresh catch.
-        .frame(minWidth: 288, maxWidth: 288, minHeight: 32, alignment: .leading)
+        // 302 (was 288, before that 252): each fixed sibling added to the pill squeezes the
+        // NAME first — the PR-6 rate slot truncated "MacBook Pr…" (deviations audit), then
+        // the PR-B dropdown chevron (~14pt with spacing) re-truncated "MacBook Pro Spe…"
+        // (founder round-1 screenshot). The width absorbs the chevron exactly.
+        .frame(minWidth: 302, maxWidth: 302, minHeight: 32, alignment: .leading)
         // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
         // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
         .glassPanel(.badge, in: Capsule())
