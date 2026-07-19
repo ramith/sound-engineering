@@ -172,6 +172,18 @@ enum DesignSystem {
             startPoint: .top,
             endPoint: .bottom
         )
+
+        /// The realigned horizontal teal fill (S10.8 PR E — `asTealMeter`): mid → bright,
+        /// leading → trailing. Shared by the loudness meters, the carved sliders, and the
+        /// footer scrubber's playing state — the same two iconFill stops, re-composed.
+        static let meterFill = LinearGradient(
+            gradient: SwiftUI.Gradient(colors: [
+                Color.from(Palette.iconFillMid),
+                Color.from(Palette.iconFillTop),
+            ]),
+            startPoint: .leading,
+            endPoint: .trailing
+        )
     }
 
     // MARK: Shell metrics (app-owned window chrome bands)
