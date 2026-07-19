@@ -28,8 +28,9 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
             header
                 .frame(height: DesignSystem.ShellMetrics.chromeHeight)
                 .frame(maxWidth: .infinity)
-                .background(DesignSystem.Color.window)
-                .overlay(alignment: .bottom) { Hairline() }
+                // Realigned styled glass (S10.8 PR G): fill strata + specular/seam edges —
+                // owns what `.background(window)` + the bottom `Hairline` did.
+                .chromeBand(lightFrom: .top)
 
             // `maxHeight: .infinity` claims the space between the bands; `.top` alignment forces
             // an over-tall child to spill DOWNWARD (never up into the chrome); `.clipped()`
@@ -43,8 +44,9 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
             footer
                 .frame(height: DesignSystem.ShellMetrics.footerHeight)
                 .frame(maxWidth: .infinity)
-                .background(DesignSystem.Color.panel)
-                .overlay(alignment: .top) { Hairline() }
+                // Realigned styled glass, light source flipped (lit from its bottom); the
+                // specular top edge replaces the old top `Hairline` + `panel` fill.
+                .chromeBand(lightFrom: .bottom)
         }
         .background(DesignSystem.Color.window)
         .frame(

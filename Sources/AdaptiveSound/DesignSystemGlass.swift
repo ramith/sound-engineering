@@ -220,18 +220,21 @@ struct TabTrackCapsule: View {
     }
 }
 
-/// The active tab's teal capsule: the brand `iconFill` gradient (the realigned "teal button"
-/// IS this gradient — byte-identical stops), the shared specular top rim, and a dark-only
-/// teal glow (grammar rule 6: light drops emissive cues).
-struct ActiveTabCapsule: View {
+/// A teal "glossy button" fill for any insettable shape: the brand `iconFill` gradient
+/// (the realigned "teal button" IS this gradient — byte-identical stops), the shared
+/// specular top rim, and a dark-only teal glow (grammar rule 6: light drops emissive
+/// cues). Consumers: the active tab capsule (PR B) and the footer play circle (PR G).
+struct TealGloss<GlossShape: InsettableShape>: View {
+    var shape: GlossShape
+
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
-        Capsule()
+        shape
             .fill(DesignSystem.Gradient.iconFill)
             .overlay {
-                Capsule().strokeBorder(
+                shape.strokeBorder(
                     LinearGradient(
                         colors: [SwiftUI.Color(token: GlassDecor.rim.value(for: appearance)), .clear],
                         startPoint: .top, endPoint: .center
@@ -243,6 +246,72 @@ struct ActiveTabCapsule: View {
                     radius: CGFloat(GlassDecor.tabActiveGlowRadius),
                     x: 0,
                     y: CGFloat(GlassDecor.tabActiveGlowOffsetY))
+    }
+}
+
+/// The active tab's teal capsule (S10.8 PR B) — the capsule instance of `TealGloss`.
+struct ActiveTabCapsule: View {
+    var body: some View {
+        TealGloss(shape: Capsule())
+    }
+}
+
+// MARK: - Chrome band styled glass (S10.8 PR G — realigned `png/01` + `png/06`)
+
+/// The app-owned chrome bands' "styled glass" (founder decision 2: fill strata, NOT real
+/// blur — nothing scrolls behind these bands). Dark: the window base + a sheen gradient
+/// lit from `lightFrom`, a 1px specular line on the band's TOP edge, and (header only) a
+/// dark seam on its bottom edge. Light: the plain window + hairline seams — the grammar
+/// drops emissive cues. Owns what AppShell's `.background` + `Hairline` overlays did.
+struct ChromeBandModifier: ViewModifier {
+    /// `.top` for the header (lit from its top edge), `.bottom` for the footer.
+    var lightFrom: UnitPoint = .top
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let dark = colorScheme == .dark
+        content
+            .background {
+                ZStack {
+                    DesignSystem.Color.window
+                    if dark {
+                        LinearGradient(
+                            colors: [SwiftUI.Color(token: GlassDecor.bandSheenStrong),
+                                     SwiftUI.Color(token: GlassDecor.bandSheenWeak)],
+                            startPoint: lightFrom,
+                            endPoint: lightFrom == .top ? .bottom : .top
+                        )
+                    }
+                }
+            }
+            // The specular line ALWAYS sits on the band's top edge (the edge that catches
+            // light — the realign guide's StyledGlassBar contract). Light keeps only the
+            // SEPARATING hairlines the bands had before (footer top; header top is the
+            // window edge — nothing to separate).
+            .overlay(alignment: .top) {
+                if dark || lightFrom == .bottom {
+                    Rectangle()
+                        .fill(dark ? SwiftUI.Color(token: GlassDecor.bandSpecularDark)
+                            : DesignSystem.Color.hairline)
+                        .frame(height: 1)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if lightFrom == .top { // header: dark seam against the content below
+                    Rectangle()
+                        .fill(dark ? SwiftUI.Color(token: GlassDecor.bandSeamDark)
+                            : DesignSystem.Color.hairline)
+                        .frame(height: 1)
+                }
+            }
+    }
+}
+
+extension View {
+    /// Apply the realigned chrome-band treatment (see `ChromeBandModifier`).
+    func chromeBand(lightFrom: UnitPoint) -> some View {
+        modifier(ChromeBandModifier(lightFrom: lightFrom))
     }
 }
 

@@ -82,6 +82,17 @@ public enum GlassDecor {
     /// Base active-capsule height (@ScaledMetric-scaled at the call site, realigned: 28pt).
     public static let tabCapsuleBaseHeight: Double = 28
 
+    // MARK: Chrome/footer band styled glass (S10.8 PR G — realigned `png/01` + `png/06`)
+
+    // Founder decision 2: fill STRATA, not real blur (nothing scrolls behind the bands).
+    // The sheen is dark-only (grammar rule 6 — light keeps the plain window + hairlines);
+    // the 1px specular line always sits on a band's TOP edge (the edge that catches light).
+    public static let bandSheenStrong: RGBAColor = .gray(1.0, alpha: 0.05)
+    public static let bandSheenWeak: RGBAColor = .gray(1.0, alpha: 0.02)
+    public static let bandSpecularDark: RGBAColor = .gray(1.0, alpha: 0.09)
+    /// The dark seam on the header's content-facing (bottom) edge.
+    public static let bandSeamDark: RGBAColor = .gray(0.0, alpha: 0.35)
+
     // MARK: Inspector floating card (S10.8 PR E — realigned `png/05`)
 
     /// The teal radial glow BEHIND/below the floating card (dark-only — grammar rule 6):
