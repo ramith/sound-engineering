@@ -103,6 +103,12 @@ enum DesignSystem {
         static let controlHover = from(Palette.controlHover)
         static let controlActiveFill = from(Palette.controlActiveFill)
         static let segmentSelected = from(Palette.segmentSelected)
+
+        /// S10.8 PR D — the playing row (realigned `png/04`); audited R4-ROW-01.
+        static let accentTitle = from(Palette.accentTitle)
+        /// The mini equalizer's bar teal — the iconFill gradient's bright stop, re-exported
+        /// (never a second #3FD0BA).
+        static let accentBright = from(Palette.iconFillTop)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)

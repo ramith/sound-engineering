@@ -80,6 +80,18 @@ public enum GlassDecor {
     /// Base active-capsule height (@ScaledMetric-scaled at the call site, realigned: 28pt).
     public static let tabCapsuleBaseHeight: Double = 28
 
+    // MARK: Playing-row mini equalizer (S10.8 PR D — realigned `png/04`)
+
+    // Deterministic sine bars (the Realigned Target SUPERSEDED the spectrum-driven plan —
+    // recorded in s10-8-deviations-plan.md §B). Bars sit still at `eqBarMinScale` whenever
+    // playback is paused or Reduce Motion is on (the §3.4 pulseIsActive predicate).
+    public static let eqBarDurations: [Double] = [0.80, 1.05, 0.90]
+    public static let eqBarPhases: [Double] = [0.0, 0.4, 0.7]
+    public static let eqBarWidth: Double = 2.5
+    public static let eqBarSpacing: Double = 1.5
+    public static let eqBarContainerHeight: Double = 12
+    public static let eqBarMinScale: Double = 0.34
+
     // MARK: Hero (PR 4 — 8a: teal title halo, dark-only per grammar rule 6; pulsing dot)
 
     /// The hero title's teal text-halo — DARK-ONLY (light drops emissive cues, grammar

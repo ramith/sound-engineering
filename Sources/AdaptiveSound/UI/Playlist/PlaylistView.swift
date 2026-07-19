@@ -301,7 +301,10 @@ private struct PlaylistItemList: View {
             file: item.file,
             index: index,
             isSelected: viewModel.selectedTrackIndex == index,
-            isNowPlaying: viewModel.isPlaying && viewModel.selectedTrackIndex == index,
+            // PR D: the CURRENT row keeps its card while paused (prominence is no longer
+            // tied to play state); `isPlaybackActive` gates only the equalizer motion.
+            isNowPlaying: viewModel.selectedTrackIndex == index,
+            isPlaybackActive: viewModel.isPlaying,
             numberColumnWidth: numberColumnWidth,
             // Nil payload while the filter narrows the list = NO grip (the row API's own
             // non-reorderable state, built in S10.3): the affordance disappears with the
