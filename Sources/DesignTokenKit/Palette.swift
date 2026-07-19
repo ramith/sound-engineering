@@ -145,12 +145,13 @@ public enum Palette {
         dark: .gray(1.0, alpha: 0.08)
     )
 
-    /// The inspector panel fill (8a: `rgba(30,33,38,.5)`). Light per the grammar: white-based
-    /// glass, one notch stronger than the lens so the column reads as the room's wall, not a
-    /// second lens. Same derived RT/IC-opaque contract.
+    /// The inspector panel fill. S10.8 PR E (Realigned Target `png/05`): the floating card
+    /// densifies to `rgba(30,32,37,.72)` (was the 8a `rgba(30,33,38,.5)`) — it now hugs its
+    /// content and floats over the glow, so it needs more body than the old full-height
+    /// wall. Light per the grammar: white-based glass, unchanged. Same RT/IC-opaque contract.
     public static let panelFill = AppearancePair(
         light: .gray(1.0, alpha: 0.60),
-        dark: RGBAColor(red: 30.0 / 255.0, green: 33.0 / 255.0, blue: 38.0 / 255.0, alpha: 0.5)
+        dark: RGBAColor(red: 30.0 / 255.0, green: 32.0 / 255.0, blue: 37.0 / 255.0, alpha: 0.72)
     )
 
     /// The capsule tab-strip track (S10.8 PR B — Realigned Target): a carved dark capsule on

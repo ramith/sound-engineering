@@ -12,13 +12,20 @@ import SwiftUI
 struct InspectorColumn: View {
     @Environment(AudioViewModel.self) private var viewModel
 
+    /// Measured height of the (padded) content — the FLOATING card (S10.8 PR E) hugs this
+    /// instead of stretching to the window bottom; when the region offers less, the
+    /// ScrollView scrolls inside the chrome exactly as before.
+    @State private var contentHeight: CGFloat = 0
+
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
                 MasterGainSliderView()
                 ReimagineSectionView()
                 signalDetail
+                sectionDivider
                 LoudnessMetersView()
+                sectionDivider
                 HeadphonesSectionView()
             }
             .padding([.horizontal, .top], 14)
@@ -29,16 +36,36 @@ struct InspectorColumn: View {
             // CROSS the run transiently while scrolling — accepted, same class as text
             // passing under the seam feather.)
             .padding(.bottom, CGFloat(GlassDecor.bleedHeight))
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                contentHeight = height
+            }
         }
+        // The hug: cap the panel at its content height (top-aligned in the region the
+        // HStack offers) — never a fixed height on the panel (guide E1). Zero means "not
+        // yet measured" → behave as before for one layout pass.
+        .frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity, alignment: .top)
         // Clip the SCROLLING content to the panel's shape: `.glassPanel` paints fill under
         // and strokes over but never clips, so rows crossing the top/bottom edge would
-        // render square into the radius-22 corner cutouts (~6pt intrusion) — and this
-        // panel is EXPECTED to scroll at the 640pt window minimum.
+        // render square into the corner cutouts — and this panel is still EXPECTED to
+        // scroll at the 640pt window minimum.
         .clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
                                     style: .continuous))
         .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
                                                  style: .continuous))
+        // The teal radial glow behind/below the card (dark-only via GlowFieldGate) — sits
+        // BEHIND the fill strata, bleeding past the bottom edge.
+        .background { InspectorCardGlow() }
         .frame(width: CGFloat(NowPlayingLayout.inspectorWidth))
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Realigned section divider: a 1px hairline run between the inspector's sections.
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(Color.asHairline)
+            .frame(height: 1)
     }
 
     /// Decoder + bit-depth detail (§5: the audiophile home for what left the hero badges).
@@ -156,7 +183,7 @@ struct HeadphonesSectionView: View {
                 }
             }
         }
-        .opacity(isEnabled ? 1 : 0.55) // 8a disabled-block opacity
+        .opacity(isEnabled ? 1 : 0.5) // realigned disabled-block opacity (guide E1: 50%)
     }
 }
 
