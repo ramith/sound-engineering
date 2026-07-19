@@ -109,6 +109,10 @@ enum DesignSystem {
         /// The mini equalizer's bar teal — the iconFill gradient's bright stop, re-exported
         /// (never a second #3FD0BA).
         static let accentBright = from(Palette.iconFillTop)
+
+        // S10.8 PR E — the true-peak hot state (realigned `png/05`); audited R4-METER-01.
+        static let meterHot = from(Palette.meterHot)
+        static let meterHotText = from(Palette.meterHotText)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
@@ -180,6 +184,17 @@ enum DesignSystem {
             gradient: SwiftUI.Gradient(colors: [
                 Color.from(Palette.iconFillMid),
                 Color.from(Palette.iconFillTop),
+            ]),
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+
+        /// The true-peak meter's HOT fill (> −1 dBTP): teal running into the amber tail
+        /// (realigned `png/05`). Stops: the bright teal → `meterHot`.
+        static let meterHotFill = LinearGradient(
+            gradient: SwiftUI.Gradient(colors: [
+                Color.from(Palette.iconFillTop),
+                Color.from(Palette.meterHot),
             ]),
             startPoint: .leading,
             endPoint: .trailing
@@ -292,6 +307,19 @@ enum DesignSystem {
         static let gripHitHeight: CGFloat = 26
         /// Hover-revealed grip opacity (S10.8 PR C — realigned: no handles at rest).
         static let gripHoverOpacity: Double = 0.45
+    }
+
+    // MARK: Loudness meter mapping (S10.8 PR E — the realigned meter rows, `png/05`)
+
+    /// Display mapping for the inspector's loudness meter bars. Floors reproduce the mock's
+    /// fractions exactly: −15.9 LUFS → 62%, −24.3 → 41% (floor −42); −0.8 dBTP → 93%,
+    /// −3.2 → 74% (floor −12). The hot threshold equals the limiter's default −1 dBTP
+    /// ceiling — the meter warns exactly where the safety layer clamps.
+    enum Meters {
+        static let lufsFloor: Double = -42
+        static let truePeakFloorDb: Double = -12
+        static let hotThresholdDbtp: Double = -1.0
+        static let labelColumnWidth: CGFloat = 82
     }
 
     // MARK: Queue header metrics (S10.8 PR C — the realigned single-row header, `png/03`)

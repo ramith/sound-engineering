@@ -159,3 +159,57 @@ static auto testLoudnessMakeupRoundTrip() -> void
     }
     logPass(kName);
 }
+
+// Test: the shared TruePeakKernel (S10.8 PR E — now also the METER path's detector)
+// recovers the inter-sample peak of a quarter-rate sine sampled at ±45° — the classic
+// ISP case: every SAMPLE lands at A·sin(45°) ≈ 0.7071·A, so a sample-peak meter
+// under-reads by 3.01 dB while the true peak is A. Budget 0.35 dB (the same
+// interpolator-gap class the libebur128 oracle uses).
+static auto testLoudnessTruePeakKernelInterSample() -> void
+{
+    static const char* const kName = "Loudness_TruePeakKernel_InterSample";
+    using namespace AdaptiveSound::TruePeakKernel;
+
+    Coefficients coeffs{};
+    computeCoefficients(coeffs);
+
+    constexpr double kAmp = 0.5; // −6.02 dBTP true peak
+    constexpr double kTruePeakDb = -6.0206;
+    History hist{};
+    double maxIsp = 0.0;
+    double maxSample = 0.0;
+    for (uint32_t n = 0U; n < 4800U; ++n)
+    {
+        // fs/4 sine, +45° phase: samples alternate ±kAmp·0.7071 exactly between peaks.
+        const double s = kAmp
+            * std::sin((std::numbers::pi / 2.0 * static_cast<double>(n)) + (std::numbers::pi / 4.0));
+        for (uint32_t k = kNumTaps - 1U; k > 0U; --k)
+        {
+            hist[k] = hist[k - 1U];
+        }
+        hist[0] = s;
+        maxSample = std::max(maxSample, std::abs(s));
+        maxIsp = std::max(maxIsp, phasePeak(hist, coeffs));
+    }
+
+    const double ispDb = 20.0 * std::log10(maxIsp);
+    const double sampleDb = 20.0 * std::log10(maxSample);
+    // The sample grid must actually miss the crest (the premise of the test)…
+    if (sampleDb > kTruePeakDb - 2.5)
+    {
+        std::ostringstream oss;
+        oss << "test premise broken: sample peak " << sampleDb << " dB is too close to the crest";
+        logFail(kName, oss.str());
+        return;
+    }
+    // …and the kernel must recover it.
+    if (std::abs(ispDb - kTruePeakDb) > 0.35)
+    {
+        std::ostringstream oss;
+        oss << "true peak: expected " << kTruePeakDb << " dBTP, kernel read " << ispDb
+            << " (sample peak " << sampleDb << ")";
+        logFail(kName, oss.str());
+        return;
+    }
+    logPass(kName);
+}

@@ -9,19 +9,23 @@
 // off-RT (engine init/teardown).
 
 #include "../include/DeviceBridge.h"
+#include "../include/TruePeakKernel.h"
 #include "LufsMeter.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <new>
 
 namespace
 {
     constexpr float kPeakDecayPerBuffer = 0.85F; // ~150 ms visual decay at tap rate
     constexpr double kPeakFloorDb = -120.0;
-    constexpr float kPeakFloorLinear = 1.0e-6F;
+    constexpr double kPeakFloorLinear = 1.0e-6;
     constexpr double kDbAmplitudeScale = 20.0;
     constexpr double kUnmeasuredLufs = -200.0;
+    constexpr uint32_t kTruePeakChannels = 2U;
 
     struct LoudnessMeterHandle
     {
@@ -29,8 +33,15 @@ namespace
         std::atomic<double> integrated{kUnmeasuredLufs};
         std::atomic<double> shortTerm{kUnmeasuredLufs};
         std::atomic<double> momentary{kUnmeasuredLufs};
-        std::atomic<double> peakDb{kPeakFloorDb};
-        float peakLinear = 0.0F; // tap-thread only
+        std::atomic<double> truePeakDb{kPeakFloorDb};
+
+        // True-peak state (S10.8 PR E — the meter path was SAMPLE-peak before; the UI's
+        // "True peak" label is honest only because this is the same 8× polyphase ISP
+        // kernel the limiter's ceiling runs). Tap-thread only.
+        AdaptiveSound::TruePeakKernel::Coefficients ispCoeffs{};
+        std::array<std::array<double, AdaptiveSound::TruePeakKernel::kNumTaps>, kTruePeakChannels>
+            histories{}; // newest-first windows, shifted per sample
+        double truePeakLinear = 0.0;
     };
 
     static_assert(std::atomic<double>::is_always_lock_free,
@@ -43,6 +54,7 @@ void* loudnessMeterCreate(double sampleRate) AUDIODSP_C_NOEXCEPT
     if (handle != nullptr)
     {
         handle->meter.prepare(sampleRate);
+        AdaptiveSound::TruePeakKernel::computeCoefficients(handle->ispCoeffs);
     }
     return handle;
 }
@@ -63,20 +75,36 @@ void loudnessMeterAddStereo(void* meter, const float* left, const float* right, 
     const float* rightChannel = (right != nullptr) ? right : left;
     handle->meter.addNonInterleavedStereo(left, rightChannel, frames);
 
-    // Sample-peak with per-buffer decay (the true-peak limiter is not in this path).
-    float peak = handle->peakLinear * kPeakDecayPerBuffer;
+    // Inter-sample TRUE peak (8× polyphase ISP — the shared TruePeakKernel), with the
+    // same per-buffer visual decay the old sample-peak readout used. Histories are
+    // newest-first shift registers (24 doubles/channel; the shift is cheaper than the
+    // 8×24 dot products that follow it).
+    using AdaptiveSound::TruePeakKernel::kNumTaps;
+    double peak = handle->truePeakLinear * kPeakDecayPerBuffer;
     for (uint32_t i = 0U; i < frames; ++i)
     {
-        peak = std::max({peak, std::abs(left[i]), std::abs(rightChannel[i])});
+        const std::array<double, kTruePeakChannels> samples{static_cast<double>(left[i]),
+                                                            static_cast<double>(rightChannel[i])};
+        for (uint32_t ch = 0U; ch < kTruePeakChannels; ++ch)
+        {
+            auto& hist = handle->histories[ch];
+            for (uint32_t k = kNumTaps - 1U; k > 0U; --k)
+            {
+                hist[k] = hist[k - 1U];
+            }
+            hist[0] = samples[ch];
+            peak =
+                std::max(peak, AdaptiveSound::TruePeakKernel::phasePeak(hist, handle->ispCoeffs));
+        }
     }
-    handle->peakLinear = peak;
-    const double peakDecibels =
+    handle->truePeakLinear = peak;
+    const double truePeakDecibels =
         (peak > kPeakFloorLinear) ? (kDbAmplitudeScale * std::log10(peak)) : kPeakFloorDb;
 
     handle->integrated.store(handle->meter.integratedLufs(), std::memory_order_release);
     handle->shortTerm.store(handle->meter.shortTermLufs(), std::memory_order_release);
     handle->momentary.store(handle->meter.momentaryLufs(), std::memory_order_release);
-    handle->peakDb.store(peakDecibels, std::memory_order_release);
+    handle->truePeakDb.store(truePeakDecibels, std::memory_order_release);
 }
 
 CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT
@@ -90,6 +118,6 @@ CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT
     out.integratedLufs = handle->integrated.load(std::memory_order_acquire);
     out.shortTermLufs = handle->shortTerm.load(std::memory_order_acquire);
     out.momentaryLufs = handle->momentary.load(std::memory_order_acquire);
-    out.peakDb = handle->peakDb.load(std::memory_order_acquire);
+    out.truePeakDb = handle->truePeakDb.load(std::memory_order_acquire);
     return out;
 }

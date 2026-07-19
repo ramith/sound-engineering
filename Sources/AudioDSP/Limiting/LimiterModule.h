@@ -68,6 +68,7 @@
 #include "../include/AudioConstants.h"
 #include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
+#include "../include/TruePeakKernel.h"
 #include <Accelerate/Accelerate.h>
 #include <algorithm>
 #include <array>
@@ -75,20 +76,15 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <numbers>
 #include <vector>
 
 namespace AdaptiveSound
 {
 
     // --- Polyphase ISP detector (replaces M1 4× linear interpolation) -----------
-    inline constexpr uint32_t kIspOversampling = 8U; // 8× polyphase upsample
-    inline constexpr uint32_t kIspNumTaps = 24U;     // taps per phase (windowed sinc)
-    inline constexpr uint32_t kIspPrototypeN = kIspOversampling * kIspNumTaps; // 192
-    inline constexpr double kIspKaiserBeta = 8.0;         // Kaiser β (≈ −98 dB stopband)
-    inline constexpr double kIspProtoCutoffNorm = 0.0625; // 0.5/L: pass base band, reject images
-    inline constexpr uint32_t kI0MaxTerms = 25U;          // I0 Bessel series term cap
-    inline constexpr double kI0ConvergeEps = 1.0e-16;     // I0 series termination
+    // The 8×24 windowed-sinc kernel itself lives in include/TruePeakKernel.h (S10.8 PR E
+    // extraction) — shared with the loudness meter's true-peak readout so both run the
+    // SAME oracle-verified design. Only the limiter-specific margin stays here.
 
     // Working-ceiling margin: polyphase worst-case under-read < 0.17 dB + 0.10 guard
     // → −0.27 dB = 10^(−0.27/20). (Was −0.5 dB / 0.94406 under M1 linear-interp.)
@@ -293,80 +289,29 @@ namespace AdaptiveSound
 
         // Modified Bessel I0(x) via series Σ ((x/2)^k / k!)² (libc++ lacks
         // std::cyl_bessel_i). Pure, off-RT.
-        [[nodiscard]] static auto kaiserI0(double xValue) noexcept -> double
-        {
-            const double half = xValue / 2.0;
-            double term = 1.0;
-            double sum = 1.0;
-            for (uint32_t k = 1U; k <= kI0MaxTerms; ++k)
-            {
-                const double ratio = half / static_cast<double>(k);
-                term *= ratio * ratio;
-                sum += term;
-                if (term < sum * kI0ConvergeEps)
-                {
-                    break;
-                }
-            }
-            return sum;
-        }
-
-        // Build the 8×24 windowed-sinc polyphase upsampler into ispCoeffs_ (flat,
-        // phase-major: ispCoeffs_[phase*kIspNumTaps + tap] = h[phase + tap*L]).
-        // h[n] = L·(2·fc)·sinc(2·fc·(n−M))·kaiser(n,β),  M = (N−1)/2.  Off-RT.
+        // Build the 8×24 windowed-sinc polyphase upsampler into ispCoeffs_. The kernel
+        // math lives in TruePeakKernel (S10.8 PR E extraction — shared with the loudness
+        // meter's true-peak readout). Off-RT.
         void computePolyphaseCoeffs() noexcept
         {
-            const double center = static_cast<double>(kIspPrototypeN - 1U) / 2.0; // 95.5
-            const double twoFc = 2.0 * kIspProtoCutoffNorm;                       // 0.125 = 1/L
-            const double scale = static_cast<double>(kIspOversampling) * twoFc;   // = 1.0
-            const double i0Beta = kaiserI0(kIspKaiserBeta);
-            const double denom = static_cast<double>(kIspPrototypeN - 1U);
-
-            for (uint32_t i = 0U; i < kIspPrototypeN; ++i)
-            {
-                // dist is half-integer (center = 95.5) → sincArg is never exactly 0.
-                const double dist = static_cast<double>(i) - center;
-                const double sincArg = twoFc * dist;
-                const double sincVal =
-                    std::sin(std::numbers::pi * sincArg) / (std::numbers::pi * sincArg);
-                const double ratio = (2.0 * dist) / denom;
-                const double winArg =
-                    kIspKaiserBeta * std::sqrt(std::max(0.0, 1.0 - (ratio * ratio)));
-                const double window = kaiserI0(winArg) / i0Beta;
-
-                const uint32_t phase = i % kIspOversampling;
-                const uint32_t tap = i / kIspOversampling;
-                ispCoeffs_[(static_cast<size_t>(phase) * kIspNumTaps) + tap] =
-                    scale * sincVal * window;
-            }
+            TruePeakKernel::computeCoefficients(ispCoeffs_);
         }
 
         // 8× polyphase inter-sample true-peak of the sample just written at
         // `writePos`, for ONE channel. Reads that channel's 24-sample ring history
-        // (handles wrap using ringSize_), runs 8 dot-products, returns max |·| (double).
-        // The caller maxes this over all active channels to drive the linked gain.
+        // (handles wrap using ringSize_) into the kernel's newest-first window, then
+        // runs the shared phase dot-products. The caller maxes this over all active
+        // channels to drive the linked gain.
         [[nodiscard]] auto polyphaseIspPeak(uint32_t channel, uint32_t writePos) const noexcept
             -> double
         {
-            std::array<double, kIspNumTaps> hist{};
-            for (uint32_t k = 0U; k < kIspNumTaps; ++k)
+            TruePeakKernel::History hist{};
+            for (uint32_t k = 0U; k < TruePeakKernel::kNumTaps; ++k)
             {
                 const uint32_t idx = (writePos + ringSize_ - k) % ringSize_;
                 hist[k] = static_cast<double>(rings_[channel][idx]);
             }
-
-            double maxPeak = 0.0;
-            for (uint32_t phase = 0U; phase < kIspOversampling; ++phase)
-            {
-                const size_t base = static_cast<size_t>(phase) * kIspNumTaps;
-                double dot = 0.0;
-                for (uint32_t k = 0U; k < kIspNumTaps; ++k)
-                {
-                    dot += ispCoeffs_[base + k] * hist[k];
-                }
-                maxPeak = std::max(maxPeak, std::abs(dot));
-            }
-            return maxPeak;
+            return TruePeakKernel::phasePeak(hist, ispCoeffs_);
         }
 
         // Required gain reduction (dB, ≤ 0) to bring `peak` down to the working
@@ -479,7 +424,7 @@ namespace AdaptiveSound
         // -----------------------------------------------------------------------
 
         // Polyphase coefficient table (flat phase-major; computed off-RT).
-        std::array<double, static_cast<size_t>(kIspOversampling) * kIspNumTaps> ispCoeffs_{};
+        TruePeakKernel::Coefficients ispCoeffs_{};
 
         // Look-ahead ring buffers: one std::vector<float> per channel, each sized to
         // ringSize_ = kLimiterLookaheadFrames + maxFrames_ in initialize(). Heap-allocated

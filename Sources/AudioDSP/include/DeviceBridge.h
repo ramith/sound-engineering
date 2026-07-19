@@ -57,13 +57,14 @@ typedef struct
 // MARK: - CLoudnessReadout
 
 /// Flat C struct: the latest BS.1770-5 loudness readout for the UI meters.
-/// Values are LUFS except peakDb (sample-peak dBFS). Unmeasured = very negative.
+/// Values are LUFS except truePeakDb — inter-sample TRUE peak in dBTP (8× polyphase ISP,
+/// the shared TruePeakKernel; was sample-peak before S10.8 PR E). Unmeasured = very negative.
 typedef struct
 {
     double integratedLufs;
     double shortTermLufs;
     double momentaryLufs;
-    double peakDb;
+    double truePeakDb;
 } CLoudnessReadout;
 
 // MARK: - C-ABI device functions

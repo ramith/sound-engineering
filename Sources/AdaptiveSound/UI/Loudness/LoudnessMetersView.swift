@@ -1,15 +1,19 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Loudness Meters
 
-/// Read-only BS.1770-5 loudness readout (integrated + short-term LUFS) and a
-/// sample-peak bar, driven by `AudioViewModel.loudness` (measured on the playback
-/// tap by the C++ LufsMeter). Replaces the previously-hardcoded "Active Modules".
+/// Read-only BS.1770-5 loudness readout, realigned (S10.8 PR E — `png/05`): three rows of
+/// label + slim gradient meter + right-aligned mono value. Integrated / Short-term are
+/// LUFS; the third row is inter-sample TRUE peak in dBTP (the label is honest — the C
+/// bridge now runs the limiter's 8× polyphase ISP kernel, founder decision 3). Above
+/// −1 dBTP the meter tail and value turn amber (`meterHot`, audited R4-METER-01).
 struct LoudnessMetersView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
     var body: some View {
         let snapshot = viewModel.loudness
+        let hot = snapshot.hasSignal && snapshot.truePeakDb > DesignSystem.Meters.hotThresholdDbtp
         VStack(alignment: .leading, spacing: 8) {
             Text("Loudness")
                 .font(.caption.weight(.semibold))
@@ -17,96 +21,82 @@ struct LoudnessMetersView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Color.asLabelSecond)
 
-            LoudnessReadoutRow(label: "Integrated", lufs: snapshot.integratedLufs,
-                               hasSignal: snapshot.hasSignal)
-            LoudnessReadoutRow(label: "Short-term", lufs: snapshot.shortTermLufs,
-                               hasSignal: snapshot.hasSignal)
-
-            PeakMeterBar(peakDb: snapshot.peakDb)
+            MeterRow(label: "Integrated",
+                     valueText: lufsText(snapshot.integratedLufs, hasSignal: snapshot.hasSignal),
+                     fraction: lufsFraction(snapshot.integratedLufs, hasSignal: snapshot.hasSignal),
+                     hot: false,
+                     spokenSuffix: "")
+            MeterRow(label: "Short-term",
+                     valueText: lufsText(snapshot.shortTermLufs, hasSignal: snapshot.hasSignal),
+                     fraction: lufsFraction(snapshot.shortTermLufs, hasSignal: snapshot.hasSignal),
+                     hot: false,
+                     spokenSuffix: "")
+            MeterRow(label: "True peak",
+                     valueText: truePeakText(snapshot),
+                     fraction: truePeakFraction(snapshot),
+                     hot: hot,
+                     // Non-color cue for the hot state (A-M5 posture): the spoken value
+                     // names the ceiling; sighted users get the amber tail + value.
+                     spokenSuffix: hot ? ", above the −1 dBTP ceiling" : "")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Loudness meters")
     }
-}
 
-// MARK: - LUFS readout row
-
-private struct LoudnessReadoutRow: View {
-    let label: String
-    let lufs: Double
-    let hasSignal: Bool
-
-    private var valueText: String {
+    private func lufsText(_ lufs: Double, hasSignal: Bool) -> String {
         guard hasSignal else { return "—" }
         return "\(lufs.formatted(.number.precision(.fractionLength(1)))) LUFS"
     }
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(DesignSystem.Font.caption)
-                .foregroundStyle(Color.asLabelSecond)
-            Spacer()
-            Text(valueText)
-                .font(DesignSystem.Font.monoSmall.weight(.medium))
-                .monospacedDigit()
-                .foregroundStyle(Color.asLabel)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(valueText)")
+    /// Meter fill for a LUFS value: 0 at the −42 floor → 1 at 0 LUFS (the mock's mapping).
+    private func lufsFraction(_ lufs: Double, hasSignal: Bool) -> Double {
+        guard hasSignal else { return 0 }
+        let floor = DesignSystem.Meters.lufsFloor
+        return min(max((lufs - floor) / (0 - floor), 0), 1)
+    }
+
+    private func truePeakText(_ snapshot: LoudnessSnapshot) -> String {
+        guard snapshot.hasSignal else { return "—" }
+        return "\(snapshot.truePeakDb.formatted(.number.precision(.fractionLength(1)))) dBTP"
+    }
+
+    private func truePeakFraction(_ snapshot: LoudnessSnapshot) -> Double {
+        guard snapshot.hasSignal else { return 0 }
+        let floor = DesignSystem.Meters.truePeakFloorDb
+        return min(max((snapshot.truePeakDb - floor) / (0 - floor), 0), 1)
     }
 }
 
-// MARK: - Sample-peak bar (dBFS)
+// MARK: - Meter row (label · slim gradient bar · mono value)
 
-private struct PeakMeterBar: View {
-    let peakDb: Double
-
-    private let floorDb: Double = -60
-    private let clipDb: Double = -1
-
-    /// 0…1 fill from the floor up to 0 dBFS.
-    private var fraction: Double {
-        min(max((peakDb - floorDb) / (0 - floorDb), 0), 1)
-    }
-
-    private var isHot: Bool {
-        peakDb >= clipDb
-    }
+private struct MeterRow: View {
+    let label: String
+    let valueText: String
+    let fraction: Double
+    let hot: Bool
+    let spokenSuffix: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text("Peak")
+        HStack(spacing: 10) {
+            Text(label)
                 .font(DesignSystem.Font.caption)
                 .foregroundStyle(Color.asLabelSecond)
+                .frame(width: DesignSystem.Meters.labelColumnWidth, alignment: .leading)
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.asCard)
-                    Capsule()
-                        .fill(isHot ? DesignSystem.Color.statusError : Color.asAccent)
-                        .frame(width: geo.size.width * CGFloat(fraction))
-                }
-            }
-            .frame(height: 4)
+            // The shared carved groove (same primitive as the sliders/scrubber), no glow —
+            // a readout, not a control. Hot swaps to the teal→amber tail gradient.
+            CarvedGroove(fillFraction: fraction,
+                         fillStyle: hot ? AnyShapeStyle(DesignSystem.Gradient.meterHotFill)
+                             : AnyShapeStyle(DesignSystem.Gradient.meterFill),
+                         glow: false)
+                .frame(height: CGFloat(GlassDecor.carvedTrackHeight))
 
-            // Non-color clip cue (A-M5): the bar turning red is the only over-level signal
-            // otherwise — invisible to colorblind + VoiceOver users. The word "CLIP" carries it.
-            if isHot {
-                Text("CLIP")
-                    .font(DesignSystem.Font.micro.weight(.bold))
-                    .foregroundStyle(DesignSystem.Color.statusErrorText) // text → AA variant (fill above stays vivid)
-            }
+            Text(valueText)
+                .font(DesignSystem.Font.monoSmall.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(hot ? DesignSystem.Color.meterHotText : Color.asLabel)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Peak level")
-        .accessibilityValue(peakValueDescription)
-    }
-
-    /// Spoken peak level, with the clip state folded into the VoiceOver value (A-M5).
-    private var peakValueDescription: String {
-        guard peakDb > -100 else { return "silent" }
-        let level = "\(peakDb.formatted(.number.precision(.fractionLength(1)))) dBFS"
-        return isHot ? "\(level), clipping" : level
+        .accessibilityLabel("\(label): \(valueText)\(spokenSuffix)")
     }
 }

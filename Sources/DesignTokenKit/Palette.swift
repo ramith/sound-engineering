@@ -102,6 +102,23 @@ public enum Palette {
         dark: RGBAColor(red: 1.0, green: 0.623, blue: 0.039)
     )
 
+    /// True-peak HOT meter fill (S10.8 PR E — realigned `png/05`: value > −1 dBTP turns the
+    /// meter tail + value amber). Dark = the realigned #F0B429; light per the split
+    /// text-vs-fill grammar: a darker amber (#B45309) that clears 3:1 non-text on the light
+    /// panel (R4-METER-01). A THIRD amber family member is deliberate — the deviations plan
+    /// sanctioned the realigned amber as a token; statusWarning keeps the macOS-vivid dot/badge
+    /// duty.
+    public static let meterHot = AppearancePair(
+        light: RGBAColor(red: 180.0 / 255.0, green: 83.0 / 255.0, blue: 9.0 / 255.0),
+        dark: RGBAColor(red: 240.0 / 255.0, green: 180.0 / 255.0, blue: 41.0 / 255.0)
+    )
+    /// Its TEXT variant (the amber value readout): dark = the same #F0B429 (AA on the dark
+    /// panel); light = the existing statusWarningText dark-amber — DERIVED, not a new value.
+    public static let meterHotText = AppearancePair(
+        light: statusWarningText.light,
+        dark: RGBAColor(red: 240.0 / 255.0, green: 180.0 / 255.0, blue: 41.0 / 255.0)
+    )
+
     // MARK: Row tints (derived from accent — appearance-independent)
 
     /// S10.8 PR D (Realigned Target `png/04`): the heavy 25% band becomes a SUBTLE 13%
@@ -216,7 +233,7 @@ public enum Palette {
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("controlHover", controlHover),
         ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
-        ("accentTitle", accentTitle),
+        ("accentTitle", accentTitle), ("meterHot", meterHot), ("meterHotText", meterHotText),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
         ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),
