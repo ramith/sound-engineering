@@ -45,12 +45,14 @@ public enum GlassDecor {
     /// them re-creates the mouse-down value-jump at the track extremes.
     public static let sliderKnobSize: Double = 14
     /// Carved groove (track) height — shared by the inspector sliders AND the footer scrubber
-    /// (PR 6) so the two carved surfaces are visually identical.
-    public static let carvedTrackHeight: Double = 5
-    /// Carved track base fill (the groove).
+    /// (PR 6) so the two carved surfaces are visually identical. S10.8 PR E (realigned):
+    /// slims 5 → 4 to the mock's slim-slider spec.
+    public static let carvedTrackHeight: Double = 4
+    /// Carved track base fill (the groove). S10.8 PR E: dark lifts 8% → 13% (the slimmer
+    /// groove needs the stronger carve to stay visible on the denser panel).
     public static let carvedTrack = AppearancePair(
         light: .gray(0.0, alpha: 0.10),
-        dark: .gray(1.0, alpha: 0.08)
+        dark: .gray(1.0, alpha: 0.13)
     )
     /// The knob fill. White on BOTH sides for now — a pair (not a constant) because the
     /// PR-6 non-text-contrast pass owns the light-side value (white knob on the white-based
@@ -79,6 +81,17 @@ public enum GlassDecor {
     public static let tabSpacing: Double = 2
     /// Base active-capsule height (@ScaledMetric-scaled at the call site, realigned: 28pt).
     public static let tabCapsuleBaseHeight: Double = 28
+
+    // MARK: Inspector floating card (S10.8 PR E — realigned `png/05`)
+
+    /// The teal radial glow BEHIND/below the floating card (dark-only — grammar rule 6):
+    /// `asTealMid 22% → clear`, blurred, extending past the card's bottom edge so the empty
+    /// area under the hugged card reads intentional.
+    public static let inspectorGlowDark = RGBAColor(red: 31.0 / 255.0, green: 168.0 / 255.0,
+                                                    blue: 147.0 / 255.0, alpha: 0.22)
+    public static let inspectorGlowBlur: Double = 18
+    public static let inspectorGlowBleed: Double = 20
+    public static let inspectorGlowRadius: Double = 200
 
     // MARK: Playing-row mini equalizer (S10.8 PR D — realigned `png/04`)
 

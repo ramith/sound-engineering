@@ -85,11 +85,13 @@ struct CarvedGroove: View {
     let fillFraction: Double
     /// Track (groove) thickness.
     var height: CGFloat = .init(GlassDecor.carvedTrackHeight)
-    /// The progress-fill color (accent for the sliders; the scrubber passes its play/pause/
-    /// interrupted state color).
-    var fillColor: SwiftUI.Color = DesignSystem.Color.accent
-    /// Whether the fill carries the dark-only teal glow (off when the fill isn't the accent —
-    /// e.g. the scrubber paused/interrupted — so a teal glow never sits under a grey fill).
+    /// The progress fill (S10.8 PR E: the realigned mid→bright teal gradient by default —
+    /// sliders, meters, and the playing scrubber share it; the scrubber's paused/
+    /// interrupted states pass their solid state colors instead).
+    var fillStyle: AnyShapeStyle = .init(DesignSystem.Gradient.meterFill)
+    /// Whether the fill carries the dark-only teal glow (off when the fill isn't the accent
+    /// family — e.g. the scrubber paused/interrupted — so a teal glow never sits under a
+    /// grey fill).
     var glow: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
@@ -116,7 +118,7 @@ struct CarvedGroove: View {
                     .frame(height: height)
 
                 Capsule()
-                    .fill(fillColor)
+                    .fill(fillStyle)
                     .frame(width: geo.size.width * clamped, height: height)
                     .shadow(color: (dark && glow) ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
                             radius: 5)
@@ -170,6 +172,27 @@ struct CarvedTrack: View {
             }
         }
         .frame(height: Self.knobSize)
+    }
+}
+
+// MARK: - Inspector card glow (S10.8 PR E — realigned `png/05`)
+
+/// The teal radial glow behind/below the floating inspector card: rendered only when the
+/// glow field itself is visible (dark + no Reduce Transparency — `GlowFieldGate`), and
+/// extending past the card's bottom so the empty area under the hugged card reads
+/// intentional. Appearance-gated, so it lives in this sanctioned file.
+struct InspectorCardGlow: View {
+    var body: some View {
+        GlowFieldGate {
+            RadialGradient(
+                colors: [SwiftUI.Color(token: GlassDecor.inspectorGlowDark), .clear],
+                center: .center,
+                startRadius: 0,
+                endRadius: CGFloat(GlassDecor.inspectorGlowRadius)
+            )
+            .padding(.bottom, -CGFloat(GlassDecor.inspectorGlowBleed))
+            .blur(radius: CGFloat(GlassDecor.inspectorGlowBlur))
+        }
     }
 }
 

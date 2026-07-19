@@ -5,8 +5,10 @@
 import Foundation
 
 public enum NowPlayingLayout {
-    /// The fixed trailing inspector column (founder decision D2 — 8a).
-    public static let inspectorWidth: Double = 260
+    /// The fixed trailing inspector column (founder decision D2 — 8a). S10.8 PR E: 260 →
+    /// 320 per the Realigned Target's floating card (`png/05`); LAY-01 still clears the
+    /// 320pt queue minimum at the 880pt window (848 − 20 − 320 = 508).
+    public static let inspectorWidth: Double = 320
     /// Content inset from the window edges (8a alignment grid).
     public static let contentInset: Double = 16
     /// Gap between the hero text block and the lens, and between the queue and inspector.

@@ -264,10 +264,11 @@ private struct FooterScrubber: View {
             let trackWidth = geo.size.width
             ZStack(alignment: .leading) {
                 // The shared 8a carved groove (PR 6 — same surface as the inspector sliders).
-                // Fill follows playback; the dark-only teal glow shows only while actually
-                // playing (paused = dim teal, interrupted = grey — no mismatched glow).
+                // Fill follows playback; while playing it carries the realigned teal
+                // gradient (S10.8 PR E — shared with sliders/meters), and the dark-only
+                // glow shows only then (paused = dim teal, interrupted = grey).
                 CarvedGroove(fillFraction: fraction,
-                             fillColor: fillColor,
+                             fillStyle: fillStyle,
                              glow: viewModel.isPlaying && !isInterrupted)
                     // Ease the play→pause fill-color shift (accent ↔ accent·0.5); the width
                     // tracks playback and is not animated. Reduce-Motion gated.
@@ -339,9 +340,11 @@ private struct FooterScrubber: View {
             .accessibilityHidden(true)
     }
 
-    private var fillColor: Color {
-        if isInterrupted { return DesignSystem.Color.labelTertiary }
-        return viewModel.isPlaying ? DesignSystem.Color.accent : DesignSystem.Color.accent.opacity(0.5)
+    private var fillStyle: AnyShapeStyle {
+        if isInterrupted { return AnyShapeStyle(DesignSystem.Color.labelTertiary) }
+        return viewModel.isPlaying
+            ? AnyShapeStyle(DesignSystem.Gradient.meterFill)
+            : AnyShapeStyle(DesignSystem.Color.accent.opacity(0.5))
     }
 
     private var accessibilityValue: String {
