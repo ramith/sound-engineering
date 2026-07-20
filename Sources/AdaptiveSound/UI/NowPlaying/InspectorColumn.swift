@@ -42,20 +42,14 @@ struct InspectorColumn: View {
                 contentHeight = height
             }
         }
-        // The hug: cap the panel at its content height (top-aligned in the region the
-        // HStack offers) — never a fixed height on the panel (guide E1). Zero means "not
-        // yet measured" → behave as before for one layout pass.
-        .frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity, alignment: .top)
-        // Clip the SCROLLING content to the panel's shape: `.glassPanel` paints fill under
-        // and strokes over but never clips, so rows crossing the top/bottom edge would
-        // render square into the corner cutouts — and this panel is still EXPECTED to
-        // scroll at the 640pt window minimum.
-        .clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
-                                    style: .continuous))
-        .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
-                                                 style: .continuous))
+        // Content-height floating glass card, shared with the Library rail via
+        // `.huggingGlassPanel`: cap at the measured content (top-aligned) — never a fixed
+        // height (guide E1) — clip the scrolling content to the panel shape, then paint the
+        // panel. Still EXPECTED to scroll at the 640pt window minimum.
+        .huggingGlassPanel(contentHeight: contentHeight)
         // The teal radial glow behind/below the card (dark-only via GlowFieldGate) — sits
-        // BEHIND the fill strata, bleeding past the bottom edge.
+        // BEHIND the fill strata, bleeding past the bottom edge (the NP inspector's per-card glow;
+        // the shared modifier deliberately paints no glow of its own).
         .background { InspectorCardGlow() }
         .frame(width: CGFloat(NowPlayingLayout.inspectorWidth))
         .frame(maxHeight: .infinity, alignment: .top)
