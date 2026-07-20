@@ -75,6 +75,7 @@ enum DesignSystem {
         static let label = from(Palette.label)
         static let labelSecondary = from(Palette.labelSecondary)
         static let labelTertiary = from(Palette.labelTertiary)
+        static let labelNav = from(Palette.labelNav)
         static let labelDisabled = from(Palette.labelDisabled)
 
         /// Status FILL/indicator color (non-text 3:1): `statusWarning` #FF9F0A vibrant orange
