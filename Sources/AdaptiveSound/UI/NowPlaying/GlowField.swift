@@ -14,6 +14,10 @@ import SwiftUI
 /// static, dark-appearance-only, and suppressed under Reduce Transparency / Increase
 /// Contrast — all via the pure `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
+    /// Which glows to render. Defaults to the Now Playing three-glow field; the Library screen
+    /// passes `GlowFieldSpec.libraryGlows` (a single teal pool) for its Twin Panels backdrop.
+    var glows: [GlowFieldSpec.Glow] = GlowFieldSpec.glows
+
     /// D8 (PR 7): per-slot sampled-palette overrides — a nil slot (or nil array) keeps the
     /// brand token. Every entry is CLAMPED by the Kit (`SampledGlow`), so whatever arrives
     /// here is audit-admissible by construction; the render fold and the R4-GLOW-D8 audit
@@ -29,13 +33,13 @@ struct GlowField: View {
             .overlay {
                 GlowFieldGate {
                     GeometryReader { geo in
-                        ForEach(0 ..< GlowFieldSpec.glows.count, id: \.self) { index in
-                            GlowEllipse(glow: GlowFieldSpec.glows[index],
+                        ForEach(0 ..< glows.count, id: \.self) { index in
+                            GlowEllipse(glow: glows[index],
                                         override: overrideColor(at: index),
                                         container: geo.size)
                                 .position(
-                                    x: geo.size.width * GlowFieldSpec.glows[index].unitCenterX,
-                                    y: geo.size.height * GlowFieldSpec.glows[index].unitCenterY
+                                    x: geo.size.width * glows[index].unitCenterX,
+                                    y: geo.size.height * glows[index].unitCenterY
                                 )
                         }
                     }

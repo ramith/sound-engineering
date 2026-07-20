@@ -46,6 +46,17 @@ public enum GlowFieldSpec {
              unitCenterX: 0.634, unitCenterY: 0.621),
     ]
 
+    /// The Library screen's single ambient glow (S10.8 — the D1 "other tabs get the glow"
+    /// follow-through). ONE teal pool upper-left-of-center per the Twin Panels mock (png/00 /
+    /// LIBRARY_GUIDE PR-B), NOT NP's three-glow field. Reuses `Palette.glowTeal` (no new
+    /// color); center/size derived from the mock CSS (glow div 1100×640 at left 8% / top 120
+    /// on the 1440×920 window, gradient origin 40%/30%) mapped into the content region's unit
+    /// space (below the ~90pt top chrome). Founder-tunable in the by-eye rounds like `glows`.
+    public static let libraryGlows: [Glow] = [
+        Glow(color: Palette.glowTeal, unitWidth: 0.76, unitHeight: 0.85,
+             unitCenterX: 0.385, unitCenterY: 0.30),
+    ]
+
     /// The falloff profile — EXACT-LINEAR to match the mock's CSS `radial-gradient(
     /// closest-side, peak → 0)` (PR-2 design review: the blur pass only rounds the apex;
     /// the mid-field is a linear ramp, NOT a plateau): peak at center, `midAlphaFactor`
@@ -74,13 +85,17 @@ public enum GlowFieldSpec {
 
     /// The composite glow color at a unit point in a container of the given size:
     /// every glow's falloff-attenuated color folded over the window base, in render order.
-    /// This is the function the R4 geometric audit samples. `overrideColors` (D8, PR 7) is
-    /// the per-slot sampled-palette override — a `nil` slot keeps the brand token; entries
-    /// carry their OWN alpha (the clamp forces the slot's token alpha). The render side and
-    /// the audit fold pass the same overrides, so tuning either re-verifies the other.
+    /// This is the function the R4 geometric audit samples. `glows` defaults to the Now
+    /// Playing three-glow field; pass another set (e.g. `libraryGlows`) to audit a different
+    /// screen's backdrop through the SAME falloff math the render reads. `overrideColors`
+    /// (D8, PR 7) is the per-slot sampled-palette override — a `nil` slot keeps the brand
+    /// token; entries carry their OWN alpha (the clamp forces the slot's token alpha). The
+    /// render side and the audit fold pass the same overrides, so tuning either re-verifies
+    /// the other.
     public static func compositeBackdrop(unitX: Double, unitY: Double,
                                          containerWidth: Double, containerHeight: Double,
                                          appearance: TokenAppearance,
+                                         glows: [Glow] = GlowFieldSpec.glows,
                                          overrideColors: [RGBAColor?]? = nil) -> RGBAColor {
         var backdrop = Palette.window.value(for: appearance)
         let pointX = unitX * containerWidth
