@@ -48,6 +48,20 @@ extension View {
     func glassPanel(_ role: SurfaceRole, in shape: some InsettableShape) -> some View {
         modifier(GlassPanelModifier(role: role, shape: shape))
     }
+
+    /// The floating glass card that HUGS its content: cap at the measured `contentHeight`
+    /// (top-aligned in the region), clip the scrolling content to the panel shape, then paint the
+    /// `.panel` glass (fill + rim + hairline + shadow). Shared by the Now Playing inspector column
+    /// (S10.7 PR E1) and the Library Twin Panels rail (S10.8 PR-C) — the ambient teal glow sits
+    /// behind at the window/tab level, so this paints no glow itself; a caller that wants a
+    /// per-card glow (the NP inspector) adds its own `.background { … }`. `contentHeight == 0`
+    /// means "not yet measured" → fill for one layout pass.
+    func huggingGlassPanel(contentHeight: CGFloat) -> some View {
+        frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity, alignment: .top)
+            .clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous))
+            .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                                     style: .continuous))
+    }
 }
 
 extension View {

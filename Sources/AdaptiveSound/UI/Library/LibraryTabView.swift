@@ -23,19 +23,17 @@ struct LibraryTabView: View {
     @Environment(PlaylistsModel.self) private var playlists
 
     var body: some View {
-        HStack(spacing: 0) {
-            LibrarySidebar()
-                .frame(width: DesignSystem.LayoutMetrics.sidebarIdeal)
-                .frame(maxHeight: .infinity)
-
-            Rectangle()
-                .fill(DesignSystem.Color.hairline)
-                .frame(width: 0.5)
-                .frame(maxHeight: .infinity)
+        // Twin Panels layout (S10.8 PR-C): the two floating cards over the shared glow, with the
+        // mock's 22pt content inset and 20pt gap; no divider between them (the gap is the seam).
+        HStack(spacing: 20) {
+            LibrarySidebar() // a fixed-width, content-height glass card that hugs the top
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(.horizontal, 22)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Twin Panels backdrop (S10.8 PR-B): window base + one soft teal glow behind both
         // cards (png/00). GlowField paints DesignSystem.Color.window and gates the glow to

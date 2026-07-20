@@ -233,7 +233,10 @@ enum DesignSystem {
         static let screenInsetV: CGFloat = 16
         static let sectionGap: CGFloat = 20
         static let readableMaxWidth: CGFloat = 720
-        static let sidebarIdeal: CGFloat = 200
+        static let sidebarIdeal: CGFloat = 234 // Twin Panels rail-card width (S10.8 PR-C; was 200)
+        /// Horizontal content inset shared by the Twin Panels rail's nav rows, section headers,
+        /// and inline folder rows so every item lines up on one edge (S10.8 PR-C).
+        static let railRowInset: CGFloat = 12
     }
 
     // MARK: Visualizer surfaces (drawing-surface sizing)

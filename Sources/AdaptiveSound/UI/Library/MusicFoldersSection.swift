@@ -2,21 +2,17 @@ import Foundation
 import LibraryStore
 import SwiftUI
 
-// MARK: - Music Folders accordion content (S9 IA change → inline-accordion redesign)
+// MARK: - Music Folders section (S9 IA → S10.8 inline rail section)
 
-/// The Library's folder list with a per-root remove (confirmed via `.alert`). Reachable by
-/// expanding the sidebar footer's "Music Folders" trigger row (`LibrarySidebar`), which renders
-/// this view inline below the trigger instead of inside a `.popover` (design:
-/// docs/sprints/music-folders-accordion.md). Adding still lives on the trigger row's "+" — NOT
-/// here — kept there for UX reasons (one-click add without an expand-then-add detour, §6), not
-/// because of any popover-lifecycle constraint: this content is part of the sidebar's persistent
-/// view hierarchy now, so an `.fileImporter` would be perfectly safe to host here too.
+/// The Library's folder list with a per-root remove (confirmed via `.alert`). Rendered inline in
+/// the Twin Panels navigation rail (`LibrarySidebar`), under the "Music Folders" section header, as
+/// plain rows inside the rail card's OWN ScrollView (S10.8 PR-C retired the earlier footer
+/// accordion, so a nested scroll here would fight the card's scroll). Adding lives on the section
+/// header's "+" — NOT here — kept there for the one-click add UX (§6).
 ///
-/// `.task`/`.onChange` below only run while this view is mounted, i.e. only while the accordion
-/// is expanded — the data they refresh (`model.roots`, the per-row "Scanning…" hint) is invisible
-/// while collapsed, so there's no reason to keep re-reading it in the background; expanding always
-/// re-triggers the `.task` for a fresh read.
-struct MusicFoldersAccordionContent: View {
+/// `.task`/`.onChange` refresh `model.roots` and the per-row "Scanning…" hint while the rail is
+/// mounted (i.e. while the Library tab is open).
+struct MusicFoldersSection: View {
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(LibraryModel.self) private var library
     @State private var removeTarget: LibraryFolder?
@@ -24,28 +20,26 @@ struct MusicFoldersAccordionContent: View {
     var body: some View {
         Group {
             if model.roots.isEmpty {
-                Text("No folders in your library yet. Use ＋ below to add one.")
+                Text("No folders in your library yet. Use ＋ above to add one.")
                     .font(DesignSystem.Font.caption)
                     .foregroundStyle(DesignSystem.Color.labelSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(model.roots) { root in
-                            rootRow(root)
-                            if root.id != model.roots.last?.id {
-                                Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-                            }
+                // Plain VStack (no inner ScrollView): the rows are items in the rail card's own
+                // ScrollView now (S10.8 inline folders), so a nested scroll would fight it.
+                VStack(spacing: 0) {
+                    ForEach(model.roots) { root in
+                        rootRow(root)
+                        if root.id != model.roots.last?.id {
+                            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
                         }
                     }
                 }
-                .frame(maxHeight: 280) // bound the accordion height; long libraries scroll (review S4)
             }
         }
-        // Same horizontal rhythm as the trigger row above (no nested indent — the sidebar column
-        // is narrow, review §4) plus a little vertical breathing room off the hairline.
-        .padding(.horizontal, DesignSystem.Spacing.medium)
-        .padding(.vertical, DesignSystem.Spacing.small)
+        // Align with the rail's nav-row content inset (S10.8 inline folders).
+        .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
+        .padding(.vertical, DesignSystem.Spacing.xSmall)
         .task { await model.loadRoots() }
         // Re-read as scans/adds/removes land: a freshly-added root (and its per-row "Scanning…"
         // hint) appears once its scan starts; libraryRevision covers completion.
@@ -91,7 +85,7 @@ struct MusicFoldersAccordionContent: View {
             .help("Remove from Library")
             .accessibilityLabel("Remove \(abbreviatedPath(root.path)) from library")
         }
-        .padding(.vertical, DesignSystem.Spacing.xSmall)
+        .frame(minHeight: 34)
         // `.contain` (not `.combine`): keep the Remove button a first-class, directly-activatable
         // VoiceOver element rather than demoting it to an Actions-rotor custom action (review S3).
         .accessibilityElement(children: .contain)
