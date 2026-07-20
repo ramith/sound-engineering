@@ -1,3 +1,4 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Library tab (S9.4)
@@ -36,7 +37,10 @@ struct LibraryTabView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignSystem.Color.window)
+        // Twin Panels backdrop (S10.8 PR-B): window base + one soft teal glow behind both
+        // cards (png/00). GlowField paints DesignSystem.Color.window and gates the glow to
+        // dark / no-Reduce-Transparency; the two floating cards (PR-C/D) then sit over it.
+        .background { GlowField(glows: GlowFieldSpec.libraryGlows) }
         // Live-fill the grid as a scan / metadata pass / reconcile completes while the tab is
         // open. Coalesced to `libraryRevision` (bumped when metadata builds the album rows) — not
         // per metadata tick, and not the earlier `lastScanResult` (design §7; review B1).
