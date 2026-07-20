@@ -43,7 +43,9 @@ struct NavRow<Trailing: View>: View {
             Spacer(minLength: 0)
             trailing
         }
-        .foregroundStyle(active ? DesignSystem.Color.accentText : DesignSystem.Color.label)
+        // Idle rows sit recessed (mock png/01, ~72% via the dedicated `labelNav` tier) so the
+        // active teal row leads.
+        .foregroundStyle(active ? DesignSystem.Color.accentText : DesignSystem.Color.labelNav)
         .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
         .frame(height: rowHeight)
         .background(rowFill, in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container,

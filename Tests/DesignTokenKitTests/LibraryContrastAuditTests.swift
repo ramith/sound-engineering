@@ -42,4 +42,19 @@ struct LibraryContrastAuditTests {
             }
         }
     }
+
+    /// The rail's idle nav label (`labelNav`, ~72%) clears AA on the panel card fill it sits on,
+    /// both appearances (the RT/IC opaque composite too). A touch stronger than `labelSecondary`
+    /// (already AA on the panel), so it clears by domination — audited directly since it's a new
+    /// tier the base R4-LEG suite doesn't enumerate.
+    @Test("R4-LEG-LIB-01: labelNav clears AA on the rail panel card, both appearances")
+    func navLabelOnPanelCard() {
+        for appearance in TokenAppearance.allCases {
+            let surface = Palette.panelFill.value(for: appearance)
+                .over(Palette.window.value(for: appearance))
+            let ratio = ContrastAuditTests.ratio(label: Palette.labelNav, on: surface, appearance)
+            #expect(ratio >= ContrastAuditTests.textAA,
+                    "labelNav on panelFill over window (\(appearance)) = \(ratio)")
+        }
+    }
 }

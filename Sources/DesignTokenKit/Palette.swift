@@ -43,6 +43,12 @@ public enum Palette {
         light: .gray(0.0, alpha: 0.28),
         dark: .gray(1.0, alpha: 0.25)
     )
+    /// Rail nav idle label (S10.8 PR-C, `png/01`): the mock's ~72% — a recessed tier between
+    /// `label` and `labelSecondary` so the active teal row leads. Symmetric alpha (light + dark).
+    public static let labelNav = AppearancePair(
+        light: .gray(0.0, alpha: 0.72),
+        dark: .gray(1.0, alpha: 0.72)
+    )
 
     // MARK: Accent family (appearance-independent — the teal reads on both)
 
@@ -223,7 +229,7 @@ public enum Palette {
     public static let all: [(name: String, pair: AppearancePair)] = [
         ("window", window), ("card", card), ("panel", panel), ("hairline", hairline),
         ("label", label), ("labelSecondary", labelSecondary), ("labelTertiary", labelTertiary),
-        ("labelDisabled", labelDisabled),
+        ("labelDisabled", labelDisabled), ("labelNav", labelNav),
         ("accent", accent), ("accentDeep", accentDeep), ("onAccent", onAccent), ("blue", blue),
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("statusWarningText", statusWarningText), ("statusErrorText", statusErrorText),
