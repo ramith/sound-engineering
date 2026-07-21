@@ -37,7 +37,9 @@ struct AlbumCell: View {
 
     private var accessibilityLabel: String {
         var parts = [album.title, album.albumArtist]
-        if album.year > 0 { parts.append("\(album.year)") }
+        if album.year > 0 {
+            parts.append("\(album.year)")
+        }
         return parts.joined(separator: ", ")
     }
 }

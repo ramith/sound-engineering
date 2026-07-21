@@ -191,7 +191,9 @@ public extension LibraryStore {
     /// "New Playlist", else the lowest "New Playlist N" (N ≥ 2) not already taken (Apple-style).
     static func lowestUnusedDefaultName(taken: Set<String>) -> String {
         let base = "New Playlist"
-        if !taken.contains(base) { return base }
+        if !taken.contains(base) {
+            return base
+        }
         var n = 2
         while taken.contains("\(base) \(n)") {
             n += 1
@@ -207,7 +209,9 @@ public extension LibraryStore {
             guard let isBuiltin = try Int64.fetchOne(db, sql: Self.selectIsBuiltinSQL, arguments: [id]) else {
                 throw PlaylistMutationError.notFound(id: id)
             }
-            if isBuiltin != 0 { throw PlaylistMutationError.builtinImmutable(id: id) }
+            if isBuiltin != 0 {
+                throw PlaylistMutationError.builtinImmutable(id: id)
+            }
             if let existing = try Int64.fetchOne(db, sql: Self.selectUserNameConflictSQL, arguments: [validated]),
                existing != id {
                 throw PlaylistNameConflict(name: validated, existingID: existing)
@@ -223,7 +227,9 @@ public extension LibraryStore {
             guard let isBuiltin = try Int64.fetchOne(db, sql: Self.selectIsBuiltinSQL, arguments: [id]) else {
                 throw PlaylistMutationError.notFound(id: id)
             }
-            if isBuiltin != 0 { throw PlaylistMutationError.builtinImmutable(id: id) }
+            if isBuiltin != 0 {
+                throw PlaylistMutationError.builtinImmutable(id: id)
+            }
             try db.execute(sql: Self.deletePlaylistSQL, arguments: [id])
         }
     }
@@ -271,7 +277,9 @@ public extension LibraryStore {
     }
 
     private static func builtinIDLocked(_ db: Database) throws -> Int64 {
-        if let id = try Int64.fetchOne(db, sql: selectBuiltinIDSQL) { return id }
+        if let id = try Int64.fetchOne(db, sql: selectBuiltinIDSQL) {
+            return id
+        }
         try Schema.seedBuiltinCurrentPlaylist(db, timestamp: LibraryStore.nowSeconds())
         guard let id = try Int64.fetchOne(db, sql: selectBuiltinIDSQL) else {
             throw SQLiteError.internalError(message: "builtin 'current' playlist not found after seed")

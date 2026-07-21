@@ -158,7 +158,9 @@ private func runSnapshotProbe(
                 let reader = try await LibraryStore(url: url, appBuild: "verify")
                 for _ in 0 ..< 400 {
                     let seen = try await reader.trackCount()
-                    if seen != bounds.pre, seen != bounds.post { return seen }
+                    if seen != bounds.pre, seen != bounds.post {
+                        return seen
+                    }
                 }
                 return nil
             }

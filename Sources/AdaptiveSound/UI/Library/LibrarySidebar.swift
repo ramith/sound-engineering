@@ -97,12 +97,16 @@ struct LibrarySidebar: View {
         .frame(width: DesignSystem.LayoutMetrics.sidebarIdeal)
         .frame(maxHeight: .infinity, alignment: .top)
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result { model.addFolder(url) }
+            if case let .success(url) = result {
+                model.addFolder(url)
+            }
         }
         .task { await playlists.loadTree() }
         // Load the tree once the async store finishes building (a visit before then shows nothing).
         .onChange(of: playlists.isStoreReady) { _, ready in
-            if ready { Task { await playlists.loadTree() } }
+            if ready {
+                Task { await playlists.loadTree() }
+            }
         }
     }
 
@@ -286,7 +290,9 @@ struct LibrarySidebar: View {
         let wasSelected = model.sidebarSelection == .playlist(playlist.id)
         Task {
             let deleted = await playlists.deletePlaylist(id: playlist.id)
-            if deleted, wasSelected { model.selectCategory(model.selectedCategory ?? .songs) }
+            if deleted, wasSelected {
+                model.selectCategory(model.selectedCategory ?? .songs)
+            }
         }
     }
 

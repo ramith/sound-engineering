@@ -24,7 +24,9 @@ struct LibraryEmptyStateView: View {
             .fileImporter(isPresented: $showFolderPicker, allowedContentTypes: [.folder]) { result in
                 // The ONE shared add path (scan-only, never touches the queue) — same as the
                 // sidebar footer + Music Folders popover, so behavior can't drift between them.
-                if case let .success(url) = result { model.addFolder(url) }
+                if case let .success(url) = result {
+                    model.addFolder(url)
+                }
             }
     }
 

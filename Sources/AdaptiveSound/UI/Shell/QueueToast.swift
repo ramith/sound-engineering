@@ -41,7 +41,9 @@ struct QueueToast: View {
         // Clear on entering Now Playing by ANY route (tap or manual tab switch) so a stale toast
         // can't reappear on return to a gated tab within the ~2 s window (review swiftui #2).
         .onChange(of: viewModel.selectedTab) { _, tab in
-            if tab == .nowPlaying { library.dismissQueueToast() }
+            if tab == .nowPlaying {
+                library.dismissQueueToast()
+            }
         }
     }
 

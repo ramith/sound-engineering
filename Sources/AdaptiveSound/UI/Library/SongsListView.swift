@@ -117,7 +117,9 @@ struct SongsListView: View {
         let sortable = column.comparator(.forward) != nil
         let active = isActiveSort(column)
         let label = HStack(spacing: 4) {
-            if column != .index { Text(column.label) }
+            if column != .index {
+                Text(column.label)
+            }
             if active {
                 Image(systemName: currentAscending ? "arrow.up" : "arrow.down")
                     .font(.system(size: 8, weight: .bold))
@@ -213,7 +215,11 @@ struct SongsListView: View {
         if flags.contains(.shift), let anchor = anchorID {
             selectRange(from: anchor, to: track.id)
         } else if flags.contains(.command) {
-            if selection.contains(track.id) { selection.remove(track.id) } else { selection.insert(track.id) }
+            if selection.contains(track.id) {
+                selection.remove(track.id)
+            } else {
+                selection.insert(track.id)
+            }
             anchorID = track.id
         } else {
             selection = [track.id]

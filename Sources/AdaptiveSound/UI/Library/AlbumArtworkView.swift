@@ -49,7 +49,9 @@ struct AlbumArtworkView: View {
 
     private func load() async {
         guard let key else { image = nil; return }
-        if let hit = model.cachedArtwork(forKey: key) { image = hit; return }
+        if let hit = model.cachedArtwork(forKey: key) {
+            image = hit; return
+        }
         image = nil
         let maxPixel = min(512, Int((side * displayScale).rounded(.up)))
         let loaded = await model.artworkImage(forKey: key, maxPixel: maxPixel)

@@ -92,7 +92,9 @@ public func deviceWidthFormat(sourceFormat: AVAudioFormat,
     guard deviceChannels > 0 else { return sourceFormat }
 
     let deviceWidth = min(sourceChannels, deviceChannels)
-    if deviceWidth == sourceChannels { return sourceFormat } // M == N: reuse the source format.
+    if deviceWidth == sourceChannels {
+        return sourceFormat
+    } // M == N: reuse the source format.
 
     if let format = multichannelFormat(for: deviceWidth, sampleRate: sourceFormat.sampleRate) {
         return format

@@ -38,7 +38,9 @@ struct SettingsTabView: View {
                         Picker("Output Device", selection: Binding(
                             get: { audioViewModel.selectedDevice },
                             set: { newDevice in
-                                if let device = newDevice { audioViewModel.selectDevice(device) }
+                                if let device = newDevice {
+                                    audioViewModel.selectDevice(device)
+                                }
                             }
                         )) {
                             Text("None")

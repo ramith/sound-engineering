@@ -190,7 +190,11 @@ private struct TrackMetadata {
         // Hold the security scope for BOTH the filesystem stat AND the AVAudioFile open:
         // for a sandboxed build, a bookmark-derived URL needs the scope active for either.
         let didAccess = url.startAccessingSecurityScopedResource()
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
 
         // --- File size ---
         if let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 {

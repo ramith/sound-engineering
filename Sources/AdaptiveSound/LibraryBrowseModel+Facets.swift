@@ -50,7 +50,9 @@ extension LibraryBrowseModel {
         }
         self[keyPath: epochKeyPath] &+= 1
         let epoch = self[keyPath: epochKeyPath]
-        if self[keyPath: arrayKeyPath].isEmpty { self[keyPath: stateKeyPath] = .loading }
+        if self[keyPath: arrayKeyPath].isEmpty {
+            self[keyPath: stateKeyPath] = .loading
+        }
         do {
             let loaded = try await read(store)
             guard epoch == self[keyPath: epochKeyPath] else { return } // superseded after list read

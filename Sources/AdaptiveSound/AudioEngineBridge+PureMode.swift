@@ -39,7 +39,11 @@ extension AudioEngineBridge {
 
         // --- Build CFileFormat from AVAudioFile ---
         let didAccess = fileURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
 
         guard let audioFile = try? AVAudioFile(forReading: fileURL) else {
             NSLog("[PureMode] Cannot open file for capability evaluation: \(fileURL.lastPathComponent)")
@@ -104,7 +108,11 @@ extension AudioEngineBridge {
         }
 
         let didAccess = fileURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
 
         var startResult: Int32 = 0
         fileURL.path.withCString { pathPtr in
@@ -294,7 +302,11 @@ extension AudioEngineBridge {
     /// `stopEnhancedResampler` is not called on the passthrough config-change branch).
     func seekEnhancedBestEffort(url: URL, player: AVAudioPlayerNode, to seconds: Double) {
         let didAccess = url.startAccessingSecurityScopedResource()
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
 
         guard let audioFile = try? AVAudioFile(forReading: url) else { return }
 

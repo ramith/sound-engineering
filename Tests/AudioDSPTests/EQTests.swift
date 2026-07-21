@@ -258,7 +258,9 @@ struct EQTests {
         var maxDiff: Float = 0
         for idx in 0 ..< refOutput.count {
             let diff = abs(refOutput[idx] - realOutput[idx])
-            if diff > maxDiff { maxDiff = diff }
+            if diff > maxDiff {
+                maxDiff = diff
+            }
         }
 
         // vDSP uses double-precision accumulation; results should be nearly identical
@@ -387,7 +389,9 @@ struct EQTests {
         var maxDiff: Float = 0
         for idx in 0 ..< sine1kHz.count {
             let diff = abs(output[idx] - sine1kHz[idx])
-            if diff > maxDiff { maxDiff = diff }
+            if diff > maxDiff {
+                maxDiff = diff
+            }
         }
         #expect(maxDiff < 1e-4,
                 "Zero-biquad EQModule must pass signal through unchanged (max diff: \(maxDiff))")

@@ -49,13 +49,21 @@ struct FacetListRoot<Item: Identifiable>: View {
                 filteredList
             }
         case .loaded:
-            if items.isEmpty { empty } else { filteredList }
+            if items.isEmpty {
+                empty
+            } else {
+                filteredList
+            }
         case .firstRun:
             LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
         case .empty:
             // Roots exist, this facet is empty: scanning if a pass is live, else the facet-specific
             // empty (songs may exist but be untagged — NOT the "No Music Found" library-empty state).
-            if model.isPopulating { LibraryEmptyStateView(kind: .scanning) } else { empty }
+            if model.isPopulating {
+                LibraryEmptyStateView(kind: .scanning)
+            } else {
+                empty
+            }
         case let .failed(message):
             LibraryEmptyStateView(kind: .failed(message))
         }

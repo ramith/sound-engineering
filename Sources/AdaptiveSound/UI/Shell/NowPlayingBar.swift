@@ -342,7 +342,9 @@ private struct FooterScrubber: View {
     }
 
     private var fillStyle: AnyShapeStyle {
-        if isInterrupted { return AnyShapeStyle(DesignSystem.Color.labelTertiary) }
+        if isInterrupted {
+            return AnyShapeStyle(DesignSystem.Color.labelTertiary)
+        }
         return viewModel.isPlaying
             ? AnyShapeStyle(DesignSystem.Gradient.meterFill)
             : AnyShapeStyle(DesignSystem.Color.accent.opacity(0.5))
@@ -351,7 +353,9 @@ private struct FooterScrubber: View {
     private var accessibilityValue: String {
         guard viewModel.duration > 0 else { return "Duration unknown" }
         var value = "\(formatDuration(displayPosition)) of \(formatDuration(viewModel.duration))"
-        if isInterrupted { value += " — playback paused, device disconnected" }
+        if isInterrupted {
+            value += " — playback paused, device disconnected"
+        }
         return value
     }
 }
@@ -365,7 +369,9 @@ private struct FooterSignalSlot: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if isLoaded { content }
+            if isLoaded {
+                content
+            }
         }
         .frame(width: DesignSystem.Footer.signalSlotWidth, alignment: .trailing)
         .accessibilityElement(children: .ignore)
@@ -422,14 +428,20 @@ private struct FooterSignalSlot: View {
     }
 
     private func dotColor(_ info: SignalPathInfo) -> Color {
-        if info.fellBackToEnhanced || info.interrupted { return DesignSystem.Color.statusWarning }
-        if info.path == .pure { return DesignSystem.Color.accent }
+        if info.fellBackToEnhanced || info.interrupted {
+            return DesignSystem.Color.statusWarning
+        }
+        if info.path == .pure {
+            return DesignSystem.Color.accent
+        }
         return DesignSystem.Color.accentBright
     }
 
     private var accessibilityValue: String {
         let info = viewModel.signalPath
-        if info.interrupted { return "Playback paused, output device disconnected" }
+        if info.interrupted {
+            return "Playback paused, output device disconnected"
+        }
         let pathStr = info.path == .pure ? "Pure mode" : "Enhanced mode"
         let rate = info.achievedSampleRate > 0
             ? info.formattedRate.replacing(" kHz", with: " kilohertz")

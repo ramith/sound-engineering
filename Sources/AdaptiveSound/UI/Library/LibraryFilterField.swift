@@ -24,7 +24,11 @@ struct LibraryFilterField: View {
                 .foregroundStyle(DesignSystem.Color.label)
                 // Focus + the transport-Space gate (S4 SW1) in one place.
                 .suppressesTransportSpace(while: $focused)
-                .onAppear { if focusesOnAppear { focused = true } }
+                .onAppear {
+                    if focusesOnAppear {
+                        focused = true
+                    }
+                }
                 .onExitCommand { // macOS Cancel (Escape): clear then defocus
                     query = ""
                     focused = false

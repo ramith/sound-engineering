@@ -72,9 +72,13 @@ public extension LibraryStore {
         sql += "FROM albums al "
         sql += "LEFT JOIN artists ar ON ar.id = al.album_artist_id "
         sql += "LEFT JOIN tracks t ON t.album_id = al.id"
-        if !whereClause.isEmpty { sql += " " + whereClause }
+        if !whereClause.isEmpty {
+            sql += " " + whereClause
+        }
         sql += " GROUP BY al.id ORDER BY \(order)"
-        if limited { sql += " LIMIT ? OFFSET ?" }
+        if limited {
+            sql += " LIMIT ? OFFSET ?"
+        }
         sql += ";"
         return sql
     }
@@ -103,9 +107,13 @@ public extension LibraryStore {
         sql += "FROM artists ar "
         sql += "LEFT JOIN tracks t ON t.artist_id = ar.id "
         sql += "WHERE ar.id <> \(unknownArtistID)"
-        if !extraWhere.isEmpty { sql += " " + extraWhere }
+        if !extraWhere.isEmpty {
+            sql += " " + extraWhere
+        }
         sql += " GROUP BY ar.id ORDER BY \(order)"
-        if limited { sql += " LIMIT ? OFFSET ?" }
+        if limited {
+            sql += " LIMIT ? OFFSET ?"
+        }
         sql += ";"
         return sql
     }

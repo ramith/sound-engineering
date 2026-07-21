@@ -326,7 +326,9 @@ public final class LibraryStore: Sendable {
                     try String.fetchOne(db, sql: Self.integrityCheckSQL) == "ok"
                 }
                 let superseded = try pool.read { db in try migrator.hasBeenSuperseded(db) }
-                if !intact || superseded { throw StoreOpenFailure.rebuildRecoverable }
+                if !intact || superseded {
+                    throw StoreOpenFailure.rebuildRecoverable
+                }
             }
             do {
                 try migrator.migrate(pool)
@@ -363,7 +365,9 @@ public final class LibraryStore: Sendable {
     /// quarantine + rebuild recovers): the explicit sentinel, or a GRDB `DatabaseError`
     /// with a corruption/not-a-db result code.
     private static func isRebuildRecoverable(_ error: Error) -> Bool {
-        if error as? StoreOpenFailure == .rebuildRecoverable { return true }
+        if error as? StoreOpenFailure == .rebuildRecoverable {
+            return true
+        }
         guard let dbError = error as? DatabaseError else { return false }
         let code = dbError.resultCode.primaryResultCode
         return code == .SQLITE_CORRUPT || code == .SQLITE_NOTADB

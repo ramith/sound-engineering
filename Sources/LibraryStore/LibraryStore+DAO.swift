@@ -311,7 +311,9 @@ public extension LibraryStore {
         // Seed the search index for a brand-new track (findable by filename immediately). On an
         // update we intentionally DON'T sync: `name` is a pure function of `url`, so a same-url
         // update changes no searchable field except via the metadata pass (which re-syncs).
-        if isNewRow { try syncSearchRow(db, trackID: id) }
+        if isNewRow {
+            try syncSearchRow(db, trackID: id)
+        }
         return id
     }
 

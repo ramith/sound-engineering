@@ -202,10 +202,14 @@ private func imageBins(
             let raw = abs(base + sign * frequency)
             // Fold into [0, destNyquist] by mirroring about the dest rate / Nyquist.
             var folded = raw.truncatingRemainder(dividingBy: destRate)
-            if folded > destNyquist { folded = destRate - folded }
+            if folded > destNyquist {
+                folded = destRate - folded
+            }
             guard folded > 1.0, folded < destNyquist - 1.0 else { continue }
             let bin = binForFrequency(folded, rate: destRate, fftSize: Measure.fftSize)
-            if abs(bin - signalBin) <= Measure.lobeHalfWidthBins { continue }
+            if abs(bin - signalBin) <= Measure.lobeHalfWidthBins {
+                continue
+            }
             bins.append(bin)
         }
     }
@@ -327,7 +331,9 @@ private func runDirection(sourceRate: Double, destRate: Double) -> Bool {
             formatDb(result.aliasingDb),
             verdict
         ))
-        if !result.pass { allPass = false }
+        if !result.pass {
+            allPass = false
+        }
     }
     return allPass
 }

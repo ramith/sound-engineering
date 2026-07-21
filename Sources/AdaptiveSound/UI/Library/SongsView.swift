@@ -45,7 +45,11 @@ struct SongsView: View {
             }
         case .loaded:
             // `.loaded` but empty means every track was removed — a genuine empty library.
-            if model.songs.isEmpty { LibraryEmptyStateView(kind: .emptyLibrary) } else { songsList }
+            if model.songs.isEmpty {
+                LibraryEmptyStateView(kind: .emptyLibrary)
+            } else {
+                songsList
+            }
         case .firstRun:
             // A scan kicked off from the first-run CTA flips this to a truthful "scanning" until
             // rows land; otherwise it's the add-a-folder call to action.

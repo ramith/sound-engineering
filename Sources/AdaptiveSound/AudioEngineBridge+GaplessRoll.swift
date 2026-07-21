@@ -152,7 +152,9 @@ extension AudioEngineBridge {
         let didAccess = nextURL.startAccessingSecurityScopedResource()
 
         guard let nextFile = try? AVAudioFile(forReading: nextURL) else {
-            if didAccess { nextURL.stopAccessingSecurityScopedResource() }
+            if didAccess {
+                nextURL.stopAccessingSecurityScopedResource()
+            }
             logUX("gapless: roll failed — cannot open '\(nextURL.lastPathComponent)'")
             // Degradation: fall back to a clean start on the global queue (stops + restarts,
             // brief gap). Sets playbackEnded if avEngine is gone (engine was shut down).
@@ -178,7 +180,9 @@ extension AudioEngineBridge {
         }
         // Security-scoped resource lifecycle: stop access after we open the file (AVAudioFile
         // retains its own file handle; we no longer need the security scope).
-        if didAccess { nextURL.stopAccessingSecurityScopedResource() }
+        if didAccess {
+            nextURL.stopAccessingSecurityScopedResource()
+        }
         return nextFile
     }
 
@@ -192,7 +196,9 @@ extension AudioEngineBridge {
         resetFramePosition: Bool
     ) {
         dispatchPrecondition(condition: .onQueue(resampleQueue))
-        if resetFramePosition { file.framePosition = 0 }
+        if resetFramePosition {
+            file.framePosition = 0
+        }
         // Capture the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump —
         // a seam schedule replaces one whose completion already fired legitimately). A later
         // stop/seek/reschedule bumps the epoch, and this completion then abandons at fire time

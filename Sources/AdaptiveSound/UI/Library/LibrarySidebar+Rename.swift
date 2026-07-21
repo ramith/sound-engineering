@@ -12,7 +12,9 @@ extension LibrarySidebar {
     func createAndBeginRename() async {
         guard let id = await playlists.createPlaylist() else { return }
         model.selectPlaylist(id)
-        if let created = playlists.playlists.first(where: { $0.id == id }) { beginRename(created) }
+        if let created = playlists.playlists.first(where: { $0.id == id }) {
+            beginRename(created)
+        }
     }
 
     func beginRename(_ playlist: Playlist) {
@@ -57,7 +59,9 @@ extension LibrarySidebar {
                 try await playlists.renamePlaylist(id: playlist.id, to: name)
                 // The user may have begun renaming ANOTHER row during the await — only close if THIS
                 // playlist is still the one being edited (QA break-it #5).
-                if editingPlaylistID == playlist.id { finishRename(restoreListFocus: keepOpenOnConflict) }
+                if editingPlaylistID == playlist.id {
+                    finishRename(restoreListFocus: keepOpenOnConflict)
+                }
             } catch let conflict as PlaylistNameConflict where keepOpenOnConflict {
                 showRenameError("“\(conflict.name)” already exists.")
             } catch PlaylistMutationError.invalidName where keepOpenOnConflict {
@@ -76,7 +80,9 @@ extension LibrarySidebar {
     /// alive — NOT on click-away, where the user intentionally moved focus elsewhere (focus-audit).
     func finishRename(restoreListFocus: Bool) {
         cancelRename()
-        if restoreListFocus { sidebarFocused = true }
+        if restoreListFocus {
+            sidebarFocused = true
+        }
     }
 
     /// Surface an inline rename error + keep the field open/focused for a retry.

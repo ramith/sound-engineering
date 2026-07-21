@@ -38,7 +38,11 @@ struct FacetTrackListView: View {
                 ContentUnavailableView("No Songs", systemImage: "music.note")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .list:
-                if groupByAlbum { groupedList } else { flatList }
+                if groupByAlbum {
+                    groupedList
+                } else {
+                    flatList
+                }
             }
         }
         .sheet(item: $addToPlaylistTarget) { PlaylistPickerSheet(trackIDs: $0.trackIDs) }
@@ -69,7 +73,9 @@ struct FacetTrackListView: View {
     }
 
     private func goBack() {
-        if !model.path.isEmpty { model.path.removeLast() }
+        if !model.path.isEmpty {
+            model.path.removeLast()
+        }
     }
 
     // MARK: Header (title · subtitle · Play + Shuffle + ⋯)
@@ -199,7 +205,11 @@ struct FacetTrackListView: View {
             .popover(
                 isPresented: Binding(
                     get: { infoTarget?.id == track.id },
-                    set: { if !$0 { infoTarget = nil } }
+                    set: {
+                        if !$0 {
+                            infoTarget = nil
+                        }
+                    }
                 ),
                 arrowEdge: .trailing
             ) {

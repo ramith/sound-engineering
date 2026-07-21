@@ -58,7 +58,9 @@ public struct MetadataExtractor: MetadataExtracting {
         let ext = url.pathExtension.lowercased()
         if ext == "flac" || ext == "ogg" {
             // FFmpeg first; if it is absent/unavailable, best-effort AVFoundation.
-            if let viaFFmpeg = ffmpegExtract(url) { return viaFFmpeg }
+            if let viaFFmpeg = ffmpegExtract(url) {
+                return viaFFmpeg
+            }
             return await avFoundationExtract(url)
         }
         guard let viaApple = await avFoundationExtract(url) else {
@@ -120,7 +122,9 @@ extension MetadataExtractor {
         var digits = ""
         for character in text where character.isNumber {
             digits.append(character)
-            if digits.count == 4 { return Int(digits) }
+            if digits.count == 4 {
+                return Int(digits)
+            }
         }
         return nil
     }
@@ -152,7 +156,9 @@ extension MetadataExtractor {
     /// 0-indexed prefix copy (a `Data` slice is not guaranteed to start at index 0).
     static func utiFromSniff(_ data: Data) -> String? {
         let head = [UInt8](data.prefix(8))
-        if head.count >= 3, head[0] == 0xFF, head[1] == 0xD8, head[2] == 0xFF { return "public.jpeg" }
+        if head.count >= 3, head[0] == 0xFF, head[1] == 0xD8, head[2] == 0xFF {
+            return "public.jpeg"
+        }
         if head.count >= 8, head[0] == 0x89, head[1] == 0x50, head[2] == 0x4E, head[3] == 0x47 {
             return "public.png"
         }

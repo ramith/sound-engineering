@@ -131,8 +131,12 @@ extension AudioEngineBridge {
         }
         // Detach both AUs (graph is stopped; safe to mutate) and drop the strong refs.
         if let engine = avEngine {
-            if let effectsUnit = dspAudioUnit { engine.detach(effectsUnit) }
-            if let spatialUnit = spatialAudioUnit { engine.detach(spatialUnit) }
+            if let effectsUnit = dspAudioUnit {
+                engine.detach(effectsUnit)
+            }
+            if let spatialUnit = spatialAudioUnit {
+                engine.detach(spatialUnit)
+            }
         }
     }
 

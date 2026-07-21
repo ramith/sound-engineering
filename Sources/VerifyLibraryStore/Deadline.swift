@@ -49,6 +49,8 @@ final class OneShotLatch: @unchecked Sendable {
         let first = !hasRun
         hasRun = true
         lock.unlock()
-        if first { body() }
+        if first {
+            body()
+        }
     }
 }

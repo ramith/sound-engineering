@@ -26,7 +26,9 @@ extension PlaylistDetailView {
     /// transient restore-queue affordance — ONLY if a replace actually happened (an all-unavailable
     /// playlist no-ops, and must not resurface a stale toast from an earlier real Play).
     func playNow(startingAt entryID: Int64? = nil) {
-        if model.playPlaylist(startingAt: entryID) { raiseRestoreToast() }
+        if model.playPlaylist(startingAt: entryID) {
+            raiseRestoreToast()
+        }
     }
 
     func raiseRestoreToast() {

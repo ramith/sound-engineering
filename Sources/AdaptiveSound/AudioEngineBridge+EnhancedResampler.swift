@@ -154,7 +154,9 @@ extension AudioEngineBridge {
             let scheduled = readConvertSchedule(
                 session: session, player: player, generation: generation
             )
-            if !scheduled { break }
+            if !scheduled {
+                break
+            }
             primed += 1
         }
         return primed

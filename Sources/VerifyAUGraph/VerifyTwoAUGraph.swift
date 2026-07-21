@@ -105,16 +105,22 @@ func bestAlignmentLag(output: [[Float]], input: AVAudioPCMBuffer) -> Int? {
     var bestDiff = Float.greatestFiniteMagnitude
     for lag in 0 ... maxPassthroughLag {
         let compareCount = frameCount - lag - passthroughCompareGuard
-        if compareCount <= 0 { break }
+        if compareCount <= 0 {
+            break
+        }
         var maxDiff: Float = 0
         for frame in 0 ..< compareCount {
             maxDiff = max(maxDiff, abs(outChannel0[frame + lag] - inChannel0[frame]))
-            if maxDiff >= bestDiff { break } // already worse than the best — abandon this lag
+            if maxDiff >= bestDiff {
+                break
+            } // already worse than the best — abandon this lag
         }
         if maxDiff < bestDiff {
             bestDiff = maxDiff
             bestLag = lag
-            if bestDiff == 0 { break } // exact alignment found; cannot do better
+            if bestDiff == 0 {
+                break
+            } // exact alignment found; cannot do better
         }
     }
     return bestLag
