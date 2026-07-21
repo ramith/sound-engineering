@@ -19,7 +19,9 @@ enum SingleInstanceGuard {
         // `open`+`flock` from the SAME process would be DENIED by our own held lock (flock treats
         // descriptors independently), which would falsely read as "duplicate" and kill the real
         // app — so short-circuit once we already hold it.
-        if lockDescriptor >= 0 { return true }
+        if lockDescriptor >= 0 {
+            return true
+        }
 
         let descriptor = open(lockFilePath(), O_CREAT | O_RDWR, 0o600)
         guard descriptor >= 0 else { return true } // can't create the lock file → don't block launch

@@ -133,12 +133,16 @@ extension AudioViewModel {
     @MainActor
     private func pollEngineReadouts() {
         let freshLoudness = engine.currentLoudness()
-        if loudness != freshLoudness { loudness = freshLoudness }
+        if loudness != freshLoudness {
+            loudness = freshLoudness
+        }
         var freshPath = engine.currentSignalPath()
         // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
         freshPath.intensityLinear = intensity
         freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
-        if signalPath != freshPath { signalPath = freshPath }
+        if signalPath != freshPath {
+            signalPath = freshPath
+        }
     }
 
     @MainActor

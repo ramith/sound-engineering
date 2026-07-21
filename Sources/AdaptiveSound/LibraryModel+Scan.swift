@@ -124,7 +124,11 @@ extension LibraryModel {
         // once sandbox bookmarks land (S8.4). Per-process, so it covers the off-main
         // walk, and this scan owns its own scope independent of the view's Task.
         let didAccess = url.startAccessingSecurityScopedResource()
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
         do {
             let existing = try await store.roots().map { URL(fileURLWithPath: $0.path) }
             try LibraryScanner().validateNewRoot(url, against: existing)
@@ -147,7 +151,9 @@ extension LibraryModel {
             await runMetadataPass(store, generation: result.generation)
             // Post-churn facet cleanup (SF-2): reap albums/artists/genres a re-scan's deletes
             // orphaned. Non-cancelled only (matches the artwork-sweep posture).
-            if !Task.isCancelled { _ = try? await store.sweepOrphanFacets() }
+            if !Task.isCancelled {
+                _ = try? await store.sweepOrphanFacets()
+            }
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let unreachable as RootUnreachableError {

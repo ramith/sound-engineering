@@ -87,7 +87,9 @@ extension AudioViewModel {
         let savedTrackID = (defaults.object(forKey: QueueCursorKey.positionTrackID) as? Int).map(Int64.init)
         if position >= 0, position < itemCount {
             if let savedTrackID {
-                if queue[position].file.trackID == savedTrackID { return position }
+                if queue[position].file.trackID == savedTrackID {
+                    return position
+                }
             } else {
                 return position
             }

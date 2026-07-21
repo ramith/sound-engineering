@@ -17,7 +17,9 @@ enum SongsAccessibility {
     static func rowLabel(for track: LibraryTrackDisplay) -> String {
         let artist = track.artistName.isEmpty ? "Unknown Artist" : track.artistName
         var parts = ["\(track.title), \(artist)"]
-        if let album = track.albumName, !album.isEmpty { parts.append(album) }
+        if let album = track.albumName, !album.isEmpty {
+            parts.append(album)
+        }
         parts.append(spokenDuration(track.durationSeconds))
         return parts.joined(separator: ", ")
     }
@@ -28,9 +30,13 @@ enum SongsAccessibility {
         var parts = [
             qualityString(format: track.format, sampleRate: track.sampleRate, bitDepth: track.bitDepth),
         ]
-        if let year = track.year, year > 0 { parts.append(String(year)) }
+        if let year = track.year, year > 0 {
+            parts.append(String(year))
+        }
         let date = compactDate(track.dateAdded)
-        if !date.isEmpty { parts.append("added \(date)") }
+        if !date.isEmpty {
+            parts.append("added \(date)")
+        }
         return parts.joined(separator: ", ")
     }
 

@@ -37,7 +37,9 @@ struct AlbumDetailView: View {
     private var backBar: some View {
         HStack {
             Button {
-                if !model.path.isEmpty { model.path.removeLast() }
+                if !model.path.isEmpty {
+                    model.path.removeLast()
+                }
             } label: {
                 Label("Library", systemImage: "chevron.backward")
             }
@@ -127,7 +129,11 @@ struct AlbumDetailView: View {
                     .popover(
                         isPresented: Binding(
                             get: { infoTarget?.id == track.id },
-                            set: { if !$0 { infoTarget = nil } }
+                            set: {
+                                if !$0 {
+                                    infoTarget = nil
+                                }
+                            }
                         ),
                         arrowEdge: .trailing
                     ) {
@@ -158,7 +164,9 @@ struct AlbumDetailView: View {
 
     private var subtitleLine: String {
         var parts: [String] = []
-        if let year = album?.year, year > 0 { parts.append("\(year)") }
+        if let year = album?.year, year > 0 {
+            parts.append("\(year)")
+        }
         parts.append("\(tracks.count) song\(tracks.count == 1 ? "" : "s")")
         return parts.joined(separator: " · ")
     }

@@ -182,12 +182,20 @@ while framesRendered < totalFrames {
 print("step 3 ok: offline-rendered \(framesRendered) frames over \(blocks) blocks, all .success")
 
 // 4. Verify passthrough integrity (finite, non-silent, peak preserved).
-if !captured.allSatisfy({ $0.isFinite }) { fail("output contains NaN/Inf — render instability") }
+if !captured.allSatisfy({ $0.isFinite }) {
+    fail("output contains NaN/Inf — render instability")
+}
+
 let outputPeak = captured.reduce(Float(0)) { max($0, abs($1)) }
 let outputRMS = sqrt(captured.reduce(Float(0)) { $0 + $1 * $1 } / Float(max(captured.count, 1)))
 print("input peak = \(toneAmplitude), output peak = \(outputPeak), output RMS = \(outputRMS)")
-if outputRMS < 0.01 { fail("output silent (RMS \(outputRMS)) — AU produced no signal") }
-if outputPeak > toneAmplitude * 2.0 { fail("output peak \(outputPeak) >> input — gain/instability") }
+if outputRMS < 0.01 {
+    fail("output silent (RMS \(outputRMS)) — AU produced no signal")
+}
+
+if outputPeak > toneAmplitude * 2.0 {
+    fail("output peak \(outputPeak) >> input — gain/instability")
+}
 
 engine.stop()
 print("ALL M1 CHECKS PASSED — custom AU registers, instantiates, sits in the live graph, and renders")

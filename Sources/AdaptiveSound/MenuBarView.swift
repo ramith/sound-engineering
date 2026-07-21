@@ -37,7 +37,9 @@ struct MenuBarView: View {
             let hasContentWindow = NSApp.windows.contains {
                 $0.styleMask.contains(.titled) && $0.canBecomeMain && $0.isVisible
             }
-            if !hasContentWindow { openWindow(id: "main") }
+            if !hasContentWindow {
+                openWindow(id: "main")
+            }
             NSApp.activate()
         }
         Button("Quit AdaptiveSound") { NSApp.terminate(nil) }

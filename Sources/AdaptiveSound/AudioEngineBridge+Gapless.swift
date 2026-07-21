@@ -96,7 +96,11 @@ extension AudioEngineBridge {
                     return
                 }
                 let didAccess = url.startAccessingSecurityScopedResource()
-                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                defer {
+                    if didAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
                 // Open OFF the leaf lock (the network-slow step); arm UNDER it (fast).
                 guard let decoder = url.path.withCString({ pureModeOpenDecodeSource($0) }) else {
                     logUX("pure setNextTrack '\(url.lastPathComponent)' → error (open failed)")

@@ -93,7 +93,9 @@ extension AudioViewModel {
         // Playing → arm the inserted slot as the on-deck (single-slot override, honors
         // shuffle). Paused → the insert alone plays it next under LINEAR order (resume's
         // primeGaplessPipeline derives computeNextIndex(current) = current+1).
-        if isPlaying { armOnDeck(index: insertAt) }
+        if isPlaying {
+            armOnDeck(index: insertAt)
+        }
         return tracks.count
     }
 
@@ -123,7 +125,9 @@ extension AudioViewModel {
             logUX("playTrackNextNow: restart current index \(index) '\(track.name)'")
             playTrack(at: index)
         case let .insertAndPlay(removeAt, insertAt):
-            if let removeAt { queue.remove(at: removeAt) }
+            if let removeAt {
+                queue.remove(at: removeAt)
+            }
             queue.insert(QueueItem(file: track), at: insertAt)
             scheduleQueueMirror()
             logUX("playTrackNextNow: '\(track.name)' → index \(insertAt)"

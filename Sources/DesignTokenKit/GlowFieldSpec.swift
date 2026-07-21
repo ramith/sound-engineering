@@ -68,8 +68,12 @@ public enum GlowFieldSpec {
     /// center (t = 1 is the ellipse edge). The single profile source: the render gradient's
     /// stops AND the R4 geometric audit both read this.
     public static func falloffFraction(at t: Double) -> Double {
-        if t <= 0 { return 1 }
-        if t >= 1 { return 0 }
+        if t <= 0 {
+            return 1
+        }
+        if t >= 1 {
+            return 0
+        }
         if t <= falloffMidStop {
             return 1 - (1 - falloffMidAlphaFactor) * (t / falloffMidStop)
         }

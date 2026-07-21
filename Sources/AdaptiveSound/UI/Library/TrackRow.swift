@@ -46,7 +46,9 @@ struct TrackRow: View {
 
     private var accessibilityLabel: String {
         var parts = [track.title]
-        if !secondary.isEmpty { parts.append(secondary) }
+        if !secondary.isEmpty {
+            parts.append(secondary)
+        }
         parts.append(formatDuration(track.durationSeconds))
         return parts.joined(separator: ", ")
     }

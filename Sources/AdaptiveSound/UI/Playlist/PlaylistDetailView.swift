@@ -49,7 +49,11 @@ struct PlaylistDetailView: View {
         // Locate… (F): pick the moved file → re-point the track (id preserved) → it resolves.
         .fileImporter(
             isPresented: Binding(get: { locatingEntryID != nil },
-                                 set: { if !$0 { locatingEntryID = nil } }),
+                                 set: {
+                                     if !$0 {
+                                         locatingEntryID = nil
+                                     }
+                                 }),
             allowedContentTypes: [.audio]
         ) { result in
             if case let .success(url) = result, let id = locatingEntryID {
@@ -61,7 +65,11 @@ struct PlaylistDetailView: View {
         // pane-wide load-error state (F review).
         .alert("Couldn’t Complete That", isPresented: Binding(
             get: { model.actionError != nil },
-            set: { if !$0 { model.clearActionError() } }
+            set: {
+                if !$0 {
+                    model.clearActionError()
+                }
+            }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -270,10 +278,12 @@ struct PlaylistDetailView: View {
         .accessibilityLabel("\(row.display?.title ?? "Unknown Track"), unavailable — file missing")
         .accessibilityActions { missingRowActions(row) }
     }
+}
 
-    // MARK: Restore-queue undo toast
+// MARK: - Restore-queue undo toast
 
-    @ViewBuilder private var restoreToast: some View {
+private extension PlaylistDetailView {
+    @ViewBuilder var restoreToast: some View {
         if restoreToastToken != nil, model.canRestorePreviousQueue {
             HStack(spacing: DesignSystem.Spacing.medium) {
                 Text("Queue replaced")

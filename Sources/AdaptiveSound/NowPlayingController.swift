@@ -238,8 +238,12 @@ final class NowPlayingController {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: snapshot.elapsedSeconds,
             MPNowPlayingInfoPropertyPlaybackRate: snapshot.rate,
         ]
-        if let artist = snapshot.artist { info[MPMediaItemPropertyArtist] = artist }
-        if let album = snapshot.album { info[MPMediaItemPropertyAlbumTitle] = album }
+        if let artist = snapshot.artist {
+            info[MPMediaItemPropertyArtist] = artist
+        }
+        if let album = snapshot.album {
+            info[MPMediaItemPropertyAlbumTitle] = album
+        }
         if let artwork {
             // The request handler MUST be nonisolated: MediaPlayer invokes it on ITS OWN
             // serial queue ("accessQueue") when serializing artwork (e.g. a Control Center

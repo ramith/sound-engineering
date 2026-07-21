@@ -35,7 +35,9 @@ final class LibraryBrowseModel {
             // detail stays visible UNDER the newly-selected category's root (review blocker).
             // This assigns `path`, NOT `selectedCategory`, so it can't self-recurse a @Observable
             // didSet.
-            if selectedCategory != oldValue { path.removeAll() }
+            if selectedCategory != oldValue {
+                path.removeAll()
+            }
         }
     }
 
@@ -199,9 +201,15 @@ final class LibraryBrowseModel {
     /// A short, phase-aware status line for the sidebar scan strip, or nil when idle. Coarse by
     /// design (one line per phase, not per tick).
     var scanStatusText: String? {
-        if let scan = library.scanProgress { return "Scanning… \(scan.filesSeenSoFar) files" }
-        if library.metadataProgress != nil { return "Reading tags…" }
-        if library.isReconciling { return "Updating library…" }
+        if let scan = library.scanProgress {
+            return "Scanning… \(scan.filesSeenSoFar) files"
+        }
+        if library.metadataProgress != nil {
+            return "Reading tags…"
+        }
+        if library.isReconciling {
+            return "Updating library…"
+        }
         return nil
     }
 
@@ -213,7 +221,9 @@ final class LibraryBrowseModel {
     /// Lazily build the thumbnail store once the async `store` exists (used by the Artwork
     /// extension's passthrough + `loadAlbums`). Private; reached from the same-file extension.
     private func ensureArtwork() {
-        if artwork == nil, let store { artwork = ArtworkThumbnailStore(store: store) }
+        if artwork == nil, let store {
+            artwork = ArtworkThumbnailStore(store: store)
+        }
     }
 
     // MARK: - Folder management (the "Music Folders" surface — S9 IA change)
@@ -255,7 +265,9 @@ final class LibraryBrowseModel {
         ensureArtwork()
         loadEpoch &+= 1
         let epoch = loadEpoch
-        if albums.isEmpty { albumsState = .loading } // keep showing cached data while refreshing
+        if albums.isEmpty {
+            albumsState = .loading
+        } // keep showing cached data while refreshing
         do {
             let loaded = try await store.albums(sortedBy: albumSort)
             guard epoch == loadEpoch else { return } // a newer load superseded this one
@@ -285,7 +297,9 @@ final class LibraryBrowseModel {
         }
         songsLoadEpoch &+= 1
         let epoch = songsLoadEpoch
-        if songs.isEmpty { songsState = .loading } // keep showing cached rows while refreshing
+        if songs.isEmpty {
+            songsState = .loading
+        } // keep showing cached rows while refreshing
         do {
             let loaded = try await store.allTracksDisplay(sortedBy: songSort, limit: nil)
             guard epoch == songsLoadEpoch else { return } // a newer load superseded this one
@@ -379,7 +393,9 @@ final class LibraryBrowseModel {
         // have added tracks that match the current query, and the reload replaced `songs` while
         // leaving the stale `matchedIDs`. Re-querying surfaces the new matches; `matchedIDs`'s
         // `didSet` refreshes `visibleSongs`. Skipped when not filtering (`matchedIDs == nil`).
-        if matchedIDs != nil { await runFilter() }
+        if matchedIDs != nil {
+            await runFilter()
+        }
     }
 
     // MARK: - Detail reads (album)

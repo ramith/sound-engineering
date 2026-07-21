@@ -192,7 +192,9 @@ struct DeviceSortOrderTests {
                 }
             }
             let lo = order(lhs.type), ro = order(rhs.type)
-            if lo != ro { return lo < ro }
+            if lo != ro {
+                return lo < ro
+            }
             return lhs.name < rhs.name
         }
     }

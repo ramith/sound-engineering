@@ -30,7 +30,9 @@ extension DesignSystem.Color {
     static func from(_ pair: AppearancePair) -> SwiftUI.Color {
         let isAppearanceIndependent = pair.light == pair.dark
             && pair.lightHighContrast == pair.light && pair.darkHighContrast == pair.dark
-        if isAppearanceIndependent { return SwiftUI.Color(token: pair.light) }
+        if isAppearanceIndependent {
+            return SwiftUI.Color(token: pair.light)
+        }
         return dynamic(light: SwiftUI.Color(token: pair.light),
                        dark: SwiftUI.Color(token: pair.dark),
                        lightHighContrast: SwiftUI.Color(token: pair.lightHighContrast),

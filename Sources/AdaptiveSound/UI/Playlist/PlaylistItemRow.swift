@@ -148,7 +148,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
 
     private var accessibilityLabel: String {
         var parts = [file.name, file.format]
-        if file.durationSeconds > 0 { parts.append(formatDuration(file.durationSeconds)) }
+        if file.durationSeconds > 0 {
+            parts.append(formatDuration(file.durationSeconds))
+        }
         return parts.joined(separator: ", ")
     }
 }

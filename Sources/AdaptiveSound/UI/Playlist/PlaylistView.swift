@@ -59,7 +59,9 @@ struct PlaylistView: View {
         // possibly-empty match set, with reorder silently disabled). Emptying the queue
         // resets the filter; a mode round-trip keeps it (the visible pill carries it).
         .onChange(of: viewModel.queue.isEmpty) { _, isEmpty in
-            if isEmpty { filterText = "" }
+            if isEmpty {
+                filterText = ""
+            }
         }
     }
 
@@ -299,7 +301,9 @@ private struct PlaylistItemList: View {
             // a now-out-of-range cursor (the queue shrank).
             .onChange(of: viewModel.queue.map(\.id)) { _, _ in
                 infoTarget = nil
-                if let cursor = cursorIndex, cursor >= viewModel.queue.count { cursorIndex = nil }
+                if let cursor = cursorIndex, cursor >= viewModel.queue.count {
+                    cursorIndex = nil
+                }
             }
             .onKeyPress(.upArrow) { moveCursor(by: -1, proxy: proxy) }
             .onKeyPress(.downArrow) { moveCursor(by: 1, proxy: proxy) }
@@ -373,7 +377,11 @@ private struct PlaylistItemList: View {
         .popover(
             isPresented: Binding(
                 get: { infoTarget?.id == item.id },
-                set: { if !$0 { infoTarget = nil } }
+                set: {
+                    if !$0 {
+                        infoTarget = nil
+                    }
+                }
             ),
             arrowEdge: .trailing
         ) {

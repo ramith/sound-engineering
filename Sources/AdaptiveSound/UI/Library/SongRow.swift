@@ -50,7 +50,9 @@ struct SongRow: View {
     }
 
     private func alignment(for column: SongColumn) -> Alignment {
-        if column == .index { return .center }
+        if column == .index {
+            return .center
+        }
         return column.isTrailing ? .trailing : .leading
     }
 
@@ -91,16 +93,15 @@ struct SongRow: View {
         return column.isMono ? DesignSystem.Color.labelTertiary : DesignSystem.Color.labelSecondary
     }
 
+    @ViewBuilder
     private var indexCell: some View {
-        Group {
-            if isNowPlaying {
-                MiniEqualizer(animating: pulseIsActive(isPlaying: isPlaybackActive,
-                                                       reduceMotion: reduceMotion))
-            } else {
-                Text(number, format: .number.grouping(.never))
-                    .font(DesignSystem.Font.monoSmall)
-                    .foregroundStyle(DesignSystem.Color.labelTertiary)
-            }
+        if isNowPlaying {
+            MiniEqualizer(animating: pulseIsActive(isPlaying: isPlaybackActive,
+                                                   reduceMotion: reduceMotion))
+        } else {
+            Text(number, format: .number.grouping(.never))
+                .font(DesignSystem.Font.monoSmall)
+                .foregroundStyle(DesignSystem.Color.labelTertiary)
         }
     }
 

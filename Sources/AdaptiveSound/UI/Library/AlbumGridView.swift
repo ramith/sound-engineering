@@ -37,7 +37,11 @@ struct AlbumGridView: View {
             }
         case .loaded:
             // `.loaded` but empty means every album was removed — a genuine empty library.
-            if model.albums.isEmpty { LibraryEmptyStateView(kind: .emptyLibrary) } else { gridWithFilter }
+            if model.albums.isEmpty {
+                LibraryEmptyStateView(kind: .emptyLibrary)
+            } else {
+                gridWithFilter
+            }
         case .firstRun:
             // A scan just kicked off from the first-run CTA flips this to a truthful "scanning"
             // until the albums land; otherwise it's the add-a-folder call to action.

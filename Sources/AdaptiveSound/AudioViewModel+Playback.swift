@@ -43,7 +43,9 @@ extension AudioViewModel {
         // keep accruing the OUTGOING track's `heardSeconds` and could cross the threshold — counting
         // the play against the newly-selected track (QA break-it #1). A pause-resume (resumeFrom !=
         // nil) continues the same play-through — no reset.
-        if resumeFrom == nil { resetPlayTracking() }
+        if resumeFrom == nil {
+            resetPlayTracking()
+        }
 
         // Snapshot index and mode for use inside the Task (avoids capturing `self` for
         // values that could change between now and when the Task body runs).
