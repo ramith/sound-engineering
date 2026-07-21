@@ -175,8 +175,12 @@ final class MockAdvanceController {
 
     /// Select a neighbour index after removing the item at `removed` from a list of `count` items.
     private func neighbourIndex(removed: Int, count: Int) -> Int? {
-        if removed < count { return removed }
-        if removed > 0 { return removed - 1 }
+        if removed < count {
+            return removed
+        }
+        if removed > 0 {
+            return removed - 1
+        }
         return nil
     }
 
@@ -266,7 +270,9 @@ final class MockAdvanceController {
         guard let current = selectedTrackIndex else { return appendToQueue(tracks) }
         let insertAt = min(current + 1, playlist.count)
         playlist.insert(contentsOf: tracks, at: insertAt)
-        if isPlaying { armOnDeck(insertAt) }
+        if isPlaying {
+            armOnDeck(insertAt)
+        }
         return tracks.count
     }
 

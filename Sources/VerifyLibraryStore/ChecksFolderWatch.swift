@@ -87,7 +87,9 @@ func runFSEventsSmokeIfRequested() async {
     touch.waitUntilExit()
     var delivered = false
     for _ in 0 ..< 60 { // up to ~12 s of 200 ms polls
-        if !box.all.isEmpty { delivered = true; break }
+        if !box.all.isEmpty {
+            delivered = true; break
+        }
         try? await Task.sleep(for: .milliseconds(200))
     }
     watcher.stop()

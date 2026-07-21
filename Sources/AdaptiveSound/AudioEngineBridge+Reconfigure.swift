@@ -87,9 +87,13 @@ extension AudioEngineBridge {
     private var currentGraphWidth: AVAudioChannelCount {
         if let player = playerNode {
             let width = player.outputFormat(forBus: 0).channelCount
-            if width > 0 { return width }
+            if width > 0 {
+                return width
+            }
         }
-        if !afterAnalyzers.isEmpty { return AVAudioChannelCount(afterAnalyzers.count) }
+        if !afterAnalyzers.isEmpty {
+            return AVAudioChannelCount(afterAnalyzers.count)
+        }
         return 2
     }
 

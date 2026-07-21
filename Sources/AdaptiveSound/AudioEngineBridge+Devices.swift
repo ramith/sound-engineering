@@ -43,7 +43,9 @@ extension AudioEngineBridge {
                 models.sort { lhs, rhs in
                     let lhsOrder = lhs.type.sortOrder
                     let rhsOrder = rhs.type.sortOrder
-                    if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+                    if lhsOrder != rhsOrder {
+                        return lhsOrder < rhsOrder
+                    }
                     return lhs.name < rhs.name
                 }
 

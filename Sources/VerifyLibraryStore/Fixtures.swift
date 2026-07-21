@@ -260,8 +260,12 @@ private func computeExpectations(
     // Named artists (track-artist ∪ album-artist), EXCLUDING the sentinel.
     var artists = Set<String>()
     for def in everyDef {
-        if let artist = def.artist { artists.insert(artist) }
-        if let albumArtist = def.albumArtist { artists.insert(albumArtist) }
+        if let artist = def.artist {
+            artists.insert(artist)
+        }
+        if let albumArtist = def.albumArtist {
+            artists.insert(albumArtist)
+        }
     }
     let artistCount = artists.count
 
@@ -314,7 +318,9 @@ private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
         for genre in Set(def.genres) {
             genreTrackCounts[genre, default: 0] += 1
             tracksByGenre[genre, default: []].insert(def.title)
-            if let album = def.album { albumsByGenre[genre, default: []].insert(album) }
+            if let album = def.album {
+                albumsByGenre[genre, default: []].insert(album)
+            }
         }
     }
     return DerivedFacetSets(

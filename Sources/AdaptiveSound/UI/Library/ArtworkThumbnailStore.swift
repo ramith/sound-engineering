@@ -42,9 +42,13 @@ final class ArtworkThumbnailStore {
     /// The thumbnail for `key` at up to `maxPixel`, or `nil` (→ placeholder) when the key
     /// is unwarmed / has no cache row / the file is missing or undecodable (never throws).
     func image(forKey key: String, maxPixel: Int) async -> NSImage? {
-        if let hit = cache.object(forKey: key as NSString) { return hit }
+        if let hit = cache.object(forKey: key as NSString) {
+            return hit
+        }
         // Resolve the path; warm on demand if this key wasn't in a prior page warm.
-        if paths[key] == nil { await warm(keys: [key]) }
+        if paths[key] == nil {
+            await warm(keys: [key])
+        }
         guard let original = paths[key] else { return nil }
         let thumb = ArtworkCache.thumbnailPath(forOriginal: original)
         guard let cg = await Self.decode(path: thumb, maxPixel: maxPixel) else { return nil }

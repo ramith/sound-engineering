@@ -53,7 +53,11 @@ extension AudioViewModel {
     /// (footer, Controls menu, queue, menu bar) routes through, so the behaviour can't drift between
     /// them. `pause()` keeps the playhead; `play()` resumes from it.
     func togglePlayPause() {
-        if isPlaying { pause() } else { play() }
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
     }
 
     /// Skip to the next track, honouring shuffle + repeat (VM-2). Routes through the same
@@ -70,7 +74,9 @@ extension AudioViewModel {
                                           manualSkip: true) else { return }
         pausedResumePosition = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = next
-        if isPlaying { startPlayback() }
+        if isPlaying {
+            startPlayback()
+        }
     }
 
     /// Skip to the previous track, honouring shuffle + repeat (VM-2). Under shuffle this is a random
@@ -82,6 +88,8 @@ extension AudioViewModel {
                                                   playlistCount: playlist.count) else { return }
         pausedResumePosition = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = previous
-        if isPlaying { startPlayback() }
+        if isPlaying {
+            startPlayback()
+        }
     }
 }

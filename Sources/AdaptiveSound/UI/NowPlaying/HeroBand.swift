@@ -223,7 +223,9 @@ private extension Text {
 
 enum SignalPathAccessibility {
     static func value(for info: SignalPathInfo) -> String {
-        if info.interrupted { return "Playback paused, output device disconnected" }
+        if info.interrupted {
+            return "Playback paused, output device disconnected"
+        }
         let pathText = info.path == .pure ? "Pure mode" : "Enhanced mode"
         let rateText = info.achievedSampleRate > 0
             ? info.formattedRate.replacing(" kHz", with: " kilohertz")
@@ -238,7 +240,9 @@ enum SignalPathAccessibility {
             parts.append(decoder == .apple ? "Apple decoder" : "FFmpeg decoder")
         }
         var result = parts.joined(separator: ", ")
-        if info.fellBackToEnhanced { result += " — Pure mode unavailable" }
+        if info.fellBackToEnhanced {
+            result += " — Pure mode unavailable"
+        }
         return result
     }
 }

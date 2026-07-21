@@ -12,7 +12,9 @@ extension LibraryBrowseModel {
     /// a `.playlist` route, else the selected category. Read by the sidebar to draw the selection
     /// capsule; WRITTEN via `selectCategory`/`selectPlaylist` (Button taps), never bound directly.
     var sidebarSelection: SidebarSelection {
-        if case let .playlist(id)? = path.last { return .playlist(id) }
+        if case let .playlist(id)? = path.last {
+            return .playlist(id)
+        }
         return .category(selectedCategory ?? .songs)
     }
 
@@ -21,7 +23,9 @@ extension LibraryBrowseModel {
     /// category while a playlist is open leaves `selectedCategory` unchanged, so the didSet wouldn't
     /// fire and the playlist would stay on screen.
     func selectCategory(_ category: LibraryCategory) {
-        if !path.isEmpty { path.removeAll() }
+        if !path.isEmpty {
+            path.removeAll()
+        }
         selectedCategory = category
     }
 

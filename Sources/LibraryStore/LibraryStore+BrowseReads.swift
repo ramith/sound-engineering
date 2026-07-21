@@ -106,11 +106,17 @@ public extension LibraryStore {
         join: String = "", whereClause: String, order: String, limited: Bool
     ) -> String {
         var sql = "SELECT \(displayTrackColumns) FROM tracks t"
-        if !join.isEmpty { sql += " " + join }
+        if !join.isEmpty {
+            sql += " " + join
+        }
         sql += " " + displayArtistAlbumJoins
-        if !whereClause.isEmpty { sql += " " + whereClause }
+        if !whereClause.isEmpty {
+            sql += " " + whereClause
+        }
         sql += " ORDER BY \(order)"
-        if limited { sql += " LIMIT ? OFFSET ?" }
+        if limited {
+            sql += " LIMIT ? OFFSET ?"
+        }
         sql += ";"
         return sql
     }

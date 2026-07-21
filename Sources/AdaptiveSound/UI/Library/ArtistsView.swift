@@ -42,13 +42,21 @@ struct ArtistsGridView: View {
                 gridWithFilter
             }
         case .loaded:
-            if visibleArtists.isEmpty { facetEmpty } else { gridWithFilter }
+            if visibleArtists.isEmpty {
+                facetEmpty
+            } else {
+                gridWithFilter
+            }
         case .firstRun:
             LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
         case .empty:
             // Roots exist but no artists: scanning if a pass is live, else the facet-specific empty
             // (songs may exist but be untagged — NOT the "No Music Found" library-empty state).
-            if model.isPopulating { LibraryEmptyStateView(kind: .scanning) } else { facetEmpty }
+            if model.isPopulating {
+                LibraryEmptyStateView(kind: .scanning)
+            } else {
+                facetEmpty
+            }
         case let .failed(message):
             LibraryEmptyStateView(kind: .failed(message))
         }

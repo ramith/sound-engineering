@@ -32,10 +32,16 @@ public enum QueueAdvance {
         randomPick: (Int, Int) -> Int
     ) -> Int? {
         guard count > 0 else { return nil }
-        if repeatMode == 2, !manualSkip { return current } // repeat-one: auto repeats, manual steps
-        if shuffle, count > 1 { return randomPick(current, count) }
+        if repeatMode == 2, !manualSkip {
+            return current
+        } // repeat-one: auto repeats, manual steps
+        if shuffle, count > 1 {
+            return randomPick(current, count)
+        }
         let nextLinear = current + 1
-        if nextLinear < count { return nextLinear }
+        if nextLinear < count {
+            return nextLinear
+        }
         return repeatMode == 1 ? 0 : nil // repeat-all wraps to the first track; else stop
     }
 
@@ -51,9 +57,13 @@ public enum QueueAdvance {
         randomPick: (Int, Int) -> Int
     ) -> Int? {
         guard count > 0 else { return nil }
-        if shuffle, count > 1 { return randomPick(current, count) }
+        if shuffle, count > 1 {
+            return randomPick(current, count)
+        }
         let prevLinear = current - 1
-        if prevLinear >= 0 { return prevLinear }
+        if prevLinear >= 0 {
+            return prevLinear
+        }
         return repeatMode == 1 ? count - 1 : nil // repeat-all wraps to the last track
     }
 

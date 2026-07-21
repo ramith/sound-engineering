@@ -61,7 +61,9 @@ func detailIsTracksTableScan(_ detail: String) -> Bool {
     guard upper.hasPrefix("SCAN"), !detailUsesIndex(detail) else { return false }
     var tokens = upper.split(separator: " ").map(String.init)
     tokens.removeFirst() // drop "SCAN"
-    if tokens.first == "TABLE" { tokens.removeFirst() } // legacy "SCAN TABLE tracks"
+    if tokens.first == "TABLE" {
+        tokens.removeFirst()
+    } // legacy "SCAN TABLE tracks"
     guard let target = tokens.first else { return false }
     return ["T", "T2", "TRACKS"].contains(target)
 }

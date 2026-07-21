@@ -47,7 +47,11 @@ struct MusicFoldersSection: View {
         .onChange(of: library.libraryRevision) { _, _ in Task { await model.loadRoots() } }
         .alert(
             removeTarget.map { "Remove \"\(abbreviatedPath($0.path))\" from your library?" } ?? "",
-            isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }),
+            isPresented: Binding(get: { removeTarget != nil }, set: {
+                if !$0 {
+                    removeTarget = nil
+                }
+            }),
             presenting: removeTarget
         ) { root in
             Button("Remove", role: .destructive) { Task { await model.removeFolder(id: root.id) } }

@@ -129,7 +129,11 @@ extension AudioEngineBridge {
     func playFile(at fileURL: URL, engine _: AVAudioEngine, playerNode: AVAudioPlayerNode) throws {
         // Establish security-scoped access for sandboxed macOS file access.
         let didAccess = fileURL.startAccessingSecurityScopedResource()
-        defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
 
         let audioFile: AVAudioFile
         do {

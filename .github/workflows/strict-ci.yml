@@ -47,8 +47,8 @@ jobs:
           # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
           # (that branch is analyzed NOWHERE else in the merge path); the rest are
           # formatters/linters/scanners. SwiftFormat/SwiftLint are NOT brewed: they are PINNED
-          # below (brew-latest 0.62.x changed wrapIfStatementBodies and flagged 74 files the
-          # local 0.61.1 gate passes — PR #61 run 1); strict-gate.sh asserts the pins, so a
+          # below (the original trigger: brew-latest SwiftFormat 0.62.x changed wrapIfStatementBodies
+          # vs the then-pinned 0.61.1 — PR #61 run 1); strict-gate.sh asserts the pins, so a
           # skew fails loudly with instructions instead of red-herring style errors.
           brew install llvm semgrep cppcheck ffmpeg || true
           # Periphery (Swift dead-code detection) lives in a tap, not core Homebrew — install it
@@ -58,10 +58,10 @@ jobs:
           # SWIFTLINT_PIN; a deliberate upgrade bumps both places + reformats in one commit).
           mkdir -p "$HOME/pinned-tools"
           curl -fsSL -o /tmp/swiftformat.zip \
-            https://github.com/nicklockwood/SwiftFormat/releases/download/0.61.1/swiftformat.zip
+            https://github.com/nicklockwood/SwiftFormat/releases/download/0.62.1/swiftformat.zip
           unzip -o -q /tmp/swiftformat.zip -d "$HOME/pinned-tools"
           curl -fsSL -o /tmp/swiftlint.zip \
-            https://github.com/realm/SwiftLint/releases/download/0.64.1/portable_swiftlint.zip
+            https://github.com/realm/SwiftLint/releases/download/0.65.0/portable_swiftlint.zip
           unzip -o -q /tmp/swiftlint.zip -d "$HOME/pinned-tools"
           chmod +x "$HOME/pinned-tools/swiftformat" "$HOME/pinned-tools/swiftlint"
           # Prepend keg-only LLVM (clang-tidy) + Homebrew bin for later steps, PRESERVING the

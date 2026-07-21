@@ -47,12 +47,13 @@ require_tool make
 xcrun --find leaks >/dev/null 2>&1 || { red "ERROR: leaks(1) missing (Xcode CLT)"; exit 1; }
 
 # Tool-skew guard (S10.7 close-out): the gate is only meaningful if local and hosted CI run
-# IDENTICAL style tools — CI's brew-latest SwiftFormat 0.62.x changed wrapIfStatementBodies
-# and flagged 74 files the local 0.61.1 passes (PR #61's first run). Style-tool versions are
-# PINNED here and installed pinned in .github/workflows/strict-ci.yml; a deliberate upgrade
-# bumps BOTH pins and reformats/relints in the SAME commit.
-SWIFTFORMAT_PIN="0.61.1"
-SWIFTLINT_PIN="0.64.1"
+# IDENTICAL style tools — a brew-latest bump silently changes formatting/lint rules and flags
+# files the pinned version passes (the original trigger: SwiftFormat 0.62.x's wrapIfStatementBodies
+# vs the then-pinned 0.61.1, PR #61 run 1). Style-tool versions are PINNED here and installed
+# pinned in .github/workflows/strict-ci.yml; a deliberate upgrade bumps BOTH pins and
+# reformats/relints in the SAME commit (last bumped 0.61.1→0.62.1 / 0.64.1→0.65.0, S10.8).
+SWIFTFORMAT_PIN="0.62.1"
+SWIFTLINT_PIN="0.65.0"
 actual_swiftformat="$(swiftformat --version)"
 if [ "$actual_swiftformat" != "$SWIFTFORMAT_PIN" ]; then
   red "ERROR: swiftformat $actual_swiftformat != pinned $SWIFTFORMAT_PIN (tool-skew guard — bump the pin + reformat in one commit, or install the pinned version)."

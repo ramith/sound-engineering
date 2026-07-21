@@ -138,7 +138,9 @@ func worstSpurPower(
             excluded = true
             break
         }
-        if excluded { continue }
+        if excluded {
+            continue
+        }
         worst = max(worst, power[bin])
     }
     return worst

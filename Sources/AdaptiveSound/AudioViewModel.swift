@@ -35,7 +35,9 @@ final class AudioViewModel {
         didSet {
             // Every play/pause/stop/end-of-queue/device-loss transition → refresh Now Playing
             // (rate + elapsed + playbackState). Guarded on change; not self-assignment (S10.4).
-            if isPlaying != oldValue { onNowPlayingRefresh?() }
+            if isPlaying != oldValue {
+                onNowPlayingRefresh?()
+            }
         }
     }
 
@@ -199,7 +201,11 @@ final class AudioViewModel {
         // while paused (S10.4 QA #1). Refresh so Control Center's enable flags don't go stale. A
         // pure reorder keeps the count and re-anchors `selectedTrackIndex` (whose didSet fires), so
         // count is the right, non-spammy trigger.
-        didSet { if queue.count != oldValue.count { onNowPlayingRefresh?() } }
+        didSet {
+            if queue.count != oldValue.count {
+                onNowPlayingRefresh?()
+            }
+        }
     }
 
     /// Read-only view of the queue as plain `AudioFile`s, for cold display consumers that don't
@@ -289,12 +295,20 @@ final class AudioViewModel {
     /// didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
     /// enable state (S10.4 QA #1) — else Control Center's Next/Prev stay stale until the next play.
     var shuffleEnabled = false {
-        didSet { if shuffleEnabled != oldValue { onNowPlayingRefresh?() } }
+        didSet {
+            if shuffleEnabled != oldValue {
+                onNowPlayingRefresh?()
+            }
+        }
     }
 
     /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
     var repeatMode: Int = 0 {
-        didSet { if repeatMode != oldValue { onNowPlayingRefresh?() } }
+        didSet {
+            if repeatMode != oldValue {
+                onNowPlayingRefresh?()
+            }
+        }
     }
 
     // MARK: - Gapless / Auto-Advance State

@@ -46,7 +46,9 @@ extension LibraryModel {
     /// folder-bound, so there is no visible-folder leg to watch (S9 IA change).
     func refreshWatchedRoots() async {
         var roots: [LibraryFolder] = []
-        if let store { roots = (try? await store.roots()) ?? [] }
+        if let store {
+            roots = (try? await store.roots()) ?? []
+        }
         let all = roots.map {
             WatchedRoot(folderID: $0.id, url: URL(fileURLWithPath: $0.path),
                         normalizedPath: PathNormalizer.normalizedString(forPath: $0.path))
@@ -57,7 +59,9 @@ extension LibraryModel {
         for root in all {
             if isLocalVolume(root.url) {
                 localURLs.append(root.url)
-                if reconcileState[root.folderID] == nil { reconcileState[root.folderID] = .watching }
+                if reconcileState[root.folderID] == nil {
+                    reconcileState[root.folderID] = .watching
+                }
             } else {
                 network.append(root)
                 reconcileState[root.folderID] = .onDemandOnly
@@ -118,13 +122,17 @@ extension LibraryModel {
     /// reconcile coalesces into ONE re-run afterward (the late change is not lost).
     private func runReconcile(folderID: Int64, root: URL) async {
         guard let store else { return }
-        if reconcilingRoots.contains(folderID) { pendingReconcile.insert(folderID); return }
+        if reconcilingRoots.contains(folderID) {
+            pendingReconcile.insert(folderID); return
+        }
         reconcilingRoots.insert(folderID)
         isReconciling = true
         await performReconcile(folderID: folderID, root: root, store: store)
         reconcilingRoots.remove(folderID)
         isReconciling = !reconcilingRoots.isEmpty
-        if pendingReconcile.remove(folderID) != nil { scheduleReconcile(folderID: folderID, root: root) }
+        if pendingReconcile.remove(folderID) != nil {
+            scheduleReconcile(folderID: folderID, root: root)
+        }
     }
 
     /// Reconcile one already-registered root into the store (NO validate/addRoot preamble): the
@@ -140,11 +148,17 @@ extension LibraryModel {
         }
         reconcileState[folderID] = .catchingUp
         let didAccess = root.startAccessingSecurityScopedResource()
-        defer { if didAccess { root.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didAccess {
+                root.stopAccessingSecurityScopedResource()
+            }
+        }
         do {
             let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
             await runMetadataPass(store, generation: result.generation)
-            if !Task.isCancelled { _ = try? await store.sweepOrphanFacets() } // SF-2 post-churn cleanup
+            if !Task.isCancelled {
+                _ = try? await store.sweepOrphanFacets()
+            } // SF-2 post-churn cleanup
             reconcileState[folderID] = isLocalVolume(root) ? .watching : .onDemandOnly
             lastReconciledAt = Date()
             lastReconcileError = nil

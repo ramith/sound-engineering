@@ -71,7 +71,9 @@ extension MetadataExtractor {
             for item in AVMetadataItem.metadataItems(from: items, filteredByIdentifier: identifier) {
                 if let value = try? await item.load(.stringValue) {
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty { return trimmed }
+                    if !trimmed.isEmpty {
+                        return trimmed
+                    }
                 }
                 if let number = try? await item.load(.numberValue) {
                     return number.stringValue
@@ -111,7 +113,9 @@ extension MetadataExtractor {
     static func trackOrDiscNumber(
         _ items: [AVMetadataItem], stringIdentifiers: [AVMetadataIdentifier], binaryAtom: String
     ) async -> Int? {
-        if let parsed = parseLeadingInt(await firstString(items, stringIdentifiers)) { return parsed }
+        if let parsed = parseLeadingInt(await firstString(items, stringIdentifiers)) {
+            return parsed
+        }
         guard let data = await firstDataValue(items, atomSuffix: binaryAtom), data.count >= 4 else { return nil }
         let bytes = [UInt8](data.prefix(4))
         return Int(bytes[2]) << 8 | Int(bytes[3])
@@ -121,7 +125,9 @@ extension MetadataExtractor {
     /// (the raw mp4 atom name — "trkn"/"disk"/"covr"), for BINARY iTunes atoms.
     static func firstDataValue(_ items: [AVMetadataItem], atomSuffix: String) async -> Data? {
         for item in items where item.identifier?.rawValue.hasSuffix(atomSuffix) ?? false {
-            if let data = try? await item.load(.dataValue), !data.isEmpty { return data }
+            if let data = try? await item.load(.dataValue), !data.isEmpty {
+                return data
+            }
         }
         return nil
     }

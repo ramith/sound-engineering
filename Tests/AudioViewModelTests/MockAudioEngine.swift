@@ -190,7 +190,9 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
 
     func initialize() async throws -> Bool {
         initializeCallCount += 1
-        if let err = initializeError { throw err }
+        if let err = initializeError {
+            throw err
+        }
         return initializeResult
     }
 
@@ -202,7 +204,9 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         startAudioCallCount += 1
         lastStartedURL = fileURL
         lastStartedPureMode = pureMode
-        if let err = startAudioThrowsError { throw err }
+        if let err = startAudioThrowsError {
+            throw err
+        }
         // A fresh startAudio clears the ended flag (new playback session).
         endedFlag = false
     }

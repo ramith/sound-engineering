@@ -90,7 +90,9 @@ final class PlaylistsModel {
         }
         treeEpoch &+= 1
         let epoch = treeEpoch
-        if playlists.isEmpty { treeState = .loading }
+        if playlists.isEmpty {
+            treeState = .loading
+        }
         do {
             // Built-in exclusion (the "current" queue playlist never appears) via the pure,
             // unit-tested `PlaylistBrowseVisibility` — not an inline filter (design §5).
@@ -112,7 +114,9 @@ final class PlaylistsModel {
         guard library.libraryRevision != lastLoadedRevision else { return }
         lastLoadedRevision = library.libraryRevision
         await loadTree()
-        if let id = openPlaylistID { await loadDetail(id: id) }
+        if let id = openPlaylistID {
+            await loadDetail(id: id)
+        }
     }
 
     // MARK: - Playlist lifecycle (create / rename / delete)
@@ -151,7 +155,9 @@ final class PlaylistsModel {
         guard let store else { return false }
         do {
             try await store.deletePlaylist(id: id)
-            if openPlaylistID == id { closeDetail() }
+            if openPlaylistID == id {
+                closeDetail()
+            }
             await loadTree()
             return true
         } catch {
@@ -172,7 +178,9 @@ final class PlaylistsModel {
         do {
             let entryIDs = try await store.appendEntries(playlistID: playlistID, trackIDs: ids)
             await loadTree()
-            if openPlaylistID == playlistID { await loadDetail(id: playlistID) }
+            if openPlaylistID == playlistID {
+                await loadDetail(id: playlistID)
+            }
             return entryIDs.count
         } catch {
             treeState = .failed(error.localizedDescription)
@@ -188,7 +196,9 @@ final class PlaylistsModel {
         let ids = PlaylistAddDecision.trackIDsToAdd(trackIDs)
         do {
             let id = try await store.createUntitledPlaylist()
-            if !ids.isEmpty { _ = try await store.appendEntries(playlistID: id, trackIDs: ids) }
+            if !ids.isEmpty {
+                _ = try await store.appendEntries(playlistID: id, trackIDs: ids)
+            }
             await loadTree()
             return id
         } catch {
@@ -205,11 +215,15 @@ final class PlaylistsModel {
     func loadDetail(id: Int64) async {
         // Switching playlists: drop the previous rows so they can't linger under the NEW header/count
         // while the read is in flight (the header reads `openPlaylist`/`detail.count` immediately).
-        if id != openPlaylistID { detail = [] }
+        if id != openPlaylistID {
+            detail = []
+        }
         openPlaylistID = id
         detailEpoch &+= 1
         let epoch = detailEpoch
-        if detail.isEmpty { detailState = .loading }
+        if detail.isEmpty {
+            detailState = .loading
+        }
         guard let store else {
             detailState = .loading
             return

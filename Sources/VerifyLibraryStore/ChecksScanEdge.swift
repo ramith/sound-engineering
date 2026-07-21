@@ -54,7 +54,9 @@ private func cancellationSkipsSweep(_ store: LibraryStore, number: Int) async th
         let fileURL = try ScanFixtureBuilder.writeFile(
             at: root, subdirs: ["d\(index / 60)"], fileName: "t\(index).flac"
         )
-        if index == 0 { victim = fileURL }
+        if index == 0 {
+            victim = fileURL
+        }
     }
     guard let victim else { printFail(number, "cancel-sweep: fixture build failed"); return false }
     let folderID = try await store.addRoot(root)
