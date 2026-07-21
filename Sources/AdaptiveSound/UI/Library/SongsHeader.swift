@@ -1,57 +1,64 @@
 import LibraryStore
 import SwiftUI
 
-// MARK: - Header (count line + incremental filter field + Columns menu)
+// MARK: - Songs header (S10.8 Library PR-D — `png/03`)
 
-/// The Songs header band: leading "N songs · total duration" (or "N results" when filtered) count,
-/// trailing filter field, then the "Columns" menu. Kept a separate view (reads only
-/// `model.visibleSongs`/`matchedIDs`, never the table's selection) so a selection change never
-/// re-sums the total.
+/// The Twin Panels song-list header strip: leading title + count line, trailing Filter pill and
+/// Sort pill. The Sort pill drives the SAME `model.sortOrder` / `applySortOrder` machinery the old
+/// Table header-clicks used (one source of truth). Kept a separate view (reads only the model's
+/// count/searchQuery/sortOrder, never the list's selection) so a selection change never re-sums.
+///
+/// PR-D.2 adds the teal Columns pill (show/hide/reorder) + the show-on-demand glass column-header
+/// row; this default header stays title · count · Filter · Sort.
 struct SongsHeader: View {
     @Environment(LibraryBrowseModel.self) private var model
-    /// Drives ⌘F focus + Escape defocus of the filter field (design §3.2/§8).
+    /// Drives ⌘F focus + Escape defocus of the filter field.
     @FocusState private var filterFocused: Bool
-    /// The SAME per-column state the table binds (identical `@AppStorage` key → no drift with the
-    /// native header context-menu). This side hosts the discoverable "Columns" button + Reset (§5),
-    /// which the native menu can't offer.
-    @AppStorage("songs.columns.v1")
-    private var columnCustomization = TableColumnCustomization<LibraryTrackDisplay>()
+    /// The shared column config (SAME `@AppStorage` key as `SongsListView`): this pill toggles
+    /// show/hide, the list renders + click-sorts. Drag-a-header reorder lands in the next sub-step.
+    @AppStorage("songs.columns.v2") private var columnConfig = SongColumnConfig.default
 
     var body: some View {
-        // Environment yields no binding; a local `@Bindable` provides `$model.searchQuery` for the
-        // TextField (§6 — NOT a hand-rolled `Binding(get:set:)`).
         @Bindable var model = model
-        HStack(spacing: DesignSystem.Spacing.small) {
-            Text(model.songsCountLine)
-                .font(DesignSystem.Font.caption)
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
+        HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.medium) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Songs")
+                    .font(.system(.title3, weight: .heavy))
+                    .foregroundStyle(DesignSystem.Color.label)
+                Text(model.songsCountLine)
+                    .font(DesignSystem.Font.monoSmall)
+                    .foregroundStyle(DesignSystem.Color.labelTertiary)
+            }
             Spacer(minLength: DesignSystem.Spacing.small)
-            filterField(query: $model.searchQuery)
-            columnsMenu
+            filterPill(query: $model.searchQuery)
+            sortPill
+            columnsPill
         }
-        .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
-        .frame(height: DesignSystem.SongsList.headerHeight)
+        .padding(.top, 16)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
         .background {
             // ⌘F focuses the filter field. A `.hidden()` button keeps the shortcut installed
-            // regardless of field state — an `if`/`.disabled` would drop the shortcut (§6/§8).
+            // regardless of field state.
             Button("Find in Songs") { filterFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
         }
     }
 
-    /// The trailing filter field (§3.2 / parent §10.2): 28pt `card` pill with a 0.5 `hairline`
-    /// stroke, leading `magnifyingglass`, the bound `TextField`, and a trailing clear button when
-    /// non-empty. Escape clears-then-defocuses via `.onExitCommand` (the macOS Cancel hook).
-    private func filterField(query: Binding<String>) -> some View {
-        HStack(spacing: DesignSystem.Spacing.xSmall) {
+    // MARK: Filter pill
+
+    /// The trailing filter pill (`png/03`): a 30pt inset capsule with a magnifier, the bound
+    /// `TextField`, and a trailing clear button when non-empty. Escape clears-then-defocuses.
+    private func filterPill(query: Binding<String>) -> some View {
+        HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
+                .font(DesignSystem.Font.caption)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
             TextField("Filter Songs", text: query)
                 .textFieldStyle(.plain)
                 .font(DesignSystem.Font.body)
                 .foregroundStyle(DesignSystem.Color.label)
-                // Focus + the transport-Space gate (S4 SW1) in one place.
                 .suppressesTransportSpace(while: $filterFocused)
                 .onExitCommand {
                     query.wrappedValue = ""
@@ -68,37 +75,143 @@ struct SongsHeader: View {
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, DesignSystem.Spacing.small)
-        .frame(height: 28)
-        .frame(minWidth: DesignSystem.SongsList.searchFieldMinWidth,
-               idealWidth: DesignSystem.SongsList.searchFieldIdealWidth)
-        .background(
-            RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
-                .fill(DesignSystem.Color.card)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
-                .stroke(DesignSystem.Color.hairline, lineWidth: 0.5)
-        )
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .frame(minWidth: DesignSystem.SongsList.searchFieldMinWidth, idealWidth: 230, maxWidth: 260)
+        .background(DesignSystem.Color.card, in: Capsule())
+        .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
     }
 
-    /// The trailing "Columns" menu (§5 / §11.3): a thin glyph `Menu` over the SAME
-    /// `columnCustomization` state as the table — one toggle per hideable column plus Reset to
-    /// Default (a fresh `TableColumnCustomization()`), which the native header menu lacks.
-    /// Title/Artwork are omitted (locked). It rides with the header, so it's present exactly when
-    /// rows are. VoiceOver reads each `Toggle`'s on/off state.
-    private var columnsMenu: some View {
+    // MARK: Sort pill
+
+    /// A sort field + its comparator factory (both directions from one `SortOrder` arg — a
+    /// `KeyPathComparator` can't be rebuilt from a `PartialKeyPath`, so the concrete keypath is
+    /// captured in the closure). Genre is display-only (no comparator), so it's absent.
+    private struct SortOption: Identifiable {
+        let id: String
+        let label: String
+        let defaultOrder: SortOrder
+        let make: (SortOrder) -> KeyPathComparator<LibraryTrackDisplay>
+    }
+
+    private var sortOptions: [SortOption] {
+        [
+            SortOption(id: "title", label: "Title", defaultOrder: .forward) {
+                KeyPathComparator(\.title, order: $0)
+            },
+            SortOption(id: "artist", label: "Artist", defaultOrder: .forward) {
+                KeyPathComparator(\.artistName, order: $0)
+            },
+            SortOption(id: "album", label: "Album", defaultOrder: .forward) {
+                KeyPathComparator(\.albumName, order: $0)
+            },
+            SortOption(id: "dateAdded", label: "Date Added", defaultOrder: .reverse) {
+                KeyPathComparator(\.dateAdded, order: $0)
+            },
+            SortOption(id: "duration", label: "Duration", defaultOrder: .forward) {
+                KeyPathComparator(\.durationMs, order: $0)
+            },
+            SortOption(id: "year", label: "Year", defaultOrder: .forward) {
+                KeyPathComparator(\.year, order: $0)
+            },
+        ]
+    }
+
+    private var sortPill: some View {
         Menu {
-            ForEach(SongsColumns.hideable) { column in
-                Toggle(column.label, isOn: visibilityBinding(for: column.id))
-            }
-            Divider()
-            Button("Reset to Default") {
-                columnCustomization = TableColumnCustomization<LibraryTrackDisplay>()
+            ForEach(sortOptions) { option in
+                Button {
+                    applySort(option)
+                } label: {
+                    if isCurrentField(option) {
+                        Label(option.label,
+                              systemImage: currentAscending ? "arrow.up" : "arrow.down")
+                    } else {
+                        Text(option.label)
+                    }
+                }
             }
         } label: {
-            Image(systemName: "slider.horizontal.3")
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
+            HStack(spacing: 6) {
+                HStack(spacing: 0) {
+                    Text("Sort: ").foregroundStyle(DesignSystem.Color.labelSecondary)
+                    Text(currentSortText).foregroundStyle(DesignSystem.Color.accentText)
+                        .fontWeight(.semibold)
+                }
+                .font(DesignSystem.Font.caption)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DesignSystem.Color.labelTertiary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(DesignSystem.Color.card, in: Capsule())
+            .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort")
+        .accessibilityLabel("Sort")
+        .accessibilityValue(currentSortText)
+    }
+
+    private var currentAscending: Bool {
+        model.sortOrder.first?.order == .forward
+    }
+
+    /// The pill's current field label + direction arrow, derived from `model.sortOrder`.
+    private var currentSortText: String {
+        guard let current = model.sortOrder.first,
+              let option = sortOptions.first(where: { $0.make(.forward).keyPath == current.keyPath })
+        else { return sortOptions.first?.label ?? "Title" }
+        return option.label + (current.order == .forward ? " ↑" : " ↓")
+    }
+
+    private func isCurrentField(_ option: SortOption) -> Bool {
+        model.sortOrder.first?.keyPath == option.make(.forward).keyPath
+    }
+
+    /// Apply a sort field: toggle the direction if it's already the active field, else use the
+    /// field's first-click default. Writes `model.sortOrder` (the pill/triangle source of truth)
+    /// and re-reads via `applySortOrder` (the same path the old Table header-click used).
+    private func applySort(_ option: SortOption) {
+        let order: SortOrder
+        if isCurrentField(option) {
+            order = currentAscending ? .reverse : .forward
+        } else {
+            order = option.defaultOrder
+        }
+        let comparators = [option.make(order)]
+        model.sortOrder = comparators
+        model.applySortOrder(comparators)
+        if let text = SongsAccessibility.sortAnnouncement(for: comparators) {
+            AccessibilityNotification.Announcement(text).post()
+        }
+    }
+
+    // MARK: Columns pill
+
+    /// The teal Columns pill (`png/07`): opens the show/hide menu (+ Reset to Default). The list
+    /// reveals the glass column-header row once the visible set differs from the default.
+    private var columnsPill: some View {
+        Menu {
+            ForEach(toggleableColumns) { column in
+                Toggle(column.label, isOn: visibilityBinding(for: column))
+            }
+            Divider()
+            Button("Reset to Default") { columnConfig = .default }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Columns").font(DesignSystem.Font.caption)
+            }
+            .foregroundStyle(DesignSystem.Color.accentText)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(DesignSystem.Color.accent.opacity(0.16), in: Capsule())
+            .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.30), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -107,15 +220,21 @@ struct SongsHeader: View {
         .accessibilityLabel("Columns")
     }
 
-    /// A `Visibility`↔`Bool` bridge for a column's show/hide `Toggle`. A `Binding(get:set:)` is
-    /// acceptable HERE — this is a COLD menu path, not the hot Table body (§5). The `get` reports
-    /// EFFECTIVE visibility (merging the default, §11.2); the `set` writes an EXPLICIT
-    /// `.visible`/`.hidden` (never `.automatic`, which would follow a default-hidden column back to
-    /// hidden). Writing persists via `@AppStorage`; the table's same-key state observes it → no drift.
-    private func visibilityBinding(for id: String) -> Binding<Bool> {
+    /// The non-frozen (toggleable) columns, in the config's current order.
+    private var toggleableColumns: [SongColumn] {
+        columnConfig.entries.map(\.column).filter { !$0.isFrozen }
+    }
+
+    private func visibilityBinding(for column: SongColumn) -> Binding<Bool> {
         Binding(
-            get: { SongsColumns.isVisible(id, in: columnCustomization) },
-            set: { columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+            get: { columnConfig.entries.first { $0.column == column }?.visible ?? false },
+            set: { newValue in
+                var config = columnConfig
+                if let index = config.entries.firstIndex(where: { $0.column == column }) {
+                    config.entries[index].visible = newValue
+                    columnConfig = config
+                }
+            }
         )
     }
 }

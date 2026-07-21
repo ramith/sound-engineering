@@ -62,6 +62,17 @@ extension View {
             .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
                                                      style: .continuous))
     }
+
+    /// The full-height Twin Panels DETAIL card (S10.8 PR-D): the right pane's floating glass card,
+    /// FILLING the region (unlike the content-height rail's `huggingGlassPanel`). Clips its content
+    /// to the panel shape, then paints the `.panel` glass. Shared by every Library category detail
+    /// (Songs list, Albums/Artists grids, Genres/facet/playlist lists) so the right pane is one
+    /// coherent card; the ambient glow sits behind at the window level (no per-card glow).
+    func libraryDetailCard() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous))
+            .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                                     style: .continuous))
+    }
 }
 
 extension View {
