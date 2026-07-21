@@ -97,14 +97,6 @@ enum SongColumn: String, CaseIterable, Codable, Identifiable {
         self == .index || self == .title
     }
 
-    /// Present in the default (clean) view. The default 5: # · Title · Artist · Date Added · Time.
-    var isDefaultVisible: Bool {
-        switch self {
-        case .index, .title, .artist, .dateAdded, .duration: true
-        default: false
-        }
-    }
-
     /// The sort comparator for a header click, or `nil` for display-only columns (index, genre,
     /// and the new technical columns that `SongSortMapping` doesn't map). Same keypaths the old
     /// Table used, so the DAO mapping is unchanged.
@@ -199,9 +191,19 @@ struct SongColumnConfig: RawRepresentable, Equatable {
         self != .default
     }
 
-    static let `default` = SongColumnConfig(
-        entries: SongColumn.allCases.map { Entry(column: $0, visible: $0.isDefaultVisible) }
-    )
+    /// Display order for `.default`: the clean hero row leads (png/00 — # · Title · Artist ·
+    /// Date Added · Time), then every other (hidden) column in catalog order. The single source
+    /// for BOTH which columns show by default AND their order — kept separate from `allCases` (the
+    /// catalog / Columns-menu order) so the hero order never rides on enum declaration order (which
+    /// lists Time before Date Added for the columns-mode header, png/06).
+    private static let defaultVisibleColumns: [SongColumn] = [.index, .title, .artist, .dateAdded, .duration]
+
+    static let `default`: SongColumnConfig = {
+        let hidden = SongColumn.allCases.filter { !defaultVisibleColumns.contains($0) }
+        return SongColumnConfig(entries: (defaultVisibleColumns + hidden).map {
+            Entry(column: $0, visible: defaultVisibleColumns.contains($0))
+        })
+    }()
 
     /// RawRepresentable (JSON) for @AppStorage. Encode the `entries` ARRAY, never `self`: `self` is
     /// RawRepresentable, whose default `Encodable.encode(to:)` re-reads `rawValue` — encoding `self`
