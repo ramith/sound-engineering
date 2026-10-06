@@ -33,6 +33,10 @@ struct SongsListView: View {
     /// view (A3). A counter, like the queue's jump request, so every press re-fires.
     @State private var cursorScrollRequest = 0
     @FocusState private var listFocused: Bool
+    #if DEBUG
+        /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): rows its fixture draws as selected.
+        @Environment(\.sheetSongSelection) private var sheetSongSelection
+    #endif
 
     /// Inter-column gap, the row's own horizontal padding (both sides), and the row AREA's inset
     /// from the card edge (each side) — the chrome the layout math must budget so Title fills
@@ -103,6 +107,9 @@ struct SongsListView: View {
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))
         }
+        #if DEBUG
+        .onAppear { selection.formUnion(sheetSongSelection) }
+        #endif
     }
 
     // MARK: Column layout
