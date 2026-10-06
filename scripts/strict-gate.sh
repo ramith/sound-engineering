@@ -51,9 +51,9 @@ xcrun --find leaks >/dev/null 2>&1 || { red "ERROR: leaks(1) missing (Xcode CLT)
 # files the pinned version passes (the original trigger: SwiftFormat 0.62.x's wrapIfStatementBodies
 # vs the then-pinned 0.61.1, PR #61 run 1). Style-tool versions are PINNED here and installed
 # pinned in .github/workflows/strict-ci.yml; a deliberate upgrade bumps BOTH pins and
-# reformats/relints in the SAME commit (last bumped 0.61.1→0.62.1 / 0.64.1→0.65.0, S10.8).
-SWIFTFORMAT_PIN="0.62.1"
-SWIFTLINT_PIN="0.65.0"
+# reformats/relints in the SAME commit (last bumped 0.62.1→0.63.0 / 0.65.0→0.65.1, S10.8 part 2).
+SWIFTFORMAT_PIN="0.63.0"
+SWIFTLINT_PIN="0.65.1"
 actual_swiftformat="$(swiftformat --version)"
 if [ "$actual_swiftformat" != "$SWIFTFORMAT_PIN" ]; then
   red "ERROR: swiftformat $actual_swiftformat != pinned $SWIFTFORMAT_PIN (tool-skew guard — bump the pin + reformat in one commit, or install the pinned version)."
