@@ -137,3 +137,32 @@ rules:
       include: ['Sources/AdaptiveSound']
       exclude: ['DesignSystemGlass.swift']
     pattern-regex: '\\\.colorScheme\b|\.preferredColorScheme\s*\(|NSApp\.appearance\s*='
+
+  # --- S10.8 A2 accent-role tripwires (docs/sprints/s10-8-glass-sweep-plan.md §E, Sprint A).
+  # Same posture as the ui-* rules above: single-line regex drift nets, not an AST check —
+  # a multi-line ternary or a color passed through a parameter evades them; review owns that.
+
+  - id: ui-no-bordered-prominent
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      The system bordered-prominent button draws a WHITE label on the tint — on the teal that
+      fails WCAG AA (≈ 2.5:1 on accent, ≈ 4.3:1 even on accentDeep). Primary actions use the
+      teal pill: .buttonStyle(.pill) (UI/Controls/PillButtonStyle.swift — dark-on-teal,
+      audited by R4-TAB-01).
+    paths:
+      include: ['Sources/AdaptiveSound']
+    pattern-regex: '\.borderedProminent\b'
+
+  - id: ui-no-accent-as-text
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      The bare accent as a text/glyph color fails contrast in light (≈ 2.2:1). Teal TEXT and
+      GLYPHS use DesignSystem.Color.accentForeground (AA, R4-TINT-02); tints, fills and a
+      glyph's fill layer use accentFill (R4-TINT-01). Both keep the bare accent's dark value,
+      so dark looks are unchanged. Decorative strokes/washes keep accent. Single-line regex,
+      not AST (like the other ui-* rules): it sees one foregroundStyle( call per line only.
+    paths:
+      include: ['Sources/AdaptiveSound']
+    pattern-regex: 'foregroundStyle\([^)\n]*(DesignSystem\.Color\.accent|Color\.asAccent|\.asAccent)\b'
