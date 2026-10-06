@@ -93,6 +93,17 @@ struct SurfaceResolverOverlayTests {
         }
     }
 
+    @Test("RES-06: the drop shadow is per-role — the card + lens cast it, badges and overlays do not")
+    func dropShadowIsPerRole() {
+        for role in [SurfaceRole.panel, .lens] {
+            #expect(role.castsShadow, "\(role)")
+        }
+        #expect(!SurfaceRole.badge.castsShadow)
+        for substrate in OverlaySubstrate.allCases {
+            #expect(!SurfaceRole.overlay(substrate).castsShadow, "overlay(\(substrate))")
+        }
+    }
+
     @Test("PG-01..04: the pulse animates ONLY while playing with Reduce Motion off — full table")
     func pulseGate() {
         #expect(pulseIsActive(isPlaying: true, reduceMotion: false))

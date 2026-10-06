@@ -392,9 +392,13 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
     /// The Regime-B strata (design §3.2): fill (+ the dark-only bottom bleed, for the roles
     /// that carry it — `SurfaceRole.hasBottomBleed`) UNDER the content;
     /// top-edge specular rim + full glass hairline as distinct strokes above; a soft deep
-    /// drop shadow (light = ~half opacity, tighter — grammar rule 4). The hairline token
-    /// carries real Increase-Contrast variants (the "stronger hairlines under IC" promise);
-    /// the resolver already handed us an OPAQUE fill under RT/IC.
+    /// drop shadow (light = ~half opacity, tighter — grammar rule 4) for the roles that cast
+    /// one (`SurfaceRole.castsShadow`). The shadow is cast by the FILL shape only — on the
+    /// whole composite every glyph, icon and analyzer bar cast its own dark halo; on the
+    /// fill it scales with the fill's alpha, exactly the composite's edge alpha the outer
+    /// shadow always came from. The hairline token carries real Increase-Contrast variants
+    /// (the "stronger hairlines under IC" promise); the resolver already handed us an
+    /// OPAQUE fill under RT/IC.
     private func decorated(_ content: Content, fill: RGBAColor,
                            appearance: TokenAppearance) -> some View {
         let increasedContrast = colorSchemeContrast == .increased
@@ -408,6 +412,10 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
             .background {
                 ZStack(alignment: .bottom) {
                     shape.fill(SwiftUI.Color(token: fill))
+                        .shadow(color: role.castsShadow ? shadow : .clear,
+                                radius: CGFloat(dark ? GlassDecor.shadowRadiusDark : GlassDecor.shadowRadiusLight),
+                                x: 0,
+                                y: CGFloat(dark ? GlassDecor.shadowOffsetYDark : GlassDecor.shadowOffsetYLight))
                     if dark, role.hasBottomBleed { // dark-only (grammar rule 3), and per-role
                         LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.bleedDark)],
                                        startPoint: .top, endPoint: .bottom)
@@ -423,9 +431,5 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
                 )
             }
             .overlay { shape.strokeBorder(hairline, lineWidth: 1) }
-            .shadow(color: shadow,
-                    radius: CGFloat(dark ? GlassDecor.shadowRadiusDark : GlassDecor.shadowRadiusLight),
-                    x: 0,
-                    y: CGFloat(dark ? GlassDecor.shadowOffsetYDark : GlassDecor.shadowOffsetYLight))
     }
 }
