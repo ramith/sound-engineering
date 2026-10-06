@@ -334,3 +334,16 @@ final class NowPlayingController {
         }
     }
 }
+
+#if DEBUG
+    extension NowPlayingController {
+        /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): pin `resolved` as the current
+        /// track's metadata, as `resolveMetadata` would from the store the renderer doesn't open. Lives
+        /// here because the metadata cache is private.
+        func seedRenderFixture(_ resolved: ResolvedTrackMeta) {
+            guard let audio, let index = audio.selectedTrackIndex, index < audio.queue.count else { return }
+            metaToken = trackToken(audio.queue[index].file)
+            meta = resolved
+        }
+    }
+#endif

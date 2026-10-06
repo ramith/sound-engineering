@@ -473,3 +473,14 @@ extension LibraryBrowseModel {
         return await artwork?.image(forKey: key, maxPixel: maxPixel)
     }
 }
+
+#if DEBUG
+    extension LibraryBrowseModel {
+        /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): show `fixture` as the loaded Songs
+        /// list without a store. Lives here because `songs` / `songsState` have private setters.
+        func seedRenderFixture(songs fixture: [LibraryTrackDisplay]) {
+            songs = fixture
+            songsState = .loaded
+        }
+    }
+#endif
