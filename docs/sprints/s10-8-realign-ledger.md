@@ -133,4 +133,8 @@ spectrum analyser is fine as it is (2026-10-06). So `lens` (and `badge`) stay
 (mock 36), playing-row card 34.0pt (mock 34), title-to-time centre offset 0.0pt, inspector fill
 flat to its last pixel row, Library rail last-row-centre → card bottom 29.0pt (mock 29; was 44).
 
-Founder cells for light / Reduce Motion / Reduce Transparency remain open.
+**Part 1 CLOSED (founder, 2026-10-06):** "I like the current screen, let's close it." The 14
+deliberate deviations above are **accepted as they are**, and the dark founder cells close with
+them. The light / Reduce Transparency / Increase Contrast cells move to the glass sweep's
+Sprint B (light mode designed once on the shipped screens) —
+[s10-8-glass-sweep-plan.md](s10-8-glass-sweep-plan.md).
