@@ -107,6 +107,11 @@ enum DesignSystem {
         static let controlActiveFill = from(Palette.controlActiveFill)
         static let segmentSelected = from(Palette.segmentSelected)
 
+        /// S10.8 A3 — the keyboard focus ring for the custom lists (Songs, queue, playlist
+        /// detail, Library rail); ≥ 3:1 against row fills and cards, audited R4-FOCUS-01/02.
+        /// Drawn only through `keyboardCursorRing(_:cornerRadius:)`.
+        static let focusRing = from(Palette.focusRing)
+
         /// S10.8 PR D — the playing row (realigned `png/04`); audited R4-ROW-01.
         static let accentTitle = from(Palette.accentTitle)
         /// The mini equalizer's bar teal — the iconFill gradient's bright stop, re-exported
