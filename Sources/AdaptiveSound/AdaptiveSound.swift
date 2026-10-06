@@ -21,6 +21,12 @@ struct AdaptiveSound: App {
     @State private var keyboardFocus = KeyboardTransportFocus()
 
     init() {
+        #if DEBUG
+            // Picture sheets (`make sheets`): `-ASRenderSheets <dir>` renders fixture screens to PNGs
+            // and exits HERE — before the single-instance lock, so it never collides with (or locks
+            // out) a running copy of the app. Without the flag this returns at once.
+            SheetRenderer.runIfRequested()
+        #endif
         // Single instance only: if another copy already holds the lock, raise it and exit before
         // building any @State or touching the audio engine (no two engines fighting one device).
         guard SingleInstanceGuard.acquire() else { exit(0) }

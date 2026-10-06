@@ -122,6 +122,12 @@ final class LibraryModel {
         Task { await self.makeLibraryStore() }
     }
 
+    #if DEBUG
+        /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): a library that never builds the
+        /// on-disk store — `store` stays `nil`, so no scan, watcher or reconcile ever starts.
+        init(storeless _: Void) {}
+    #endif
+
     /// Ordered library teardown: stop the FSEvents watcher + NSWorkspace volume monitor and cancel
     /// every in-flight reconcile + scan, so nothing writes to the store after this returns. Awaited
     /// by `AppDelegate.applicationShouldTerminate` BEFORE `AudioViewModel.shutdown()` tears the
