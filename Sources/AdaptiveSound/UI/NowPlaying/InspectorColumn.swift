@@ -29,13 +29,12 @@ struct InspectorColumn: View {
                 HeadphonesSectionView()
             }
             .padding([.horizontal, .top], 14)
-            // Bottom inset == the bleed run (break-it R4 catch): the dark-only bottom light
-            // bleed brightens the panel fill enough that tertiary text RESTING on it fails
-            // AA (4.18 measured). Reading the same token as the bleed's height means text
-            // can never rest on the bleed and the two values cannot drift apart. (Rows still
-            // CROSS the run transiently while scrolling — accepted, same class as text
-            // passing under the seam feather.)
-            .padding(.bottom, CGFloat(GlassDecor.bleedHeight))
+            // A plain bottom inset (unchanged at 24pt). It used to BE the bleed run: the card's
+            // bottom light bleed took tertiary text resting on it below AA (4.18 measured —
+            // break-it R4), so text was fenced off it. The card no longer carries a bleed
+            // (`SurfaceRole.hasBottomBleed`), so every point of it is the audited fill and this
+            // is only breathing room under the last control.
+            .padding(.bottom, DesignSystem.Spacing.large)
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
             } action: { height in

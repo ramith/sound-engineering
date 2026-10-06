@@ -46,7 +46,6 @@ struct SurfaceResolverOverlayTests {
         (.lens, Palette.lensFill),
         (.badge, Palette.badgeFill),
         (.panel, Palette.panelFill),
-        (.libraryCard, Palette.panelFill), // shares the panel fill BY DESIGN (differs in decoration only)
     ]
 
     @Test("RES-01: fill roles resolve to their translucent token when transparency is allowed")
@@ -80,12 +79,13 @@ struct SurfaceResolverOverlayTests {
         }
     }
 
-    /// The Library Twin Panels cards are flat to their bottom edge (the mock has no bleed band);
-    /// the Now Playing 8a surfaces keep theirs. `.overlay` is system Material and has no strata.
-    @Test("RES-05: the bottom light bleed is per-role — the 8a roles carry it, the Library card does not")
+    /// The floating card (NP inspector + Library twin panels) is flat to its bottom edge — both
+    /// realigned mocks draw it that way, and its bleed band was a contrast hazard. The small 8a
+    /// surfaces keep theirs. `.overlay` is system Material and has no strata.
+    @Test("RES-05: the bottom light bleed is per-role — lens + badge carry it, the floating card does not")
     func bottomBleedIsPerRole() {
-        #expect(!SurfaceRole.libraryCard.hasBottomBleed)
-        for role in [SurfaceRole.lens, .badge, .panel] {
+        #expect(!SurfaceRole.panel.hasBottomBleed)
+        for role in [SurfaceRole.lens, .badge] {
             #expect(role.hasBottomBleed, "\(role)")
         }
         for substrate in OverlaySubstrate.allCases {

@@ -313,6 +313,10 @@ enum DesignSystem {
         static let gripHitHeight: CGFloat = 26
         /// Hover-revealed grip opacity (S10.8 PR C — realigned: no handles at rest).
         static let gripHoverOpacity: Double = 0.45
+        /// The row CARD's height (realigned `png/04`: 34pt) and the seam between two cards
+        /// (2pt → the mock's 36pt row pitch, `png/00`).
+        static let cardMinHeight: CGFloat = 34
+        static let cardSeam: CGFloat = 2
     }
 
     // MARK: Loudness meter mapping (S10.8 PR E — the realigned meter rows, `png/05`)

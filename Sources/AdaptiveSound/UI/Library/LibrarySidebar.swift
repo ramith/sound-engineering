@@ -1,4 +1,3 @@
-import DesignTokenKit
 import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
@@ -69,10 +68,10 @@ struct LibrarySidebar: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 12)
-            // Bottom inset == the bleed run (NP inspector R4 catch): the dark-only bottom light
-            // bleed brightens the panel fill enough that resting tertiary text can fail AA, so no
-            // row rests ON the bleed. Reading the same token means the two can't drift apart.
-            .padding(.bottom, CGFloat(GlassDecor.bleedHeight))
+            // The guide's rail inset (PR-C "inner padding 12×10"; png/00 measures 10pt under the
+            // last row). It was the 24pt bleed run while the card carried a bottom bleed that
+            // text had to stay off; the card is flat now, so the rail ends where the mock's does.
+            .padding(.bottom, 10)
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.height
             } action: { height in
@@ -93,7 +92,7 @@ struct LibrarySidebar: View {
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
         // hug the measured content, scroll when the window is short. The shared teal glow (PR-B) sits
         // behind both cards at the window level, so there is no per-card glow here.
-        .huggingGlassPanel(.libraryCard, contentHeight: contentHeight)
+        .huggingGlassPanel(contentHeight: contentHeight)
         .frame(width: DesignSystem.LayoutMetrics.sidebarIdeal)
         .frame(maxHeight: .infinity, alignment: .top)
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in

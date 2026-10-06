@@ -83,10 +83,18 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                         : isSelected ? Color.asAccent : Color.asLabel)
                     .lineLimit(1)
 
-                Text(file.relativePath)
-                    .font(DesignSystem.Font.monoSmall)
-                    .foregroundStyle(Color.asLabelTertiary)
-                    .lineLimit(1)
+                // The folder path, only when there IS one. Today no track has one — every
+                // `AudioFile` comes from the library adapter, which leaves `relativePath` empty —
+                // and an EMPTY `Text` still claims a full line: it pushed every title above the
+                // row's centre line while the number, format tag and time sat on it, and made
+                // each row a line taller than the realigned mock's (founder screenshot,
+                // 2026-10-06). The full path stays on the row's tooltip either way.
+                if !file.relativePath.isEmpty {
+                    Text(file.relativePath)
+                        .font(DesignSystem.Font.monoSmall)
+                        .foregroundStyle(Color.asLabelTertiary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
@@ -104,7 +112,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
         // to a ScrollView/LazyVStack; the row owns its own insets + selection/now-playing tint.
         .padding(.vertical, DesignSystem.Spacing.xSmall)
         .padding(.horizontal, DesignSystem.Spacing.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // The realigned row card is 34pt tall (png/04), whether or not the row carries the
+        // drag grip that used to set its height incidentally.
+        .frame(maxWidth: .infinity, minHeight: DesignSystem.QueueRow.cardMinHeight, alignment: .leading)
         // Realigned card (PR D): the tint is a radius-10 card; the current row adds the
         // subtle accent ring (13% fill + 38% ring replaces the old heavy 25% band).
         .background(rowTint, in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container,
@@ -121,6 +131,10 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                     .strokeBorder(DesignSystem.Color.accent, lineWidth: 2)
             }
         }
+        // 1pt above and below the CARD: a 36pt row pitch with a 2pt seam between cards
+        // (png/00). Outside the fill/ring, inside the hit shape — the seam still hovers,
+        // clicks and accepts drops, so there is no dead strip between rows.
+        .padding(.vertical, DesignSystem.QueueRow.cardSeam / 2)
         .contentShape(Rectangle())
         .onHover { isRowHovered = $0 }
         // Full file-path tooltip (deviations §3) — the honest provenance readout on hover;
