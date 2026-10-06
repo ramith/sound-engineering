@@ -21,12 +21,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <functional>
 #include <mutex>
 #include <numbers>
 #include <random>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -172,9 +174,9 @@ static auto logPass(const char* testName) -> void
     }
 }
 
-static auto logFail(const char* testName, const std::string& reason) -> void
+static auto logFail(const char* testName, std::string_view reason) -> void
 {
-    std::string line = std::string("[FAIL] ") + testName + " -- " + reason + "\n";
+    std::string line = std::format("[FAIL] {} -- {}\n", testName, reason);
     if (tlBuffering)
     {
         tlOutputBuf += line;
@@ -259,10 +261,10 @@ static auto mismatchMsg(const char* side, uint32_t index, float expected, float 
 // Two-channel (non-interleaved) AudioBufferList with statically correct storage.
 struct AudioBufferList2
 {
-    AudioBufferList head; // mNumberBuffers + mBuffers[0]
-    AudioBuffer extra;    // provides storage for mBuffers[1]
+    AudioBufferList head{}; // mNumberBuffers + mBuffers[0]
+    AudioBuffer extra{};    // provides storage for mBuffers[1]
 
-    AudioBufferList2() : head{}, extra{}
+    AudioBufferList2()
     {
         head.mNumberBuffers = 2U;
     }
@@ -280,10 +282,10 @@ struct AudioBufferList2
 // at construction time; only those buffers are wired to channel vectors.
 struct AudioBufferListN
 {
-    AudioBufferList head;                               // mNumberBuffers + mBuffers[0]
+    AudioBufferList head{};                             // mNumberBuffers + mBuffers[0]
     std::array<AudioBuffer, kMaxChannels - 1U> extra{}; // mBuffers[1..kMaxChannels-1]
 
-    explicit AudioBufferListN(uint32_t numCh) : head{}, extra{}
+    explicit AudioBufferListN(uint32_t numCh)
     {
         head.mNumberBuffers = numCh;
     }
@@ -692,7 +694,7 @@ static auto runAllTests(int parallelN, const std::array<TestEntry, N>& kTests) -
 
     // Atomic work-steal index for the parallel pool.
     std::atomic<std::size_t> workIdx{0U};
-    const auto workerBody = [&]()
+    const auto workerBody = [&]
     {
         for (;;)
         {

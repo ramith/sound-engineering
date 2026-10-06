@@ -68,17 +68,17 @@ namespace AdaptiveSound
     {
         FullBitPerfect,   // integer PCM at the file's exact rate — true bit-perfect
         RateMatchedFloat, // float HAL render at the file's exact rate — no sample-rate conversion
-        FallbackEnhanced  // hand off to the Enhanced (DSP) path; bit-perfect not achievable
+        FallbackEnhanced, // hand off to the Enhanced (DSP) path; bit-perfect not achievable
     };
 
     // Why Pure Mode reached its decision (for logging / tests).
     enum class PureModeReason : uint8_t
     {
-        BitPerfectInteger,      // device exposes integer PCM at the exact rate
-        RateMatchedFloatNoSRC,  // exact rate supported, but only float — no SRC needed
-        LossyWirelessCodec,     // BT / BT-LE / AirPlay codec sits below the HAL
-        VirtualDevice,          // virtual / aggregate device — no real exclusive hardware path
-        RateUnsupportedResample // device cannot do the file's rate — Enhanced path must resample
+        BitPerfectInteger,       // device exposes integer PCM at the exact rate
+        RateMatchedFloatNoSRC,   // exact rate supported, but only float — no SRC needed
+        LossyWirelessCodec,      // BT / BT-LE / AirPlay codec sits below the HAL
+        VirtualDevice,           // virtual / aggregate device — no real exclusive hardware path
+        RateUnsupportedResample, // device cannot do the file's rate — Enhanced path must resample
     };
 
     // The full result of evaluating Pure Mode.

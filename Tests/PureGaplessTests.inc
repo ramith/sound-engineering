@@ -121,7 +121,7 @@ static auto testPureGaplessSeamSampleAccurate() -> void
     static const char* const kName = "PureGapless_SeamSampleAccurate";
     constexpr float kClickTol = 3.0F * kRampStep; // one ordinary ramp step at the seam
 
-    const std::string writeErr =
+    const std::string_view writeErr =
         writeGaplessSeamPair(kPathPureGaplessA, kPathPureGaplessB, kB2bRate48k);
     if (!writeErr.empty())
     {

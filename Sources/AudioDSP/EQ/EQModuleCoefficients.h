@@ -40,10 +40,11 @@ namespace AdaptiveSound
 
         // Standard 31-band ISO 3-octave center frequencies (Hz)
         static constexpr std::array<float, kNumBands> kCenterFrequencies = {
-            20.F,   25.F,   31.5F,  40.F,    50.F,    63.F,    80.F,   100.F,
-            125.F,  160.F,  200.F,  250.F,   315.F,   400.F,   500.F,  630.F,
-            800.F,  1000.F, 1250.F, 1600.F,  2000.F,  2500.F,  3150.F, 4000.F,
-            5000.F, 6300.F, 8000.F, 10000.F, 12500.F, 16000.F, 20000.F};
+            20.F,   25.F,   31.5F,  40.F,    50.F,    63.F,    80.F,    100.F,
+            125.F,  160.F,  200.F,  250.F,   315.F,   400.F,   500.F,   630.F,
+            800.F,  1000.F, 1250.F, 1600.F,  2000.F,  2500.F,  3150.F,  4000.F,
+            5000.F, 6300.F, 8000.F, 10000.F, 12500.F, 16000.F, 20000.F,
+        };
 
         // Compute biquad cascade from 31-band gains
         // @param gains: 31-element array of gain in dB (typically ±12 dB range)

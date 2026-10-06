@@ -17,7 +17,7 @@ namespace AdaptiveSound
             Builtin,
             USB,
             Wireless,
-            Unknown
+            Unknown,
         };
 
         AudioDeviceID id = 0;

@@ -117,13 +117,15 @@ namespace AdaptiveSound
         {
             if (bigEndian)
             {
-                dst[0] = static_cast<std::uint8_t>((bits >> kBitsPerByte) & kByteMask);
+                dst[0] = static_cast<std::uint8_t>((static_cast<uint32_t>(bits) >> kBitsPerByte) &
+                                                   kByteMask);
                 dst[1] = static_cast<std::uint8_t>(bits & kByteMask);
             }
             else
             {
                 dst[0] = static_cast<std::uint8_t>(bits & kByteMask);
-                dst[1] = static_cast<std::uint8_t>((bits >> kBitsPerByte) & kByteMask);
+                dst[1] = static_cast<std::uint8_t>((static_cast<uint32_t>(bits) >> kBitsPerByte) &
+                                                   kByteMask);
             }
         }
 

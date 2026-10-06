@@ -245,7 +245,7 @@ static auto testRoundTripBitExact16bit() -> void
         logFail(kName, "could not write the 16-bit fixture");
         return;
     }
-    const auto leg = [&source]() -> std::string { return roundTrip16Body(source); };
+    const auto leg = [&source] -> std::string { return roundTrip16Body(source); };
     if (runRoundTripLegs(kName, kRtPath16, leg))
     {
         logPass(kName);
@@ -275,7 +275,7 @@ static auto testRoundTripBitExact24bit() -> void
         logFail(kName, "could not write the 24-bit fixture");
         return;
     }
-    const auto leg = [&source]() -> std::string { return roundTrip24Body(source); };
+    const auto leg = [&source] -> std::string { return roundTrip24Body(source); };
     if (runRoundTripLegs(kName, kRtPath24, leg))
     {
         logPass(kName);

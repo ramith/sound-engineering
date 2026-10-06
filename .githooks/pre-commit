@@ -27,12 +27,19 @@ red()    { printf '\033[31m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
-# clang-tidy is keg-only under Homebrew LLVM; prefer that path, fall back to PATH.
-CLANG_TIDY=""
-if [[ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
-    CLANG_TIDY=/opt/homebrew/opt/llvm/bin/clang-tidy
-elif command -v clang-tidy >/dev/null 2>&1; then
-    CLANG_TIDY="$(command -v clang-tidy)"
+# clang-tidy: resolved + MAJOR-pinned through the shared C++ analysis library — the SAME
+# resolver and CXX_CLANG_TIDY_MAJOR_PIN scripts/strict-gate.sh asserts, so the hook can never
+# analyse with a different clang-tidy than the merge gate (a major bump adds checks). Empty
+# when absent → the hook hard-fails below for staged C++; a major skew blocks the commit with
+# the same instructions the gate prints.
+source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+CLANG_TIDY="$(cxx_clang_tidy_path)" || true
+if [[ -n "$CLANG_TIDY" ]]; then
+    clang_tidy_major="$(cxx_clang_tidy_major "$CLANG_TIDY")"
+    if [[ "$clang_tidy_major" != "$CXX_CLANG_TIDY_MAJOR_PIN" ]]; then
+        red "❌ clang-tidy major $clang_tidy_major != pinned $CXX_CLANG_TIDY_MAJOR_PIN at $CLANG_TIDY (tool-skew guard — brew install llvm@${CXX_CLANG_TIDY_MAJOR_PIN}, or bump the pin + fix the new findings in one commit)."
+        exit 1
+    fi
 fi
 
 # Collect staged files (added/copied/modified), NUL-safe.
@@ -101,10 +108,10 @@ fi
 if ((${#cpp_files[@]})); then
     if [[ -n "$CLANG_TIDY" ]]; then
         # Parse flags come from the single source of truth shared with the strict-gate
-        # and build-null-test.sh, so the hook analyses the SAME translation units the
+        # and build-null-test.sh (scripts/lib/cxx-analysis-flags.sh, sourced above with the
+        # clang-tidy resolver), so the hook analyses the SAME translation units the
         # compiler builds (incl. the -isystem/-D flags that make FileDecodeSource.mm's
         # __has_include(<libavformat/...>) FFmpeg branch parse). See the library header.
-        source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
         # Constant across files: resolve once (xcrun etc.) rather than per file.
         core_flags=($(cxx_analysis_core_flags))
         test_extra_flags=($(cxx_test_extra_flags))
