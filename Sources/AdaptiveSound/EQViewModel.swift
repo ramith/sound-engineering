@@ -52,10 +52,16 @@ final class EQViewModel {
 
     private let audioViewModel: AudioViewModel
 
+    /// Where the custom presets, the per-output map and the live curve persist
+    /// (`EQViewModel+Persistence.swift`): `.standard` in the app. The debug picture-sheet renderer
+    /// injects its own suite so a render never reads or writes the user's EQ state.
+    let defaults: UserDefaults
+
     // MARK: - Init
 
-    init(audioViewModel: AudioViewModel) {
+    init(audioViewModel: AudioViewModel, defaults: UserDefaults = .standard) {
         self.audioViewModel = audioViewModel
+        self.defaults = defaults
         loadPersistedState()
         // "Remember last setting" — HEADLESS re-dispatch of the restored curve.
         //

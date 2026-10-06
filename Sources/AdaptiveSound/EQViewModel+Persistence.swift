@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - EQViewModel Persistence
 
-/// UserDefaults-backed persistence for saved custom presets and the
-/// per-output-device preset recall map. All keys are versioned so a future
-/// schema change can migrate or discard stale data without a crash.
+/// UserDefaults-backed persistence (the injected `defaults` — `.standard` in the app) for saved
+/// custom presets and the per-output-device preset recall map. All keys are versioned so a
+/// future schema change can migrate or discard stale data without a crash.
 ///
 /// Format v1:
 ///   `eqCustomPresetsV1`   — JSON-encoded `[String: [Float]]`
@@ -36,12 +36,12 @@ extension EQViewModel {
     /// Persist `savedCustomPresets` to UserDefaults as JSON.
     func persistCustomPresets() {
         guard let data = try? JSONEncoder().encode(savedCustomPresets) else { return }
-        UserDefaults.standard.set(data, forKey: UDKey.customPresets)
+        defaults.set(data, forKey: UDKey.customPresets)
     }
 
     private func loadCustomPresets() -> [String: [Float]] {
         guard
-            let data = UserDefaults.standard.data(forKey: UDKey.customPresets),
+            let data = defaults.data(forKey: UDKey.customPresets),
             let decoded = try? JSONDecoder().decode([String: [Float]].self, from: data)
         else { return [:] }
         // Validate: each array must be exactly 31 bands.
@@ -53,12 +53,12 @@ extension EQViewModel {
     /// Persist `outputPresetMap` to UserDefaults as JSON.
     func persistOutputPresetMap() {
         guard let data = try? JSONEncoder().encode(outputPresetMap) else { return }
-        UserDefaults.standard.set(data, forKey: UDKey.outputPresetMap)
+        defaults.set(data, forKey: UDKey.outputPresetMap)
     }
 
     private func loadOutputPresetMap() -> [String: String] {
         guard
-            let data = UserDefaults.standard.data(forKey: UDKey.outputPresetMap),
+            let data = defaults.data(forKey: UDKey.outputPresetMap),
             let decoded = try? JSONDecoder().decode([String: String].self, from: data)
         else { return [:] }
         return decoded
@@ -72,7 +72,7 @@ extension EQViewModel {
     func persistLiveState() {
         let state = EQLiveState(presetRaw: selectedPreset?.rawValue, bandGains: bandGains)
         guard let data = try? JSONEncoder().encode(state) else { return }
-        UserDefaults.standard.set(data, forKey: UDKey.liveState)
+        defaults.set(data, forKey: UDKey.liveState)
     }
 
     /// Restore the last live EQ state into `bandGains` + `selectedPreset`.
@@ -93,7 +93,7 @@ extension EQViewModel {
 
     private func loadLiveState() -> EQLiveState? {
         guard
-            let data = UserDefaults.standard.data(forKey: UDKey.liveState),
+            let data = defaults.data(forKey: UDKey.liveState),
             let decoded = try? JSONDecoder().decode(EQLiveState.self, from: data)
         else { return nil }
         return decoded
