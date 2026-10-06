@@ -24,23 +24,22 @@ public enum SurfaceRole: Equatable, Sendable {
     case lens
     /// Hero badge capsules (PR 4): the 8a small-control fill, same RT/IC contract as lens.
     case badge
-    /// The inspector column (PR 5): the 8a panel fill, same RT/IC contract.
+    /// The floating glass CARD: the Now Playing inspector (PR 5) and the Library "Twin Panels"
+    /// rail + detail card (S10.8 part 2) — one glass, one fill, one set of contrast audits.
     case panel
-    /// The Library "Twin Panels" floating cards — nav rail + detail card (S10.8 part 2). The
-    /// SAME fill as `.panel` (one glass across both screens, one set of contrast audits), but
-    /// FLAT to its bottom edge: see `hasBottomBleed`.
-    case libraryCard
 
     /// Whether the surface carries the 8a bottom light bleed (dark-only, `GlassDecor.bleedDark`).
-    /// The Now Playing 8a recipe has it; the Library Twin Panels mock does not — its cards are a
-    /// flat fill right down to the hairline (png/00: the rail reads (27,29,34) to its last pixel
-    /// row). Painting the bleed there put a ~24pt band along the bottom of both cards that
-    /// nearly doubled the fill's lightness, under the last visible song row (founder round,
-    /// 2026-10-06). Role DATA, so the app-side modifier stays a thin shim and RES-05 can assert it.
+    /// The small 8a surfaces (lens, badge) keep it. The floating CARD does not: both realigned
+    /// mocks draw it as a flat fill right down to the hairline (the Library rail and the NP
+    /// inspector each read (27,29,34) to their last pixel row), where the bleed put a ~24pt band
+    /// that nearly doubled the fill's lightness — under the Library's last visible song row,
+    /// and on the inspector it took resting tertiary text below AA (4.18), which had to be
+    /// fenced off with a bottom inset (founder rounds 1–2, 2026-10-06). Role DATA, so the
+    /// app-side modifier stays a thin shim and RES-05 can assert it.
     public var hasBottomBleed: Bool {
         switch self {
-        case .overlay, .libraryCard: false // .overlay is system Material — no strata at all
-        case .lens, .badge, .panel: true
+        case .overlay, .panel: false // .overlay is system Material — no strata at all
+        case .lens, .badge: true
         }
     }
 }
@@ -97,9 +96,7 @@ public func resolveSurface(role: SurfaceRole,
         return resolvedFill(Palette.badgeFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)
-    case .panel, .libraryCard:
-        // `.libraryCard` deliberately SHARES the panel fill (it differs only in decoration —
-        // `hasBottomBleed`), so the Library cards inherit every panel contrast audit unchanged.
+    case .panel:
         return resolvedFill(Palette.panelFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)

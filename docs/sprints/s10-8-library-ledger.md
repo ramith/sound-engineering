@@ -62,7 +62,7 @@ The founder ran the merged build and compared it against the mock; seven fixes f
 | 2 | Columns pill was plain white text, no teal capsule | same | same |
 | 3 | Column header "TRA…" (Track #) | the header upper-cased the full menu label; a 44pt column cannot hold it | the mock's capitalisation; compact header labels (Track / Disc / Plays); Track No 44 → 52, Disc 40 → 44; **SLOT-04** holds every header to its column |
 | 4 | Rows looser than the mock | the guide's row area is "6×12 padding" (6 above/below, 12 each side, no inter-row gap); the first cut used the 6 as row spacing and dropped the 12 | spacing 0 (48pt pitch) + the 12pt side inset, budgeted in the width math |
-| 5 | Cards did not look like the mock's | NOT the fill (see below) — the NP 8a "bottom light bleed" put a ~24pt band along both cards' bottom edge that nearly doubled the fill's lightness | new `SurfaceRole.libraryCard`: the SAME panel fill, flat to the edge (`hasBottomBleed`, **RES-05**) |
+| 5 | Cards did not look like the mock's | NOT the fill (see below) — the NP 8a "bottom light bleed" put a ~24pt band along both cards' bottom edge that nearly doubled the fill's lightness | the card is flat to its edge (`SurfaceRole.hasBottomBleed`, **RES-05**) — shipped in round 1 as a separate `libraryCard` role, folded back into `.panel` in round 2 |
 | 6 | Device pill: truncated name, an inner box, a blank right half | the borderless menu again: AppKit's bezel insets ate the name's width, and the rate had to sit outside the label to update, leaving a dead half | the whole pill is one live menu label; it hugs its content (≤ 302pt) and shows the rate only while one is known |
 | 7 | Footer said "Unknown Artist" for a tagged song | the Now Playing refresh cleared the SYSTEM session for a stopped track and returned before resolving the display metadata the footer also reads | `NowPlayingRefreshPlan` separates the two; a stopped / restored track resolves artist + cover (**NP-08..10**) |
 
@@ -86,12 +86,12 @@ grey — the borderless menu redraws its label as a template image and drops the
   exactly and showed the plain style rendering — and live-updating — correctly. Usable again for
   any "does macOS actually draw this control" question; it cannot show Materials or the real app.
 
-**Now Playing findings from the same session — NOT fixed, awaiting a founder yes/no:**
-
-- Queue rows reserve a second line for a folder path that is empty for every library track, so
-  titles sit high in the row; the NP mock's rows are single-line (36pt pitch vs the app's 40).
-- The inspector card still carries the bottom bleed band; the Realigned Target's card is flat to
-  its edge there too (png/00 reads (27,29,34) to the last row).
+**Now Playing findings from the same session** — approved by the founder and fixed the same
+day as *founder round 2*; recorded in the [realign ledger](s10-8-realign-ledger.md). One
+consequence lands here: once the NP inspector card went flat too, `SurfaceRole.libraryCard`
+(added in round 1) had nothing left to distinguish it from `.panel`, so it was removed — the
+Library cards and the inspector are one role again, flat to the edge. The rail's bottom inset
+also dropped from the 24pt bleed run to the guide's 10pt.
 
 ## Fast-follows (PR-D shipped the validated core; these land right after)
 

@@ -101,3 +101,36 @@ session (Screen Recording TCC absent); every ☐ below is the founder's dark+lig
 - Otherwise the screenshot matches the target (hero chips incl. the live "-- kHz" empty
   slot, one-row queue header, playing-row card + still bars, floating inspector with
   meters at "—" while idle, styled bands, glossy play). Remaining cells still open.
+
+## Founder round 2 (2026-10-06, live screenshots)
+
+First founder look after the ~2.5-month gap, during the Library's own round 1 (see the
+[library ledger](s10-8-library-ledger.md) for the seven Library/chrome fixes — three of which
+change Now Playing too: the device pill is now one live menu label that hugs its content, and
+the footer keeps a stopped track's artist + cover). Two Now Playing findings, both approved by
+the founder and FIXED:
+
+- **Queue titles sat above the row's centre line.** The row's second line renders
+  `AudioFile.relativePath`, which is EMPTY for every track (all `AudioFile`s come from the
+  library adapter) — and an empty `Text` still claims a line. The number, format tag and time
+  were centred; the title was not; each row was a line taller than the mock's. Now the second
+  line appears only when there is a path; the row card is 34pt with a 2pt seam (the mock's
+  36pt pitch, `png/00` / `png/04`; was 40). The path stays on the row tooltip. The adapter's
+  own doc comment had recorded this as known debt.
+- **The inspector card had a bright band along its bottom edge** — the 8a bottom light bleed,
+  which the Realigned Target's card does not have (`png/00` reads (27,29,34) to its last pixel
+  row). It was also a contrast hazard: tertiary text resting on it measured 4.18 (break-it
+  R4), which had been fenced off with a bottom inset equal to the bleed height. The floating
+  card is now flat on both screens (`SurfaceRole.hasBottomBleed`, RES-05); the inset is plain
+  spacing.
+
+**Founder decision — the analyzer lens keeps its bleed.** The lens carries the same bottom
+band and the mock's lens is flat there too, but the founder reviewed it on screen and said the
+spectrum analyser is fine as it is (2026-10-06). So `lens` (and `badge`) stay
+`hasBottomBleed == true` deliberately — do not "finish the job" by flattening them.
+
+**Verified on the founder's screenshots by measurement** (not by eye): queue row pitch 36.0pt
+(mock 36), playing-row card 34.0pt (mock 34), title-to-time centre offset 0.0pt, inspector fill
+flat to its last pixel row, Library rail last-row-centre → card bottom 29.0pt (mock 29; was 44).
+
+Founder cells for light / Reduce Motion / Reduce Transparency remain open.

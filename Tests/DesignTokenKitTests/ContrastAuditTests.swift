@@ -467,12 +467,11 @@ struct SampledCornerAuditTests {
         }
         // R4-PANEL-01 pairs (review MAJOR-3): the inspector panel renders over the field on
         // the RIGHT side — tertiary text's designed home (§3.3 placement rule), so ALL three
-        // label rungs are audited on panel⊕field there. The bottom BLEED stratum is NOT a
-        // text surface: folding it measured tertiary at 4.18 (break-it catch), so the
-        // constraint is ENCODED instead of diluted — `InspectorColumn`'s bottom content
-        // inset IS `GlassDecor.bleedHeight` (same token, cannot drift), meaning text never
-        // RESTS on the bleed run; transient scroll crossings are accepted (the seam-feather
-        // class).
+        // label rungs are audited on panel⊕field there. This fill is now the WHOLE card: the
+        // panel used to carry a bottom bleed stratum on which tertiary measured 4.18 (break-it
+        // catch), fenced off by a bottom inset rather than audited. The card is flat since
+        // S10.8 founder round 2 (`SurfaceRole.hasBottomBleed`, RES-05), so no part of it is
+        // unaudited — including while rows scroll past its bottom edge.
         if point.x >= 0.5 {
             let panel = Palette.panelFill.dark.over(backdrop)
             for (name, label) in [("label", Palette.label),

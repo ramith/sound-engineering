@@ -10,9 +10,9 @@ extension AudioFile {
     /// when the tag title is absent (LibraryTrackDisplay §), so a queued library track
     /// shows its tag title in Now Playing rather than the raw filename (final-gate #8).
     /// `relativePath` is empty: a library track has no meaningful scan-folder-relative path.
-    /// The existing Now-Playing queue row (`PlaylistItemRow`) renders `relativePath` as its
-    /// second line, so a library-queued track shows a blank subtitle there until that row
-    /// guards the empty case / shows artist·album (S9.4+ shared TrackRow). `AudioFile.id ==
+    /// The Now-Playing queue row (`PlaylistItemRow`) renders `relativePath` as a second line
+    /// only when it is non-empty (guarded since S10.8 founder round 2 — an empty line used to
+    /// push every title off the row's centre). `AudioFile.id ==
     /// absoluteURL` carries the identity playback needs; the durable `tracks.id` is now ALSO
     /// carried in `trackID` (S10.2 — closes the S9.5 seam: the queue mirror + play-count
     /// write-back use it directly, no `url → id` lookup). Kept in its own file so the base
