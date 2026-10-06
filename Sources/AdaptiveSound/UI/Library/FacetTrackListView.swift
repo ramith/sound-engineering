@@ -63,7 +63,7 @@ struct FacetTrackListView: View {
                 Label("Library", systemImage: "chevron.backward")
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(DesignSystem.Color.accent)
+            .foregroundStyle(DesignSystem.Color.accentForeground)
             .accessibilityLabel(backLabel)
             .keyboardShortcut("[", modifiers: .command)
             Spacer()

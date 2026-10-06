@@ -41,7 +41,7 @@ struct TrackInfoCard: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "music.note")
                 .font(.system(size: 18))
-                .foregroundStyle(Color.asAccent)
+                .foregroundStyle(DesignSystem.Color.accentForeground)
                 .frame(width: 40, height: 40)
                 .background(Color.asWindow)
                 .clipShape(.rect(cornerRadius: 8))

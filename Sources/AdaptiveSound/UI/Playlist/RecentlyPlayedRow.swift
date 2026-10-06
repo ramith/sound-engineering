@@ -31,7 +31,7 @@ struct RecentlyPlayedRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                     .font(DesignSystem.Font.body.weight(isNowPlaying ? .semibold : .regular))
-                    .foregroundStyle(isNowPlaying ? Color.asAccent : Color.asLabel)
+                    .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentForeground : Color.asLabel)
                     .lineLimit(1)
                 Text(statsCue)
                     .font(DesignSystem.Font.monoSmall)

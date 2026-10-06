@@ -31,7 +31,7 @@ struct PureModeSettingsSection: View {
                 }
             }
             .toggleStyle(.switch)
-            .tint(Color.asAccent)
+            .tint(DesignSystem.Color.accentFill)
             .padding(.horizontal, 16)
 
             SignalPathStatusCard(
@@ -97,7 +97,7 @@ private struct SignalPathStatusCard: View {
                 .frame(width: 110, alignment: .leading)
             Text(value)
                 .font(.caption.monospaced())
-                .foregroundStyle(accent ? Color.asAccent : Color.asLabel)
+                .foregroundStyle(accent ? DesignSystem.Color.accentForeground : Color.asLabel)
             Spacer()
         }
     }

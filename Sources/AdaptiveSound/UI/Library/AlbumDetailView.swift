@@ -44,7 +44,7 @@ struct AlbumDetailView: View {
                 Label("Library", systemImage: "chevron.backward")
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(DesignSystem.Color.accent)
+            .foregroundStyle(DesignSystem.Color.accentForeground)
             .accessibilityLabel("Back to Albums")
             .keyboardShortcut("[", modifiers: .command) // consistent with FacetTrackListView (S4 L7)
 
