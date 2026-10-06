@@ -81,6 +81,7 @@ struct LibrarySidebar: View {
         .focusable()
         .focused($sidebarFocused)
         .defaultFocus($sidebarFocused, true)
+        // The system effect would outline the whole rail; the selected row's ring replaces it (A3).
         .focusEffectDisabled()
         // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still in
         // the focus chain) HIJACKS the keys from the focused TextField (arrows moved the sidebar
@@ -117,7 +118,8 @@ struct LibrarySidebar: View {
             model.selectCategory(category)
             sidebarFocused = true
         } label: {
-            NavRow(icon: category.icon, label: category.title, active: isSelected)
+            NavRow(icon: category.icon, label: category.title, active: isSelected,
+                   isKeyboardCursor: sidebarFocused && isSelected)
         }
         .buttonStyle(.plain)
         // Selection is conveyed by color alone otherwise — expose it to VoiceOver; `.combine`
@@ -159,7 +161,8 @@ struct LibrarySidebar: View {
                 model.selectPlaylist(playlist.id)
                 sidebarFocused = true
             } label: {
-                NavRow(icon: "music.note.list", label: playlist.name, active: isSelected) {
+                NavRow(icon: "music.note.list", label: playlist.name, active: isSelected,
+                       isKeyboardCursor: sidebarFocused && isSelected) {
                     Text(playlist.entryCount.formatted(.number))
                         .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(DesignSystem.Color.labelTertiary)

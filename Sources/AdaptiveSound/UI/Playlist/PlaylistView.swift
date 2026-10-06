@@ -279,10 +279,11 @@ private struct PlaylistItemList: View {
 
     var body: some View {
         ScrollViewReader { proxy in
+            let cursor = keyboardCursorIndex
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(visibleRows) { row in
-                        queueRow(index: row.index, item: row.item)
+                        queueRow(index: row.index, item: row.item, isKeyboardCursor: row.index == cursor)
                     }
                 }
             }
@@ -290,7 +291,8 @@ private struct PlaylistItemList: View {
             // Apple limitation, forum 730367) — so grip drag-and-drop reorder works here.
             // `.focusable` + `.focused` + `.defaultFocus` restore the key-command target that
             // `List` provided for free (a row tap also sets it); `.focusEffectDisabled` suppresses
-            // the focus ring on the scroll area (the selection tint is the cue).
+            // the system ring around the whole scroll area — the cursor row's own `focusRing`
+            // is the cue (A3).
             .focusable()
             .focused(queueFocused)
             .defaultFocus(queueFocused, true)
@@ -321,7 +323,7 @@ private struct PlaylistItemList: View {
         } // ScrollViewReader
     }
 
-    private func queueRow(index: Int, item: QueueItem) -> some View {
+    private func queueRow(index: Int, item: QueueItem, isKeyboardCursor: Bool) -> some View {
         PlaylistItemRow(
             file: item.file,
             index: index,
@@ -339,7 +341,8 @@ private struct PlaylistItemList: View {
             // capability instead of offering a dead-end drag. The drop guard below stays
             // as belt-and-braces.
             dragPayload: reorderEnabled ? QueueDragItem(id: item.id) : nil,
-            isDropTarget: dropTargetIndex == index
+            isDropTarget: dropTargetIndex == index,
+            isKeyboardCursor: isKeyboardCursor
         )
         // Identity is the stable `QueueItem.id` (matches the `ForEach` key via `VisibleRow`)
         // so reorders re-render the RIGHT rows — a positional key re-identifies every row
@@ -420,6 +423,26 @@ private struct PlaylistItemList: View {
         }
     }
 
+    /// The row the arrows move FROM: the cursor when it's visible, else the playing row when
+    /// it's visible, else nil. Shared by `moveCursor` and the focus ring, so the ring always
+    /// sits where the next arrow press starts.
+    private var cursorAnchor: Int? {
+        if let cursor = cursorIndex, visibleIndices.contains(cursor) {
+            return cursor
+        }
+        if let playing = viewModel.selectedTrackIndex, visibleIndices.contains(playing) {
+            return playing
+        }
+        return nil
+    }
+
+    /// The keyboard CURSOR row (A3) — where the focus ring sits: the arrow anchor, or the first
+    /// visible row when there is none yet. Nil — no ring — while the queue lacks key focus.
+    private var keyboardCursorIndex: Int? {
+        guard queueFocused.wrappedValue else { return nil }
+        return cursorAnchor ?? visibleIndices.first
+    }
+
     /// Move the keyboard CURSOR by `delta` VISIBLE rows — never `selectedTrackIndex`, so the
     /// hero/footer/Now Playing (which read that pointer) don't move while you navigate
     /// (founder bug). Navigates the visible (filter-narrowed) set, so the cursor can't land
@@ -428,17 +451,10 @@ private struct PlaylistItemList: View {
     /// move would leave the list, so the event can bubble.
     private func moveCursor(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
         guard !visibleIndices.isEmpty else { return .ignored }
-        let anchor: Int
-        if let cursor = cursorIndex, let pos = visibleIndices.firstIndex(of: cursor) {
-            anchor = pos
-        } else if let playing = viewModel.selectedTrackIndex,
-                  let pos = visibleIndices.firstIndex(of: playing) {
-            anchor = pos
-        } else {
-            // No cursor and the playing row isn't visible: the first ↓ lands on row 0, ↑ on
-            // the last row (a virtual anchor just off each end).
-            anchor = delta > 0 ? -1 : visibleIndices.count
-        }
+        // No anchor (no visible cursor or playing row): the first ↓ lands on row 0, ↑ on the
+        // last row (a virtual anchor just off each end).
+        let anchor = cursorAnchor.flatMap { visibleIndices.firstIndex(of: $0) }
+            ?? (delta > 0 ? -1 : visibleIndices.count)
         let nextPos = anchor + delta
         guard nextPos >= 0, nextPos < visibleIndices.count else { return .ignored }
         let target = visibleIndices[nextPos]
