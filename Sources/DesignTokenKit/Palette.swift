@@ -73,6 +73,13 @@ public enum Palette {
         dark: RGBAColor(red: 111.0 / 255.0, green: 224.0 / 255.0, blue: 208.0 / 255.0)
     )
 
+    /// The keyboard focus indicator for the custom (non-`List`) lists (S10.8 A3): the 2pt ring
+    /// on the row the arrow keys act on, drawn in place of the system focus effect those lists
+    /// switch off. Non-text (WCAG 1.4.11 / 2.4.7): ≥ 3:1 against the row fills and the cards
+    /// it sits on, both appearances and Increase Contrast (R4-FOCUS-01/02). DERIVED from the
+    /// `accentText` teal (no new value) — the selection tint alone is ~1.2:1, too faint to cue.
+    public static let focusRing = AppearancePair(light: accentText.light, dark: accentText.dark)
+
     // MARK: Status
 
     //
@@ -237,7 +244,8 @@ public enum Palette {
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
-        ("tabTrack", tabTrack), ("accentText", accentText), ("controlHover", controlHover),
+        ("tabTrack", tabTrack), ("accentText", accentText), ("focusRing", focusRing),
+        ("controlHover", controlHover),
         ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
         ("accentTitle", accentTitle), ("meterHot", meterHot), ("meterHotText", meterHotText),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
