@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="flex: none; height: 74px; display: flex; align-items: center; gap: 16px; padding: 0 20px; position: relative; font-family: -apple-system, system-ui, sans-serif; background: linear-gradient(0deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 2px 12px rgba(0,0,0,.15);">
+  <div style="width: 46px; height: 46px; border-radius: 9px; background: linear-gradient(150deg,#1c3b39,#122523); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center;">
+    <svg width="20" height="20" viewBox="0 0 20 20"><g stroke="rgba(63,208,186,.55)" stroke-width="1.6" stroke-linecap="round"><line x1="5" y1="8" x2="5" y2="12"></line><line x1="8.5" y1="5.5" x2="8.5" y2="14.5"></line><line x1="12" y1="7" x2="12" y2="13"></line><line x1="15" y1="9" x2="15" y2="11"></line></g></svg>
+  </div>
+  <div style="min-width: 0; width: 210px;">
+    <div style="font-size: 13.5px; font-weight: 700; color: rgba(255,255,255,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Loke Karakewi Machan</div>
+    <div style="font-size: 11.5px; color: rgba(255,255,255,.55); margin-top: 2px;">Ayesha, Sewmini &amp; Thenuka</div>
+  </div>
+  <div style="display: flex; align-items: center; gap: 6px;">
+    <button style="width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="17" height="17" viewBox="0 0 17 17"><path d="M12 4 6 8.5 12 13zM5.5 4h1.6v9H5.5z" fill="rgba(255,255,255,.85)"></path></svg></button>
+    <button style="width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(160deg,#3fd0ba,#1fa893 60%,#14897a); border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 14px rgba(31,168,147,.45);"><svg width="15" height="15" viewBox="0 0 15 15"><path d="M4.5 3h2v9h-2zM8.5 3h2v9h-2z" fill="#08221e"></path></svg></button>
+    <button style="width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="17" height="17" viewBox="0 0 17 17"><path d="M5 4l6 4.5L5 13zM9.9 4h1.6v9H9.9z" fill="rgba(255,255,255,.85)"></path></svg></button>
+  </div>
+  <span style="font-size: 11.5px; color: rgba(255,255,255,.55); font-family: ui-monospace,'SF Mono',Menlo,monospace;">2:33</span>
+  <div style="position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); cursor: pointer;">
+    <div style="position: absolute; top: 0; bottom: 0; left: 0; width: 79%; border-radius: 2px; background: linear-gradient(90deg,#1fa893,#3fd0ba);"></div>
+    <div style="position: absolute; top: 50%; left: 79%; width: 13px; height: 13px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%); box-shadow: 0 1px 5px rgba(0,0,0,.55);"></div>
+  </div>
+  <span style="font-size: 11.5px; color: rgba(255,255,255,.55); font-family: ui-monospace,'SF Mono',Menlo,monospace;">3:14</span>
+  <span style="display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.6);"><span style="{{ dot }}"></span><span style="color: #6fe0d0;">Enhanced</span>· 48 kHz</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;reduceMotion&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const rm = this.props.reduceMotion ?? false;
+    const dot = 'display:inline-block;width:6px;height:6px;border-radius:50%;background:#3fd0ba;box-shadow:0 0 6px rgba(63,208,186,.8);' + (rm ? '' : 'animation:lbDot 1.6s ease-in-out infinite;');
+    return { dot };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; background: #0c0d0f; }
+  a { color: #6fe0d0; } a:hover { color: #8af0e0; }
+  @keyframes lbBar { 0%,100% { transform: scaleY(.34); } 50% { transform: scaleY(1); } }
+  @keyframes lbDot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .lb-row .rowact { opacity: 0; transition: opacity .15s; }
+  .lb-row:hover .rowact { opacity: 1; }
+  .lb-row:hover { background: rgba(255,255,255,.05); }
+  .lb-nav:hover { background: rgba(255,255,255,.06); }
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; gap: 44px; padding: 34px 26px; overflow: auto; font-family: -apple-system, system-ui, 'SF Pro Text', sans-serif; -webkit-font-smoothing: antialiased;">
+<div style="width: 1440px; flex: none; display: flex; align-items: baseline; gap: 14px; color: rgba(255,255,255,.55); font-size: 13px;"><span style="font-size: 12px; font-weight: 800; letter-spacing: .08em; color: #0c1413; background: #3fd0ba; padding: 4px 11px; border-radius: 999px;">DEFAULT</span><span style="color: rgba(255,255,255,.85); font-weight: 600;">5-column opinionated view</span>· header row hidden · sort via pill</div>
+<div data-shot="window" data-screen-label="Library — Twin Panels" style="width: 1440px; flex: none; height: 920px; display: flex; flex-direction: column; background: #131418; border-radius: 14px; overflow: hidden; position: relative; box-shadow: 0 40px 90px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.07);">
+  <div style="position: absolute; top: 120px; left: 8%; width: 1100px; height: 640px; background: radial-gradient(ellipse at 40% 30%, rgba(41,182,164,.16), rgba(41,182,164,0) 60%); filter: blur(8px); pointer-events: none;"></div>
+  <dc-import name="__chrome_titlebar" hint-size="100%,34px"></dc-import>
+  <dc-import name="__chrome_toolbar" active="Library" hint-size="100%,56px"></dc-import>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 20px; padding: 22px 22px 18px; position: relative;">
+    <!-- floating glass rail -->
+    <div data-shot="rail" style="width: 234px; flex: none; display: flex; flex-direction: column;">
+      <div style="border-radius: 18px; background: rgba(30,32,37,.72); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px rgba(0,0,0,.55); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px;">
+        <dc-import name="__nav_item" glyph="song" label="Songs" active="{{ true }}" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="album" label="Albums" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="artist" label="Artists" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="genre" label="Genres" hint-size="100%,38px"></dc-import>
+        <div style="height: 1px; background: rgba(255,255,255,.07); margin: 9px 8px;"></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 6px;">
+          <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.42);">PLAYLISTS</span>
+          <span style="font-size: 15px; color: #6fe0d0; line-height: 1; cursor: pointer;">+</span>
+        </div>
+        <dc-import name="__nav_item" glyph="list" label="debugPlaylist" count="4" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="list" label="Recents" count="12" hint-size="100%,38px"></dc-import>
+        <div style="height: 1px; background: rgba(255,255,255,.07); margin: 9px 8px;"></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 6px;">
+          <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: rgba(255,255,255,.42);"><svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 3.2 2 5h8v4.5H1V3.2z" stroke="rgba(255,255,255,.42)" stroke-width="1" fill="none"></path></svg>MUSIC FOLDERS</span>
+          <span style="font-size: 15px; color: #6fe0d0; line-height: 1; cursor: pointer;">+</span>
+        </div>
+        <dc-import name="__nav_item" glyph="folder" label="~/english2026" remove="{{ true }}" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="folder" label="~/music2026" remove="{{ true }}" hint-size="100%,38px"></dc-import>
+      </div>
+    </div>
+
+    <!-- list as floating glass card -->
+    <div data-shot="listcard" style="flex: 1; min-width: 0; border-radius: 18px; background: rgba(30,32,37,.66); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden;">
+      <div data-shot="listhead" style="flex: none; display: flex; align-items: center; gap: 14px; padding: 16px 20px 14px;">
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 20px; font-weight: 800; letter-spacing: -.01em; color: #fff;">Songs</span>
+          <span style="font-size: 11.5px; color: rgba(255,255,255,.42); font-family: ui-monospace,'SF Mono',Menlo,monospace; margin-top: 2px;">379 songs · 41 hrs 23 min</span>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 7px; height: 30px; width: 230px; padding: 0 12px; border-radius: 15px; background: rgba(0,0,0,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.07);">
+          <svg width="13" height="13" viewBox="0 0 13 13"><circle cx="5.4" cy="5.4" r="3.6" stroke="rgba(255,255,255,.45)" stroke-width="1.3" fill="none"></circle><line x1="8.1" y1="8.1" x2="11" y2="11" stroke="rgba(255,255,255,.45)" stroke-width="1.3" stroke-linecap="round"></line></svg>
+          <span style="font-size: 12.5px; color: rgba(255,255,255,.4);">Filter Songs</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: rgba(0,0,0,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.07); cursor: pointer;" class="lb-nav">
+          <span style="font-size: 12px; color: rgba(255,255,255,.6);">Sort: <span style="color: #6fe0d0; font-weight: 600;">Title ↑</span></span>
+          <svg width="9" height="9" viewBox="0 0 9 9"><path d="M2 3.5l2.5 2.5L7 3.5" stroke="rgba(255,255,255,.5)" stroke-width="1.4" fill="none" stroke-linecap="round"></path></svg>
+        </div>
+      </div>
+      <div style="flex: none; height: 1px; background: rgba(255,255,255,.07); margin: 0 20px;"></div>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 6px 12px 10px;">
+        <sc-for list="{{ rows }}" as="t" hint-placeholder-count="14">
+          <div class="lb-row" data-shot-row="{{ t.shot }}" style="display: grid; grid-template-columns: 34px 1fr 190px 96px 60px; align-items: center; gap: 14px; padding: 0 12px; height: 48px; border-radius: 11px; background: {{ t.bg }}; box-shadow: {{ t.ring }};">
+            <span style="display: flex; align-items: center; justify-content: center;">
+              <sc-if value="{{ t.playing }}" hint-placeholder-val="{{ false }}">
+                <span style="display: flex; align-items: flex-end; gap: 1.5px; height: 12px;">
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq1 }};"></span>
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq2 }};"></span>
+                  <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq3 }};"></span>
+                </span>
+              </sc-if>
+              <sc-if value="{{ t.notPlaying }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 11.5px; color: rgba(255,255,255,.3); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ t.n }}</span>
+              </sc-if>
+            </span>
+            <span style="min-width: 0; display: flex; align-items: center; gap: 9px;">
+              <span style="min-width: 0; font-size: 14px; font-weight: {{ t.weight }}; color: {{ t.titleColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.title }}</span>
+              <span style="flex: none; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: {{ t.fmtColor }}; background: {{ t.fmtBg }}; padding: 2px 5px; border-radius: 4px;">{{ t.fmt }}</span>
+            </span>
+            <span style="font-size: 13px; color: rgba(255,255,255,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.artist }}</span>
+            <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ t.date }}</span>
+            <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.dur }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <dc-import name="__chrome_transport" reduce-motion="{{ rm }}" hint-size="100%,74px"></dc-import>
+</div>
+
+<div style="width: 1440px; flex: none; display: flex; align-items: baseline; gap: 14px; color: rgba(255,255,255,.55); font-size: 13px; margin-top: 4px;"><span style="font-size: 12px; font-weight: 800; letter-spacing: .08em; color: #08221e; background: #cbb26a; padding: 4px 11px; border-radius: 999px;">EXPANDED</span><span style="color: rgba(255,255,255,.85); font-weight: 600;">custom columns shown</span>· glass header row appears · drag to reorder · click header or pill to sort · card scrolls horizontally past frozen # + Title</div>
+
+<div data-shot="cols-window" data-screen-label="Library — Expanded Columns" style="width: 1440px; flex: none; height: 920px; display: flex; flex-direction: column; background: #131418; border-radius: 14px; overflow: hidden; position: relative; box-shadow: 0 40px 90px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.07);">
+  <div style="position: absolute; top: 120px; left: 8%; width: 1100px; height: 640px; background: radial-gradient(ellipse at 40% 30%, rgba(41,182,164,.16), rgba(41,182,164,0) 60%); filter: blur(8px); pointer-events: none;"></div>
+  <dc-import name="__chrome_titlebar" hint-size="100%,34px"></dc-import>
+  <dc-import name="__chrome_toolbar" active="Library" hint-size="100%,56px"></dc-import>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 20px; padding: 22px 22px 18px; position: relative;">
+    <div style="width: 234px; flex: none; display: flex; flex-direction: column;">
+      <div style="border-radius: 18px; background: rgba(30,32,37,.72); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px rgba(0,0,0,.55); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px;">
+        <dc-import name="__nav_item" glyph="song" label="Songs" active="{{ true }}" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="album" label="Albums" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="artist" label="Artists" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="genre" label="Genres" hint-size="100%,38px"></dc-import>
+        <div style="height: 1px; background: rgba(255,255,255,.07); margin: 9px 8px;"></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 6px;">
+          <span style="font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.42);">PLAYLISTS</span>
+          <span style="font-size: 15px; color: #6fe0d0; line-height: 1; cursor: pointer;">+</span>
+        </div>
+        <dc-import name="__nav_item" glyph="list" label="debugPlaylist" count="4" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="list" label="Recents" count="12" hint-size="100%,38px"></dc-import>
+        <div style="height: 1px; background: rgba(255,255,255,.07); margin: 9px 8px;"></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 10px 6px;">
+          <span style="display: flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: rgba(255,255,255,.42);"><svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 3.2 2 5h8v4.5H1V3.2z" stroke="rgba(255,255,255,.42)" stroke-width="1" fill="none"></path></svg>MUSIC FOLDERS</span>
+          <span style="font-size: 15px; color: #6fe0d0; line-height: 1; cursor: pointer;">+</span>
+        </div>
+        <dc-import name="__nav_item" glyph="folder" label="~/english2026" remove="{{ true }}" hint-size="100%,38px"></dc-import>
+        <dc-import name="__nav_item" glyph="folder" label="~/music2026" remove="{{ true }}" hint-size="100%,38px"></dc-import>
+      </div>
+    </div>
+
+    <div data-shot="cols-card" style="flex: 1; min-width: 0; border-radius: 18px; background: rgba(30,32,37,.66); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,255,255,.06), 0 18px 50px -12px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden;">
+      <div style="flex: none; display: flex; align-items: center; gap: 12px; padding: 16px 20px 14px;">
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 20px; font-weight: 800; letter-spacing: -.01em; color: #fff;">Songs</span>
+          <span style="font-size: 11.5px; color: rgba(255,255,255,.42); font-family: ui-monospace,'SF Mono',Menlo,monospace; margin-top: 2px;">379 songs · 41 hrs 23 min</span>
+        </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 7px; height: 30px; width: 190px; padding: 0 12px; border-radius: 15px; background: rgba(0,0,0,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.07);">
+          <svg width="13" height="13" viewBox="0 0 13 13"><circle cx="5.4" cy="5.4" r="3.6" stroke="rgba(255,255,255,.45)" stroke-width="1.3" fill="none"></circle><line x1="8.1" y1="8.1" x2="11" y2="11" stroke="rgba(255,255,255,.45)" stroke-width="1.3" stroke-linecap="round"></line></svg>
+          <span style="font-size: 12.5px; color: rgba(255,255,255,.4);">Filter Songs</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: rgba(0,0,0,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.07); cursor: pointer;" class="lb-nav">
+          <span style="font-size: 12px; color: rgba(255,255,255,.6);">Sort: <span style="color: #6fe0d0; font-weight: 600;">Title ↑</span></span>
+          <svg width="9" height="9" viewBox="0 0 9 9"><path d="M2 3.5l2.5 2.5L7 3.5" stroke="rgba(255,255,255,.5)" stroke-width="1.4" fill="none" stroke-linecap="round"></path></svg>
+        </div>
+        <div style="display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 15px; background: rgba(41,182,164,.16); box-shadow: inset 0 0 0 1px rgba(41,182,164,.3); cursor: pointer;" class="lb-nav">
+          <svg width="13" height="13" viewBox="0 0 13 13"><g stroke="#6fe0d0" stroke-width="1.2"><rect x="1.5" y="2" width="3" height="9" rx="1"></rect><rect x="6" y="2" width="3" height="9" rx="1"></rect><line x1="11" y1="2.5" x2="11" y2="10.5" stroke-dasharray="1.4 1.4"></line></g></svg>
+          <span style="font-size: 12px; font-weight: 600; color: #6fe0d0;">Columns</span>
+        </div>
+      </div>
+
+      <div style="flex: 1; min-height: 0; overflow-x: auto; overflow-y: auto;">
+        <div style="width: 1360px;">
+          <div data-shot="cols-header" style="display: grid; grid-template-columns: 34px minmax(240px,1fr) 150px 150px 100px 52px 58px 96px 84px 82px 64px 56px; gap: 14px; align-items: center; padding: 7px 20px; margin: 0 0 2px; background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012)); box-shadow: inset 0 -1px 0 rgba(255,255,255,.06);">
+            <sc-for list="{{ columns }}" as="c" hint-placeholder-count="12">
+              <span style="display: flex; align-items: center; gap: 4px; justify-content: {{ c.justify }}; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: {{ c.color }}; cursor: pointer; white-space: nowrap; overflow: hidden;">{{ c.label }}<span style="color: #6fe0d0;">{{ c.arrow }}</span></span>
+            </sc-for>
+          </div>
+          <div style="padding: 4px 12px 10px;">
+            <sc-for list="{{ rows }}" as="t" hint-placeholder-count="14">
+              <div class="lb-row" style="display: grid; grid-template-columns: 34px minmax(240px,1fr) 150px 150px 100px 52px 58px 96px 84px 82px 64px 56px; align-items: center; gap: 14px; padding: 0 8px; height: 46px; border-radius: 10px; background: {{ t.bg }}; box-shadow: {{ t.ring }};">
+                <span style="display: flex; align-items: center; justify-content: center;">
+                  <sc-if value="{{ t.playing }}" hint-placeholder-val="{{ false }}">
+                    <span style="display: flex; align-items: flex-end; gap: 1.5px; height: 12px;">
+                      <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq1 }};"></span>
+                      <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq2 }};"></span>
+                      <span style="width: 2.5px; border-radius: 1px; background: #3fd0ba; height: 100%; transform-origin: bottom; animation: {{ eq3 }};"></span>
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{ t.notPlaying }}" hint-placeholder-val="{{ true }}">
+                    <span style="font-size: 11.5px; color: rgba(255,255,255,.3); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ t.n }}</span>
+                  </sc-if>
+                </span>
+                <span style="min-width: 0; display: flex; align-items: center; gap: 9px;">
+                  <span style="min-width: 0; font-size: 14px; font-weight: {{ t.weight }}; color: {{ t.titleColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.title }}</span>
+                  <span style="flex: none; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: {{ t.fmtColor }}; background: {{ t.fmtBg }}; padding: 2px 5px; border-radius: 4px;">{{ t.fmt }}</span>
+                </span>
+                <span style="font-size: 13px; color: rgba(255,255,255,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: inset 15px 0 0 -14px rgba(255,255,255,.1);">{{ t.artist }}</span>
+                <span style="font-size: 13px; color: rgba(255,255,255,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.album }}</span>
+                <span style="font-size: 12.5px; color: rgba(255,255,255,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.genre }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.year }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.dur }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; white-space: nowrap;">{{ t.date }}</span>
+                <span style="font-size: 12px; font-weight: 600; color: {{ t.qColor }}; white-space: nowrap;">{{ t.quality }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.sr }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.bit }}</span>
+                <span style="font-size: 12px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace; text-align: right;">{{ t.plays }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <dc-import name="__chrome_transport" reduce-motion="{{ rm }}" hint-size="100%,74px"></dc-import>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1500, &quot;height&quot;: 1000}, &quot;reduceMotion&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Motion&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const rm = this.props.reduceMotion ?? false;
+    const eq = (d, dur) => rm ? 'none' : `lbBar ${dur}s ease-in-out ${d}s infinite`;
+    const raw = [
+      ['Nosalenna Kandulak Desin (නොසැලෙන්න කඳුලක් දෑසින්) Yohan Arjuna', 'Yohan Arjuna', '12 Jul 2026', '4:12', 'MP3'],
+      ['Premasiri Khemadasa - Mixtapes HD', 'Khemadasa', '12 Jul 2026', '58:20', 'FLAC'],
+      ['Manaloli Manamaliye (මනලෝලී මනමාලියේ) Rock Version', '@rocksaami', '12 Jul 2026', '5:03', 'MP3'],
+      ['Premasiri Kemadasa Master Songs Collection ප්‍රේමසිරි කේමදාස', 'Various', '12 Jul 2026', '1:12:04', 'MP3'],
+      ['කෙසේ කියන්නද', '2FORTY2', '12 Jul 2026', '4:41', 'MP3'],
+      ['ඉවුරු තලා', '2FORTY2', '12 Jul 2026', '3:58', 'MP3'],
+      ['Attention / Single Ladies Medley (Live)', '2FORTY2', '12 Jul 2026', '6:15', 'WAV'],
+      ['කොළොම්පුරේ', '2FORTY2', '12 Jul 2026', '4:22', 'MP3'],
+      ['මී අඹ වනයේ', '2FORTY2', '12 Jul 2026', '5:10', 'MP3'],
+      ['දෙතුන් වතාවක්', '2FORTY2', '12 Jul 2026', '3:47', 'MP3'],
+      ['සිහින ලොවක් – ගමෙන් ලියුමක්', '2FORTY2', '12 Jul 2026', '4:33', 'MP3'],
+      ['කොණ්ඩ කිරිල්ලියේ', '2FORTY2', '12 Jul 2026', '4:08', 'MP3'],
+      ['අපි කතා නොකර ඉමු', '2FORTY2', '12 Jul 2026', '3:52', 'MP3'],
+      ['හැඟුමන්', '2FORTY2', '12 Jul 2026', '4:19', 'MP3'],
+      ['සැනසුම', '2FORTY2', '12 Jul 2026', '5:27', 'MP3'],
+      ['සිලිලාර සිත නයනා', '2FORTY2', '12 Jul 2026', '4:44', 'MP3'],
+      ['Hazard', '2FORTY2', '18 Jul 2026', '3:31', 'MP3'],
+      ['පංච කලයාණියේ', '@RockAppachchi', '12 Jul 2026', '4:55', 'MP3'],
+    ];
+    const playingIdx = 6;
+    const genres = ['Sinhala', 'Classical', 'Rock', 'Fusion', 'Pop', 'Folk'];
+    const albums = ['Aakaśa Kusum', 'Live at Nelum Pokuna', 'Rock Vol. 2', 'Master Collection', 'Singles 2026', 'Mixtape HD'];
+    const rows = raw.map((r, i) => {
+      const playing = i === playingIdx;
+      const enh = r[4] !== 'FLAC' && r[4] !== 'WAV';
+      return {
+        title: r[0], artist: r[1], date: r[2], dur: r[3], fmt: r[4], n: String(i + 1),
+        playing, notPlaying: !playing,
+        shot: playing ? 'playing' : (i === 0 ? 'first' : ''),
+        bg: playing ? 'rgba(41,182,164,.12)' : 'transparent',
+        ring: playing ? 'inset 0 0 0 1px rgba(41,182,164,.36)' : 'none',
+        titleColor: playing ? '#7ee8d8' : 'rgba(255,255,255,.9)',
+        weight: playing ? 650 : 450,
+        fmtColor: playing ? '#6fe0d0' : (enh ? 'rgba(255,255,255,.42)' : '#cbb26a'),
+        fmtBg: playing ? 'rgba(41,182,164,.18)' : (enh ? 'rgba(255,255,255,.06)' : 'rgba(203,178,106,.14)'),
+        // extra columns (expanded state)
+        album: albums[i % albums.length],
+        genre: genres[i % genres.length],
+        year: String(2018 + (i % 9)),
+        quality: enh ? '320 kbps' : 'Lossless',
+        qColor: playing ? '#6fe0d0' : (enh ? 'rgba(255,255,255,.5)' : '#cbb26a'),
+        sr: (i % 3 === 0) ? '44.1 kHz' : '48.0 kHz',
+        bit: enh ? '16-bit' : '24-bit',
+        plays: String((i * 7 + 3) % 40),
+      };
+    });
+    const col = (label, active, dir, right) => ({
+      label, arrow: active ? (dir || '↑') : '',
+      color: active ? '#6fe0d0' : 'rgba(255,255,255,.5)',
+      justify: right ? 'flex-end' : 'flex-start',
+    });
+    const columns = [
+      col(''), col('Title', true, '↑'), col('Artist'), col('Album'), col('Genre'),
+      col('Year', false, '', true), col('Time', false, '', true), col('Date Added'),
+      col('Quality'), col('Sample Rate', false, '', true), col('Bit Depth', false, '', true), col('Plays', false, '', true),
+    ];
+    return { rows, columns, rm, eq1: eq(-0.1, 0.8), eq2: eq(-0.45, 1.05), eq3: eq(-0.7, 0.9) };
+  }
+}
+</script>
+</body>
+</html>
