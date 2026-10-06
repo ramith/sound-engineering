@@ -70,7 +70,7 @@ struct ErrorBanner: View {
             if !viewModel.isEngineReady {
                 Button("Retry") { viewModel.retryInitialization() }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(DesignSystem.Color.accent)
+                    .foregroundStyle(DesignSystem.Color.accentForeground)
                     .help("Retry starting the audio engine")
             }
 

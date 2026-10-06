@@ -135,7 +135,7 @@ private struct AlbumGridItem: View {
             Image(systemName: "play.circle.fill")
                 .font(.system(size: max(20, side * 0.26)))
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(DesignSystem.Color.onAccent, DesignSystem.Color.accent)
+                .foregroundStyle(DesignSystem.Color.onAccent, DesignSystem.Color.accentFill)
                 .shadow(radius: 3)
         }
         .buttonStyle(.plain)

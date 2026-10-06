@@ -83,7 +83,7 @@ private struct EQRecallBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
-                .foregroundStyle(Color.asAccent)
+                .foregroundStyle(DesignSystem.Color.accentForeground)
             Text(message)
                 .font(.callout)
                 .foregroundStyle(Color.asLabel)

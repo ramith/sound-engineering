@@ -74,7 +74,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                     Text(index + 1, format: .number.grouping(.never))
                         .font(DesignSystem.Font.monoSmall)
                         .lineLimit(1)
-                        .foregroundStyle(isSelected ? Color.asAccent : Color.asLabelTertiary)
+                        .foregroundStyle(isSelected ? DesignSystem.Color.accentForeground : Color.asLabelTertiary)
                 }
             }
             .frame(width: numberColumnWidth, alignment: .trailing)
@@ -83,7 +83,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                 Text(file.name)
                     .font(DesignSystem.Font.body.weight(isSelected || isNowPlaying ? .semibold : .regular))
                     .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentTitle
-                        : isSelected ? Color.asAccent : Color.asLabel)
+                        : isSelected ? DesignSystem.Color.accentForeground : Color.asLabel)
                     .lineLimit(1)
 
                 // The folder path, only when there IS one. Today no track has one — every

@@ -327,7 +327,7 @@ private extension PlaylistDetailView {
                     dismissRestoreToast()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(DesignSystem.Color.accent)
+                .foregroundStyle(DesignSystem.Color.accentForeground)
             }
             .padding(.horizontal, DesignSystem.Spacing.medium)
             .padding(.vertical, DesignSystem.Spacing.small)
