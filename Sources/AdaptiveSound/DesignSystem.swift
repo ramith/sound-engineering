@@ -60,6 +60,11 @@ enum DesignSystem {
         /// `accentFill`: tints + fills (switches, the root tint, a glyph's fill layer), ≥ 3:1
         /// (R4-TINT-01). `accentForeground`: teal TEXT and GLYPHS, ≥ 4.5:1 (R4-TINT-02).
         /// Decorative strokes/washes keep `accent`; semgrep `ui-no-accent-as-text` holds it.
+        ///
+        /// `accentFill` is applied PER SITE (each switch), never as an inherited root `.tint`:
+        /// on macOS 26 an inherited tint also re-styles NEUTRAL controls — automatic/bordered
+        /// buttons turn teal-text-on-teal-wash, default-action buttons white-on-teal (≈ 2.5:1)
+        /// — which would change shipped dark looks (probed with ImageRenderer, S10.8 A2).
         static let accentFill = from(Palette.accentFill)
         static let accentForeground = from(Palette.accentForeground)
 

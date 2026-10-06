@@ -61,7 +61,7 @@ struct QueueToast: View {
         } label: {
             HStack(spacing: DesignSystem.Spacing.small) {
                 Image(systemName: "text.badge.plus")
-                    .foregroundStyle(DesignSystem.Color.accent)
+                    .foregroundStyle(DesignSystem.Color.accentForeground)
                 Text(message)
                     .font(DesignSystem.Font.body)
                     .foregroundStyle(DesignSystem.Color.label)

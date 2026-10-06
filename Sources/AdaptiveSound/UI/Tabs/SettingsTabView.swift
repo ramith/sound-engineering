@@ -76,6 +76,7 @@ struct SettingsTabView: View {
                             }
                         }
                         .toggleStyle(.switch)
+                        .tint(DesignSystem.Color.accentFill)
                         .padding(.horizontal, 16)
                     }
                 }
@@ -106,7 +107,7 @@ private struct DeviceDetailRow: View {
         HStack(spacing: 12) {
             Image(systemName: device.systemIcon)
                 .font(.body)
-                .foregroundStyle(Color.asAccent)
+                .foregroundStyle(DesignSystem.Color.accentForeground)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 2) {

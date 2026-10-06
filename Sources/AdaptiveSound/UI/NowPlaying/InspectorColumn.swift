@@ -193,7 +193,7 @@ private struct CrossfeedToggleRow: View {
                 .foregroundStyle(Color.asLabel)
         }
         .toggleStyle(.switch)
-        .tint(Color.asAccent)
+        .tint(DesignSystem.Color.accentFill)
         .disabled(!deviceEnabled)
     }
 }
