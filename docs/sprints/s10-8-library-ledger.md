@@ -50,6 +50,49 @@ merged sprint branch.
 9. **Column RESIZE dropped** — the addendum specifies fixed widths (Title is the only flexible
    column); the old Table's drag-resize is intentionally gone.
 
+## Founder round 1 (2026-10-06) — first eyes on PR-A..D
+
+The founder ran the merged build and compared it against the mock; seven fixes followed, on
+`sprint/s10-8-library-founder-round-1`. Each was confirmed on the founder's screen the same day
+(dark appearance; light / Reduce Motion / Reduce Transparency are still the open cells above).
+
+| # | What the founder saw | Root cause | Fix |
+|---|---|---|---|
+| 1 | Sort pill read a bare "⌄ Sort:" — no value, no capsule | `.menuStyle(.borderlessButton)` hands the label to an AppKit pop-up button that keeps ONE image + ONE text, drops the rest, and never re-renders | `pillMenuStyle()` (`.menuStyle(.button)` + `.buttonStyle(.plain)`) — the label is a real, live SwiftUI view |
+| 2 | Columns pill was plain white text, no teal capsule | same | same |
+| 3 | Column header "TRA…" (Track #) | the header upper-cased the full menu label; a 44pt column cannot hold it | the mock's capitalisation; compact header labels (Track / Disc / Plays); Track No 44 → 52, Disc 40 → 44; **SLOT-04** holds every header to its column |
+| 4 | Rows looser than the mock | the guide's row area is "6×12 padding" (6 above/below, 12 each side, no inter-row gap); the first cut used the 6 as row spacing and dropped the 12 | spacing 0 (48pt pitch) + the 12pt side inset, budgeted in the width math |
+| 5 | Cards did not look like the mock's | NOT the fill (see below) — the NP 8a "bottom light bleed" put a ~24pt band along both cards' bottom edge that nearly doubled the fill's lightness | new `SurfaceRole.libraryCard`: the SAME panel fill, flat to the edge (`hasBottomBleed`, **RES-05**) |
+| 6 | Device pill: truncated name, an inner box, a blank right half | the borderless menu again: AppKit's bezel insets ate the name's width, and the rate had to sit outside the label to update, leaving a dead half | the whole pill is one live menu label; it hugs its content (≤ 302pt) and shows the rate only while one is known |
+| 7 | Footer said "Unknown Artist" for a tagged song | the Now Playing refresh cleared the SYSTEM session for a stopped track and returned before resolving the display metadata the footer also reads | `NowPlayingRefreshPlan` separates the two; a stopped / restored track resolves artist + cover (**NP-08..10**) |
+
+Also fixed, same root cause as 1–2: the playlist missing-file warning triangle had been drawing
+grey — the borderless menu redraws its label as a template image and drops the amber token.
+
+**Recorded so nobody "fixes" them:**
+
+- **The card FILL was measured and left alone.** Card-vs-window luminance contrast is 1.11 in the
+  app and 1.09–1.11 in the mock — equal. The app reads ~4 levels darker overall only because its
+  window base is the D10 deep base (`#0E1013`, locked in S10.7) where this mock assumed
+  `#131418`. Lifting the fill would drop `labelTertiary` (track numbers, dates) below AA at the
+  glow peak (4.61 → ~4.45).
+- **Deviation 10 — two column widths depart from the addendum** (Track No 52, Disc 44): at the
+  addendum's 44 / 40 even the compact header plus the sort arrow does not fit.
+- **Deviation 11 — the device pill hugs its content** instead of the fixed 302pt slot. The fixed
+  width existed to keep the tab strip from sliding; the tabs moved to the chrome's right edge in
+  part 1's founder round, so only the pill's own trailing edge moves now.
+- **How this was verified without screen capture:** an in-process offscreen render
+  (`NSHostingView` → `cacheDisplay`) of the menu-label variants reproduced the broken pill
+  exactly and showed the plain style rendering — and live-updating — correctly. Usable again for
+  any "does macOS actually draw this control" question; it cannot show Materials or the real app.
+
+**Now Playing findings from the same session — NOT fixed, awaiting a founder yes/no:**
+
+- Queue rows reserve a second line for a folder path that is empty for every library track, so
+  titles sit high in the row; the NP mock's rows are single-line (36pt pitch vs the app's 40).
+- The inspector card still carries the bottom bleed band; the Realigned Target's card is flat to
+  its edge there too (png/00 reads (27,29,34) to the last row).
+
 ## Fast-follows (PR-D shipped the validated core; these land right after)
 
 - **Drag-a-header reorder** (founder chose full apparatus; deferred as the fragile bit — the

@@ -60,3 +60,31 @@ public struct NowPlayingSnapshot: Sendable, Equatable {
         !isPlaying && elapsedSeconds == 0 && !hasResumePoint
     }
 }
+
+// MARK: - Refresh plan
+
+/// What one Now Playing refresh does, decided purely from transport state. TWO independent
+/// outputs, because the controller serves two audiences from one resolved-metadata cache:
+///
+///   - the IN-APP footer + Now Playing widget, which always show the SELECTED track, and
+///   - the SYSTEM session (Control Center / media keys), which must NOT show a phantom
+///     paused-at-0:00 track for a stopped one (S10.4 FN-1).
+///
+/// The original flow tied them together: a stopped track cleared the system session AND the
+/// metadata cache, and returned before resolving anything. So a track restored at launch (or
+/// after ⌘. Stop, or at end-of-queue) showed "Unknown Artist" and no cover in the footer, even
+/// though the library knew both (founder screenshot, 2026-10-06). Naming the two outputs keeps
+/// them from being re-coupled.
+public struct NowPlayingRefreshPlan: Sendable, Equatable {
+    /// Resolve (or keep) the selected track's display metadata — artist / album / artwork —
+    /// for the in-app footer + widget. False only when no track is selected.
+    public let resolvesDisplayMetadata: Bool
+    /// Push the track to the system Now Playing session. False → the system session is cleared
+    /// (no track, or a stopped one), while the display metadata may still be kept.
+    public let pushesSystemSession: Bool
+
+    public static func plan(hasSelectedTrack: Bool, isStopped: Bool) -> NowPlayingRefreshPlan {
+        NowPlayingRefreshPlan(resolvesDisplayMetadata: hasSelectedTrack,
+                              pushesSystemSession: hasSelectedTrack && !isStopped)
+    }
+}

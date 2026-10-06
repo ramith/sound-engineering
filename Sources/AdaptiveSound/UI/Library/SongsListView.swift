@@ -30,10 +30,21 @@ struct SongsListView: View {
     @State private var addToPlaylistTarget: AddToPlaylistTarget?
     @FocusState private var listFocused: Bool
 
-    /// Inter-column gap + the row's horizontal padding (both sides) — the row chrome the layout math
-    /// must budget so Title fills exactly / overflow triggers correctly.
+    /// Inter-column gap, the row's own horizontal padding (both sides), and the row AREA's inset
+    /// from the card edge (each side) — the chrome the layout math must budget so Title fills
+    /// exactly / overflow triggers correctly.
     private static let columnSpacing: CGFloat = 14
     private static let rowHorizontalPadding: CGFloat = 24
+    /// The guide's row area is a scroll view with "6×12 padding": 6 above/below, 12 at each side,
+    /// and NO gap between rows (48pt rows at a 48pt pitch, png/02). The first cut read the 6 as
+    /// inter-row spacing and dropped the 12 — rows sat 6pt apart (about one row in nine lost)
+    /// and ran edge to edge, so a playing/selected row's fill touched the card border.
+    private static let listVerticalInset: CGFloat = 6
+    private static let listHorizontalInset: CGFloat = 12
+    /// Everything that is not a column: gaps + row padding + the row area's side insets.
+    private static func chromeWidth(columnCount: Int) -> CGFloat {
+        columnSpacing * CGFloat(max(columnCount - 1, 0)) + rowHorizontalPadding + 2 * listHorizontalInset
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -45,12 +56,13 @@ struct SongsListView: View {
                         columnHeaderRow(columns: columns, titleWidth: titleWidth)
                     }
                     ScrollView(.vertical) {
-                        LazyVStack(spacing: 6) {
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
                                 row(track, number: index + 1, columns: columns, titleWidth: titleWidth)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, Self.listVerticalInset)
+                        .padding(.horizontal, Self.listHorizontalInset)
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -84,14 +96,12 @@ struct SongsListView: View {
     /// scroll). Budgets the fixed columns + inter-column spacing + row padding (the addendum).
     private func resolvedTitleWidth(columns: [SongColumn], available: CGFloat) -> CGFloat {
         let fixed = columns.filter { $0 != .title }.reduce(CGFloat.zero) { $0 + ($1.width ?? 0) }
-        let chrome = Self.columnSpacing * CGFloat(max(columns.count - 1, 0)) + Self.rowHorizontalPadding
-        return max(SongColumn.titleMinWidth, available - fixed - chrome)
+        return max(SongColumn.titleMinWidth, available - fixed - Self.chromeWidth(columnCount: columns.count))
     }
 
     private func contentWidth(columns: [SongColumn], titleWidth: CGFloat) -> CGFloat {
         let fixed = columns.filter { $0 != .title }.reduce(CGFloat.zero) { $0 + ($1.width ?? 0) }
-        let chrome = Self.columnSpacing * CGFloat(max(columns.count - 1, 0)) + Self.rowHorizontalPadding
-        return fixed + titleWidth + chrome
+        return fixed + titleWidth + Self.chromeWidth(columnCount: columns.count)
     }
 
     // MARK: Glass column-header row (`png/08`)
@@ -105,7 +115,9 @@ struct SongsListView: View {
                                : (column.isTrailing ? .trailing : .leading))
             }
         }
-        .padding(.horizontal, 12)
+        // The row's own 12pt padding + the row area's side inset: header cells sit exactly over
+        // the columns they label. The hairline still spans the full card width.
+        .padding(.horizontal, Self.rowHorizontalPadding / 2 + Self.listHorizontalInset)
         .frame(height: 30)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 1)
@@ -114,30 +126,35 @@ struct SongsListView: View {
 
     @ViewBuilder
     private func headerCell(_ column: SongColumn) -> some View {
-        let sortable = column.comparator(.forward) != nil
         let active = isActiveSort(column)
-        let label = HStack(spacing: 4) {
+        // `headerLabel`, in the mock's own capitalisation (png/07-08 read "Title ↑ · Artist ·
+        // Album"): the first cut upper-cased the full menu label, which is ~25% wider and
+        // truncated the narrow numeric columns ("TRA…" for Track #). SLOT-04 holds every
+        // header (+ its sort arrow) to its column width; the scale factor is only the net for
+        // large Dynamic Type sizes, where the fixed widths do not grow.
+        let label = HStack(spacing: SongColumn.headerArrowSpacing) {
             if column != .index {
-                Text(column.label)
+                Text(column.headerLabel)
             }
             if active {
                 Image(systemName: currentAscending ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: SongColumn.headerArrowSize, weight: .bold))
                     .accessibilityHidden(true)
             }
         }
         .font(DesignSystem.Font.micro)
         .fontWeight(.heavy)
-        .tracking(0.6)
-        .textCase(.uppercase)
+        .tracking(SongColumn.headerTracking)
         .foregroundStyle(active ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
         .lineLimit(1)
+        .minimumScaleFactor(0.75)
 
-        if sortable {
+        if column.isSortable {
             Button { applySort(column) } label: { label }
                 .buttonStyle(.plain)
+                .accessibilityLabel(column.label) // the full name, not the compact header
         } else {
-            label
+            label.accessibilityLabel(column.label)
         }
     }
 

@@ -1,102 +1,14 @@
 import Foundation
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
-// MARK: - Songs column model (S10.8 Library PR-D.2 — the addendum's ColumnSpec)
+// MARK: - Songs column behaviour (the app half of `SongColumn`)
 
-/// The identity of a Songs-list column. `index` (# / equalizer) and `title` are the FROZEN leading
-/// group — always first, always visible, pinned on horizontal scroll. Every other column is
-/// toggleable + reorderable, fixed-width, and lives in the horizontally-scrolling region. Sortable
-/// columns expose a comparator (the same keypaths the old Table used, so `SongSortMapping` +
-/// `applySortOrder` are unchanged); the rest (index, genre, and the new sampleRate/bitDepth/
-/// lastPlayed) are display-only.
-enum SongColumn: String, CaseIterable, Codable, Identifiable {
-    case index, title, artist, album, genre, year, duration, dateAdded, quality
-    case sampleRate, bitDepth, trackNo, discNo, fileSize, playCount, lastPlayed, albumArtist, format
-
-    var id: String {
-        rawValue
-    }
-
-    /// Menu / header label.
-    var label: String {
-        switch self {
-        case .index: "#"
-        case .title: "Title"
-        case .artist: "Artist"
-        case .album: "Album"
-        case .genre: "Genre"
-        case .year: "Year"
-        case .duration: "Time"
-        case .dateAdded: "Date Added"
-        case .quality: "Quality"
-        case .sampleRate: "Sample Rate"
-        case .bitDepth: "Bit Depth"
-        case .trackNo: "Track #"
-        case .discNo: "Disc #"
-        case .fileSize: "File Size"
-        case .playCount: "Play Count"
-        case .lastPlayed: "Last Played"
-        case .albumArtist: "Album Artist"
-        case .format: "Format"
-        }
-    }
-
-    /// Fixed width in points, or `nil` for the only flexible column (Title: `minmax(240, 1fr)`).
-    /// Widths per the addendum; Format / Album Artist (not in the addendum's list, kept from the
-    /// old Table) get sensible values.
-    var width: CGFloat? {
-        switch self {
-        case .index: 34
-        case .title: nil // flexible — takes leftover, min 240 (applied at the row)
-        case .artist: 150
-        case .album: 150
-        case .genre: 100
-        case .year: 52
-        case .duration: 58
-        case .dateAdded: 96
-        case .quality: 84
-        case .sampleRate: 82
-        case .bitDepth: 64
-        case .trackNo: 44
-        case .discNo: 40
-        case .fileSize: 74
-        case .playCount: 56
-        case .lastPlayed: 96
-        case .albumArtist: 150
-        case .format: 64
-        }
-    }
-
-    /// The flexible Title column's minimum before horizontal scrolling starts (addendum).
-    static let titleMinWidth: CGFloat = 240
-
-    /// Trailing-aligned (mono numerics) vs leading (text). Index is centered (handled at the row).
-    var isTrailing: Bool {
-        switch self {
-        case .year, .duration, .sampleRate, .bitDepth, .trackNo, .discNo, .fileSize, .playCount:
-            true
-        default:
-            false
-        }
-    }
-
-    /// Monospaced numeric/technical columns (addendum: "mono numerics right-aligned").
-    var isMono: Bool {
-        switch self {
-        case .index, .year, .duration, .dateAdded, .quality, .sampleRate, .bitDepth,
-             .trackNo, .discNo, .fileSize, .playCount, .lastPlayed:
-            true
-        default:
-            false
-        }
-    }
-
-    /// The frozen leading group — always first, always visible, pinned on horizontal scroll.
-    var isFrozen: Bool {
-        self == .index || self == .title
-    }
-
+/// The column CATALOG (identity, labels, fixed layout) is pure data in `LibraryBrowseKit` so the
+/// header-fit test can measure it. This extension adds what needs the store's row type and the
+/// app's formatters: the header-click comparator and the row-cell display string.
+extension SongColumn {
     /// The sort comparator for a header click, or `nil` for display-only columns (index, genre,
     /// and the new technical columns that `SongSortMapping` doesn't map). Same keypaths the old
     /// Table used, so the DAO mapping is unchanged.
@@ -120,15 +32,12 @@ enum SongColumn: String, CaseIterable, Codable, Identifiable {
             .playCount: KeyPathComparator(\.playCount, order: order),
             .albumArtist: KeyPathComparator(\.albumArtistName, order: order),
         ]
-        return comparators[self]
-    }
-
-    /// First-click direction: recency columns lead descending, everything else ascending.
-    var defaultOrder: SortOrder {
-        switch self {
-        case .dateAdded, .lastPlayed, .playCount: .reverse
-        default: .forward
-        }
+        let comparator = comparators[self]
+        // The Kit's `isSortable` is what the header-fit test budgets the sort arrow from; keep it
+        // honest against this table (the behaviour) rather than trusting two lists to stay equal.
+        assert((comparator != nil) == isSortable,
+               "SongColumn.\(rawValue): isSortable (LibraryBrowseKit) disagrees with the comparator table")
+        return comparator
     }
 
     /// The row-cell display string for this column ("" → blank cell). A STATIC formatter table

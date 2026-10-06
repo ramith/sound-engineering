@@ -262,10 +262,20 @@ struct PlaylistDetailView: View {
             Menu {
                 missingRowActions(row)
             } label: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DesignSystem.Color.statusWarningText)
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(DesignSystem.Color.statusWarningText)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Color.labelTertiary)
+                }
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            // `pillMenuStyle`, not `.borderlessButton`: the borderless style redraws the label
+            // as a template image and DROPS its color — the warning triangle rendered grey, so
+            // the amber token never showed. The explicit chevron keeps the "this opens a menu"
+            // cue the borderless indicator used to give.
+            .pillMenuStyle()
             .help("File missing — moved or deleted. Locate… to re-point it, or remove it.")
         }
         .padding(.vertical, DesignSystem.Spacing.xSmall)

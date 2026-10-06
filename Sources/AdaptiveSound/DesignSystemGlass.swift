@@ -53,27 +53,28 @@ extension View {
 
     /// The floating glass card that HUGS its content: cap at the measured `contentHeight`
     /// (top-aligned in the region), clip the scrolling content to the panel shape, then paint the
-    /// `.panel` glass (fill + rim + hairline + shadow). Shared by the Now Playing inspector column
-    /// (S10.7 PR E1) and the Library Twin Panels rail (S10.8 PR-C) — the ambient teal glow sits
-    /// behind at the window/tab level, so this paints no glow itself; a caller that wants a
-    /// per-card glow (the NP inspector) adds its own `.background { … }`. `contentHeight == 0`
-    /// means "not yet measured" → fill for one layout pass.
-    func huggingGlassPanel(contentHeight: CGFloat) -> some View {
+    /// role's glass (fill + rim + hairline + shadow). Shared by the Now Playing inspector column
+    /// (S10.7 PR E1, `.panel`) and the Library Twin Panels rail (S10.8 PR-C, `.libraryCard` — the
+    /// same fill, flat to its bottom edge). The ambient teal glow sits behind at the window/tab
+    /// level, so this paints no glow itself; a caller that wants a per-card glow (the NP
+    /// inspector) adds its own `.background { … }`. `contentHeight == 0` means "not yet
+    /// measured" → fill for one layout pass.
+    func huggingGlassPanel(_ role: SurfaceRole = .panel, contentHeight: CGFloat) -> some View {
         frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity, alignment: .top)
             .clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous))
-            .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
-                                                     style: .continuous))
+            .glassPanel(role, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                                   style: .continuous))
     }
 
     /// The full-height Twin Panels DETAIL card (S10.8 PR-D): the right pane's floating glass card,
     /// FILLING the region (unlike the content-height rail's `huggingGlassPanel`). Clips its content
-    /// to the panel shape, then paints the `.panel` glass. Shared by every Library category detail
-    /// (Songs list, Albums/Artists grids, Genres/facet/playlist lists) so the right pane is one
-    /// coherent card; the ambient glow sits behind at the window level (no per-card glow).
+    /// to the panel shape, then paints the `.libraryCard` glass. Shared by every Library category
+    /// detail (Songs list, Albums/Artists grids, Genres/facet/playlist lists) so the right pane is
+    /// one coherent card; the ambient glow sits behind at the window level (no per-card glow).
     func libraryDetailCard() -> some View {
         clipShape(RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous))
-            .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
-                                                     style: .continuous))
+            .glassPanel(.libraryCard, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius),
+                                                           style: .continuous))
     }
 }
 
@@ -389,7 +390,8 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
         }
     }
 
-    /// The Regime-B strata (design §3.2): fill (+ dark-only bottom bleed) UNDER the content;
+    /// The Regime-B strata (design §3.2): fill (+ the dark-only bottom bleed, for the roles
+    /// that carry it — `SurfaceRole.hasBottomBleed`) UNDER the content;
     /// top-edge specular rim + full glass hairline as distinct strokes above; a soft deep
     /// drop shadow (light = ~half opacity, tighter — grammar rule 4). The hairline token
     /// carries real Increase-Contrast variants (the "stronger hairlines under IC" promise);
@@ -407,7 +409,7 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
             .background {
                 ZStack(alignment: .bottom) {
                     shape.fill(SwiftUI.Color(token: fill))
-                    if dark { // bottom light bleed is dark-only (grammar rule 3)
+                    if dark, role.hasBottomBleed { // dark-only (grammar rule 3), and per-role
                         LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.bleedDark)],
                                        startPoint: .top, endPoint: .bottom)
                             .frame(height: CGFloat(GlassDecor.bleedHeight))

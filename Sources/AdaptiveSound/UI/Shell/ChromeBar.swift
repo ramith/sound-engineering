@@ -4,7 +4,7 @@ import SwiftUI
 /// The app-owned chrome header (the shell's top band).
 ///
 /// Layout (left → right):
-///   App logo squircle | Device dropdown pill | Tab selector | Spacer
+///   App logo squircle | Device dropdown pill | Spacer | Tab selector
 ///
 /// `AppShell` owns the band height (`ShellMetrics.chromeHeight`), the window background,
 /// and the bottom hairline, so this view sets none of those. Its leading edge shares the
@@ -12,8 +12,8 @@ import SwiftUI
 /// own strip, so no traffic-light inset is needed.
 ///
 /// The tab picker is `.fixedSize()` (locked to its intrinsic size — never stretches or
-/// compresses). The device pill is fixed-width and truncates long names, so the tab control's
-/// left edge is invariant to the device name and an aggregate-device name can't blow out the header.
+/// compresses) and sits on the trailing edge. The device pill hugs its content up to a width
+/// cap and truncates longer names, so an aggregate-device name can't blow out the header.
 struct ChromeBar: View {
     /// Binding to the tab selection owned by ContentView so the toolbar
     /// controls navigation without owning state it does not produce.
@@ -76,74 +76,79 @@ private struct DevicePillView: View {
         viewModel.signalPath.achievedSampleRate
     }
 
+    /// The pill's maximum width. It HUGS its content up to this cap, then the device name
+    /// truncates. (It was a fixed 302pt slot while the tab strip sat directly to its right, so
+    /// a device change could not slide the tabs; the tabs moved to the chrome's right edge in
+    /// S10.8 founder round 1, so only the pill's own trailing edge moves now.)
+    private static let maxWidth: CGFloat = 302
+
     var body: some View {
-        // The rate readout lives OUTSIDE the Menu's label, beside it in the shared capsule:
-        // macOS does NOT reliably re-render a Menu's custom label when observed data changes
-        // (the founder's screenshots showed the rate stuck empty while the hero badge and
-        // footer — plain views on the same property — updated live; it refreshed only on a
-        // device switch, which rebuilds the menu). A sibling Text updates like any view.
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(viewModel.availableDevices) { device in
-                    Button(action: { viewModel.selectDevice(device) }, label: {
-                        if device.id == viewModel.selectedDevice?.id {
-                            Label(device.displayName, systemImage: "checkmark")
-                        } else {
-                            Text(device.displayName)
-                        }
-                    })
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2")
-                    Text(viewModel.selectedDevice?.name ?? "No Device")
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    // Realigned (png/01): an explicit dropdown chevron between the name and
-                    // the rate readout — the borderless Menu label shows no indicator of its own.
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Color.asLabelTertiary)
-                }
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Color.asLabel)
+        Menu {
+            ForEach(viewModel.availableDevices) { device in
+                Button(action: { viewModel.selectDevice(device) }, label: {
+                    if device.id == viewModel.selectedDevice?.id {
+                        Label(device.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(device.displayName)
+                    }
+                })
             }
-            .accessibilityLabel("Audio output device")
-            .accessibilityValue(deviceAccessibilityValue)
-            .accessibilityHint("Click to choose from available audio output devices")
+        } label: {
+            pillLabel
+        }
+        // The WHOLE pill is the menu's label (`pillMenuStyle`). Under the old borderless style
+        // only the icon + name were, drawn by AppKit: the rate had to sit beside the menu to
+        // update at all, which left the pill's trailing half unclickable, and AppKit's own bezel
+        // insets truncated "MacBook Pro Speak…" with empty space right next to it (founder
+        // screenshot, 2026-10-06).
+        .pillMenuStyle()
+        .accessibilityLabel("Audio output device")
+        .accessibilityValue(deviceAccessibilityValue)
+        .accessibilityHint("Click to choose from available audio output devices")
+    }
 
-            Spacer(minLength: 8)
+    private var pillLabel: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: viewModel.selectedDevice?.systemIcon ?? "speaker.wave.2")
+                Text(viewModel.selectedDevice?.name ?? "No Device")
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                // Realigned (png/01): an explicit dropdown chevron after the name.
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Color.asLabelTertiary)
+            }
+            .font(.callout.weight(.medium))
+            .foregroundStyle(Color.asLabel)
 
-            // D5: the device's live sample rate, digits rolling (`numericText`) when it
-            // changes. Reserved fixed slot — empty until a rate is known, so the pill's
-            // fixed width (and the tabs' x-origin) never move.
-            Text(achievedRate > 0 ? SignalPathInfo.rateString(achievedRate) : "")
-                .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(Color.asLabelSecond)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
-                .lineLimit(1)
-                // The slot fits every rate at default size (SLOT-02); a 9-char hi-res rate
-                // ("176.4 kHz") at the clamped .xLarge max shrinks to fit rather than
-                // truncating away the "kHz" unit.
-                .minimumScaleFactor(0.7)
-                .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
-                .accessibilityHidden(true) // folded into the Menu's a11y value above
+            // D5: the device's live sample rate, digits rolling (`numericText`) when it changes.
+            // Present only while a rate is known — an idle pill is just the device, with no
+            // blank reserved slot. While shown it keeps a FIXED slot, so a rate change
+            // (44.1 → 176.4 kHz) rolls the digits without resizing the pill.
+            if achievedRate > 0 {
+                Text(SignalPathInfo.rateString(achievedRate))
+                    .font(DesignSystem.Font.monoSmall)
+                    .foregroundStyle(Color.asLabelSecond)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    // The slot fits every rate at default size (SLOT-02); a 9-char hi-res rate
+                    // ("176.4 kHz") at the clamped .xLarge max shrinks to fit rather than
+                    // truncating away the "kHz" unit.
+                    .minimumScaleFactor(0.7)
+                    .frame(width: CGFloat(SlotWidths.chromeSampleRate), alignment: .trailing)
+                    .transition(.opacity)
+            }
         }
         .padding(.horizontal, 12)
-        // Fixed width (minWidth == maxWidth), not a range: the pill's width was tracking the
-        // device NAME, which slid the tab control's left edge on every device change. Fixed →
-        // tabs' x-origin is invariant (the founder's "fixed top-left"). Long names truncate
-        // (the text compresses before the spacer's 8pt minimum or the rate slot give way).
-        // 302 (was 288, before that 252): each fixed sibling added to the pill squeezes the
-        // NAME first — the PR-6 rate slot truncated "MacBook Pr…" (deviations audit), then
-        // the PR-B dropdown chevron (~14pt with spacing) re-truncated "MacBook Pro Spe…"
-        // (founder round-1 screenshot). The width absorbs the chevron exactly.
-        .frame(minWidth: 302, maxWidth: 302, minHeight: 32, alignment: .leading)
+        .frame(minHeight: 32)
+        .frame(maxWidth: Self.maxWidth, alignment: .leading)
         // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
-        // mock's device pill uses), replacing the old flat card + hand-drawn hairline.
+        // mock's device pill uses).
         .glassPanel(.badge, in: Capsule())
+        .contentShape(Capsule())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: achievedRate)
     }
 
     private var deviceAccessibilityValue: String {

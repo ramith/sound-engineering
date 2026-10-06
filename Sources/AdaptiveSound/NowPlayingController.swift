@@ -129,53 +129,69 @@ final class NowPlayingController {
 
     private func refresh() {
         guard !isTerminating else { return }
-        guard let audio, let index = audio.selectedTrackIndex, index < audio.queue.count else {
-            clear() // no current track → clear Now Playing
+        let selection = selectedTrack()
+        let plan = NowPlayingRefreshPlan.plan(
+            hasSelectedTrack: selection != nil,
+            // Stopped / finished / never-started: Stop (⌘.), end-of-queue, or a fresh restored
+            // cursor all leave the track SELECTED but at position 0 with no resume point. A Pause
+            // keeps `pausedResumePosition`, so it is not stopped.
+            isStopped: selection.map { NowPlayingSnapshot.isStopped(
+                isPlaying: $0.audio.isPlaying,
+                elapsedSeconds: $0.audio.playbackPosition,
+                hasResumePoint: $0.audio.pausedResumePosition != nil
+            ) } ?? true
+        )
+        guard plan.resolvesDisplayMetadata, let (audio, file) = selection else {
+            clear() // no current track → clear the system session AND the display cache
             return
         }
-        // Stopped / finished / never-started: Stop (⌘.), end-of-queue, or a fresh restored cursor
-        // all leave the track SELECTED but at position 0 with no resume point. That's not an active
-        // or paused-mid-track session, so clear Now Playing rather than push a phantom paused-at-0:00
-        // track (design §3/§7; S10.4 FN-1). A Pause keeps `pausedResumePosition`, so it stays shown.
-        if NowPlayingSnapshot.isStopped(
-            isPlaying: audio.isPlaying,
-            elapsedSeconds: audio.playbackPosition,
-            hasResumePoint: audio.pausedResumePosition != nil
-        ) {
-            clear()
-            return
-        }
-        let file = audio.queue[index].file
         let token = trackToken(file)
-        // Reuse cached metadata/artwork only if it belongs to the current track.
-        let resolved = (metaToken == token) ? meta : nil
-        let image = (artworkToken == token) ? artwork : nil
+        // The footer + widget show the SELECTED track whether or not it is playing, so its
+        // display metadata resolves BEFORE the stopped check (see `NowPlayingRefreshPlan`).
+        resolveDisplayMetadataIfNeeded(for: file, token: token)
 
+        guard plan.pushesSystemSession else {
+            // Not an active or paused-mid-track session: clear the SYSTEM session rather than
+            // push a phantom paused-at-0:00 track (design §3/§7; S10.4 FN-1) — but keep the
+            // display cache the footer reads.
+            clearSystemSession()
+            return
+        }
+        // The cache belongs to this track (just claimed above if it changed); artwork is
+        // token-guarded separately because it lands later than the text metadata.
+        let image = (artworkToken == token) ? artwork : nil
         let snapshot = NowPlayingSnapshot(
             title: file.name,
-            artistName: resolved?.artist ?? "",
-            albumName: resolved?.album ?? nil,
+            artistName: meta?.artist ?? "",
+            albumName: meta?.album ?? nil,
             durationSeconds: audio.duration,
             elapsedSeconds: audio.playbackPosition,
             state: audio.isPlaying ? .playing : .paused,
-            artworkKey: resolved?.artworkKey,
+            artworkKey: meta?.artworkKey,
             trackToken: token
         )
         push(snapshot, artwork: image)
         updateCommandEnablement(audio)
+    }
 
-        // Track changed → resolve metadata + artwork asynchronously, then re-push (stale-guarded).
-        if metaToken != token {
-            // Claim the token now (title-only immediately) so a same-value rewrite every play/pause
-            // push doesn't thrash the @Observable footer/widget, and a slower loose-file read isn't
-            // re-triggered on each push before it lands (S10.4 QA #5).
-            metaToken = token
-            meta = nil
-            if let trackID = file.trackID {
-                resolveAndRepush(trackID: trackID, token: token)
-            } else {
-                resolveLooseAndApply(url: file.absoluteURL, token: token) // loose file: embedded tags
-            }
+    /// The selected queue entry, or nil when nothing is selected / the cursor is out of range.
+    private func selectedTrack() -> (audio: AudioViewModel, file: AudioFile)? {
+        guard let audio, let index = audio.selectedTrackIndex, index < audio.queue.count else { return nil }
+        return (audio, audio.queue[index].file)
+    }
+
+    /// Track changed → resolve its metadata + artwork asynchronously, then re-refresh
+    /// (stale-guarded). Claims the token immediately (title-only until the resolve lands) so a
+    /// same-value rewrite on every play/pause push doesn't thrash the @Observable footer/widget,
+    /// and a slower loose-file read isn't re-triggered on each push before it lands (S10.4 QA #5).
+    private func resolveDisplayMetadataIfNeeded(for file: AudioFile, token: String) {
+        guard metaToken != token else { return }
+        metaToken = token
+        meta = nil
+        if let trackID = file.trackID {
+            resolveAndRepush(trackID: trackID, token: token)
+        } else {
+            resolveLooseAndApply(url: file.absoluteURL, token: token) // loose file: embedded tags
         }
     }
 
@@ -264,12 +280,18 @@ final class NowPlayingController {
         center.playbackState = playbackState(snapshot.state) // macOS: MUST be set explicitly
     }
 
-    /// Clear Now Playing (stopped / no track). Latch-free so the stopped-state path in `refresh()`
-    /// can call it repeatedly without disabling future refreshes.
-    func clear() {
+    /// Clear the SYSTEM Now Playing session only (a stopped track). Latch-free so the
+    /// stopped-state path in `refresh()` can call it repeatedly without disabling future
+    /// refreshes; the display cache the footer + widget read is deliberately untouched.
+    private func clearSystemSession() {
         let center = MPNowPlayingInfoCenter.default()
         center.nowPlayingInfo = nil
         center.playbackState = .stopped
+    }
+
+    /// Clear everything (no track selected / quit): the system session AND the display cache.
+    func clear() {
+        clearSystemSession()
         metaToken = nil; meta = nil; artworkToken = nil; artwork = nil
     }
 
