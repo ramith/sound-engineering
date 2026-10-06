@@ -17,16 +17,19 @@ struct NavRow<Trailing: View>: View {
     let icon: String
     let label: String
     let active: Bool
+    /// The rail holds key focus and this is the row the arrow keys act on (A3).
+    let isKeyboardCursor: Bool
     let trailing: Trailing
 
     @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 38
     @State private var hover = false
 
-    init(icon: String, label: String, active: Bool = false,
+    init(icon: String, label: String, active: Bool = false, isKeyboardCursor: Bool = false,
          @ViewBuilder trailing: () -> Trailing) {
         self.icon = icon
         self.label = label
         self.active = active
+        self.isKeyboardCursor = isKeyboardCursor
         self.trailing = trailing()
     }
 
@@ -56,6 +59,7 @@ struct NavRow<Trailing: View>: View {
                     .strokeBorder(DesignSystem.Color.accent.opacity(0.30), lineWidth: 1)
             }
         }
+        .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.container)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
     }
@@ -73,8 +77,10 @@ struct NavRow<Trailing: View>: View {
 
 /// Trailing-free convenience for the plain category rows.
 extension NavRow where Trailing == EmptyView {
-    init(icon: String, label: String, active: Bool = false) {
-        self.init(icon: icon, label: label, active: active) { EmptyView() }
+    init(icon: String, label: String, active: Bool = false, isKeyboardCursor: Bool = false) {
+        self.init(icon: icon, label: label, active: active, isKeyboardCursor: isKeyboardCursor) {
+            EmptyView()
+        }
     }
 }
 

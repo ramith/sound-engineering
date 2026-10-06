@@ -27,6 +27,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
     /// True while a reorder drag is hovering over THIS row (the drop target). Draws an accent
     /// border so the drop point is visible during the drag (macOS drop-zone affordance).
     var isDropTarget: Bool = false
+    /// The list holds key focus and this is the row the arrow keys act on (A3): draws the
+    /// `focusRing` on the card (under the drop-target border, which wins mid-drag).
+    var isKeyboardCursor: Bool = false
 
     /// Row hover reveals the drag grip (S10.8 PR C — realigned: no handles at rest). The
     /// grip stays MOUNTED at opacity 0 (hidden, not removed): it keeps its leading slot (no
@@ -125,6 +128,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                     .strokeBorder(DesignSystem.Color.accent.opacity(0.38), lineWidth: 1)
             }
         }
+        .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.container)
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: DesignSystem.Radius.container, style: .continuous)

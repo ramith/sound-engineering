@@ -178,18 +178,25 @@ struct PlaylistDetailView: View {
             trackList
         }
     }
+}
 
-    private var trackList: some View {
-        ScrollView {
+// MARK: - Track list (rows + keyboard cursor)
+
+/// Same-file extension (type-body length): reaches the view's private focus/drop state.
+private extension PlaylistDetailView {
+    var trackList: some View {
+        let cursorID = keyboardCursorEntryID
+        return ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(Array(model.detail.enumerated()), id: \.element.id) { index, row in
-                    detailRow(index: index, row: row)
+                    detailRow(index: index, row: row, isKeyboardCursor: row.id == cursorID)
                 }
             }
         }
         .focusable()
         .focused($listFocused)
         .defaultFocus($listFocused, true)
+        // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
         .focusEffectDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onKeyPress(.upArrow) { moveSelection(by: -1) }
@@ -198,8 +205,21 @@ struct PlaylistDetailView: View {
         .onKeyPress(.delete) { removeSelected() }
     }
 
+    /// The keyboard CURSOR row (A3) — where the focus ring sits: the selected entry, or the first
+    /// playable row while nothing is selected (the first ↑/↓ then selects it, so the ring marks
+    /// exactly what the next arrow press acts on). Nil — no ring — while the list lacks key focus.
+    /// Unavailable rows are never the cursor (`moveSelection` skips them).
+    var keyboardCursorEntryID: Int64? {
+        guard listFocused else { return nil }
+        let playable = model.detail.lazy.filter(\.isAvailable)
+        if let selectedEntryID, playable.contains(where: { $0.id == selectedEntryID }) {
+            return selectedEntryID
+        }
+        return playable.first?.id
+    }
+
     @ViewBuilder
-    private func detailRow(index: Int, row: PlaylistDetailEntry) -> some View {
+    func detailRow(index: Int, row: PlaylistDetailEntry, isKeyboardCursor: Bool) -> some View {
         if row.isAvailable, let display = row.display {
             PlaylistItemRow(
                 file: AudioFile(display),
@@ -208,7 +228,8 @@ struct PlaylistDetailView: View {
                 isNowPlaying: false, // "now playing" in a playlist context is deferred (architect #4)
                 numberColumnWidth: numberColumnWidth,
                 dragPayload: PlaylistEntryDragItem(entryID: row.id),
-                isDropTarget: dropTargetEntryID == row.id
+                isDropTarget: dropTargetEntryID == row.id,
+                isKeyboardCursor: isKeyboardCursor
             )
             .dropDestination(for: PlaylistEntryDragItem.self) { payloads, _ in
                 dropTargetEntryID = nil
@@ -240,7 +261,7 @@ struct PlaylistDetailView: View {
     /// A missing-file entry (F): its metadata dimmed, with a trailing warning-badge MENU (Locate /
     /// Remove) — a visible, click-and-keyboard-reachable affordance, not just right-click (review).
     /// Not tappable-to-play (skipped on play). VoiceOver reads it as one element + the same actions.
-    private func unavailableRow(index: Int, row: PlaylistDetailEntry) -> some View {
+    func unavailableRow(index: Int, row: PlaylistDetailEntry) -> some View {
         HStack(spacing: 12) {
             Text(index + 1, format: .number.grouping(.never))
                 .font(DesignSystem.Font.monoSmall)

@@ -22,6 +22,12 @@ struct SongRow: View {
     let isNowPlaying: Bool
     let isPlaybackActive: Bool
     let isSelected: Bool
+    /// The list holds key focus and this is the row the arrow keys act on (A3) — passed in, not
+    /// read from the environment, so the row stays env-object-free.
+    let isKeyboardCursor: Bool
+
+    /// The row card's corner radius (fill, now-playing ring and keyboard ring share it).
+    private static let cornerRadius: CGFloat = 11
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hover = false
@@ -35,13 +41,14 @@ struct SongRow: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 48)
-        .background(rowFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(rowFill, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
             if isNowPlaying {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                     .strokeBorder(DesignSystem.Color.accent.opacity(0.36), lineWidth: 1)
             }
         }
+        .keyboardCursorRing(isKeyboardCursor, cornerRadius: Self.cornerRadius)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
     }
