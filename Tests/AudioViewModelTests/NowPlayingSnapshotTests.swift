@@ -65,4 +65,33 @@ struct NowPlayingSnapshotTests {
         // Or a non-zero elapsed (paused mid-track).
         #expect(!NowPlayingSnapshot.isStopped(isPlaying: false, elapsedSeconds: 90, hasResumePoint: false))
     }
+
+    // MARK: Refresh plan — display metadata vs the system session (founder round, 2026-10-06)
+
+    /// The footer regression: a track restored at launch (or after Stop / at end-of-queue) is
+    /// SELECTED but stopped. The system session must clear (FN-1) — but the in-app footer still
+    /// shows that track, so its artist/artwork must still resolve. The old flow cleared both and
+    /// the footer read "Unknown Artist" for a song the library had an artist for.
+    @Test("NP-08: a selected-but-stopped track still resolves display metadata; only the system session clears")
+    func stoppedTrackKeepsDisplayMetadata() {
+        let plan = NowPlayingRefreshPlan.plan(hasSelectedTrack: true, isStopped: true)
+        #expect(plan.resolvesDisplayMetadata)
+        #expect(!plan.pushesSystemSession)
+    }
+
+    @Test("NP-09: a playing or paused-mid-track selection resolves display metadata AND pushes the system session")
+    func activeTrackPushes() {
+        let plan = NowPlayingRefreshPlan.plan(hasSelectedTrack: true, isStopped: false)
+        #expect(plan.resolvesDisplayMetadata)
+        #expect(plan.pushesSystemSession)
+    }
+
+    @Test("NP-10: no selected track resolves nothing and never pushes, whatever the stopped flag says")
+    func noTrackClearsEverything() {
+        for isStopped in [true, false] {
+            let plan = NowPlayingRefreshPlan.plan(hasSelectedTrack: false, isStopped: isStopped)
+            #expect(!plan.resolvesDisplayMetadata)
+            #expect(!plan.pushesSystemSession)
+        }
+    }
 }

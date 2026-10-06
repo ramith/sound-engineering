@@ -26,6 +26,23 @@ public enum SurfaceRole: Equatable, Sendable {
     case badge
     /// The inspector column (PR 5): the 8a panel fill, same RT/IC contract.
     case panel
+    /// The Library "Twin Panels" floating cards — nav rail + detail card (S10.8 part 2). The
+    /// SAME fill as `.panel` (one glass across both screens, one set of contrast audits), but
+    /// FLAT to its bottom edge: see `hasBottomBleed`.
+    case libraryCard
+
+    /// Whether the surface carries the 8a bottom light bleed (dark-only, `GlassDecor.bleedDark`).
+    /// The Now Playing 8a recipe has it; the Library Twin Panels mock does not — its cards are a
+    /// flat fill right down to the hairline (png/00: the rail reads (27,29,34) to its last pixel
+    /// row). Painting the bleed there put a ~24pt band along the bottom of both cards that
+    /// nearly doubled the fill's lightness, under the last visible song row (founder round,
+    /// 2026-10-06). Role DATA, so the app-side modifier stays a thin shim and RES-05 can assert it.
+    public var hasBottomBleed: Bool {
+        switch self {
+        case .overlay, .libraryCard: false // .overlay is system Material — no strata at all
+        case .lens, .badge, .panel: true
+        }
+    }
 }
 
 /// The animation-gate predicate (design §3.4/§7 R2 PG-01..04): the pulsing dot and the
@@ -80,7 +97,9 @@ public func resolveSurface(role: SurfaceRole,
         return resolvedFill(Palette.badgeFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)
-    case .panel:
+    case .panel, .libraryCard:
+        // `.libraryCard` deliberately SHARES the panel fill (it differs only in decoration —
+        // `hasBottomBleed`), so the Library cards inherit every panel contrast audit unchanged.
         return resolvedFill(Palette.panelFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)

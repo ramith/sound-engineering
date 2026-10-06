@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
@@ -147,10 +148,12 @@ struct SongsHeader: View {
             .frame(height: 30)
             .background(DesignSystem.Color.card, in: Capsule())
             .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
+            .contentShape(Capsule()) // the whole pill opens the menu, not just its text
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        // `pillMenuStyle`, not `.borderlessButton`: the borderless style drew a bare "⌄ Sort:"
+        // (it keeps one image + one text and drops the value, the capsule and the ring) and
+        // never updated when the sort changed.
+        .pillMenuStyle()
         .help("Sort")
         .accessibilityLabel("Sort")
         .accessibilityValue(currentSortText)
@@ -212,10 +215,9 @@ struct SongsHeader: View {
             .frame(height: 30)
             .background(DesignSystem.Color.accent.opacity(0.16), in: Capsule())
             .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.30), lineWidth: 1))
+            .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .pillMenuStyle() // keeps the teal capsule the borderless style discarded
         .help("Columns")
         .accessibilityLabel("Columns")
     }
