@@ -185,24 +185,27 @@ struct PlaylistDetailView: View {
 /// Same-file extension (type-body length): reaches the view's private focus/drop state.
 private extension PlaylistDetailView {
     var trackList: some View {
-        let cursorID = keyboardCursorEntryID
-        return ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(model.detail.enumerated()), id: \.element.id) { index, row in
-                    detailRow(index: index, row: row, isKeyboardCursor: row.id == cursorID)
+        ScrollViewReader { proxy in
+            let cursorID = keyboardCursorEntryID
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(model.detail.enumerated()), id: \.element.id) { index, row in
+                        detailRow(index: index, row: row, isKeyboardCursor: row.id == cursorID)
+                            .id(row.id) // the arrow keys' `scrollTo` target (A3)
+                    }
                 }
             }
+            .focusable()
+            .focused($listFocused)
+            .defaultFocus($listFocused, true)
+            // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
+            .focusEffectDisabled()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
+            .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
+            .onKeyPress(.return) { playSelected() }
+            .onKeyPress(.delete) { removeSelected() }
         }
-        .focusable()
-        .focused($listFocused)
-        .defaultFocus($listFocused, true)
-        // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
-        .focusEffectDisabled()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onKeyPress(.upArrow) { moveSelection(by: -1) }
-        .onKeyPress(.downArrow) { moveSelection(by: 1) }
-        .onKeyPress(.return) { playSelected() }
-        .onKeyPress(.delete) { removeSelected() }
     }
 
     /// The keyboard CURSOR row (A3) — where the focus ring sits: the selected entry, or the first

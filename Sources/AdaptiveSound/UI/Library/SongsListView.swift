@@ -28,6 +28,10 @@ struct SongsListView: View {
     @State private var anchorID: RowID?
     @State private var infoTarget: LibraryTrackDisplay?
     @State private var addToPlaylistTarget: AddToPlaylistTarget?
+    /// Bumped by ↑/↓ ONLY (never a click — scrolling must not move a row out from under a
+    /// double-click); the row area's `ScrollViewReader` observes it and scrolls the cursor into
+    /// view (A3). A counter, like the queue's jump request, so every press re-fires.
+    @State private var cursorScrollRequest = 0
     @FocusState private var listFocused: Bool
 
     /// Inter-column gap, the row's own horizontal padding (both sides), and the row AREA's inset
@@ -56,15 +60,27 @@ struct SongsListView: View {
                     if columnConfig.isCustomized {
                         columnHeaderRow(columns: columns, titleWidth: titleWidth)
                     }
-                    ScrollView(.vertical) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
-                                row(track, number: index + 1, columns: columns, titleWidth: titleWidth,
-                                    isKeyboardCursor: track.id == cursorID)
+                    // The reader wraps ONLY the vertical scroll, so `scrollTo` can never yank the
+                    // horizontal column scroll back to the leading edge.
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
+                                    row(track, number: index + 1, columns: columns, titleWidth: titleWidth,
+                                        isKeyboardCursor: track.id == cursorID)
+                                        .id(track.id) // the arrow keys' `scrollTo` target
+                                }
+                            }
+                            .padding(.vertical, Self.listVerticalInset)
+                            .padding(.horizontal, Self.listHorizontalInset)
+                        }
+                        // Keep the cursor on screen the queue's way: no anchor = scroll only as far
+                        // as needed (none when the row is already visible), instantly.
+                        .onChange(of: cursorScrollRequest) {
+                            if let anchorID {
+                                proxy.scrollTo(anchorID)
                             }
                         }
-                        .padding(.vertical, Self.listVerticalInset)
-                        .padding(.horizontal, Self.listHorizontalInset)
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -318,6 +334,8 @@ private extension SongsListView {
         selection = Set(ids[min(i, j) ... max(i, j)])
     }
 
+    /// ↑/↓: move the single selection + anchor one row. With no visible anchor the first ↓ selects
+    /// the first row (where the focus ring already sits). Asks the row area to scroll it into view.
     func moveSelection(by delta: Int) -> KeyPress.Result {
         let ids = model.visibleSongs.map(\.id)
         guard !ids.isEmpty else { return .ignored }
@@ -326,6 +344,7 @@ private extension SongsListView {
         guard next >= 0, next < ids.count else { return .ignored }
         selection = [ids[next]]
         anchorID = ids[next]
+        cursorScrollRequest &+= 1
         return .handled
     }
 }
