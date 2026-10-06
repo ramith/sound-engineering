@@ -47,9 +47,11 @@ namespace AdaptiveSound
     {
         std::vector<AudioDevice> devices;
 
-        AudioObjectPropertyAddress devicesPropertyAddr{kAudioHardwarePropertyDevices,
-                                                       kAudioObjectPropertyScopeGlobal,
-                                                       kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress devicesPropertyAddr{
+            kAudioHardwarePropertyDevices,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
 
         UInt32 devicesDataSize = 0;
         OSStatus status = AudioObjectGetPropertyDataSize(
@@ -88,9 +90,11 @@ namespace AdaptiveSound
             const std::string candidateName = getDeviceName(deviceID);
 
             // Check if device has output channels
-            AudioObjectPropertyAddress outputChannelsAddr{kAudioDevicePropertyStreamConfiguration,
-                                                          kAudioObjectPropertyScopeOutput,
-                                                          kAudioObjectPropertyElementMain};
+            AudioObjectPropertyAddress outputChannelsAddr{
+                kAudioDevicePropertyStreamConfiguration,
+                kAudioObjectPropertyScopeOutput,
+                kAudioObjectPropertyElementMain,
+            };
 
             UInt32 bufferListSize = 0;
 
@@ -144,9 +148,11 @@ namespace AdaptiveSound
 
     AudioDeviceID CoreAudioDevice::getDefaultOutputDevice()
     {
-        AudioObjectPropertyAddress devicePropertyAddr{kAudioHardwarePropertyDefaultOutputDevice,
-                                                      kAudioObjectPropertyScopeGlobal,
-                                                      kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress devicePropertyAddr{
+            kAudioHardwarePropertyDefaultOutputDevice,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
 
         AudioDeviceID deviceID = kAudioObjectUnknown;
         UInt32 dataSize = sizeof(deviceID);
@@ -165,9 +171,11 @@ namespace AdaptiveSound
 
     std::string CoreAudioDevice::getDeviceName(AudioDeviceID deviceID)
     {
-        AudioObjectPropertyAddress namePropertyAddr{kAudioObjectPropertyName,
-                                                    kAudioObjectPropertyScopeOutput,
-                                                    kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress namePropertyAddr{
+            kAudioObjectPropertyName,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
 
         CFStringRef deviceName = nullptr;
         UInt32 dataSize = sizeof(CFStringRef);
@@ -187,9 +195,11 @@ namespace AdaptiveSound
 
     uint32_t CoreAudioDevice::getDeviceSampleRate(AudioDeviceID deviceID)
     {
-        AudioObjectPropertyAddress nominalSampleRateAddr{kAudioDevicePropertyNominalSampleRate,
-                                                         kAudioObjectPropertyScopeOutput,
-                                                         kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress nominalSampleRateAddr{
+            kAudioDevicePropertyNominalSampleRate,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
 
         Float64 sampleRate = static_cast<Float64>(kDefaultSampleRate);
         UInt32 dataSize = sizeof(sampleRate);
@@ -209,9 +219,11 @@ namespace AdaptiveSound
 
     uint32_t CoreAudioDevice::getDeviceBufferFrameSize(AudioDeviceID deviceID)
     {
-        AudioObjectPropertyAddress bufferSizeAddr{kAudioDevicePropertyBufferFrameSize,
-                                                  kAudioObjectPropertyScopeOutput,
-                                                  kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress bufferSizeAddr{
+            kAudioDevicePropertyBufferFrameSize,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
 
         UInt32 bufferSize = kDefaultMaxFrames;
         UInt32 dataSize = sizeof(bufferSize);
@@ -234,9 +246,11 @@ namespace AdaptiveSound
         // Prefer the authoritative CoreAudio transport type (kAudioDevicePropertyTransportType);
         // a USB DAC named "SomeDAC" or a non-Apple BT headset would be misclassified by a name
         // heuristic. Fall back to the name only when the transport type is unavailable/unrecognized.
-        AudioObjectPropertyAddress transportAddr{kAudioDevicePropertyTransportType,
-                                                 kAudioObjectPropertyScopeGlobal,
-                                                 kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress transportAddr{
+            kAudioDevicePropertyTransportType,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
 
         UInt32 transportType = 0;
         UInt32 dataSize = sizeof(transportType);
@@ -284,9 +298,11 @@ namespace AdaptiveSound
     // Returns kAudioObjectUnknown when the device has no output stream.
     static AudioObjectID firstOutputStream(AudioDeviceID deviceID)
     {
-        AudioObjectPropertyAddress streamsAddr{kAudioDevicePropertyStreams,
-                                               kAudioObjectPropertyScopeOutput,
-                                               kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress streamsAddr{
+            kAudioDevicePropertyStreams,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
 
         UInt32 dataSize = 0;
         OSStatus status =
@@ -311,9 +327,11 @@ namespace AdaptiveSound
     {
         std::vector<double> rates;
 
-        AudioObjectPropertyAddress ratesAddr{kAudioDevicePropertyAvailableNominalSampleRates,
-                                             kAudioObjectPropertyScopeOutput,
-                                             kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress ratesAddr{
+            kAudioDevicePropertyAvailableNominalSampleRates,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
 
         UInt32 dataSize = 0;
         OSStatus status =
@@ -366,10 +384,11 @@ namespace AdaptiveSound
             return info;
         }
 
-        AudioObjectPropertyAddress formatAddr{physical ? kAudioStreamPropertyPhysicalFormat
-                                                       : kAudioStreamPropertyVirtualFormat,
-                                              kAudioObjectPropertyScopeGlobal,
-                                              kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress formatAddr{
+            physical ? kAudioStreamPropertyPhysicalFormat : kAudioStreamPropertyVirtualFormat,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
 
         AudioStreamBasicDescription asbd{};
         UInt32 dataSize = sizeof(asbd);
@@ -396,9 +415,11 @@ namespace AdaptiveSound
         cap.id = deviceID;
 
         // Transport type (authoritative; same selector as getDeviceType()).
-        AudioObjectPropertyAddress transportAddr{kAudioDevicePropertyTransportType,
-                                                 kAudioObjectPropertyScopeGlobal,
-                                                 kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress transportAddr{
+            kAudioDevicePropertyTransportType,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         UInt32 transportType = 0;
         UInt32 dataSize = sizeof(transportType);
         OSStatus status = AudioObjectGetPropertyData(

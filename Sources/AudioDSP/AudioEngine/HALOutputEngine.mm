@@ -144,9 +144,11 @@ namespace
     // kAudioObjectUnknown when the device has no output stream. (Mirrors the spike's helper.)
     AudioObjectID firstOutputStream(AudioDeviceID dev) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyStreams,
-                                        kAudioObjectPropertyScopeOutput,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyStreams,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
         UInt32 size = 0;
         if (AudioObjectGetPropertyDataSize(dev, &addr, 0, nullptr, &size) != noErr || size == 0U)
         {
@@ -169,9 +171,11 @@ namespace
     // untouched) on failure.
     bool getStreamPhysicalFormat(AudioObjectID stream, AudioStreamBasicDescription& out) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioStreamPropertyPhysicalFormat,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioStreamPropertyPhysicalFormat,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         UInt32 size = sizeof(out);
         return AudioObjectGetPropertyData(stream, &addr, 0, nullptr, &size, &out) == noErr;
     }
@@ -179,9 +183,11 @@ namespace
     // Read the current virtual format of an output stream. Returns false on failure.
     bool getStreamVirtualFormat(AudioObjectID stream, AudioStreamBasicDescription& out) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioStreamPropertyVirtualFormat,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioStreamPropertyVirtualFormat,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         UInt32 size = sizeof(out);
         return AudioObjectGetPropertyData(stream, &addr, 0, nullptr, &size, &out) == noErr;
     }
@@ -192,9 +198,11 @@ namespace
                                      std::vector<AudioStreamBasicDescription>& out) noexcept
     {
         out.clear();
-        AudioObjectPropertyAddress addr{kAudioStreamPropertyAvailablePhysicalFormats,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioStreamPropertyAvailablePhysicalFormats,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         UInt32 size = 0;
         if (AudioObjectGetPropertyDataSize(stream, &addr, 0, nullptr, &size) != noErr || size == 0U)
         {
@@ -228,9 +236,11 @@ namespace
     bool setStreamPhysicalFormat(AudioObjectID stream,
                                  const AudioStreamBasicDescription& fmt) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioStreamPropertyPhysicalFormat,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioStreamPropertyPhysicalFormat,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         return AudioObjectSetPropertyData(stream, &addr, 0, nullptr, sizeof(fmt), &fmt) == noErr;
     }
 
@@ -266,9 +276,11 @@ namespace
 
     double getNominalRate(AudioDeviceID dev) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyNominalSampleRate,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyNominalSampleRate,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         Float64 rate = 0;
         UInt32 size = sizeof(rate);
         if (AudioObjectGetPropertyData(dev, &addr, 0, nullptr, &size, &rate) != noErr)
@@ -280,9 +292,11 @@ namespace
 
     bool setNominalRate(AudioDeviceID dev, double rateHz) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyNominalSampleRate,
-                                        kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyNominalSampleRate,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         Float64 rateValue = rateHz;
         return AudioObjectSetPropertyData(dev, &addr, 0, nullptr, sizeof(rateValue), &rateValue) ==
                noErr;
@@ -291,8 +305,11 @@ namespace
     // Try to acquire hog mode (set owner pid to us). Returns true only if we now own it.
     bool acquireHog(AudioDeviceID dev) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyHogMode,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         pid_t want = getpid();
         if (AudioObjectSetPropertyData(dev, &addr, 0, nullptr, sizeof(want), &want) != noErr)
         {
@@ -309,8 +326,11 @@ namespace
 
     void releaseHog(AudioDeviceID dev) noexcept
     {
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal,
-                                        kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyHogMode,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
         pid_t owner = -1; // -1 == release
         AudioObjectSetPropertyData(dev, &addr, 0, nullptr, sizeof(owner), &owner);
     }
@@ -858,10 +878,7 @@ class HALOutputEngine::Impl
             {
                 return true;
             }
-            const struct timespec step
-            {
-                0, kRatePollStepNs
-            };
+            const struct timespec step{.tv_sec = 0, .tv_nsec = kRatePollStepNs};
             nanosleep(&step, nullptr);
         }
         return std::fabs(getNominalRate(dev) - rateHz) < kRateEpsilonHz;
@@ -889,14 +906,11 @@ class HALOutputEngine::Impl
 
         if (deviceID_ != kAudioObjectUnknown)
         {
-            if (originalRate_ > 0.0)
+            if (originalRate_ > 0.0 && !setNominalRate(deviceID_, originalRate_))
             {
-                if (!setNominalRate(deviceID_, originalRate_))
-                {
-                    AdaptiveSound::log::line(
-                        "[HALOutputEngine] WARNING: failed to restore nominal rate {:.1f} Hz",
-                        originalRate_);
-                }
+                AdaptiveSound::log::line(
+                    "[HALOutputEngine] WARNING: failed to restore nominal rate {:.1f} Hz",
+                    originalRate_);
             }
             if (weHogged_)
             {

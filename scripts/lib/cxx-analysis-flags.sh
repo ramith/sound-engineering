@@ -87,3 +87,39 @@ cxx_lang_flags() {
         *)              printf '%s ' -x c++ ;;
     esac
 }
+
+# ---------------------------------------------------------------------------------------
+# clang-tidy resolution + MAJOR-version pin (the tool-skew doctrine, C++ side).
+#
+# clang-tidy majors ADD checks: LLVM 23 introduced readability-trailing-comma,
+# readability-redundant-lambda-parameter-list, modernize-use-string-view,
+# portability-no-assembler… — a brew-latest major bump on hosted CI surfaced as ~120
+# red-herring findings the local 22 gate had passed (PR #63 run 1). Like SWIFTFORMAT_PIN /
+# SWIFTLINT_PIN in strict-gate.sh, the major is pinned HERE (one place, consumed by the gate
+# and the pre-commit hook) and installed pinned in .github/workflows/strict-ci.yml
+# (`brew install llvm@N`). A deliberate upgrade bumps this pin + the workflow's llvm@N and
+# fixes the new findings in the SAME commit (last bumped 22→23, S10.8 part 2).
+CXX_CLANG_TIDY_MAJOR_PIN=23
+
+# cxx_clang_tidy_path — the pinned clang-tidy binary, or nothing (exit 1) when absent.
+# Order: the versioned Homebrew keg (opt/llvm@N — what `llvm@N` installs once N is no longer
+# current), the unversioned keg (opt/llvm — `llvm@N` is an alias of `llvm` while N IS
+# current), then PATH. Callers assert the major with cxx_clang_tidy_major.
+cxx_clang_tidy_path() {
+    local candidate
+    for candidate in \
+        "/opt/homebrew/opt/llvm@${CXX_CLANG_TIDY_MAJOR_PIN}/bin/clang-tidy" \
+        /opt/homebrew/opt/llvm/bin/clang-tidy; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    command -v clang-tidy 2>/dev/null
+}
+
+# cxx_clang_tidy_major <clang-tidy> — "23" from `… version 23.1.0` (Homebrew and Apple
+# builds both print "version <major>.<minor>…").
+cxx_clang_tidy_major() {
+    "$1" --version | sed -nE 's/.*version ([0-9]+)\..*/\1/p' | head -1
+}

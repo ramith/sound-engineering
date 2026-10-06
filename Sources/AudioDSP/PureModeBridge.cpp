@@ -394,9 +394,11 @@ extern "C"
         {
             clamped = 1.0F;
         }
-        const AudioObjectPropertyAddress addr{kAudioDevicePropertyVolumeScalar,
-                                              kAudioObjectPropertyScopeOutput,
-                                              kAudioObjectPropertyElementMain};
+        const AudioObjectPropertyAddress addr{
+            kAudioDevicePropertyVolumeScalar,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
         const auto dev = static_cast<AudioObjectID>(deviceID);
         if (AudioObjectHasProperty(dev, &addr) == 0)
         {

@@ -32,7 +32,7 @@ namespace AdaptiveSound
     enum class DecoderKind : uint8_t
     {
         Apple = 0,
-        FFmpeg = 1
+        FFmpeg = 1,
     };
 
     class FileDecodeSource final : public PureModeSource

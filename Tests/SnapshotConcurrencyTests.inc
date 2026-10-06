@@ -92,10 +92,12 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
                 const size_t idx = tearSampleCount.fetch_add(1U, std::memory_order_relaxed);
                 if (idx < tearSamples.size())
                 {
-                    tearSamples[idx] =
-                        TearSample{gen, static_cast<uint64_t>(out.intensityLinear),
-                                   static_cast<uint64_t>(out.loudness.makeupGainLinear / 2.0F),
-                                   static_cast<uint32_t>(out.eq.numBiquads)};
+                    tearSamples[idx] = TearSample{
+                        gen,
+                        static_cast<uint64_t>(out.intensityLinear),
+                        static_cast<uint64_t>(out.loudness.makeupGainLinear / 2.0F),
+                        static_cast<uint32_t>(out.eq.numBiquads),
+                    };
                 }
             }
             if (gen < lastSeq)
@@ -253,8 +255,13 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
     readerStop.store(true, std::memory_order_relaxed);
     reader.join();
 
-    return WholePayloadRoundResult{accepted.load(), torn.load(), backwards.load(),
-                                   firstTornRefGen.load(), firstTornWordGen.load()};
+    return WholePayloadRoundResult{
+        accepted.load(),
+        torn.load(),
+        backwards.load(),
+        firstTornRefGen.load(),
+        firstTornWordGen.load(),
+    };
 }
 
 static auto testSnapshotTripleBufferWholePayloadNoTear() -> void

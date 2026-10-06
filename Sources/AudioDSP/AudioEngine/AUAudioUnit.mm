@@ -328,9 +328,11 @@ int selectOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
     // system default — so setting the default here keeps BOTH paths on the device the user picked in
     // the app (fixes the "OS says Bluetooth, app plays on built-in" mismatch). Best-effort: a set
     // failure is logged but still returns success, since Pure uses currentDeviceID regardless.
-    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDefaultOutputDevice,
-                                    kAudioObjectPropertyScopeGlobal,
-                                    kAudioObjectPropertyElementMain};
+    AudioObjectPropertyAddress addr{
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain,
+    };
     AudioDeviceID dev = static_cast<AudioDeviceID>(deviceID);
     const OSStatus status = AudioObjectSetPropertyData(
         kAudioObjectSystemObject, &addr, 0, nullptr, sizeof(dev), &dev);

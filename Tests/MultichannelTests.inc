@@ -232,7 +232,10 @@ static auto testPerChannelIndependence() -> void
 {
     static const char* const kName = "PerChannelIndependence_N4_6_8";
     constexpr std::array<uint32_t, 3U> kNValues = {
-        TestConstants::kNChannels4, TestConstants::kNChannels6, TestConstants::kNChannels8};
+        TestConstants::kNChannels4,
+        TestConstants::kNChannels6,
+        TestConstants::kNChannels8,
+    };
     for (const uint32_t numCh : kNValues)
     {
         const std::string err = perChannelIndependenceForN(numCh);
@@ -486,14 +489,16 @@ static auto testLimiterHotNoiseSoakN8() -> void
     // Use 8 distinct seeds so each channel carries a different noise sequence,
     // maximising the chance of independent inter-sample peaks that stress the
     // fan-in max() and the ring wrap across 8 slots.
-    constexpr std::array<uint32_t, kNumCh> kSeeds = {0xA1B2C3D4U,
-                                                     0xE5F60718U,
-                                                     0x29304152U,
-                                                     0x63748596U,
-                                                     0xA7B8C9DAU,
-                                                     0xEBFC0D1EU,
-                                                     0x2F304152U,
-                                                     0x73849506U};
+    constexpr std::array<uint32_t, kNumCh> kSeeds = {
+        0xA1B2C3D4U,
+        0xE5F60718U,
+        0x29304152U,
+        0x63748596U,
+        0xA7B8C9DAU,
+        0xEBFC0D1EU,
+        0x2F304152U,
+        0x73849506U,
+    };
     const std::string err =
         limiterHotNoiseSoakBody(kNumCh, 50U, kSeeds.data(), /*printInfo=*/true, kName);
     if (!err.empty())
@@ -1296,7 +1301,7 @@ namespace
 
     // Returns "" on success, a non-empty error string on failure.
     // Stereo (2): L R
-    auto gateDCheckStereo() -> std::string
+    auto gateDCheckStereo() -> std::string_view
     {
         const ChannelLayout lay = decodeChannelLayout(kAudioChannelLayoutTag_Stereo);
         if (lay.numChannels != 2U)
@@ -1327,7 +1332,7 @@ namespace
     }
 
     // MPEG 5.1 A: L R C LFE Ls Rs  (LFE at slot 3, surrounds at 4/5)
-    auto gateDCheck51A() -> std::string
+    auto gateDCheck51A() -> std::string_view
     {
         const ChannelLayout layA = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_A);
         if (layA.numChannels != 6U)
@@ -1370,7 +1375,7 @@ namespace
 
     // MPEG 5.1 B: L R Ls Rs C LFE  (LFE at slot 5, surrounds at 2/3)
     // DIFFERENT ordering from _A — this is the whole point of Gate D.
-    auto gateDCheck51B() -> std::string
+    auto gateDCheck51B() -> std::string_view
     {
         const ChannelLayout layB = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_5_1_B);
         if (layB.numChannels != 6U)
@@ -1409,7 +1414,7 @@ namespace
     }
 
     // MPEG 7.1 A: L R C LFE Ls Rs Lc Rc
-    auto gateDCheck71A() -> std::string
+    auto gateDCheck71A() -> std::string_view
     {
         const ChannelLayout lay71A = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_7_1_A);
         if (lay71A.numChannels != 8U)
@@ -1439,7 +1444,7 @@ namespace
     }
 
     // MPEG 7.1 C: L R C LFE Ls Rs Rls Rrs
-    auto gateDCheck71C() -> std::string
+    auto gateDCheck71C() -> std::string_view
     {
         const ChannelLayout lay71C = decodeChannelLayout(kAudioChannelLayoutTag_MPEG_7_1_C);
         if (lay71C.numChannels != 8U)
@@ -1505,35 +1510,35 @@ static auto testChannelLayoutDecodeGateD() -> void
 
     // Run each sub-case; bail on the first failure (matches the pattern used
     // by all other Gate tests in this suite).
-    const std::string stereoErr = gateDCheckStereo();
+    const std::string_view stereoErr = gateDCheckStereo();
     if (!stereoErr.empty())
     {
         logFail(kName, stereoErr);
         return;
     }
 
-    const std::string err51A = gateDCheck51A();
+    const std::string_view err51A = gateDCheck51A();
     if (!err51A.empty())
     {
         logFail(kName, err51A);
         return;
     }
 
-    const std::string err51B = gateDCheck51B();
+    const std::string_view err51B = gateDCheck51B();
     if (!err51B.empty())
     {
         logFail(kName, err51B);
         return;
     }
 
-    const std::string err71A = gateDCheck71A();
+    const std::string_view err71A = gateDCheck71A();
     if (!err71A.empty())
     {
         logFail(kName, err71A);
         return;
     }
 
-    const std::string err71C = gateDCheck71C();
+    const std::string_view err71C = gateDCheck71C();
     if (!err71C.empty())
     {
         logFail(kName, err71C);

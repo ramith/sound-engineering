@@ -117,7 +117,7 @@ namespace AdaptiveSound
             {
                 Ok,
                 Eof,
-                Error
+                Error,
             };
 
             DecodeBackend() = default;
@@ -385,7 +385,11 @@ namespace AdaptiveSound
         void* openVersionedLib(const char* base, int major) noexcept
         {
             const std::array<const char*, 4> prefixes = {
-                "/opt/homebrew/lib/", "/usr/local/lib/", "@loader_path/../Frameworks/", ""};
+                "/opt/homebrew/lib/",
+                "/usr/local/lib/",
+                "@loader_path/../Frameworks/",
+                "",
+            };
             for (const char* prefix : prefixes)
             {
                 const std::string soname = std::format("{}{}.{}.dylib", prefix, base, major);
@@ -1252,7 +1256,8 @@ namespace AdaptiveSound
         for (unsigned index = 0U; index < fmt->nb_streams; ++index)
         {
             AVStream* stream = fmt->streams[index];
-            const bool isPic = (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) != 0;
+            const bool isPic = (static_cast<unsigned>(stream->disposition) &
+                                static_cast<unsigned>(AV_DISPOSITION_ATTACHED_PIC)) != 0U;
             if (isPic && stream->attached_pic.size > 0)
             {
                 const std::size_t bytes = static_cast<std::size_t>(stream->attached_pic.size);

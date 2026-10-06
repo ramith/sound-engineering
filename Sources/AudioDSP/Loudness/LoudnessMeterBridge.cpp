@@ -85,8 +85,10 @@ void loudnessMeterAddStereo(void* meter, const float* left, const float* right, 
     double peak = handle->truePeakLinear * kPeakDecayPerBuffer;
     for (uint32_t i = 0U; i < frames; ++i)
     {
-        const std::array<double, kTruePeakChannels> samples{static_cast<double>(left[i]),
-                                                            static_cast<double>(rightChannel[i])};
+        const std::array<double, kTruePeakChannels> samples{
+            static_cast<double>(left[i]),
+            static_cast<double>(rightChannel[i]),
+        };
         for (uint32_t ch = 0U; ch < activeChannels; ++ch)
         {
             auto& hist = handle->histories[ch];

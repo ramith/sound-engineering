@@ -11,8 +11,9 @@ Missing tools are now a **hard failure**, not a silent skip — install everythi
 # Swift format + lint
 brew install swiftformat swiftlint
 
-# C++ static analysis (keg-only clang-tidy) + supplementary checker
-brew install llvm cppcheck
+# C++ static analysis (keg-only clang-tidy, MAJOR-PINNED — see "known, accepted edges"
+# below) + supplementary checker
+brew install llvm@23 cppcheck
 
 # Pattern-based safety bans (Swift force-try/cast; C++ unbounded string funcs)
 brew install semgrep
@@ -21,7 +22,7 @@ brew install semgrep
 swiftformat --version
 swiftlint --version
 clang-format --version
-/opt/homebrew/opt/llvm/bin/clang-tidy --version
+/opt/homebrew/opt/llvm/bin/clang-tidy --version   # must report the pinned major (23)
 semgrep --version
 cppcheck --version   # optional: strict-gate runs a supplementary pass if present
 ```
@@ -124,10 +125,20 @@ an **owner or a sprint/issue ID** — e.g. `// TODO(S8.4): …` or `// TODO(rami
 
 The C++ static-analysis gate is deliberately strict; these are the known, accepted edges:
 
-- **clang-tidy fail-on-any is LLVM-version-sensitive.** `WarningsAsErrors: '*'` promotes every
-  enabled check to fatal, so a `brew upgrade llvm` can fire a *newly-added* check on otherwise
-  unchanged code and break the gate. When convenient, pin/record the expected LLVM major
-  (CI uses the runner's `llvm`). Treat such a break as a check-triage task, not a code bug.
+- **clang-tidy fail-on-any is LLVM-version-sensitive — so the major is PINNED.**
+  `WarningsAsErrors: '*'` promotes every enabled check to fatal, so a new LLVM major can fire
+  *newly-added* checks on otherwise unchanged code (LLVM 23 did exactly that on hosted CI:
+  ~120 findings, mostly `readability-trailing-comma`, PR #63 run 1). The expected major lives in
+  ONE place — `CXX_CLANG_TIDY_MAJOR_PIN` in `scripts/lib/cxx-analysis-flags.sh` — and is asserted
+  by both `strict-gate.sh` and the pre-commit hook; CI installs the matching `llvm@N`
+  (`strict-ci.yml`). A skew now fails the tool check with instructions instead of a wall of
+  findings. A deliberate upgrade bumps the pin + the workflow's `llvm@N` and triages the new
+  checks in the SAME commit (same doctrine as the SwiftFormat/SwiftLint pins).
+  Two clang-tidy 23 fix-it traps met during the 22→23 bump: `--fix` silently writes NOTHING for
+  `.mm` (its post-fix reformat rejects the Cpp-only `.clang-format`; use `--format-style=none`
+  and format the touched lines by hand), and `readability-trailing-comma` misreads the comma
+  between two `member{}` constructor initializers as a trailing comma and DELETES it (prefer
+  default member initializers there).
 - **clang-tidy scope is hardcoded.** It analyses `Sources/AudioDSP` + `Sources/AudioDSPTestBridge`
   + `Tests/` (`.cpp`/`.mm`/`.cc`, any depth — matching the pre-commit hook and the Makefile). A
   **new C++ directory/target** outside those roots would go unanalysed until it is explicitly added
