@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="flex: none; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 18px; position: relative; font-family: -apple-system, system-ui, sans-serif; background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 -1px 0 rgba(0,0,0,.35);">
+  <div style="width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(160deg,#3fd0ba,#14897a); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 8px rgba(31,168,147,.35);">
+    <svg width="15" height="15" viewBox="0 0 15 15"><g stroke="#08221e" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="5.5" x2="3" y2="9.5"></line><line x1="6" y1="3.5" x2="6" y2="11.5"></line><line x1="9" y1="5" x2="9" y2="10"></line><line x1="12" y1="6.5" x2="12" y2="8.5"></line></g></svg>
+  </div>
+  <div style="display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 1px 6px rgba(0,0,0,.3);">
+    <svg width="13" height="13" viewBox="0 0 13 13"><path d="M2 4.5v4h2.5L8 11V2L4.5 4.5H2z" fill="rgba(255,255,255,.75)"></path><path d="M9.5 4.5a3 3 0 0 1 0 4" stroke="rgba(255,255,255,.55)" stroke-width="1.2" fill="none" stroke-linecap="round"></path></svg>
+    <span style="font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.85);">MacBook Pro Speakers</span>
+    <svg width="9" height="9" viewBox="0 0 9 9"><path d="M2 3.5l2.5 2.5L7 3.5" stroke="rgba(255,255,255,.5)" stroke-width="1.4" fill="none" stroke-linecap="round"></path></svg>
+    <span style="font-size: 11px; color: rgba(255,255,255,.45); font-family: ui-monospace,'SF Mono',Menlo,monospace;">48 kHz</span>
+  </div>
+  <div style="margin-left: auto; display: flex; gap: 2px; padding: 3px; border-radius: 18px; background: rgba(0,0,0,.38); box-shadow: inset 0 1px 2px rgba(0,0,0,.45), inset 0 -1px 0 rgba(255,255,255,.04);">
+    <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="5">
+      <button style="height: 28px; padding: 0 15px; border-radius: 14px; font-size: 12.5px; font-weight: {{ tab.weight }}; color: {{ tab.color }}; border: none; background: {{ tab.bg }}; box-shadow: {{ tab.shadow }}; cursor: pointer;">{{ tab.label }}</button>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;active&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Library&quot;, &quot;tsType&quot;: &quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const active = this.props.active ?? 'Now Playing';
+    const tabs = ['Now Playing', 'Library', 'EQ', 'Monitoring', 'Settings'].map(label => {
+      const on = label === active;
+      return {
+        label,
+        weight: on ? 700 : 600,
+        color: on ? '#0c1413' : 'rgba(255,255,255,.6)',
+        bg: on ? 'rgba(41,182,164,.94)' : 'transparent',
+        shadow: on ? '0 1px 8px rgba(31,168,147,.5), inset 0 1px 0 rgba(255,255,255,.3)' : 'none',
+      };
+    });
+    return { tabs };
+  }
+}
+</script>
+</body>
+</html>

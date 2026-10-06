@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div class="lb-nav" style="display: flex; align-items: center; gap: 11px; height: 38px; padding: 0 12px; border-radius: 10px; cursor: pointer; font-family: -apple-system, system-ui, sans-serif; background: {{ bg }}; box-shadow: {{ ring }};">
+  <span style="flex: none; width: 18px; display: flex; align-items: center; justify-content: center;">{{ icon }}</span>
+  <span style="flex: 1; min-width: 0; font-size: 13.5px; font-weight: {{ weight }}; color: {{ color }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ label }}</span>
+  <sc-if value="{{ hasCount }}" hint-placeholder-val="{{ false }}">
+    <span style="flex: none; font-size: 11px; color: rgba(255,255,255,.4); font-family: ui-monospace,'SF Mono',Menlo,monospace;">{{ count }}</span>
+  </sc-if>
+  <sc-if value="{{ remove }}" hint-placeholder-val="{{ false }}">
+    <span style="flex: none; color: rgba(255,255,255,.35); font-size: 15px; line-height: 1;">⊖</span>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;glyph&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;song&quot;,&quot;album&quot;,&quot;artist&quot;,&quot;genre&quot;,&quot;list&quot;,&quot;folder&quot;], &quot;default&quot;: &quot;song&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;label&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;Songs&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;active&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}, &quot;count&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;number&quot;}, &quot;remove&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const active = this.props.active ?? false;
+    const glyph = this.props.glyph ?? 'song';
+    const stroke = active ? '#6fe0d0' : 'rgba(255,255,255,.55)';
+    const P = { fill: 'none', stroke, strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+    const svg = (kids) => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 16 16' }, kids);
+    const el = React.createElement;
+    let icon;
+    switch (glyph) {
+      case 'song': icon = svg([el('path',{key:1,d:'M6 12.5V4l6-1.2V11',...P}), el('circle',{key:2,cx:4.4,cy:12.5,r:1.6,fill:stroke,stroke:'none'}), el('circle',{key:3,cx:12,cy:11,r:1.6,fill:stroke,stroke:'none'})]); break;
+      case 'album': icon = svg([el('rect',{key:1,x:2,y:2,width:5,height:5,rx:1,...P}), el('rect',{key:2,x:9,y:2,width:5,height:5,rx:1,...P}), el('rect',{key:3,x:2,y:9,width:5,height:5,rx:1,...P}), el('rect',{key:4,x:9,y:9,width:5,height:5,rx:1,...P})]); break;
+      case 'artist': icon = svg([el('path',{key:1,d:'M8 9.5a2.6 2.6 0 0 0 2.6-2.6V4.6a2.6 2.6 0 0 0-5.2 0v2.3A2.6 2.6 0 0 0 8 9.5zM8 9.5v3.5M5.5 13h5',...P})]); break;
+      case 'genre': icon = svg([el('path',{key:1,d:'M3 11V5l4 6V3M10 11a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8z',...P})]); break;
+      case 'list': icon = svg([el('path',{key:1,d:'M3 4.5h6M3 8h6M3 11.5h4M11 5v6.5',...P}), el('circle',{key:2,cx:9.3,cy:11.5,r:1.5,fill:stroke,stroke:'none'})]); break;
+      case 'folder': icon = svg([el('path',{key:1,d:'M2 4.5 3.2 3h3.3l1 1.5H14v7.5H2V4.5z',...P})]); break;
+      default: icon = svg([]);
+    }
+    return {
+      icon,
+      label: this.props.label ?? '',
+      weight: active ? 650 : 500,
+      color: active ? '#6fe0d0' : 'rgba(255,255,255,.72)',
+      bg: active ? 'rgba(41,182,164,.14)' : 'transparent',
+      ring: active ? 'inset 0 0 0 1px rgba(41,182,164,.3)' : 'none',
+      hasCount: this.props.count != null,
+      count: this.props.count,
+      remove: this.props.remove ?? false,
+    };
+  }
+}
+</script>
+</body>
+</html>
