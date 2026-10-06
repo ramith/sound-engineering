@@ -42,6 +42,21 @@ public enum SurfaceRole: Equatable, Sendable {
         case .lens, .badge: true
         }
     }
+
+    /// Whether the surface casts the soft deep drop shadow (`GlassDecor.shadow*`, grammar
+    /// rule 4). The raised glass — the floating CARD and the analyzer lens — does. The badge
+    /// role (hero chips, pills, the device pill) never had a designed drop shadow: its visible
+    /// "shadow" was only the per-glyph halo the old whole-composite `.shadow` cast from its
+    /// TEXT (S10.8 Sprint A1 — the probe showed no visible loss without it). `.overlay` is
+    /// system Material — no strata at all. The shadow is cast by the FILL shape only, never
+    /// by the content. Role DATA, so the app-side modifier stays a thin shim and RES-06 can
+    /// assert it.
+    public var castsShadow: Bool {
+        switch self {
+        case .overlay, .badge: false
+        case .lens, .panel: true
+        }
+    }
 }
 
 /// The animation-gate predicate (design §3.4/§7 R2 PG-01..04): the pulsing dot and the
