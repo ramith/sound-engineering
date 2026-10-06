@@ -50,6 +50,7 @@ struct SongsListView: View {
         GeometryReader { geo in
             let columns = orderedVisibleColumns
             let titleWidth = resolvedTitleWidth(columns: columns, available: geo.size.width)
+            let cursorID = keyboardCursorID
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(spacing: 0) {
                     if columnConfig.isCustomized {
@@ -58,7 +59,8 @@ struct SongsListView: View {
                     ScrollView(.vertical) {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
-                                row(track, number: index + 1, columns: columns, titleWidth: titleWidth)
+                                row(track, number: index + 1, columns: columns, titleWidth: titleWidth,
+                                    isKeyboardCursor: track.id == cursorID)
                             }
                         }
                         .padding(.vertical, Self.listVerticalInset)
@@ -74,6 +76,7 @@ struct SongsListView: View {
         .dynamicTypeSize(.small ... .xxLarge)
         .focusable()
         .focused($listFocused)
+        // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
         .focusEffectDisabled()
         .onKeyPress(.upArrow) { moveSelection(by: -1) }
         .onKeyPress(.downArrow) { moveSelection(by: 1) }
@@ -161,14 +164,15 @@ struct SongsListView: View {
     // MARK: Rows
 
     private func row(_ track: LibraryTrackDisplay, number: Int,
-                     columns: [SongColumn], titleWidth: CGFloat) -> some View {
+                     columns: [SongColumn], titleWidth: CGFloat, isKeyboardCursor: Bool) -> some View {
         Button {
             handleClick(track)
         } label: {
             SongRow(track: track, number: number, columns: columns, titleWidth: titleWidth,
                     isNowPlaying: track.id == currentTrackID,
                     isPlaybackActive: viewModel.isPlaying,
-                    isSelected: selection.contains(track.id))
+                    isSelected: selection.contains(track.id),
+                    isKeyboardCursor: isKeyboardCursor)
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.playTrackNextNow(track) })
@@ -224,46 +228,6 @@ struct SongsListView: View {
         }
     }
 
-    // MARK: Selection
-
-    private func handleClick(_ track: LibraryTrackDisplay) {
-        listFocused = true
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.shift), let anchor = anchorID {
-            selectRange(from: anchor, to: track.id)
-        } else if flags.contains(.command) {
-            if selection.contains(track.id) {
-                selection.remove(track.id)
-            } else {
-                selection.insert(track.id)
-            }
-            anchorID = track.id
-        } else {
-            selection = [track.id]
-            anchorID = track.id
-        }
-    }
-
-    private func selectRange(from start: RowID, to end: RowID) {
-        let ids = model.visibleSongs.map(\.id)
-        guard let i = ids.firstIndex(of: start), let j = ids.firstIndex(of: end) else {
-            selection = [end]
-            return
-        }
-        selection = Set(ids[min(i, j) ... max(i, j)])
-    }
-
-    private func moveSelection(by delta: Int) -> KeyPress.Result {
-        let ids = model.visibleSongs.map(\.id)
-        guard !ids.isEmpty else { return .ignored }
-        let currentIndex = (anchorID ?? selection.first).flatMap { ids.firstIndex(of: $0) } ?? -1
-        let next = currentIndex + delta
-        guard next >= 0, next < ids.count else { return .ignored }
-        selection = [ids[next]]
-        anchorID = ids[next]
-        return .handled
-    }
-
     // MARK: Play + context (mirror the former SongsTable)
 
     @discardableResult
@@ -308,5 +272,60 @@ struct SongsListView: View {
         AddToPlaylistMenu(resolveTrackIDs: { trackIDs }, onChooseMore: { ids in
             addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
         })
+    }
+}
+
+// MARK: - Selection + keyboard cursor
+
+/// Same-file extension (type-body length): reaches the list's private selection state.
+private extension SongsListView {
+    /// The keyboard CURSOR row (A3) — where the focus ring sits: the selection anchor the arrows
+    /// move from, or the first row while nothing is anchored (the first ↓ then selects it, so the
+    /// ring marks exactly what the next arrow press acts on). Nil — no ring — while the list
+    /// lacks key focus.
+    var keyboardCursorID: RowID? {
+        guard listFocused else { return nil }
+        if let anchorID, model.visibleSongs.contains(where: { $0.id == anchorID }) {
+            return anchorID
+        }
+        return model.visibleSongs.first?.id
+    }
+
+    func handleClick(_ track: LibraryTrackDisplay) {
+        listFocused = true
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift), let anchor = anchorID {
+            selectRange(from: anchor, to: track.id)
+        } else if flags.contains(.command) {
+            if selection.contains(track.id) {
+                selection.remove(track.id)
+            } else {
+                selection.insert(track.id)
+            }
+            anchorID = track.id
+        } else {
+            selection = [track.id]
+            anchorID = track.id
+        }
+    }
+
+    func selectRange(from start: RowID, to end: RowID) {
+        let ids = model.visibleSongs.map(\.id)
+        guard let i = ids.firstIndex(of: start), let j = ids.firstIndex(of: end) else {
+            selection = [end]
+            return
+        }
+        selection = Set(ids[min(i, j) ... max(i, j)])
+    }
+
+    func moveSelection(by delta: Int) -> KeyPress.Result {
+        let ids = model.visibleSongs.map(\.id)
+        guard !ids.isEmpty else { return .ignored }
+        let currentIndex = (anchorID ?? selection.first).flatMap { ids.firstIndex(of: $0) } ?? -1
+        let next = currentIndex + delta
+        guard next >= 0, next < ids.count else { return .ignored }
+        selection = [ids[next]]
+        anchorID = ids[next]
+        return .handled
     }
 }
