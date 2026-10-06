@@ -40,17 +40,24 @@ namespace
         cap.transportType = TestConstants::kTransportHDMI;
         cap.currentRate = TestConstants::kRate48k;
         cap.availableRates = {
-            TestConstants::kRate32k, TestConstants::kRate44k, TestConstants::kRate48k};
-        cap.physicalFormat = {TestConstants::kRate48k,
-                              TestConstants::kBits24,
-                              TestConstants::kStereo,
-                              /*isFloat=*/false,
-                              /*isPCM=*/true};
-        cap.virtualFormat = {TestConstants::kRate48k,
-                             TestConstants::kBits32,
-                             TestConstants::kStereo,
-                             /*isFloat=*/true,
-                             /*isPCM=*/true};
+            TestConstants::kRate32k,
+            TestConstants::kRate44k,
+            TestConstants::kRate48k,
+        };
+        cap.physicalFormat = {
+            TestConstants::kRate48k,
+            TestConstants::kBits24,
+            TestConstants::kStereo,
+            /*isFloat=*/false,
+            /*isPCM=*/true,
+        };
+        cap.virtualFormat = {
+            TestConstants::kRate48k,
+            TestConstants::kBits32,
+            TestConstants::kStereo,
+            /*isFloat=*/true,
+            /*isPCM=*/true,
+        };
         cap.integerCapable = true;
         cap.exclusiveCapable = true;
         cap.isLossyWireless = false;
@@ -65,11 +72,13 @@ namespace
         cap.transportType = TestConstants::kTransportBluetooth;
         cap.currentRate = TestConstants::kRate44k;
         cap.availableRates = {TestConstants::kRate16k, TestConstants::kRate44k};
-        cap.physicalFormat = {TestConstants::kRate44k,
-                              TestConstants::kBits32,
-                              TestConstants::kStereo,
-                              /*isFloat=*/true,
-                              /*isPCM=*/true};
+        cap.physicalFormat = {
+            TestConstants::kRate44k,
+            TestConstants::kBits32,
+            TestConstants::kStereo,
+            /*isFloat=*/true,
+            /*isPCM=*/true,
+        };
         cap.virtualFormat = cap.physicalFormat;
         cap.integerCapable = false;
         cap.exclusiveCapable = true; // hoggable in principle, but lossy wireless gates it out first
@@ -84,15 +93,19 @@ namespace
         DeviceCapability cap;
         cap.transportType = TestConstants::kTransportBuiltIn;
         cap.currentRate = TestConstants::kRate48k;
-        cap.availableRates = {TestConstants::kRate44k,
-                              TestConstants::kRate48k,
-                              TestConstants::kRate88k,
-                              TestConstants::kRate96k};
-        cap.physicalFormat = {TestConstants::kRate48k,
-                              TestConstants::kBits32,
-                              TestConstants::kStereo,
-                              /*isFloat=*/true,
-                              /*isPCM=*/true};
+        cap.availableRates = {
+            TestConstants::kRate44k,
+            TestConstants::kRate48k,
+            TestConstants::kRate88k,
+            TestConstants::kRate96k,
+        };
+        cap.physicalFormat = {
+            TestConstants::kRate48k,
+            TestConstants::kBits32,
+            TestConstants::kStereo,
+            /*isFloat=*/true,
+            /*isPCM=*/true,
+        };
         cap.virtualFormat = cap.physicalFormat;
         cap.integerCapable = false;
         cap.exclusiveCapable = true;
@@ -108,11 +121,13 @@ namespace
         cap.transportType = TestConstants::kTransportVirtual;
         cap.currentRate = TestConstants::kRate48k;
         cap.availableRates = {TestConstants::kRate48k};
-        cap.physicalFormat = {TestConstants::kRate48k,
-                              TestConstants::kBits32,
-                              TestConstants::kMono,
-                              /*isFloat=*/true,
-                              /*isPCM=*/true};
+        cap.physicalFormat = {
+            TestConstants::kRate48k,
+            TestConstants::kBits32,
+            TestConstants::kMono,
+            /*isFloat=*/true,
+            /*isPCM=*/true,
+        };
         cap.virtualFormat = cap.physicalFormat;
         cap.integerCapable = false;
         cap.exclusiveCapable = false;
@@ -439,7 +454,7 @@ namespace
     {
         const auto lo = static_cast<uint16_t>(bytes[(2U * i)]);
         const auto hi = static_cast<uint16_t>(bytes[(2U * i) + 1U]);
-        return static_cast<int16_t>(static_cast<uint16_t>(lo | (hi << 8U)));
+        return static_cast<int16_t>(static_cast<uint16_t>(lo | (static_cast<uint32_t>(hi) << 8U)));
     }
 
     // Decode a little-endian uint32 word from a byte buffer at sample index i.
@@ -515,10 +530,12 @@ static auto testConvertInt32Saturation() -> void
                          /*isAlignedHigh=*/false,
                          /*isBigEndian=*/false);
 
-    const std::array<uint32_t, 4> expected = {static_cast<uint32_t>(kI32PosFull),
-                                              kI32NegFullBits,
-                                              0U,
-                                              static_cast<uint32_t>(kI32PosFull)};
+    const std::array<uint32_t, 4> expected = {
+        static_cast<uint32_t>(kI32PosFull),
+        kI32NegFullBits,
+        0U,
+        static_cast<uint32_t>(kI32PosFull),
+    };
     for (size_t i = 0; i < src.size(); ++i)
     {
         const uint32_t got = readLeWord32(dst, i);
@@ -761,18 +778,20 @@ static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
         uint8_t expectDecision = 0U; // documented expectation, also asserted directly below
         uint8_t expectReason = 0U;
     };
-    const std::array<BranchCase, 5> cases = {{
-        // HDMI + 44.1k → FullBitPerfect / BitPerfectInteger.
-        {"hdmi+44.1k", makeHdmiCapability(), makeFile(TestConstants::kRate44k), 0U, 0U},
-        // built-in + 96k → RateMatchedFloat / RateMatchedFloatNoSRC.
-        {"builtin+96k", makeBuiltInCapability(), makeFile(TestConstants::kRate96k), 1U, 1U},
-        // Bluetooth + 44.1k → FallbackEnhanced / LossyWirelessCodec.
-        {"bt+44.1k", makeBluetoothCapability(), makeFile(TestConstants::kRate44k), 2U, 2U},
-        // Virtual + 48k → FallbackEnhanced / VirtualDevice.
-        {"virtual+48k", makeVirtualCapability(), makeFile(TestConstants::kRate48k), 2U, 3U},
-        // HDMI + 96k (unsupported) → FallbackEnhanced / RateUnsupportedResample.
-        {"hdmi+96k", makeHdmiCapability(), makeFile(TestConstants::kRate96k), 2U, 4U},
-    }};
+    const std::array<BranchCase, 5> cases = {
+        {
+            // HDMI + 44.1k → FullBitPerfect / BitPerfectInteger.
+            {"hdmi+44.1k", makeHdmiCapability(), makeFile(TestConstants::kRate44k), 0U, 0U},
+            // built-in + 96k → RateMatchedFloat / RateMatchedFloatNoSRC.
+            {"builtin+96k", makeBuiltInCapability(), makeFile(TestConstants::kRate96k), 1U, 1U},
+            // Bluetooth + 44.1k → FallbackEnhanced / LossyWirelessCodec.
+            {"bt+44.1k", makeBluetoothCapability(), makeFile(TestConstants::kRate44k), 2U, 2U},
+            // Virtual + 48k → FallbackEnhanced / VirtualDevice.
+            {"virtual+48k", makeVirtualCapability(), makeFile(TestConstants::kRate48k), 2U, 3U},
+            // HDMI + 96k (unsupported) → FallbackEnhanced / RateUnsupportedResample.
+            {"hdmi+96k", makeHdmiCapability(), makeFile(TestConstants::kRate96k), 2U, 4U},
+        },
+    };
 
     for (const BranchCase& bc : cases)
     {
@@ -823,7 +842,7 @@ static auto testPureModeBridgeNullArgsAreNoOp() -> void
     constexpr uint8_t kSentinelRateChange = 0xCCU;
     constexpr uint8_t kSentinelHog = 0xDDU;
     constexpr uint8_t kSentinelReason = 0xBBU;
-    const auto makeSentinel = []() -> CPureModeEvaluation
+    const auto makeSentinel = [] -> CPureModeEvaluation
     {
         CPureModeEvaluation out{};
         out.decision = kSentinelDecision;
@@ -904,10 +923,12 @@ static auto testPureModeBridgeRateArrayCopiedFaithfully() -> void
 
     // Built-in-like (float, not integer-capable) device with an EXPLICIT advertised-rate list.
     DeviceCapability cap = makeBuiltInCapability();
-    cap.availableRates = {TestConstants::kRate44k,
-                          TestConstants::kRate48k,
-                          TestConstants::kRate88k,
-                          TestConstants::kRate96k};
+    cap.availableRates = {
+        TestConstants::kRate44k,
+        TestConstants::kRate48k,
+        TestConstants::kRate88k,
+        TestConstants::kRate96k,
+    };
 
     std::vector<double> rates;
     const CDeviceCapability flatCap = toFlat(cap, rates);

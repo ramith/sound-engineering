@@ -42,7 +42,11 @@ jobs:
 
       - name: Install tools (idempotent)
         run: |
-          # keg-only llvm provides clang-tidy; ffmpeg supplies the libavformat headers under
+          # keg-only llvm@23 provides clang-tidy — MAJOR-PINNED (clang-tidy 23 added checks
+          # that 22 lacks, e.g. readability-trailing-comma; strict-gate.sh asserts the major via
+          # CXX_CLANG_TIDY_MAJOR_PIN, so a brew-latest major bump fails loudly instead of
+          # surfacing as a wall of red-herring findings — PR #63 run 1). A deliberate upgrade
+          # bumps the pin + fixes the new findings in one commit. ffmpeg supplies the libavformat headers under
           # /opt/homebrew/include so FileDecodeSource.mm's __has_include(<libavformat/...>)
           # FFmpeg decode + metadata branch parses and clang-tidy actually analyzes it here
           # (that branch is analyzed NOWHERE else in the merge path); the rest are
@@ -50,7 +54,7 @@ jobs:
           # below (the original trigger: brew-latest SwiftFormat 0.62.x changed wrapIfStatementBodies
           # vs the then-pinned 0.61.1 — PR #61 run 1); strict-gate.sh asserts the pins, so a
           # skew fails loudly with instructions instead of red-herring style errors.
-          brew install llvm semgrep cppcheck ffmpeg || true
+          brew install llvm@23 semgrep cppcheck ffmpeg || true
           # Periphery (Swift dead-code detection) lives in a tap, not core Homebrew — install it
           # separately so `make strict-gate`'s hostile `periphery scan` step has the binary.
           brew install peripheryapp/periphery/periphery || true
@@ -70,7 +74,10 @@ jobs:
           # so it expanded to empty, dropped /usr/bin, and broke `make` (exit 127).
           # pinned-tools is written LAST so it lands FIRST on PATH (each write prepends),
           # shadowing any preinstalled brew swiftformat/swiftlint on the runner image.
+          # llvm@23 is an alias of `llvm` while 23 is current (keg at opt/llvm) and becomes
+          # a versioned keg (opt/llvm@23) once 24 ships — put both on PATH, versioned first.
           echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/llvm@23/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
           echo "$HOME/pinned-tools" >> "$GITHUB_PATH"
 

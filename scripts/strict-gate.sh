@@ -65,17 +65,24 @@ if [ "$actual_swiftlint" != "$SWIFTLINT_PIN" ]; then
   exit 1
 fi
 
-# clang-tidy is keg-only under Homebrew LLVM; prefer that path, fall back to PATH. It is
-# REQUIRED (not skipped) so the pre-commit C++ static-analysis net is guaranteed to work.
-if [[ -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
-  CLANG_TIDY=/opt/homebrew/opt/llvm/bin/clang-tidy
-elif command -v clang-tidy >/dev/null 2>&1; then
-  CLANG_TIDY="$(command -v clang-tidy)"
-else
-  red "ERROR: required tool missing: clang-tidy (brew install llvm)"
+# clang-tidy: resolved + MAJOR-pinned through the shared C++ analysis library (ONE resolver
+# for this gate and the pre-commit hook; the pin lives there as CXX_CLANG_TIDY_MAJOR_PIN).
+# Same doctrine as the Swift pins above: a major bump adds checks, so a skew must fail HERE
+# with instructions rather than as a wall of findings (PR #63 run 1). It is REQUIRED (not
+# skipped) so the C++ static-analysis net is guaranteed to work.
+# shellcheck source=scripts/lib/cxx-analysis-flags.sh
+source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+CLANG_TIDY="$(cxx_clang_tidy_path)" || true
+if [[ -z "$CLANG_TIDY" ]]; then
+  red "ERROR: required tool missing: clang-tidy (brew install llvm@${CXX_CLANG_TIDY_MAJOR_PIN})"
   exit 1
 fi
-echo "clang-tidy: $CLANG_TIDY"
+actual_clang_tidy_major="$(cxx_clang_tidy_major "$CLANG_TIDY")"
+if [ "$actual_clang_tidy_major" != "$CXX_CLANG_TIDY_MAJOR_PIN" ]; then
+  red "ERROR: clang-tidy major $actual_clang_tidy_major != pinned $CXX_CLANG_TIDY_MAJOR_PIN at $CLANG_TIDY (tool-skew guard — brew install llvm@${CXX_CLANG_TIDY_MAJOR_PIN}, or bump the pin in scripts/lib/cxx-analysis-flags.sh + strict-ci.yml and fix the new findings in one commit)."
+  exit 1
+fi
+echo "clang-tidy: $CLANG_TIDY (LLVM $actual_clang_tidy_major, pinned major)"
 # cppcheck is optional; a supplementary C++ pass runs only if it is installed.
 HAVE_CPPCHECK=0
 command -v cppcheck >/dev/null 2>&1 && HAVE_CPPCHECK=1
@@ -182,12 +189,11 @@ fi
 
 step "clang-tidy (.clang-tidy enforcement over AudioDSP + tests)"
 # The parse flags come from the single source of truth shared with the pre-commit hook and
-# build-null-test.sh, so this gate analyses the SAME translation units the compiler builds.
-# This is what closes the biggest gate hole: until now .clang-tidy was enforced only by the
-# bypassable pre-commit hook and NEVER by the merge gate. $CLANG_TIDY (resolved in the tool
-# check) is finally USED here.
-# shellcheck source=scripts/lib/cxx-analysis-flags.sh
-source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+# build-null-test.sh (scripts/lib/cxx-analysis-flags.sh, already sourced in the tool check),
+# so this gate analyses the SAME translation units the compiler builds. This is what closes
+# the biggest gate hole: until now .clang-tidy was enforced only by the bypassable pre-commit
+# hook and NEVER by the merge gate. $CLANG_TIDY (resolved + major-pinned in the tool check)
+# is finally USED here.
 
 # The FFmpeg decode + metadata branch in FileDecodeSource.cpp is behind
 # __has_include(<libavformat/avformat.h>); clang-tidy only PARSES (hence analyses) it when

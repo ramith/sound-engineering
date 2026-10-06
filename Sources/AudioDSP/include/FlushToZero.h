@@ -21,7 +21,11 @@ namespace AdaptiveSound
     // On x86_64 (CI / simulator) Accelerate/vDSP already sets FTZ/DAZ internally; we leave
     // MXCSR alone rather than depend on <xmmintrin.h> / _MM_SET_FLUSH_ZERO_MODE.
     //
-    // Reference: ARM DDI 0487 §A1.4.3 (FPCR); Apple Silicon LLVM inline-asm guide.
+    // FPCR is read/written through Clang's AArch64 system-register builtins
+    // (__builtin_arm_rsr64 / __builtin_arm_wsr64) rather than inline asm — same mrs/msr
+    // instructions, but visible to the compiler (and clean under portability-no-assembler).
+    //
+    // Reference: ARM DDI 0487 §A1.4.3 (FPCR); Clang "ARM/AArch64 system register builtins".
     //
     // This is the single definition; it replaces the five hand-maintained copies that had
     // drifted to two names and two constant encodings (Stage-1 review AR-1).
@@ -29,10 +33,9 @@ namespace AdaptiveSound
     {
 #ifdef __aarch64__
         constexpr uint64_t kFpcrFlushToZeroBit = 1ULL << 24U; // FPCR.FZ
-        uint64_t fpcr = 0U;
-        __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
+        uint64_t fpcr = __builtin_arm_rsr64("fpcr");
         fpcr |= kFpcrFlushToZeroBit; // flush subnormal inputs and outputs to zero
-        __asm__ volatile("msr fpcr, %0" : : "r"(fpcr));
+        __builtin_arm_wsr64("fpcr", fpcr);
 #endif
     }
 

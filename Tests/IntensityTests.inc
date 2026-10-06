@@ -171,7 +171,7 @@ static auto testIntensitySettledRampConvergesToHardBranch() -> void
     kernel.publishTargetState(half);
 
     TestABL abl(kFrames);
-    auto runOne = [&]()
+    auto runOne = [&]
     {
         std::memcpy(abl.left.data(), input.data(), kFrames * sizeof(float));
         std::memcpy(abl.right.data(), input.data(), kFrames * sizeof(float));

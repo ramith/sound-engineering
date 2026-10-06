@@ -385,7 +385,7 @@ static auto testSoakGaplessSourceZeroRtAllocPull() -> void
 
     // A small two-segment ramp pair (reuses the gapless fixtures). Each seam drains A then B; we
     // rebuild the session each iteration so a fresh seam straddle is measured every time.
-    const std::string writeErr =
+    const std::string_view writeErr =
         writeGaplessSeamPair(kPathPureGaplessA, kPathPureGaplessB, kB2bRate48k);
     if (!writeErr.empty())
     {

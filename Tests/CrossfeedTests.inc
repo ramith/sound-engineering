@@ -239,10 +239,12 @@ static auto testCrossfeedMonoLevelNeutral() -> void
         uint32_t preset;
         double tolDb;
     };
-    const std::array<Case, 2U> cases = {{
-        {"Bauer", kCfPresetBauer, 0.1},
-        {"Strong", kCfPresetStrong, 0.3},
-    }};
+    const std::array<Case, 2U> cases = {
+        {
+            {"Bauer", kCfPresetBauer, 0.1},
+            {"Strong", kCfPresetStrong, 0.3},
+        },
+    };
 
     std::string fail;
     double measuredBauer = 0.0;
@@ -320,11 +322,13 @@ static auto testCrossfeedChannelSeparation() -> void
         uint32_t preset;
         float alpha;
     };
-    const std::array<Case, 3U> cases = {{
-        {"Relaxed", kCfPresetRelaxed, kCfAlphaRelaxed},
-        {"Bauer", kCfPresetBauer, kCfAlphaBauer},
-        {"Strong", kCfPresetStrong, kCfAlphaStrong},
-    }};
+    const std::array<Case, 3U> cases = {
+        {
+            {"Relaxed", kCfPresetRelaxed, kCfAlphaRelaxed},
+            {"Bauer", kCfPresetBauer, kCfAlphaBauer},
+            {"Strong", kCfPresetStrong, kCfAlphaStrong},
+        },
+    };
 
     std::string fail;
     double measuredBauer = 0.0;

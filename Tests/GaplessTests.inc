@@ -121,7 +121,7 @@ namespace
 
     // Write the A and B seam fixtures (continuous ramp; B continues exactly where A ends).
     // `rateB` lets the 44.1k variant share this writer. Returns "" on success.
-    auto writeGaplessSeamPair(const char* pathA, const char* pathB, double rateB) -> std::string
+    auto writeGaplessSeamPair(const char* pathA, const char* pathB, double rateB) -> std::string_view
     {
         const std::vector<int16_t> segA = makeGaplessRampSegment(0U, kGaplessSegmentFrames);
         const std::vector<int16_t> segB =
@@ -148,7 +148,7 @@ static auto testGaplessSeamFrameAccuracy() -> void
     static const char* const kName = "Gapless_SeamFrameAccuracy";
     constexpr float kClickTol = 3.0F * kRampStep; // seam step must look like one ordinary ramp step
 
-    const std::string writeErr = writeGaplessSeamPair(kPathGaplessA, kPathGaplessB, kB2bRate48k);
+    const std::string_view writeErr = writeGaplessSeamPair(kPathGaplessA, kPathGaplessB, kB2bRate48k);
     if (!writeErr.empty())
     {
         logFail(kName, writeErr);
@@ -234,7 +234,7 @@ static auto testGaplessTotalFrameCount48kOnly() -> void
 {
     static const char* const kName = "Gapless_TotalFrameCount_48kOnly";
 
-    const std::string writeErr = writeGaplessSeamPair(kPathGaplessA, kPathGaplessB, kB2bRate48k);
+    const std::string_view writeErr = writeGaplessSeamPair(kPathGaplessA, kPathGaplessB, kB2bRate48k);
     if (!writeErr.empty())
     {
         logFail(kName, writeErr);
@@ -280,7 +280,7 @@ static auto testGaplessSampleRateMismatchProducesFrameCountForEach() -> void
 {
     static const char* const kName = "Gapless_SampleRateMismatch_ProducesFrameCountForEach";
 
-    const std::string writeErr =
+    const std::string_view writeErr =
         writeGaplessSeamPair(kPathGaplessA, kPathGaplessB44k, kB2bRate44k);
     if (!writeErr.empty())
     {

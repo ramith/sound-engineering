@@ -96,22 +96,24 @@ static auto decodeBitExactCase(const char* kName) -> void
 
     // Known mid-range samples (avoid full scale so the check is robust to ExtAudioFile's exact
     // normalization). Literals live in this named constant's initializer.
-    static constexpr std::array<int16_t, kKnownCount> kKnownSamples = {0,
-                                                                       0,
-                                                                       16384,
-                                                                       -16384,
-                                                                       -8192,
-                                                                       8192,
-                                                                       12345,
-                                                                       -12345,
-                                                                       -1,
-                                                                       1,
-                                                                       4096,
-                                                                       -4096,
-                                                                       100,
-                                                                       -100,
-                                                                       -20000,
-                                                                       20000};
+    static constexpr std::array<int16_t, kKnownCount> kKnownSamples = {
+        0,
+        0,
+        16384,
+        -16384,
+        -8192,
+        8192,
+        12345,
+        -12345,
+        -1,
+        1,
+        4096,
+        -4096,
+        100,
+        -100,
+        -20000,
+        20000,
+    };
 
     std::vector<int16_t> known(kKnownSamples.begin(), kKnownSamples.end());
     const uint32_t frameCount = static_cast<uint32_t>(known.size()) / kChannels;
@@ -248,7 +250,7 @@ namespace
     enum class Backend : uint8_t
     {
         Apple,
-        FFmpeg
+        FFmpeg,
     };
 
     auto forceBackend(Backend backend) -> void
@@ -344,7 +346,7 @@ namespace
     auto appendLeWord16(std::vector<uint8_t>& bytes, uint16_t value) -> void
     {
         bytes.push_back(static_cast<uint8_t>(value & 0xFFU));
-        bytes.push_back(static_cast<uint8_t>((value >> 8U) & 0xFFU));
+        bytes.push_back(static_cast<uint8_t>((static_cast<uint32_t>(value) >> 8U) & 0xFFU));
     }
 
     // Hand-write a canonical 44-byte RIFF/WAV header + packed 24-bit signed little-endian PCM.
@@ -805,18 +807,20 @@ static auto testFileDecodeBitExact24bit() -> void
     static const char* const kName = "FileDecode_BitExact_24bit";
 
     // Mid-range 24-bit signed values (avoid full scale for normalization robustness).
-    const std::vector<int32_t> samples = {0,
-                                          0,
-                                          4194304,  // +0.5
-                                          -4194304, // -0.5
-                                          2097152,  // +0.25
-                                          -2097152,
-                                          1234567,
-                                          -1234567,
-                                          100,
-                                          -100,
-                                          8388607, // near +full scale
-                                          -8388608};
+    const std::vector<int32_t> samples = {
+        0,
+        0,
+        4194304,  // +0.5
+        -4194304, // -0.5
+        2097152,  // +0.25
+        -2097152,
+        1234567,
+        -1234567,
+        100,
+        -100,
+        8388607, // near +full scale
+        -8388608,
+    };
 
     if (!writeWav24(kPathBitExact24, samples, kB2bChannels2, kB2bRate48k))
     {
@@ -895,7 +899,17 @@ static auto testFileDecodeBitExactFloat32() -> void
     static const char* const kName = "FileDecode_BitExact_Float32";
 
     const std::vector<float> samples = {
-        0.0F, 0.0F, 0.5F, -0.5F, 0.25F, -0.25F, 0.123456F, -0.123456F, 0.999F, -0.999F};
+        0.0F,
+        0.0F,
+        0.5F,
+        -0.5F,
+        0.25F,
+        -0.25F,
+        0.123456F,
+        -0.123456F,
+        0.999F,
+        -0.999F,
+    };
 
     if (!writeWavFloat32(kPathBitExactF32, samples, kB2bChannels2, kB2bRate48k))
     {
@@ -1650,7 +1664,7 @@ static auto testFileDecodeSeekSampleAccurateWav16() -> void
     }
 
     // One forced-backend leg: seek to frame 1000 before any pull, drain 8, assert exact L+R ramp.
-    const auto runLeg = [&]() -> std::string
+    const auto runLeg = [&] -> std::string
     {
         FileDecodeSource src;
         if (!src.open(kPathSeekSampleAcc))
@@ -1746,7 +1760,7 @@ static auto testFileDecodeSeekToZeroReproducesFromOpen() -> void
     }
 
     // (a) baseline from open; (b) drain a prefix, seek(0), drain all; compare bit-identical.
-    const auto runLeg = [&]() -> std::string
+    const auto runLeg = [&] -> std::string
     {
         std::vector<float> baseline(static_cast<std::size_t>(kFrames) * kB2bChannels2, 0.0F);
         {
@@ -1855,7 +1869,7 @@ static auto testFileDecodeSeekPastEofLandsAtEnd() -> void
         return;
     }
 
-    const auto runLeg = [&]() -> std::string
+    const auto runLeg = [&] -> std::string
     {
         FileDecodeSource src;
         if (!src.open(kPathSeekPastEof))
@@ -2059,10 +2073,10 @@ static auto testFileDecodeSeekRepeatedRapidNoStaleNoLeak() -> void
     constexpr uint32_t kDrain = 4U;
     // Varied seek targets, all WITHIN the 16384-frame file AND < kI16Period so the ramp is the
     // identity (landed L recovers the exact frame). Spans early / mid / late / repeated positions.
-    static constexpr std::array<uint32_t, 20> kTargets = {100U,   5000U,  250U,   12000U, 50U,
-                                                          8000U,  15999U, 1U,     9999U,  333U,
-                                                          15000U, 7U,     4096U,  11111U, 2048U,
-                                                          600U,   13000U, 42U,    8888U,  14321U};
+    static constexpr std::array<uint32_t, 20> kTargets = {
+        100U,   5000U, 250U,  12000U, 50U,   8000U, 15999U, 1U,  9999U, 333U,
+        15000U, 7U,    4096U, 11111U, 2048U, 600U,  13000U, 42U, 8888U, 14321U,
+    };
 
     const std::vector<int16_t> interleaved = makeDistinctStereoRamp(kFrames);
     if (!writeWav16(kPathSeekRapid, interleaved, kB2bChannels2, kB2bRate48k))
@@ -2071,7 +2085,7 @@ static auto testFileDecodeSeekRepeatedRapidNoStaleNoLeak() -> void
         return;
     }
 
-    const auto runLeg = [&]() -> std::string
+    const auto runLeg = [&] -> std::string
     {
         FileDecodeSource src;
         if (!src.open(kPathSeekRapid))
@@ -2162,7 +2176,7 @@ static auto testFileDecodeSeekMidStreamDistinctChannels() -> void
         return;
     }
 
-    const auto runLeg = [&]() -> std::string
+    const auto runLeg = [&] -> std::string
     {
         FileDecodeSource src;
         if (!src.open(kPathSeekMidStream))
