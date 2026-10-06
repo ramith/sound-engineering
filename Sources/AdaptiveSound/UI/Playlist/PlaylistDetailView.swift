@@ -117,8 +117,7 @@ struct PlaylistDetailView: View {
     private var playVerbs: some View {
         HStack(spacing: DesignSystem.Spacing.small) {
             Button { playNow() } label: { Label("Play", systemImage: "play.fill") }
-                .buttonStyle(.borderedProminent)
-                .tint(DesignSystem.Color.accent)
+                .buttonStyle(.pill)
             Button { _ = model.playPlaylistNext() } label: {
                 Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
             }

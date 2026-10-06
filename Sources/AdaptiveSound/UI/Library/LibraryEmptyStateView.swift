@@ -39,8 +39,7 @@ struct LibraryEmptyStateView: View {
                 Text("Add a folder of music to start browsing your library.")
             } actions: {
                 Button("Add Folder…") { showFolderPicker = true }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Color.accent)
+                    .buttonStyle(.pill)
             }
         case .scanning:
             VStack(spacing: DesignSystem.Spacing.medium) {
@@ -56,8 +55,7 @@ struct LibraryEmptyStateView: View {
                 Text("No playable audio was found in your library folders.")
             } actions: {
                 Button("Add Folder…") { showFolderPicker = true }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DesignSystem.Color.accent)
+                    .buttonStyle(.pill)
             }
         case let .failed(message):
             ContentUnavailableView {
