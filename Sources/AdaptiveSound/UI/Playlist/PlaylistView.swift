@@ -209,8 +209,7 @@ struct PlaylistView: View {
             Text("Browse your Library and press Play to start listening.")
         } actions: {
             Button("Browse Library") { viewModel.selectedTab = .library }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.asAccent)
+                .buttonStyle(.pill)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

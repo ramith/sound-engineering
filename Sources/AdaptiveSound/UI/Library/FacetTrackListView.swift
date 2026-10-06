@@ -106,10 +106,7 @@ struct FacetTrackListView: View {
             } label: {
                 Label("Play", systemImage: "play.fill")
             }
-            .buttonStyle(.borderedProminent)
-            // accentDeep, not accent: white-on-accent is only ~2.5:1 (below WCAG AA); the deeper
-            // teal lifts it to ~4.3:1 (S4 A-M6). Final light-palette tuning is the founder make-run.
-            .tint(DesignSystem.Color.accentDeep)
+            .buttonStyle(.pill)
             .disabled(tracks.isEmpty)
 
             Button {
