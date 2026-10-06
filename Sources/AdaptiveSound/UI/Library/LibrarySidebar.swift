@@ -46,50 +46,47 @@ struct LibrarySidebar: View {
     /// `internal` for the same-type `LibrarySidebar+Rename` extension (focus yield/restore).
     @FocusState var sidebarFocused: Bool
 
-    /// The unified top-to-bottom row order for ↑/↓ navigation (categories, then playlists).
-    private var selectables: [SidebarSelection] {
-        LibraryCategory.allCases.map(SidebarSelection.category)
-            + playlists.playlists.map { SidebarSelection.playlist($0.id) }
-    }
-
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(LibraryCategory.allCases) { category in
-                    categoryRow(category)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    ForEach(LibraryCategory.allCases) { category in
+                        categoryRow(category)
+                    }
+                    sectionDivider
+                    playlistsSectionHeader
+                    playlistRows
+                    sectionDivider
+                    musicFoldersSectionHeader
+                    MusicFoldersSection()
+                    scanStatusStrip
                 }
-                sectionDivider
-                playlistsSectionHeader
-                playlistRows
-                sectionDivider
-                musicFoldersSectionHeader
-                MusicFoldersSection()
-                scanStatusStrip
+                .padding(.horizontal, 10)
+                .padding(.top, 12)
+                // The guide's rail inset (PR-C "inner padding 12×10"; png/00 measures 10pt under
+                // the last row). It was the 24pt bleed run while the card carried a bottom bleed
+                // that text had to stay off; the card is flat now, so the rail ends where the
+                // mock's does.
+                .padding(.bottom, 10)
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.height
+                } action: { height in
+                    contentHeight = height
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 12)
-            // The guide's rail inset (PR-C "inner padding 12×10"; png/00 measures 10pt under the
-            // last row). It was the 24pt bleed run while the card carried a bottom bleed that
-            // text had to stay off; the card is flat now, so the rail ends where the mock's does.
-            .padding(.bottom, 10)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
-            } action: { height in
-                contentHeight = height
-            }
+            .focusable()
+            .focused($sidebarFocused)
+            .defaultFocus($sidebarFocused, true)
+            // The system effect would outline the whole rail; the selected row's ring replaces it (A3).
+            .focusEffectDisabled()
+            // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still
+            // in the focus chain) HIJACKS the keys from the focused TextField (arrows moved the
+            // sidebar selection instead of the cursor; Return re-entered `beginRename`).
+            .onKeyPress(.upArrow) { editingPlaylistID == nil ? moveSelection(by: -1, proxy: proxy) : .ignored }
+            .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1, proxy: proxy) : .ignored }
+            // Return renames the selected playlist (Finder/Music convention). Categories ignore it.
+            .onKeyPress(.return) { editingPlaylistID == nil ? renameSelectedPlaylist() : .ignored }
         }
-        .focusable()
-        .focused($sidebarFocused)
-        .defaultFocus($sidebarFocused, true)
-        // The system effect would outline the whole rail; the selected row's ring replaces it (A3).
-        .focusEffectDisabled()
-        // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still in
-        // the focus chain) HIJACKS the keys from the focused TextField (arrows moved the sidebar
-        // selection instead of the cursor; Return re-entered `beginRename`).
-        .onKeyPress(.upArrow) { editingPlaylistID == nil ? moveSelection(by: -1) : .ignored }
-        .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1) : .ignored }
-        // Return renames the selected playlist (Finder/Music convention). Categories ignore it.
-        .onKeyPress(.return) { editingPlaylistID == nil ? renameSelectedPlaylist() : .ignored }
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
         // hug the measured content, scroll when the window is short. The shared teal glow (PR-B) sits
         // behind both cards at the window level, so there is no per-card glow here.
@@ -126,6 +123,7 @@ struct LibrarySidebar: View {
         // folds the row into one activatable element carrying the `.isSelected` trait.
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .id(SidebarSelection.category(category)) // the arrow keys' `scrollTo` target (A3)
     }
 
     // MARK: - Playlists section
@@ -192,6 +190,7 @@ struct LibrarySidebar: View {
                 Button("Rename") { beginRename(playlist) }
                 Button("Delete", role: .destructive) { deletePlaylist(playlist) }
             }
+            .id(SidebarSelection.playlist(playlist.id)) // the arrow keys' `scrollTo` target (A3)
         }
     }
 
@@ -297,12 +296,25 @@ struct LibrarySidebar: View {
             }
         }
     }
+}
+
+// MARK: - Keyboard cursor (↑/↓)
+
+/// Same-file extension (type-body length): reaches the rail's private state.
+private extension LibrarySidebar {
+    /// The unified top-to-bottom row order for ↑/↓ navigation (categories, then playlists).
+    var selectables: [SidebarSelection] {
+        LibraryCategory.allCases.map(SidebarSelection.category)
+            + playlists.playlists.map { SidebarSelection.playlist($0.id) }
+    }
 
     /// Move the unified selection by `delta` rows through `selectables` (keyboard ↑/↓). `.ignored`
     /// when the move would leave the list, so the event can bubble. Also `.ignored` while a browse
     /// drill-down (album/artist/genre detail) is showing: `sidebarSelection` collapses that to its
     /// category, so an arrow press would otherwise navigate away and DESTROY the drill-down.
-    private func moveSelection(by delta: Int) -> KeyPress.Result {
+    /// Keeps the new selection on screen the queue's way (A3) — the rail scrolls when the window
+    /// is short: `scrollTo` with no anchor scrolls only as far as needed, instantly.
+    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
         if let route = model.path.last {
             switch route {
             case .album, .artist, .genre: return .ignored // a drill-down is open — don't blow it away
@@ -317,6 +329,7 @@ struct LibrarySidebar: View {
         case let .category(category): model.selectCategory(category)
         case let .playlist(id): model.selectPlaylist(id)
         }
+        proxy.scrollTo(items[next])
         return .handled
     }
 }
