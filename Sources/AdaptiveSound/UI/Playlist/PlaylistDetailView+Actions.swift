@@ -61,16 +61,22 @@ extension PlaylistDetailView {
 
     /// ↑/↓ traverse only the AVAILABLE (playable) rows — the "unavailable" (missing-file) rows are
     /// non-interactive except via their context menu (Locate / Remove), so selection skips them (F).
-    func moveSelection(by delta: Int) -> KeyPress.Result {
+    /// The first press selects the first playable row (where the focus ring already sits). Keeps
+    /// the new selection on screen the queue's way (A3): `scrollTo` with no anchor scrolls only
+    /// as far as needed, instantly.
+    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
         let ids = model.detail.filter(\.isAvailable).map(\.id)
         guard !ids.isEmpty else { return .ignored }
-        guard let current = selectedEntryID, let index = ids.firstIndex(of: current) else {
-            selectedEntryID = ids.first
-            return .handled
+        let target: Int64
+        if let current = selectedEntryID, let index = ids.firstIndex(of: current) {
+            let next = index + delta
+            guard next >= 0, next < ids.count else { return .ignored }
+            target = ids[next]
+        } else {
+            target = ids[0]
         }
-        let next = index + delta
-        guard next >= 0, next < ids.count else { return .ignored }
-        selectedEntryID = ids[next]
+        selectedEntryID = target
+        proxy.scrollTo(target)
         return .handled
     }
 
