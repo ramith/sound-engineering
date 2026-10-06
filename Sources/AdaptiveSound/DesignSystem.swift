@@ -55,6 +55,13 @@ enum DesignSystem {
         /// Foreground drawn ON the accent (e.g. a play glyph over the teal fill). Appearance-
         /// independent like `accent` itself — white reads on the teal in both light + dark.
         static let onAccent = from(Palette.onAccent)
+        /// S10.8 A2 accent ROLES — dark is exactly `accent` (no dark look changes); light is
+        /// the deeper teal, because the bare `accent` fails contrast on the light window.
+        /// `accentFill`: tints + fills (switches, the root tint, a glyph's fill layer), ≥ 3:1
+        /// (R4-TINT-01). `accentForeground`: teal TEXT and GLYPHS, ≥ 4.5:1 (R4-TINT-02).
+        /// Decorative strokes/washes keep `accent`; semgrep `ui-no-accent-as-text` holds it.
+        static let accentFill = from(Palette.accentFill)
+        static let accentForeground = from(Palette.accentForeground)
 
         /// Alternates (swap into accent to change feel). #0A84FF.
         static let blue = from(Palette.blue)

@@ -80,6 +80,25 @@ public enum Palette {
     /// `accentText` teal (no new value) — the selection tint alone is ~1.2:1, too faint to cue.
     public static let focusRing = AppearancePair(light: accentText.light, dark: accentText.dark)
 
+    // MARK: Accent roles (S10.8 A2 — the split-text-vs-fill grammar applied to the teal)
+
+    //
+    // The bare `accent` reads on dark but fails contrast in LIGHT (~2.2–2.5:1 on the light
+    // window as text, and under 3:1 as a fill there). These roles fix LIGHT only: their DARK
+    // value IS `accent`'s, so no shipped dark look changes (founder rule; R4-TINT-03 asserts
+    // it). Both are DERIVED from existing values — no new literal enters the palette.
+    // Decorative strokes and washes keep the bare `accent`.
+
+    /// Tints and fills: a switch's "on" track, the root control tint, the fill layer of a
+    /// two-layer glyph. Light = `accentDeep` (≥ 3:1 non-text on the light window and panel,
+    /// R4-TINT-01); dark = `accent`, unchanged.
+    public static let accentFill = AppearancePair(light: accentDeep.light, dark: accent.dark)
+    /// Teal TEXT and GLYPHS (headers' teal words, selected row numbers, icon glyphs). Light =
+    /// `accentText`'s deep teal (AA text on window, panel and badge, R4-TINT-02); dark =
+    /// `accent`, unchanged — deliberately NOT `accentText`, whose brighter dark #6FE0D0 would
+    /// recolour approved dark text.
+    public static let accentForeground = AppearancePair(light: accentText.light, dark: accent.dark)
+
     // MARK: Status
 
     //
@@ -245,7 +264,7 @@ public enum Palette {
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("focusRing", focusRing),
-        ("controlHover", controlHover),
+        ("accentFill", accentFill), ("accentForeground", accentForeground), ("controlHover", controlHover),
         ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
         ("accentTitle", accentTitle), ("meterHot", meterHot), ("meterHotText", meterHotText),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
