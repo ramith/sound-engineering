@@ -93,7 +93,7 @@ struct LibrarySidebar: View {
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
         // hug the measured content, scroll when the window is short. The shared teal glow (PR-B) sits
         // behind both cards at the window level, so there is no per-card glow here.
-        .huggingGlassPanel(contentHeight: contentHeight)
+        .huggingGlassPanel(.libraryCard, contentHeight: contentHeight)
         .frame(width: DesignSystem.LayoutMetrics.sidebarIdeal)
         .frame(maxHeight: .infinity, alignment: .top)
         .fileImporter(isPresented: $showFolderImporter, allowedContentTypes: [.folder]) { result in
