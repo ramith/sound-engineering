@@ -113,7 +113,7 @@ private struct NowPlayingInfoRegion: View {
             if let artwork = nowPlaying.currentArtwork {
                 Image(nsImage: artwork)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
             } else {
                 Image(systemName: "music.note")
                     .font(.system(size: 18))
