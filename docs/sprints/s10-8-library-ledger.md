@@ -93,6 +93,14 @@ consequence lands here: once the NP inspector card went flat too, `SurfaceRole.l
 Library cards and the inspector are one role again, flat to the edge. The rail's bottom inset
 also dropped from the 24pt bleed run to the guide's 10pt.
 
+## Where the open work went (2026-10-06)
+
+The remaining Library work — other categories into the card, PR-E / PR-F, empty states, and
+the light / Reduce Transparency cells above — is now planned in
+[s10-8-glass-sweep-plan.md](s10-8-glass-sweep-plan.md) (Sprints B, D and E). From the
+fast-follows below, the **keyboard cluster is promoted to an R1 Must** (Sprint E); drag-a-header
+reorder and the frozen title column stay deferred.
+
 ## Fast-follows (PR-D shipped the validated core; these land right after)
 
 - **Drag-a-header reorder** (founder chose full apparatus; deferred as the fragile bit — the
