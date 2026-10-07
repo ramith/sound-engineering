@@ -118,6 +118,8 @@ struct SongsListView: View {
             selection.formUnion(sheetSongSelection)
             anchorID = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: sheetSongSelection)?.id
         }
+        // Picture-sheet ring variant: focus, so the ring marks the seeded anchor.
+        .sheetFocusSeed(.songs) { listFocused = true }
         #endif
     }
 
