@@ -59,6 +59,31 @@ struct SliderAuditTests {
         #expect(ratio >= ContrastAuditTests.nonTextAA, "meterFillTrail on the footer groove = \(ratio)")
     }
 
+    /// The paused scrubber (S10.8 B3): in light the shipped accent 50% measured 1.34:1 on the groove
+    /// and 1.68:1 on the window. It must clear 3:1 against both in light, and still read PAUSED in
+    /// both appearances — dimmer than the playing fill's value end, measured as chroma (in light a
+    /// fainter fill would lose contrast, so the dim is a greyer teal, not a lighter one). Dark keeps
+    /// the shipped value (2.39:1 on its groove — dark is out of B3's scope).
+    @Test("R4-SLIDER-05: the paused footer fill clears 3:1 in light and reads dimmer than playing")
+    func pausedFooterFill() {
+        func chroma(_ color: RGBAColor) -> Double {
+            max(color.red, color.green, color.blue) - min(color.red, color.green, color.blue)
+        }
+        for appearance in TokenAppearance.allCases {
+            let window = Palette.window.value(for: appearance)
+            let groove = GlassDecor.carvedTrackOnWindow.value(for: appearance).over(window)
+            let paused = Palette.scrubberPausedFill.value(for: appearance).over(groove)
+            let playing = Palette.meterFillTrail.value(for: appearance).over(groove)
+            #expect(chroma(paused) < chroma(playing), "paused vs playing chroma (\(appearance))")
+            guard appearance == .light else { continue }
+            for (name, backdrop) in [("groove", groove), ("window", window)] {
+                let ratio = RGBAColor.contrastRatio(paused, backdrop)
+                #expect(ratio >= ContrastAuditTests.nonTextAA, "paused fill on the light \(name) = \(ratio)")
+            }
+        }
+        #expect(Palette.scrubberPausedFill.dark == Palette.accent.dark.opacity(0.5))
+    }
+
     /// The founder rule as a test: B2a re-tunes LIGHT only.
     @Test("R4-SLIDER-04: the dark fill, groove and knob are the shipped ones")
     func darkValuesUnchanged() {

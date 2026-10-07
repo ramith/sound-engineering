@@ -191,6 +191,13 @@ public enum Palette {
     /// `iconFillTop`, the shipped mid → bright run; light = `accentDeep`, so the DEEP end trails —
     /// the bright #3FD0BA is 1.8:1 on the light card. DERIVED, no new literal.
     public static let meterFillTrail = AppearancePair(light: accentDeep.light, dark: iconFillTop.dark)
+    /// The footer scrubber's PAUSED fill (S10.8 B3, R4-SLIDER-05): the teal at part strength, so it
+    /// reads dimmer than the playing gradient. Dark = the shipped accent 50%; light = the deep text
+    /// teal at 70%, a greyed teal ≥ 3:1 on the footer groove and the window — the accent 50% measured
+    /// 1.34:1 there (in light a fainter fill loses contrast, so "dimmer" means less vivid, not
+    /// lighter). DERIVED, no new literal.
+    public static let scrubberPausedFill = AppearancePair(light: accentText.light.opacity(0.70),
+                                                          dark: accent.dark.opacity(0.5))
 
     // MARK: Glass-look fills (Regime B — design §3.1; staged per consumer)
 
@@ -285,6 +292,7 @@ public enum Palette {
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
         ("labelTertiaryOnSelection", labelTertiaryOnSelection),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid), ("meterFillTrail", meterFillTrail),
+        ("scrubberPausedFill", scrubberPausedFill),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("focusRing", focusRing),

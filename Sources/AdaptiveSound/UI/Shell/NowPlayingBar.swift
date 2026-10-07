@@ -349,7 +349,7 @@ private struct FooterScrubber: View {
         }
         return viewModel.isPlaying
             ? AnyShapeStyle(DesignSystem.Gradient.meterFill)
-            : AnyShapeStyle(DesignSystem.Color.accent.opacity(0.5))
+            : AnyShapeStyle(DesignSystem.Color.scrubberPausedFill)
     }
 
     private var accessibilityValue: String {
