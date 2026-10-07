@@ -111,7 +111,13 @@ struct SongsListView: View {
             TrackInfoCard(file: AudioFile(track))
         }
         #if DEBUG
-        .onAppear { selection.formUnion(sheetSongSelection) }
+        // Seed the anchor too, so the fixture's selection is a real cursor state (the first seeded
+        // row in visible order — never the Set's arbitrary `first`). A no-op in a normal run.
+        .onAppear {
+            guard !sheetSongSelection.isEmpty else { return }
+            selection.formUnion(sheetSongSelection)
+            anchorID = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: sheetSongSelection)?.id
+        }
         #endif
     }
 
