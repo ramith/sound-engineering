@@ -219,6 +219,34 @@ covers dark.
 
 ## Sprint B — light mode
 
+### B3 — the final light polish (2026-10-07)
+
+Three light-only fixes from the B2a findings, approved by the founder under the freeze rule. Token
+math (the R4 tests) first, then the rendered sheet pixels.
+
+| Fix | Commit | Before → after |
+|---|---|---|
+| Format chips: a 1pt light edge (`controlEdgeLight`, black 20%, now shared with the switch) inside the chip, clipped to it, both states; one `lightEdge` modifier now draws the knob ring, the switch edge and the chip edge | `c3b2e8d` | White chip on the card 1.08 → 1.49 (rendered 1.07 → 1.51), RT/IC card 1.02 → 1.57 (1.02 → 1.58), window 1.17 → 1.37 (1.16 → 1.39); teal playing chip on its row 1.10 → 1.76 rendered. Text unchanged, AA (6.20; teal 5.16–6.72). R4-CHIP-03 |
+| Footer groove on the light window: `carvedTrackOnWindow` 7% (the card groove's grey) | `d7d0fc1` | Playing fill end vs groove 2.94 → 3.15 (rendered 2.89 → 3.09); vs window 3.68, unchanged; the groove itself 1.25 → 1.17 against the window. R4-SLIDER-03 now asserts 3:1 outright (pin removed) |
+| Paused fill: `scrubberPausedFill`, light = `accentText` 70%, a greyed teal | `685d1f3` | Vs groove 1.34 → 3.41 (rendered 1.32 → 3.33); vs window 1.68 → 3.98 (1.65 → 3.90). It reads dimmer than playing by chroma, not lightness. R4-SLIDER-05 |
+
+The hero's "FLAC · 48 kHz" chip already had an edge: its `.badge` glass hairline measures 1.42 on
+the window (rendered 1.43). R4-CHIP-03 now holds it to the same floor; it is unchanged.
+
+**Proof.** All 70 sheets rendered at `7f01921` and at the tip, compared on all four channels. Dark:
+35/35 identical, and also identical paused (a throwaway `isPlaying = false` render of Now Playing
+and Library, not committed). Light: 35/35 differ, and only in the chip columns and the footer
+groove.
+
+**Found, not fixed:**
+
+- Dark paused scrubber: 2.39:1 against its groove, 3.40 against the window. It shipped that way,
+  and dark is out of scope.
+- R4-SLIDER-01 puts the knob ring over the surface. The ring is actually drawn over the white
+  knob, so on the light window it is 2.87:1, under 3:1. That is the footer's hover thumb. On the
+  card it is 3.10.
+- Reimagine's "Pure (bypassed)" dim, as routed in B2a.
+
 ### B2b — the light window backdrop (2026-10-07)
 
 The founder picked **B · Pale glow** live in the app (`Debug ▸ Light Background`) on 2026-10-07;
@@ -266,8 +294,8 @@ accessibility): the paused 40% dim (light ramp 1.53–1.74:1, even black only 2.
 
 **Known issues, pinned with `withKnownIssue` (they flip when fixed):** R4-SLIDER-03 — the fill on
 the footer groove over the light window, 2.94:1 (the time text beside it carries the position),
-→ B3. R4-SEL-03 — dark tertiary on a selected row, 4.46:1 (pre-existing) → **resolved**: the
-founder chose "fix both" (2026-10-07), so dark tertiary on a selected row promotes to secondary like
+→ B3 (**resolved** there, 3.15:1). R4-SEL-03 — dark tertiary on a selected row, 4.46:1
+(pre-existing) → **resolved**: the founder chose "fix both" (2026-10-07), so dark tertiary on a selected row promotes to secondary like
 light (the test now asserts AA outright; the dark selection tint itself is unchanged).
 
 **Deviations (accepted by the agent, with evidence):**
@@ -301,6 +329,7 @@ light (the test now asserts AA outright; the dark selection tint itself is uncha
 
 - B3: the white format-badge chips nearly vanish on the denser light card (1.07:1, was 1.11 —
   text-led, not an AA miss); the paused footer scrubber (`accent` 50%) on the light window.
+  **Both resolved in B3.**
 - Wherever Reimagine is restyled: its Intensity block dims whole to 50% under Pure, so the
   "Pure (bypassed)" status reads ~2:1 in both appearances — the headphones-hint class.
 - `DesignSystemGlass.swift` is at 496 of its 500 lines: F2 must make room before adding (the
