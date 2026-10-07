@@ -298,8 +298,8 @@ public final class LibraryStore: Sendable {
             (Schema.MigrationID.v4, { try Schema.migrateV3toV4($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v5, { try Schema.migrateV4toV5($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v6, { try Schema.migrateV5toV6($0, appBuild: appBuild, timestamp: $1) }),
-            // v7 rebuilds `albums` (S10.8 C2), so it relies on the DEFAULT `.deferred` foreign-key
-            // checks (FKs off during the step, verified before commit) — never `.immediate`.
+            // v7 rebuilds `albums` (S10.8 C2), so it runs with FKs OFF — never `.immediate` — and
+            // checks its OWN references (see the loop below).
             (Schema.MigrationID.v7, { try Schema.migrateV6toV7($0, appBuild: appBuild, timestamp: $1) }),
         ]
         assert(steps.count == currentSchemaVersion, "currentSchemaVersion must equal the registered step count")
@@ -307,6 +307,14 @@ public final class LibraryStore: Sendable {
         var migrator = DatabaseMigrator()
         migrator.eraseDatabaseOnSchemaChange = false
         for step in steps.prefix(version) {
+            if step.id == Schema.MigrationID.v7 {
+                // From v7 on, GRDB's WHOLE-database deferred foreign-key check is off (C2 fix round,
+                // A3): one unrelated stale reference anywhere (a `tracks.artwork_key` …) must not
+                // fail an upgrade. Each step from here runs with FKs OFF and checks the references
+                // it can break itself (`Schema.checkReferences`); a step that rebuilds no table may
+                // register `.immediate` instead. GRDB's switch is sticky, so it is flipped once.
+                migrator = migrator.disablingDeferredForeignKeyChecks()
+            }
             migrator.registerMigration(step.id) { db in try step.migrate(db, clock()) }
         }
         return migrator

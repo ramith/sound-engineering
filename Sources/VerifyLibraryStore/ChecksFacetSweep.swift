@@ -106,6 +106,11 @@ func checkFacetSweepArtworkInteraction(number: Int, url: URL) async -> Bool {
         try await store.applyExtractedResult(
             trackID: id, meta: TrackMetadata(title: "A", albumTitle: "Art"), artwork: art, generation: gen
         )
+        // The end-of-pass regroup makes album "Art" and gives it the track's cover.
+        try await store.refreshDerivedFacets()
+        guard try await store.albums().first(where: { $0.title == "Art" })?.artworkKey == "hashZ" else {
+            printFail(number, "facet-artwork: album 'Art' did not take its track's cover"); return false
+        }
         // Delete the track → album "Art" is zero-track. Facet sweep removes the album, whose
         // ON DELETE SET NULL nulls its artwork_key → hashZ is now referenced by nothing.
         try await store.delete(id: id)
