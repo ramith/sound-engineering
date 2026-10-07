@@ -106,9 +106,18 @@ enum DesignSystem {
 
         /// Row-fill tints for a selectable list row (queue / History): the now-playing row reads
         /// stronger than a merely-selected one. Accent-derived (the derivation is asserted by
-        /// TOK-04), so appearance-independent like `accent`.
+        /// TOK-04); the selected tint deepens in light (S10.8 B2a).
         static let rowNowPlaying = from(Palette.rowNowPlaying)
         static let rowSelected = from(Palette.rowSelected)
+        private static let labelTertiaryOnSelection = from(Palette.labelTertiaryOnSelection)
+
+        /// The selected-row text rule (S10.8 B2a) — its ONE home: tertiary text on a row that is
+        /// selected promotes to `labelTertiaryOnSelection` (light = secondary, AA on the deeper
+        /// `rowSelected`; dark unchanged). Every selectable row's tertiary text reads through
+        /// here: Songs rows, queue / playlist rows, the rail's playlist counts.
+        static func labelTertiary(onSelectedRow isSelected: Bool) -> SwiftUI.Color {
+            isSelected ? labelTertiaryOnSelection : labelTertiary
+        }
 
         /// The small-control hover wash (S10.8 PR B): re-exports the badge fill — the same
         /// white-8%/dark-6% wash the realigned mock uses for hovered chrome controls, so

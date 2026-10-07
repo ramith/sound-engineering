@@ -151,13 +151,23 @@ public enum Palette {
         dark: RGBAColor(red: 240.0 / 255.0, green: 180.0 / 255.0, blue: 41.0 / 255.0)
     )
 
-    // MARK: Row tints (derived from accent — appearance-independent)
+    // MARK: Row tints (derived from the accent family)
 
     /// S10.8 PR D (Realigned Target `png/04`): the heavy 25% band becomes a SUBTLE 13%
     /// tinted card (radius-10 + ring at the call site); the teal `accentTitle` + mini
     /// equalizer now carry the row's prominence instead of fill strength.
     public static let rowNowPlaying = AppearancePair(both: accent.light.opacity(0.13))
-    public static let rowSelected = AppearancePair(both: accent.light.opacity(0.12))
+    /// The selected row. Light (S10.8 B2a): `accentDeep` at 24% — the 12% accent measured
+    /// 1.10:1 against the card, too faint to see a multi-selection; this is ~1.33:1. Dark keeps
+    /// the shipped 12% accent (strengthening it is a founder decision).
+    public static let rowSelected = AppearancePair(light: accentDeep.light.opacity(0.24),
+                                                   dark: accent.dark.opacity(0.12))
+    /// Tertiary text ON a selected row — the selected-row text rule (S10.8 B2a). Light promotes it
+    /// to `labelSecondary`: any tint above ~1.16:1 against the card takes black-55% tertiary below
+    /// AA (4.3:1 on `rowSelected`). Dark keeps `labelTertiary` (4.46:1 there — pre-existing, on
+    /// the founder's desk with the dark selection strength). DERIVED, no new literal.
+    public static let labelTertiaryOnSelection = AppearancePair(light: labelSecondary.light,
+                                                                dark: labelTertiary.dark)
 
     /// The playing row's TITLE teal (S10.8 PR D — realigned #7EE8D8; one step brighter than
     /// `accentText` so the title reads above the row's chips). Light: the same deep-teal
@@ -269,6 +279,7 @@ public enum Palette {
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("statusWarningText", statusWarningText), ("statusErrorText", statusErrorText),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
+        ("labelTertiaryOnSelection", labelTertiaryOnSelection),
         ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid), ("meterFillTrail", meterFillTrail),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
