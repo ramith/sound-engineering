@@ -293,7 +293,8 @@ public enum Palette {
         ("accentTitle", accentTitle), ("meterHot", meterHot), ("meterHotText", meterHotText),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
-        ("carvedTrack", GlassDecor.carvedTrack), ("knobFill", GlassDecor.knobFill),
+        ("carvedTrack", GlassDecor.carvedTrack), ("carvedTrackOnWindow", GlassDecor.carvedTrackOnWindow),
+        ("knobFill", GlassDecor.knobFill),
     ]
 }
 

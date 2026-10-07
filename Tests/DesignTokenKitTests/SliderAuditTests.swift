@@ -48,18 +48,15 @@ struct SliderAuditTests {
             >= ContrastAuditTests.nonTextAA, "meterFillTrail on the light window")
     }
 
-    /// The footer groove is darker than the card's (it sits on the grey window), so the value end
-    /// measures 2.94:1 against it — just under. The elapsed and remaining time beside it carry the
-    /// position as text; routed to B3 (the light pass on the bands) rather than deepening the one
-    /// shared fill token again.
-    @Test("R4-SLIDER-03: known — the fill against the footer groove on the light window (2.94:1)")
+    /// The footer groove sits on the bare window, darker than the card: the card's 10% carved a
+    /// darker groove there and the value end measured 2.94:1 against it. B3 gives the window its
+    /// own groove (`carvedTrackOnWindow`, the card groove's rendered grey) rather than deepening the
+    /// one shared fill token again.
+    @Test("R4-SLIDER-03: the fill's value end clears 3:1 on the footer groove over the light window")
     func footerGrooveInLight() {
-        let window = Palette.window.light
-        let groove = GlassDecor.carvedTrack.light.over(window)
+        let groove = GlassDecor.carvedTrackOnWindow.light.over(Palette.window.light)
         let ratio = ContrastAuditTests.ratio(label: Palette.meterFillTrail, on: groove, .light)
-        withKnownIssue("B3: the footer groove on the light window") {
-            #expect(ratio >= ContrastAuditTests.nonTextAA, "meterFillTrail on the footer groove = \(ratio)")
-        }
+        #expect(ratio >= ContrastAuditTests.nonTextAA, "meterFillTrail on the footer groove = \(ratio)")
     }
 
     /// The founder rule as a test: B2a re-tunes LIGHT only.
@@ -68,6 +65,7 @@ struct SliderAuditTests {
         #expect(Palette.meterFillTrail.dark == Palette.iconFillTop.dark)
         #expect(GlassDecor.carvedTrack == AppearancePair(light: .gray(0.0, alpha: 0.10),
                                                          dark: .gray(1.0, alpha: 0.13)))
+        #expect(GlassDecor.carvedTrackOnWindow.dark == GlassDecor.carvedTrack.dark)
         #expect(GlassDecor.knobFill.dark == .gray(1.0))
     }
 }

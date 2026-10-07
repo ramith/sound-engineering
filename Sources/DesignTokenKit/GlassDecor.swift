@@ -54,6 +54,11 @@ public enum GlassDecor {
         light: .gray(0.0, alpha: 0.10),
         dark: .gray(1.0, alpha: 0.13)
     )
+    /// The groove where it sits on the bare window — the footer scrubber (S10.8 B3, R4-SLIDER-03).
+    /// Light 7%, so it renders the card groove's own grey (#DDDDDD): 10% over the darker window
+    /// carved a darker groove, and the fill's value end measured 2.94:1 against it. Dark = the
+    /// shipped groove.
+    public static let carvedTrackOnWindow = AppearancePair(light: .gray(0.0, alpha: 0.07), dark: carvedTrack.dark)
     /// The knob fill. White on BOTH sides — a pair (not a constant) so an appearance can diverge.
     /// In light the white knob is ~1.07:1 on the white-based card, so its edge is `knobRingLight`.
     public static let knobFill = AppearancePair(both: .gray(1.0))
