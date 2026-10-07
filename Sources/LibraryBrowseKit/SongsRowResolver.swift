@@ -14,6 +14,19 @@ public enum SongsRowResolver {
         visible.first { selection.contains($0.id) }
     }
 
+    /// The Songs keyboard cursor's anchor (A break-it): the last clicked/arrowed row while it is
+    /// still selected AND visible, else the first visible selected row (`primaryRow`); nil when
+    /// no visible row is selected. A ⌘-click that DESELECTS the anchor, or a filter that hides
+    /// it, therefore never leaves Return playing a row the selection no longer marks.
+    public static func cursorAnchor<Row: Identifiable>(
+        in visible: [Row], selection: Set<Row.ID>, anchor: Row.ID?
+    ) -> Row.ID? {
+        if let anchor, selection.contains(anchor), visible.contains(where: { $0.id == anchor }) {
+            return anchor
+        }
+        return primaryRow(in: visible, selection: selection)?.id
+    }
+
     /// The selected rows in visible (sort) order — multi-select verbs (Play / Play Next / Add to
     /// Queue) operate on this. A selection id that isn't in `visible` (e.g. left over after a filter
     /// hid its row) is dropped, so a multi-select action can never touch an off-screen track.
