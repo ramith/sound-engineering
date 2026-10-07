@@ -18,12 +18,12 @@ import LibraryStore
 // throw and SKIP its sweep (no wrongful delete).
 
 extension LibraryModel {
-    /// Construct the persistent store off-main at init (design §7). Failure is
+    /// Construct the persistent store at `location` off-main at init (design §7). Failure is
     /// non-fatal: `store` stays nil, the audio path is untouched, and a note is surfaced.
     /// Called from `init`'s Task so the async initializer never blocks the main actor.
-    func makeLibraryStore() async {
+    func makeLibraryStore(at location: AppDataLocation) async {
         do {
-            let url = try LibraryStore.defaultStoreURL()
+            let url = location.storeURL
             let created = try await LibraryStore(url: url, appBuild: appBuildIdentifier)
             store = created
             // A quarantine-rebuild means the on-disk DB was damaged and reset — and it held
@@ -34,9 +34,8 @@ extension LibraryModel {
                     + "history couldn't be recovered. The previous file was saved to "
                     + "\(quarantined.path).")
             }
-            if let cacheURL = try? LibraryStore.defaultArtworkCacheURL() {
-                metadataArtworkCache = ArtworkCache(directory: cacheURL)
-            }
+            // The cache creates its folder on its first write.
+            metadataArtworkCache = ArtworkCache(directory: location.artworkCacheURL)
             logUX("libraryStore: ready at '\(Self.makeDisplayPath(url))'")
             onStoreReady?() // S10.2 2c: store is live — let the audio VM hydrate the queue
         } catch {

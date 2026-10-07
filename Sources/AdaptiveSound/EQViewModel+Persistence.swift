@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - EQViewModel Persistence
 
-/// UserDefaults-backed persistence (the injected `defaults` — `.standard` in the app) for saved
+/// UserDefaults-backed persistence (the injected `defaults` — `AppDataLocation`'s) for saved
 /// custom presets and the per-output-device preset recall map. All keys are versioned so a
 /// future schema change can migrate or discard stale data without a crash.
 ///

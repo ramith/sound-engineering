@@ -95,7 +95,8 @@ public final class LibraryStore: Sendable {
     /// S10.3). Never crashes, never silently deletes (design §5).
     ///
     /// - Parameters:
-    ///   - url: the store file URL (`:memory:` for an in-memory database).
+    ///   - url: the store file URL (`:memory:` for an in-memory database). The app's lives at
+    ///     `AppDataLocation.storeURL` (its artwork cache beside it); the store picks no path itself.
     ///   - appBuild: optional build identifier stored in `schema_info.app_build`.
     public init(url: URL, appBuild: String? = nil) async throws {
         let opened = try LibraryStore.openMigratingAndRepairing(
@@ -104,32 +105,6 @@ public final class LibraryStore: Sendable {
         dbWriter = opened.writer
         version = opened.version
         quarantinedFrom = opened.quarantinedFrom
-    }
-
-    /// The default store location: `~/Library/Application Support/AdaptiveSound/
-    /// library.sqlite3`. Creates the `AdaptiveSound` directory if needed.
-    public static func defaultStoreURL() throws -> URL {
-        let fileManager = FileManager.default
-        let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-        )
-        let directory = appSupport.appendingPathComponent("AdaptiveSound", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("library.sqlite3")
-    }
-
-    /// The default artwork cache directory — `~/Library/Application Support/
-    /// AdaptiveSound/artwork/`, a sibling of the store (design §4). Created if needed.
-    public static func defaultArtworkCacheURL() throws -> URL {
-        let fileManager = FileManager.default
-        let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-        )
-        let directory = appSupport
-            .appendingPathComponent("AdaptiveSound", isDirectory: true)
-            .appendingPathComponent("artwork", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
     }
 
     /// The schema version the store is currently at.

@@ -325,9 +325,13 @@ final class AudioViewModel {
     var pendingNextIndex: Int?
 
     let engine: any AudioPlaybackEngine
+    /// Where the now-playing cursor persists (`+QueueHydration`): the launch's
+    /// `AppDataLocation.defaults`. The picture-sheet renderer injects its own suite.
+    let defaults: UserDefaults
     private let masterGainParameterID: UInt32 = 0
 
-    init(engine: any AudioPlaybackEngine = AudioEngineBridge()) {
+    init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
+        self.defaults = defaults
         self.engine = engine
     }
 
