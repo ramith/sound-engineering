@@ -64,6 +64,12 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     named for that sprint. Agents and tests fill the rest of the matrix (§G). The keyboard and
     VoiceOver walk happens once, in Sprint G.
 15. **Now Playing (part 1) closed** as it is; only its light-mode pass remains, in Sprint B.
+16. **Light backdrop = B, the pale glow** (picked live in the app, 2026-10-07, from A no glow /
+    B pale glow / C tinted base): plain grey window, with a pale glow that brightens and never
+    darkens. A and C are deleted; the light design is now frozen (§E Sprint B freeze rule).
+17. **Two faint dark texts fixed** (2026-10-07, "fix both"; an exception to "dark untouched"):
+    the headphones hint is no longer dimmed, and tertiary text on a selected row promotes to
+    secondary. The dark selection tint itself is unchanged.
 
 ## C. Scope
 
