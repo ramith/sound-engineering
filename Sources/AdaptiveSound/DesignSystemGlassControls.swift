@@ -20,6 +20,9 @@ struct CarvedGroove: View {
     let fillFraction: Double
     /// Track (groove) thickness.
     var height: CGFloat = .init(GlassDecor.carvedTrackHeight)
+    /// The groove's fill: the card groove by default; the footer scrubber, on the bare window,
+    /// passes `carvedTrackOnWindow` (S10.8 B3).
+    var track: AppearancePair = GlassDecor.carvedTrack
     /// The progress fill (S10.8 PR E: the realigned teal `meterFill` gradient by default —
     /// sliders, meters, and the playing scrubber share it; the scrubber's paused/
     /// interrupted states pass their solid state colors instead).
@@ -40,7 +43,7 @@ struct CarvedGroove: View {
             ZStack(alignment: .leading) {
                 // Carved base: token fill + a top inner shade (the 8a inset shadow).
                 Capsule()
-                    .fill(SwiftUI.Color(token: GlassDecor.carvedTrack.value(for: dark ? .dark : .light)))
+                    .fill(SwiftUI.Color(token: track.value(for: dark ? .dark : .light)))
                     .overlay(alignment: .top) {
                         LinearGradient(
                             colors: [SwiftUI.Color(token: dark ? GlassDecor.carvedShadeDark
