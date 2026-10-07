@@ -49,6 +49,16 @@ rules:
       (Sources/AdaptiveSound/UI/Shell/ScreenHeader.swift).
     pattern-regex: '\.navigationTitle'
 
+  - id: swift-no-keypress-delete
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      A key-press handler for KeyEquivalent.delete never fires on macOS: the ⌫ key arrives as
+      U+007F, but .delete is U+0008 (S10.8 founder bug — the queue's Delete was dead). Use
+      .onDeleteCommand(perform:), the system Delete command (⌫, ⌦ and Edit ▸ Delete; a nil
+      action disables it). .deleteForward is U+F728 — ⌦'s own NSDeleteFunctionKey — so not flagged.
+    pattern-regex: '\.onKeyPress\([^)\n]*\.delete\b'
+
   - id: cpp-no-unsafe-string-fn
     languages: [generic]
     severity: ERROR
