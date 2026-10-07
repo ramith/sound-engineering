@@ -2,7 +2,7 @@
 
 # Design-reference snapshots under docs/ are handoff artifacts, not governed source —
 # never reformat them (mirrors .swiftlint.yml `excluded` and the pre-commit hook scope).
---exclude docs
+--exclude docs,.claude
 
 # Keep opening braces on the same line as a multi-line condition (K&R), matching
 # SwiftLint's `opening_brace` rule. Without this, swiftformat wraps the brace to its

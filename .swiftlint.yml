@@ -43,6 +43,10 @@ excluded:
   # artifacts, not governed source — they are never compiled. The pre-commit hook and
   # .swiftformat mirror this same scope.
   - docs/
+  # Agent/tooling worktrees (`.claude/worktrees/*`) are full repo copies with their own
+  # `.build/`, gitignored but on disk inside the repo — linting them is not our source and
+  # crashed swiftlint (SIGILL) in the S10.8 Sprint A gate. Mirrored in .swiftformat.
+  - .claude/
 
 # --- Severity promotions (guide §4.2) ---
 force_cast: error
