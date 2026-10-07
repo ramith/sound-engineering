@@ -21,17 +21,24 @@ extension MetadataExtractor {
         var scalars = CFileMetadataScalars()
         ffmpegMetadataScalars(handle, &scalars)
         let tags = Self.tagDictionary(handle, count: scalars.tagCount)
-        // The bridge lowercases keys; each ?? chain maps BOTH the Vorbis-comment spelling
-        // (FLAC/Ogg: `albumartist`, `tracknumber`, `discnumber`, `date`) and the alternate
-        // ID3/container spelling (`album artist`, `track`, `disc`, `year`/`originaldate`).
+        // The bridge lowercases keys. FFmpeg's demuxers NORMALISE most tags to its generic names
+        // before we see them — the flac/ogg Vorbis-comment table maps ALBUMARTIST → `album_artist`,
+        // TRACKNUMBER → `track`, DISCNUMBER → `disc`; mp4 `aART` and ID3 `TPE2` also land on
+        // `album_artist` — so the generic key leads each ?? chain, and the raw spellings
+        // (`albumartist`, `album artist`, `tracknumber`, `discnumber`, `year`/`originaldate`) back
+        // it up. (S10.8 C2: the chain once lacked `album_artist`, so EVERY FLAC album artist was
+        // dropped → "Unknown Artist"; ALB-02 now reads it from the real fixture.flac.) The
+        // compilation flag needs no chain: Vorbis `COMPILATION`, mp4 `cpil` and ID3 `TCMP` (and
+        // `TXXX:compilation`) all arrive as `compilation`.
         let meta = TrackMetadata(
             title: tags["title"],
             artistName: tags["artist"],
             albumTitle: tags["album"],
-            albumArtistName: tags["albumartist"] ?? tags["album artist"],
+            albumArtistName: tags["album_artist"] ?? tags["albumartist"] ?? tags["album artist"],
+            isCompilation: Self.parseFlag(tags["compilation"]),
             year: Self.parseYear(tags["date"] ?? tags["year"] ?? tags["originaldate"]),
-            trackNo: Self.parseLeadingInt(tags["tracknumber"] ?? tags["track"]),
-            discNo: Self.parseLeadingInt(tags["discnumber"] ?? tags["disc"]),
+            trackNo: Self.parseLeadingInt(tags["track"] ?? tags["tracknumber"]),
+            discNo: Self.parseLeadingInt(tags["disc"] ?? tags["discnumber"]),
             genres: Self.parseGenres(tags["genre"]),
             durationMs: scalars.durationSeconds > 0 ? Int64((scalars.durationSeconds * 1000).rounded()) : 0,
             sampleRate: scalars.sampleRate > 0 ? Int(scalars.sampleRate) : nil,

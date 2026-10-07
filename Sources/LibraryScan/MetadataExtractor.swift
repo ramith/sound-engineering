@@ -90,6 +90,7 @@ extension TrackMetadata {
             artistName: artistName ?? other.artistName,
             albumTitle: albumTitle ?? other.albumTitle,
             albumArtistName: albumArtistName ?? other.albumArtistName,
+            isCompilation: isCompilation || other.isCompilation,
             year: year ?? other.year,
             trackNo: trackNo ?? other.trackNo,
             discNo: discNo ?? other.discNo,
@@ -133,6 +134,17 @@ extension MetadataExtractor {
     static func parseLeadingInt(_ text: String?) -> Int? {
         guard let head = text?.split(separator: "/").first else { return nil }
         return Int(head.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// A boolean tag (the compilation flag) → `true` only for an explicit yes: `1`, `true` or
+    /// `yes`, any case, whitespace-trimmed. Absent, `0` or anything else → `false`. ONE parser
+    /// for both extraction paths (S10.8 C2), so the two never disagree on a flag.
+    static func parseFlag(_ text: String?) -> Bool {
+        guard let text else { return false }
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes": return true
+        default: return false
+        }
     }
 
     /// Split a genre tag on `;`/`/` into trimmed, non-empty names.
