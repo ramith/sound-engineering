@@ -3,6 +3,7 @@
 // expectations (bounds come from the Kit constants, never re-typed magic numbers).
 
 import DesignTokenKit
+import Foundation
 import Testing
 
 @Suite("Sampled glows — clamp + selection (D8)")
@@ -72,6 +73,108 @@ struct SampledGlowTests {
                 guard let once = SampledGlow.clampedSampledColor(sample, slot: slot) else { continue }
                 let twice = SampledGlow.clampedSampledColor(once, slot: slot)
                 #expect(twice == once, "re-clamp must be a no-op (slot \(slot))")
+            }
+        }
+    }
+
+    // MARK: Light lift (S10.8 B2b)
+
+    /// A chromatic lattice over the whole hue circle (HSV, 10° steps × three saturations × two
+    /// values) — what a cover's dominant colors can be, beyond the four hostile extremes.
+    private static let hueLattice: [RGBAColor] = stride(from: 0.0, to: 360.0, by: 10.0).flatMap { hue in
+        [1.0, 0.5, 0.25].flatMap { saturation in
+            [1.0, 0.6].map { value in hsv(hue: hue, saturation: saturation, value: value) }
+        }
+    }
+
+    /// sRGB → linear light (the WCAG linearization) — the test's own oracle, not the Kit's.
+    private static func linear(_ channel: Double) -> Double {
+        channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+    }
+
+    private static func hsv(hue: Double, saturation: Double, value: Double) -> RGBAColor {
+        let chroma = value * saturation
+        let sector = hue / 60
+        let second = chroma * (1 - abs(sector.truncatingRemainder(dividingBy: 2) - 1))
+        let floor = value - chroma
+        func color(_ red: Double, _ green: Double, _ blue: Double) -> RGBAColor {
+            RGBAColor(red: red + floor, green: green + floor, blue: blue + floor)
+        }
+        return switch Int(sector) {
+        case 0: color(chroma, second, 0)
+        case 1: color(second, chroma, 0)
+        case 2: color(0, chroma, second)
+        case 3: color(0, second, chroma)
+        case 4: color(second, 0, chroma)
+        default: color(chroma, 0, second)
+        }
+    }
+
+    @Test("D8-LIGHT-01: the pair's dark half IS the dark clamp, and both reject together")
+    func pairDarkHalfIsTheClamp() {
+        for slot in GlowFieldSpec.glows.indices {
+            for sample in Self.hostileSamples + Self.hueLattice {
+                let pair = SampledGlow.clampedSampledPair(sample, slot: slot)
+                #expect(pair?.dark == SampledGlow.clampedSampledColor(sample, slot: slot),
+                        "dark half drifted from the clamp: \(sample) slot \(slot)")
+            }
+        }
+        #expect(SampledGlow.clampedSampledPair(.gray(0.5), slot: 0) == nil, "achromatic → brand")
+        #expect(SampledGlow.clampedSampledPair(.gray(0.5), slot: 99) == nil, "bad slot → brand")
+    }
+
+    /// The light half is a pastel at (at least) the slot's brand-pastel luminance, at the
+    /// slot's token LIGHT alpha, with the sample's hue: mixing toward white in linear light
+    /// scales every channel's distance from white by the same factor — and never by more than
+    /// the brand pastel's own depth into the brand hue (so no channel falls below that floor).
+    @Test("D8-LIGHT-02: the light half is the hue lifted to the brand pastel's luminance, at the light alpha")
+    func lightHalfIsALiftedPastel() throws {
+        for slot in GlowFieldSpec.glows.indices {
+            let brand = GlowFieldSpec.glows[slot].color
+            let pastel = brand.light
+            let brandPeak = max(brand.dark.red, max(brand.dark.green, brand.dark.blue))
+            let brandHue = RGBAColor(red: brand.dark.red / brandPeak, green: brand.dark.green / brandPeak,
+                                     blue: brand.dark.blue / brandPeak)
+            let budget = (1 - pastel.relativeLuminance) / (1 - brandHue.relativeLuminance)
+            for sample in Self.hostileSamples + Self.hueLattice {
+                guard let light = SampledGlow.clampedSampledPair(sample, slot: slot)?.light else { continue }
+                #expect(light.alpha == pastel.alpha, "alpha must be the slot's token light alpha")
+                #expect(light.relativeLuminance >= pastel.relativeLuminance - 1e-9,
+                        "lifted \(light) is darker than the slot pastel (slot \(slot))")
+                for channel in [light.red, light.green, light.blue] {
+                    #expect(Self.linear(channel) >= 1 - budget - 1e-9,
+                            "lifted \(light) is deeper than the slot's tint budget (slot \(slot))")
+                }
+                let peak = max(sample.red, max(sample.green, sample.blue))
+                let channels = [(light.red, sample.red), (light.green, sample.green), (light.blue, sample.blue)]
+                let distances = channels.map { lifted, sampled in
+                    (lifted: 1 - Self.linear(lifted), hue: 1 - Self.linear(sampled / peak))
+                }
+                let reference = try #require(distances.max { $0.hue < $1.hue })
+                for distance in distances {
+                    #expect(abs(distance.lifted * reference.hue - distance.hue * reference.lifted) < 1e-9,
+                            "hue not preserved: \(sample) → \(light)")
+                }
+            }
+        }
+    }
+
+    /// The pale-glow promise for art: whatever the cover, every slot composited over the light
+    /// window only brightens it — at every alpha the falloff reaches, not just the peak
+    /// (compositing runs in gamma space, where a saturated hue's low channel can dip the
+    /// luminance at a partial alpha even when the hue itself is brighter than the window).
+    @Test("D8-LIGHT-03: no sampled light glow darkens the light window, at any falloff alpha")
+    func lightHalfNeverDarkens() {
+        let window = Palette.window.light
+        let fractions = (1 ... 20).map { Double($0) / 20 }
+        for slot in GlowFieldSpec.glows.indices {
+            for sample in Self.hostileSamples + Self.hueLattice {
+                guard let light = SampledGlow.clampedSampledPair(sample, slot: slot)?.light else { continue }
+                for fraction in fractions {
+                    let composite = light.opacity(light.alpha * fraction).over(window)
+                    #expect(composite.relativeLuminance > window.relativeLuminance,
+                            "\(sample) slot \(slot) darkens the light window at \(fraction) of peak")
+                }
             }
         }
     }

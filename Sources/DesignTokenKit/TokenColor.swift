@@ -58,9 +58,7 @@ public extension RGBAColor {
     /// WCAG 2.x relative luminance (sRGB linearization). Defined for opaque colors;
     /// composite translucent tokens onto their backdrop first.
     var relativeLuminance: Double {
-        func linear(_ channel: Double) -> Double {
-            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
-        }
+        let linear = Self.linearChannel
         return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 
@@ -69,6 +67,18 @@ public extension RGBAColor {
         let lighter = max(first.relativeLuminance, second.relativeLuminance)
         let darker = min(first.relativeLuminance, second.relativeLuminance)
         return (lighter + 0.05) / (darker + 0.05)
+    }
+}
+
+extension RGBAColor {
+    /// One sRGB channel → linear light (the WCAG 2.x linearization `relativeLuminance` uses).
+    static func linearChannel(_ channel: Double) -> Double {
+        channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+    }
+
+    /// One linear-light channel → sRGB: the exact inverse of `linearChannel`.
+    static func encodedChannel(_ linear: Double) -> Double {
+        linear <= 0.03928 / 12.92 ? linear * 12.92 : 1.055 * pow(linear, 1 / 2.4) - 0.055
     }
 }
 

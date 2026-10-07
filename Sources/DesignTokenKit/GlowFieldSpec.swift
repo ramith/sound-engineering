@@ -136,14 +136,17 @@ public enum GlowFieldSpec {
 
 // MARK: - Visibility resolver (RES-04)
 
-/// The glow field renders ONLY in dark appearance (PR 2): the 8a mock is dark-only, and the
-/// review math shows any mid-luminance hue alpha-composited over the near-white light window
-/// DARKENS it — a stain, unfixable by alpha choice. Light-mode ambience needs re-derived
-/// luminance-positive pastels (S10.8 / D8 material). And it is TRANSLUCENCY DECORATION:
-/// suppressed whenever the user asks for reduced transparency — including under Increase
-/// Contrast alone (RES-02 doctrine: never depend on the OS coupling IC→RT).
+/// The glow field renders in dark under every light backdrop (the 8a field). In LIGHT it renders
+/// only under a backdrop that glows there (S10.8 B2b — the pale glow): its light tokens are
+/// luminance-positive pastels that only brighten the window (GLOW-01). The PR-2 dark-only rule
+/// stands for the other backdrops — its reason was the old mid-luminance light hues, which
+/// alpha-composited over the near-white window DARKENED it (a stain, unfixable by alpha choice).
+/// And it is TRANSLUCENCY DECORATION: suppressed whenever the user asks for reduced
+/// transparency — including under Increase Contrast alone (RES-02 doctrine: never depend on the
+/// OS coupling IC→RT). `backdrop` defaults to the designed one — all a Release build paints.
 public func glowFieldIsVisible(appearance: TokenAppearance,
                                reduceTransparency: Bool,
-                               increasedContrast: Bool) -> Bool {
-    appearance == .dark && !reduceTransparency && !increasedContrast
+                               increasedContrast: Bool,
+                               backdrop: LightBackdrop = .designed) -> Bool {
+    (appearance == .dark || backdrop.glowsInLight) && !reduceTransparency && !increasedContrast
 }
