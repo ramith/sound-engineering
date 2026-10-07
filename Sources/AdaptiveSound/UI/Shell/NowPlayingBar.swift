@@ -264,7 +264,8 @@ private struct FooterScrubber: View {
         GeometryReader { geo in
             let trackWidth = geo.size.width
             ZStack(alignment: .leading) {
-                // The shared 8a carved groove (PR 6 — same surface as the inspector sliders).
+                // The shared 8a carved groove (PR 6 — same surface as the inspector sliders),
+                // in its on-the-window fill (S10.8 B3: the card's groove grey, not darker).
                 // Fill follows playback; while playing it carries the realigned teal
                 // gradient (S10.8 PR E — shared with sliders/meters), and the dark-only
                 // glow shows only then (paused = dim teal, interrupted = grey). The state
@@ -272,6 +273,7 @@ private struct FooterScrubber: View {
                 // interpolate — the old play↔pause ease is gone by construction, so no
                 // animation modifier here (a hard swap either way).
                 CarvedGroove(fillFraction: fraction,
+                             track: GlassDecor.carvedTrackOnWindow,
                              fillStyle: fillStyle,
                              glow: viewModel.isPlaying && !isInterrupted)
 
