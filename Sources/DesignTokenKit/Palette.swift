@@ -162,12 +162,13 @@ public enum Palette {
     /// the shipped 12% accent (strengthening it is a founder decision).
     public static let rowSelected = AppearancePair(light: accentDeep.light.opacity(0.24),
                                                    dark: accent.dark.opacity(0.12))
-    /// Tertiary text ON a selected row — the selected-row text rule (S10.8 B2a). Light promotes it
-    /// to `labelSecondary`: any tint above ~1.16:1 against the card takes black-55% tertiary below
-    /// AA (4.3:1 on `rowSelected`). Dark keeps `labelTertiary` (4.46:1 there — pre-existing, on
-    /// the founder's desk with the dark selection strength). DERIVED, no new literal.
+    /// Tertiary text ON a selected row — the selected-row text rule (S10.8 B2a). Promotes it to
+    /// `labelSecondary` in both appearances: in light, any tint above ~1.16:1 against the card
+    /// takes black-55% tertiary below AA (4.3:1 on `rowSelected`); in dark, tertiary read 4.46:1
+    /// there (pre-existing) — the founder chose the fix (S10.8 B, 2026-10-07). DERIVED, no new
+    /// literal.
     public static let labelTertiaryOnSelection = AppearancePair(light: labelSecondary.light,
-                                                                dark: labelTertiary.dark)
+                                                                dark: labelSecondary.dark)
 
     /// The playing row's TITLE teal (S10.8 PR D — realigned #7EE8D8; one step brighter than
     /// `accentText` so the title reads above the row's chips). Light: the same deep-teal
