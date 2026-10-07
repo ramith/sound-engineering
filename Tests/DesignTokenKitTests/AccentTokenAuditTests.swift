@@ -7,8 +7,9 @@ import Testing
 
 /// `accentFill` (tints, switch tracks, glyph fill layers — non-text 3:1) and
 /// `accentForeground` (teal text and glyphs — text AA 4.5:1) audited on every surface they
-/// sit on, in both appearances. The founder rule — no shipped DARK look changes — is a test
-/// too: both roles' dark value IS the bare accent's.
+/// sit on, in both appearances, plus the `onAccent` glyph drawn on an `accentFill` disc. The
+/// founder rule — no shipped DARK look changes — is a test too: both roles' dark value IS the
+/// bare accent's.
 @Suite("Contrast audit — accent roles (R4-TINT)")
 struct AccentTokenAuditTests {
     /// The plain window plus a translucent fill composited over it, per appearance.
@@ -53,6 +54,19 @@ struct AccentTokenAuditTests {
         for (name, pair) in [("accentFill", Palette.accentFill),
                              ("accentForeground", Palette.accentForeground)] {
             #expect(pair.dark == Palette.accent.dark, "\(name).dark must equal accent.dark")
+        }
+    }
+
+    /// The play discs (Albums/Artists hover discs, the Recently Played now-playing disc) draw an
+    /// `onAccent` glyph on an `accentFill` disc — a graphical object, so WCAG 1.4.11's 3:1. LIGHT
+    /// is the binding case: `accentFill` deepens there, toward the near-black glyph.
+    @Test("R4-TINT-04: an onAccent glyph clears non-text 3:1 on accentFill, both appearances")
+    func glyphOnFill() {
+        for appearance in TokenAppearance.allCases {
+            let disc = Palette.accentFill.value(for: appearance)
+                .over(Palette.window.value(for: appearance))
+            let ratio = ContrastAuditTests.ratio(label: Palette.onAccent, on: disc, appearance)
+            #expect(ratio >= ContrastAuditTests.nonTextAA, "onAccent on accentFill (\(appearance)) = \(ratio)")
         }
     }
 }
