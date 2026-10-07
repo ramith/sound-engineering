@@ -1,4 +1,5 @@
-// LibraryStore+Open — the open path: look before writing, refuse rather than reset (S10.8 C2).
+// LibraryStore+Open — the open path: look before writing, refuse rather than reset, back up
+// before upgrading (S10.8 C2).
 //
 // The store file holds the user's playlists and play history, so the open path resets a file only
 // when it is genuinely damaged. An EXISTING file is first looked at on one plain connection that
@@ -8,20 +9,24 @@
 //     aside, never deleted) and rebuild fresh; the app names the saved file.
 //   • written by a NEWER build (a migration id this build doesn't know) → refuse, the file untouched;
 //     the newer build still opens it.
-//   • behind (migrations pending) → migrate on that same connection.
+//   • behind (migrations pending) → back up (StoreBackup), then migrate on that same connection. A
+//     failed backup refuses without migrating.
 //   • any other failure on an intact file — disk full mid-migration, an I/O error, a busy timeout, a
 //     foreign-key violation — → refuse. Each migration step is one transaction, so the failed step
-//     rolls back (any step before it stays applied — each leaves a whole store).
+//     rolls back (any step before it stays applied — each leaves a whole store — and the backup
+//     holds the file as it was).
 // A refusal throws `StoreOpenRefusal`: the app runs without the store (the additive seam) and says why.
 
 import Foundation
 import GRDB
 
 /// Why the store refused to open an existing library. The file is never reset or moved — it keeps
-/// all its data where it is.
+/// all its data where it is, and only a pre-upgrade backup may have been written beside it.
 public enum StoreOpenRefusal: Error {
     /// A newer build last wrote this library: it records a migration this build doesn't know.
     case newerVersion
+    /// The backup taken before upgrading failed, so the library was not upgraded.
+    case backupFailed(any Error)
     /// The library is intact but could not be opened or upgraded.
     case openFailed(any Error)
 }
@@ -66,7 +71,7 @@ extension LibraryStore {
             return try openPool(url: url, migrator: migrator, quarantinedFrom: nil)
         }
         do {
-            try upgradeInPlace(url: url, migrator: migrator)
+            try upgradeInPlace(url: url, migrator: migrator, stamp: stamp)
             return try openPool(url: url, migrator: migrator, quarantinedFrom: nil)
         } catch let error where isCorruption(error) {
             // Damaged beyond use. Quarantine it (+ sidecars) and rebuild fresh — the DERIVED cache
@@ -82,10 +87,10 @@ extension LibraryStore {
     }
 
     /// Bring an EXISTING file up to `migrator`'s schema on one plain connection, which writes nothing
-    /// until the file is known intact and not from a newer build. Throws a corruption error
+    /// until the file is known intact, current-or-behind, and backed up. Throws a corruption error
     /// for a damaged file and `StoreOpenRefusal` for one that must be left alone. The connection
     /// closes on return, before the pool opens.
-    private static func upgradeInPlace(url: URL, migrator: DatabaseMigrator) throws {
+    private static func upgradeInPlace(url: URL, migrator: DatabaseMigrator, stamp: String) throws {
         let connection = try DatabaseQueue(path: url.path, configuration: makeConfiguration())
         let upToDate = try connection.read { db in
             guard try String.fetchOne(db, sql: integrityCheckSQL) == "ok" else { throw FailedIntegrityCheck() }
@@ -93,6 +98,12 @@ extension LibraryStore {
             return try migrator.hasCompletedMigrations(db)
         }
         guard !upToDate else { return }
+        do {
+            // One registered step per schema version (`makeMigrator` asserts it): the count is the target.
+            try StoreBackup.backUp(connection, storeURL: url, targetVersion: migrator.migrations.count, stamp: stamp)
+        } catch {
+            throw StoreOpenRefusal.backupFailed(error)
+        }
         try migrator.migrate(connection)
     }
 
