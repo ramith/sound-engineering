@@ -72,6 +72,9 @@ public extension LibraryStore {
     /// Ids of tracks still needing a metadata attempt (`metadata_scanned == 0`), id-ordered, capped.
     private static let selectTracksNeedingMetadataSQL =
         "SELECT id FROM tracks WHERE metadata_scanned = 0 ORDER BY id ASC LIMIT ?;"
+    /// The same, for the tracks of one root only.
+    private static let selectTracksNeedingMetadataInFolderSQL =
+        "SELECT id FROM tracks WHERE metadata_scanned = 0 AND folder_id = ? ORDER BY id ASC LIMIT ?;"
 
     /// Assemble the bare-`tracks` SELECT projecting `trackColumns`, ordered by `order` with the
     /// pagination `clause` appended (empty when unbounded) — the bare-`tracks` list read's SQL in
@@ -143,13 +146,17 @@ public extension LibraryStore {
     /// Ids of tracks that still need a metadata attempt (`metadata_scanned == 0`),
     /// id-ordered, capped at `limit` — the S8.3 metadata-pass driving query. A no-tags
     /// file, once marked, never reappears here (the anti-loop guarantee); a retagged
-    /// file is reset to 0 by the upsert and reappears. FS-independent (§2a).
-    func tracksNeedingMetadata(limit: Int) async throws -> [Int64] {
+    /// file is reset to 0 by the upsert and reappears. FS-independent (§2a). `folderID`
+    /// narrows it to one root's tracks — a live reconcile's pass, which must not drain the rest
+    /// of the library's pending set while a full pass owns it (S10.8 C2 fix round, B3).
+    func tracksNeedingMetadata(limit: Int, inFolder folderID: Int64? = nil) async throws -> [Int64] {
         try await dbWriter.read { db in
-            try Int64.fetchAll(
-                db, sql: Self.selectTracksNeedingMetadataSQL,
-                arguments: [Int64(limit)]
-            )
+            if let folderID {
+                return try Int64.fetchAll(
+                    db, sql: Self.selectTracksNeedingMetadataInFolderSQL, arguments: [folderID, Int64(limit)]
+                )
+            }
+            return try Int64.fetchAll(db, sql: Self.selectTracksNeedingMetadataSQL, arguments: [Int64(limit)])
         }
     }
 }
