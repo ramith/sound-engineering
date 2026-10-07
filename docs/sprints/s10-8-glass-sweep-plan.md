@@ -202,6 +202,8 @@ and switching output device all still work.
 - Hover washes, hit areas and focus are built inside the Button label; controls stay ≥ 4pt
   inside a card edge; any new fixed row height gets a Dynamic Type clamp.
 - Reduce Motion means "no easing; live meters stay live".
+- **No app-wide tint** (Sprint A finding: an inherited `.tint` recolours every plain button in
+  dark). Every system control a sprint restyles gets its tint per site, from the accent tokens.
 - Debug-only code (the renderer, the test-library switch) must still have a consumer in the
   debug build, or hostile Periphery fails the gate.
 - **System-drawn surfaces** (Save Preset sheet, playlist picker sheet, Track Info popover,
@@ -240,7 +242,8 @@ actions listed under that sprint's "Founder checks"; say what looks wrong.
 
 **Once, in Sprint G (about ten minutes):**
 1. **Keyboard:** turn on keyboard navigation; Tab through each tab. Every stop shows a clear
-   ring; ↑/↓ keeps the row in view; ⇧↓ and ⌘A select; Return plays; Space works pills and switches.
+   ring; ↑/↓ keeps the row in view; ⇧↓ and ⌘A select; Return plays or presses the focused
+   pill (Space stays the app-wide play / pause key, by design).
 2. **VoiceOver (⌘F5):** the capsule switch reads its label and "selected"; the current item in
    an open pill menu reads "checked"; a row reads title, artist and "Now playing".
 3. **Appearance:** flip dark ↔ light while a song plays.
