@@ -125,8 +125,8 @@ struct ContrastAuditTests {
     // geometrically impossible — and it re-verifies AUTOMATICALLY whenever the founder
     // tunes glow centers, because render and audit read the same Kit data.
     //
-    // DARK ONLY: the resolver suppresses the glow field outside dark appearance (RES-04),
-    // so light pairs would audit pixels that never render.
+    // DARK here: the light field (the pale glow, S10.8 B2b) is audited through the same fold
+    // by LightGlowAuditTests.
     //
     // PLACEMENT RULE (§3.3, unchanged): labelTertiary small text never sits inside the
     // TEAL core (t ≤ midStop) — the 8a mock puts only the HERO (large text, 3:1) there.
@@ -251,7 +251,7 @@ struct ContrastAuditTests {
                 }
             }
         }
-        // Light: lens over the plain window (glows are suppressed in light).
+        // Light: lens over the plain window (over the pale light glow: LightGlowAuditTests).
         let lightLens = Palette.lensFill.light.over(Palette.window.light)
         for (name, label) in [("label", Palette.label), ("labelSecondary", Palette.labelSecondary)] {
             let ratio = Self.ratio(label: label, on: lightLens, .light)

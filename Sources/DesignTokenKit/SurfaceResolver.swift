@@ -91,13 +91,10 @@ public enum ResolvedSurface: Equatable, Sendable {
 /// translucent fill goes opaque when `reduceTransparency` is true, AND when
 /// `increasedContrast` is true even with `reduceTransparency` false — macOS couples IC→RT at
 /// the OS level, but the resolver must never depend on the OS doing it (design §7 RES-02).
-/// The opaque composite sits on the light `backdrop`'s window (S10.8 B2b — the tinted base
-/// differs); it defaults to the designed backdrop, all a Release build paints.
 public func resolveSurface(role: SurfaceRole,
                            appearance: TokenAppearance,
                            reduceTransparency: Bool,
-                           increasedContrast: Bool,
-                           backdrop: LightBackdrop = .designed) -> ResolvedSurface {
+                           increasedContrast: Bool) -> ResolvedSurface {
     switch role {
     case let .overlay(substrate):
         // Native-adaptation ownership: Material self-adapts to RT/IC/appearance, so the
@@ -107,15 +104,15 @@ public func resolveSurface(role: SurfaceRole,
     // Every fill role names its pair EXPLICITLY (no `default:`) so a future role cannot
     // silently inherit panelFill — it fails to compile until someone binds its token here.
     case .lens:
-        return resolvedFill(Palette.lensFill, over: backdrop.window, appearance: appearance,
+        return resolvedFill(Palette.lensFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)
     case .badge:
-        return resolvedFill(Palette.badgeFill, over: backdrop.window, appearance: appearance,
+        return resolvedFill(Palette.badgeFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)
     case .panel:
-        return resolvedFill(Palette.panelFill, over: backdrop.window, appearance: appearance,
+        return resolvedFill(Palette.panelFill, appearance: appearance,
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast)
     }
@@ -125,13 +122,12 @@ public func resolveSurface(role: SurfaceRole,
 /// window) when transparency is reduced — and under Increase Contrast EVEN IF the RT flag
 /// is false (never depend on the OS coupling IC→RT).
 private func resolvedFill(_ pair: AppearancePair,
-                          over window: AppearancePair,
                           appearance: TokenAppearance,
                           reduceTransparency: Bool,
                           increasedContrast: Bool) -> ResolvedSurface {
     let fill = pair.value(for: appearance, increasedContrast: increasedContrast)
     if reduceTransparency || increasedContrast {
-        let window = window.value(for: appearance, increasedContrast: increasedContrast)
+        let window = Palette.window.value(for: appearance, increasedContrast: increasedContrast)
         return .fill(fill.over(window))
     }
     return .fill(fill)

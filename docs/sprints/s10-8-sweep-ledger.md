@@ -219,6 +219,11 @@ covers dark.
 
 ## Sprint B — light mode
 
+### B2b — the light window backdrop (2026-10-07)
+
+The founder picked **B · Pale glow** live in the app (`Debug ▸ Light Background`) on 2026-10-07;
+A (no glow) and C (tinted base) and the switch are deleted — light ships the pale glow.
+
 ### B2a — the shared light fixes (2026-10-07)
 
 Built by a swiftui-pro agent in its own worktree while the founder picks the backdrop (B1),

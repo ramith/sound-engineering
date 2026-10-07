@@ -58,11 +58,9 @@ run-release: release
 # models into $(SHEETS_DIR)/<tab>-<appearance>-<w>x<h>.png and exit non-zero if any sheet failed.
 # Cheap variants ride along (dark + light, 1000x720, Now Playing + Library) as
 # <tab>-<appearance>-<variant>-1000x720.png: ring (queue + Songs keyboard focus), ring-rail, empty.
-# Light appearances render once per light window backdrop (S10.8 B2b), slugged after the appearance:
-# <tab>-light-{a-noglow,b-paleglow,c-tinted}[-<variant>]-<w>x<h>.png; dark sheets carry no slug.
 # No library store, audio device, UserDefaults.standard or single-instance lock is touched, so it is
 # safe beside a running app. Narrow with e.g.
-#   make sheets SHEETS_ARGS='-ASSheetTabs np,library -ASSheetAppearances dark,light -ASSheetBackdrops b-paleglow'
+#   make sheets SHEETS_ARGS='-ASSheetTabs np,library -ASSheetAppearances dark,light'
 # Each commit renders into its OWN directory, .build/sheets/<short sha>/ (the renderer prints it),
 # so a sheet from an older commit can never pass for a current one; SHEETS_DIR=<dir> overrides it.
 # Within one commit, sheets are overwritten in place. The binary comes from `--show-bin-path` (like

@@ -46,7 +46,7 @@ struct InspectorColumn: View {
         // height (guide E1) — clip the scrolling content to the panel shape, then paint the
         // panel. Still EXPECTED to scroll at the 640pt window minimum.
         .huggingGlassPanel(contentHeight: contentHeight)
-        // The teal radial glow behind/below the card (dark-only via GlowFieldGate) — sits
+        // The teal radial glow behind/below the card (dark-only — `InspectorCardGlow`) — sits
         // BEHIND the fill strata, bleeding past the bottom edge (the NP inspector's per-card glow;
         // the shared modifier deliberately paints no glow of its own).
         .background { InspectorCardGlow() }

@@ -126,9 +126,9 @@ private struct HeroTitleModifier: ViewModifier {
 // MARK: - Inspector card glow (S10.8 PR E — realigned `png/05`)
 
 /// The teal radial glow behind/below the floating inspector card: rendered only in DARK
-/// (grammar rule 6 — its dark teal would stain the light window, so it stays dark-only even
-/// under the pale-glow backdrop that opens `GlowFieldGate` in light) and only when the glow
-/// field itself is visible (`GlowFieldGate`: no Reduce Transparency / Increase Contrast),
+/// (grammar rule 6 — its dark teal would stain the light window, so it stays dark-only though
+/// `GlowFieldGate` opens in light for the pale glow) and only when the glow field itself is
+/// visible (`GlowFieldGate`: no Reduce Transparency / Increase Contrast),
 /// extending past the card's bottom so the empty area under the hugged card reads
 /// intentional. Appearance-gated, so it lives in this sanctioned file.
 struct InspectorCardGlow: View {
@@ -226,7 +226,7 @@ struct ChromeBandModifier: ViewModifier {
         content
             .background {
                 ZStack {
-                    Rectangle().fill(DesignSystem.Color.window)
+                    DesignSystem.Color.window
                     if dark {
                         LinearGradient(
                             colors: [SwiftUI.Color(token: GlassDecor.bandSheenStrong),
@@ -269,24 +269,20 @@ extension View {
 
 /// The sanctioned environment→resolver wiring for the glow field (this file is the one
 /// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
-/// `glowFieldIsVisible` resolver says so (dark, or light under the pale-glow backdrop; never
-/// with a reduced-transparency or increased-contrast request), handing it the appearance it
-/// resolved — so a decoration picks a token pair's side without reading the environment.
+/// `glowFieldIsVisible` resolver says so (both appearances; never with a reduced-transparency
+/// or increased-contrast request), handing it the appearance it resolved — so a decoration
+/// picks a token pair's side without reading the environment.
 struct GlowFieldGate<Content: View>: View {
     @ViewBuilder var content: (TokenAppearance) -> Content
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.lightBackdrop) private var lightBackdrop
 
     var body: some View {
-        let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
-        if glowFieldIsVisible(appearance: appearance,
-                              reduceTransparency: reduceTransparency,
-                              increasedContrast: colorSchemeContrast == .increased,
-                              backdrop: lightBackdrop) {
-            content(appearance)
+        if glowFieldIsVisible(reduceTransparency: reduceTransparency,
+                              increasedContrast: colorSchemeContrast == .increased) {
+            content(colorScheme == .dark ? .dark : .light)
         }
     }
 }
@@ -300,7 +296,6 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.lightBackdrop) private var lightBackdrop
 
     func body(content: Content) -> some View {
         let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
@@ -308,8 +303,7 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
             role: role,
             appearance: appearance,
             reduceTransparency: reduceTransparency,
-            increasedContrast: colorSchemeContrast == .increased,
-            backdrop: lightBackdrop
+            increasedContrast: colorSchemeContrast == .increased
         )
         switch resolved {
         case .systemMaterial(.ultraThin):

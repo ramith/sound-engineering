@@ -253,9 +253,9 @@ public enum Palette {
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
-    /// base). Light (S10.8 B2b, the pale-glow backdrop): near-white PASTELS of the same hues at
-    /// high alpha, so the pool only ever BRIGHTENS the light window (GLOW-01) — the old ~1/3
-    /// alphas of the dark hues darkened it. Light paints only under the pale glow (RES-04).
+    /// base). Light (S10.8 B2b, the pale glow — the founder's pick): near-white PASTELS of the
+    /// same hues at high alpha, so the pool only ever BRIGHTENS the light window (GLOW-01) — the
+    /// old ~1/3 alphas of the dark hues darkened it.
     /// D8 pre-binding: sampled colors CLAMP into ranges derived from these tokens (dark: the
     /// channel ceiling; light: lifted to the slot pastel's luminance), so the R4 audit keeps
     /// enumerating bounded worst cases.

@@ -1,5 +1,4 @@
 #if DEBUG
-    import DesignTokenKit
     import LibraryStore
     import SwiftUI
 
@@ -48,11 +47,10 @@
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
         }
 
-        /// The whole window content, as `AdaptiveSound.body` builds it, in `appearance`'s environment
-        /// under the light window `backdrop` (S10.8 B2b — what `Debug ▸ Light Background` sets live).
+        /// The whole window content, as `AdaptiveSound.body` builds it, in `appearance`'s environment.
         /// Reduce Motion is always on: sheets are still frames. The ring variants draw keyboard focus
         /// (as after an arrow press) in the lists they focus.
-        func root(for appearance: SheetAppearance, backdrop: LightBackdrop) -> some View {
+        func root(for appearance: SheetAppearance) -> some View {
             ContentView()
                 .environment(audio)
                 .environment(eq)
@@ -64,7 +62,6 @@
                 .environment(\._colorSchemeContrast, appearance.increasedContrast ? .increased : .standard)
                 .environment(\._accessibilityReduceTransparency, appearance.reduceTransparency)
                 .environment(\._accessibilityReduceMotion, true)
-                .environment(\.lightBackdrop, backdrop)
                 .environment(\.sheetSongSelection, selectedSongs)
                 .environment(\.showsKeyboardFocus, !variant.focusedLists.isEmpty)
                 .environment(\.sheetFocusedLists, variant.focusedLists)

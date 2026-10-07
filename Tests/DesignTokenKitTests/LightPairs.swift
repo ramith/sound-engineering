@@ -1,7 +1,7 @@
 // The R4 LIGHT pair table (S10.8 B2b), as data: the light text and non-text pairs the base R4
-// suites audit on the plain window (each row names its source), so the candidate light windows
-// (LightBackdropAuditTests) and the pale light glow (LightGlowAuditTests) replay the SAME pairs
-// on their own backdrops — tuning a token re-verifies every backdrop with no second table.
+// suites audit on the plain window (each row names its source), so the pale light glow
+// (LightGlowAuditTests) replays the SAME pairs on every sampled point of its composite —
+// tuning a token re-verifies the glow with no second table.
 
 import DesignTokenKit
 import Testing

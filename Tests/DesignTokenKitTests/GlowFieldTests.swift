@@ -5,32 +5,20 @@ import Testing
 
 @Suite("Glow field — visibility resolver + spec invariants")
 struct GlowFieldTests {
-    /// The glow field is translucency decoration — any accessibility opacity request wins.
-    /// Dark paints it under every light backdrop; light only under the one that glows there
-    /// (S10.8 B2b: the pale glow, whose light tokens only brighten — GLOW-01). The others keep
-    /// the PR-2 dark-only rule (review MAJOR 4: a mid-luminance hue composited over the
-    /// near-white light window DARKENS it — a stain).
-    @Test("RES-04: glows render in dark, and in light only under the pale glow; never under RT/IC — full cube")
+    /// The glow field is translucency decoration — any accessibility opacity request wins. It
+    /// paints in both appearances: light is the pale glow (S10.8 B2b), whose tokens only
+    /// brighten (GLOW-01) — the PR-2 dark-only rule existed because the old light hues
+    /// darkened the near-white window (review MAJOR 4: a stain).
+    @Test("RES-04: glows render in both appearances, never under an RT/IC request — full flag square")
     func visibilityResolution() {
-        for backdrop in LightBackdrop.allCases {
-            for appearance in TokenAppearance.allCases {
-                for reduceTransparency in [false, true] {
-                    for increasedContrast in [false, true] {
-                        let visible = glowFieldIsVisible(appearance: appearance,
-                                                         reduceTransparency: reduceTransparency,
-                                                         increasedContrast: increasedContrast,
-                                                         backdrop: backdrop)
-                        let painted = appearance == .dark || backdrop == .paleGlow
-                        let expected = painted && !reduceTransparency && !increasedContrast
-                        #expect(visible == expected,
-                                "\(backdrop)/\(appearance)/rt=\(reduceTransparency)/ic=\(increasedContrast)")
-                    }
-                }
+        for reduceTransparency in [false, true] {
+            for increasedContrast in [false, true] {
+                let visible = glowFieldIsVisible(reduceTransparency: reduceTransparency,
+                                                 increasedContrast: increasedContrast)
+                #expect(visible == (!reduceTransparency && !increasedContrast),
+                        "rt=\(reduceTransparency)/ic=\(increasedContrast)")
             }
         }
-        // Release has no switch: the default is the designed backdrop.
-        #expect(glowFieldIsVisible(appearance: .light, reduceTransparency: false, increasedContrast: false)
-            == LightBackdrop.designed.glowsInLight)
     }
 
     /// The light grammar's glow rule (§3.2, re-derived in S10.8 B2b): a light glow is a

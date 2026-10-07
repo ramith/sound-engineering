@@ -1,6 +1,6 @@
-// R4 over the LIGHT glow field (S10.8 B2b — the pale-glow backdrop). The base glow audits are
-// dark-only because the field never painted in light; under the pale glow it does, so its light
-// composite is audited here through the SAME `compositeBackdrop` fold the render reads: Now
+// R4 over the LIGHT glow field (S10.8 B2b — the pale glow, the founder's pick). The base glow
+// audits are dark; the field paints in light too, so its light composite is audited here
+// through the SAME `compositeBackdrop` fold the render reads: Now
 // Playing's three glows and the Library's single pool, both geometries, every grid point — the
 // brand pastels, and a lattice of art-sampled pastels (the D8 light lift) in every slot.
 

@@ -69,10 +69,9 @@
             }
         }
 
-        /// How many sheets this variant renders for `request` (a light appearance once per backdrop).
+        /// How many sheets this variant renders for `request`.
         func sheetCount(for request: SheetRequest) -> Int {
-            let looks = appearances(of: request).reduce(0) { $0 + request.backdrops(for: $1).count }
-            return tabs(of: request).count * looks * sizes.count
+            tabs(of: request).count * appearances(of: request).count * sizes.count
         }
     }
 #endif

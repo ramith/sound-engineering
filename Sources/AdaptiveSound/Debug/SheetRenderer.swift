@@ -1,6 +1,5 @@
 #if DEBUG
     import AppKit
-    import DesignTokenKit
     import SwiftUI
 
     // MARK: - Picture-sheet renderer
@@ -10,9 +9,8 @@
     /// `AdaptiveSound -ASRenderSheets <dir>` — or `make sheets` — renders whole app screens offscreen
     /// from `SheetFixture` models, every tab × appearance × reference size, into
     /// `<tab>-<appearance>-<w>x<h>.png`, plus the cheap `SheetVariant` extras (keyboard ring, empty
-    /// states) as `<tab>-<appearance>-<variant>-<w>x<h>.png`. Light appearances render once per light
-    /// window backdrop (S10.8 B2b), slugged after the appearance: `np-light-b-paleglow-1000x720.png`.
-    /// Then it exits: 0 when every sheet was written, 1 otherwise. It runs
+    /// states) as `<tab>-<appearance>-<variant>-<w>x<h>.png`, then exits: 0 when every sheet was
+    /// written, 1 otherwise. It runs
     /// first thing in `AdaptiveSound.init()`, BEFORE `SingleInstanceGuard`, so it works beside a running
     /// copy of the app without taking its lock, and it never opens the library store, the audio engine
     /// or device, or `UserDefaults.standard` (see `SheetFixture`).
@@ -50,10 +48,8 @@
             for variant in SheetVariant.allCases where variant.sheetCount(for: request) > 0 {
                 let fixture = SheetFixture(defaults: defaults, variant: variant)
                 for appearance in variant.appearances(of: request) {
-                    for backdrop in request.backdrops(for: appearance) {
-                        failures += render(appearance, backdrop: backdrop, tabs: variant.tabs(of: request),
-                                           fixture: fixture, into: request.directory)
-                    }
+                    failures += render(appearance, tabs: variant.tabs(of: request), fixture: fixture,
+                                       into: request.directory)
                 }
             }
             defaults.removePersistentDomain(forName: defaultsSuite)
@@ -62,36 +58,33 @@
             exit(failures.isEmpty ? EXIT_SUCCESS : EXIT_FAILURE)
         }
 
-        /// Every tab at each of the fixture variant's sizes in one appearance, under one light window
-        /// backdrop (`nil` for a dark appearance — `SheetRequest.backdrops(for:)`); returns the sheets
-        /// that could not be written.
-        private static func render(_ appearance: SheetAppearance, backdrop: LightBackdrop?, tabs: [TabSelection],
-                                   fixture: SheetFixture, into directory: URL) -> [String] {
+        /// Every tab at each of the fixture variant's sizes in one appearance; returns the sheets that
+        /// could not be written.
+        private static func render(_ appearance: SheetAppearance, tabs: [TabSelection], fixture: SheetFixture,
+                                   into directory: URL) -> [String] {
             let variant = fixture.variant
-            let name = { (tab: TabSelection, size: NSSize) in fileName(tab, appearance, backdrop, variant, size) }
             guard let windowAppearance = appearance.makeAppearance() else {
-                let names = tabs.flatMap { tab in variant.sizes.map { name(tab, $0) } }
+                let names = tabs.flatMap { tab in variant.sizes.map { fileName(tab, appearance, variant, $0) } }
                 return names.map { "\($0): this macOS can't build the appearance" }
             }
             var failures: [String] = []
             for tab in tabs {
                 fixture.audio.selectedTab = tab
                 for size in variant.sizes {
-                    if let reason = snapshot(fixture.root(for: appearance, backdrop: backdrop ?? .designed),
-                                             appearance: windowAppearance, size: size,
-                                             to: directory.appending(path: name(tab, size))) {
-                        failures.append("\(name(tab, size)): \(reason)")
+                    let name = fileName(tab, appearance, variant, size)
+                    if let reason = snapshot(fixture.root(for: appearance), appearance: windowAppearance, size: size,
+                                             to: directory.appending(path: name)) {
+                        failures.append("\(name): \(reason)")
                     }
                 }
             }
             return failures
         }
 
-        private static func fileName(_ tab: TabSelection, _ appearance: SheetAppearance, _ backdrop: LightBackdrop?,
-                                     _ variant: SheetVariant, _ size: NSSize) -> String {
+        private static func fileName(_ tab: TabSelection, _ appearance: SheetAppearance, _ variant: SheetVariant,
+                                     _ size: NSSize) -> String {
             let dimensions = "\(Int(size.width))x\(Int(size.height))"
-            let parts = [SheetRequest.slug(for: tab), appearance.rawValue, backdrop.map(SheetRequest.slug(for:)),
-                         variant.slug, dimensions]
+            let parts = [SheetRequest.slug(for: tab), appearance.rawValue, variant.slug, dimensions]
             return parts.compactMap(\.self).joined(separator: "-") + ".png"
         }
 
