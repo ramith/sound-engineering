@@ -80,7 +80,7 @@ rules:
   # --- S10.7 layer-policy tripwires (docs/sprints/s10-7-liquid-glass-design.md §3.1/§3.2/§7 R1).
   # Drift nets, not security boundaries (same posture as the migrator grep): helper indirection
   # and legal-token recomposition can evade regexes — review owns that seam (design §7.4-1).
-  # The three DEFINITION files (DesignSystem, DesignSystemGlass, Color+Brand) are the only
+  # The DEFINITION files (DesignSystem, DesignSystemGlass[Controls], Color+Brand) are the only
   # exceptions — they are where color/material IS defined. (SpectrumColorPalette left the list in
   # S10.8 B2a: the analyzer ramp is Kit data now, `SpectrumRamp`.)
 
@@ -145,7 +145,11 @@ rules:
       DesignSystem tokens.
     paths:
       include: ['Sources/AdaptiveSound']
-      exclude: ['DesignSystemGlass.swift']
+      # PATH-ANCHORED, like ui-no-color-literal. DesignSystemGlassControls (S10.8 B) holds the
+      # carved slider + glass switch, split out of DesignSystemGlass under its length budget.
+      exclude:
+        - 'Sources/AdaptiveSound/DesignSystemGlass.swift'
+        - 'Sources/AdaptiveSound/DesignSystemGlassControls.swift'
     pattern-regex: '\\\.colorScheme\b|\.preferredColorScheme\s*\(|NSApp\.appearance\s*='
 
   # --- S10.8 A2 accent-role tripwires (docs/sprints/s10-8-glass-sweep-plan.md §E, Sprint A).
