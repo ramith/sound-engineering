@@ -24,7 +24,8 @@ struct RecentlyPlayedRow: View {
                             .font(.system(size: 10))
                             .foregroundStyle(DesignSystem.Color.onAccent)
                             .padding(3)
-                            .background(DesignSystem.Color.accent, in: Circle())
+                            // The fill role, like the Albums/Artists play discs (R4-TINT-04).
+                            .background(DesignSystem.Color.accentFill, in: Circle())
                     }
                 }
 
