@@ -18,6 +18,8 @@ struct PlaylistItemList: View {
     /// (`.focused` + default + set-on-tap). OWNED by `PlaylistView` so the filter field's
     /// Escape can hand focus back here.
     var queueFocused: FocusState<Bool>.Binding
+    /// Draw the cursor ring only while the user navigates by keyboard (A-review).
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
     /// Non-nil while the "Info" popover is showing; identifies which row's card is open by its
     /// stable `QueueItem.id` (dups-safe — keying on the URL popped the card on every duplicate row).
@@ -221,9 +223,10 @@ struct PlaylistItemList: View {
     }
 
     /// The keyboard CURSOR row (A3) — where the focus ring sits: the arrow anchor, or the first
-    /// visible row when there is none yet. Nil — no ring — while the queue lacks key focus.
+    /// visible row when there is none yet. Nil — no ring — while the queue lacks key focus or
+    /// the user is pointing rather than navigating by keyboard.
     private var keyboardCursorIndex: Int? {
-        guard queueFocused.wrappedValue else { return nil }
+        guard queueFocused.wrappedValue, showsKeyboardFocus else { return nil }
         return cursorAnchor ?? visibleIndices.first
     }
 

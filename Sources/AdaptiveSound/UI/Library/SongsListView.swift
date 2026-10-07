@@ -33,6 +33,8 @@ struct SongsListView: View {
     /// view (A3). A counter, like the queue's jump request, so every press re-fires.
     @State private var cursorScrollRequest = 0
     @FocusState private var listFocused: Bool
+    /// Draw the cursor ring only while the user navigates by keyboard (A-review).
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     #if DEBUG
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): rows its fixture draws as selected.
         @Environment(\.sheetSongSelection) private var sheetSongSelection
@@ -305,9 +307,9 @@ private extension SongsListView {
     /// The keyboard CURSOR row (A3) — where the focus ring sits: the selection anchor the arrows
     /// move from, or the first row while nothing is anchored (the first ↓ then selects it, so the
     /// ring marks exactly what the next arrow press acts on). Nil — no ring — while the list
-    /// lacks key focus.
+    /// lacks key focus or the user is pointing rather than navigating by keyboard.
     var keyboardCursorID: RowID? {
-        guard listFocused else { return nil }
+        guard listFocused, showsKeyboardFocus else { return nil }
         if let anchorID, model.visibleSongs.contains(where: { $0.id == anchorID }) {
             return anchorID
         }

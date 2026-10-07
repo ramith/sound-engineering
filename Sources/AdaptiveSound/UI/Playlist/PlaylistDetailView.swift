@@ -21,6 +21,8 @@ struct PlaylistDetailView: View {
     /// The entry a reorder drag is hovering over (drop-target border). Nil when no drag is active.
     @State private var dropTargetEntryID: Int64?
     @FocusState private var listFocused: Bool
+    /// Draw the cursor ring only while the user navigates by keyboard (A-review).
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     /// Transient "Restore previous queue" affordance after a Play-replace; the token re-triggers the
     /// auto-dismiss even on a repeated Play.
     @State var restoreToastToken: Int?
@@ -209,10 +211,11 @@ private extension PlaylistDetailView {
 
     /// The keyboard CURSOR row (A3) — where the focus ring sits: the selected entry, or the first
     /// playable row while nothing is selected (the first ↑/↓ then selects it, so the ring marks
-    /// exactly what the next arrow press acts on). Nil — no ring — while the list lacks key focus.
-    /// Unavailable rows are never the cursor (`moveSelection` skips them).
+    /// exactly what the next arrow press acts on). Nil — no ring — while the list lacks key focus
+    /// or the user is pointing rather than navigating by keyboard. Unavailable rows are never the
+    /// cursor (`moveSelection` skips them).
     var keyboardCursorEntryID: Int64? {
-        guard listFocused else { return nil }
+        guard listFocused, showsKeyboardFocus else { return nil }
         let playable = model.detail.lazy.filter(\.isAvailable)
         if let selectedEntryID, playable.contains(where: { $0.id == selectedEntryID }) {
             return selectedEntryID
