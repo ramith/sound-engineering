@@ -252,19 +252,22 @@ public enum Palette {
     // MARK: Ambient glow field (S10.7 PR 2 — design §3.3)
 
     /// The three 8a content glows. Dark alphas are the 8a spec (.28/.12/.10 over the deep
-    /// base); light alphas follow the §3.2 grammar rule 5 (~1/3 — ambience, not smears).
-    /// D8 pre-binding: when art-sampling lands (PR 7), sampled colors CLAMP into ranges
-    /// derived from these tokens, so the R4 audit keeps enumerating bounded worst cases.
+    /// base). Light (S10.8 B2b, the pale-glow backdrop): near-white PASTELS of the same hues at
+    /// high alpha, so the pool only ever BRIGHTENS the light window (GLOW-01) — the old ~1/3
+    /// alphas of the dark hues darkened it. Light paints only under the pale glow (RES-04).
+    /// D8 pre-binding: sampled colors CLAMP into ranges derived from these tokens (dark: the
+    /// channel ceiling; light: lifted to the slot pastel's luminance), so the R4 audit keeps
+    /// enumerating bounded worst cases.
     public static let glowTeal = AppearancePair(
-        light: RGBAColor(red: 41.0 / 255.0, green: 182.0 / 255.0, blue: 164.0 / 255.0, alpha: 0.09),
+        light: RGBAColor(red: 236.0 / 255.0, green: 253.0 / 255.0, blue: 249.0 / 255.0, alpha: 0.95),
         dark: RGBAColor(red: 41.0 / 255.0, green: 182.0 / 255.0, blue: 164.0 / 255.0, alpha: 0.28)
     )
     public static let glowLime = AppearancePair(
-        light: RGBAColor(red: 200.0 / 255.0, green: 240.0 / 255.0, blue: 106.0 / 255.0, alpha: 0.04),
+        light: RGBAColor(red: 246.0 / 255.0, green: 253.0 / 255.0, blue: 230.0 / 255.0, alpha: 0.85),
         dark: RGBAColor(red: 200.0 / 255.0, green: 240.0 / 255.0, blue: 106.0 / 255.0, alpha: 0.12)
     )
     public static let glowBlue = AppearancePair(
-        light: RGBAColor(red: 79.0 / 255.0, green: 178.0 / 255.0, blue: 214.0 / 255.0, alpha: 0.033),
+        light: RGBAColor(red: 236.0 / 255.0, green: 246.0 / 255.0, blue: 253.0 / 255.0, alpha: 0.75),
         dark: RGBAColor(red: 79.0 / 255.0, green: 178.0 / 255.0, blue: 214.0 / 255.0, alpha: 0.10)
     )
 

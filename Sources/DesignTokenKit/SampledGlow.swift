@@ -31,8 +31,8 @@ public enum SampledGlow {
 
     /// Clamp a sampled color into the slot's box: hue-preserving proportional scale-down
     /// (never per-channel truncation, which would shift the hue), with the slot's token
-    /// DARK alpha forced (the glow field is dark-only, and alphas are never sampled —
-    /// they are the audited quantity). The aesthetic floors are evaluated on the SCALED
+    /// DARK alpha forced (this is the dark half — `clampedSampledPair` adds the light lift —
+    /// and alphas are never sampled: they are the audited quantity). The aesthetic floors are evaluated on the SCALED
     /// color — what would actually render (review MINOR-4: a barely-chromatic bright
     /// sample whose spread collapses under the scale-down must reject, not render as a
     /// sub-floor gray; this also makes the clamp genuinely idempotent). Returns `nil`
@@ -53,6 +53,45 @@ public enum SampledGlow {
                          green: sampled.green * scale,
                          blue: sampled.blue * scale,
                          alpha: GlowFieldSpec.glows[slot].color.dark.alpha)
+    }
+
+    /// Both halves of the clamp for one slot — what the app-side sampler publishes and
+    /// `GlowField` renders: dark = `clampedSampledColor`; light = the sample's hue LIFTED to a
+    /// pastel (S10.8 B2b). In light the glow only ever brightens the window (GLOW-01), so a
+    /// cover is never composited as sampled: its full-value hue is mixed toward white until its
+    /// relative luminance reaches the slot's brand pastel's — but never deeper into the hue than
+    /// the brand pastel sits from its own brand hue (the slot's tint budget), so a hue that is
+    /// already bright (yellow) still lands a pastel, brighter than the target, never a
+    /// saturated wash whose low channel would dip the window at the falloff's partial alphas.
+    /// The mix runs in LINEAR light, where luminance is linear in it, so the luminance floor is
+    /// exact and the hue's channel ratios survive. Alpha is the slot's token LIGHT alpha. A
+    /// sample rejected by the dark clamp returns nil (→ the brand pair), so a slot is sampled
+    /// in both appearances or in neither.
+    public static func clampedSampledPair(_ sampled: RGBAColor, slot: Int) -> AppearancePair? {
+        guard let dark = clampedSampledColor(sampled, slot: slot) else { return nil }
+        let brand = GlowFieldSpec.glows[slot].color
+        let target = brand.light.relativeLuminance
+        let mix = min(whiteMix(toward: sampled, reaching: target), whiteMix(toward: brand.dark, reaching: target))
+        func lifted(_ channel: Double) -> Double {
+            RGBAColor.encodedChannel(1 - mix * (1 - RGBAColor.linearChannel(channel)))
+        }
+        let hue = fullValue(sampled)
+        let light = RGBAColor(red: lifted(hue.red), green: lifted(hue.green), blue: lifted(hue.blue),
+                              alpha: brand.light.alpha)
+        return AppearancePair(light: light, dark: dark)
+    }
+
+    /// The linear-light mix `m` of a color's full-value hue into white (`1 − m·(1 − hue)`)
+    /// whose relative luminance is `luminance`. Callers pass chromatic colors (the clamp's
+    /// spread floor; the brand hues), whose full-value luminance is below 1.
+    private static func whiteMix(toward color: RGBAColor, reaching luminance: Double) -> Double {
+        (1 - luminance) / (1 - fullValue(color).relativeLuminance)
+    }
+
+    /// The color scaled so its brightest channel is 1 — its hue at full value.
+    private static func fullValue(_ color: RGBAColor) -> RGBAColor {
+        let peak = max(color.red, max(color.green, color.blue))
+        return RGBAColor(red: color.red / peak, green: color.green / peak, blue: color.blue / peak)
     }
 
     /// Each slot's ceiling-gray at its token dark alpha: the worst case of the slot's
