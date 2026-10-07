@@ -555,6 +555,24 @@ dedicated mp3 `TCMP` frame (the ffmpeg CLI cannot write it). (4) The app-side `s
 `removeLibraryFolder` behaviour have no automated proof (the app is an executable target, which no
 test target can import).
 
+### C2 re-break, round 2 (2026-10-08, qa-expert, at `25ef2c5`)
+
+Every round-1 finding re-checked with its original repro and **held**: this build refuses a newer
+store untouched; the backup opens with the user data (WAL writes included); offline at the re-read →
+all 10,043 stay pending, and after remount the result equals a fresh scan (0 rows differ); 2,000
+songs on one title in 1.16 s (was 118 s); every disc / bonus folder folds; compilations and year-less
+bonus tracks stay one; removing a root mid-pass is clean; "feat." credits the artist; covers are
+deterministic; a stray dangling FK no longer fails v7. Kill -9 at seven points (backup and migration
+included) then resume: identical. Live test app: 10k library consistent 13.6 s after launch.
+It found two new MAJORs, both from the fix round itself:
+- **"Year out of identity" merged distinct tagged albums**: Weezer's Blue (1994) and Green (2001),
+  Thriller and its 2008 edition; and an untagged album absorbed a tagged one in its folder.
+- **A store migrated by the pre-fix v7 was accepted, then every pass failed.** Dev and test stores
+  only — the founder's real store was confirmed at v6 by an immutable read-only look (no lock; file
+  byte-identical before and after).
+→ the final round below. Decision: **no third break-it round** (decision 18): the final round
+re-ran the break-it harness itself, and the founder checks the result on the test library.
+
 ### C2 final fix round (2026-10-08)
 
 The re-break confirmed the first fix round holds; it found two MAJORs and three small items.
@@ -608,3 +626,35 @@ Peter Gabriel albums; the break-it's old v7 store is refused, byte-identical.
 Band") still make twin tiles; "&" / "and" / "with" guest forms and "ß" vs "SS" still read as two
 artists for the credit; a root that stays offline re-runs a short "Reading tags…" pass at each
 launch; backups taken in the same second can prune out of order.
+
+### Merge and gate (2026-10-08)
+
+C1, C2, the store-open safety round and three C2 fix rounds were cherry-picked onto
+`sprint/s10-8-c-artists` (two conflicts: the launch path in `LibraryModel+Scan.swift`, where the
+test-library scan stands in for the launch re-read, and the check registry in VerifyLibraryStore's
+`main.swift`). One merge-level fix: Periphery's hostile config flagged four leftovers of the first
+fix round (a key struct read only through `Hashable`, an import, a helper) — the agents had not run
+Periphery. `make strict-gate`: exit 0 on the final tip; VerifyLibraryStore 148/148.
+
+### Founder check — pending (on the TEST library, before merge)
+
+The real library must not meet this build before it is on main: main's v6 build would quarantine a
+v7 store (the old open path), and this build refuses only from now on. So: check on the test
+library, merge, then the founder's own app upgrades the real library, with the automatic
+`library.pre-v7-*` backup plus a manual copy taken first.
+
+### Mini-retro — Sprint C
+
+1. **Store work earned the full review + break-it, and the founder's data is why.** The upgrade was
+   byte-safe from the first build, yet round 1 found that a failed or newer store was wiped from
+   view — a pre-existing open-path rule that v7 made likely. Keep review + break-it for any store,
+   migration or audio-path work (decision 18 already says so).
+2. **A fix round can cause the next round's MAJORs.** "Year out of identity" fixed compilations and
+   merged Weezer's two albums. A product-visible rule change needs its counter-examples written
+   down before it is coded (here: same title + artist, different years).
+3. **Don't delete an agent's worktree until the sprint closes.** The C2 builder could not be resumed
+   for its own fix round (its worktree was gone); a fresh agent relearned the code.
+4. **Agents must run Periphery** (`make periphery`): the gate's hostile dead-code check caught four
+   leftovers after a merge. Briefs now name it.
+5. **The test library paid off on day one.** Its first scan found the FLAC album-artist bug behind
+   the founder's "Unknown Artist", and every break-it repro ran on it — never on the real library.
