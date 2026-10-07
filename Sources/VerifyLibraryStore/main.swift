@@ -11,7 +11,7 @@
 //     SCHEMA-4  migration is transactional (all-or-nothing).
 //     SCHEMA-5  corrupt file (+ live -wal/-shm) → quarantine + rebuild, no crash;
 //               plus the actor's own auto-repair path end to end.
-//     SCHEMA-6  downgrade guard — newer user_version → schemaTooNew + rebuild.
+//     SCHEMA-6  downgrade guard — a store from a newer build → refused, file untouched.
 //     RESTART   durability — write, drop the store, reopen → rows present.
 //
 //   S8.1b (DAO + concurrency/FS-divergence):
@@ -186,12 +186,12 @@ func allCheckCases() -> [CheckCase] {
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
-/// the additive-only (erase=false) data-preservation guard (S10.3).
+/// the additive-only (erase=false) data-preservation guard (S10.3) + a foreign schema refused (S10.8 C2).
 func hardeningCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "sp-single-pool-concurrency", run: checkSinglePoolConcurrency),
         CheckCase(label: "additive-preserve-schema-bump", run: checkAdditiveMigrationPreservesData),
-        CheckCase(label: "foreign-schema-rebuild", run: checkForeignSchemaRebuild),
+        CheckCase(label: "foreign-schema-refused", run: checkForeignSchemaRefused),
     ]
 }
 

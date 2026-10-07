@@ -3,9 +3,10 @@
 // The store is built on GRDB, which surfaces its own `DatabaseError` for SQLite-level
 // failures (constraint / corruption / busy / …). `LibraryStore` maps the conditions it acts
 // on into domain types — a `UNIQUE(url)` collision becomes `URLConflict` (LibraryTypes);
-// corruption or a too-new schema are detected from a `DatabaseError` inside the store's open
-// path and drive quarantine + rebuild there. Only these two app-level conditions remain as a
-// typed `SQLiteError`. No `Database`/`sqlite3*` handle ever escapes into an error value.
+// corruption is detected from a `DatabaseError` inside the store's open path and drives
+// quarantine + rebuild there, and a store it won't open is a `StoreOpenRefusal`
+// (LibraryStore+Open). Only the two app-level conditions below remain a typed `SQLiteError`.
+// No `Database`/`sqlite3*` handle ever escapes into an error value.
 
 import Foundation
 
@@ -21,8 +22,8 @@ public enum SQLiteError: Error, Sendable {
 
     /// Whether a quarantine + rebuild recovers from this error — always `false`:
     /// `fts5Unavailable` is a build/config fault a valid store must surface (not paper over),
-    /// and `internalError` is a logic invariant, not corruption. (Corruption / a too-new
-    /// schema are recognised from GRDB's `DatabaseError` inside the store's open path, not here.)
+    /// and `internalError` is a logic invariant, not corruption. (Corruption is recognised from
+    /// GRDB's `DatabaseError` inside the store's open path, not here.)
     public var isRebuildRecoverable: Bool {
         false
     }
