@@ -22,7 +22,7 @@
 // `eraseDatabaseOnSchemaChange` is FALSE (S10.3) — a schema change is an ADDITIVE, frozen-body
 // migration that PRESERVES user data; the cache is rebuilt by a re-scan, never by wiping the file.
 // Only real corruption is still quarantined + rebuilt; a store this build can't safely open or
-// upgrade is refused and left as it was (LibraryStore+Open).
+// upgrade is refused and left as it was, and every upgrade is backed up first (LibraryStore+Open).
 
 import Foundation
 import GRDB
@@ -93,9 +93,9 @@ public final class LibraryStore: Sendable {
 
     /// Open (creating if absent) and migrate the store at `url`. Real corruption quarantines the
     /// file (+ its `-wal`/`-shm` sidecars) and rebuilds fresh; a store written by a newer build, or
-    /// one that can't be opened or upgraded, throws a `StoreOpenRefusal` and is left as it was. A
-    /// schema change is an ADDITIVE migration that PRESERVES data (erase=false, S10.3). Never
-    /// crashes, never silently deletes (design §5).
+    /// one that can't be opened or upgraded, throws a `StoreOpenRefusal` and is left as it was; an
+    /// upgrade is backed up first (`StoreBackup`). A schema change is an ADDITIVE migration that
+    /// PRESERVES data (erase=false, S10.3). Never crashes, never silently deletes (design §5).
     ///
     /// - Parameters:
     ///   - url: the store file URL (`:memory:` for an in-memory database). The app's lives at
@@ -107,7 +107,7 @@ public final class LibraryStore: Sendable {
     }
 
     /// The same open with its seams exposed: the harness passes a `migrator` that fails or runs
-    /// ahead (to prove refusals) and a fixed `stamp` naming the quarantine files.
+    /// ahead (to prove refusals and backups) and a fixed `stamp` naming the backup/quarantine files.
     public init(url: URL, migrator: DatabaseMigrator, stamp: String) async throws {
         let opened = try LibraryStore.openMigratingAndRepairing(url: url, migrator: migrator, stamp: stamp)
         dbWriter = opened.writer

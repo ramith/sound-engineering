@@ -265,7 +265,7 @@ func checkAdditiveMigrationPreservesData(number: Int, url: URL) async -> Bool {
 /// migrator re-runs `v1-create-all` and collides with the existing tables (`CREATE TABLE … already
 /// exists`). That used to quarantine + rebuild; since S10.8 C2 only real corruption does, so this — a
 /// real migration failure on an intact file — is REFUSED (`.openFailed`): the file byte-identical,
-/// nothing quarantined.
+/// nothing quarantined. Only the pre-upgrade backup, written before the attempt, sits beside it.
 func checkForeignSchemaRefused(number: Int, url: URL) async -> Bool {
     do {
         // 1. Build a valid store + seed a row, then ERASE grdb_migrations so the app tables exist
@@ -288,13 +288,14 @@ func checkForeignSchemaRefused(number: Int, url: URL) async -> Bool {
         guard try Data(contentsOf: url) == before else {
             printFail(number, "foreign-schema: the refused store's file changed"); return false
         }
-        guard try strayFiles(beside: url).isEmpty else {
-            try printFail(number, "foreign-schema: files written beside the refused store: "
+        let backups = try StoreBackup.backups(of: url).map(\.lastPathComponent)
+        guard backups.count == 1, try strayFiles(beside: url) == backups else {
+            try printFail(number, "foreign-schema: expected only the pre-upgrade backup beside the store, found "
                 + "\(strayFiles(beside: url))"); return false
         }
         printPass(number, "foreign-schema refused: a store with app tables but NO grdb_migrations records "
             + "(a pre-GRDB / foreign-migration file) is refused (.openFailed) — byte-identical, nothing "
-            + "quarantined")
+            + "quarantined, the pre-upgrade backup beside it")
         return true
     } catch {
         printFail(number, "foreign-schema threw: \(error)")
