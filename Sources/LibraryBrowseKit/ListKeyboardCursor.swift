@@ -57,16 +57,23 @@ public struct ListKeyboardCursor<ID: Equatable>: Equatable {
         return position == rows.startIndex ? nil : rows[rows.index(before: position)]
     }
 
-    /// ↑/↓ — the row the press lands on. An unanchored cursor is claimed IN PLACE: the first press
-    /// selects the row the ring already marks, whichever arrow it was, and never skips past it.
-    /// An anchored cursor moves `delta` rows. Nil when the move would leave the list (or the
-    /// cursor is no longer in `rows`), so the key can bubble.
+    /// ↑/↓ — the row the press lands on. An anchored cursor moves `delta` rows; nil when the move
+    /// would leave the list (or the cursor is no longer in `rows`), so the key can bubble.
+    ///
+    /// An unanchored cursor seeded on the FIRST row is claimed IN PLACE: the first press selects
+    /// the row the ring already marks, whichever arrow it was, and never skips past it. Seeded
+    /// anywhere else — the queue's playing row, which already wears its own outline, so "stay"
+    /// reads as "nothing happened" — the first press moves from it, claiming it in place only
+    /// where the move would leave the list.
     public func step<Rows: BidirectionalCollection>(by delta: Int, in rows: Rows) -> ID?
         where Rows.Element == ID {
         guard let position = rows.firstIndex(of: id) else { return nil }
-        guard isAnchored else { return id }
+        if !isAnchored, position == rows.startIndex {
+            return id
+        }
         let limit = delta < 0 ? rows.startIndex : rows.index(before: rows.endIndex)
-        return rows.index(position, offsetBy: delta, limitedBy: limit).map { rows[$0] }
+        let moved = rows.index(position, offsetBy: delta, limitedBy: limit).map { rows[$0] }
+        return isAnchored ? moved : moved ?? id
     }
 
     /// Return — the row it activates. Always the cursor when it is anchored (its row wears the
