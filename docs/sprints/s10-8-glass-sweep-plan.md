@@ -156,6 +156,7 @@ of every earlier sprint's picture sheets; later sprints derive new values from t
 | D3 | Icon chip and capsule switch (required accessibility label; selection cue not by fill alone) → queue header, Songs | M | R4-SEG-02 (selected segment ≥ 3:1) |
 | D4 | Card header → Songs, Albums, Artists, Genres | S | — |
 | D5 | Genres rows (system list replaced); grid insets; first-run, scanning, empty, no-results states on the pill style | M | — |
+| D6 | Returning from an album / artist / genre page restores the grid's scroll position (founder, Sprint A check); the Songs count line no longer wraps at 880×640 (Sprint A break-it) | M | — |
 
 **Founder checks:** Songs → Albums → Artists → Genres, the card never moves; each has the
 filter pill; the Now Playing queue header still works (D2 and D3 change it).
