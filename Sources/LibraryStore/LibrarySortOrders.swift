@@ -100,7 +100,7 @@ public enum TrackSort: Sendable, Hashable {
     /// By `last_played` descending; NULL sorts LAST (NULLS-LAST for desc).
     case lastPlayedDesc
     /// By resolved ALBUM-artist name NOCASE ascending (Display-only — the `aa` join). NULL
-    /// album-artist (no album, OR the id-0 "Unknown Artist" sentinel) sorts LAST in BOTH
+    /// album-artist (no album, OR the id-0 unknown-artist sentinel) sorts LAST in BOTH
     /// directions — mirrors `.albumTitleAsc`, deliberately NOT the SQL NULLS-FIRST default.
     case albumArtistAsc
     /// By resolved ALBUM-artist name NOCASE descending; NULL still sorts LAST (mirrors

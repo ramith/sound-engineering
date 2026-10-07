@@ -48,10 +48,10 @@ extension SongColumn {
     }
 
     private static let formatters: [SongColumn: @Sendable (LibraryTrackDisplay) -> String] = [
-        .artist: { $0.artistName },
+        .artist: { $0.artistDisplayName },
         .album: { $0.albumName ?? "" },
         .genre: { $0.genreName ?? "" },
-        .albumArtist: { $0.albumArtistName ?? "" },
+        .albumArtist: { $0.albumArtistDisplayName },
         .format: { $0.format },
         .quality: { qualityString(format: $0.format, sampleRate: $0.sampleRate, bitDepth: $0.bitDepth) },
         .year: { $0.year.flatMap { $0 > 0 ? String($0) : nil } ?? "" },

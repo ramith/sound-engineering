@@ -139,9 +139,9 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     /// §12.3 — written by `incrementPlayCount`.
     public let lastPlayed: Int64?
     /// Resolved ALBUM-artist name (`albums.album_artist_id → artists.name`), or `nil` when
-    /// the track has no album OR the album's artist is the id-0 "Unknown Artist" sentinel
-    /// (blank-cell rendering, mirrors the BR3b sentinel-exclusion convention). Distinct
-    /// from `artistName` (the TRACK artist). S9.5 §12.1 "Album Artist" column.
+    /// the track has no album OR the album's artist is the id-0 sentinel (mirrors the BR3b
+    /// sentinel-exclusion convention; sorts last). Distinct from `artistName` (the TRACK artist).
+    /// S9.5 §12.1 "Album Artist" column — which renders `albumArtistDisplayName`.
     public let albumArtistName: String?
     /// A representative genre name (`MIN` over the track's `track_genres`), or `nil` when
     /// the track has no genre. Display-only — deliberately NO header sort (a per-row
@@ -152,6 +152,19 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
     public var durationSeconds: Double {
         Double(durationMs) / 1000.0
+    }
+
+    /// The artist as displayed (S10.8 C2, ALB-04): the track artist, or `unknownArtistName` when
+    /// the song has none — the ONE missing-artist string every row, cell and spoken label uses.
+    public var artistDisplayName: String {
+        artistName.isEmpty ? unknownArtistName : artistName
+    }
+
+    /// The album artist as displayed: "" for a song with no album (nothing to credit), else the
+    /// album's artist — `unknownArtistName` when the album is credited to the id-0 sentinel.
+    public var albumArtistDisplayName: String {
+        guard albumID != nil else { return "" }
+        return albumArtistName ?? unknownArtistName
     }
 
     public init(
