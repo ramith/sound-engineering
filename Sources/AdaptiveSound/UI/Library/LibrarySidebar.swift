@@ -172,7 +172,7 @@ struct LibrarySidebar: View {
                        isKeyboardCursor: isKeyboardCursor) {
                     Text(playlist.entryCount.formatted(.number))
                         .font(DesignSystem.Font.monoSmall)
-                        .foregroundStyle(DesignSystem.Color.labelTertiary)
+                        .foregroundStyle(DesignSystem.Color.labelTertiary(onSelectedRow: isSelected))
                 }
                 // Drop-target ring while a library track is dragged over this row — STATE, not
                 // decoration, so it wears the non-text 3:1 fill role (R4-TINT-01).

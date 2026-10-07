@@ -47,16 +47,17 @@ struct TokenInvariantTests {
         }
     }
 
-    /// rowNowPlaying/rowSelected/controlActiveFill are the accent at documented alphas,
-    /// never drifting values.
+    /// rowNowPlaying/rowSelected/controlActiveFill are the accent family at documented alphas,
+    /// never drifting values. rowSelected is the one appearance-dependent tint (S10.8 B2a: the
+    /// deeper teal in light; dark keeps the shipped accent 12%).
     @Test("TOK-04: derived accent tints stay derived from the accent")
     func rowTintsDeriveFromAccent() {
         let accent = Palette.accent.light
         #expect(Palette.rowNowPlaying.light == accent.opacity(0.13))
-        #expect(Palette.rowSelected.light == accent.opacity(0.12))
+        #expect(Palette.rowSelected.light == Palette.accentDeep.light.opacity(0.24))
+        #expect(Palette.rowSelected.dark == Palette.accent.dark.opacity(0.12))
         #expect(Palette.controlActiveFill.light == accent.opacity(0.16))
         for (name, pair) in [("rowNowPlaying", Palette.rowNowPlaying),
-                             ("rowSelected", Palette.rowSelected),
                              ("controlActiveFill", Palette.controlActiveFill)] {
             #expect(pair.light == pair.dark,
                     "\(name) is appearance-independent (accent-derived)")
