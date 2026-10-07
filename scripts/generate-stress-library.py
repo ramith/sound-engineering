@@ -70,7 +70,8 @@ def _multichannel(channels, seconds=3, only=None):
     joining several sources frames them differently run to run, which would defeat the manifest."""
     layout, _ = LAYOUTS[channels]
     exprs = "|".join(f"0.125*sin(2*PI*{NOTES[i]}*t)" if only in (None, i) else "0" for i in range(channels))
-    return ["-f", "lavfi", "-i", f"aevalsrc=exprs={exprs}:channel_layout={layout}:sample_rate=48000:duration={seconds}"]
+    source = f"aevalsrc=exprs={exprs}:channel_layout={layout}:sample_rate=48000:duration={seconds}"
+    return ["-f", "lavfi", "-i", source]
 
 
 def template_recipes():
@@ -168,7 +169,7 @@ MP4 = {"title": "title", "artist": "artist", "album": "album", "album_artist": "
 
 
 def numbered(tags, key):
-    """"3/12"-style track or disc numbers for ID3 and MP4."""
+    """A track or disc number as ID3 and MP4 write it: "3/12", or "3" without a total."""
     if key not in tags:
         return None
     total = tags.get(f"{key}_total")
@@ -332,7 +333,8 @@ def album_title(rng):
     adjective, noun, other = rng.choice(ADJECTIVES), rng.choice(NOUNS), rng.choice(NOUNS)
     return rng.choice([f"{adjective} {noun}", f"{noun} of {other}", f"The {noun}", noun, f"{noun} & {other}",
                        f"Live at the {adjective} {noun}", f"{adjective} {noun} (Deluxe Edition)",
-                       f"{noun}, Vol. {rng.randint(2, 4)}", f"{adjective} {noun} (Remastered {rng.randint(2001, 2024)})"])
+                       f"{noun}, Vol. {rng.randint(2, 4)}",
+                       f"{adjective} {noun} (Remastered {rng.randint(2001, 2024)})"])
 
 
 def track_title(rng, artist):
