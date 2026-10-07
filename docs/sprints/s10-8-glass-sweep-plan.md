@@ -70,6 +70,10 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
 17. **Two faint dark texts fixed** (2026-10-07, "fix both"; an exception to "dark untouched"):
     the headphones hint is no longer dimmed, and tertiary text on a selected row promotes to
     secondary. The dark selection tint itself is unchanged.
+18. **Lighter routine, behaviour first** (2026-10-07, after Sprint B's "never-ending loop"
+    review). Sprints C–G run the lighter routine in §D, and the behaviour the founder noticed
+    in use comes before the glass looks: album artists, keyboard selection, the grid keeping
+    its scroll position, moving playlist items (run order in §E). No scope added or cut.
 
 ## C. Scope
 
@@ -97,6 +101,27 @@ only be reordered by dragging (an accessibility requirement, not a design change
 
 ## D. How every sprint runs (the loop that keeps each chunk accurate)
 
+**From Sprint C on: the lighter routine (decision 18).** It replaces the six-step loop below,
+which ran Sprints A and B (A: 10 feature commits, 22 fix commits).
+
+1. **Plan check:** short, by the coordinator or one agent; the founder is asked only when a
+   decision changes.
+2. **Build:** one agent per piece of work, in parallel worktrees when independent; each runs
+   `swift build && swift test` and the linters. The coordinator merges and runs ONE
+   `make strict-gate` on the merged branch, exit code read directly. Code review for logic,
+   data and store changes; colour-only changes rest on the R4 audits and the sheets.
+3. **Sheets:** only the screens the sprint changed; dark pixel-compared to the sprint's base.
+4. **Break-it:** only for keyboard / focus, data-changing or store work — plus the whole-app
+   pass in Sprint G.
+5. **Founder check:** a few minutes on the changed spots (close-ups are fine).
+6. **Mini-retro:** five lines in the sweep ledger.
+
+**Fix what a person can notice:** a contrast number is an R1 item only when it is a real
+readability miss (text under AA, a control or its state under 3:1) — not a hair under a target
+no eye can see.
+
+*The original loop (Sprints A–B):*
+
 1. **Plan check (start):** before code, an agent re-reads the sprint's PRs against the current
    code and the previous sprint's retro, and corrects the scope. The founder is asked only if a
    decision changes.
@@ -116,6 +141,12 @@ only be reordered by dragging (an accessibility requirement, not a design change
 
 Sizes: S = 1 point, M = 2, L = 3 (the sprint model's scale). Each PR can be reverted on its own
 and ships every new piece with a consumer in the same PR (hostile Periphery).
+
+**Run order from Sprint C (decision 18: behaviour first).** A ✅ → B ✅ → **C** (album artists,
+test library) → **behaviour pull-forward**: E1 (selection kit + the full keyboard set), D6
+(the grid keeps its scroll position; the Songs count line), and E4's Move Up / Down / to Top
+with shortcuts → **D** (D1–D5, the Library glass) → **E** (E2, E3, E4's header and insets) →
+**F** → **G**. The PR tables below keep their letters; only the order changes.
 
 ### Sprint A — foundation (7 points)
 
