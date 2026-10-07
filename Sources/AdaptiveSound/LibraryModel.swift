@@ -44,8 +44,8 @@ final class LibraryModel {
 
     // MARK: - Library Store + Scan State (S8.2b)
 
-    /// The persistent library store (S8.1). Constructed off-main at init from
-    /// `LibraryStore.defaultStoreURL()`. `nil` until construction completes (or if it
+    /// The persistent library store (S8.1). Constructed off-main at init at the launch's
+    /// `AppDataLocation.storeURL`. `nil` until construction completes (or if it
     /// failed — the app still runs; the queue is unaffected). The browse UI's source of
     /// truth (`LibraryBrowseModel` reads it); a folder scan populates it.
     var store: LibraryStore?
@@ -73,8 +73,8 @@ final class LibraryModel {
     /// makes the scanner throw `CancellationError` mid-walk and SKIP its sweep.
     var scanTask: Task<Void, Never>?
 
-    /// The artwork cache (S8.3), built alongside `store` in `makeLibraryStore` from
-    /// `LibraryStore.defaultArtworkCacheURL()`. `nil` if the store failed to construct.
+    /// The artwork cache (S8.3), built alongside `store` in `makeLibraryStore` at
+    /// `AppDataLocation.artworkCacheURL`. `nil` if the store failed to construct.
     var metadataArtworkCache: ArtworkCache?
 
     /// Non-nil while a metadata pass is running — a presence signal (`MetadataProgress` no longer
@@ -115,11 +115,12 @@ final class LibraryModel {
     /// NSWorkspace mount/unmount observer tokens (removed in `shutdown()`).
     var volumeMonitorTokens: [any NSObjectProtocol] = []
 
-    init() {
+    /// A library over the store at `location` (the launch's `AppDataLocation`).
+    init(location: AppDataLocation) {
         // Construct the persistent library store off-main (S8.2b). The initializer is async, so —
         // per design §7 — it runs in an init-time Task; failure leaves `store` nil and the audio
         // path (which no longer owns any of this state) fully intact.
-        Task { await self.makeLibraryStore() }
+        Task { await self.makeLibraryStore(at: location) }
     }
 
     #if DEBUG

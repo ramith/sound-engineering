@@ -6,10 +6,10 @@ import LibraryStore
 //
 // Read-side of the persistent queue: on launch (when the store signals ready) restore the queue
 // from the built-in "current" playlist, RESTORE-PAUSED at the saved track + offset — never
-// auto-play (founder brainstorm §0.2). The now-playing cursor lives in UserDefaults, NOT a schema
-// column, so S10.2 adds no migration (the queue rows survive in the DB as-is; DUR-1 still applies
-// to a future schema change). A user edit BEFORE the store is ready SUPERSEDES hydration — their
-// queue wins (the `hasUserEditedQueue` guard).
+// auto-play (founder brainstorm §0.2). The now-playing cursor lives in the injected `defaults` (the
+// launch's `AppDataLocation`), NOT a schema column, so S10.2 adds no migration (the queue rows
+// survive in the DB as-is; DUR-1 still applies to a future schema change). A user edit BEFORE the
+// store is ready SUPERSEDES hydration — their queue wins (the `hasUserEditedQueue` guard).
 //
 // Cursor durability (QA break-it #2/#3): the cursor is stored as (position, trackID-at-position)
 // and RESOLVED tolerantly on restore — an exact (position, id) match, else the id found anywhere,
@@ -62,7 +62,6 @@ extension AudioViewModel {
     /// Play resumes there (reusing the position-preserving resume seek), and mirrored into
     /// `playbackPosition` so the scrubber shows the resume point rather than 0:00 (QA #5b/#5c).
     private func restoreCursor(itemCount: Int) {
-        let defaults = UserDefaults.standard
         if let index = resolveCursorPosition(itemCount: itemCount) {
             selectedTrackIndex = index // didSet clears the (nil) resume point first — order matters
             let saved = max(0, defaults.double(forKey: QueueCursorKey.offset))
@@ -82,7 +81,6 @@ extension AudioViewModel {
     /// (dup-safe: first match); else nil (start at top). A cursor from before `positionTrackID`
     /// existed has no saved id → best-effort by range only.
     private func resolveCursorPosition(itemCount: Int) -> Int? {
-        let defaults = UserDefaults.standard
         guard let position = defaults.object(forKey: QueueCursorKey.position) as? Int else { return nil }
         let savedTrackID = (defaults.object(forKey: QueueCursorKey.positionTrackID) as? Int).map(Int64.init)
         if position >= 0, position < itemCount {
@@ -105,7 +103,6 @@ extension AudioViewModel {
     /// left off. (Periodic persistence for crash resilience = DUR-1; the tolerant resolve above
     /// keeps a stale cursor safe.)
     func persistQueueCursor() {
-        let defaults = UserDefaults.standard
         if let index = selectedTrackIndex, index >= 0, index < queue.count {
             defaults.set(index, forKey: QueueCursorKey.position)
             if let trackID = queue[index].file.trackID {

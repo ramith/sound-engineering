@@ -9,7 +9,8 @@
     /// - no library store: `LibraryModel(storeless:)` never builds one, so `store` stays `nil` and
     ///   every store-backed loader returns early;
     /// - no audio engine or device: `SheetEngine`, and `initializeEngine()` is never called;
-    /// - no `UserDefaults.standard`: the EQ model and every `@AppStorage` use the caller's suite;
+    /// - none of the app's settings: the audio and EQ models and every `@AppStorage` use the
+    ///   caller's suite;
     /// - no system Now Playing: `onNowPlayingRefresh` stays unwired and `registerCommands()` is never
     ///   called, so Control Center and the media keys are untouched.
     ///
@@ -32,7 +33,8 @@
             self.defaults = defaults
             self.variant = variant
             let monitor = Self.monitorSpectra()
-            audio = AudioViewModel(engine: SheetEngine(before: monitor.before, after: monitor.after))
+            audio = AudioViewModel(defaults: defaults,
+                                   engine: SheetEngine(before: monitor.before, after: monitor.after))
             eq = EQViewModel(audioViewModel: audio, defaults: defaults)
             browse = LibraryBrowseModel(audio: audio, library: library)
             playlists = PlaylistsModel(library: library, audio: audio)
