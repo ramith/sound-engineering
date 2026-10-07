@@ -230,15 +230,21 @@ regenerate-metadata-fixtures:
 	  -metadata disc="1/2" -metadata genre="TestGenre" -y "$$dir/fixture.flac"; \
 	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" \
 	  -map 0:a -c:a aac -map_metadata -1 -y "$$dir/no-tags.m4a"; \
-	for ext in m4a flac; do \
-	  codec=aac; [ "$$ext" = flac ] && codec=flac; \
+	for ext in m4a flac mp3; do \
+	  codec=aac; [ "$$ext" = flac ] && codec=flac; [ "$$ext" = mp3 ] && codec=libmp3lame; \
 	  ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" -map 0:a -c:a "$$codec" \
 	    -metadata title="Comp Title" -metadata artist="Comp Artist" -metadata album="Comp Album" \
 	    -metadata compilation=1 -y "$$dir/compilation.$$ext"; \
 	done; \
+	for ext in ogg opus; do \
+	  codec="vorbis -strict -2 -ac 2"; [ "$$ext" = opus ] && codec=libopus; \
+	  ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=0.3" -map 0:a -c:a $$codec \
+	    -metadata title="Comp Title" -metadata artist="Comp Artist" -metadata album="Comp Album" \
+	    -metadata ALBUMARTIST="Comp Album Artist" -metadata ITUNESCOMPILATION=1 -y "$$dir/compilation.$$ext"; \
+	done; \
 	echo "cover.png sha256 (pin in ChecksMetadataReal.knownCoverSHA256 + the README table): $$(shasum -a 256 "$$dir/cover.png" | awk '{print $$1}')"; \
 	rm -f "$$dir/cover.png"; \
-	echo "Regenerated $$dir fixtures (fixture.m4a, fixture.flac, no-tags.m4a, compilation.m4a, compilation.flac)."
+	echo "Regenerated $$dir fixtures (fixture.m4a, fixture.flac, no-tags.m4a, compilation.{m4a,flac,mp3,ogg,opus})."
 
 help:
 	@echo "AdaptiveSound Build Commands:"
