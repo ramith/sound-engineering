@@ -19,6 +19,9 @@ struct AdaptiveSound: App {
     @State private var nowPlaying: NowPlayingController
     /// Suppresses the global Space play/pause accelerator while a text field is focused (S4 SW1).
     @State private var keyboardFocus = KeyboardTransportFocus()
+    /// Draw the custom lists' focus ring only while the user navigates by keyboard (A-review).
+    /// App-owned so the whole app shares ONE event monitor, however many windows open.
+    @State private var keyboardFocusVisibility = KeyboardFocusVisibility()
 
     init() {
         #if DEBUG
@@ -91,6 +94,7 @@ struct AdaptiveSound: App {
                 .environment(playlistsModel)
                 .environment(nowPlaying) // S10.4 D2: footer + widget read the resolved metadata
                 .environment(keyboardFocus)
+                .publishesKeyboardFocusVisibility(keyboardFocusVisibility)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
