@@ -44,4 +44,26 @@ struct SongsRowResolverTests {
         #expect(SongsRowResolver.primaryRow(in: filtered, selection: [10, 40]) == Row(id: 40))
         #expect(SongsRowResolver.orderedSelection(in: filtered, selection: [10, 40]) == [Row(id: 40)])
     }
+
+    // MARK: cursorAnchor (A break-it)
+
+    @Test("cursorAnchor = the anchor while it is selected and visible, even when not first")
+    func cursorAnchorKeepsSelectedAnchor() {
+        #expect(SongsRowResolver.cursorAnchor(in: visible, selection: [20, 30], anchor: 30) == 30)
+    }
+
+    @Test("⌘-click deselecting the anchor un-anchors the cursor — Return can't play the deselected row")
+    func cursorAnchorDropsDeselectedAnchor() {
+        // Click 20, ⌘-click 20 again: the selection is empty but the view's anchor still says 20.
+        #expect(SongsRowResolver.cursorAnchor(in: visible, selection: [], anchor: 20) == nil)
+        // With another row still selected, the cursor moves to it.
+        #expect(SongsRowResolver.cursorAnchor(in: visible, selection: [40], anchor: 20) == 40)
+    }
+
+    @Test("a filter-hidden anchor → the first VISIBLE selected row (main's Return behaviour)")
+    func cursorAnchorHiddenUsesFirstVisibleSelected() {
+        let filtered = [Row(id: 20), Row(id: 30), Row(id: 40)] // 10 hidden by an active filter
+        #expect(SongsRowResolver.cursorAnchor(in: filtered, selection: [10, 40, 30], anchor: 10) == 30)
+        #expect(SongsRowResolver.cursorAnchor(in: filtered, selection: [10], anchor: 10) == nil)
+    }
 }

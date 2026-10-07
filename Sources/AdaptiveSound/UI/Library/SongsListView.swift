@@ -305,9 +305,12 @@ struct SongsListView: View {
 private extension SongsListView {
     /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from and the row
     /// Return plays: the selection anchor (the last clicked/arrowed row — never `selection.first`,
-    /// whose Set order is arbitrary), or the first row while nothing is anchored.
+    /// whose Set order is arbitrary) while it is still selected and visible, else the first
+    /// visible selected row (`SongsRowResolver.cursorAnchor`), else the first row, unanchored.
     var keyboardCursor: ListKeyboardCursor<RowID>? {
-        ListKeyboardCursor.resolve(rows: model.visibleSongs.lazy.map(\.id), anchor: anchorID)
+        let visible = model.visibleSongs
+        let anchor = SongsRowResolver.cursorAnchor(in: visible, selection: selection, anchor: anchorID)
+        return ListKeyboardCursor.resolve(rows: visible.lazy.map(\.id), anchor: anchor)
     }
 
     /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.
@@ -321,14 +324,15 @@ private extension SongsListView {
     }
 
     /// Return: play the cursor row — the ring row, or the anchored row while the ring is hidden.
-    /// An unanchored (ring-only) row is claimed first, as an arrow press would.
+    /// An unanchored (ring-only) row is claimed first, as an arrow press would; the played row
+    /// becomes the anchor, so ⇧-click and the arrows continue from it.
     func playCursorRow() -> KeyPress.Result {
         guard let cursor = keyboardCursor, let id = cursor.activationTarget(ringVisible: showsRing),
               let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
         if !cursor.isAnchored {
             selection = [id]
-            anchorID = id
         }
+        anchorID = id
         model.playTrackNextNow(track)
         return .handled
     }
