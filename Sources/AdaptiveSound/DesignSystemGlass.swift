@@ -84,22 +84,28 @@ extension View {
     func heroTitle() -> some View {
         modifier(HeroTitleModifier())
     }
-}
 
-extension View {
-    /// An analyzer peak cap's opacity over its bar's fill (S10.8 B2a): `SpectrumRamp.capOpacity*`,
-    /// dark the shipped 50%, light 85%. A VIEW opacity, as shipped — alpha baked into the gradient
-    /// colors instead shifts the dark caps by up to 4 levels.
+    /// An analyzer peak cap's opacity over its bar's fill (S10.8 B2a): dark 50% as shipped, light
+    /// 85%. A VIEW opacity, as shipped — baked into the gradient's colors it shifts dark caps.
     func spectrumCapOpacity() -> some View {
-        modifier(SpectrumCapOpacity())
+        modifier(AppearanceOpacity(light: SpectrumRamp.capOpacityLight, dark: SpectrumRamp.capOpacityDark))
+    }
+
+    /// Dims DISABLED content in DARK only — the shipped 50% (guide E1). Light never dims: a native
+    /// control draws its own disabled look, and an instruction beside it must stay AA (S10.8 B2a).
+    func disabledDim(_ disabled: Bool) -> some View {
+        modifier(AppearanceOpacity(light: 1, dark: disabled ? GlassDecor.disabledDimDark : 1))
     }
 }
 
-private struct SpectrumCapOpacity: ViewModifier {
+private struct AppearanceOpacity: ViewModifier {
+    let light: Double
+    let dark: Double
+
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
-        content.opacity(colorScheme == .dark ? SpectrumRamp.capOpacityDark : SpectrumRamp.capOpacityLight)
+        content.opacity(colorScheme == .dark ? dark : light)
     }
 }
 
@@ -222,6 +228,33 @@ struct CarvedTrack: View {
             }
         }
         .frame(height: Self.knobSize)
+    }
+}
+
+// MARK: - Glass switch (S10.8 B2a — the Settings switches reuse it in F2)
+
+/// The app's on/off switch: the native `.switch`, tinted per site with `accentFill` (plan §F). Light
+/// edges the track with a 1pt dark hairline (grammar rule 2: the off track alone is ~1.09:1 on the
+/// card) and shows DISABLED by the switch's own look plus a tertiary label, never a dim on top.
+struct GlassSwitchStyle: ToggleStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let light = colorScheme != .dark
+        let edge = SwiftUI.Color(token: GlassDecor.switchEdgeLight)
+        // The native labeled switch's own layout (label, 8pt, switch; pixel-identical), re-composed
+        // so the hairline sits on the track alone — the labels-hidden switch's frame IS its track.
+        HStack(spacing: DesignSystem.Spacing.small) {
+            configuration.label
+                .foregroundStyle(light && !isEnabled ? DesignSystem.Color.labelTertiary : DesignSystem.Color.label)
+                .accessibilityHidden(true) // the switch below carries the label
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(DesignSystem.Color.accentFill)
+                .overlay { Capsule().strokeBorder(light ? edge : .clear, lineWidth: 1) }
+        }
     }
 }
 
