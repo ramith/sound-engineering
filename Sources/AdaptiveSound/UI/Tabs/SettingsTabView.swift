@@ -76,7 +76,8 @@ struct SettingsTabView: View {
                             }
                         }
                         .toggleStyle(.switch)
-                        .tint(DesignSystem.Color.accentFill)
+                        // Deliberately UNTINTED: this switch has always shown the system accent,
+                        // a shipped dark look — Sprint F restyles Settings as a whole.
                         .padding(.horizontal, 16)
                     }
                 }
