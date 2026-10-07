@@ -36,8 +36,13 @@ tagless anti-loop shape (though the store-level anti-loop is proven syntheticall
 `compilation.m4a` / `compilation.flac` (S10.8 C2) carry the **compilation flag** (`compilation=1`
 → the iTunes `cpil` atom in m4a, the Vorbis `COMPILATION` comment in flac) plus title `Comp Title`,
 artist `Comp Artist`, album `Comp Album`, no cover. `ChecksAlbumArtist` (ALB-02) asserts both
-extraction paths read the flag, and that `fixture.*` (no flag) reads as not a compilation. The mp3
-`TCMP` frame is not covered here: the `ffmpeg` CLI cannot write it (it writes `TXXX` instead).
+extraction paths read the flag, and that `fixture.*` (no flag) reads as not a compilation.
+
+The C2 fix round (C7) adds the keys other taggers write: `compilation.mp3` (`compilation=1`, which
+the `ffmpeg` CLI writes as an ID3 **`TXXX:TCMP`** frame — read on the AVFoundation path), and
+`compilation.ogg` / `compilation.opus` (Vorbis comments **`ITUNESCOMPILATION=1`** and
+**`ALBUMARTIST=Comp Album Artist`** — read on the FFmpeg path). The dedicated mp3 `TCMP` frame is
+still not covered by a file: the `ffmpeg` CLI cannot write it.
 
 ## Authoritative — the gate NEVER runs `ffmpeg`
 
