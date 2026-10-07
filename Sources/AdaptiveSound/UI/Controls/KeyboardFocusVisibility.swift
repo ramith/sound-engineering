@@ -11,30 +11,26 @@ import SwiftUI
 /// One app-wide LOCAL event monitor (the App owns this object, so there is one per app): a
 /// focus-navigation key — Tab / ⇧Tab, an arrow, Home / End, Page Up / Down, without ⌘ (so the
 /// ⌘← / ⌘→ track skips don't count) — switches to keyboard mode; any mouse-down switches back.
-/// System "Keyboard navigation" (Full Keyboard Access) keeps focus drawn regardless. The lists
-/// read the result as the plain `showsKeyboardFocus` environment Bool, published at the window
-/// root by `publishesKeyboardFocusVisibility(_:)`.
+/// The lists read the result as the plain `showsKeyboardFocus` environment Bool, published at
+/// the window root by `publishesKeyboardFocusVisibility(_:)`.
+///
+/// System "Keyboard navigation" (Full Keyboard Access) is deliberately NOT an input: it governs
+/// what Tab can reach, not whether focus is drawn — the browser `:focus-visible` precedent. It
+/// used to force the ring on permanently, so with FKA on a clicking user always saw a ring on a
+/// row they never chose (and Delete acted on it — A break-it). An FKA user who navigates by
+/// Tab or the arrows switches to keyboard mode like anyone else, and sees the ring then.
 @MainActor
 @Observable
 final class KeyboardFocusVisibility {
-    /// The last input that could move focus was a navigation key, not a click.
-    private(set) var isKeyboardDriven = false
-    /// System "Keyboard navigation". Not KVO-observable, so it is re-read on every monitored
-    /// event (AppKit documents the read as inexpensive) — a settings change lands with the next
-    /// key or click.
-    private(set) var isFullKeyboardAccessEnabled = false
+    /// Draw keyboard focus: the last input that could move focus was a navigation key, not a
+    /// click.
+    private(set) var showsFocus = false
 
     @ObservationIgnored private var monitor: Any?
-
-    /// Draw keyboard focus: the user is navigating by keyboard, or Full Keyboard Access is on.
-    var showsFocus: Bool {
-        isKeyboardDriven || isFullKeyboardAccessEnabled
-    }
 
     /// Installs the monitor. Idempotent — every window root calls it, one monitor results.
     func start() {
         guard monitor == nil else { return }
-        isFullKeyboardAccessEnabled = NSApp.isFullKeyboardAccessEnabled
         let events: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         monitor = NSEvent.addLocalMonitorForEvents(matching: events) { @Sendable [weak self] event in
             let keyboardDriven = Self.inputMode(after: event)
@@ -73,12 +69,8 @@ final class KeyboardFocusVisibility {
 
     /// Writes only on a change — an `@Observable` write invalidates its readers even when equal.
     private func record(keyboardDriven: Bool?) {
-        if let keyboardDriven, keyboardDriven != isKeyboardDriven {
-            isKeyboardDriven = keyboardDriven
-        }
-        let fullKeyboardAccess = NSApp.isFullKeyboardAccessEnabled
-        if fullKeyboardAccess != isFullKeyboardAccessEnabled {
-            isFullKeyboardAccessEnabled = fullKeyboardAccess
+        if let keyboardDriven, keyboardDriven != showsFocus {
+            showsFocus = keyboardDriven
         }
     }
 }
