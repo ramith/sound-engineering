@@ -109,6 +109,13 @@ struct PlaylistItemList: View {
                 guard let index = viewModel.selectedTrackIndex, index < viewModel.queue.count else { return }
                 withAnimation { proxy.scrollTo(viewModel.queue[index].id, anchor: .center) }
             }
+            #if DEBUG
+            // Picture-sheet ring variant: focus, with the cursor where the first ↓ lands.
+            .sheetFocusSeed(.queue) {
+                queueFocused.wrappedValue = true
+                cursorID = keyboardCursor?.step(by: 1, in: visibleRows.map(\.id))
+            }
+            #endif
         } // ScrollViewReader
     }
 

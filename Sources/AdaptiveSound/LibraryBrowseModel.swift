@@ -292,7 +292,12 @@ final class LibraryBrowseModel {
     /// discipline; `songSort` drives the DAO-side order, so `songs` is already the play order.
     func loadSongs() async {
         guard let store else {
-            songsState = .loading // store still building; the list reloads on `isStoreReady`
+            // Store still building; the list reloads on `isStoreReady`. Only a never-loaded list
+            // shows the spinner: without a store nothing can have resolved it, except the
+            // picture-sheet fixture's seed (`seedRenderFixture`), which this must not clobber.
+            if songsState == .idle {
+                songsState = .loading
+            }
             return
         }
         songsLoadEpoch &+= 1
@@ -477,10 +482,11 @@ extension LibraryBrowseModel {
 #if DEBUG
     extension LibraryBrowseModel {
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): show `fixture` as the loaded Songs
-        /// list without a store. Lives here because `songs` / `songsState` have private setters.
+        /// list without a store. Lives here because `songs` / `songsState` have private setters. No
+        /// fixture has folder roots, so an EMPTY one is the first-run state, as `loadSongs` decides.
         func seedRenderFixture(songs fixture: [LibraryTrackDisplay]) {
             songs = fixture
-            songsState = .loaded
+            songsState = fixture.isEmpty ? .firstRun : .loaded
         }
     }
 #endif
