@@ -32,6 +32,8 @@
         }
 
         private static func run(_ request: SheetRequest) -> Never {
+            let total = request.appearances.count * request.tabs.count * sizes.count
+            guard total > 0 else { SheetRequest.usage("the selection renders no sheets") }
             NSApplication.shared.setActivationPolicy(.prohibited) // no Dock icon, never frontmost
             do {
                 try FileManager.default.createDirectory(at: request.directory, withIntermediateDirectories: true)
@@ -46,7 +48,6 @@
                 failures += render(appearance, tabs: request.tabs, fixture: fixture, into: request.directory)
             }
             defaults.removePersistentDomain(forName: defaultsSuite)
-            let total = request.appearances.count * request.tabs.count * sizes.count
             print("sheets: \(total - failures.count) of \(total) written to \(request.directory.path)")
             failures.forEach { print("sheets: FAILED \($0)") }
             exit(failures.isEmpty ? EXIT_SUCCESS : EXIT_FAILURE)
@@ -80,7 +81,9 @@
 
         /// Hosts `view` in a borderless window that is never ordered on screen, lets SwiftUI settle
         /// (`.task`s run, Monitoring's poll ticks), and writes the hosting view's own drawing as a PNG at
-        /// the screen's backing scale. Returns why it failed, or `nil` on success.
+        /// the screen's backing scale, in sRGB — the cached bitmap carries the DISPLAY's profile, so
+        /// raw pixel values (and sheet-to-sheet diffs) would otherwise differ from Mac to Mac.
+        /// Returns why it failed, or `nil` on success.
         private static func snapshot(_ view: some View, appearance: NSAppearance, size: NSSize,
                                      to url: URL) -> String? {
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
@@ -97,7 +100,8 @@
             guard host.bounds.size == size else { return "laid out at \(host.bounds.size), not \(size)" }
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return "no bitmap" }
             host.cacheDisplay(in: host.bounds, to: bitmap)
-            guard let png = bitmap.representation(using: .png, properties: [:]) else { return "PNG encoding failed" }
+            guard let srgb = bitmap.converting(to: .sRGB, renderingIntent: .default) else { return "no sRGB bitmap" }
+            guard let png = srgb.representation(using: .png, properties: [:]) else { return "PNG encoding failed" }
             do {
                 try png.write(to: url)
             } catch {
