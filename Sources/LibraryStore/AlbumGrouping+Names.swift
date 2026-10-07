@@ -60,10 +60,11 @@ public extension AlbumGrouping {
     }
 
     /// Whether a subfolder name is a disc or bonus folder that folds into its parent (C2). A disc
-    /// folder is "cd" / "disc" / "disk", optional separators (space - _ . #), then 1–3 digits or
-    /// a number word ("One"…"Ten"), then nothing or a qualifier set off by a non-alphanumeric
-    /// character ("Disc 1 of 2", "CD1 - Live", "Disc 1 (Remastered)"); brackets around the whole
-    /// name ("[CD 1]") are ignored. "CD Collection", "Discography" and "CD 1234" are not.
+    /// folder is JUST a disc marker: "cd" / "disc" / "disk", optional separators (space - _ . #), a
+    /// small number (below 100, up to 3 digits) or a number word ("One"…"Ten") — then, optionally,
+    /// " of N", and optionally a " - subtitle" or a bracketed note ("Disc 1 of 2", "CD1 - Live",
+    /// "Disc 1 (Remastered)"); brackets around the whole name ("[CD 1]") are ignored. Anything else
+    /// is an album folder of its own: "CD Collection", "Discography", "CD 1234", "CD 100 Hits".
     static func isFoldedFolderName(_ name: String) -> Bool {
         var lower = name.lowercased().trimmingCharacters(in: .whitespaces)
         if lower.count >= 2, let first = lower.first, let last = lower.last, "[(".contains(first), "])".contains(last) {
@@ -75,15 +76,29 @@ public extension AlbumGrouping {
         guard let prefix = ["disc", "disk", "cd"].first(where: { lower.hasPrefix($0) }) else { return false }
         let afterPrefix = lower.dropFirst(prefix.count).drop { " -_.#".contains($0) }
         let digits = afterPrefix.prefix { $0.isASCII && $0.isNumber }
-        let rest: Substring
-        if (1 ... 3).contains(digits.count) {
-            rest = afterPrefix.dropFirst(digits.count)
-        } else if let word = discNumberWords.first(where: { afterPrefix.hasPrefix($0) }) {
-            rest = afterPrefix.dropFirst(word.count)
-        } else {
-            return false
+        if (1 ... 3).contains(digits.count), let number = Int(digits), number < 100 {
+            return isDiscQualifier(afterPrefix.dropFirst(digits.count))
         }
-        return rest.first.map { !($0.isLetter || $0.isNumber) } ?? true
+        guard let word = discNumberWords.first(where: { afterPrefix.hasPrefix($0) }) else { return false }
+        return isDiscQualifier(afterPrefix.dropFirst(word.count))
+    }
+
+    /// What may follow a disc number (C2 final round): nothing; " of N"; then nothing, a " - subtitle"
+    /// (any dash or a colon) or a bracketed note. "CD1 - Live" and "Disc 1 (Remastered)" qualify; the
+    /// " Hits" of "CD 100 Hits" does not.
+    private static func isDiscQualifier(_ rest: Substring) -> Bool {
+        var tail = rest.drop { $0 == " " }
+        if tail.hasPrefix("of") {
+            let afterOf = tail.dropFirst(2).drop { $0 == " " }
+            let total = afterOf.prefix { $0.isASCII && $0.isNumber }
+            guard (1 ... 3).contains(total.count) else { return false }
+            tail = afterOf.dropFirst(total.count).drop { $0 == " " }
+        }
+        guard let first = tail.first else { return true }
+        if "-–—:".contains(first) {
+            return !tail.dropFirst().trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return "([".contains(first) && tail.last.map { ")]".contains($0) } == true
     }
 }
 
