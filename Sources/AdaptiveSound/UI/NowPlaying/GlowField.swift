@@ -11,25 +11,27 @@ import SwiftUI
 ///
 /// Mounted via `.background { }` (never as a layout sibling — a ~760pt ellipse would inflate
 /// the tab's ideal size). Decoration contract: hit-transparent, invisible to accessibility,
-/// static, dark-appearance-only, and suppressed under Reduce Transparency / Increase
-/// Contrast — all via the pure `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
+/// static, dark-appearance-only (light too under the pale-glow backdrop, S10.8 B2b), and
+/// suppressed under Reduce Transparency / Increase Contrast — all via the pure
+/// `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
     /// Which glows to render. Defaults to the Now Playing three-glow field; the Library screen
     /// passes `GlowFieldSpec.libraryGlows` (a single teal pool) for its Twin Panels backdrop.
     var glows: [GlowFieldSpec.Glow] = GlowFieldSpec.glows
 
     /// D8 (PR 7): per-slot sampled-palette overrides — a nil slot (or nil array) keeps the
-    /// brand token. Every entry is CLAMPED by the Kit (`SampledGlow`), so whatever arrives
-    /// here is audit-admissible by construction; the render fold and the R4-GLOW-D8 audit
-    /// fold share the override convention.
-    var sampledPalette: [RGBAColor?]?
+    /// brand token. Every entry is CLAMPED by the Kit (`SampledGlow.clampedSampledPair`: the
+    /// dark clamp and, S10.8 B2b, the light pastel lift), so whatever arrives here is
+    /// audit-admissible by construction; the render fold and the R4-GLOW-D8 / R4-GLOW-LIGHT
+    /// audit folds share the override convention.
+    var sampledPalette: [AppearancePair?]?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // The window base always paints (AppShell's background is the same token; painting it
         // here too keeps the field self-contained wherever it's mounted).
-        DesignSystem.Color.window
+        Rectangle().fill(DesignSystem.Color.window)
             .overlay {
                 GlowFieldGate {
                     GeometryReader { geo in
@@ -58,7 +60,7 @@ struct GlowField: View {
             .accessibilityHidden(true)
     }
 
-    private func overrideColor(at index: Int) -> RGBAColor? {
+    private func overrideColor(at index: Int) -> AppearancePair? {
         guard let sampledPalette, index < sampledPalette.count else { return nil }
         return sampledPalette[index]
     }
@@ -84,9 +86,9 @@ struct GlowField: View {
 
 private struct GlowEllipse: View {
     let glow: GlowFieldSpec.Glow
-    /// D8: the clamped sampled color for this slot (carries its own token alpha), or nil
-    /// for the brand token pair.
-    let override: RGBAColor?
+    /// D8: the clamped sampled pair for this slot (each side carries its own token alpha),
+    /// or nil for the brand token pair.
+    let override: AppearancePair?
     let container: CGSize
 
     private var width: CGFloat {
@@ -110,7 +112,7 @@ private struct GlowEllipse: View {
     /// The shared exact-linear profile, expressed as gradient stops: peak →
     /// `falloffFraction(midStop)` at the mid stop → clear at the edge.
     private var radialFalloff: RadialGradient {
-        let color = override.map { SwiftUI.Color(token: $0) } ?? DesignSystem.Color.from(glow.color)
+        let color = DesignSystem.Color.from(override ?? glow.color)
         let midStop = GlowFieldSpec.falloffMidStop
         return RadialGradient(
             gradient: Gradient(stops: [
