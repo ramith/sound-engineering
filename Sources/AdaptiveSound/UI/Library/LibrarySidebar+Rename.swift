@@ -31,15 +31,6 @@ extension LibrarySidebar {
         sidebarFocused = false
     }
 
-    /// Begin renaming the selected playlist (keyboard Return). `.ignored` unless a playlist row is
-    /// the current selection, so the event bubbles for categories / drill-downs.
-    func renameSelectedPlaylist() -> KeyPress.Result {
-        guard case let .playlist(id) = model.sidebarSelection,
-              let playlist = playlists.playlists.first(where: { $0.id == id }) else { return .ignored }
-        beginRename(playlist)
-        return .handled
-    }
-
     /// Commit the rename from a draft captured synchronously at submit time (`proposed`). Empty or
     /// unchanged → cancel (no write). On a duplicate name (D-names: globally unique): when committing
     /// via Return (`keepOpenOnConflict`) the field stays open with an inline message; on click-away

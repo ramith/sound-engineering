@@ -60,7 +60,7 @@ struct SongsListView: View {
         GeometryReader { geo in
             let columns = orderedVisibleColumns
             let titleWidth = resolvedTitleWidth(columns: columns, available: geo.size.width)
-            let cursorID = keyboardCursorID
+            let cursorID = ringCursorID
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(spacing: 0) {
                     if columnConfig.isCustomized {
@@ -96,13 +96,14 @@ struct SongsListView: View {
             .scrollContentBackground(.hidden)
         }
         .dynamicTypeSize(.small ... .xxLarge)
-        .focusable()
+        // An empty list (a filter matching nothing) has no cursor row — and so is no focus stop.
+        .focusable(!model.visibleSongs.isEmpty)
         .focused($listFocused)
         // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
         .focusEffectDisabled()
         .onKeyPress(.upArrow) { moveSelection(by: -1) }
         .onKeyPress(.downArrow) { moveSelection(by: 1) }
-        .onKeyPress(.return) { playSelection() ? .handled : .ignored }
+        .onKeyPress(.return) { playCursorRow() }
         .sheet(item: $addToPlaylistTarget) { target in
             PlaylistPickerSheet(trackIDs: target.trackIDs)
         }
@@ -255,14 +256,6 @@ struct SongsListView: View {
 
     // MARK: Play + context (mirror the former SongsTable)
 
-    @discardableResult
-    private func playSelection() -> Bool {
-        guard let track = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: selection)
-        else { return false }
-        model.playTrackNextNow(track)
-        return true
-    }
-
     private func contextIDs(clicked track: LibraryTrackDisplay) -> Set<RowID> {
         selection.contains(track.id) ? selection : [track.id]
     }
@@ -304,16 +297,34 @@ struct SongsListView: View {
 
 /// Same-file extension (type-body length): reaches the list's private selection state.
 private extension SongsListView {
-    /// The keyboard CURSOR row (A3) — where the focus ring sits: the selection anchor the arrows
-    /// move from, or the first row while nothing is anchored (the first ↓ then selects it, so the
-    /// ring marks exactly what the next arrow press acts on). Nil — no ring — while the list
-    /// lacks key focus or the user is pointing rather than navigating by keyboard.
-    var keyboardCursorID: RowID? {
-        guard listFocused, showsKeyboardFocus else { return nil }
-        if let anchorID, model.visibleSongs.contains(where: { $0.id == anchorID }) {
-            return anchorID
+    /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from and the row
+    /// Return plays: the selection anchor (the last clicked/arrowed row — never `selection.first`,
+    /// whose Set order is arbitrary), or the first row while nothing is anchored.
+    var keyboardCursor: ListKeyboardCursor<RowID>? {
+        ListKeyboardCursor.resolve(rows: model.visibleSongs.lazy.map(\.id), anchor: anchorID)
+    }
+
+    /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.
+    var showsRing: Bool {
+        listFocused && showsKeyboardFocus
+    }
+
+    /// The row wearing the focus ring, or nil (no ring).
+    var ringCursorID: RowID? {
+        showsRing ? keyboardCursor?.id : nil
+    }
+
+    /// Return: play the cursor row — the ring row, or the anchored row while the ring is hidden.
+    /// An unanchored (ring-only) row is claimed first, as an arrow press would.
+    func playCursorRow() -> KeyPress.Result {
+        guard let cursor = keyboardCursor, let id = cursor.actionTarget(ringVisible: showsRing),
+              let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
+        if !cursor.isAnchored {
+            selection = [id]
+            anchorID = id
         }
-        return model.visibleSongs.first?.id
+        model.playTrackNextNow(track)
+        return .handled
     }
 
     func handleClick(_ track: LibraryTrackDisplay) {
@@ -343,16 +354,14 @@ private extension SongsListView {
         selection = Set(ids[min(i, j) ... max(i, j)])
     }
 
-    /// ↑/↓: move the single selection + anchor one row. With no visible anchor the first ↓ selects
-    /// the first row (where the focus ring already sits). Asks the row area to scroll it into view.
+    /// ↑/↓: move the single selection + anchor from the cursor. With nothing anchored the first
+    /// press (either arrow) selects the first row, where the ring already sits. Asks the row area
+    /// to scroll it into view.
     func moveSelection(by delta: Int) -> KeyPress.Result {
-        let ids = model.visibleSongs.map(\.id)
-        guard !ids.isEmpty else { return .ignored }
-        let currentIndex = (anchorID ?? selection.first).flatMap { ids.firstIndex(of: $0) } ?? -1
-        let next = currentIndex + delta
-        guard next >= 0, next < ids.count else { return .ignored }
-        selection = [ids[next]]
-        anchorID = ids[next]
+        guard let target = keyboardCursor?.step(by: delta, in: model.visibleSongs.lazy.map(\.id))
+        else { return .ignored }
+        selection = [target]
+        anchorID = target
         cursorScrollRequest &+= 1
         return .handled
     }

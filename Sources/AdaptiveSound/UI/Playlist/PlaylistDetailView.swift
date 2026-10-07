@@ -1,3 +1,4 @@
+import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -187,7 +188,7 @@ struct PlaylistDetailView: View {
 private extension PlaylistDetailView {
     var trackList: some View {
         ScrollViewReader { proxy in
-            let cursorID = keyboardCursorEntryID
+            let cursorID = ringCursorEntryID
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(model.detail.enumerated()), id: \.element.id) { index, row in
@@ -196,7 +197,8 @@ private extension PlaylistDetailView {
                     }
                 }
             }
-            .focusable()
+            // All-unavailable (missing-file) rows = no cursor row = no focus stop.
+            .focusable(keyboardCursor != nil)
             .focused($listFocused)
             .defaultFocus($listFocused, true)
             // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
@@ -204,23 +206,64 @@ private extension PlaylistDetailView {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
             .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
-            .onKeyPress(.return) { playSelected() }
-            .onKeyPress(.delete) { removeSelected() }
+            .onKeyPress(.return) { playCursorRow() }
+            .onKeyPress(.delete) { removeCursorRow() }
         }
     }
 
-    /// The keyboard CURSOR row (A3) — where the focus ring sits: the selected entry, or the first
-    /// playable row while nothing is selected (the first ↑/↓ then selects it, so the ring marks
-    /// exactly what the next arrow press acts on). Nil — no ring — while the list lacks key focus
-    /// or the user is pointing rather than navigating by keyboard. Unavailable rows are never the
-    /// cursor (`moveSelection` skips them).
-    var keyboardCursorEntryID: Int64? {
-        guard listFocused, showsKeyboardFocus else { return nil }
-        let playable = model.detail.lazy.filter(\.isAvailable)
-        if let selectedEntryID, playable.contains(where: { $0.id == selectedEntryID }) {
-            return selectedEntryID
+    /// The rows the cursor walks: the AVAILABLE (playable) entries only — a missing-file row is
+    /// non-interactive except via its badge/context menu (Locate / Remove), so the keys skip it (F).
+    var playableEntryIDs: some BidirectionalCollection<Int64> {
+        model.detail.lazy.filter(\.isAvailable).map(\.id)
+    }
+
+    /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from, and the row
+    /// Return plays from and Delete removes: the selected entry, or the first playable row while
+    /// nothing is selected.
+    var keyboardCursor: ListKeyboardCursor<Int64>? {
+        ListKeyboardCursor.resolve(rows: playableEntryIDs, anchor: selectedEntryID)
+    }
+
+    /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.
+    var showsRing: Bool {
+        listFocused && showsKeyboardFocus
+    }
+
+    /// The row wearing the focus ring, or nil (no ring).
+    var ringCursorEntryID: Int64? {
+        showsRing ? keyboardCursor?.id : nil
+    }
+
+    /// ↑/↓ from the cursor through the playable rows; with nothing selected the first press
+    /// (either arrow) selects the first playable row, where the ring already sits. Keeps the new
+    /// selection on screen the queue's way: `scrollTo` with no anchor scrolls only as far as
+    /// needed, instantly.
+    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard let target = keyboardCursor?.step(by: delta, in: playableEntryIDs) else { return .ignored }
+        selectedEntryID = target
+        proxy.scrollTo(target)
+        return .handled
+    }
+
+    /// Return: play the playlist from the cursor row (selecting it).
+    func playCursorRow() -> KeyPress.Result {
+        guard let id = keyboardCursor?.actionTarget(ringVisible: showsRing) else { return .ignored }
+        selectedEntryID = id
+        playNow(startingAt: id)
+        return .handled
+    }
+
+    /// Delete: remove the cursor row. Pre-selects its playable neighbour (next, else previous) so
+    /// the selection lands there — not back at the top — once the async remove + reload lands.
+    func removeCursorRow() -> KeyPress.Result {
+        guard let id = keyboardCursor?.actionTarget(ringVisible: showsRing) else { return .ignored }
+        let ids = Array(playableEntryIDs)
+        if let index = ids.firstIndex(of: id) {
+            selectedEntryID = index + 1 < ids.count ? ids[index + 1]
+                : (index - 1 >= 0 ? ids[index - 1] : nil)
         }
-        return playable.first?.id
+        Task { await model.removeEntry(id) }
+        return .handled
     }
 
     @ViewBuilder
