@@ -178,11 +178,12 @@ public enum Palette {
     // MARK: Glass-look fills (Regime B — design §3.1; staged per consumer)
 
     /// The analyzer lens fill (8a: `rgba(16,18,21,.42)` — a darker inset against the glowed
-    /// field). Light per the §3.2 grammar: white-based glass. Under Reduce Transparency /
-    /// Increase Contrast the resolver serves the OPAQUE composite (fill over window),
-    /// derived — never a third hand-kept value.
+    /// field). Light per the §3.2 grammar: white-based glass — 80% since S10.8 B2a (was 55%:
+    /// the key shadow shows through a thin fill and greys the lens toward the window). Under
+    /// Reduce Transparency / Increase Contrast the resolver serves the OPAQUE composite (fill
+    /// over window), derived — never a third hand-kept value.
     public static let lensFill = AppearancePair(
-        light: .gray(1.0, alpha: 0.55),
+        light: .gray(1.0, alpha: 0.80),
         dark: RGBAColor(red: 16.0 / 255.0, green: 18.0 / 255.0, blue: 21.0 / 255.0, alpha: 0.42)
     )
 
@@ -197,9 +198,11 @@ public enum Palette {
     /// The inspector panel fill. S10.8 PR E (Realigned Target `png/05`): the floating card
     /// densifies to `rgba(30,32,37,.72)` (was the 8a `rgba(30,33,38,.5)`) — it now hugs its
     /// content and floats over the glow, so it needs more body than the old full-height
-    /// wall. Light per the grammar: white-based glass, unchanged. Same RT/IC-opaque contract.
+    /// wall. Light per the grammar: white-based glass — 86% since S10.8 B2a (CARD-SEP-01; was
+    /// 60%, whose card RENDERED #F3F3F3, 1.06:1 on the window: the shadows the fill casts show
+    /// through it). Same RT/IC-opaque contract.
     public static let panelFill = AppearancePair(
-        light: .gray(1.0, alpha: 0.60),
+        light: .gray(1.0, alpha: 0.86),
         dark: RGBAColor(red: 30.0 / 255.0, green: 32.0 / 255.0, blue: 37.0 / 255.0, alpha: 0.72)
     )
 
