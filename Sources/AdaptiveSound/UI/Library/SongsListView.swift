@@ -323,7 +323,7 @@ private extension SongsListView {
     /// Return: play the cursor row — the ring row, or the anchored row while the ring is hidden.
     /// An unanchored (ring-only) row is claimed first, as an arrow press would.
     func playCursorRow() -> KeyPress.Result {
-        guard let cursor = keyboardCursor, let id = cursor.actionTarget(ringVisible: showsRing),
+        guard let cursor = keyboardCursor, let id = cursor.activationTarget(ringVisible: showsRing),
               let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
         if !cursor.isAnchored {
             selection = [id]

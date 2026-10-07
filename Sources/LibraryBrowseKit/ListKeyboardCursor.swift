@@ -2,9 +2,9 @@
 
 /// The keyboard CURSOR of a custom (non-`List`) list — Songs, the queue, the playlist detail,
 /// the Library rail: the ONE row its focus ring marks and its keys act on. ↑/↓ move from it,
-/// Return activates it, Delete removes it. Each list resolves it once from its own state with
-/// `resolve`, so the ring and every key agree by construction (they drifted apart when each
-/// handler re-derived "the current row" its own way).
+/// Return activates it, Delete removes it once it is selected. Each list resolves it once from
+/// its own state with `resolve`, so the ring and every key agree by construction (they drifted
+/// apart when each handler re-derived "the current row" its own way).
 ///
 /// A cursor is ANCHORED when it sits on a row the user chose — a click or an arrow press; that
 /// row also wears the list's selection. It is UNANCHORED when the list seeded it because nothing
@@ -13,6 +13,14 @@
 public struct ListKeyboardCursor<ID: Equatable>: Equatable {
     public let id: ID
     public let isAnchored: Bool
+
+    /// What the Delete key does (`deleteAction(ringVisible:)`).
+    public enum DeleteAction: Equatable {
+        /// Remove this row — it is selected, so the user chose it.
+        case remove(ID)
+        /// Select this row and remove nothing — it was only seeded, so a second Delete is needed.
+        case claim(ID)
+    }
 
     public init(id: ID, isAnchored: Bool) {
         self.id = id
@@ -34,6 +42,21 @@ public struct ListKeyboardCursor<ID: Equatable>: Equatable {
         return rows.first.map { ListKeyboardCursor(id: $0, isAnchored: false) }
     }
 
+    /// Where the anchor goes once Delete removed `removed` from `rows` (the rows BEFORE the
+    /// removal): the row after it, else the row before it — the new last row — else nil (the
+    /// list emptied). Holding Delete therefore keeps removing the SELECTED row, walking up from
+    /// the end, and never drops the anchor onto an unselected seed such as the playing row.
+    public static func anchor<Rows: BidirectionalCollection>(
+        afterRemoving removed: ID, from rows: Rows
+    ) -> ID? where Rows.Element == ID {
+        guard let position = rows.firstIndex(of: removed) else { return nil }
+        let next = rows.index(after: position)
+        if next != rows.endIndex {
+            return rows[next]
+        }
+        return position == rows.startIndex ? nil : rows[rows.index(before: position)]
+    }
+
     /// ↑/↓ — the row the press lands on. An unanchored cursor is claimed IN PLACE: the first press
     /// selects the row the ring already marks, whichever arrow it was, and never skips past it.
     /// An anchored cursor moves `delta` rows. Nil when the move would leave the list (or the
@@ -46,12 +69,25 @@ public struct ListKeyboardCursor<ID: Equatable>: Equatable {
         return rows.index(position, offsetBy: delta, limitedBy: limit).map { rows[$0] }
     }
 
-    /// Return / Delete — the row they act on. Always the cursor when it is anchored (its row wears
-    /// the selection); an unanchored cursor only while the ring is drawn, so a key never acts on a
+    /// Return — the row it activates. Always the cursor when it is anchored (its row wears the
+    /// selection); an unanchored cursor only while the ring is drawn, so Return never acts on a
     /// row that nothing on screen marks (e.g. right after a click elsewhere hid the ring).
-    public func actionTarget(ringVisible: Bool) -> ID? {
+    /// Activation is not destructive, so the ring alone is mark enough.
+    public func activationTarget(ringVisible: Bool) -> ID? {
         isAnchored || ringVisible ? id : nil
+    }
+
+    /// Delete — destructive, so it needs a real SELECTION: it removes an anchored cursor's row
+    /// and nothing else. On an unanchored cursor (a seeded ring row — e.g. the playing track the
+    /// queue rings at launch) it only CLAIMS the row, as an arrow would, so a stray Delete never
+    /// removes a row the user did not choose; nil while the ring is hidden, so the key bubbles.
+    public func deleteAction(ringVisible: Bool) -> DeleteAction? {
+        if isAnchored {
+            return .remove(id)
+        }
+        return ringVisible ? .claim(id) : nil
     }
 }
 
 extension ListKeyboardCursor: Sendable where ID: Sendable {}
+extension ListKeyboardCursor.DeleteAction: Sendable where ID: Sendable {}

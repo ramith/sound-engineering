@@ -360,7 +360,7 @@ private extension LibrarySidebar {
     /// Return: rename the cursor row when it is a playlist (Finder/Music convention). `.ignored`
     /// for a category or an open drill-down, so the event bubbles.
     func renameCursorPlaylist() -> KeyPress.Result {
-        guard case let .playlist(id) = keyboardCursor?.actionTarget(ringVisible: showsRing),
+        guard case let .playlist(id) = keyboardCursor?.activationTarget(ringVisible: showsRing),
               let playlist = playlists.playlists.first(where: { $0.id == id }) else { return .ignored }
         beginRename(playlist)
         return .handled

@@ -67,19 +67,72 @@ struct ListKeyboardCursorTests {
         #expect(Cursor(id: 99, isAnchored: false).step(by: 1, in: rows) == nil)
     }
 
-    // MARK: actionTarget
+    // MARK: activationTarget (Return)
 
-    @Test("Return/Delete act on an anchored cursor whether or not the ring is drawn")
-    func anchoredActs() {
+    @Test("Return acts on an anchored cursor whether or not the ring is drawn")
+    func anchoredActivates() {
         let cursor = Cursor(id: 20, isAnchored: true)
-        #expect(cursor.actionTarget(ringVisible: false) == 20)
-        #expect(cursor.actionTarget(ringVisible: true) == 20)
+        #expect(cursor.activationTarget(ringVisible: false) == 20)
+        #expect(cursor.activationTarget(ringVisible: true) == 20)
     }
 
-    @Test("Return/Delete act on an unanchored cursor only while the ring marks it")
-    func unanchoredActsOnlyWhenMarked() {
+    @Test("Return acts on an unanchored cursor only while the ring marks it")
+    func unanchoredActivatesOnlyWhenMarked() {
         let seed = Cursor(id: 10, isAnchored: false)
-        #expect(seed.actionTarget(ringVisible: true) == 10)
-        #expect(seed.actionTarget(ringVisible: false) == nil)
+        #expect(seed.activationTarget(ringVisible: true) == 10)
+        #expect(seed.activationTarget(ringVisible: false) == nil)
+    }
+
+    // MARK: deleteAction (Delete)
+
+    @Test("Delete removes an anchored (selected) row whether or not the ring is drawn")
+    func anchoredDeletes() {
+        let cursor = Cursor(id: 20, isAnchored: true)
+        #expect(cursor.deleteAction(ringVisible: false) == .remove(20))
+        #expect(cursor.deleteAction(ringVisible: true) == .remove(20))
+    }
+
+    @Test("ring visible + no selection → Delete removes nothing; it only claims the ring row")
+    func unanchoredDeleteOnlyClaims() {
+        // The queue rings the PLAYING row at launch with Full Keyboard Access on: one ⌫ removed
+        // it, with no undo (A break-it). The ring is not a selection.
+        let playing = Cursor(id: 30, isAnchored: false)
+        #expect(playing.deleteAction(ringVisible: true) == .claim(30))
+    }
+
+    @Test("ring hidden + no selection → Delete does nothing, so the key bubbles")
+    func unanchoredUnmarkedDeleteIsNil() {
+        #expect(Cursor(id: 10, isAnchored: false).deleteAction(ringVisible: false) == nil)
+    }
+
+    // MARK: anchor(afterRemoving:)
+
+    @Test("after a removal the anchor moves to the next row, else the new last row, else nil")
+    func anchorAfterRemoving() {
+        #expect(Cursor.anchor(afterRemoving: 20, from: rows) == 30)
+        #expect(Cursor.anchor(afterRemoving: 40, from: rows) == 30) // the last row → the new last
+        #expect(Cursor.anchor(afterRemoving: 10, from: [10]) == nil) // the list emptied
+        #expect(Cursor.anchor(afterRemoving: 99, from: rows) == nil) // not a row
+    }
+
+    @Test("holding ⌫ at the end of the queue never reaches an unselected row")
+    func repeatedDeleteAtEndStaysOnSelection() {
+        // The queue: the playing row (30) is the seed. The user selected the LAST row and holds ⌫.
+        // Before the fix the anchor was dropped once it ran off the end, the cursor fell back to
+        // the playing row, and the next ⌫ removed the PLAYING track — holding ⌫ chewed around it.
+        var queue = rows
+        var anchor: Int? = 40
+        var removed: [Int] = []
+        while let cursor = Cursor.resolve(rows: queue, anchor: anchor, fallback: 30) {
+            guard case let .remove(id) = cursor.deleteAction(ringVisible: true) else {
+                Issue.record("⌫ reached the unselected row \(cursor.id)")
+                return
+            }
+            #expect(id == anchor) // every removal is the row the user had selected
+            anchor = Cursor.anchor(afterRemoving: id, from: queue)
+            queue.removeAll { $0 == id }
+            removed.append(id)
+        }
+        #expect(removed == [40, 30, 20, 10]) // walks up from the end, one selected row per ⌫
     }
 }
