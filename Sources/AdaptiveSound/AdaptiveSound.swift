@@ -95,10 +95,6 @@ struct AdaptiveSound: App {
                 .environment(nowPlaying) // S10.4 D2: footer + widget read the resolved metadata
                 .environment(keyboardFocus)
                 .publishesKeyboardFocusVisibility(keyboardFocusVisibility)
-            #if DEBUG
-                // S10.8 B2b: the founder's live light-backdrop pick (`Debug ▸ Light Background`).
-                .modifier(LightBackdropSwitch())
-            #endif
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
@@ -172,10 +168,6 @@ struct AdaptiveSound: App {
                 Button("Jump to Now Playing") { audioViewModel.selectedTab = .nowPlaying }
                     .keyboardShortcut("0", modifiers: .command)
             }
-
-            #if DEBUG
-                LightBackdropMenu() // S10.8 B2b — Debug ▸ Light Background (A / B / C)
-            #endif
         }
 
         // macOS menu-bar (top-bar) presence: quick transport + raise/quit, controllable without

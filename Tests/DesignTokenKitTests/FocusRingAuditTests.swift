@@ -38,8 +38,8 @@ struct FocusRingAuditTests {
         }
     }
 
-    /// The queue's rows sit on the Now Playing glow field, not on a card (dark only — the field
-    /// is gated off in light and under Reduce Transparency / Increase Contrast).
+    /// The queue's rows sit on the Now Playing glow field, not on a card (dark here; the light
+    /// field is LightGlowAuditTests'; the field is gated off under RT / Increase Contrast).
     @Test("R4-FOCUS-02: focusRing clears 3:1 on queue rows over the sampled glow field (dark)")
     func ringOverGlowField() {
         for geometry in ContrastAuditTests.glowGeometries {
