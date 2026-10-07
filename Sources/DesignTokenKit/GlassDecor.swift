@@ -72,9 +72,11 @@ public enum GlassDecor {
 
     // MARK: Switch + disabled content (S10.8 B2a — the headphones block, then F2's Settings)
 
-    /// The LIGHT-ONLY 1pt hairline around the native switch track (grammar rule 2: the edge flips
-    /// dark in light) — the off track alone is ~1.09:1 on the white card.
-    public static let switchEdgeLight: RGBAColor = .gray(0.0, alpha: 0.20)
+    /// The LIGHT-ONLY 1pt hairline around a light control its own fill can't separate (grammar
+    /// rule 2: the edge flips dark in light): the native switch's off track (~1.09:1 on the white
+    /// card) and the format chip (white ~1.07:1 on the card, the teal ~1.10:1 on its row — S10.8 B3,
+    /// R4-CHIP-03).
+    public static let controlEdgeLight: RGBAColor = .gray(0.0, alpha: 0.20)
     /// The realigned disabled dim (guide E1: 50%) — DARK only; light content shows its own
     /// disabled look instead of a dim on top.
     public static let disabledDimDark: Double = 0.5
