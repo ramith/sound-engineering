@@ -95,7 +95,7 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
                 if !file.relativePath.isEmpty {
                     Text(file.relativePath)
                         .font(DesignSystem.Font.monoSmall)
-                        .foregroundStyle(Color.asLabelTertiary)
+                        .foregroundStyle(DesignSystem.Color.labelTertiary(onSelectedRow: isSelected))
                         .lineLimit(1)
                 }
             }
@@ -106,7 +106,8 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
 
             Text(file.durationSeconds > 0 ? formatDuration(file.durationSeconds) : "--:--")
                 .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentText : Color.asLabelTertiary)
+                .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentText
+                    : DesignSystem.Color.labelTertiary(onSelectedRow: isSelected))
                 .frame(width: DesignSystem.QueueRow.durationWidth, alignment: .trailing)
         }
         // Self-styled row (padding + background) so it renders identically whether it sits in a

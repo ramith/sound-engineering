@@ -92,13 +92,14 @@ struct SongRow: View {
         }
     }
 
-    /// Quality leads with the accent when playing (else secondary); other mono columns are tertiary,
-    /// text columns secondary.
+    /// Quality leads with the accent when playing (else secondary); other mono columns are tertiary
+    /// (by the selected-row rule), text columns secondary.
     private func cellColor(_ column: SongColumn) -> Color {
         if column == .quality {
             return isNowPlaying ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary
         }
-        return column.isMono ? DesignSystem.Color.labelTertiary : DesignSystem.Color.labelSecondary
+        return column.isMono ? DesignSystem.Color.labelTertiary(onSelectedRow: isSelected)
+            : DesignSystem.Color.labelSecondary
     }
 
     @ViewBuilder
@@ -109,7 +110,7 @@ struct SongRow: View {
         } else {
             Text(number, format: .number.grouping(.never))
                 .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(DesignSystem.Color.labelTertiary)
+                .foregroundStyle(DesignSystem.Color.labelTertiary(onSelectedRow: isSelected))
         }
     }
 
