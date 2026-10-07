@@ -31,13 +31,15 @@ struct PlaylistItemList: View {
     /// no drag is in progress.
     @State private var dropTargetIndex: Int?
 
-    /// The keyboard-navigation cursor (a REAL queue index), DISTINCT from the now-playing
-    /// pointer `viewModel.selectedTrackIndex`. Arrow keys move THIS — never the now-playing
-    /// pointer — so navigating the queue no longer changes the hero / footer / Now Playing
-    /// (which all read `selectedTrackIndex`); only Return/click actually plays a row and
-    /// moves that pointer. The anchor of `keyboardCursor`; nil = none yet. Drives the
-    /// `rowSelected` focus tint; the playing row keeps its own now-playing card independently.
-    @State private var cursorIndex: Int?
+    /// The keyboard-navigation cursor, DISTINCT from the now-playing pointer
+    /// `viewModel.selectedTrackIndex`. Arrow keys move THIS — never the now-playing pointer — so
+    /// navigating the queue no longer changes the hero / footer / Now Playing (which all read
+    /// `selectedTrackIndex`); only Return/click actually plays a row and moves that pointer. The
+    /// anchor of `keyboardCursor`; nil = none yet. Drives the `rowSelected` focus tint; the
+    /// playing row keeps its own now-playing card independently. Keyed by the STABLE
+    /// `QueueItem.id` (A break-it), not a position: a reorder or a removal above it no longer
+    /// re-points the selection at a different track.
+    @State private var cursorID: QueueItem.ID?
 
     /// Track-number column width sized to the widest index in the list (~8 pt per monospaced
     /// digit + slack), so a 190-track list reserves room for 3 digits and never wraps "191".
@@ -66,11 +68,11 @@ struct PlaylistItemList: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            let ringIndex = ringCursorIndex
+            let ringID = ringCursorID
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(visibleRows) { row in
-                        queueRow(index: row.index, item: row.item, isKeyboardCursor: row.index == ringIndex)
+                        queueRow(index: row.index, item: row.item, isKeyboardCursor: row.id == ringID)
                     }
                 }
             }
@@ -87,11 +89,11 @@ struct PlaylistItemList: View {
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
             // so a stale target can't match — and re-present on — a different row. Also drop
-            // a now-out-of-range cursor (the queue shrank).
-            .onChange(of: viewModel.queue.map(\.id)) { _, _ in
+            // a cursor whose track left the queue (Clear, a context-menu remove).
+            .onChange(of: viewModel.queue.map(\.id)) { _, ids in
                 infoTarget = nil
-                if let cursor = cursorIndex, cursor >= viewModel.queue.count {
-                    cursorIndex = nil
+                if let cursorID, !ids.contains(cursorID) {
+                    self.cursorID = nil
                 }
             }
             .onKeyPress(.upArrow) { moveCursor(by: -1, proxy: proxy) }
@@ -117,7 +119,7 @@ struct PlaylistItemList: View {
             // `isSelected` follows the KEYBOARD CURSOR (the focus tint), not the now-playing
             // pointer — so arrowing the queue highlights the focused row without disturbing
             // the hero. The now-playing card is a separate cue below.
-            isSelected: cursorIndex == index,
+            isSelected: cursorID == item.id,
             // PR D: the CURRENT row keeps its card while paused (prominence is no longer
             // tied to play state); `isPlaybackActive` gates only the equalizer motion.
             isNowPlaying: viewModel.selectedTrackIndex == index,
@@ -153,7 +155,7 @@ struct PlaylistItemList: View {
                 // A click on a row focuses the queue for the keyboard shortcuts and lands the
                 // cursor here (so subsequent arrows continue from where you clicked).
                 queueFocused.wrappedValue = true
-                cursorIndex = index
+                cursorID = item.id
                 // Single-click plays the row, so the now-playing card always matches the audio (no
                 // select-without-play state). Re-clicking the playing track is a no-op (no restart).
                 guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
@@ -211,12 +213,17 @@ struct PlaylistItemList: View {
     }
 
     /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from, and the row
-    /// Return plays and Delete removes: the cursor index when visible, else the playing row when
+    /// Return plays and Delete removes: the cursor row when visible, else the playing row when
     /// visible, else the first visible row. Visible-only, so a filter-hidden row (possibly the
     /// playing track) is never acted on with no visible target (break-it MINOR-2).
-    private var keyboardCursor: ListKeyboardCursor<Int>? {
-        ListKeyboardCursor.resolve(rows: visibleIndices, anchor: cursorIndex,
-                                   fallback: viewModel.selectedTrackIndex)
+    private var keyboardCursor: ListKeyboardCursor<QueueItem.ID>? {
+        ListKeyboardCursor.resolve(rows: visibleRows.lazy.map(\.id), anchor: cursorID, fallback: playingItemID)
+    }
+
+    /// The now-playing row's id — the cursor's seed while nothing is chosen.
+    private var playingItemID: QueueItem.ID? {
+        guard let index = viewModel.selectedTrackIndex, index < viewModel.queue.count else { return nil }
+        return viewModel.queue[index].id
     }
 
     /// The ring is drawn while the queue holds key focus AND the user navigates by keyboard.
@@ -225,30 +232,25 @@ struct PlaylistItemList: View {
     }
 
     /// The row wearing the focus ring, or nil (no ring).
-    private var ringCursorIndex: Int? {
+    private var ringCursorID: QueueItem.ID? {
         showsRing ? keyboardCursor?.id : nil
     }
 
-    /// Return/Delete target: the cursor row when something on screen marks it (see
-    /// `ListKeyboardCursor.actionTarget`), as a still-valid REAL queue index.
-    private var actionIndex: Int? {
-        guard let index = keyboardCursor?.actionTarget(ringVisible: showsRing),
-              index < viewModel.queue.count else { return nil }
-        return index
+    /// The REAL queue position of `id` — what the view model's verbs take.
+    private func queueIndex(of id: QueueItem.ID) -> Int? {
+        viewModel.queue.firstIndex { $0.id == id }
     }
 
     /// Move the keyboard CURSOR by `delta` VISIBLE rows — never `selectedTrackIndex`, so the
     /// hero/footer/Now Playing (which read that pointer) don't move while you navigate
     /// (founder bug). Navigates the visible (filter-narrowed) set, so the cursor can't land
-    /// on a hidden row. With no cursor yet, the first press (either arrow) claims the ring row
-    /// — the playing row when visible, else the first; scrolls the cursor into view.
-    /// `.ignored` when the move would leave the list, so the event can bubble.
+    /// on a hidden row; scrolls the cursor into view. `.ignored` when the move would leave the
+    /// list, so the event can bubble.
     private func moveCursor(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
-        guard let target = keyboardCursor?.step(by: delta, in: visibleIndices),
-              target < viewModel.queue.count else { return .ignored }
-        cursorIndex = target
+        guard let target = keyboardCursor?.step(by: delta, in: visibleRows.map(\.id)) else { return .ignored }
+        cursorID = target
         // Keep the cursor on screen (nil anchor = scroll the minimum needed, no jump).
-        proxy.scrollTo(viewModel.queue[target].id)
+        proxy.scrollTo(target)
         return .handled
     }
 
@@ -256,8 +258,9 @@ struct PlaylistItemList: View {
     /// (mirrors the row's tap semantics), claiming it as the cursor. `.ignored` with no target
     /// so the key can bubble.
     private func activateCursor() -> KeyPress.Result {
-        guard let index = actionIndex else { return .ignored }
-        cursorIndex = index
+        guard let id = keyboardCursor?.activationTarget(ringVisible: showsRing),
+              let index = queueIndex(of: id) else { return .ignored }
+        cursorID = id
         if viewModel.selectedTrackIndex == index {
             viewModel.togglePlayPause()
         } else {
@@ -266,12 +269,21 @@ struct PlaylistItemList: View {
         return .handled
     }
 
-    /// Delete: remove the cursor row. The cursor stays at that position, so the next row
-    /// slides under it.
+    /// Delete: remove the SELECTED row (A break-it — the ring alone never licenses a removal; a
+    /// Delete on the seeded ring row, e.g. the playing track at launch, only selects it). The
+    /// cursor moves to the next visible row, else the new last one, so holding Delete keeps
+    /// removing selected rows instead of falling back onto the playing track.
     private func deleteCursorRow() -> KeyPress.Result {
-        guard let index = actionIndex else { return .ignored }
-        cursorIndex = index
-        viewModel.removeTrack(at: index)
+        switch keyboardCursor?.deleteAction(ringVisible: showsRing) {
+        case let .remove(id):
+            guard let index = queueIndex(of: id) else { return .ignored }
+            cursorID = ListKeyboardCursor.anchor(afterRemoving: id, from: visibleRows.map(\.id))
+            viewModel.removeTrack(at: index)
+        case let .claim(id):
+            cursorID = id
+        case nil:
+            return .ignored
+        }
         return .handled
     }
 }
