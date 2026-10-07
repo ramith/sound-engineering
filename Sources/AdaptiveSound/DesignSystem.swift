@@ -200,13 +200,14 @@ enum DesignSystem {
             endPoint: .bottom
         )
 
-        /// The realigned horizontal teal fill (S10.8 PR E — `asTealMeter`): mid → bright,
-        /// leading → trailing. Shared by the loudness meters, the carved sliders, and the
-        /// footer scrubber's playing state — the same two iconFill stops, re-composed.
+        /// The realigned horizontal teal fill (S10.8 PR E — `asTealMeter`): leading → trailing,
+        /// the iconFill mid stop into `meterFillTrail` (dark: bright, as shipped; light: the deep
+        /// teal, so the value end clears 3:1 — S10.8 B2a). Shared by the loudness meters, the
+        /// carved sliders, and the footer scrubber's playing state.
         static let meterFill = LinearGradient(
             gradient: SwiftUI.Gradient(colors: [
                 Color.from(Palette.iconFillMid),
-                Color.from(Palette.iconFillTop),
+                Color.from(Palette.meterFillTrail),
             ]),
             startPoint: .leading,
             endPoint: .trailing
