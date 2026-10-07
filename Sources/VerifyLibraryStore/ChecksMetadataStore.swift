@@ -294,10 +294,6 @@ private func applyCover(_ store: LibraryStore, _ song: CoverSong, gen: Int64) as
     try await store.applyExtractedResult(trackID: song.id, meta: meta, artwork: link, generation: gen)
 }
 
-private func trackArt(_ store: LibraryStore, _ id: Int64) async throws -> String? {
-    try await store.track(id: id)?.artworkKey
-}
-
 private func albumCover(_ store: LibraryStore) async throws -> String? {
     try await store.albums().first(where: { $0.title == "One Album" })?.artworkKey
 }
