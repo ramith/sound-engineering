@@ -21,8 +21,8 @@
 // user-state columns play_count/loved/rating/last_played/frecency_*). Because of the latter,
 // `eraseDatabaseOnSchemaChange` is FALSE (S10.3) — a schema change is an ADDITIVE, frozen-body
 // migration that PRESERVES user data; the cache is rebuilt by a re-scan, never by wiping the file.
-// Corruption is still quarantined + rebuilt (a genuinely-unreadable file) — the deferred backup/
-// export is the durability answer for user data on that last-resort path.
+// Only real corruption is still quarantined + rebuilt; a store this build can't safely open or
+// upgrade is refused and left as it was (LibraryStore+Open).
 
 import Foundation
 import GRDB
@@ -38,7 +38,7 @@ public final class LibraryStore: Sendable {
     /// The schema version reached after migrate (read back from `schema_info`).
     private let version: Int
 
-    /// The quarantined path when a PRE-EXISTING file was corrupt/unusable and this store was rebuilt
+    /// The quarantined path when a PRE-EXISTING file was corrupt and this store was rebuilt
     /// fresh (nil on a normal open). The rebuild loses NON-rebuildable user data (playlists / track
     /// state), so the app surfaces this to the user instead of wiping silently (S10.3 break-it).
     public let quarantinedFrom: URL?
@@ -55,8 +55,8 @@ public final class LibraryStore: Sendable {
 
     // MARK: - SQL
 
-    /// `PRAGMA integrity_check(1);` — "ok" iff the database file is intact.
-    private static let integrityCheckSQL = "PRAGMA integrity_check(1);"
+    /// `PRAGMA integrity_check(1);` — "ok" iff the database file is intact. Shared with the open path.
+    static let integrityCheckSQL = "PRAGMA integrity_check(1);"
     /// The live `journal_mode` (expected "wal" for a file store).
     private static let journalModePragmaSQL = "PRAGMA journal_mode;"
     /// Whether `foreign_keys` enforcement is ON.
@@ -84,8 +84,6 @@ public final class LibraryStore: Sendable {
     private static let recordPlayByURLSQL =
         "UPDATE tracks SET play_count = play_count + 1, last_played = ?, "
             + "frecency_score = ?, frecency_rank = ? WHERE url = ?;"
-    /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
-    private static let selectSchemaVersionSQL = "SELECT version FROM schema_info WHERE id = 1;"
 
     /// Count rows in `table` (verification hook). `table` is caller-validated against the known
     /// schema table set before interpolation, keeping the identifier injection-safe.
@@ -93,19 +91,25 @@ public final class LibraryStore: Sendable {
         "SELECT count(*) FROM \(table);"
     }
 
-    /// Open (creating if absent) and migrate the store at `url`. Corruption / a failed
-    /// integrity check quarantine the file (+ its `-wal`/`-shm` sidecars) and rebuild
-    /// fresh; a schema change is an ADDITIVE migration that PRESERVES data (erase=false,
-    /// S10.3). Never crashes, never silently deletes (design §5).
+    /// Open (creating if absent) and migrate the store at `url`. Real corruption quarantines the
+    /// file (+ its `-wal`/`-shm` sidecars) and rebuilds fresh; a store written by a newer build, or
+    /// one that can't be opened or upgraded, throws a `StoreOpenRefusal` and is left as it was. A
+    /// schema change is an ADDITIVE migration that PRESERVES data (erase=false, S10.3). Never
+    /// crashes, never silently deletes (design §5).
     ///
     /// - Parameters:
     ///   - url: the store file URL (`:memory:` for an in-memory database). The app's lives at
     ///     `AppDataLocation.storeURL` (its artwork cache beside it); the store picks no path itself.
     ///   - appBuild: optional build identifier stored in `schema_info.app_build`.
-    public init(url: URL, appBuild: String? = nil) async throws {
-        let opened = try LibraryStore.openMigratingAndRepairing(
-            url: url, appBuild: appBuild, stamp: StoreQuarantine.defaultStamp()
-        )
+    public convenience init(url: URL, appBuild: String? = nil) async throws {
+        try await self.init(url: url, migrator: LibraryStore.makeMigrator(appBuild: appBuild),
+                            stamp: StoreQuarantine.defaultStamp())
+    }
+
+    /// The same open with its seams exposed: the harness passes a `migrator` that fails or runs
+    /// ahead (to prove refusals) and a fixed `stamp` naming the quarantine files.
+    public init(url: URL, migrator: DatabaseMigrator, stamp: String) async throws {
+        let opened = try LibraryStore.openMigratingAndRepairing(url: url, migrator: migrator, stamp: stamp)
         dbWriter = opened.writer
         version = opened.version
         quarantinedFrom = opened.quarantinedFrom
@@ -257,106 +261,7 @@ public final class LibraryStore: Sendable {
         }
     }
 
-    // MARK: - Open / repair pipeline
-
-    /// The GRDB `Configuration` shared by every store connection: WAL is implied by
-    /// `DatabasePool`; `foreign_keys` ON (design §5); a 5 s busy timeout so a writer
-    /// waits under contention rather than failing with `SQLITE_BUSY` immediately.
-    private static func makeConfiguration() -> Configuration {
-        var config = Configuration()
-        config.foreignKeysEnabled = true
-        config.busyMode = .timeout(5)
-        return config
-    }
-
-    /// Open + migrate the store at `url`. On a rebuild-recoverable failure for a
-    /// PRE-EXISTING file — it cannot be opened/queried as a database, or `integrity_check`
-    /// fails — the file (+ its `-wal`/`-shm` sidecars) is quarantined and a fresh store is
-    /// rebuilt. Never crashes, never silently deletes (design §5). A schema change is an
-    /// ADDITIVE, frozen-body migration that PRESERVES user data (erase=false, S10.3).
-    /// Result of opening/migrating a store: the writer, the schema version reached, and — when a
-    /// pre-existing corrupt file was quarantined + rebuilt — the quarantined path (else nil). A
-    /// struct (not a 3-tuple) to stay within the large-tuple lint bound.
-    private struct OpenedStore {
-        let writer: any DatabaseWriter
-        let version: Int
-        let quarantinedFrom: URL?
-    }
-
-    private static func openMigratingAndRepairing(
-        url: URL, appBuild: String?, stamp: String
-    ) throws -> OpenedStore {
-        let migrator = makeMigrator(appBuild: appBuild)
-
-        // In-memory stores can't be corrupt/quarantined; open + migrate directly.
-        if url.path == ":memory:" || url.absoluteString == "file::memory:" {
-            let queue = try DatabaseQueue(configuration: makeConfiguration())
-            try migrator.migrate(queue)
-            return try OpenedStore(writer: queue, version: readSchemaVersion(queue), quarantinedFrom: nil)
-        }
-
-        let fileExisted = FileManager.default.fileExists(atPath: url.path)
-        do {
-            let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
-            if fileExisted {
-                // A pre-existing file must be intact AND not written by a newer app (the
-                // downgrade guard — `hasBeenSuperseded` sees a migration id we don't know)
-                // before we trust it. GRDB tracks applied migrations in `grdb_migrations`.
-                let intact = try pool.read { db in
-                    try String.fetchOne(db, sql: Self.integrityCheckSQL) == "ok"
-                }
-                let superseded = try pool.read { db in try migrator.hasBeenSuperseded(db) }
-                if !intact || superseded {
-                    throw StoreOpenFailure.rebuildRecoverable
-                }
-            }
-            do {
-                try migrator.migrate(pool)
-            } catch {
-                // A PRE-EXISTING file whose on-disk schema the current migrator cannot apply —
-                // e.g. a store from a prior, non-GRDB migration scheme (app tables present but NOT
-                // recorded in `grdb_migrations`, so `migrate` re-runs v1 and collides with the
-                // existing tables), or any partially-migrated file. The library is a REBUILDABLE
-                // CACHE, so quarantine + rebuild rather than fail to open. A FRESH file that fails
-                // to migrate is a genuine bug → propagate.
-                guard fileExisted else { throw error }
-                throw StoreOpenFailure.rebuildRecoverable
-            }
-            return try OpenedStore(writer: pool, version: readSchemaVersion(pool), quarantinedFrom: nil)
-        } catch let error where fileExisted && isRebuildRecoverable(error) {
-            // A pre-existing file was unusable (corrupt / failed integrity / newer schema / a
-            // schema the migrator can't apply). Quarantine it (+ sidecars) and rebuild fresh — the
-            // DERIVED cache re-scans, but this file ALSO held user data (playlists / track state)
-            // that a rebuild CANNOT recover, so the quarantined path is surfaced (S10.3 break-it):
-            // the caller warns the user + points at the saved file rather than wiping in silence.
-            let quarantined = try StoreQuarantine.quarantine(storeURL: url, stamp: stamp)
-            let pool = try DatabasePool(path: url.path, configuration: makeConfiguration())
-            try migrator.migrate(pool)
-            return try OpenedStore(writer: pool, version: readSchemaVersion(pool), quarantinedFrom: quarantined.first)
-        }
-    }
-
-    /// A sentinel distinguishing "quarantine + rebuild" from a genuine, propagate error.
-    private enum StoreOpenFailure: Error, Equatable {
-        case rebuildRecoverable
-    }
-
-    /// Whether an open/migrate error means the file is not a usable database (so a
-    /// quarantine + rebuild recovers): the explicit sentinel, or a GRDB `DatabaseError`
-    /// with a corruption/not-a-db result code.
-    private static func isRebuildRecoverable(_ error: Error) -> Bool {
-        if error as? StoreOpenFailure == .rebuildRecoverable {
-            return true
-        }
-        guard let dbError = error as? DatabaseError else { return false }
-        let code = dbError.resultCode.primaryResultCode
-        return code == .SQLITE_CORRUPT || code == .SQLITE_NOTADB
-    }
-
-    /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
-    private static func readSchemaVersion(_ writer: any DatabaseWriter) throws -> Int {
-        try writer.read { db in try Int.fetchOne(db, sql: Self.selectSchemaVersionSQL) ?? 0 }
-    }
+    // MARK: - Migrations
 
     /// The GRDB `DatabaseMigrator` bringing a fresh/older store to `currentSchemaVersion`.
     ///

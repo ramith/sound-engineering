@@ -1,10 +1,11 @@
-// StoreQuarantine — move a corrupt/too-new store aside (with its WAL sidecars).
+// StoreQuarantine — move a corrupt store aside (with its WAL sidecars).
 //
-// S8.1a (design §5, must-fix O1). When the store is corrupt, fails
-// `integrity_check`, or is newer than the app (downgrade guard), the file is
-// QUARANTINED rather than deleted — the library is a rebuildable cache (§2a), but
-// a corrupt file may still hold user-recoverable rows, so we keep it for
-// post-mortem and rebuild fresh.
+// S8.1a (design §5, must-fix O1). When the store is corrupt or fails
+// `integrity_check`, the file is QUARANTINED rather than deleted — the library's
+// cache is rebuildable (§2a), but a corrupt file may still hold user-recoverable
+// rows, so we keep it for post-mortem and rebuild fresh. (A store from a newer
+// build is no longer quarantined: S10.8 C2 refuses to open it and leaves it as it
+// was — LibraryStore+Open.)
 //
 // The quarantine renames THREE files atomically-enough for our purposes: the main
 // `library.sqlite3` AND its `-wal` / `-shm` sidecars (a live WAL left orphaned
