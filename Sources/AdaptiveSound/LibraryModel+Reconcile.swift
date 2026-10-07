@@ -26,9 +26,9 @@ enum ReconcileState: Equatable {
 // Replaces the old non-recursive DispatchSource monitor: ONE recursive FSEvents `LibraryWatcher`
 // drives the persistent-store reconcile. On a filesystem change under a watched store root we
 // debounce (~1 s), then re-scan that root into the store (reusing the already-verified
-// LibraryScanner.scan → move-match → metadata → facet-sweep). The queue is NOT folder-bound
-// (S9 IA change), so a disk change never rewrites it. The watcher's `@Sendable` sink hops to
-// @MainActor FIRST (the SIGTRAP lesson) before touching any state.
+// LibraryScanner.scan → move-match → metadata pass, which ends with the album regroup + facet
+// sweep). The queue is NOT folder-bound (S9 IA change), so a disk change never rewrites it. The
+// watcher's `@Sendable` sink hops to @MainActor FIRST (the SIGTRAP lesson) before touching any state.
 
 extension LibraryModel {
     /// Build + start the FSEvents watcher (idempotent). Called once from `makeLibraryStore`.
@@ -136,8 +136,8 @@ extension LibraryModel {
     }
 
     /// Reconcile one already-registered root into the store (NO validate/addRoot preamble): the
-    /// same scan → move-match → metadata → facet-sweep the on-demand path runs. Catches the
-    /// empty-walk guard + cancellation silently (background non-events).
+    /// same scan → move-match → metadata pass (album regroup + facet sweep) the on-demand path
+    /// runs. Catches the empty-walk guard + cancellation silently (background non-events).
     private func performReconcile(folderID: Int64, root: URL, store: LibraryStore) async {
         // Proactive reachability precheck (slice 5b): an unmounted volume / deleted folder → skip
         // the walk entirely (paused). The empty-walk backstop (slice 3) remains the actual safety.
@@ -155,10 +155,8 @@ extension LibraryModel {
         }
         do {
             let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+            // The pass ends by regrouping albums + reaping orphan facets (SF-2, S10.8 C2).
             await runMetadataPass(store, generation: result.generation)
-            if !Task.isCancelled {
-                _ = try? await store.sweepOrphanFacets()
-            } // SF-2 post-churn cleanup
             reconcileState[folderID] = isLocalVolume(root) ? .watching : .onDemandOnly
             lastReconciledAt = Date()
             lastReconcileError = nil
