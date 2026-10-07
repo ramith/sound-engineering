@@ -320,19 +320,22 @@ public struct LibraryFolder: Sendable, Identifiable, Equatable {
 
 // MARK: - Metadata write payload (S8.3 fills — provided now)
 
-/// The tag metadata applied to a track in S8.3 (design §4 `applyMetadata`). The
-/// store resolves album/artist/genre rows from these via the M1 total-album-key
-/// query-then-insert so untagged albums collapse to one. Provided now so the write
-/// path exists and is testable; S8.3 populates it from real tag extraction.
+/// The tag metadata applied to a track in S8.3 (design §4 `applyMetadata`). The store
+/// stores the raw album inputs on the track and assigns its album through `AlbumGrouping`
+/// (S10.8 C2): tagged albums key on their album artist, untagged ones on their folder.
 public struct TrackMetadata: Sendable, Equatable {
     /// Track title tag, or `nil`.
     public let title: String?
     /// Track-artist name, or `nil` (resolved/created in `artists`).
     public let artistName: String?
-    /// Album title, or `nil` (defaults to the untagged sentinel handling in resolution).
+    /// Album title, or `nil` (no album).
     public let albumTitle: String?
-    /// Album-artist name, or `nil` (defaults to the unknown-artist sentinel, id 0).
+    /// Album-artist TAG, or `nil` — then the album groups by folder and its artist is derived
+    /// (`AlbumGrouping`).
     public let albumArtistName: String?
+    /// The compilation flag (iTunes `cpil`, ID3 `TCMP`, Vorbis `COMPILATION`). An untagged
+    /// album with any flagged song is credited to "Various Artists" (S10.8 C2, decision 12).
+    public let isCompilation: Bool
     /// Release year, or `nil` (defaults to 0 = "unknown" in the total album key).
     public let year: Int?
     /// Track number, or `nil`.
@@ -352,14 +355,15 @@ public struct TrackMetadata: Sendable, Equatable {
 
     public init(
         title: String? = nil, artistName: String? = nil, albumTitle: String? = nil,
-        albumArtistName: String? = nil, year: Int? = nil, trackNo: Int? = nil,
-        discNo: Int? = nil, genres: [String] = [], durationMs: Int64 = 0,
+        albumArtistName: String? = nil, isCompilation: Bool = false, year: Int? = nil,
+        trackNo: Int? = nil, discNo: Int? = nil, genres: [String] = [], durationMs: Int64 = 0,
         sampleRate: Int? = nil, bitDepth: Int? = nil, channels: Int? = nil
     ) {
         self.title = title
         self.artistName = artistName
         self.albumTitle = albumTitle
         self.albumArtistName = albumArtistName
+        self.isCompilation = isCompilation
         self.year = year
         self.trackNo = trackNo
         self.discNo = discNo

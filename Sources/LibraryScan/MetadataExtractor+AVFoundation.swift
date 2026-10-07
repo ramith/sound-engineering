@@ -32,6 +32,7 @@ extension MetadataExtractor {
             albumArtistName: await Self.firstString(items, [
                 .iTunesMetadataAlbumArtist, .id3MetadataBand,
             ]),
+            isCompilation: Self.parseFlag(await Self.firstString(items, Self.compilationIdentifiers)),
             year: Self.parseYear(await Self.firstString(items, [
                 .commonIdentifierCreationDate, .iTunesMetadataReleaseDate,
                 .id3MetadataRecordingTime, .id3MetadataYear,
@@ -61,6 +62,16 @@ extension MetadataExtractor {
     }
 
     // MARK: - Field helpers
+
+    /// Where the compilation flag lives, by container (S10.8 C2): the iTunes `cpil` atom (m4a),
+    /// iTunes' ID3 `TCMP` frame (mp3 — no SDK constant, so the raw `id3/TCMP` identifier) and
+    /// the Vorbis `COMPILATION` comment (flac/ogg when FFmpeg is absent). `firstString` reads a
+    /// `cpil` boolean atom through its number value ("1").
+    static let compilationIdentifiers: [AVMetadataIdentifier] = [
+        .iTunesMetadataDiscCompilation,
+        AVMetadataIdentifier(rawValue: "id3/TCMP"),
+        AVMetadataIdentifier(rawValue: "vorb/COMPILATION"),
+    ]
 
     /// The first non-empty value across `identifiers` (in precedence order), as a string.
     /// Falls back to `numberValue` because iTunes binary atoms — `trkn` (track) / `disk`
