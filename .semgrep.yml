@@ -146,13 +146,13 @@ rules:
     languages: [swift]
     severity: ERROR
     message: >-
-      The system bordered-prominent button draws a WHITE label on the tint — on the teal that
-      fails WCAG AA (≈ 2.5:1 on accent, ≈ 4.3:1 even on accentDeep). Primary actions use the
-      teal pill: .buttonStyle(.pill) (UI/Controls/PillButtonStyle.swift — dark-on-teal,
-      audited by R4-TAB-01).
+      The system prominent buttons (bordered-prominent and glass-prominent, by shorthand or by
+      type) draw a WHITE label on the tint — on the teal that fails WCAG AA (≈ 2.5:1 on accent,
+      ≈ 4.3:1 even on accentDeep). Primary actions use the teal pill: .buttonStyle(.pill)
+      (UI/Controls/PillButtonStyle.swift — dark-on-teal, audited by R4-TAB-01).
     paths:
       include: ['Sources/AdaptiveSound']
-    pattern-regex: '\.borderedProminent\b'
+    pattern-regex: '\.(borderedProminent|glassProminent)\b|\b(BorderedProminent|GlassProminent)ButtonStyle\('
 
   - id: ui-no-accent-as-text
     languages: [swift]
