@@ -90,6 +90,10 @@ struct LibrarySidebar: View {
             .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1, proxy: proxy) : .ignored }
             // Return renames the selected playlist (Finder/Music convention). Categories ignore it.
             .onKeyPress(.return) { editingPlaylistID == nil ? renameCursorPlaylist() : .ignored }
+            #if DEBUG
+                // Picture-sheet ring-rail variant: focus, so the ring marks the selected category.
+                .sheetFocusSeed(.rail) { sidebarFocused = true }
+            #endif
         }
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
         // hug the measured content, scroll when the window is short. The shared teal glow (PR-B) sits

@@ -56,6 +56,8 @@ run-release: release
 
 # Picture sheets (S10.8 A4, debug only): render every screen × appearance × size from FIXTURE
 # models into $(SHEETS_DIR)/<tab>-<appearance>-<w>x<h>.png and exit non-zero if any sheet failed.
+# Cheap variants ride along (dark + light, 1000x720, Now Playing + Library) as
+# <tab>-<appearance>-<variant>-1000x720.png: ring (queue + Songs keyboard focus), ring-rail, empty.
 # No library store, audio device, UserDefaults.standard or single-instance lock is touched, so it is
 # safe beside a running app. Narrow with e.g.
 #   make sheets SHEETS_ARGS='-ASSheetTabs np,library -ASSheetAppearances dark,light'

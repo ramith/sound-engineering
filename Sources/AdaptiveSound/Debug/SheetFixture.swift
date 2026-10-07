@@ -12,9 +12,13 @@
     /// - no `UserDefaults.standard`: the EQ model and every `@AppStorage` use the caller's suite;
     /// - no system Now Playing: `onNowPlayingRefresh` stays unwired and `registerCommands()` is never
     ///   called, so Control Center and the media keys are untouched.
+    ///
+    /// One fixture per `SheetVariant`: `empty` seeds no songs and no queue; the ring variants seed
+    /// the standard world and draw keyboard focus in their lists (`root(for:)`).
     @MainActor
     final class SheetFixture {
         let audio: AudioViewModel
+        let variant: SheetVariant
         private let library = LibraryModel(storeless: ())
         private let eq: EQViewModel
         private let browse: LibraryBrowseModel
@@ -24,16 +28,18 @@
         private let defaults: UserDefaults
         private let selectedSongs: Set<LibraryTrackDisplay.ID>
 
-        init(defaults: UserDefaults) {
+        init(defaults: UserDefaults, variant: SheetVariant) {
             self.defaults = defaults
+            self.variant = variant
             let monitor = Self.monitorSpectra()
             audio = AudioViewModel(engine: SheetEngine(before: monitor.before, after: monitor.after))
             eq = EQViewModel(audioViewModel: audio, defaults: defaults)
             browse = LibraryBrowseModel(audio: audio, library: library)
             playlists = PlaylistsModel(library: library, audio: audio)
-            let songs = Self.songs()
+            let songs = variant == .empty ? [] : Self.songs()
             selectedSongs = Set(songs.filter { $0.title == Self.selectedTitle }.map(\.id))
             browse.seedRenderFixture(songs: songs)
+            seedDevices()
             seedPlayback(songs)
             eq.bandGains = Self.eqCurve()
             eq.selectedPreset = nil // a hand-drawn curve reads "Custom"
@@ -42,7 +48,8 @@
         }
 
         /// The whole window content, as `AdaptiveSound.body` builds it, in `appearance`'s environment.
-        /// Reduce Motion is always on: sheets are still frames.
+        /// Reduce Motion is always on: sheets are still frames. The ring variants draw keyboard focus
+        /// (as after an arrow press) in the lists they focus.
         func root(for appearance: SheetAppearance) -> some View {
             ContentView()
                 .environment(audio)
@@ -56,12 +63,25 @@
                 .environment(\._accessibilityReduceTransparency, appearance.reduceTransparency)
                 .environment(\._accessibilityReduceMotion, true)
                 .environment(\.sheetSongSelection, selectedSongs)
+                .environment(\.showsKeyboardFocus, !variant.focusedLists.isEmpty)
+                .environment(\.sheetFocusedLists, variant.focusedLists)
                 .defaultAppStorage(defaults)
         }
 
-        /// A playing queue on the built-in speakers: track 3 at 1:21, Enhanced at 20%, measured loudness
-        /// and a live-looking analyzer frame.
+        /// The built-in speakers selected, a USB DAC beside them — every variant has an output device.
+        private func seedDevices() {
+            let speakers = AudioDeviceModel(id: 1, name: "MacBook Pro Speakers", sampleRate: 48000,
+                                            bufferFrameSize: 512, type: .builtin)
+            let dac = AudioDeviceModel(id: 2, name: "Modi+ USB DAC", sampleRate: 96000,
+                                       bufferFrameSize: 512, type: .usb)
+            audio.availableDevices = [speakers, dac]
+            audio.selectedDevice = speakers
+        }
+
+        /// A playing queue: track 3 at 1:21, Enhanced at 20%, measured loudness and a live-looking
+        /// analyzer frame. Nothing at all when the library is empty (`empty`).
         private func seedPlayback(_ songs: [LibraryTrackDisplay]) {
+            guard !songs.isEmpty else { return }
             let byTitle = Dictionary(uniqueKeysWithValues: songs.map { ($0.title, $0) })
             let queue = Self.queueTitles.compactMap { byTitle[$0] }
             audio.queue = queue.map { QueueItem(file: AudioFile($0)) }
@@ -70,12 +90,6 @@
             audio.duration = byTitle[Self.playingTitle]?.durationSeconds ?? 0
             audio.playbackPosition = 81
             audio.sampleRate = 48000
-            let speakers = AudioDeviceModel(id: 1, name: "MacBook Pro Speakers", sampleRate: 48000,
-                                            bufferFrameSize: 512, type: .builtin)
-            let dac = AudioDeviceModel(id: 2, name: "Modi+ USB DAC", sampleRate: 96000,
-                                       bufferFrameSize: 512, type: .usb)
-            audio.availableDevices = [speakers, dac]
-            audio.selectedDevice = speakers
             var path = SignalPathInfo()
             path.path = .enhanced
             path.achievedSampleRate = 48000

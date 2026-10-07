@@ -8,7 +8,9 @@
     ///
     /// `AdaptiveSound -ASRenderSheets <dir>` — or `make sheets` — renders whole app screens offscreen
     /// from `SheetFixture` models, every tab × appearance × reference size, into
-    /// `<tab>-<appearance>-<w>x<h>.png`, then exits: 0 when every sheet was written, 1 otherwise. It runs
+    /// `<tab>-<appearance>-<w>x<h>.png`, plus the cheap `SheetVariant` extras (keyboard ring, empty
+    /// states) as `<tab>-<appearance>-<variant>-<w>x<h>.png`, then exits: 0 when every sheet was
+    /// written, 1 otherwise. It runs
     /// first thing in `AdaptiveSound.init()`, BEFORE `SingleInstanceGuard`, so it works beside a running
     /// copy of the app without taking its lock, and it never opens the library store, the audio engine
     /// or device, or `UserDefaults.standard` (see `SheetFixture`).
@@ -17,11 +19,6 @@
     /// popovers, alerts), and anything blended with what is behind the window.
     @MainActor
     enum SheetRenderer {
-        /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`) and the hard minimum.
-        private static let sizes = [
-            NSSize(width: 1000, height: 720),
-            NSSize(width: DesignSystem.ShellMetrics.windowMinWidth, height: DesignSystem.ShellMetrics.windowMinHeight),
-        ]
         /// The renderer's private defaults suite — wiped before and after every run.
         private static let defaultsSuite = "AdaptiveSound.SheetRenderer"
 
@@ -32,7 +29,7 @@
         }
 
         private static func run(_ request: SheetRequest) -> Never {
-            let total = request.appearances.count * request.tabs.count * sizes.count
+            let total = SheetVariant.allCases.reduce(0) { $0 + $1.sheetCount(for: request) }
             guard total > 0 else { SheetRequest.usage("the selection renders no sheets") }
             NSApplication.shared.setActivationPolicy(.prohibited) // no Dock icon, never frontmost
             do {
@@ -42,10 +39,13 @@
             }
             guard let defaults = UserDefaults(suiteName: defaultsSuite) else { fail("no defaults suite") }
             defaults.removePersistentDomain(forName: defaultsSuite)
-            let fixture = SheetFixture(defaults: defaults)
             var failures: [String] = []
-            for appearance in request.appearances {
-                failures += render(appearance, tabs: request.tabs, fixture: fixture, into: request.directory)
+            for variant in SheetVariant.allCases where variant.sheetCount(for: request) > 0 {
+                let fixture = SheetFixture(defaults: defaults, variant: variant)
+                for appearance in variant.appearances(of: request) {
+                    failures += render(appearance, tabs: variant.tabs(of: request), fixture: fixture,
+                                       into: request.directory)
+                }
             }
             defaults.removePersistentDomain(forName: defaultsSuite)
             print("sheets: \(total - failures.count) of \(total) written to \(request.directory.path)")
@@ -53,19 +53,20 @@
             exit(failures.isEmpty ? EXIT_SUCCESS : EXIT_FAILURE)
         }
 
-        /// Every tab at every size in one appearance; returns the sheets that could not be written.
+        /// Every tab at each of the fixture variant's sizes in one appearance; returns the sheets that
+        /// could not be written.
         private static func render(_ appearance: SheetAppearance, tabs: [TabSelection], fixture: SheetFixture,
                                    into directory: URL) -> [String] {
+            let variant = fixture.variant
             guard let windowAppearance = appearance.makeAppearance() else {
-                return tabs.flatMap { tab in
-                    sizes.map { "\(fileName(tab, appearance, $0)): this macOS can't build the appearance" }
-                }
+                let names = tabs.flatMap { tab in variant.sizes.map { fileName(tab, appearance, variant, $0) } }
+                return names.map { "\($0): this macOS can't build the appearance" }
             }
             var failures: [String] = []
             for tab in tabs {
                 fixture.audio.selectedTab = tab
-                for size in sizes {
-                    let name = fileName(tab, appearance, size)
+                for size in variant.sizes {
+                    let name = fileName(tab, appearance, variant, size)
                     if let reason = snapshot(fixture.root(for: appearance), appearance: windowAppearance, size: size,
                                              to: directory.appending(path: name)) {
                         failures.append("\(name): \(reason)")
@@ -75,8 +76,11 @@
             return failures
         }
 
-        private static func fileName(_ tab: TabSelection, _ appearance: SheetAppearance, _ size: NSSize) -> String {
-            "\(SheetRequest.slug(for: tab))-\(appearance.rawValue)-\(Int(size.width))x\(Int(size.height)).png"
+        private static func fileName(_ tab: TabSelection, _ appearance: SheetAppearance, _ variant: SheetVariant,
+                                     _ size: NSSize) -> String {
+            let dimensions = "\(Int(size.width))x\(Int(size.height))"
+            let parts = [SheetRequest.slug(for: tab), appearance.rawValue, variant.slug, dimensions]
+            return parts.compactMap(\.self).joined(separator: "-") + ".png"
         }
 
         /// Hosts `view` in a borderless window that is never ordered on screen, lets SwiftUI settle
