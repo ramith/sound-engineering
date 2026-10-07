@@ -52,8 +52,10 @@ enum DesignSystem {
         // Accent — appearance-independent (the teal reads on both light + dark). #29B6A4/#148979.
         static let accent = from(Palette.accent)
         static let accentDeep = from(Palette.accentDeep)
-        /// Foreground drawn ON the accent (e.g. a play glyph over the teal fill). Appearance-
-        /// independent like `accent` itself — white reads on the teal in both light + dark.
+        /// Foreground drawn ON the accent (a play glyph on a teal disc, the active tab's and the
+        /// pill's label). Appearance-independent like `accent` itself: the near-black teal
+        /// #0C1413 — S10.8 PR B retired white, whose ≈ 2.5:1 on the teal failed AA. Gated by
+        /// R4-TAB-01 (on the teal gloss) and R4-TINT-04 (on `accentFill`).
         static let onAccent = from(Palette.onAccent)
         /// S10.8 A2 accent ROLES — dark is exactly `accent` (no dark look changes); light is
         /// the deeper teal, because the bare `accent` fails contrast on the light window.
