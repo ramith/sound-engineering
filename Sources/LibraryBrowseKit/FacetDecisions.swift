@@ -21,9 +21,10 @@ public enum FacetDetailState: Sendable, Equatable {
     }
 }
 
-/// Whether a facet row is shown in the Artists/Genres lists. 0-song facets (e.g. an
-/// album-artist-only "Various Artists" with no track-level appearances) are hidden from
-/// the browse lists; the DAO keeps them reachable for detail reads + the sweep gate.
+/// Whether a facet row is shown in the Albums grid and the Artists/Genres lists. 0-song facets
+/// (e.g. an album-artist-only "Various Artists" with no track-level appearances, or an album a
+/// retag just emptied) are hidden from the browse lists; the DAO keeps them reachable for detail
+/// reads + the sweep gate.
 public enum FacetListVisibility {
     public static func isVisible(trackCount: Int) -> Bool {
         trackCount > 0
