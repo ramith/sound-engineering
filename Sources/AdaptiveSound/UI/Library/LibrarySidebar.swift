@@ -45,6 +45,8 @@ struct LibrarySidebar: View {
     /// way a `List` does — same `.focusable`/`.focused`/`.defaultFocus` pattern the queue uses).
     /// `internal` for the same-type `LibrarySidebar+Rename` extension (focus yield/restore).
     @FocusState var sidebarFocused: Bool
+    /// Draw the cursor ring only while the user navigates by keyboard (A-review).
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -107,6 +109,11 @@ struct LibrarySidebar: View {
         }
     }
 
+    /// The rail holds key focus AND the user is navigating by keyboard — the ring's gate.
+    private var showsRing: Bool {
+        sidebarFocused && showsKeyboardFocus
+    }
+
     // MARK: - Category rows
 
     private func categoryRow(_ category: LibraryCategory) -> some View {
@@ -116,7 +123,7 @@ struct LibrarySidebar: View {
             sidebarFocused = true
         } label: {
             NavRow(icon: category.icon, label: category.title, active: isSelected,
-                   isKeyboardCursor: sidebarFocused && isSelected)
+                   isKeyboardCursor: showsRing && isSelected)
         }
         .buttonStyle(.plain)
         // Selection is conveyed by color alone otherwise — expose it to VoiceOver; `.combine`
@@ -160,7 +167,7 @@ struct LibrarySidebar: View {
                 sidebarFocused = true
             } label: {
                 NavRow(icon: "music.note.list", label: playlist.name, active: isSelected,
-                       isKeyboardCursor: sidebarFocused && isSelected) {
+                       isKeyboardCursor: showsRing && isSelected) {
                     Text(playlist.entryCount.formatted(.number))
                         .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(DesignSystem.Color.labelTertiary)
