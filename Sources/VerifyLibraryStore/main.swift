@@ -183,6 +183,7 @@ func allCheckCases() -> [CheckCase] {
         + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
         + albumArtistCheckCases()
+        + storeOpenSafetyCheckCases()
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
@@ -376,7 +377,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "+ EXPLAIN tracks_fts-only, never SCAN tracks; "
         + "S10.8 C2: ALB-01 folder fallback + incremental re-credit, ALB-02 compilation no-split [real "
         + "flag both extractors + disc folders], ALB-03 re-read keeps user data [v6 store, byte-identical], "
-        + "ALB-04 one missing-artist string, ALB-05 same-title folders don't merge + move re-keys) ===")
+        + "ALB-04 one missing-artist string, ALB-05 same-title folders don't merge + move re-keys; "
+        + "S10.8 C2 store-open safety: OPEN-01 failed migration refused [byte-identical], OPEN-02 backup "
+        + "before upgrade [restores + keep 2], OPEN-03 no backup when current, OPEN-04 failed backup refuses, "
+        + "OPEN-05 damaged page still quarantined) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
