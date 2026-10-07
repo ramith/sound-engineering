@@ -39,13 +39,27 @@ struct ListKeyboardCursorTests {
 
     // MARK: step
 
-    @Test("an unanchored cursor is claimed in place by EITHER arrow — never skipped, never wrapped")
-    func unanchoredClaimsInPlace() {
+    @Test("an unanchored FIRST-row seed is claimed in place by EITHER arrow — never skipped, never wrapped")
+    func unanchoredFirstRowClaimsInPlace() {
         let seed = Cursor(id: 10, isAnchored: false)
         #expect(seed.step(by: 1, in: rows) == 10)
         #expect(seed.step(by: -1, in: rows) == 10) // the old queue jumped ↑ to the LAST row
+    }
+
+    @Test("an unanchored seed on the playing row moves on the first arrow")
+    func unanchoredPlayingRowMoves() {
+        // The playing row already wears a teal outline, so "claim in place" looked like the
+        // first ↓/↑ in the queue did nothing (A break-it).
         let playing = Cursor(id: 30, isAnchored: false)
-        #expect(playing.step(by: 1, in: rows) == 30)
+        #expect(playing.step(by: 1, in: rows) == 40)
+        #expect(playing.step(by: -1, in: rows) == 20)
+    }
+
+    @Test("an unanchored seed at the last row claims in place rather than bubbling off the end")
+    func unanchoredLastRowClaimsAtEdge() {
+        let playing = Cursor(id: 40, isAnchored: false)
+        #expect(playing.step(by: 1, in: rows) == 40)
+        #expect(playing.step(by: -1, in: rows) == 30)
     }
 
     @Test("an anchored cursor moves one row each way")
