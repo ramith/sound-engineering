@@ -16,7 +16,6 @@
 //          artist rows keep their full names; two different primary artists are still "Various".
 
 import Foundation
-import LibraryScan
 import LibraryStore
 
 // MARK: - Registration

@@ -101,15 +101,17 @@ public enum AlbumGrouping {
     /// agree on one.
     public static func keys(for songs: [some AlbumGroupingSong]) -> [AlbumGroupKey?] {
         let folders = songs.map { albumFolder(ofTrackPath: $0.path) }
-        var tagsInPlace: [AlbumPlace: Set<String>] = [:]
+        // Keyed by the place itself — one title in one album folder, i.e. its UNTAGGED key.
+        var tagsInPlace: [AlbumGroupKey: Set<String>] = [:]
         for (song, folder) in zip(songs, folders) {
             if let title = song.albumTitle, let tag = song.albumArtistTag {
-                tagsInPlace[AlbumPlace(title: title, folder: folder), default: []].insert(tag)
+                tagsInPlace[AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder), default: []]
+                    .insert(tag)
             }
         }
         return zip(songs, folders).map { song, folder in
             guard let title = song.albumTitle else { return nil }
-            let tags = tagsInPlace[AlbumPlace(title: title, folder: folder)]
+            let tags = tagsInPlace[AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder)]
             if let tag = song.albumArtistTag ?? (tags?.count == 1 ? tags?.first : nil) {
                 return AlbumGroupKey(title: title, taggedArtist: tag, folderKey: "")
             }
@@ -155,10 +157,4 @@ public enum AlbumGrouping {
         (lhs.discNo ?? 1, lhs.trackNo == nil ? 1 : 0, lhs.trackNo ?? 0, lhs.songID)
             < (rhs.discNo ?? 1, rhs.trackNo == nil ? 1 : 0, rhs.trackNo ?? 0, rhs.songID)
     }
-}
-
-/// One album title within one album folder — where mixed tagging (C3) compares tags.
-private struct AlbumPlace: Hashable {
-    let title: String
-    let folder: String
 }
