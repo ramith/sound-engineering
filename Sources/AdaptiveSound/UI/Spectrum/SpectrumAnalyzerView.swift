@@ -16,10 +16,10 @@ struct SpectrumAnalyzerView: View {
     @Environment(AudioViewModel.self) var viewModel
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
+    /// Cap geometry; its opacity is per appearance (`.spectrumCapOpacity()`).
     private enum CapMetrics {
         static let height: CGFloat = 2
         static let gapAboveBar: CGFloat = 4
-        static let opacity: Double = 0.5
     }
 
     /// Decorative axis text (a11y-hidden; sub-10pt is allowed for decorative-only, §3.2).
@@ -50,26 +50,25 @@ struct SpectrumAnalyzerView: View {
     private var barField: some View {
         let bars = viewModel.spectrumBars
         let caps = viewModel.peakCaps
+        let fills = SpectrumColorPalette.barFills(count: bars.count)
         return GeometryReader { geo in
             let maxBarHeight = geo.size.height
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0 ..< bars.count, id: \.self) { index in
-                    let t = bars.count > 1 ? Float(index) / Float(bars.count - 1) : 0
-                    let barGradient = SpectrumColorPalette.gradientAt(t)
                     let barHeight = CGFloat(min(max(bars[index], 0), 1)) * maxBarHeight
                     let capValue = index < caps.count ? CGFloat(min(max(caps[index], 0), 1)) : 0
 
                     ZStack(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(barGradient)
+                            .fill(fills[index])
                             .frame(height: barHeight)
                             .animation(reduceMotion ? nil : .easeOut(duration: 0.08),
                                        value: bars[index])
 
                         if capValue * maxBarHeight > barHeight + 1 {
                             RoundedRectangle(cornerRadius: 1, style: .continuous)
-                                .fill(barGradient)
-                                .opacity(CapMetrics.opacity)
+                                .fill(fills[index])
+                                .spectrumCapOpacity()
                                 .frame(height: CapMetrics.height)
                                 .offset(y: -(capValue * maxBarHeight + CapMetrics.gapAboveBar))
                                 .animation(reduceMotion ? nil : .easeOut(duration: 0.08),

@@ -80,8 +80,9 @@ rules:
   # --- S10.7 layer-policy tripwires (docs/sprints/s10-7-liquid-glass-design.md §3.1/§3.2/§7 R1).
   # Drift nets, not security boundaries (same posture as the migrator grep): helper indirection
   # and legal-token recomposition can evade regexes — review owns that seam (design §7.4-1).
-  # The four DEFINITION files (DesignSystem, DesignSystemGlass, Color+Brand, SpectrumColorPalette)
-  # are the only exceptions — they are where color/material IS defined.
+  # The three DEFINITION files (DesignSystem, DesignSystemGlass, Color+Brand) are the only
+  # exceptions — they are where color/material IS defined. (SpectrumColorPalette left the list in
+  # S10.8 B2a: the analyzer ramp is Kit data now, `SpectrumRamp`.)
 
   - id: ui-no-adhoc-material
     languages: [swift]
@@ -93,7 +94,7 @@ rules:
       .overlay role inside DesignSystemGlass.swift. Declare a role, don't paint a material.
     paths:
       include: ['Sources/AdaptiveSound']
-      exclude: ['DesignSystem.swift', 'DesignSystemGlass.swift', 'Color+Brand.swift', 'SpectrumColorPalette.swift']
+      exclude: ['DesignSystem.swift', 'DesignSystemGlass.swift', 'Color+Brand.swift']
     pattern-regex: '\.(ultraThin|thin|regular|thick|ultraThick)Material\b|\bMaterial\.|\bNSVisualEffectView\b|\.background\(\s*\.bar\b'
 
   - id: no-liquid-glass-api
@@ -126,7 +127,6 @@ rules:
         - 'Sources/AdaptiveSound/DesignSystem.swift'
         - 'Sources/AdaptiveSound/DesignSystemGlass.swift'
         - 'Sources/AdaptiveSound/Color+Brand.swift'
-        - 'Sources/AdaptiveSound/UI/Spectrum/SpectrumColorPalette.swift'
     pattern-either:
       # Colorspace prefix generalized (break-it hardening): `Color(.displayP3, red:)` evaded
       # the .sRGB-only group — and P3 is exactly what the R4 audit cannot model.

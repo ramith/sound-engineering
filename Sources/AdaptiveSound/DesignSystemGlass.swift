@@ -86,6 +86,23 @@ extension View {
     }
 }
 
+extension View {
+    /// An analyzer peak cap's opacity over its bar's fill (S10.8 B2a): `SpectrumRamp.capOpacity*`,
+    /// dark the shipped 50%, light 85%. A VIEW opacity, as shipped — alpha baked into the gradient
+    /// colors instead shifts the dark caps by up to 4 levels.
+    func spectrumCapOpacity() -> some View {
+        modifier(SpectrumCapOpacity())
+    }
+}
+
+private struct SpectrumCapOpacity: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.opacity(colorScheme == .dark ? SpectrumRamp.capOpacityDark : SpectrumRamp.capOpacityLight)
+    }
+}
+
 private struct HeroTitleModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
 
