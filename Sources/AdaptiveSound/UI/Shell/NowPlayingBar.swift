@@ -399,11 +399,13 @@ private struct FooterSignalSlot: View {
             // Teal "Enhanced" ONLY for the clean enhanced state: under Pure-fallback the
             // dot is the amber warning, and brand-teal text beside it would read as two
             // different states in 12pt of space (break-it finding) — neutral label there.
-            (Text(info.path == .pure ? "Pure" : "Enhanced")
+            // One Text by interpolation (macOS 26 deprecates `Text + Text`): the mode word
+            // keeps its own color, the rate takes the outer labelSecondary.
+            let mode = Text(info.path == .pure ? "Pure" : "Enhanced")
                 .foregroundStyle(info.path == .enhanced && !info.fellBackToEnhanced
                     ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
-                + Text(" · \(info.formattedRate)")
-                .foregroundStyle(DesignSystem.Color.labelSecondary))
+            Text("\(mode) · \(info.formattedRate)")
+                .foregroundStyle(DesignSystem.Color.labelSecondary)
                 .font(DesignSystem.Font.monoSmall)
                 .lineLimit(1)
                 .truncationMode(.tail)
