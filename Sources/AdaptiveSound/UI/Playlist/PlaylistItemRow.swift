@@ -130,9 +130,9 @@ struct PlaylistItemRow<DragPayload: Transferable>: View {
         }
         .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.container)
         .overlay {
-            if isDropTarget {
+            if isDropTarget { // STATE, not decoration: the non-text 3:1 fill role (R4-TINT-01)
                 RoundedRectangle(cornerRadius: DesignSystem.Radius.container, style: .continuous)
-                    .strokeBorder(DesignSystem.Color.accent, lineWidth: 2)
+                    .strokeBorder(DesignSystem.Color.accentFill, lineWidth: 2)
             }
         }
         // 1pt above and below the CARD: a 36pt row pitch with a 2pt seam between cards
