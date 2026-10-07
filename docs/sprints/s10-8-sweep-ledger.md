@@ -161,3 +161,58 @@ settings or audio; the rail stands down during drill-downs and renames.
 what Sprint A changed:** open an album and look at Play; open a playlist and look at Play beside
 the other buttons; launch, and without clicking press ↓ once in the queue (it moves); press ⌫
 before selecting anything (nothing happens).
+
+### Founder check (2026-10-07, dark + a light glance)
+
+| Step | Founder found | Outcome |
+|---|---|---|
+| Now Playing look | Unchanged in dark | ✅ accepted |
+| Light mode | "OK for an undesigned state" | ✅ accepted — designed in Sprint B |
+| Album page Play | First click did nothing; on retry it played (log: `playNow: 2 track(s)`) | ✅ works — the first click most likely only activated the window |
+| No Shuffle beside Play on the album page | — | Not a bug: the coordinator's check script was wrong (album pages have Play + More; Shuffle is on artist / genre pages) |
+| "‹ Library" from an album returns to the top of the grid, not where the founder was | — | **New R1 Must → Sprint D** (the Albums grid keeps its scroll position) |
+| Playlist page "looks different" | — | Expected: playlist pages get their glass card in Sprint D and header in Sprint E |
+| Queue: click a song, Backspace → not removed | **R1 blocker** | **Fixed** (`e6310dd`, `ebbdb59`) — confirmed by the founder |
+
+**The Backspace bug — root cause.** `.onKeyPress(.delete)` never fires on macOS: Backspace arrives
+as U+007F while `KeyEquivalent.delete` is U+0008. The handler had been dead in both the queue and
+playlist detail since before Sprint A; Sprint A's check exposed it. Both lists now use
+`.onDeleteCommand` (⌫, ⌦ and Edit ▸ Delete), keeping the Sprint A rule (only a selected row is
+removed); semgrep `swift-no-keypress-delete` keeps it out. Verified on the running app with real
+mouse and key events (queue: `removeTrack:` logged; playlist detail: entry removed; Songs and
+the rail: ↓ moves).
+
+**How it was found without more founder time.** The coordinator drove the real app with macOS
+accessibility automation and a direct-binary launch that captures the `[UX]` log. One trap,
+recorded so it is not repeated: System Events `click at` performs an element's *accessibility
+action*, not a mouse click — it produced a false "the device menu holds focus" diagnosis until
+the fix agent switched to real mouse and key events.
+
+**Side effect, disclosed to the founder:** testing a playlist row replaced the founder's queue
+(by design); the agent restored it as it was at launch, deleted only throwaway test tracks, and
+a few test songs played briefly.
+
+### Mini-retro — Sprint A
+
+1. **Parallel worktrees paid off; merging cost little.** Four PRs built at once; one palette
+   conflict. But the worktrees crashed swiftlint until `.claude/` was excluded — any future
+   parallel sprint starts with that exclusion in place (done).
+2. **Break-it found what review missed — twice.** Reviews passed a Delete rule that, with Full
+   Keyboard Access on (the founder's real setup), deleted the playing track; the founder check
+   then found a Delete handler that had never worked. **Change for Sprint B on:** every
+   keyboard / focus change is tested live with Full Keyboard Access on, using the automation
+   harness, before the founder sees it.
+3. **The check script must exercise what the sprint changed.** The original one did not (the
+   devil's advocate caught it); the founder's 10 minutes found a pre-existing bug. Keep writing
+   checks from the sprint's diff, not from the plan's wording.
+4. **Picture sheets earned their keep** (60 → 70 sheets, ring and empty variants) but cannot
+   show live interaction, real art, or system-control tint — those stay founder-only.
+5. **Next sprint's plan check** reads this retro, adds the live FKA keyboard pass to Sprint B's
+   loop, and starts Sprint B with the light options render (B1).
+
+**Late founder finding (same check):** in Songs, multi-select by keyboard (Shift + ↑/↓, ⌘A,
+type-to-find) doesn't exist; Shift + click and ⌘ + click work, and right-click → Add to Queue /
+Play Next adds the selection. **Founder decision: keep the keyboard set in Sprint E** (E1), built
+once for Songs and every detail page. Also noted: the selected-row tint is very faint (≈ 1.2:1
+in dark), which makes a multi-selection hard to see — a Sprint B light-design item that also
+covers dark.
