@@ -12,11 +12,10 @@ import SwiftUI
 /// cells) is isolated and self-documenting.
 enum SongsAccessibility {
     /// The row's spoken identity (§10.7): "Title, Artist" + album (when present) + duration. An
-    /// empty artist falls back to "Unknown Artist" — the cell renders blank, but VoiceOver
-    /// substitutes it so a track never reads as anonymous.
+    /// empty artist reads as `unknownArtistName` — the same string the cell shows (ALB-04), so a
+    /// track never reads as anonymous.
     static func rowLabel(for track: LibraryTrackDisplay) -> String {
-        let artist = track.artistName.isEmpty ? "Unknown Artist" : track.artistName
-        var parts = ["\(track.title), \(artist)"]
+        var parts = ["\(track.title), \(track.artistDisplayName)"]
         if let album = track.albumName, !album.isEmpty {
             parts.append(album)
         }

@@ -1,4 +1,5 @@
 import DesignTokenKit
+import LibraryStore
 import SwiftUI
 
 // MARK: - Now Playing Bar (footer transport — L3)
@@ -55,11 +56,11 @@ private struct NowPlayingInfoRegion: View {
         track != nil
     }
 
-    /// The footer subtitle: the resolved artist when known, else the honest "Unknown Artist"
-    /// fallback (a loose file or a track with no artist tag), else the idle prompt.
+    /// The footer subtitle: the resolved artist when known, else the one missing-artist string
+    /// (`unknownArtistName` — a loose file or a track with no artist tag), else the idle prompt.
     private var subtitle: String {
         guard isLoaded else { return "Select a track to play" }
-        return nowPlaying.currentArtist ?? "Unknown Artist"
+        return nowPlaying.currentArtist ?? unknownArtistName
     }
 
     var body: some View {
@@ -140,7 +141,7 @@ private struct NowPlayingInfoRegion: View {
 
     private var accessibilityLabel: String {
         guard let track else { return "Nothing playing" }
-        return "Now Playing, \(track.name), \(nowPlaying.currentArtist ?? "Unknown Artist")"
+        return "Now Playing, \(track.name), \(nowPlaying.currentArtist ?? unknownArtistName)"
     }
 }
 

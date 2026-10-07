@@ -195,3 +195,17 @@ rules:
     paths:
       include: ['Sources/AdaptiveSound']
     pattern-regex: 'foregroundStyle\([^)\n]*(DesignSystem\.Color\.accent|Color\.asAccent|\.asAccent)\b'
+
+  # --- S10.8 C2 (docs/sprints/s10-8-glass-sweep-plan.md §E, ALB-04): ONE missing-artist string.
+  - id: library-one-unknown-artist-string
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      A missing artist reads the same everywhere (ALB-04): use `unknownArtistName` (LibraryStore,
+      the id-0 sentinel row's own name) or `LibraryTrackDisplay.artistDisplayName` — never a
+      second "Unknown Artist" literal, which is how the Songs cell drifted to blank while the
+      Albums grid and the footer said "Unknown Artist". Comment lines are not matched.
+    paths:
+      include: ['Sources']
+      exclude: ['Sources/LibraryStore/Schema.swift']
+    pattern-regex: '(?m)^(?!\s*//).*"Unknown Artist"'

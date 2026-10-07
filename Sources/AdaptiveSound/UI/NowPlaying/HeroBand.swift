@@ -1,4 +1,5 @@
 import DesignTokenKit
+import LibraryStore
 import SwiftUI
 
 // MARK: - Hero Band (S10.7 PR 4 — design §5)
@@ -39,7 +40,7 @@ struct HeroBand: View {
                     .truncationMode(.tail)
                     .help(track.name) // long-title tooltip (§5)
                     .contentTransition(.opacity)
-                Text(nowPlaying.currentArtist ?? "Unknown Artist")
+                Text(nowPlaying.currentArtist ?? unknownArtistName)
                     .font(DesignSystem.Font.body)
                     .foregroundStyle(DesignSystem.Color.labelSecondary)
                     .lineLimit(1)
