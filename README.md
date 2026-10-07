@@ -74,6 +74,8 @@ make gate           # DSP correctness gate (C++ null-test + VerifyAUGraph + Veri
 make strict-gate    # Full pre-merge gate (build + swift test + gate + clang-tidy + sanitizers)
 make format         # Format code (Swift + C++)
 make profile        # Build + profile with Instruments
+make run-test-library    # Debug copy on an isolated test library (~10k generated tracks), beside your own
+make reset-test-library  # Start the test library over (never touches your own library or settings)
 make help           # Show all targets
 ```
 
