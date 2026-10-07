@@ -21,6 +21,9 @@ the enrichment sequel to the S8.2 structural scan.
 ## 1. Locked founder decisions (do not relitigate)
 1. **Extraction = AVFoundation PRIMARY + FFmpeg FALLBACK** (mirrors the decode path). Apple handles mp3/m4a/aac/alac/aiff/wav; FFmpeg fills FLAC + Ogg (and any file Apple returns empty for). FFmpeg-absent ⇒ graceful degradation (those files carry partial/no tags but still exist as rows).
 2. **Separate BACKGROUND pass** after the structural scan — NOT inline in the walk.
+   > **Extended (S10.8 C2, 2026-10-07):** the same pass also runs ALONE at launch when songs are
+   > pending — the one-time full tag re-read a derived-data version bump queues
+   > (`LibraryStore.derivedDataVersion`), or a pass cut off at quit. Still never inline in a walk.
 3. **Artwork = cache original + generate a thumbnail now** (~512 px, ImageIO).
 4. **Local only** — no online lookup; **no metadata-provenance marker** (both deferred to a future enrichment epic).
 
@@ -44,6 +47,10 @@ public struct MetadataExtractor: MetadataExtracting { public init() {} /* … */
 **AVFoundation path** (mp3/m4a/aac/alac/aiff/wav): `asset.load(.metadata)` + `.id3Metadata`/`.iTunesMetadata` spaces; `load(.duration)` → `durationMs = Int64((seconds*1000).rounded())`; audio-track `formatDescriptions` → ASBD `mSampleRate`/`mChannelsPerFrame`/`mBitsPerChannel` (0 ⇒ `bitDepth = nil`); artwork via `commonKeyArtwork`/`APIC`/`covr` `dataValue`.
 
 **Key → field precedence: common → iTunes → ID3** (defensive number parsing; unparseable → nil; `TRCK`/`TPOS` `"3/12"` split on `/`; empty-after-trim → nil). Full mapping table lives in the extractor's doc comment (title/artist/album/albumArtist/year/trackNo/discNo/genres/art). Vorbis-comment keys for the FFmpeg path: `title/artist/album/albumartist/date/tracknumber/discnumber/genre`.
+> **CORRECTED (S10.8 C2, 2026-10-07):** FFmpeg's demuxers normalise these before we see them —
+> ALBUMARTIST → `album_artist`, TRACKNUMBER → `track`, DISCNUMBER → `disc` — so the FFmpeg path now
+> reads the generic key first. Reading only `albumartist` had dropped every FLAC album artist. C2 also
+> reads the compilation flag (`compilation`; AVFoundation: `cpil`, `id3/TCMP`, `vorb/COMPILATION`).
 
 **Trigger (extension-routed + cross-fill):**
 - `flac`, `ogg` → **FFmpeg first**; if FFmpeg absent, best-effort AVFoundation (may still recover duration/format).
