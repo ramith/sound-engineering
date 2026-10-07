@@ -33,6 +33,12 @@ new hash; update it there + in `knownCoverSHA256`.
 tagless anti-loop shape (though the store-level anti-loop is proven synthetically in
 `ChecksMetadataPass`).
 
+`compilation.m4a` / `compilation.flac` (S10.8 C2) carry the **compilation flag** (`compilation=1`
+→ the iTunes `cpil` atom in m4a, the Vorbis `COMPILATION` comment in flac) plus title `Comp Title`,
+artist `Comp Artist`, album `Comp Album`, no cover. `ChecksAlbumArtist` (ALB-02) asserts both
+extraction paths read the flag, and that `fixture.*` (no flag) reads as not a compilation. The mp3
+`TCMP` frame is not covered here: the `ffmpeg` CLI cannot write it (it writes `TXXX` instead).
+
 ## Authoritative — the gate NEVER runs `ffmpeg`
 
 These checked-in files are the source of truth; `make gate` reads them directly (a builder
