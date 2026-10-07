@@ -247,22 +247,26 @@ private extension PlaylistDetailView {
 
     /// Return: play the playlist from the cursor row (selecting it).
     func playCursorRow() -> KeyPress.Result {
-        guard let id = keyboardCursor?.actionTarget(ringVisible: showsRing) else { return .ignored }
+        guard let id = keyboardCursor?.activationTarget(ringVisible: showsRing) else { return .ignored }
         selectedEntryID = id
         playNow(startingAt: id)
         return .handled
     }
 
-    /// Delete: remove the cursor row. Pre-selects its playable neighbour (next, else previous) so
-    /// the selection lands there — not back at the top — once the async remove + reload lands.
+    /// Delete: remove the SELECTED row — permanently, so the ring alone never licenses it (A
+    /// break-it): on the seeded first row it only selects. Pre-selects the playable neighbour
+    /// (next, else previous) so the selection lands there — not back at the top — once the async
+    /// remove + reload lands.
     func removeCursorRow() -> KeyPress.Result {
-        guard let id = keyboardCursor?.actionTarget(ringVisible: showsRing) else { return .ignored }
-        let ids = Array(playableEntryIDs)
-        if let index = ids.firstIndex(of: id) {
-            selectedEntryID = index + 1 < ids.count ? ids[index + 1]
-                : (index - 1 >= 0 ? ids[index - 1] : nil)
+        switch keyboardCursor?.deleteAction(ringVisible: showsRing) {
+        case let .remove(id):
+            selectedEntryID = ListKeyboardCursor.anchor(afterRemoving: id, from: playableEntryIDs)
+            Task { await model.removeEntry(id) }
+        case let .claim(id):
+            selectedEntryID = id
+        case nil:
+            return .ignored
         }
-        Task { await model.removeEntry(id) }
         return .handled
     }
 
