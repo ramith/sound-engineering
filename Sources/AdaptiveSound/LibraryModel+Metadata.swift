@@ -16,14 +16,16 @@ import LibraryStore
 // Cancellation (a re-trigger/teardown cancelling `scanTask`) makes the pass throw and SKIP them.
 
 extension LibraryModel {
-    /// Run the metadata pass over the store's pending-metadata tracks, reusing the scan's
-    /// `generation`. No-op if the artwork cache never built (store construction failed).
-    func runMetadataPass(_ store: LibraryStore, generation: Int64) async {
+    /// Run the metadata pass over the store's pending-metadata tracks — all of them, or one
+    /// root's (`folderID`, a live reconcile) — reusing the scan's `generation`. No-op if the
+    /// artwork cache never built (store construction failed).
+    func runMetadataPass(_ store: LibraryStore, generation: Int64, inFolder folderID: Int64? = nil) async {
         guard let cache = metadataArtworkCache else { return }
         logUX("runMetadataPass: start (generation \(generation))")
         do {
             try await MetadataScanner().run(
                 generation: generation, into: store, cache: cache, extractor: MetadataExtractor(),
+                inFolder: folderID,
                 progress: { snapshot in
                     Task { @MainActor [weak self] in self?.metadataProgress = snapshot }
                 }

@@ -155,8 +155,10 @@ extension LibraryModel {
         }
         do {
             let result = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-            // The pass ends by regrouping albums + reaping orphan facets (SF-2, S10.8 C2).
-            await runMetadataPass(store, generation: result.generation)
+            // The pass reads THIS root's pending songs only — a full pass (the launch re-read, a
+            // folder add) may own the rest concurrently (S10.8 C2 fix round, B3) — and ends by
+            // regrouping albums + reaping orphan facets (SF-2, S10.8 C2).
+            await runMetadataPass(store, generation: result.generation, inFolder: folderID)
             reconcileState[folderID] = isLocalVolume(root) ? .watching : .onDemandOnly
             lastReconciledAt = Date()
             lastReconcileError = nil
