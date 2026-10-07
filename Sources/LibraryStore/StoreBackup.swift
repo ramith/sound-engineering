@@ -5,7 +5,8 @@
 // beside itself with SQLite's online backup (GRDB `backup(to:)`): a page-for-page snapshot,
 // consistent even against a live WAL. A backup that fails stops the upgrade — the open path refuses
 // rather than migrate without one (`StoreOpenRefusal.backupFailed`). Only the newest `keepCount`
-// backups are kept.
+// backups are kept, and what a crash mid-backup left (a `.partial` copy + its journal) is cleared
+// at the next backup.
 //
 // Named `library.pre-v<N>-<stamp>.sqlite3`, N being the schema version upgraded TO. The stamp is
 // passed in, as for StoreQuarantine, so the harness can assert exact names and their order.
@@ -44,8 +45,9 @@ public enum StoreBackup {
 
     /// Copy `source` (the store at `storeURL`) to its backup, then prune the oldest. The copy is
     /// written under a temporary name and renamed into place, so a file under a backup name is
-    /// always a complete copy.
+    /// always a complete copy; a temporary one a crash left behind is removed first.
     static func backUp(_ source: any DatabaseReader, storeURL: URL, targetVersion: Int, stamp: String) throws {
+        removeStalePartials(storeURL)
         let destination = backupURL(for: storeURL, targetVersion: targetVersion, stamp: stamp)
         let partial = destination.appendingPathExtension("partial")
         do {
@@ -68,6 +70,19 @@ public enum StoreBackup {
             for file in [old.path] + StoreQuarantine.sidecarSuffixes.map({ old.path + $0 }) {
                 try? FileManager.default.removeItem(atPath: file)
             }
+        }
+    }
+
+    /// Delete every unfinished backup beside `storeURL` — `<backup name>.partial` and its journal or
+    /// sidecars (`.partial-journal`, `-wal`, `-shm`). Only a crash mid-copy leaves one: a finished copy
+    /// is renamed. Best effort, like `prune`.
+    private static func removeStalePartials(_ storeURL: URL) {
+        let directory = storeURL.deletingLastPathComponent()
+        let prefix = namePrefix(of: storeURL)
+        let marker = nameSuffix(of: storeURL) + ".partial"
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        for name in names where name.hasPrefix(prefix) && name.contains(marker) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
     }
 
