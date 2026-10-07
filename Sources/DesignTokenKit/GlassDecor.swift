@@ -54,10 +54,12 @@ public enum GlassDecor {
         light: .gray(0.0, alpha: 0.10),
         dark: .gray(1.0, alpha: 0.13)
     )
-    /// The knob fill. White on BOTH sides for now — a pair (not a constant) because the
-    /// PR-6 non-text-contrast pass owns the light-side value (white knob on the white-based
-    /// light panel is a known open item).
+    /// The knob fill. White on BOTH sides — a pair (not a constant) so an appearance can diverge.
+    /// In light the white knob is ~1.07:1 on the white-based card, so its edge is `knobRingLight`.
     public static let knobFill = AppearancePair(both: .gray(1.0))
+    /// The LIGHT-ONLY 1pt ring around the knob (S10.8 B2a, R4-SLIDER-01): the edge flips dark in
+    /// light (grammar rule 2) — ≥ 3:1 on the card and the window, where the white knob alone isn't.
+    public static let knobRingLight: RGBAColor = .gray(0.0, alpha: 0.45)
     /// The inset top shade inside the groove (8a `inset 0 1px 2px rgba(0,0,0,.4)`; light
     /// per grammar: much fainter).
     public static let carvedShadeDark: RGBAColor = .gray(0.0, alpha: 0.40)

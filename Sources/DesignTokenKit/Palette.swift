@@ -175,6 +175,12 @@ public enum Palette {
     public static let iconFillTop = AppearancePair(both: RGBAColor(red: 0.247, green: 0.816, blue: 0.729))
     public static let iconFillMid = AppearancePair(both: RGBAColor(red: 0.122, green: 0.659, blue: 0.576))
 
+    /// The TRAILING stop of the shared horizontal teal fill (sliders, loudness meters, the playing
+    /// footer scrubber) — the fill's value end, so the value cue (S10.8 B2a, R4-SLIDER-02). Dark =
+    /// `iconFillTop`, the shipped mid → bright run; light = `accentDeep`, so the DEEP end trails —
+    /// the bright #3FD0BA is 1.8:1 on the light card. DERIVED, no new literal.
+    public static let meterFillTrail = AppearancePair(light: accentDeep.light, dark: iconFillTop.dark)
+
     // MARK: Glass-look fills (Regime B — design §3.1; staged per consumer)
 
     /// The analyzer lens fill (8a: `rgba(16,18,21,.42)` — a darker inset against the glowed
@@ -263,7 +269,7 @@ public enum Palette {
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("statusWarningText", statusWarningText), ("statusErrorText", statusErrorText),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
-        ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid),
+        ("iconFillTop", iconFillTop), ("iconFillMid", iconFillMid), ("meterFillTrail", meterFillTrail),
         ("glowTeal", glowTeal), ("glowLime", glowLime), ("glowBlue", glowBlue),
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("focusRing", focusRing),

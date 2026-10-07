@@ -129,7 +129,7 @@ struct CarvedGroove: View {
     let fillFraction: Double
     /// Track (groove) thickness.
     var height: CGFloat = .init(GlassDecor.carvedTrackHeight)
-    /// The progress fill (S10.8 PR E: the realigned mid→bright teal gradient by default —
+    /// The progress fill (S10.8 PR E: the realigned teal `meterFill` gradient by default —
     /// sliders, meters, and the playing scrubber share it; the scrubber's paused/
     /// interrupted states pass their solid state colors instead).
     var fillStyle: AnyShapeStyle = .init(DesignSystem.Gradient.meterFill)
@@ -173,7 +173,8 @@ struct CarvedGroove: View {
 }
 
 /// The 8a carved knob/thumb: a token-filled circle with a bottom inner shade (the physical
-/// cue, both appearances). Shared by the slider knob and the footer scrubber's hover thumb.
+/// cue, both appearances) and, in light, a 1pt dark ring — the white knob's edge on the white
+/// card (S10.8 B2a). Shared by the slider knob and the footer scrubber's hover thumb.
 struct CarvedKnob: View {
     var size: CGFloat = .init(GlassDecor.sliderKnobSize)
 
@@ -187,6 +188,11 @@ struct CarvedKnob: View {
                 LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.knobShade)],
                                startPoint: .center, endPoint: .bottom)
                     .clipShape(Circle())
+            }
+            .overlay {
+                if !dark {
+                    Circle().strokeBorder(SwiftUI.Color(token: GlassDecor.knobRingLight), lineWidth: 1)
+                }
             }
             .frame(width: size, height: size)
     }
