@@ -384,7 +384,8 @@ private func printRunSummary(passed: Int, total: Int) {
         + "mixed tagging, ALB-14 one missing rule, ALB-15 normalised once, ALB-16 featured artists; "
         + "S10.8 C2 store-open safety: OPEN-01 failed migration refused [byte-identical], OPEN-02 backup "
         + "before upgrade [restores + keep 2], OPEN-03 no backup when current, OPEN-04 failed backup refuses, "
-        + "OPEN-05 damaged page still quarantined) ===")
+        + "OPEN-05 damaged page still quarantined; S10.8 C2 final round: ALB-17 the year splits two albums, "
+        + "OPEN-06 unfinished v7 refused [hot WAL byte-identical], SCHEMA-6 + OPEN-02 extended) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")

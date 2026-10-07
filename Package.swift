@@ -87,8 +87,20 @@ let package = Package(
             name: "LibraryStore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
+                "StoreSQLiteShim",
             ],
             path: "Sources/LibraryStore",
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
+        ),
+        // The one SQLite connection option the store sets that Swift can't (S10.8 C2): the C
+        // `sqlite3_db_config` is variadic, so Swift does not import it, and GRDB wraps only its own
+        // options. The open path turns off checkpoint-on-close with it, so a library it refuses is
+        // left byte-identical even with writes in its WAL. Pure C over the SYSTEM libsqlite3.
+        .target(
+            name: "StoreSQLiteShim",
+            path: "Sources/StoreSQLiteShim",
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
             ]

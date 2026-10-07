@@ -1,11 +1,13 @@
 // ChecksAlbumIdentity — the S10.8 C2 fix round, the album RULE (`AlbumGrouping`), each case driven
 // through the real scan → metadata pass (`AlbumFixture`) and compared EXACTLY (title → credit × songs):
 //   ALB-11 (C1) the year is not identity — a compilation whose tracks carry their original years,
-//          and an album with a year-less bonus track, are each ONE album, shown with the most common
-//          year (a tie → the latest); a tagged album with two years across folders is one;
+//          an album with a year-less bonus track, and one artist's album of mixed years are each ONE
+//          album, shown with the most common year (a tie → the latest); a tagged album across folders
+//          whose years agree or are missing is one. Changed by the final round: a tagged album across
+//          folders of DIFFERENT years now splits (ALB-17);
 //   ALB-12 (C2) disc and bonus folders fold into the album folder — every disc-folder spelling the
-//          break-it found, plus "Bonus" / "Bonus Tracks" / "Extras"; look-alikes do not; a real album
-//          titled "CD 1" still works;
+//          break-it found, plus "Bonus" / "Bonus Tracks" / "Extras"; look-alikes ("CD 100 Hits") do
+//          not; a real album titled "CD 1" still works;
 //   ALB-13 (C3) mixed tagging — untagged songs adopt the one tag their folder-mates agree on; with
 //          two tags in the folder they don't; a same-title song in ANOTHER folder never does;
 //   ALB-14 (C4) one missing rule — a literal "Unknown Artist" album-artist tag is no tag (CD-ripper
@@ -13,7 +15,12 @@
 //   ALB-15 (C5) normalised once — "Abbey Road " and "Abbey Road", NFC and NFD titles and tags, and
 //          'Ann ' vs 'Ann' are the same bytes in the store — including through a single write;
 //   ALB-16 (C6) featured artists — "Mara Lind" + "Mara Lind feat. X" is Mara Lind's album, the
-//          artist rows keep their full names; two different primary artists are still "Various".
+//          artist rows keep their full names; two different primary artists are still "Various";
+//   ALB-17 (C2 final round) the year tells two albums apart — Weezer's self-titled Blue / Green and
+//          Thriller / its anniversary edition (same title + album-artist tag, folders of different
+//          years); a flat folder of Queen's and ABBA's "Greatest Hits"; an untagged 1962 album beside
+//          a tagged 2023 one, and a tagged Queen "Hits" beside an untagged ABBA one (no adoption across
+//          years); a year-less song joins its group's most common year, and still adopts.
 
 import Foundation
 import LibraryStore
@@ -28,6 +35,7 @@ func albumIdentityCheckCases() -> [CheckCase] {
         CheckCase(label: "alb14-one-missing-rule", run: checkOneMissingRule),
         CheckCase(label: "alb15-normalised-once", run: checkNormalisedOnce),
         CheckCase(label: "alb16-featured-artists", run: checkFeaturedArtists),
+        CheckCase(label: "alb17-year-splits-two-albums", run: checkYearSplitsTwoAlbums),
     ]
 }
 
@@ -51,12 +59,14 @@ func checkYearIsNotIdentity(number: Int, url: URL) async -> Bool {
             song("M/m1.flac", songTags("Mo", album: "Mostly", year: 2003)),
             song("M/m2.flac", songTags("Mo", album: "Mostly", year: 2001)),
             song("M/m3.flac", songTags("Mo", album: "Mostly", year: 2003)),
-            song("T/A/t1.flac", songTags("Tess", album: "Tagged", year: 1999, albumArtist: "Tess")),
-            song("T/B/t2.flac", songTags("Tess", album: "Tagged", year: 2009, albumArtist: "Tess")),
+            // A tagged album across two folders the fold doesn't know: years agree, or one is missing.
+            song("T/Part 1/t1.flac", songTags("Tess", album: "Tagged", year: 2009, albumArtist: "Tess")),
+            song("T/Part 2/t2.flac", songTags("Tess", album: "Tagged", year: 2009, albumArtist: "Tess")),
+            song("T/Part 3/t3.flac", songTags("Tess", album: "Tagged", albumArtist: "Tess")),
         ])
         let store = fixture.store
         guard try await expectAlbums(store, [
-            "Oldies": ["\(variousArtistsName) ×3"], "Years": ["Yan ×3"], "Mostly": ["Mo ×3"], "Tagged": ["Tess ×2"],
+            "Oldies": ["\(variousArtistsName) ×3"], "Years": ["Yan ×3"], "Mostly": ["Mo ×3"], "Tagged": ["Tess ×3"],
         ], "years within one album", number: number) else { return false }
         let years = try await ["Oldies", "Years", "Mostly", "Tagged"].asyncYears(store)
         guard years == [1981, 2001, 2003, 2009] else {
@@ -65,8 +75,9 @@ func checkYearIsNotIdentity(number: Int, url: URL) async -> Bool {
             return false
         }
         printPass(number, "ALB-11 (C1) the year is not identity: a compilation of original years, an album with a "
-            + "year-less bonus track and a tagged album with two years across folders are each ONE album, "
-            + "shown with the most common non-zero year (a tie → the latest)")
+            + "year-less bonus track, one artist's album of mixed years, and a tagged album across folders whose "
+            + "years agree or are missing are each ONE album, shown with the most common non-zero year (a tie → "
+            + "the latest)")
         return true
     } catch {
         printFail(number, "ALB-11 threw: \(error)"); return false
@@ -89,9 +100,13 @@ private extension [String] {
 /// Folder names that fold into their parent, and look-alikes that do not.
 private let foldedFolderNames = [
     "CD 1", "Disc2", "disk 003", "cd-1", "Disc 1 of 2", "CD1 - Live", "Disc One", "[CD 1]", "Disc 1 - The Hits",
-    "Disc #1", "Disc 1 (Remastered)", "CD 01", "(Disc 2)", "Bonus", "Bonus Tracks", "Extras",
+    "Disc #1", "Disc 1 (Remastered)", "CD 01", "(Disc 2)", "Disc 1 of 2 - Live", "CD 2: Encore", "Bonus",
+    "Bonus Tracks", "Extras",
 ]
-private let keptFolderNames = ["CD Collection", "Discography", "CD 1234", "Disco Hits", "CDs", "Disc 1a", "Bonus Round"]
+private let keptFolderNames = [
+    "CD Collection", "Discography", "CD 1234", "Disco Hits", "CDs", "Disc 1a", "Bonus Round", "CD 100 Hits",
+    "CD 1 Hits", "Disc Two Live", "Disc 1 official", "Disc 1 of", "CD 100", "Disc 250 (Box)",
+]
 
 func checkDiscAndBonusFoldersFold(number: Int, url: URL) async -> Bool {
     do {
@@ -124,8 +139,8 @@ func checkDiscAndBonusFoldersFold(number: Int, url: URL) async -> Bool {
         }
         printPass(number, "ALB-12 (C2) disc and bonus folders fold into the album folder: \(foldedFolderNames.count) "
             + "spellings ('Disc 1 of 2', 'CD1 - Live', 'Disc One', '[CD 1]', 'Disc #1', 'CD 01', 'Bonus Tracks', "
-            + "'Extras' …) each keep their set ONE album; look-alikes ('CD Collection', 'Discography', 'CD 1234' "
-            + "…) stay their own folder; a real album titled 'CD 1' still groups")
+            + "'Extras' …) each keep their set ONE album; look-alikes ('CD Collection', 'Discography', 'CD 1234', "
+            + "'CD 100 Hits' …) stay their own folder; a real album titled 'CD 1' still groups")
         return true
     } catch {
         printFail(number, "ALB-12 threw: \(error)"); return false
@@ -261,4 +276,95 @@ func checkFeaturedArtists(number: Int, url: URL) async -> Bool {
     } catch {
         printFail(number, "ALB-16 threw: \(error)"); return false
     }
+}
+
+// MARK: - ALB-17 (C2 final round) — the year tells two albums apart
+
+func checkYearSplitsTwoAlbums(number: Int, url: URL) async -> Bool {
+    let jonas = "Jonas Gon\u{00E7}alves"
+    do {
+        let fixture = try await AlbumFixture("alb17", url: url, songs: yearSplitSongs(jonas: jonas))
+        guard try await expectAlbums(fixture.store, [
+            "Weezer": ["Weezer ×3", "Weezer ×3"], "Thriller": ["Michael Jackson ×1", "Michael Jackson ×3"],
+            "Greatest Hits": ["ABBA ×2", "Queen ×2"], "Live": ["Ann ×3", "Bob ×1"],
+            "Gardens": ["\(jonas) ×2", "\(jonas) ×3"], "Hits": ["ABBA ×1", "Queen ×1"],
+        ], "the year splits two albums", number: number) else { return false }
+        let years = try await fixture.store.albums().filter { ["Weezer", "Thriller", "Gardens"].contains($0.title) }
+            .map { "\($0.title) \($0.year) ×\($0.trackCount)" }.sorted()
+        let expectedYears = ["Gardens 1962 ×2", "Gardens 2023 ×3", "Thriller 1982 ×1", "Thriller 2008 ×3",
+                             "Weezer 1994 ×3", "Weezer 2001 ×3"]
+        guard years == expectedYears else {
+            printFail(number, "ALB-17: shown years \(years), expected \(expectedYears)"); return false
+        }
+        guard try await retagMergesThriller(fixture, number: number) else { return false }
+        printPass(number, "ALB-17 (C2 final round) the year tells two albums apart: Weezer's Blue (1994) and Green "
+            + "(2001) and Thriller (1982) and its 2008 edition — one title, one album-artist tag, folders of "
+            + "different years — are two albums each; a flat folder of Queen's 1981 and ABBA's 1992 'Greatest "
+            + "Hits' is two; an untagged 1962 'Gardens' beside a tagged 2023 one stays apart (a year-less "
+            + "song still adopts the tag), as does an untagged ABBA 'Hits' beside a tagged Queen one; a "
+            + "year-less song or folder joins its group's most common year; a single retag that makes the "
+            + "years agree merges the albums in that write")
+        return true
+    } catch {
+        printFail(number, "ALB-17 threw: \(error)"); return false
+    }
+}
+
+/// ALB-17's library: Weezer's two self-titled albums, Thriller and its edition (plus a year-less
+/// singles folder), a flat folder of two artists' "Greatest Hits", a two-artist "Live" folder, a
+/// tagged and an untagged "Gardens" in one folder, and a tagged Queen beside an untagged ABBA "Hits".
+private func yearSplitSongs(jonas: String) -> [SongSpec] {
+    var songs = (1 ... 3).flatMap { track in [
+        song("Weezer/Weezer (Blue Album)/b\(track).flac",
+             songTags("Weezer", album: "Weezer", year: 1994, albumArtist: "Weezer")),
+        song("Weezer/Weezer (Green Album)/g\(track).flac",
+             songTags("Weezer", album: "Weezer", year: 2001, albumArtist: "Weezer")),
+    ] }
+    songs += [
+        // An edition: two folders of different years; the edition's year-less song joins it.
+        song("MJ/Thriller/t1.flac", songTags("Michael Jackson", album: "Thriller", year: 1982,
+                                             albumArtist: "Michael Jackson")),
+        song("MJ/Thriller (25th Anniversary)/u1.flac", songTags("Michael Jackson", album: "Thriller", year: 2008,
+                                                                albumArtist: "Michael Jackson")),
+        song("MJ/Thriller (25th Anniversary)/u2.flac",
+             songTags("Michael Jackson", album: "Thriller", albumArtist: "Michael Jackson")),
+        // A folder with no year at all joins the group's most common year (a 1–1 tie → the latest).
+        song("MJ/Singles/s1.flac", songTags("Michael Jackson", album: "Thriller", albumArtist: "Michael Jackson")),
+        // A flat folder: two artists' same-title albums of different years, untagged.
+        song("Downloads/q1.mp3", songTags("Queen", album: "Greatest Hits", year: 1981)),
+        song("Downloads/q2.mp3", songTags("Queen", album: "Greatest Hits", year: 1981)),
+        song("Downloads/a1.mp3", songTags("ABBA", album: "Greatest Hits", year: 1992)),
+        song("Downloads/a2.mp3", songTags("ABBA", album: "Greatest Hits", year: 1992)),
+        // Two artists in two years, untagged, one folder — the year-less song joins the most common year.
+        song("Live/l1.flac", songTags("Ann", album: "Live", year: 2001)),
+        song("Live/l2.flac", songTags("Ann", album: "Live", year: 2001)),
+        song("Live/l3.flac", songTags("Ann", album: "Live")),
+        song("Live/l4.flac", songTags("Bob", album: "Live", year: 2005)),
+        // One folder: a tagged 2023 album and an untagged 1962 one (no adoption across years); a
+        // year-less untagged song still adopts.
+        song("Jonas/Gardens/new1.flac", songTags(jonas, album: "Gardens", year: 2023, albumArtist: jonas)),
+        song("Jonas/Gardens/new2.flac", songTags(jonas, album: "Gardens", year: 2023, albumArtist: jonas)),
+        song("Jonas/Gardens/new3.flac", songTags(jonas, album: "Gardens")),
+        song("Jonas/Gardens/old1.mp3", songTags(jonas, album: "Gardens", year: 1962)),
+        song("Jonas/Gardens/old2.mp3", songTags(jonas, album: "Gardens", year: 1962)),
+        // Tagged Queen and untagged ABBA "Hits" in one folder.
+        song("Mix/h1.mp3", songTags("Queen", album: "Hits", year: 1981, albumArtist: "Queen")),
+        song("Mix/h2.mp3", songTags("ABBA", album: "Hits", year: 1992)),
+    ]
+    return songs
+}
+
+/// ONE retag (a single write, outside a pass) that makes the edition's year agree merges the two
+/// Thriller albums in that same write — the split weighs every folder of the group.
+private func retagMergesThriller(_ fixture: AlbumFixture, number: Int) async throws -> Bool {
+    let editionURL = fixture.fileURL("MJ/Thriller (25th Anniversary)/u1.flac")
+    guard let edition = try await fixture.store.track(url: editionURL) else { return false }
+    try await fixture.store.applyMetadata(songTags("Michael Jackson", album: "Thriller", year: 1982,
+                                                   albumArtist: "Michael Jackson"), forTrack: edition.id)
+    let thriller = try await fixture.store.albums().filter { $0.title == "Thriller" }
+    guard thriller.count == 1, thriller.first?.trackCount == 4 else {
+        printFail(number, "ALB-17: a retag that made Thriller's years agree left \(thriller.count) albums")
+        return false
+    }
+    return true
 }
