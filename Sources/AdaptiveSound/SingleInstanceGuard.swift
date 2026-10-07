@@ -8,7 +8,8 @@ import Darwin
 /// the lock when the process exits — even on a crash — so a fresh launch can always reacquire;
 /// there is no stale-lock-file problem. If another instance already holds the lock, this process is
 /// a duplicate: we best-effort raise the existing instance and the caller exits before building any
-/// state or touching the audio engine.
+/// state or touching the audio engine. One lock per location: the debug test library runs beside
+/// the user's own copy.
 enum SingleInstanceGuard {
     /// Held open for the process lifetime so the `flock` stays acquired — closing the descriptor
     /// releases the lock. Written once at launch on the main thread; never mutated concurrently.
