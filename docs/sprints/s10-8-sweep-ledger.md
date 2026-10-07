@@ -554,3 +554,57 @@ whose album artist is spelled two ways by case is two albums (S8's artist identi
 dedicated mp3 `TCMP` frame (the ffmpeg CLI cannot write it). (4) The app-side `scanTask` guard and
 `removeLibraryFolder` behaviour have no automated proof (the app is an executable target, which no
 test target can import).
+
+### C2 final fix round (2026-10-08)
+
+The re-break confirmed the first fix round holds; it found two MAJORs and three small items.
+
+- **The year tells two albums apart (MAJOR).** Taking the year out of identity merged distinct tagged
+  albums: Weezer's self-titled Blue (1994) and Green (2001) became one six-song album with duplicate
+  track numbers, and Thriller merged with its 2008 edition. The year is now a SPLIT, only where a
+  group holds two albums (`AlbumGrouping+Years.swift`, `albums.edition_year`, 0 unless split):
+  - a tagged group spanning album folders whose dominant years differ splits per folder year;
+    agreeing or year-less folders stay together;
+  - an untagged folder holding two primary artists in two years splits per year (Queen's 1981 and
+    ABBA's 1992 "Greatest Hits" in one flat folder);
+  - a compilation (the flag, or a "Various Artists" tag) never splits; a year-less song or folder
+    joins its group's most common year;
+  - adoption (C3) needs agreeing years, or a year-less untagged song ("Gardens": an untagged 1962
+    album beside a tagged 2023 one is two albums again, as is ABBA beside a tagged Queen "Hits").
+  A single write now regroups every song sharing its old or new title, the smallest complete scope
+  now that a split weighs all of a tagged album's folders. v7 copies every v6 row with its year as
+  `edition_year` (ids kept; no merge). Re-read cost unchanged: `--bi-perf 2000 10 same` 2.1 s first
+  scan + pass / 1.17 s re-read; the 10,043-song stress store upgrades and re-reads in 6.0 s, with no
+  album holding a duplicate (disc, track).
+- **A store an unfinished test build migrated to v7 is refused (MAJOR).** v7 was amended in place
+  twice; a dev/test store migrated by an earlier amendment recorded v7 as applied, so GRDB never
+  re-ran it, and every pass then failed (`no such column: regroup_owed`, an `ON CONFLICT` matching no
+  key). The open path now checks the v7 shape (`Schema.v7ShapeProblem`: the columns v7 adds, and the
+  album key) and refuses a mismatch (`StoreOpenRefusal.unfinishedTestVersion`), the file untouched.
+  The founder's real store is at v6 and migrates normally.
+- **Look-alike folders.** A disc folder is now just a disc marker with a small number (below 100),
+  optionally " of N", then a " - subtitle" or a bracketed note. "CD 100 Hits", "CD 1 Hits" and
+  "CD 100" are albums of their own; "CD1 - Live" and "Disc 1 (Remastered)" still fold.
+- **A refusal is byte-identical even with a hot WAL.** The open path's look-first connection turns
+  off checkpoint-on-close (`SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE`, through a small C target,
+  `StoreSQLiteShim` — Swift doesn't import the variadic `sqlite3_db_config`), so refusing a library
+  whose WAL still holds a crash's writes leaves its main file and WAL as they were.
+- **Stale backups.** A backup a crash left half-written (`.partial` + journal) is cleared at the next
+  backup.
+
+**Checks.** New ALB-17 (the year splits two albums, and a single retag that makes the years agree
+merges them in that write) and OPEN-06 (both earlier v7 shapes refused, with a hot WAL, while this
+build's v7 passes). Extended: SCHEMA-6 (the newer build's id only in the WAL, refused byte-identical),
+OPEN-02 (stale `.partial` cleared), ALB-12 (look-alikes). Intentionally changed: **ALB-11** (a tagged
+album across folders of different years now splits; its "stays one" case is now folders whose years
+agree or are missing) and **ALB-06** (year-apart v6 rows stay two, ids kept, instead of merging); the
+schema golden. 13 mutations of the new rules, each caught. VerifyLibraryStore 148/148.
+
+**Re-break harness re-run.** Every `--bi-edge` scenario (rounds 1–3, `biScenarios3` included) groups
+as specified; real FLACs from `mkweezer.sh` give Weezer 1994 ×3 and 2001 ×3 (tracks 1–3 each) and two
+Peter Gabriel albums; the break-it's old v7 store is refused, byte-identical.
+
+**Deferred** (out of scope for this round, as agreed): disagreeing album-artist tags ("Band" vs "The
+Band") still make twin tiles; "&" / "and" / "with" guest forms and "ß" vs "SS" still read as two
+artists for the credit; a root that stays offline re-runs a short "Reading tags…" pass at each
+launch; backups taken in the same second can prune out of order.

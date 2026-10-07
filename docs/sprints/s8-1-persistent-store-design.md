@@ -190,6 +190,17 @@ Notes: `PRAGMA foreign_keys=ON` + `busy_timeout` + `journal_mode=WAL` at every o
 > "X feat. Y" counts as X when deciding shared artist vs "Various Artists"; the cover is the album's
 > first song with art in (disc, track) order. v7 was amended in place — no real library had run it.
 > Proven by ALB-06…16 ([s10-8-sweep-ledger.md](s10-8-sweep-ledger.md), Sprint C, the C2 fix round).
+>
+> **REFINED (S10.8 C2 final round, 2026-10-08) — the year splits, where a group holds two albums.**
+> Taking the year out entirely merged distinct albums: Weezer's self-titled Blue (1994) and Green
+> (2001), both tagged "Weezer", became one six-song album. The key is now
+> `(title, album_artist_id, folder_key, edition_year)`, `edition_year` 0 unless a group splits: a
+> tagged group whose album folders have different dominant years splits per folder year (agreeing or
+> year-less folders stay together); an untagged folder holding two primary artists in two years
+> splits per year; a compilation never splits; a year-less song joins its group's most common year;
+> adoption (C3) needs agreeing years. v7 copies every v6 row with its year as `edition_year`, and a
+> store an earlier amendment left at v7 is refused at open (`StoreOpenRefusal.unfinishedTestVersion`).
+> Proven by ALB-11, ALB-17 and OPEN-06.
 
 ---
 
