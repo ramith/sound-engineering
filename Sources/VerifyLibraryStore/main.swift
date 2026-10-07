@@ -182,6 +182,7 @@ func allCheckCases() -> [CheckCase] {
         + playlistSpineCheckCases() + playlistFolderCheckCases()
         + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
+        + albumArtistCheckCases()
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
@@ -372,7 +373,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "[genre CORRELATED SCALAR SUBQUERY + SEARCH aa + BR5 hot-reads recheck], "
         + "SS5 incrementPlayCount [atomic URL-keyed accumulate + independent + silent no-op]; "
         + "S9.5 §4 A2: MID searchMatchingIDs membership == unbounded search + junk/empty → [] "
-        + "+ EXPLAIN tracks_fts-only, never SCAN tracks) ===")
+        + "+ EXPLAIN tracks_fts-only, never SCAN tracks; "
+        + "S10.8 C2: ALB-01 folder fallback + incremental re-credit, ALB-02 compilation no-split [real "
+        + "flag both extractors + disc folders], ALB-03 re-read keeps user data [v6 store, byte-identical], "
+        + "ALB-04 one missing-artist string, ALB-05 same-title folders don't merge + move re-keys) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
