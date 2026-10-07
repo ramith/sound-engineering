@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// Mounted via `.background { }` (never as a layout sibling — a ~760pt ellipse would inflate
 /// the tab's ideal size). Decoration contract: hit-transparent, invisible to accessibility,
-/// static, dark-appearance-only (light too under the pale-glow backdrop, S10.8 B2b), and
+/// static, painted in dark (and in light only under the pale-glow backdrop, S10.8 B2b), and
 /// suppressed under Reduce Transparency / Increase Contrast — all via the pure
 /// `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
@@ -33,11 +33,11 @@ struct GlowField: View {
         // here too keeps the field self-contained wherever it's mounted).
         Rectangle().fill(DesignSystem.Color.window)
             .overlay {
-                GlowFieldGate {
+                GlowFieldGate { appearance in
                     GeometryReader { geo in
                         ForEach(0 ..< glows.count, id: \.self) { index in
                             GlowEllipse(glow: glows[index],
-                                        override: overrideColor(at: index),
+                                        override: overridePair(at: index)?.value(for: appearance),
                                         container: geo.size)
                                 .position(
                                     x: geo.size.width * glows[index].unitCenterX,
@@ -60,7 +60,7 @@ struct GlowField: View {
             .accessibilityHidden(true)
     }
 
-    private func overrideColor(at index: Int) -> AppearancePair? {
+    private func overridePair(at index: Int) -> AppearancePair? {
         guard let sampledPalette, index < sampledPalette.count else { return nil }
         return sampledPalette[index]
     }
@@ -86,9 +86,9 @@ struct GlowField: View {
 
 private struct GlowEllipse: View {
     let glow: GlowFieldSpec.Glow
-    /// D8: the clamped sampled pair for this slot (each side carries its own token alpha),
-    /// or nil for the brand token pair.
-    let override: AppearancePair?
+    /// D8: the clamped sampled color for this slot (carries its own token alpha), or nil
+    /// for the brand token pair.
+    let override: RGBAColor?
     let container: CGSize
 
     private var width: CGFloat {
@@ -112,7 +112,7 @@ private struct GlowEllipse: View {
     /// The shared exact-linear profile, expressed as gradient stops: peak →
     /// `falloffFraction(midStop)` at the mid stop → clear at the edge.
     private var radialFalloff: RadialGradient {
-        let color = DesignSystem.Color.from(override ?? glow.color)
+        let color = override.map { SwiftUI.Color(token: $0) } ?? DesignSystem.Color.from(glow.color)
         let midStop = GlowFieldSpec.falloffMidStop
         return RadialGradient(
             gradient: Gradient(stops: [
