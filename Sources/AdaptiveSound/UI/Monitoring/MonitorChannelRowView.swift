@@ -72,7 +72,9 @@ struct MonitorChannelRowView: View {
             Spacer()
 
             HStack(spacing: Layout.innerSpacing) {
-                stageTag(title: "BEFORE", color: beforeColor)
+                // The tag is TEXT: the bare `accent` is ≈ 2.5:1 on the light card (R4-TINT-02);
+                // `accentForeground` is the same teal in dark. The bars keep `beforeColor`.
+                stageTag(title: "BEFORE", color: DesignSystem.Color.accentForeground)
                 stageTag(title: "AFTER", color: afterColor)
             }
         }
