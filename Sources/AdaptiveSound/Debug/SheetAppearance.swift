@@ -10,7 +10,8 @@
     enum SheetAppearance: String, CaseIterable {
         case dark
         case light
-        /// Increase Contrast — the high-contrast appearance AND `colorSchemeContrast == .increased`.
+        /// Increase Contrast — the high-contrast appearance AND `colorSchemeContrast == .increased`,
+        /// with Reduce Transparency on too (see `reduceTransparency`).
         case darkIC
         case lightIC
         /// Reduce Transparency — the base appearance with `accessibilityReduceTransparency` set, which is
@@ -29,8 +30,11 @@
             self == .darkIC || self == .lightIC
         }
 
+        /// On for the RT columns AND the IC ones: macOS turns Reduce Transparency on (and locks it)
+        /// whenever Increase Contrast is on, so an IC sheet with glass would show a combination no
+        /// Mac produces.
         var reduceTransparency: Bool {
-            self == .darkRT || self == .lightRT
+            increasedContrast || self == .darkRT || self == .lightRT
         }
 
         /// The window appearance, or `nil` when this macOS can't build it truthfully — the renderer then
