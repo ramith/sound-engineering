@@ -59,10 +59,12 @@ run-release: release
 # No library store, audio device, UserDefaults.standard or single-instance lock is touched, so it is
 # safe beside a running app. Narrow with e.g.
 #   make sheets SHEETS_ARGS='-ASSheetTabs np,library -ASSheetAppearances dark,light'
-# Sheets are overwritten in place, never cleared. The binary comes from `--show-bin-path` (like
+# Each commit renders into its OWN directory, .build/sheets/<short sha>/ (the renderer prints it),
+# so a sheet from an older commit can never pass for a current one; SHEETS_DIR=<dir> overrides it.
+# Within one commit, sheets are overwritten in place. The binary comes from `--show-bin-path` (like
 # `release`), NOT `build`'s find|head: that can pick a RELEASE binary, which has no renderer and would
 # launch the real app instead.
-SHEETS_DIR ?= .build/sheets
+SHEETS_DIR ?= .build/sheets/$(shell git rev-parse --short HEAD)
 sheets:
 	swift build -c debug -j 8
 	@BIN="$$(swift build -c debug --show-bin-path)"; \
@@ -185,7 +187,7 @@ help:
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
 	@echo "  make build  - Build + bundle app (debug)"
 	@echo "  make run    - Build and launch app (debug)"
-	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets"
+	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
 	@echo "  make release     - Optimized release build + bundle (.build/release/AdaptiveSound.app, unsigned)"
 	@echo "  make run-release - Release build + launch"
 	@echo "  make clean  - Remove build artifacts"
