@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library help
+.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
 
 build:
 	swift build -c debug -j 8
@@ -80,6 +80,47 @@ sheets:
 STRESS_LIBRARY ?= $(HOME)/Music/AdaptiveSound Stress Library
 stress-library:
 	python3 scripts/generate-stress-library.py --output "$(STRESS_LIBRARY)"
+
+# Isolated test library (S10.8 C1, debug only): the debug app on its OWN library store, artwork cache,
+# settings and single-instance lock (`-ASTestLibrary`, Sources/AdaptiveSound/Debug/TestLibrary.swift),
+# scanning $(STRESS_LIBRARY) — so it runs beside your normal copy and never reads or writes your
+# library or settings. It is bundled as "AdaptiveSound Test Library.app" under its own bundle id (AppKit
+# files window/panel state under that) and its own executable name, so `make run`'s quit/pkill and
+# this target's never reach the other copy. Like `make run`, a running test copy is replaced. The
+# binary comes from `--show-bin-path`: a release binary has no switch and would open YOUR library.
+# reset-test-library forgets the test copy's library and settings (the names below must match
+# TestLibrary.swift); the stress library folder itself is kept.
+TEST_LIBRARY_ID := com.adaptivesound.app.test-library
+# ≤ 15 characters: `pgrep -x` matches the kernel's process name, which is cut at 16.
+TEST_LIBRARY_EXE := ASTestLibrary
+TEST_LIBRARY_DATA := $(HOME)/Library/Application Support/AdaptiveSound Test Library
+TEST_LIBRARY_SUITE := AdaptiveSound.TestLibrary
+run-test-library: stress-library
+	swift build -c debug -j 8
+	@BIN="$$(swift build -c debug --show-bin-path)"; APP="$$BIN/AdaptiveSound Test Library.app"; \
+		python3 scripts/bundle-app.py --executable "$$BIN/AdaptiveSound" --output "$$APP" \
+			--info-plist Sources/AdaptiveSound/Info.plist \
+			--icon Sources/AdaptiveSound/Assets.xcassets/AppIcon.appiconset/AppIcon.icns \
+			--bundle-id $(TEST_LIBRARY_ID) --bundle-name "AdaptiveSound Test Library" \
+			--executable-name $(TEST_LIBRARY_EXE) >/dev/null || exit 1; \
+		if pgrep -x $(TEST_LIBRARY_EXE) >/dev/null 2>&1; then \
+			osascript -e 'with timeout of 5 seconds' -e 'tell application id "$(TEST_LIBRARY_ID)" to quit' \
+				-e 'end timeout' >/dev/null 2>&1 || true; \
+			for i in $$(seq 1 20); do pgrep -x $(TEST_LIBRARY_EXE) >/dev/null 2>&1 || break; sleep 0.25; done; \
+			pkill -x $(TEST_LIBRARY_EXE) >/dev/null 2>&1 || true; \
+		fi; \
+		open "$$APP" --args -ASTestLibrary "$(STRESS_LIBRARY)" >/dev/null 2>&1 || true; \
+		for i in $$(seq 1 40); do pgrep -x $(TEST_LIBRARY_EXE) >/dev/null 2>&1 && \
+			{ echo "✅ Test library running: $$APP, scanning $(STRESS_LIBRARY)"; exit 0; }; sleep 0.25; done; \
+		echo "❌ The test library failed to launch (open '$$APP')" >&2; exit 1
+
+reset-test-library:
+	@if pgrep -x $(TEST_LIBRARY_EXE) >/dev/null 2>&1; then \
+		echo "❌ Quit AdaptiveSound Test Library first" >&2; exit 1; fi
+	rm -rf "$(TEST_LIBRARY_DATA)" "$(HOME)/Library/Saved Application State/$(TEST_LIBRARY_ID).savedState"
+	-defaults delete $(TEST_LIBRARY_SUITE) >/dev/null 2>&1
+	-defaults delete $(TEST_LIBRARY_ID) >/dev/null 2>&1
+	@echo "✅ Test library reset; the stress library is kept at $(STRESS_LIBRARY)"
 
 clean:
 	rm -rf .build
@@ -200,6 +241,8 @@ help:
 	@echo "  make run    - Build and launch app (debug)"
 	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
 	@echo "  make stress-library - Write the ~10k-track stress library (needs ffmpeg) to STRESS_LIBRARY"
+	@echo "  make run-test-library   - Run a debug copy on an ISOLATED library + settings, scanning the stress library"
+	@echo "  make reset-test-library - Forget the test copy's library and settings (never touches your own)"
 	@echo "  make release     - Optimized release build + bundle (.build/release/AdaptiveSound.app, unsigned)"
 	@echo "  make run-release - Release build + launch"
 	@echo "  make clean  - Remove build artifacts"
