@@ -26,7 +26,7 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// VerifyLibraryStore after a NEW migration and pasting the printed FRESH hash — it should change
 /// ONLY when a migration is appended, never from editing a shipped one. (A hash, not the full DDL,
 /// so the constant stays one short line.)
-let goldenSchemaFingerprintHashV6 = "ba691c5ab17c37ab"
+let goldenSchemaFingerprintHashV7 = "894218130d04d3dd"
 
 // MARK: - Fingerprint
 
@@ -82,9 +82,9 @@ func checkAdditiveMigrationConvergence(number: Int, url _: URL) -> Bool {
             return false
         }
         let freshHash = fnv1a64Hex(freshFingerprint)
-        guard freshHash == goldenSchemaFingerprintHashV6 else {
+        guard freshHash == goldenSchemaFingerprintHashV7 else {
             printFail(number, "schema fingerprint drift — a SHIPPED migration body changed (or a new "
-                + "migration landed without updating goldenSchemaFingerprintHashV6). If this is an "
+                + "migration landed without updating goldenSchemaFingerprintHashV7). If this is an "
                 + "intentional NEW migration, set the golden to: \(freshHash)\nFingerprint:\n\(freshFingerprint)")
             return false
         }
