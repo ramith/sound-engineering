@@ -5,11 +5,12 @@
 // `fetchAlbums`/`fetchArtists` builders in LibraryStore+FacetDrilldown so the list reads and
 // the single-facet reads can never drift and the id-0 sentinel exclusion is defined once.
 //
-// The metadata write path (`applyMetadata`/`linkArtwork` + the resolvers) implements the M1
-// TOTAL-ALBUM-KEY query-then-insert: an album is keyed on (title, album_artist_id defaulting
-// to the id-0 unknown-artist sentinel, year defaulting to 0), so untagged albums collapse to
-// ONE row. Each resolver is RACE-SAFE: `ON CONFLICT(<unique-key>) DO NOTHING` then a
-// re-SELECT, so two writers inserting the same brand-new name resolve to the winner's row.
+// The metadata write path (`applyMetadata`/`linkArtwork` + the resolvers) stores a song's tags,
+// including its RAW album inputs (title, album-artist tag, compilation flag), then assigns its
+// album through `AlbumGrouping` (S10.8 C2 — `LibraryStore+AlbumGrouping`), which amends the M1
+// total album key: tagged albums key on their album artist, untagged ones on their folder. Each
+// resolver is RACE-SAFE: `ON CONFLICT(<unique-key>) DO NOTHING` then a re-SELECT, so two writers
+// inserting the same brand-new name resolve to the winner's row.
 
 import Foundation
 import GRDB
@@ -54,20 +55,19 @@ public extension LibraryStore {
     /// Insert a genre (race-safe; `ON CONFLICT(name) DO NOTHING`).
     private static let insertGenreSQL =
         "INSERT INTO genres(name) VALUES (?) ON CONFLICT(name) DO NOTHING;"
-    /// Insert an album on the M1 total key (race-safe; `ON CONFLICT(title, album_artist_id, year) DO NOTHING`).
-    private static let insertAlbumSQL =
-        "INSERT INTO albums(title, album_artist_id, year) VALUES (?, ?, ?) "
-            + "ON CONFLICT(title, album_artist_id, year) DO NOTHING;"
-    /// Select an album id for the total key `(title, album_artist_id, year)`.
-    private static let selectAlbumIDByKeySQL =
-        "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND year = ?;"
-    /// Write the resolved metadata columns onto a track (scan-owned columns untouched).
+    /// Write the tag columns onto a track — the raw album inputs included, `album_id` NOT (the
+    /// regroup assigns it). Scan-owned and user-state columns are untouched.
     private static let updateTrackMetadataSQL = """
     UPDATE tracks SET
-        album_id = ?, artist_id = ?, title = ?, track_no = ?, disc_no = ?,
-        year = ?, duration_ms = ?, sample_rate = ?, bit_depth = ?, channels = ?
+        album_title = ?, album_artist_tag = ?, compilation = ?, artist_id = ?, title = ?,
+        track_no = ?, disc_no = ?, year = ?, duration_ms = ?, sample_rate = ?, bit_depth = ?,
+        channels = ?
     WHERE id = ?;
     """
+    /// A song's stored album title before a tag write (its old album must be regrouped too).
+    private static let selectAlbumTitleSQL = "SELECT album_title FROM tracks WHERE id = ?;"
+    /// A song with no album title belongs to no album.
+    private static let clearTrackAlbumSQL = "UPDATE tracks SET album_id = NULL WHERE id = ?;"
     /// Clear a track's genre memberships (before re-inserting the current set).
     private static let deleteTrackGenresSQL = "DELETE FROM track_genres WHERE track_id = ?;"
     /// Insert one `track_genres` membership (idempotent via the PK).
@@ -106,9 +106,8 @@ public extension LibraryStore {
 
     // MARK: - Metadata write path
 
-    /// Apply `meta` to track `trackID`: resolve/create album, track-artist, and genres, then
-    /// update the metadata columns. ONE write transaction. Album resolution uses the M1
-    /// total-album-key so untagged albums collapse to one. Idempotent.
+    /// Apply `meta` to track `trackID`: resolve/create the track-artist and genres, write the tag
+    /// columns, then assign the album (`AlbumGrouping`). ONE write transaction. Idempotent.
     func applyMetadata(_ meta: TrackMetadata, forTrack trackID: Int64) async throws {
         try await dbWriter.write { db in try self.applyMetadataLocked(db, meta, forTrack: trackID) }
     }
@@ -116,12 +115,22 @@ public extension LibraryStore {
     /// The body of `applyMetadata`, so `applyExtractedResult` (LibraryStore+MetadataWrite) can
     /// fold it into a SINGLE per-track write alongside the artwork link + the
     /// `metadata_scanned` marker. Runs inside the caller's `Database`.
+    ///
+    /// The album is assigned by regrouping every song that shares this song's OLD or NEW album
+    /// title (S10.8 C2): the song may have joined a group (whose credit can turn into "Various
+    /// Artists") or left one (whose credit can turn back) — so the store is consistent after
+    /// every commit, not only at the end of a pass.
     internal func applyMetadataLocked(_ db: Database, _ meta: TrackMetadata, forTrack trackID: Int64) throws {
         let artistID = try meta.artistName.flatMap { try resolveArtist(db, named: $0) }
-        let albumID = try resolveAlbum(db, for: meta)
-        try updateTrackMetadata(db, trackID: trackID, meta: meta, albumID: albumID, artistID: artistID)
+        let previousTitle = try String.fetchOne(db, sql: Self.selectAlbumTitleSQL, arguments: [trackID])
+        let title = AlbumGrouping.nonEmpty(meta.albumTitle)
+        try updateTrackMetadata(db, trackID: trackID, meta: meta, artistID: artistID)
+        if title == nil {
+            try db.execute(sql: Self.clearTrackAlbumSQL, arguments: [trackID])
+        }
         try replaceGenres(db, forTrack: trackID, names: meta.genres)
-        // Re-index for search AFTER genres are written so group_concat(genre) is fresh (design §4).
+        try regroupAlbumsLocked(db, titles: Set([previousTitle, title].compactMap(\.self)))
+        // Re-index for search AFTER genres + album are written so the FTS row is fresh (design §4).
         try syncSearchRow(db, trackID: trackID)
     }
 
@@ -144,7 +153,7 @@ public extension LibraryStore {
         )
     }
 
-    // MARK: - Resolution helpers (M1 total-album-key)
+    // MARK: - Resolution helpers
 
     /// Resolve (query-then-insert) an artist by name, returning its rowid. Idempotent via
     /// `UNIQUE(name)`; RACE-SAFE (`ON CONFLICT(name) DO NOTHING` then re-SELECT).
@@ -173,44 +182,21 @@ public extension LibraryStore {
         return id
     }
 
-    /// Resolve an album for `meta` via the M1 TOTAL-ALBUM-KEY query-then-insert. `nil` when
-    /// there is no album title. The key is (title, album_artist_id defaulting to the id-0
-    /// sentinel, year defaulting to 0). RACE-SAFE.
-    internal func resolveAlbum(_ db: Database, for meta: TrackMetadata) throws -> Int64? {
-        guard let title = meta.albumTitle, !title.isEmpty else { return nil }
-        let albumArtistID = try meta.albumArtistName.flatMap { try resolveArtist(db, named: $0) } ?? unknownArtistID
-        let year = Int64(meta.year ?? 0)
-        if let existing = try selectAlbumID(db, title: title, albumArtistID: albumArtistID, year: year) {
-            return existing
-        }
-        try db.execute(sql: Self.insertAlbumSQL, arguments: [title, albumArtistID, year])
-        guard let id = try selectAlbumID(db, title: title, albumArtistID: albumArtistID, year: year) else {
-            throw SQLiteError.internalError(message: "resolveAlbum: row for key not found after insert")
-        }
-        return id
-    }
-
-    /// SELECT the album id for the total key `(title, album_artist_id, year)`, or nil.
-    private func selectAlbumID(_ db: Database, title: String, albumArtistID: Int64, year: Int64) throws -> Int64? {
-        try Int64.fetchOne(
-            db, sql: Self.selectAlbumIDByKeySQL,
-            arguments: [title, albumArtistID, year]
-        )
-    }
-
     // MARK: - Private metadata update
 
-    /// Write the resolved metadata columns onto the track row (leaving the scan-owned columns
-    /// — url/folder/signature — untouched).
+    /// Write the tag columns onto the track row (leaving the scan-owned columns — url/folder/
+    /// signature — and the user-state columns untouched). Empty album tags are stored as NULL.
     private func updateTrackMetadata(
-        _ db: Database, trackID: Int64, meta: TrackMetadata, albumID: Int64?, artistID: Int64?
+        _ db: Database, trackID: Int64, meta: TrackMetadata, artistID: Int64?
     ) throws {
         try db.execute(
             sql: Self.updateTrackMetadataSQL,
             arguments: [
-                albumID, artistID, meta.title, meta.trackNo.map { Int64($0) }, meta.discNo.map { Int64($0) },
-                meta.year.map { Int64($0) }, meta.durationMs, meta.sampleRate.map { Int64($0) },
-                meta.bitDepth.map { Int64($0) }, meta.channels.map { Int64($0) }, trackID,
+                AlbumGrouping.nonEmpty(meta.albumTitle), AlbumGrouping.nonEmpty(meta.albumArtistName),
+                meta.isCompilation ? 1 : 0, artistID, meta.title, meta.trackNo.map { Int64($0) },
+                meta.discNo.map { Int64($0) }, meta.year.map { Int64($0) }, meta.durationMs,
+                meta.sampleRate.map { Int64($0) }, meta.bitDepth.map { Int64($0) },
+                meta.channels.map { Int64($0) }, trackID,
             ]
         )
     }

@@ -43,6 +43,10 @@ public final class LibraryStore: Sendable {
     /// state), so the app surfaces this to the user instead of wiping silently (S10.3 break-it).
     public let quarantinedFrom: URL?
 
+    /// True when this open found the derived data older than `derivedDataVersion` and queued every
+    /// song for a one-time tag re-read (S10.8 C2). The re-read itself is the next metadata pass.
+    public let derivedDataRefreshed: Bool
+
     /// A count of FTS `SearchIndex` write operations (sync/delete) performed this
     /// session — a verification hook so the harness can prove a no-op re-scan does
     /// ZERO FTS writes (the idempotency contract, design §4). A `Mutex` because writes
@@ -105,6 +109,7 @@ public final class LibraryStore: Sendable {
         dbWriter = opened.writer
         version = opened.version
         quarantinedFrom = opened.quarantinedFrom
+        derivedDataRefreshed = try LibraryStore.queueTagReReadIfStale(opened.writer)
     }
 
     /// The schema version the store is currently at.
@@ -371,26 +376,33 @@ public final class LibraryStore: Sendable {
     /// the schema fingerprint (an edited shipped body fails it). The DERIVED cache (scan-built
     /// track/album/artist/genre/FTS rows) is still rebuildable — by a RE-SCAN (delete rows +
     /// re-scan), not by wiping the file. Dev reset: add a migration, or delete the DB file by hand.
-    static func makeMigrator(appBuild: String?) -> DatabaseMigrator {
+    ///
+    /// ONE registration list, shared with the verify harness (S10.8 C2): `version` caps the steps
+    /// registered (the harness builds genuine older stores — a v1 store, the previous release's
+    /// v6 store — through it) and `timestamp` stamps `schema_info` (the harness pins it). So the
+    /// harness proves THIS list, never a hand-kept copy that could drift from it.
+    public static func makeMigrator(
+        appBuild: String?, through version: Int = currentSchemaVersion,
+        timestamp: (@Sendable () -> Int64)? = nil
+    ) -> DatabaseMigrator {
+        typealias Step = @Sendable (Database, Int64) throws -> Void
+        let steps: [(id: String, migrate: Step)] = [
+            (Schema.MigrationID.v1, { try Schema.migrateV0toV1($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v2, { try Schema.migrateV1toV2($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v3, { try Schema.migrateV2toV3($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v4, { try Schema.migrateV3toV4($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v5, { try Schema.migrateV4toV5($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v6, { try Schema.migrateV5toV6($0, appBuild: appBuild, timestamp: $1) }),
+            // v7 rebuilds `albums` (S10.8 C2), so it relies on the DEFAULT `.deferred` foreign-key
+            // checks (FKs off during the step, verified before commit) — never `.immediate`.
+            (Schema.MigrationID.v7, { try Schema.migrateV6toV7($0, appBuild: appBuild, timestamp: $1) }),
+        ]
+        assert(steps.count == currentSchemaVersion, "currentSchemaVersion must equal the registered step count")
+        let clock = timestamp ?? { nowSeconds() }
         var migrator = DatabaseMigrator()
         migrator.eraseDatabaseOnSchemaChange = false
-        migrator.registerMigration(Schema.MigrationID.v1) { db in
-            try Schema.migrateV0toV1(db, appBuild: appBuild, timestamp: nowSeconds())
-        }
-        migrator.registerMigration(Schema.MigrationID.v2) { db in
-            try Schema.migrateV1toV2(db, appBuild: appBuild, timestamp: nowSeconds())
-        }
-        migrator.registerMigration(Schema.MigrationID.v3) { db in
-            try Schema.migrateV2toV3(db, appBuild: appBuild, timestamp: nowSeconds())
-        }
-        migrator.registerMigration(Schema.MigrationID.v4) { db in
-            try Schema.migrateV3toV4(db, appBuild: appBuild, timestamp: nowSeconds())
-        }
-        migrator.registerMigration(Schema.MigrationID.v5) { db in
-            try Schema.migrateV4toV5(db, appBuild: appBuild, timestamp: nowSeconds())
-        }
-        migrator.registerMigration(Schema.MigrationID.v6) { db in
-            try Schema.migrateV5toV6(db, appBuild: appBuild, timestamp: nowSeconds())
+        for step in steps.prefix(version) {
+            migrator.registerMigration(step.id) { db in try step.migrate(db, clock()) }
         }
         return migrator
     }

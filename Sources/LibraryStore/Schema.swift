@@ -32,10 +32,16 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 6
+public let currentSchemaVersion = 7
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
+
+/// The ONE string a missing artist reads as, everywhere (S10.8 C2, ALB-04): the sentinel row's
+/// name (so the Albums grid shows it), and the fallback every song row, the footer and Now Playing
+/// use for an empty artist. The semgrep rule `library-one-unknown-artist-string` bans the literal
+/// anywhere else.
+public let unknownArtistName = "Unknown Artist"
 
 /// Static schema DDL + the v0→v1 migration.
 public enum Schema {
@@ -71,6 +77,9 @@ public enum Schema {
         /// and recreates it `COLLATE NOCASE`. ADDITIVE + data-preserving (it fails loudly, rolling
         /// back, only if two case-colliding names already exist — impossible before real user data).
         public static let v6 = "v6-playlist-name-nocase"
+        /// v6 → v7: album artists (S10.8 C2) — the raw album tags on `tracks`, the folder-keyed
+        /// album identity, and `schema_info.derived_version`. See `Schema+AlbumArtists.swift`.
+        public static let v7 = "v7-album-artists"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a
@@ -397,7 +406,7 @@ public enum Schema {
     public static func seedSentinelArtist(_ db: Database) throws {
         try db.execute(
             sql: seedSentinelArtistSQL,
-            arguments: [unknownArtistID, "Unknown Artist", "Unknown Artist"]
+            arguments: [unknownArtistID, unknownArtistName, unknownArtistName]
         )
     }
 

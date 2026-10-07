@@ -5,10 +5,16 @@
 // REFILLED bounded pool (a sliding window of at most `maxInFlight` extractions, sized to
 // the M1→M5 core profile); the store WRITES serialize on the actor (one
 // applyExtractedResult transaction per track). Triggered after the structural scan (NOT
-// inline), reusing the scan's generation. FS-tolerant (a vanished file → extract nil →
-// still marked, anti-loop), cancellable (per-task + post-apply checkCancellation; a
-// cancelled pass SKIPS the end-of-pass artwork orphan sweep — no wrongful file delete on
+// inline), reusing the scan's generation — or alone, at launch, for songs left pending (the
+// one-time re-read of a derived-data bump, or a pass cut off at quit). FS-tolerant (a vanished
+// file → extract nil → still marked, anti-loop), cancellable (per-task + post-apply
+// checkCancellation; a cancelled pass SKIPS the end-of-pass steps — no wrongful file delete on
 // a partial view).
+//
+// The end of every clean pass derives what the whole library implies (S10.8 C2): regroup every
+// song's album (catching the folder moves and deletions the scan just made) and reap orphan
+// facets, THEN sweep orphan artwork — so art a reaped album held is reclaimed in the same pass.
+// It runs even when no song was pending: a scan that only deleted files still changes albums.
 
 import Foundation
 import LibraryStore
@@ -27,19 +33,20 @@ public struct MetadataScanner: Sendable {
 
     public init() {}
 
-    /// Run the pass to completion (or until cancelled). Pulls the pending-metadata id
-    /// snapshot and enriches each in a CONTINUOUSLY-REFILLED bounded pool: keep `maxInFlight`
-    /// extractions in flight, and as each finishes apply it serially on the actor and launch
-    /// the next. A sliding window, NOT a stop-the-world per-chunk barrier — one slow file
-    /// never idles the other cores waiting for a whole batch to drain. `checkCancellation`
-    /// after each apply makes a cancelled pass throw before the end-of-pass orphan sweep.
+    /// Run the pass to completion (or until cancelled): enrich every pending song, then the
+    /// end-of-pass steps (regroup albums + reap orphan facets, then reap orphan artwork).
+    ///
+    /// Enrichment is a CONTINUOUSLY-REFILLED bounded pool: keep `maxInFlight` extractions in
+    /// flight, and as each finishes apply it serially on the actor and launch the next. A sliding
+    /// window, NOT a stop-the-world per-chunk barrier — one slow file never idles the other cores
+    /// waiting for a whole batch to drain. `checkCancellation` after each apply (and once more
+    /// before the end-of-pass steps) makes a cancelled pass throw and skip those steps.
     public func run(
         generation: Int64, into store: LibraryStore, cache: ArtworkCache,
         extractor: some MetadataExtracting,
         progress: (@Sendable (MetadataProgress) -> Void)? = nil
     ) async throws {
         let pending = try await store.tracksNeedingMetadata(limit: Self.unlimited)
-        guard !pending.isEmpty else { return }
         let maxInFlight = max(1, min(ProcessInfo.processInfo.activeProcessorCount, 6))
         var next = 0
         try await withThrowingTaskGroup(of: ExtractResult.self) { group in
@@ -57,8 +64,10 @@ public struct MetadataScanner: Sendable {
                 }
             }
         }
-        // Reached ONLY on clean completion (a cancelled pass threw above): reap artwork rows
-        // no track/album references any more, and delete their cache files.
+        // Reached ONLY on a clean run. Albums first (regroup + reap orphan facets), then artwork
+        // rows no song/album references any more, with their cache files.
+        try Task.checkCancellation()
+        try await store.refreshDerivedFacets()
         for orphan in try await store.sweepOrphanArtwork() {
             cache.removeFiles(cachePath: orphan.cachePath)
         }

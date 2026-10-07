@@ -219,7 +219,7 @@ func checkSongsSortQueryPlan(number: Int, url: URL) async -> Bool {
 private struct CatalogTrack {
     let name: String
     let title: String
-    let artist: String
+    let artist: String?
     let album: String?
     let albumArtist: String?
     let year: Int?
@@ -231,14 +231,15 @@ private struct CatalogTrack {
 }
 
 /// `full`: a real album-artist + a 2-genre track (MIN picks "Alpha", regardless of insertion
-/// order — deliberately inserted "Zeta" first). `sentinel`: an album whose artist is left
-/// unset, so `resolveAlbum` defaults it to the id-0 "Unknown Artist" sentinel (0 genres).
+/// order — deliberately inserted "Zeta" first). `sentinel`: an album with NO album-artist tag and
+/// NO song artist, so `AlbumGrouping` credits it to the id-0 unknown-artist sentinel (0 genres).
+/// (S10.8 C2: with a song artist it would be credited to that artist — ALB-01.)
 /// `noalbum`: no album at all (album_id stays NULL) with exactly ONE genre.
 private let catalogFixture: [CatalogTrack] = [
     CatalogTrack(name: "full", title: "Full Track", artist: "Artist Full", album: "Album With AA",
                  albumArtist: "Real Album Artist", year: 2020, trackNo: 3, discNo: 2,
                  genres: ["Zeta", "Alpha"], fileSize: 111_000, durationMs: 210_000),
-    CatalogTrack(name: "sentinel", title: "Sentinel Track", artist: "Artist Sentinel",
+    CatalogTrack(name: "sentinel", title: "Sentinel Track", artist: nil,
                  album: "Album No AA", albumArtist: nil, year: 2019, trackNo: 1, discNo: nil,
                  genres: [], fileSize: 222_000, durationMs: 180_000),
     CatalogTrack(name: "noalbum", title: "No Album Track", artist: "Artist Loner", album: nil,
