@@ -41,37 +41,22 @@ func seedFolders(_ db: Database, count: Int, prefix: String) throws -> [String] 
 
 /// A `DatabaseMigrator` with ONLY the v1 (create-all) step — used by the SCHEMA-3/4
 /// migration-mechanics checks to build a genuine v1 store, so they can then exercise the
-/// REAL v1→v2 (built from the production `Schema` migration bodies).
+/// REAL v1→v2. The PRODUCTION registration list (`LibraryStore.makeMigrator`), capped at v1.
 func v1OnlyMigrator() -> DatabaseMigrator {
-    var migrator = DatabaseMigrator()
-    migrator.registerMigration(Schema.MigrationID.v1) { db in
-        try Schema.migrateV0toV1(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    return migrator
+    migrator(through: 1)
 }
 
-/// The full v1→v2 migrator (create-all + the real FTS5 step) from the production `Schema`
-/// bodies. Uses the SAME `Schema.MigrationID` identifiers as `LibraryStore.makeMigrator`, so a
-/// v1 store it (or `v1OnlyMigrator`) builds can be handed to `LibraryStore` without tripping the
-/// `hasBeenSuperseded` downgrade guard.
+/// The full production migrator (`LibraryStore.makeMigrator`) with the harness's fixed timestamp.
+/// The SAME identifiers as the app's, so a store it builds can be handed to `LibraryStore`
+/// without tripping the `hasBeenSuperseded` downgrade guard.
 func fullMigrator() -> DatabaseMigrator {
-    var migrator = v1OnlyMigrator()
-    migrator.registerMigration(Schema.MigrationID.v2) { db in
-        try Schema.migrateV1toV2(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    migrator.registerMigration(Schema.MigrationID.v3) { db in
-        try Schema.migrateV2toV3(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    migrator.registerMigration(Schema.MigrationID.v4) { db in
-        try Schema.migrateV3toV4(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    migrator.registerMigration(Schema.MigrationID.v5) { db in
-        try Schema.migrateV4toV5(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    migrator.registerMigration(Schema.MigrationID.v6) { db in
-        try Schema.migrateV5toV6(db, appBuild: "verify", timestamp: testTimestamp)
-    }
-    return migrator
+    migrator(through: currentSchemaVersion)
+}
+
+/// The production migrator capped at schema `version` — a genuine store of an OLDER release
+/// (S10.8 C2's ALB-03 builds the previous release's v6 store with it).
+func migrator(through version: Int) -> DatabaseMigrator {
+    LibraryStore.makeMigrator(appBuild: "verify", through: version, timestamp: { testTimestamp })
 }
 
 /// The app-facing schema version from `schema_info` (our provenance mirror; GRDB keeps the

@@ -147,7 +147,9 @@ public extension LibraryStore {
             try Self.deleteFolderRow(db, folderID)
             let toDelete = try Self.unreferencedTrackIDs(db, among: detaching)
             try self.deleteTrackRows(db, ids: toDelete)
-            _ = try self.sweepOrphanFacetsLocked(db) // SF-2: reap facets orphaned by the delete, same txn
+            // SF-2 + C2: regroup (a kept, now-loose song may leave a "Various Artists" group with
+            // one artist) and reap the facets the delete orphaned — same transaction.
+            _ = try self.refreshDerivedFacetsLocked(db)
         }
     }
 

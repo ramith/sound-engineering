@@ -8,9 +8,12 @@
 //
 // Composition (per §6): 3 named artists × 2 albums each, a "Various Artists"
 // compilation, an all-default-facet UNTAGGED album (two 'Greatest Hits' tracks with
-// no album-artist / no year — must collapse to ONE album, M1), across 2 years and 3
-// OVERLAPPING genres, the CONFUSABLE `/Music/Rock` vs `/Music/RockAndRoll` folders,
+// no album-artist / no year in ONE folder — must collapse to ONE album, M1), across 2 years
+// and 3 OVERLAPPING genres, the CONFUSABLE `/Music/Rock` vs `/Music/RockAndRoll` folders,
 // and at least one LOOSE file (folder NULL, outside every root).
+//
+// S10.8 C2: the expected albums (identity AND credited artist) come from the store's OWN pure
+// rule, `AlbumGrouping` — the harness no longer keeps a private copy of the album key.
 //
 // S9.1 adds DERIVED per-facet expectation sets (year set + per-artist/-genre/-year
 // album & track sets) so the browse-drill-down checks (BR2/BR2b/BR2c) assert against
@@ -90,6 +93,8 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
     let jazzTracks = jazzFixtureTracks()
     let rockTracks = rockFixtureTracks()
     let rockAndRollTracks = rockAndRollFixtureTracks()
+    let placed = place(popTracks, in: "/Music/Pop") + place(jazzTracks, in: "/Music/Jazz")
+        + place(rockTracks, in: "/Music/Rock") + place(rockAndRollTracks, in: "/Music/RockAndRoll")
 
     try await seed(store, tracks: popTracks, root: "/Music/Pop", folderID: popRootID, gen: generation)
     try await seed(store, tracks: jazzTracks, root: "/Music/Jazz", folderID: jazzRootID, gen: generation)
@@ -119,12 +124,23 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
     )
 
     return computeExpectations(
-        allDefs: popTracks + jazzTracks + rockTracks + rockAndRollTracks,
-        loose: LooseTrackSpec(title: looseTitle, artist: looseArtist, album: looseAlbum,
-                              year: looseYear, genres: looseGenres),
+        placed: placed,
+        loose: LooseTrackSpec(path: looseFile.url.path, title: looseTitle, artist: looseArtist,
+                              album: looseAlbum, year: looseYear, genres: looseGenres),
         rockRoot: GenreRootExpectation(rootID: rockRootID, trackCount: rockTracks.count),
         rockAndRollRoot: GenreRootExpectation(rootID: rockAndRollRootID, trackCount: rockAndRollTracks.count)
     )
+}
+
+/// A fixture track at its path — what `AlbumGrouping` needs to group an untagged album by folder.
+private struct PlacedTrack {
+    let path: String
+    let def: FixtureTrack
+}
+
+/// Place one root's fixture tracks at `root/<fileName>` (the paths `seed` writes).
+private func place(_ tracks: [FixtureTrack], in root: String) -> [PlacedTrack] {
+    tracks.map { PlacedTrack(path: "\(root)/\($0.fileName)", def: $0) }
 }
 
 /// Upsert + decorate one folder's fixture tracks.
@@ -222,6 +238,7 @@ private func rockAndRollFixtureTracks() -> [FixtureTrack] {
 /// The one loose (folder-less) fixture track's metadata — shared by the store write and the
 /// derived expectations so both compute from a single source of truth.
 private struct LooseTrackSpec {
+    let path: String
     let title: String
     let artist: String
     let album: String
@@ -236,7 +253,7 @@ private struct GenreRootExpectation {
 }
 
 private func computeExpectations(
-    allDefs: [FixtureTrack],
+    placed: [PlacedTrack],
     loose: LooseTrackSpec,
     rockRoot: GenreRootExpectation,
     rockAndRollRoot: GenreRootExpectation
@@ -247,15 +264,13 @@ private func computeExpectations(
         fileName: "loose-single.flac", title: loose.title, artist: loose.artist,
         album: loose.album, albumArtist: loose.artist, year: loose.year, trackNo: 1, genres: loose.genres
     )
-    let everyDef = allDefs + [looseDef]
+    let everyPlaced = placed + [PlacedTrack(path: loose.path, def: looseDef)]
+    let everyDef = everyPlaced.map(\.def)
     let totalTracks = everyDef.count
 
-    // Album count via the M1 total key: (title, albumArtist ?? sentinel, year ?? 0).
-    var albumKeys = Set<String>()
-    for def in everyDef where def.album != nil {
-        albumKeys.insert(albumKey(title: def.album, albumArtist: def.albumArtist, year: def.year))
-    }
-    let albumCount = albumKeys.count
+    // Albums via the store's own rule (S10.8 C2): one album per distinct key.
+    let albumCredits = expectedAlbumCredits(everyPlaced)
+    let albumCount = albumCredits.count
 
     // Named artists (track-artist ∪ album-artist), EXCLUDING the sentinel.
     var artists = Set<String>()
@@ -269,7 +284,7 @@ private func computeExpectations(
     }
     let artistCount = artists.count
 
-    let derived = deriveFacetSets(everyDef)
+    let derived = deriveFacetSets(everyDef, albumCredits: albumCredits)
 
     let untaggedCount = everyDef.filter {
         $0.album == "Greatest Hits" && $0.albumArtist == nil && $0.year == nil
@@ -299,8 +314,11 @@ private struct DerivedFacetSets {
 }
 
 /// Build every derived facet set in one pass over `defs` — the single source the
-/// browse-drill-down checks assert against (mirrors the store's LEFT-JOIN semantics).
-private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
+/// browse-drill-down checks assert against (mirrors the store's LEFT-JOIN semantics). The
+/// album-artist lens comes from `albumCredits` (the credit `AlbumGrouping` gives each album).
+private func deriveFacetSets(
+    _ defs: [FixtureTrack], albumCredits: [AlbumGroupKey: String?]
+) -> DerivedFacetSets {
     var genreTrackCounts: [String: Int] = [:]
     var albumsByAlbumArtist: [String: Set<String>] = [:]
     var tracksByArtist: [String: Set<String>] = [:]
@@ -312,15 +330,17 @@ private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
             tracksByArtist[artist, default: []].insert(def.title)
             artistTrackCounts[artist, default: 0] += 1
         }
-        if let album = def.album, let albumArtist = def.albumArtist {
-            albumsByAlbumArtist[albumArtist, default: []].insert(album)
-        }
         for genre in Set(def.genres) {
             genreTrackCounts[genre, default: 0] += 1
             tracksByGenre[genre, default: []].insert(def.title)
             if let album = def.album {
                 albumsByGenre[genre, default: []].insert(album)
             }
+        }
+    }
+    for (key, credit) in albumCredits {
+        if let credit {
+            albumsByAlbumArtist[credit, default: []].insert(key.title)
         }
     }
     return DerivedFacetSets(
@@ -331,8 +351,31 @@ private func deriveFacetSets(_ defs: [FixtureTrack]) -> DerivedFacetSets {
     )
 }
 
-/// The M1 total-album-key string used to compute the expected album count — mirrors
-/// the store's resolution (album-artist defaults to the sentinel, year to 0).
-private func albumKey(title: String?, albumArtist: String?, year: Int?) -> String {
-    "\(title ?? "")|\(albumArtist ?? "<sentinel>")|\(year ?? 0)"
+/// Every album the fixture implies, keyed by `AlbumGrouping.key`, with the artist it is credited
+/// to — the album-artist tag, else `AlbumGrouping.derivedArtist` over the songs' artist NAMES
+/// (nil = the id-0 sentinel, which no artist read lists). The store's own rule, not a copy of it.
+private func expectedAlbumCredits(_ placed: [PlacedTrack]) -> [AlbumGroupKey: String?] {
+    var members: [AlbumGroupKey: [FixtureTrack]] = [:]
+    for track in placed {
+        if let key = AlbumGrouping.key(albumTitle: track.def.album, albumArtistTag: track.def.albumArtist,
+                                       year: track.def.year, trackPath: track.path) {
+            members[key, default: []].append(track.def)
+        }
+    }
+    var credits: [AlbumGroupKey: String?] = [:]
+    for (key, defs) in members {
+        let credit: String? = key.taggedArtist ?? derivedCreditName(defs.map(\.artist))
+        credits.updateValue(credit, forKey: key) // NOT `credits[key] = credit`: nil would delete the album
+    }
+    return credits
+}
+
+/// The credited artist NAME of an untagged fixture album (nil = the sentinel). No fixture song
+/// carries the compilation flag, so only the mixed-artists rule can make it "Various Artists".
+private func derivedCreditName(_ artists: [String?]) -> String? {
+    switch AlbumGrouping.derivedArtist(anyCompilation: false, artists: artists) {
+    case .various: variousArtistsName
+    case let .shared(name): name
+    case .unknown: nil
+    }
 }
