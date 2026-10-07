@@ -114,8 +114,8 @@ enum DesignSystem {
         private static let labelTertiaryOnSelection = from(Palette.labelTertiaryOnSelection)
 
         /// The selected-row text rule (S10.8 B2a) — its ONE home: tertiary text on a row that is
-        /// selected promotes to `labelTertiaryOnSelection` (light = secondary, AA on the deeper
-        /// `rowSelected`; dark unchanged). Every selectable row's tertiary text reads through
+        /// selected promotes to `labelTertiaryOnSelection` (secondary, AA on `rowSelected` in both
+        /// appearances; dark since the founder's S10.8 B decision). Every selectable row's tertiary text reads through
         /// here: Songs rows, queue / playlist rows, the rail's playlist counts.
         static func labelTertiary(onSelectedRow isSelected: Bool) -> SwiftUI.Color {
             isSelected ? labelTertiaryOnSelection : labelTertiary

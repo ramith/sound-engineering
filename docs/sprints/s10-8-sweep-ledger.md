@@ -261,8 +261,9 @@ accessibility): the paused 40% dim (light ramp 1.53–1.74:1, even black only 2.
 
 **Known issues, pinned with `withKnownIssue` (they flip when fixed):** R4-SLIDER-03 — the fill on
 the footer groove over the light window, 2.94:1 (the time text beside it carries the position),
-→ B3. R4-SEL-03 — dark tertiary on a selected row, 4.46:1 (pre-existing) → the founder's dark
-selection decision.
+→ B3. R4-SEL-03 — dark tertiary on a selected row, 4.46:1 (pre-existing) → **resolved**: the
+founder chose "fix both" (2026-10-07), so dark tertiary on a selected row promotes to secondary like
+light (the test now asserts AA outright; the dark selection tint itself is unchanged).
 
 **Deviations (accepted by the agent, with evidence):**
 

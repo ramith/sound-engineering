@@ -55,21 +55,16 @@ struct SelectionAuditTests {
         }
     }
 
-    /// Dark is unchanged here. Its tertiary on the selected row measures 4.46:1 on the card — a
-    /// pre-existing AA miss that waits on the founder's decision about dark selection (a shipped
-    /// dark value); pinned so the fix flips this test.
-    @Test("R4-SEL-03: dark selected-row text (tertiary pinned: 4.46:1, founder decision)")
+    /// Dark: the tertiary on a selected row read 4.46:1 on the card (pre-existing). The founder
+    /// chose the fix (S10.8 B, 2026-10-07): it promotes as in light, and the dark selection tint
+    /// itself stays as shipped.
+    @Test("R4-SEL-03: every text on a dark selected row clears AA, the promoted tertiary included")
     func darkSelectedRowText() {
         let card = Palette.panelFill.dark.over(Palette.window.dark)
         let selected = Palette.rowSelected.dark.over(card)
-        for text in Self.texts where text.name != "labelTertiaryOnSelection" {
+        for text in Self.texts {
             let ratio = ContrastAuditTests.ratio(label: text.pair, on: selected, .dark)
             #expect(ratio >= ContrastAuditTests.textAA, "\(text.name) on dark rowSelected = \(ratio)")
-        }
-        let tertiary = ContrastAuditTests.ratio(label: Palette.labelTertiaryOnSelection, on: selected, .dark)
-        #expect(Palette.labelTertiaryOnSelection.dark == Palette.labelTertiary.dark)
-        withKnownIssue("founder decision: dark selection strength / dark tertiary on a selected row") {
-            #expect(tertiary >= ContrastAuditTests.textAA, "tertiary on dark rowSelected = \(tertiary)")
         }
     }
 }
