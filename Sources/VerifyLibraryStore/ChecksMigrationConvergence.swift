@@ -25,9 +25,10 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// FNV-1a hash of the expected schema fingerprint at `currentSchemaVersion`. Regenerate by running
 /// VerifyLibraryStore after a NEW migration and pasting the printed FRESH hash — it should change
 /// ONLY when a migration is appended, never from editing a shipped one. (A hash, not the full DDL,
-/// so the constant stays one short line.) v7 was AMENDED in place once — by the S10.8 C2 fix round,
-/// before any real library had run it (only test stores, which `make reset-test-library` resets).
-let goldenSchemaFingerprintHashV7 = "26b5da9327c9f8c3"
+/// so the constant stays one short line.) v7 was AMENDED in place twice — by the S10.8 C2 fix rounds,
+/// before any real library had run it (only test stores, which `make reset-test-library` resets; the
+/// open path refuses one an earlier amendment migrated — `Schema.v7ShapeProblem`).
+let goldenSchemaFingerprintHashV7 = "1282ef7f4acef388"
 
 // MARK: - Fingerprint
 

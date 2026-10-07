@@ -4,11 +4,15 @@
 // The store file holds the user's playlists and play history, so the open path resets a file only
 // when it is genuinely damaged. An EXISTING file is first looked at on one plain connection that
 // only reads — a `DatabasePool` writes as it opens (its WAL set-up), so the pool waits until the
-// file is known good:
+// file is known good. That connection never checkpoints on close (`StoreSQLiteShim`): closing the
+// last connection would otherwise copy a crash-left WAL into the main file, so a REFUSED library
+// would not be byte-identical after all.
 //   • damaged — SQLITE_CORRUPT / SQLITE_NOTADB, or `integrity_check` fails → quarantine (renamed
 //     aside, never deleted) and rebuild fresh; the app names the saved file.
 //   • written by a NEWER build (a migration id this build doesn't know) → refuse, the file untouched;
 //     the newer build still opens it.
+//   • recorded at v7 by an UNFINISHED test build (v7 was amended in place — `Schema.v7ShapeProblem`)
+//     → refuse, the file untouched: every pass would fail on it.
 //   • behind (migrations pending) → back up (StoreBackup), then migrate on that same connection. A
 //     failed backup refuses without migrating.
 //   • any other failure on an intact file — disk full mid-migration, an I/O error, a busy timeout, a
@@ -19,6 +23,7 @@
 
 import Foundation
 import GRDB
+import StoreSQLiteShim
 
 /// Why the store refused to open an existing library. The file is never reset or moved — it keeps
 /// all its data where it is, and only a pre-upgrade backup may have been written beside it.
@@ -29,6 +34,9 @@ public enum StoreOpenRefusal: Error {
     case backupFailed(any Error)
     /// The library is intact but could not be opened or upgraded.
     case openFailed(any Error)
+    /// An unfinished test build left this library at a schema shape no release has (S10.8 C2 amended
+    /// v7 in place before any real library ran it): it records v7 but lacks what v7 now creates.
+    case unfinishedTestVersion
 }
 
 extension LibraryStore {
@@ -44,6 +52,9 @@ extension LibraryStore {
     /// `integrity_check` did not answer "ok" — the one corruption SQLite reports as data, not an error.
     private struct FailedIntegrityCheck: Error {}
 
+    /// SQLite refused to turn off checkpoint-on-close for the look-first connection.
+    private struct CheckpointOnCloseNotDisabled: Error {}
+
     /// Read the schema version back from `schema_info` (0 on a fresh, unwritten store).
     private static let selectSchemaVersionSQL = "SELECT version FROM schema_info WHERE id = 1;"
 
@@ -54,6 +65,16 @@ extension LibraryStore {
         var config = Configuration()
         config.foreignKeysEnabled = true
         config.busyMode = .timeout(5)
+        return config
+    }
+
+    /// The look-first connection's configuration: `makeConfiguration`, and closing it never
+    /// checkpoints the WAL into the main file (file header).
+    private static func makeLookFirstConfiguration() -> Configuration {
+        var config = makeConfiguration()
+        config.prepareDatabase { db in
+            guard storeSQLiteDisableCheckpointOnClose(db.sqliteConnection) else { throw CheckpointOnCloseNotDisabled() }
+        }
         return config
     }
 
@@ -87,24 +108,31 @@ extension LibraryStore {
     }
 
     /// Bring an EXISTING file up to `migrator`'s schema on one plain connection, which writes nothing
-    /// until the file is known intact, current-or-behind, and backed up. Throws a corruption error
-    /// for a damaged file and `StoreOpenRefusal` for one that must be left alone. The connection
-    /// closes on return, before the pool opens.
+    /// until the file is known intact, current-or-behind, and backed up — and then checks the result
+    /// has the shape this build's schema has. Throws a corruption error for a damaged file and
+    /// `StoreOpenRefusal` for one that must be left alone. The connection closes on return, before
+    /// the pool opens.
     private static func upgradeInPlace(url: URL, migrator: DatabaseMigrator, stamp: String) throws {
-        let connection = try DatabaseQueue(path: url.path, configuration: makeConfiguration())
+        let connection = try DatabaseQueue(path: url.path, configuration: makeLookFirstConfiguration())
         let upToDate = try connection.read { db in
             guard try String.fetchOne(db, sql: integrityCheckSQL) == "ok" else { throw FailedIntegrityCheck() }
             guard try !migrator.hasBeenSuperseded(db) else { throw StoreOpenRefusal.newerVersion }
             return try migrator.hasCompletedMigrations(db)
         }
-        guard !upToDate else { return }
-        do {
-            // One registered step per schema version (`makeMigrator` asserts it): the count is the target.
-            try StoreBackup.backUp(connection, storeURL: url, targetVersion: migrator.migrations.count, stamp: stamp)
-        } catch {
-            throw StoreOpenRefusal.backupFailed(error)
+        if !upToDate {
+            do {
+                // One registered step per schema version (`makeMigrator` asserts it): the count is the target.
+                try StoreBackup.backUp(connection, storeURL: url, targetVersion: migrator.migrations.count,
+                                       stamp: stamp)
+            } catch {
+                throw StoreOpenRefusal.backupFailed(error)
+            }
+            try migrator.migrate(connection)
         }
-        try migrator.migrate(connection)
+        try connection.read { db in
+            guard try migrator.appliedIdentifiers(db).contains(Schema.MigrationID.v7) else { return }
+            guard try Schema.v7ShapeProblem(db) == nil else { throw StoreOpenRefusal.unfinishedTestVersion }
+        }
     }
 
     /// Open the store's `DatabasePool` and migrate — the whole schema for a new file, a no-op for an

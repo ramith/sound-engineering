@@ -240,6 +240,9 @@ extension LibraryModel {
         case let .openFailed(cause):
             "Your library couldn't be opened (\(cause.localizedDescription)). Nothing was deleted — "
                 + "your playlists and play history are safe. Reopen the app to try again."
+        case .unfinishedTestVersion:
+            "This library was opened by an unfinished test version of AdaptiveSound and can't be used. "
+                + "Nothing was changed. Reset the test library, or restore a backup."
         case nil:
             "Your library couldn't be opened (\(error.localizedDescription))."
         }

@@ -75,6 +75,26 @@ func refusal(from open: () async throws -> LibraryStore) async -> StoreOpenRefus
     }
 }
 
+/// Copy the WAL-mode store at `source` to `target` the way a crash leaves one: `write` lands in the WAL
+/// only (auto-checkpoint off), and the main file, `-wal` and `-shm` are copied while that writer is
+/// still open — so `target`'s newest writes exist ONLY in its WAL, and no connection is open on it.
+/// Whatever opens `target` next is the last connection to close it: unless it was told not to, it
+/// checkpoints those writes into the main file.
+func copyWithHotWAL(from source: URL, to target: URL, write: (Database) throws -> Void) throws {
+    let pool = try DatabasePool(path: source.path)
+    try pool.writeWithoutTransaction { db in try db.execute(sql: "PRAGMA wal_autocheckpoint = 0;") }
+    try pool.write(write)
+    for suffix in ["", "-wal", "-shm"] {
+        try FileManager.default.copyItem(atPath: source.path + suffix, toPath: target.path + suffix)
+    }
+    try pool.close()
+}
+
+/// The byte size of the `-wal` beside the store at `url` (0 when there is none).
+func walSize(of url: URL) -> Int {
+    ((try? FileManager.default.attributesOfItem(atPath: url.path + "-wal"))?[.size] as? Int) ?? 0
+}
+
 /// The files beside the store at `url` that are neither the store nor its WAL sidecars — quarantined
 /// copies, backups, stray partial backups — sorted by name.
 func strayFiles(beside url: URL) throws -> [String] {

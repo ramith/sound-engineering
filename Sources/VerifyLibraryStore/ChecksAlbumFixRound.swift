@@ -1,9 +1,9 @@
 // ChecksAlbumFixRound — the S10.8 C2 fix round, store and pass (docs/sprints/s10-8-sweep-ledger.md,
 // Sprint C). Each case replays a break-it finding through the app's own pipeline:
 //   ALB-06 (A3) v7 checks only the references it can break — a v6 store holding an unrelated
-//          dangling reference still migrates; album rows that differed only by year merge, ids
-//          kept; a song pointing at a missing album row is unlinked; the scoped check does catch a
-//          dangling reference INTO albums;
+//          dangling reference still migrates; every album row keeps its id (two that differ only by
+//          year stay two — the year becomes their `edition_year`); a song pointing at a missing album
+//          row is unlinked; the scoped check does catch a dangling reference INTO albums;
 //   ALB-07 (B1) an offline file stays pending — a pass while the folder is moved away marks none
 //          of its songs; after it comes back, a rescan reads them all (album artist + compilation
 //          flag); a file that is there but unreadable is still marked (anti-loop);
@@ -50,7 +50,8 @@ private func cacheDirectory(beside url: URL, _ label: String) -> URL {
 
 /// The previous release's library with three kinds of old data: a song whose `artwork_key` names an
 /// artwork row that is gone (nothing to do with albums), two album rows that differ ONLY by year
-/// (one album under the new key), and a song pointing at an album row that is gone.
+/// (two albums still — Weezer's Blue and Green are such a pair), and a song pointing at an album row
+/// that is gone.
 private let staleV6SeedSQL = [
     "INSERT INTO folders(id, path, is_root) VALUES (1, '/ALB06/Lib', 1);",
     "INSERT INTO artists(id, name, sort_name) VALUES (1, 'Ann', 'Ann');",
@@ -91,22 +92,22 @@ func checkV7ScopedReferenceCheck(number: Int, url: URL) async -> Bool {
             printFail(number, "ALB-06: a v6 store with an unrelated dangling reference did not migrate to v7")
             return false
         }
-        // Kept ids (FKs were off for the rebuild — no SET NULL cascade), the year-only duplicate merged
-        // onto the lowest id, the dangling album link cleared, the unrelated reference left alone.
+        // Kept ids (FKs were off for the rebuild — no SET NULL cascade): the two year-apart rows stay
+        // two, the dangling album link is cleared, the unrelated reference is left alone.
         let tracks = try await [1, 2, 3].asyncMap { try await store.track(id: $0) }
-        guard tracks.map({ $0?.albumID }) == [1, 1, nil], tracks[0]?.artworkKey == "gone-hash",
-              try await store.countRows(inTable: "albums") == 1,
+        guard tracks.map({ $0?.albumID }) == [1, 2, nil], tracks[0]?.artworkKey == "gone-hash",
+              try await store.countRows(inTable: "albums") == 2,
               try await store.userState(trackID: 1)?.playCount == 5 else {
             printFail(number, "ALB-06: after v7 the songs' albums are \(tracks.map { $0?.albumID }) (expected "
-                + "[1, 1, nil]) or the unrelated reference / user data changed"); return false
+                + "[1, 2, nil]) or the unrelated reference / user data changed"); return false
         }
         guard try scopedCheckCatchesOnlyAlbumReferences() else {
             printFail(number, "ALB-06: Schema.checkReferences(into: albums) missed a dangling album link or "
                 + "tripped on an unrelated one"); return false
         }
         printPass(number, "ALB-06 (A3) v7 checks only the references it can break: a v6 store with a dangling "
-            + "tracks.artwork_key migrates; album rows differing only by year merge onto the lowest id, the "
-            + "other ids kept (no SET NULL cascade); a song on a missing album row is unlinked; the scoped "
+            + "tracks.artwork_key migrates; every album row keeps its id, the two that differ only by year "
+            + "stay two (no SET NULL cascade); a song on a missing album row is unlinked; the scoped "
             + "check throws on a dangling link INTO albums and ignores one elsewhere")
         return true
     } catch {

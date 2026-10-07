@@ -145,6 +145,19 @@ private struct PlacedTrack: AlbumGroupingSong {
     var albumArtistTag: String? {
         AlbumGrouping.presentArtist(def.albumArtist)
     }
+
+    var year: Int? {
+        def.year
+    }
+
+    /// No fixture song carries the compilation flag.
+    var isCompilation: Bool {
+        false
+    }
+
+    var artistName: String? {
+        def.artist
+    }
 }
 
 /// Place one root's fixture tracks at `root/<fileName>` (the paths `seed` writes).
