@@ -4,7 +4,7 @@
 // in-scope songs' RAW album inputs (title, album-artist tag, compilation flag, artist, path),
 // keys them with `AlbumGrouping.keys(for:)`, credits each group (its tag, else the derived
 // "Various Artists" / shared artist / Unknown Artist), resolves the album row on the
-// (title, album_artist_id, folder_key) key, and rewrites `album_id` ONLY for songs whose album
+// (title, album_artist_id, folder_key, edition_year) key, and rewrites `album_id` ONLY for songs whose album
 // changed. Then each touched album's SHOWN year and cover follow its members
 // (`AlbumGrouping.display` — fix round C1/C8). A pure function of stored columns — idempotent,
 // cancel-safe, re-runnable.
@@ -17,10 +17,11 @@
 //     the end-of-pass step. The whole-library pass also catches what no tag write sees: songs that
 //     MOVED folder (a Finder move keeps its tags) or were DELETED. Unchanged albums cost a read,
 //     never a write;
-//   • ONE song's neighbourhood, for a single tag write outside a pass (`applyMetadata`): the songs
-//     sharing its old or new title in its album folder — everything whose key or credit that one
-//     write can change (another folder's songs key on their own folder) — and then the display of
-//     every album touched. An album that write vacates is deleted in the same write (B4).
+//   • ONE song's titles, for a single tag write outside a pass (`applyMetadata`): every song
+//     sharing its old or new album title — the smallest complete scope, since a tagged album's
+//     year split (C2 final round) weighs all its folders, and adoption all of a folder's songs — and
+//     then the display of every album touched. An album that write vacates is deleted in the same
+//     write (B4).
 
 import Foundation
 import GRDB
@@ -40,25 +41,21 @@ public extension LibraryStore {
 
     /// Every song that is, or should be, on an album — the whole-library regroup's scope.
     private static let wholeLibraryScope = "t.album_title IS NOT NULL OR t.album_id IS NOT NULL"
-    /// One song plus the songs with one of `titleCount` titles under one folder (`url` in
-    /// [folder/, folder0) — '0' is the byte after '/'): the single-write scope.
-    private static func neighbourhoodScope(titleCount: Int) -> String {
+    /// One song plus every song with one of `titleCount` titles: the single-write scope.
+    private static func titlesScope(titleCount: Int) -> String {
         guard titleCount > 0 else { return "t.id = ?" }
-        return "t.id = ? OR (t.album_title IN (\(databaseQuestionMarks(count: titleCount))) "
-            + "AND t.url >= ? AND t.url < ?)"
+        return "t.id = ? OR t.album_title IN (\(databaseQuestionMarks(count: titleCount)))"
     }
 
     /// Insert an album row on its total key (race-safe; `ON CONFLICT … DO NOTHING`).
     private static let insertAlbumSQL =
-        "INSERT INTO albums(title, album_artist_id, folder_key) VALUES (?, ?, ?) "
-            + "ON CONFLICT(title, album_artist_id, folder_key) DO NOTHING;"
+        "INSERT INTO albums(title, album_artist_id, folder_key, edition_year) VALUES (?, ?, ?, ?) "
+            + "ON CONFLICT(title, album_artist_id, folder_key, edition_year) DO NOTHING;"
     /// Select an album id by its total key.
     private static let selectAlbumIDByKeySQL =
-        "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND folder_key = ?;"
+        "SELECT id FROM albums WHERE title = ? AND album_artist_id = ? AND folder_key = ? AND edition_year = ?;"
     /// Point a song at its album (NULL = no album).
     private static let setTrackAlbumSQL = "UPDATE tracks SET album_id = ? WHERE id = ?;"
-    /// A song's stored url (the single-write regroup's folder).
-    private static let selectTrackURLSQL = "SELECT url FROM tracks WHERE id = ?;"
     /// Every album's shown year + cover.
     private static let selectAllAlbumDisplaySQL = "SELECT id, year, artwork_key FROM albums;"
     /// The shown year + cover of `count` albums (ids bound as placeholders).
@@ -127,23 +124,16 @@ public extension LibraryStore {
         try db.execute(sql: Self.markRegroupOwedSQL)
     }
 
-    /// Regroup ONE song's neighbourhood after a single tag write outside a pass: the song and the
-    /// songs sharing one of `titles` (its old and new album title) in its album folder. Their keys,
-    /// the folder's mixed-tag adoption (C3) and an untagged album's credit all live there; a tagged
-    /// album's other-folder songs keep their key. Then every touched album shows its members'
-    /// year and cover, and an album the write vacated is deleted.
+    /// Regroup after a single tag write outside a pass: the song and every song sharing one of
+    /// `titles` (its old and new album title). Album identity never crosses titles, and within one
+    /// title everything a write can change is there — the folder's adoption (C3), an untagged
+    /// album's credit and year split, a tagged album's year split across all its folders. Then every
+    /// touched album shows its members' year and cover, and an album the write vacated is deleted.
     internal func regroupOwnAlbumLocked(_ db: Database, trackID: Int64, titles: Set<String>) throws {
-        guard let url = try String.fetchOne(db, sql: Self.selectTrackURLSQL, arguments: [trackID]) else { return }
-        let folder = AlbumGrouping.albumFolder(ofTrackPath: url)
-        var arguments: StatementArguments = [trackID]
-        if !titles.isEmpty {
-            arguments += StatementArguments(Array(titles))
-            arguments += [folder + "/", folder + "0"]
-        }
         let rows = try GroupingRow.fetchAll(
-            db, sql: Self.selectGroupingRowsSQL(scope: Self.neighbourhoodScope(titleCount: titles.count)),
-            arguments: arguments
-        ).filter { $0.id == trackID || AlbumGrouping.albumFolder(ofTrackPath: $0.path) == folder }
+            db, sql: Self.selectGroupingRowsSQL(scope: Self.titlesScope(titleCount: titles.count)),
+            arguments: [trackID] + StatementArguments(Array(titles))
+        )
         let previous = Set(rows.compactMap(\.albumID))
         let touched = try previous.union(assignAlbums(db, rows).keys)
         try refreshAlbumDisplay(db, albumIDs: touched)
@@ -202,7 +192,7 @@ public extension LibraryStore {
 
     /// Resolve (query-then-insert) the album row for `key` credited to `artistID`. RACE-SAFE.
     private func resolveAlbumRow(_ db: Database, key: AlbumGroupKey, artistID: Int64) throws -> Int64 {
-        let arguments: StatementArguments = [key.title, artistID, key.folderKey]
+        let arguments: StatementArguments = [key.title, artistID, key.folderKey, key.editionYear]
         if let existing = try Int64.fetchOne(db, sql: Self.selectAlbumIDByKeySQL, arguments: arguments) {
             return existing
         }
@@ -255,8 +245,8 @@ enum AlbumUpkeep {
     /// Inside a metadata pass: no album work per write — the end-of-pass regroup is the
     /// authority; the write records the debt (`schema_info.regroup_owed`).
     case deferredToPassEnd
-    /// A single write outside a pass: regroup the song's own neighbourhood in the same write.
-    case ownNeighbourhood
+    /// A single write outside a pass: regroup the songs sharing its old or new title, in that write.
+    case sameTitles
 }
 
 // MARK: - Grouping row
@@ -272,6 +262,10 @@ private struct GroupingRow: FetchableRecord, AlbumGroupingSong {
     let artistName: String?
     let albumID: Int64?
     let display: AlbumMemberDisplay
+
+    var year: Int? {
+        display.year
+    }
 
     init(row: Row) {
         id = row[0]

@@ -9,8 +9,8 @@
 // including its RAW album inputs (title, album-artist tag, compilation flag), then keeps its
 // album current through `AlbumGrouping` (S10.8 C2 — `LibraryStore+AlbumGrouping`), which amends
 // the M1 total album key: tagged albums key on their album artist, untagged ones on their folder.
-// A metadata pass leaves the albums to its end-of-pass regroup; a single write regroups its own
-// neighbourhood (C2 fix round, B2). Each resolver is RACE-SAFE: `ON CONFLICT(<unique-key>) DO
+// A metadata pass leaves the albums to its end-of-pass regroup; a single write regroups the songs
+// sharing its old or new title (C2 fix round, B2). Each resolver is RACE-SAFE: `ON CONFLICT(<unique-key>) DO
 // NOTHING` then a re-SELECT, so two writers inserting the same brand-new name resolve to the
 // winner's row.
 
@@ -108,12 +108,12 @@ public extension LibraryStore {
     // MARK: - Metadata write path
 
     /// Apply `meta` to track `trackID` — a SINGLE write outside a metadata pass: resolve/create the
-    /// track-artist and genres, write the tag columns, then regroup the song's own neighbourhood
-    /// (`AlbumGrouping`), so the store is consistent at this commit. ONE write transaction.
+    /// track-artist and genres, write the tag columns, then regroup the songs sharing its old or new
+    /// title (`AlbumGrouping`), so the store is consistent at this commit. ONE write transaction.
     /// Idempotent; a no-op when the song is gone.
     func applyMetadata(_ meta: TrackMetadata, forTrack trackID: Int64) async throws {
         _ = try await dbWriter.write { db in
-            try self.applyMetadataLocked(db, meta, forTrack: trackID, albums: .ownNeighbourhood)
+            try self.applyMetadataLocked(db, meta, forTrack: trackID, albums: .sameTitles)
         }
     }
 
@@ -136,7 +136,7 @@ public extension LibraryStore {
         switch albums {
         case .deferredToPassEnd:
             try markAlbumRegroupOwedLocked(db)
-        case .ownNeighbourhood:
+        case .sameTitles:
             let titles = Set([previousTitle, meta.albumTitle].compactMap(\.self))
             try regroupOwnAlbumLocked(db, trackID: trackID, titles: titles)
         }

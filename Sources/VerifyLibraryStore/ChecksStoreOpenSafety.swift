@@ -8,7 +8,11 @@
 //   OPEN-03 no backup for a brand-new store, nor for one with nothing to migrate;
 //   OPEN-04 a backup that fails refuses the upgrade — nothing migrated, nothing quarantined;
 //   OPEN-05 real corruption is still quarantined — a damaged page that only `integrity_check` sees
-//           (SCHEMA-5/5b cover a file that isn't a database at all).
+//           (SCHEMA-5/5b cover a file that isn't a database at all);
+//   OPEN-06 a store an UNFINISHED test build migrated to v7 (v7 was amended in place — the first C2
+//           build's shape, and the first fix round's) is refused (.unfinishedTestVersion), byte-identical
+//           even with writes still in its WAL; a store this build migrated passes the same shape check.
+// OPEN-02 also proves a backup a crash left half-written (`.partial` + journal) is cleared.
 // The newer-build refusal is SCHEMA-6 and the foreign-schema refusal FOREIGN-SCHEMA (ChecksCorruption).
 //
 // Each fixture is the previous release's store (the production migrator capped one step back) in
@@ -27,6 +31,7 @@ func storeOpenSafetyCheckCases() -> [CheckCase] {
         CheckCase(label: "open03-no-backup-when-current", run: checkNoBackupWhenCurrent),
         CheckCase(label: "open04-backup-failure-refuses", run: checkBackupFailureRefuses),
         CheckCase(label: "open05-damaged-page-quarantined", run: checkDamagedPageQuarantined),
+        CheckCase(label: "open06-unfinished-v7-refused", run: checkUnfinishedV7Refused),
     ]
 }
 
@@ -100,11 +105,21 @@ func checkBackupBeforeUpgrade(number: Int, url: URL) async -> Bool {
     do {
         try buildPreviousReleaseStore(at: url)
         let first = StoreBackup.backupURL(for: url, targetVersion: currentSchemaVersion, stamp: "OPEN02-1")
+        // What a crash mid-backup leaves: a half-written copy and its journal. The next backup clears them.
+        let stale = StoreBackup.backupURL(for: url, targetVersion: currentSchemaVersion, stamp: "OPEN02-0")
+            .appendingPathExtension("partial")
+        try Data("half a copy".utf8).write(to: stale)
+        try Data().write(to: URL(fileURLWithPath: stale.path + "-journal"))
         do {
             let store = try await LibraryStore(url: url, migrator: fullMigrator(), stamp: "OPEN02-1")
             guard await store.schemaVersion() == currentSchemaVersion else {
                 printFail(number, "OPEN-02: the store did not upgrade"); return false
             }
+        }
+        guard !FileManager.default.fileExists(atPath: stale.path),
+              !FileManager.default.fileExists(atPath: stale.path + "-journal") else {
+            printFail(number, "OPEN-02: a stale .partial backup (or its journal) survived the next backup")
+            return false
         }
         // The backup is the store as it was BEFORE migrating — and it opens as a store: a copy of it
         // upgrades like the original did, every row kept.
@@ -134,8 +149,9 @@ func checkBackupBeforeUpgrade(number: Int, url: URL) async -> Bool {
                 + "\(StoreBackup.backups(of: url).map(\.lastPathComponent))"); return false
         }
         printPass(number, "OPEN-02 an upgrade is backed up first: \(first.lastPathComponent) holds the "
-            + "v\(previousSchemaVersion) store with its rows and opens as a store; after two more upgrades only "
-            + "the newest \(StoreBackup.keepCount) backups remain")
+            + "v\(previousSchemaVersion) store with its rows and opens as a store; a half-written backup a crash "
+            + "left (.partial + journal) is cleared; after two more upgrades only the newest "
+            + "\(StoreBackup.keepCount) backups remain")
         return true
     } catch {
         printFail(number, "OPEN-02 threw: \(error)"); return false
@@ -235,5 +251,104 @@ func checkDamagedPageQuarantined(number: Int, url: URL) async -> Bool {
         return true
     } catch {
         printFail(number, "OPEN-05 threw: \(error)"); return false
+    }
+}
+
+// MARK: - OPEN-06 — a store an unfinished test build migrated to v7 is refused, untouched
+
+/// The v7 the FIRST C2 build ran (858db30), on top of a v6 store: the year still in the album key, no
+/// `regroup_owed`, no `edition_year`. (Its data backfill is left out — only the shape matters here.)
+private let firstBuildV7Statements = [
+    "ALTER TABLE tracks ADD COLUMN album_title TEXT;",
+    "ALTER TABLE tracks ADD COLUMN album_artist_tag TEXT;",
+    "ALTER TABLE tracks ADD COLUMN compilation INTEGER NOT NULL DEFAULT 0;",
+    "CREATE INDEX idx_tracks_album_title ON tracks(album_title);",
+    """
+    CREATE TABLE albums_v7 (id INTEGER PRIMARY KEY, title TEXT NOT NULL,
+        album_artist_id INTEGER NOT NULL DEFAULT 0 REFERENCES artists(id) ON DELETE SET DEFAULT,
+        year INTEGER NOT NULL DEFAULT 0, artwork_key TEXT REFERENCES artwork(content_hash) ON DELETE SET NULL,
+        folder_key TEXT NOT NULL DEFAULT '');
+    """,
+    """
+    INSERT INTO albums_v7(id, title, album_artist_id, year, artwork_key)
+    SELECT id, title, album_artist_id, year, artwork_key FROM albums;
+    """,
+    "DROP TABLE albums;",
+    "ALTER TABLE albums_v7 RENAME TO albums;",
+    "CREATE UNIQUE INDEX idx_albums_key ON albums(title, album_artist_id, year, folder_key);",
+    "CREATE INDEX idx_albums_artist ON albums(album_artist_id);",
+    "CREATE INDEX idx_albums_year ON albums(year);",
+    "ALTER TABLE schema_info ADD COLUMN derived_version INTEGER NOT NULL DEFAULT 0;",
+]
+
+/// What the FIRST fix round's v7 added on top: `regroup_owed`, and the key without the year (but
+/// without `edition_year` either).
+private let firstFixRoundV7Statements = [
+    "ALTER TABLE schema_info ADD COLUMN regroup_owed INTEGER NOT NULL DEFAULT 0;",
+    "DROP INDEX idx_albums_key;",
+    "CREATE UNIQUE INDEX idx_albums_key ON albums(title, album_artist_id, folder_key);",
+]
+
+/// Build, at `url`, a WAL store an unfinished test build migrated to v7: the previous release's
+/// store with folders and a playlist, then `statements` as that build's v7, recorded as applied.
+private func buildUnfinishedV7Store(at url: URL, statements: [String]) throws {
+    var config = Configuration()
+    config.foreignKeysEnabled = false // a table rebuild, as the migrator runs it
+    let pool = try DatabasePool(path: url.path, configuration: config)
+    try migrator(through: 6).migrate(pool)
+    try pool.write { db in
+        _ = try seedFolders(db, count: seededFolderCount, prefix: "open06")
+        try db.execute(sql: "INSERT INTO playlists(name, is_builtin, created_at) VALUES ('Kept', 0, 1);")
+        for statement in statements {
+            try db.execute(sql: statement)
+        }
+        try db.execute(sql: "UPDATE schema_info SET version = 7 WHERE id = 1;")
+        try db.execute(sql: "INSERT INTO grdb_migrations(identifier) VALUES (?);", arguments: [Schema.MigrationID.v7])
+    }
+    try pool.close()
+}
+
+func checkUnfinishedV7Refused(number: Int, url: URL) async -> Bool {
+    let shapes = [("the first C2 build", firstBuildV7Statements),
+                  ("the first fix round", firstBuildV7Statements + firstFixRoundV7Statements)]
+    do {
+        for (index, (name, statements)) in shapes.enumerated() {
+            let directory = url.deletingLastPathComponent()
+                .appendingPathComponent("open06-\(index)-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let built = directory.appendingPathComponent("built.sqlite3")
+            let store = directory.appendingPathComponent("library.sqlite3")
+            try buildUnfinishedV7Store(at: built, statements: statements)
+            // That build crashed with a write still in its WAL.
+            try copyWithHotWAL(from: built, to: store) { db in
+                try db.execute(sql: "INSERT INTO folders(path, is_root) VALUES ('/Music/open06-wal', 1);")
+            }
+            let before = try Data(contentsOf: store)
+            let walBefore = walSize(of: store)
+            let refused = await refusal(from: { try await LibraryStore(url: store, appBuild: "verify") })
+            guard case .unfinishedTestVersion? = refused else {
+                printFail(number, "OPEN-06: a store \(name) migrated to v7 was not refused (.unfinishedTestVersion)")
+                return false
+            }
+            guard walBefore > 0, try Data(contentsOf: store) == before, walSize(of: store) == walBefore,
+                  try strayFiles(beside: store).isEmpty else {
+                try printFail(number, "OPEN-06: refusing \(name)'s store changed its file or WAL, or wrote beside "
+                    + "it: \(strayFiles(beside: store))"); return false
+            }
+        }
+        // This build's own v7 passes the same check: a previous-release store upgrades and opens.
+        try buildPreviousReleaseStore(at: url)
+        let upgraded = try await LibraryStore(url: url, migrator: fullMigrator(), stamp: "OPEN06")
+        guard await upgraded.schemaVersion() == currentSchemaVersion else {
+            printFail(number, "OPEN-06: a store this build migrated to v7 did not open"); return false
+        }
+        printPass(number, "OPEN-06 a store an unfinished test build migrated to v7 (the first C2 build's shape, "
+            + "and the first fix round's) is refused (.unfinishedTestVersion): the file and its WAL — still "
+            + "holding a crash's write — are byte-identical, nothing is written beside it; a store this build "
+            + "migrates passes the same shape check")
+        return true
+    } catch {
+        printFail(number, "OPEN-06 threw: \(error)"); return false
     }
 }

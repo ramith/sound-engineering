@@ -147,14 +147,44 @@ func checkDowngradeGuard(number: Int, url: URL) async -> Bool {
             try printFail(number, "downgrade guard: files written beside the refused store: "
                 + "\(strayFiles(beside: url))"); return false
         }
+        guard try await newerWritesOnlyInWALRefusedUntouched(beside: url, number: number) else { return false }
         printPass(number, "downgrade guard: an unknown-newer migration id → hasBeenSuperseded fires and the "
             + "open is REFUSED (.newerVersion): the file is byte-identical, nothing quarantined, backed up or "
-            + "rebuilt; no crash")
+            + "rebuilt; no crash — and the same when the newer build's writes are still only in the WAL (a "
+            + "crash): the refusal's look-first connection does not checkpoint them into the main file")
         return true
     } catch {
         printFail(number, "downgrade guard threw: \(error)")
         return false
     }
+}
+
+/// The newer build's migration id (and a row) still ONLY in the WAL — the newer build crashed after
+/// writing. The refusal must still leave the main file byte-identical and the WAL holding them
+/// (S10.8 C2 final round): closing the look-first connection must not checkpoint.
+private func newerWritesOnlyInWALRefusedUntouched(beside url: URL, number: Int) async throws -> Bool {
+    let directory = url.deletingLastPathComponent()
+        .appendingPathComponent("schema6-hot-wal-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("source.sqlite3")
+    let crashed = directory.appendingPathComponent("library.sqlite3")
+    _ = try await LibraryStore(url: source, appBuild: "verify")
+    try copyWithHotWAL(from: source, to: crashed) { db in
+        try db.execute(sql: "INSERT INTO grdb_migrations(identifier) VALUES ('v9999-from-the-future');")
+        try db.execute(sql: "INSERT INTO folders(path, is_root) VALUES ('/Music/future-wal', 1);")
+    }
+    let before = try Data(contentsOf: crashed)
+    let walBefore = walSize(of: crashed)
+    guard walBefore > 0 else { printFail(number, "downgrade guard: the hot-WAL fixture has no WAL"); return false }
+    guard case .newerVersion? = await refusal(from: { try await LibraryStore(url: crashed, appBuild: "verify") }) else {
+        printFail(number, "downgrade guard: a newer store whose id is only in the WAL was not refused"); return false
+    }
+    guard try Data(contentsOf: crashed) == before, walSize(of: crashed) == walBefore else {
+        printFail(number, "downgrade guard: refusing a store with a hot WAL changed its main file (checkpoint on "
+            + "close) or its WAL"); return false
+    }
+    return true
 }
 
 // MARK: - RESTART durability

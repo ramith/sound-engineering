@@ -5,13 +5,17 @@
 // (docs/sprints/s8-1-persistent-store-design.md §3) the way Apple Music groups a library:
 //   • IDENTITY — a song WITH an album-artist tag is on (title, tag), in any folder; a song WITHOUT
 //     one is on (title, album folder), so same-title albums in different folders never merge
-//     (ALB-05) while a compilation in one folder stays one album (ALB-02). The YEAR is not part of
-//     identity (C2 fix round, C1): a compilation whose tracks carry their original years, or an
-//     album with one year-less bonus track, stays ONE album, shown with its most common year.
+//     (ALB-05) while a compilation in one folder stays one album (ALB-02). The YEAR only SPLITS a
+//     group that holds two albums (`AlbumGrouping+Years.swift`, C2 final round): a tagged group in
+//     folders of different years (Weezer's self-titled Blue 1994 and Green 2001), or an untagged
+//     folder holding two artists' same-title albums of different years. A compilation whose tracks
+//     carry their original years, or an album with one year-less bonus track, stays ONE album,
+//     shown with its most common year (C1).
 //   • ALBUM FOLDER — the file's folder, with disc and bonus subfolders ("CD 1", "Disc 2 of 2",
 //     "[CD 1]", "Bonus Tracks", "Extras" …) folded into their parent (`albumFolder`, C2).
 //   • MIXED TAGGING — in one album folder, untagged songs whose title matches tagged songs that
-//     all agree on ONE tag adopt that tag (C3): one album, not twin tiles.
+//     all agree on ONE tag adopt that tag (C3): one album, not twin tiles — when their years agree,
+//     or the untagged song has none (a 1962 untagged album beside a 2023 tagged one stays two).
 //   • CREDIT of an untagged album — "Various Artists" when any song carries the compilation flag
 //     or its songs have two or more PRIMARY artists (decision 12; "X feat. Y" counts as X — C6),
 //     else their one shared artist, else the id-0 "Unknown Artist" sentinel.
@@ -20,8 +24,9 @@
 //   • NORMALISED ONCE — `TrackMetadata.init` trims + NFC-normalises the album title, the
 //     album-artist tag and the artist (`normalizedTag` / `presentArtist`, C5), so the store's SQL
 //     compares the same bytes Swift does.
-// The key stays TOTAL (M1): no component is ever NULL — a tagged album's folder key is "".
-// The names and folders half of the rule lives in `AlbumGrouping+Names.swift`.
+// The key stays TOTAL (M1): no component is ever NULL — a tagged album's folder key is "", and the
+// split year is 0 unless the group splits. The names and folders half of the rule lives in
+// `AlbumGrouping+Names.swift`; the year half in `AlbumGrouping+Years.swift`.
 
 import Foundation
 
@@ -31,7 +36,7 @@ import Foundation
 public let variousArtistsName = "Various Artists"
 
 /// The identity of one album (S10.8 C2): two songs share an album iff their keys are equal. The
-/// store persists it as `albums(title, album_artist_id, folder_key)`.
+/// store persists it as `albums(title, album_artist_id, folder_key, edition_year)`.
 public struct AlbumGroupKey: Hashable, Sendable {
     /// The album title tag (never empty).
     public let title: String
@@ -40,6 +45,16 @@ public struct AlbumGroupKey: Hashable, Sendable {
     public let taggedArtist: String?
     /// "" for a tagged album (folder-independent); the album folder otherwise (`albums.folder_key`).
     public let folderKey: String
+    /// 0, unless the group holds albums of different years: then the year that tells this one apart
+    /// (`albums.edition_year`, C2 final round).
+    public let editionYear: Int
+
+    init(title: String, taggedArtist: String?, folderKey: String, editionYear: Int = 0) {
+        self.title = title
+        self.taggedArtist = taggedArtist
+        self.folderKey = folderKey
+        self.editionYear = editionYear
+    }
 }
 
 /// What the grouping rule reads of one song. The store's grouping row conforms, so the rule runs
@@ -51,6 +66,13 @@ public protocol AlbumGroupingSong {
     var albumArtistTag: String? { get }
     /// The song's stored (normalised) path — only its album folder matters.
     var path: String { get }
+    /// The year tag, or nil/0 — it splits a group holding two albums and gates adoption (C2 final
+    /// round); it is never the identity on its own.
+    var year: Int? { get }
+    /// The compilation flag — a compilation never splits by year.
+    var isCompilation: Bool { get }
+    /// The track artist's name, or nil — two primary artists in two years split an untagged folder.
+    var artistName: String? { get }
 }
 
 /// Who an album WITHOUT an album-artist tag is credited to.
@@ -96,27 +118,43 @@ public struct AlbumDisplay: Equatable, Sendable {
 /// The pure album-grouping rule (S10.8 C2). No store, no filesystem — paths are plain strings.
 public enum AlbumGrouping {
     /// The album key of every song, in order (nil = the song has no album title, so no album).
-    /// Takes the whole set at once because mixed tagging (C3) looks at a song's folder-mates:
-    /// an untagged song adopts the tag of the same-title songs in its album folder when they all
-    /// agree on one.
+    /// Takes the whole set at once: mixed tagging (C3) looks at a song's folder-mates, and a year
+    /// split at every song of its group. First each song's GROUP — its tag, the tag it adopts, or
+    /// its folder — then the group's split year, if it holds albums of different years.
     public static func keys(for songs: [some AlbumGroupingSong]) -> [AlbumGroupKey?] {
         let folders = songs.map { albumFolder(ofTrackPath: $0.path) }
         // Keyed by the place itself — one title in one album folder, i.e. its UNTAGGED key.
-        var tagsInPlace: [AlbumGroupKey: Set<String>] = [:]
+        var tagged: [AlbumGroupKey: TaggedPlace] = [:]
         for (song, folder) in zip(songs, folders) {
             if let title = song.albumTitle, let tag = song.albumArtistTag {
-                tagsInPlace[AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder), default: []]
-                    .insert(tag)
+                tagged[AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder), default: TaggedPlace()]
+                    .add(tag: tag, year: song.year)
             }
         }
-        return zip(songs, folders).map { song, folder in
+        let groups: [AlbumGroupKey?] = zip(songs, folders).map { song, folder in
             guard let title = song.albumTitle else { return nil }
-            let tags = tagsInPlace[AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder)]
-            if let tag = song.albumArtistTag ?? (tags?.count == 1 ? tags?.first : nil) {
+            let place = AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder)
+            if let tag = song.albumArtistTag ?? tagged[place]?.adoptedTag(forYear: song.year) {
                 return AlbumGroupKey(title: title, taggedArtist: tag, folderKey: "")
             }
-            return AlbumGroupKey(title: title, taggedArtist: nil, folderKey: folder)
+            return place
         }
+        var members: [AlbumGroupKey: [Int]] = [:]
+        for (index, group) in groups.enumerated() {
+            if let group {
+                members[group, default: []].append(index)
+            }
+        }
+        var keys = groups
+        for (group, indices) in members {
+            let members = indices.map { YearMember(songs[$0], folder: folders[$0]) }
+            let years = editionYears(of: members, taggedArtist: group.taggedArtist)
+            for (index, year) in zip(indices, years) where year != 0 {
+                keys[index] = AlbumGroupKey(title: group.title, taggedArtist: group.taggedArtist,
+                                            folderKey: group.folderKey, editionYear: year)
+            }
+        }
+        return keys
     }
 
     /// The album credit for an UNTAGGED album from its songs' artist names (in song order): any
@@ -142,11 +180,7 @@ public enum AlbumGrouping {
     /// song has a year), and the cover of its first song with art in (disc, track) order — so the
     /// cover never depends on which file happened to be read first.
     public static func display(of members: [AlbumMemberDisplay]) -> AlbumDisplay {
-        var counts: [Int: Int] = [:]
-        for year in members.compactMap(\.year) where year > 0 {
-            counts[year, default: 0] += 1
-        }
-        let year = counts.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key ?? 0
+        let year = dominantYear(members.map(\.year)) ?? 0
         let cover = members.filter { $0.artworkKey != nil }.min(by: precedesForCover)?.artworkKey
         return AlbumDisplay(year: year, artworkKey: cover)
     }
