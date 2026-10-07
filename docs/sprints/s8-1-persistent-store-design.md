@@ -178,6 +178,18 @@ Notes: `PRAGMA foreign_keys=ON` + `busy_timeout` + `journal_mode=WAL` at every o
 > raw album tags (`album_title`, `album_artist_tag`, `compilation`) are stored on `tracks` so albums
 > can be regrouped without re-reading files. Proven by VerifyLibraryStore ALB-01…05
 > ([s10-8-glass-sweep-plan.md](s10-8-glass-sweep-plan.md) §E Sprint C, C2).
+>
+> **AMENDED again (S10.8 C2 fix round, 2026-10-08) — the year left the identity.** The key is now
+> `(title, album_artist_id, folder_key)`: a tagged song keys on (title, tag), an untagged one on
+> (title, album folder), and the album SHOWS its songs' most common non-zero year (a tie → the
+> latest), so a compilation whose tracks carry their original years, or an album with one year-less
+> bonus track, is one album (as in Apple Music). Disc folders ("Disc 1 of 2", "CD1 - Live",
+> "[CD 1]" …) and bonus folders ("Bonus Tracks", "Extras") fold into the parent; untagged songs adopt
+> the one tag their same-title folder-mates agree on; an empty, whitespace or literal "Unknown
+> Artist" (album) artist is missing; tags are trimmed + NFC-normalised once (`TrackMetadata.init`);
+> "X feat. Y" counts as X when deciding shared artist vs "Various Artists"; the cover is the album's
+> first song with art in (disc, track) order. v7 was amended in place — no real library had run it.
+> Proven by ALB-06…16 ([s10-8-sweep-ledger.md](s10-8-sweep-ledger.md), Sprint C, the C2 fix round).
 
 ---
 

@@ -448,3 +448,54 @@ groove.
   whose album changed; the artwork sweep now runs after every clean pass (it used to skip passes
   with nothing pending); the harness builds its migrators from `LibraryStore.makeMigrator` (one
   registration list, capped by version) instead of a hand-kept copy.
+
+### C2 fix round (2026-10-08)
+
+Inputs: an independent code review and a break-it pass with real experiments (A3, B1–B4, C1–C8).
+**v7 was amended in place, not a v8:** no real library has run it. A TEST library built on the
+earlier v7 must be reset (`make reset-test-library`): GRDB never re-runs an applied step.
+
+- **A3** v7 runs with foreign keys off and without GRDB's whole-database check, then checks only the
+  references into `albums` (`Schema.checkReferences`) — a stale `tracks.artwork_key` no longer fails
+  the upgrade. GRDB's switch is sticky: from v7 on, every step checks its own references.
+- **B1** a file that is not there stays pending; only a present-but-unparseable file is marked.
+- **B2** a pass's writes do no album work; the end-of-pass regroup is the authority, and
+  `schema_info.regroup_owed` (set per write, cleared by the regroup) makes a pass cut off at quit
+  regroup at the next launch. A single write regroups its own neighbourhood (old/new title in its
+  album folder). `--bi-perf 2000 10 same`: first scan + pass 50.1 s → 2.1 s, re-read 100.9 s → 1.1 s
+  (10,000 songs: 13.3 s / 5.8 s; distinct titles unchanged, 2.1 s / 1.1 s).
+- **B3** a gone row writes nothing (no `track_genres` FK error); a reconcile's pass reads only its
+  root's pending songs; the launch resume never overwrites a running `scanTask`; `removeLibraryFolder`
+  lets a running pass skip the removed rows.
+- **B4** a single write deletes the album it vacates; the Albums grid hides 0-song albums
+  (`FacetListVisibility`, as Artists and Genres).
+- **C1** identity is (title, tag) or (title, album folder); the album shows its songs' most common
+  non-zero year (a tie → the latest). v6 rows that differed only by year merge in v7, ids kept.
+- **C2** disc folders ("Disc 1 of 2", "CD1 - Live", "Disc One", "[CD 1]", "Disc #1", "CD 01" …) and
+  "Bonus" / "Bonus Tracks" / "Extras" fold into the album folder; look-alikes don't.
+- **C3** untagged songs adopt the one tag their same-title folder-mates agree on.
+- **C4** one missing rule, `AlbumGrouping.presentArtist`: empty, whitespace or a literal "Unknown
+  Artist" artist or album artist is no artist.
+- **C5** `TrackMetadata.init` trims + NFC-normalises the album title, album-artist tag and artist.
+- **C6** "X feat./ft./featuring Y" counts as X for shared vs "Various Artists"; rows keep full names.
+- **C7** mp3 `TXXX:TCMP` / `TXXX:compilation`, Vorbis `ITUNESCOMPILATION`, and `vorb/ALBUMARTIST`
+  on the AVFoundation path; `.opus`/`.oga` go FFmpeg-first. New fixtures `compilation.{mp3,ogg,opus}`.
+- **C8** the album cover is its first song with art in (disc, track) order, derived at the regroup.
+- **Also:** the search index takes a song's album text from `tracks.album_title`, so a pass that
+  defers the album still indexes it at the song's own write.
+
+**Checks.** New ALB-06…16 (A3, B1–B4, C1–C6); C7 extends ALB-02's real-file table; C8 replaces AA.
+Rules that intentionally changed in existing checks: **ALB-01** (NFC and NFD spellings are now one
+artist row: 3 → 2), **ALB-04** (a literal "Unknown Artist" tag is no artist, not a link to the
+sentinel row), **AA** (M5 "the first applied cover wins" → the deterministic cover), **T / DC1 / DC2
+/ F8** (the pass write leaves the album to the end-of-pass regroup), and the schema golden. Each new
+rule was mutation-checked: broken once, its check failed (21 mutations, all caught). One guard has no
+proof of its own: the AVFoundation-path Vorbis keys only matter when FFmpeg is absent, so breaking
+the opus routing alone is masked by them (breaking both is caught).
+
+**Deferred.** (1) Case variants of one artist are still separate artist rows, so a tagged album
+whose album artist is spelled two ways by case is two albums (S8's artist identity). (2) "Straße" vs
+"STRASSE" reads as two artists for the credit (`lowercased()` does not fold ß). (3) No fixture for the
+dedicated mp3 `TCMP` frame (the ffmpeg CLI cannot write it). (4) The app-side `scanTask` guard and
+`removeLibraryFolder` behaviour have no automated proof (the app is an executable target, which no
+test target can import).
