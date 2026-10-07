@@ -65,6 +65,25 @@ func schemaInfoVersion(_ db: Database) throws -> Int {
     try Int.fetchOne(db, sql: "SELECT version FROM schema_info WHERE id = 1;") ?? 0
 }
 
+/// The `StoreOpenRefusal` an open threw — nil when the store opened or the open threw anything else.
+func refusal(from open: () async throws -> LibraryStore) async -> StoreOpenRefusal? {
+    do {
+        _ = try await open()
+        return nil
+    } catch {
+        return error as? StoreOpenRefusal
+    }
+}
+
+/// The files beside the store at `url` that are neither the store nor its WAL sidecars — quarantined
+/// copies, backups, stray partial backups — sorted by name.
+func strayFiles(beside url: URL) throws -> [String] {
+    let stem = url.deletingPathExtension().lastPathComponent
+    let own = Set([url.lastPathComponent] + StoreQuarantine.sidecarSuffixes.map { url.lastPathComponent + $0 })
+    return try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+        .filter { $0.hasPrefix(stem) && !own.contains($0) }.sorted()
+}
+
 // MARK: - SCHEMA-1 — fresh create
 
 /// SCHEMA-1: a fresh store opens at v1 with integrity ok, WAL + foreign_keys +

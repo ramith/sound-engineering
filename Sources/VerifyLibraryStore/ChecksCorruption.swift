@@ -1,5 +1,5 @@
 // ChecksCorruption — SCHEMA-5 (corruption→quarantine+rebuild), SCHEMA-6
-// (downgrade guard), and RESTART durability. Companion to Checks.swift / main.swift.
+// (downgrade guard → refused), and RESTART durability. Companion to Checks.swift / main.swift.
 
 import Foundation
 import GRDB
@@ -112,16 +112,15 @@ func checkActorAutoRepair(number: Int, url: URL) async -> Bool {
 
 // MARK: - SCHEMA-6 — downgrade guard
 
-/// SCHEMA-6: a store written by a NEWER app quarantines + rebuilds rather than running an
-/// unknown-newer schema. GRDB's `DatabaseMigrator` records applied migrations in its
-/// `grdb_migrations` table; the store's open path calls `hasBeenSuperseded` — true when the
-/// file carries an applied migration id this build does not know. We simulate that by
-/// injecting a future migration id, then assert the open path quarantines + rebuilds fresh.
+/// SCHEMA-6: a store written by a NEWER build is REFUSED and left as it was (S10.8 C2 — it used to be
+/// quarantined + rebuilt, so an older build opened an empty library). GRDB's `DatabaseMigrator`
+/// records applied migrations in `grdb_migrations`; the open path's `hasBeenSuperseded` is true when
+/// the file carries one this build does not know. We inject a future migration id and assert the
+/// open throws `.newerVersion`, the file is byte-identical, and nothing is quarantined or backed up.
 func checkDowngradeGuard(number: Int, url: URL) async -> Bool {
-    let fileManager = FileManager.default
     do {
         // 1. Build a valid store + seed rows, then INJECT a future migration id into
-        //    grdb_migrations (an applied id the app's 2-migration migrator does not know).
+        //    grdb_migrations (an applied id the app's migrator does not know).
         do {
             let store = try await LibraryStore(url: url, appBuild: "verify")
             _ = try await store.seedFolderRow(path: "/Music/future-A")
@@ -133,32 +132,24 @@ func checkDowngradeGuard(number: Int, url: URL) async -> Bool {
                 try db.execute(sql: "INSERT INTO grdb_migrations(identifier) VALUES ('v9999-from-the-future');")
             }
         }
+        let before = try Data(contentsOf: url)
 
-        // 2. Reopening MUST recover (quarantine + rebuild to the app's schema), never run the
-        //    unknown-newer store — `hasBeenSuperseded` fires, the file is quarantined, rebuilt fresh.
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        let version = await store.schemaVersion()
-        guard version == currentSchemaVersion, try await store.integrityCheck() else {
-            printFail(number, "downgrade guard: store did not rebuild to v\(currentSchemaVersion) (got v\(version))")
+        // 2. Reopening is REFUSED — no store, never a quarantine or a rebuild — and the file is
+        //    byte-identical, so the newer build still opens it with every row.
+        guard case .newerVersion? = await refusal(from: { try await LibraryStore(url: url, appBuild: "verify") }) else {
+            printFail(number, "downgrade guard: a store from a newer build was not refused with .newerVersion")
             return false
         }
-        // The rebuilt store is fresh — the future rows were quarantined away, not carried forward.
-        let folderCount = try await store.countRows(inTable: "folders")
-        guard folderCount == 0 else {
-            printFail(number, "downgrade guard: rebuilt store unexpectedly has \(folderCount) folders")
-            return false
+        guard try Data(contentsOf: url) == before else {
+            printFail(number, "downgrade guard: the refused store's file changed"); return false
         }
-        // A quarantine artifact for this store's stem must exist (the superseded file preserved).
-        let directory = url.deletingLastPathComponent()
-        let stem = url.deletingPathExtension().lastPathComponent
-        let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
-        let quarantined = contents.filter { $0.hasPrefix(stem) && $0.contains(".corrupt-") }
-        guard !quarantined.isEmpty else {
-            printFail(number, "downgrade guard: no quarantine artifact produced for the superseded store")
-            return false
+        guard try strayFiles(beside: url).isEmpty else {
+            try printFail(number, "downgrade guard: files written beside the refused store: "
+                + "\(strayFiles(beside: url))"); return false
         }
-        printPass(number, "downgrade guard: an unknown-newer migration id → hasBeenSuperseded fires, "
-            + "the store is quarantined + rebuilt fresh to v\(version); no crash")
+        printPass(number, "downgrade guard: an unknown-newer migration id → hasBeenSuperseded fires and the "
+            + "open is REFUSED (.newerVersion): the file is byte-identical, nothing quarantined, backed up or "
+            + "rebuilt; no crash")
         return true
     } catch {
         printFail(number, "downgrade guard threw: \(error)")
@@ -267,16 +258,15 @@ func checkAdditiveMigrationPreservesData(number: Int, url: URL) async -> Bool {
     }
 }
 
-// MARK: - FOREIGN-SCHEMA — a store with app tables but no grdb_migrations records → rebuild
+// MARK: - FOREIGN-SCHEMA — a store with app tables but no grdb_migrations records → refused
 
-/// FOREIGN-SCHEMA REBUILD (regression guard for the pre-GRDB → GRDB transition): a pre-existing
-/// store whose app tables are present but NOT recorded in GRDB's `grdb_migrations` (a store from
-/// the prior, `user_version`-based migration scheme). GRDB's migrator would re-run `v1-create-all`
-/// and collide with the existing tables (`CREATE TABLE … already exists`) — the open path must
-/// treat that as a rebuildable-cache mismatch → quarantine + rebuild, NEVER a failed open (which
-/// bricked "add music folders" on an upgraded install).
-func checkForeignSchemaRebuild(number: Int, url: URL) async -> Bool {
-    let fileManager = FileManager.default
+/// FOREIGN-SCHEMA REFUSED: a pre-existing store whose app tables are present but NOT recorded in
+/// GRDB's `grdb_migrations` (a store from the prior, `user_version`-based migration scheme). GRDB's
+/// migrator re-runs `v1-create-all` and collides with the existing tables (`CREATE TABLE … already
+/// exists`). That used to quarantine + rebuild; since S10.8 C2 only real corruption does, so this — a
+/// real migration failure on an intact file — is REFUSED (`.openFailed`): the file byte-identical,
+/// nothing quarantined.
+func checkForeignSchemaRefused(number: Int, url: URL) async -> Bool {
     do {
         // 1. Build a valid store + seed a row, then ERASE grdb_migrations so the app tables exist
         //    with NO recorded migrations — the exact shape a pre-GRDB store presents to the migrator.
@@ -288,33 +278,26 @@ func checkForeignSchemaRebuild(number: Int, url: URL) async -> Bool {
             let tamper = try DatabaseQueue(path: url.path)
             try await tamper.write { db in try db.execute(sql: "DELETE FROM grdb_migrations;") }
         }
+        let before = try Data(contentsOf: url)
 
-        // 2. Reopening MUST quarantine + rebuild fresh — migrate re-runs v1, the CREATE collides,
-        //    and the open path recovers (rather than propagating the SQLITE_ERROR and failing open).
-        let store = try await LibraryStore(url: url, appBuild: "verify")
-        let version = await store.schemaVersion()
-        guard version == currentSchemaVersion, try await store.integrityCheck() else {
-            printFail(number, "foreign-schema rebuild: store did not rebuild to v\(currentSchemaVersion) "
-                + "(got v\(version))"); return false
-        }
-        let folderCount = try await store.countRows(inTable: "folders")
-        guard folderCount == 0 else {
-            printFail(number, "foreign-schema rebuild: rebuilt store unexpectedly has \(folderCount) folders")
+        // 2. Reopening is REFUSED — migrate re-runs v1, the CREATE collides and rolls back.
+        guard case .openFailed? = await refusal(from: { try await LibraryStore(url: url, appBuild: "verify") }) else {
+            printFail(number, "foreign-schema: the colliding migration was not refused with .openFailed")
             return false
         }
-        let directory = url.deletingLastPathComponent()
-        let stem = url.deletingPathExtension().lastPathComponent
-        let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
-        guard contents.contains(where: { $0.hasPrefix(stem) && $0.contains(".corrupt-") }) else {
-            printFail(number, "foreign-schema rebuild: no quarantine artifact produced for the foreign store")
-            return false
+        guard try Data(contentsOf: url) == before else {
+            printFail(number, "foreign-schema: the refused store's file changed"); return false
         }
-        printPass(number, "foreign-schema rebuild: a store with app tables but NO grdb_migrations records "
-            + "(a pre-GRDB / foreign-migration file) is quarantined + rebuilt fresh to v\(version), "
-            + "never a failed open")
+        guard try strayFiles(beside: url).isEmpty else {
+            try printFail(number, "foreign-schema: files written beside the refused store: "
+                + "\(strayFiles(beside: url))"); return false
+        }
+        printPass(number, "foreign-schema refused: a store with app tables but NO grdb_migrations records "
+            + "(a pre-GRDB / foreign-migration file) is refused (.openFailed) — byte-identical, nothing "
+            + "quarantined")
         return true
     } catch {
-        printFail(number, "foreign-schema rebuild threw: \(error)")
+        printFail(number, "foreign-schema threw: \(error)")
         return false
     }
 }
