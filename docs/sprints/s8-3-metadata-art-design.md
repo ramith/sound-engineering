@@ -51,6 +51,11 @@ public struct MetadataExtractor: MetadataExtracting { public init() {} /* … */
 > ALBUMARTIST → `album_artist`, TRACKNUMBER → `track`, DISCNUMBER → `disc` — so the FFmpeg path now
 > reads the generic key first. Reading only `albumartist` had dropped every FLAC album artist. C2 also
 > reads the compilation flag (`compilation`; AVFoundation: `cpil`, `id3/TCMP`, `vorb/COMPILATION`).
+> **Extended (S10.8 C2 fix round, 2026-10-08):** also an mp3 `TXXX` frame described `TCMP` or
+> `compilation` and the Vorbis `ITUNESCOMPILATION` comment (FFmpeg keys `tcmp` / `itunescompilation`;
+> AVFoundation `id3/TXXX` by its description, `vorb/ITUNESCOMPILATION`), and AVFoundation reads
+> `vorb/ALBUMARTIST`. `opus` and `oga` now route FFmpeg-first like `flac`/`ogg` (AVFoundation read
+> their core tags, so the FFmpeg cross-fill never ran and the album artist was never read).
 
 **Trigger (extension-routed + cross-fill):**
 - `flac`, `ogg` → **FFmpeg first**; if FFmpeg absent, best-effort AVFoundation (may still recover duration/format).
@@ -93,6 +98,11 @@ The pass must (a) extract only tracks that need it and (b) be a no-op on re-run,
   `metadata_scanned INTEGER NOT NULL DEFAULT 0` on `tracks` (stores the **scan generation** attempted at, reusing `beginScanGeneration()` — composes with re-scan) + `CREATE INDEX idx_tracks_meta_scanned ON tracks(metadata_scanned)`.
 - **`upsertOne` conflict SET resets `metadata_scanned = 0` ONLY on the *modified* branch** (`+DAO.swift:292` no-bump predicate), so a retagged file re-extracts; an unchanged upsert leaves it (idempotency preserved).
 - DAO: `tracksNeedingMetadata(limit:) -> [Int64]` (`metadata_scanned == 0`, FS-independent) + `markMetadataScanned(trackID:generation:)`. Every attempt — success, no-tags, or vanished — ends with `markMetadataScanned` ⇒ re-run finds an empty set ⇒ true no-op.
+  > **CORRECTED (S10.8 C2 fix round, 2026-10-08):** not "vanished". A file that is NOT there (moved
+  > away, volume unmounted) stays PENDING: marking it spent its one re-read on nothing, and after a
+  > remount the unchanged files were never read again (the break-it lost 3,796 FLAC album artists and
+  > 40 compilation flags that way). Only a file that is there but can't be parsed is marked
+  > (anti-loop). `tracksNeedingMetadata(limit:inFolder:)` also scopes a live reconcile's pass to its root.
 
 ## 6. MetadataScanner (the background pass)
 
@@ -103,6 +113,13 @@ New `Sources/LibraryScan/MetadataScanner.swift` + `MetadataProgress` (mirrors `S
 - `withThrowingTaskGroup`, bounded to `min(activeProcessorCount, 6)` (each child does ImageIO + file I/O — don't thrash a 4-core M1): each child `try Task.checkCancellation()`, resolves the track `url`, runs the extractor **and** `ArtworkCache.store` (hashing/ImageIO/file-write all off-actor), returns a Sendable `(trackID, TrackMetadata, ArtworkRef?)`.
 - Driver applies results **serially on GRDB's writer, ONE transaction per track** via a new `applyExtractedResult(trackID:meta:artwork:generation:)` that folds `applyMetadata` + (if art) `linkArtwork` + `attachArtwork` + `markMetadataScanned` into a SINGLE `connection.transaction` (VET SHOULD-FIX): "attempt recorded" then commits ATOMICALLY with the write, so an interrupt between them can't leave a written-but-unmarked row (which would needlessly re-extract next pass). Also halves actor hops per track (helps the S9-read-starvation goal, per the `batchSize=256` rationale, `LibraryScanner.swift:44`).
 - **No-tags** → still `markMetadataScanned` (anti-loop). **Vanished** → mark scanned, no crash (diverged row legal; reads don't assert existence). **Cancellation** → applied rows valid + marked; **orphan-sweep runs ONLY on non-cancelled completion** (no wrongful file delete on a partial view).
+  > **AMENDED (S10.8 C2 fix round, 2026-10-08):** a vanished file now stays pending (see §5), and a
+  > song whose ROW is gone (its folder removed mid-pass) is skipped — its write would have failed on
+  > the `track_genres` foreign key. The per-track write does NO album work: it records
+  > `schema_info.regroup_owed`, and the end-of-pass regroup (`refreshDerivedFacets`) assigns albums,
+  > their years and covers and clears it; a pass cut off before that leaves it set, and the next launch
+  > runs the pass for it. (Regrouping every same-title song per write made a pass O(k²) in a title's
+  > song count — 10k "Unknown Album" songs took over an hour.)
 - **Trigger:** at the tail of `performScan` (`AudioViewModel+LibraryScan.swift:67`), on the SAME `Task(priority:.utility)`, reusing the scan's `generation`. Driven by the store query (not `result.trackIDs`), so it also finishes any prior interrupted pass.
 
 ```swift
@@ -116,6 +133,9 @@ public func run(generation: Int64, into store: LibraryStore, cache: ArtworkCache
 **VET-resolved (§11-c): drop the incremental `ref_count` counter; orphan-sweep purely by reachability.** The `delete`/`sweepOrphans`/`removeRoot` paths null `artwork_key` via the FK without touching a counter, so an incrementally-maintained integer is already unreliable — maintaining it is dead weight and a correctness trap (a future delete path that forgets to decrement silently desyncs it). The `artwork.ref_count` column stays (no schema delta) but is UNUSED.
 
 - `attachArtwork(contentHash:toTrack:)` — sets `tracks.artwork_key` and, when unset, the album cover: `UPDATE albums SET artwork_key=? WHERE id=? AND artwork_key IS NULL` (SQL guard, not read-then-write). No counter writes. Idempotent (re-attaching the same hash is a no-op UPDATE). Runs in the per-track txn (§6).
+  > **AMENDED (S10.8 C2 fix round, 2026-10-08):** it no longer sets the album cover — "the first
+  > applied track's art" made the cover depend on read order. The regroup derives it: the album's
+  > first song with art in (disc, track) order (`AlbumGrouping.display`).
 - `sweepOrphanArtwork() -> [(contentHash, cachePath)]` — authoritative by reachability: delete `artwork` rows `WHERE content_hash NOT IN (SELECT artwork_key FROM tracks WHERE artwork_key IS NOT NULL) AND content_hash NOT IN (SELECT artwork_key FROM albums WHERE artwork_key IS NOT NULL)` (the `IS NOT NULL` filters avoid the SQL `NOT IN (…,NULL)` never-true trap). Runs once at end-of-pass (non-cancelled only); returns swept `(hash, path)` so the caller does `cache.removeFiles(...)`. No `detachArtwork` needed — a re-link just overwrites `artwork_key` and the old hash falls out of reachability, swept on the next sweep.
 
 ## 8. VM seam + DAO additions
