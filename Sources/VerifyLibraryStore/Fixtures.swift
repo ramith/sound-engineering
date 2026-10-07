@@ -133,9 +133,18 @@ func seedFixtureLibrary(_ store: LibraryStore) async throws -> FixtureExpectatio
 }
 
 /// A fixture track at its path — what `AlbumGrouping` needs to group an untagged album by folder.
-private struct PlacedTrack {
+private struct PlacedTrack: AlbumGroupingSong {
     let path: String
     let def: FixtureTrack
+
+    /// The album inputs as the store keeps them (normalised the way `TrackMetadata.init` does).
+    var albumTitle: String? {
+        AlbumGrouping.normalizedTag(def.album)
+    }
+
+    var albumArtistTag: String? {
+        AlbumGrouping.presentArtist(def.albumArtist)
+    }
 }
 
 /// Place one root's fixture tracks at `root/<fileName>` (the paths `seed` writes).
@@ -351,14 +360,13 @@ private func deriveFacetSets(
     )
 }
 
-/// Every album the fixture implies, keyed by `AlbumGrouping.key`, with the artist it is credited
-/// to — the album-artist tag, else `AlbumGrouping.derivedArtist` over the songs' artist NAMES
-/// (nil = the id-0 sentinel, which no artist read lists). The store's own rule, not a copy of it.
+/// Every album the fixture implies, keyed by `AlbumGrouping.keys(for:)`, with the artist it is
+/// credited to — the album-artist tag, else `AlbumGrouping.derivedArtist` over the songs' artist
+/// NAMES (nil = the id-0 sentinel, which no artist read lists). The store's own rule, not a copy.
 private func expectedAlbumCredits(_ placed: [PlacedTrack]) -> [AlbumGroupKey: String?] {
     var members: [AlbumGroupKey: [FixtureTrack]] = [:]
-    for track in placed {
-        if let key = AlbumGrouping.key(albumTitle: track.def.album, albumArtistTag: track.def.albumArtist,
-                                       year: track.def.year, trackPath: track.path) {
+    for (track, key) in zip(placed, AlbumGrouping.keys(for: placed)) {
+        if let key {
             members[key, default: []].append(track.def)
         }
     }

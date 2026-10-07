@@ -43,6 +43,7 @@ func checkLibraryTrackFullDecode(number: Int, url: URL) async -> Bool {
                                  pixelSize: .zero, byteSize: 4096),
             generation: gen
         )
+        try await store.refreshDerivedFacets() // the end-of-pass regroup assigns the album
         guard let track = try await store.track(id: trackID) else {
             printFail(number, "DC1: track(id:) returned nil after enrich"); return false
         }
@@ -103,6 +104,7 @@ func checkArtistFacetArtworkKey(number: Int, url: URL) async -> Bool {
                                  pixelSize: .zero, byteSize: 2048),
             generation: gen
         )
+        try await store.refreshDerivedFacets() // the end-of-pass regroup assigns the album + cover
         let artists = try await store.artists()
         guard let artist = artists.first(where: { $0.name == "Cover Artist" }) else {
             printFail(number, "DC2: artist 'Cover Artist' not listed"); return false

@@ -156,7 +156,9 @@ func checkMetadataPassCancellation(number: Int, url: URL) async -> Bool {
             printFail(number, "m9: orphan seed failed"); return false
         }
         // Park after the first apply, cancel, release → the pass must throw and skip the sweep.
-        guard try await cancelPassAfterFirstApply(store, cache: cache, gen: gen, number: number) else { return false }
+        guard try await cancelPassAfterFirstApply(
+            store, cache: cache, gen: gen, extractor: StubExtractor(withArt: true, emptyTags: false), number: number
+        ) else { return false }
         // Sweep skipped ⇒ the orphan SURVIVES (artwork = {m9orphan, t0's shared art} = 2), and t0
         // was enriched + marked (< 4 still pending).
         guard try await store.countRows(inTable: "artwork") == 2 else {
@@ -183,17 +185,17 @@ func checkMetadataPassCancellation(number: Int, url: URL) async -> Bool {
 
 /// Run the pass, park it in its progress closure after the FIRST apply, cancel while parked,
 /// then release so the drain loop's next `checkCancellation()` throws. Returns true iff the
-/// pass threw `CancellationError`. Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly.
-private func cancelPassAfterFirstApply(
-    _ store: LibraryStore, cache: ArtworkCache, gen: Int64, number: Int
+/// pass threw `CancellationError`. Mirrors ChecksScanEdge.cancelAfterFirstBatch exactly. Shared
+/// with ALB-10 (a pass cut off at quit leaves no zero-song album).
+func cancelPassAfterFirstApply(
+    _ store: LibraryStore, cache: ArtworkCache, gen: Int64, extractor: some MetadataExtracting, number: Int
 ) async throws -> Bool {
     let firstApply = OneShotLatch()
     let proceed = DispatchSemaphore(value: 0) // released after cancel; wait()ed in the SYNC closure only
     let applied = AsyncStream<Void>.makeStream()
     let task = Task {
         try await MetadataScanner().run(
-            generation: gen, into: store, cache: cache,
-            extractor: StubExtractor(withArt: true, emptyTags: false),
+            generation: gen, into: store, cache: cache, extractor: extractor,
             progress: { _ in
                 firstApply.runOnce {
                     applied.continuation.yield(())
