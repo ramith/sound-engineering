@@ -256,7 +256,8 @@ final class LibraryBrowseModel {
     // MARK: - Album loading
 
     /// Load the album grid. Sets `firstRun` when no roots are registered, `empty` when roots
-    /// exist but no albums yet (mid-scan / empty folders), `failed` on error.
+    /// exist but no albums yet (mid-scan / empty folders), `failed` on error. A 0-song album is
+    /// never shown (`FacetListVisibility`, as Artists and Genres — S10.8 C2 fix round, B4).
     func loadAlbums() async {
         guard let store else {
             albumsState = .loading // store still building; the grid reloads on `isStoreReady`
@@ -270,6 +271,7 @@ final class LibraryBrowseModel {
         } // keep showing cached data while refreshing
         do {
             let loaded = try await store.albums(sortedBy: albumSort)
+                .filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
             guard epoch == loadEpoch else { return } // a newer load superseded this one
             albums = loaded
             if loaded.isEmpty {
