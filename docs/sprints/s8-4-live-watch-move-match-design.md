@@ -142,6 +142,13 @@ Reachability sweep mirroring `sweepOrphanArtwork` (not a ref-counter — counter
 
 Albums-before-artists so a dead album's references are gone before the artist reachability check. Returns `(albums:Int, artists:Int, genres:Int)` for logging/verification. **Run it BEFORE `sweepOrphanArtwork`** (deleting an album nulls its `artwork_key`, orphaning art the artwork sweep then reclaims). It is **library-wide reachability** (NOT folder-scoped — a facet used by a track in another folder is kept). Gate it on churn (`orphansSwept>0 || metadataApplied>0`) to avoid three anti-joins on every steady-state pass → **Open Decision D6** (recommend gated). GRDB's single writer serializes it against the metadata resolvers; cross-instance it's write-locked by `BEGIN IMMEDIATE` and idempotently recoverable — same posture as the artwork sweep.
 
+> **AMENDED (S10.8 C2, 2026-10-07):** the app no longer calls this sweep after the pass. It now runs
+> inside `LibraryStore.refreshDerivedFacets()` — regroup every song's album (C2), then this sweep, in
+> one write — which `MetadataScanner.run` calls at the end of every clean pass **before**
+> `sweepOrphanArtwork`, so the order asked for above finally holds (art a reaped album held is
+> reclaimed in the same pass). It runs even when no song was pending, since a scan that only deleted
+> or moved files still changes albums. `removeRoot` calls the locked form of the same step.
+
 **Also call it from `removeRoot` (red-team F5 + architect SF-c).** `removeRoot` deletes a folder's tracks *outside* the scan/reconcile path (`LibraryStore+DAO.swift:101`), so it can leave orphan facets no later reconcile is guaranteed to clean. It should sweep facets+artwork after its delete — **but** `removeRoot` already wraps its work in one `connection.transaction {}`, and `sweepOrphanFacets()` opens its own `BEGIN IMMEDIATE`; SQLite can't nest transactions. So provide a no-txn **`sweepOrphanFacetsLocked()`** (mirroring `applyMetadataLocked`/`attachArtworkLocked`) and call the *locked* form inside `removeRoot`'s existing transaction.
 
 ---

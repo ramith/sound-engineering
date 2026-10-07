@@ -163,6 +163,22 @@ CREATE TABLE artwork (                    -- BLOBS LIVE IN THE ON-DISK CACHE (S8
 
 Notes: `PRAGMA foreign_keys=ON` + `busy_timeout` + `journal_mode=WAL` at every open. **M5** `folder_id` nullable — architect-verified safe: the orphan sweep is folder-scoped (`IN(:roots)` excludes NULL → loose tracks never swept) and `removeRoot` cascade only hits that root's tracks (loose tracks survive). **M1** album key is now total (non-NULL defaults + query-then-insert resolution) so untagged albums don't fragment the S9 grid. Metadata columns present ⇒ **no S8.1→S8.3 migration**.
 
+> **AMENDED (S10.8 C2, 2026-10-07) — the M1 album identity.** The M1 key above,
+> `UNIQUE(title, album_artist_id, year)`, is now `(title, album_artist_id, year, folder_key)` (schema
+> v7 rebuilds the derived `albums` table with ids kept — `Schema+AlbumArtists.swift`; the rule is the
+> pure `AlbumGrouping`). An album **with** an album-artist tag still keys on (title, tag, year), in any
+> folder (`folder_key = ''`). An album **without** one keys on (title, year, album folder — a
+> `CD 1`/`Disc 2` subfolder folds into its parent) and is credited to its songs' shared artist, or
+> to "Various Artists" when any song carries the compilation flag or the songs have two or more
+> artists (founder decision 12), or to the id-0 sentinel when no song has an artist. **Why:** under M1
+> every untagged album read "Unknown Artist", and different untagged albums with one title (two
+> "Greatest Hits" folders) merged into one (glass-sweep plan §I). **What survives:** the key is still
+> TOTAL (no NULL component); two untagged same-title songs in ONE folder still collapse to one album
+> (check B-M1); the sentinel row stays, and its name is now the one missing-artist string. The songs'
+> raw album tags (`album_title`, `album_artist_tag`, `compilation`) are stored on `tracks` so albums
+> can be regrouped without re-reading files. Proven by VerifyLibraryStore ALB-01…05
+> ([s10-8-glass-sweep-plan.md](s10-8-glass-sweep-plan.md) §E Sprint C, C2).
+
 ---
 
 ## 4. Data-access layer — a `LibraryStore` actor

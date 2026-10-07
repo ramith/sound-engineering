@@ -432,3 +432,19 @@ groove.
   rule bans the literal anywhere else.
 - **Stop check: none hit.** Decision 12 is the rule above; no user data is written; S8's M1 key
   stays total (two untagged same-title albums in ONE folder still collapse) — amended, not broken.
+
+### C2 build record (2026-10-07)
+
+- **Folded in from C1's stress scan.** (1) FFmpeg normalises Vorbis `ALBUMARTIST` to `album_artist`,
+  which the FFmpeg path never read, so every tagged FLAC album was credited "Unknown Artist" — fixed
+  (generic keys lead the chains; ALB-02 reads the album artist from the real `fixture.flac`).
+  (2) Same-title albums merging across folders: ALB-05. (3) Spelling variants: the credit compares
+  artist names NFC-normalised and case-folded, so "Zoë" (NFC / NFD) and "zoë" on one album are one
+  artist, not "Various Artists" (ALB-01).
+- **Finding, not fixed (artist-row identity is S8's):** NFC/NFD and case variants of one artist name
+  are still separate artist rows (C1 saw 2 for "Zoë Ångström", 3 for "Neon Harbor"), so the Artists
+  list shows them twice and a tagged album-artist spelled two ways is two albums.
+- **Beyond the plan's letter:** the end-of-pass regroup is whole-library but writes only the songs
+  whose album changed; the artwork sweep now runs after every clean pass (it used to skip passes
+  with nothing pending); the harness builds its migrators from `LibraryStore.makeMigrator` (one
+  registration list, capped by version) instead of a hand-kept copy.
