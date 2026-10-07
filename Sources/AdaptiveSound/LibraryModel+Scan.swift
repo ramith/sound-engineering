@@ -54,11 +54,33 @@ extension LibraryModel {
         }
         #if DEBUG
             // Test library (`-ASTestLibrary <folder>`, Debug/TestLibrary.swift): scan its music folder
-            // on every launch. An exact root re-adds as a no-op, so a re-run only picks up changes.
+            // on every launch. An exact root re-adds as a no-op, so a re-run only picks up changes —
+            // and the scan's own metadata pass reads every pending song, so it stands in for the
+            // launch re-read below (no start-then-cancel).
             if let folder = location.testMusicFolder {
                 scanFolderIntoLibrary(folder)
+                return
             }
         #endif
+        if let store {
+            await resumePendingMetadata(store)
+        }
+    }
+
+    /// Read the tags of songs left pending at launch (S10.8 C2): the one-time full re-read a
+    /// derived-data version bump queues (`LibraryStore.derivedDataRefreshed`), or a pass cut off
+    /// at quit. Without this they would wait for the next folder change. Runs on `scanTask`, so
+    /// adding a folder (whose own pass reads every pending song) or quitting cancels it. The
+    /// sidebar shows "Reading tags…" while it runs; the Albums grid reloads when it ends.
+    private func resumePendingMetadata(_ store: LibraryStore) async {
+        guard let pending = try? await store.tracksNeedingMetadata(limit: 1), !pending.isEmpty,
+              let generation = try? await store.beginScanGeneration() else { return }
+        let reason = store.derivedDataRefreshed
+            ? "full re-read for derived data v\(LibraryStore.derivedDataVersion)" : "resuming an interrupted pass"
+        logUX("libraryStore: reading pending tags at launch (\(reason))")
+        scanTask = Task(priority: .utility) { [weak self] in
+            await self?.runMetadataPass(store, generation: generation)
+        }
     }
 
     /// Scan `url` INTO the persistent library store (the browse UI's source of truth). Cancels
@@ -153,13 +175,9 @@ extension LibraryModel {
             publishScanResult(result)
             // After the structural scan (NOT inline — locked decision): enrich new/changed
             // rows with tags + art, reusing this scan's generation. Runs on the same
-            // `scanTask`, so a re-trigger/teardown cancels the pass too.
+            // `scanTask`, so a re-trigger/teardown cancels the pass too. The pass ends by
+            // regrouping albums + reaping orphan facets (SF-2, S10.8 C2) — no separate sweep here.
             await runMetadataPass(store, generation: result.generation)
-            // Post-churn facet cleanup (SF-2): reap albums/artists/genres a re-scan's deletes
-            // orphaned. Non-cancelled only (matches the artwork-sweep posture).
-            if !Task.isCancelled {
-                _ = try? await store.sweepOrphanFacets()
-            }
         } catch is CancellationError {
             await MainActor.run { [weak self] in self?.scanProgress = nil }
         } catch let unreachable as RootUnreachableError {
