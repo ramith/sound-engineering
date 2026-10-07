@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// Mounted via `.background { }` (never as a layout sibling — a ~760pt ellipse would inflate
 /// the tab's ideal size). Decoration contract: hit-transparent, invisible to accessibility,
-/// static, painted in dark (and in light only under the pale-glow backdrop, S10.8 B2b), and
+/// static, painted in both appearances (light: the pale-glow pastels, S10.8 B2b), and
 /// suppressed under Reduce Transparency / Increase Contrast — all via the pure
 /// `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
@@ -31,7 +31,7 @@ struct GlowField: View {
     var body: some View {
         // The window base always paints (AppShell's background is the same token; painting it
         // here too keeps the field self-contained wherever it's mounted).
-        Rectangle().fill(DesignSystem.Color.window)
+        DesignSystem.Color.window
             .overlay {
                 GlowFieldGate { appearance in
                     GeometryReader { geo in

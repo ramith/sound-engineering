@@ -29,7 +29,7 @@ struct PlayingRowAuditTests {
                 }
             }
         }
-        // Light: glows are suppressed — the card composites over the plain window.
+        // Light: the card over the plain window (over the pale light glow: LightGlowAuditTests).
         let lightCard = Palette.rowNowPlaying.light.over(Palette.window.light)
         for (name, text) in [("accentTitle", Palette.accentTitle),
                              ("accentText", Palette.accentText)] {
