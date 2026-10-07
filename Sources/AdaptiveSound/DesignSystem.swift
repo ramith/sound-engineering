@@ -77,7 +77,9 @@ enum DesignSystem {
         /// first pass (gray base, white raised cards, darker inset). (`panel` had one
         /// consumer, the footer band background, which S10.8 PR G replaced with the
         /// styled-glass strata; the Kit `Palette.panel` token stays for the R4 audit.)
-        static let window = from(Palette.window)
+        /// `window` is a `ShapeStyle`, not a `Color`, while the light backdrop is switchable
+        /// (S10.8 B2b — `WindowBaseStyle` reads the live pick from the environment).
+        static let window = WindowBaseStyle()
         static let card = from(Palette.card)
         static let hairline = from(Palette.hairline)
 

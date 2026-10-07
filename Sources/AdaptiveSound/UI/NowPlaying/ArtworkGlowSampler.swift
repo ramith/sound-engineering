@@ -6,8 +6,9 @@ import Observation
 
 /// Extracts the current artwork's dominant colors and publishes the CLAMPED per-slot glow
 /// palette `GlowField` renders (design §3.3): downsample → pixel votes → the Kit's
-/// `SampledGlow` selection + clamp — every published color is audit-admissible by
-/// construction (R4-GLOW-D8 proves the clamp box's corner, so no cover can break contrast).
+/// `SampledGlow` selection + clamp — every published pair is audit-admissible by
+/// construction (R4-GLOW-D8 proves the dark clamp box's corner, R4-GLOW-LIGHT the light
+/// pastel lift, so no cover can break contrast in either appearance).
 /// Per-track palette cache (the `ArtworkThumbnailStore` pattern); a `nil` palette — missing
 /// art, unreadable art, or the token-guarded resolve gap right after a track change — means
 /// the brand colors.
@@ -15,10 +16,10 @@ import Observation
 @Observable
 final class ArtworkGlowSampler {
     /// Per-slot overrides for `GlowFieldSpec.glows`; a nil slot (or nil array) keeps brand.
-    private(set) var palette: [RGBAColor?]?
+    private(set) var palette: [AppearancePair?]?
 
     /// Palette cache keyed by track identity; insertion-ordered for cheap FIFO eviction.
-    private var cache: [String: [RGBAColor?]] = [:]
+    private var cache: [String: [AppearancePair?]] = [:]
     private var cacheOrder: [String] = []
     private let cacheLimit = 64
 
@@ -46,7 +47,7 @@ final class ArtworkGlowSampler {
     }
 
     /// Downsample to a tiny sRGB thumb and run the pure Kit pipeline over its pixels.
-    private static func samplePalette(from artwork: NSImage) -> [RGBAColor?] {
+    private static func samplePalette(from artwork: NSImage) -> [AppearancePair?] {
         let side = thumbSide
         guard let cgImage = artwork.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let context = CGContext(
@@ -75,13 +76,13 @@ final class ArtworkGlowSampler {
 
         let dominant = SampledGlow.dominantColors(samples: samples)
         return GlowFieldSpec.glows.indices.map { slot in
-            slot < dominant.count ? SampledGlow.clampedSampledColor(dominant[slot], slot: slot) : nil
+            slot < dominant.count ? SampledGlow.clampedSampledPair(dominant[slot], slot: slot) : nil
         }
     }
 
     /// All-slots-brand (used for unreadable artwork so the failure is cached too — retrying
     /// a broken image every track revisit would be waste).
-    private static var brandOnly: [RGBAColor?] {
+    private static var brandOnly: [AppearancePair?] {
         GlowFieldSpec.glows.indices.map { _ in nil }
     }
 }
