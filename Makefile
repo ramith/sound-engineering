@@ -1,4 +1,4 @@
-.PHONY: build run release run-release clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
+.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
 
 build:
 	swift build -c debug -j 8
@@ -53,6 +53,20 @@ release:
 
 run-release: release
 	@open "$$(cat /tmp/adaptive-sound-release-app-path)"
+
+# Picture sheets (S10.8 A4, debug only): render every screen × appearance × size from FIXTURE
+# models into $(SHEETS_DIR)/<tab>-<appearance>-<w>x<h>.png and exit non-zero if any sheet failed.
+# No library store, audio device, UserDefaults.standard or single-instance lock is touched, so it is
+# safe beside a running app. Narrow with e.g.
+#   make sheets SHEETS_ARGS='-ASSheetTabs np,library -ASSheetAppearances dark,light'
+# Sheets are overwritten in place, never cleared. The binary comes from `--show-bin-path` (like
+# `release`), NOT `build`'s find|head: that can pick a RELEASE binary, which has no renderer and would
+# launch the real app instead.
+SHEETS_DIR ?= .build/sheets
+sheets:
+	swift build -c debug -j 8
+	@BIN="$$(swift build -c debug --show-bin-path)"; \
+		"$$BIN/AdaptiveSound" -ASRenderSheets "$(SHEETS_DIR)" $(SHEETS_ARGS)
 
 clean:
 	rm -rf .build
@@ -171,6 +185,7 @@ help:
 	@echo "  make xcode  - Open in Xcode IDE (RECOMMENDED for development)"
 	@echo "  make build  - Build + bundle app (debug)"
 	@echo "  make run    - Build and launch app (debug)"
+	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets"
 	@echo "  make release     - Optimized release build + bundle (.build/release/AdaptiveSound.app, unsigned)"
 	@echo "  make run-release - Release build + launch"
 	@echo "  make clean  - Remove build artifacts"
