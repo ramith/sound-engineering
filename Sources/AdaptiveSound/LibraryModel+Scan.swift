@@ -52,6 +52,13 @@ extension LibraryModel {
         for root in networkRoots {
             scheduleReconcile(folderID: root.folderID, root: root.url)
         }
+        #if DEBUG
+            // Test library (`-ASTestLibrary <folder>`, Debug/TestLibrary.swift): scan its music folder
+            // on every launch. An exact root re-adds as a no-op, so a re-run only picks up changes.
+            if let folder = location.testMusicFolder {
+                scanFolderIntoLibrary(folder)
+            }
+        #endif
     }
 
     /// Scan `url` INTO the persistent library store (the browse UI's source of truth). Cancels

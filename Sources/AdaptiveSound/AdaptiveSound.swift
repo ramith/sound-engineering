@@ -33,12 +33,13 @@ struct AdaptiveSound: App {
             // out) a running copy of the app. Without the flag this returns at once.
             SheetRenderer.runIfRequested()
         #endif
-        // Where everything persists, decided once, then injected — nothing below picks a path or
-        // defaults of its own.
+        // Where everything persists, decided once (a debug `-ASTestLibrary` launch swaps in the
+        // isolated test library), then injected — nothing below picks a path or defaults of its own.
         let location = AppDataLocation.atLaunch()
         dataLocation = location
         // Single instance only: if another copy already holds the lock, raise it and exit before
         // building any @State or touching the audio engine (no two engines fighting one device).
+        // The lock lives in the location, so the test library runs beside the user's own copy.
         guard SingleInstanceGuard.acquire(lockFile: location.instanceLockURL) else { exit(0) }
 
         // Build the model peers once and wire the two edges between the audio VM and the library
