@@ -402,3 +402,33 @@ groove.
    batch merges so one gate covers several.
 5. **Honest labels.** An agent labelled a change "founder decision" before the founder had
    decided; caught and relabelled. Agents never record a decision the founder hasn't made.
+
+## Sprint C — album artists, and the test library
+
+### C2 design check (2026-10-07)
+
+- **Compilation tag.** AVFoundation reads `itsk/cpil`, `id3/TCMP` and `vorb/COMPILATION`; FFmpeg
+  reads its `compilation` key (Vorbis, mp4 `cpil` and ID3 `TCMP` all land there). One parser
+  (`1`/`true`/`yes`); stored per song. Checked on generated m4a, mp3 and flac files.
+- **Grouping** — one pure `AlbumGrouping`, used by the store and the harness. With an album-artist
+  tag: title + tag + year, any folder (as today). Without: title + year + **album folder** (the
+  file's folder; a `CD 1` / `Disc 2` subfolder folds into its parent, so a 2-disc set stays one).
+- **Artist** (no tag): "Various Artists" if any song has the compilation flag or the songs have two
+  or more artists (decision 12); else their one shared artist; else Unknown Artist (sentinel).
+- **Where it runs.** Each tag write regroups the albums sharing the song's old and new title, so
+  every commit is consistent. After every scan or reconcile, `MetadataScanner` regroups the whole
+  library (writing only songs whose album changed: the affected albums), sweeps orphan albums,
+  then artwork. `removeRoot` does the same in its transaction.
+- **Schema v7, appended.** `tracks` + `album_title`, `album_artist_tag`, `compilation`, filled from
+  today's album rows; `schema_info.derived_version`; `albums` + `folder_key` ('' = tagged) with the
+  unique key widened to (title, artist, year, folder_key). Widening a table UNIQUE needs SQLite's
+  table rebuild, the data-preserving, append-only form `makeMigrator` documents: `albums` is
+  derived, its ids are copied, foreign keys are off during the migration, nothing is dropped.
+- **Version bump.** `derivedDataVersion = 1`: on open, a lower stored value resets
+  `metadata_scanned` on every song in one write; at launch the app runs the metadata pass when
+  songs are pending ("Reading tags…"). Kept: playlists and entries (never touched), song ids (rows
+  updated in place), play count, loved, rating, last played, frecency (no write names them).
+- **One missing-artist string:** `unknownArtistName`, also the sentinel row's name; a semgrep
+  rule bans the literal anywhere else.
+- **Stop check: none hit.** Decision 12 is the rule above; no user data is written; S8's M1 key
+  stays total (two untagged same-title albums in ONE folder still collapse) — amended, not broken.
