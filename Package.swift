@@ -43,6 +43,10 @@ let package = Package(
                 .unsafeFlags([
                     "-import-objc-header",
                     "Sources/AudioDSP/include/DeviceBridge.h",
+                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
+                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
+                    // header is tiny, so the PCH bought no build time — only a warning.
+                    "-disable-bridging-pch",
                 ]),
                 // Opt the Swift Accelerate overlay into the new-LAPACK CBLAS headers so the
                 // `cblas_scopy` deprecation clears here too (Spectrum* + ReferenceTone). The
@@ -64,6 +68,10 @@ let package = Package(
                 .unsafeFlags([
                     "-import-objc-header",
                     "Sources/AudioDSP/include/DeviceBridge.h",
+                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
+                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
+                    // header is tiny, so the PCH bought no build time — only a warning.
+                    "-disable-bridging-pch",
                 ]),
             ]
         ),
@@ -260,6 +268,10 @@ let package = Package(
                 .unsafeFlags([
                     "-import-objc-header",
                     "Sources/AudioDSPTestBridge/include/EQTestBridge.h",
+                    // No bridging PCH: the driver precompiles it into a temp dir it then reports
+                    // missing ("<Bridge>.pch: No such file or directory" on every build). The
+                    // header is tiny, so the PCH bought no build time — only a warning.
+                    "-disable-bridging-pch",
                 ]),
                 // swift-testing is provided natively by the toolchain under swift-tools 6.2;
                 // no manual Testing.framework linkage (see AudioViewModelTests for why the
@@ -333,3 +345,15 @@ let package = Package(
     ],
     cxxLanguageStandard: .gnucxx2b
 )
+
+// Swift warnings break the DEBUG build: the Swift twin of AudioDSP's debug -Werror. A Swift
+// warning used to compile and land unnoticed (macOS 26's `Text + Text` deprecation sat on main
+// from S10.8 PR-G to S10.8 B); now the dev build, `make strict-gate`, and CI all refuse one.
+// RELEASE stays permissive on purpose, for AudioDSP's release reason: a new SDK's deprecation
+// must never brick a release build that has no code change. Only this package's own targets
+// (GRDB's are untouched); Clang targets have no Swift sources, so they ignore it.
+for target in package.targets {
+    target.swiftSettings = (target.swiftSettings ?? []) + [
+        .treatAllWarnings(as: .error, .when(configuration: .debug)),
+    ]
+}

@@ -7,7 +7,7 @@ import Testing
 struct SearchEpochTests {
     @Test("no edit since capture → the read may publish")
     func happyPath() {
-        var epoch = SearchEpoch()
+        let epoch = SearchEpoch()
         let captured = epoch.value
         #expect(epoch.isCurrent(captured))
     }
