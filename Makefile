@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures help
+.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library help
 
 build:
 	swift build -c debug -j 8
@@ -71,6 +71,15 @@ sheets:
 	swift build -c debug -j 8
 	@BIN="$$(swift build -c debug --show-bin-path)"; \
 		"$$BIN/AdaptiveSound" -ASRenderSheets "$(SHEETS_DIR)" $(SHEETS_ARGS)
+
+# Stress library (S10.8 C1): ~10,000 tiny, real, tagged audio files (FLAC/MP3/M4A; long, CJK, RTL and
+# emoji names; flagged and unflagged compilations; same-title albums; 5.1 and 7.1 files; art and no
+# art) in $(STRESS_LIBRARY), OUTSIDE the repo. Needs ffmpeg. Idempotent: a re-run rewrites only what
+# changed, and the script only ever writes into a folder it made. The test library scans it
+# (`make run-test-library`); never add it to your own library.
+STRESS_LIBRARY ?= $(HOME)/Music/AdaptiveSound Stress Library
+stress-library:
+	python3 scripts/generate-stress-library.py --output "$(STRESS_LIBRARY)"
 
 clean:
 	rm -rf .build
@@ -190,6 +199,7 @@ help:
 	@echo "  make build  - Build + bundle app (debug)"
 	@echo "  make run    - Build and launch app (debug)"
 	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
+	@echo "  make stress-library - Write the ~10k-track stress library (needs ffmpeg) to STRESS_LIBRARY"
 	@echo "  make release     - Optimized release build + bundle (.build/release/AdaptiveSound.app, unsigned)"
 	@echo "  make run-release - Release build + launch"
 	@echo "  make clean  - Remove build artifacts"
