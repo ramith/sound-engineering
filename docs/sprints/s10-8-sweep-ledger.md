@@ -219,38 +219,20 @@ covers dark.
 
 ## Sprint B — light mode
 
-### B3 — the final light polish (2026-10-07)
+### Plan check and B1 (2026-10-07, ui-designer)
 
-Three light-only fixes from the B2a findings, approved by the founder under the freeze rule. Token
-math (the R4 tests) first, then the rendered sheet pixels.
+The plan check corrected Sprint B before work started (the full note and the B1 prototype stayed
+in the session scratchpad): selection visibility needs a companion text rule; the headphones
+hint is an R1 blocker in BOTH appearances; R4-SPEC-01's idle dim cannot pass in either mode
+(audit the playing state, exempt the dim and caps as decorative); the shared teal fill must be
+fixed with the knob; a light glow needs a pastel clamp for art-sampled colour and must keep
+`InspectorCardGlow` dark-only; "Filter queue" clipping at 880×640 is dark too (→ D2); the
+renderer was non-deterministic on Songs. It split B2 into **B2a** (shared fixes, started at once)
+and **B2b** (the chosen backdrop). B1 rendered three backdrops: A no glow, B pale glow, C tinted
+base.
 
-| Fix | Commit | Before → after |
-|---|---|---|
-| Format chips: a 1pt light edge (`controlEdgeLight`, black 20%, now shared with the switch) inside the chip, clipped to it, both states; one `lightEdge` modifier now draws the knob ring, the switch edge and the chip edge | `c3b2e8d` | White chip on the card 1.08 → 1.49 (rendered 1.07 → 1.51), RT/IC card 1.02 → 1.57 (1.02 → 1.58), window 1.17 → 1.37 (1.16 → 1.39); teal playing chip on its row 1.10 → 1.76 rendered. Text unchanged, AA (6.20; teal 5.16–6.72). R4-CHIP-03 |
-| Footer groove on the light window: `carvedTrackOnWindow` 7% (the card groove's grey) | `d7d0fc1` | Playing fill end vs groove 2.94 → 3.15 (rendered 2.89 → 3.09); vs window 3.68, unchanged; the groove itself 1.25 → 1.17 against the window. R4-SLIDER-03 now asserts 3:1 outright (pin removed) |
-| Paused fill: `scrubberPausedFill`, light = `accentText` 70%, a greyed teal | `685d1f3` | Vs groove 1.34 → 3.41 (rendered 1.32 → 3.33); vs window 1.68 → 3.98 (1.65 → 3.90). It reads dimmer than playing by chroma, not lightness. R4-SLIDER-05 |
-
-The hero's "FLAC · 48 kHz" chip already had an edge: its `.badge` glass hairline measures 1.42 on
-the window (rendered 1.43). R4-CHIP-03 now holds it to the same floor; it is unchanged.
-
-**Proof.** All 70 sheets rendered at `7f01921` and at the tip, compared on all four channels. Dark:
-35/35 identical, and also identical paused (a throwaway `isPlaying = false` render of Now Playing
-and Library, not committed). Light: 35/35 differ, and only in the chip columns and the footer
-groove.
-
-**Found, not fixed:**
-
-- Dark paused scrubber: 2.39:1 against its groove, 3.40 against the window. It shipped that way,
-  and dark is out of scope.
-- R4-SLIDER-01 puts the knob ring over the surface. The ring is actually drawn over the white
-  knob, so on the light window it is 2.87:1, under 3:1. That is the footer's hover thumb. On the
-  card it is 3.10.
-- Reimagine's "Pure (bypassed)" dim, as routed in B2a.
-
-### B2b — the light window backdrop (2026-10-07)
-
-The founder picked **B · Pale glow** live in the app (`Debug ▸ Light Background`) on 2026-10-07;
-A (no glow) and C (tinted base) and the switch are deleted — light ships the pale glow.
+Commit hashes in B2a / B2b / B3 below are the agents' worktree hashes; the sprint branch carries
+the same commits replayed by cherry-pick (same subjects).
 
 ### B2a — the shared light fixes (2026-10-07)
 
@@ -332,8 +314,8 @@ light (the test now asserts AA outright; the dark selection tint itself is uncha
   **Both resolved in B3.**
 - Wherever Reimagine is restyled: its Intensity block dims whole to 50% under Pure, so the
   "Pure (bypassed)" status reads ~2:1 in both appearances — the headphones-hint class.
-- `DesignSystemGlass.swift` is at 496 of its 500 lines: F2 must make room before adding (the
-  appearance-free `huggingGlassPanel` / `libraryDetailCard` helpers could move out).
+- `DesignSystemGlass.swift` is at 496 of its 500 lines → **resolved at the merge**: B2a + B2b
+  together reached 507, so the control visuals moved to `DesignSystemGlassControls.swift`.
 - Tooling: in agent worktrees (under `.claude/worktrees/`), `.swiftformat`'s `--exclude .claude`
   matches the worktree's own path, so SwiftFormat — the hook and `make strict-gate` — silently
   skips every file there. B2a ran it with the same rules minus that exclusion: clean.
@@ -345,3 +327,78 @@ light (the test now asserts AA outright; the dark selection tint itself is uncha
 dims: hint 2.19 → 4.81:1, heading 2.49 → 5.84:1 (darkIC/RT 4.87 / 5.98). The control row stays
 pixel-identical (label 4.57:1, the shipped switch). Only the 8 Now Playing dark sheets change,
 and only in the heading and hint rows; light is untouched (35/35).
+
+### B2b — the light window backdrop (2026-10-07)
+
+The founder picked **B · Pale glow** live in the app (`Debug ▸ Light Background`) on 2026-10-07;
+A (no glow) and C (tinted base) and the switch are deleted — light ships the pale glow.
+
+### B3 — the final light polish (2026-10-07)
+
+Three light-only fixes from the B2a findings, approved by the founder under the freeze rule. Token
+math (the R4 tests) first, then the rendered sheet pixels.
+
+| Fix | Commit | Before → after |
+|---|---|---|
+| Format chips: a 1pt light edge (`controlEdgeLight`, black 20%, now shared with the switch) inside the chip, clipped to it, both states; one `lightEdge` modifier now draws the knob ring, the switch edge and the chip edge | `c3b2e8d` | White chip on the card 1.08 → 1.49 (rendered 1.07 → 1.51), RT/IC card 1.02 → 1.57 (1.02 → 1.58), window 1.17 → 1.37 (1.16 → 1.39); teal playing chip on its row 1.10 → 1.76 rendered. Text unchanged, AA (6.20; teal 5.16–6.72). R4-CHIP-03 |
+| Footer groove on the light window: `carvedTrackOnWindow` 7% (the card groove's grey) | `d7d0fc1` | Playing fill end vs groove 2.94 → 3.15 (rendered 2.89 → 3.09); vs window 3.68, unchanged; the groove itself 1.25 → 1.17 against the window. R4-SLIDER-03 now asserts 3:1 outright (pin removed) |
+| Paused fill: `scrubberPausedFill`, light = `accentText` 70%, a greyed teal | `685d1f3` | Vs groove 1.34 → 3.41 (rendered 1.32 → 3.33); vs window 1.68 → 3.98 (1.65 → 3.90). It reads dimmer than playing by chroma, not lightness. R4-SLIDER-05 |
+
+The hero's "FLAC · 48 kHz" chip already had an edge: its `.badge` glass hairline measures 1.42 on
+the window (rendered 1.43). R4-CHIP-03 now holds it to the same floor; it is unchanged.
+
+**Proof.** All 70 sheets rendered at `7f01921` and at the tip, compared on all four channels. Dark:
+35/35 identical, and also identical paused (a throwaway `isPlaying = false` render of Now Playing
+and Library, not committed). Light: 35/35 differ, and only in the chip columns and the footer
+groove.
+
+**Found, not fixed:**
+
+- Dark paused scrubber: 2.39:1 against its groove, 3.40 against the window. It shipped that way,
+  and dark is out of scope.
+- R4-SLIDER-01 puts the knob ring over the surface. The ring is actually drawn over the white
+  knob, so on the light window it is 2.87:1, under 3:1. That is the footer's hover thumb. On the
+  card it is 3.10.
+- Reimagine's "Pure (bypassed)" dim, as routed in B2a.
+
+### Merge, gate and the founder's picks (2026-10-07)
+
+- **Merge.** B2a and B2b cherry-picked onto `sprint/s10-8-b-light` with no conflicts. One merge
+  fix: `DesignSystemGlass.swift` reached 507 lines (each agent alone was under 500) → the carved
+  slider and glass switch moved verbatim to `DesignSystemGlassControls.swift`, sanctioned by
+  `ui-no-appearance-branching` (now path-anchored).
+- **Gate.** The agents' own strict-gate runs failed at clang-tidy: agent worktrees do not check
+  out the `third_party/libebur128` submodule (an artifact, not the code). From here on agents run
+  `swift build && swift test` + lint, and ONE `make strict-gate` runs on the merged branch in the
+  main repo — exit 0 after each merge.
+- **Swift warnings are now build-breaking in debug** (founder request, mid-sprint): the footer's
+  `Text + Text` (deprecated in macOS 26) had sat on main since S10.8 PR-G because only C++
+  warnings were fatal. `Package.swift` gives every target `treatAllWarnings(as: .error)` in debug
+  (release stays permissive, like AudioDSP); the three existing warnings were fixed first
+  (`Text` interpolation, `-disable-bridging-pch`, a never-mutated `var`). Proven by planting a
+  deprecation and an unused `var`: both fail debug; release still builds.
+- **Founder picks (decisions 16, 17).** Backdrop **B** chosen live with a temporary
+  `Debug ▸ Light Background` switch, then A, C and the switch deleted (light sheets identical to
+  the B sheets, dark identical). Dark text: **fix both** — the headphones hint and the selected
+  row's tertiary text (R4-SEL-03 now asserts AA outright).
+
+### Mini-retro — Sprint B
+
+1. **The founder felt a never-ending loop, and was right.** Sprint A had 10 feature commits and
+   22 fix commits; every review stage found more, much of it numbers no eye can see. Sprint B's
+   tail ran lean (one agent per fix set, the gate, a 2-minute founder look, no separate break-it
+   for colour-only changes) and closed fast. **Change:** the founder chooses the routine for
+   C–G before Sprint C starts (lighter routine recommended: break-it only for keyboard, focus or
+   data-changing work, and once at the end).
+2. **Live beats pictures for a taste decision.** The backdrop was picked in the running app via a
+   temporary DEBUG switch, then the losers deleted in one commit. Reuse that for any visual
+   either/or.
+3. **Parallel agents again merged cleanly, but their checks don't add up.** Each kept a file
+   under budget, together they broke it; their gate runs were invalid (no submodule). Gate only
+   the merged branch; expect a merge-level fix.
+4. **Waiting was the real cost.** Picture renders went from ~1.5 to ~40 minutes while the Mac sat
+   idle (App Nap-style throttling, not confirmed), and every merge re-ran the 10-minute gate.
+   **Change:** keep the Mac awake for renders (or give the renderer a no-throttle activity);
+   batch merges so one gate covers several.
+5. **Honest labels.** An agent labelled a change "founder decision" before the founder had
+   decided; caught and relabelled. Agents never record a decision the founder hasn't made.
