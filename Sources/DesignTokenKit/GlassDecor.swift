@@ -136,14 +136,22 @@ public enum GlassDecor {
     // MARK: Drop shadow (grammar rule 4: light = lighter AND tighter — tuned from the PR-3
 
     // founder screenshots: the first pass at literal half-of-dark (0.30 @ 18) read as a
-    // gray smudge on the light window; native macOS light panels sit nearer 0.15)
+    // gray smudge on the light window; native macOS light panels sit nearer 0.15. S10.8 B2a
+    // (CARD-SEP-01) tightens light to 11% @ 8, y 3, under a 1pt contact shadow — the macOS
+    // layered recipe: the crisp contact line draws the card's edge, the soft key shadow lifts
+    // it, and less of either greys the translucent fill it shows through)
 
     public static let shadowColor = AppearancePair(
-        light: .gray(0.0, alpha: 0.15),
+        light: .gray(0.0, alpha: 0.11),
         dark: .gray(0.0, alpha: 0.60)
     )
     public static let shadowRadiusDark: Double = 36
-    public static let shadowRadiusLight: Double = 12
+    public static let shadowRadiusLight: Double = 8
     public static let shadowOffsetYDark: Double = 14
-    public static let shadowOffsetYLight: Double = 5
+    public static let shadowOffsetYLight: Double = 3
+    /// The LIGHT-ONLY contact shadow under the key shadow (dark's deep shadow needs none). Cast,
+    /// like the key shadow, by the fill shape of the roles that cast one (`castsShadow`).
+    public static let contactShadowLight: RGBAColor = .gray(0.0, alpha: 0.10)
+    public static let contactShadowRadius: Double = 1
+    public static let contactShadowOffsetY: Double = 1
 }

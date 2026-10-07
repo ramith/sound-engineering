@@ -392,12 +392,12 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
     /// The Regime-B strata (design §3.2): fill (+ the dark-only bottom bleed, for the roles
     /// that carry it — `SurfaceRole.hasBottomBleed`) UNDER the content;
     /// top-edge specular rim + full glass hairline as distinct strokes above; a soft deep
-    /// drop shadow (light = ~half opacity, tighter — grammar rule 4) for the roles that cast
-    /// one (`SurfaceRole.castsShadow`). The shadow is cast by the FILL shape only — on the
-    /// whole composite every glyph, icon and analyzer bar cast its own dark halo; on the
-    /// fill it scales with the fill's alpha, exactly the composite's edge alpha the outer
-    /// shadow always came from. The hairline token carries real Increase-Contrast variants
-    /// (the "stronger hairlines under IC" promise); the resolver already handed us an
+    /// drop shadow (light = fainter, tighter, over a 1pt contact shadow — grammar rule 4) for
+    /// the roles that cast one (`SurfaceRole.castsShadow`). The shadows are cast by the FILL
+    /// shape only — on the whole composite every glyph, icon and analyzer bar cast its own dark
+    /// halo; on the fill they scale with the fill's alpha, exactly the composite's edge alpha
+    /// the outer shadow always came from. The hairline token carries real Increase-Contrast
+    /// variants (the "stronger hairlines under IC" promise); the resolver already handed us an
     /// OPAQUE fill under RT/IC.
     private func decorated(_ content: Content, fill: RGBAColor,
                            appearance: TokenAppearance) -> some View {
@@ -408,6 +408,7 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
         ))
         let shadow = SwiftUI.Color(token: GlassDecor.shadowColor.value(for: appearance))
         let dark = appearance == .dark
+        let contact = SwiftUI.Color(token: GlassDecor.contactShadowLight)
         return content
             .background {
                 ZStack(alignment: .bottom) {
@@ -416,6 +417,10 @@ private struct GlassPanelModifier<PanelShape: InsettableShape>: ViewModifier {
                                 radius: CGFloat(dark ? GlassDecor.shadowRadiusDark : GlassDecor.shadowRadiusLight),
                                 x: 0,
                                 y: CGFloat(dark ? GlassDecor.shadowOffsetYDark : GlassDecor.shadowOffsetYLight))
+                        .shadow(color: role.castsShadow && !dark ? contact : .clear, // light-only
+                                radius: CGFloat(GlassDecor.contactShadowRadius),
+                                x: 0,
+                                y: CGFloat(GlassDecor.contactShadowOffsetY))
                     if dark, role.hasBottomBleed { // dark-only (grammar rule 3), and per-role
                         LinearGradient(colors: [.clear, SwiftUI.Color(token: GlassDecor.bleedDark)],
                                        startPoint: .top, endPoint: .bottom)
