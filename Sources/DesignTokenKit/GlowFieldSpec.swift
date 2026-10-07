@@ -94,8 +94,9 @@ public enum GlowFieldSpec {
     /// screen's backdrop through the SAME falloff math the render reads. `overrideColors`
     /// (D8, PR 7) is the per-slot sampled-palette override — a `nil` slot keeps the brand
     /// token; entries carry their OWN alpha (the clamp forces the slot's token alpha). The
-    /// render side and the audit fold pass the same overrides, so tuning either re-verifies
-    /// the other.
+    /// render side and the audit fold pass the same overrides — the render a slot's
+    /// `SampledGlow.clampedSampledPair`, the fold its side for `appearance` — so tuning either
+    /// re-verifies the other.
     public static func compositeBackdrop(unitX: Double, unitY: Double,
                                          containerWidth: Double, containerHeight: Double,
                                          appearance: TokenAppearance,

@@ -267,11 +267,9 @@ struct GlassSwitchStyle: ToggleStyle {
 /// extending past the card's bottom so the empty area under the hugged card reads
 /// intentional. Appearance-gated, so it lives in this sanctioned file.
 struct InspectorCardGlow: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        GlowFieldGate {
-            if colorScheme == .dark {
+        GlowFieldGate { appearance in
+            if appearance == .dark {
                 RadialGradient(
                     colors: [SwiftUI.Color(token: GlassDecor.inspectorGlowDark), .clear],
                     center: .center,
@@ -407,9 +405,10 @@ extension View {
 /// The sanctioned environment→resolver wiring for the glow field (this file is the one
 /// place appearance may be read — semgrep rule 4). Renders `content` only when the pure
 /// `glowFieldIsVisible` resolver says so (dark, or light under the pale-glow backdrop; never
-/// with a reduced-transparency or increased-contrast request).
+/// with a reduced-transparency or increased-contrast request), handing it the appearance it
+/// resolved — so a decoration picks a token pair's side without reading the environment.
 struct GlowFieldGate<Content: View>: View {
-    @ViewBuilder var content: Content
+    @ViewBuilder var content: (TokenAppearance) -> Content
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -417,11 +416,12 @@ struct GlowFieldGate<Content: View>: View {
     @Environment(\.lightBackdrop) private var lightBackdrop
 
     var body: some View {
-        if glowFieldIsVisible(appearance: colorScheme == .dark ? .dark : .light,
+        let appearance: TokenAppearance = colorScheme == .dark ? .dark : .light
+        if glowFieldIsVisible(appearance: appearance,
                               reduceTransparency: reduceTransparency,
                               increasedContrast: colorSchemeContrast == .increased,
                               backdrop: lightBackdrop) {
-            content
+            content(appearance)
         }
     }
 }
