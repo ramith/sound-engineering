@@ -50,14 +50,15 @@ struct LibrarySidebar: View {
 
     var body: some View {
         ScrollViewReader { proxy in
+            let ringRow = ringCursorRow
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     ForEach(LibraryCategory.allCases) { category in
-                        categoryRow(category)
+                        categoryRow(category, isKeyboardCursor: ringRow == .category(category))
                     }
                     sectionDivider
                     playlistsSectionHeader
-                    playlistRows
+                    playlistRows(ringRow: ringRow)
                     sectionDivider
                     musicFoldersSectionHeader
                     MusicFoldersSection()
@@ -79,7 +80,8 @@ struct LibrarySidebar: View {
             .focusable()
             .focused($sidebarFocused)
             .defaultFocus($sidebarFocused, true)
-            // The system effect would outline the whole rail; the selected row's ring replaces it (A3).
+            // The system effect would outline the whole rail; the cursor row's ring replaces it (A3).
+            // Always focusable — the category rows never empty out.
             .focusEffectDisabled()
             // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still
             // in the focus chain) HIJACKS the keys from the focused TextField (arrows moved the
@@ -87,7 +89,7 @@ struct LibrarySidebar: View {
             .onKeyPress(.upArrow) { editingPlaylistID == nil ? moveSelection(by: -1, proxy: proxy) : .ignored }
             .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1, proxy: proxy) : .ignored }
             // Return renames the selected playlist (Finder/Music convention). Categories ignore it.
-            .onKeyPress(.return) { editingPlaylistID == nil ? renameSelectedPlaylist() : .ignored }
+            .onKeyPress(.return) { editingPlaylistID == nil ? renameCursorPlaylist() : .ignored }
         }
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
         // hug the measured content, scroll when the window is short. The shared teal glow (PR-B) sits
@@ -109,21 +111,16 @@ struct LibrarySidebar: View {
         }
     }
 
-    /// The rail holds key focus AND the user is navigating by keyboard — the ring's gate.
-    private var showsRing: Bool {
-        sidebarFocused && showsKeyboardFocus
-    }
-
     // MARK: - Category rows
 
-    private func categoryRow(_ category: LibraryCategory) -> some View {
+    private func categoryRow(_ category: LibraryCategory, isKeyboardCursor: Bool) -> some View {
         let isSelected = model.sidebarSelection == .category(category)
         return Button {
             model.selectCategory(category)
             sidebarFocused = true
         } label: {
             NavRow(icon: category.icon, label: category.title, active: isSelected,
-                   isKeyboardCursor: showsRing && isSelected)
+                   isKeyboardCursor: isKeyboardCursor)
         }
         .buttonStyle(.plain)
         // Selection is conveyed by color alone otherwise — expose it to VoiceOver; `.combine`
@@ -142,7 +139,8 @@ struct LibrarySidebar: View {
         }
     }
 
-    @ViewBuilder private var playlistRows: some View {
+    @ViewBuilder
+    private func playlistRows(ringRow: SidebarSelection?) -> some View {
         if playlists.playlists.isEmpty {
             Text("No playlists yet")
                 .font(DesignSystem.Font.caption)
@@ -151,13 +149,13 @@ struct LibrarySidebar: View {
                 .padding(.vertical, DesignSystem.Spacing.xSmall)
         } else {
             ForEach(playlists.playlists) { playlist in
-                playlistRow(playlist)
+                playlistRow(playlist, isKeyboardCursor: ringRow == .playlist(playlist.id))
             }
         }
     }
 
     @ViewBuilder
-    private func playlistRow(_ playlist: Playlist) -> some View {
+    private func playlistRow(_ playlist: Playlist, isKeyboardCursor: Bool) -> some View {
         if editingPlaylistID == playlist.id {
             renameField(playlist)
         } else {
@@ -167,7 +165,7 @@ struct LibrarySidebar: View {
                 sidebarFocused = true
             } label: {
                 NavRow(icon: "music.note.list", label: playlist.name, active: isSelected,
-                       isKeyboardCursor: showsRing && isSelected) {
+                       isKeyboardCursor: isKeyboardCursor) {
                     Text(playlist.entryCount.formatted(.number))
                         .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(DesignSystem.Color.labelTertiary)
@@ -315,28 +313,54 @@ private extension LibrarySidebar {
             + playlists.playlists.map { SidebarSelection.playlist($0.id) }
     }
 
-    /// Move the unified selection by `delta` rows through `selectables` (keyboard ↑/↓). `.ignored`
-    /// when the move would leave the list, so the event can bubble. Also `.ignored` while a browse
-    /// drill-down (album/artist/genre detail) is showing: `sidebarSelection` collapses that to its
-    /// category, so an arrow press would otherwise navigate away and DESTROY the drill-down.
-    /// Keeps the new selection on screen the queue's way (A3) — the rail scrolls when the window
-    /// is short: `scrollTo` with no anchor scrolls only as far as needed, instantly.
-    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
-        if let route = model.path.last {
-            switch route {
-            case .album, .artist, .genre: return .ignored // a drill-down is open — don't blow it away
-            case .playlist: break // a playlist is selected — arrow nav among rows is fine
-            }
+    /// A browse drill-down (album/artist/genre detail) is showing. `sidebarSelection` collapses it
+    /// to its category, so an arrow press would navigate away and DESTROY the drill-down — the
+    /// keys stand down there. (An open playlist is a rail row itself: arrows stay live.)
+    var isBrowseDrillDownOpen: Bool {
+        switch model.path.last {
+        case .album, .artist, .genre: true
+        case .playlist, nil: false
         }
-        let items = selectables
-        guard let current = items.firstIndex(of: model.sidebarSelection) else { return .ignored }
-        let next = current + delta
-        guard next >= 0, next < items.count else { return .ignored }
-        switch items[next] {
+    }
+
+    /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from and the row
+    /// Return renames: the rail selection. Nil while a drill-down is open, where the keys stand
+    /// down — so the ring hides with them instead of promising a move that won't happen.
+    var keyboardCursor: ListKeyboardCursor<SidebarSelection>? {
+        guard !isBrowseDrillDownOpen else { return nil }
+        return ListKeyboardCursor.resolve(rows: selectables, anchor: model.sidebarSelection)
+    }
+
+    /// The ring is drawn while the rail holds key focus AND the user navigates by keyboard.
+    var showsRing: Bool {
+        sidebarFocused && showsKeyboardFocus
+    }
+
+    /// The row wearing the focus ring, or nil (no ring).
+    var ringCursorRow: SidebarSelection? {
+        showsRing ? keyboardCursor?.id : nil
+    }
+
+    /// Move the rail selection from the cursor by `delta` rows through `selectables` (keyboard
+    /// ↑/↓). `.ignored` when the move would leave the list or a drill-down is open, so the event
+    /// can bubble. Keeps the new selection on screen the queue's way (A3) — the rail scrolls when
+    /// the window is short: `scrollTo` with no anchor scrolls only as far as needed, instantly.
+    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard let target = keyboardCursor?.step(by: delta, in: selectables) else { return .ignored }
+        switch target {
         case let .category(category): model.selectCategory(category)
         case let .playlist(id): model.selectPlaylist(id)
         }
-        proxy.scrollTo(items[next])
+        proxy.scrollTo(target)
+        return .handled
+    }
+
+    /// Return: rename the cursor row when it is a playlist (Finder/Music convention). `.ignored`
+    /// for a category or an open drill-down, so the event bubbles.
+    func renameCursorPlaylist() -> KeyPress.Result {
+        guard case let .playlist(id) = keyboardCursor?.actionTarget(ringVisible: showsRing),
+              let playlist = playlists.playlists.first(where: { $0.id == id }) else { return .ignored }
+        beginRename(playlist)
         return .handled
     }
 }
