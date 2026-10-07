@@ -138,7 +138,8 @@ struct ReimagineSectionView: View {
 // MARK: - Headphones Section (QW-C)
 
 /// Crossfeed toggle + strength picker; disabled on non-headphone devices. The "Connect headphones"
-/// hint is instruction text, so it must stay AA: light never dims it (`disabledDim`).
+/// hint is instruction text, so it must stay AA: only the control row dims (`disabledDim`), never
+/// the hint or the heading.
 struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -176,8 +177,8 @@ struct HeadphonesSectionView: View {
                         .fixedSize()
                 }
             }
+            .disabledDim(!isEnabled) // the control only (dark 50%, guide E1); light: its own look
         }
-        .disabledDim(!isEnabled) // dark: the shipped whole-block 50% (guide E1); light: no dim
     }
 }
 
