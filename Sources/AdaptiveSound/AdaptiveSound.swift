@@ -22,6 +22,9 @@ struct AdaptiveSound: App {
     /// Draw the custom lists' focus ring only while the user navigates by keyboard (A-review).
     /// App-owned so the whole app shares ONE event monitor, however many windows open.
     @State private var keyboardFocusVisibility = KeyboardFocusVisibility()
+    /// Where this launch persists (`AppDataLocation`): the models get it in `init`, every
+    /// `@AppStorage` through `.defaultAppStorage` below.
+    private let dataLocation: AppDataLocation
 
     init() {
         #if DEBUG
@@ -30,15 +33,19 @@ struct AdaptiveSound: App {
             // out) a running copy of the app. Without the flag this returns at once.
             SheetRenderer.runIfRequested()
         #endif
+        // Where everything persists, decided once, then injected — nothing below picks a path or
+        // defaults of its own.
+        let location = AppDataLocation.atLaunch()
+        dataLocation = location
         // Single instance only: if another copy already holds the lock, raise it and exit before
         // building any @State or touching the audio engine (no two engines fighting one device).
-        guard SingleInstanceGuard.acquire() else { exit(0) }
+        guard SingleInstanceGuard.acquire(lockFile: location.instanceLockURL) else { exit(0) }
 
         // Build the model peers once and wire the two edges between the audio VM and the library
         // subsystem (S3 F5 — the God-object split). `library` owns the store + scan/reconcile;
         // `audio` owns playback/engine. They are peers, NOT nested.
-        let audio = AudioViewModel()
-        let lib = LibraryModel()
+        let audio = AudioViewModel(defaults: location.defaults)
+        let lib = LibraryModel(location: location)
         // Edge 1 (audio → library): the play-count write-back reaches the store through this
         // non-owning reference (see `AudioViewModel.countPlayCompletion`).
         audio.library = lib
@@ -51,7 +58,7 @@ struct AdaptiveSound: App {
         lib.onStoreReady = { [weak audio] in audio?.hydrateQueueOnLaunch() }
         _audioViewModel = State(initialValue: audio)
         _library = State(initialValue: lib)
-        _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio))
+        _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio, defaults: location.defaults))
         // S9.4: the browse model is owned HERE (above the tab switch) and injected, so Library
         // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed). It
         // composes BOTH peers — library reads + audio play verbs.
@@ -95,6 +102,7 @@ struct AdaptiveSound: App {
                 .environment(nowPlaying) // S10.4 D2: footer + widget read the resolved metadata
                 .environment(keyboardFocus)
                 .publishesKeyboardFocusVisibility(keyboardFocusVisibility)
+                .defaultAppStorage(dataLocation.defaults)
                 .onAppear {
                     // Engine lifecycle belongs to the app/scene, NOT a child view's
                     // `.task`/`.onDisappear` (the latter is an unreliable teardown signal and
@@ -175,6 +183,7 @@ struct AdaptiveSound: App {
         MenuBarExtra("AdaptiveSound", systemImage: "music.note") {
             MenuBarView()
                 .environment(audioViewModel)
+                .defaultAppStorage(dataLocation.defaults)
         }
     }
 }

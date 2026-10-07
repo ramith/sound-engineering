@@ -13,7 +13,7 @@
     /// written, 1 otherwise. It runs
     /// first thing in `AdaptiveSound.init()`, BEFORE `SingleInstanceGuard`, so it works beside a running
     /// copy of the app without taking its lock, and it never opens the library store, the audio engine
-    /// or device, or `UserDefaults.standard` (see `SheetFixture`).
+    /// or device, or the app's settings (see `SheetFixture`).
     ///
     /// Out of reach (plan §E A4 — those cells stay founder-only): system-drawn surfaces (menus, sheets,
     /// popovers, alerts), and anything blended with what is behind the window.

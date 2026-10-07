@@ -59,6 +59,21 @@ rules:
       action disables it). .deleteForward is U+F728 — ⌦'s own NSDeleteFunctionKey — so not flagged.
     pattern-regex: '\.onKeyPress\([^)\n]*\.delete\b'
 
+  # S10.8 C1: the isolated test library is only isolated if NOTHING picks its own place to persist.
+  - id: persist-one-location
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Persistence outside AppDataLocation. The launch decides once where the app persists (the
+      user's library, or a debug build's isolated test library) and injects it: the store and
+      artwork paths, the lock, and the defaults (`@AppStorage` reads them via .defaultAppStorage).
+      The standard defaults, an Application Support or Caches path, or an explicit @AppStorage
+      store would write the user's data from a test-library run. Take AppDataLocation instead.
+    paths:
+      include: ['Sources']
+      exclude: ['Sources/AdaptiveSound/AppDataLocation.swift']
+    pattern-regex: '\bUserDefaults\.standard\b|\bUserDefaults\(\s*\)|UserDefaults\s*=\s*\.standard\b|\bdefaults:\s*\.standard\b|\b(applicationSupport|caches)Directory\b|@AppStorage\([^)\n]*\bstore:'
+
   - id: cpp-no-unsafe-string-fn
     languages: [generic]
     severity: ERROR
