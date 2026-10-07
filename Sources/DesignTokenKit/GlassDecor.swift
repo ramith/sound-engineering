@@ -70,6 +70,15 @@ public enum GlassDecor {
     /// The knob's bottom inner shade (both appearances — it's a physical cue, not emission).
     public static let knobShade: RGBAColor = .gray(0.0, alpha: 0.25)
 
+    // MARK: Switch + disabled content (S10.8 B2a — the headphones block, then F2's Settings)
+
+    /// The LIGHT-ONLY 1pt hairline around the native switch track (grammar rule 2: the edge flips
+    /// dark in light) — the off track alone is ~1.09:1 on the white card.
+    public static let switchEdgeLight: RGBAColor = .gray(0.0, alpha: 0.20)
+    /// The realigned disabled dim (guide E1: 50%) — DARK only; light content shows its own
+    /// disabled look instead of a dim on top.
+    public static let disabledDimDark: Double = 0.5
+
     // MARK: Capsule tab strip (S10.8 PR B — Realigned Target `png/01-toolbar.png`)
 
     /// The active tab capsule's teal glow — DARK-ONLY (grammar rule 6). Realigned spec:

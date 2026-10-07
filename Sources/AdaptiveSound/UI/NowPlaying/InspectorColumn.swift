@@ -137,7 +137,8 @@ struct ReimagineSectionView: View {
 
 // MARK: - Headphones Section (QW-C)
 
-/// Crossfeed toggle + strength picker; disabled and dimmed on non-headphone devices.
+/// Crossfeed toggle + strength picker; disabled on non-headphone devices. The "Connect headphones"
+/// hint is instruction text, so it must stay AA: light never dims it (`disabledDim`).
 struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -176,7 +177,7 @@ struct HeadphonesSectionView: View {
                 }
             }
         }
-        .opacity(isEnabled ? 1 : 0.5) // realigned disabled-block opacity (guide E1: 50%)
+        .disabledDim(!isEnabled) // dark: the shipped whole-block 50% (guide E1); light: no dim
     }
 }
 
@@ -190,10 +191,8 @@ private struct CrossfeedToggleRow: View {
         Toggle(isOn: $crossfeedEnabled) {
             Label("Crossfeed", systemImage: "ear.and.waveform")
                 .font(DesignSystem.Font.body)
-                .foregroundStyle(Color.asLabel)
         }
-        .toggleStyle(.switch)
-        .tint(DesignSystem.Color.accentFill)
+        .toggleStyle(GlassSwitchStyle()) // label color, tint and the disabled look are the style's
         .disabled(!deviceEnabled)
     }
 }
