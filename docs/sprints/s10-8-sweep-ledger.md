@@ -216,3 +216,91 @@ Play Next adds the selection. **Founder decision: keep the keyboard set in Sprin
 once for Songs and every detail page. Also noted: the selected-row tint is very faint (≈ 1.2:1
 in dark), which makes a multi-selection hard to see — a Sprint B light-design item that also
 covers dark.
+
+## Sprint B — light mode
+
+### B2a — the shared light fixes (2026-10-07)
+
+Built by a swiftui-pro agent in its own worktree while the founder picks the backdrop (B1),
+from the designer's plan check (the values) and B1 prototype (the evidence). Everything here
+is the same for options A, B and C; the window, the background glow, `InspectorCardGlow`,
+`SampledGlow` and RES-04 are B2b's.
+
+| Commit | Scope | Tests |
+|---|---|---|
+| `43a146d` | The Songs column-header flake: root cause and fix (below) | SongColumnConfigTests |
+| `16260d1` | Sheets render at a fixed 2x in Display P3 → sRGB, not the main screen's | debug only |
+| `6080bb0` | CARD-SEP-01: light card 86%, lens 80%; light shadow 11% r8 y3 + a 1pt contact shadow | CARD-SEP-01/02 |
+| `b9e190e` | Analyzer ramp → Kit `SpectrumRamp` light/dark pair; light caps 85% | R4-SPEC-01/02 |
+| `af63182` | Light knob ring (black 45%); `meterFillTrail` (light = `accentDeep`) for sliders, meters, scrubber | R4-SLIDER-01…04 |
+| `8cd9b80` | Light `rowSelected` = `accentDeep` 24%; the selected-row text rule, one home | R4-SEL-01…03, TOK-04 |
+| `af52039` | Headphones block, light: `GlassSwitchStyle` (F2 reuses it), `disabledDim` | sheets |
+
+**Measured on the light sheets** (1000×720, the composited pixels — not token math):
+
+| Pair | Before | After |
+|---|---|---|
+| Card vs window (NP inspector, Songs, rail) | 1.055 (#F3F3F3) | 1.093 (#F7F7F7); RT/IC 1.151 |
+| Lens vs window | 1.055 | 1.074 |
+| Analyzer bar tops / bottoms (playing) | 1.35–3.09 / 1.62–4.11 | 3.53–4.74 / 4.12–6.11 |
+| Analyzer peak caps | 1.22–1.88 | 3.42–4.31 |
+| Fill value end vs card / groove body | 1.73 / 1.22 | 4.01 / 3.19 |
+| Footer fill end vs window / groove | 1.64 / 1.31 | 3.67 / 2.93 (pinned, R4-SLIDER-03) |
+| Knob edge vs card | 1.11 (white knob) | ring 3.96 |
+| Selection vs card | 1.10 | 1.33 |
+| Selected row: title / secondary / tertiary | 15.20 / 5.85 / 4.53 | 12.79 / 5.49 / 5.49 (promoted) |
+| Rail's active label on the selection | 7.40 | 6.15 |
+| Headphones hint / heading | 1.95 / 2.14 | 4.69 / 6.05 (RT/IC hint 4.73) |
+
+Dark: every B2a commit above leaves the 35 dark sheets (dark, darkIC, darkRT, both sizes, ring,
+ring-rail, empty) pixel-identical — all four channels compared.
+
+**Decorative exemptions** (R4-SPEC-01, recorded in the test; the bar field is hidden from
+accessibility): the paused 40% dim (light ramp 1.53–1.74:1, even black only 2.81:1; dark
+1.86–3.19:1) and the peak caps (dark keeps 50%: 2.24:1 at the darkest stop).
+
+**Known issues, pinned with `withKnownIssue` (they flip when fixed):** R4-SLIDER-03 — the fill on
+the footer groove over the light window, 2.94:1 (the time text beside it carries the position),
+→ B3. R4-SEL-03 — dark tertiary on a selected row, 4.46:1 (pre-existing) → the founder's dark
+selection decision.
+
+**Deviations (accepted by the agent, with evidence):**
+
+1. **The renderer flake was a real app bug.** `SongColumnConfig` is `RawRepresentable` and
+   `Equatable` with no `==`, so Swift's witness was the standard library's RawRepresentable `==`,
+   comparing JSON whose key order varies from one encode to the next: `isCustomized` flipped at
+   random (7 of 16 base Library renders; the live app too). Fixed by a canonical (sorted-key)
+   string; the type moved into LibraryBrowseKit for a headless test. A hand-written `==` was
+   dropped: SwiftFormat's `redundantEquatable` deletes it as "synthesized-equivalent".
+2. **A second sheet non-determinism.** The renderer took density and colour profile from the
+   main screen; with a 1x external display as main it wrote 1000×720 sheets mid-sprint. Fixed
+   (≤ 2 levels on ~250 px against the old Retina output). Dark proofs after that compare against
+   the base plus only this and the column fix (deterministic: 70/70 twice). What it cannot pin:
+   text and AppKit controls rasterize for the offscreen window's screen — the main one (a 1x
+   main screen changes every glyph, even in the 2x bitmap; in clamshell mode there is no Retina
+   screen to borrow). The renderer now prints a WARNING then; diff only sheets rendered with the
+   same main-screen scale. Residual, rare: the native "Filter Songs" placeholder moved 1px in 2 of
+   ~23 full renders (one at a display change), and in 0 of 22 focused reruns.
+3. **Caps keep a view opacity** (`.spectrumCapOpacity()`): baking the alpha into the gradient's
+   colours moved the dark caps by up to 4 levels (~1,400 px). The B1 prototype's "dark 27/27
+   identical" was likely the same diff-tool trap the agent hit first: PIL's `getbbox()` on an
+   RGBA difference reads the alpha channel only.
+4. **The light groove stays 10%** (the prototype's 12% lowers fill-vs-groove: card 3.21 → 3.06,
+   footer 2.94 → 2.81). The knob gets the ring only, per scope (no prototype knob shadow).
+5. **The switch hairline sits on the switch's own frame**, which is the native 54×24 track; the
+   prototype's 1pt horizontal inset is gone. The dark "ticks" at its ends in zoomed crops are
+   antialiasing that any 1pt capsule stroke shows.
+
+**Found, routed:**
+
+- B3: the white format-badge chips nearly vanish on the denser light card (1.07:1, was 1.11 —
+  text-led, not an AA miss); the paused footer scrubber (`accent` 50%) on the light window.
+- Wherever Reimagine is restyled: its Intensity block dims whole to 50% under Pure, so the
+  "Pure (bypassed)" status reads ~2:1 in both appearances — the headphones-hint class.
+- `DesignSystemGlass.swift` is at 496 of its 500 lines: F2 must make room before adding (the
+  appearance-free `huggingGlassPanel` / `libraryDetailCard` helpers could move out).
+- Tooling: in agent worktrees (under `.claude/worktrees/`), `.swiftformat`'s `--exclude .claude`
+  matches the worktree's own path, so SwiftFormat — the hook and `make strict-gate` — silently
+  skips every file there. B2a ran it with the same rules minus that exclusion: clean.
+- Live-only (sheets draw system switches as an inactive window): the Crossfeed switch on, off
+  and disabled in an active window, both appearances.
