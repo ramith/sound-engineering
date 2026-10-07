@@ -140,6 +140,9 @@ enum DesignSystem {
         /// The mini equalizer's bar teal — the iconFill gradient's bright stop, re-exported
         /// (never a second #3FD0BA).
         static let accentBright = from(Palette.iconFillTop)
+        /// S10.8 B3 — the footer scrubber's paused fill (dark: the shipped accent 50%; light: a
+        /// greyed deep teal); audited R4-SLIDER-05.
+        static let scrubberPausedFill = from(Palette.scrubberPausedFill)
 
         /// S10.8 PR E — the true-peak hot VALUE text (realigned `png/05`); audited
         /// R4-METER-01. The hot FILL is `Gradient.meterHotFill` (which composes the Kit
