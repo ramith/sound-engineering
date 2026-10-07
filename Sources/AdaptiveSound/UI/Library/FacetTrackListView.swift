@@ -216,7 +216,7 @@ struct FacetTrackListView: View {
 
     /// Genres/Years flat rows show "Artist · Album" (the Songs-tab secondary convention).
     private func secondaryLine(_ track: LibraryTrackDisplay) -> String {
-        [track.artistName, track.albumName ?? ""]
+        [track.artistDisplayName, track.albumName ?? ""]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }
