@@ -1,11 +1,12 @@
 // ChecksAlbumArtist — S10.8 C2 album artists (docs/sprints/s10-8-glass-sweep-plan.md §E Sprint C):
-//   ALB-01 the folder fallback — an album with no album-artist tag groups by title + year + folder
+//   ALB-01 the folder fallback — an album with no album-artist tag groups by title + album folder
 //          and is credited to its songs' shared artist (or "Various Artists" / Unknown Artist), and
 //          an incremental scan re-credits it when a song joins or leaves;
 //   ALB-02 a compilation does not split — the flag is read by BOTH extractors (real files), and a
 //          flagged, mixed-artist, two-disc compilation is ONE "Various Artists" album;
 //   ALB-05 same-title albums in different folders do not merge — and a folder move regroups.
-// (ALB-03 and ALB-04 live in ChecksAlbumArtistData.swift.)
+// (ALB-03 and ALB-04 live in ChecksAlbumArtistData.swift; the fix round's ALB-06…10 in
+// ChecksAlbumFixRound.swift and ALB-11…16 in ChecksAlbumIdentity.swift.)
 //
 // Every case drives the app's OWN pipeline: real files on disk → `LibraryScanner.scan` →
 // `MetadataScanner.run` (whose end-of-pass step regroups albums + reaps orphans), with a stub
@@ -32,7 +33,9 @@ func albumArtistCheckCases() -> [CheckCase] {
 // MARK: - Shared fixture (real files + the real scan → metadata pass)
 
 /// Answers each file's tags from a table keyed by FILE NAME (unique within a fixture). A file
-/// missing from the table extracts as unreadable (nil), like a vanished file.
+/// missing from the table extracts as unreadable (nil). It answers whether or not the file is on
+/// disk (ALB-03's previous-release store names paths that never existed); `PresentFilesExtractor`
+/// reads only files that are there, as the real extractor does.
 struct TagTableExtractor: MetadataExtracting {
     let tags: [String: TrackMetadata]
 
@@ -180,7 +183,7 @@ func checkAlbumFolderFallback(number: Int, url: URL) async -> Bool {
               try await leftGroupRegroupsInTheSameWrite(fixture, number: number),
               try await spellingVariantsAreOneArtist(fixture, number: number) else { return false }
 
-        printPass(number, "ALB-01 folder fallback: untagged albums group by title + year + folder and are "
+        printPass(number, "ALB-01 folder fallback: untagged albums group by title + album folder and are "
             + "credited to the shared artist (a no-artist song doesn't change it), mixed artists → "
             + "\(variousArtistsName), no artists → \(unknownArtistName); a tagged album stays one across "
             + "folders; an incremental scan re-credits on join (→ VA) and on delete (→ the artist), no ghosts; "
@@ -210,8 +213,10 @@ private func leftGroupRegroupsInTheSameWrite(_ fixture: AlbumFixture, number: In
 }
 
 /// One artist spelled three ways — NFC, NFD (a decomposed tag) and another case — is ONE artist for
-/// the credit (not "Various Artists"), while the store still keeps the three exact-spelling rows
-/// (S8 artist identity is untouched; merging them is a separate finding, C1's stress library).
+/// the credit (not "Various Artists"). The tag is NFC-normalised at write (C2 fix round, C5), so the
+/// NFC and NFD spellings are now ONE artist row; the other CASE stays its own row (S8 artist
+/// identity is exact-spelling — merging case variants is a separate finding, C1's stress library).
+/// Changed by the fix round: three rows → two.
 private func spellingVariantsAreOneArtist(_ fixture: AlbumFixture, number: Int) async throws -> Bool {
     let spellings = ["Zo\u{00EB} \u{00C5}ngstr\u{00F6}m", "Zo\u{0065}\u{0308} \u{0041}\u{030A}ngstr\u{006F}\u{0308}m",
                      "zo\u{00EB} \u{00E5}ngstr\u{00F6}m"]
@@ -223,7 +228,7 @@ private func spellingVariantsAreOneArtist(_ fixture: AlbumFixture, number: Int) 
     let spelled = try await fixture.store.albums().filter { $0.title == "Spelled" }
     let rows = try await fixture.store.artists().filter { AlbumGrouping.sameArtistKey($0.name) == key }
     guard spelled.count == 1, let album = spelled.first, album.trackCount == 3,
-          AlbumGrouping.sameArtistKey(album.albumArtist) == key, rows.count == 3 else {
+          AlbumGrouping.sameArtistKey(album.albumArtist) == key, rows.count == 2 else {
         printFail(number, "ALB-01: spelling variants credited \(spelled.map { "\($0.albumArtist) ×\($0.trackCount)" }) "
             + "(artist rows \(rows.count))")
         return false
@@ -260,8 +265,9 @@ func checkCompilationDoesNotSplit(number: Int, url: URL) async -> Bool {
             "Hits": ["\(variousArtistsName) ×3"], "Best Of Dan": ["\(variousArtistsName) ×2"],
         ], "compilations", number: number) else { return false }
         printPass(number, "ALB-02 a compilation does not split: the flag is read from a real m4a (AVFoundation "
-            + "cpil) and flac (FFmpeg COMPILATION), absent on the plain fixtures, and both paths read the "
-            + "album-artist tag (FLAC's normalised album_artist included); a flagged 3-artist "
+            + "cpil), flac (FFmpeg COMPILATION), mp3 (TXXX:TCMP) and ogg/opus (ITUNESCOMPILATION), absent on the "
+            + "plain fixtures, and both paths read the album-artist tag (FLAC's normalised album_artist and the "
+            + "ogg/opus ALBUMARTIST included); a flagged 3-artist "
             + "compilation across 'CD 1'/'CD 2' is ONE \(variousArtistsName) album, and a flagged "
             + "single-artist one is credited \(variousArtistsName) too")
         return true
@@ -273,10 +279,14 @@ func checkCompilationDoesNotSplit(number: Int, url: URL) async -> Bool {
 /// Both extraction paths read the two album-credit tags from REAL files: the compilation flag (and
 /// not where it's absent), and the album-artist tag — which the FFmpeg path once dropped for every
 /// FLAC (FFmpeg normalises Vorbis ALBUMARTIST to `album_artist`; found scanning the C1 stress
-/// library), crediting tagged FLAC albums to "Unknown Artist" before C2.
+/// library), crediting tagged FLAC albums to "Unknown Artist" before C2. The fix round (C7) adds the
+/// keys other taggers use: an mp3 `TXXX:TCMP` frame (AVFoundation path), and the Vorbis
+/// `ITUNESCOMPILATION` + `ALBUMARTIST` comments in ogg and opus (FFmpeg path — opus used to go to
+/// AVFoundation first, which reads neither).
 private func bothExtractorsReadTheAlbumTags(number: Int) async -> Bool {
     let expected: [String: (flag: Bool, albumArtist: String?)] = [
-        "compilation.m4a": (true, nil), "compilation.flac": (true, nil),
+        "compilation.m4a": (true, nil), "compilation.flac": (true, nil), "compilation.mp3": (true, nil),
+        "compilation.ogg": (true, "Comp Album Artist"), "compilation.opus": (true, "Comp Album Artist"),
         "fixture.m4a": (false, "Verify Artist"), "fixture.flac": (false, "Verify Artist"),
     ]
     for (file, (flag, albumArtist)) in expected.sorted(by: { $0.key < $1.key }) {

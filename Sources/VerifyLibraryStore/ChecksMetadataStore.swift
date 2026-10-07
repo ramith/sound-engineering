@@ -2,7 +2,8 @@
 // files/extraction — that arrives with the tagged fixtures in Slice 5). Drives the
 // metadata/artwork WRITE ops through the actor: the `metadata_scanned` marker +
 // `tracksNeedingMetadata` + the upsert reset (idempotency + retag), `applyExtractedResult`
-// (tags + artwork + album cover in ONE txn), artwork dedup, and reachability-based
+// (tags + artwork in ONE txn; the album + its cover at the end-of-pass regroup), artwork dedup,
+// the deterministic album cover, and reachability-based
 // orphan sweep. Same VerifyAUGraph idiom (Bool return, numbered PASS/FAIL, temp DBs).
 
 import CoreGraphics
@@ -98,13 +99,19 @@ func checkMetadataApplyResult(number: Int, url: URL) async -> Bool {
         )
         try await store.applyExtractedResult(trackID: trackID, meta: meta, artwork: art, generation: gen)
 
+        // The pass write does no album work (S10.8 C2 fix round, B2): it records the regroup debt,
+        // and the end-of-pass regroup (`refreshDerivedFacets`) assigns the album and its cover.
         guard let row = try await store.track(id: trackID),
               row.title == "Song One", row.trackNo == 3, row.discNo == 1, row.year == 1999,
-              row.albumID != nil, row.artistID != nil, row.artworkKey == "hashA" else {
-            printFail(number, "apply: track metadata/artwork columns not set correctly"); return false
+              row.albumID == nil, row.artistID != nil, row.artworkKey == "hashA",
+              try await store.isAlbumRegroupOwed() else {
+            printFail(number, "apply: track metadata/artwork columns not set correctly (or the album "
+                + "was assigned per write / the regroup debt not recorded)"); return false
         }
-        guard try await store.albums().contains(where: { $0.title == "The Album" && $0.artworkKey == "hashA" })
-        else { printFail(number, "apply: album not resolved or album cover not set"); return false }
+        try await store.refreshDerivedFacets()
+        guard try await store.track(id: trackID)?.albumID != nil, try await !store.isAlbumRegroupOwed(),
+              try await store.albums().contains(where: { $0.title == "The Album" && $0.artworkKey == "hashA" })
+        else { printFail(number, "apply: the end-of-pass regroup did not resolve the album + cover"); return false }
         guard try await store.artists().contains(where: { $0.name == "The Artist" }) else {
             printFail(number, "apply: artist not resolved"); return false
         }
@@ -115,7 +122,8 @@ func checkMetadataApplyResult(number: Int, url: URL) async -> Bool {
             printFail(number, "apply: expected exactly 1 artwork row"); return false
         }
         printPass(number, "applyExtractedResult (one txn): writes tags (title/track/disc/year), resolves "
-            + "artist+album, attaches genres, links artwork + sets the album cover — atomically")
+            + "the artist, attaches genres, links artwork and records the regroup debt — atomically; the "
+            + "end-of-pass regroup then resolves the album + its cover and clears the debt")
         return true
     } catch {
         printFail(number, "apply-result threw: \(error)"); return false
@@ -213,53 +221,77 @@ func checkExtractorVanishedFile(number: Int, url: URL) async -> Bool {
     return true
 }
 
-// MARK: - album-cover first-wins (M5): attachArtworkLocked's `artwork_key IS NULL` guard
+// MARK: - album cover is deterministic (S10.8 C2 fix round, C8 — replaces M5's "first wins")
 
-/// The album cover is the FIRST applied track's art. `attachArtworkLocked` sets it only when
-/// the album has none (`… AND artwork_key IS NULL`), so re-linking a track — or applying a
-/// LATER track in the same album — updates the TRACK's art but must NOT override the album
-/// cover. Case U covered only album-LESS tracks, so this guard was untested.
-func checkAlbumCoverFirstWins(number: Int, url: URL) async -> Bool {
+/// The album cover is the art of its FIRST song in album order — lowest disc, then track number
+/// (a missing disc reads as disc 1, a song without a track number comes last) — whichever file the
+/// pass happened to read first. M5's rule ("the first APPLIED track's art wins") made the cover
+/// depend on extraction order; C8 replaces it. Proven by applying the same songs in two orders.
+func checkAlbumCoverDeterministic(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
         let root = try await store.addRoot(URL(fileURLWithPath: "/Music/S83d"))
         let gen = try await store.beginScanGeneration()
-        let ids = try await store.upsert([
-            makeScanned(path: "/Music/S83d/a.flac", name: "a"),
-            makeScanned(path: "/Music/S83d/b.flac", name: "b"),
-        ], folderID: root, generation: gen)
-        guard ids.count == 2 else { printFail(number, "album-cover: 2-track seed failed"); return false }
-
-        // t0 → art A: the album had no cover, so A becomes the album cover.
-        try await applyCover(store, track: ids[0], title: "a", hash: "A", gen: gen)
-        guard try await trackArt(store, ids[0]) == "A", try await albumCover(store) == "A" else {
-            printFail(number, "album-cover: first apply did not set the album cover to A"); return false
+        let ids = try await store.upsert(["a", "b", "c", "d"].map {
+            makeScanned(path: "/Music/S83d/\($0).flac", name: $0)
+        }, folderID: root, generation: gen)
+        guard ids.count == 4 else { printFail(number, "album-cover: 4-track seed failed"); return false }
+        // Album order: c (disc —, track 1) < b (disc 1, track 2) < d (disc 2, track 1) < a (no track).
+        let order = [
+            CoverSong(id: ids[0], disc: 1, trackNo: nil, hash: "A"),
+            CoverSong(id: ids[1], disc: 1, trackNo: 2, hash: "B"),
+            CoverSong(id: ids[2], disc: nil, trackNo: 1, hash: "C"),
+            CoverSong(id: ids[3], disc: 2, trackNo: 1, hash: "D"),
+        ]
+        // Read in file order, then in REVERSE — the cover must be C both times.
+        for pass in [order, order.reversed()] {
+            for song in pass {
+                try await applyCover(store, song, gen: gen)
+            }
+            try await store.refreshDerivedFacets()
+            let cover = try await albumCover(store)
+            guard cover == "C" else {
+                printFail(number, "album-cover: cover is \(String(describing: cover)) after reading "
+                    + "\(pass.map(\.hash)), expected C (disc 1 track 1)"); return false
+            }
         }
-        // Re-link t0 → art B: the TRACK updates; the album cover STAYS A (IS NULL guard).
-        try await applyCover(store, track: ids[0], title: "a", hash: "B", gen: gen)
-        guard try await trackArt(store, ids[0]) == "B", try await albumCover(store) == "A" else {
-            printFail(number, "album-cover: re-link overrode the album cover (IS NULL guard failed)"); return false
+        // Re-link the first song's art → the cover follows it; renumber that song to track 9 → the
+        // new first song's art (B) takes over.
+        try await applyCover(store, CoverSong(id: ids[2], disc: nil, trackNo: 1, hash: "E"), gen: gen)
+        try await store.refreshDerivedFacets()
+        let followed = try await albumCover(store)
+        try await applyCover(store, CoverSong(id: ids[2], disc: nil, trackNo: 9, hash: nil), gen: gen)
+        try await store.refreshDerivedFacets()
+        guard followed == "E", try await albumCover(store) == "B" else {
+            printFail(number, "album-cover: the first song's new art (\(String(describing: followed))) or the "
+                + "new first song's art did not become the cover"); return false
         }
-        // A SECOND track in the SAME album → art C: album cover still A (not overridden).
-        try await applyCover(store, track: ids[1], title: "b", hash: "C", gen: gen)
-        guard try await trackArt(store, ids[1]) == "C", try await albumCover(store) == "A" else {
-            printFail(number, "album-cover: a later track in the album overrode the album cover"); return false
-        }
-        printPass(number, "album cover = FIRST applied track's art: the `artwork_key IS NULL` guard means "
-            + "re-linking a track (or applying a later track in the album) updates the TRACK art but NEVER "
-            + "overrides the album cover")
+        printPass(number, "album cover is deterministic (C8): the art of the album's first song in (disc, "
+            + "track) order — a missing disc is disc 1, an unnumbered song last — the same whichever order the "
+            + "files are read; it follows that song's art, and the album order when a song is renumbered")
         return true
     } catch {
-        printFail(number, "album-cover-first-wins threw: \(error)"); return false
+        printFail(number, "album-cover-deterministic threw: \(error)"); return false
     }
 }
 
-/// Apply `hash` as `track`'s art within album "One Album" (all tracks share the album).
-private func applyCover(_ store: LibraryStore, track: Int64, title: String, hash: String, gen: Int64) async throws {
-    let meta = TrackMetadata(title: title, artistName: "AA", albumTitle: "One Album", albumArtistName: "AA")
-    let link = ArtworkLink(contentHash: hash, cachePath: "/cache/\(hash).jpg",
-                           pixelSize: CGSize(width: 10, height: 10), byteSize: 10)
-    try await store.applyExtractedResult(trackID: track, meta: meta, artwork: link, generation: gen)
+/// One song of album "One Album": its id, album position and art (nil = leave its art).
+private struct CoverSong {
+    let id: Int64
+    let disc: Int?
+    let trackNo: Int?
+    let hash: String?
+}
+
+/// Apply `song`'s position and art within album "One Album" (all tracks share it).
+private func applyCover(_ store: LibraryStore, _ song: CoverSong, gen: Int64) async throws {
+    let meta = TrackMetadata(title: "t\(song.id)", artistName: "AA", albumTitle: "One Album", albumArtistName: "AA",
+                             trackNo: song.trackNo, discNo: song.disc)
+    let link = song.hash.map {
+        ArtworkLink(contentHash: $0, cachePath: "/cache/\($0).jpg", pixelSize: CGSize(width: 10, height: 10),
+                    byteSize: 10)
+    }
+    try await store.applyExtractedResult(trackID: song.id, meta: meta, artwork: link, generation: gen)
 }
 
 private func trackArt(_ store: LibraryStore, _ id: Int64) async throws -> String? {

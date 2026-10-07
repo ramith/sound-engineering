@@ -71,12 +71,18 @@ extension LibraryModel {
 
     /// Read the tags of songs left pending at launch (S10.8 C2): the one-time full re-read a
     /// derived-data version bump queues (`LibraryStore.derivedDataRefreshed`), or a pass cut off
-    /// at quit. Without this they would wait for the next folder change. Runs on `scanTask`, so
-    /// adding a folder (whose own pass reads every pending song) or quitting cancels it. The
-    /// sidebar shows "Reading tags…" while it runs; the Albums grid reloads when it ends.
+    /// at quit — including one cut off after its last song but before its end-of-pass album
+    /// regroup (`isAlbumRegroupOwed`, C2 fix round B2). Without this they would wait for the next
+    /// folder change. Runs on `scanTask`, so adding a folder (whose own pass reads every pending
+    /// song) or quitting cancels it. The sidebar shows "Reading tags…" while it runs; the Albums
+    /// grid reloads when it ends.
     private func resumePendingMetadata(_ store: LibraryStore) async {
-        guard let pending = try? await store.tracksNeedingMetadata(limit: 1), !pending.isEmpty,
-              let generation = try? await store.beginScanGeneration() else { return }
+        let pending = (try? await store.tracksNeedingMetadata(limit: 1)) ?? []
+        let regroupOwed = (try? await store.isAlbumRegroupOwed()) ?? false
+        guard !pending.isEmpty || regroupOwed, let generation = try? await store.beginScanGeneration() else { return }
+        // A folder added while the reads above awaited owns `scanTask` now, and its pass reads every
+        // pending song and regroups — never overwrite (and so orphan, uncancellable) it (B3).
+        guard scanTask == nil else { return }
         let reason = store.derivedDataRefreshed
             ? "full re-read for derived data v\(LibraryStore.derivedDataVersion)" : "resuming an interrupted pass"
         logUX("libraryStore: reading pending tags at launch (\(reason))")
@@ -120,8 +126,10 @@ extension LibraryModel {
         // walk's next batch UPSERTs a now-dangling folder_id → FK failure + a spurious
         // "scan failed" error + wasted work (AC-14, review 1b). `scanTask` is a single shared
         // task, so only cancel when the active scan targets this folder; await it so no batch
-        // lands after the delete. (`scanProgress` is nil between scan + metadata phases — that
-        // narrow window is FK-backstopped, not resurrected.)
+        // lands after the delete. A METADATA pass running meanwhile (the launch re-read, or this
+        // folder's own pass — `scanProgress` is nil then) is left running: it skips every song
+        // whose row the delete removes (`applyExtractedResult` writes nothing for a gone row —
+        // S10.8 C2 fix round, B3) and its end-of-pass regroup settles the rest.
         if scanProgress?.folderID == folderID {
             let scan = scanTask
             scan?.cancel()

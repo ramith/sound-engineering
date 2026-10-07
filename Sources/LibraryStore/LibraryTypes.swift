@@ -336,20 +336,26 @@ public struct LibraryFolder: Sendable, Identifiable, Equatable {
 /// The tag metadata applied to a track in S8.3 (design §4 `applyMetadata`). The store
 /// stores the raw album inputs on the track and assigns its album through `AlbumGrouping`
 /// (S10.8 C2): tagged albums key on their album artist, untagged ones on their folder.
+///
+/// NORMALISED ONCE, here (C2 fix round, C5): the album title, the album-artist tag and the artist
+/// are trimmed and NFC-normalised, and a missing artist or album artist (empty, whitespace or a
+/// literal "Unknown Artist" — C4) reads as nil. Every producer (both extractors, the harness)
+/// builds through this init, so the store's SQL always compares normalised bytes.
 public struct TrackMetadata: Sendable, Equatable {
     /// Track title tag, or `nil`.
     public let title: String?
-    /// Track-artist name, or `nil` (resolved/created in `artists`).
+    /// Track-artist name (normalised; nil when missing), or `nil` (resolved/created in `artists`).
     public let artistName: String?
-    /// Album title, or `nil` (no album).
+    /// Album title (normalised), or `nil` (no album).
     public let albumTitle: String?
-    /// Album-artist TAG, or `nil` — then the album groups by folder and its artist is derived
-    /// (`AlbumGrouping`).
+    /// Album-artist TAG (normalised; nil when missing), or `nil` — then the album groups by folder
+    /// and its artist is derived (`AlbumGrouping`).
     public let albumArtistName: String?
     /// The compilation flag (iTunes `cpil`, ID3 `TCMP`, Vorbis `COMPILATION`). An untagged
     /// album with any flagged song is credited to "Various Artists" (S10.8 C2, decision 12).
     public let isCompilation: Bool
-    /// Release year, or `nil` (defaults to 0 = "unknown" in the total album key).
+    /// Release year, or `nil`. Not album identity (C2 fix round): the album shows its songs' most
+    /// common year (`AlbumGrouping.display`).
     public let year: Int?
     /// Track number, or `nil`.
     public let trackNo: Int?
@@ -373,9 +379,9 @@ public struct TrackMetadata: Sendable, Equatable {
         sampleRate: Int? = nil, bitDepth: Int? = nil, channels: Int? = nil
     ) {
         self.title = title
-        self.artistName = artistName
-        self.albumTitle = albumTitle
-        self.albumArtistName = albumArtistName
+        self.artistName = AlbumGrouping.presentArtist(artistName)
+        self.albumTitle = AlbumGrouping.normalizedTag(albumTitle)
+        self.albumArtistName = AlbumGrouping.presentArtist(albumArtistName)
         self.isCompilation = isCompilation
         self.year = year
         self.trackNo = trackNo

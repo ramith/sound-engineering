@@ -172,8 +172,8 @@ func allCheckCases() -> [CheckCase] {
         // S8.3 Slice 5 — REAL-file extraction correctness (self-made tagged fixtures).
         CheckCase(label: "y-real-m4a", run: checkRealMetadataM4A),
         CheckCase(label: "z-real-flac", run: checkRealMetadataFLAC),
-        // S8.3 review-driven: album-cover first-wins (M5), pass cancellation (M9), real tagless.
-        CheckCase(label: "aa-album-cover-first-wins", run: checkAlbumCoverFirstWins),
+        // S8.3 review-driven: album cover (M5; deterministic since S10.8 C2 C8), cancellation (M9), tagless.
+        CheckCase(label: "aa-album-cover-deterministic", run: checkAlbumCoverDeterministic),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
@@ -182,7 +182,7 @@ func allCheckCases() -> [CheckCase] {
         + playlistSpineCheckCases() + playlistFolderCheckCases()
         + playlistScanCheckCases()
         + migrationConvergenceCheckCases()
-        + albumArtistCheckCases()
+        + albumArtistCheckCases() + albumFixRoundCheckCases() + albumIdentityCheckCases()
         + storeOpenSafetyCheckCases()
 }
 
@@ -349,7 +349,7 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S8.3 Slice 2: V extractor-FS-tolerance; S8.3 Slice 3: W artwork-cache-dedup+thumbnail; "
         + "S8.3 Slice 4: X metadata-pass [enrich+idempotency+anti-loop]; "
         + "S8.3 Slice 5: Y real-m4a [AVFoundation], Z real-flac [FFmpeg]; "
-        + "S8.3 review: AA album-cover-first-wins [IS NULL guard], AB metadata-pass-cancellation "
+        + "S8.3 review: AA album-cover-deterministic [C8], AB metadata-pass-cancellation "
         + "[skips sweep], AC real-no-tags [empty-not-crash + marked]; "
         + "S8.4 Slice 1: AD move-reference-survives [Gate-2: play_count/loved/rating keep the id], "
         + "AE move-candidate-selection [cross-vol/format/ambiguity → no-match], "
@@ -378,6 +378,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S10.8 C2: ALB-01 folder fallback + incremental re-credit, ALB-02 compilation no-split [real "
         + "flag both extractors + disc folders], ALB-03 re-read keeps user data [v6 store, byte-identical], "
         + "ALB-04 one missing-artist string, ALB-05 same-title folders don't merge + move re-keys; "
+        + "S10.8 C2 fix round: ALB-06 v7 scoped reference check, ALB-07 offline file stays pending, ALB-08 "
+        + "one-title pass cost, ALB-09 folder removed mid-pass + root-scoped pass, ALB-10 no zero-song "
+        + "album + durable regroup debt, ALB-11 year not identity, ALB-12 disc/bonus folders fold, ALB-13 "
+        + "mixed tagging, ALB-14 one missing rule, ALB-15 normalised once, ALB-16 featured artists; "
         + "S10.8 C2 store-open safety: OPEN-01 failed migration refused [byte-identical], OPEN-02 backup "
         + "before upgrade [restores + keep 2], OPEN-03 no backup when current, OPEN-04 failed backup refuses, "
         + "OPEN-05 damaged page still quarantined) ===")

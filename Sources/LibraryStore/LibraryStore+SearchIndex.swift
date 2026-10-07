@@ -20,19 +20,20 @@ import GRDB
 
 extension LibraryStore {
     /// The searchable-field projection for one track, LEFT-JOINed so a track with no
-    /// artist/album/genre still resolves; `title` falls back to the filename `name`,
-    /// genres are space-joined. Identical column semantics to the v2 backfill, so a
-    /// re-synced row matches what the migration would have produced.
+    /// artist/genre still resolves; `title` falls back to the filename `name`, genres are
+    /// space-joined. The album text is the song's own album title (`tracks.album_title`, v7): an
+    /// album row's title IS its songs' album title (S10.8 C2), so this matches the v2 backfill's
+    /// `albums.title` — and a metadata pass, which leaves album assignment to its end-of-pass
+    /// regroup (C2 fix round B2), still indexes the album text at the song's own write.
     private static let searchRowSelect = """
     SELECT COALESCE(NULLIF(t.title, ''), t.name),
            COALESCE(ar.name, ''),
-           COALESCE(al.title, ''),
+           COALESCE(t.album_title, ''),
            COALESCE((SELECT group_concat(g.name, ' ')
                      FROM track_genres tg JOIN genres g ON g.id = tg.genre_id
                      WHERE tg.track_id = t.id), '')
     FROM tracks t
     LEFT JOIN artists ar ON ar.id = t.artist_id
-    LEFT JOIN albums  al ON al.id = t.album_id
     WHERE t.id = ?;
     """
 

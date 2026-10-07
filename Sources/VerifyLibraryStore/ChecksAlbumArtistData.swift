@@ -7,7 +7,9 @@
 //   ALB-04 one missing-artist string everywhere — the Albums credit, every song row, the album-
 //          artist cell and a literal "Unknown Artist" tag all resolve to `unknownArtistName`, and
 //          the Artists list never shows it. (The UI's literal ban is the semgrep rule
-//          `library-one-unknown-artist-string`.)
+//          `library-one-unknown-artist-string`.) Changed by the C2 fix round (C4): a literal
+//          "Unknown Artist" tag is now NO tag — the song has no artist row, exactly like an
+//          untagged one — instead of a link to the id-0 sentinel row.
 
 import Foundation
 import GRDB
@@ -168,7 +170,7 @@ func checkOneMissingArtistString(number: Int, url: URL) async -> Bool {
             song("Anon/anon.flac", songTags(nil, album: "Nameless")),
             song("Named/named.flac", songTags("Named", album: "Named Album")),
             song("Loose/noalbum.flac", TrackMetadata(title: "No Album")),
-            // A tag that literally says the missing-artist string is the sentinel, not a 2nd artist.
+            // A tag that literally says the missing-artist string is no artist (C4), not a 2nd one.
             song("Literal/literal.flac", TrackMetadata(title: "Literal", artistName: unknownArtistName)),
         ])
         let store = fixture.store
@@ -182,8 +184,8 @@ func checkOneMissingArtistString(number: Int, url: URL) async -> Bool {
         }
         printPass(number, "ALB-04 one missing-artist string: the Albums credit, a no-artist song's row, a "
             + "no-album song's row and the album-artist cell all read '\(unknownArtistName)' (no-album → no "
-            + "credit); a literal '\(unknownArtistName)' tag IS the sentinel (no 2nd row), and the Artists list "
-            + "never shows it; the UI literal is banned by semgrep library-one-unknown-artist-string")
+            + "credit); a literal '\(unknownArtistName)' tag is no artist (no row of its own), and the Artists "
+            + "list never shows it; the UI literal is banned by semgrep library-one-unknown-artist-string")
         return true
     } catch {
         printFail(number, "ALB-04 threw: \(error)"); return false
@@ -206,7 +208,7 @@ private func songRowsReadTheOneString(_ store: LibraryStore, number: Int) async 
         (noAlbum.artistDisplayName, unknownArtistName), (noAlbum.albumArtistDisplayName, ""),
         (literal.artistDisplayName, unknownArtistName),
     ]
-    guard cells.allSatisfy({ $0.0 == $0.1 }), literal.artistID == unknownArtistID else {
+    guard cells.allSatisfy({ $0.0 == $0.1 }), literal.artistID == nil, anon.artistID == nil else {
         printFail(number, "ALB-04: song cells read \(cells.map(\.0)), expected \(cells.map(\.1)) "
             + "(literal artist id \(String(describing: literal.artistID)))")
         return false
