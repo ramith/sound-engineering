@@ -39,6 +39,11 @@
             }
             guard let defaults = UserDefaults(suiteName: defaultsSuite) else { fail("no defaults suite") }
             defaults.removePersistentDomain(forName: defaultsSuite)
+            if NSScreen.main?.backingScaleFactor != scale {
+                // Text and AppKit controls rasterize for the WINDOW's screen even in the 2x bitmap.
+                print("sheets: WARNING the main screen is not 2x — text rasterizes for it; don't diff these "
+                    + "against sheets rendered with a Retina main screen")
+            }
             var failures: [String] = []
             for variant in SheetVariant.allCases where variant.sheetCount(for: request) > 0 {
                 let fixture = SheetFixture(defaults: defaults, variant: variant)
@@ -83,11 +88,18 @@
             return parts.compactMap(\.self).joined(separator: "-") + ".png"
         }
 
+        /// Sheets always render at Retina density, composited in Display P3 (a Retina panel's space,
+        /// where the live app composites). The main screen is not a fixed fact: with a 1x external
+        /// display set as main, the screen-derived bitmap wrote 1000×720 sheets in that display's
+        /// profile, which no earlier sheet can be diffed against (S10.8 B2a). Text and AppKit
+        /// controls still rasterize for the main screen (an offscreen window's), hence the warning.
+        private static let scale: CGFloat = 2
+
         /// Hosts `view` in a borderless window that is never ordered on screen, lets SwiftUI settle
-        /// (`.task`s run, Monitoring's poll ticks), and writes the hosting view's own drawing as a PNG at
-        /// the screen's backing scale, in sRGB — the cached bitmap carries the DISPLAY's profile, so
-        /// raw pixel values (and sheet-to-sheet diffs) would otherwise differ from Mac to Mac.
-        /// Returns why it failed, or `nil` on success.
+        /// (`.task`s run, Monitoring's poll ticks), and writes the hosting view's own drawing as a PNG:
+        /// drawn at `scale` into a Display P3 bitmap, then converted to sRGB — never the attached
+        /// display's density or colour profile, so sheet-to-sheet diffs hold across displays (text
+        /// aside: see `scale`). Returns why it failed, or `nil` on success.
         private static func snapshot(_ view: some View, appearance: NSAppearance, size: NSSize,
                                      to url: URL) -> String? {
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
@@ -102,7 +114,12 @@
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
             }
             guard host.bounds.size == size else { return "laid out at \(host.bounds.size), not \(size)" }
-            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return "no bitmap" }
+            guard let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            )?.retagging(with: .displayP3) else { return "no bitmap" }
+            bitmap.size = size // points; the pixel dimensions above set the density
             host.cacheDisplay(in: host.bounds, to: bitmap)
             guard let srgb = bitmap.converting(to: .sRGB, renderingIntent: .default) else { return "no sRGB bitmap" }
             guard let png = srgb.representation(using: .png, properties: [:]) else { return "PNG encoding failed" }
