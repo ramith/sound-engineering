@@ -1,5 +1,5 @@
 // DesignSystemGlassControls — the appearance-aware control visuals of the S10.7 token contract:
-// the carved slider (groove, knob, track) and the glass switch. Split out of
+// the carved slider (groove, knob, track), the glass switch and the light edge. Split out of
 // `DesignSystemGlass.swift` (S10.8 B) so the surface/glow half keeps room under its length
 // budget; like that file, this is a sanctioned definition file — the one other place the
 // appearance may be read (semgrep `ui-no-appearance-branching`). No RGBA literal lives here
@@ -80,11 +80,7 @@ struct CarvedKnob: View {
                                startPoint: .center, endPoint: .bottom)
                     .clipShape(Circle())
             }
-            .overlay {
-                if !dark {
-                    Circle().strokeBorder(SwiftUI.Color(token: GlassDecor.knobRingLight), lineWidth: 1)
-                }
-            }
+            .lightEdge(GlassDecor.knobRingLight, in: Circle())
             .frame(width: size, height: size)
     }
 }
@@ -127,7 +123,6 @@ struct GlassSwitchStyle: ToggleStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let light = colorScheme != .dark
-        let edge = SwiftUI.Color(token: GlassDecor.switchEdgeLight)
         // The native labeled switch's own layout (label, 8pt, switch; pixel-identical), re-composed
         // so the hairline sits on the track alone — the labels-hidden switch's frame IS its track.
         HStack(spacing: DesignSystem.Spacing.small) {
@@ -138,7 +133,34 @@ struct GlassSwitchStyle: ToggleStyle {
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .tint(DesignSystem.Color.accentFill)
-                .overlay { Capsule().strokeBorder(light ? edge : .clear, lineWidth: 1) }
+                .lightEdge(GlassDecor.controlEdgeLight, in: Capsule())
+        }
+    }
+}
+
+// MARK: - Light edge (grammar rule 2 — S10.8 B3)
+
+extension View {
+    /// The LIGHT-ONLY 1pt dark edge drawn inside `shape`, over the content, for a light surface its
+    /// own fill can't separate from what it sits on (grammar rule 2: the edge flips dark in light).
+    /// Dark draws nothing — its fills already separate. One idiom for the knob ring, the switch
+    /// track and the format chip.
+    func lightEdge(_ color: RGBAColor, in shape: some InsettableShape) -> some View {
+        modifier(LightEdge(color: color, shape: shape))
+    }
+}
+
+private struct LightEdge<EdgeShape: InsettableShape>: ViewModifier {
+    let color: RGBAColor
+    let shape: EdgeShape
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if colorScheme != .dark {
+                shape.strokeBorder(SwiftUI.Color(token: color), lineWidth: 1)
+            }
         }
     }
 }
