@@ -2,9 +2,9 @@ import SwiftUI
 
 // MARK: - PlaylistDetailView + actions (split out for type-body length)
 
-/// Play / reorder / keyboard-nav / restore-toast actions for the playlist detail, plus the
-/// missing-file (F) helpers. A same-type extension, split from `PlaylistDetailView` for type-body
-/// length; reaches its `internal` state.
+/// Play / reorder / restore-toast actions for the playlist detail, plus the missing-file (F)
+/// helpers. A same-type extension, split from `PlaylistDetailView` for type-body length; reaches
+/// its `internal` state. (The keyboard-cursor keys live beside the track list, in the main file.)
 extension PlaylistDetailView {
     /// Locate / Remove for a missing entry — shared by the badge menu, the row context menu, and the
     /// VoiceOver rotor so all three stay in sync.
@@ -57,46 +57,5 @@ extension PlaylistDetailView {
         ids.move(fromOffsets: IndexSet(integer: from), toOffset: from < to ? to + 1 : to)
         Task { await model.reorderEntries(ids) }
         return true
-    }
-
-    /// ↑/↓ traverse only the AVAILABLE (playable) rows — the "unavailable" (missing-file) rows are
-    /// non-interactive except via their context menu (Locate / Remove), so selection skips them (F).
-    /// The first press selects the first playable row (where the focus ring already sits). Keeps
-    /// the new selection on screen the queue's way (A3): `scrollTo` with no anchor scrolls only
-    /// as far as needed, instantly.
-    func moveSelection(by delta: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
-        let ids = model.detail.filter(\.isAvailable).map(\.id)
-        guard !ids.isEmpty else { return .ignored }
-        let target: Int64
-        if let current = selectedEntryID, let index = ids.firstIndex(of: current) {
-            let next = index + delta
-            guard next >= 0, next < ids.count else { return .ignored }
-            target = ids[next]
-        } else {
-            target = ids[0]
-        }
-        selectedEntryID = target
-        proxy.scrollTo(target)
-        return .handled
-    }
-
-    func playSelected() -> KeyPress.Result {
-        guard let id = selectedEntryID else { return .ignored }
-        playNow(startingAt: id)
-        return .handled
-    }
-
-    func removeSelected() -> KeyPress.Result {
-        guard let id = selectedEntryID else { return .ignored }
-        // Pre-select the neighbor (next, else previous) so selection lands there — not back at the
-        // top — once the async remove + reload lands. Use the SAME available-row set `moveSelection`
-        // traverses, so the neighbor is a selectable row (not an unavailable placeholder).
-        let ids = model.detail.filter(\.isAvailable).map(\.id)
-        if let index = ids.firstIndex(of: id) {
-            selectedEntryID = index + 1 < ids.count ? ids[index + 1]
-                : (index - 1 >= 0 ? ids[index - 1] : nil)
-        }
-        Task { await model.removeEntry(id) }
-        return .handled
     }
 }
