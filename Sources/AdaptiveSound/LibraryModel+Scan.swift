@@ -40,8 +40,10 @@ extension LibraryModel {
             onStoreReady?() // S10.2 2c: store is live — let the audio VM hydrate the queue
         } catch {
             // Additive seam — the app runs without the store; only the parallel
-            // store-population is unavailable until the next successful construction.
-            logUX("libraryStore: init failed — \(error.localizedDescription)")
+            // store-population is unavailable until the next successful construction. Say why: a
+            // library the store refused is left as it was, and the user should know it's safe.
+            logUX("libraryStore: init failed — \(error)")
+            onError?(Self.storeOpenFailureMessage(error))
         }
         // S8.4: start the FSEvents watcher — it drives the live store reconcile.
         // refreshWatchedRoots picks up the store roots.
@@ -214,6 +216,25 @@ extension LibraryModel {
             + "'\(conflict.newRoot)' overlaps '\(conflict.existingRoot)'")
         logUX("scanFolderIntoLibrary: rejected nested root \(conflict.kind) "
             + "(new='\(conflict.newRoot)' existing='\(conflict.existingRoot)')")
+    }
+
+    /// The note for a library that didn't open (S10.8 C2). A `StoreOpenRefusal` left the file as it
+    /// was, so the note says the user's data is safe and what to do next.
+    private static func storeOpenFailureMessage(_ error: any Error) -> String {
+        switch error as? StoreOpenRefusal {
+        case .newerVersion:
+            "This library was last opened by a newer version of AdaptiveSound, so this version can't "
+                + "open it. Nothing was changed — open it with the newer version."
+        case let .backupFailed(cause):
+            "AdaptiveSound couldn't make a safety copy of your library before updating it, so it left "
+                + "the library as it was. Check that your disk has free space, then reopen the app. "
+                + "(\(cause.localizedDescription))"
+        case let .openFailed(cause):
+            "Your library couldn't be opened (\(cause.localizedDescription)). Nothing was deleted — "
+                + "your playlists and play history are safe. Reopen the app to try again."
+        case nil:
+            "Your library couldn't be opened (\(error.localizedDescription))."
+        }
     }
 }
 
