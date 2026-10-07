@@ -405,6 +405,29 @@ groove.
 
 ## Sprint C — album artists, and the test library
 
+### C1 — the isolated test library (2026-10-07)
+
+Built by one agent in its own worktree, alongside C2.
+
+- **One `AppDataLocation`** decides where the app persists: the store (tracks, albums, playlists,
+  queue, history, watched folders), the artwork cache, the single-instance lock, and the settings
+  (every `@AppStorage` through `.defaultAppStorage`, and the view models' defaults). Nothing else
+  names Application Support or the standard defaults — semgrep `persist-one-location`. The user's
+  own location is unchanged: `Application Support/AdaptiveSound/` and the app's standard defaults.
+- **`-ASTestLibrary [<folder>]`** (debug only) swaps in `Application Support/AdaptiveSound Test
+  Library/`, the `AdaptiveSound.TestLibrary` defaults suite and its own lock, under its own bundle id
+  (`com.adaptivesound.app.test-library`, because AppKit files window state by bundle id). It refuses
+  to run inside the real bundle. Release builds carry no trace of it.
+- **`make stress-library`** writes 10,043 small tagged tracks (857 albums, 345 artists, art and no
+  art, long / CJK / RTL / emoji names, compilations with and without the flag, same-title albums in
+  different folders, 6- and 8-channel files) to `~/Music/AdaptiveSound Stress Library` in ~7 s
+  (~117 MB). **`make run-test-library`** runs the debug app on it; **`make reset-test-library`**
+  wipes only the test store.
+- **Isolation proof:** four launches beside the founder's running app; the real store files, the
+  artwork folder and `defaults export com.adaptivesound.app` were identical before and after.
+- **Found by its first stress scan** (fed to C2): FLAC album artists never read; same-title albums
+  merging across folders; one artist spelled two ways making two artist rows.
+
 ### C2 design check (2026-10-07)
 
 - **Compilation tag.** AVFoundation reads `itsk/cpil`, `id3/TCMP` and `vorb/COMPILATION`; FFmpeg
@@ -448,6 +471,38 @@ groove.
   whose album changed; the artwork sweep now runs after every clean pass (it used to skip passes
   with nothing pending); the harness builds its migrators from `LibraryStore.makeMigrator` (one
   registration list, capped by version) instead of a hand-kept copy.
+
+### C2 review and break-it, round 1 (2026-10-08, code-reviewer + qa-expert, read-only)
+
+Both found the UPGRADE itself byte-safe (a v6 store with playlists, plays, loved, ratings and
+frecency, migrated and re-read: user data identical; kill -9 at six points, then resume: identical).
+What was not safe was everything around it. Verdict: **not safe for the founder's real library.**
+
+- **Open path (pre-existing, made likely by v7):** any migration failure on a healthy store, or a
+  store from a NEWER build, was quarantined and rebuilt EMPTY. A v7 library opened by main's v6
+  build came up with no playlists or plays. → the store-open safety round below.
+- **The re-read:** a file offline at first launch was marked read and never re-read (3,796 FLAC
+  album artists lost for good in the repro); a tag write regrouped every song sharing its title
+  (2,000 songs, one title: 118 s; 10k extrapolated past an hour).
+- **Grouping:** disc and bonus folders split ("Disc 1 of 2", "[CD 1]", "Bonus/" …, a regression from
+  v6); compilations split by year; mixed tagging made twin tiles; stray spaces and NFC/NFD split
+  albums; "feat." made Various Artists; ghost zero-song albums mid-pass.
+→ the C2 fix round below (A3, B1–B4, C1–C8).
+
+### C2 store-open safety round (2026-10-08)
+
+One agent, in parallel with the fix round. `LibraryStore+Open.swift`, `StoreBackup.swift`.
+
+- **Look first, read-only:** an existing file is checked on a plain connection before anything
+  writes to it (a WAL pool writes on open).
+- **Quarantine only real corruption** (`SQLITE_CORRUPT`, `SQLITE_NOTADB`, a failed `integrity_check`).
+- **Refuse, untouched:** a newer-schema store, or a migration / open failure on an intact file, leaves
+  the store nil and the file byte-identical, with a plain message ("This library was last opened by a
+  newer version of AdaptiveSound… Nothing was changed").
+- **Back up before every migration of an existing store:** `library.pre-v<N>-<stamp>.sqlite3` via GRDB
+  `backup(to:)`, written under `.partial` and renamed; the newest two kept; a failed backup refuses.
+- **Checks:** OPEN-01…05; SCHEMA-6 and the foreign-schema check now assert refusal (an intentional
+  rule change). 11 mutations, all caught. The S8.1 and S10.3 designs carry the annotation.
 
 ### C2 fix round (2026-10-08)
 
