@@ -132,7 +132,9 @@ look the same in dark, minus the text halos; no button has white text on teal.
 | B3 | Light pass on Now Playing, Songs, the nav rail and both bands — fixing what the sheets show | M | the light picture sheets |
 
 **Bar:** the §3.2 light grammar fully applied. The effects that stay dark-only are named:
-the title halo, the slider glow, the band sheen and the play-button gloss glow (grammar rule 6).
+the title halo, the slider glow, the band sheen, the play-button gloss glow and the inspector
+card's teal glow (grammar rule 6; the card glow shares the glow field's gate, so it carries its
+own dark check — a light backdrop that glows must never open it).
 How the *background glow* looks in light is exactly what B1 decides.
 **Freeze rule:** after B, a light token changes only with founder sign-off **and** a re-render
 of every earlier sprint's picture sheets; later sprints derive new values from the frozen ones.
