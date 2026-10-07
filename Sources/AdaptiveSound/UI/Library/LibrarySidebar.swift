@@ -170,9 +170,11 @@ struct LibrarySidebar: View {
                         .font(DesignSystem.Font.monoSmall)
                         .foregroundStyle(DesignSystem.Color.labelTertiary)
                 }
-                .overlay( // drop-target ring while a library track is dragged over this row
+                // Drop-target ring while a library track is dragged over this row — STATE, not
+                // decoration, so it wears the non-text 3:1 fill role (R4-TINT-01).
+                .overlay(
                     RoundedRectangle(cornerRadius: DesignSystem.Radius.container)
-                        .stroke(DesignSystem.Color.accent,
+                        .stroke(DesignSystem.Color.accentFill,
                                 lineWidth: dropTargetPlaylistID == playlist.id ? 1.5 : 0)
                 )
             }
