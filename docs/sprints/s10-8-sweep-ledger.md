@@ -304,3 +304,9 @@ selection decision.
   skips every file there. B2a ran it with the same rules minus that exclusion: clean.
 - Live-only (sheets draw system switches as an inactive window): the Crossfeed switch on, off
   and disabled in an active window, both appearances.
+
+**The dark half — its own commit (DARK-AFFECTING; the founder chose "fix both", 2026-10-07).** It moves
+`disabledDim` from the whole headphones block to its control row, so in dark too only the control
+dims: hint 2.19 → 4.81:1, heading 2.49 → 5.84:1 (darkIC/RT 4.87 / 5.98). The control row stays
+pixel-identical (label 4.57:1, the shipped switch). Only the 8 Now Playing dark sheets change,
+and only in the heading and hint rows; light is untouched (35/35).
