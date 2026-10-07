@@ -207,7 +207,9 @@ private extension PlaylistDetailView {
             .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
             .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
             .onKeyPress(.return) { playCursorRow() }
-            .onKeyPress(.delete) { removeCursorRow() }
+            // The system Delete command (⌫, ⌦, Edit ▸ Delete): macOS delivers ⌫ as U+007F, which
+            // a key-press match on `KeyEquivalent.delete` (U+0008) never sees — see the queue.
+            .onDeleteCommand(perform: removeCommand)
         }
     }
 
@@ -253,11 +255,18 @@ private extension PlaylistDetailView {
         return .handled
     }
 
+    /// The Delete command's action, or nil while Delete has nothing to act on — which disables
+    /// Edit ▸ Delete and lets ⌫ bubble.
+    var removeCommand: (() -> Void)? {
+        guard keyboardCursor?.deleteAction(ringVisible: showsRing) != nil else { return nil }
+        return { removeCursorRow() }
+    }
+
     /// Delete: remove the SELECTED row — permanently, so the ring alone never licenses it (A
     /// break-it): on the seeded first row it only selects. Pre-selects the playable neighbour
     /// (next, else previous) so the selection lands there — not back at the top — once the async
     /// remove + reload lands.
-    func removeCursorRow() -> KeyPress.Result {
+    func removeCursorRow() {
         switch keyboardCursor?.deleteAction(ringVisible: showsRing) {
         case let .remove(id):
             selectedEntryID = ListKeyboardCursor.anchor(afterRemoving: id, from: playableEntryIDs)
@@ -265,9 +274,8 @@ private extension PlaylistDetailView {
         case let .claim(id):
             selectedEntryID = id
         case nil:
-            return .ignored
+            break
         }
-        return .handled
     }
 
     @ViewBuilder

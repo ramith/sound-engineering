@@ -102,7 +102,11 @@ struct PlaylistItemList: View {
             // No `.onKeyPress(.space)`: the Controls-menu Space key-equivalent is matched first
             // (disabled only while a text field is focused), so this handler was dead — Return
             // already covers keyboard play/toggle here (focus-audit nit).
-            .onKeyPress(.delete) { deleteCursorRow() }
+            // Delete is the system Delete COMMAND (⌫, ⌦, Edit ▸ Delete), not a key-press match:
+            // macOS delivers ⌫ as U+007F but `KeyEquivalent.delete` is U+0008, so a key-press
+            // handler for it never fired (founder bug). Nil disables the command, so the key
+            // bubbles while there is nothing to act on.
+            .onDeleteCommand(perform: deleteCommand)
             // Scroll the current track into view when the header's "Jump to Now Playing" fires (UI-2).
             // Target the row's stable id (matches `.id(item.id)`), not a positional index.
             .onChange(of: jumpToCurrentRequestID) { _, _ in
@@ -276,21 +280,28 @@ struct PlaylistItemList: View {
         return .handled
     }
 
+    /// The Delete command's action, or nil while Delete has nothing to act on (no cursor, or
+    /// an unanchored cursor with the ring hidden) — which disables Edit ▸ Delete and lets ⌫
+    /// bubble.
+    private var deleteCommand: (() -> Void)? {
+        guard keyboardCursor?.deleteAction(ringVisible: showsRing) != nil else { return nil }
+        return { deleteCursorRow() }
+    }
+
     /// Delete: remove the SELECTED row (A break-it — the ring alone never licenses a removal; a
     /// Delete on the seeded ring row, e.g. the playing track at launch, only selects it). The
     /// cursor moves to the next visible row, else the new last one, so holding Delete keeps
     /// removing selected rows instead of falling back onto the playing track.
-    private func deleteCursorRow() -> KeyPress.Result {
+    private func deleteCursorRow() {
         switch keyboardCursor?.deleteAction(ringVisible: showsRing) {
         case let .remove(id):
-            guard let index = queueIndex(of: id) else { return .ignored }
+            guard let index = queueIndex(of: id) else { return }
             cursorID = ListKeyboardCursor.anchor(afterRemoving: id, from: visibleRows.map(\.id))
             viewModel.removeTrack(at: index)
         case let .claim(id):
             cursorID = id
         case nil:
-            return .ignored
+            break
         }
-        return .handled
     }
 }
