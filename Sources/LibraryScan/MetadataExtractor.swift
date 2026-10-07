@@ -3,7 +3,7 @@
 // A stateless `Sendable` value type; a pure PRODUCER — it never touches `LibraryStore`.
 // The MetadataScanner pass calls `extract`, then hands the result to the store's
 // `applyExtractedResult` + the ArtworkCache. AVFoundation is primary (mp3/m4a/aac/alac/
-// aiff/wav); the FFmpeg dlopen backend (via the AudioDSP C bridge) fills FLAC/Ogg and
+// aiff/wav); the FFmpeg dlopen backend (via the AudioDSP C bridge) fills FLAC/Ogg/Opus and
 // anything AVFoundation returns empty for — mirroring the decode path's fallback model.
 //
 // `extract` is non-throwing + Optional: every failure is "skip/partial", never
@@ -51,12 +51,13 @@ public struct MetadataExtractor: MetadataExtracting {
 
     public init() {}
 
-    /// Read `url`'s tags + embedded art. Extension-routed (design §4): flac/ogg → FFmpeg
-    /// first (AVFoundation tags them poorly), others → AVFoundation first with an FFmpeg
-    /// cross-fill when the core fields came back empty. `nil` ONLY for unreadable/vanished.
+    /// Read `url`'s tags + embedded art. Extension-routed (design §4): the Vorbis-comment
+    /// formats (flac, ogg/oga, opus) → FFmpeg first (AVFoundation reads their core tags but not
+    /// the album artist or compilation keys — S10.8 C2 fix round, C7), others → AVFoundation
+    /// first with an FFmpeg cross-fill when the core fields came back empty. `nil` ONLY for
+    /// unreadable/vanished.
     public func extract(from url: URL) async -> ExtractedMetadata? {
-        let ext = url.pathExtension.lowercased()
-        if ext == "flac" || ext == "ogg" {
+        if Self.vorbisCommentExtensions.contains(url.pathExtension.lowercased()) {
             // FFmpeg first; if it is absent/unavailable, best-effort AVFoundation.
             if let viaFFmpeg = ffmpegExtract(url) {
                 return viaFFmpeg
@@ -72,6 +73,9 @@ public struct MetadataExtractor: MetadataExtracting {
         }
         return viaApple
     }
+
+    /// The containers whose tags are Vorbis comments — FFmpeg-first.
+    static let vorbisCommentExtensions: Set<String> = ["flac", "ogg", "oga", "opus"]
 }
 
 // MARK: - Merge (AVFoundation primary, FFmpeg cross-fill)
@@ -135,6 +139,11 @@ extension MetadataExtractor {
         guard let head = text?.split(separator: "/").first else { return nil }
         return Int(head.trimmingCharacters(in: .whitespaces))
     }
+
+    /// The compilation flag's user-text names (C2 fix round, C7), lowercased: iTunes' `TCMP` and a
+    /// plain `compilation` in an mp3 `TXXX` frame, and the Vorbis `ITUNESCOMPILATION` comment.
+    /// (The dedicated keys — mp4 `cpil`, ID3 `TCMP`, Vorbis `COMPILATION` — are read too.)
+    static let compilationUserTextNames: Set<String> = ["tcmp", "compilation", "itunescompilation"]
 
     /// A boolean tag (the compilation flag) → `true` only for an explicit yes: `1`, `true` or
     /// `yes`, any case, whitespace-trimmed. Absent, `0` or anything else → `false`. ONE parser

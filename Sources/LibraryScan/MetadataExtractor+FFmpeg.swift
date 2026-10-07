@@ -28,14 +28,15 @@ extension MetadataExtractor {
         // (`albumartist`, `album artist`, `tracknumber`, `discnumber`, `year`/`originaldate`) back
         // it up. (S10.8 C2: the chain once lacked `album_artist`, so EVERY FLAC album artist was
         // dropped → "Unknown Artist"; ALB-02 now reads it from the real fixture.flac.) The
-        // compilation flag needs no chain: Vorbis `COMPILATION`, mp4 `cpil` and ID3 `TCMP` (and
-        // `TXXX:compilation`) all arrive as `compilation`.
+        // compilation flag: Vorbis `COMPILATION`, mp4 `cpil`, ID3 `TCMP` and `TXXX:compilation`
+        // arrive as `compilation`; `TXXX:TCMP` keeps its description (`tcmp`) and the Vorbis
+        // `ITUNESCOMPILATION` its name (C2 fix round, C7) — any of them saying yes counts.
         let meta = TrackMetadata(
             title: tags["title"],
             artistName: tags["artist"],
             albumTitle: tags["album"],
             albumArtistName: tags["album_artist"] ?? tags["albumartist"] ?? tags["album artist"],
-            isCompilation: Self.parseFlag(tags["compilation"]),
+            isCompilation: Self.compilationUserTextNames.contains { Self.parseFlag(tags[$0]) },
             year: Self.parseYear(tags["date"] ?? tags["year"] ?? tags["originaldate"]),
             trackNo: Self.parseLeadingInt(tags["track"] ?? tags["tracknumber"]),
             discNo: Self.parseLeadingInt(tags["disc"] ?? tags["discnumber"]),

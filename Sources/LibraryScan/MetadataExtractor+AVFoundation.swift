@@ -29,10 +29,8 @@ extension MetadataExtractor {
             albumTitle: await Self.firstString(items, [
                 .commonIdentifierAlbumName, .iTunesMetadataAlbum, .id3MetadataAlbumTitle,
             ]),
-            albumArtistName: await Self.firstString(items, [
-                .iTunesMetadataAlbumArtist, .id3MetadataBand,
-            ]),
-            isCompilation: Self.parseFlag(await Self.firstString(items, Self.compilationIdentifiers)),
+            albumArtistName: await Self.firstString(items, Self.albumArtistIdentifiers),
+            isCompilation: await Self.compilationFlag(items),
             year: Self.parseYear(await Self.firstString(items, [
                 .commonIdentifierCreationDate, .iTunesMetadataReleaseDate,
                 .id3MetadataRecordingTime, .id3MetadataYear,
@@ -63,15 +61,44 @@ extension MetadataExtractor {
 
     // MARK: - Field helpers
 
+    /// Where the album-artist tag lives: the iTunes `aART` atom, ID3 `TPE2`, and the Vorbis
+    /// `ALBUMARTIST` / `ALBUM ARTIST` comments (ogg/opus/flac when FFmpeg is absent — C2 fix
+    /// round, C7; no SDK constants, so the raw `vorb/…` identifiers).
+    static let albumArtistIdentifiers: [AVMetadataIdentifier] = [
+        .iTunesMetadataAlbumArtist, .id3MetadataBand,
+        AVMetadataIdentifier(rawValue: "vorb/ALBUMARTIST"), AVMetadataIdentifier(rawValue: "vorb/ALBUM ARTIST"),
+    ]
+
     /// Where the compilation flag lives, by container (S10.8 C2): the iTunes `cpil` atom (m4a),
     /// iTunes' ID3 `TCMP` frame (mp3 — no SDK constant, so the raw `id3/TCMP` identifier) and
-    /// the Vorbis `COMPILATION` comment (flac/ogg when FFmpeg is absent). `firstString` reads a
-    /// `cpil` boolean atom through its number value ("1").
+    /// the Vorbis `COMPILATION` / `ITUNESCOMPILATION` comments (flac/ogg/opus when FFmpeg is
+    /// absent). `firstString` reads a `cpil` boolean atom through its number value ("1").
     static let compilationIdentifiers: [AVMetadataIdentifier] = [
         .iTunesMetadataDiscCompilation,
         AVMetadataIdentifier(rawValue: "id3/TCMP"),
         AVMetadataIdentifier(rawValue: "vorb/COMPILATION"),
+        AVMetadataIdentifier(rawValue: "vorb/ITUNESCOMPILATION"),
     ]
+
+    /// The ID3 user-text frame (`TXXX`), whose DESCRIPTION names the value.
+    static let id3UserTextIdentifier = AVMetadataIdentifier(rawValue: "id3/TXXX")
+
+    /// The compilation flag: any of its dedicated keys, or an mp3 `TXXX` frame described `TCMP` or
+    /// `compilation` (C2 fix round, C7 — taggers that can't write a `TCMP` frame write that),
+    /// saying yes.
+    static func compilationFlag(_ items: [AVMetadataItem]) async -> Bool {
+        if parseFlag(await firstString(items, compilationIdentifiers)) {
+            return true
+        }
+        for item in AVMetadataItem.metadataItems(from: items, filteredByIdentifier: id3UserTextIdentifier) {
+            let description = (try? await item.load(.extraAttributes))??[.info] as? String
+            guard let description, compilationUserTextNames.contains(description.lowercased()) else { continue }
+            if parseFlag(try? await item.load(.stringValue)) {
+                return true
+            }
+        }
+        return false
+    }
 
     /// The first non-empty value across `identifiers` (in precedence order), as a string.
     /// Falls back to `numberValue` because iTunes binary atoms — `trkn` (track) / `disk`
