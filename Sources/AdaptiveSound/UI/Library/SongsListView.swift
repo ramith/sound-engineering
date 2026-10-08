@@ -108,7 +108,7 @@ struct SongsListView: View {
         .focusEffectDisabled()
         .onKeyPress(keys: Self.navigationKeys) { navigate($0) }
         .onKeyPress(.return) { playCursorRow() }
-        .onKeyPress(characters: Self.typeSelectCharacters) { typeSelect($0) }
+        .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
         // ⌘A and Edit ▸ Select All: the standard `selectAll:` action, sent to the focused list.
         .onCommand(#selector(NSStandardKeyBindingResponding.selectAll(_:))) {
             selection.selectAll(in: rowIDs)
@@ -395,10 +395,11 @@ private extension SongsListView {
         return .handled
     }
 
-    /// Type-to-select over the displayed titles, in the current order. A key with ⌘ or ⌃ is a
-    /// shortcut, not typing; a key that matches nothing is still consumed, so it doesn't beep.
+    /// Type-to-select over the displayed titles, in the current order — `BrowseKeyboard`'s rule: on
+    /// the key-down only (a held key does not repeat into the search), and a key with ⌘, ⌥ or ⌃ is
+    /// a shortcut, not typing. A key that matches nothing is still consumed, so it doesn't beep.
     func typeSelect(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.isDisjoint(with: [.command, .control]) else { return .ignored }
+        guard press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
         if selection.typeSelect(press.characters, at: .now, in: model.visibleSongs, title: \.title) != nil {
             cursorScrollRequest &+= 1
         }
