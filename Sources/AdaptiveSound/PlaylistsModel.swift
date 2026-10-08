@@ -51,6 +51,9 @@ final class PlaylistsModel {
     private(set) var detail: [PlaylistDetailEntry] = []
     private(set) var detailState: LoadState = .idle
     private var detailEpoch = 0
+    /// The newest reorder not yet written, and whether its writer is running (E4: `reorderEntries`).
+    @ObservationIgnored private var pendingOrder: (playlistID: Int64, entryIDs: [Int64])?
+    @ObservationIgnored private var isWritingOrder = false
 
     /// A transient per-ACTION error (Locate / Remove-missing) shown as an alert — never routed through
     /// `detailState` (a failed row-action mustn't blow the whole pane into load-error; F review).
@@ -336,17 +339,7 @@ final class PlaylistsModel {
         }
     }
 
-    /// Reorder the open playlist to `orderedEntryIDs` (dense renumber in the DAO), then reload the
-    /// detail. Count is unchanged, so the tree isn't reloaded.
-    func reorderEntries(_ orderedEntryIDs: [Int64]) async {
-        guard let store, let playlistID = openPlaylistID else { return }
-        do {
-            try await store.reorderPlaylist(id: playlistID, entryIDsInOrder: orderedEntryIDs)
-            await loadDetail(id: playlistID)
-        } catch {
-            detailState = .failed(error.localizedDescription)
-        }
-    }
+    // Reorder (`reorderEntries`) is in the same-file extension below — type-body length.
 
     // MARK: - Dead/missing-file handling (F)
 
@@ -389,6 +382,55 @@ final class PlaylistsModel {
         } catch {
             actionError = "Couldn’t relocate the file: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Reorder (C; S10.8 E4 — a drag and the Move commands)
+
+/// Same-file extension (type-body length): it writes the model's private detail state.
+extension PlaylistsModel {
+    /// Reorder the open playlist to `orderedEntryIDs` — a drag, or a Move command. The rows move AT
+    /// ONCE, before the write, so a held ⌥⌘↓ compounds from the order on screen instead of
+    /// re-planning from a stale one. One writer then persists the NEWEST order — a burst of moves
+    /// coalesces, and no write can land after a newer one — and re-reads once it has caught up.
+    /// Count is unchanged, so the tree isn't reloaded.
+    func reorderEntries(_ orderedEntryIDs: [Int64]) {
+        guard let playlistID = openPlaylistID else { return }
+        resequenceDetail(orderedEntryIDs)
+        pendingOrder = (playlistID, orderedEntryIDs)
+        guard !isWritingOrder else { return } // the running writer picks the newest order up
+        isWritingOrder = true
+        Task { await writePendingOrders() }
+    }
+
+    /// Puts the loaded rows in `orderedEntryIDs`' order — only when it names every one of them
+    /// (anything else waits for the re-read). Bumps `detailEpoch` so a load already in flight, which
+    /// read the old order, can't publish it over this one.
+    private func resequenceDetail(_ orderedEntryIDs: [Int64]) {
+        var rows = Dictionary(detail.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let reordered = orderedEntryIDs.compactMap { rows.removeValue(forKey: $0) }
+        guard reordered.count == detail.count else { return }
+        detail = reordered
+        detailEpoch &+= 1
+    }
+
+    /// Writes `pendingOrder` until no newer one is waiting, re-reading the open detail after each
+    /// write nothing has superseded. A failed write is a per-action alert (F review) — never the
+    /// pane-wide load error — and the re-read puts the stored order back on screen.
+    private func writePendingOrders() async {
+        while let order = pendingOrder {
+            pendingOrder = nil
+            guard let store else { break }
+            do {
+                try await store.reorderPlaylist(id: order.playlistID, entryIDsInOrder: order.entryIDs)
+            } catch {
+                actionError = "Couldn’t save the new order: \(error.localizedDescription)"
+            }
+            if pendingOrder == nil, openPlaylistID == order.playlistID {
+                await loadDetail(id: order.playlistID)
+            }
+        }
+        isWritingOrder = false
     }
 }
 

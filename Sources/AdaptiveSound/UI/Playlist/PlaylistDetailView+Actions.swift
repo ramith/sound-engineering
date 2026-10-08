@@ -55,7 +55,7 @@ extension PlaylistDetailView {
         guard let from = ids.firstIndex(of: fromID), let to = ids.firstIndex(of: toEntryID),
               from != to else { return false }
         ids.move(fromOffsets: IndexSet(integer: from), toOffset: from < to ? to + 1 : to)
-        Task { await model.reorderEntries(ids) }
+        model.reorderEntries(ids)
         return true
     }
 }
