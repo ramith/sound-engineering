@@ -1,78 +1,84 @@
+import LibraryBrowseKit
 import SwiftUI
 
-// MARK: - Browse grid (S10.8 — the one tile grid of Albums and Artists)
+// MARK: - Browse grid (S10.8 D5 — the one tile grid of Albums, Artists and Genres)
 
-/// The full-width adaptive tile grid of a browse root — Albums and Artists today, Genres from
-/// Sprint D — with the keyboard wired once (`BrowseKeyboard`: arrows, Home / End, Page Up / Down,
-/// type-to-select, Return) and the place it returns to (D6). Single-click a tile → OPEN (pushes
-/// the section's route); the Play verbs come from the hover button and the context menu. The
-/// section supplies only data: its tiles' content, title, route, Play and queue actions.
+/// The browse grid: tiles that FILL the card's width (`FillGridLayout` — at least 160 pt, at least
+/// two columns, no gutter left over), 12 pt apart both ways inside the Songs row area's insets,
+/// with the keyboard wired once (`BrowseKeyboard`: arrows, Home / End, Page Up / Down,
+/// type-to-select, Return) and the place it returns to (D6). Single-click a tile → OPEN (pushes its
+/// page); the Play verbs come from the hover button, VoiceOver's actions and the context menu.
+/// The section supplies only data: each item's `BrowseTileContent`.
 ///
-/// Today's layout, unchanged: fixed `tileSide` tiles centred in adaptive columns of up to
-/// `columnMaximum` (`BrowseGridMetrics`). The column count the arrow keys step by is computed from
-/// the laid-out width with the same rule SwiftUI's adaptive `GridItem` uses.
-struct BrowseGrid<Item: Identifiable, Cell: View, Actions: View>: View where Item.ID == Int64 {
+/// The width is read in the same layout pass (a `GeometryReader`), so the first frame already has
+/// its real columns — a D6 restore scrolls a grid that won't re-flow under it. The columns are
+/// flexible, so a legacy (always-shown) scroll bar narrows the tiles instead of clipping them.
+struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
     let category: LibraryCategory
     /// The visible (filtered) tiles, in display order.
     let items: [Item]
-    /// The type-to-select key.
-    let title: (Item) -> String
-    let route: (Item) -> LibraryRoute
-    let play: @MainActor (Item) async -> Void
-    @ViewBuilder let cell: (Item) -> Cell
-    @ViewBuilder let actions: (Item) -> Actions
+    let tile: (Item) -> BrowseTileContent
 
     @Environment(LibraryBrowseModel.self) private var model
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
-    @State private var navigator = BrowseNavigator(arrangement: .grid)
+    @State private var navigator = BrowseNavigator()
     @FocusState private var focused: Bool
+    #if DEBUG
+        /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): the tile it puts the cursor on.
+        @Environment(\.sheetGridStates) private var sheetGridStates
+    #endif
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: BrowseGridMetrics.tileSide, maximum: BrowseGridMetrics.columnMaximum),
-                  spacing: BrowseGridMetrics.columnSpacing)]
-    }
+    private typealias Metrics = DesignSystem.BrowseGrid
 
     var body: some View {
-        let ringID = navigator.ringID(in: items.map(\.id), focused: focused, keyboardMode: showsKeyboardFocus)
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: BrowseGridMetrics.rowSpacing) {
-                    ForEach(items) { item in
-                        tile(item, isKeyboardCursor: item.id == ringID)
+        GeometryReader { geometry in
+            let layout = Metrics.layout(areaWidth: geometry.size.width)
+            let artSide = Metrics.artSide(tileWidth: layout.tileWidth)
+            let ringID = navigator.ringID(in: items.map(\.id), focused: focused, keyboardMode: showsKeyboardFocus)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVGrid(columns: Self.columns(layout.columns), spacing: Metrics.spacing) {
+                        ForEach(items) { item in
+                            BrowseTile(content: tile(item), artSide: artSide,
+                                       placeholderSymbol: category.tilePlaceholderSymbol,
+                                       isKeyboardCursor: item.id == ringID, open: { open(item) })
+                                // The tile's frame on screen, for scroll-into-view and the place
+                                // (D6) — dropped when the lazy grid unloads it.
+                                .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
+                                    navigator.record(frame, for: item.id)
+                                }
+                                .onDisappear { navigator.forget(item.id) }
+                        }
                     }
+                    .padding(.horizontal, Metrics.areaInsetH)
+                    .padding(.vertical, Metrics.areaInsetV)
                 }
-                .padding(BrowseGridMetrics.inset)
-                .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { width in
-                    navigator.columns = BrowseGridMetrics.columns(width: width)
-                }
+                .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
+                .onChange(of: layout.columns, initial: true) { _, columns in navigator.columns = columns }
+                .modifier(BrowseKeyboard(category: category, items: items, title: { tile($0).title },
+                                         navigator: navigator, focused: $focused, proxy: proxy, open: open))
+                #if DEBUG
+                    // Picture-sheet states variant: focus, with the cursor on the fixture's tile.
+                    .sheetFocusSeed(.grid) {
+                        if let cursor = items.first(where: { tile($0).ref == sheetGridStates.cursor }) {
+                            navigator.seedCursor(cursor.id)
+                        }
+                        focused = true
+                    }
+                #endif
             }
-            .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
-            .modifier(BrowseKeyboard(category: category, items: items, title: title, navigator: navigator,
-                                     focused: $focused, proxy: proxy, open: open))
         }
     }
 
-    private func tile(_ item: Item, isKeyboardCursor: Bool) -> some View {
-        BrowseTile(
-            side: BrowseGridMetrics.tileSide,
-            isKeyboardCursor: isKeyboardCursor,
-            open: { open(item) },
-            play: { await play(item) },
-            cell: { cell(item) },
-            actions: { actions(item) }
-        )
-        // The tile's frame on screen, for scroll-into-view and the place (D6) — dropped when the
-        // lazy grid unloads it.
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
-            navigator.record(frame, for: item.id)
-        }
-        .onDisappear { navigator.forget(item.id) }
+    /// `count` equal, flexible columns, 12 pt apart.
+    private static func columns(_ count: Int) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Metrics.spacing), count: count)
     }
 
     /// Opens a tile's page — a click or Return — remembering the place to come back to (D6).
     private func open(_ item: Item) {
         model.browsePlace = navigator.opening(item.id, category: category, rows: items.map(\.id))
-        model.path.append(route(item))
+        model.path.append(tile(item).ref.route)
     }
 }

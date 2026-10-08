@@ -63,6 +63,9 @@ final class LibraryBrowseModel {
     var artistsState: LoadState = .idle
     var genres: [GenreFacet] = []
     var genresState: LoadState = .idle
+    /// Each genre's tile covers, by genre id (S10.8 D5; `CoverArrangement`) — none for a genre
+    /// whose albums have no artwork.
+    var genreCoverKeys: [Int64: [String]] = [:]
 
     /// Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
     /// structs ≈ a few MB, no keyset cursor), so the loaded array IS the play order — play-from-row
@@ -175,6 +178,7 @@ final class LibraryBrowseModel {
     /// Newest-wins tokens for the facet-list loaders (mutated by `LibraryBrowseModel+Facets`).
     var artistsLoadEpoch = 0
     var genresLoadEpoch = 0
+    var genreCoversLoadEpoch = 0
 
     init(audio: AudioViewModel, library: LibraryModel) {
         self.audio = audio
@@ -406,8 +410,8 @@ final class LibraryBrowseModel {
         (try? await store?.tracksDisplay(inAlbum: albumID)) ?? []
     }
 
-    // Play actions (playAlbum / play / playNext / append / playTrackNextNow) live in
-    // `LibraryBrowseModel+Play` (a same-type extension, split for file length).
+    // Play actions (play / playNext / append / playTrackNextNow) live in `LibraryBrowseModel+Play`;
+    // a browse tile's (an album, artist or genre) in `+Facets` (same-type extensions, for length).
 
     // MARK: - Queue toast (S9.5 §10.4)
 
@@ -475,11 +479,14 @@ extension LibraryBrowseModel {
 #if DEBUG
     extension LibraryBrowseModel {
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): show `fixture` as the loaded Songs
-        /// list without a store. Lives here because `songs` / `songsState` have private setters. No
-        /// fixture has folder roots, so an EMPTY one is the first-run state, as `loadSongs` decides.
-        func seedRenderFixture(songs fixture: [LibraryTrackDisplay]) {
+        /// list, and `albumFixture` as the Albums grid, without a store. Lives here because their
+        /// arrays and states have private setters. No fixture has folder roots, so an EMPTY one is
+        /// the first-run state, as `loadSongs` decides.
+        func seedRenderFixture(songs fixture: [LibraryTrackDisplay], albums albumFixture: [AlbumFacet] = []) {
             songs = fixture
             songsState = fixture.isEmpty ? .firstRun : .loaded
+            albums = albumFixture
+            albumsState = albumFixture.isEmpty ? .firstRun : .loaded
         }
     }
 #endif

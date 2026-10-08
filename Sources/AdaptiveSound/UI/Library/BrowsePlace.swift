@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Browse place (S10.8 D6 — the grid keeps its scroll position)
 
-/// Where a browse root's grid (Albums, Artists) or list (Genres) was when it left the screen — for
+/// Where a browse root's grid (Albums, Artists, Genres) was when it left the screen — for
 /// an album / artist / genre page, a playlist, or another tab — so coming back puts it where it
 /// was, with the keyboard cursor on the same tile. The grid is destroyed under a drill-down (the
 /// detail replaces it), so this lives on `LibraryBrowseModel` and is used once, by the next
@@ -21,6 +21,6 @@ struct BrowsePlace {
     let anchorY: Double
     /// The keyboard cursor: the tile just opened, else the anchor the user last chose, if any.
     let cursorID: Int64?
-    /// The grid or list held keyboard focus (it takes it back, so the arrows go on from the tile).
+    /// The grid held keyboard focus (it takes it back, so the arrows go on from the tile).
     let wasFocused: Bool
 }
