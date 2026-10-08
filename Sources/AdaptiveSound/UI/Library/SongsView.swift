@@ -3,10 +3,10 @@ import SwiftUI
 // MARK: - Songs list (S9.5)
 
 /// The Library's default landing: the full-library song list over the in-memory full-load set
-/// (`LibraryBrowseModel.songs`, OD-1), rendered inside the Twin Panels glass detail card. Header +
-/// customizable-column custom list (`SongsHeader` + `SongsListView`, S10.8 PR-D — replaced the
-/// SwiftUI `Table`), the composite default order, double-click / Return play-from-row, and the
-/// "N songs · total" count.
+/// (`LibraryBrowseModel.songs`, OD-1), on the Library's one glass card (mounted by
+/// `LibraryTabView`, S10.8 D1). Header + customizable-column custom list (`SongsHeader` +
+/// `SongsListView`, S10.8 PR-D — replaced the SwiftUI `Table`), the composite default order,
+/// double-click / Return play-from-row, and the "N songs · total" count.
 ///
 /// State handling mirrors `AlbumGridView`: a `.task(id:)` keyed on store-readiness kicks the
 /// full-load, and `.onChange(of: libraryRevision)` (in `LibraryTabView`) reloads once per pass.
@@ -18,9 +18,6 @@ struct SongsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Twin Panels detail card (S10.8 PR-D): the right pane is a full-height glass card over
-            // the shared glow — the header, rows, and the empty/loading states all live inside it.
-            .libraryDetailCard()
             // Keyed on store-readiness so a Library visit BEFORE the async store finishes building
             // reloads once it's ready (mirrors AlbumGridView / review S2) — not a stuck spinner.
             .task(id: model.isStoreReady) { await model.loadSongs() }

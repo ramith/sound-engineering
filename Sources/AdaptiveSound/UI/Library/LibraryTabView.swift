@@ -28,8 +28,12 @@ struct LibraryTabView: View {
         HStack(spacing: 20) {
             LibrarySidebar() // a fixed-width, content-height glass card that hugs the top
 
+            // The right pane's ONE glass card (S10.8 D1), mounted here and nowhere else: it stays
+            // put as the rail moves between Songs, Albums, Artists and Genres, and holds the detail
+            // pages and playlists too — none of them paints a card or a background of its own.
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .libraryDetailCard()
         }
         .padding(.horizontal, 22)
         .padding(.top, 22)
