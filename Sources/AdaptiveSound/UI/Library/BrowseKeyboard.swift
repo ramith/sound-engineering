@@ -114,11 +114,12 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
         }
     }
 
-    /// Leaving the screen while still this category's root — another tab, or "no results" while
-    /// filtering: remember where it is. Opening a tile already saved its place (the route is pushed
-    /// by then), and a rail jump to another category starts that root fresh.
+    /// Leaving the screen while this is still the category — another tab, a playlist opened over it
+    /// (deleting that playlist shows this root again), or "no results" while filtering: remember
+    /// where it is. Under its own drill-down it doesn't: opening the tile already pinned the place
+    /// on it. A rail jump to another category starts that root fresh.
     private func rememberPlace() {
-        guard model.selectedCategory == category, model.path.isEmpty else { return }
+        guard model.selectedCategory == category, !model.isBrowseDrillDownOpen else { return }
         model.browsePlace = navigator.place(category: category, rows: rows, focused: focused.wrappedValue)
     }
 }

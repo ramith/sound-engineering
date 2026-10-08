@@ -304,12 +304,13 @@ struct LibrarySidebar: View {
     /// Delete a playlist; if it was the open/selected one, redirect nav back to the current category
     /// so the detail pane doesn't orphan on a `.playlist(deletedID)` route that resolves to nothing.
     /// Only redirects on a CONFIRMED delete — a failed delete leaves the row, so nav must stay put.
+    /// Not a rail jump: the category root comes back as the user left it (Filter text and place).
     private func deletePlaylist(_ playlist: Playlist) {
         let wasSelected = model.sidebarSelection == .playlist(playlist.id)
         Task {
             let deleted = await playlists.deletePlaylist(id: playlist.id)
             if deleted, wasSelected {
-                model.selectCategory(model.selectedCategory ?? .songs)
+                model.showCategoryRoot()
             }
         }
     }
@@ -325,21 +326,13 @@ private extension LibrarySidebar {
             + playlists.playlists.map { SidebarSelection.playlist($0.id) }
     }
 
-    /// A browse drill-down (album/artist/genre detail) is showing. `sidebarSelection` collapses it
-    /// to its category, so an arrow press would navigate away and DESTROY the drill-down — the
-    /// keys stand down there. (An open playlist is a rail row itself: arrows stay live.)
-    var isBrowseDrillDownOpen: Bool {
-        switch model.path.last {
-        case .album, .artist, .genre: true
-        case .playlist, nil: false
-        }
-    }
-
     /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from and the row
-    /// Return renames: the rail selection. Nil while a drill-down is open, where the keys stand
-    /// down — so the ring hides with them instead of promising a move that won't happen.
+    /// Return renames: the rail selection. Nil while a browse drill-down is open: `sidebarSelection`
+    /// collapses it to its category, so an arrow press would navigate away and DESTROY the
+    /// drill-down — the keys stand down there, and the ring hides with them instead of promising a
+    /// move that won't happen. (An open playlist is a rail row itself: arrows stay live.)
     var keyboardCursor: ListKeyboardCursor<SidebarSelection>? {
-        guard !isBrowseDrillDownOpen else { return nil }
+        guard !model.isBrowseDrillDownOpen else { return nil }
         return ListKeyboardCursor.resolve(rows: selectables, anchor: model.sidebarSelection)
     }
 
