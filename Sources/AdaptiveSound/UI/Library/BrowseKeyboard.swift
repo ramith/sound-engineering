@@ -10,9 +10,9 @@ import SwiftUI
 /// inside the scroll view's `ScrollViewReader`.
 ///
 /// Keys: ←/→ the previous / next tile (grids only), ↑/↓ a row, Home / End the first / last tile,
-/// Page Up / Down a viewport of rows, letters type-to-select on the title, Return opens. With ⌘, ⌃
-/// or ⌥ held (and ⇧ on the navigation keys — reserved for a multi-select) a key bubbles, so the
-/// app's shortcuts (⌘← / ⌘→ track skip) keep working.
+/// Page Up / Down a viewport of rows, letters type-to-select on the title, Return opens. A
+/// shortcut (`KeyPress.isShortcut`: ⌘, ⌥ or ⌃ held) bubbles, as does ⇧ on the navigation keys
+/// (reserved for a multi-select), so the app's shortcuts (⌘← / ⌘→ track skip) keep working.
 struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     let category: LibraryCategory
     /// The visible tiles, in display order.
@@ -42,7 +42,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
             .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .pageUp, .pageDown]) {
                 navigate($0)
             }
-            .onKeyPress(.return) { openCursorTile() }
+            .onKeyPress(keys: [.return]) { $0.isShortcut ? .ignored : openCursorTile() }
             .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
             .onChange(of: focused.wrappedValue) { _, isFocused in navigator.focusChanged(isFocused) }
             .onAppear(perform: restorePlace)
@@ -56,7 +56,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     // MARK: Keys
 
     private func navigate(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift]),
+        guard !press.isShortcut, !press.modifiers.contains(.shift),
               let move = arrowMove(press.key) ?? jumpMove(press.key),
               navigator.move(move, in: rows, proxy: proxy) else { return .ignored }
         return .handled
@@ -96,7 +96,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     }
 
     private func typeSelect(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.isDisjoint(with: [.command, .control, .option]) else { return .ignored }
+        guard !press.isShortcut else { return .ignored }
         navigator.typeSelect(press.characters, in: items, title: title, proxy: proxy)
         return .handled // a miss keeps the cursor; the letter is still the grid's, not a beep
     }
