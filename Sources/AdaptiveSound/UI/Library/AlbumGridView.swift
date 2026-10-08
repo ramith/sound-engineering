@@ -1,146 +1,39 @@
-import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
 // MARK: - Album grid (S9.4)
 
-/// The full-width adaptive album grid. Single-click a cell → OPEN (appends the album route to
-/// `model.path` → AlbumDetailView); Play verbs come from the hover button + the context menu. Warms one
-/// batched artwork query per album set. Empty/first-run/scanning/failed states delegate to
-/// LibraryEmptyStateView.
+/// The Albums root: the shared browse scaffold (`BrowseGridRoot` → `BrowseGrid`) over the loaded
+/// albums. Single-click a tile → OPEN the album (AlbumDetailView); Play comes from the hover button
+/// and the context menu; the keyboard and the return place are the grid's. Filters on title OR
+/// album artist. Warms one batched artwork query per album set. The `.loaded`-but-empty state is
+/// the library-wide "No Music Found": every album was removed.
 struct AlbumGridView: View {
     @Environment(LibraryBrowseModel.self) private var model
-    /// In-view filter (narrows the loaded albums by title OR artist, in place — Apple Filter field).
-    @State private var filter = ""
-
-    private let side: CGFloat = 168
-    /// Adaptive minimum ≥ the fixed cell width, else a column can resolve narrower than the
-    /// 168-pt cell and clip it (review S1/layout). Cells are left-aligned within wider columns.
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: side, maximum: 200), spacing: 16)]
-    }
 
     var body: some View {
-        content
-            // Keyed on store-readiness so a Library visit BEFORE the async store finishes
-            // building reloads once it's ready (review S2) — not stuck on the nil-store spinner.
-            .task(id: model.isStoreReady) { await model.loadAlbums() }
-    }
-
-    @ViewBuilder private var content: some View {
-        switch model.albumsState {
-        case .idle, .loading:
-            if model.albums.isEmpty {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                gridWithFilter
+        BrowseGridRoot(
+            items: model.albums,
+            state: model.albumsState,
+            empty: LibraryEmptyStateView(kind: .emptyLibrary),
+            noun: "album",
+            filterPlaceholder: "Filter Albums",
+            filterKeys: { [$0.title, $0.albumArtist] },
+            load: { await model.loadAlbums() },
+            content: { albums in
+                BrowseGrid(
+                    items: albums,
+                    title: \.title,
+                    route: { .album($0.id) },
+                    play: { await model.playAlbum($0.id) },
+                    cell: { AlbumCell(album: $0, side: BrowseGridMetrics.tileSide) },
+                    actions: { AlbumQueueActions(albumID: $0.id) }
+                )
             }
-        case .loaded:
-            // `.loaded` but empty means every album was removed — a genuine empty library.
-            if model.albums.isEmpty {
-                LibraryEmptyStateView(kind: .emptyLibrary)
-            } else {
-                gridWithFilter
-            }
-        case .firstRun:
-            // A scan just kicked off from the first-run CTA flips this to a truthful "scanning"
-            // until the albums land; otherwise it's the add-a-folder call to action.
-            LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
-        case .empty:
-            // Roots exist, zero albums: scanning if a pass is live, else a genuine "no music"
-            // (not the permanent "Scanning…" the old mapping showed — review S1).
-            LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .emptyLibrary)
-        case let .failed(message):
-            LibraryEmptyStateView(kind: .failed(message))
-        }
-    }
-
-    /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
-    /// `filteredAlbums` is computed ONCE here and threaded down — previously the count line, the empty
-    /// check, and the `ForEach` each re-ran it (three O(n) filter passes per body evaluation).
-    private var gridWithFilter: some View {
-        let albums = filteredAlbums
-        return VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLabel(albums.count), filter: $filter, placeholder: "Filter Albums")
-            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if albums.isEmpty {
-                ContentUnavailableView.search(text: filter)
-            } else {
-                grid(albums)
-            }
-        }
-    }
-
-    /// Albums narrowed by the filter — matches on title OR album-artist (in place, order preserved).
-    private var filteredAlbums: [AlbumFacet] {
-        filter.isEmpty
-            ? model.albums
-            : model.albums.filter { FacetTextFilter.matches([$0.title, $0.albumArtist], query: filter) }
-    }
-
-    private func countLabel(_ shown: Int) -> String {
-        "\(shown) album\(shown == 1 ? "" : "s")"
-    }
-
-    private func grid(_ albums: [AlbumFacet]) -> some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(albums) { album in
-                    AlbumGridItem(album: album, side: side)
-                }
-            }
-            .padding(DesignSystem.Spacing.medium)
-        }
+        )
         .task(id: model.albums.map(\.id)) {
             await model.warmArtwork(model.albums.compactMap(\.artworkKey))
         }
-    }
-}
-
-// MARK: - Grid item (Open button + hover Play overlay)
-
-/// One grid entry. The whole cell is an Open button (appends the album route to `model.path`).
-/// The hover Play button is a SIBLING overlay ABOVE it — not nested in its label — so it reliably wins the hit test
-/// on macOS (review §6); it's positioned over the art (top `side`×`side` region), and is
-/// `accessibilityHidden` because the cell exposes Play as a custom action.
-private struct AlbumGridItem: View {
-    let album: AlbumFacet
-    let side: CGFloat
-
-    @Environment(LibraryBrowseModel.self) private var model
-    @State private var hovering = false
-
-    var body: some View {
-        Button {
-            model.path.append(.album(album.id))
-        } label: {
-            AlbumCell(album: album, side: side)
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            if hovering {
-                playButton
-                    .padding(DesignSystem.Spacing.small)
-                    .frame(width: side, height: side, alignment: .bottomTrailing)
-            }
-        }
-        .onHover { hovering = $0 }
-        .contextMenu { AlbumQueueActions(albumID: album.id) }
-    }
-
-    private var playButton: some View {
-        Button {
-            Task { await model.playAlbum(album.id) }
-        } label: {
-            Image(systemName: "play.circle.fill")
-                .font(.system(size: max(20, side * 0.26)))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(DesignSystem.Color.onAccent, DesignSystem.Color.accentFill)
-                .shadow(radius: 3)
-        }
-        .buttonStyle(.plain)
-        .help("Play")
-        .accessibilityHidden(true) // the cell exposes Play as a custom action
     }
 }
 
