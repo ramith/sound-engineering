@@ -369,19 +369,6 @@ final class LibraryBrowseModel {
         matchedIDs = ids // [] on junk/no-match (never nil here) → drives zero-results
     }
 
-    /// The Songs summary line: unfiltered "N songs · total duration"; filtered "N results" (duration
-    /// dropped; `0` → "0 results"). Driven off `visibleSongs`/`matchedIDs` (design §3.3/§6).
-    var songsCountLine: String {
-        let count = visibleSongs.count
-        if matchedIDs != nil {
-            let noun = count == 1 ? "result" : "results"
-            return "\(count.formatted(.number)) \(noun)"
-        }
-        let noun = count == 1 ? "song" : "songs"
-        let total = humaneTotalDuration(visibleSongs.reduce(0.0) { $0 + $1.durationSeconds })
-        return "\(count.formatted(.number)) \(noun) · \(total)"
-    }
-
     /// Reload the visible facets when a scan / metadata pass / reconcile completes (albums + songs
     /// + art fill in live). Coalesced to `library.libraryRevision` — one reload per pass, NOT per
     /// metadata tick (design §7; review B1 — the revision bumps when metadata builds the rows, not
