@@ -132,7 +132,8 @@ enum DesignSystem {
 
         /// S10.8 A3 — the keyboard focus ring for the custom lists (Songs, queue, playlist
         /// detail, Library rail); ≥ 3:1 against row fills and cards, audited R4-FOCUS-01/02.
-        /// Drawn only through `keyboardCursorRing(_:cornerRadius:)`.
+        /// Drawn only through `keyboardCursorRing(_:cornerRadius:)` (list rows) and
+        /// `keyboardFocusRing(_:around:)` (the icon chip, S10.8 D3).
         static let focusRing = from(Palette.focusRing)
 
         /// S10.8 PR D — the playing row (realigned `png/04`); audited R4-ROW-01.
@@ -371,11 +372,10 @@ enum DesignSystem {
     // MARK: Queue header metrics (S10.8 PR C — the realigned single-row header, `png/03`)
 
     /// Everything above the queue list collapses into ONE row of this height: title + count +
-    /// icon chips + the Up Next/Recent capsule pair + the right-aligned compact filter pill.
+    /// icon chips + the Up Next/Recent capsule pair + the right-aligned compact filter pill. The
+    /// chips' own sizes are the shared `ControlMetrics` (S10.8 D3).
     enum QueueHeader {
         static let height: CGFloat = 32
-        static let iconButton: CGFloat = 28 // square chip, Radius.control corners
-        static let iconSymbol: CGFloat = 12
         static let segmentHeight: CGFloat = 20 // + 2×segmentPadding = the 24pt pair
         static let segmentPadding: CGFloat = 2
         /// The filter pill: 190pt ideal (the mock), compressing to min so the header row
