@@ -76,6 +76,17 @@ public struct ListKeyboardCursor<ID: Equatable>: Equatable {
         return isAnchored ? moved : moved ?? id
     }
 
+    /// Page Up / Page Down — the row `delta` rows away (the list's page size), STOPPING at the first
+    /// or last row instead of bubbling, so a page key always lands on a row. Unlike `step`, a seeded
+    /// cursor is never claimed in place: a page press means "go a page", from wherever the ring sits.
+    /// Nil only when the cursor is no longer in `rows`.
+    public func page<Rows: BidirectionalCollection>(by delta: Int, in rows: Rows) -> ID?
+        where Rows.Element == ID {
+        guard let position = rows.firstIndex(of: id) else { return nil }
+        let limit = delta < 0 ? rows.startIndex : rows.index(before: rows.endIndex)
+        return rows[rows.index(position, offsetBy: delta, limitedBy: limit) ?? limit]
+    }
+
     /// Return — the row it activates. Always the cursor when it is anchored (its row wears the
     /// selection); an unanchored cursor only while the ring is drawn, so Return never acts on a
     /// row that nothing on screen marks (e.g. right after a click elsewhere hid the ring).

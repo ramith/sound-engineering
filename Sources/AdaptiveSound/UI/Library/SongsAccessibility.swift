@@ -39,6 +39,16 @@ enum SongsAccessibility {
         return parts.joined(separator: ", ")
     }
 
+    /// "12 songs selected" — the selection-change VoiceOver announcement (S10.8 E1): ⇧-arrows, ⌘A
+    /// and Esc change the selection with nothing but the row tint to show it.
+    static func selectionAnnouncement(count: Int) -> String {
+        switch count {
+        case 0: "No songs selected"
+        case 1: "1 song selected"
+        default: "\(count.formatted(.number)) songs selected"
+        }
+    }
+
     /// "Sorted by Title, ascending" — the sort-change VoiceOver announcement (§10.7). Returns `nil`
     /// for an empty order (the composite default / a triangle cleared by hiding the active column),
     /// so those transitions announce nothing. `\.format` maps to the default-visible "Quality"

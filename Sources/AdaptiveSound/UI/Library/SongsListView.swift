@@ -9,8 +9,9 @@ import SwiftUI
 /// Default = the clean 5-column header-less view (`png/02`/`03`); customizing (via the header's
 /// Columns pill) reveals the glass column-header row (`png/06`-`08`) and, when the columns overflow
 /// the card, a horizontal scroll. Replaces the SwiftUI `Table` (which can't draw the mock's tinted
-/// header-less rows + the playing-row equalizer). Selection lives HERE; ⌘/⇧ click multi-select +
-/// ↑/↓ nav are rebuilt; double-click / Return play; the context menu mirrors the old table.
+/// header-less rows + the playing-row equalizer). Selection lives HERE, in the `ListSelection` kit
+/// (S10.8 E1): click / ⇧ / ⌘ click, ↑/↓ and ⇧↑/⇧↓, Home / End, Page Up / Down, ⌘A, Esc and
+/// type-to-select; double-click / Return play; the context menu acts on the selection.
 ///
 /// The `@AppStorage` column config is SHARED with `SongsHeader`'s Columns pill (same key) — the pill
 /// toggles/reorders, this view renders + click-sorts. Sort writes the SAME `model.sortOrder` /
@@ -24,14 +25,15 @@ struct SongsListView: View {
     @Environment(AudioViewModel.self) private var viewModel
     @AppStorage("songs.columns.v2") private var columnConfig = SongColumnConfig.default
 
-    @State private var selection = Set<RowID>()
-    @State private var anchorID: RowID?
+    @State private var selection = ListSelection<RowID>()
     @State private var infoTarget: LibraryTrackDisplay?
     @State private var addToPlaylistTarget: AddToPlaylistTarget?
-    /// Bumped by ↑/↓ ONLY (never a click — scrolling must not move a row out from under a
+    /// Bumped by the KEYBOARD only (never a click — scrolling must not move a row out from under a
     /// double-click); the row area's `ScrollViewReader` observes it and scrolls the cursor into
     /// view (A3). A counter, like the queue's jump request, so every press re-fires.
     @State private var cursorScrollRequest = 0
+    /// Rows Page Up / Down move: from the row area's measured height (`rowsPerPage(viewportHeight:)`).
+    @State private var rowsPerPage = 1
     @FocusState private var listFocused: Bool
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
@@ -49,7 +51,7 @@ struct SongsListView: View {
     /// and NO gap between rows (48pt rows at a 48pt pitch, png/02). The first cut read the 6 as
     /// inter-row spacing and dropped the 12 — rows sat 6pt apart (about one row in nine lost)
     /// and ran edge to edge, so a playing/selected row's fill touched the card border.
-    private static let listVerticalInset: CGFloat = 6
+    private nonisolated static let listVerticalInset: CGFloat = 6
     private static let listHorizontalInset: CGFloat = 12
     /// Everything that is not a column: gaps + row padding + the row area's side insets.
     private static func chromeWidth(columnCount: Int) -> CGFloat {
@@ -83,10 +85,13 @@ struct SongsListView: View {
                         // Keep the cursor on screen the queue's way: no anchor = scroll only as far
                         // as needed (none when the row is already visible), instantly.
                         .onChange(of: cursorScrollRequest) {
-                            if let anchorID {
-                                proxy.scrollTo(anchorID)
+                            if let cursor = selection.cursor {
+                                proxy.scrollTo(cursor)
                             }
                         }
+                        .onGeometryChange(for: Int.self) { geometry in
+                            Self.rowsPerPage(viewportHeight: geometry.size.height)
+                        } action: { rowsPerPage = $0 }
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -101,9 +106,18 @@ struct SongsListView: View {
         .focused($listFocused)
         // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
         .focusEffectDisabled()
-        .onKeyPress(.upArrow) { moveSelection(by: -1) }
-        .onKeyPress(.downArrow) { moveSelection(by: 1) }
+        .onKeyPress(keys: Self.navigationKeys) { navigate($0) }
         .onKeyPress(.return) { playCursorRow() }
+        .onKeyPress(characters: Self.typeSelectCharacters) { typeSelect($0) }
+        // ⌘A and Edit ▸ Select All: the standard `selectAll:` action, sent to the focused list.
+        .onCommand(#selector(NSStandardKeyBindingResponding.selectAll(_:))) {
+            selection.selectAll(in: rowIDs)
+        }
+        .onExitCommand { selection.clear() } // Esc — the macOS cancel command
+        // VoiceOver hears a count change it cannot see: ⇧-arrows, ⌘A and Esc change only the tint.
+        .onChange(of: selection.ids.count) { _, count in
+            AccessibilityNotification.Announcement(SongsAccessibility.selectionAnnouncement(count: count)).post()
+        }
         .sheet(item: $addToPlaylistTarget) { target in
             PlaylistPickerSheet(trackIDs: target.trackIDs)
         }
@@ -115,8 +129,7 @@ struct SongsListView: View {
         // row in visible order — never the Set's arbitrary `first`). A no-op in a normal run.
         .onAppear {
             guard !sheetSongSelection.isEmpty else { return }
-            selection.formUnion(sheetSongSelection)
-            anchorID = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: sheetSongSelection)?.id
+            selection = ListSelection(selecting: sheetSongSelection, in: rowIDs)
         }
         // Picture-sheet ring variant: focus, so the ring marks the seeded anchor.
         .sheetFocusSeed(.songs) { listFocused = true }
@@ -265,7 +278,7 @@ struct SongsListView: View {
     // MARK: Play + context (mirror the former SongsTable)
 
     private func contextIDs(clicked track: LibraryTrackDisplay) -> Set<RowID> {
-        selection.contains(track.id) ? selection : [track.id]
+        selection.contains(track.id) ? selection.ids : [track.id]
     }
 
     private func orderedTracks(for ids: Set<RowID>) -> [LibraryTrackDisplay] {
@@ -301,18 +314,32 @@ struct SongsListView: View {
     }
 }
 
-// MARK: - Selection + keyboard cursor
+// MARK: - Selection + keyboard
 
 /// Same-file extension (type-body length): reaches the list's private selection state.
 private extension SongsListView {
-    /// The ONE keyboard cursor (A3, A-review) — the ring row, the row ↑/↓ move from and the row
-    /// Return plays: the selection anchor (the last clicked/arrowed row — never `selection.first`,
-    /// whose Set order is arbitrary) while it is still selected and visible, else the first
-    /// visible selected row (`SongsRowResolver.cursorAnchor`), else the first row, unanchored.
+    /// The keys `navigate` moves the cursor with.
+    static let navigationKeys: Set<KeyEquivalent> = [.upArrow, .downArrow, .home, .end, .pageUp, .pageDown]
+
+    /// Type-to-select keys: letters, digits, punctuation and symbols. Not Space — the app-wide play /
+    /// pause key (§H) — so a search never starts or goes on with it, queue or no queue.
+    static let typeSelectCharacters = CharacterSet.alphanumerics.union(.punctuationCharacters).union(.symbols)
+
+    /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
+    /// Nonisolated (with the two metrics it reads): `onGeometryChange` runs it off the main actor.
+    nonisolated static func rowsPerPage(viewportHeight: CGFloat) -> Int {
+        max(Int((viewportHeight - 2 * listVerticalInset) / SongRow.height) - 1, 1)
+    }
+
+    /// The visible rows' ids in display order (filtered, sorted) — what every selection verb acts on.
+    var rowIDs: some BidirectionalCollection<RowID> {
+        model.visibleSongs.lazy.map(\.id)
+    }
+
+    /// The ONE keyboard cursor (A3, A-review): the ring row, the row the arrow and Page keys move
+    /// from and the row Return plays — resolved by the selection kit over the visible rows.
     var keyboardCursor: ListKeyboardCursor<RowID>? {
-        let visible = model.visibleSongs
-        let anchor = SongsRowResolver.cursorAnchor(in: visible, selection: selection, anchor: anchorID)
-        return ListKeyboardCursor.resolve(rows: visible.lazy.map(\.id), anchor: anchor)
+        selection.keyboardCursor(in: rowIDs)
     }
 
     /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.
@@ -325,56 +352,50 @@ private extension SongsListView {
         showsRing ? keyboardCursor?.id : nil
     }
 
-    /// Return: play the cursor row — the ring row, or the anchored row while the ring is hidden.
-    /// An unanchored (ring-only) row is claimed first, as an arrow press would; the played row
-    /// becomes the anchor, so ⇧-click and the arrows continue from it.
-    func playCursorRow() -> KeyPress.Result {
-        guard let cursor = keyboardCursor, let id = cursor.activationTarget(ringVisible: showsRing),
-              let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
-        if !cursor.isAnchored {
-            selection = [id]
+    func handleClick(_ track: LibraryTrackDisplay) {
+        listFocused = true
+        let flags = NSEvent.modifierFlags
+        selection.click(track.id, extend: flags.contains(.shift), toggle: flags.contains(.command), in: rowIDs)
+    }
+
+    /// ↑/↓, Home / End, Page Up / Down — with ⇧, extending the range from the anchor. Asks the row
+    /// area to scroll the cursor into view; a key that moves nothing bubbles.
+    func navigate(_ press: KeyPress) -> KeyPress.Result {
+        guard let movement = movement(for: press.key),
+              selection.move(movement, extend: press.modifiers.contains(.shift), in: rowIDs) != nil
+        else { return .ignored }
+        cursorScrollRequest &+= 1
+        return .handled
+    }
+
+    func movement(for key: KeyEquivalent) -> ListSelection<RowID>.Movement? {
+        switch key {
+        case .upArrow: .step(-1)
+        case .downArrow: .step(1)
+        case .pageUp: .page(-rowsPerPage)
+        case .pageDown: .page(rowsPerPage)
+        case .home: .first
+        case .end: .last
+        default: nil
         }
-        anchorID = id
+    }
+
+    /// Return: play the cursor row — the ring row, or the selected cursor row while the ring is
+    /// hidden (`ListSelection.activate`, which claims a ring-only row first).
+    func playCursorRow() -> KeyPress.Result {
+        guard let id = selection.activate(in: rowIDs, ringVisible: showsRing),
+              let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
         model.playTrackNextNow(track)
         return .handled
     }
 
-    func handleClick(_ track: LibraryTrackDisplay) {
-        listFocused = true
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.shift), let anchor = anchorID {
-            selectRange(from: anchor, to: track.id)
-        } else if flags.contains(.command) {
-            if selection.contains(track.id) {
-                selection.remove(track.id)
-            } else {
-                selection.insert(track.id)
-            }
-            anchorID = track.id
-        } else {
-            selection = [track.id]
-            anchorID = track.id
+    /// Type-to-select over the displayed titles, in the current order. A key with ⌘ or ⌃ is a
+    /// shortcut, not typing; a key that matches nothing is still consumed, so it doesn't beep.
+    func typeSelect(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.isDisjoint(with: [.command, .control]) else { return .ignored }
+        if selection.typeSelect(press.characters, at: .now, in: model.visibleSongs, title: \.title) != nil {
+            cursorScrollRequest &+= 1
         }
-    }
-
-    func selectRange(from start: RowID, to end: RowID) {
-        let ids = model.visibleSongs.map(\.id)
-        guard let i = ids.firstIndex(of: start), let j = ids.firstIndex(of: end) else {
-            selection = [end]
-            return
-        }
-        selection = Set(ids[min(i, j) ... max(i, j)])
-    }
-
-    /// ↑/↓: move the single selection + anchor from the cursor. With nothing anchored the first
-    /// press (either arrow) selects the first row, where the ring already sits. Asks the row area
-    /// to scroll it into view.
-    func moveSelection(by delta: Int) -> KeyPress.Result {
-        guard let target = keyboardCursor?.step(by: delta, in: model.visibleSongs.lazy.map(\.id))
-        else { return .ignored }
-        selection = [target]
-        anchorID = target
-        cursorScrollRequest &+= 1
         return .handled
     }
 }

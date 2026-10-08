@@ -81,6 +81,27 @@ struct ListKeyboardCursorTests {
         #expect(Cursor(id: 99, isAnchored: false).step(by: 1, in: rows) == nil)
     }
 
+    // MARK: page (Page Up / Page Down, E1)
+
+    @Test("a page moves `delta` rows and stops ON the first or last row instead of bubbling")
+    func pageStopsAtEnds() {
+        let cursor = Cursor(id: 20, isAnchored: true)
+        #expect(cursor.page(by: 2, in: rows) == 40)
+        #expect(cursor.page(by: 9, in: rows) == 40) // past the end → the last row
+        #expect(cursor.page(by: -9, in: rows) == 10) // past the start → the first row
+        #expect(Cursor(id: 40, isAnchored: true).page(by: 3, in: rows) == 40) // already last: stays
+    }
+
+    @Test("a page moves from a seeded first row at once — no claim in place, unlike an arrow")
+    func pageNeverClaimsInPlace() {
+        #expect(Cursor(id: 10, isAnchored: false).page(by: 2, in: rows) == 30)
+    }
+
+    @Test("a cursor that left the rows cannot page")
+    func stalePage() {
+        #expect(Cursor(id: 99, isAnchored: true).page(by: 2, in: rows) == nil)
+    }
+
     // MARK: activationTarget (Return)
 
     @Test("Return acts on an anchored cursor whether or not the ring is drawn")

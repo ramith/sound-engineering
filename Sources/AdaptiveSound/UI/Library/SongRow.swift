@@ -26,6 +26,9 @@ struct SongRow: View {
     /// read from the environment, so the row stays env-object-free.
     let isKeyboardCursor: Bool
 
+    /// The fixed row height — also the list's pitch (no gap between rows), from which it sizes a
+    /// Page Up / Down.
+    nonisolated static let height: CGFloat = 48
     /// The row card's corner radius (fill, now-playing ring and keyboard ring share it).
     private static let cornerRadius: CGFloat = 11
 
@@ -40,7 +43,7 @@ struct SongRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 48)
+        .frame(height: Self.height)
         .background(rowFill, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
             if isNowPlaying {
