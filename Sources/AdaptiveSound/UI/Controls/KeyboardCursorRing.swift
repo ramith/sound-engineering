@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Keyboard cursor ring (S10.8 A3)
+// MARK: - Keyboard cursor ring (S10.8 A3) and the control focus ring (S10.8 D3)
 
 extension View {
     /// The keyboard focus indicator for the custom (non-`List`) lists — Songs, the queue, the
@@ -18,11 +18,34 @@ extension View {
     func keyboardCursorRing(_ isVisible: Bool, cornerRadius: CGFloat) -> some View {
         overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(DesignSystem.Color.focusRing, lineWidth: 2)
-                .opacity(isVisible ? 1 : 0)
-                .animation(nil, value: isVisible)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                .keyboardRingStroke(isVisible)
         }
+    }
+
+    /// The same ring for a CONTROL that holds key focus itself — the icon chip (a Tab stop under
+    /// Full Keyboard Access) — rather than moving a cursor row. The control switches the system
+    /// focus effect off and passes `isVisible` = focused AND keyboard-driven
+    /// (`showsKeyboardFocus`), so a click never leaves a ring behind.
+    ///
+    /// Drawn OUTSIDE `shape` (`ControlMetrics.focusRingOutset`), where the system focus ring sits,
+    /// so it never merges with the control's own 1pt teal edge (an "on" chip). Same stroke,
+    /// colour and posture as the cursor ring; it sits on the window or the glow beside the
+    /// control, which R4-FOCUS-01/02 audit.
+    func keyboardFocusRing(_ isVisible: Bool, around shape: some InsettableShape) -> some View {
+        overlay {
+            shape.inset(by: -ControlMetrics.focusRingOutset)
+                .keyboardRingStroke(isVisible)
+        }
+    }
+}
+
+private extension InsettableShape {
+    /// Both rings' one stroke: 2pt `focusRing` inside the shape, always mounted, shown by opacity.
+    func keyboardRingStroke(_ isVisible: Bool) -> some View {
+        strokeBorder(DesignSystem.Color.focusRing, lineWidth: 2)
+            .opacity(isVisible ? 1 : 0)
+            .animation(nil, value: isVisible)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
