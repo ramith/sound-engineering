@@ -74,6 +74,12 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     review). Sprints C–G run the lighter routine in §D, and the behaviour the founder noticed
     in use comes before the glass looks: album artists, keyboard selection, the grid keeping
     its scroll position, moving playlist items (run order in §E). No scope added or cut.
+19. **Genres becomes a tile grid** (2026-10-08, founder test-library feedback; a recorded exception
+    to "no new arrangements"): Albums, Artists and Genres share ONE browse tile, a genre's art is a
+    2×2 mosaic of its top album covers (a small new library read), and no Sort pill on the grids for
+    R1. Design: [s10-8-browse-grid-design.md](s10-8-browse-grid-design.md). Sprint D grows by ~1–2.
+20. **Arrow keys on the tile grids** (Albums, Artists, Genres) come with the keyboard work in the
+    behaviour pull-forward, not after R1 (2026-10-08). About +2.
 
 ## C. Scope
 
@@ -144,8 +150,9 @@ and ships every new piece with a consumer in the same PR (hostile Periphery).
 
 **Run order from Sprint C (decision 18: behaviour first).** A ✅ → B ✅ → **C** (album artists,
 test library) → **behaviour pull-forward**: E1 (selection kit + the full keyboard set), D6
-(the grid keeps its scroll position; the Songs count line), and E4's Move Up / Down / to Top
-with shortcuts → **D** (D1–D5, the Library glass) → **E** (E2, E3, E4's header and insets) →
+(the grid keeps its scroll position; the Songs count line), E4's Move Up / Down / to Top
+with shortcuts, and **arrow keys on the tile grids** (decision 20; its plan check decides whether
+D5's `BrowseGridRoot` scaffold moves forward so the keys are wired once) → **D** (D1–D5, the Library glass) → **E** (E2, E3, E4's header and insets) →
 **F** → **G**. The PR tables below keep their letters; only the order changes.
 
 ### Sprint A — foundation (7 points)
@@ -194,7 +201,7 @@ of every earlier sprint's picture sheets; later sprints derive new values from t
 | D2 | Shared filter pill → Songs, queue, playlist picker | M | SLOT fit for the placeholder; semgrep: no raw text field outside the shared pill, the rename field and the Save sheet |
 | D3 | Icon chip and capsule switch (required accessibility label; selection cue not by fill alone) → queue header, Songs | M | R4-SEG-02 (selected segment ≥ 3:1) |
 | D4 | Card header → Songs, Albums, Artists, Genres | S | — |
-| D5 | Genres rows (system list replaced); grid insets; first-run, scanning, empty, no-results states on the pill style | M | — |
+| D5 | ~~Genres rows (system list replaced)~~ → **one shared browse grid** for Albums, Artists and Genres (decision 19, [design](s10-8-browse-grid-design.md)): `BrowseTile` / `BrowseArt` / `BrowseGridRoot`, fill-width columns, one-line names, the placeholder, hover plate + the A3 ring; Genres on the tile with a 2×2 cover mosaic (a new genre-cover read); first-run, scanning, empty, no-results states on the pill style | L (+1–2) | the genre-cover read: a VerifyLibraryStore check incl. its query plan + a break-it pass (store work); a 300-genre stress case; one sheet variant per grid |
 | D6 | Returning from an album / artist / genre page restores the grid's scroll position (founder, Sprint A check); the Songs count line no longer wraps at 880×640 (Sprint A break-it) | M | — |
 
 **Founder checks:** Songs → Albums → Artists → Genres, the card never moves; each has the
