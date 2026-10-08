@@ -28,12 +28,11 @@ struct SongsListView: View {
     @State private var selection = ListSelection<RowID>()
     @State private var infoTarget: LibraryTrackDisplay?
     @State private var addToPlaylistTarget: AddToPlaylistTarget?
-    /// Bumped by the KEYBOARD only (never a click — scrolling must not move a row out from under a
-    /// double-click); the row area's `ScrollViewReader` observes it and scrolls the cursor into
-    /// view (A3). A counter, like the queue's jump request, so every press re-fires.
-    @State private var cursorScrollRequest = 0
-    /// Rows Page Up / Down move: from the row area's measured height (`rowsPerPage(viewportHeight:)`).
-    @State private var rowsPerPage = 1
+    /// The row area's scroll position: the KEYBOARD sets it, to keep the cursor in view (A3) — never
+    /// a click, which must not move a row out from under a double-click.
+    @State private var rowScroll = ScrollPosition()
+    /// The row area's visible span, for the keys alone (`VisibleSpan`).
+    @State private var visibleSpan = VisibleSpan()
     @FocusState private var listFocused: Bool
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
@@ -51,7 +50,7 @@ struct SongsListView: View {
     /// and NO gap between rows (48pt rows at a 48pt pitch, png/02). The first cut read the 6 as
     /// inter-row spacing and dropped the 12 — rows sat 6pt apart (about one row in nine lost)
     /// and ran edge to edge, so a playing/selected row's fill touched the card border.
-    private nonisolated static let listVerticalInset: CGFloat = 6
+    private static let listVerticalInset: CGFloat = 6
     private static let listHorizontalInset: CGFloat = 12
     /// Everything that is not a column: gaps + row padding + the row area's side insets.
     private static func chromeWidth(columnCount: Int) -> CGFloat {
@@ -62,36 +61,26 @@ struct SongsListView: View {
         GeometryReader { geo in
             let columns = orderedVisibleColumns
             let titleWidth = resolvedTitleWidth(columns: columns, available: geo.size.width)
-            let cursorID = ringCursorID
+            let pass = rowPass(columns: columns, titleWidth: titleWidth)
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(spacing: 0) {
                     if columnConfig.isCustomized {
                         columnHeaderRow(columns: columns, titleWidth: titleWidth)
                     }
-                    // The reader wraps ONLY the vertical scroll, so `scrollTo` can never yank the
-                    // horizontal column scroll back to the leading edge.
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
-                                    row(track, number: index + 1, columns: columns, titleWidth: titleWidth,
-                                        isKeyboardCursor: track.id == cursorID)
-                                        .id(track.id) // the arrow keys' `scrollTo` target
-                                }
-                            }
-                            .padding(.vertical, Self.listVerticalInset)
-                            .padding(.horizontal, Self.listHorizontalInset)
-                        }
-                        // Keep the cursor on screen the queue's way: no anchor = scroll only as far
-                        // as needed (none when the row is already visible), instantly.
-                        .onChange(of: cursorScrollRequest) {
-                            if let cursor = selection.cursor {
-                                proxy.scrollTo(cursor)
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(model.visibleSongs.enumerated()), id: \.element.id) { index, track in
+                                row(track, number: index + 1, pass: pass)
                             }
                         }
-                        .onGeometryChange(for: Int.self) { geometry in
-                            Self.rowsPerPage(viewportHeight: geometry.size.height)
-                        } action: { rowsPerPage = $0 }
+                        .padding(.vertical, Self.listVerticalInset)
+                        .padding(.horizontal, Self.listHorizontalInset)
+                    }
+                    // The VERTICAL scroll only, so a key can never yank the horizontal column
+                    // scroll back to the leading edge.
+                    .scrollPosition($rowScroll)
+                    .onScrollGeometryChange(for: CGRect.self) { $0.visibleRect } action: { _, visible in
+                        visibleSpan.rect = visible
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -210,26 +199,43 @@ struct SongsListView: View {
 
     // MARK: Rows
 
-    private func row(_ track: LibraryTrackDisplay, number: Int,
-                     columns: [SongColumn], titleWidth: CGFloat, isKeyboardCursor: Bool) -> some View {
-        Button {
+    /// What every row of one list pass shares, read ONCE per pass: a row does only O(1) work of its
+    /// own — the list may build thousands of them (the S10.8 End-key hang).
+    private struct RowPass {
+        let columns: [SongColumn]
+        let titleWidth: CGFloat
+        /// The ring row (nil: no ring) and the playing row.
+        let cursorID: RowID?
+        let nowPlayingID: RowID?
+        let isPlaybackActive: Bool
+    }
+
+    /// This list pass's `RowPass`.
+    private func rowPass(columns: [SongColumn], titleWidth: CGFloat) -> RowPass {
+        RowPass(columns: columns, titleWidth: titleWidth, cursorID: ringCursorID,
+                       nowPlayingID: currentTrackID, isPlaybackActive: viewModel.isPlaying)
+    }
+
+    private func row(_ track: LibraryTrackDisplay, number: Int, pass: RowPass) -> some View {
+        let isNowPlaying = track.id == pass.nowPlayingID
+        return Button {
             handleClick(track)
         } label: {
-            SongRow(track: track, number: number, columns: columns, titleWidth: titleWidth,
-                    isNowPlaying: track.id == currentTrackID,
-                    isPlaybackActive: viewModel.isPlaying,
+            SongRow(track: track, number: number, columns: pass.columns, titleWidth: pass.titleWidth,
+                    isNowPlaying: isNowPlaying,
+                    isPlaybackActive: pass.isPlaybackActive,
                     isSelected: selection.contains(track.id),
-                    isKeyboardCursor: isKeyboardCursor)
+                    isKeyboardCursor: track.id == pass.cursorID)
         }
         .buttonStyle(.plain)
         // Not a focus stop of its own: the LIST is the one Tab stop and the cursor ring its cue
         // (as `BrowseTile` and the facet rows). Clicks, the menu and VoiceOver are unaffected.
         .focusable(false)
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.playTrackNextNow(track) })
-        .contextMenu { menuItems(for: contextIDs(clicked: track)) }
+        .contextMenu { menuItems(clicked: track) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(SongsAccessibility.rowLabel(for: track))
-        .accessibilityValue(rowAccessibilityValue(for: track))
+        .accessibilityValue(rowAccessibilityValue(for: track, isNowPlaying: isNowPlaying))
         .accessibilityAddTraits(selection.contains(track.id) ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.playTrackNextNow(track) }
         .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
@@ -245,9 +251,9 @@ struct SongsListView: View {
 
     /// The row's spoken value + a "Now playing" suffix for the current track — the equalizer is the
     /// only VISUAL now-playing cue, which VoiceOver can't see.
-    private func rowAccessibilityValue(for track: LibraryTrackDisplay) -> String {
+    private func rowAccessibilityValue(for track: LibraryTrackDisplay, isNowPlaying: Bool) -> String {
         let base = SongsAccessibility.rowValue(for: track)
-        guard track.id == currentTrackID else { return base }
+        guard isNowPlaying else { return base }
         return base.isEmpty ? "Now playing" : base + ", Now playing"
     }
 
@@ -280,38 +286,38 @@ struct SongsListView: View {
 
     // MARK: Play + context (mirror the former SongsTable)
 
-    private func contextIDs(clicked track: LibraryTrackDisplay) -> Set<RowID> {
-        selection.contains(track.id) ? selection.ids : [track.id]
+    /// The selected tracks in display order, without filter-hidden ones — resolved when a menu item is
+    /// CHOSEN: an O(N) walk, so never while the menu is built (it is built with every row).
+    private func selectedTracks() -> [LibraryTrackDisplay] {
+        SongsRowResolver.orderedSelection(in: model.visibleSongs, selection: selection.ids)
     }
 
-    private func orderedTracks(for ids: Set<RowID>) -> [LibraryTrackDisplay] {
-        SongsRowResolver.orderedSelection(in: model.visibleSongs, selection: ids)
-    }
-
+    /// The row's context menu: the whole selection when the clicked row is one of several selected,
+    /// else the clicked row. SwiftUI builds it with the row, for every row it builds, so building it
+    /// is O(1) (`ListSelection.menuActsOnSelection`); the selection's tracks are resolved in the actions.
     @ViewBuilder
-    private func menuItems(for ids: Set<RowID>) -> some View {
-        if ids.count > 1 {
-            let tracks = orderedTracks(for: ids)
-            Button("Play") { model.play(tracks, startAt: 0) }
-            Button("Play Next") { model.playNext(tracks) }
-            Button("Add to Queue") { model.append(tracks) }
+    private func menuItems(clicked track: LibraryTrackDisplay) -> some View {
+        if selection.menuActsOnSelection(clicked: track.id) {
+            Button("Play") { model.play(selectedTracks(), startAt: 0) }
+            Button("Play Next") { model.playNext(selectedTracks()) }
+            Button("Add to Queue") { model.append(selectedTracks()) }
             Divider()
-            addToPlaylistMenu(trackIDs: tracks.map(\.id))
+            addToPlaylistMenu { selectedTracks().map(\.id) }
             Divider()
-            Button("Info", systemImage: "info.circle") { infoTarget = tracks.first }
-        } else if let track = SongsRowResolver.primaryRow(in: model.visibleSongs, selection: ids) {
+            Button("Info", systemImage: "info.circle") { infoTarget = selectedTracks().first }
+        } else {
             Button("Play") { model.playTrackNextNow(track) }
             Button("Play Next") { model.playNext([track]) }
             Button("Add to Queue") { model.append([track]) }
             Divider()
-            addToPlaylistMenu(trackIDs: [track.id])
+            addToPlaylistMenu { [track.id] }
             Divider()
             Button("Info", systemImage: "info.circle") { infoTarget = track }
         }
     }
 
-    private func addToPlaylistMenu(trackIDs: [Int64]) -> some View {
-        AddToPlaylistMenu(resolveTrackIDs: { trackIDs }, onChooseMore: { ids in
+    private func addToPlaylistMenu(trackIDs: @escaping () -> [Int64]) -> some View {
+        AddToPlaylistMenu(resolveTrackIDs: trackIDs, onChooseMore: { ids in
             addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
         })
     }
@@ -329,9 +335,30 @@ private extension SongsListView {
     static let typeSelectCharacters = CharacterSet.alphanumerics.union(.punctuationCharacters).union(.symbols)
 
     /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
-    /// Nonisolated (with the two metrics it reads): `onGeometryChange` runs it off the main actor.
-    nonisolated static func rowsPerPage(viewportHeight: CGFloat) -> Int {
-        max(Int((viewportHeight - 2 * listVerticalInset) / SongRow.height) - 1, 1)
+    var rowsPerPage: Int {
+        max(Int((visibleSpan.rect.height - 2 * Self.listVerticalInset) / SongRow.height) - 1, 1)
+    }
+
+    /// The row area's visible span, in its content's coordinates. A REFERENCE kept in `@State`: it is
+    /// written on every scroll frame but read only when a key moves the cursor, so scrolling never
+    /// re-renders the list (a value in `@State` would, frame by frame, over every visible row).
+    final class VisibleSpan {
+        var rect = CGRect.zero
+    }
+
+    /// Scrolls the cursor row into view — as little as needed, none when it is already in view — by
+    /// arithmetic on the fixed row height (`FixedRowReveal`). Scrolling to the row's ID made the lazy
+    /// stack build every row up to it, and keep them: End over 10,000 songs built them all, and every
+    /// later key rebuilt them all (the S10.8 End-key hang).
+    func revealCursor() {
+        guard let cursor = selection.cursor,
+              let index = model.visibleSongs.firstIndex(where: { $0.id == cursor }),
+              let offset = FixedRowReveal.offset(revealing: index, rowHeight: SongRow.height,
+                                                 inset: Self.listVerticalInset,
+                                                 visibleTop: visibleSpan.rect.minY,
+                                                 visibleHeight: visibleSpan.rect.height)
+        else { return }
+        rowScroll.scrollTo(y: offset)
     }
 
     /// The visible rows' ids in display order (filtered, sorted) — what every selection verb acts on.
@@ -366,12 +393,18 @@ private extension SongsListView {
     /// with ⌘, ⌥ or ⌃ (`BrowseKeyboard`'s rule): those are the app's and the system's shortcuts,
     /// never a plain step.
     func navigate(_ press: KeyPress) -> KeyPress.Result {
-        guard !press.isShortcut,
-              let movement = movement(for: press.key),
-              selection.move(movement, extend: press.modifiers.contains(.shift), in: rowIDs) != nil
-        else { return .ignored }
-        cursorScrollRequest &+= 1
+        guard !press.isShortcut, navigate(key: press.key, extend: press.modifiers.contains(.shift)) else {
+            return .ignored
+        }
         return .handled
+    }
+
+    /// The move `key` makes (`extend` = ⇧ held); false when it moves nothing.
+    func navigate(key: KeyEquivalent, extend: Bool) -> Bool {
+        guard let movement = movement(for: key), selection.move(movement, extend: extend, in: rowIDs) != nil
+        else { return false }
+        revealCursor()
+        return true
     }
 
     func movement(for key: KeyEquivalent) -> ListSelection<RowID>.Movement? {
@@ -401,7 +434,7 @@ private extension SongsListView {
     func typeSelect(_ press: KeyPress) -> KeyPress.Result {
         guard !press.isShortcut else { return .ignored }
         if selection.typeSelect(press.characters, at: .now, in: model.visibleSongs, title: \.title) != nil {
-            cursorScrollRequest &+= 1
+            revealCursor()
         }
         return .handled
     }

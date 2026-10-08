@@ -28,7 +28,7 @@ struct SongRow: View {
 
     /// The fixed row height — also the list's pitch (no gap between rows), from which it sizes a
     /// Page Up / Down.
-    nonisolated static let height: CGFloat = 48
+    static let height: CGFloat = 48
     /// The row card's corner radius (fill, now-playing ring and keyboard ring share it).
     private static let cornerRadius: CGFloat = 11
 
