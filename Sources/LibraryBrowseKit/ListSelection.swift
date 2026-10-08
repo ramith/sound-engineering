@@ -130,17 +130,16 @@ public struct ListSelection<ID: Hashable> {
         return target
     }
 
-    /// Type-to-select: `typed` extends the search (a pause of `TypeSelectBuffer.resetInterval`
+    /// Type-to-select: `typed` extends the search (a pause of `TypeSelectBuffer.timeout`
     /// starts a new one), and the selection, anchor and cursor jump to the FIRST row in `rows` order
-    /// whose `title` starts with it — ignoring case and diacritics. Returns that row, or nil when no
+    /// whose `title` starts with it — ignoring case, diacritics and width. Returns that row, or nil when no
     /// title matches; then nothing changes, as in a macOS list.
     @discardableResult
     public mutating func typeSelect<Rows: Collection>(
         _ typed: String, at now: ContinuousClock.Instant, in rows: Rows, title: (Rows.Element) -> String
     ) -> ID? where Rows.Element: Identifiable, Rows.Element.ID == ID {
         let search = typeSelectBuffer.append(typed, at: now)
-        guard let match = rows.first(where: { TypeSelectBuffer.title(title($0), startsWith: search) })
-        else { return nil }
+        guard let match = TypeSelectBuffer.firstMatch(for: search, in: rows, title: title) else { return nil }
         moveCursor(to: match.id)
         return match.id
     }
