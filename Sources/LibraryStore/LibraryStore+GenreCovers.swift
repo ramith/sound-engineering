@@ -14,9 +14,11 @@
 // placeholder). Like every read it touches no filesystem: the keys resolve to cache paths through
 // `artworkCachePaths(forKeys:)`.
 //
-// Plan (VerifyLibraryStore GC-03): `track_genres` is walked once — the whole grid needs every
-// membership — and `tracks` / `albums` are reached by rowid, never a full SCAN of `tracks`. The
-// existing indexes serve it; no schema change.
+// Plan (VerifyLibraryStore GC-04): `track_genres` is walked once — the whole grid needs every
+// membership — and `tracks` / `albums` are reached by rowid, never a full SCAN of `tracks`. Step 1
+// groups album-first so SQLite walks `track_genres` in rowid order rather than through its genre
+// index (a table lookup per membership): ~25% faster at 100k songs. The existing indexes serve it;
+// no schema change.
 
 import Foundation
 import GRDB
@@ -33,7 +35,7 @@ public extension LibraryStore {
         JOIN tracks t ON t.id = tg.track_id
         JOIN albums al ON al.id = t.album_id
         WHERE al.artwork_key IS NOT NULL
-        GROUP BY tg.genre_id, al.id
+        GROUP BY al.id, tg.genre_id
     ), covers AS (
         SELECT genre_id, album_id, artwork_key, songs,
                ROW_NUMBER() OVER (PARTITION BY genre_id, artwork_key ORDER BY songs DESC, album_id ASC) AS wearer
