@@ -85,14 +85,20 @@ struct LibrarySidebar: View {
             .focusEffectDisabled()
             // ↑/↓/Return stand down WHILE a rename field is open — otherwise this ScrollView (still
             // in the focus chain) HIJACKS the keys from the focused TextField (arrows moved the
-            // sidebar selection instead of the cursor; Return re-entered `beginRename`).
-            .onKeyPress(.upArrow) { editingPlaylistID == nil ? moveSelection(by: -1, proxy: proxy) : .ignored }
-            .onKeyPress(.downArrow) { editingPlaylistID == nil ? moveSelection(by: 1, proxy: proxy) : .ignored }
+            // sidebar selection instead of the cursor; Return re-entered `beginRename`) — and for a
+            // shortcut (⌘ / ⌥ / ⌃): the rail keeps focus after a playlist click, and took ⌥⌘↓
+            // (Move Down) as "next playlist".
+            .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                guard editingPlaylistID == nil, !press.isShortcut else { return .ignored }
+                return moveSelection(by: press.key == .upArrow ? -1 : 1, proxy: proxy)
+            }
             // Return renames the selected playlist (Finder/Music convention). Categories ignore it.
-            .onKeyPress(.return) { editingPlaylistID == nil ? renameCursorPlaylist() : .ignored }
+            .onKeyPress(keys: [.return]) { press in
+                editingPlaylistID == nil && !press.isShortcut ? renameCursorPlaylist() : .ignored
+            }
             #if DEBUG
-                // Picture-sheet ring-rail variant: focus, so the ring marks the selected category.
-                .sheetFocusSeed(.rail) { sidebarFocused = true }
+            // Picture-sheet ring-rail variant: focus, so the ring marks the selected category.
+            .sheetFocusSeed(.rail) { sidebarFocused = true }
             #endif
         }
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
