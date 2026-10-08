@@ -149,12 +149,13 @@ final class BrowseNavigator {
 
     // MARK: Private
 
-    /// The room kept between the cursor tile and the viewport edge when scrolling it into view:
-    /// the grid's ring is drawn outside the tile, so the tile stops short of the edge by more.
+    /// The room kept between the cursor tile and the viewport edge when scrolling it into view: the
+    /// grid's ring is drawn outside the tile, so the tile stops short of the edge; a list row holds
+    /// its ring inside, so it may sit flush (the native list's minimal scroll).
     private var revealMargin: Double {
         switch arrangement {
         case .grid: BrowseGridMetrics.ringOutset + 2
-        case .list: 4
+        case .list: 0
         }
     }
 
