@@ -667,3 +667,19 @@ still read "Unknown Artist" — correct. Scratch copies deleted.
    leftovers after a merge. Briefs now name it.
 5. **The test library paid off on day one.** Its first scan found the FLAC album-artist bug behind
    the founder's "Unknown Artist", and every break-it repro ran on it — never on the real library.
+
+## Behaviour pull-forward — keyboard, scroll restore, playlist moves (decisions 18, 20)
+
+### Plan check and split (2026-10-08, coordinator)
+
+The lighter routine (decision 18), three agents in parallel worktrees off `18a3430`, split by file
+so they cannot collide:
+
+| Piece | Scope | Owns |
+|---|---|---|
+| **E1** | the selection kit (cursor, anchor, ⇧-extend, ⌘A, type-to-select, Home/End, Page Up/Down, Esc) — no column or sort knowledge (COL-01) — wired into Songs with no visual change; the Songs count line no longer wraps at 880×640 (D6, second half) | `ListKeyboardCursor`, the Songs files |
+| **Grid keys + D6** | a 2-D `GridKeyboardCursor` for Albums / Artists (Genres stays a list until Sprint D); the A3 ring on tiles; back from a detail page restores the scroll position and the cursor (D6) — and, if wiring twice would duplicate, the browse-grid STRUCTURE moves forward from D5 (no restyle) | the grid / facet views, `LibraryRoute` |
+| **E4 moves** | Move Up / Down / to Top for playlist entries (context menu + shortcuts), through the store API drag-reorder already uses | the playlist files |
+
+Agents do not drive the real UI (the founder may be using the Mac); the live Full Keyboard Access
+pass (Sprint A retro rule) runs once, coordinated with the founder, at break-it time.
