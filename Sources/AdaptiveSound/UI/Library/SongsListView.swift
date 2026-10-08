@@ -39,6 +39,8 @@ struct SongsListView: View {
     #if DEBUG
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): rows its fixture draws as selected.
         @Environment(\.sheetSongSelection) private var sheetSongSelection
+        /// `make songs-perf` only (`Debug/SongsPerfRun.swift`): counts passes and row builds, presses keys.
+        @Environment(\.songsListProbe) private var probe
     #endif
 
     /// Inter-column gap, the row's own horizontal padding (both sides), and the row AREA's inset
@@ -117,6 +119,10 @@ struct SongsListView: View {
         // Seed the anchor too, so the fixture's selection is a real cursor state (the first seeded
         // row in visible order — never the Set's arbitrary `first`). A no-op in a normal run.
         .onAppear {
+            probe?.press = { key in
+                _ = navigate(key: key, extend: false)
+                return selection.cursor.flatMap { id in model.visibleSongs.firstIndex { $0.id == id } }.map { $0 + 1 }
+            }
             guard !sheetSongSelection.isEmpty else { return }
             selection = ListSelection(selecting: sheetSongSelection, in: rowIDs)
         }
@@ -210,13 +216,19 @@ struct SongsListView: View {
         let isPlaybackActive: Bool
     }
 
-    /// This list pass's `RowPass`.
+    /// This list pass's `RowPass` — in the perf run (`make songs-perf`), also one counted pass.
     private func rowPass(columns: [SongColumn], titleWidth: CGFloat) -> RowPass {
-        RowPass(columns: columns, titleWidth: titleWidth, cursorID: ringCursorID,
+        #if DEBUG
+            probe?.countListPass()
+        #endif
+        return RowPass(columns: columns, titleWidth: titleWidth, cursorID: ringCursorID,
                        nowPlayingID: currentTrackID, isPlaybackActive: viewModel.isPlaying)
     }
 
     private func row(_ track: LibraryTrackDisplay, number: Int, pass: RowPass) -> some View {
+        #if DEBUG
+            probe?.countRowBuild(number: number)
+        #endif
         let isNowPlaying = track.id == pass.nowPlayingID
         return Button {
             handleClick(track)
