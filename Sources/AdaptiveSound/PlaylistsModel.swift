@@ -53,6 +53,8 @@ final class PlaylistsModel {
     private var detailEpoch = 0
     /// Saves each playlist's newest on-screen order, one write at a time (E4: `reorderEntries`).
     @ObservationIgnored private let orderWriter: CoalescingWriter<Int64, [Int64]>
+    /// The failed save behind `actionError`, so a later successful save of that playlist withdraws it.
+    @ObservationIgnored private var orderFailure: (playlistID: Int64, message: String)?
 
     /// A transient per-ACTION error (Locate / Remove-missing) shown as an alert — never routed through
     /// `detailState` (a failed row-action mustn't blow the whole pane into load-error; F review).
@@ -412,20 +414,35 @@ extension PlaylistsModel {
         guard let store else { return }
         do {
             try await store.reorderPlaylist(id: playlistID, entryIDsInOrder: order)
+            withdrawOrderFailure(of: playlistID)
             // Re-read INSIDE the write: this re-read supersedes any older one that may have read
             // before the write, and until it has, the order still counts as unsaved for that one.
             if openPlaylistID == playlistID {
                 await loadDetail(id: playlistID)
             }
         } catch {
-            // A per-action alert (F review), never the pane-wide load error. Re-read once this
-            // write has ENDED, so the failed order is no longer laid over the read and the stored
-            // order shows again; nothing was written, so any read is current.
-            actionError = "Couldn’t save the new order: \(error.localizedDescription)"
+            // A per-action alert (F review), never the pane-wide load error — naming the playlist,
+            // since it may not be the one on screen. Re-read once this write has ENDED, so the
+            // failed order is no longer laid over the read and the stored order shows again;
+            // nothing was written, so any read is current.
+            let name = playlists.first { $0.id == playlistID }.map { "“\($0.name)”" } ?? "a playlist"
+            let message = "Couldn’t save the new order of \(name): \(error.localizedDescription)"
+            orderFailure = (playlistID, message)
+            actionError = message
             if openPlaylistID == playlistID {
                 Task { await loadDetail(id: playlistID) }
             }
         }
+    }
+
+    /// A save of `playlistID` succeeded: its earlier failure is moot, so its alert goes — unless
+    /// another error has replaced it since.
+    private func withdrawOrderFailure(of playlistID: Int64) {
+        guard let failure = orderFailure, failure.playlistID == playlistID else { return }
+        if actionError == failure.message {
+            actionError = nil
+        }
+        orderFailure = nil
     }
 }
 
