@@ -102,15 +102,16 @@ struct ListMoveTests {
 
     // MARK: held key
 
-    @Test("a held Move Down walks one row to the bottom, then stops")
+    @Test("a held Move Down walks one row to the bottom, one place per press, then stops")
     func heldKeyWalksToTheEdge() {
         var order = rows
-        var steps = 0
-        while let next = ListMove.down.reordering(order, moving: ["a"]) {
+        var landings: [Int] = []
+        for _ in 0 ..< rows.count * 2 { // bounded: a planner that never says "edge" must fail, not hang
+            guard let next = ListMove.down.reordering(order, moving: ["a"]) else { break }
             order = next
-            steps += 1
+            landings.append(order.firstIndex(of: "a") ?? -1)
         }
-        #expect(steps == 4)
+        #expect(landings == [1, 2, 3, 4])
         #expect(order == ["b", "c", "d", "e", "a"])
     }
 
