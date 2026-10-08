@@ -65,10 +65,11 @@ struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
         .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(ref(item)) } }
         .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(ref(item)) } }
         .contextMenu { FacetQueueActions(ref: ref(item)) }
+        // The ring on the clear view BEFORE the negative padding grows it (see `BrowseTile`).
         .overlay {
             Color.clear
-                .padding(Self.ringInsets)
                 .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.control)
+                .padding(Self.ringInsets)
         }
         // The row's frame on screen, for scroll-into-view and the place (D6).
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in

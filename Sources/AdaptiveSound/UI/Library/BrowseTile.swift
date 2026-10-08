@@ -38,11 +38,13 @@ struct BrowseTile<Cell: View, Actions: View>: View {
         }
         .onHover { hovering = $0 }
         .contextMenu { actions }
-        // Outside the tile — there is no tile plate to draw it on yet (Sprint D adds one).
+        // Outside the tile — there is no tile plate to draw it on yet (Sprint D adds one). The ring
+        // goes on the clear view BEFORE the negative padding grows it: an overlay after the padding
+        // would take the padding view's own bounds, which are the tile's.
         .overlay {
             Color.clear
-                .padding(-BrowseGridMetrics.ringOutset)
                 .keyboardCursorRing(isKeyboardCursor, cornerRadius: BrowseGridMetrics.ringCornerRadius)
+                .padding(-BrowseGridMetrics.ringOutset)
         }
     }
 
