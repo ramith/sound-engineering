@@ -22,6 +22,7 @@ struct AlbumGridView: View {
             load: { await model.loadAlbums() },
             content: { albums in
                 BrowseGrid(
+                    category: .albums,
                     items: albums,
                     title: \.title,
                     route: { .album($0.id) },

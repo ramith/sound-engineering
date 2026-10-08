@@ -11,8 +11,9 @@ import SwiftUI
 ///
 /// Keyboard (decision 20): the grids' `BrowseKeyboard` as a one-column list — ↑/↓, Home / End,
 /// Page Up / Down, type-to-select, Return opens — with the teal ring on the cursor row in place of
-/// the system focus effect.
+/// the system focus effect, and the list's place kept across a drill-down (D6).
 struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
+    let category: LibraryCategory
     /// The visible (filtered) items, in display order.
     let items: [Item]
     let name: (Item) -> String
@@ -40,7 +41,7 @@ struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
-            .modifier(BrowseKeyboard(items: items, title: name, navigator: navigator,
+            .modifier(BrowseKeyboard(category: category, items: items, title: name, navigator: navigator,
                                      focused: $focused, proxy: proxy, open: open))
         }
     }
@@ -69,15 +70,16 @@ struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
                 .padding(Self.ringInsets)
                 .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.control)
         }
-        // The row's frame on screen, for scroll-into-view.
+        // The row's frame on screen, for scroll-into-view and the place (D6).
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
             navigator.record(frame, for: item.id)
         }
         .onDisappear { navigator.forget(item.id) }
     }
 
-    /// Opens a row's page — a click or Return.
+    /// Opens a row's page — a click or Return — remembering the place to come back to (D6).
     private func open(_ item: Item) {
+        model.browsePlace = navigator.opening(item.id, category: category, rows: items.map(\.id))
         model.path.append(route(item))
     }
 }

@@ -26,6 +26,7 @@ struct GenresListView: View {
             load: { await model.loadGenres() },
             content: { genres in
                 FacetList(
+                    category: .genres,
                     items: genres,
                     name: \.name,
                     count: \.trackCount,
