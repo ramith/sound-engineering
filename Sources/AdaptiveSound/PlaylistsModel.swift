@@ -51,9 +51,8 @@ final class PlaylistsModel {
     private(set) var detail: [PlaylistDetailEntry] = []
     private(set) var detailState: LoadState = .idle
     private var detailEpoch = 0
-    /// The newest reorder not yet written, and whether its writer is running (E4: `reorderEntries`).
-    @ObservationIgnored private var pendingOrder: (playlistID: Int64, entryIDs: [Int64])?
-    @ObservationIgnored private var isWritingOrder = false
+    /// Saves each playlist's newest on-screen order, one write at a time (E4: `reorderEntries`).
+    @ObservationIgnored private let orderWriter: CoalescingWriter<Int64, [Int64]>
 
     /// A transient per-ACTION error (Locate / Remove-missing) shown as an alert — never routed through
     /// `detailState` (a failed row-action mustn't blow the whole pane into load-error; F review).
@@ -66,6 +65,10 @@ final class PlaylistsModel {
     init(library: LibraryModel, audio: AudioViewModel) {
         self.library = library
         self.audio = audio
+        // The sink reaches the model weakly; `self` exists only once every stored property is set.
+        weak var model: PlaylistsModel?
+        orderWriter = CoalescingWriter { playlistID, order in await model?.saveOrder(order, of: playlistID) }
+        model = self
     }
 
     // MARK: - Store access
@@ -238,10 +241,14 @@ final class PlaylistsModel {
             // playlist doesn't jank (F). A resolved track whose file is gone = "unavailable".
             let availableIDs = await Self.availableEntryIDs(entries: entries, displays: byID)
             guard epoch == detailEpoch else { return } // a newer open/reload superseded this one
-            detail = entries.map {
+            let rows = entries.map {
                 PlaylistDetailEntry(entry: $0, display: byID[$0.trackID],
                                     isAvailable: availableIDs.contains($0.id))
             }
+            // An order not saved yet is laid over what was read (E4): this read may predate its
+            // write, and publishing the stored order would undo moves already on screen — and the
+            // next move, planned from it, would save that undo.
+            detail = ListOrder.applying(orderWriter.unsavedValue(for: id) ?? [], to: rows, id: \.id)
             detailState = detail.isEmpty ? .empty : .loaded
         } catch {
             guard epoch == detailEpoch else { return }
@@ -390,47 +397,35 @@ final class PlaylistsModel {
 /// Same-file extension (type-body length): it writes the model's private detail state.
 extension PlaylistsModel {
     /// Reorder the open playlist to `orderedEntryIDs` — a drag, or a Move command. The rows move AT
-    /// ONCE, before the write, so a held ⌥⌘↓ compounds from the order on screen instead of
-    /// re-planning from a stale one. One writer then persists the NEWEST order — a burst of moves
-    /// coalesces, and no write can land after a newer one — and re-reads once it has caught up.
+    /// ONCE, by the store's own rule, so a held ⌥⌘↓ compounds from the order on screen; the order
+    /// is then saved through `orderWriter`: per playlist only the newest is written, never after a
+    /// newer one, and until it is written every re-read lays it over what it read (`loadDetail`).
     /// Count is unchanged, so the tree isn't reloaded.
     func reorderEntries(_ orderedEntryIDs: [Int64]) {
         guard let playlistID = openPlaylistID else { return }
-        resequenceDetail(orderedEntryIDs)
-        pendingOrder = (playlistID, orderedEntryIDs)
-        guard !isWritingOrder else { return } // the running writer picks the newest order up
-        isWritingOrder = true
-        Task { await writePendingOrders() }
+        orderWriter.submit(orderedEntryIDs, for: playlistID)
+        detail = ListOrder.applying(orderedEntryIDs, to: detail, id: \.id)
     }
 
-    /// Puts the loaded rows in `orderedEntryIDs`' order — only when it names every one of them
-    /// (anything else waits for the re-read). Bumps `detailEpoch` so a load already in flight, which
-    /// read the old order, can't publish it over this one.
-    private func resequenceDetail(_ orderedEntryIDs: [Int64]) {
-        var rows = Dictionary(detail.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let reordered = orderedEntryIDs.compactMap { rows.removeValue(forKey: $0) }
-        guard reordered.count == detail.count else { return }
-        detail = reordered
-        detailEpoch &+= 1
-    }
-
-    /// Writes `pendingOrder` until no newer one is waiting, re-reading the open detail after each
-    /// write nothing has superseded. A failed write is a per-action alert (F review) — never the
-    /// pane-wide load error — and the re-read puts the stored order back on screen.
-    private func writePendingOrders() async {
-        while let order = pendingOrder {
-            pendingOrder = nil
-            guard let store else { break }
-            do {
-                try await store.reorderPlaylist(id: order.playlistID, entryIDsInOrder: order.entryIDs)
-            } catch {
-                actionError = "Couldn’t save the new order: \(error.localizedDescription)"
+    /// `orderWriter`'s sink: write one playlist's order, then re-read it if it is the open one.
+    private func saveOrder(_ order: [Int64], of playlistID: Int64) async {
+        guard let store else { return }
+        do {
+            try await store.reorderPlaylist(id: playlistID, entryIDsInOrder: order)
+            // Re-read INSIDE the write: this re-read supersedes any older one that may have read
+            // before the write, and until it has, the order still counts as unsaved for that one.
+            if openPlaylistID == playlistID {
+                await loadDetail(id: playlistID)
             }
-            if pendingOrder == nil, openPlaylistID == order.playlistID {
-                await loadDetail(id: order.playlistID)
+        } catch {
+            // A per-action alert (F review), never the pane-wide load error. Re-read once this
+            // write has ENDED, so the failed order is no longer laid over the read and the stored
+            // order shows again; nothing was written, so any read is current.
+            actionError = "Couldn’t save the new order: \(error.localizedDescription)"
+            if openPlaylistID == playlistID {
+                Task { await loadDetail(id: playlistID) }
             }
         }
-        isWritingOrder = false
     }
 }
 
