@@ -79,7 +79,7 @@ extension EnvironmentValues {
     /// Draw keyboard focus (see `KeyboardFocusVisibility`). Read by the custom-list and grid
     /// containers (Songs, the queue, the playlist detail, the Library rail, the browse grids),
     /// which pass their rows a plain `isKeyboardCursor` Bool — rows stay environment-free — and
-    /// by the controls that hold focus themselves (`IconChip`). Defaults to
+    /// by the controls that hold focus themselves (`IconChip`, `CapsuleSwitch`). Defaults to
     /// `false`, which is what the debug picture-sheet renderer draws.
     @Entry var showsKeyboardFocus = false
 }

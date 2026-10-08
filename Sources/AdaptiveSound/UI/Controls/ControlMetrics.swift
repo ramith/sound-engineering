@@ -11,7 +11,16 @@ enum ControlMetrics {
     static let chipSide: CGFloat = 28
     /// The icon chip's SF Symbol point size.
     static let chipSymbol: CGFloat = 12
-    /// The teal edge that marks an "on" chip: the state cue that is not the fill (R4-CHIP-04).
+    /// A capsule-switch segment's height; plus twice `switchTrackPadding`, the 24pt switch.
+    static let segmentHeight: CGFloat = 20
+    /// The switch track's inset around its segments.
+    static let switchTrackPadding: CGFloat = 2
+    /// The gap between two segments.
+    static let segmentSpacing: CGFloat = 2
+    /// A segment title's inset from the capsule's round ends.
+    static let segmentTitleInset: CGFloat = 10
+    /// The teal edge that marks an "on" chip and the selected segment: the state cue that is not the
+    /// fill (R4-CHIP-04, R4-SEG-02).
     static let stateRingWidth: CGFloat = 1
     /// How far OUTSIDE a control its keyboard focus ring reaches (a 1pt gap, then the 2pt ring) —
     /// where the system focus ring it replaces sits, clear of the control's own edge.
