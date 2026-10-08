@@ -33,7 +33,7 @@ Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. E
 - **s8-1-persistent-store-design.md**, **s8-2-folder-scan-design.md**, **s8-3-metadata-art-design.md**, **s8-4-live-watch-move-match-design.md** — S8 library-spine design (store now **GRDB-backed** — see the SUPERSEDED note in s8-1) — ✅ shipped
 - **s9-browse-search-ui-design.md**, **s9-library-ia-queue-design.md**, **s9-5-songs-search-design.md** (+ `-test-plan`), **s9-6-artists-genres-design.md** — S9 browse/search design — ✅ shipped
 - **s9-implementation-plan.md**, **s9-5-search-sort-design.md**, **s9-5-queue-toast-design.md**, **s9-5-customizable-columns-plan.md** — S9.5 execution/companion fragments — ⚠️ superseded/folded into `s9-5-songs-search-design.md`
-- **s10-8-deviations-plan.md**, **s10-8-realign-ledger.md** (part 1, Now Playing polish); **s10-8-library-ledger.md** (part 2, Library Twin Panels); **s10-8-glass-sweep-plan.md** (part 2, every remaining screen onto the shipped glass — founder decisions in §B) — S10.8 Liquid Glass sweep plans + implementation ledgers
+- **s10-8-deviations-plan.md**, **s10-8-realign-ledger.md** (part 1, Now Playing polish); **s10-8-library-ledger.md** (part 2, Library Twin Panels); **s10-8-glass-sweep-plan.md** (part 2, every remaining screen onto the shipped glass — founder decisions in §B), **s10-8-sweep-ledger.md** (its per-sprint record), **s10-8-browse-grid-design.md** (one shared tile grid for Albums, Artists and Genres) — S10.8 Liquid Glass sweep plans + implementation ledgers
 - **qw1-quick-win-differentiators-design.md** — QW1 crossfeed + Reimagine-intensity + tonal presets (crossfeed↔BRIR exclusivity invariant) — ✅ shipped
 
 **Cross-sprint topical design docs** (`{feature}-{design|plan}.md`, not owned by one sprint):
