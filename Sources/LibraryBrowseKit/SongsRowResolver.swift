@@ -5,18 +5,10 @@
 /// view passes `[LibraryTrackDisplay]`. Extracted from `SongsView` so the "resolve over the visible
 /// subset, by id" contract (review #3) is unit-testable rather than an inline closure in the view.
 public enum SongsRowResolver {
-    /// The single row a selection acts on (single-click Play / Return / Info): the FIRST visible row,
-    /// in sort order, whose id is selected. `nil` if the selection matches no visible row. Resolving
-    /// by id (not title) keeps duplicate titles distinct and honors the filtered subset.
-    public static func primaryRow<Row: Identifiable>(
-        in visible: [Row], selection: Set<Row.ID>
-    ) -> Row? {
-        visible.first { selection.contains($0.id) }
-    }
-
     /// The selected rows in visible (sort) order — multi-select verbs (Play / Play Next / Add to
     /// Queue) operate on this. A selection id that isn't in `visible` (e.g. left over after a filter
-    /// hid its row) is dropped, so a multi-select action can never touch an off-screen track.
+    /// hid its row) is dropped, so a multi-select action can never touch an off-screen track. An
+    /// O(n) walk: call it when a verb runs, never while building a row (the S10.8 End-key hang).
     public static func orderedSelection<Row: Identifiable>(
         in visible: [Row], selection: Set<Row.ID>
     ) -> [Row] {

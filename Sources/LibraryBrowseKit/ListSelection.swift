@@ -47,6 +47,14 @@ public struct ListSelection<ID: Hashable> {
         ids.contains(id)
     }
 
+    /// Whether a context-menu click on `id` acts on the whole selection — `id` is one of several
+    /// selected rows — rather than on the clicked row alone. O(1) and blind to the rows by design: a
+    /// list builds each row's menu with the row, eagerly, so a scan here runs once per row built
+    /// (the S10.8 End-key hang); the selection's tracks are resolved when a menu item is chosen.
+    public func menuActsOnSelection(clicked id: ID) -> Bool {
+        ids.count > 1 && ids.contains(id)
+    }
+
     // MARK: The keyboard cursor
 
     /// The ONE row the ring marks, the arrows and Page keys move from, and Return plays, over `rows`
