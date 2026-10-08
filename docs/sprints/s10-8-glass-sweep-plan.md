@@ -216,6 +216,14 @@ filter pill; the Now Playing queue header still works (D2 and D3 change it).
 | E3 | Artist and genre detail on the kit, keeping the artist page's album grouping | M | PLAY-01 rows for artist and genre; PLAY-02 (artist queue order = shown order) |
 | E4 | Playlist header, insets, Move Up / Down / to Top with shortcuts | M | — |
 
+*SEL-01…08 as built (behaviour pull-forward, `ListSelection` in LibraryBrowseKit):* **01** click /
+⇧-click / ⌘-click results unchanged; **02** ↑/↓ move the cursor and a single selection; **03** ⇧↑/⇧↓
+extend from the anchor; **04** ⌘A selects exactly the filtered rows; **05** Home / End and Page Up /
+Down (⇧ extends); **06** type-to-select on the displayed title (case- and accent-blind, 1 s reset; ⌘/⌃
+and Space left alone); **07** Esc clears (the ring stays), Return plays the cursor row; **08** the
+selection survives filtering and re-sorting, by id. **COL-01:** the kit sees only row ids and a title —
+semgrep `selection-kit-no-columns` keeps Songs' columns and sort out of it.
+
 Play contexts are added to the kit only by the PR that uses them (hostile Periphery).
 **Founder checks:** a detail page opens inside the card; double-click plays from that song;
 ⌘A and ⇧↓ select; dragging a song into a playlist still works.
