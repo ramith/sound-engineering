@@ -15,7 +15,8 @@
     ///   called, so Control Center and the media keys are untouched.
     ///
     /// One fixture per `SheetVariant`: `empty` seeds no songs and no queue; the ring variants seed
-    /// the standard world and draw keyboard focus in their lists (`root(for:)`).
+    /// the standard world and draw keyboard focus in their lists (`root(for:)`); the grid variants
+    /// add the browse grids' albums, artists, genres and covers (`+Browse`) and open their category.
     @MainActor
     final class SheetFixture {
         let audio: AudioViewModel
@@ -28,6 +29,8 @@
         private let keyboardFocus = KeyboardTransportFocus()
         private let defaults: UserDefaults
         private let selectedSongs: Set<LibraryTrackDisplay.ID>
+        /// The browse grids' covers (`SheetArtwork`) — only in a grid variant's world.
+        private let artwork: [String: NSImage]
 
         init(defaults: UserDefaults, variant: SheetVariant) {
             self.defaults = defaults
@@ -40,7 +43,17 @@
             playlists = PlaylistsModel(library: library, audio: audio)
             let songs = variant == .empty ? [] : Self.songs()
             selectedSongs = Set(songs.filter { $0.title == Self.selectedTitle }.map(\.id))
-            browse.seedRenderFixture(songs: songs)
+            let showsGrid = variant.category != .songs
+            browse.seedRenderFixture(songs: songs, albums: showsGrid ? Self.albums() : [])
+            if showsGrid {
+                browse.artists = Self.artists()
+                browse.artistsState = .loaded
+                browse.genres = Self.genres()
+                browse.genresState = .loaded
+                browse.genreCoverKeys = Self.genreCovers()
+                browse.selectedCategory = variant.category
+            }
+            artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
             seedDevices()
             seedPlayback(songs)
             eq.bandGains = Self.eqCurve()
@@ -51,9 +64,12 @@
 
         /// The whole window content, as `AdaptiveSound.body` builds it, in `appearance`'s environment.
         /// Reduce Motion is always on: sheets are still frames. The ring variants draw keyboard focus
-        /// (as after an arrow press) in the lists they focus.
+        /// (as after an arrow press) in the lists they focus. Each sheet's browse grid starts at the
+        /// top: tearing down the previous sheet's window remembered its place (D6), which a sheet of
+        /// another size would restore at a slightly different height.
         func root(for appearance: SheetAppearance) -> some View {
-            ContentView()
+            browse.browsePlace = nil
+            return ContentView()
                 .environment(audio)
                 .environment(eq)
                 .environment(library)
@@ -67,6 +83,8 @@
                 .environment(\.sheetSongSelection, selectedSongs)
                 .environment(\.showsKeyboardFocus, !variant.focusedLists.isEmpty)
                 .environment(\.sheetFocusedLists, variant.focusedLists)
+                .environment(\.sheetArtwork, artwork)
+                .environment(\.sheetGridStates, variant == .gridStates ? Self.gridStates : SheetGridStates())
                 .defaultAppStorage(defaults)
         }
 
