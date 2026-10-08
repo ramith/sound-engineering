@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 /// (with a `PlaylistEntryDragItem` grip). Chunk C: the three play verbs (Play replaces the queue
 /// with a one-level restore-queue undo; Play Next / Add to Queue), tap-to-play-from-row, grip-drag
 /// reorder, remove, and ↑/↓/Return/⌫ keys — the same scaffold the queue's `PlaylistItemList` uses.
+/// S10.8 E4 adds Move to Top / Up / Down / to Bottom (`+Moves`): row menu, ⌥⌘-arrow keys, VoiceOver.
 /// Chunk F renders the unavailable state for an entry whose file moved/was deleted. Several members
 /// are `internal` (not `private`) so the same-type `PlaylistDetailView+Actions` extension (split out
 /// for type-body length) can reach them.
@@ -19,6 +20,8 @@ struct PlaylistDetailView: View {
 
     /// Keyboard-selected row (a ScrollView/LazyVStack doesn't own key focus like a `List`).
     @State var selectedEntryID: Int64?
+    /// The entry a Move command just moved: scrolled into view once the rows re-sequence (E4).
+    @State var revealEntryID: Int64?
     /// The entry a reorder drag is hovering over (drop-target border). Nil when no drag is active.
     @State private var dropTargetEntryID: Int64?
     @FocusState private var listFocused: Bool
@@ -204,12 +207,18 @@ private extension PlaylistDetailView {
             // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
             .focusEffectDisabled()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onKeyPress(.upArrow) { moveSelection(by: -1, proxy: proxy) }
-            .onKeyPress(.downArrow) { moveSelection(by: 1, proxy: proxy) }
+            .onKeyPress(keys: [.upArrow, .downArrow]) { arrowKey($0, proxy: proxy) }
             .onKeyPress(.return) { playCursorRow() }
             // The system Delete command (⌫, ⌦, Edit ▸ Delete): macOS delivers ⌫ as U+007F, which
             // a key-press match on `KeyEquivalent.delete` (U+0008) never sees — see the queue.
             .onDeleteCommand(perform: removeCommand)
+            // A moved row stays in view (E4). After the re-sequence, not in the move itself: the
+            // row's new place exists only once the rows have re-rendered.
+            .onChange(of: model.detail.map(\.id)) {
+                guard let id = revealEntryID else { return }
+                revealEntryID = nil
+                proxy.scrollTo(id)
+            }
         }
     }
 
@@ -244,6 +253,21 @@ private extension PlaylistDetailView {
         guard let target = keyboardCursor?.step(by: delta, in: playableEntryIDs) else { return .ignored }
         selectedEntryID = target
         proxy.scrollTo(target)
+        return .handled
+    }
+
+    /// ↑/↓ walk the cursor; the Move chords (⌥⌘↑ / ⌥⌘↓, with ⇧ to the top / bottom) MOVE an entry
+    /// instead (E4) — one handler, so a chord can never also walk the cursor. A move acts where
+    /// Return does: on the selected row, or on the ring row while the ring is drawn (a move removes
+    /// nothing, so the ring alone is mark enough — unlike Delete). A chord is always consumed, even
+    /// with nothing to move or at the edge, so it never falls through to another action.
+    func arrowKey(_ press: KeyPress, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard let move = ListMove(press) else {
+            return moveSelection(by: press.key == .upArrow ? -1 : 1, proxy: proxy)
+        }
+        if let id = keyboardCursor?.activationTarget(ringVisible: showsRing) {
+            perform(move, on: id)
+        }
         return .handled
     }
 
@@ -305,9 +329,12 @@ private extension PlaylistDetailView {
             })
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { playNow(startingAt: row.id) }
+            .accessibilityActions { moveAccessibilityActions(for: row.id, at: index) }
             .contextMenu {
                 Button("Play") { playNow(startingAt: row.id) }
                 Button("Play Next") { _ = model.playEntryNext(row.id) } // this track, not the whole list
+                Divider()
+                moveMenuItems(for: row.id, at: index)
                 Divider()
                 Button("Remove from Playlist", role: .destructive) {
                     Task { await model.removeEntry(row.id) }
