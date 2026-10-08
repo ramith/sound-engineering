@@ -37,7 +37,7 @@ struct BrowseTile: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .help("\(content.title)\n\(content.subtitle)")
+        .help(tooltip)
         .accessibilityLabel(content.accessibilityLabel)
         .accessibilityAction(named: "Play", play)
         .accessibilityAction(named: "Play Next", playNext)
@@ -56,6 +56,12 @@ struct BrowseTile: View {
                 }
             }
         #endif
+    }
+
+    /// The title and subtitle whole, on two lines (the tile cuts each to one) — verbatim, never
+    /// looked up as a localization key.
+    private var tooltip: String {
+        "\(content.title)\n\(content.subtitle)"
     }
 
     /// The tile's face: art, then title and subtitle, on the plate.
