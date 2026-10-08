@@ -1,0 +1,98 @@
+import LibraryBrowseKit
+import SwiftUI
+
+// MARK: - Browse keyboard (S10.8 decision 20 — wired once for every browse root)
+
+/// The keyboard of a browse grid or list, wired ONCE for Albums, Artists and Genres: one focus
+/// stop (the system focus effect off — the cursor tile's teal ring is the cue), the navigation
+/// keys, Return and type-to-select. The state and the rules live in `BrowseNavigator` and the
+/// Kit; this attaches them to the scroll view. Applied inside the scroll view's `ScrollViewReader`.
+///
+/// Keys: ←/→ the previous / next tile (grids only), ↑/↓ a row, Home / End the first / last tile,
+/// Page Up / Down a viewport of rows, letters type-to-select on the title, Return opens. With ⌘, ⌃
+/// or ⌥ held (and ⇧ on the navigation keys — reserved for a multi-select) a key bubbles, so the
+/// app's shortcuts (⌘← / ⌘→ track skip) keep working.
+struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
+    /// The visible tiles, in display order.
+    let items: [Item]
+    /// The type-to-select key (the tile's title).
+    let title: (Item) -> String
+    let navigator: BrowseNavigator
+    let focused: FocusState<Bool>.Binding
+    let proxy: ScrollViewProxy
+    let open: (Item) -> Void
+
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
+
+    /// Printable characters only — never Space (the app-wide play / pause key, matched first), Tab,
+    /// Return or the arrows (control and private-use characters).
+    private static var typeSelectCharacters: CharacterSet {
+        CharacterSet.alphanumerics.union(.punctuationCharacters).union(.symbols)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            // No tile = no cursor = no focus stop (the root shows "no results" instead).
+            .focusable(!items.isEmpty)
+            .focused(focused)
+            .focusEffectDisabled()
+            .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .pageUp, .pageDown]) {
+                navigate($0)
+            }
+            .onKeyPress(.return) { openCursorTile() }
+            .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
+            .onChange(of: focused.wrappedValue) { _, isFocused in navigator.focusChanged(isFocused) }
+    }
+
+    private var rows: [Int64] {
+        items.map(\.id)
+    }
+
+    // MARK: Keys
+
+    private func navigate(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.isDisjoint(with: [.command, .control, .option, .shift]),
+              let move = arrowMove(press.key) ?? jumpMove(press.key),
+              navigator.move(move, in: rows, proxy: proxy) else { return .ignored }
+        return .handled
+    }
+
+    private func arrowMove(_ key: KeyEquivalent) -> GridKeyboardCursor<Int64>.Move? {
+        let isGrid = navigator.arrangement == .grid
+        switch key {
+        case .leftArrow: return isGrid ? .left : nil
+        case .rightArrow: return isGrid ? .right : nil
+        case .upArrow: return .up
+        case .downArrow: return .down
+        default: return nil
+        }
+    }
+
+    private func jumpMove(_ key: KeyEquivalent) -> GridKeyboardCursor<Int64>.Move? {
+        switch key {
+        case .home: .first
+        case .end: .last
+        case .pageUp: .pageUp(rows: navigator.pageRows)
+        case .pageDown: .pageDown(rows: navigator.pageRows)
+        default: nil
+        }
+    }
+
+    /// Return opens the cursor tile — under `ListKeyboardCursor`'s rule: the anchored tile always,
+    /// the unanchored first tile only while the ring marks it.
+    private func openCursorTile() -> KeyPress.Result {
+        let rows = rows
+        let ringVisible = navigator.ringID(in: rows, focused: focused.wrappedValue,
+                                           keyboardMode: showsKeyboardFocus) != nil
+        guard let id = navigator.cursor(in: rows)?.activationTarget(ringVisible: ringVisible),
+              let item = items.first(where: { $0.id == id }) else { return .ignored }
+        open(item)
+        return .handled
+    }
+
+    private func typeSelect(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.isDisjoint(with: [.command, .control, .option]) else { return .ignored }
+        navigator.typeSelect(press.characters, in: items, title: title, proxy: proxy)
+        return .handled // a miss keeps the cursor; the letter is still the grid's, not a beep
+    }
+}

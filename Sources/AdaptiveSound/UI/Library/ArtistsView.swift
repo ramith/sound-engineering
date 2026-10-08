@@ -4,151 +4,48 @@ import SwiftUI
 
 // MARK: - Artists tab (S9.6 — tile grid)
 
-/// The Artists tile grid (founder feedback: tiles, not a flat list). Each tile shows a
-/// representative album cover (there is no artist-photo source) + name + "N songs". Single-click a
-/// tile → OPEN the artist detail; Play comes from the hover button + the context menu (mirrors
-/// `AlbumGridView`). Hides 0-song artists (e.g. an album-artist-only "Various Artists") via the pure
-/// `FacetListVisibility` predicate.
+/// The Artists tile grid (founder feedback: tiles, not a flat list) on the shared browse scaffold
+/// (`BrowseGridRoot` → `BrowseGrid`). Each tile shows a representative album cover (there is no
+/// artist-photo source) + name + "N songs". Single-click a tile → OPEN the artist detail; Play comes
+/// from the hover button + the context menu. Hides 0-song artists (e.g. an album-artist-only
+/// "Various Artists") via the pure `FacetListVisibility` predicate; filters on the name.
 struct ArtistsGridView: View {
     @Environment(LibraryBrowseModel.self) private var model
-    /// In-view filter (narrows the visible artists by name, in place — the Apple Filter field).
-    @State private var filter = ""
 
-    private let side: CGFloat = 168
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: side, maximum: 200), spacing: 16)]
-    }
-
-    /// 0-song artists hidden (FacetListVisibility), then narrowed by the filter (name substring).
+    /// 0-song artists hidden (FacetListVisibility).
     private var visibleArtists: [ArtistFacet] {
         model.artists.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) }
     }
 
-    private var filteredArtists: [ArtistFacet] {
-        filter.isEmpty ? visibleArtists : visibleArtists.filter { FacetTextFilter.matches($0.name, query: filter) }
-    }
-
     var body: some View {
-        content
-            .task(id: model.isStoreReady) { await model.loadArtists() }
-    }
-
-    @ViewBuilder private var content: some View {
-        switch model.artistsState {
-        case .idle, .loading:
-            if visibleArtists.isEmpty {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                gridWithFilter
+        let artists = visibleArtists
+        BrowseGridRoot(
+            items: artists,
+            state: model.artistsState,
+            // Songs may exist but be untagged — NOT the "No Music Found" library-empty state.
+            empty: FacetListEmpty(
+                title: "No Artists",
+                systemImage: "music.mic",
+                hint: "Songs without artist tags won't appear here."
+            ),
+            noun: "artist",
+            filterPlaceholder: "Filter Artists",
+            filterKeys: { [$0.name] },
+            load: { await model.loadArtists() },
+            content: { shown in
+                BrowseGrid(
+                    items: shown,
+                    title: \.name,
+                    route: { .artist($0.id) },
+                    play: { await model.playFacet(.artist($0.id)) },
+                    cell: { ArtistCell(artist: $0, side: BrowseGridMetrics.tileSide) },
+                    actions: { FacetQueueActions(ref: .artist($0.id)) }
+                )
             }
-        case .loaded:
-            if visibleArtists.isEmpty {
-                facetEmpty
-            } else {
-                gridWithFilter
-            }
-        case .firstRun:
-            LibraryEmptyStateView(kind: model.isPopulating ? .scanning : .firstRun)
-        case .empty:
-            // Roots exist but no artists: scanning if a pass is live, else the facet-specific empty
-            // (songs may exist but be untagged — NOT the "No Music Found" library-empty state).
-            if model.isPopulating {
-                LibraryEmptyStateView(kind: .scanning)
-            } else {
-                facetEmpty
-            }
-        case let .failed(message):
-            LibraryEmptyStateView(kind: .failed(message))
-        }
-    }
-
-    private var facetEmpty: some View {
-        FacetListEmpty(
-            title: "No Artists",
-            systemImage: "music.mic",
-            hint: "Songs without artist tags won't appear here."
         )
-    }
-
-    /// Filter header + the narrowed grid (or a "no results" state when the filter matches nothing).
-    /// `filteredArtists` is computed ONCE here and threaded down — previously the count line, the empty
-    /// check, and the `ForEach` each re-ran it, and each run re-filtered `visibleArtists` too (so ~6
-    /// O(n) passes per body evaluation).
-    private var gridWithFilter: some View {
-        let artists = filteredArtists
-        return VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLabel(artists.count), filter: $filter, placeholder: "Filter Artists")
-            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
-            if artists.isEmpty {
-                ContentUnavailableView.search(text: filter)
-            } else {
-                grid(artists)
-            }
+        .task(id: artists.map(\.id)) {
+            await model.warmArtwork(artists.compactMap(\.artworkKey))
         }
-    }
-
-    private func countLabel(_ shown: Int) -> String {
-        "\(shown) artist\(shown == 1 ? "" : "s")"
-    }
-
-    private func grid(_ artists: [ArtistFacet]) -> some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: DesignSystem.Spacing.large) {
-                ForEach(artists) { artist in
-                    ArtistGridItem(artist: artist, side: side)
-                }
-            }
-            .padding(DesignSystem.Spacing.medium)
-        }
-        .task(id: visibleArtists.map(\.id)) {
-            await model.warmArtwork(visibleArtists.compactMap(\.artworkKey))
-        }
-    }
-}
-
-// MARK: - Grid item (Open button + hover Play overlay)
-
-/// One artist tile: the whole cell opens the artist detail; the hover Play button is a sibling
-/// overlay above it (reliably wins the hit test on macOS), and is a11y-hidden because the cell
-/// exposes Play as a custom action. Mirrors `AlbumGridItem`.
-private struct ArtistGridItem: View {
-    let artist: ArtistFacet
-    let side: CGFloat
-
-    @Environment(LibraryBrowseModel.self) private var model
-    @State private var hovering = false
-
-    var body: some View {
-        Button {
-            model.path.append(.artist(artist.id))
-        } label: {
-            ArtistCell(artist: artist, side: side)
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topLeading) {
-            if hovering {
-                playButton
-                    .padding(DesignSystem.Spacing.small)
-                    .frame(width: side, height: side, alignment: .bottomTrailing)
-            }
-        }
-        .onHover { hovering = $0 }
-        .contextMenu { FacetQueueActions(ref: .artist(artist.id)) }
-    }
-
-    private var playButton: some View {
-        Button {
-            Task { await model.playFacet(.artist(artist.id)) }
-        } label: {
-            Image(systemName: "play.circle.fill")
-                .font(.system(size: max(20, side * 0.26)))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(DesignSystem.Color.onAccent, DesignSystem.Color.accentFill)
-                .shadow(radius: 3)
-        }
-        .buttonStyle(.plain)
-        .help("Play")
-        .accessibilityHidden(true)
     }
 }
 

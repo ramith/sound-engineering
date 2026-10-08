@@ -4,27 +4,35 @@ import SwiftUI
 
 // MARK: - Genres tab (S9.6)
 
-/// The Genres list root. Hides 0-song genres (e.g. one orphaned by a retag) via `FacetListVisibility`;
-/// opening a genre pushes `.genre(id)` → `GenreDetailView`.
+/// The Genres root: the shared browse scaffold over a text list (`FacetList`) until Sprint D puts
+/// Genres on the browse grid (decision 19). Hides 0-song genres (e.g. one orphaned by a retag) via
+/// `FacetListVisibility`; opening a genre pushes `.genre(id)` → `GenreDetailView`.
 struct GenresListView: View {
     @Environment(LibraryBrowseModel.self) private var model
 
     var body: some View {
-        FacetListRoot(
+        BrowseGridRoot(
             items: model.genres.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) },
             state: model.genresState,
+            // Songs may exist but be untagged — NOT the "No Music Found" library-empty state.
             empty: FacetListEmpty(
                 title: "No Genres",
                 systemImage: "guitars",
                 hint: "Songs without a genre tag won't appear here."
             ),
-            name: \.name,
-            count: \.trackCount,
-            ref: { .genre($0.id) },
-            route: { .genre($0.id) },
-            load: { await model.loadGenres() },
+            noun: "genre",
             filterPlaceholder: "Filter Genres",
-            noun: "genre"
+            filterKeys: { [$0.name] },
+            load: { await model.loadGenres() },
+            content: { genres in
+                FacetList(
+                    items: genres,
+                    name: \.name,
+                    count: \.trackCount,
+                    ref: { .genre($0.id) },
+                    route: { .genre($0.id) }
+                )
+            }
         )
     }
 }
