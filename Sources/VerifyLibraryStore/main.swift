@@ -184,6 +184,7 @@ func allCheckCases() -> [CheckCase] {
         + migrationConvergenceCheckCases()
         + albumArtistCheckCases() + albumFixRoundCheckCases() + albumIdentityCheckCases()
         + storeOpenSafetyCheckCases()
+        + genreCoverCheckCases()
 }
 
 /// GRDB hardening (post-adoption follow-ups): single-pool DatabasePool concurrency +
@@ -385,7 +386,10 @@ private func printRunSummary(passed: Int, total: Int) {
         + "S10.8 C2 store-open safety: OPEN-01 failed migration refused [byte-identical], OPEN-02 backup "
         + "before upgrade [restores + keep 2], OPEN-03 no backup when current, OPEN-04 failed backup refuses, "
         + "OPEN-05 damaged page still quarantined; S10.8 C2 final round: ALB-17 the year splits two albums, "
-        + "OPEN-06 unfinished v7 refused [hot WAL byte-identical], SCHEMA-6 + OPEN-02 extended) ===")
+        + "OPEN-06 unfinished v7 refused [hot WAL byte-identical], SCHEMA-6 + OPEN-02 extended; "
+        + "S10.8 D5 genre covers: GC-01 ranking [songs, tie → lower album id, perGenre cap], GC-02 membership "
+        + "[album once, cover once, art-less skipped, no-cover genre absent, two genres count], GC-03 empty, "
+        + "GC-04 EXPLAIN no-SCAN-tracks, GC-05 300 genres [reference parity + 100 ms bound], GC-06 write path) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
