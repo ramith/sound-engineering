@@ -20,66 +20,27 @@ struct ArtistsGridView: View {
     var body: some View {
         let artists = visibleArtists
         BrowseGridRoot(
+            category: .artists,
             items: artists,
             state: model.artistsState,
+            noun: "artist",
             // Songs may exist but be untagged — NOT the "No Music Found" library-empty state.
             empty: FacetListEmpty(
                 title: "No Artists",
                 systemImage: "music.mic",
                 hint: "Songs without artist tags won't appear here."
             ),
-            noun: "artist",
-            filterPlaceholder: "Filter Artists",
             filterKeys: { [$0.name] },
             load: { await model.loadArtists() },
-            content: { shown in
-                BrowseGrid(
-                    category: .artists,
-                    items: shown,
-                    title: \.name,
-                    route: { .artist($0.id) },
-                    play: { await model.playFacet(.artist($0.id)) },
-                    cell: { ArtistCell(artist: $0, side: BrowseGridMetrics.tileSide) },
-                    actions: { FacetQueueActions(ref: .artist($0.id)) }
-                )
+            tile: { artist in
+                BrowseTileContent(ref: .artist(artist.id), title: artist.name,
+                                  subtitle: FacetCountLabel.songs(count: artist.trackCount),
+                                  artworkKeys: artist.artworkKey.map { [$0] } ?? [])
             }
         )
         .task(id: artists.map(\.id)) {
             await model.warmArtwork(artists.compactMap(\.artworkKey))
         }
-    }
-}
-
-// MARK: - Artist grid cell (art + name + N songs)
-
-/// One artist tile's content: representative album cover + name + "N songs". VoiceOver: one combined
-/// element with Play / Play Next / Add-to-Queue actions (Open is the enclosing button's activation).
-struct ArtistCell: View {
-    let artist: ArtistFacet
-    let side: CGFloat
-
-    @Environment(LibraryBrowseModel.self) private var model
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
-            AlbumArtworkView(key: artist.artworkKey, side: side, model: model)
-            Text(artist.name)
-                .font(DesignSystem.Font.bodyMedium)
-                .foregroundStyle(DesignSystem.Color.label)
-                .lineLimit(2, reservesSpace: true)
-            Text(FacetCountLabel.songs(count: artist.trackCount))
-                .font(DesignSystem.Font.caption)
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
-                .lineLimit(1)
-        }
-        .frame(width: side, alignment: .leading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(artist.name), \(FacetCountLabel.songs(count: artist.trackCount))")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Play") { Task { await model.playFacet(.artist(artist.id)) } }
-        .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(.artist(artist.id)) } }
-        .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(.artist(artist.id)) } }
     }
 }
 

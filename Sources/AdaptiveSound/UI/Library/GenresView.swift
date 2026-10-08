@@ -2,39 +2,44 @@ import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
 
-// MARK: - Genres tab (S9.6)
+// MARK: - Genres tab (S9.6; on the browse grid since S10.8 D5, decision 19)
 
-/// The Genres root: the shared browse scaffold over a text list (`FacetList`) until Sprint D puts
-/// Genres on the browse grid (decision 19). Hides 0-song genres (e.g. one orphaned by a retag) via
-/// `FacetListVisibility`; opening a genre pushes `.genre(id)` → `GenreDetailView`.
+/// The Genres root: the shared browse scaffold and tile (`BrowseGridRoot` → `BrowseGrid`), like
+/// Albums and Artists. A genre's art is a 2×2 mosaic of its biggest albums' covers (one cover with
+/// one to three, the guitars glyph with none — `CoverArrangement`), from the model's one cover read
+/// per Genres load (`genreCoverKeys`); its subtitle is "N songs". Hides 0-song genres (e.g. one
+/// orphaned by a retag) via `FacetListVisibility`; opening a genre pushes `.genre(id)` →
+/// `GenreDetailView`.
 struct GenresListView: View {
     @Environment(LibraryBrowseModel.self) private var model
 
     var body: some View {
+        // Read here, not inside the tile closure: a cover read landing after the list re-renders
+        // this root, and so every tile.
+        let covers = model.genreCoverKeys
         BrowseGridRoot(
+            category: .genres,
             items: model.genres.filter { FacetListVisibility.isVisible(trackCount: $0.trackCount) },
             state: model.genresState,
+            noun: "genre",
             // Songs may exist but be untagged — NOT the "No Music Found" library-empty state.
             empty: FacetListEmpty(
                 title: "No Genres",
                 systemImage: "guitars",
                 hint: "Songs without a genre tag won't appear here."
             ),
-            noun: "genre",
-            filterPlaceholder: "Filter Genres",
             filterKeys: { [$0.name] },
             load: { await model.loadGenres() },
-            content: { genres in
-                FacetList(
-                    category: .genres,
-                    items: genres,
-                    name: \.name,
-                    count: \.trackCount,
-                    ref: { .genre($0.id) },
-                    route: { .genre($0.id) }
-                )
+            tile: { genre in
+                BrowseTileContent(ref: .genre(genre.id), title: genre.name,
+                                  subtitle: FacetCountLabel.songs(count: genre.trackCount),
+                                  artworkKeys: covers[genre.id] ?? [])
             }
         )
+        // One batched path lookup for every cover the mosaics show (as the album tiles do).
+        .task(id: covers) {
+            await model.warmArtwork(covers.values.flatMap(\.self))
+        }
     }
 }
 

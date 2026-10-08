@@ -2,10 +2,11 @@ import SwiftUI
 
 // MARK: - Library filter field (S9.6 — the Apple Music "Filter field", per-section)
 
-/// A reusable in-view filter field that narrows the CURRENT section's list in place (distinct from a
-/// global search that navigates away — the Apple Music "Filter field" pattern; market-research vetted).
-/// Extracted so Albums / Artists / Genres share one styling + ⌘F-focus + Escape-clear behavior. Owns
-/// its focus; a hidden ⌘F button keeps the shortcut installed regardless of field state.
+/// A reusable in-view filter field that narrows the CURRENT list in place (distinct from a global
+/// search that navigates away — the Apple Music "Filter field" pattern; market-research vetted). Owns
+/// its focus; a hidden ⌘F button keeps the shortcut installed regardless of field state. Now only
+/// the playlist picker's: the Library card headers moved to the shared `FilterPill` (S10.8 D2), which
+/// the picker adopts next.
 struct LibraryFilterField: View {
     @Binding var query: String
     let placeholder: String
@@ -60,27 +61,5 @@ struct LibraryFilterField: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
         }
-    }
-}
-
-// MARK: - Library filter header (count + filter field)
-
-/// The header band each browse section (Albums / Artists / Genres) shows above its content: a leading
-/// count on the left and the `LibraryFilterField` on the right — the same layout the Songs header uses.
-struct LibraryFilterHeader: View {
-    let count: String
-    @Binding var filter: String
-    let placeholder: String
-
-    var body: some View {
-        HStack(spacing: DesignSystem.Spacing.small) {
-            Text(count)
-                .font(DesignSystem.Font.caption)
-                .foregroundStyle(DesignSystem.Color.labelSecondary)
-            Spacer(minLength: DesignSystem.Spacing.small)
-            LibraryFilterField(query: $filter, placeholder: placeholder)
-        }
-        .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
-        .frame(height: DesignSystem.SongsList.headerHeight)
     }
 }

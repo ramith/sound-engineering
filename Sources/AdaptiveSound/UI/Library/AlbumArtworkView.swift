@@ -1,43 +1,19 @@
-import AppKit
 import SwiftUI
 
 // MARK: - Cover-art thumbnail view (S9.4, design §5)
 
-/// Async-loads a local cover-art thumbnail via `LibraryBrowseModel` (→ ArtworkThumbnailStore).
-/// `.task(id: key)` cancels the in-flight decode when the cell scrolls off / is reused; a
-/// synchronous cache peek avoids a placeholder flash on hits; the art fades in (Reduce-Motion
-/// gated) and is `accessibilityHidden` (the owning cell/row carries the label).
+/// A fixed-size cover for rows and the album page: the shared loader (`ArtworkThumbnail`) in a
+/// `side`×`side` square with `Radius.control` corners and a hairline, a ♪ on the `card` fill while
+/// there is no cover. `accessibilityHidden` — the owning cell / row carries the label. (The browse
+/// tiles draw their art with `BrowseArt`.)
 struct AlbumArtworkView: View {
     let key: String?
     let side: CGFloat
-    /// The browse model, passed in as a plain value — NOT `@Environment`. A `Table` cell's
-    /// `@Environment(Observable)` property is updated in a DETACHED graph host during the
-    /// sort-driven preferences/accessibility pass, where the injected object is unresolvable →
-    /// `EnvironmentValues.subscript` asserts (the header-click crash). A plain `let` has no
-    /// `EnvironmentBox` to update, so it can't trap; the caller (always an env holder) passes it in.
+    /// The browse model, as a plain value — see `ArtworkThumbnail.model`.
     let model: LibraryBrowseModel
 
-    @Environment(\.displayScale) private var displayScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var image: NSImage?
-
     var body: some View {
-        artwork
-            .frame(width: side, height: side)
-            .clipShape(.rect(cornerRadius: DesignSystem.Radius.control)) // also clips scaledToFill overflow
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
-                    .strokeBorder(DesignSystem.Color.hairline, lineWidth: 0.5)
-            }
-            .task(id: key) { await load() }
-            .animation(reduceMotion ? nil : .easeIn(duration: 0.2), value: image != nil)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder private var artwork: some View {
-        if let image {
-            Image(nsImage: image).resizable().scaledToFill()
-        } else {
+        ArtworkThumbnail(key: key, pixelSide: side, model: model) {
             ZStack {
                 DesignSystem.Color.card
                 Image(systemName: "music.note")
@@ -45,20 +21,12 @@ struct AlbumArtworkView: View {
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
             }
         }
-    }
-
-    private func load() async {
-        guard let key else { image = nil; return }
-        if let hit = model.cachedArtwork(forKey: key) {
-            image = hit; return
+        .frame(width: side, height: side)
+        .clipShape(.rect(cornerRadius: DesignSystem.Radius.control)) // also clips scaledToFill overflow
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignSystem.Radius.control)
+                .strokeBorder(DesignSystem.Color.hairline, lineWidth: 0.5)
         }
-        image = nil
-        let maxPixel = min(512, Int((side * displayScale).rounded(.up)))
-        let loaded = await model.artworkImage(forKey: key, maxPixel: maxPixel)
-        // The cell's `key` changed mid-decode (`.task(id:)` cancelled us): don't paint a stale
-        // cover over the album now in this slot (review S4). `.task(id:)` cancels synchronously on
-        // the main actor, so by the time we resume here `isCancelled` already reflects the change.
-        guard !Task.isCancelled else { return }
-        image = loaded
+        .accessibilityHidden(true)
     }
 }

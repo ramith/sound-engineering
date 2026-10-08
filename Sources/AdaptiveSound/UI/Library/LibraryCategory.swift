@@ -33,4 +33,13 @@ enum LibraryCategory: String, CaseIterable, Identifiable {
         case .genres: "guitars"
         }
     }
+
+    /// The glyph a browse tile with no cover shows (S10.8 D5): the rail's glyph, except that an
+    /// album is a note — the rail's grid glyph would read as a mosaic.
+    var tilePlaceholderSymbol: String {
+        switch self {
+        case .songs, .albums: "music.note"
+        case .artists, .genres: icon
+        }
+    }
 }
