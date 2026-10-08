@@ -11,7 +11,7 @@ import Foundation
 /// the Songs tab uses.
 public enum FacetTextFilter {
     public static func matches(_ candidates: [String], query: String) -> Bool {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = normalized(query)
         guard !trimmed.isEmpty else { return true }
         return candidates.contains { $0.localizedStandardContains(trimmed) }
     }
@@ -19,5 +19,15 @@ public enum FacetTextFilter {
     /// Convenience for a single candidate (Artists / Genres filter on their name).
     public static func matches(_ candidate: String, query: String) -> Bool {
         matches([candidate], query: query)
+    }
+
+    /// Whether `query` narrows anything: false for an empty or whitespace-only filter, which
+    /// matches everything — so a card header's count line reads "N albums", not "N results".
+    public static func isActive(_ query: String) -> Bool {
+        !normalized(query).isEmpty
+    }
+
+    private static func normalized(_ query: String) -> String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

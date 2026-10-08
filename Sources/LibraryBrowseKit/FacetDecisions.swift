@@ -1,12 +1,19 @@
 // MARK: - Facet browse decisions (S9.6 — Artists/Genres/Years pure decisions)
 
-/// Pure "N songs" count label for facet rows + detail headers. Groups the number
-/// (`.formatted(.number)`, matching the Songs-tab count line) and singularizes at 1.
-/// Extracted so the copy + pluralization are unit-tested once instead of drifting across
-/// the three list rows and three detail headers.
+/// Pure count labels: "N songs" for the browse tiles and detail headers, and the Library card
+/// headers' count line. Groups the number (`.formatted(.number)`) and singularizes at 1. Extracted
+/// so the copy + pluralization are unit-tested once instead of drifting across the tiles, the four
+/// card headers and the detail headers.
 public enum FacetCountLabel {
     public static func songs(count: Int) -> String {
-        "\(count.formatted(.number)) \(count == 1 ? "song" : "songs")"
+        Self.count(count, noun: "song", filtered: false)
+    }
+
+    /// A card header's count line (S10.8 D4): "857 albums" — `noun` takes an "s" except at 1 — or,
+    /// while a filter narrows the list, "N results" ("1 result").
+    public static func count(_ count: Int, noun: String, filtered: Bool) -> String {
+        let word = filtered ? "result" : noun
+        return "\(count.formatted(.number)) \(word)\(count == 1 ? "" : "s")"
     }
 }
 
