@@ -26,9 +26,7 @@ struct SongsHeader: View {
                 Text("Songs")
                     .font(.system(.title3, weight: .heavy))
                     .foregroundStyle(DesignSystem.Color.label)
-                Text(model.songsCountLine)
-                    .font(DesignSystem.Font.monoSmall)
-                    .foregroundStyle(DesignSystem.Color.labelTertiary)
+                countLine
             }
             Spacer(minLength: DesignSystem.Spacing.small)
             filterPill(query: $model.searchQuery)
@@ -45,6 +43,22 @@ struct SongsHeader: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
         }
+    }
+
+    // MARK: Count line
+
+    /// "379 songs · 41 hrs" on ONE line, never wrapped (D6): where it doesn't fit — the 880×640
+    /// minimum window, beside the three pills — the count alone ("379 songs") stands in. VoiceOver
+    /// reads the full line either way.
+    private var countLine: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(model.songsCountLine)
+            Text(model.songsCount)
+        }
+        .lineLimit(1)
+        .font(DesignSystem.Font.monoSmall)
+        .foregroundStyle(DesignSystem.Color.labelTertiary)
+        .accessibilityLabel(model.songsCountLine)
     }
 
     // MARK: Filter pill
