@@ -53,6 +53,14 @@ struct ScrollPlacementTests {
         #expect(point.anchorY == 0)
     }
 
+    @Test("only a tile cut off at the top is laid out: it comes back from its top, never above the viewport")
+    func cutOffTileClampsToTop() throws {
+        let point = try #require(ScrollPlacement.restorePoint(tiles: [tile(3, top: -100)], viewportHeight: 300,
+                                                              preferred: nil))
+        #expect(point.id == 3)
+        #expect(point.anchorY == 0)
+    }
+
     @Test("nothing laid out: no restore point")
     func emptyRestore() {
         #expect(ScrollPlacement.restorePoint(tiles: [Tile](), viewportHeight: viewport, preferred: 1) == nil)
