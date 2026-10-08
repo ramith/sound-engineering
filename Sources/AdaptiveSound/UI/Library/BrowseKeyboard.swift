@@ -1,18 +1,20 @@
 import LibraryBrowseKit
 import SwiftUI
 
-// MARK: - Browse keyboard (S10.8 decision 20 — wired once for every browse root)
+// MARK: - Browse keyboard (S10.8 decision 20 + D6 — wired once for every browse root)
 
-/// The keyboard of a browse grid or list, wired ONCE for Albums, Artists and Genres: one focus
-/// stop (the system focus effect off — the cursor tile's teal ring is the cue), the navigation
-/// keys, Return and type-to-select. The state and the rules live in `BrowseNavigator` and the
-/// Kit; this attaches them to the scroll view. Applied inside the scroll view's `ScrollViewReader`.
+/// The keyboard and the scroll memory of a browse grid or list, wired ONCE for Albums, Artists and
+/// Genres: one focus stop (the system focus effect off — the cursor tile's teal ring is the cue),
+/// the navigation keys, Return, type-to-select, and the place it returns to (D6). The state and
+/// the rules live in `BrowseNavigator` and the Kit; this attaches them to the scroll view. Applied
+/// inside the scroll view's `ScrollViewReader`.
 ///
 /// Keys: ←/→ the previous / next tile (grids only), ↑/↓ a row, Home / End the first / last tile,
 /// Page Up / Down a viewport of rows, letters type-to-select on the title, Return opens. With ⌘, ⌃
 /// or ⌥ held (and ⇧ on the navigation keys — reserved for a multi-select) a key bubbles, so the
 /// app's shortcuts (⌘← / ⌘→ track skip) keep working.
 struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
+    let category: LibraryCategory
     /// The visible tiles, in display order.
     let items: [Item]
     /// The type-to-select key (the tile's title).
@@ -22,6 +24,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     let proxy: ScrollViewProxy
     let open: (Item) -> Void
 
+    @Environment(LibraryBrowseModel.self) private var model
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
     /// Printable characters only — never Space (the app-wide play / pause key, matched first), Tab,
@@ -42,6 +45,8 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
             .onKeyPress(.return) { openCursorTile() }
             .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
             .onChange(of: focused.wrappedValue) { _, isFocused in navigator.focusChanged(isFocused) }
+            .onAppear(perform: restorePlace)
+            .onDisappear(perform: rememberPlace)
     }
 
     private var rows: [Int64] {
@@ -94,5 +99,26 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
         guard press.modifiers.isDisjoint(with: [.command, .control, .option]) else { return .ignored }
         navigator.typeSelect(press.characters, in: items, title: title, proxy: proxy)
         return .handled // a miss keeps the cursor; the letter is still the grid's, not a beep
+    }
+
+    // MARK: The place (D6)
+
+    /// Coming back to this category's root: the place it left from — the scroll position, the
+    /// cursor, and key focus if it had it. Used once.
+    private func restorePlace() {
+        guard let place = model.browsePlace, place.category == category else { return }
+        model.browsePlace = nil
+        navigator.restore(place, rows: rows, proxy: proxy)
+        if place.wasFocused {
+            focused.wrappedValue = true
+        }
+    }
+
+    /// Leaving the screen while still this category's root — another tab, or "no results" while
+    /// filtering: remember where it is. Opening a tile already saved its place (the route is pushed
+    /// by then), and a rail jump to another category starts that root fresh.
+    private func rememberPlace() {
+        guard model.selectedCategory == category, model.path.isEmpty else { return }
+        model.browsePlace = navigator.place(category: category, rows: rows, focused: focused.wrappedValue)
     }
 }

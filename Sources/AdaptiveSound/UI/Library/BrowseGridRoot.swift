@@ -9,6 +9,9 @@ import SwiftUI
 /// (`BrowseGrid`) for Albums and Artists, the Genres list until Sprint D puts Genres on the grid.
 /// Generalises the S9.6 `FacetListRoot`, so the three roots share one state machine (the
 /// facet-empty-vs-"no music" distinction stays correct in ONE place) and one Filter.
+///
+/// The Filter text lives on the model (`browseFilter`): it survives the drill-down and comes back
+/// with the grid's place (D6); a rail jump clears it.
 struct BrowseGridRoot<Item: Identifiable, Empty: View, Content: View>: View {
     /// The category's visible items, before the filter.
     let items: [Item]
@@ -25,9 +28,6 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View, Content: View>: View {
     @ViewBuilder let content: ([Item]) -> Content
 
     @Environment(LibraryBrowseModel.self) private var model
-    /// In-view filter text (narrows the loaded items in place; not sticky across tab switches — the
-    /// Apple Music Filter-field behavior).
-    @State private var filter = ""
 
     var body: some View {
         // Keyed on store-readiness so a Library visit BEFORE the async store finishes building
@@ -69,13 +69,14 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View, Content: View>: View {
     /// Filter header + the narrowed body (or "no results"). The filtered items are computed ONCE
     /// here and threaded down — the count line, the empty check and the body share one pass.
     private var filtered: some View {
+        @Bindable var model = model
         let shown = filteredItems
         return VStack(spacing: 0) {
-            LibraryFilterHeader(count: countLabel(shown.count), filter: $filter,
+            LibraryFilterHeader(count: countLabel(shown.count), filter: $model.browseFilter,
                                 placeholder: filterPlaceholder)
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
             if shown.isEmpty {
-                ContentUnavailableView.search(text: filter)
+                ContentUnavailableView.search(text: model.browseFilter)
             } else {
                 content(shown)
             }
@@ -84,7 +85,8 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View, Content: View>: View {
 
     /// The items narrowed by the filter, in place (order preserved).
     private var filteredItems: [Item] {
-        filter.isEmpty ? items : items.filter { FacetTextFilter.matches(filterKeys($0), query: filter) }
+        let filter = model.browseFilter
+        return filter.isEmpty ? items : items.filter { FacetTextFilter.matches(filterKeys($0), query: filter) }
     }
 
     private func countLabel(_ shown: Int) -> String {

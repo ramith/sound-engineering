@@ -22,10 +22,17 @@ extension LibraryBrowseModel {
     /// Explicit `path` clear (not just `selectedCategory`'s didSet): re-selecting the ALREADY-current
     /// category while a playlist is open leaves `selectedCategory` unchanged, so the didSet wouldn't
     /// fire and the playlist would stay on screen.
+    ///
+    /// A rail jump starts the root fresh (S10.8 D6): no Filter text and no remembered place. Only
+    /// "back" (and a tab switch) returns a grid to where it was.
     func selectCategory(_ category: LibraryCategory) {
         if !path.isEmpty {
             path.removeAll()
         }
+        if !browseFilter.isEmpty {
+            browseFilter = ""
+        }
+        browsePlace = nil
         selectedCategory = category
     }
 

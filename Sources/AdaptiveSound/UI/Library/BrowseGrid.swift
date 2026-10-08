@@ -4,14 +4,15 @@ import SwiftUI
 
 /// The full-width adaptive tile grid of a browse root — Albums and Artists today, Genres from
 /// Sprint D — with the keyboard wired once (`BrowseKeyboard`: arrows, Home / End, Page Up / Down,
-/// type-to-select, Return). Single-click a tile → OPEN (pushes the section's route); the Play
-/// verbs come from the hover button and the context menu. The
+/// type-to-select, Return) and the place it returns to (D6). Single-click a tile → OPEN (pushes
+/// the section's route); the Play verbs come from the hover button and the context menu. The
 /// section supplies only data: its tiles' content, title, route, Play and queue actions.
 ///
 /// Today's layout, unchanged: fixed `tileSide` tiles centred in adaptive columns of up to
 /// `columnMaximum` (`BrowseGridMetrics`). The column count the arrow keys step by is computed from
 /// the laid-out width with the same rule SwiftUI's adaptive `GridItem` uses.
 struct BrowseGrid<Item: Identifiable, Cell: View, Actions: View>: View where Item.ID == Int64 {
+    let category: LibraryCategory
     /// The visible (filtered) tiles, in display order.
     let items: [Item]
     /// The type-to-select key.
@@ -47,7 +48,7 @@ struct BrowseGrid<Item: Identifiable, Cell: View, Actions: View>: View where Ite
                 }
             }
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
-            .modifier(BrowseKeyboard(items: items, title: title, navigator: navigator,
+            .modifier(BrowseKeyboard(category: category, items: items, title: title, navigator: navigator,
                                      focused: $focused, proxy: proxy, open: open))
         }
     }
@@ -61,15 +62,17 @@ struct BrowseGrid<Item: Identifiable, Cell: View, Actions: View>: View where Ite
             cell: { cell(item) },
             actions: { actions(item) }
         )
-        // The tile's frame on screen, for scroll-into-view — dropped when the lazy grid unloads it.
+        // The tile's frame on screen, for scroll-into-view and the place (D6) — dropped when the
+        // lazy grid unloads it.
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { frame in
             navigator.record(frame, for: item.id)
         }
         .onDisappear { navigator.forget(item.id) }
     }
 
-    /// Opens a tile's page — a click or Return.
+    /// Opens a tile's page — a click or Return — remembering the place to come back to (D6).
     private func open(_ item: Item) {
+        model.browsePlace = navigator.opening(item.id, category: category, rows: items.map(\.id))
         model.path.append(route(item))
     }
 }
