@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The keyboard cursor, type-to-select and scroll memory of one browse grid (Albums, Artists) or
 /// browse list (Genres, until Sprint D puts it on the grid) — the state behind `BrowseKeyboard`.
-/// The rules are the Kit's (`GridKeyboardCursor` over `ListKeyboardCursor`, `TypeSelectBuffer`,
+/// The rules are the Kit's (`GridCursorState` → `GridKeyboardCursor` over `ListKeyboardCursor`,
 /// `ScrollPlacement`); this class only keeps their inputs and turns key results into scrolls.
 ///
 /// Only the cursor is observed (it moves the ring). The layout inputs — tile frames, the column
@@ -24,9 +24,10 @@ final class BrowseNavigator {
 
     let arrangement: Arrangement
 
-    /// The tile the user chose — a click, a navigation key, type-select, or the cursor a return
-    /// brought back (D6). Nil until then: the cursor is the first tile, unanchored.
-    private(set) var anchorID: Int64?
+    /// The anchor — the tile the user chose: a click, a navigation key, type-select, or the cursor
+    /// a return brought back (D6) — and the type-to-select prefix, which every other cursor change
+    /// ends (`GridCursorState`).
+    private var cursorState = GridCursorState<Int64>()
     /// A type-select hit draws the ring before any navigation key has switched the window to
     /// keyboard mode: typing into the grid IS keyboard use, but the app-wide tracker can't tell it
     /// from typing into a field. Cleared when the grid loses focus.
@@ -39,7 +40,6 @@ final class BrowseNavigator {
     /// Every laid-out tile's frame in the scroll view's space (`.scrollView`), forgotten when the
     /// lazy container unloads it — so a stale frame can never claim an off-screen tile is visible.
     @ObservationIgnored private var frames: [Int64: CGRect] = [:]
-    @ObservationIgnored private var typeSelectBuffer = TypeSelectBuffer()
 
     init(arrangement: Arrangement) {
         self.arrangement = arrangement
@@ -50,7 +50,7 @@ final class BrowseNavigator {
     /// The ONE keyboard cursor over the visible tiles: the ring tile, the tile the keys move from
     /// and the one Return opens.
     func cursor(in rows: [Int64]) -> GridKeyboardCursor<Int64>? {
-        GridKeyboardCursor.resolve(rows: rows, anchor: anchorID, columns: columns)
+        cursorState.cursor(in: rows, columns: columns)
     }
 
     /// The tile wearing the ring, or nil: the cursor while the grid holds focus in keyboard mode
@@ -75,8 +75,9 @@ final class BrowseNavigator {
     /// A navigation key: moves the cursor (claiming the tile) and scrolls it into view. False when
     /// the key should bubble.
     func move(_ move: GridKeyboardCursor<Int64>.Move, in rows: [Int64], proxy: ScrollViewProxy) -> Bool {
-        guard let cursor = cursor(in: rows), let target = cursor.target(of: move, in: rows) else { return false }
-        claim(target, from: cursor.id, in: rows, proxy: proxy)
+        let current = cursor(in: rows)?.id
+        guard let target = cursorState.move(move, in: rows, columns: columns) else { return false }
+        reveal(target, from: current, in: rows, proxy: proxy)
         return true
     }
 
@@ -85,17 +86,18 @@ final class BrowseNavigator {
     func typeSelect<Item: Identifiable>(
         _ characters: String, in items: [Item], title: (Item) -> String, proxy: ScrollViewProxy
     ) where Item.ID == Int64 {
-        let prefix = typeSelectBuffer.append(characters, at: .now)
-        guard let match = TypeSelectBuffer.firstMatch(for: prefix, in: items, title: title) else { return }
         let rows = items.map(\.id)
-        claim(match.id, from: cursor(in: rows)?.id, in: rows, proxy: proxy)
+        let current = cursor(in: rows)?.id
+        guard let match = cursorState.typeSelect(characters, at: .now, in: items, title: title) else { return }
+        reveal(match, from: current, in: rows, proxy: proxy)
         typeSelectShowsRing = true
     }
 
-    /// The grid's focus changed; leaving it ends the type-select ring.
+    /// The grid's focus changed; leaving it ends the type-select ring and the typed prefix.
     func focusChanged(_ focused: Bool) {
         if !focused {
             typeSelectShowsRing = false
+            cursorState.endTyping()
         }
     }
 
@@ -104,7 +106,7 @@ final class BrowseNavigator {
     /// A tile is being opened (a click or Return): it becomes the cursor, and the place to come
     /// back to is pinned on it. The grid held focus — a click focuses it, as a row click does.
     func opening(_ id: Int64, category: LibraryCategory, rows: [Int64]) -> BrowsePlace? {
-        anchorID = id
+        cursorState.choose(id)
         return place(category: category, rows: rows, focused: true)
     }
 
@@ -116,7 +118,7 @@ final class BrowseNavigator {
         let tiles = frames.filter { shown.contains($0.key) }.map { id, frame in
             ScrollPlacement.Tile(id: id, top: frame.minY, leading: frame.minX, height: frame.height)
         }
-        let cursorID = anchorID.flatMap { shown.contains($0) ? $0 : nil }
+        let cursorID = cursorState.anchor.flatMap { shown.contains($0) ? $0 : nil }
         let point = ScrollPlacement.restorePoint(tiles: tiles, viewportHeight: viewportHeight, preferred: cursorID)
             ?? cursorID.map { (id: $0, anchorY: 0.5) }
         guard let point else { return nil }
@@ -128,7 +130,7 @@ final class BrowseNavigator {
     /// A tile that left the library in between is skipped (the grid then starts at the top).
     func restore(_ place: BrowsePlace, rows: [Int64], proxy: ScrollViewProxy) {
         if let cursorID = place.cursorID, rows.contains(cursorID) {
-            anchorID = cursorID
+            cursorState.choose(cursorID)
         }
         if rows.contains(place.scrollTileID) {
             proxy.scrollTo(place.scrollTileID, anchor: UnitPoint(x: 0.5, y: place.anchorY))
@@ -156,10 +158,10 @@ final class BrowseNavigator {
         }
     }
 
-    /// Makes `target` the (anchored) cursor and scrolls it into view — only as far as needed, and
-    /// never flush against the edge where its ring would be cut.
-    private func claim(_ target: Int64, from current: Int64?, in rows: [Int64], proxy: ScrollViewProxy) {
-        anchorID = target
+    /// Scrolls the new cursor `target` into view — only as far as needed, and never flush against
+    /// the edge where its ring would be cut. `current` (the cursor before) gives the direction for a
+    /// tile not laid out yet.
+    private func reveal(_ target: Int64, from current: Int64?, in rows: [Int64], proxy: ScrollViewProxy) {
         let frame = frames[target]
         let forward = (rows.firstIndex(of: target) ?? 0) >= (current.flatMap { rows.firstIndex(of: $0) } ?? 0)
         guard let anchorY = ScrollPlacement.revealAnchorY(
