@@ -18,7 +18,7 @@ final class BrowseNavigator {
     enum Arrangement {
         /// A tile grid: ←/→ walk reading order; the ring sits outside a tile (`BrowseGridMetrics`).
         case grid
-        /// A one-column list: ←/→ bubble; the ring sits just inside the row.
+        /// A one-column list: ←/→ bubble; the ring sits just outside the row's label, inside the row.
         case list
     }
 
