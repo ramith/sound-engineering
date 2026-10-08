@@ -43,6 +43,37 @@ struct ControlChipAuditTests {
         }
     }
 
+    /// S10.8 D3: an "on" chip (shuffle, repeat) is not shown by its fill alone — the teal tint is
+    /// ≈ 1.1–1.3:1 against the window — so its 1pt `accentForeground` ring is the state's non-text
+    /// cue (WCAG 1.4.11): ≥ 3:1 against the window outside it and the tint inside it, in both
+    /// appearances, and over the dark glow field the queue header sits on. (The light glow replays
+    /// these pairs through `LightPairs`.)
+    @Test("R4-CHIP-04: an on chip's ring clears 3:1 against the window and its own tint")
+    func onChipRing() {
+        for appearance in TokenAppearance.allCases {
+            Self.expectOnRing(on: Palette.window.value(for: appearance), appearance, "window")
+        }
+        for geometry in ContrastAuditTests.glowGeometries {
+            for point in ContrastAuditTests.gridPoints() {
+                let glow = GlowFieldSpec.compositeBackdrop(
+                    unitX: point.x, unitY: point.y,
+                    containerWidth: geometry.width, containerHeight: geometry.height,
+                    appearance: .dark
+                )
+                Self.expectOnRing(on: glow, .dark, "glow @(\(point.x),\(point.y)) \(geometry.width)pt")
+            }
+        }
+    }
+
+    /// The on ring against the backdrop outside the chip and the tint inside it.
+    private static func expectOnRing(on backdrop: RGBAColor, _ appearance: TokenAppearance, _ site: String) {
+        let tint = Palette.controlActiveFill.value(for: appearance).over(backdrop)
+        for (side, surface) in [("outside", backdrop), ("on the tint", tint)] {
+            let ratio = ContrastAuditTests.ratio(label: Palette.accentForeground, on: surface, appearance)
+            #expect(ratio >= ContrastAuditTests.nonTextAA, "on ring \(side), \(site) (\(appearance)) = \(ratio)")
+        }
+    }
+
     /// The chip-visibility floor (S10.8 B3). Not a WCAG pair — the chip's text carries the format
     /// — but a regression net for "the chip disappears into its card", like CARD-SEP.
     static let chipVisibilityFloor = 1.3

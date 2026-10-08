@@ -56,6 +56,8 @@ enum LightPairs {
               "R4-TINT-01"),
         pairs([("onAccent", Palette.onAccent)], on: [("accentFill", [Palette.accentFill])],
               ContrastAuditTests.nonTextAA, "R4-TINT-04"),
+        pairs([("accentForeground", Palette.accentForeground)],
+              on: [("controlActiveFill", [Palette.controlActiveFill])], ContrastAuditTests.nonTextAA, "R4-CHIP-04"),
         pairs([("focusRing", Palette.focusRing)],
               on: [window, panelFill, rowSelected, rowNowPlaying,
                    ("panelFill+rowSelected", [Palette.panelFill, Palette.rowSelected]),
