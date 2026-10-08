@@ -93,7 +93,8 @@ struct PlaylistView: View {
             PlaylistControlsView(onJumpToNowPlaying: jumpToNowPlaying, panelMode: $panelMode)
                 .fixedSize()
 
-            QueueModeSwitcher(panelMode: $panelMode)
+            CapsuleSwitch("Queue view", selection: $panelMode, options: QueuePanelMode.allCases,
+                          title: \.pickerLabel)
                 .fixedSize()
 
             Spacer(minLength: DesignSystem.Spacing.small)
