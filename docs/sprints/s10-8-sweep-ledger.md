@@ -636,12 +636,21 @@ test-library scan stands in for the launch re-read, and the check registry in Ve
 fix round (a key struct read only through `Hashable`, an import, a helper) — the agents had not run
 Periphery. `make strict-gate`: exit 0 on the final tip; VerifyLibraryStore 148/148.
 
-### Founder check — pending (on the TEST library, before merge)
+### Founder check and the real-library upgrade (2026-10-08)
 
 The real library must not meet this build before it is on main: main's v6 build would quarantine a
 v7 store (the old open path), and this build refuses only from now on. So: check on the test
 library, merge, then the founder's own app upgrades the real library, with the automatic
 `library.pre-v7-*` backup plus a manual copy taken first.
+
+**Done.** The founder checked on the test library (and asked for the Genres grid — decision 19) and
+merged PR #70. With both apps quit, a full copy of the library folder was taken and verified (90
+files, md5-identical); `make run` on main then upgraded the real library: the automatic
+`library.pre-v7-*` backup was written, v7 applied, the re-read finished (0 songs pending). Compared on
+a scratch copy against the pre-upgrade snapshot: 379 songs, 4 playlists / 23 entries (same songs,
+same order) and every user column (plays, rating, loved, last played, frecency) **identical**; albums
+139 → 138; albums credited "Unknown Artist" **139 → 0**. 26 songs have no artist tag at all and
+still read "Unknown Artist" — correct. Scratch copies deleted.
 
 ### Mini-retro — Sprint C
 
