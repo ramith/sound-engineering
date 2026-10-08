@@ -51,8 +51,9 @@ struct PlaylistDetailView: View {
             Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
             content
         }
+        // No background of its own: it sits on the Library card (S10.8 D1 — the opaque window fill
+        // it painted was the hard edge against the glow).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(DesignSystem.Color.window)
         .overlay(alignment: .bottom) { restoreToast }
         // Locate… (F): pick the moved file → re-point the track (id preserved) → it resolves.
         .fileImporter(
