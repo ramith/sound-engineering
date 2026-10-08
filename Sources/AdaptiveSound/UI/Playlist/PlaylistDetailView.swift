@@ -24,7 +24,9 @@ struct PlaylistDetailView: View {
     @State var revealEntryID: Int64?
     /// The entry a reorder drag is hovering over (drop-target border). Nil when no drag is active.
     @State private var dropTargetEntryID: Int64?
-    @FocusState private var listFocused: Bool
+    /// The list holds key focus. `internal` so a Move from the menu or VoiceOver (`+Moves`) can take
+    /// it — the next ⌥⌘-arrow then lands on this list.
+    @FocusState var listFocused: Bool
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     /// Transient "Restore previous queue" affordance after a Play-replace; the token re-triggers the

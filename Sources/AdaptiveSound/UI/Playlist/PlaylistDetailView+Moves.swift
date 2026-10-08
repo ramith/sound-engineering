@@ -36,10 +36,13 @@ extension PlaylistDetailView {
     }
 
     /// Move one entry, keeping it selected and in view (the list scrolls once the rows re-sequence),
-    /// and tell VoiceOver where it landed. Does nothing at the edge.
+    /// and tell VoiceOver where it landed. Does nothing at the edge. Takes key focus for the list:
+    /// from the context menu or VoiceOver the focus may be elsewhere (the rail), and the shortcut
+    /// the menu just advertised must land here next time.
     func perform(_ move: ListMove, on entryID: Int64) {
         guard let order = move.reordering(model.detail.map(\.id), moving: [entryID]),
               let position = order.firstIndex(of: entryID) else { return }
+        listFocused = true
         selectedEntryID = entryID
         revealEntryID = entryID
         model.reorderEntries(order)
