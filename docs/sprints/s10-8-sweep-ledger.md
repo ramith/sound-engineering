@@ -732,6 +732,12 @@ through the AX tree, the log and the database. Noted, not fixed: the inline new-
 does not take focus (click it first); sidebar rows are each a Tab stop (pre-existing); switching tabs
 clears the Songs selection; a filtered grid's count reads "N albums" (Sprint D's header).
 
+### Founder check (2026-10-08)
+
+On the real library (no schema change this sprint): Songs ⇧↓ + Add to Queue, ⌘A, type-to-select,
+End; Albums arrows, Return and ⌘[ back to the same place; a playlist's Move Down, ⌥⌘↓ and ⌥⇧⌘↑.
+**"All works."**
+
 ### Mini-retro — behaviour pull-forward
 
 1. **Run the slow, real checks BEFORE review, not after.** The review found data and focus bugs; the
