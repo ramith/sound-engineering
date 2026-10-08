@@ -31,6 +31,14 @@ struct FacetTextFilterTests {
         #expect(FacetTextFilter.matches("Jazz", query: "  jazz  "))
     }
 
+    @Test("a filter is active only when it narrows: text beyond whitespace")
+    func isActive() {
+        #expect(!FacetTextFilter.isActive(""))
+        #expect(!FacetTextFilter.isActive("  \n"))
+        #expect(FacetTextFilter.isActive("ja"))
+        #expect(FacetTextFilter.isActive(" j "))
+    }
+
     @Test("diacritic-insensitive (S10.7 §5 queue-filter contract)")
     func diacriticInsensitive() {
         #expect(FacetTextFilter.matches("Beyoncé", query: "beyonce"))
