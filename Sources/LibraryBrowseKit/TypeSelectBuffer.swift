@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - TypeSelectBuffer (S10.8 — the ONE type-to-select: the Songs selection kit (E1) and the browse grids (decision 20))
+// MARK: - TypeSelectBuffer (S10.8 — the ONE type-to-select: Songs (E1) and the browse grids, decision 20)
 
 /// Type-to-select, the Finder / `NSTableView` way: letters typed in quick succession build one
 /// prefix ("j", "ja", "jaz"), and the first item in display order whose title starts with it —
