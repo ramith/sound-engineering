@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
+.PHONY: build run release run-release sheets songs-perf clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
 
 build:
 	swift build -c debug -j 8
@@ -71,6 +71,15 @@ sheets:
 	swift build -c debug -j 8
 	@BIN="$$(swift build -c debug --show-bin-path)"; \
 		"$$BIN/AdaptiveSound" -ASRenderSheets "$(SHEETS_DIR)" $(SHEETS_ARGS)
+
+# Songs list performance run (S10.8 E1, debug only): the Songs list over 20,000 fixture songs,
+# offscreen, with End / Home / Page / arrow keys pressed through the list's own key path; each must
+# settle within the S9.5 hard gate (100 ms at 20k) and build only a few screenfuls of rows (the
+# founder's End press hung for minutes), and a user scroll must not re-run the list. Exits non-zero past either bound, 2 if the main thread hangs. Like `sheets`: no library
+# store, audio device, user settings or single-instance lock — safe beside a running app.
+songs-perf:
+	swift build -c debug -j 8
+	@BIN="$$(swift build -c debug --show-bin-path)"; "$$BIN/AdaptiveSound" -ASSongsPerf
 
 # Stress library (S10.8 C1): ~10,000 tiny, real, tagged audio files (FLAC/MP3/M4A; long, CJK, RTL and
 # emoji names; flagged and unflagged compilations; same-title albums; 5.1 and 7.1 files; art and no
@@ -252,6 +261,7 @@ help:
 	@echo "  make build  - Build + bundle app (debug)"
 	@echo "  make run    - Build and launch app (debug)"
 	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
+	@echo "  make songs-perf - Time the Songs list's keys over 20,000 fixture songs against the 100 ms gate (debug)"
 	@echo "  make stress-library - Write the ~10k-track stress library (needs ffmpeg) to STRESS_LIBRARY"
 	@echo "  make run-test-library   - Run a debug copy on an ISOLATED library + settings, scanning the stress library"
 	@echo "  make reset-test-library - Forget the test copy's library and settings (never touches your own)"

@@ -32,6 +32,9 @@ struct AdaptiveSound: App {
             // and exits HERE — before the single-instance lock, so it never collides with (or locks
             // out) a running copy of the app. Without the flag this returns at once.
             SheetRenderer.runIfRequested()
+            // `make songs-perf`: `-ASSongsPerf` times the Songs list's keys offscreen and exits — the
+            // same no-lock, no-store, no-device rules as the sheets.
+            SongsPerfRun.runIfRequested()
         #endif
         // Where everything persists, decided once (a debug `-ASTestLibrary` launch swaps in the
         // isolated test library), then injected — nothing below picks a path or defaults of its own.
