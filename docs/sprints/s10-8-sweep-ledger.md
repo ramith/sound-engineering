@@ -752,3 +752,24 @@ End; Albums arrows, Return and ⌘[ back to the same place; a playlist's Move Do
    Run swiftlint on the resolved files before committing a resolution.
 5. **The founder stopped the agents to ask whether they were useful** — a fair check. Report each
    agent's measurable result (here: End 15.1 s → 0.04 s) rather than activity.
+
+## Sprint D — Library glass (D1–D5; D6 shipped in the pull-forward)
+
+### Plan check and split (2026-10-08, coordinator)
+
+Inputs: plan §E Sprint D (D5 amended by decision 19), the [browse-grid design](s10-8-browse-grid-design.md)
+(its prototype and renders are in the session scratchpad), the behaviour pull-forward's retro. The
+browse STRUCTURE (`BrowseGridRoot` / `BrowseGrid` / `BrowseTile`) already exists with no restyle, so
+D5 is the restyle plus Genres on the grid. Two waves, split by file so agents cannot collide:
+
+| Wave | Agent | Scope | Owns |
+|---|---|---|---|
+| 1 | **Library pane** | D1 (one card for the whole right pane; the playlist view's hard edge), D4 (the card header on Songs, Albums, Artists, Genres), D2's shared filter pill — extracted from Songs' header, used in all four headers — and D5 (BrowseTile / BrowseArt restyle, fill-width columns, one-line names, the placeholder, hover plate + ring, Genres on the grid with a 2×2 cover mosaic, the empty / scanning / no-results states, a sheet variant per grid) | the Library UI files, `DesignSystem.BrowseGrid` |
+| 1 | **Genre covers (store)** | `genreCoverArtworkKeys(perGenre:)`: for each genre, up to 4 artwork keys of its albums with the most songs in it — one indexed read, a VerifyLibraryStore check incl. the query plan, and a 300-genre stress case | `Sources/LibraryStore`, VerifyLibraryStore |
+| 1 | **Queue controls** | D3: the icon chip and the capsule switch (a required accessibility label; selection not by fill alone; R4-SEG-02), adopted in the Now Playing queue header | the queue header, new control files |
+| 2 | one agent | the shared pill in the queue filter and the playlist picker (+ the 880×640 "Filter queue" clipping), the D3 chips on Songs' Sort / Columns, the semgrep "no raw text field outside the pill" rule | — |
+
+Retro rules applied: every agent runs `make periphery` and `make songs-perf`; the coordinator runs
+the live keyboard pass on the 10k test library BEFORE the code review; the genre-cover read gets a
+break-it pass (store work); shared helpers have one named owner (the pill: Library pane; chip and
+switch: Queue controls).
