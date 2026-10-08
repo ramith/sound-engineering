@@ -43,6 +43,36 @@ struct LibraryContrastAuditTests {
         }
     }
 
+    /// The Library's ONE detail card (S10.8 D1) now holds every category, page and playlist, so its
+    /// tertiary text — the count lines, the grids' captions, the playlist header — can sit anywhere
+    /// over the glow, its peak included. The label hierarchy clears AA on the card's fill over the
+    /// Library glow at every sampled point, in both appearances (the light glow is the pale one).
+    @Test("R4-GLOW-LIB-02: labelTertiary (and the hierarchy) clears AA on the card over the Library glow")
+    func labelsOnDetailCardOverGlow() {
+        let labels: [(String, AppearancePair)] = [
+            ("label", Palette.label), ("labelSecondary", Palette.labelSecondary),
+            ("labelTertiary", Palette.labelTertiary),
+        ]
+        for appearance in TokenAppearance.allCases {
+            for geometry in ContrastAuditTests.glowGeometries {
+                for point in ContrastAuditTests.gridPoints() {
+                    let glow = GlowFieldSpec.compositeBackdrop(
+                        unitX: point.x, unitY: point.y,
+                        containerWidth: geometry.width, containerHeight: geometry.height,
+                        appearance: appearance,
+                        glows: GlowFieldSpec.libraryGlows
+                    )
+                    let card = Palette.panelFill.value(for: appearance).over(glow)
+                    for (name, label) in labels {
+                        let ratio = ContrastAuditTests.ratio(label: label, on: card, appearance)
+                        #expect(ratio >= ContrastAuditTests.textAA,
+                                "\(name) on card⊕glow (\(appearance)) @(\(point.x),\(point.y)) = \(ratio)")
+                    }
+                }
+            }
+        }
+    }
+
     /// The rail's idle nav label (`labelNav`, ~72%) clears AA on the panel card fill it sits on,
     /// both appearances (the RT/IC opaque composite too). A touch stronger than `labelSecondary`
     /// (already AA on the panel), so it clears by domination — audited directly since it's a new
