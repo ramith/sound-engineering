@@ -366,7 +366,7 @@ private extension SongsListView {
     /// with ⌘, ⌥ or ⌃ (`BrowseKeyboard`'s rule): those are the app's and the system's shortcuts,
     /// never a plain step.
     func navigate(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.isDisjoint(with: [.command, .option, .control]),
+        guard !press.isShortcut,
               let movement = movement(for: press.key),
               selection.move(movement, extend: press.modifiers.contains(.shift), in: rowIDs) != nil
         else { return .ignored }
@@ -399,7 +399,7 @@ private extension SongsListView {
     /// the key-down only (a held key does not repeat into the search), and a key with ⌘, ⌥ or ⌃ is
     /// a shortcut, not typing. A key that matches nothing is still consumed, so it doesn't beep.
     func typeSelect(_ press: KeyPress) -> KeyPress.Result {
-        guard press.modifiers.isDisjoint(with: [.command, .option, .control]) else { return .ignored }
+        guard !press.isShortcut else { return .ignored }
         if selection.typeSelect(press.characters, at: .now, in: model.visibleSongs, title: \.title) != nil {
             cursorScrollRequest &+= 1
         }
