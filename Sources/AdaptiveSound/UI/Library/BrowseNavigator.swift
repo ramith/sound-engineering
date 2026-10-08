@@ -1,16 +1,16 @@
 import LibraryBrowseKit
 import SwiftUI
 
-// MARK: - Browse navigator (S10.8 decision 20)
+// MARK: - Browse navigator (S10.8 decision 20 + D6)
 
-/// The keyboard cursor and type-to-select of one browse grid (Albums, Artists) or
+/// The keyboard cursor, type-to-select and scroll memory of one browse grid (Albums, Artists) or
 /// browse list (Genres, until Sprint D puts it on the grid) — the state behind `BrowseKeyboard`.
 /// The rules are the Kit's (`GridKeyboardCursor` over `ListKeyboardCursor`, `TypeSelectBuffer`,
 /// `ScrollPlacement`); this class only keeps their inputs and turns key results into scrolls.
 ///
 /// Only the cursor is observed (it moves the ring). The layout inputs — tile frames, the column
-/// count, the viewport height — change on every scroll or resize and are read only by the keys,
-/// so they are kept out of observation: recording them never re-renders the grid.
+/// count, the viewport height — change on every scroll or resize and are read only by the keys
+/// and by `place`, so they are kept out of observation: recording them never re-renders the grid.
 @MainActor
 @Observable
 final class BrowseNavigator {
@@ -24,8 +24,8 @@ final class BrowseNavigator {
 
     let arrangement: Arrangement
 
-    /// The tile the user chose — a navigation key or type-select. Nil until then: the cursor is
-    /// the first tile, unanchored.
+    /// The tile the user chose — a click, a navigation key, type-select, or the cursor a return
+    /// brought back (D6). Nil until then: the cursor is the first tile, unanchored.
     private(set) var anchorID: Int64?
     /// A type-select hit draws the ring before any navigation key has switched the window to
     /// keyboard mode: typing into the grid IS keyboard use, but the app-wide tracker can't tell it
@@ -96,6 +96,42 @@ final class BrowseNavigator {
     func focusChanged(_ focused: Bool) {
         if !focused {
             typeSelectShowsRing = false
+        }
+    }
+
+    // MARK: Opening a tile, and the place (D6)
+
+    /// A tile is being opened (a click or Return): it becomes the cursor, and the place to come
+    /// back to is pinned on it. The grid held focus — a click focuses it, as a row click does.
+    func opening(_ id: Int64, category: LibraryCategory, rows: [Int64]) -> BrowsePlace? {
+        anchorID = id
+        return place(category: category, rows: rows, focused: true)
+    }
+
+    /// Where the grid is now (`BrowsePlace`): pinned on the cursor tile when it is fully visible,
+    /// else on the first fully visible tile — or, with nothing laid out, on the cursor, centred.
+    /// Nil only with neither.
+    func place(category: LibraryCategory, rows: [Int64], focused: Bool) -> BrowsePlace? {
+        let shown = Set(rows)
+        let tiles = frames.filter { shown.contains($0.key) }.map { id, frame in
+            ScrollPlacement.Tile(id: id, top: frame.minY, leading: frame.minX, height: frame.height)
+        }
+        let cursorID = anchorID.flatMap { shown.contains($0) ? $0 : nil }
+        let point = ScrollPlacement.restorePoint(tiles: tiles, viewportHeight: viewportHeight, preferred: cursorID)
+            ?? cursorID.map { (id: $0, anchorY: 0.5) }
+        guard let point else { return nil }
+        return BrowsePlace(category: category, scrollTileID: point.id, anchorY: point.anchorY,
+                           cursorID: cursorID, wasFocused: focused)
+    }
+
+    /// Puts the grid back at `place`: the cursor on its tile and the pinned tile at the same height.
+    /// A tile that left the library in between is skipped (the grid then starts at the top).
+    func restore(_ place: BrowsePlace, rows: [Int64], proxy: ScrollViewProxy) {
+        if let cursorID = place.cursorID, rows.contains(cursorID) {
+            anchorID = cursorID
+        }
+        if rows.contains(place.scrollTileID) {
+            proxy.scrollTo(place.scrollTileID, anchor: UnitPoint(x: 0.5, y: place.anchorY))
         }
     }
 

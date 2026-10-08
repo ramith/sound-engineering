@@ -42,6 +42,10 @@ final class LibraryBrowseModel {
     }
 
     var path: [LibraryRoute] = []
+    /// The browse roots' Filter text — kept across a drill-down and a tab switch, cleared by a rail jump.
+    var browseFilter = ""
+    /// Where the browse grid or list was when it left the screen (S10.8 D6) — see `BrowsePlace`.
+    @ObservationIgnored var browsePlace: BrowsePlace?
 
     // Sidebar selection (S10.3) lives in `LibraryBrowseModel+Sidebar` (a same-type extension, split
     // for file length): `sidebarSelection` + `selectCategory`/`selectPlaylist`.

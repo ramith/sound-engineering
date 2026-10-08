@@ -34,6 +34,7 @@ struct ArtistsGridView: View {
             load: { await model.loadArtists() },
             content: { shown in
                 BrowseGrid(
+                    category: .artists,
                     items: shown,
                     title: \.name,
                     route: { .artist($0.id) },
