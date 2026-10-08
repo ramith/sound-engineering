@@ -27,10 +27,23 @@ extension LibraryBrowseModel {
                             read: { try await $0.artists() })
     }
 
-    /// Load the Genres list (same flat-facet discipline as `loadArtists`).
+    /// Load the Genres list (same flat-facet discipline as `loadArtists`), then its tiles' covers.
     func loadGenres() async {
         await loadFlatFacet(into: \.genres, state: \.genresState, epoch: \.genresLoadEpoch,
                             read: { try await $0.genres() })
+        await loadGenreCovers()
+    }
+
+    /// The genre tiles' cover keys (S10.8 D5): up to a mosaic's four per genre, from its biggest
+    /// albums. Newest-wins like the lists; a failed read keeps the covers it had — a genre without
+    /// covers shows the placeholder, never an error.
+    private func loadGenreCovers() async {
+        guard let store else { return }
+        genreCoversLoadEpoch &+= 1
+        let epoch = genreCoversLoadEpoch
+        guard let covers = try? await store.genreCoverArtworkKeys(perGenre: CoverArrangement.mosaicCount),
+              epoch == genreCoversLoadEpoch, covers != genreCoverKeys else { return }
+        genreCoverKeys = covers
     }
 
     /// Shared loader for the flat facet lists (Artists, Genres). Bumps the facet's epoch, publishes
@@ -89,23 +102,34 @@ extension LibraryBrowseModel {
         (try? await store?.tracksDisplay(inGenre: id)) ?? []
     }
 
-    // MARK: Whole-facet play verbs (list-row context menus — read-then-enqueue, mirror playAlbum*)
+    // MARK: Whole-facet play verbs (browse tiles — read-then-enqueue)
 
-    /// A browse-facet reference for the list-row queue verbs.
-    enum FacetRef {
+    /// A browse tile's album, artist or genre: what its queue verbs read, and the page it opens.
+    enum FacetRef: Equatable {
+        case album(Int64)
         case artist(Int64)
         case genre(Int64)
+
+        var route: LibraryRoute {
+            switch self {
+            case let .album(id): .album(id)
+            case let .artist(id): .artist(id)
+            case let .genre(id): .genre(id)
+            }
+        }
     }
 
+    /// An album's songs in disc / track order; an artist's or a genre's as their pages list them.
     private func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
         switch ref {
+        case let .album(id): return await tracks(inAlbum: id)
         case let .artist(id): return await tracks(byArtist: id)
         case let .genre(id): return await tracks(inGenre: id)
         }
     }
 
-    /// The track ids of a whole facet (artist/genre) — for a tile's reference-add to a playlist
-    /// (S10.3). Wraps the private `facetTracks` read; empty facet → empty (a no-op add).
+    /// The track ids of a whole facet — for a tile's reference-add to a playlist (S10.3). Wraps
+    /// the private `facetTracks` read; empty facet → empty (a no-op add).
     func facetTrackIDs(_ ref: FacetRef) async -> [Int64] {
         await facetTracks(ref).map(\.id)
     }

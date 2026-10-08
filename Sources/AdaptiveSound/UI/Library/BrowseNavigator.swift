@@ -3,10 +3,10 @@ import SwiftUI
 
 // MARK: - Browse navigator (S10.8 decision 20 + D6)
 
-/// The keyboard cursor, type-to-select and scroll memory of one browse grid (Albums, Artists) or
-/// browse list (Genres, until Sprint D puts it on the grid) — the state behind `BrowseKeyboard`.
-/// The rules are the Kit's (`GridCursorState` → `GridKeyboardCursor` over `ListKeyboardCursor`,
-/// `ScrollPlacement`); this class only keeps their inputs and turns key results into scrolls.
+/// The keyboard cursor, type-to-select and scroll memory of one browse grid (Albums, Artists,
+/// Genres) — the state behind `BrowseKeyboard`. The rules are the Kit's (`GridCursorState` →
+/// `GridKeyboardCursor` over `ListKeyboardCursor`, `ScrollPlacement`); this class only keeps their
+/// inputs and turns key results into scrolls.
 ///
 /// Only the cursor is observed (it moves the ring). The layout inputs — tile frames, the column
 /// count, the viewport height — change on every scroll or resize and are read only by the keys
@@ -14,16 +14,6 @@ import SwiftUI
 @MainActor
 @Observable
 final class BrowseNavigator {
-    /// How the root lays its tiles out.
-    enum Arrangement {
-        /// A tile grid: ←/→ walk reading order; the ring sits outside a tile (`BrowseGridMetrics`).
-        case grid
-        /// A one-column list: ←/→ bubble; the ring sits just outside the row's label, inside the row.
-        case list
-    }
-
-    let arrangement: Arrangement
-
     /// The anchor — the tile the user chose: a click, a navigation key, type-select, or the cursor
     /// a return brought back (D6) — and the type-to-select prefix, which every other cursor change
     /// ends (`GridCursorState`).
@@ -33,17 +23,13 @@ final class BrowseNavigator {
     /// from typing into a field. Cleared when the grid loses focus.
     private(set) var typeSelectShowsRing = false
 
-    /// Tiles per row, from the laid-out width (`GridLayoutMath.adaptiveColumns`); 1 for a list.
-    @ObservationIgnored var columns = 1
+    /// Tiles per row, from the laid-out width (`FillGridLayout`).
+    @ObservationIgnored var columns = DesignSystem.BrowseGrid.minimumColumns
     /// The scroll viewport's height.
     @ObservationIgnored var viewportHeight: Double = 0
     /// Every laid-out tile's frame in the scroll view's space (`.scrollView`), forgotten when the
     /// lazy container unloads it — so a stale frame can never claim an off-screen tile is visible.
     @ObservationIgnored private var frames: [Int64: CGRect] = [:]
-
-    init(arrangement: Arrangement) {
-        self.arrangement = arrangement
-    }
 
     // MARK: Cursor and ring
 
@@ -110,6 +96,13 @@ final class BrowseNavigator {
         return place(category: category, rows: rows, focused: true)
     }
 
+    #if DEBUG
+        /// Picture-sheet renderer only (`SheetGridStates`): the cursor on `id`, as a click leaves it.
+        func seedCursor(_ id: Int64) {
+            cursorState.choose(id)
+        }
+    #endif
+
     /// Where the grid is now (`BrowsePlace`): pinned on the cursor tile when it is fully visible,
     /// else on the first fully visible tile — or, with nothing laid out, on the cursor, centred.
     /// Nil only with neither.
@@ -150,13 +143,10 @@ final class BrowseNavigator {
     // MARK: Private
 
     /// The room kept between the cursor tile and the viewport edge when scrolling it into view: the
-    /// grid's ring is drawn outside the tile, so the tile stops short of the edge; a list row holds
-    /// its ring inside, so it may sit flush (the native list's minimal scroll).
+    /// grid area's own inset, so a revealed tile sits where the first row does. (The ring is drawn
+    /// on the tile's plate, inside its frame.)
     private var revealMargin: Double {
-        switch arrangement {
-        case .grid: BrowseGridMetrics.ringOutset + 2
-        case .list: 0
-        }
+        Double(DesignSystem.BrowseGrid.areaInsetV)
     }
 
     /// Scrolls the new cursor `target` into view — only as far as needed, and never flush against

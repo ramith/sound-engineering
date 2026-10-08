@@ -3,13 +3,13 @@ import SwiftUI
 
 // MARK: - Browse keyboard (S10.8 decision 20 + D6 — wired once for every browse root)
 
-/// The keyboard and the scroll memory of a browse grid or list, wired ONCE for Albums, Artists and
+/// The keyboard and the scroll memory of the browse grid, wired ONCE for Albums, Artists and
 /// Genres: one focus stop (the system focus effect off — the cursor tile's teal ring is the cue),
 /// the navigation keys, Return, type-to-select, and the place it returns to (D6). The state and
 /// the rules live in `BrowseNavigator` and the Kit; this attaches them to the scroll view. Applied
 /// inside the scroll view's `ScrollViewReader`.
 ///
-/// Keys: ←/→ the previous / next tile (grids only), ↑/↓ a row, Home / End the first / last tile,
+/// Keys: ←/→ the previous / next tile, ↑/↓ a row, Home / End the first / last tile,
 /// Page Up / Down a viewport of rows, letters type-to-select on the title, Return opens. A
 /// shortcut (`KeyPress.isShortcut`: ⌘, ⌥ or ⌃ held) bubbles, as does ⇧ on the navigation keys
 /// (reserved for a multi-select), so the app's shortcuts (⌘← / ⌘→ track skip) keep working.
@@ -63,13 +63,12 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     }
 
     private func arrowMove(_ key: KeyEquivalent) -> GridKeyboardCursor<Int64>.Move? {
-        let isGrid = navigator.arrangement == .grid
         switch key {
-        case .leftArrow: return isGrid ? .left : nil
-        case .rightArrow: return isGrid ? .right : nil
-        case .upArrow: return .up
-        case .downArrow: return .down
-        default: return nil
+        case .leftArrow: .left
+        case .rightArrow: .right
+        case .upArrow: .up
+        case .downArrow: .down
+        default: nil
         }
     }
 
