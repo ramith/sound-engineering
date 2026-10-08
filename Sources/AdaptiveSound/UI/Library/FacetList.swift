@@ -3,11 +3,15 @@ import SwiftUI
 
 // MARK: - Facet list (S9.6 — the Genres text list, until Sprint D puts Genres on the browse grid)
 
-/// The Genres body under `BrowseGridRoot`: a `List` whose rows are plain Buttons showing "name ·
-/// N songs" that OPEN the detail on single-click and carry the whole-facet queue context menu.
-/// (Buttons, not List(selection:)+gesture: on macOS a custom row gesture races the List's built-in
-/// selection — the source of an inconsistent select-vs-navigate bug — whereas a Button always fires;
-/// this mirrors the browse grid's tiles.)
+/// The Genres body under `BrowseGridRoot`: rows of plain Buttons showing "name · N songs" that
+/// OPEN the detail on single-click and carry the whole-facet queue context menu.
+///
+/// A `ScrollView` + `LazyVStack`, like every other custom list (Songs, the queue, the rail) — not a
+/// SwiftUI `List`: an NSTableView-backed `List` takes key focus and handles the arrows itself, so
+/// the keys below could be eaten, or the list become two Tab stops. It draws what the `.inset`
+/// `List` drew, measured offscreen and pixel-identical on all four channels in dark and light: a
+/// 10-pt inset above and below, 24-pt rows (the label, 4 pt above and below, 16 pt each side) and
+/// a 1-pt `.separator` line under every row but the last, inset with the label.
 ///
 /// Keyboard (decision 20): the grids' `BrowseKeyboard` as a one-column list — ↑/↓, Home / End,
 /// Page Up / Down, type-to-select, Return opens — with the teal ring on the cursor row in place of
@@ -27,34 +31,49 @@ struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
     @State private var navigator = BrowseNavigator(arrangement: .list)
     @FocusState private var focused: Bool
 
-    /// The ring sits just outside the row's label — inside the row's own height and inset.
+    /// The `.inset` `List`'s inset above the first row and below the last.
+    private static var listInset: CGFloat {
+        10
+    }
+
+    /// Around the label inside a row — the `.inset` `List`'s row insets. The row is the Button, so
+    /// the whole 24-pt row is the click target, not just the label's line.
+    private static var rowInsets: EdgeInsets {
+        EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16)
+    }
+
+    /// The ring: 3 pt above and below the label, 6 pt to each side — just inside the row.
     private static var ringInsets: EdgeInsets {
-        EdgeInsets(top: -3, leading: -6, bottom: -3, trailing: -6)
+        EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 10)
     }
 
     var body: some View {
         let ringID = navigator.ringID(in: items.map(\.id), focused: focused, keyboardMode: showsKeyboardFocus)
         ScrollViewReader { proxy in
-            List {
-                ForEach(items) { item in row(item, isKeyboardCursor: item.id == ringID) }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(items) { item in
+                        row(item, isKeyboardCursor: item.id == ringID, isLast: item.id == items.last?.id)
+                    }
+                }
+                .padding(.vertical, Self.listInset)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
             .modifier(BrowseKeyboard(category: category, items: items, title: name, navigator: navigator,
                                      focused: $focused, proxy: proxy, open: open))
         }
     }
 
-    /// Each row is a plain `Button` — the pattern the grid tiles use. A Button's single-click action
-    /// ALWAYS fires and can't race the List's built-in selection gesture (that race was the
-    /// inconsistent select-vs-navigate bug). Single-click OPENS the facet detail, as the tiles do.
-    /// No focus stop of its own: the list is one stop whose keys move the ring.
-    private func row(_ item: Item, isKeyboardCursor: Bool) -> some View {
+    /// Each row is a plain `Button` — the pattern the grid tiles use; single-click OPENS the facet
+    /// detail, as the tiles do. No focus stop of its own: the list is one stop whose keys move the
+    /// ring.
+    private func row(_ item: Item, isKeyboardCursor: Bool, isLast: Bool) -> some View {
         Button {
             open(item)
         } label: {
             FacetRowLabel(name: name(item), count: count(item))
+                .padding(Self.rowInsets)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -65,7 +84,15 @@ struct FacetList<Item: Identifiable>: View where Item.ID == Int64 {
         .accessibilityAction(named: "Play Next") { Task { await model.playFacetNext(ref(item)) } }
         .accessibilityAction(named: "Add to Queue") { Task { await model.appendFacet(ref(item)) } }
         .contextMenu { FacetQueueActions(ref: ref(item)) }
-        // The ring on the clear view BEFORE the negative padding grows it (see `BrowseTile`).
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle()
+                    .fill(.separator)
+                    .frame(height: 1)
+                    .padding(.horizontal, Self.rowInsets.leading)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay {
             Color.clear
                 .keyboardCursorRing(isKeyboardCursor, cornerRadius: DesignSystem.Radius.control)
