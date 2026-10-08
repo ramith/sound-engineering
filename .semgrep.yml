@@ -196,6 +196,22 @@ rules:
       include: ['Sources/AdaptiveSound']
     pattern-regex: 'foregroundStyle\([^)\n]*(DesignSystem\.Color\.accent|Color\.asAccent|\.asAccent)\b'
 
+  # --- S10.8 E1 (docs/sprints/s10-8-glass-sweep-plan.md §E, COL-01): the selection kit is for EVERY list.
+  - id: selection-kit-no-columns
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      The selection kit (ListSelection, TypeSelectBuffer, ListKeyboardCursor) must not depend on
+      Songs' columns, sort or row type (COL-01): the album, artist and genre pages adopt it too,
+      and they have none of them. A list hands the kit its rows' ids in display order and, for
+      type-to-select, the title it shows. Comment lines are not matched.
+    paths:
+      include:
+        - 'Sources/LibraryBrowseKit/ListSelection.swift'
+        - 'Sources/LibraryBrowseKit/TypeSelectBuffer.swift'
+        - 'Sources/LibraryBrowseKit/ListKeyboardCursor.swift'
+    pattern-regex: '(?m)^(?!\s*//).*(\b(SongColumn\w*|SongSortMapping|SortOrder|KeyPathComparator|LibraryTrackDisplay)\b|^\s*import\s+LibraryStore\b)'
+
   # --- S10.8 C2 (docs/sprints/s10-8-glass-sweep-plan.md §E, ALB-04): ONE missing-artist string.
   - id: library-one-unknown-artist-string
     languages: [swift]
