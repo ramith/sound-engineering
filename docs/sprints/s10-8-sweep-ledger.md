@@ -683,3 +683,66 @@ so they cannot collide:
 
 Agents do not drive the real UI (the founder may be using the Mac); the live Full Keyboard Access
 pass (Sprint A retro rule) runs once, coordinated with the founder, at break-it time.
+
+### Build record (2026-10-08)
+
+- **E1** — `ListSelection` (LibraryBrowseKit): cursor, anchor, ⇧-extend, ⌘A (the filtered rows),
+  Home / End, Page Up / Down, type-to-select, Esc; no column or sort knowledge (semgrep
+  `selection-kit-no-columns`). Wired into Songs with no visual change; the Songs count line drops its
+  duration where it would wrap (880×640). SEL-01…08 defined in the plan (§E).
+- **Grid keys + D6** — `GridKeyboardCursor`; the browse STRUCTURE moved forward from D5 with no
+  restyle (`BrowseGridRoot`, `BrowseGrid`, `BrowseTile`, `BrowseKeyboard`, `BrowseNavigator`, the
+  Genres `FacetList` on ScrollView + LazyVStack); back from a page restores the place (`BrowsePlace`)
+  and the Filter (`browseFilter`); a sidebar jump starts fresh.
+- **E4** — `ListMove` (Move to Top / Up / Down / to Bottom: ⌥⌘↑ / ⌥⌘↓, ⌥⇧⌘↑ / ⌥⇧⌘↓, context menu,
+  VoiceOver). Saving goes through a per-playlist latest-wins `CoalescingWriter` (LibraryBrowseKit)
+  and `ListOrder` (the store's merge rule) so a reload never publishes over an unsaved order; quit
+  flushes it.
+- **Merge** — one shared `TypeSelectBuffer` (both agents had written one) and one `KeyPress.isShortcut`
+  rule ("⌘ / ⌥ / ⌃ held = a shortcut, not a step or typing") for Songs, the grids and the rail.
+
+### Code review (2026-10-08, code-reviewer, read-only) → one fix round
+
+**BLOCKER:** a single pending-order slot let a playlist switch mid-burst silently drop the first
+playlist's newest order. **MAJOR:** a stale reload could publish the old order and the next save
+made the revert permanent; ⌥⌘↑/↓ went to the sidebar (it took modifier arrows) and switched
+playlists. **MINOR:** quit could lose the last order; the failure alert was not tied to its playlist;
+the grid type-select prefix never reset; Genres' keys sat on an NSTableView-backed `List`; deleting
+the open playlist wiped the browse state; Songs rows could each be a Tab stop. All fixed by the three
+builders in parallel (each in its own worktree), with tests (the writer: 7, mutation-checked).
+
+### Live keyboard pass (2026-10-08, the coordinator, real CGEvent input on the test library)
+
+The plan's founder script (A Songs, B grids, C playlists), driven with real key and mouse events
+on the 10,043-song test library, verified through the accessibility tree, the app's `[UX]` log and
+the TEST library's database. **Found a BLOCKER no test could:** End in Songs froze the app (100% CPU
+for minutes) — `scrollTo(id)` made the lazy stack build every row up to the last (~20,000), and each
+row's eager context menu scanned all songs. Fixed (`FixedRowReveal`: scroll by arithmetic on the fixed
+row height; an O(1) menu decision, targets resolved in the actions; shared per-pass row values) and
+guarded by `make songs-perf` (offscreen, 20,000 songs; every key < 100 ms — measured 27–42 ms, ≤ 82
+rows built; End was 15.1 s / 19,986 rows). Re-run live after the fix: **A1–A9, B1–B5, C1–C5 all pass**
+(⌥⌘↓ stays in the playlist; switching playlists mid-burst keeps both orders; ⌘Q right after a move
+keeps it; back from a page restores the place even at the end of 862 albums).
+
+Harness lessons (tools in the session scratchpad: `kp`, `mc`, `ax`): a flagged key event leaves the
+modifier "held" in the HID source state — every event must set its flags explicitly, or later clicks
+arrive as ⌘-clicks; CGEvent letters don't type into fields (use System Events `keystroke`); re-read a
+row's frame before clicking (the list scrolls the cursor into view); no Screen Recording, so verify
+through the AX tree, the log and the database. Noted, not fixed: the inline new-playlist name field
+does not take focus (click it first); sidebar rows are each a Tab stop (pre-existing); switching tabs
+clears the Songs selection; a filtered grid's count reads "N albums" (Sprint D's header).
+
+### Mini-retro — behaviour pull-forward
+
+1. **Run the slow, real checks BEFORE review, not after.** The review found data and focus bugs; the
+   live pass found a freeze no test could. Three passes where two would do: next sprint, the agents
+   run `make songs-perf`-style perf checks and the coordinator runs the live keyboard pass on the
+   merged branch before the code review.
+2. **Stress data is the point.** The End-key freeze only exists at 10k rows — the founder's 379-song
+   library would never show it. Keep the 10k test library in every keyboard / list check.
+3. **Parallel agents duplicate shared helpers** (two `TypeSelectBuffer`s, two modifier rules). The
+   plan check should name the shared pieces and their owner up front.
+4. **A cherry-pick skips the pre-commit hook** — a merge-resolution commit failed the gate's lint.
+   Run swiftlint on the resolved files before committing a resolution.
+5. **The founder stopped the agents to ask whether they were useful** — a fair check. Report each
+   agent's measurable result (here: End 15.1 s → 0.04 s) rather than activity.
