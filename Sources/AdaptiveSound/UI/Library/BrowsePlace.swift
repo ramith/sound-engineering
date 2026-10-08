@@ -3,10 +3,11 @@ import Foundation
 // MARK: - Browse place (S10.8 D6 — the grid keeps its scroll position)
 
 /// Where a browse root's grid (Albums, Artists) or list (Genres) was when it left the screen — for
-/// an album / artist / genre page, or another tab — so coming back puts it where it was, with the
-/// keyboard cursor on the same tile. The grid is destroyed under a drill-down (the detail replaces
-/// it), so this lives on `LibraryBrowseModel` and is used once, by the next appearance of the same
-/// category's root. A rail jump clears it (`selectCategory`): that starts the root fresh.
+/// an album / artist / genre page, a playlist, or another tab — so coming back puts it where it
+/// was, with the keyboard cursor on the same tile. The grid is destroyed under a drill-down (the
+/// detail replaces it), so this lives on `LibraryBrowseModel` and is used once, by the next
+/// appearance of the same category's root. A rail jump clears it (`selectCategory`): that starts
+/// the root fresh; `showCategoryRoot` keeps it.
 ///
 /// The scroll position is kept as a TILE and its height on screen, not as a content offset, so it
 /// survives a window resize in between (the columns change, the tile stays put) and a library

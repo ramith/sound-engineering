@@ -18,22 +18,35 @@ extension LibraryBrowseModel {
         return .category(selectedCategory ?? .songs)
     }
 
-    /// Select a browse category — clears any drill-down / open playlist so the category root shows.
-    /// Explicit `path` clear (not just `selectedCategory`'s didSet): re-selecting the ALREADY-current
-    /// category while a playlist is open leaves `selectedCategory` unchanged, so the didSet wouldn't
-    /// fire and the playlist would stay on screen.
-    ///
-    /// A rail jump starts the root fresh (S10.8 D6): no Filter text and no remembered place. Only
-    /// "back" (and a tab switch) returns a grid to where it was.
+    /// A rail jump to a browse category: its root, started FRESH (S10.8 D6) — no Filter text and no
+    /// remembered place, even when it is the category already showing. (Coming back any other way —
+    /// "back", a tab switch, `showCategoryRoot` — returns a grid to where it was.)
     func selectCategory(_ category: LibraryCategory) {
-        if !path.isEmpty {
-            path.removeAll()
-        }
         if !browseFilter.isEmpty {
             browseFilter = ""
         }
         browsePlace = nil
+        showCategoryRoot()
         selectedCategory = category
+    }
+
+    /// Shows the CURRENT category's root — closes any drill-down or open playlist — keeping its
+    /// Filter text and remembered place, so it comes back as the user left it (e.g. when the open
+    /// playlist is deleted). An explicit `path` clear, not `selectedCategory`'s didSet: the category
+    /// doesn't change, so the didSet wouldn't fire and the playlist would stay on screen.
+    func showCategoryRoot() {
+        if !path.isEmpty {
+            path.removeAll()
+        }
+    }
+
+    /// A browse drill-down (an album / artist / genre page) is showing over the category root. An
+    /// open playlist is not one: it replaced the browse stack (`selectPlaylist`).
+    var isBrowseDrillDownOpen: Bool {
+        switch path.last {
+        case .album, .artist, .genre: true
+        case .playlist, nil: false
+        }
     }
 
     /// Select a playlist — a TOP-LEVEL jump that replaces the browse stack (not a drill-down push),
