@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// S10.4: macOS system control, also owned by the App's `@State`. Cleared at quit so the Now
     /// Playing widget / Control Center don't keep showing a stopped track after the app exits.
     weak var nowPlaying: NowPlayingController?
+    /// S10.8 E4: the playlists model, also owned by the App's `@State`. A reorder is saved just after
+    /// the rows move, so at quit the last order on screen may still be unsaved.
+    weak var playlists: PlaylistsModel?
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         // Last window closed (the red traffic-light button): retreat to the menu bar — hide the
@@ -57,7 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // FSEvents watcher + volume monitor and cancel any in-flight scan/reconcile — so nothing
             // writes to the store while the engine tears down; THEN the audio engine (its own ordered
             // stop → engine.shutdown P2-C sequence). This preserves the ordering the pre-F5
-            // single-model `shutdown()` enforced inline.
+            // single-model `shutdown()` enforced inline. Before both: save any playlist order still
+            // waiting (E4) — it needs the store, and a user's order must not be lost to a quit.
+            await playlists?.flushPendingOrders()
             libraryModel?.shutdown()
             await audioViewModel?.shutdown()
             sender.reply(toApplicationShouldTerminate: true)

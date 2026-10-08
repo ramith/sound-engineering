@@ -409,6 +409,12 @@ extension PlaylistsModel {
         detail = ListOrder.applying(orderedEntryIDs, to: detail, id: \.id)
     }
 
+    /// Saves every order still waiting — awaited at quit, before the library tears down, so the
+    /// last order on screen is the one stored.
+    func flushPendingOrders() async {
+        await orderWriter.flush()
+    }
+
     /// `orderWriter`'s sink: write one playlist's order, then re-read it if it is the open one.
     private func saveOrder(_ order: [Int64], of playlistID: Int64) async {
         guard let store else { return }
