@@ -359,9 +359,12 @@ private extension SongsListView {
     }
 
     /// ↑/↓, Home / End, Page Up / Down — with ⇧, extending the range from the anchor. Asks the row
-    /// area to scroll the cursor into view; a key that moves nothing bubbles.
+    /// area to scroll the cursor into view. A key that moves nothing bubbles, and so does one held
+    /// with ⌘, ⌥ or ⌃ (`BrowseKeyboard`'s rule): those are the app's and the system's shortcuts,
+    /// never a plain step.
     func navigate(_ press: KeyPress) -> KeyPress.Result {
-        guard let movement = movement(for: press.key),
+        guard press.modifiers.isDisjoint(with: [.command, .option, .control]),
+              let movement = movement(for: press.key),
               selection.move(movement, extend: press.modifiers.contains(.shift), in: rowIDs) != nil
         else { return .ignored }
         cursorScrollRequest &+= 1
