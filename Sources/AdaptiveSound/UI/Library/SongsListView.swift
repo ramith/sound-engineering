@@ -222,6 +222,9 @@ struct SongsListView: View {
                     isKeyboardCursor: isKeyboardCursor)
         }
         .buttonStyle(.plain)
+        // Not a focus stop of its own: the LIST is the one Tab stop and the cursor ring its cue
+        // (as `BrowseTile` and the facet rows). Clicks, the menu and VoiceOver are unaffected.
+        .focusable(false)
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.playTrackNextNow(track) })
         .contextMenu { menuItems(for: contextIDs(clicked: track)) }
         .accessibilityElement(children: .ignore)
