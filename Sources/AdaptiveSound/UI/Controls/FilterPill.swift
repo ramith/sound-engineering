@@ -16,9 +16,10 @@ import SwiftUI
 /// (`suppressesTransportSpace`), so a typed space is a space, not play / pause, and draws the app's
 /// keyboard ring while it is focused in keyboard mode. `focusShortcut` (the card headers and the
 /// picker pass ⌘F) focuses it from anywhere in its window; `focusesOnAppear` makes it type-ready as
-/// it appears (the picker sheet). The pill fills the width its host gives it; its height grows with
-/// the text size. Its horizontal geometry is Kit data (`FilterPillMetrics`), so SLOT-06 can hold
-/// each host's narrowest width to the whole placeholder.
+/// it appears (the picker sheet). It wears the header pills' capsule (`headerPillChrome(.neutral)`,
+/// like Sort beside it) and fills the width its host gives it (`filterPillWidth`); its height grows
+/// with the text size. Its horizontal geometry is Kit data (`FilterPillMetrics`), so SLOT-06 can
+/// hold each host's narrowest width to the whole placeholder.
 struct FilterPill: View {
     @Binding var text: String
     /// The placeholder, which is also the field's VoiceOver label ("Filter Albums").
@@ -31,8 +32,6 @@ struct FilterPill: View {
     var focusesOnAppear = false
 
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
-    /// 30 pt at the default text size, like the header pills beside it.
-    @ScaledMetric(relativeTo: .body) private var height = ControlMetrics.pillHeight
 
     var body: some View {
         HStack(spacing: CGFloat(FilterPillMetrics.itemSpacing)) {
@@ -63,10 +62,7 @@ struct FilterPill: View {
                     .help("Clear Filter")
             }
         }
-        .padding(.horizontal, CGFloat(FilterPillMetrics.horizontalInset))
-        .frame(height: height)
-        .background(DesignSystem.Color.card, in: Capsule())
-        .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
+        .headerPillChrome(.neutral)
         .keyboardFocusRing(focus.wrappedValue == .filter && showsKeyboardFocus, around: Capsule())
         .background {
             // A hidden button keeps the shortcut installed whatever the field's state.

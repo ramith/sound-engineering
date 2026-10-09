@@ -17,9 +17,9 @@ import SwiftUI
 /// Sort and Columns stay labelled pills, not icon chips (S10.8 D3): Sort carries its value
 /// ("Sort: Artist ↑") and the Library guide's addendum specifies Columns as icon + "Columns". They
 /// take the chip's grammar where it fits a labelled pill — the app's keyboard ring
-/// (`controlFocusRing`) in place of the system focus effect, a height and glyphs that scale with
-/// the text size like the Filter pill and the chips — and Columns fills with the chip's accent
-/// token (`controlActiveFill`, the same teal 16%).
+/// (`controlFocusRing`) in place of the system focus effect, glyphs that scale with the text size
+/// like the chips — and wear the header pills' one capsule with the Filter pill
+/// (`headerPillChrome`): Sort neutral, Columns active (the chip's `controlActiveFill`, teal 16%).
 struct SongsHeader: View {
     /// The Songs card's one focus value (`SongsView` owns it): the Filter pill is `.filter`.
     let focus: FocusState<CardFocus?>.Binding
@@ -28,7 +28,6 @@ struct SongsHeader: View {
     /// The shared column config (SAME `@AppStorage` key as `SongsListView`): this pill toggles
     /// show/hide, the list renders + click-sorts. Drag-a-header reorder lands in the next sub-step.
     @AppStorage("songs.columns.v2") private var columnConfig = SongColumnConfig.default
-    @ScaledMetric(relativeTo: .body) private var pillHeight = ControlMetrics.pillHeight
     @ScaledMetric(relativeTo: .callout) private var chevronSize: CGFloat = 9
     @ScaledMetric(relativeTo: .callout) private var columnsSymbolSize: CGFloat = 11
 
@@ -102,10 +101,7 @@ struct SongsHeader: View {
                     .font(.system(size: chevronSize, weight: .semibold))
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
             }
-            .padding(.horizontal, 12)
-            .frame(height: pillHeight)
-            .background(DesignSystem.Color.card, in: Capsule())
-            .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
+            .headerPillChrome(.neutral)
             .contentShape(Capsule()) // the whole pill opens the menu, not just its text
         }
         // `pillMenuStyle`, not `.borderlessButton`: the borderless style drew a bare "⌄ Sort:"
@@ -170,10 +166,7 @@ struct SongsHeader: View {
                 Text("Columns").font(DesignSystem.Font.caption)
             }
             .foregroundStyle(DesignSystem.Color.accentText)
-            .padding(.horizontal, 12)
-            .frame(height: pillHeight)
-            .background(DesignSystem.Color.controlActiveFill, in: Capsule())
-            .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.30), lineWidth: 1))
+            .headerPillChrome(.active)
             .contentShape(Capsule())
         }
         .pillMenuStyle() // keeps the teal capsule the borderless style discarded
