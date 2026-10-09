@@ -23,9 +23,6 @@ struct PillButtonStyle: ButtonStyle {
 
     /// Label inset from the capsule's ends — wide enough that the round caps clear the text.
     private let horizontalPadding: CGFloat = 14
-    /// Pressed matches the footer play button (the other `TealGloss` control) so every teal
-    /// gloss control answers a press the same way.
-    private let pressedOpacity = 0.6
     private let disabledOpacity = 0.45
 
     func makeBody(configuration: Configuration) -> some View {
@@ -37,7 +34,9 @@ struct PillButtonStyle: ButtonStyle {
             .frame(minHeight: minHeight)
             .background(TealGloss(shape: Capsule()))
             .contentShape([.interaction, .focusEffect], Capsule())
-            .opacity(isEnabled ? (configuration.isPressed ? pressedOpacity : 1) : disabledOpacity)
+            // Pressed: the shared press answer (the chips, the footer controls), so every control
+            // the app draws answers a press the same way.
+            .opacity(isEnabled ? (configuration.isPressed ? ControlMetrics.pressedOpacity : 1) : disabledOpacity)
     }
 
     private var minHeight: CGFloat {

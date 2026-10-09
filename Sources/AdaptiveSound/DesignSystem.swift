@@ -328,9 +328,6 @@ enum DesignSystem {
     /// THIS slice consumes are declared; artwork thumb / A–Z-rail widths are added in the slices
     /// that consume them (§10.8) so there are no unused tokens for periphery to flag.
     enum SongsList {
-        /// The Library card header's filter pill at its narrowest (§10.2) — re-exported from the Kit,
-        /// where SLOT-06 asserts every category's placeholder fits it.
-        static let searchFieldMinWidth: CGFloat = .init(SlotWidths.libraryFilter)
         static let artwork: CGFloat = 28 // leading row thumbnail (§10.1; denser than the 44pt footer)
     }
 
@@ -374,14 +371,11 @@ enum DesignSystem {
     /// Everything above the queue list collapses into ONE row of this height: title + count +
     /// icon chips + the Up Next/Recent capsule switch + the right-aligned filter pill
     /// (`QueueHeaderLayout`). The chips' and the switch's own sizes are the shared
-    /// `ControlMetrics` (S10.8 D3); the pill's height is the shared `FilterPill`'s (D2).
+    /// `ControlMetrics` (S10.8 D3); the pill's height is the shared `FilterPill`'s and its widths
+    /// are `FilterPillWidth.queue` (D2): 190pt ideal (the mock), compressing to a minimum that holds
+    /// the whole "Filter queue" placeholder before the count gives way. At the LAY-01 minimum queue
+    /// width (the 880pt window, every chip showing) that leaves the count ~29pt — its short form.
     enum QueueHeader {
         static let height: CGFloat = 32
-        /// The filter pill: 190pt ideal (the mock), compressing to its minimum before the count
-        /// gives way. The minimum holds the whole "Filter queue" placeholder (SLOT-06, from the
-        /// Kit); at the LAY-01 minimum queue width (the 880pt window, every chip showing) it
-        /// leaves the count ~29pt — its compact form, up to four digits.
-        static let filterIdealWidth: CGFloat = 190
-        static let filterMinWidth: CGFloat = .init(SlotWidths.queueFilter)
     }
 }

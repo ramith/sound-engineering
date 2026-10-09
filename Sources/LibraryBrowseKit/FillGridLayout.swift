@@ -15,7 +15,7 @@ public struct FillGridLayout: Equatable, Sendable {
     /// - Parameter width: the width the tiles and the gaps between them share (the grid area less
     ///   its side insets).
     public init(width: Double, minimumTile: Double, spacing: Double, minimumColumns: Int) {
-        let fit = GridLayoutMath.adaptiveColumns(width: width, minimum: minimumTile, spacing: spacing)
+        let fit = GridLayoutMath.columnsThatFit(width: width, minimum: minimumTile, spacing: spacing)
         columns = max(minimumColumns, fit)
         let tile = (width - spacing * Double(columns - 1)) / Double(columns)
         tileWidth = tile.isFinite ? max(0, tile) : 0
