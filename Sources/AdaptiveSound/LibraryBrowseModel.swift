@@ -64,7 +64,8 @@ final class LibraryBrowseModel {
     var genres: [GenreFacet] = []
     var genresState: LoadState = .idle
     /// Each genre's tile covers, by genre id (S10.8 D5; `CoverArrangement`) — none for a genre
-    /// whose albums have no artwork.
+    /// whose albums have no artwork. Loaded and published with `genres` (`loadGenres`), so it only
+    /// ever holds ids of the listed genres.
     var genreCoverKeys: [Int64: [String]] = [:]
 
     /// Songs (S9.5 D8). OD-1 full-load: the ENTIRE sorted set is held in memory (≤20k compact
@@ -178,7 +179,6 @@ final class LibraryBrowseModel {
     /// Newest-wins tokens for the facet-list loaders (mutated by `LibraryBrowseModel+Facets`).
     var artistsLoadEpoch = 0
     var genresLoadEpoch = 0
-    var genreCoversLoadEpoch = 0
 
     init(audio: AudioViewModel, library: LibraryModel) {
         self.audio = audio
