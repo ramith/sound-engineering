@@ -223,8 +223,7 @@ func checkGenreCoverMembership(number: Int, url: URL) async -> Bool {
         let rockTopFour = try await store.genreCoverArtworkKeys()[rock] ?? []
         let rules: [(rule: String, holds: Bool)] = [
             ("an album lists once (album 2's five Rock songs → one c2)", rockKeys.count(where: { $0 == "c2" }) == 1),
-            ("a cover on two albums shows once, at its best album's songs (Rock's c2 at album 2's five, "
-                + "not album 6's two; Pop's shared once)",
+            ("a cover two albums wear shows once, at its best album's songs (Rock's c2: album 2's five)",
              rockKeys.first == "c2" && popKeys.count(where: { $0 == "shared" }) == 1),
             ("an album without art takes no slot (album 3 has the most Rock songs)", rockTopFour.count == 4),
             ("a genre whose albums have no art, or whose songs have no album, is absent", all[ambient] == nil),
