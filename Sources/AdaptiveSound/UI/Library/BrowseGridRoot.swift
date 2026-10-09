@@ -7,8 +7,8 @@ import SwiftUI
 /// (`LibraryLoadStateView`), then the card header (`LibraryCardHeader` — title, count line, Filter
 /// pill) over the tile grid (`BrowseGrid`) of the narrowed items, or "no results" when the filter
 /// matches nothing. Generalises the S9.6 `FacetListRoot`; each section supplies only data — its
-/// items, noun, empty state, filter keys, loader and each item's `BrowseTileContent` — so the three
-/// grids can't drift.
+/// items, noun, empty state, filter keys, title, loader and each item's `BrowseTileContent` — so the
+/// three grids can't drift.
 ///
 /// The Filter text lives on the model (`browseFilter`): it survives the drill-down and comes back
 /// with the grid's place (D6); a rail jump clears it.
@@ -23,6 +23,9 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
     let empty: Empty
     /// The strings the Filter matches (an album: its title and its artist).
     let filterKeys: (Item) -> [String]
+    /// The title type-to-select matches — a plain read, so a key press never builds every tile's
+    /// content.
+    let title: (Item) -> String
     let load: () async -> Void
     let tile: (Item) -> BrowseTileContent
 
@@ -57,7 +60,7 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
             if shown.isEmpty {
                 LibraryNoResultsView(items: "\(noun)s", query: query)
             } else {
-                BrowseGrid(category: category, items: shown, tile: tile, focus: $focus)
+                BrowseGrid(category: category, items: shown, title: title, tile: tile, focus: $focus)
             }
         }
     }

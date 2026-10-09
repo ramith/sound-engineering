@@ -28,6 +28,7 @@ struct GenresListView: View {
                 hint: "Songs without a genre tag won't appear here."
             ),
             filterKeys: { [$0.name] },
+            title: \.name,
             load: { await model.loadGenres() },
             tile: { genre in
                 BrowseTileContent(ref: .genre(genre.id), title: genre.name,
