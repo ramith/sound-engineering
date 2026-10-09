@@ -10,8 +10,9 @@ import SwiftUI
 ///   (light) against the track — too faint to carry the selection — so it also gets a 1pt
 ///   `accentForeground` ring that clears 3:1 against the track and the segment in both
 ///   appearances (R4-SEG-02), and a bold, full-strength title (the others are semibold secondary).
-/// - **VoiceOver:** a group named by `label`, valued by the selected title; each segment is a
-///   button, the selected one carrying the Selected trait.
+/// - **VoiceOver:** reads it as the native segmented control (`accessibilityRepresentation`): a tab
+///   group named by `label`, each segment a radio button titled as drawn, the selected one marked
+///   selected — "Up Next, selected, tab, 1 of 2".
 /// - **Keyboard:** ONE Tab stop under Full Keyboard Access (the segments are not stops of their
 ///   own); ← / → select the neighbouring segment (mirrored right-to-left), like a native segmented
 ///   control; a shortcut (⌘, ⌥ or ⌃ held) passes through. The app's keyboard ring is drawn around
@@ -54,9 +55,18 @@ struct CapsuleSwitch<Value: Hashable>: View {
         .controlFocusRing(around: Capsule(style: .circular))
         .onKeyPress(keys: [.leftArrow, .rightArrow], action: step)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: selection)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(label)
-        .accessibilityValue(title(selection))
+        // VoiceOver gets the native segmented control, bound to the same selection: a tab group
+        // named by `label` whose segments are radio buttons, the selected one marked, read "1 of 2".
+        // Drawn segments would read as loose buttons.
+        .accessibilityRepresentation {
+            Picker(label, selection: $selection) {
+                ForEach(options, id: \.self) { option in
+                    Text(title(option)).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden() // the label names the group; shown, it is read a second time
+        }
     }
 
     /// ← / → select the visually previous / next segment. At either end the key is still the
@@ -112,7 +122,6 @@ extension CapsuleSwitch {
             .buttonStyle(.plain)
             .focusable(false)
             .onHover { isHovered = $0 }
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }
 }
