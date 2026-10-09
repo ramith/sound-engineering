@@ -13,11 +13,21 @@ import SwiftUI
 /// The count line is "379 songs · 41 hrs" on ONE line, never wrapped (D6): where it doesn't fit —
 /// the 880×640 minimum window, beside the three pills — the count alone ("379 songs") stands in.
 /// VoiceOver reads the full line either way.
+///
+/// Sort and Columns stay labelled pills, not icon chips (S10.8 D3): Sort carries its value
+/// ("Sort: Artist ↑") and the Library guide's addendum specifies Columns as icon + "Columns". They
+/// take the chip's grammar where it fits a labelled pill — the app's keyboard ring
+/// (`controlFocusRing`) in place of the system focus effect, a height and glyphs that scale with
+/// the text size like the Filter pill and the chips — and Columns fills with the chip's accent
+/// token (`controlActiveFill`, the same teal 16%).
 struct SongsHeader: View {
     @Environment(LibraryBrowseModel.self) private var model
     /// The shared column config (SAME `@AppStorage` key as `SongsListView`): this pill toggles
     /// show/hide, the list renders + click-sorts. Drag-a-header reorder lands in the next sub-step.
     @AppStorage("songs.columns.v2") private var columnConfig = SongColumnConfig.default
+    @ScaledMetric(relativeTo: .body) private var pillHeight = ControlMetrics.pillHeight
+    @ScaledMetric(relativeTo: .callout) private var chevronSize: CGFloat = 9
+    @ScaledMetric(relativeTo: .callout) private var columnsSymbolSize: CGFloat = 11
 
     var body: some View {
         @Bindable var model = model
@@ -86,11 +96,11 @@ struct SongsHeader: View {
                 }
                 .font(DesignSystem.Font.caption)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: chevronSize, weight: .semibold))
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
             }
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(height: pillHeight)
             .background(DesignSystem.Color.card, in: Capsule())
             .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
             .contentShape(Capsule()) // the whole pill opens the menu, not just its text
@@ -99,6 +109,7 @@ struct SongsHeader: View {
         // (it keeps one image + one text and drops the value, the capsule and the ring) and
         // never updated when the sort changed.
         .pillMenuStyle()
+        .controlFocusRing(around: Capsule())
         .help("Sort")
         .accessibilityLabel("Sort")
         .accessibilityValue(currentSortText)
@@ -152,17 +163,18 @@ struct SongsHeader: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: columnsSymbolSize, weight: .semibold))
                 Text("Columns").font(DesignSystem.Font.caption)
             }
             .foregroundStyle(DesignSystem.Color.accentText)
             .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(DesignSystem.Color.accent.opacity(0.16), in: Capsule())
+            .frame(height: pillHeight)
+            .background(DesignSystem.Color.controlActiveFill, in: Capsule())
             .overlay(Capsule().strokeBorder(DesignSystem.Color.accent.opacity(0.30), lineWidth: 1))
             .contentShape(Capsule())
         }
         .pillMenuStyle() // keeps the teal capsule the borderless style discarded
+        .controlFocusRing(around: Capsule())
         .help("Columns")
         .accessibilityLabel("Columns")
     }

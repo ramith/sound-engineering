@@ -27,8 +27,8 @@ struct FilterPill: View {
     var onCancel: () -> Void = {}
 
     @FocusState private var focused: Bool
-    /// 30 pt at the default text size (the shipped Songs pill).
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 30
+    /// 30 pt at the default text size, like the header pills beside it.
+    @ScaledMetric(relativeTo: .body) private var height = ControlMetrics.pillHeight
 
     var body: some View {
         HStack(spacing: CGFloat(FilterPillMetrics.itemSpacing)) {
