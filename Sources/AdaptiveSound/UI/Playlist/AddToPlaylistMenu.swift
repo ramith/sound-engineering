@@ -74,6 +74,9 @@ struct PlaylistPickerSheet: View {
     @Environment(LibraryBrowseModel.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var filter = ""
+    /// The sheet's one focus value (`CardFocus`, K1): the pill (type-ready on open) is `.filter`,
+    /// the playlist list `.content` — where Esc in the pill sends key focus.
+    @FocusState private var focus: CardFocus?
 
     private var filtered: [Playlist] {
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -90,8 +93,8 @@ struct PlaylistPickerSheet: View {
             }
             .padding(DesignSystem.Spacing.medium)
 
-            FilterPill(text: $filter, prompt: "Filter playlists", focusShortcut: KeyboardShortcut("f"),
-                       focusesOnAppear: true)
+            FilterPill(text: $filter, prompt: "Filter playlists", focus: $focus,
+                       focusShortcut: KeyboardShortcut("f"), focusesOnAppear: true)
                 .padding(.horizontal, DesignSystem.Spacing.medium)
 
             Button {
@@ -120,6 +123,7 @@ struct PlaylistPickerSheet: View {
                 }
                 .buttonStyle(.plain)
             }
+            .focused($focus, equals: .content)
         }
         .frame(width: 380, height: 460)
     }

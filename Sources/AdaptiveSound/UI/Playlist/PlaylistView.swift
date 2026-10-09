@@ -25,9 +25,10 @@ struct PlaylistView: View {
     @State private var panelMode: QueuePanelMode = .upNext
     /// The D7 filter — view-local; empty means "filter off".
     @State private var filterText = ""
-    /// Key-command focus for the queue list — owned HERE (not by the list) so the filter
-    /// pill's Escape can hand focus back to the queue (§5: ↑/↓ must work immediately).
-    @FocusState private var queueFocused: Bool
+    /// The panel's ONE focus value (`CardFocus`, K1) — owned HERE, not by the list: the filter pill
+    /// is `.filter`, the queue list `.content`, so the pill's Escape hands focus to the queue with a
+    /// single write (§5: ↑/↓ must work immediately), even when it was showing "No Matches".
+    @FocusState private var focus: CardFocus?
     /// The header row's Dynamic-Type-scaled minimum height (32pt at default size).
     @ScaledMetric(relativeTo: .body) private var headerHeight = DesignSystem.QueueHeader.height
 
@@ -45,7 +46,7 @@ struct PlaylistView: View {
                     PlaylistItemList(jumpToCurrentRequestID: jumpToCurrentRequestID,
                                      visibleIndices: filteredIndices,
                                      reorderEnabled: !filterActive,
-                                     queueFocused: $queueFocused)
+                                     focus: $focus)
                 }
             case .history:
                 QueueHistoryList()
@@ -92,7 +93,7 @@ struct PlaylistView: View {
             // function, out of this styling wave) — hidden with the mode, not disabled.
             // 190pt ideal (`png/03`); its minimum holds the whole placeholder (SLOT-06).
             if panelMode == .upNext, !viewModel.queue.isEmpty {
-                FilterPill(text: $filterText, prompt: "Filter queue", onCancel: focusQueue)
+                FilterPill(text: $filterText, prompt: "Filter queue", focus: $focus)
                     .frame(minWidth: DesignSystem.QueueHeader.filterMinWidth,
                            idealWidth: DesignSystem.QueueHeader.filterIdealWidth,
                            maxWidth: DesignSystem.QueueHeader.filterIdealWidth)
@@ -135,12 +136,6 @@ struct PlaylistView: View {
         Task { @MainActor in
             jumpToCurrentRequestID += 1
         }
-    }
-
-    /// Escape's landing (§5): the pill has cleared itself and given up focus; key focus goes to
-    /// the queue so ↑/↓/Return work immediately — focus must never strand on a defocused field.
-    private func focusQueue() {
-        queueFocused = true
     }
 
     private var filterActive: Bool {

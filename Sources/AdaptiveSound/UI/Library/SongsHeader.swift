@@ -21,6 +21,9 @@ import SwiftUI
 /// the text size like the Filter pill and the chips — and Columns fills with the chip's accent
 /// token (`controlActiveFill`, the same teal 16%).
 struct SongsHeader: View {
+    /// The Songs card's one focus value (`SongsView` owns it): the Filter pill is `.filter`.
+    let focus: FocusState<CardFocus?>.Binding
+
     @Environment(LibraryBrowseModel.self) private var model
     /// The shared column config (SAME `@AppStorage` key as `SongsListView`): this pill toggles
     /// show/hide, the list renders + click-sorts. Drag-a-header reorder lands in the next sub-step.
@@ -32,7 +35,7 @@ struct SongsHeader: View {
     var body: some View {
         @Bindable var model = model
         LibraryCardHeader(title: "Songs", count: model.songsCountLine, compactCount: model.songsCount,
-                          filter: $model.searchQuery, filterPrompt: "Filter Songs") {
+                          filter: $model.searchQuery, filterPrompt: "Filter Songs", focus: focus) {
             sortPill
             columnsPill
         }

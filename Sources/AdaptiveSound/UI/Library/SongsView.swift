@@ -11,8 +11,12 @@ import SwiftUI
 /// The load states are the Library card roots' shared machine (`LibraryLoadStateView`): a
 /// `.task(id:)` keyed on store-readiness kicks the full-load, and `.onChange(of: libraryRevision)`
 /// (in `LibraryTabView`) reloads once per pass. Header + list are shown only when there ARE rows.
+///
+/// The card's key focus is ONE value owned here (`CardFocus`, K1): the header's Filter pill is
+/// `.filter`, the song list `.content`, so Esc in the filter lands on the list.
 struct SongsView: View {
     @Environment(LibraryBrowseModel.self) private var model
+    @FocusState private var focus: CardFocus?
 
     var body: some View {
         LibraryLoadStateView(state: model.songsState, isEmpty: model.songs.isEmpty) {
@@ -42,11 +46,11 @@ struct SongsView: View {
     /// when there's genuinely no library content (§3.3/§10.3).
     private var songsList: some View {
         VStack(spacing: 0) {
-            SongsHeader()
+            SongsHeader(focus: $focus)
             if model.matchedIDs?.isEmpty == true {
                 LibraryNoResultsView(items: "songs", query: model.searchQuery)
             } else {
-                SongsListView()
+                SongsListView(focus: $focus)
             }
         }
     }

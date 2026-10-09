@@ -21,6 +21,10 @@ import SwiftUI
 struct SongsListView: View {
     typealias RowID = LibraryTrackDisplay.ID
 
+    /// The Songs card's one focus value (`SongsView` owns it, K1): the list holds key focus while it
+    /// is `.content` — where Esc in the Filter pill sends it.
+    let focus: FocusState<CardFocus?>.Binding
+
     @Environment(LibraryBrowseModel.self) private var model
     @Environment(AudioViewModel.self) private var viewModel
     @AppStorage("songs.columns.v2") private var columnConfig = SongColumnConfig.default
@@ -33,7 +37,6 @@ struct SongsListView: View {
     @State private var rowScroll = ScrollPosition()
     /// The row area's visible span, for the keys alone (`VisibleSpan`).
     @State private var visibleSpan = VisibleSpan()
-    @FocusState private var listFocused: Bool
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     #if DEBUG
@@ -94,7 +97,7 @@ struct SongsListView: View {
         .dynamicTypeSize(.small ... .xxLarge)
         // An empty list (a filter matching nothing) has no cursor row — and so is no focus stop.
         .focusable(!model.visibleSongs.isEmpty)
-        .focused($listFocused)
+        .focused(focus, equals: .content)
         // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
         .focusEffectDisabled()
         .onKeyPress(keys: Self.navigationKeys) { navigate($0) }
@@ -127,7 +130,7 @@ struct SongsListView: View {
             selection = ListSelection(selecting: sheetSongSelection, in: rowIDs)
         }
         // Picture-sheet ring variant: focus, so the ring marks the seeded anchor.
-        .sheetFocusSeed(.songs) { listFocused = true }
+        .sheetFocusSeed(.songs) { focus.wrappedValue = .content }
         #endif
     }
 
@@ -386,7 +389,7 @@ private extension SongsListView {
 
     /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.
     var showsRing: Bool {
-        listFocused && showsKeyboardFocus
+        focus.wrappedValue == .content && showsKeyboardFocus
     }
 
     /// The row wearing the focus ring, or nil (no ring).
@@ -395,7 +398,7 @@ private extension SongsListView {
     }
 
     func handleClick(_ track: LibraryTrackDisplay) {
-        listFocused = true
+        focus.wrappedValue = .content
         let flags = NSEvent.modifierFlags
         selection.click(track.id, extend: flags.contains(.shift), toggle: flags.contains(.command), in: rowIDs)
     }
