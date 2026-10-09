@@ -20,7 +20,8 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     /// The type-to-select key (the tile's title).
     let title: (Item) -> String
     let navigator: BrowseNavigator
-    let focused: FocusState<Bool>.Binding
+    /// The card's one focus value (K1): the grid is the focus stop for `.content`.
+    let focus: FocusState<CardFocus?>.Binding
     let proxy: ScrollViewProxy
     let open: (Item) -> Void
 
@@ -37,20 +38,25 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
         content
             // No tile = no cursor = no focus stop (the root shows "no results" instead).
             .focusable(!items.isEmpty)
-            .focused(focused)
+            .focused(focus, equals: .content)
             .focusEffectDisabled()
             .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .pageUp, .pageDown]) {
                 navigate($0)
             }
             .onKeyPress(keys: [.return]) { $0.isShortcut ? .ignored : openCursorTile() }
             .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
-            .onChange(of: focused.wrappedValue) { _, isFocused in navigator.focusChanged(isFocused) }
+            .onChange(of: isFocused) { _, focused in navigator.focusChanged(focused) }
             .onAppear(perform: restorePlace)
             .onDisappear(perform: rememberPlace)
     }
 
     private var rows: [Int64] {
         items.map(\.id)
+    }
+
+    /// The grid holds key focus.
+    private var isFocused: Bool {
+        focus.wrappedValue == .content
     }
 
     // MARK: Keys
@@ -86,8 +92,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     /// the unanchored first tile only while the ring marks it.
     private func openCursorTile() -> KeyPress.Result {
         let rows = rows
-        let ringVisible = navigator.ringID(in: rows, focused: focused.wrappedValue,
-                                           keyboardMode: showsKeyboardFocus) != nil
+        let ringVisible = navigator.ringID(in: rows, focused: isFocused, keyboardMode: showsKeyboardFocus) != nil
         guard let id = navigator.cursor(in: rows)?.activationTarget(ringVisible: ringVisible),
               let item = items.first(where: { $0.id == id }) else { return .ignored }
         open(item)
@@ -109,7 +114,7 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
         model.browsePlace = nil
         navigator.restore(place, rows: rows, proxy: proxy)
         if place.wasFocused {
-            focused.wrappedValue = true
+            focus.wrappedValue = .content
         }
     }
 
@@ -119,6 +124,6 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     /// on it. A rail jump to another category starts that root fresh.
     private func rememberPlace() {
         guard model.selectedCategory == category, !model.isBrowseDrillDownOpen else { return }
-        model.browsePlace = navigator.place(category: category, rows: rows, focused: focused.wrappedValue)
+        model.browsePlace = navigator.place(category: category, rows: rows, focused: isFocused)
     }
 }

@@ -4,8 +4,9 @@ import SwiftUI
 
 /// The header of the Library card, one for the four categories so it stays put as the rail
 /// switches between them (`png/03`): the title, the mono count line under it, the Filter pill
-/// (⌘F focuses it, Esc clears it) and the category's own pills after it — Songs' Sort and Columns;
-/// none on the grids for R1. A hairline under it, inset with the text.
+/// (⌘F focuses it; Esc clears it and hands key focus to the list or grid below, K1) and the
+/// category's own pills after it — Songs' Sort and Columns; none on the grids for R1. A hairline
+/// under it, inset with the text.
 struct LibraryCardHeader<Controls: View>: View {
     let title: String
     /// "857 albums", "379 songs · 41 hrs", or "N results" while filtering. VoiceOver reads it whole.
@@ -14,6 +15,8 @@ struct LibraryCardHeader<Controls: View>: View {
     var compactCount: String?
     @Binding var filter: String
     let filterPrompt: String
+    /// The card's one focus value (`CardFocus`), owned by the category root: the pill is `.filter`.
+    let focus: FocusState<CardFocus?>.Binding
     @ViewBuilder let controls: Controls
 
     var body: some View {
@@ -26,7 +29,7 @@ struct LibraryCardHeader<Controls: View>: View {
                     countLine
                 }
                 Spacer(minLength: DesignSystem.Spacing.small)
-                FilterPill(text: $filter, prompt: filterPrompt, focusShortcut: KeyboardShortcut("f"))
+                FilterPill(text: $filter, prompt: filterPrompt, focus: focus, focusShortcut: KeyboardShortcut("f"))
                     .frame(minWidth: DesignSystem.SongsList.searchFieldMinWidth, idealWidth: 230, maxWidth: 260)
                 controls
             }
@@ -61,8 +64,9 @@ struct LibraryCardHeader<Controls: View>: View {
 
 extension LibraryCardHeader where Controls == EmptyView {
     /// A header with the Filter pill alone (the browse grids).
-    init(title: String, count: String, filter: Binding<String>, filterPrompt: String) {
-        self.init(title: title, count: count, filter: filter, filterPrompt: filterPrompt) {
+    init(title: String, count: String, filter: Binding<String>, filterPrompt: String,
+         focus: FocusState<CardFocus?>.Binding) {
+        self.init(title: title, count: count, filter: filter, filterPrompt: filterPrompt, focus: focus) {
             EmptyView()
         }
     }
