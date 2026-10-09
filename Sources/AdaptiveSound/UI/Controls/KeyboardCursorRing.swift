@@ -23,9 +23,10 @@ extension View {
     }
 
     /// The same ring for a CONTROL that holds key focus itself — the icon chip, the capsule switch
-    /// (a Tab stop under Full Keyboard Access) — rather than moving a cursor row. The control
-    /// switches the system focus effect off and passes `isVisible` = focused AND keyboard-driven
-    /// (`showsKeyboardFocus`), so a click never leaves a ring behind.
+    /// (a Tab stop under Full Keyboard Access) — rather than moving a cursor row. Controls take it
+    /// through `controlFocusRing(around:)`, which switches the system focus effect off and passes
+    /// `isVisible` = focused AND keyboard-driven (`showsKeyboardFocus`), so a click never leaves a
+    /// ring behind.
     ///
     /// Drawn OUTSIDE `shape` (`ControlMetrics.focusRingOutset`), where the system focus ring sits,
     /// so it never merges with the control's own 1pt teal edge (an "on" chip, the selected
