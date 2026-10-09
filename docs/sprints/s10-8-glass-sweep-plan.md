@@ -85,9 +85,20 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     arrangements" and to decision 3. Built as **Sprint EQ** (§E); design and evidence in
     [docs/design/eq-lens/](../design/eq-lens/README.md).
 22. **EQ editor: "The Lens" look, 31 draggable points only** — no five-point mode. The engine
-    becomes an accurate 31-band graphic EQ so what is drawn is what plays.
+    becomes an accurate 31-band graphic EQ so what is drawn is what plays. *(Layout revised by
+    decision 24: the Lens's single-card layout gave way to V1b. The 31 points stay the only
+    thing on the graph; Tone sliders are macros that move them, not a second mode.)*
 23. **EQ safety: automatic headroom + a visible +12 dB ceiling;** the summed-dB clamp is retired
     (it shrank presets ~10× yet let a single +12 dB band through).
+24. **EQ layout: V1b, "sound first" with a left rail** (2026-10-09, chosen from three prototypes
+    and a revision). Left: an **Equalizer** card (On/Off, Presets, My Presets) above a **Tone**
+    card (Bass <150 Hz, Body 150–500 Hz, Mids 0.5–2 kHz, Presence 2–6 kHz, Air >6 kHz; ±12 dB;
+    hovering or dragging a slider shades its region on the graph; Reset Tone). Right: the graph
+    card (preset name + "Edited", a **"Used on <output>" pin** for per-output memory, Compare,
+    Reset, Save; the 31 points keep today's drag where neighbours follow). **Choosing a preset
+    resets Tone to 0; Save bakes Tone into the saved preset.** In a small window **the Tone card
+    folds to one line** (the user's choice, remembered). Pictures:
+    [eq-lens/png/v1b-*](../design/eq-lens/README.md#layout-v1b-decision-24).
 
 ## C. Scope
 
@@ -161,7 +172,7 @@ test library) → **behaviour pull-forward**: E1 (selection kit + the full keybo
 (the grid keeps its scroll position; the Songs count line), E4's Move Up / Down / to Top
 with shortcuts, and **arrow keys on the tile grids** (decision 20; its plan check decides whether
 D5's `BrowseGridRoot` scaffold moves forward so the keys are wired once) → **D** (D1–D5, the Library glass) → **E** (E2, E3, E4's header and insets) →
-**Sprint EQ** (decisions 21–23) → **F** → **G**. The PR tables below keep their letters; only the
+**Sprint EQ** (decisions 21–24) → **F** → **G**. The PR tables below keep their letters; only the
 order changes.
 
 ### Sprint A — foundation (7 points)
@@ -251,7 +262,7 @@ Play contexts are added to the kit only by the PR that uses them (hostile Periph
 **Founder checks:** no blue on any surface the app draws; dragging an EQ point, a preset, Save,
 and switching output device all still work.
 
-### Sprint EQ — "The Lens", 31 points (decisions 21–23; ~20 points)
+### Sprint EQ — the honest 31-point EQ, V1b layout (decisions 21–24; ~23 points)
 
 Design, evidence and scope: [docs/design/eq-lens/](../design/eq-lens/README.md).
 
@@ -259,11 +270,13 @@ Design, evidence and scope: [docs/design/eq-lens/](../design/eq-lens/README.md).
 |---|---|---|---|
 | EQ1 | Engine: an accurate 31-band graphic EQ (Välimäki & Liski), sections 10 → ≥ 31 | L+ | C++ gate: per-band and per-preset played response vs target; null / bypass bit-exact; RT-alloc soak; CPU at 7.1 |
 | EQ2 | Automatic headroom (the summed-dB clamp deleted; preamp via `masterGainLinear`) + the played-curve read-back | M+M | no frequency above the source; preset loudness before/after |
-| EQ3 | The Lens: 31 draggable points over ±12 dB, the played curve, readout, headroom + ceiling, On/Off, Compare, Reset; keyboard + VoiceOver | L+ | R4 for the curve, points and ceiling, both modes; the live keyboard pass |
-| EQ4 | Presets: My Presets in the menu (rename / delete), per-output memory written ("Use on <output> ✓"), the presets re-voiced | M | the founder's listening check |
+| EQ3 | The V1b screen: the left rail (Equalizer card: On/Off, Presets, My Presets) + the graph card (31 points over ±12 dB with today's neighbours-follow drag, the played curve, readout, headroom + ceiling, Compare, Reset, Save); keyboard + VoiceOver; the keyboard cursor follows the click | L+ | R4 for the curve, points and ceiling, both modes; LAY-EQ-01 at 880×640; the live keyboard pass |
+| EQ3t | The Tone card: five region macros over the 31 points (region shading + readout on hover/drag), Reset Tone, fold-to-one-line (remembered); a preset choice resets Tone, Save bakes it in | M | Tone → points → played response test; fold at 880×640 |
+| EQ4 | Presets: My Presets (rename / delete), the "Used on <output>" pin writing per-output memory, the presets re-voiced | M | the founder's listening check |
 
-**Founder checks:** a 10-minute listening check of the presets and of dragging; On/Off and Compare
-feel level-fair; a saved preset comes back; switching output recalls its EQ.
+**Founder checks:** a 10-minute listening check of the presets, of dragging and of the Tone
+sliders; On/Off and Compare feel level-fair; a saved preset comes back; switching output recalls
+its EQ; the Tone card folds in a small window.
 
 ### Sprint G — Monitoring, then close-out (4 points)
 
