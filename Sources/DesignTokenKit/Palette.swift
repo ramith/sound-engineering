@@ -322,4 +322,11 @@ public enum SlotWidths {
     /// path started publishing a real rate (founder screenshot, PR-6 round); SLOT-03 asserts
     /// the widest legitimate content fits.
     public static let footerSignalSlot: Double = 150
+    /// The queue header's filter pill at its narrowest — where it sits at the 880pt window with
+    /// every chip showing. At 90 it clipped its placeholder to "Filter que" (founder, Sprint D);
+    /// SLOT-06 asserts the whole "Filter queue" fits.
+    public static let queueFilter: Double = 120
+    /// The Library card header's filter pill at its narrowest (Songs, Albums, Artists, Genres);
+    /// SLOT-06 asserts each category's placeholder fits.
+    public static let libraryFilter: Double = 180
 }

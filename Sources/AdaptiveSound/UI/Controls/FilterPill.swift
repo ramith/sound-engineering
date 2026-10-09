@@ -1,16 +1,20 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Filter pill (S10.8 D2 — the app's one in-place filter field)
 
 /// The filter field: a capsule pill holding a magnifier, the text field and, while there is text,
 /// a clear button. One component for every in-place filter — the Library card headers (Songs,
-/// Albums, Artists, Genres) today; the queue and the playlist picker adopt it next.
+/// Albums, Artists, Genres) and the Now Playing queue; the playlist picker adopts it next. Semgrep
+/// `ui-no-raw-text-field` keeps a second filter field from appearing.
 ///
 /// It owns its focus and the transport-Space gate (`suppressesTransportSpace`), so a typed space
 /// is a space, not play / pause. Escape (the macOS cancel command) clears the text, gives up focus,
 /// then runs `onCancel` — where a host hands key focus back to the list it filters.
 /// `focusShortcut` (the card headers pass ⌘F) focuses it from anywhere in its window. The pill
-/// fills the width its host gives it; its height grows with the text size.
+/// fills the width its host gives it; its height grows with the text size. Its horizontal geometry
+/// is Kit data (`FilterPillMetrics`), so SLOT-06 can hold each host's narrowest width to the whole
+/// placeholder.
 struct FilterPill: View {
     @Binding var text: String
     /// The placeholder, which is also the field's VoiceOver label ("Filter Albums").
@@ -23,7 +27,9 @@ struct FilterPill: View {
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 30
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: CGFloat(FilterPillMetrics.itemSpacing)) {
+            // SLOT-06 measures this glyph at the callout size and the text at the body size (the
+            // two fonts below): change either and update the test with it.
             Image(systemName: "magnifyingglass")
                 .font(DesignSystem.Font.caption)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
@@ -42,7 +48,7 @@ struct FilterPill: View {
                     .help("Clear Filter")
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, CGFloat(FilterPillMetrics.horizontalInset))
         .frame(height: height)
         .background(DesignSystem.Color.card, in: Capsule())
         .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
