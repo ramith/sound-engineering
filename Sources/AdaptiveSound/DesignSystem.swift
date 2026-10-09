@@ -331,7 +331,6 @@ enum DesignSystem {
         /// The Library card header's filter pill at its narrowest (§10.2) — re-exported from the Kit,
         /// where SLOT-06 asserts every category's placeholder fits it.
         static let searchFieldMinWidth: CGFloat = .init(SlotWidths.libraryFilter)
-        static let searchFieldIdealWidth: CGFloat = 240
         static let artwork: CGFloat = 28 // leading row thumbnail (§10.1; denser than the 44pt footer)
     }
 

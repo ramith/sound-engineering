@@ -66,7 +66,8 @@ struct AddToPlaylistTarget: Identifiable {
 }
 
 /// A searchable playlist picker (US-PLIST-02 "scales to hundreds"): filter with the shared
-/// `LibraryFilterField`, tap a playlist to reference-add + dismiss. New Playlist is here too.
+/// `FilterPill`, tap a playlist to reference-add + dismiss. New Playlist is here too. The sheet
+/// itself stays system-drawn; only the filter inside it wears the app's pill (S10.8 D2).
 struct PlaylistPickerSheet: View {
     let trackIDs: [Int64]
     @Environment(PlaylistsModel.self) private var playlists
@@ -89,7 +90,8 @@ struct PlaylistPickerSheet: View {
             }
             .padding(DesignSystem.Spacing.medium)
 
-            LibraryFilterField(query: $filter, placeholder: "Filter playlists", focusesOnAppear: true)
+            FilterPill(text: $filter, prompt: "Filter playlists", focusShortcut: KeyboardShortcut("f"),
+                       focusesOnAppear: true)
                 .padding(.horizontal, DesignSystem.Spacing.medium)
 
             Button {
