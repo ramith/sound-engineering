@@ -1,10 +1,11 @@
 // ChecksGenreCovers — the S10.8 D5 genre-cover read, `genreCoverArtworkKeys(perGenre:)` (browse-grid
 // decision 19: a genre tile's art is a 2×2 mosaic of the covers of its albums with the most songs):
-//   GC-01 ranking — most songs first, a tie → the lower album id, cut at `perGenre` (4 by default; 1, 2
-//         and a cap past the end too); a cap below 1 → an empty map. The Swift reference rule GC-05 and
-//         GC-06 rely on gives the same hand-worked answer;
+//   GC-01 ranking — most songs first, a tie → the artwork key ascending (CONTENT, never the album id,
+//         which a rescan renumbers — S10.8 D fix round), cut at `perGenre` (4 by default; 1, 2 and a cap
+//         past the end too); a cap below 1 → an empty map. The Swift reference rule GC-05 and GC-06 rely
+//         on gives the same hand-worked answer;
 //   GC-02 membership — an album lists once however many of its songs are in the genre; two albums
-//         wearing one cover show it once, at the better album's place; an album without art is skipped
+//         wearing one cover show it once, at its best album's song count; an album without art is skipped
 //         (the next fills in) and a song with no album is ignored; a genre whose albums have no art, or
 //         with no songs, is ABSENT; a song in two genres counts in both;
 //   GC-03 empty — an empty library, and one whose albums have no art, return an empty map;
@@ -105,8 +106,9 @@ private func openCoverStore(at url: URL, _ library: CoverLibrary) async throws -
 }
 
 /// The genre-cover rule computed in Swift — the reference GC-05/GC-06 hold the read to: songs per
-/// (genre, album) over albums with a cover; most songs first, a tie → the lower album id; a cover
-/// already taken is skipped; at most `perGenre` per genre; a genre left with none is absent.
+/// (genre, album) over albums with a cover; a cover two albums wear counts once, at its best album's
+/// songs; most songs first, a tie → the cover key ascending; at most `perGenre` per genre; a genre
+/// left with none is absent.
 private func referenceGenreCovers(
     memberships: [(genre: Int64, album: Int64?)], covers: [Int64: String], perGenre: Int
 ) -> [Int64: [String]] {
@@ -117,13 +119,14 @@ private func referenceGenreCovers(
     }
     var result: [Int64: [String]] = [:]
     for (genre, counts) in songs {
-        let ranked = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-        var keys: [String] = []
-        for (album, _) in ranked where keys.count < perGenre {
-            if let key = covers[album], !keys.contains(key) {
-                keys.append(key)
+        var best: [String: Int] = [:] // a cover → its best album's songs in this genre
+        for (album, count) in counts {
+            if let key = covers[album] {
+                best[key] = max(best[key] ?? 0, count)
             }
         }
+        let ranked = best.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        let keys = ranked.prefix(perGenre).map(\.key)
         if !keys.isEmpty {
             result[genre] = keys
         }
@@ -142,7 +145,8 @@ private let pop: Int64 = 5
 /// Rock: album 3 has the most songs (6) but no art; 2 has 5 → c2; 4 (2 + a song also in Jazz) and 5
 /// tie at 3 → c4 then c5; 6 wears album 2's cover with 2 songs; 1 has 2 → c1; 7 has 1 → c7.
 /// Jazz: album 8 has 2 → c8, then 4's shared song → c4. Ambient: an art-less album and a song with no
-/// album only. Silent: no songs. Pop: albums 10–14 tie at 2 songs; 10 and 12 wear one cover.
+/// album only. Silent: no songs. Pop: albums 10–14 tie at 2 songs; 10 and 12 wear one cover, whose key
+/// ("shared") sorts LAST though album 10 has the lowest id — the tie breaks by content, not album id.
 private let rulesLibrary = CoverLibrary(
     albums: [(1, "c1"), (2, "c2"), (3, nil), (4, "c4"), (5, "c5"), (6, "c2"), (7, "c7"), (8, "c8"), (9, nil),
              (10, "shared"), (11, "p11"), (12, "shared"), (13, "p13"), (14, "p14")],
@@ -159,7 +163,7 @@ private let rulesLibrary = CoverLibrary(
 
 /// The hand-worked uncapped answer for `rulesLibrary`.
 private let rulesRanking: [Int64: [String]] = [
-    rock: ["c2", "c4", "c5", "c1", "c7"], jazz: ["c8", "c4"], pop: ["shared", "p11", "p13", "p14"],
+    rock: ["c2", "c4", "c5", "c1", "c7"], jazz: ["c8", "c4"], pop: ["p11", "p13", "p14", "shared"],
 ]
 
 /// `rulesRanking` cut at `cap` (a genre cut to nothing is absent).
@@ -173,6 +177,13 @@ func checkGenreCoverRanking(number: Int, url: URL) async -> Bool {
     do {
         let store = try await openCoverStore(at: url, rulesLibrary)
         let defaulted = try await store.genreCoverArtworkKeys()
+        // The tie rule on its own: Pop's four covers tie at 2 songs; the lowest album id (10) wears
+        // "shared", so an album-id tie-break would put it first — content puts it last.
+        guard defaulted[pop] == ["p11", "p13", "p14", "shared"] else {
+            printFail(number, "GC-01: Pop's tied covers came \(defaulted[pop] ?? []), expected by key: "
+                + "[p11, p13, p14, shared] (an album-id tie-break puts album 10's \"shared\" first)")
+            return false
+        }
         guard defaulted == cappedRanking(4) else {
             printFail(number, "GC-01: the default cap gave \(defaulted), expected \(cappedRanking(4))"); return false
         }
@@ -190,9 +201,10 @@ func checkGenreCoverRanking(number: Int, url: URL) async -> Bool {
             printFail(number, "GC-01: the Swift reference rule gave \(reference), not the hand-worked answer")
             return false
         }
-        printPass(number, "GC-01 genre covers rank by songs in the genre, a tie → the lower album id (4 and 5 at "
-            + "3 songs; Pop's five albums at 2), cut at perGenre (default 4; 1, 2, 3, 5, 10, Int.max exact; 0 and "
-            + "-1 → empty); the Swift reference rule agrees with the hand-worked answer")
+        printPass(number, "GC-01 genre covers rank by songs in the genre, a tie → the artwork key, never the "
+            + "album id (Rock's c4/c5 at 3 songs; Pop's four covers at 2, album 10's \"shared\" last), cut at "
+            + "perGenre (default 4; 1, 2, 3, 5, 10, Int.max exact; 0 and -1 → empty); the Swift reference rule "
+            + "agrees with the hand-worked answer")
         return true
     } catch {
         printFail(number, "GC-01 threw: \(error)"); return false
@@ -211,8 +223,9 @@ func checkGenreCoverMembership(number: Int, url: URL) async -> Bool {
         let rockTopFour = try await store.genreCoverArtworkKeys()[rock] ?? []
         let rules: [(rule: String, holds: Bool)] = [
             ("an album lists once (album 2's five Rock songs → one c2)", rockKeys.count(where: { $0 == "c2" }) == 1),
-            ("a cover on two albums shows once, at the better album's place (Rock's c2, Pop's shared)",
-             rockKeys.first == "c2" && popKeys.first == "shared" && popKeys.count(where: { $0 == "shared" }) == 1),
+            ("a cover on two albums shows once, at its best album's songs (Rock's c2 at album 2's five, "
+                + "not album 6's two; Pop's shared once)",
+             rockKeys.first == "c2" && popKeys.count(where: { $0 == "shared" }) == 1),
             ("an album without art takes no slot (album 3 has the most Rock songs)", rockTopFour.count == 4),
             ("a genre whose albums have no art, or whose songs have no album, is absent", all[ambient] == nil),
             ("a genre with no songs is absent", all[silent] == nil),
@@ -226,7 +239,7 @@ func checkGenreCoverMembership(number: Int, url: URL) async -> Bool {
             printFail(number, "GC-02: uncapped read gave \(all), expected \(rulesRanking)"); return false
         }
         printPass(number, "GC-02 genre-cover membership: an album lists once; a cover two albums wear shows "
-            + "once at the better album's place; art-less albums and album-less songs are skipped; a genre with "
+            + "once, at its best album's songs; art-less albums and album-less songs are skipped; a genre with "
             + "no covered album or no songs is absent; a song in two genres counts in both")
         return true
     } catch {
@@ -417,14 +430,15 @@ func checkGenreCoverWritePath(number: Int, url: URL) async -> Bool {
         let keys = try await store.genreCoverArtworkKeys()
         let expected = try await referenceFromBrowseReads(store)
         let byName = try await store.genres().reduce(into: [String: [String]]()) { $0[$1.name] = keys[$1.id] }
-        // Beta and Delta tie at one Jazz song: their order is the album ids the regroup gave them.
+        // Beta and Delta tie at one Jazz song: by content, Beta's key first — whatever album ids the
+        // regroup gave them.
         guard keys == expected, byName["Rock"] == ["art-alpha", "art-beta"],
-              Set(byName["Jazz"] ?? []) == ["art-beta", "art-delta"], byName["Jazz"]?.count == 2 else {
+              byName["Jazz"] == ["art-beta", "art-delta"] else {
             printFail(number, "GC-06: through the write path the read gave \(byName)"); return false
         }
         printPass(number, "GC-06 genre covers through the write path (tags + art → end-of-pass regroup): the read "
-            + "equals the reference rule over the public browse reads — Rock [Alpha, Beta], Jazz {Beta, Delta}, "
-            + "the art-less Gamma skipped though it has the most Jazz songs")
+            + "equals the reference rule over the public browse reads — Rock [Alpha, Beta], Jazz [Beta, Delta] "
+            + "(tied, by key), the art-less Gamma skipped though it has the most Jazz songs")
         return true
     } catch {
         printFail(number, "GC-06 threw: \(error)"); return false

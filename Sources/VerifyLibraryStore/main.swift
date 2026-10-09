@@ -387,7 +387,7 @@ private func printRunSummary(passed: Int, total: Int) {
         + "before upgrade [restores + keep 2], OPEN-03 no backup when current, OPEN-04 failed backup refuses, "
         + "OPEN-05 damaged page still quarantined; S10.8 C2 final round: ALB-17 the year splits two albums, "
         + "OPEN-06 unfinished v7 refused [hot WAL byte-identical], SCHEMA-6 + OPEN-02 extended; "
-        + "S10.8 D5 genre covers: GC-01 ranking [songs, tie → lower album id, perGenre cap], GC-02 membership "
+        + "S10.8 D5 genre covers: GC-01 ranking [songs, tie → artwork key, perGenre cap], GC-02 membership "
         + "[album once, cover once, art-less skipped, no-cover genre absent, two genres count], GC-03 empty, "
         + "GC-04 EXPLAIN no-SCAN-tracks, GC-05 300 genres [reference parity + 100 ms bound], GC-06 write path) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
