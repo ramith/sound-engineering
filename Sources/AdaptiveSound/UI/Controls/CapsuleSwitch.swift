@@ -24,8 +24,6 @@ struct CapsuleSwitch<Value: Hashable>: View {
     private let options: [Value]
     private let title: (Value) -> String
 
-    @FocusState private var isFocused: Bool
-    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -52,10 +50,8 @@ struct CapsuleSwitch<Value: Hashable>: View {
         }
         .padding(ControlMetrics.switchTrackPadding)
         .background(TabTrackCapsule())
-        .keyboardFocusRing(isFocused && showsKeyboardFocus, around: Capsule(style: .circular))
         .focusable(interactions: .activate)
-        .focused($isFocused)
-        .focusEffectDisabled()
+        .controlFocusRing(around: Capsule(style: .circular))
         .onKeyPress(keys: [.leftArrow, .rightArrow], action: step)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: selection)
         .accessibilityElement(children: .contain)
