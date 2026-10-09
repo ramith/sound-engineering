@@ -8,8 +8,10 @@
 //      an album lists once however many of its songs are in the genre; a song in two genres counts
 //      in both (one `track_genres` row each, unique by its primary key — no DISTINCT needed).
 //   2. `covers` — one row per (genre, cover): when two albums wear the same image (one content
-//      hash), the better-ranked album keeps it, so a mosaic never shows a cover twice.
-//   3. `ranked` — most songs first, ties → the lower album id; the caller's cap cuts each genre.
+//      hash), it counts once, at its best album's songs, so a mosaic never shows a cover twice.
+//   3. `ranked` — most songs first, ties → the artwork key (a content hash), ascending; the
+//      caller's cap cuts each genre. Ties break by CONTENT, never by album id (S10.8 D fix round):
+//      album ids are renumbered by a rescan or a regroup, and a mosaic must not reshuffle with them.
 // A genre with no covered album yields no row, so it is ABSENT from the result (the tile shows the
 // placeholder). Like every read it touches no filesystem: the keys resolve to cache paths through
 // `artworkCachePaths(forKeys:)`.
@@ -30,21 +32,20 @@ public extension LibraryStore {
     /// the per-genre cap.
     private static let selectGenreCoverKeysSQL = """
     WITH album_songs AS (
-        SELECT tg.genre_id, al.id AS album_id, al.artwork_key, count(*) AS songs
+        SELECT tg.genre_id, al.artwork_key, count(*) AS songs
         FROM track_genres tg
         JOIN tracks t ON t.id = tg.track_id
         JOIN albums al ON al.id = t.album_id
         WHERE al.artwork_key IS NOT NULL
         GROUP BY al.id, tg.genre_id
     ), covers AS (
-        SELECT genre_id, album_id, artwork_key, songs,
-               ROW_NUMBER() OVER (PARTITION BY genre_id, artwork_key ORDER BY songs DESC, album_id ASC) AS wearer
+        SELECT genre_id, artwork_key, max(songs) AS songs
         FROM album_songs
+        GROUP BY genre_id, artwork_key
     ), ranked AS (
         SELECT genre_id, artwork_key,
-               ROW_NUMBER() OVER (PARTITION BY genre_id ORDER BY songs DESC, album_id ASC) AS rank
+               ROW_NUMBER() OVER (PARTITION BY genre_id ORDER BY songs DESC, artwork_key ASC) AS rank
         FROM covers
-        WHERE wearer = 1
     )
     SELECT genre_id, artwork_key FROM ranked WHERE rank <= ? ORDER BY genre_id, rank;
     """
@@ -52,7 +53,8 @@ public extension LibraryStore {
     // MARK: - Genre covers
 
     /// For every genre with at least one album that has artwork: up to `perGenre` distinct album
-    /// artwork keys, from its albums with the most songs in that genre (ties: lower album id first).
+    /// artwork keys, from its albums with the most songs in that genre (ties: the artwork key,
+    /// ascending — content, so a rescan that renumbers albums never reorders a mosaic).
     /// Keyed by genre id, keys in rank order; a genre with no covered album is absent, and a
     /// `perGenre` below 1 returns an empty map.
     func genreCoverArtworkKeys(perGenre: Int = 4) async throws -> [Int64: [String]] {
