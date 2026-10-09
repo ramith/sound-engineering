@@ -211,42 +211,6 @@ struct LibrarySidebar: View {
         }
     }
 
-    private func renameField(_ playlist: Playlist) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TextField("Playlist name", text: $editDraft)
-                .textFieldStyle(.plain)
-                .font(DesignSystem.Font.body)
-                // Applies `.focused($renameFieldFocused)` AND the transport-Space gate in one place.
-                .suppressesTransportSpace(while: $renameFieldFocused)
-                // Click-away COMMITS (Finder/Music convention). Guarded on `wasFocused` so the
-                // deferred-focus arrival (false→true) can't self-commit, and on `editingPlaylistID`
-                // so a post-teardown blur is a no-op. Escape (`.onExitCommand`) is the sole cancel.
-                .onChange(of: renameFieldFocused) { wasFocused, isFocused in
-                    if wasFocused, !isFocused, editingPlaylistID == playlist.id {
-                        commitRename(playlist, proposed: editDraft, keepOpenOnConflict: false)
-                    }
-                }
-                // Focus HERE, in the field's own onAppear — reliable post-insertion, unlike a
-                // @FocusState set from beginRename which bounced on a freshly-inserted row.
-                .onAppear { renameFieldFocused = true }
-                // Capture the draft SYNCHRONOUSLY at submit: a later blur/teardown that clears
-                // `editDraft` must not race the async rename into an empty/stale name.
-                .onSubmit { commitRename(playlist, proposed: editDraft, keepOpenOnConflict: true) }
-                .onExitCommand {
-                    cancelRename()
-                    sidebarFocused = true // keyboard close → keep ↑/↓/Return alive (focus-audit MAJOR)
-                }
-                .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
-                .padding(.vertical, 5)
-            if let renameError {
-                Text(renameError)
-                    .font(DesignSystem.Font.caption)
-                    .foregroundStyle(DesignSystem.Color.statusErrorText)
-                    .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
-            }
-        }
-    }
-
     // MARK: - Music Folders section (S10.8: inline, replacing the pinned footer accordion)
 
     private var musicFoldersSectionHeader: some View {
