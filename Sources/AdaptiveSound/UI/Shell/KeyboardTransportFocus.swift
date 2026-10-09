@@ -1,4 +1,5 @@
-import SwiftUI
+import Foundation
+import Observation
 
 // MARK: - Global transport focus gate (S4 GUI review — SW1)
 
@@ -15,19 +16,28 @@ import SwiftUI
 /// field is being edited, so the key equivalent doesn't match and the event falls through to the
 /// field editor. The `Controls` menu reads `isTextEntryFocused` in its `.disabled` condition.
 ///
-/// ## Why a single flag is safe
-/// These fields are never focused simultaneously — the Library filter fields live in mutually
-/// exclusive tabs/sections and the Save-Preset field is a modal sheet — so there is never a second
-/// focused field whose state a shared flag could clobber.
-///
-/// ## Wiring
-/// Fields wire this via the `.suppressesTransportSpace(while:)` modifier (see
-/// `TransportSpaceSuppressing`), which owns the `.focused` + `.onChange` + `.onDisappear` trio in one
-/// place so a field can't half-wire it. (A later hardening could make this a `Set<FieldID>` or derive
-/// it from the AppKit first responder to also close the focus-handoff transposition race — focus-audit.)
+/// ## One token per field, not a shared flag (S10.8 D fix round)
+/// Fields CAN overlap: the playlist picker's pill lives in a sheet over the Songs card, whose pill
+/// may hold focus underneath. With one shared Bool, the sheet's field closing wrote `false` and
+/// re-enabled Space while the Songs pill still had focus. Each field now holds its own token
+/// (`suppressesTransportSpace`), and Space is suppressed while ANY token is in.
 @MainActor
 @Observable
 final class KeyboardTransportFocus {
-    /// True while a text-entry field holds keyboard focus. Driven by `.suppressesTransportSpace(while:)`.
-    var isTextEntryFocused = false
+    /// The tokens of the text fields holding key focus right now.
+    private var focusedFields: Set<UUID> = []
+
+    /// True while any text-entry field holds keyboard focus. Driven by `.suppressesTransportSpace`.
+    var isTextEntryFocused: Bool {
+        !focusedFields.isEmpty
+    }
+
+    /// The field holding `token` gained (`true`) or lost (`false`) key focus, or went away.
+    func field(_ token: UUID, isFocused: Bool) {
+        if isFocused {
+            focusedFields.insert(token)
+        } else {
+            focusedFields.remove(token)
+        }
+    }
 }
