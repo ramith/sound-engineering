@@ -14,9 +14,21 @@ audio-dsp verification of today's engine (below). Founder decisions 21–23 in t
   visible safety ceiling, the honest played curve) — but the user shapes sound with **all 31 points**;
   **no five-point mode** (the study's five named points are NOT built). So the engine must play an
   accurate 31-band graphic EQ. *(Layout revised by 24; the features above all stay.)*
-- **23 — Safety = automatic headroom + a visible +12 dB ceiling.** Today's summed-dB clamp is retired.
+- **23 — Safety = automatic headroom + a visible +12 dB ceiling.** Today's summed-dB clamp is retired. *(Revised by 26.)*
 - **24 — Layout = V1b** (below), chosen over the Lens's single card, "Sound first" (B) and
   "Profiles" (C), then three B-based prototypes (V1–V3) and one revision.
+- **25 — The EQ always plays in full:** it runs ahead of the Intensity blend. "Intensity 0 with EQ Off"
+  is the bit-perfect state.
+- **26 — Loudness-neutral EQ** (revises 23): a gain predicted from the track's gated spectrum keeps
+  the loudness unchanged, replacing the −max|H| preamp; the −1 dBTP limiter catches rare peaks. Off
+  is a true bypass and level-fair at once. The Headroom readout goes; the +12 dB ceiling stays.
+- **27 — Preset switch with unsaved edits:** switch at once, with a "Bring back edits" message.
+- **28 — Compare = hold to hear without the EQ** at the same loudness. A pinned output remembers
+  exactly what was last heard on it.
+
+Evidence for 25–28: the plan check plus a three-reviewer adversarial panel (breaker, state-of-the-art
+challenger, architect), backed by a literature survey and a survey of how other players implement
+EQ. Records are in the [sweep ledger](../../sprints/s10-8-sweep-ledger.md) (Sprint EQ).
 
 ## Layout: V1b (decision 24)
 
