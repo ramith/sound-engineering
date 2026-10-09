@@ -64,12 +64,15 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
                 .modifier(BrowseKeyboard(category: category, items: items, title: title,
                                          navigator: navigator, focus: focus, proxy: proxy, open: open))
                 #if DEBUG
-                    // Picture-sheet states variant: focus, with the cursor on the fixture's tile.
+                    // Picture-sheet states variant: focus, with the cursor on the fixture's tile. The
+                    // focus write waits a turn, as `BrowseKeyboard.restorePlace` does.
                     .sheetFocusSeed(.grid) {
                         if let cursor = items.first(where: { tile($0).ref == sheetGridStates.cursor }) {
                             navigator.seedCursor(cursor.id)
                         }
-                        focus.wrappedValue = .content
+                        Task { @MainActor in
+                            focus.wrappedValue = .content
+                        }
                     }
                 #endif
             }

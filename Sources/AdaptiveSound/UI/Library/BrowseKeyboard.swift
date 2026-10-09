@@ -108,13 +108,17 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
     // MARK: The place (D6)
 
     /// Coming back to this category's root: the place it left from — the scroll position, the
-    /// cursor, and key focus if it had it. Used once.
+    /// cursor, and key focus if it had it. Used once. The focus write waits a main-actor turn: the
+    /// focus value is the ROOT's (K1), and a write from the grid's first `onAppear` can land before
+    /// the grid is a focus target, and be dropped (seen offscreen).
     private func restorePlace() {
         guard let place = model.browsePlace, place.category == category else { return }
         model.browsePlace = nil
         navigator.restore(place, rows: rows, proxy: proxy)
         if place.wasFocused {
-            focus.wrappedValue = .content
+            Task { @MainActor in
+                focus.wrappedValue = .content
+            }
         }
     }
 
