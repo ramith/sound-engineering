@@ -52,4 +52,33 @@ struct SlotFitTests {
         #expect(measured <= SlotWidths.footerSignalSlot - 2,
                 "dot + 'Enhanced · 176.4 kHz' measures \(measured)pt against the \(SlotWidths.footerSignalSlot)pt slot")
     }
+
+    /// The filter pill (S10.8 D2) at its narrowest must still show its whole placeholder: the
+    /// founder saw "Filter que" in the queue header at 880×640, a 90pt pill. The pill is
+    /// inset + magnifier + gap + text + inset (`FilterPillMetrics`, what `FilterPill` draws with);
+    /// the magnifier at the callout size, the text at the body size — `FilterPill`'s two fonts. The
+    /// prompts are literals (the views live in the app target): the queue's, and the Library card
+    /// header's "Filter <category>". AppKit's magnifier is 1pt wider than SwiftUI's, so the
+    /// measure errs wide.
+    @Test("SLOT-06: every filter pill's placeholder fits the pill at its narrowest")
+    func filterPillPlaceholderFits() throws {
+        let callout = NSFont.preferredFont(forTextStyle: .callout).pointSize
+        let magnifier = try #require(NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: callout, weight: .regular)))
+        let chrome = 2 * FilterPillMetrics.horizontalInset + magnifier.size.width + FilterPillMetrics.itemSpacing
+        let body = NSFont.preferredFont(forTextStyle: .body)
+        let slots: [(prompt: String, width: Double)] = [
+            ("Filter queue", SlotWidths.queueFilter),
+            ("Filter Songs", SlotWidths.libraryFilter),
+            ("Filter Albums", SlotWidths.libraryFilter),
+            ("Filter Artists", SlotWidths.libraryFilter),
+            ("Filter Genres", SlotWidths.libraryFilter),
+        ]
+        for slot in slots {
+            let text = NSAttributedString(string: slot.prompt, attributes: [.font: body]).size().width
+            // 2pt margin, like the other slots: the NSFont↔SwiftUI seam, never a real misfit.
+            #expect(chrome + text <= slot.width - 2,
+                    "'\(slot.prompt)' needs \(chrome + text)pt in a \(slot.width)pt pill")
+        }
+    }
 }

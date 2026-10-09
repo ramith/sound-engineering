@@ -25,14 +25,11 @@ struct PlaylistView: View {
     @State private var panelMode: QueuePanelMode = .upNext
     /// The D7 filter — view-local; empty means "filter off".
     @State private var filterText = ""
-    @FocusState private var filterFocused: Bool
     /// Key-command focus for the queue list — owned HERE (not by the list) so the filter
-    /// field's Escape can hand focus back to the queue (§5: ↑/↓ must work immediately).
+    /// pill's Escape can hand focus back to the queue (§5: ↑/↓ must work immediately).
     @FocusState private var queueFocused: Bool
     /// The header row's Dynamic-Type-scaled minimum height (32pt at default size).
     @ScaledMetric(relativeTo: .body) private var headerHeight = DesignSystem.QueueHeader.height
-    /// The filter pill's scaled height (28pt at default size).
-    @ScaledMetric(relativeTo: .callout) private var filterHeight = DesignSystem.QueueHeader.filterHeight
 
     var body: some View {
         VStack(spacing: 12) {
@@ -67,51 +64,64 @@ struct PlaylistView: View {
 
     // MARK: Header (S10.8 PR C — the realigned SINGLE 32pt row, `png/03`)
 
-    /// Title + count + icon chips + the Up Next/Recent capsule pair + the compact filter
-    /// pill, replacing the stacked header block / segmented picker / full-width filter bar.
-    /// Width-deficit policy at the 880pt minimum (break-it finding 2): the title is
-    /// protected, the switcher/chips are rigid (`fixedSize` — a control label must never
-    /// truncate), the filter compresses to its minimum first, and the COUNT subtitle is
-    /// the designated truncation victim. Height is a scaled MINIMUM (finding 3) so larger
-    /// text sizes grow the row instead of clipping.
+    /// Title + count + icon chips + the Up Next/Recent capsule pair + the filter pill,
+    /// replacing the stacked header block / segmented picker / full-width filter bar.
+    /// Width-deficit policy at the 880pt minimum (break-it finding 2, `QueueHeaderLayout`):
+    /// the title, chips and switch are rigid (a control label must never truncate), the
+    /// filter compresses to its minimum first, and the COUNT is the designated victim —
+    /// compact, then truncated. Height is a scaled MINIMUM (finding 3) so larger text sizes
+    /// grow the row instead of clipping.
     private var headerRow: some View {
-        HStack(spacing: 12) {
+        QueueHeaderLayout(spacing: 12) {
             Text(panelMode == .history ? "Recently Played" : "Queue")
                 .font(.system(.body, weight: .heavy))
                 .tracking(1)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.asLabel)
                 .lineLimit(1)
-                .fixedSize()
-                .layoutPriority(1)
 
-            Text(headerSubtitle)
-                .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(Color.asLabelTertiary)
-                .lineLimit(1)
+            countLine
+                .queueHeaderRole(.count)
 
             PlaylistControlsView(onJumpToNowPlaying: jumpToNowPlaying, panelMode: $panelMode)
-                .fixedSize()
 
             CapsuleSwitch("Queue view", selection: $panelMode, options: QueuePanelMode.allCases,
                           title: \.pickerLabel)
-                .fixedSize()
-
-            Spacer(minLength: DesignSystem.Spacing.small)
 
             // The filter narrows Up Next only (a Recently-Played filter would be new
             // function, out of this styling wave) — hidden with the mode, not disabled.
+            // 190pt ideal (`png/03`); its minimum holds the whole placeholder (SLOT-06).
             if panelMode == .upNext, !viewModel.queue.isEmpty {
-                filterField
+                FilterPill(text: $filterText, prompt: "Filter queue", onCancel: focusQueue)
+                    .frame(minWidth: DesignSystem.QueueHeader.filterMinWidth,
+                           idealWidth: DesignSystem.QueueHeader.filterIdealWidth,
+                           maxWidth: DesignSystem.QueueHeader.filterIdealWidth)
+                    .queueHeaderRole(.filter)
             }
         }
         .frame(minHeight: headerHeight)
     }
 
+    /// The count, whole ("9 tracks") where it fits, else the number alone — at the 880pt window
+    /// with every chip showing. VoiceOver reads it whole either way.
+    private var countLine: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(headerSubtitle)
+            Text(String(headerCount))
+        }
+        .font(DesignSystem.Font.monoSmall)
+        .foregroundStyle(Color.asLabelTertiary)
+        .lineLimit(1)
+        .accessibilityLabel(headerSubtitle)
+    }
+
     /// Mode-aware count: the queue's track count, or the number of recently-played tracks.
+    private var headerCount: Int {
+        panelMode == .history ? library.history.count : viewModel.queue.count
+    }
+
     private var headerSubtitle: String {
-        let count = panelMode == .history ? library.history.count : viewModel.queue.count
-        return "\(count) \(count == 1 ? "track" : "tracks")"
+        "\(headerCount) \(headerCount == 1 ? "track" : "tracks")"
     }
 
     /// Jump-to-now-playing IGNORES an active filter (§5) — sequenced, not simultaneous:
@@ -127,11 +137,9 @@ struct PlaylistView: View {
         }
     }
 
-    /// Escape's landing (§5): clear, dismiss the field, and hand key focus to the queue so
-    /// ↑/↓/Return work immediately — focus must never strand on a defocused field.
-    private func clearFilterAndFocusQueue() {
-        filterText = ""
-        filterFocused = false
+    /// Escape's landing (§5): the pill has cleared itself and given up focus; key focus goes to
+    /// the queue so ↑/↓/Return work immediately — focus must never strand on a defocused field.
+    private func focusQueue() {
         queueFocused = true
     }
 
@@ -148,46 +156,6 @@ struct PlaylistView: View {
         return viewModel.queue.indices.filter { index in
             FacetTextFilter.matches(viewModel.queue[index].file.name, query: filterText)
         }
-    }
-
-    private var filterField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.asLabelTertiary)
-            TextField("Filter queue", text: $filterText)
-                .textFieldStyle(.plain)
-                .font(DesignSystem.Font.caption)
-                .suppressesTransportSpace(while: $filterFocused)
-                // `.onExitCommand` is the documented macOS cancel hook — the field editor's
-                // `cancelOperation` can consume Escape before `.onKeyPress` ever sees it.
-                // The key-press handler stays as belt-and-braces for paths where it does
-                // fire (it only fires focused, so no guard).
-                .onExitCommand(perform: clearFilterAndFocusQueue)
-                .onKeyPress(.escape) {
-                    clearFilterAndFocusQueue()
-                    return .handled
-                }
-            if filterActive {
-                Button("Clear", systemImage: "xmark.circle.fill") {
-                    filterText = ""
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.asLabelTertiary)
-                .help("Clear the filter")
-            }
-        }
-        .padding(.horizontal, 10)
-        // Realigned (`png/03`): a compact right-aligned pill — 190pt ideal, compressing to
-        // its minimum before the header row's fixed neighbours would overflow (LAY-01).
-        .frame(minWidth: DesignSystem.QueueHeader.filterMinWidth,
-               idealWidth: DesignSystem.QueueHeader.filterIdealWidth,
-               maxWidth: DesignSystem.QueueHeader.filterIdealWidth)
-        .frame(height: filterHeight)
-        .glassPanel(.badge, in: Capsule())
-        .accessibilityLabel("Filter queue")
     }
 
     private var noMatches: some View {
