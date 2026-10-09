@@ -80,6 +80,14 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     R1. Design: [s10-8-browse-grid-design.md](s10-8-browse-grid-design.md). Sprint D grows by ~1–2.
 20. **Arrow keys on the tile grids** (Albums, Artists, Genres) come with the keyboard work in the
     behaviour pull-forward, not after R1 (2026-10-08). About +2.
+21. **The EQ is redesigned in full before R1** (2026-10-09; founder ask + market research + a DSP
+    check that found today's EQ plays a fraction of what it shows). A recorded exception to "no new
+    arrangements" and to decision 3. Built as **Sprint EQ** (§E); design and evidence in
+    [docs/design/eq-lens/](../design/eq-lens/README.md).
+22. **EQ editor: "The Lens" look, 31 draggable points only** — no five-point mode. The engine
+    becomes an accurate 31-band graphic EQ so what is drawn is what plays.
+23. **EQ safety: automatic headroom + a visible +12 dB ceiling;** the summed-dB clamp is retired
+    (it shrank presets ~10× yet let a single +12 dB band through).
 
 ## C. Scope
 
@@ -153,7 +161,8 @@ test library) → **behaviour pull-forward**: E1 (selection kit + the full keybo
 (the grid keeps its scroll position; the Songs count line), E4's Move Up / Down / to Top
 with shortcuts, and **arrow keys on the tile grids** (decision 20; its plan check decides whether
 D5's `BrowseGridRoot` scaffold moves forward so the keys are wired once) → **D** (D1–D5, the Library glass) → **E** (E2, E3, E4's header and insets) →
-**F** → **G**. The PR tables below keep their letters; only the order changes.
+**Sprint EQ** (decisions 21–23) → **F** → **G**. The PR tables below keep their letters; only the
+order changes.
 
 ### Sprint A — foundation (7 points)
 
@@ -237,8 +246,24 @@ Play contexts are added to the kit only by the PR that uses them (hostile Periph
 | F3 | EQ graph on the lens, growing to fill the height without clipping the controls at the minimum window with large text; its own extra fill and border removed | M | R4-EQ-02 (curve, dots, 0 dB line ≥ 3:1 both modes, incl. the lens's bottom band); LAY-EQ-01 |
 | F4 | EQ controls: the capsule switch (a recorded deviation from design §3.1's native-control rule), Preset and Save as pills | S | — |
 
+*F3 and F4 are superseded by Sprint EQ (decision 21); Sprint F keeps F1 and F2.*
+
 **Founder checks:** no blue on any surface the app draws; dragging an EQ point, a preset, Save,
 and switching output device all still work.
+
+### Sprint EQ — "The Lens", 31 points (decisions 21–23; ~20 points)
+
+Design, evidence and scope: [docs/design/eq-lens/](../design/eq-lens/README.md).
+
+| PR | Scope | Size | Tests / audits |
+|---|---|---|---|
+| EQ1 | Engine: an accurate 31-band graphic EQ (Välimäki & Liski), sections 10 → ≥ 31 | L+ | C++ gate: per-band and per-preset played response vs target; null / bypass bit-exact; RT-alloc soak; CPU at 7.1 |
+| EQ2 | Automatic headroom (the summed-dB clamp deleted; preamp via `masterGainLinear`) + the played-curve read-back | M+M | no frequency above the source; preset loudness before/after |
+| EQ3 | The Lens: 31 draggable points over ±12 dB, the played curve, readout, headroom + ceiling, On/Off, Compare, Reset; keyboard + VoiceOver | L+ | R4 for the curve, points and ceiling, both modes; the live keyboard pass |
+| EQ4 | Presets: My Presets in the menu (rename / delete), per-output memory written ("Use on <output> ✓"), the presets re-voiced | M | the founder's listening check |
+
+**Founder checks:** a 10-minute listening check of the presets and of dragging; On/Off and Compare
+feel level-fair; a saved preset comes back; switching output recalls its EQ.
 
 ### Sprint G — Monitoring, then close-out (4 points)
 
