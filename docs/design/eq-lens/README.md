@@ -54,7 +54,7 @@ curve is the PLAYED response, the points are the targets; a readout while draggi
 plays); a "Headroom −X dB" readout and the +12 dB ceiling drawn when a boost reaches it; EQ On/Off,
 level-matched Compare, Reset; the Preset menu with built-in + My Presets (rename / delete) and
 "Use on <output> ✓" (per-output memory, written); keyboard (move between points, ↑/↓ adjust) and
-VoiceOver (each point an adjustable element); existing tokens only (light frozen, decision 16); the
+VoiceOver (each point an adjustable element); **the keyboard cursor follows the point you click or drag** (founder, 2026-10-09: today's cursor stays where the keyboard left it, so ↑/↓ after a click adjust a different band), and like every keyboard ring in the app it shows only while navigating by keyboard (Sprint A rule); existing tokens only (light frozen, decision 16); the
 analyzer lens (Sprint D grammar). The "Interpolation" picker retires.
 
 **Presets re-voiced** for the honest engine (they will sound stronger than today's clamped ones) —

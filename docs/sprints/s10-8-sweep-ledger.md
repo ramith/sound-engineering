@@ -773,3 +773,62 @@ Retro rules applied: every agent runs `make periphery` and `make songs-perf`; th
 the live keyboard pass on the 10k test library BEFORE the code review; the genre-cover read gets a
 break-it pass (store work); shared helpers have one named owner (the pill: Library pane; chip and
 switch: Queue controls).
+
+### Build record (2026-10-08 – 09)
+
+- **Wave 1, three agents in parallel.** Library pane: D1 (one card for the whole right pane; the
+  playlist's hard edge gone), D4 (`LibraryCardHeader`, one load-state view, one no-results view),
+  D2's `FilterPill` (extracted from Songs, used in all four headers), D5 (`BrowseTile` /
+  `BrowseArt` / `FillGridLayout` / `CoverArrangement`; Genres on the grid with a 2×2 cover mosaic;
+  `FacetList`, `AlbumCell`, `ArtistCell` retired). Genre covers: `genreCoverArtworkKeys(perGenre:)`,
+  one window-function read (GC-01…06; 300 genres ≈ 14–18 ms; no `SCAN tracks`). Queue controls:
+  `IconChip` (required label) and `CapsuleSwitch` (R4-SEG-02: the selected segment's ring 7.86 dark /
+  4.45 light; not by fill alone). The UI agent coded against an agreed signature with a temporary
+  stub, deleted at merge.
+- **Wave 2.** The queue filter and the playlist picker on `FilterPill`; "Filter queue" whole at
+  880×640 (SLOT-06) — and a pre-existing 16 pt overflow of the Now Playing tab at 880 fixed by
+  `QueueHeaderLayout`; Songs' Sort / Columns keep their pills (the chip grammar doesn't fit a
+  labelled menu) with the app's focus ring; semgrep `ui-no-raw-text-field`.
+
+### Break-it (genre covers), live keyboard pass, code review → one fix round (2026-10-09)
+
+- **Break-it (qa-expert, real experiments, 10k + 100k songs):** the read held everywhere (0 torn of
+  1,504 concurrent reads; off-main; TSan clean). UI breaks: a deleted cover file gave blank,
+  glyph-less tiles; one DB read per cover on first paint; placeholders flashed before mosaics; a
+  reused genre id could paint a removed genre's covers; first-scan tie order was random.
+- **Live keyboard pass (coordinator, before the review):** the card never moves across the four
+  sections; grid keys, Return, ⌘[ back, type-select, Filter "N results", the Up Next / Recent switch
+  with ←/→, Shuffle / Repeat all pass. **Found:** Esc in any Filter pill left key focus on the window
+  (arrows dead) — in the Library AND the queue.
+- **Code review:** root causes for Esc (Library: never wired; queue: a two-write focus race, and no
+  list mounted under "No Matches"); a MAJOR new one — the thumbnail cache served the FIRST decoded
+  size to every caller (Recently Played's 56 px covers blurred the grid all session); and minors
+  (unbounded cache bytes, a cached-cover flash, the pill's clear button as a blue Tab stop, a shared
+  Space-gate flag, the switch read as plain buttons, the queue header at large text, duplicated pill
+  chrome and tokens, a per-key type-select cost).
+- **Fix round (two agents, split by file):** a host-owned `CardFocus` — Esc is one deferred write
+  to `.content`; an upgrade-only, single-flight, 128 MB-bounded thumbnail cache seeded in `init`; one
+  load for genres + covers; a cover phase with fallback to the next key or the glyph; ties by
+  `artwork_key`; grids' first arrow steps; the switch as a native segmented control to VoiceOver;
+  `QueueHeaderWidths` (Kit, tested at 1.5× text: the filter takes its own row rather than
+  overflow); one `HeaderPillChrome`; one filter-width group; semgrep also covers TextEditor,
+  NSTextView, NSComboBox, NSTokenField, NSSearchToolbarItem.
+- **Live re-check after the fix:** Esc returns focus to the Songs list, the Albums grid and the
+  queue — including from "No Matches" — and arrows work at once; a grid's first → moves.
+- **Learned:** on macOS 26 SwiftUI text styles and `@ScaledMetric` ignore Dynamic Type, so the
+  `.dynamicTypeSize` clamps the strict gate checks for likely bound nothing — layouts must hold by
+  structure (revisit the guard). The wave-1 agent's first sheet compare used PIL `getbbox()` on RGBA
+  (alpha only) and over-reported identical sheets; corrected.
+- **Deferred:** songs with no album give a genre placeholder; deleted cover files are not rebuilt
+  (pre-existing); the founder's call on Columns as an icon chip (kept as the approved labelled pill).
+
+### Mini-retro — Sprint D
+
+1. **The live pass before the review worked:** it found the Esc focus bug, and the review then
+   explained it (two causes) instead of rediscovering it — one fix round, not two.
+2. **An agreed API signature + a stub file let the UI and the store read be built in parallel**,
+   with a one-line merge (delete the stub). Reuse for any UI-over-store split.
+3. **Agents' own claims need checking:** a sheet-compare bug (alpha-only) and an Esc hand-off
+   "wired" that never arrived live. Verify on the merged branch, live.
+4. **Pausing mid-sprint cost nothing** because worktrees were kept and agents resumed with
+   context.
