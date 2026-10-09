@@ -13,7 +13,7 @@ import SwiftUI
 ///   the tint in both appearances (R4-CHIP-04), so "on" still reads in grayscale. VoiceOver reads
 ///   the state as the chip's value ("Shuffle, On").
 /// - **Keyboard:** a Tab stop under Full Keyboard Access, pressed with Return (Space is the
-///   app-wide play / pause key). It carries the app's keyboard ring (`keyboardFocusRing`) in place
+///   app-wide play / pause key). It carries the app's keyboard ring (`controlFocusRing`) in place
 ///   of the system focus effect, drawn only while the window is keyboard-driven.
 /// - The chip is built inside the button (its style), so the chip IS the hit shape — a frame or
 ///   background around a Button never extends its hit area.
@@ -36,8 +36,6 @@ struct IconChip: View {
     private let action: () -> Void
 
     @State private var isHovered = false
-    @FocusState private var isFocused: Bool
-    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
     /// An action chip (Clear Queue, Jump to Now Playing).
     init(_ title: String, systemImage: String, emphasis: Emphasis = .standard, action: @escaping () -> Void) {
@@ -64,10 +62,7 @@ struct IconChip: View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
             .buttonStyle(ChipStyle(isOn: state?.isOn ?? false, emphasis: emphasis, isHovered: isHovered))
-            .focused($isFocused)
-            .focusEffectDisabled()
-            .keyboardFocusRing(isFocused && showsKeyboardFocus,
-                               around: RoundedRectangle(cornerRadius: DesignSystem.Radius.control))
+            .controlFocusRing(around: RoundedRectangle(cornerRadius: DesignSystem.Radius.control))
             .onHover { isHovered = $0 }
             .accessibilityValue(state?.value ?? "")
     }
