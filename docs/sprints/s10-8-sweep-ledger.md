@@ -822,6 +822,13 @@ switch: Queue controls).
 - **Deferred:** songs with no album give a genre placeholder; deleted cover files are not rebuilt
   (pre-existing); the founder's call on Columns as an icon chip (kept as the approved labelled pill).
 
+### Founder check (2026-10-09)
+
+On the real library (no schema change): the card and header steady across the four sections,
+Genres as cover mosaics, one-line tiles, Filter + Esc with arrows working at once, the queue
+filter, the teal "on / selected" outlines, sharp covers after Recent. **"Looks good."** Noted for
+Sprint E's plan check (not decided): the genre's cover mosaic as its detail-page header.
+
 ### Mini-retro — Sprint D
 
 1. **The live pass before the review worked:** it found the Esc focus bug, and the review then
