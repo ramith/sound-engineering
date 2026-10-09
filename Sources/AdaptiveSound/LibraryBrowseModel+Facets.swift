@@ -63,7 +63,7 @@ extension LibraryBrowseModel {
         read: (LibraryStore) async throws -> [T]
     ) async {
         await loadFlatFacet(into: arrayKeyPath, state: stateKeyPath, epoch: epochKeyPath,
-                            read: { (try await read($0), ()) }, alongside: { _ in })
+                            read: { try (await read($0), ()) }, alongside: { _ in })
     }
 
     /// Shared loader for the flat facet lists (Artists, Genres). Bumps the facet's epoch, publishes
