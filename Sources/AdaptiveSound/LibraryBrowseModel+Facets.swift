@@ -27,35 +27,57 @@ extension LibraryBrowseModel {
                             read: { try await $0.artists() })
     }
 
-    /// Load the Genres list (same flat-facet discipline as `loadArtists`), then its tiles' covers.
+    /// Load the Genres list and its tiles' covers AS ONE (S10.8 D fix round): the two reads run at
+    /// once, the cover paths are warmed, then the genres, their covers and the state publish in one
+    /// turn — so the grid never draws a frame of placeholders before its covers arrive, and no tile
+    /// looks a cover path up on its own. Same flat-facet discipline as `loadArtists`.
     func loadGenres() async {
         await loadFlatFacet(into: \.genres, state: \.genresState, epoch: \.genresLoadEpoch,
-                            read: { try await $0.genres() })
-        await loadGenreCovers()
+                            read: { try await readGenresWithCovers($0) },
+                            alongside: { covers in
+                                if genreCoverKeys != covers {
+                                    genreCoverKeys = covers
+                                }
+                            })
     }
 
-    /// The genre tiles' cover keys (S10.8 D5): up to a mosaic's four per genre, from its biggest
-    /// albums. Newest-wins like the lists; a failed read keeps the covers it had — a genre without
-    /// covers shows the placeholder, never an error.
-    private func loadGenreCovers() async {
-        guard let store else { return }
-        genreCoversLoadEpoch &+= 1
-        let epoch = genreCoversLoadEpoch
-        guard let covers = try? await store.genreCoverArtworkKeys(perGenre: CoverArrangement.mosaicCount),
-              epoch == genreCoversLoadEpoch, covers != genreCoverKeys else { return }
-        genreCoverKeys = covers
+    /// The genres, and up to a mosaic's four covers for each (`CoverArrangement`), their paths
+    /// warmed in one batch. A failed cover read means NO covers — never the last read's, which a
+    /// genre id reused since would wear — and covers of a genre not in the list are dropped.
+    private func readGenresWithCovers(_ store: LibraryStore) async throws
+        -> (items: [GenreFacet], alongside: [Int64: [String]]) {
+        async let genres = store.genres()
+        async let covers = store.genreCoverArtworkKeys(perGenre: CoverArrangement.mosaicCount)
+        let loaded = try await genres
+        let listed = Set(loaded.map(\.id))
+        let keys = ((try? await covers) ?? [:]).filter { listed.contains($0.key) }
+        await warmArtwork(keys.values.flatMap(\.self))
+        return (loaded, keys)
+    }
+
+    /// `loadFlatFacet` for a list with nothing published alongside it (Artists).
+    private func loadFlatFacet<T>(
+        into arrayKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, [T]>,
+        state stateKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, LoadState>,
+        epoch epochKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, Int>,
+        read: (LibraryStore) async throws -> [T]
+    ) async {
+        await loadFlatFacet(into: arrayKeyPath, state: stateKeyPath, epoch: epochKeyPath,
+                            read: { (try await read($0), ()) }, alongside: { _ in })
     }
 
     /// Shared loader for the flat facet lists (Artists, Genres). Bumps the facet's epoch, publishes
     /// an optimistic `.loading` while the list is empty, reads, then re-guards the epoch after the
     /// list read AND again after the `roots()` read so a superseded load can never publish a stale
     /// `.empty`/`.firstRun` flash (R1). Written ONCE so that newest-wins invariant is correct across
-    /// both facets by construction.
-    private func loadFlatFacet<T>(
+    /// both facets by construction. What the read returns `alongside` the list (the genre covers)
+    /// publishes in the same turn as the list.
+    private func loadFlatFacet<T, Alongside>(
         into arrayKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, [T]>,
         state stateKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, LoadState>,
         epoch epochKeyPath: ReferenceWritableKeyPath<LibraryBrowseModel, Int>,
-        read: (LibraryStore) async throws -> [T]
+        read: (LibraryStore) async throws -> (items: [T], alongside: Alongside),
+        alongside publishAlongside: (Alongside) -> Void
     ) async {
         guard let store else {
             self[keyPath: stateKeyPath] = .loading // store still building; reloads on isStoreReady
@@ -67,9 +89,10 @@ extension LibraryBrowseModel {
             self[keyPath: stateKeyPath] = .loading
         }
         do {
-            let loaded = try await read(store)
+            let (loaded, alongside) = try await read(store)
             guard epoch == self[keyPath: epochKeyPath] else { return } // superseded after list read
             self[keyPath: arrayKeyPath] = loaded
+            publishAlongside(alongside)
             if loaded.isEmpty {
                 let hasRoots = try await !store.roots().isEmpty
                 guard epoch == self[keyPath: epochKeyPath] else { return } // superseded after roots
