@@ -1,16 +1,18 @@
 // MARK: - GridKeyboardCursor (S10.8 decision 20 — arrow keys on the browse grids)
 
-/// The keyboard cursor of a browse grid (Albums, Artists; Genres from Sprint D) or of a one-column
-/// browse list (Genres until then): the tile its focus ring marks and its keys act on. Built ON
-/// `ListKeyboardCursor`, never beside it — the same resolution (the anchor while it is visible,
-/// else the first tile, unanchored), the same claim rule for the arrows and the same Return rule.
-/// It adds only the 2-D moves over the tiles in reading order, `columns` to a row.
+/// The keyboard cursor of a browse grid (Albums, Artists, Genres): the tile its focus ring marks
+/// and its keys act on. Built ON `ListKeyboardCursor`, never beside it — the same resolution (the
+/// anchor while it is visible, else the first tile, unanchored) and the same Return rule. It adds
+/// only the 2-D moves over the tiles in reading order, `columns` to a row.
 ///
 /// ←/→ step through reading order, so they run on across row ends; ↑/↓ step a whole row, and ↓
 /// into a ragged last row that has no tile in this column lands on its last tile. All four are
-/// arrows in the `ListKeyboardCursor` sense: nil off either end (so the key bubbles), and the first
-/// press on the unanchored seed claims it in place. Home / End and Page Up / Down jump to an
-/// absolute tile, so they act from the seed at once; the Page keys stop at the first / last row.
+/// arrows in the `ListKeyboardCursor` sense: nil off either end (so the key bubbles) once the
+/// cursor is anchored. The first press on the unanchored seed (the first tile) STEPS from it, as
+/// from the queue's playing row (K2): a tile has no selected look, so claiming it in place would
+/// change nothing on screen; only an arrow that would leave the grid claims the seed where it is.
+/// Home / End and Page Up / Down jump to an absolute tile, so they act from the seed at once; the
+/// Page keys stop at the first / last row.
 public struct GridKeyboardCursor<ID: Equatable>: Equatable {
     private let cursor: ListKeyboardCursor<ID>
     /// Tiles per row, at least 1 (a list is a one-column grid).
@@ -51,7 +53,7 @@ public struct GridKeyboardCursor<ID: Equatable>: Equatable {
         let place = GridPlace(position: rows.distance(from: rows.startIndex, to: index),
                               last: rows.count - 1, columns: columns)
         if let delta = place.arrowDelta(move) {
-            return cursor.step(by: delta, in: rows)
+            return cursor.step(by: delta, in: rows, claimsFirstRowSeed: false)
         }
         return rows[rows.index(rows.startIndex, offsetBy: place.jumpPosition(move))]
     }

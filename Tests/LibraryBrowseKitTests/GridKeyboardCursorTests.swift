@@ -76,21 +76,34 @@ struct GridKeyboardCursorTests {
         #expect(move(.down, from: 3, in: even) == 7)
     }
 
-    // MARK: The unanchored seed (ListKeyboardCursor's claim rule)
+    // MARK: The unanchored seed (K2: the first arrow steps — a tile has no selected look)
 
-    @Test("the first press of ANY arrow on the unanchored seed claims the first tile in place")
-    func seedClaimedInPlace() throws {
+    @Test("the first → / ↓ on the unanchored seed STEPS from the first tile — never an invisible claim")
+    func seedSteps() throws {
         let seed = try #require(Cursor.resolve(rows: tiles, anchor: nil, columns: 4))
-        for arrow: Cursor.Move in [.left, .right, .up, .down] {
-            #expect(seed.target(of: arrow, in: tiles) == 0)
-        }
+        #expect(seed.target(of: .right, in: tiles) == 1)
+        #expect(seed.target(of: .down, in: tiles) == 4)
     }
 
-    @Test("a single-row grid: the seed is still claimed in place by ↓ (never bubbles past the ring)")
+    @Test("an arrow off the grid from the seed (← / ↑) claims it where it is, never bubbles past the ring")
+    func seedClaimedAtEdge() throws {
+        let seed = try #require(Cursor.resolve(rows: tiles, anchor: nil, columns: 4))
+        #expect(seed.target(of: .left, in: tiles) == 0)
+        #expect(seed.target(of: .up, in: tiles) == 0)
+    }
+
+    @Test("a single-row grid: ↓ from the seed claims it in place; → still steps")
     func seedSingleRow() throws {
         let row = [0, 1, 2]
         let seed = try #require(Cursor.resolve(rows: row, anchor: nil, columns: 4))
         #expect(seed.target(of: .down, in: row) == 0)
+        #expect(seed.target(of: .right, in: row) == 1)
+    }
+
+    @Test("the step rule is the grid's alone: the list kit still claims a first-row seed in place (Songs)")
+    func listKeepsFirstRowClaim() {
+        let seed = ListKeyboardCursor(id: 0, isAnchored: false)
+        #expect(seed.step(by: 1, in: tiles) == 0)
     }
 
     // MARK: Home / End

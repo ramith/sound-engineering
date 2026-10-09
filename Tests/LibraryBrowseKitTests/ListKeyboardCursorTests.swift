@@ -62,6 +62,18 @@ struct ListKeyboardCursorTests {
         #expect(playing.step(by: -1, in: rows) == 30)
     }
 
+    @Test("without the first-row claim (no selected look, K2) a first-row seed steps; off the edge it claims")
+    func unanchoredFirstRowStepsWithoutClaim() {
+        let seed = Cursor(id: 10, isAnchored: false)
+        #expect(seed.step(by: 1, in: rows, claimsFirstRowSeed: false) == 20)
+        #expect(seed.step(by: 2, in: rows, claimsFirstRowSeed: false) == 30)
+        #expect(seed.step(by: -1, in: rows, claimsFirstRowSeed: false) == 10) // nowhere to go: claimed, no bubble
+        // The claim rule only ever concerned the unanchored seed: an anchored cursor is unchanged.
+        let anchored = Cursor(id: 10, isAnchored: true)
+        #expect(anchored.step(by: 1, in: rows, claimsFirstRowSeed: false) == 20)
+        #expect(anchored.step(by: -1, in: rows, claimsFirstRowSeed: false) == nil)
+    }
+
     @Test("an anchored cursor moves one row each way")
     func anchoredMoves() {
         let cursor = Cursor(id: 20, isAnchored: true)

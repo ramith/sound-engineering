@@ -60,15 +60,19 @@ public struct ListKeyboardCursor<ID: Equatable>: Equatable {
     /// ↑/↓ — the row the press lands on. An anchored cursor moves `delta` rows; nil when the move
     /// would leave the list (or the cursor is no longer in `rows`), so the key can bubble.
     ///
-    /// An unanchored cursor seeded on the FIRST row is claimed IN PLACE: the first press selects
-    /// the row the ring already marks, whichever arrow it was, and never skips past it. Seeded
+    /// An unanchored cursor seeded on the FIRST row is claimed IN PLACE by default: the first press
+    /// selects the row the ring already marks, whichever arrow it was, and never skips past it — a
+    /// list whose rows show their selection (Songs, the queue) makes that claim visible. Seeded
     /// anywhere else — the queue's playing row, which already wears its own outline, so "stay"
     /// reads as "nothing happened" — the first press moves from it, claiming it in place only
-    /// where the move would leave the list.
-    public func step<Rows: BidirectionalCollection>(by delta: Int, in rows: Rows) -> ID?
+    /// where the move would leave the list. `claimsFirstRowSeed: false` gives the first row that
+    /// rule too: for a list with no selected look (the browse grids, K2), where a claim in place
+    /// would change nothing on screen.
+    public func step<Rows: BidirectionalCollection>(by delta: Int, in rows: Rows,
+                                                    claimsFirstRowSeed: Bool = true) -> ID?
         where Rows.Element == ID {
         guard let position = rows.firstIndex(of: id) else { return nil }
-        if !isAnchored, position == rows.startIndex {
+        if !isAnchored, claimsFirstRowSeed, position == rows.startIndex {
             return id
         }
         let limit = delta < 0 ? rows.startIndex : rows.index(before: rows.endIndex)
