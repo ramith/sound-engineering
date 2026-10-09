@@ -20,6 +20,7 @@ struct AlbumGridView: View {
             noun: "album",
             empty: LibraryEmptyStateView(kind: .emptyLibrary),
             filterKeys: { [$0.title, $0.albumArtist] },
+            title: \.title,
             load: { await model.loadAlbums() },
             tile: { album in
                 BrowseTileContent(ref: .album(album.id), title: album.title, subtitle: album.albumArtist,

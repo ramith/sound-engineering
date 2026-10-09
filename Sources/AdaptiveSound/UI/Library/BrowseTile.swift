@@ -39,6 +39,7 @@ struct BrowseTile: View {
         .focusable(false)
         .help(tooltip)
         .accessibilityLabel(content.accessibilityLabel)
+        .accessibilityHint(content.accessibilityHint) // not the tooltip: it would repeat the name
         .accessibilityAction(named: "Play", play)
         .accessibilityAction(named: "Play Next", playNext)
         .accessibilityAction(named: "Add to Queue", append)

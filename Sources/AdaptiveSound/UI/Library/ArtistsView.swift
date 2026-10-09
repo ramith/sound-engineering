@@ -31,6 +31,7 @@ struct ArtistsGridView: View {
                 hint: "Songs without artist tags won't appear here."
             ),
             filterKeys: { [$0.name] },
+            title: \.name,
             load: { await model.loadArtists() },
             tile: { artist in
                 BrowseTileContent(ref: .artist(artist.id), title: artist.name,
