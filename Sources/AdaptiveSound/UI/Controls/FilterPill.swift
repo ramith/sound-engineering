@@ -5,21 +5,25 @@ import SwiftUI
 
 /// The filter field: a capsule pill holding a magnifier, the text field and, while there is text,
 /// a clear button. One component for every in-place filter — the Library card headers (Songs,
-/// Albums, Artists, Genres) and the Now Playing queue; the playlist picker adopts it next. Semgrep
+/// Albums, Artists, Genres), the Now Playing queue and the playlist picker. Semgrep
 /// `ui-no-raw-text-field` keeps a second filter field from appearing.
 ///
 /// It owns its focus and the transport-Space gate (`suppressesTransportSpace`), so a typed space
 /// is a space, not play / pause. Escape (the macOS cancel command) clears the text, gives up focus,
 /// then runs `onCancel` — where a host hands key focus back to the list it filters.
-/// `focusShortcut` (the card headers pass ⌘F) focuses it from anywhere in its window. The pill
-/// fills the width its host gives it; its height grows with the text size. Its horizontal geometry
-/// is Kit data (`FilterPillMetrics`), so SLOT-06 can hold each host's narrowest width to the whole
+/// `focusShortcut` (the card headers and the picker pass ⌘F) focuses it from anywhere in its
+/// window; `focusesOnAppear` makes it type-ready as it appears (the picker sheet). The pill fills
+/// the width its host gives it; its height grows with the text size. Its horizontal geometry is Kit
+/// data (`FilterPillMetrics`), so SLOT-06 can hold each host's narrowest width to the whole
 /// placeholder.
 struct FilterPill: View {
     @Binding var text: String
     /// The placeholder, which is also the field's VoiceOver label ("Filter Albums").
     let prompt: String
     var focusShortcut: KeyboardShortcut?
+    /// Take key focus on appearing — for a sheet that opens to type in. Off by default: an in-tab
+    /// filter is focused by ⌘F or a click, not on every visit.
+    var focusesOnAppear = false
     var onCancel: () -> Void = {}
 
     @FocusState private var focused: Bool
@@ -40,6 +44,11 @@ struct FilterPill: View {
                 .foregroundStyle(DesignSystem.Color.label)
                 .suppressesTransportSpace(while: $focused)
                 .onExitCommand(perform: cancel)
+                .onAppear {
+                    if focusesOnAppear {
+                        focused = true
+                    }
+                }
             if !text.isEmpty {
                 Button("Clear Filter", systemImage: "xmark.circle.fill", action: clear)
                     .labelStyle(.iconOnly)
