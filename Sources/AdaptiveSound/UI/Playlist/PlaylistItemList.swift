@@ -16,9 +16,10 @@ struct PlaylistItemList: View {
     let reorderEnabled: Bool
     /// Keyboard-command focus for the scroll area. `List` owned key focus for free; a
     /// ScrollView/LazyVStack does not, so the ↑/↓/Return/Delete shortcuts are bound to this
-    /// (`.focused` + default + set-on-tap). OWNED by `PlaylistView` so the filter field's
-    /// Escape can hand focus back here.
-    var queueFocused: FocusState<Bool>.Binding
+    /// (`.focused` + default + set-on-tap). The panel's ONE focus value (`CardFocus`), OWNED by
+    /// `PlaylistView`: the list holds focus while it is `.content`, where the filter pill's Escape
+    /// sends it (K1).
+    let focus: FocusState<CardFocus?>.Binding
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
@@ -83,8 +84,8 @@ struct PlaylistItemList: View {
             // the system ring around the whole scroll area — the cursor row's own `focusRing`
             // is the cue (A3). No visible row = no cursor = no focus stop.
             .focusable(!visibleIndices.isEmpty)
-            .focused(queueFocused)
-            .defaultFocus(queueFocused, true)
+            .focused(focus, equals: .content)
+            .defaultFocus(focus, .content)
             .focusEffectDisabled()
             .frame(maxHeight: .infinity)
             // Dismiss any open Info popover when the queue changes (remove / clear / reorder)
@@ -116,7 +117,7 @@ struct PlaylistItemList: View {
             #if DEBUG
             // Picture-sheet ring variant: focus, with the cursor where the first ↓ lands.
             .sheetFocusSeed(.queue) {
-                queueFocused.wrappedValue = true
+                focus.wrappedValue = .content
                 cursorID = keyboardCursor?.step(by: 1, in: visibleRows.map(\.id))
             }
             #endif
@@ -165,7 +166,7 @@ struct PlaylistItemList: View {
             TapGesture().onEnded {
                 // A click on a row focuses the queue for the keyboard shortcuts and lands the
                 // cursor here (so subsequent arrows continue from where you clicked).
-                queueFocused.wrappedValue = true
+                focus.wrappedValue = .content
                 cursorID = item.id
                 // Single-click plays the row, so the now-playing card always matches the audio (no
                 // select-without-play state). Re-clicking the playing track is a no-op (no restart).
@@ -239,7 +240,7 @@ struct PlaylistItemList: View {
 
     /// The ring is drawn while the queue holds key focus AND the user navigates by keyboard.
     private var showsRing: Bool {
-        queueFocused.wrappedValue && showsKeyboardFocus
+        focus.wrappedValue == .content && showsKeyboardFocus
     }
 
     /// The row wearing the focus ring, or nil (no ring).

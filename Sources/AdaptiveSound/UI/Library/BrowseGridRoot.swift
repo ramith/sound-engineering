@@ -27,6 +27,9 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
     let tile: (Item) -> BrowseTileContent
 
     @Environment(LibraryBrowseModel.self) private var model
+    /// The card's one focus value (`CardFocus`, K1): the Filter pill is `.filter`, the grid
+    /// `.content` — so Esc in the filter lands on the grid, even one "no results" had replaced.
+    @FocusState private var focus: CardFocus?
 
     var body: some View {
         LibraryLoadStateView(state: state, isEmpty: items.isEmpty) {
@@ -49,11 +52,12 @@ struct BrowseGridRoot<Item: Identifiable, Empty: View>: View where Item.ID == In
         return VStack(spacing: 0) {
             LibraryCardHeader(title: category.title,
                               count: FacetCountLabel.count(shown.count, noun: noun, filtered: isFiltering),
-                              filter: $model.browseFilter, filterPrompt: "Filter \(category.title)")
+                              filter: $model.browseFilter, filterPrompt: "Filter \(category.title)",
+                              focus: $focus)
             if shown.isEmpty {
                 LibraryNoResultsView(items: "\(noun)s", query: query)
             } else {
-                BrowseGrid(category: category, items: shown, tile: tile)
+                BrowseGrid(category: category, items: shown, tile: tile, focus: $focus)
             }
         }
     }

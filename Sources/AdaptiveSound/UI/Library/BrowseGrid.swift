@@ -18,12 +18,14 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
     /// The visible (filtered) tiles, in display order.
     let items: [Item]
     let tile: (Item) -> BrowseTileContent
+    /// The card's one focus value (`BrowseGridRoot` owns it, K1): the grid holds key focus while it
+    /// is `.content`.
+    let focus: FocusState<CardFocus?>.Binding
 
     @Environment(LibraryBrowseModel.self) private var model
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     @State private var navigator = BrowseNavigator()
-    @FocusState private var focused: Bool
     #if DEBUG
         /// Picture-sheet renderer only (`Debug/SheetFixture.swift`): the tile it puts the cursor on.
         @Environment(\.sheetGridStates) private var sheetGridStates
@@ -35,7 +37,8 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
         GeometryReader { geometry in
             let layout = Metrics.layout(areaWidth: geometry.size.width)
             let artSide = Metrics.artSide(tileWidth: layout.tileWidth)
-            let ringID = navigator.ringID(in: items.map(\.id), focused: focused, keyboardMode: showsKeyboardFocus)
+            let ringID = navigator.ringID(in: items.map(\.id), focused: focus.wrappedValue == .content,
+                                          keyboardMode: showsKeyboardFocus)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVGrid(columns: Self.columns(layout.columns), spacing: Metrics.spacing) {
@@ -57,14 +60,14 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
                 .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
                 .onChange(of: layout.columns, initial: true) { _, columns in navigator.columns = columns }
                 .modifier(BrowseKeyboard(category: category, items: items, title: { tile($0).title },
-                                         navigator: navigator, focused: $focused, proxy: proxy, open: open))
+                                         navigator: navigator, focus: focus, proxy: proxy, open: open))
                 #if DEBUG
                     // Picture-sheet states variant: focus, with the cursor on the fixture's tile.
                     .sheetFocusSeed(.grid) {
                         if let cursor = items.first(where: { tile($0).ref == sheetGridStates.cursor }) {
                             navigator.seedCursor(cursor.id)
                         }
-                        focused = true
+                        focus.wrappedValue = .content
                     }
                 #endif
             }
