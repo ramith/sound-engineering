@@ -1,11 +1,12 @@
 import Foundation
 
-// MARK: - Control metrics (S10.8 D3 — the icon chip and the capsule switch)
+// MARK: - Control metrics (S10.8 D3 — the icon chip, the capsule switch and the header pills)
 
-/// The shared small controls' metrics, in one place so every adopter — the Now Playing queue header
-/// today, Songs' Sort / Columns and the EQ switch later — draws the same control. The sizes are the
-/// realigned queue header's (`png/03`), moved here unchanged from `DesignSystem.QueueHeader`; the
-/// sizes are Dynamic-Type-scaled where the controls read them.
+/// The shared small controls' metrics, in one place so every adopter — the Now Playing queue
+/// header, Songs' Sort / Columns, the EQ switch later — draws the same control. The chip and switch
+/// sizes are the realigned queue header's (`png/03`), moved here unchanged from
+/// `DesignSystem.QueueHeader`; the pill height is the shipped Songs pills'. All are
+/// Dynamic-Type-scaled where the controls read them.
 enum ControlMetrics {
     /// The icon chip's side: a square with `DesignSystem.Radius.control` corners.
     static let chipSide: CGFloat = 28
@@ -27,4 +28,8 @@ enum ControlMetrics {
     static let focusRingOutset: CGFloat = 3
     /// A pressed chip's opacity — the press answer of the pill and the footer play button.
     static let pressedOpacity = 0.6
+    /// The header pills' height at the default text size — the filter pill, Songs' Sort and
+    /// Columns pills and the large teal pill — so a header's pills stay one height; each scales it
+    /// with Dynamic Type (relative to `.body`).
+    static let pillHeight: CGFloat = 30
 }

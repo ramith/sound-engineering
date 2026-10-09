@@ -17,7 +17,7 @@ import SwiftUI
 /// `.large` is the 30pt header pill. Both scale with Dynamic Type so larger text never clips.
 struct PillButtonStyle: ButtonStyle {
     @ScaledMetric(relativeTo: .body) private var regularHeight: CGFloat = 24
-    @ScaledMetric(relativeTo: .body) private var largeHeight: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var largeHeight = ControlMetrics.pillHeight
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
 
