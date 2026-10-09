@@ -16,6 +16,9 @@ struct BrowseTileContent {
     /// VoiceOver's label — "title, subtitle", and an album's year after them. The tooltip shows
     /// the title and subtitle whole, since the tile cuts each to one line.
     let accessibilityLabel: String
+    /// VoiceOver's hint — what activating the tile does ("Opens the album"). Set in place of the
+    /// one `.help` would give, which repeats the name the label has just read.
+    let accessibilityHint: String
 
     /// - Parameter year: an album's year (0 = unknown, left out).
     init(ref: LibraryBrowseModel.FacetRef, title: String, subtitle: String, artworkKeys: [String],
@@ -25,5 +28,10 @@ struct BrowseTileContent {
         self.subtitle = subtitle
         self.artworkKeys = artworkKeys
         accessibilityLabel = ([title, subtitle] + (year > 0 ? ["\(year)"] : [])).joined(separator: ", ")
+        accessibilityHint = switch ref {
+        case .album: "Opens the album"
+        case .artist: "Opens the artist"
+        case .genre: "Opens the genre"
+        }
     }
 }

@@ -17,6 +17,8 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
     let category: LibraryCategory
     /// The visible (filtered) tiles, in display order.
     let items: [Item]
+    /// The type-to-select title (a plain read, not a whole `BrowseTileContent` per key press).
+    let title: (Item) -> String
     let tile: (Item) -> BrowseTileContent
     /// The card's one focus value (`BrowseGridRoot` owns it, K1): the grid holds key focus while it
     /// is `.content`.
@@ -59,7 +61,7 @@ struct BrowseGrid<Item: Identifiable>: View where Item.ID == Int64 {
                 }
                 .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { navigator.viewportHeight = $0 }
                 .onChange(of: layout.columns, initial: true) { _, columns in navigator.columns = columns }
-                .modifier(BrowseKeyboard(category: category, items: items, title: { tile($0).title },
+                .modifier(BrowseKeyboard(category: category, items: items, title: title,
                                          navigator: navigator, focus: focus, proxy: proxy, open: open))
                 #if DEBUG
                     // Picture-sheet states variant: focus, with the cursor on the fixture's tile.
