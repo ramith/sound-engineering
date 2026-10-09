@@ -6,16 +6,15 @@ import SwiftUI
 
 /// The Genres root: the shared browse scaffold and tile (`BrowseGridRoot` → `BrowseGrid`), like
 /// Albums and Artists. A genre's art is a 2×2 mosaic of its biggest albums' covers (one cover with
-/// one to three, the guitars glyph with none — `CoverArrangement`), from the model's one cover read
-/// per Genres load (`genreCoverKeys`); its subtitle is "N songs". Hides 0-song genres (e.g. one
-/// orphaned by a retag) via `FacetListVisibility`; opening a genre pushes `.genre(id)` →
-/// `GenreDetailView`.
+/// one to three, the guitars glyph with none — `CoverArrangement`), from the cover read that loads
+/// with the genres (`loadGenres`, paths already warmed); its subtitle is "N songs". Hides 0-song
+/// genres (e.g. one orphaned by a retag) via `FacetListVisibility`; opening a genre pushes
+/// `.genre(id)` → `GenreDetailView`.
 struct GenresListView: View {
     @Environment(LibraryBrowseModel.self) private var model
 
     var body: some View {
-        // Read here, not inside the tile closure: a cover read landing after the list re-renders
-        // this root, and so every tile.
+        // Read here, not inside the tile closure, so new covers re-render this root and its tiles.
         let covers = model.genreCoverKeys
         BrowseGridRoot(
             category: .genres,
@@ -36,10 +35,6 @@ struct GenresListView: View {
                                   artworkKeys: covers[genre.id] ?? [])
             }
         )
-        // One batched path lookup for every cover the mosaics show (as the album tiles do).
-        .task(id: covers) {
-            await model.warmArtwork(covers.values.flatMap(\.self))
-        }
     }
 }
 
