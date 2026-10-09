@@ -94,21 +94,20 @@ struct PlaylistView: View {
             // 190pt ideal (`png/03`); its minimum holds the whole placeholder (SLOT-06).
             if panelMode == .upNext, !viewModel.queue.isEmpty {
                 FilterPill(text: $filterText, prompt: "Filter queue", focus: $focus)
-                    .frame(minWidth: DesignSystem.QueueHeader.filterMinWidth,
-                           idealWidth: DesignSystem.QueueHeader.filterIdealWidth,
-                           maxWidth: DesignSystem.QueueHeader.filterIdealWidth)
+                    .filterPillWidth(.queue)
                     .queueHeaderRole(.filter)
             }
         }
         .frame(minHeight: headerHeight)
     }
 
-    /// The count, whole ("9 tracks") where it fits, else the number alone — at the 880pt window
-    /// with every chip showing. VoiceOver reads it whole either way.
+    /// The count, whole ("10,000 tracks") where it fits, else the number alone in its short form
+    /// ("999", "1.2K", "10K") — at the 880pt window with every chip showing, where the count has
+    /// ~29pt: a grouped "1,000" would already be cut. VoiceOver reads it whole either way.
     private var countLine: some View {
         ViewThatFits(in: .horizontal) {
             Text(headerSubtitle)
-            Text(String(headerCount))
+            Text(headerCount.formatted(.number.notation(.compactName)))
         }
         .font(DesignSystem.Font.monoSmall)
         .foregroundStyle(Color.asLabelTertiary)
@@ -121,8 +120,10 @@ struct PlaylistView: View {
         panelMode == .history ? library.history.count : viewModel.queue.count
     }
 
+    /// The count line's one rule (`FacetCountLabel.count`, as the Library card headers): the whole
+    /// queue, also while the filter narrows it.
     private var headerSubtitle: String {
-        "\(headerCount) \(headerCount == 1 ? "track" : "tracks")"
+        FacetCountLabel.count(headerCount, noun: "track", filtered: false)
     }
 
     /// Jump-to-now-playing IGNORES an active filter (§5) — sequenced, not simultaneous:

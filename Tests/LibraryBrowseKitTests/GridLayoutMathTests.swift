@@ -5,17 +5,17 @@ import Testing
 
 @Suite("GridLayoutMath — columns, page size and row pitch")
 struct GridLayoutMathTests {
-    /// Today's browse grid: 168-pt tiles, 16-pt column gaps.
+    /// 168-pt tiles, 16-pt gaps (the pre-D5 grid's numbers; `FillGridLayoutTests` has today's).
     private func columns(_ width: Double) -> Int {
-        GridLayoutMath.adaptiveColumns(width: width, minimum: 168, spacing: 16)
+        GridLayoutMath.columnsThatFit(width: width, minimum: 168, spacing: 16)
     }
 
     @Test("as many minimum-wide tiles as fit with the gaps between them")
-    func adaptiveColumns() {
+    func columnsThatFit() {
         #expect(columns(168) == 1)
         #expect(columns(352) == 2) // 2 × 168 + 16
         #expect(columns(536) == 3)
-        #expect(columns(968) == 5) // a 1000-pt grid less its 16-pt insets
+        #expect(columns(968) == 5)
     }
 
     @Test("a column appears exactly at its boundary, not a fraction before (SwiftUI's adaptive rule)")

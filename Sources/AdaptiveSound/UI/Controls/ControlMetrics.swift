@@ -26,7 +26,8 @@ enum ControlMetrics {
     /// How far OUTSIDE a control its keyboard focus ring reaches (a 1pt gap, then the 2pt ring) —
     /// where the system focus ring it replaces sits, clear of the control's own edge.
     static let focusRingOutset: CGFloat = 3
-    /// A pressed chip's opacity — the press answer of the pill and the footer play button.
+    /// A pressed control's opacity — the one press answer of the icon chip, the teal pill
+    /// (`PillButtonStyle`) and the footer's transport controls.
     static let pressedOpacity = 0.6
     /// The header pills' height at the default text size — the filter pill, Songs' Sort and
     /// Columns pills and the large teal pill — so a header's pills stay one height; each scales it

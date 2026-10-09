@@ -3,12 +3,12 @@
 /// The browse grid's layout arithmetic for the keyboard: how many tiles a row holds and how far a
 /// page moves. Pure, so the keys and the layout cannot disagree untested.
 public enum GridLayoutMath {
-    /// Columns of an adaptive `GridItem(.adaptive(minimum:), spacing:)` in `width` points — as many
-    /// `minimum`-wide tiles as fit with `spacing` between them, at least one. This is the count
-    /// SwiftUI lays out: checked offscreen against a real `LazyVGrid` at 457 widths, the fractional
-    /// widths around every column boundary included. (Capped at 1 000 — a sanity bound, never a
-    /// real layout.)
-    public static func adaptiveColumns(width: Double, minimum: Double, spacing: Double) -> Int {
+    /// As many `minimum`-wide tiles as fit in `width` points with `spacing` between them, at least
+    /// one — the count `FillGridLayout` builds on. The browse grid lays out exactly that many
+    /// FLEXIBLE columns (S10.8 D5), so this is the row length the arrow keys step by by
+    /// construction. (The rule is also SwiftUI's own for an adaptive `GridItem`, checked offscreen
+    /// at 457 widths when the grid used one.) Capped at 1 000 — a sanity bound, never a real layout.
+    public static func columnsThatFit(width: Double, minimum: Double, spacing: Double) -> Int {
         let fit = ((width + spacing) / (minimum + spacing)).rounded(.down)
         return fit >= 1 ? Int(min(fit, 1000)) : 1 // NaN / negative / zero → one column
     }

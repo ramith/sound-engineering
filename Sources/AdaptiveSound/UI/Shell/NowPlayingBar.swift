@@ -203,7 +203,7 @@ private struct FooterTransportControls: View {
 /// rest appearance / disabled color). Mirrors the existing `TransportButtonStyle` pattern.
 private struct FooterControlButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+        configuration.label.opacity(configuration.isPressed ? ControlMetrics.pressedOpacity : 1)
     }
 }
 

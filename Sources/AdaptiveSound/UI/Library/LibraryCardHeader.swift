@@ -30,7 +30,7 @@ struct LibraryCardHeader<Controls: View>: View {
                 }
                 Spacer(minLength: DesignSystem.Spacing.small)
                 FilterPill(text: $filter, prompt: filterPrompt, focus: focus, focusShortcut: KeyboardShortcut("f"))
-                    .frame(minWidth: DesignSystem.SongsList.searchFieldMinWidth, idealWidth: 230, maxWidth: 260)
+                    .filterPillWidth(.library)
                 controls
             }
             .padding(.top, 16)
