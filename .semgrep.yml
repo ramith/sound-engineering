@@ -207,7 +207,11 @@ rules:
       fields had drifted from all three. The only other text entry is the playlist rename field
       (UI/Library/LibrarySidebar+Rename.swift) and the Save Preset sheet
       (UI/EQ/SaveCustomPresetView.swift). Use FilterPill; a genuinely new kind of text entry is
-      added to this rule's allow-list in review. Comment lines are not matched.
+      added to this rule's allow-list in review. Covers every text-entry control: SwiftUI's
+      TextField, SecureField, TextEditor and .searchable, and AppKit's NSTextField, NSSearchField,
+      NSSecureTextField, NSTokenField, NSComboBox (and a ComboBox wrapper), NSSearchToolbarItem and
+      NSTextView — editable unless told otherwise, which a regex can't see; display-only text is a
+      SwiftUI Text. Comment lines are not matched.
     paths:
       include: ['Sources/AdaptiveSound']
       # PATH-ANCHORED, like ui-no-color-literal: a bare basename would exempt any file of that name.
@@ -215,7 +219,7 @@ rules:
         - 'Sources/AdaptiveSound/UI/Controls/FilterPill.swift'
         - 'Sources/AdaptiveSound/UI/Library/LibrarySidebar+Rename.swift'
         - 'Sources/AdaptiveSound/UI/EQ/SaveCustomPresetView.swift'
-    pattern-regex: '(?m)^(?!\s*//).*(\b(TextField|SecureField|NSTextField|NSSearchField|NSSecureTextField)\b|\.searchable\s*\()'
+    pattern-regex: '(?m)^(?!\s*//).*(\b(TextField|SecureField|TextEditor|ComboBox|NSTextField|NSSearchField|NSSecureTextField|NSTokenField|NSComboBox|NSSearchToolbarItem|NSTextView)\b|\.searchable\s*\()'
 
   # --- S10.8 E1 (docs/sprints/s10-8-glass-sweep-plan.md §E, COL-01): the selection kit is for EVERY list.
   - id: selection-kit-no-columns
