@@ -1,26 +1,27 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Queue header layout (S10.8 D2 — the header row's width policy, in code)
 
-/// The Now Playing queue header's one row (`png/03`): the title, the count, the icon chips and the
+/// The Now Playing queue header (`png/03`): the title, the count, the icon chips and the
 /// Up Next / Recent switch from the leading edge, the filter pill at the trailing edge.
 ///
-/// The row is too full for an `HStack` at the 880pt window: the stack offered the count its whole
-/// width before it reserved the filter's minimum, so the row ran 16pt wider than the queue column
-/// and pushed the whole Now Playing tab past the window (its 16pt insets read 8pt). This layout
-/// states the width-deficit policy (break-it finding 2) instead:
+/// An `HStack` could not hold the row's width-deficit policy: it offered the count its whole width
+/// before it reserved the filter's minimum, so at the 880pt window the row ran 16pt wider than the
+/// queue column and pushed the whole Now Playing tab past the window. The policy is Kit data,
+/// `QueueHeaderWidths` (unit-tested at the design's widths, every count size, History mode and
+/// large text); this layout measures the parts, asks it, and places them:
 ///
-/// 1. A `.rigid` part — the title, the chips, the switch — always gets its ideal width: a control
-///    label never truncates.
-/// 2. The `.filter` compresses first, from its ideal width down to its minimum, which holds its
-///    whole placeholder (SLOT-06).
-/// 3. Then the `.count` gives way — the designated truncation victim, which switches to its compact
-///    form (`ViewThatFits`) before it would truncate. What the compact form does not use goes back
-///    to the filter, up to its ideal width.
+/// - the title, chips and switch keep their ideal widths; the filter compresses first, then the
+///   count gives way (its compact form, then truncation) and what it doesn't take goes back to the
+///   filter;
+/// - where even the filter's minimum no longer fits beside the rest — larger text — the filter
+///   takes a row of its own under the others, at the trailing edge, rather than overlapping them
+///   or pushing the column wider. A `.dynamicTypeSize` clamp could not prevent that: on macOS 26
+///   text styles do not follow the Dynamic Type environment, so a clamp bounds nothing — the
+///   layout has to hold at any size.
 ///
-/// Space left over opens between the switch and the filter. Every part is centred vertically; the
-/// row is as tall as its tallest part. One count and one filter: any further part marked either
-/// way is laid out as rigid.
+/// Every part is centred on its row; the header is as tall as its rows.
 struct QueueHeaderLayout: Layout {
     /// What a part does when the row runs short of width.
     enum Role {
@@ -28,31 +29,34 @@ struct QueueHeaderLayout: Layout {
     }
 
     var spacing: CGFloat
+    /// The gap above the filter when it takes its own row.
+    var rowSpacing: CGFloat = DesignSystem.Spacing.small
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
-        let width: CGFloat = if let proposed = proposal.width, proposed.isFinite {
-            // Never narrower than the rigid parts and the filter's minimum: past that the row
-            // overflows, like a stack, rather than truncating a control.
-            max(proposed, minimumWidth(of: subviews))
-        } else {
-            idealWidth(of: subviews)
-        }
-        let heights = zip(subviews, partWidths(in: width, subviews: subviews)).map { subview, partWidth in
-            subview.sizeThatFits(ProposedViewSize(width: partWidth, height: nil)).height
-        }
-        return CGSize(width: width, height: heights.max() ?? 0)
+        let available = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let plan = plan(in: available ?? .infinity, subviews: subviews)
+        let rows = rowHeights(plan, subviews: subviews)
+        // Wider than offered only when the first row's parts overflow on their own.
+        let width = max(available ?? 0, CGFloat(plan.requiredWidth))
+        return CGSize(width: width, height: rows.first + (rows.filter.map { rowSpacing + $0 } ?? 0))
     }
 
     func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        let plan = plan(in: bounds.width, subviews: subviews)
+        let rows = rowHeights(plan, subviews: subviews)
+        let firstRowY = rows.filter == nil ? bounds.midY : bounds.minY + rows.first / 2
         let filter = index(of: .filter, in: subviews)
         var x = bounds.minX
-        for (position, partWidth) in partWidths(in: bounds.width, subviews: subviews).enumerated() {
+        for (position, subview) in subviews.enumerated() {
+            let width = CGFloat(plan.widths[position])
+            let proposal = ProposedViewSize(width: width, height: nil)
             if position == filter {
-                x = bounds.maxX - partWidth // the filter sits at the trailing edge
+                let y = rows.filter.map { bounds.minY + rows.first + rowSpacing + $0 / 2 } ?? firstRowY
+                subview.place(at: CGPoint(x: bounds.maxX - width, y: y), anchor: .leading, proposal: proposal)
+            } else {
+                subview.place(at: CGPoint(x: x, y: firstRowY), anchor: .leading, proposal: proposal)
+                x += width + spacing
             }
-            subviews[position].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
-                                     proposal: ProposedViewSize(width: partWidth, height: nil))
-            x += partWidth + spacing
         }
     }
 }
@@ -63,60 +67,40 @@ extension QueueHeaderLayout {
         static let defaultValue = Role.rigid
     }
 
-    /// Each part's width in a row `width` wide, by the policy above.
-    private func partWidths(in width: CGFloat, subviews: Subviews) -> [CGFloat] {
-        var widths = subviews.map { $0.sizeThatFits(.unspecified).width }
+    /// The Kit policy, fed with the parts' measured widths; the count answers for itself.
+    private func plan(in width: CGFloat, subviews: Subviews) -> QueueHeaderWidths {
         let count = index(of: .count, in: subviews)
         let filter = index(of: .filter, in: subviews)
-        let room = width - gaps(subviews) - rigidWidth(widths, count: count, filter: filter)
-        let filterRange = filter.map { index in
-            let minimum = minimumWidth(of: subviews[index])
-            return minimum ... max(widths[index], minimum)
-        }
-        if let count {
-            // The filter compresses first: while it can shrink to make room, the count is whole.
-            // Past that the count gives way to the room the filter's minimum leaves, and keeps only
-            // what its form needs of it — the compact form is narrower than the room.
-            let filterMinimum = filterRange?.lowerBound ?? 0
-            let offer: ProposedViewSize = room - widths[count] >= filterMinimum
-                ? .unspecified
-                : ProposedViewSize(width: max(room - filterMinimum, 0), height: nil)
-            widths[count] = subviews[count].sizeThatFits(offer).width
-        }
-        if let filter, let filterRange {
-            // The filter takes the rest, between its minimum and its ideal width.
-            let rest = room - (count.map { widths[$0] } ?? 0)
-            widths[filter] = min(max(rest, filterRange.lowerBound), filterRange.upperBound)
-        }
-        return widths
-    }
-
-    /// The row at its ideal width: every part at its ideal, the count whole.
-    private func idealWidth(of subviews: Subviews) -> CGFloat {
-        subviews.reduce(gaps(subviews)) { $0 + $1.sizeThatFits(.unspecified).width }
-    }
-
-    /// The narrowest the row gets without overflowing: the rigid parts and the filter's minimum.
-    private func minimumWidth(of subviews: Subviews) -> CGFloat {
-        let widths = subviews.map { $0.sizeThatFits(.unspecified).width }
-        let count = index(of: .count, in: subviews)
-        let filter = index(of: .filter, in: subviews)
-        let filterMinimum = filter.map { minimumWidth(of: subviews[$0]) } ?? 0
-        return gaps(subviews) + rigidWidth(widths, count: count, filter: filter) + filterMinimum
-    }
-
-    private func minimumWidth(of subview: LayoutSubview) -> CGFloat {
-        subview.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width
-    }
-
-    private func rigidWidth(_ widths: [CGFloat], count: Int?, filter: Int?) -> CGFloat {
-        widths.indices.reduce(0) { total, index in
-            index == count || index == filter ? total : total + widths[index]
+        let filterMinimum = filter.map { subviews[$0].sizeThatFits(ProposedViewSize(width: 0, height: nil)).width }
+        return QueueHeaderWidths(
+            available: Double(width),
+            spacing: Double(spacing),
+            idealWidths: subviews.map { Double($0.sizeThatFits(.unspecified).width) },
+            count: count,
+            filter: filter,
+            filterMinimum: Double(filterMinimum ?? 0)
+        ) { offer in
+            guard let count else { return 0 }
+            let proposal = ProposedViewSize(width: offer.isFinite ? CGFloat(offer) : nil, height: nil)
+            return Double(subviews[count].sizeThatFits(proposal).width)
         }
     }
 
-    private func gaps(_ subviews: Subviews) -> CGFloat {
-        spacing * CGFloat(max(subviews.count - 1, 0))
+    /// The first row's height, and the filter's row's when it has one.
+    private func rowHeights(_ plan: QueueHeaderWidths, subviews: Subviews) -> (first: CGFloat, filter: CGFloat?) {
+        let filter = plan.filterOnOwnRow ? index(of: .filter, in: subviews) : nil
+        var first: CGFloat = 0
+        var filterRow: CGFloat?
+        for (position, subview) in subviews.enumerated() {
+            let proposal = ProposedViewSize(width: CGFloat(plan.widths[position]), height: nil)
+            let height = subview.sizeThatFits(proposal).height
+            if position == filter {
+                filterRow = height
+            } else {
+                first = max(first, height)
+            }
+        }
+        return (first, filterRow)
     }
 
     /// The first part with `role`.
