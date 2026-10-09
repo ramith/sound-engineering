@@ -90,6 +90,8 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     thing on the graph; Tone sliders are macros that move them, not a second mode.)*
 23. **EQ safety: automatic headroom + a visible +12 dB ceiling;** the summed-dB clamp is retired
     (it shrank presets ~10× yet let a single +12 dB band through).
+    *(Revised by decision 26: loudness-neutral instead of the headroom preamp; the ceiling and the
+    clamp's retirement stand.)*
 24. **EQ layout: V1b, "sound first" with a left rail** (2026-10-09, chosen from three prototypes
     and a revision). Left: an **Equalizer** card (On/Off, Presets, My Presets) above a **Tone**
     card (Bass <150 Hz, Body 150–500 Hz, Mids 0.5–2 kHz, Presence 2–6 kHz, Air >6 kHz; ±12 dB;
@@ -99,6 +101,20 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     resets Tone to 0; Save bakes Tone into the saved preset.** In a small window **the Tone card
     folds to one line** (the user's choice, remembered). Pictures:
     [eq-lens/png/v1b-*](../design/eq-lens/README.md#layout-v1b-decision-24).
+25. **The EQ always plays in full** (2026-10-10, after the review panel). Now Playing's Intensity knob
+    blended the EQ with the dry signal, so below 100 % the graph lied and boosts went above the
+    source. The EQ now runs ahead of the blend, and Intensity scales only the adaptive enhancement.
+    The bit-perfect rule becomes "Intensity 0 **with EQ Off** = bit-perfect"; Pure Mode is unchanged.
+26. **The EQ keeps the song's loudness** (2026-10-10; revises 23). A loudness-neutral output gain,
+    predicted from the track's own gated spectrum, replaces the −max|H| preamp, which cost 1.7–12 dB
+    that the post-EQ normaliser only won back slowly. The always-on −1 dBTP limiter catches the
+    rare peaks (measured: ≤ +1.2 dB on 0.5 % of 10 ms frames). Off is then a true bypass and
+    level-fair at once. The "Headroom" readout goes; the +12 dB ceiling stays.
+27. **Unsaved edits on a preset switch:** switch at once, and a "Bring back edits" message offers
+    them back for a few seconds (the queue's restore-message pattern). No ⌘Z, no prompt.
+28. **Compare = press and hold to hear the song without the EQ** at the same loudness; let go to
+    return. The engine needs only On/Off. A pinned output remembers exactly what was last heard on
+    it, edits and Tone included (default, not a founder question).
 
 ## C. Scope
 

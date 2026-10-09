@@ -839,3 +839,50 @@ Sprint E's plan check (not decided): the genre's cover mosaic as its detail-page
    "wired" that never arrived live. Verify on the merged branch, live.
 4. **Pausing mid-sprint cost nothing** because worktrees were kept and agents resumed with
    context.
+
+## Sprint EQ — the honest 31-point EQ, V1b layout (decisions 21–28)
+
+### Plan check (2026-10-09 – 10)
+
+- **Engine (audio-dsp).** A Python + C++ prototype in the session scratchpad: one bilinear bell
+  per band at a bandwidth of 0.40·fc, a weighted least-squares interaction solve (31 centres plus
+  30 midpoints), iterated, in double-precision TPT state-variable filters. At the band centres it
+  measured ≤ 0.08 dB on every preset at 44.1–192 kHz, at about 2.2 % of one core at 192 kHz × 8
+  channels. It found a live bug: after an AU re-allocation the EQ plays flat until it is next
+  touched.
+- **UI (ui-designer, from the V1b prototype).** A pure `EQEditKit` target for the editing rules;
+  today's neighbours-follow drag kept verbatim; "Edited" computed rather than stored. It found two
+  per-output memory bugs: recall is mounted only on the EQ tab, and it is keyed by a session-scoped
+  `AudioDeviceID`.
+
+### Research and the adversarial review panel (2026-10-10, founder ask)
+
+The founder asked for the algorithms to be reviewed adversarially and independently, against the
+published literature and against how other players actually implement EQ, from sources opened in
+the session rather than memory.
+
+- **Research.**
+  - **How other players do it:** source code for GStreamer, Audacious, VLC, FFmpeg, DeaDBeeF,
+    Rockbox, Equalizer APO, EasyEffects/LSP, eqMac and AutoEq; official docs for Roon, FabFilter,
+    Apple, Wavelet and others. Common players run uncompensated filter cascades (two adjacent
+    +6 dB sliders play about +9 dB). Good automatic preamps use the realised response, not the
+    slider values. Nobody smooths parameter changes well.
+  - **Literature:** Välimäki & Liski 2017, Liski & Välimäki DAFx-17, Rämö et al. 2020, Wishnick
+    DAFx-14, BS.1770-5, Olive 2022. Three corrections to the plan: the published GEQ tuning exists
+    only at 44.1 kHz; a ≤ 0 dB magnitude does not bound peaks; Wishnick ranks transposed DF-II
+    above the SVF for an instant gain change.
+- **Panel.** Three blind reviewers, none of them the author:
+
+  | Reviewer | Verdict | Key results (all measured) |
+  |---|---|---|
+  | Breaker (audio-dsp, own prototype) | SOUND WITH FIXES | Reproduced the core. BLOCKER: the Intensity blend sits after the EQ, so the played curve misses the drawn one by 4–22 dB and plays up to +3 dB over the source, and the gates only test intensity 1.0. The shared dB ramp overshoots +5.6 dB on adversarial pairs, while smoothing the finished SVF coefficients gives +0.12 dB. Compare's prediction is off by up to ±3.9 dB. The re-allocation bug is confirmed at runtime. Worst centre error is 0.86 dB, not 0.31. Plus 11 missing gate tests. |
+  | State of the art (audio-dsp) | IMPROVE | Six designs compared; the author's is the most accurate IIR design at every rate. FIR (5.4 dB low-band error, or 39 % CPU to fix it), matched bells and neural prediction were rejected. Wishnick's DF-II win was for an unsmoothed step; under the 10 ms ramp the double SVF tracks the ideal 10–17 dB better, so the SVF is kept. A third refinement pass takes every-third-down from 0.93 to 0.27 dB. The −max\|H\| preamp costs 1.7–12 dB of loudness, so a loudness-neutral gain is recommended. A gated block-spectral predictor gets level matching to 0.10 dB max error (vs 3.42 dB). CPU is 2.66 % of a core at 192 kHz × 8. |
+  | Architect + the-fool | APPROVED WITH AMENDMENTS | One reconciled contract (`base`/`tone`/`points`, extending `AudioPlaybackEngine`). The Intensity blend issue confirmed independently, plus intensity never sent at launch (the UI shows 20 %, the engine plays 100 %). Re-allocation fix: `Realizer::reinitializeKernel` on the Realizer's own queue, which avoids a use-after-free race. Per-output recall wired at app level (it must work from the menu bar), keyed on the device UID. Removing the clamp leaves no safety gap: the −1 dBTP limiter was always the real bound, and the clamp's own test was not running. Migration: unedited built-ins load the re-voiced presets. |
+
+- **Founder decisions 25–28** (all four recommended options; plan §B):
+  - the EQ always plays in full, ahead of the Intensity blend;
+  - loudness-neutral EQ (revises 23);
+  - a "Bring back edits" message after a preset switch;
+  - Compare = hold to hear without the EQ.
+- **Next:** one revision round by the authors (engine + UI, on the reconciled contract), then one
+  verify pass by the three reviewers on their own findings only, then the build.
