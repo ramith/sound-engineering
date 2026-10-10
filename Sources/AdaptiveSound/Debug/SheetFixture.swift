@@ -17,7 +17,9 @@
     ///
     /// One fixture per `SheetVariant`: `empty` seeds no songs and no queue; the ring variants seed
     /// the standard world and draw keyboard focus in their lists (`root(for:)`); the grid variants
-    /// add the browse grids' albums, artists, genres and covers (`+Browse`) and open their category.
+    /// add the browse grids' albums, artists, genres and covers (`+Browse`) and open their category;
+    /// the EQ worlds put the EQ screen in one state each (`+EQ`). Every world's engine reads "ready"
+    /// (nothing is ever started) except `eqEngine`'s.
     @MainActor
     final class SheetFixture {
         let audio: AudioViewModel
@@ -58,7 +60,7 @@
             artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
             seedDevices()
             seedPlayback(songs)
-            eq.seedRenderFixture(points: Self.eqCurve()) // a hand-drawn curve reads "Flat · edited"
+            Self.seedEQ(eq, audio: audio, for: variant) // "Warm · Edited", then the EQ world's own state
             nowPlaying.audio = audio
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
         }
@@ -86,6 +88,7 @@
                 .environment(\.sheetFocusedLists, variant.focusedLists)
                 .environment(\.sheetArtwork, artwork)
                 .environment(\.sheetGridStates, variant == .gridStates ? Self.gridStates : SheetGridStates())
+                .environment(\.sheetEQGraph, Self.eqGraphSeed(for: variant))
                 .defaultAppStorage(defaults)
         }
 

@@ -147,8 +147,10 @@ enum DesignSystem {
 
         /// S10.8 PR E — the true-peak hot VALUE text (realigned `png/05`); audited
         /// R4-METER-01. The hot FILL is `Gradient.meterHotFill` (which composes the Kit
-        /// `Palette.meterHot` stop inline), so there is no solid `meterHot` re-export.
+        /// `Palette.meterHot` stop inline).
         static let meterHotText = from(Palette.meterHotText)
+        /// The solid hot amber: the EQ graph's +12 dB ceiling line (Sprint EQ, EQ3); audited R4-EQ-03.
+        static let meterHot = from(Palette.meterHot)
     }
 
     // MARK: Typography (semantic scale mapped to Dynamic Type text styles)
@@ -267,21 +269,12 @@ enum DesignSystem {
         static let screenInsetV: CGFloat = 16
         static let sectionGap: CGFloat = 20
         static let readableMaxWidth: CGFloat = 720
-        static let sidebarIdeal: CGFloat = 234 // Twin Panels rail-card width (S10.8 PR-C; was 200)
+        /// The Twin Panels rail-card width (S10.8 PR-C; was 200), one value for the Library rail and the
+        /// EQ rail. Forwarded from the Kit's `EQScreenLayout`, so LAY-EQ-01 budgets the rail the app draws.
+        static let sidebarIdeal = CGFloat(EQScreenLayout.railWidth)
         /// Horizontal content inset shared by the Twin Panels rail's nav rows, section headers,
         /// and inline folder rows so every item lines up on one edge (S10.8 PR-C).
         static let railRowInset: CGFloat = 12
-    }
-
-    // MARK: Visualizer surfaces (drawing-surface sizing)
-
-    /// Sizing for drawing surfaces (EQ response graph, spectrum, channel rows). The Canvas
-    /// draws to whatever size the slot gives it; these tokens size the slot — replacing the
-    /// former magic pixel heights.
-    enum Visualizer {
-        static let responseGraphMinHeight: CGFloat = 220
-        static let responseGraphIdealHeight: CGFloat = 360
-        static let responseGraphMaxHeight: CGFloat = 460
     }
 
     // MARK: Artwork sizes
