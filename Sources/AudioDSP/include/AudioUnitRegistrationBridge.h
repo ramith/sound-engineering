@@ -101,8 +101,8 @@ extern "C"
     /// Publish a new intensity value (the spatial/clarity coloration wet/dry mix) to the live
     /// AdaptiveSoundAU (S6 Tier-3 3a). This is the SINGLE intensity control surface (design
     /// §1.5): setAUParameter(Intensity, ...) is a dead stub. Off-RT control plane: sets the
-    /// Realizer's pending-intensity slot (clamped to [0,1]) and posts a drain block on a
-    /// clean->dirty transition; the canonical read-modify-write and the atomic publish happen
+    /// Realizer's pending-intensity slot (clamped to [0,1]) and posts a drain block when none is
+    /// pending; the canonical read-modify-write and the atomic publish happen
     /// off-main in the Realizer's serial queue. Must be called from a single control thread
     /// (the @MainActor). No-op if auUnit is null.
     ///
@@ -112,8 +112,8 @@ extern "C"
 
     /// Publish a new crossfeed state (the wet-region headphone-soundstage stage) to the live
     /// AdaptiveSoundAU (QW1 §3). Off-RT control plane: sets the Realizer's pending-crossfeed slot
-    /// (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain block on
-    /// a clean->dirty transition; the off-RT coefficient derivation (from {preset, level, fs}),
+    /// (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain block
+    /// when none is pending; the off-RT coefficient derivation (from {preset, level, fs}),
     /// the canonical read-modify-write, and the atomic publish all happen in the Realizer's serial
     /// queue. Crossfeed is a WET-region stage, so its audible depth is `crossfeed × intensity`
     /// (QW1 §4) — the Reimagine knob scales it. Must be called from a single control thread (the
