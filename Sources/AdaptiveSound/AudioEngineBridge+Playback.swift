@@ -26,6 +26,7 @@ extension AudioEngineBridge {
                     // Try the Pure path first; if it fully starts we're done. Otherwise it records
                     // the fall-back flag and we continue to the Enhanced path below.
                     if self.attemptPureStart(fileURL: fileURL, pureMode: pureMode) {
+                        self.loudnessAnalyzer.cancel(nil) // Pure Mode bypasses the EQ: no analysis
                         continuation.resume(returning: ())
                         return
                     }
@@ -151,6 +152,9 @@ extension AudioEngineBridge {
         //    sources hit the same-count no-op, so the existing stereo path is unchanged.
         configureGraphForSource(channelCount: channelCount, channelLayout: channelLayout)
 
+        // A fresh start: this file is the audible track now (the loudness-neutral EQ gain).
+        trackBecameAudible(fileURL, gaplessSeam: false)
+
         // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
         //    the current one. Also stop any prior streaming-resampler session (bumps the generation
         //    so its in-flight buffers abandon themselves) before this new track supersedes it.
@@ -231,6 +235,7 @@ extension AudioEngineBridge {
                 }
                 self.removeSpectrumTap()
                 self.referenceToneBuffer = nil
+                self.loudnessAnalyzer.cancel(nil) // a deliberate stop: nothing left to analyse
                 self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
                 continuation.resume()

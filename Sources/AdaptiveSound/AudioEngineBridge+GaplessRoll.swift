@@ -46,7 +46,7 @@ extension AudioEngineBridge {
             // call the *Locked variant directly — stopEnhancedResampler() would resampleQueue.sync
             // onto ourselves and trap libdispatch (C-1 re-entrancy).
             stopEnhancedResamplerLocked()
-            bumpTransitionCount(player: player)
+            bumpTransitionCount(player: player, nextURL: nextURL)
             setLastFileURL(nextURL)
             scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: true)
             // Arm the passthrough hook so the track after this one can also be gapless.
@@ -81,7 +81,7 @@ extension AudioEngineBridge {
         if nextRate == graphRate {
             // Both current and next are 48 kHz: consecutive scheduleFile calls play back-to-back,
             // byte-exact. This is the spec's "consecutive scheduleFile" gapless path.
-            bumpTransitionCount(player: player)
+            bumpTransitionCount(player: player, nextURL: nextURL)
             scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: true)
             armPassthroughNextTrack(player: player)
             logUX("gapless: passthrough→passthrough seam '\(nextURL.lastPathComponent)'")
@@ -237,7 +237,7 @@ extension AudioEngineBridge {
             // (the wrong-song bug escaping through stale state; seam-fix review MAJOR-1).
             resampleSession = nil
             // S-1: the .dataPlayedBack completion keeps onPassthroughEOF firing for the next seam.
-            bumpTransitionCount(player: player)
+            bumpTransitionCount(player: player, nextURL: nextURL)
             armPassthroughNextTrack(player: player)
             scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: false)
             logUX("gapless: →passthrough fallback seam "
@@ -256,7 +256,7 @@ extension AudioEngineBridge {
             session: nextSession, audioFile: nextFile, player: player, startFrame: 0
         )
         if primed > 0 {
-            bumpTransitionCount(player: player)
+            bumpTransitionCount(player: player, nextURL: nextURL)
             armResamplerNextTrack(player: player)
             logUX("gapless: →resampler seam '\(nextURL.lastPathComponent)' "
                 + "(\(Int(nextRate))→\(Int(graphRate)))")
@@ -269,7 +269,7 @@ extension AudioEngineBridge {
         // non-nil at the top of its prime even when 0 buffers are produced.
         resampleSession = nil
         // S-1: completion preserves the chain.
-        bumpTransitionCount(player: player)
+        bumpTransitionCount(player: player, nextURL: nextURL)
         armPassthroughNextTrack(player: player)
         scheduleFileChainingPassthrough(nextFile, player: player, resetFramePosition: false)
         logUX("gapless: →passthrough fallback seam "
