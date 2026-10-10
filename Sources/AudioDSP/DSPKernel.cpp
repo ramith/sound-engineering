@@ -35,8 +35,12 @@ namespace AdaptiveSound
     static constexpr float kHalfPi = 1.57079632679489661923F;
 
     // The normaliser's contribution reaches 100 % at this Intensity (amendment 2:
-    // makeup·min(1, r/0.1)), and fades linearly to 0 dB below it.
+    // makeup·min(1, r/0.1)), and fades linearly to 0 dB below it …
     static constexpr float kLoudnessFadeIntensity = 0.1F;
+    // … but in TIME it moves no faster than a full 0 ↔ 1 in this long (founder decision 33:
+    // crossing Intensity 0 glides the level over ~2 s): the normaliser's makeup leaves (or joins)
+    // the level as a slow fade, however fast Intensity itself moves.
+    static constexpr float kLoudnessGlideSeconds = 2.0F;
 
     // The bit-perfect path: the cross-fade length between the undelayed input and the limiter's
     // delayed output, and the hysteresis before entering it (engine-plan §5.1).
@@ -84,6 +88,9 @@ namespace AdaptiveSound
         (void)targetStateSnapshot_.tryCopySnapshot(currentState_);
         intensityRamp_.target = currentState_.intensityLinear;
         intensityRamp_.snap();
+        loudnessContribution_ = loudnessContributionAt(intensityRamp_.current);
+        loudnessContributionStep_ =
+            1.0F / std::max(1.0F, kLoudnessGlideSeconds * static_cast<float>(sampleRate));
 
         const auto fs = static_cast<double>(sampleRate);
         bypassMixStep_ = 1.0F / std::max(1.0F, kBypassCrossfadeSeconds * static_cast<float>(fs));
@@ -169,12 +176,17 @@ namespace AdaptiveSound
         intensityRamp_.target = state.intensityLinear;
         const bool settled =
             std::abs(intensityRamp_.current - intensityRamp_.target) < kIntensitySettledEpsilon;
-        const bool atZero = settled && intensityRamp_.target == 0.0F;
-        const bool atOne = settled && intensityRamp_.target == 1.0F;
-        if (atZero || atOne)
+        const bool endpoint = intensityRamp_.target == 0.0F || intensityRamp_.target == 1.0F;
+        if (settled && endpoint)
         {
             intensityRamp_.current = intensityRamp_.target; // keep the endpoint bit-exact
         }
+        // An endpoint's hard branch (P1 / P2) also waits for the normaliser's contribution to
+        // finish its glide there (decision 33); until then the blend path runs at the endpoint.
+        const bool atZero =
+            settled && intensityRamp_.target == 0.0F && loudnessContribution_ == 0.0F;
+        const bool atOne =
+            settled && intensityRamp_.target == 1.0F && loudnessContribution_ == 1.0F;
 
         // P0 eligibility, with the 2 s hysteresis. The first block after initialize() has no
         // previous output to stay continuous with, so it snaps to its path.
@@ -254,13 +266,19 @@ namespace AdaptiveSound
 
         // (c) Equal-power blend, the intensity ramp advanced per sample. Equal-POWER is the law for
         //     the decorrelating wet chain; on correlated (lightly processed) material it adds up to
-        //     +3 dB at r = 0.5, which the normaliser downstream absorbs.
+        //     +3 dB at r = 0.5, which the normaliser downstream absorbs. The normaliser's
+        //     contribution glides toward min(1, r/0.1) at most 1 per kLoudnessGlideSeconds.
         for (uint32_t i = 0U; i < safeCount; ++i)
         {
             const float ramped = intensityRamp_.tick();
             wetGainBuf_[i] = std::sin(ramped * kHalfPi);
             dryGainBuf_[i] = std::cos(ramped * kHalfPi);
-            loudnessWeightBuf_[i] = std::min(1.0F, ramped / kLoudnessFadeIntensity);
+            const float goal = loudnessContributionAt(ramped);
+            loudnessContribution_ =
+                (goal > loudnessContribution_)
+                    ? std::min(goal, loudnessContribution_ + loudnessContributionStep_)
+                    : std::max(goal, loudnessContribution_ - loudnessContributionStep_);
+            loudnessWeightBuf_[i] = loudnessContribution_;
         }
         const auto len = static_cast<vDSP_Length>(safeCount);
         for (uint32_t ch = 0U; ch < numChannels; ++ch)
@@ -275,7 +293,8 @@ namespace AdaptiveSound
         }
 
         // (d) Loudness on the blend, its contribution faded toward 0 dB as r → 0 so this path meets
-        //     the normaliser-free EQ-only path with no level step (amendment 2); then the limiter.
+        //     the normaliser-free EQ-only path with no level step (amendment 2), and slowly
+        //     (decision 33); then the limiter.
         loudnessModule_->process(
             state.loudness, block, std::span<const float>(loudnessWeightBuf_.data(), safeCount));
         limiterModule_->process(state.limiter, block);
@@ -294,6 +313,11 @@ namespace AdaptiveSound
                 std::copy_n(src, safeCount, dst);
             }
         }
+    }
+
+    float DSPKernel::loudnessContributionAt(float intensity) noexcept
+    {
+        return std::min(1.0F, intensity / kLoudnessFadeIntensity);
     }
 
     void DSPKernel::crossfadeWithBypass(const MultichannelView& block, float toward) noexcept

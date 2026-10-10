@@ -60,6 +60,10 @@ namespace
             realizer->setOutputTransport(transport);
             realizer->applyIntensity(0.0F);
             realizer->applyEq(engineEqIntent(curve, isOn));
+            // Start rendering AT Intensity 0, as the app does (the AU allocates after the launch
+            // publish): a move to 0 while rendering would glide the normaliser out over 2 s first
+            // (decision 33).
+            realizer->reinitializeKernel(static_cast<uint32_t>(kEngineFs), kEngineBlock);
         }
         ~LnEngine()
         {
