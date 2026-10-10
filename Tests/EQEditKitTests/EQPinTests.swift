@@ -85,10 +85,11 @@ struct EQPinTests {
         // An edit on the second pair rewrites the first pair's memory: the documented behaviour.
         store[slot: store.slotID(for: Self.secondPods)] = EQState(preset: .builtIn(.vocal), curve: nil)
         #expect(store[slot: store.slotID(for: Self.pods)].preset == .builtIn(.vocal))
-        // Pinning the second pair gives it its own copy; with two pins of the model, neither is shared.
+        // One pin per model: pinning the second pair, which already plays the model's pin, changes nothing.
+        let before = store
         store.pin(Self.secondPods)
-        #expect(store.pin(for: Self.secondPods) == .pinned(Self.secondPods))
-        #expect(store[slot: store.slotID(for: Self.secondPods)].preset == .builtIn(.vocal))
+        #expect(store == before)
+        #expect(store.pin(for: Self.secondPods) == .sharedWith(Self.pods, on: Self.secondPods))
     }
 
     @Test("PIN-06: unpinning from the second unit unpins the model's one pin — both play shared")

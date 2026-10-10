@@ -18,9 +18,12 @@
 //   - the same blob, or none: nothing happened in a v1 build — the store is current;
 //   - another blob: the user chose or edited the EQ in a v1 build after this store was written, so
 //     that is the latest EQ they made — the shared slot is migrated from it again (rules 1–3). Pins
-//     stay: v1 has no per-output memory to replace them with;
-//   - a store from before this rule (no fingerprint) can't tell which came later: it records the
-//     blob's fingerprint and keeps its own state, so an edit made in v2 is never discarded on a guess.
+//     stay: v1 has no per-output memory to replace them with. A store made when there was NO blob
+//     (a fresh install of this build) records that as `noV1Blob`, so a blob a later downgrade writes
+//     is "another blob" too;
+//   - a store from before this rule (no fingerprint at all — only that is "pre-rule") can't tell
+//     which came later: it records what is on disk now (the blob's fingerprint, or `noV1Blob`) and
+//     keeps its own state, so an edit made in v2 is never discarded on a guess.
 
 import Foundation
 
@@ -29,18 +32,27 @@ public enum EQMigration {
     /// saved presets (`eqCustomPresetsV1`, name → points). It records the blob's fingerprint.
     public static func store(fromV1 live: Data?, customPresets: [String: [Float]]) -> EQStore {
         var store = EQStore(shared: state(fromV1: live, customPresets: customPresets))
-        store.v1Fingerprint = live.map(fingerprint(of:))
+        store.v1Fingerprint = live.map(fingerprint(of:)) ?? noV1Blob
         return store
     }
+
+    /// What a store records when it found no v1 blob to take in. Never a real fingerprint (those are
+    /// hex), and never `nil`, which only a store from before the rule has.
+    static let noV1Blob = "none"
 
     /// `store` caught up with the v1 blob on disk (`live`): the shared slot migrated again when a v1
     /// build wrote another EQ since the store took the last one in; otherwise `store` unchanged but
     /// for the fingerprint it records (see the file comment for the rule).
     public static func catchUp(_ store: EQStore, withV1 live: Data?, customPresets: [String: [Float]]) -> EQStore {
-        guard let live else { return store }
+        var caughtUp = store
+        guard let live else {
+            // No blob on disk: nothing to catch up with. A pre-rule store now records that there was
+            // none, so a blob a v1 build writes later reads as newer.
+            caughtUp.v1Fingerprint = store.v1Fingerprint ?? noV1Blob
+            return caughtUp
+        }
         let current = fingerprint(of: live)
         guard store.v1Fingerprint != current else { return store }
-        var caughtUp = store
         if store.v1Fingerprint != nil {
             caughtUp[slot: nil] = state(fromV1: live, customPresets: customPresets)
         }

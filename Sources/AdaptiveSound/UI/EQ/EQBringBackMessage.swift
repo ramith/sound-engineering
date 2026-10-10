@@ -31,7 +31,9 @@ struct EQBringBackMessage: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: shownOffer)
-        .onChange(of: eq.bringBack?.offer, initial: true) { _, offer in arm(offer) }
+        // Initially (a return to the tab) the offer still on shows, unannounced: it was announced when
+        // it was made.
+        .onChange(of: eq.bringBack?.offer, initial: true) { old, offer in arm(offer, announce: old != offer) }
         .task(id: countdown) { await run(countdown) }
     }
 
@@ -59,11 +61,13 @@ struct EQBringBackMessage: View {
         .onHover { isHovered = $0 }
     }
 
-    /// A new offer shows for the full time and is announced; a cleared one hides.
-    private func arm(_ offer: Int?) {
+    /// A new offer shows for the full time and is announced; a cleared one hides. The hover starts
+    /// clear: a capsule that went away under the pointer (its button clicked) never sends the exit.
+    private func arm(_ offer: Int?, announce: Bool) {
         shownOffer = offer
         remaining = Self.lifetime
-        guard offer != nil, let setAside = eq.bringBack?.edits.preset.displayName else { return }
+        isHovered = false
+        guard announce, offer != nil, let setAside = eq.bringBack?.edits.preset.displayName else { return }
         let switched = eq.current.preset.displayName
         AccessibilityNotification.Announcement("Switched to \(switched). Edits to \(setAside) can be brought back.")
             .post()

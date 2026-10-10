@@ -26,12 +26,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// S10.8 E4: the playlists model, also owned by the App's `@State`. A reorder is saved just after
     /// the rows move, so at quit the last order on screen may still be unsaved.
     weak var playlists: PlaylistsModel?
+    /// Sprint EQ: a latched Compare (VoiceOver) lets go when the window closes, so the EQ never stays
+    /// bypassed behind a window that is gone.
+    weak var eqViewModel: EQViewModel?
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         // Last window closed (the red traffic-light button): retreat to the menu bar — hide the
         // Dock icon and DO NOT quit. This delegate hook fires ONLY on last-window-close, never on
         // ⌘Q / the menu-bar Quit (those go straight to applicationShouldTerminate).
         NSApp.setActivationPolicy(.accessory)
+        eqViewModel?.endCompare()
         return false
     }
 

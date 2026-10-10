@@ -11,11 +11,14 @@ import Foundation
 ///                         still reads it).
 /// v1's `eqLiveStateV1` is read once, by the migration, and left in place for one release so a
 /// downgrade still finds its EQ. v1's `eqOutputPresetMapV1` was never written and is dropped.
+/// `eqStateV2.unreadable` keeps the raw bytes of an `eqStateV2` this build couldn't read, set aside
+/// before anything overwrites them, so the user's EQ is never lost to a bug or a newer build's format.
 extension EQViewModel {
     private enum Key {
         static let store = "eqStateV2"
         static let myPresets = "eqCustomPresetsV1"
         static let liveStateV1 = "eqLiveStateV1"
+        static let unreadableStore = "eqStateV2.unreadable"
     }
 
     /// Write every slot.
@@ -40,9 +43,10 @@ extension EQViewModel {
     /// The stored slots: `eqStateV2`, or on the first launch after the upgrade the v1 EQ migrated
     /// (`EQMigration`) and written at once, so it migrates once. A v1 build run since (a downgrade,
     /// then this build again) left its EQ in `eqLiveStateV1`: the shared slot catches up with it and
-    /// is written at once (`EQMigration.catchUp`). Unreadable v2 data plays Flat and stays on disk
-    /// until the next write. A slot on a My Preset that no longer exists keeps its curve as an edited
-    /// Flat.
+    /// is written at once (`EQMigration.catchUp`). Unreadable v2 data is copied aside
+    /// (`eqStateV2.unreadable`) before anything overwrites it, and the v1 EQ — if a v1 blob is on disk
+    /// — plays meanwhile, else Flat. A slot on a My Preset that no longer exists keeps its curve as an
+    /// edited Flat.
     static func loadStore(from defaults: UserDefaults, myPresets: [String: [Float]]) -> EQStore {
         var store: EQStore
         if let data = defaults.data(forKey: Key.store) {
@@ -52,12 +56,16 @@ extension EQViewModel {
                                             customPresets: myPresets)
                 if store != stored {
                     write(store, to: defaults)
+                }
+                if store[slot: nil] != stored[slot: nil] {
                     logUX("EQ persistence: caught up with eqLiveStateV1 — shared "
                         + "'\(stored[slot: nil].preset.displayName)' → '\(store[slot: nil].preset.displayName)'")
                 }
             } catch {
-                logUX("EQ persistence: eqStateV2 unreadable (\(error.localizedDescription)) — playing Flat")
-                store = EQStore(shared: .flat)
+                defaults.set(data, forKey: Key.unreadableStore)
+                store = EQMigration.store(fromV1: defaults.data(forKey: Key.liveStateV1), customPresets: myPresets)
+                logUX("EQ persistence: eqStateV2 unreadable (\(error.localizedDescription)) — kept aside as "
+                    + "\(Key.unreadableStore); playing '\(store[slot: nil].preset.displayName)' from eqLiveStateV1")
             }
         } else {
             store = EQMigration.store(fromV1: defaults.data(forKey: Key.liveStateV1), customPresets: myPresets)

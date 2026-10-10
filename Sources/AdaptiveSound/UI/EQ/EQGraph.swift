@@ -35,12 +35,11 @@ struct EQGraph: View {
     @GestureState var isDragging = false
 
     var body: some View {
-        let points = eq.points
-        let played = eq.played
+        let reading = EQGraphReading(eq) // the curve, resolved once per redraw
         let audible = eq.audible
         ZStack(alignment: .topLeading) {
-            plot(points: points, played: played, audible: audible)
-            EQGraphStrip(audible: audible, keyboardReadout: keyboardReadout(points: points, played: played),
+            plot(reading, audible: audible)
+            EQGraphStrip(audible: audible, keyboardReadout: keyboardReadout(reading),
                          toneReadout: eq.toneReadout, isDragging: drag != nil,
                          isHeldAtCeiling: drag?.isPastCeiling ?? false) {
                 audio.selectedTab = .settings
@@ -55,13 +54,15 @@ struct EQGraph: View {
         #endif
     }
 
-    private func plot(points: [Float], played: EQPlayed?, audible: EQAudibleState) -> some View {
+    private func plot(_ reading: EQGraphReading, audible: EQAudibleState) -> some View {
         // Everything the painter draws is read HERE, in the body — which is what observes the view
         // model and this view's state — and handed to the Canvas as values.
         let active = activeBand
         let region = eq.highlightedRegion
         let dragged = drag
-        let tag = dragged.map { tagText(band: $0.band, points: points, played: played) }
+        let tag = dragged.map { reading.tag(band: $0.band) }
+        let points = reading.points
+        let played = reading.played
         return ZStack(alignment: .topLeading) {
             EQGraphSilhouette()
             Canvas { context, canvasSize in
@@ -90,7 +91,7 @@ struct EQGraph: View {
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end], action: handleKey)
         .onKeyPress(.escape, action: cancelStroke)
         .onDeleteCommand { eq.resetBand(keyboardBand) }
-        .graphAccessibility(eq: eq, points: points, played: played)
+        .graphAccessibility(eq: eq, reading: reading, map: plotMap)
     }
 
     // MARK: Derived
@@ -111,14 +112,9 @@ struct EQGraph: View {
         .eqGraph(in: size)
     }
 
-    private func keyboardReadout(points: [Float], played: EQPlayed?) -> String? {
+    private func keyboardReadout(_ reading: EQGraphReading) -> String? {
         guard ringVisible, drag == nil else { return nil }
-        return tagText(band: keyboardBand, points: points, played: played)
-    }
-
-    private func tagText(band: Int, points: [Float], played: EQPlayed?) -> String {
-        EQReadout.point(band: band, set: points[band], plays: played?.centreDb[band],
-                        limited: eq.current.resolvedCurve.isLimited(atBand: band))
+        return reading.tag(band: keyboardBand)
     }
 
     #if DEBUG

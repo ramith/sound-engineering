@@ -36,6 +36,9 @@ struct CarvedSlider: View {
 
     /// A drag is in progress (between its `onEditingChanged` brackets).
     @State private var isDragging = false
+    /// The pointer is down on the track. Unlike `onEnded`, its reset comes for a drag the system
+    /// cancels too, so every drag that began ends (`onEditingChanged(false)`).
+    @GestureState private var isPressing = false
 
     var body: some View {
         GeometryReader { geo in
@@ -47,6 +50,7 @@ struct CarvedSlider: View {
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
+                        .updating($isPressing) { _, pressing, _ in pressing = true }
                         .onChanged { drag in
                             beginDragIfNeeded()
                             // Map the pointer onto the KNOB'S travel ([knob/2, width−knob/2]
@@ -58,6 +62,11 @@ struct CarvedSlider: View {
                         }
                         .onEnded { _ in endDrag() }
                 )
+                .onChange(of: isPressing) { _, pressing in
+                    if !pressing {
+                        endDrag()
+                    }
+                }
         }
         .frame(height: 20) // hit target taller than the visual track
         .focusable()
@@ -65,11 +74,9 @@ struct CarvedSlider: View {
         // A focused slider OWNS its arrows (NSSlider parity): consume the key even at the
         // bounds — a bubbled ← at min must not reach whatever the enclosing context binds
         // arrows to (PR 6 puts a CarvedTrack scrubber next to the footer transport). ↑/↓ are
-        // the slider's only when `stepsWithVerticalArrows`; otherwise they pass on, as shipped.
-        .onKeyPress(.leftArrow) { nudge(-step); return .handled }
-        .onKeyPress(.rightArrow) { nudge(step); return .handled }
-        .onKeyPress(.downArrow) { stepVertically(-step) }
-        .onKeyPress(.upArrow) { stepVertically(step) }
+        // the slider's only when `stepsWithVerticalArrows`; otherwise they pass on, as shipped. A
+        // shortcut (⌘ ⌥ ⌃) always passes, so ⌘← / ⌘→ skip tracks from a focused slider too.
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .downArrow, .upArrow], action: handleArrow)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValueText)
@@ -110,9 +117,12 @@ struct CarvedSlider: View {
         value = min(max(value + delta, range.lowerBound), range.upperBound)
     }
 
-    private func stepVertically(_ delta: Float) -> KeyPress.Result {
-        guard stepsWithVerticalArrows else { return .ignored }
-        nudge(delta)
+    /// An arrow key on the focused slider: ← / → always, ↑ / ↓ when opted in; never a shortcut.
+    private func handleArrow(_ press: KeyPress) -> KeyPress.Result {
+        guard !press.isShortcut else { return .ignored }
+        let isVertical = press.key == .upArrow || press.key == .downArrow
+        guard !isVertical || stepsWithVerticalArrows else { return .ignored }
+        nudge(press.key == .rightArrow || press.key == .upArrow ? step : -step)
         return .handled
     }
 }

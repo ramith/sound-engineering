@@ -95,12 +95,13 @@ public struct EQStore: Equatable, Sendable {
     }
 
     /// Pins `output`: it gets a slot of its own holding exactly what it plays now — edits and Tone
-    /// included — so nothing audible changes, and from then on its edits are its own. An output that
-    /// can't be pinned (`EQOutputKey.isPinnable`) or already has its own pin is left as it is; one that
-    /// plays another unit's pin (the model-UID fallback) gets its own copy of it.
+    /// included — so nothing audible changes, and from then on its edits are its own. One pin per model
+    /// (amendment 13, as the pin and its tooltip say): an output that already plays a pin — its own, or
+    /// the one it shares with its model — is left as it is, and so is one that can't be pinned
+    /// (`EQOutputKey.isPinnable`).
     public mutating func pin(_ output: EQOutputKey) {
-        guard output.isPinnable, pinned[output.uid] == nil else { return }
-        let playing = self[slot: slotID(for: output)]
+        guard output.isPinnable, slotID(for: output) == nil else { return }
+        let playing = shared
         pinned[output.uid] = PinnedSlot(key: output, state: playing)
         unreadablePins[output.uid] = nil
     }
