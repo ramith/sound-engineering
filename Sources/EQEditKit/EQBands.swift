@@ -29,8 +29,8 @@ public enum EQBands {
     /// land exactly under a Tone offset (base = point − Tone) without being cut short.
     static let baseLimitDb: Float = 24
 
-    /// The ±dB range of each Tone region.
-    static let toneLimitDb: Float = 12
+    /// The ±dB range of each Tone region: the Tone sliders' range.
+    public static let toneLimitDb: Float = 12
 }
 
 extension Float {

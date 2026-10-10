@@ -53,3 +53,42 @@ public enum EQToneRegion: Int, CaseIterable, Identifiable, Sendable {
         return 0.5 * (1 + sin(.pi * min(max(octaves, -0.5), 0.5)))
     }
 }
+
+// MARK: - Names (the Tone card's rows, the graph's Tone readout, VoiceOver)
+
+public extension EQToneRegion {
+    /// The region's name: "Presence".
+    var name: String {
+        switch self {
+        case .bass: "Bass"
+        case .body: "Body"
+        case .mids: "Mids"
+        case .presence: "Presence"
+        case .air: "Air"
+        }
+    }
+
+    /// Where the region sits on the graph's own frequency axis — its crossovers (`edgesHz`):
+    /// "<150 Hz", "2–6 kHz", ">6 kHz". The Tone card prints it under the name; the graph's readout
+    /// follows the name with it ("Tone · Presence 2–6 kHz +3.0 dB").
+    var span: String {
+        switch self {
+        case .bass: "<150 Hz"
+        case .body: "150–500 Hz"
+        case .mids: "0.5–2 kHz"
+        case .presence: "2–6 kHz"
+        case .air: ">6 kHz"
+        }
+    }
+
+    /// `span` as VoiceOver speaks it: "below 150 hertz", "2 to 6 kilohertz".
+    var spokenSpan: String {
+        switch self {
+        case .bass: "below 150 hertz"
+        case .body: "150 to 500 hertz"
+        case .mids: "500 hertz to 2 kilohertz"
+        case .presence: "2 to 6 kilohertz"
+        case .air: "above 6 kilohertz"
+        }
+    }
+}

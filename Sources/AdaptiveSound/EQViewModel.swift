@@ -8,8 +8,8 @@ import Foundation
 /// slot is `current`. Every editing rule lives in `EQEditKit`; this owns the state, sends it to the
 /// engine from ONE place (`publish()`), and persists it (`+Persistence`).
 ///
-/// - Edits: choosing a preset and Save here; the drag and the keyboard step in `+Stroke`. Every edit
-///   goes through `edit(to:)` or `setCurrent(_:)`, and every edit turns the EQ on.
+/// - Edits: choosing a preset and Save here; the drag and the keyboard step in `+Stroke`; Tone in
+///   `+Tone`. Every edit goes through `edit(to:)` or `setCurrent(_:)`, and every edit turns the EQ on.
 /// - Outputs: `outputDidChange(to:)`, wired at the composition root (Edge 5), makes the new output's
 ///   slot current — with the window closed too — and raises `outputToast` when that changes the sound.
 /// - The graph's played curve (EQ3, from EQ1a's designer) is a memo on (`points`, the engine's design

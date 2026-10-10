@@ -11,25 +11,35 @@ import SwiftUI
 /// appearance file); native `Slider` cannot render the carved look (`.tint` only), which is
 /// what justifies this control existing at all. The footer scrubber (deferred-commit
 /// semantics) adopts `CarvedTrack` in PR 6 with its own interaction wrapper.
+///
+/// OPT-IN behaviours (EQ3t's Tone sliders turn them on; with the defaults the inspector's
+/// Intensity and Master Gain sliders behave and look exactly as shipped):
+/// - `origin`: a CENTRE-ZERO slider (±12 dB around 0) — the fill grows from that value toward the
+///   knob, with a mark in the groove at it;
+/// - `stepsWithVerticalArrows`: ↑/↓ step the value too (NSSlider parity);
+/// - `usesAppFocusRing`: the app's keyboard-only ring (`controlFocusRing`) in place of the system
+///   focus effect, so a click never leaves a ring behind;
+/// - `onEditingChanged`: brackets a DRAG, as `Slider`'s does — `true` at mouse-down, before the
+///   first value; `false` at mouse-up. A key or VoiceOver step is one change with no bracket.
 struct CarvedSlider: View {
     @Binding var value: Float
     var range: ClosedRange<Float> = 0 ... 1
     var step: Float = 0.01
+    /// The value the fill grows from; `nil` is the range's lower bound.
+    var origin: Float?
+    var stepsWithVerticalArrows = false
+    var usesAppFocusRing = false
     let accessibilityLabel: String
     /// Spoken/read value, e.g. "4.0 decibels" — derived by the caller from the same binding.
     var accessibilityValueText: String
+    var onEditingChanged: ((Bool) -> Void)?
 
-    @FocusState private var focused: Bool
-
-    private var fraction: Double {
-        let span = range.upperBound - range.lowerBound
-        guard span > 0 else { return 0 }
-        return Double((value - range.lowerBound) / span)
-    }
+    /// A drag is in progress (between its `onEditingChanged` brackets).
+    @State private var isDragging = false
 
     var body: some View {
         GeometryReader { geo in
-            CarvedTrack(fraction: fraction)
+            CarvedTrack(fraction: fraction(of: value), origin: fraction(of: origin ?? range.lowerBound))
                 // Fill the GeometryReader (it top-aligns by default) so the contentShape —
                 // and therefore the drag — covers the FULL 20pt hit target, not just the
                 // track's own 14pt band.
@@ -38,6 +48,7 @@ struct CarvedSlider: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
+                            beginDragIfNeeded()
                             // Map the pointer onto the KNOB'S travel ([knob/2, width−knob/2]
                             // — the same inset `CarvedTrack` renders with), not the raw
                             // width: this is a LIVE-commit audio control, so mouse-down on
@@ -45,16 +56,20 @@ struct CarvedSlider: View {
                             let knob = CGFloat(GlassDecor.sliderKnobSize)
                             set(fraction: (drag.location.x - knob / 2) / max(geo.size.width - knob, 1))
                         }
+                        .onEnded { _ in endDrag() }
                 )
         }
         .frame(height: 20) // hit target taller than the visual track
         .focusable()
-        .focused($focused)
+        .modifier(CarvedSliderFocusLook(usesAppFocusRing: usesAppFocusRing))
         // A focused slider OWNS its arrows (NSSlider parity): consume the key even at the
         // bounds — a bubbled ← at min must not reach whatever the enclosing context binds
-        // arrows to (PR 6 puts a CarvedTrack scrubber next to the footer transport).
+        // arrows to (PR 6 puts a CarvedTrack scrubber next to the footer transport). ↑/↓ are
+        // the slider's only when `stepsWithVerticalArrows`; otherwise they pass on, as shipped.
         .onKeyPress(.leftArrow) { nudge(-step); return .handled }
         .onKeyPress(.rightArrow) { nudge(step); return .handled }
+        .onKeyPress(.downArrow) { stepVertically(-step) }
+        .onKeyPress(.upArrow) { stepVertically(step) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValueText)
@@ -67,6 +82,24 @@ struct CarvedSlider: View {
         }
     }
 
+    private func fraction(of value: Float) -> Double {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return Double((value - range.lowerBound) / span)
+    }
+
+    private func beginDragIfNeeded() {
+        guard !isDragging else { return }
+        isDragging = true
+        onEditingChanged?(true)
+    }
+
+    private func endDrag() {
+        guard isDragging else { return }
+        isDragging = false
+        onEditingChanged?(false)
+    }
+
     private func set(fraction raw: Double) {
         let clamped = Float(min(max(raw, 0), 1))
         let stepped = (range.lowerBound + clamped * (range.upperBound - range.lowerBound)) / step
@@ -75,5 +108,11 @@ struct CarvedSlider: View {
 
     private func nudge(_ delta: Float) {
         value = min(max(value + delta, range.lowerBound), range.upperBound)
+    }
+
+    private func stepVertically(_ delta: Float) -> KeyPress.Result {
+        guard stepsWithVerticalArrows else { return .ignored }
+        nudge(delta)
+        return .handled
     }
 }
