@@ -44,6 +44,7 @@ protocol AudioPlaybackEngineMirror: AnyObject {
     func currentSignalPath() -> SignalPathInfoMirror
     func setParameter(_ id: UInt32, value: Float) async throws
     func publishEQ(points: [Float], isOn: Bool)
+    func eqSampleRate() -> Double
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror]
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
     var onOutputDevicesChanged: (() -> Void)? { get set }
@@ -242,6 +243,12 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     func publishEQ(points: [Float], isOn: Bool) {
         publishEQCallCount += 1
         lastPublishedEQ = (points, isOn)
+    }
+
+    /// The EQ's design rate; the graph format's 48 kHz unless a test sets another.
+    var mockEQSampleRate = 48000.0
+    func eqSampleRate() -> Double {
+        mockEQSampleRate
     }
 
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror] {

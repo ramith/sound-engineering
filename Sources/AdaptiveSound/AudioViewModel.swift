@@ -375,6 +375,11 @@ final class AudioViewModel {
     func publishEQ(points: [Float], isOn: Bool) {
         engine.publishEQ(points: points, isOn: isOn)
     }
+
+    /// The rate the engine designs the EQ at, so the EQ graph's played curve is designed the same way.
+    func eqSampleRate() -> Double {
+        engine.eqSampleRate()
+    }
 }
 
 // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in

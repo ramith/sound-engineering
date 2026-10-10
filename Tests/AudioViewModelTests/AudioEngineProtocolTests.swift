@@ -152,6 +152,14 @@ struct AudioEngineProtocolTests {
         #expect(mock.lastPublishedEQ?.isOn == false)
     }
 
+    @Test("eqSampleRate() reports the graph format's 48 kHz until a rate is set")
+    func eqSampleRateDefaultsToGraphRate() {
+        let mock = MockAudioEngine()
+        #expect(mock.eqSampleRate() == 48000)
+        mock.mockEQSampleRate = 96000
+        #expect(mock.eqSampleRate() == 96000)
+    }
+
     // MARK: readSpectrumBands()
 
     @Test("readSpectrumBands() returns false when no data")
