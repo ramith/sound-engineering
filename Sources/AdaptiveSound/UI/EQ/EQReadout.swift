@@ -3,8 +3,9 @@ import Foundation
 
 // MARK: - EQ readout wording (Sprint EQ, EQ3 — ui-plan §4.3, §5.4)
 
-/// How the EQ graph names a band and a level, on screen and to VoiceOver — one home, so the drag tag,
-/// the keyboard readout and the 31 VoiceOver points always agree.
+/// How the EQ graph names a band, on screen and to VoiceOver — one home, so the drag tag, the keyboard
+/// readout and the 31 VoiceOver points always agree. Levels are the kit's `EQLevelText`, which the Tone
+/// card and its readout write with too.
 enum EQReadout {
     /// How far the played level must stray from the set one before VoiceOver adds "plays …" (dB).
     private static let playsDifferenceDb: Float = 0.2
@@ -16,17 +17,12 @@ enum EQReadout {
             : hz.formatted(.number.precision(.fractionLength(0 ... 1))) + " Hz"
     }
 
-    /// "+4.0 dB", "0.0 dB", "-2.5 dB".
-    static func level(_ db: Float) -> String {
-        db.formatted(.number.precision(.fractionLength(1)).sign(strategy: .always(includingZero: false))) + " dB"
-    }
-
     /// The point readout (the drag tag and the keyboard strip): "1 kHz · set +4.0 dB · plays +3.9 dB",
     /// ending "· limited" while the ceiling holds the point.
     static func point(band: Int, set: Float, plays: Float?, limited: Bool) -> String {
-        var parts = [frequency(EQBands.nominalHz[band]), "set " + level(set)]
+        var parts = [frequency(EQBands.nominalHz[band]), "set " + EQLevelText.level(set)]
         if let plays {
-            parts.append("plays " + level(plays))
+            parts.append("plays " + EQLevelText.level(plays))
         }
         if limited {
             parts.append("limited")
@@ -41,16 +37,6 @@ enum EQReadout {
         hz >= 1000
             ? (hz / 1000).formatted(.number.precision(.fractionLength(0 ... 2))) + " kilohertz"
             : hz.formatted(.number.precision(.fractionLength(0 ... 1))) + " hertz"
-    }
-
-    /// "plus 4 decibels", "minus 2.5 decibels", "0 decibels".
-    static func spokenLevel(_ db: Float) -> String {
-        let rounded = (db * 10).rounded() / 10
-        let magnitude = abs(rounded).formatted(.number.precision(.fractionLength(0 ... 1))) + " decibels"
-        if rounded > 0 {
-            return "plus " + magnitude
-        }
-        return rounded < 0 ? "minus " + magnitude : magnitude
     }
 
     /// The graph's VoiceOver value: the preset as it plays ("Warm, edited"), or what silences it.
@@ -68,9 +54,9 @@ enum EQReadout {
     /// A point's VoiceOver value: its level, "plays …" only where the played level differs by 0.2 dB or
     /// more, and "limited" where the ceiling holds it.
     static func spokenPoint(set: Float, plays: Float?, limited: Bool) -> String {
-        var parts = [spokenLevel(set)]
+        var parts = [EQLevelText.spoken(set)]
         if let plays, abs(plays - set) >= playsDifferenceDb {
-            parts.append("plays " + spokenLevel(plays))
+            parts.append("plays " + EQLevelText.spoken(plays))
         }
         if limited {
             parts.append("limited")

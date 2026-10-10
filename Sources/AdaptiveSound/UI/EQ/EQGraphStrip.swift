@@ -9,12 +9,15 @@ import SwiftUI
 /// Pure Mode (with Open Settings) or no engine yet. A stroke past +12 dB adds the ceiling's note.
 /// No Headroom figure (decision 26).
 ///
-/// EQ3t's seam: while a Tone row is hovered or dragged, its readout ("Tone · Presence 2–6 kHz +3.0 dB ·
-/// 3 points held at +12") takes the hint's place in `playing`.
+/// While a Tone slider is hovered, dragged or keyboard-focused (EQ3t), its readout ("Tone · Presence
+/// 2–6 kHz +3.0 dB · 3 points held") takes the hint's place in `playing` — ahead of the graph's own
+/// keyboard readout, since it answers what the user is on now.
 struct EQGraphStrip: View {
     let audible: EQAudibleState
     /// The keyboard cursor's readout, while the graph holds key focus in keyboard mode.
     let keyboardReadout: String?
+    /// The Tone readout, while a Tone slider is in use (`EQViewModel.toneReadout`).
+    let toneReadout: String?
     let isDragging: Bool
     /// A stroke is asking past +12 dB, and the ceiling holds the point.
     let isHeldAtCeiling: Bool
@@ -37,10 +40,10 @@ struct EQGraphStrip: View {
     @ViewBuilder private var message: some View {
         switch audible {
         case .playing:
-            if let keyboardReadout {
+            if toneReadout == nil, let keyboardReadout {
                 EQKeyboardReadout(text: keyboardReadout)
             } else {
-                EQGraphLegend(showsHint: !isDragging)
+                EQGraphLegend(showsHint: !isDragging, toneReadout: toneReadout)
             }
         case .engineNotReady:
             stateCopy("The audio engine isn't running yet — the EQ plays as set once it starts.",

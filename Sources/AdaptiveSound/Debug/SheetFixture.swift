@@ -60,7 +60,7 @@
             artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
             seedDevices()
             seedPlayback(songs)
-            Self.seedEQ(eq, audio: audio, for: variant) // "Warm · Edited", then the EQ world's own state
+            Self.seedEQ(eq, audio: audio, defaults: defaults, for: variant) // "Warm · Edited", then the world's
             nowPlaying.audio = audio
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
         }

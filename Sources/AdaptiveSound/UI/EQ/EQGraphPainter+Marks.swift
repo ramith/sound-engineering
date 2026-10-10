@@ -8,12 +8,6 @@ extension EQGraphPainter {
     /// The active point's radius (`EQPointHandle` is this wide): the ghost's tether ends at its rim.
     static let handleRadius: CGFloat = 7.5
 
-    /// The plot's region names over their spans (Hz), low to high: each is centred on its span.
-    private static let regionNames: [(name: String, span: ClosedRange<Double>)] = [
-        ("Sub", 20 ... 60), ("Bass", 60 ... 250), ("Low mids", 250 ... 500), ("Mids", 500 ... 2000),
-        ("Presence", 2000 ... 6000), ("Air", 6000 ... 20000),
-    ]
-
     /// The frequency axis's labelled ticks.
     private static let frequencyLabels: [(hz: Double, text: String)] = [
         (20, "20 Hz"), (50, "50"), (100, "100"), (200, "200"), (500, "500"), (1000, "1k"),
@@ -60,14 +54,15 @@ extension EQGraphPainter {
 
     // MARK: Labels
 
-    /// The region names above the plot, the dB axis beside it, the frequency axis below it.
+    /// The region names above the plot — the Tone regions', each centred over its span, so the graph
+    /// and the Tone card name the same five — the dB axis beside it, the frequency axis below it.
     func drawLabels(_ context: inout GraphicsContext) {
-        for region in Self.regionNames {
+        for region in EQToneRegion.allCases {
             let text = Text(region.name.uppercased())
                 .font(DesignSystem.Font.micro)
                 .tracking(0.8)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
-            let centreHz = sqrt(region.span.lowerBound * region.span.upperBound) // the middle, on a log axis
+            let centreHz = sqrt(region.spanHz.lowerBound * region.spanHz.upperBound) // the middle, on a log axis
             context.draw(context.resolve(text), at: CGPoint(x: map.x(forFreq: centreHz), y: map.top - 6),
                          anchor: .bottom)
         }
