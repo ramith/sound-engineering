@@ -34,6 +34,11 @@
         case eqCompare = "compare"
         case eqPure = "pure"
         case eqEngine = "engine"
+        /// The Tone worlds (EQ3t): a Tone row hovered on a Flat base, so the curve is the Tone alone —
+        /// its region shaded and the readout in the strip; and the Tone card folded to its one line at
+        /// 880×640, where every preset then fits without a scroll.
+        case eqTone = "tone"
+        case eqFolded = "folded"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -62,11 +67,12 @@
         }
 
         /// The default window size and the hard minimum for `standard` and the grids; the minimum
-        /// alone for the long presets list (where the card scrolls); the default size for the rest.
+        /// alone for the long presets list (where the card scrolls) and the folded Tone card; the
+        /// default size for the rest.
         var sizes: [NSSize] {
             switch self {
             case .standard, .albums, .artists, .genres: [Self.defaultSize, Self.minimumSize]
-            case .eqMany: [Self.minimumSize]
+            case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
         }
@@ -90,7 +96,7 @@
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates: [.library]
-            case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine: [.eq]
+            case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded: [.eq]
             }
             return request.tabs.filter { wanted?.contains($0) ?? true }
         }

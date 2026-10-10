@@ -4,9 +4,9 @@ import SwiftUI
 // MARK: - EQ rail (Sprint EQ, EQ3 — V1b's left column)
 
 /// The EQ screen's left column, the Library rail's width: the Equalizer card (On/Off, Presets, My
-/// Presets) and, below it, the Tone card. The Tone card is a SEAM: EQ3t's `EQToneCard` mounts as the
-/// rail's trailing content — `EQRail(save:) { EQToneCard() }` — and stays whole and pinned while the
-/// Equalizer card scrolls inside itself when the window is short. The glow shows below both.
+/// Presets) and, below it, the Tone card — `EQRail(save:) { EQToneCard() }` (EQ3t), which stays whole
+/// and pinned while the Equalizer card scrolls inside itself when the window is short. The glow shows
+/// below both.
 struct EQRail<ToneCard: View>: View {
     /// Opens the Save sheet (My Presets' "+").
     let save: () -> Void
@@ -21,12 +21,5 @@ struct EQRail<ToneCard: View>: View {
         }
         .frame(width: DesignSystem.LayoutMetrics.sidebarIdeal)
         .frame(maxHeight: .infinity, alignment: .top)
-    }
-}
-
-extension EQRail where ToneCard == EmptyView {
-    /// The rail before the Tone card mounts.
-    init(save: @escaping () -> Void) {
-        self.init(save: save) { EmptyView() }
     }
 }

@@ -17,7 +17,7 @@ struct EQTabView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(EQScreenLayout.columnGap)) {
-            EQRail(save: beginSave)
+            EQRail(save: beginSave) { EQToneCard() }
             EQGraphCard(save: beginSave)
         }
         .padding(.horizontal, CGFloat(EQScreenLayout.insetHorizontal))

@@ -54,9 +54,17 @@ public enum EQToneRegion: Int, CaseIterable, Identifiable, Sendable {
     }
 }
 
-// MARK: - Names (the Tone card's rows, the graph's Tone readout, VoiceOver)
+// MARK: - Names (the Tone card's rows, the graph's region labels and Tone readout, VoiceOver)
 
+/// One set of region names for the whole screen: the Tone card's rows and the graph's labels above the
+/// plot are these five, over these spans, so the two always agree.
 public extension EQToneRegion {
+    /// The region's span on the graph's 20 Hz – 20 kHz axis: crossover to crossover, an open end
+    /// running to the axis's end. The graph centres the region's name over it.
+    var spanHz: ClosedRange<Double> {
+        (edgesHz.lower ?? EQBands.nominalHz[0]) ... (edgesHz.upper ?? EQBands.nominalHz[EQBands.count - 1])
+    }
+
     /// The region's name: "Presence".
     var name: String {
         switch self {

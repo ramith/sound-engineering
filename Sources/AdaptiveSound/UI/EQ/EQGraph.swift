@@ -41,7 +41,8 @@ struct EQGraph: View {
         ZStack(alignment: .topLeading) {
             plot(points: points, played: played, audible: audible)
             EQGraphStrip(audible: audible, keyboardReadout: keyboardReadout(points: points, played: played),
-                         isDragging: drag != nil, isHeldAtCeiling: drag?.isPastCeiling ?? false) {
+                         toneReadout: eq.toneReadout, isDragging: drag != nil,
+                         isHeldAtCeiling: drag?.isPastCeiling ?? false) {
                 audio.selectedTab = .settings
             }
             .padding(.horizontal, 14)

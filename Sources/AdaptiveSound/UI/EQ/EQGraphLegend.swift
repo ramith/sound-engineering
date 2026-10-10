@@ -4,9 +4,11 @@ import SwiftUI
 
 /// "— plays  ● your setting  · drag a point, its neighbours follow smoothly": the line is the curve
 /// the EQ plays, the dots are what you set. The hint gives way first where the lens is narrow, and
-/// hides during a drag (the readout is over the point then).
+/// hides during a drag (the readout is over the point then). While a Tone slider is in use its readout
+/// stands in the hint's place ("· Tone · Presence 2–6 kHz +3.0 dB"), truncating where the lens is narrow.
 struct EQGraphLegend: View {
     let showsHint: Bool
+    var toneReadout: String?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -25,7 +27,10 @@ struct EQGraphLegend: View {
             .fixedSize()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("The line is what plays; the dots are your setting")
-            if showsHint {
+            if let toneReadout {
+                Text("·  \(toneReadout)")
+                    .foregroundStyle(DesignSystem.Color.labelSecondary)
+            } else if showsHint {
                 ViewThatFits(in: .horizontal) {
                     Text("·  drag a point, its neighbours follow smoothly")
                         .foregroundStyle(DesignSystem.Color.labelTertiary)

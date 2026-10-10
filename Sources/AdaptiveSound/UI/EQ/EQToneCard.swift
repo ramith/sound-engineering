@@ -19,19 +19,25 @@ import SwiftUI
 /// - **Keyboard:** the fold chip, Reset Tone, then the five sliders, in that Tab order; ←/→ or ↑/↓
 ///   step a focused slider by 0.5 dB.
 ///
-/// Its height is exact (`EQLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds.
+/// Its height is exact (`EQScreenLayout.toneCardHeight`), so the rail's budget (LAY-EQ-01) holds.
 struct EQToneCard: View {
     @Environment(EQViewModel.self) private var eq
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG
+        @Environment(\.sheetEQGraph) private var sheetSeed
+    #endif
 
-    @AppStorage("eq.toneFolded.v1") private var isFolded = false
+    /// Where the fold is remembered: the user's choice, through the injected defaults.
+    static let foldedKey = "eq.toneFolded.v1"
+
+    @AppStorage(foldedKey) private var isFolded = false
     @State private var hovered: EQToneRegion?
     @State private var dragged: EQToneRegion?
     @FocusState private var focused: EQToneRegion?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: CGFloat(EQLayout.toneHeaderGap)) {
+        VStack(alignment: .leading, spacing: CGFloat(EQScreenLayout.toneHeaderGap)) {
             EQToneHeader(isFolded: isFolded, toggleFold: toggleFold)
             if !isFolded {
                 VStack(spacing: 0) {
@@ -44,17 +50,33 @@ struct EQToneCard: View {
                 }
             }
         }
-        .padding(CGFloat(EQLayout.toneCardPadding))
+        .padding(CGFloat(EQScreenLayout.railCardPadding))
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: CGFloat(EQLayout.toneCardHeight(rows: isFolded ? 0 : EQToneRegion.allCases.count)),
-               alignment: .top)
-        .glassPanel(.panel, in: RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous))
+        .frame(height: height, alignment: .top)
+        .glassPanel(.panel, in: shape)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tone")
         .onChange(of: highlighted, initial: true) { _, region in
             eq.highlightedRegion = region
         }
         .onDisappear(perform: clearHighlight)
+        #if DEBUG
+            .onAppear(perform: seedSheetState)
+        #endif
+    }
+
+    /// The card's exact height (`EQScreenLayout.toneCardHeight`): the header alone folded, every row open.
+    private var height: CGFloat {
+        CGFloat(EQScreenLayout.toneCardHeight(rows: isFolded ? 0 : EQToneRegion.allCases.count))
+    }
+
+    /// Open, the rail cards' continuous corner. Folded, the one line is too short for it — a continuous
+    /// corner needs about one and a half radii of straight edge, or the panel's strokes overrun the
+    /// card's ends as a sliver — so its ends round fully, circular.
+    private var shape: RoundedRectangle {
+        isFolded
+            ? RoundedRectangle(cornerRadius: height / 2, style: .circular)
+            : RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous)
     }
 
     /// The region the user is on: a drag wins, then the pointer, then keyboard focus — shown only
@@ -88,6 +110,13 @@ struct EQToneCard: View {
             dragged = nil
         }
     }
+
+    #if DEBUG
+        /// Picture sheets: the Tone row the fixture hovers (an offscreen window gets no pointer).
+        private func seedSheetState() {
+            hovered = sheetSeed.toneRegion
+        }
+    #endif
 
     /// Leaving (the tab, the window) takes the shading with it: a hover's exit never comes then.
     private func clearHighlight() {

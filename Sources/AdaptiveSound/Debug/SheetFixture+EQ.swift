@@ -12,13 +12,20 @@
         /// The ring world's keyboard cursor: 80 Hz, a point the Tone layer holds at the ceiling ("limited").
         private static let ringBand = 6
 
+        /// The Tone world's Tone: Presence lifted, Bass lowered — both signs in the rows' value column.
+        private static let toneSample: [(EQToneRegion, Float)] = [(.presence, 3), (.bass, -2.5)]
+        /// The Tone world's hovered row.
+        private static let toneRegion = EQToneRegion.presence
+
         /// Seeds the EQ for `variant`: every world plays "Warm · Edited" with My Presets saved and the
-        /// engine running; each EQ world then puts the screen in its one state — through the view
-        /// model's own verbs, so a sheet shows what the app would.
-        static func seedEQ(_ eq: EQViewModel, audio: AudioViewModel, for variant: SheetVariant) {
+        /// engine running, with the Tone card open; each EQ world then puts the screen in its one state —
+        /// through the view model's own verbs, so a sheet shows what the app would. The fold is written
+        /// for every world, so one world's never carries into the next (the run shares one suite).
+        static func seedEQ(_ eq: EQViewModel, audio: AudioViewModel, defaults: UserDefaults,
+                           for variant: SheetVariant) {
             audio.isEngineReady = variant != .eqEngine
-            eq.seedRenderFixture(state: variant == .ring ? toneLimitedState() : editedWarm(),
-                                 myPresets: myPresets(many: variant == .eqMany))
+            defaults.set(variant == .eqFolded, forKey: EQToneCard.foldedKey)
+            eq.seedRenderFixture(state: startingState(for: variant), myPresets: myPresets(many: variant == .eqMany))
             switch variant {
             case .eqDrag: stroke(eq, dragSample)
             case .eqCeiling: stroke(eq, ceilingSample)
@@ -29,13 +36,24 @@
             }
         }
 
-        /// The graph's own state for `variant` (its drag, its keyboard cursor), which the graph seeds on
-        /// appear.
+        /// What `variant`'s EQ plays before its own state: Warm under a limiting Bass Tone for the ring
+        /// (its cursor reads "limited"), Flat under the Tone sample for the Tone world, else "Warm · Edited".
+        private static func startingState(for variant: SheetVariant) -> EQState {
+            switch variant {
+            case .ring: toneLimitedState()
+            case .eqTone: tonedFlat()
+            default: editedWarm()
+            }
+        }
+
+        /// The screen's own state for `variant` (the graph's drag and keyboard cursor, the hovered Tone
+        /// row), which the graph and the Tone card seed on appear.
         static func eqGraphSeed(for variant: SheetVariant) -> SheetEQGraph {
             switch variant {
             case .eqDrag: SheetEQGraph(drag: dragSample)
             case .eqCeiling: SheetEQGraph(drag: ceilingSample)
             case .ring: SheetEQGraph(cursorBand: ringBand)
+            case .eqTone: SheetEQGraph(toneRegion: toneRegion)
             default: SheetEQGraph()
             }
         }
@@ -53,12 +71,19 @@
         }
 
         /// Warm under a +6 dB Bass Tone: the low points ask past +12 dB and are held there ("limited").
-        /// Decoded from the stored form — the Tone verbs are the Tone card's (EQ3t).
         private static func toneLimitedState() -> EQState {
-            let base = EQBuiltInPreset.warm.points.map { "\($0)" }.joined(separator: ",")
-            let json = #"{"base":["# + base + #"],"tone":[6,0,0,0,0]}"#
-            let curve = try? JSONDecoder().decode(EQCurve.self, from: Data(json.utf8))
+            var curve = EQCurve(points: EQBuiltInPreset.warm.points)
+            curve.setTone(.bass, to: 6)
             return EQState(preset: .builtIn(.warm), curve: curve)
+        }
+
+        /// Flat under the Tone world's Tone: the curve is the Tone's alone ("Flat · Edited").
+        private static func tonedFlat() -> EQState {
+            var curve = EQCurve.flat
+            for (region, db) in toneSample {
+                curve.setTone(region, to: db)
+            }
+            return EQState(preset: .builtIn(.flat), curve: curve)
         }
 
         /// My Presets: the design's two, or twelve with a 40-character name (the list scrolls).
