@@ -1073,13 +1073,35 @@ static auto testCrossfeedRederivedOnRateChange() -> void
 }
 
 // Realizer_ReinitDuringDrain — architect F3: re-allocation and a burst of intents race through the
-// Realizer's queue without a data race (run under tsan) and the last intent wins.
+// Realizer's queue without a data race (run under tsan), the last intent wins, and a
+// re-allocation never waits behind a growing queue. The bound is relative to an idle
+// re-allocation, so it holds at -O0, -O2 and under the sanitizers: with at most one untaken drain
+// queued, a re-allocation waits for at most one drain (one design) plus its own work, about 2×
+// idle. Per-slot drain posting let every real drain re-arm all three slots, so the queue grew for
+// as long as the burst lasted — 2–9 s per re-allocation before the fix.
 static auto testRealizerReinitDuringDrain() -> void
 {
     static const char* const kName = "Realizer_ReinitDuringDrain";
+    constexpr int kRounds = 40;
+    constexpr int kIdleRounds = 4;
+    constexpr double kBoundFactor = 4.0; // ~2× expected; headroom for scheduler noise
+    constexpr double kBoundSlackMs = 10.0;
     auto kernel = std::make_shared<DSPKernel>();
     kernel->initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
+    const auto timedReinit = [&](int round) -> double
+    {
+        const auto started = std::chrono::steady_clock::now();
+        realizer->reinitializeKernel((round % 2 == 0) ? TestConstants::kSampleRate44k : 48000U,
+                                     kEngineBlock);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+            .count();
+    };
+    double idleWorstMs = 0.0;
+    for (int round = 0; round < kIdleRounds; ++round)
+    {
+        idleWorstMs = std::max(idleWorstMs, timedReinit(round));
+    }
     std::atomic<bool> stop{false};
     std::thread control(
         [&]
@@ -1096,20 +1118,35 @@ static auto testRealizerReinitDuringDrain() -> void
                 std::this_thread::sleep_for(std::chrono::microseconds(50)); // a fast UI, not a spin
             }
         });
-    const auto started = std::chrono::steady_clock::now();
-    for (int round = 0; round < 40; ++round)
+    double burstWorstMs = 0.0;
+    double burstTotalMs = 0.0;
+    for (int round = 0; round < kRounds; ++round)
     {
-        realizer->reinitializeKernel((round % 2 == 0) ? TestConstants::kSampleRate44k : 48000U,
-                                     kEngineBlock);
+        const double ms = timedReinit(round);
+        burstWorstMs = std::max(burstWorstMs, ms);
+        burstTotalMs += ms;
     }
-    const double perReinitMs =
-        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
-            .count() /
-        40.0;
     stop.store(true, std::memory_order_relaxed);
-    logInfo(std::format(
-        "[info] {}: {:.2f} ms per re-allocation under an intent burst\n", kName, perReinitMs));
     control.join();
+    const double boundMs = (kBoundFactor * idleWorstMs) + kBoundSlackMs;
+    logInfo(std::format(
+        "[info] {}: re-allocation idle worst {:.2f} ms; under an intent burst mean {:.2f} ms, "
+        "worst {:.2f} ms (bound {:.2f} ms)\n",
+        kName,
+        idleWorstMs,
+        burstTotalMs / kRounds,
+        burstWorstMs,
+        boundMs));
+    if (burstWorstMs > boundMs)
+    {
+        logFail(kName,
+                std::format(
+                    "a re-allocation waited {:.2f} ms behind the intent burst (bound {:.2f} ms) — "
+                    "the drain queue is growing",
+                    burstWorstMs,
+                    boundMs));
+        return;
+    }
     // The last intents win once the queue drains.
     const EqCurve last = eqFlatCurveWith(17U, 6.0F);
     (void)realizer->setPendingEq(last.data(), 31U, true);
