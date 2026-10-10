@@ -1,0 +1,8 @@
+# Build products of build-measure.sh, and local run logs (the committed evidence is
+# out-measurements.txt and out-storm-tsan.txt).
+measure
+measure.dSYM/
+.ebur128.o
+out-make-*.txt
+out-clang-tidy-*.txt
+out-verify-*.txt
