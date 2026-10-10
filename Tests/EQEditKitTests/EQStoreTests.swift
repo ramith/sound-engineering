@@ -106,12 +106,12 @@ struct EQStoreTests {
         #expect(try JSONDecoder().decode(EQStore.self, from: JSONEncoder().encode(store)) == store)
     }
 
-    @Test("STORE-08: another version throws; an unreadable state plays Flat without losing the rest")
+    @Test("STORE-08: another version throws; a state that can't be read plays Flat without losing the rest")
     func lenientDecoding() throws {
         #expect(throws: DecodingError.self) {
             try EQFixture.decode(EQStore.self, #"{"version":3,"shared":{"preset":{"builtIn":"Warm"},"isOn":true}}"#)
         }
-        let bad = #"{"preset":{"builtIn":"Warm"},"isOn":true,"curve":{"base":[],"tone":[]}}"#
+        let bad = #"["not a state"]"#
         let good = #"{"preset":{"builtIn":"Vocal"},"isOn":true}"#
         let pin = #""p":{"key":{"uid":"p","name":"P"},"state":"#
         let store = try EQFixture.decode(EQStore.self, #"{"version":2,"shared":"# + bad + #","pinned":{"#
@@ -121,5 +121,38 @@ struct EQStoreTests {
         #expect(store.pinned["q"]?.state == .flat, "the pin is kept, playing Flat")
         // Missing pins read as none.
         #expect(try EQFixture.decode(EQStore.self, #"{"version":2,"shared":"# + good + "}").pinned.isEmpty)
+    }
+
+    @Test("STORE-09: a pin that can't be read is kept aside and written back unchanged; pinning its UID replaces it")
+    func unreadablePinIsKeptVerbatim() throws {
+        let good = #"{"key":{"uid":"p","name":"P"},"state":{"isOn":true,"preset":{"builtIn":"Vocal"}}}"#
+        let reshaped = #"{"key":{"id":7,"label":["Modi",null,true,1.5]},"state":{"x":1}}"#
+        let stored = #"{"version":2,"shared":{"isOn":true,"preset":{"builtIn":"Warm"}},"pinned":{"p":"#
+            + good + #","q":"# + reshaped + "}}"
+        let store = try EQFixture.decode(EQStore.self, stored)
+        #expect(store[slot: "p"] == Self.vocal && store.pinned.count == 1)
+        #expect(store.unreadablePins.keys.sorted() == ["q"])
+        // The next write keeps it exactly, so a build that can read it finds it again.
+        let rewritten = try JSONSerialization.jsonObject(with: JSONEncoder().encode(store)) as? [String: Any]
+        let pins = try #require(rewritten?["pinned"] as? [String: Any])
+        let expected = try JSONSerialization.jsonObject(with: Data(reshaped.utf8)) as? NSDictionary
+        #expect((pins["q"] as? NSDictionary) == expected)
+        #expect(try JSONDecoder().decode(EQStore.self, from: JSONEncoder().encode(store)) == store)
+        // Pinning that UID again replaces the unreadable entry.
+        let repinned = EQStore(shared: .flat, pinned: ["q": .init(key: Self.dac, state: Self.warm)],
+                               unreadablePins: store.unreadablePins)
+        let reread = try JSONDecoder().decode(EQStore.self, from: JSONEncoder().encode(repinned))
+        #expect(reread.pinned["q"]?.state == Self.warm && reread.unreadablePins.isEmpty)
+    }
+
+    @Test("STORE-10: a slot change is a move to another slot — never a move between outputs that share one")
+    func slotChange() {
+        let store = Self.store(pinning: [Self.pods])
+        #expect(!store.isSlotChange(from: Self.speakers, to: Self.dac), "both unpinned: both play shared")
+        #expect(!store.isSlotChange(from: nil, to: Self.speakers))
+        #expect(store.isSlotChange(from: Self.speakers, to: Self.pods))
+        #expect(store.isSlotChange(from: Self.pods, to: nil))
+        let secondPair = EQOutputKey(uid: "B8-00:output", modelUID: Self.pods.modelUID, name: "AirPods Pro")
+        #expect(!store.isSlotChange(from: Self.pods, to: secondPair), "the model fallback plays the same pin")
     }
 }

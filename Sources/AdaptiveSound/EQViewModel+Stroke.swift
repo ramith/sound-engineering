@@ -28,7 +28,10 @@ extension EQViewModel {
         edit(to: curve)
     }
 
-    /// Mouse-up: the stroke stays — persisted and logged once.
+    /// Mouse-up: the stroke stays — persisted and logged once. A discrete edit (a preset choice,
+    /// Save, a key step) calls this first too (break-it A1/A2/S0): it then applies to what plays and
+    /// what is on disk — never to a stroke that would redraw over it — and the rest of that drag is
+    /// ignored until the next mouse-down. So an Esc never restores a state that isn't on disk.
     func endStroke() {
         guard let active = stroke else { return }
         stroke = nil
@@ -37,6 +40,13 @@ extension EQViewModel {
         let points = current.points
         logUX("EQ stroke → '\(presetLabel)' max=\(String(format: "%+.1f", points.max() ?? 0))dB "
             + "min=\(String(format: "%+.1f", points.min() ?? 0))dB")
+    }
+
+    /// The output is moving to `key`. A drag stays with its slot: it ends (kept, persisted) only when
+    /// the move changes the slot, and draws on across an output change that keeps it (break-it D1).
+    func endStroke(beforeMovingTo key: EQOutputKey?) {
+        guard store.isSlotChange(from: output, to: key) else { return }
+        endStroke()
     }
 
     /// Esc during a drag: the state from before the stroke plays again, exactly. Returns whether
@@ -52,6 +62,7 @@ extension EQViewModel {
     /// The keyboard / VoiceOver step: `band` moves by `db`, persisted per step (a key press has no
     /// stroke end).
     func nudge(band: Int, by db: Float) {
+        endStroke()
         var curve = current.resolvedCurve
         guard curve.points.indices.contains(band) else { return }
         curve.setPoint(band, to: curve.points[band] + db)

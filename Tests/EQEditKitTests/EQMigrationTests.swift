@@ -35,12 +35,13 @@ struct EQMigrationTests {
     func builtInBecomesReference() throws {
         // v1 stored the gains it played; a later re-voice must still reach this unedited user, so the
         // gains are ignored (here: an older, louder Warm).
-        let store = EQMigration.store(fromV1: Self.v1("Warm", EQBuiltInPreset.warm.points.map { $0 * 1.2 }),
-                                      customPresets: Self.customPresets)
+        let live = Self.v1("Warm", EQBuiltInPreset.warm.points.map { $0 * 1.2 })
+        let store = EQMigration.store(fromV1: live, customPresets: Self.customPresets)
         #expect(store[slot: nil] == EQState(preset: .builtIn(.warm), curve: nil))
         #expect(store[slot: nil].points == EQBuiltInPreset.warm.points)
-        #expect(try EQFixture.json(store)
-            == #"{"pinned":{},"shared":{"isOn":true,"preset":{"builtIn":"Warm"}},"version":2}"#)
+        let fingerprint = EQMigration.fingerprint(of: live)
+        #expect(try EQFixture.json(store) == #"{"pinned":{},"shared":{"isOn":true,"preset":{"builtIn":"Warm"}},"#
+            + #""v1Fingerprint":"\#(fingerprint)","version":2}"#)
         // Every built-in id v1 could have stored.
         for preset in EQBuiltInPreset.allCases {
             let migrated = Self.migrate(Self.v1(preset.rawValue, preset.points))
@@ -90,8 +91,55 @@ struct EQMigrationTests {
         let blob = Data(#"{"bandGains":[\#(zeros)],"presetRaw":"Flat"}"#.utf8)
         #expect(blob.count == 96)
         let store = EQMigration.store(fromV1: blob, customPresets: [:])
-        #expect(try EQFixture.json(store)
-            == #"{"pinned":{},"shared":{"isOn":true,"preset":{"builtIn":"Flat"}},"version":2}"#)
+        #expect(try EQFixture.json(store) == #"{"pinned":{},"shared":{"isOn":true,"preset":{"builtIn":"Flat"}},"#
+            + #""v1Fingerprint":"b0adf57d0b5bc3e2","version":2}"#)
+    }
+
+    @Test("MIGRATE-07: the v1 fingerprint is 64-bit FNV-1a — persisted, so pinned to the published vectors")
+    func fingerprintIsStable() {
+        #expect(EQMigration.fingerprint(of: Data()) == "cbf29ce484222325")
+        #expect(EQMigration.fingerprint(of: Data("a".utf8)) == "af63dc4c8601ec8c")
+        #expect(EQMigration.fingerprint(of: Data("foobar".utf8)) == "85944171f73967e8")
+        #expect(EQMigration.fingerprint(of: Self.v1("Warm", EQBuiltInPreset.warm.points))
+            != EQMigration.fingerprint(of: Self.v1("Vocal", EQBuiltInPreset.vocal.points)))
+    }
+
+    @Test("MIGRATE-08: downgrade, then upgrade (break-it B1) — an EQ made in a v1 build since wins the shared slot")
+    func catchUpWithAV1BuildRunSince() throws {
+        // Upgrade from v1 Warm; pin an output; the user downgrades and chooses Vocal in the v1 build,
+        // which writes eqLiveStateV1 and nothing else; then this build runs again.
+        let warmBlob = Self.v1("Warm", EQBuiltInPreset.warm.points)
+        var store = EQMigration.store(fromV1: warmBlob, customPresets: [:])
+        let pods = EQOutputKey(uid: "A4-C3:output", modelUID: nil, name: "AirPods Pro")
+        let late = EQState(preset: .mine("Late Night"), curve: EQFixture.curve([4: 6]))
+        store = EQStore(shared: store[slot: nil], pinned: [pods.uid: .init(key: pods, state: late)],
+                        v1Fingerprint: store.v1Fingerprint)
+        let vocalBlob = Self.v1("Vocal", EQBuiltInPreset.vocal.points)
+        let caughtUp = EQMigration.catchUp(store, withV1: vocalBlob, customPresets: Self.customPresets)
+        #expect(caughtUp[slot: nil] == EQState(preset: .builtIn(.vocal), curve: nil))
+        #expect(caughtUp[slot: pods.uid] == late, "pins stay: v1 has no per-output memory")
+        #expect(caughtUp.v1Fingerprint == EQMigration.fingerprint(of: vocalBlob))
+        // Caught up once: the same blob again changes nothing, so the edits made here since survive.
+        var edited = caughtUp
+        edited[slot: nil] = EQState(preset: .builtIn(.studio), curve: EQFixture.curve([20: 5]))
+        #expect(EQMigration.catchUp(edited, withV1: vocalBlob, customPresets: Self.customPresets) == edited)
+        // A rule-2 blob catches up as that My Preset.
+        let podcast = try #require(Self.customPresets["Podcast"])
+        #expect(EQMigration.catchUp(edited, withV1: Self.v1(nil, podcast), customPresets: Self.customPresets)[slot: nil]
+            .preset == .mine("Podcast"))
+    }
+
+    @Test("MIGRATE-09: no v1 blob, or a store from before the rule, never loses the v2 EQ")
+    func catchUpNeverGuesses() {
+        let edited = EQState(preset: .builtIn(.studio), curve: EQFixture.curve([20: 5]))
+        let current = EQStore(shared: edited, pinned: [:], v1Fingerprint: "cbf29ce484222325")
+        #expect(EQMigration.catchUp(current, withV1: nil, customPresets: [:]) == current)
+        // Written before the fingerprint existed: it records the blob on disk and keeps its own state.
+        let older = EQStore(shared: edited)
+        let vocalBlob = Self.v1("Vocal", EQBuiltInPreset.vocal.points)
+        let adopted = EQMigration.catchUp(older, withV1: vocalBlob, customPresets: [:])
+        #expect(adopted[slot: nil] == edited)
+        #expect(adopted.v1Fingerprint == EQMigration.fingerprint(of: vocalBlob))
     }
 
     @Test("MIGRATE-05: a migrated store has no pins (v1's per-output map was never written)")
