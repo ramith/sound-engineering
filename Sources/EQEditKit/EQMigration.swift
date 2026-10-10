@@ -53,8 +53,9 @@ public enum EQMigration {
         guard let live, let v1 = try? JSONDecoder().decode(V1LiveState.self, from: live),
               EQCurve.isWellFormed(v1.bandGains)
         else { return .flat }
-        // Rule 1. An id no build knows (e.g. renamed long ago) was played as an edit in v1: rules 2–3.
-        if let builtIn = v1.presetRaw.flatMap(EQBuiltInPreset.init(rawValue:)) {
+        // Rule 1, through the stored-id rule: a retired id plays its replacement (v1's "Studio" is
+        // Flat, decision 32). An id no build knows was played as an edit in v1: rules 2–3.
+        if let builtIn = v1.presetRaw.flatMap(EQBuiltInPreset.init(storedID:)) {
             return EQState(preset: .builtIn(builtIn), curve: nil)
         }
         let curve = EQCurve(points: v1.bandGains)

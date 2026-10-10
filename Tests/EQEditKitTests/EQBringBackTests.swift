@@ -12,7 +12,7 @@ struct EQBringBackTests {
     /// Warm with one point moved (edited), switched off — the whole slot is what comes back.
     private static let editedWarm: EQState = {
         var points = EQBuiltInPreset.warm.points
-        points[22] = -1.5
+        points[22] = 2 // a lift where Warm dips
         return EQState(preset: .builtIn(.warm), curve: EQCurve(points: points), isOn: false)
     }()
 
