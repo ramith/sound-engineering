@@ -39,6 +39,8 @@ namespace AdaptiveSound::GraphicEQ
 
     // Exact base-10 third-octave centres f_m = 10^(1.3 + 0.1·m): 19.95 Hz … 19.95 kHz. The UI
     // labels them with the rounded ISO 266 names (20, 25, 31.5 … 20 k); the maths uses these.
+    // They are EQEditKit's EQBands.centreHz, bit for bit: the C++ gate (EQ_Bands_MatchKit) and the
+    // kit's BANDS-04 pin both copies to one table.
     constexpr double kCentreBase = 10.0;
     constexpr double kFirstCentreLog10 = 1.3;
     constexpr double kCentreLog10Step = 0.1;
@@ -56,8 +58,12 @@ namespace AdaptiveSound::GraphicEQ
     // The centre frequency (Hz) of band `band` (0 … kBandCount − 1).
     [[nodiscard]] inline double centreHz(int band) noexcept
     {
-        return std::pow(kCentreBase,
-                        kFirstCentreLog10 + (kCentreLog10Step * static_cast<double>(band)));
+        // Two statements on purpose: clang's default -ffp-contract=on would fuse 1.3 + 0.1·m into
+        // one FMA, which rounds the exponent differently from Swift (and the numpy oracle), which
+        // never contract — band 10 then lands one ulp off EQBands.centreHz (EQ_Bands_MatchKit).
+        const double offset = kCentreLog10Step * static_cast<double>(band);
+        const double exponent = kFirstCentreLog10 + offset;
+        return std::pow(kCentreBase, exponent);
     }
 
     // The bilinear prewarp tan(πf / fs). For a band centre this is the SVF's g; for any frequency

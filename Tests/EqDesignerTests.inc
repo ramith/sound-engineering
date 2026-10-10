@@ -15,6 +15,8 @@
 // EQ1a brief, at 44.1 / 48 / 88.2 / 96 / 176.4 / 192 kHz. The value in (…) is the oracle's.
 //
 // Tests:
+//   EQ_Bands_MatchKit           — the designer's centres == EQEditKit's EQBands.centreHz, bit
+//                                 for bit (the kit's BANDS-04 pins the same table)
 //   EQ_Designer_MatchesOracle   — solved gains == pinned oracle gains (≤ 1e-6 dB), one curve
 //                                 per rate
 //   EQ_ACGE_Presets_Tone_Smooth — presets ≤ 0.084 dB (0.0837); 100 Tone ≤ 0.2 (0.081);
@@ -55,9 +57,10 @@ namespace
     };
     constexpr double kEqLimitDb = 12.0;
 
-    // The built-in presets exactly as the oracle evaluates them (geq.py PRESETS: the
-    // EQPreset.swift formulas at the nominal ISO centres, rounded to float32). Presence, Clarity,
-    // Warm, Loudness, Vocal, Studio.
+    // The built-in presets exactly as the oracle evaluates them (geq.py PRESETS: the preset
+    // formulas at the nominal ISO centres, rounded to float32). Presence, Clarity, Warm, Loudness,
+    // Vocal, Studio. These are the app's own points: EQEditKit's PRESET-06 pins
+    // EQBuiltInPreset.points to this same table, so re-voicing a preset re-runs this gate.
     constexpr std::array<EqCurve, 6> kEqPresetCurves = {
         {
             {
@@ -109,6 +112,28 @@ namespace
         },
     };
     constexpr size_t kEqPresetWarm = 2U;
+
+    // EQEditKit's EQBands.centreHz (Swift: pow(10, 1.3 + 0.1·m)), printed %.17g. The kit's
+    // BANDS-04 pins the Swift side to this same table, so the UI's bands and the designer's
+    // bands can only change together.
+    constexpr std::array<double, 31> kEqKitCentresHz = {
+        19.952623149688797, 25.118864315095809,
+        31.622776601683793, 39.810717055349734,
+        50.118723362727252, 63.095734448019329,
+        79.432823472428169, 100.0,
+        125.89254117941675, 158.48931924611142,
+        199.52623149688787, 251.18864315095823,
+        316.22776601683796, 398.10717055349733,
+        501.18723362727246, 630.957344480193,
+        794.3282347242822,  1000.0,
+        1258.9254117941675, 1584.893192461114,
+        1995.2623149688789, 2511.8864315095821,
+        3162.2776601683795, 3981.0717055349774,
+        5011.8723362727251, 6309.5734448019302,
+        7943.2823472428217, 10000.0,
+        12589.254117941688, 15848.931924611141,
+        19952.623149688789,
+    };
 
     // The breaker's adversarial commands, pinned from research/eq-geq-poc/fixtures/ (float32).
     constexpr EqCurve kEqWorstCmdLong = {
@@ -846,6 +871,28 @@ namespace
         return failure;
     }
 } // namespace
+
+// ---------------------------------------------------------------------------
+// EQ_Bands_MatchKit — the C++ centres are the kit's (one source of truth, pinned on both sides).
+// ---------------------------------------------------------------------------
+static auto testEqBandsMatchKit() -> void
+{
+    static const char* const kName = "EQ_Bands_MatchKit";
+    for (size_t band = 0; band < kDesignBands; ++band)
+    {
+        const double centre = GraphicEQ::centreHz(static_cast<int>(band));
+        if (centre != kEqKitCentresHz[band])
+        {
+            logFail(kName,
+                    std::format("band {}: C++ {:.17g} Hz vs EQBands.centreHz {:.17g} Hz",
+                                band,
+                                centre,
+                                kEqKitCentresHz[band]));
+            return;
+        }
+    }
+    logPass(kName);
+}
 
 // ---------------------------------------------------------------------------
 // EQ_Designer_MatchesOracle — the port reproduces the Python oracle's solved gains.

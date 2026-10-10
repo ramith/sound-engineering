@@ -75,7 +75,7 @@
 
 namespace
 {
-    constexpr std::array<TestEntry, 135U> kTests = {
+    constexpr std::array<TestEntry, 136U> kTests = {
         {
             // Phase 0 bypass tests
             {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
@@ -287,6 +287,7 @@ namespace
             {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
             // Sprint EQ / EQ1a: the graphic-EQ designer vs the Python oracle (parallel-safe: pure
             // DSP, no env/tmp) — except Designer_Timing, serial so the pool cannot skew its clock.
+            {"EQ_Bands_MatchKit", testEqBandsMatchKit, true},
             {"EQ_Designer_MatchesOracle", testEqDesignerMatchesOracle, true},
             {"EQ_ACGE_Presets_Tone_Smooth", testEqAcgePresetsToneSmooth, true},
             {"EQ_ACGE_Ramo1000", testEqAcgeRamo1000, true},

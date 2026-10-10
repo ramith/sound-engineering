@@ -57,4 +57,40 @@ struct EQBuiltInPresetTests {
             }
         }
     }
+
+    /// The C++ designer's accuracy gate (EQ_ACGE_Presets_Tone_Smooth, Tests/EqDesignerTests.inc:
+    /// every preset plays within 0.084 dB of its points at 44.1–192 kHz) runs on its own copy of
+    /// these points. Pinning them here keeps that gate testing the presets the app ships: re-voice
+    /// a preset and both tables change together, and the gate re-checks its accuracy.
+    @Test("PRESET-06: the points are exactly the ones the C++ accuracy gate pins")
+    func pointsMatchTheDesignerGate() {
+        let zeros = { (count: Int) in [Float](repeating: 0, count: count) }
+        let gate: [EQBuiltInPreset: [Float]] = [
+            .presence: zeros(18) + [
+                3.8752439, 6.99874878, 8, 6.99874878, 4.12249899, 9.79717482e-16, 3.49937439, 2.06124949,
+            ] + zeros(5),
+            .clarity: zeros(18) + [
+                1.00658441, 2.08575392, 3, 3.82920933, 4.57333708, 5.19615221, 5.62580061, 5.90257025, 6,
+                3.49937439, 2.1228106,
+            ] + zeros(2),
+            .warm: [
+                6.95925808, 7.27462626, 7.58047199, 7.87582207, 8.13384724, 8.38407993, 8.6257267,
+                8.83683395, 9.03473473, 9.23927498, 9.41199684, 9.57391262, 9.73093891, 9.88257694,
+                10.0150509, 7.33586168, 6.54984617, 5.73225069, 4.85224533, 3.84244251, 2.9430356,
+            ] + zeros(10),
+            .loudness: [
+                4, 3.97630811, 3.90212274, 3.7733438, 3.60674, 3.38917542, 3.11906195, 2.82842708,
+                2.50428677, 2.11130285, 1.72957408, 1.32735682, 0.894262433, 0.434711725, 2.44929371e-16,
+            ] + zeros(8) + [0.806700289, 1.50767219, 2.13093019, 2.62027121, 2.90351629, 3, 3, 3],
+            .vocal: zeros(15) + [
+                1.1757797, 2.34269428, 3.34593296, 4.22819042, 5.02495384, 5.55473375, 5.88366747, 6,
+                5.52024317, 4.27103186, 2.35093927,
+            ] + zeros(5),
+            .studio: zeros(27) + [0.968810976, 1.69511616, 2, 2],
+        ]
+        for (preset, points) in gate {
+            #expect(points.count == EQBands.count, "\(preset) table")
+            #expect(preset.points == points, "\(preset)")
+        }
+    }
 }
