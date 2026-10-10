@@ -25,6 +25,20 @@
 // 44.1 kHz, 247 at 48 kHz, 295 at 192 kHz. (The Python oracle stops its edges at 20·2^(263/24) ≈
 // 39.8 kHz; above 88.2 kHz the grid here continues to Nyquist instead of lumping one wide top band.)
 //
+// THE LIMITS (amendment 19). The predictor reads each band's energy at the band's CENTRE, on a
+// 1/24-octave grid whose low bands are narrower than the 400 ms block's 2.5 Hz FFT bins. Where a
+// programme's energy sits in a few places at which the curve changes fast, the centre's response is
+// not the one the energy meets — the break-it's finding 10, and EqEngineFixTests.inc's sweep:
+//   - a sustained low sine (20–75 Hz) under a jagged ±12 curve or a ±12 bass point: up to 8.2 dB;
+//   - DC and sub-20 Hz rumble (band 0 is all of 0–20 Hz) under a bass boost or cut: up to 2.8 dB;
+//   - a tone near Nyquist (21.5 kHz at 44.1 kHz) under ±12 dB of Air: up to 1.1 dB.
+// The errors are almost all UNDER-compensation: the gain moves the level the right way but not all
+// of it (as an EQ without the gain would, only less). Where it goes PAST the true change, it goes
+// at most 2.8 dB past (Loudness_Predictor_PathologicalBounded bounds that at 3 dB). Broadband music
+// stays within 0.14 dB. And no prediction leaves the played curve's own range — the gain never
+// compensates more than the curve changes anything, even where BS.1770's relative gate alone would
+// carry the change past it (the predictor clamps to the response's [smallest, largest] gain).
+//
 // DECIMATION. A profile keeps every block up to the profiler's cap; above it the blocks are thinned
 // to every 2nd, 4th, … (blockStrideHops). Kept blocks are always exact, whole 400 ms blocks, so the
 // gating stays a fair sample (TrackLoudnessProfiler.h, "memory and cost").
@@ -101,6 +115,7 @@ namespace AdaptiveSound
     // bandGainDb.size() bands; bands at and above that index are treated as NOT PLAYED and leave
     // both sums (a track at a higher rate than the output loses them to the sample-rate converter).
     // `blockStep` ≥ 1 uses every blockStep-th kept block (a cheaper estimate, e.g. during a drag).
+    // The result lies within the response's own range, [min, max] of bandGainDb (amendment 19).
     //
     // Returns false — leaving `changeDb` untouched — on an empty or oversized response, a
     // non-finite response value, a zero blockStep, a profile with no blocks, a block set in which
