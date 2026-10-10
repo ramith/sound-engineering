@@ -41,6 +41,14 @@
 // process() is noexcept: no allocation, free, OS call, or lock. All buffers and the
 // polyphase coefficient table are pre-allocated/computed in initialize() (off-RT).
 //
+// Non-finite input
+// ================
+// The limiter is the last stage before the device, so it never passes a NaN or an infinity on:
+// such a sample enters the look-ahead ring as silence (process() and prime() both). The detector,
+// the window maximum and the dB envelope therefore only ever see finite values, and the envelope
+// arithmetic stays total — there is no state to repair afterwards. (A bypassed limiter, ceiling
+// ≥ 1.0, is the identity and touches nothing; the kernel scrubs its own input ahead of it.)
+//
 // Ring sizing
 // ===========
 // The look-ahead ring is sized ringSize_ = lookaheadFrames_ + maxFrames_, where
@@ -66,6 +74,7 @@
 // - jiixyj/libebur128, x42/dpl.lv2 (oversampled true-peak detection)
 
 #include "../include/AudioConstants.h"
+#include "../include/FiniteSamples.h"
 #include "../include/MultichannelView.h"
 #include "../include/TargetState.h"
 #include "../include/TruePeakKernel.h"
@@ -231,12 +240,14 @@ namespace AdaptiveSound
 
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
-                // Write all active channels into their rings for this sample.
+                // Write all active channels into their rings for this sample. The ring only ever
+                // holds FINITE samples (amendment 14): an infinity would read as an infinite true
+                // peak, send the envelope to −Inf dB and then to NaN on its release — for good.
                 for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
                     if (bufs[ch] != nullptr)
                     {
-                        rings_[ch][writeHead_] = bufs[ch][i];
+                        rings_[ch][writeHead_] = finiteOrSilence(bufs[ch][i]);
                     }
                 }
 
@@ -296,7 +307,7 @@ namespace AdaptiveSound
                 for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
                     const float* buf = block.channel(ch);
-                    rings_[ch][writeHead_] = (buf != nullptr) ? buf[i] : 0.0F;
+                    rings_[ch][writeHead_] = (buf != nullptr) ? finiteOrSilence(buf[i]) : 0.0F;
                 }
                 writeHead_ = (writeHead_ + 1U) % ringSize_;
             }

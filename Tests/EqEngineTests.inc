@@ -23,7 +23,8 @@
 //   EQ_PublishRejectsNonFinite     — the Realizer's trust boundary
 //   EQ_RT_IgnoresBadSnapshot       — non-finite / non-positive coefficients and a design for
 //                                    another rate are ignored; the last good target keeps playing
-//   EQ_NaNInput_Recovers           — a NaN input recovers in one block (module) / two (kernel)
+//   EQ_NaNInput_Recovers           — a NaN input recovers in one block (module); the kernel
+//                                    never lets it in (amendment 14: it plays as silence)
 //   EQ_FZ_Set_OnRenderThread       — the kernel sets FPCR.FZ on whatever thread renders
 //   EQ_NoSubnormalStates           — seeded states decaying in silence: subnormal without FZ (the
 //                                    test CAN fail), none with it
@@ -621,7 +622,8 @@ static auto testEqRtIgnoresBadSnapshot() -> void
 }
 
 // ---------------------------------------------------------------------------
-// EQ_NaNInput_Recovers — engine-plan §7: a NaN in the input poisons one block, not the stream.
+// EQ_NaNInput_Recovers — engine-plan §7: a NaN in the input poisons one block of the EQ module,
+// not the stream; and the kernel scrubs its input (amendment 14), so there it poisons nothing.
 // ---------------------------------------------------------------------------
 static auto testEqNaNInputRecovers() -> void
 {
@@ -654,24 +656,23 @@ static auto testEqNaNInputRecovers() -> void
         logFail(kName, "the EQ module did not recover in the next block");
         return;
     }
-    // The kernel: the limiter's 3 ms look-ahead still holds the NaN for one more block.
+    // The kernel: the NaN plays as silence, so even the block that carried it comes out finite
+    // (and the next one, which the limiter's 3 ms look-ahead spills it into).
     TargetState state = makeIdentityState();
     state.limiter = LimiterParams{};
     state.eq = warm;
     DSPKernel kernel;
     kernel.publishTargetState(state);
     kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
-    blockWithNaN(abl, true);
-    kernel.process(abl.abl(), kEngineBlock);
-    for (int b = 0; b < 2; ++b)
+    for (int b = 0; b < 3; ++b)
     {
-        blockWithNaN(abl, false);
+        blockWithNaN(abl, b == 0);
         kernel.process(abl.abl(), kEngineBlock);
-    }
-    if (!std::ranges::all_of(abl.left, [](float v) { return std::isfinite(v); }))
-    {
-        logFail(kName, "the kernel did not recover within two blocks");
-        return;
+        if (!std::ranges::all_of(abl.left, [](float v) { return std::isfinite(v); }))
+        {
+            logFail(kName, std::format("the kernel put out a non-finite sample in block {}", b));
+            return;
+        }
     }
     logPass(kName);
 }

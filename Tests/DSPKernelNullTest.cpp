@@ -43,6 +43,7 @@
 //                           per-track rules, gapless seams, the causal fallback, On vs Off
 //   EqEngineBreakItTests.inc — Sprint EQ engine break-it: red tests pinning defects the gate above
 //                           misses (its measurement half: EqEngineBreakItMeasure.cpp, not gated)
+//   EqEngineFixTests.inc  — Sprint EQ engine fix round (amendments 14–19): each fix's own gate
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -78,6 +79,7 @@
 #include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
 #include "LoudnessNeutralTests.inc" // after TrackLoudnessTests.inc + EqEngineTests.inc (helpers)
 #include "EqEngineBreakItTests.inc" // after EqEngineTests.inc + EqTransitionTests.inc (helpers)
+#include "EqEngineFixTests.inc"     // after EqEngineBreakItTests.inc (helpers)
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -387,6 +389,10 @@ namespace
         },
         {"BreakIt_Transitions_LowBandGestures", testBreakItTransitionsLowBandGestures, true},
         {"BreakIt_TauRule_SinglePointIsNotJagged", testBreakItTauRuleSinglePointIsNotJagged, true},
+        // Sprint EQ engine fix round (amendments 14–19): each fix's own gate.
+        {"Kernel_NonFiniteInput_PlaysAsSilence", testKernelNonFiniteInputPlaysAsSilence, true},
+        {"Limiter_NonFiniteInput_StaysFinite", testLimiterNonFiniteInputStaysFinite, true},
+        {"LufsMeter_NonFiniteSample_IsSilence", testLufsMeterNonFiniteSampleIsSilence, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine
