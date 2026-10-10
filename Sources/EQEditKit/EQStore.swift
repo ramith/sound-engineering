@@ -21,14 +21,26 @@ public struct EQStore: Equatable, Sendable {
     /// The pinned outputs' slots, keyed by device UID.
     private(set) var pinned: [String: PinnedSlot]
 
+    /// Pins this build can't read (a damaged write, or a later build's reshaped key), keyed by UID as
+    /// stored. They resolve to no output, but they are written back unchanged, so no save makes their
+    /// loss permanent (break-it BRK-01); one is replaced only when its UID is pinned again.
+    private(set) var unreadablePins: [String: EQOpaqueJSON]
+
+    /// The fingerprint of the v1 EQ (`eqLiveStateV1`) this store last took in (`EQMigration`); `nil`
+    /// for a store written before that rule.
+    var v1Fingerprint: String?
+
     /// A store whose every output plays `shared` (nothing pinned).
     public init(shared: EQState) {
         self.init(shared: shared, pinned: [:])
     }
 
-    init(shared: EQState, pinned: [String: PinnedSlot]) {
+    init(shared: EQState, pinned: [String: PinnedSlot], unreadablePins: [String: EQOpaqueJSON] = [:],
+         v1Fingerprint: String? = nil) {
         self.shared = shared
         self.pinned = pinned
+        self.unreadablePins = unreadablePins
+        self.v1Fingerprint = v1Fingerprint
     }
 
     /// The slot `output` plays: its own pin by exact UID; else the one pin of the same model (a
@@ -42,6 +54,13 @@ public struct EQStore: Equatable, Sendable {
         guard let modelUID = output.modelUID else { return nil }
         let sameModel = pinned.filter { $0.value.key.modelUID == modelUID }
         return sameModel.count == 1 ? sameModel.first?.key : nil
+    }
+
+    /// Whether the output moving from `old` to `new` moves the EQ to another slot. A move between two
+    /// outputs that play the same slot (two unpinned outputs both play shared) changes nothing that
+    /// is edited, so a drag carries on across it (break-it D1).
+    public func isSlotChange(from old: EQOutputKey?, to new: EQOutputKey?) -> Bool {
+        slotID(for: old) != slotID(for: new)
     }
 
     /// The state in slot `id` (`nil` or an unknown id: the shared slot), read or written.
@@ -67,18 +86,19 @@ public struct EQStore: Equatable, Sendable {
     }
 }
 
-// MARK: - Codable ({"version": 2, "shared": state, "pinned": {uid: {"key", "state"}}})
+// MARK: - Codable ({"version": 2, "shared": state, "pinned": {uid: {"key", "state"}}, "v1Fingerprint"})
 
 extension EQStore: Codable {
     /// The schema this build reads and writes.
     private static let version = 2
 
     private enum CodingKeys: String, CodingKey {
-        case version, shared, pinned
+        case version, shared, pinned, v1Fingerprint
     }
 
-    /// Any other version throws. Below that, a state that can't be read plays Flat rather than
-    /// losing the rest (the shared slot, or that one pin); only unreadable pin keys lose the pins.
+    /// Any other version throws. Below that, nothing damaged costs anything else: a state that can't
+    /// be read plays Flat (`EQState` keeps what it can of it), and a pin that can't be read is kept
+    /// aside unchanged while the others play on. Only a `pinned` value that isn't a map loses the pins.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let version = try container.decode(Int.self, forKey: .version)
@@ -88,9 +108,12 @@ extension EQStore: Codable {
                 debugDescription: "EQStore v\(version); this build reads v\(Self.version)"
             )
         }
+        let pins = (try? container.decode([String: StoredPin].self, forKey: .pinned)) ?? [:]
         self.init(
             shared: (try? container.decode(EQState.self, forKey: .shared)) ?? .flat,
-            pinned: (try? container.decode([String: PinnedSlot].self, forKey: .pinned)) ?? [:]
+            pinned: pins.compactMapValues(\.readable),
+            unreadablePins: pins.compactMapValues(\.unreadable),
+            v1Fingerprint: try? container.decodeIfPresent(String.self, forKey: .v1Fingerprint)
         )
     }
 
@@ -98,7 +121,42 @@ extension EQStore: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(Self.version, forKey: .version)
         try container.encode(shared, forKey: .shared)
-        try container.encode(pinned, forKey: .pinned)
+        // A readable pin wins over an unreadable entry under the same UID: that output was pinned again.
+        let pins = unreadablePins.mapValues(StoredPin.unreadable)
+            .merging(pinned.mapValues(StoredPin.readable)) { _, readable in readable }
+        try container.encode(pins, forKey: .pinned)
+        try container.encodeIfPresent(v1Fingerprint, forKey: .v1Fingerprint)
+    }
+}
+
+/// One stored pin: read when this build can, else kept exactly as it was stored.
+private enum StoredPin: Codable {
+    case readable(EQStore.PinnedSlot)
+    case unreadable(EQOpaqueJSON)
+
+    var readable: EQStore.PinnedSlot? {
+        guard case let .readable(slot) = self else { return nil }
+        return slot
+    }
+
+    var unreadable: EQOpaqueJSON? {
+        guard case let .unreadable(json) = self else { return nil }
+        return json
+    }
+
+    init(from decoder: any Decoder) throws {
+        if let slot = try? EQStore.PinnedSlot(from: decoder) {
+            self = .readable(slot)
+        } else {
+            self = try .unreadable(EQOpaqueJSON(from: decoder))
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        switch self {
+        case let .readable(slot): try slot.encode(to: encoder)
+        case let .unreadable(json): try json.encode(to: encoder)
+        }
     }
 }
 

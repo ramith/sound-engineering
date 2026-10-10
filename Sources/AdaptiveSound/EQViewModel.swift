@@ -85,6 +85,7 @@ final class EQViewModel {
     /// Choose a preset: its points, Tone at 0, and the EQ on. Re-choosing the current preset resets
     /// it. A My Preset that no longer exists is ignored.
     func choose(_ preset: EQPresetRef) {
+        endStroke() // a discrete edit ends a drag first (+Stroke)
         guard let state = EQState(choosing: preset, myPresets: customPresets) else { return }
         logUX("EQ preset → '\(preset.displayName)'")
         setCurrent(state)
@@ -94,6 +95,7 @@ final class EQViewModel {
     /// Save what plays as the My Preset `name` (replacing one of that name), Tone baked in. The
     /// current slot then plays that preset, unedited.
     func save(as name: String) {
+        endStroke() // a discrete edit ends a drag first (+Stroke)
         let name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         let saved = current.saved(as: name)
@@ -107,11 +109,11 @@ final class EQViewModel {
     // MARK: - Outputs
 
     /// The sound moved to another output (Edge 5; fired only when the UID changes). Its slot — its
-    /// pin, else shared — becomes current, and a drag in progress stays with the output it was made
+    /// pin, else shared — becomes current, and a drag in progress stays with the slot it was made
     /// on. When that changes what plays, it is sent, and the toast names the output and its EQ —
     /// except at launch, when no output played before.
     func outputDidChange(to key: EQOutputKey?) {
-        endStroke()
+        endStroke(beforeMovingTo: key)
         let before = current
         let hadOutput = output != nil
         output = key

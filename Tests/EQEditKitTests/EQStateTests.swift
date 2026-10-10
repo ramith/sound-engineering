@@ -117,8 +117,35 @@ struct EQStateTests {
         #expect(try EQFixture.decode(EQState.self, #"{"preset":{"builtIn":"Podcast"},"isOn":false}"#)
             == EQState(preset: .builtIn(.flat), curve: nil, isOn: false))
         #expect(try EQFixture.decode(EQState.self, #"{"preset":{"mine":"Late Night"},"isOn":true}"#) == .flat)
-        // A curve outside its limits throws (the store then plays Flat in that slot).
-        let short = #"{"preset":{"builtIn":"Warm"},"isOn":true,"curve":{"base":[1],"tone":[0]}}"#
-        #expect(throws: DecodingError.self) { try EQFixture.decode(EQState.self, short) }
+        // Only a state that isn't an object throws (the store then plays Flat in that slot).
+        #expect(throws: DecodingError.self) { try EQFixture.decode(EQState.self, #""warm""#) }
+    }
+
+    @Test("STATE-09: one damaged field never costs the others — a bad curve keeps the preset and On/Off")
+    func damagedFieldsStandAlone() throws {
+        let short = #","curve":{"base":[1],"tone":[0]}}"#
+        // A damaged curve falls back to the built-in's reference, and an Off slot stays Off.
+        #expect(try EQFixture.decode(EQState.self, #"{"preset":{"builtIn":"Warm"},"isOn":false"# + short)
+            == EQState(preset: .builtIn(.warm), curve: nil, isOn: false))
+        // A My Preset can't fall back to a reference: Flat, still Off.
+        #expect(try EQFixture.decode(EQState.self, #"{"preset":{"mine":"Late Night"},"isOn":false"# + short)
+            == EQState(preset: .builtIn(.flat), curve: nil, isOn: false))
+        // A missing or unreadable On/Off reads On and keeps the curve.
+        let warmWithCurve = try #"{"preset":{"builtIn":"Warm"},"curve":"# + EQFixture.json(EQFixture.curve([4: 6]))
+        for isOn in ["", #","isOn":"yes""#] {
+            let decoded = try EQFixture.decode(EQState.self, warmWithCurve + isOn + "}")
+            #expect(decoded.isOn && decoded.points == EQFixture.points([4: 6]), "isOn field: \(isOn)")
+        }
+    }
+
+    @Test("STATE-10: choosing a malformed My Preset is nil, like a missing one (break-it BRK-03)")
+    func choosingMalformedIsNil() {
+        var nonFinite = Self.lateNight
+        nonFinite[7] = .nan
+        let myPresets = ["Short": [Float](repeating: 1, count: 3), "Long": Self.lateNight + [0], "NaN": nonFinite]
+        for name in myPresets.keys {
+            #expect(EQState(choosing: .mine(name), myPresets: myPresets) == nil, "\(name)")
+        }
+        #expect(!EQCurve.isWellFormed(nonFinite) && EQCurve.isWellFormed(Self.lateNight))
     }
 }

@@ -40,9 +40,10 @@ public struct EQState: Equatable, Sendable {
     }
 
     /// The state of choosing `preset`: its points with Tone at 0, and on (choosing is an edit, and
-    /// any edit turns the EQ on). `nil` for a My Preset that no longer exists.
+    /// any edit turns the EQ on). `nil` for a My Preset that no longer exists, or whose points are
+    /// not one finite value per band — never a trap.
     public init?(choosing preset: EQPresetRef, myPresets: [String: [Float]]) {
-        guard let points = preset.points(myPresets: myPresets) else { return nil }
+        guard let points = preset.points(myPresets: myPresets), EQCurve.isWellFormed(points) else { return nil }
         self.init(preset: preset, curve: EQCurve(points: points))
     }
 
@@ -99,17 +100,21 @@ extension EQState: Codable {
         case preset, curve, isOn
     }
 
-    /// Decodes into the canonical form, keeping the user's sound where it can: a preset this build
-    /// doesn't know (a newer build's built-in) plays on as an edited Flat with its curve kept, or as
-    /// Flat when it had none. A curve outside its limits (wrong counts, non-finite) throws, and the
-    /// slot falls back to Flat (`EQStore`).
+    /// Decodes into the canonical form, each field on its own so one damaged field never costs the
+    /// others (break-it BRK-02):
+    /// - a preset this build doesn't know (a newer build's built-in) plays on as an edited Flat with
+    ///   its curve kept, or as Flat when it had none;
+    /// - a curve outside its limits (wrong counts, non-finite) is dropped: the state falls back to
+    ///   its built-in's reference (a My Preset to Flat) and keeps its On/Off — an Off slot stays
+    ///   Off, the bit-perfect path (decision 25);
+    /// - a missing or unreadable On/Off reads On (the app's default) and keeps the curve.
+    /// Only a state that isn't an object at all throws (that slot then plays Flat, `EQStore`).
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let preset = (try? container.decode(EQPresetRef.self, forKey: .preset)) ?? .builtIn(.flat)
-        try self.init(
-            preset: preset,
-            curve: container.decodeIfPresent(EQCurve.self, forKey: .curve),
-            isOn: container.decode(Bool.self, forKey: .isOn)
+        self.init(
+            preset: (try? container.decode(EQPresetRef.self, forKey: .preset)) ?? .builtIn(.flat),
+            curve: try? container.decodeIfPresent(EQCurve.self, forKey: .curve),
+            isOn: (try? container.decode(Bool.self, forKey: .isOn)) ?? true
         )
     }
 
