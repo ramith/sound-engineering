@@ -23,8 +23,24 @@ namespace AdaptiveSound
     class LimiterModule;
     class MultichannelView;
 
-    // DSP Kernel: orchestrates the wet-region coloration + safety signal chain
-    // EQ → Clarity → BRIR → Crossfeed → [intensity blend] → Loudness → Limiter
+    // DSP Kernel: the signal chain, EQ FIRST (Sprint EQ decision 25):
+    //
+    //   EQ → [dry tap] → Clarity → BRIR → Crossfeed → [Intensity blend] → Loudness → Limiter
+    //
+    // The EQ sits ahead of the Intensity blend, so what the EQ graph draws is what plays at every
+    // Intensity; the blend's dry signal is the EQ'd signal. Four paths (engine-plan §5.1):
+    //
+    //   P0 bit-perfect  Intensity settled at 0 AND the EQ settled at its identity for ≥ 2 s:
+    //                   the input is returned untouched (the limiter's look-ahead ring is primed).
+    //   P1 EQ-only      Intensity settled at 0 otherwise: EQ → Limiter (no normaliser, so
+    //                   EQ On ↔ Off stays level-fair against the bit-perfect Off).
+    //   P2 full         Intensity settled at 1: EQ → coloration → Loudness → Limiter.
+    //   P3 blend        otherwise: EQ → dry snapshot → coloration → equal-power blend → Loudness
+    //                   (its contribution faded as min(1, r/0.1), amendment 2) → Limiter.
+    //
+    // P0 ↔ P1/P3 switches cross-fade the undelayed input and the limiter's 3 ms-delayed output over
+    // 5 ms, so a switch neither skips nor repeats audio; the 2 s hysteresis keeps a short Compare
+    // hold at Intensity 0 from switching at all.
     class DSPKernel
     {
       public:
@@ -36,14 +52,13 @@ namespace AdaptiveSound
         DSPKernel(DSPKernel&&) = delete;
         DSPKernel& operator=(DSPKernel&&) = delete;
 
-        // Initialize with sample rate and buffer frame size
+        // Initialize with sample rate and buffer frame size (off-RT; never while rendering).
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
 
-        // Process audio buffer with current parameter snapshot
+        // Process audio buffer with current parameter snapshot (RT).
         void process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept;
 
-        // Publish new parameter state from the off-RT (control/Realizer) thread.
-        // Builds the EQ vDSP setup off-RT (issue #3) before publishing the snapshot.
+        // Publish new parameter state from the off-RT (control/Realizer) thread. Single producer.
         void publishTargetState(const TargetState& newState) noexcept;
 
         // Off-RT (control thread): forward decoded BS.1770-5 per-channel weights to
@@ -51,20 +66,31 @@ namespace AdaptiveSound
         // tag changes.  Harmless no-op if loudnessModule_ is not yet initialised.
         void publishChannelLayout(const ChannelLayout& layout) noexcept;
 
+        // Read-only view of the EQ stage between process() calls (tests/diagnostics only).
+        [[nodiscard]] const EQModule* eqModule() const noexcept
+        {
+            return eqModule_.get();
+        }
+
       private:
-        // Run the wet-region coloration chain (EQ → Clarity → BRIR → Crossfeed) in place.
-        // Extracted so the settled-at-1 and mid-ramp crossfade branches of process() share
-        // ONE definition of the chain order instead of writing it twice (Stage-1 AR-4).
+        // Run the wet-region coloration chain (Clarity → BRIR → Crossfeed) in place.
         void runColorationChain(const TargetState& state, const MultichannelView& block) noexcept;
-        // Run the safety chain (Loudness → Limiter) on the final (possibly blended) signal.
-        void runSafetyChain(const TargetState& state, const MultichannelView& block) noexcept;
+        // The processed paths P1–P3 (everything but the bit-perfect return), in place.
+        void runProcessedPath(const TargetState& state,
+                              const MultichannelView& block,
+                              bool intensityAtZero,
+                              bool intensityAtOne) noexcept;
+        // P3: EQ'd dry tap → coloration → equal-power blend → weighted Loudness → Limiter.
+        void runBlendPath(const TargetState& state, const MultichannelView& block) noexcept;
+        // Copy the block into a planar scratch (channel ch at scratch + ch·maxFrames_).
+        void copyBlock(const MultichannelView& block, std::vector<float>& scratch) const noexcept;
+        // Cross-fade the processed block with the bypass copy, gliding bypassMix_ toward `toward`.
+        void crossfadeWithBypass(const MultichannelView& block, float toward) noexcept;
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
 
-        // Signal chain modules. Crossfeed sits in the wet region, adjacent to BRIR's slot
-        // (QW1 §2): EQ → Clarity → BRIR → Crossfeed, then the intensity blend, then
-        // Loudness → Limiter.
+        // Signal chain modules.
         std::unique_ptr<EQModule> eqModule_;
         std::unique_ptr<ClarityModule> clarityModule_;
         std::unique_ptr<BRIRModule> brirModule_;
@@ -75,38 +101,33 @@ namespace AdaptiveSound
         // Lock-free parameter transport (wait-free SPSC triple-buffer snapshot).
         DoubleBufferSnapshot<TargetState> targetStateSnapshot_;
 
-        // RT-thread-owned snapshot state (S6 RACE-1). `currentState_` is the last CONSISTENT
-        // snapshot the RT thread committed; `process()` copies the published snapshot into
-        // `scratchState_` and promotes it to `currentState_` only on a non-torn read, otherwise it
-        // keeps the previous `currentState_` (one-block-stale but consistent). Both are
-        // pre-allocated members (no RT allocation) and touched ONLY on the RT thread, so they need
-        // no locking.
+        // RT-thread-owned snapshot state (S6 RACE-1): the stable per-block copy of the snapshot.
         TargetState currentState_{};
         TargetState scratchState_{};
 
         // --- Steerable wet/dry intensity (S6 Tier-3 §3b) ---
-        //
-        // Intensity scales the COLORATION stages (EQ→Clarity→BRIR = "wet") against the
-        // unprocessed "dry" input via an equal-power crossfade, BEFORE Loudness+Limiter
-        // (so the limiter guards the final output and loudness measures what is heard).
-        //
-        // Ramped to avoid zipper noise; snapped to the initial intensity in initialize()
-        // so there is no launch fade-in. The endpoints are taken via HARD branches gated
-        // on "settled" (|current-target| < ε AND target ∈ {0,1}) — a ramped value only
-        // approaches 0/1 asymptotically and `dry + 1·(wet-dry)` is NOT bit-equal to wet,
-        // so the bit-exact paths must never run the crossfade math.
+        // Ramped to avoid zipper noise; snapped to the initial intensity in initialize(). The
+        // endpoints take HARD branches gated on "settled": a ramped value only approaches 0/1
+        // asymptotically, and `dry + 1·(wet-dry)` is NOT bit-equal to wet.
         ParameterRamp intensityRamp_{};
 
-        // Planar dry-scratch: maxFrames_ × kMaxChannels, allocated in initialize().
-        // Channel ch lives at dryScratch_.data() + ch*maxFrames_. Holds a per-channel
-        // copy of the input taken BEFORE any module mutates the block. Never allocated
-        // on the RT path (process() asserts frames ≤ maxFrames_).
+        // Planar scratches, maxFrames_ × kMaxChannels each, allocated in initialize():
+        // the blend's EQ'd dry tap, and the undelayed input for the bypass cross-fade.
         std::vector<float> dryScratch_;
+        std::vector<float> bypassScratch_;
 
-        // Per-sample crossfade-gain scratch (maxFrames_ each), allocated in initialize().
-        // wetGain[i] = sin(r[i]·π/2), dryGain[i] = cos(r[i]·π/2), r[i] = ramped intensity.
+        // Per-sample scratch (maxFrames_ each): the equal-power gains and the normaliser's
+        // contribution weight min(1, r/0.1).
         std::vector<float> wetGainBuf_;
         std::vector<float> dryGainBuf_;
+        std::vector<float> loudnessWeightBuf_;
+
+        // --- The bit-perfect path (P0) ---
+        float bypassMix_ = 0.0F;          // weight of the undelayed input: 1 = P0, 0 = processed
+        float bypassMixStep_ = 1.0F;      // per-sample change of bypassMix_ (5 ms cross-fade)
+        uint64_t identityHeldFrames_ = 0; // frames Intensity 0 + EQ identity has held so far
+        uint64_t bypassHoldFrames_ = 0;   // the 2 s hysteresis before P0
+        bool firstBlock_ = true;          // the first block after initialize() snaps the path
     };
 
 } // namespace AdaptiveSound

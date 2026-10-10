@@ -218,14 +218,13 @@ namespace
         DSPKernel kernel;
         kernel.initialize(kSoakSampleRate, kSoakFrames);
 
-        // EQ active (a +6 dB @ 1 kHz boost, real biquads) so the chain actually computes; plus the
+        // EQ active (a +6 dB @ 1 kHz boost, the real SVF cascade) so the chain computes; plus the
         // requested intensity. makeIdentityState() neutralises the stub modules + bypasses the
         // limiter; we re-enable the limiter ceiling so the limiter ring path also runs.
         std::array<float, kEqBands> gains{};
         gains[kBand1kHzIndex] = kEqBoostDb;
         TargetState state = makeIdentityState();
-        state.eq = EQModuleCoefficients::computeBiquadCascade(
-            gains, static_cast<float>(kSoakSampleRate));
+        state.eq = makeEqParams(gains, kSoakSampleRate);
         state.intensityLinear = intensity;
         state.limiter.truePeakCeilingLinear = 0.89F; // < 1.0 → limiter ring path active (-1 dBTP-ish)
         if (crossfeedOn)
@@ -233,10 +232,10 @@ namespace
             // Derive a Strong-preset crossfeed POD off-RT (the shipping derivation path).
             auto cfKernel = std::make_shared<DSPKernel>();
             cfKernel->initialize(kSoakSampleRate, kSoakFrames);
-            auto cfRealizer = std::make_shared<AdaptiveSound::Realizer>(cfKernel);
+            auto cfRealizer = std::make_shared<AdaptiveSound::Realizer>(
+                cfKernel, static_cast<double>(kSoakSampleRate));
             constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Strong
-            cfRealizer->applyCrossfeed(1U, 1.0F, kStrongPreset,
-                                       static_cast<double>(kSoakSampleRate));
+            cfRealizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kStrongPreset});
             state.crossfeed = cfRealizer->canonicalState().crossfeed;
             cfRealizer->shutdown();
         }

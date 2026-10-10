@@ -1,10 +1,11 @@
 #pragma once
 
-#include "../EQ/EQModuleCoefficients.h" // computeBiquadCascade (off-main EQ design)
+#include "../EQ/GraphicEQDesigner.h" // the Realizer's own designer (owner-local, architect F9)
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
 #include "../Spatial/CrossfeedModule.h" // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <dispatch/dispatch.h>
 #include <memory>
@@ -14,83 +15,89 @@
 namespace AdaptiveSound
 {
     // ------------------------------------------------------------------------
-    // Realizer (S6 Tier-3, sub-step 3a) — single-producer, off-main control owner.
+    // PendingSlot<T> — one coalescing intent slot (architect A-F15). The control thread write()s
+    // the newest intent and learns whether the slot just went clean → dirty (post one drain then);
+    // the drain take()s it. Both run under the Realizer's slotMutex_ (off-RT), never on the RT
+    // thread. T is a trivially copyable intent POD.
+    // ------------------------------------------------------------------------
+    template <typename T> class PendingSlot
+    {
+        static_assert(std::is_trivially_copyable_v<T>, "an intent must be trivially copyable");
+
+      public:
+        // Store the newest intent. True when the slot was clean (the caller posts a drain).
+        bool write(const T& value) noexcept
+        {
+            const bool wasClean = !dirty_;
+            value_ = value;
+            dirty_ = true;
+            return wasClean;
+        }
+
+        // Take the pending intent, if any, leaving the slot clean.
+        [[nodiscard]] bool take(T& out) noexcept
+        {
+            if (!dirty_)
+            {
+                return false;
+            }
+            out = value_;
+            dirty_ = false;
+            return true;
+        }
+
+      private:
+        T value_{};
+        bool dirty_ = false;
+    };
+
+    // ------------------------------------------------------------------------
+    // Realizer (S6 Tier-3 3a; Sprint EQ EQ1b) — the single off-RT producer of feed-forward control.
     //
-    // The Realizer owns the canonical `TargetState` (moved OUT of the AdaptiveSoundAU
-    // @interface, so it is structurally unreachable except through this object) and a
-    // shared_ptr<DSPKernel> to publish through. It is the SOLE caller of
-    // DSPKernel::publishTargetState — retiring the load-bearing single-producer comments
-    // at DSPKernel.mm / EQModule.h.
+    // It owns the canonical TargetState and a shared_ptr<DSPKernel>, and it OWNS the design sample
+    // rate: every intent is realised at the rate the kernel was last initialised at, so nothing
+    // upstream passes a rate (engine-plan §6). Control-plane entry points (one control thread, the
+    // @MainActor) write a coalescing slot and post a drain to a serial queue on a clean → dirty
+    // transition; the drain realises only what changed, read-modify-writes the canonical state and
+    // publishes ONCE. The EQ is designed HERE, on the queue, by the Realizer's own
+    // GraphicEQDesigner (never shared with the UI's), into the finished (k, m1) the RT module runs,
+    // with the glide time from the τ rule (EQTargets.h).
     //
-    // Ownership: held by a std::shared_ptr by AdaptiveSoundAU. Control-plane entry points
-    // hop to a dedicated serial dispatch_queue (`com.adaptivesound.realizer`, off-main /
-    // off-RT) capturing a shared_ptr<Realizer> via shared_from_this — NEVER the ObjC `self`
-    // — so intents in flight keep the Realizer + kernel alive until the queue drains.
+    // Re-allocation (engine-plan §6): reinitializeKernel() runs on the queue (dispatch_sync), so it
+    // is serialised with every publish: it re-initialises the kernel, re-solves the EQ from the
+    // stored points and re-derives the crossfeed at the new rate, and publishes once — the EQ
+    // module snaps to that first target, so a rate or channel change never fades in from flat.
     //
-    // Coalescing (design §1.3): per-intent-kind slots (NOT a std::atomic of 31 floats).
-    // Each control-thread entry point writes its slot and posts a drain block ONLY on a
-    // clean->dirty transition; the drain reads-and-clears the dirty slots, recomputes only
-    // the dirty parts (EQ dirty -> computeBiquadCascade here, off-main), applies a
-    // field-level read-modify-write to the canonical state, bumps sequenceNumber, and calls
-    // publishTargetState ONCE. The intensity slot is separate from the EQ slot, so an
-    // interleaved intensity intent is never dropped.
-    //
-    // Threading: the control-plane entry points are called from a single control thread (the
-    // @MainActor — see AudioUnitRegistrationBridge.h), but drain() runs on the serial queue — a
-    // DIFFERENT thread — and coalescing means a slot can be rewritten WITHOUT re-posting a drain
-    // block, so a control-thread slot write can race an in-flight drain's read. The slot access is
-    // therefore guarded by a small off-RT mutex (slotMutex_, NOT an atomic — the payload is a
-    // multi-word POD), per design §1.3 (Stage-2 review OWN-2). Never taken on the RT thread.
-    //
-    // Feed-forward vs feedback (design §1, founder decision 1): the Realizer is the sole
-    // producer of feed-FORWARD control in TargetState (EQ coeffs, intensity, ...).
-    // Measurement-driven FEEDBACK (LoudnessModule's makeup gain) stays module-local and is
-    // NOT routed through this queue. publishChannelLayoutTag likewise stays a direct call to
-    // the loudness worker; the feed-forward plane and the loudness side-channel plane are
-    // unordered w.r.t. each other (design §1.4).
+    // Threading: the slots are guarded by slotMutex_ (control-thread write vs drain read). Never
+    // taken on the RT thread. Everything else is queue-owned.
     // ------------------------------------------------------------------------
     class Realizer : public std::enable_shared_from_this<Realizer>
     {
       public:
-        // The pending-EQ coalescing slot. POD; copied by value on the control thread.
-        struct PendingEqGains
+        // The EQ intent: the 31 points the UI draws (already clamped to ±12) and On/Off.
+        struct EqIntent
         {
-            std::array<float, static_cast<size_t>(EQModuleCoefficients::kNumBands)> gainsDb{};
-            float sampleRate = 0.0F;
-            bool dirty = false;
+            std::array<float, kEqBandCount> points{};
+            bool isOn = false;
         };
 
-        // The pending-intensity coalescing slot. POD; copied by value on the control thread.
-        struct PendingIntensity
+        struct IntensityIntent
         {
             float value = 1.0F;
-            bool dirty = false;
         };
 
-        // The pending-crossfeed coalescing slot (QW1 §3). POD; copied by value on the control
-        // thread. Holds the user INTENT (enabled/level/preset); the derived coefficients are
-        // computed off-RT inside drain()/applyCrossfeed() from {preset, level, fs}. level is
-        // clamped to [0,1] and preset to the valid enum range at the surface (setPendingCrossfeed).
-        struct PendingCrossfeed
+        // The crossfeed intent; the coefficients are derived from it at the owned rate.
+        struct CrossfeedIntent
         {
             uint32_t enabled = 0U;
             float level = 0.0F;
             uint32_t preset = 0U; // CrossfeedPreset value
-            float sampleRate = 0.0F;
-            bool dirty = false;
         };
 
-        // TODO(QW1 F1 — refactoring-specialist): drain() now has FOUR near-verbatim per-intent
-        // read-and-clear blocks (EQ, intensity, crossfeed + the channel-layout side-channel is
-        // separate). Extract a `PendingSlot<T>` template IF a 5TH feed-forward surface is added,
-        // OR before the S8 maturity work next touches the Realizer — whichever comes first. NOT
-        // done in QW1: re-touching load-bearing concurrency code mid-burst is the wrong
-        // risk/reward (architect ruling §9.3); this keeps it scheduled debt, not rot.
-
-        // Construct around the kernel the Realizer publishes through. `kernel` must outlive
-        // the Realizer; AdaptiveSoundAU guarantees this by draining the queue (shutdown())
-        // before releasing the kernel.
-        explicit Realizer(std::shared_ptr<DSPKernel> kernel);
+        // Construct around the kernel the Realizer publishes through, initialised at `sampleRate`.
+        // `kernel` must outlive the Realizer; AdaptiveSoundAU guarantees this by draining the
+        // queue (shutdown()) before releasing the kernel.
+        Realizer(std::shared_ptr<DSPKernel> kernel, double sampleRate);
         ~Realizer();
 
         Realizer(const Realizer&) = delete;
@@ -100,90 +107,72 @@ namespace AdaptiveSound
 
         // --- Control-plane entry points (off-RT, single control thread) -----------------
 
-        // Set the pending-EQ slot (31-band gains in dB + design sample rate) and post a
-        // drain on a clean->dirty transition. The biquad cascade is computed off-main inside
-        // the drain, not here. `count` must equal EQModuleCoefficients::kNumBands and
-        // sampleRate must be > 0, else this is a no-op returning false.
-        bool setPendingEqGains(const float* gainsDb, uint32_t count, double sampleRate);
+        // The EQ: `count` (must be 31) points in dB, and On/Off. The trust boundary (engine-plan
+        // §7, guard layer 1): a NULL pointer, a wrong count or any non-finite point is rejected
+        // (false; the last good EQ keeps playing); finite points are clamped to ±12 dB.
+        bool setPendingEq(const float* pointsDb, uint32_t count, bool isOn);
 
-        // Set the pending-intensity slot (clamped to [0,1]) and post a drain on a
-        // clean->dirty transition.
+        // Intensity, clamped to [0,1].
         void setPendingIntensity(float value);
 
-        // Set the pending-crossfeed slot (QW1 §3) and post a drain on a clean->dirty transition.
-        // `level` is clamped to [0,1] and `preset` to the valid CrossfeedPreset range via
-        // std::clamp at the surface; the off-RT coefficient derivation happens in drain().
-        // `sampleRate` must be > 0 (the coefficient design rate), else this is a no-op returning
-        // false.
-        bool setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset, double sampleRate);
+        // Crossfeed: level clamped to [0,1], preset to the valid CrossfeedPreset range.
+        void setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset);
 
-        // Teardown / draining barrier (design §1, the review's BLOCKER). Quiesces the queue
-        // with dispatch_sync(queue, ^{}) so no queued block runs after the caller drops its
-        // shared_ptr<Realizer> and releases the kernel. Idempotent. Must be called by
-        // AdaptiveSoundAU BEFORE releasing the kernel.
+        // The rate the EQ is designed at (the kernel's rate). Any thread.
+        [[nodiscard]] double eqDesignSampleRate() const noexcept
+        {
+            return designRate_.load(std::memory_order_acquire);
+        }
+
+        // --- Allocation thread ------------------------------------------------------------
+
+        // Re-initialise the kernel at a (possibly new) rate and frame ceiling, then re-realise
+        // every intent at that rate and publish once. Runs on the Realizer's queue via
+        // dispatch_sync. Call from allocateRenderResources (the AU is not rendering then).
+        void reinitializeKernel(uint32_t sampleRate, uint32_t maxFrames);
+
+        // Teardown / draining barrier. Idempotent. Must be called before releasing the kernel.
         void shutdown();
 
-        // --- Synchronously-callable intent application (testability, design §1.7) -------
-        // These do the read-modify-write + (for EQ) the cascade design + the single publish
-        // on the CALLING thread. The dispatch wrapper (the drain block) just hops to the
-        // serial queue and calls these. A future unit test can drive the RMW logic directly
-        // without a dispatch hop.
-
-        // Apply a 31-band EQ gain vector: design the cascade, RMW canonical_.eq, bump
-        // sequenceNumber, publish once. Caller owns `gains`.
-        void applyEqGains(
-            const std::array<float, static_cast<size_t>(EQModuleCoefficients::kNumBands)>& gains,
-            float sampleRate);
-
-        // Apply an intensity value (already clamped): RMW canonical_.intensityLinear, bump
-        // sequenceNumber, publish once.
+        // --- Synchronously-callable intent application (tests; design §1.7) -------------
+        // The read-modify-write + single publish on the CALLING thread; the drain calls these.
+        void applyEq(const EqIntent& intent);
         void applyIntensity(float value);
+        void applyCrossfeed(const CrossfeedIntent& intent);
 
-        // Synchronously-callable RMW (testability, design §1.7). Derives the crossfeed coefficients
-        // off-RT from {preset, level, sampleRate}, RMW canonical_.crossfeed (preserving all other
-        // fields), bump sequenceNumber, publish once. `enabled`/`level`/`preset` are taken as-is
-        // (setPendingCrossfeed clamps at the surface); sampleRate must be > 0.
-        void applyCrossfeed(uint32_t enabled, float level, uint32_t preset, double sampleRate);
-
-        // Read-only canonical-state accessor for tests/diagnostics (control thread only).
+        // Read-only canonical-state accessor for tests/diagnostics.
         const TargetState& canonicalState() const noexcept
         {
             return canonical_;
         }
 
       private:
-        // Drain the dirty coalescing slots: read-and-clear, recompute only what changed,
-        // RMW canonical_, bump sequenceNumber, publish ONCE. Runs on the serial queue (or
-        // synchronously from a test). Asserts it owns the canonical-state mutation path.
         void drain();
-
-        // Publish the canonical state through the kernel (the sole publishTargetState call
-        // site). Asserts the realizer queue in debug.
+        void reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames);
+        void postDrain();
+        // Design the stored EQ intent at sampleRate_ into canonical_.eq (glide by the τ rule).
+        void realizeEq();
+        void realizeCrossfeed();
         void publishCanonical();
 
         std::shared_ptr<DSPKernel> kernel_; // outlives us (drained before release)
         dispatch_queue_t queue_ = nullptr;  // serial, off-main; sole publisher
-        TargetState canonical_{};           // canonical feed-forward state (moved out of the AU)
 
-        // Guards the coalescing slots below against the control-thread-write / drain-read race
-        // (OWN-2). Off-RT only. Held only for the brief slot read/write, never across the EQ
-        // cascade design or publish.
+        // --- Queue-owned -----------------------------------------------------------------
+        TargetState canonical_{};
+        std::unique_ptr<GraphicEQDesigner> designer_;
+        EqIntent eq_{};
+        CrossfeedIntent crossfeed_{};
+        std::array<double, kEqBandCount> publishedGainsDb_{}; // the τ rule's "from" endpoint
+        double sampleRate_ = 0.0;
+        std::atomic<double> designRate_{0.0}; // sampleRate_, readable from any thread
+
+        // --- Coalescing slots (control thread writes, drain takes; under slotMutex_) --------
         std::mutex slotMutex_;
-
-        // Coalescing slots, written on the control thread, read-and-cleared in drain().
-        PendingEqGains pendingEqGains_{};
-        PendingIntensity pendingIntensity_{};
-        PendingCrossfeed pendingCrossfeed_{};
+        PendingSlot<EqIntent> pendingEq_;
+        PendingSlot<IntensityIntent> pendingIntensity_;
+        PendingSlot<CrossfeedIntent> pendingCrossfeed_;
         bool shutdown_ = false;
     };
-
-    // -fno-exceptions discipline (design §6): the intent/slot PODs must be trivially copyable
-    // so they can be byte-copied into a captured drain block without surprises.
-    static_assert(std::is_trivially_copyable_v<Realizer::PendingEqGains>,
-                  "Realizer::PendingEqGains must be trivially copyable");
-    static_assert(std::is_trivially_copyable_v<Realizer::PendingIntensity>,
-                  "Realizer::PendingIntensity must be trivially copyable");
-    static_assert(std::is_trivially_copyable_v<Realizer::PendingCrossfeed>,
-                  "Realizer::PendingCrossfeed must be trivially copyable");
 
 } // namespace AdaptiveSound

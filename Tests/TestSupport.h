@@ -40,10 +40,12 @@
 
 #include "DeviceCapability.h"
 #include "DSPKernel.h"
-#include "EQ/EQModuleCoefficients.h"
+#include "EQ/EQModule.h"
+#include "EQ/EQTargets.h"
 #include "EQ/GraphicEQDesigner.h"
 #include "EQDesignBridge.h"
 #include "FileDecodeSource.h"
+#include "FlushToZero.h"
 #include "GaplessSource.h"
 #include "Limiting/LimiterModule.h"
 #include "Loudness/ChannelLayoutDecoder.h"
@@ -53,6 +55,7 @@
 #include "MultichannelView.h"
 #include "PureModeFormat.h"
 #include "PureModeSource.h"
+#include "RtSwappableResource.h"
 #include "Spatial/SpatialRenderKernel.h"
 #include "TargetState.h"
 #include "TrackLoudnessBridge.h"
@@ -365,7 +368,7 @@ struct TestABL
     AudioBufferList2 storage;
 };
 
-// Build an identity TargetState: EQ passthrough (numBiquads=0, masterGain=1),
+// Build an identity TargetState: EQ passthrough (the default EQParams: no design, every m1 = 0),
 // all other modules explicitly disabled / neutralised.
 //
 // Each real module that could alter the signal is set to its bypass/identity
@@ -379,12 +382,27 @@ static auto makeIdentityState() -> TargetState
 {
     TargetState state{};
     state.intensityLinear = 1.0F; // documentary clarity; matches the struct default
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{};
     state.clarity.enabled = 0U;                 // stub module -- no-op
     state.loudness.enabled = 0U;                // stub module -- no-op
     state.limiter.truePeakCeilingLinear = 2.0F; // bypass: ceiling ≥ 1.0 → identity
     return state;
+}
+
+// The EQParams the Realizer publishes for `points` at `sampleRate`: the production
+// GraphicEQDesigner's design as finished (k, m1), gliding over `rampSeconds`. The identity
+// (EQParams{}) if the design is rejected.
+static auto makeEqParams(const std::array<float, kEqBandCount>& points,
+                         uint32_t sampleRate,
+                         float rampSeconds = kEqDefaultRampSeconds) -> EQParams
+{
+    auto designer = std::make_unique<GraphicEQDesigner>();
+    GraphicEQDesign design{};
+    if (!designer->design(points, static_cast<double>(sampleRate), design))
+    {
+        return EQParams{};
+    }
+    return EQTargets::toParams(design, rampSeconds);
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +434,7 @@ namespace
     }
 
     constexpr uint32_t kEqBands = 31U;
-    constexpr size_t kBand1kHzIndex = 17U; // kCenterFrequencies[17] == 1000 Hz
+    constexpr size_t kBand1kHzIndex = 17U; // GraphicEQ::centreHz(17) == 1000 Hz
     constexpr float kEqTestToneHz = 1000.0F;
     constexpr float kEqTestAmplitude = 0.25F; // -12 dBFS
     constexpr float kEqBoostDb = 6.0F;
@@ -443,8 +461,7 @@ namespace
         kernel.initialize(TestConstants::kSampleRate48k, totalFrames);
 
         TargetState state = makeIdentityState();
-        state.eq = EQModuleCoefficients::computeBiquadCascade(
-            gains, static_cast<float>(TestConstants::kSampleRate48k));
+        state.eq = makeEqParams(gains, TestConstants::kSampleRate48k);
         kernel.publishTargetState(state);
 
         TestABL abl(totalFrames);
@@ -528,7 +545,7 @@ static auto eqSwapNoClickBody(uint32_t numCh, const char* kName) -> std::string
     boostedGains[kBand1kHzIndex] = kBoostDbLarge;
 
     TargetState flatState = makeIdentityState();
-    flatState.eq = EQModuleCoefficients::computeBiquadCascade(flatGains, kSR);
+    flatState.eq = makeEqParams(flatGains, TestConstants::kSampleRate48k);
     kernel.publishTargetState(flatState);
 
     std::vector<std::vector<float>> out(numCh);
@@ -541,7 +558,7 @@ static auto eqSwapNoClickBody(uint32_t numCh, const char* kName) -> std::string
     const size_t swapSample = out[0].size();
 
     TargetState boostState = makeIdentityState();
-    boostState.eq = EQModuleCoefficients::computeBiquadCascade(boostedGains, kSR);
+    boostState.eq = makeEqParams(boostedGains, TestConstants::kSampleRate48k);
     kernel.publishTargetState(boostState);
     eqSwapRunBlocks(kernel, numCh, kBlocksAfter, kSR, out, sampleIdx);
 

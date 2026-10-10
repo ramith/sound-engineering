@@ -43,8 +43,9 @@ namespace
     {
         auto kernel = std::make_shared<DSPKernel>();
         kernel->initialize(sampleRate, TestConstants::kFrames512);
-        auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel);
-        realizer->applyCrossfeed(enabled, level, preset, static_cast<double>(sampleRate));
+        auto realizer =
+            std::make_shared<AdaptiveSound::Realizer>(kernel, static_cast<double>(sampleRate));
+        realizer->applyCrossfeed({.enabled = enabled, .level = level, .preset = preset});
         const CrossfeedParams params = realizer->canonicalState().crossfeed;
         realizer->shutdown();
         return params;
@@ -84,7 +85,8 @@ namespace
 // ===========================================================================
 // CF-1: bypass is bit-exact (module present-but-off) → re-asserts the golden master hash.
 // This is the canary: with crossfeed inserted into the chain but DISABLED, the full stereo
-// chain output must hash to exactly 0xE7267654BA01D315 (zero tolerance). It reuses the same
+// chain output must hash to exactly 0xE7AF0C67F9340785 (zero tolerance; re-baselined with the
+// GoldenMaster in EQ1b — the accurate SVF EQ replaced the retired biquad fitter). It reuses the same
 // chirp + non-trivial state as GoldenMaster_StereoN2_v1; the default-off CrossfeedParams keep
 // the chain byte-identical to the pre-QW1 output.
 // ===========================================================================
@@ -95,7 +97,7 @@ static auto testCrossfeedBypassBitExactGoldenMaster() -> void
     constexpr uint32_t kChunk = TestConstants::kFrames512;
     constexpr uint32_t kTotal = TestConstants::kTotalFrames1s;
     constexpr float kBoostDb = 6.0F;
-    constexpr uint64_t kGoldenHash = 0xE7267654BA01D315ULL;
+    constexpr uint64_t kGoldenHash = 0xE7AF0C67F9340785ULL;
     constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
 
     std::vector<float> chirp(kTotal);
@@ -114,7 +116,7 @@ static auto testCrossfeedBypassBitExactGoldenMaster() -> void
     TargetState state = makeIdentityState();
     std::array<float, kEqBands> gains{};
     gains[kBand1kHzIndex] = kBoostDb;
-    state.eq = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(kSR));
+    state.eq = makeEqParams(gains, kSR);
     state.limiter.truePeakCeilingLinear = kTruePeakCeilingLinear; // active
     // Crossfeed explicitly OFF (the default; stated for documentary clarity).
     state.crossfeed = CrossfeedParams{};

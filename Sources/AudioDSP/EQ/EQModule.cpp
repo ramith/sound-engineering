@@ -1,182 +1,428 @@
+// EQModule.cpp — the graphic EQ's real-time stage. See EQModule.h.
+
 #include "EQModule.h"
-#include <Accelerate/Accelerate.h>
+#include "GraphicEQBands.h"
+#include <algorithm>
 #include <cassert>
-#include <format>
-#include <iostream>
+#include <cmath>
+#include <numbers>
 
 namespace AdaptiveSound
 {
+    namespace
+    {
+        constexpr auto kBands = static_cast<size_t>(kEqBandCount);
 
-    EQModule::~EQModule() = default;
-    // The RtSwappableResource<VDSPBiquadSetup> member's dtor (off-RT) frees every live setup
-    // via VDSPBiquadSetup -> vDSP_biquad_DestroySetup. Precondition: the RT thread is quiesced.
+        // A parameter within this RELATIVE distance of its target snaps to it and stops ramping.
+        // Not 1e-12 (engine-plan §7): a double one-pole stalls one ulp/α short of its target, which
+        // is ~7e-12 relative at τ 160 ms / 192 kHz, so a 1e-12 test would never settle. 1e-9
+        // changes the response by ~1e-8 dB — inaudible — and settles at every supported τ and rate.
+        constexpr double kSettleRelative = 1e-9;
+
+        // The one-pole τ is held inside this range whatever the snapshot asks for.
+        constexpr float kMinRampSeconds = 0.001F;
+        constexpr float kMaxRampSeconds = 2.0F;
+
+        constexpr double kGainDbToNeper = std::numbers::ln10 / 20.0;
+
+        [[nodiscard]] bool closeTo(double value, double target, double scale) noexcept
+        {
+            return std::abs(value - target) <= kSettleRelative * scale;
+        }
+    } // namespace
 
     void EQModule::initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept
     {
         sampleRate_ = sampleRate;
         maxFrames_ = maxFrames;
-
-        // Reset per-channel delay state (issue #2).
-        delays_.reset();
-
-        // Seed coefficients to an all-identity cascade (b0=1, rest 0 per section).
-        cascadeCoeffs_.fill(0.0);
-        for (size_t i = 0; i < static_cast<size_t>(kMaxBiquads); ++i)
+        const auto fs = static_cast<double>(sampleRate);
+        for (size_t band = 0; band < kBands; ++band)
         {
-            cascadeCoeffs_[i * kCoeffsPerBiquad] = 1.0; // b0
+            const double centre = GraphicEQ::centreHz(static_cast<int>(band));
+            // A centre at or above Nyquist (rates under ~40 kHz) cannot host its bell: its prewarp
+            // is meaningless. Such rates never adopt a design (the Realizer designs only within
+            // 44–768 kHz), so the module stays at the identity; the tables just stay finite.
+            const bool hostable = centre < (fs / 2.0);
+            prewarp_[band] = hostable ? GraphicEQ::prewarp(centre, fs) : 1.0;
+            unityK_[band] = hostable ? GraphicEQ::bellK0(centre, fs) : 1.0;
         }
 
-        // Create the initial (identity) setup once, off-RT. Until publishCoefficients()
-        // supplies real coefficients, the cascade passes audio through unchanged.
-        // publish() into pending_; the first process() adopt()s it into active_. (Before any
-        // adopt, active() is null and process() returns early, exactly as before initialize.)
-        vDSP_biquad_Setup setup =
-            vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
-        setup_.publish(std::make_unique<VDSPBiquadSetup>(setup));
+        kTarget_ = unityK_;
+        m1Target_.fill(0.0);
+        gainDbTarget_ = 0.0;
+        snapToTargets();
+        coefficientAlpha_ = 1.0;
+        gainAlpha_ = 1.0;
+        snapNextAdopt_ = true;
+        seen_ = EQParams{};
+        zeroStates();
 
-        // Initialize the master-gain ramp with a 32 ms time constant and snap it to
-        // unity so the first buffer plays at full gain rather than ramping up from 0.
-        constexpr float kMasterGainRampSeconds = 0.032F; // 32 ms one-pole smoothing
-        masterGainRamp_.initialize(kMasterGainRampSeconds, static_cast<float>(sampleRate));
-        masterGainRamp_.target = 1.0F;
-        masterGainRamp_.snap();
-
-        // Size the ramp scratch buffer to maxFrames_ (off-RT; the only allocation site).
-        // process() asserts frameCount <= maxFrames_ so this is the tight upper bound.
-        rampBuf_.assign(maxFrames_, 0.0F);
+        const size_t frames = maxFrames_;
+        work_.assign(frames * kChannelPairs, simd_double2{0.0, 0.0});
+        gainLinear_.assign(frames, 1.0);
     }
 
-    void EQModule::publishCoefficients(const EQParams& params) noexcept
+    double EQModule::onePoleAlpha(float rampSeconds) const noexcept
     {
-        // OFF-RT ONLY. Pack the active sections, identity-pad the rest, build a new
-        // fixed-size (kMaxBiquads) setup, and hand it to the RT thread via setup_.publish().
-        const size_t numActive =
-            std::min(static_cast<size_t>(params.numBiquads), static_cast<size_t>(kMaxBiquads));
-
-        for (size_t i = 0; i < numActive; ++i)
-        {
-            const auto& coeffs = params.biquads[i];
-            const size_t offset = i * kCoeffsPerBiquad;
-            cascadeCoeffs_[offset + 0] = static_cast<double>(coeffs.b0);
-            cascadeCoeffs_[offset + 1] = static_cast<double>(coeffs.b1);
-            cascadeCoeffs_[offset + 2] = static_cast<double>(coeffs.b2);
-            cascadeCoeffs_[offset + 3] = static_cast<double>(coeffs.a1);
-            cascadeCoeffs_[offset + 4] = static_cast<double>(coeffs.a2);
-        }
-        for (size_t i = numActive; i < static_cast<size_t>(kMaxBiquads); ++i)
-        {
-            const size_t offset = i * kCoeffsPerBiquad;
-            cascadeCoeffs_[offset + 0] = 1.0; // identity: b0=1
-            cascadeCoeffs_[offset + 1] = 0.0;
-            cascadeCoeffs_[offset + 2] = 0.0;
-            cascadeCoeffs_[offset + 3] = 0.0;
-            cascadeCoeffs_[offset + 4] = 0.0;
-        }
-
-        vDSP_biquad_Setup newSetup =
-            vDSP_biquad_CreateSetup(cascadeCoeffs_.data(), static_cast<vDSP_Length>(kMaxBiquads));
-        if (newSetup == nullptr)
-        {
-            std::cerr << std::format(
-                "[EQModule] WARNING: vDSP_biquad_CreateSetup failed for {} biquads; "
-                "keeping existing setup running\n",
-                static_cast<uint32_t>(numActive));
-            return;
-        }
-
-        // Publish to the RT thread. publish() first reclaim()s anything the RT thread retired,
-        // then release-stores the new setup into pending_. If a prior pending was never adopted
-        // (two updates before one render), publish() frees that displaced setup here (off-RT) —
-        // single-pending. The Realizer's coalescing guarantees the producer never outruns the RT
-        // adopt (S6 Tier-3 §3.2 ↔ §3a).
-        setup_.publish(std::make_unique<VDSPBiquadSetup>(newSetup));
+        const float tau = std::isfinite(rampSeconds)
+                              ? std::clamp(rampSeconds, kMinRampSeconds, kMaxRampSeconds)
+                              : kEqDefaultRampSeconds;
+        return 1.0 - std::exp(-1.0 / (static_cast<double>(tau) * static_cast<double>(sampleRate_)));
     }
 
-    void EQModule::process(const EQParams& params, const MultichannelView& block) noexcept
+    void EQModule::adopt(const EQParams& params) noexcept
     {
-        const uint32_t frameCount = block.frames();
-        if (frameCount == 0)
+        const bool designed = params.designSampleRate != 0.0F;
+        if (designed && params.designSampleRate != static_cast<float>(sampleRate_))
+        {
+            return; // designed for another rate: hold the last good target (engine-plan §6)
+        }
+        if (!std::isfinite(params.outputGainDb))
         {
             return;
         }
-        // frameCount must never exceed the buffer capacity established in initialize().
-        // Violating this would overrun rampBuf_ (sized to maxFrames_ off-RT).
-        assert(frameCount <= maxFrames_);
-
-        // RT-safe setup adoption: adopt() swaps any pending setup into active, retires the old
-        // one for off-RT reclaim, and returns the live resource. All lock-free atomics — no
-        // alloc, no free, no lock on the render thread.
-        //
-        // Delay state (delays_) is intentionally PRESERVED across swaps and stays HERE in
-        // EQModule — it is module-specific filter memory, NOT part of the generic swap template
-        // (S6 Tier-3 §3). The cascade is a fixed kMaxBiquads topology, so the 2*kMaxBiquads+2
-        // delay layout is invariant and the existing state is valid input to the new
-        // coefficients — continuous filter memory is click-free, whereas re-zeroing would inject
-        // a discontinuity on every EQ change. (Confirmed by audio-dsp-agent + cpp-pro; obsoletes
-        // the #2 re-zero, which only existed because the section count — and thus the layout —
-        // varied.) The template swaps the resource; delays_ are never touched by adopt().
-        const VDSPBiquadSetup* adopted = setup_.adopt();
-        if (adopted == nullptr || adopted->get() == nullptr)
+        if (designed)
         {
-            return;
-        }
-        vDSP_biquad_Setup setup = adopted->get();
-
-        // Run every channel through the fixed kMaxBiquads-section cascade (identity-padded).
-        // Each channel has its own independent delay state in delays_[ch]; the SAME setup
-        // (coefficient cascade) is applied to all channels — identical tonal curve, independent
-        // filter memory. delays_ is sized kMaxChannels; block.channels() ≤ kMaxChannels (enforced
-        // by MultichannelView::fromABL). No alloc, no lock — RT-safe.
-        const uint32_t numChannels = block.channels();
-        const vDSP_Length vDspFrames = static_cast<vDSP_Length>(frameCount);
-        for (uint32_t ch = 0U; ch < numChannels; ++ch)
-        {
-            float* buf = block.channel(ch);
-            if (buf != nullptr)
+            for (size_t band = 0; band < kBands; ++band)
             {
-                vDSP_biquad(setup, delays_[ch].data(), buf, 1, buf, 1, vDspFrames);
-            }
-        }
-
-        // Apply master gain with per-sample ramping to eliminate zipper noise.
-        //
-        // Update the ramp target from the current params. The target is set here (on the
-        // RT thread) immediately before tick() — this is safe because publishTargetState()
-        // (the sole off-RT writer of params.masterGainLinear) completes its store before
-        // the render thread reads the TargetState snapshot, so there is no concurrent write
-        // to params.masterGainLinear while process() runs.
-        //
-        // Fast path: if the ramp has fully settled at unity, skip the multiply entirely.
-        // The settled check uses an epsilon so floating-point drift does not prevent exit.
-        masterGainRamp_.target = params.masterGainLinear;
-        const bool settled = (std::abs(masterGainRamp_.current - masterGainRamp_.target) < 1e-6F);
-
-        if (!settled || params.masterGainLinear != 1.0F)
-        {
-            // Generate the per-sample gain envelope into rampBuf_ ONCE (shared across all
-            // channels — one ramp for all; the envelope is channel-independent).
-            // tick() advances current toward target by α each sample — this IS the
-            // one-pole smoother; no secondary vDSP_vramp interpolation needed.
-            //
-            // rampBuf_ is sized to maxFrames_ in initialize(). The assert above
-            // guarantees frameCount <= maxFrames_, so the full frameCount is safe.
-            const uint32_t safeCount = std::min(frameCount, maxFrames_);
-            const vDSP_Length len = static_cast<vDSP_Length>(safeCount);
-            for (uint32_t i = 0U; i < safeCount; ++i)
-            {
-                rampBuf_[i] = masterGainRamp_.tick();
-            }
-
-            // vDSP_vmul: element-wise multiply (signal × per-sample gain), per channel.
-            for (uint32_t ch = 0U; ch < numChannels; ++ch)
-            {
-                float* buf = block.channel(ch);
-                if (buf != nullptr)
+                if (!std::isfinite(params.k[band]) || !(params.k[band] > 0.0) ||
+                    !std::isfinite(params.m1[band]))
                 {
-                    vDSP_vmul(buf, 1, rampBuf_.data(), 1, buf, 1, len);
+                    return; // a bad snapshot is ignored; the last good target keeps playing
+                }
+            }
+        }
+
+        // An undesigned snapshot (the default EQParams) is the identity at this rate.
+        const BandArray& damping = designed ? params.k : unityK_;
+        BandArray mix{};
+        if (designed)
+        {
+            mix = params.m1;
+        }
+        const double alpha = onePoleAlpha(params.rampSeconds);
+        if (damping != kTarget_ || mix != m1Target_)
+        {
+            kTarget_ = damping;
+            m1Target_ = mix;
+            coefficientAlpha_ = alpha;
+            coefficientsRamping_ = true;
+        }
+        if (params.outputGainDb != gainDbTarget_)
+        {
+            gainDbTarget_ = params.outputGainDb;
+            gainAlpha_ = alpha;
+            gainRamping_ = true;
+        }
+        if (snapNextAdopt_)
+        {
+            snapNextAdopt_ = false;
+            snapToTargets();
+            zeroStates();
+        }
+    }
+
+    void EQModule::snapToTargets() noexcept
+    {
+        kCurrent_ = kTarget_;
+        m1Current_ = m1Target_;
+        gainDbCurrent_ = gainDbTarget_;
+        coefficientsRamping_ = false;
+        gainRamping_ = false;
+    }
+
+    void EQModule::zeroStates() noexcept
+    {
+        for (auto& pair : ic1_)
+        {
+            pair.fill(simd_double2{0.0, 0.0});
+        }
+        for (auto& pair : ic2_)
+        {
+            pair.fill(simd_double2{0.0, 0.0});
+        }
+        statesClear_ = true;
+    }
+
+    bool EQModule::isIdentity() const noexcept
+    {
+        if (coefficientsRamping_ || gainRamping_ || gainDbCurrent_ != 0.0)
+        {
+            return false;
+        }
+        return std::ranges::all_of(m1Current_, [](double mix) { return mix == 0.0; });
+    }
+
+    template <uint32_t Pairs, bool Ramping>
+    void EQModule::runBandPairs(size_t band, uint32_t frames) noexcept
+    {
+        // Simper's trapezoidal SVF bell, per sample:
+        //   v3 = v0 − ic2;  v1 = a1·ic1 + a2·v3;  v2 = ic2 + a2·ic1 + a3·v3
+        //   ic1 = 2·v1 − ic1;  ic2 = 2·v2 − ic2;  out = v0 + m1·v1
+        // The pairs are independent recurrences, interleaved per sample so the FMA latency of one
+        // hides behind the others. The states are copied into locals for the block: with the pair
+        // count a constant the loops unroll and they stay in registers.
+        std::array<simd_double2, Pairs> ic1{};
+        std::array<simd_double2, Pairs> ic2{};
+        for (uint32_t pair = 0U; pair < Pairs; ++pair)
+        {
+            ic1[pair] = ic1_[pair][band];
+            ic2[pair] = ic2_[pair][band];
+        }
+        const double prewarp = prewarp_[band];
+        const double alpha = coefficientAlpha_;
+        const double kGoal = kTarget_[band];
+        const double mixGoal = m1Target_[band];
+        double damping = kCurrent_[band];
+        double mix = m1Current_[band];
+        GraphicEQ::SvfDamping coefficients = GraphicEQ::svfDamping(prewarp, damping);
+        simd_double2* frame = work_.data();
+        for (uint32_t i = 0U; i < frames; ++i, frame += kChannelPairs)
+        {
+            if constexpr (Ramping)
+            {
+                // The S2 glide: one one-pole step per sample on (k, m1), then the finished a's.
+                damping += alpha * (kGoal - damping);
+                mix += alpha * (mixGoal - mix);
+                coefficients = GraphicEQ::svfDamping(prewarp, damping);
+            }
+            for (uint32_t pair = 0U; pair < Pairs; ++pair)
+            {
+                const simd_double2 v0 = frame[pair];
+                const simd_double2 v3 = v0 - ic2[pair];
+                const simd_double2 v1 = (coefficients.a1 * ic1[pair]) + (coefficients.a2 * v3);
+                const simd_double2 v2 =
+                    ic2[pair] + (coefficients.a2 * ic1[pair]) + (coefficients.a3 * v3);
+                ic1[pair] = (2.0 * v1) - ic1[pair];
+                ic2[pair] = (2.0 * v2) - ic2[pair];
+                frame[pair] = v0 + (mix * v1);
+            }
+        }
+        for (uint32_t pair = 0U; pair < Pairs; ++pair)
+        {
+            ic1_[pair][band] = ic1[pair];
+            ic2_[pair][band] = ic2[pair];
+        }
+        if constexpr (Ramping)
+        {
+            kCurrent_[band] = damping;
+            m1Current_[band] = mix;
+        }
+    }
+
+    void EQModule::runBand(size_t band, uint32_t frames, uint32_t pairs, bool ramping) noexcept
+    {
+        static_assert(kChannelPairs == 4U, "runBand dispatches one runBandPairs per pair count");
+        switch (pairs)
+        {
+            case 1U:
+                ramping ? runBandPairs<1U, true>(band, frames)
+                        : runBandPairs<1U, false>(band, frames);
+                break;
+            case 2U:
+                ramping ? runBandPairs<2U, true>(band, frames)
+                        : runBandPairs<2U, false>(band, frames);
+                break;
+            case 3U:
+                ramping ? runBandPairs<3U, true>(band, frames)
+                        : runBandPairs<3U, false>(band, frames);
+                break;
+            default:
+                ramping ? runBandPairs<4U, true>(band, frames)
+                        : runBandPairs<4U, false>(band, frames);
+                break;
+        }
+    }
+
+    void EQModule::applyOutputGain(uint32_t frames, uint32_t pairs) noexcept
+    {
+        if (!gainRamping_ && gainDbCurrent_ == 0.0)
+        {
+            return;
+        }
+        if (gainRamping_)
+        {
+            double gainDb = gainDbCurrent_;
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                gainDb += gainAlpha_ * (gainDbTarget_ - gainDb);
+                gainLinear_[i] = std::exp(gainDb * kGainDbToNeper);
+            }
+            gainDbCurrent_ = gainDb;
+        }
+        else
+        {
+            std::fill_n(gainLinear_.begin(), frames, std::exp(gainDbCurrent_ * kGainDbToNeper));
+        }
+        for (uint32_t i = 0U; i < frames; ++i)
+        {
+            simd_double2* frame = work_.data() + (static_cast<size_t>(i) * kChannelPairs);
+            for (uint32_t pair = 0U; pair < pairs; ++pair)
+            {
+                frame[pair] = frame[pair] * gainLinear_[i];
+            }
+        }
+    }
+
+    void EQModule::settleIfConverged() noexcept
+    {
+        if (coefficientsRamping_)
+        {
+            bool converged = true;
+            for (size_t band = 0; band < kBands && converged; ++band)
+            {
+                const double scale = kTarget_[band] + std::abs(m1Target_[band]);
+                converged = closeTo(kCurrent_[band], kTarget_[band], scale) &&
+                            closeTo(m1Current_[band], m1Target_[band], scale);
+            }
+            if (converged)
+            {
+                kCurrent_ = kTarget_;
+                m1Current_ = m1Target_;
+                coefficientsRamping_ = false;
+            }
+        }
+        if (gainRamping_ && closeTo(gainDbCurrent_, gainDbTarget_, 1.0 + std::abs(gainDbTarget_)))
+        {
+            gainDbCurrent_ = gainDbTarget_;
+            gainRamping_ = false;
+        }
+        if (isIdentity())
+        {
+            zeroStates(); // m1 == 0 everywhere: the states no longer reach the output
+        }
+    }
+
+    void EQModule::update(const EQParams& params) noexcept
+    {
+        if (params != seen_)
+        {
+            seen_ = params;
+            adopt(params);
+        }
+        // Audio is flowing from here on: a later target must glide, never snap.
+        snapNextAdopt_ = false;
+    }
+
+    void EQModule::loadWork(const MultichannelView& block, uint32_t frames, uint32_t pairs) noexcept
+    {
+        // float → double, two channels per lane pair (a missing odd channel runs on zeros).
+        for (uint32_t pair = 0U; pair < pairs; ++pair)
+        {
+            const float* left = block.channel(2U * pair);
+            const float* right = block.channel((2U * pair) + 1U);
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                work_[(static_cast<size_t>(i) * kChannelPairs) + pair] = simd_double2{
+                    (left != nullptr) ? static_cast<double>(left[i]) : 0.0,
+                    (right != nullptr) ? static_cast<double>(right[i]) : 0.0,
+                };
+            }
+        }
+    }
+
+    void EQModule::storeWork(const MultichannelView& block,
+                             uint32_t frames,
+                             uint32_t pairs) const noexcept
+    {
+        for (uint32_t pair = 0U; pair < pairs; ++pair)
+        {
+            float* left = block.channel(2U * pair);
+            float* right = block.channel((2U * pair) + 1U);
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                const simd_double2 out = work_[(static_cast<size_t>(i) * kChannelPairs) + pair];
+                if (left != nullptr)
+                {
+                    left[i] = static_cast<float>(out.x);
+                }
+                if (right != nullptr)
+                {
+                    right[i] = static_cast<float>(out.y);
                 }
             }
         }
     }
 
+    bool EQModule::statesFinite() const noexcept
+    {
+        const auto finite = [](const PairStates& states)
+        {
+            return std::ranges::all_of(
+                states,
+                [](const auto& pair)
+                {
+                    return std::ranges::all_of(
+                        pair,
+                        [](simd_double2 state)
+                        { return std::isfinite(state.x) && std::isfinite(state.y); });
+                });
+        };
+        return finite(ic1_) && finite(ic2_);
+    }
+
+    void EQModule::process(const MultichannelView& block) noexcept
+    {
+        if (isIdentity())
+        {
+            if (!statesClear_)
+            {
+                zeroStates();
+            }
+            return;
+        }
+        const uint32_t frameCount = block.frames();
+        const uint32_t channels = block.channels();
+        if (frameCount == 0U || channels == 0U)
+        {
+            return;
+        }
+        assert(frameCount <= maxFrames_);
+        const uint32_t frames = std::min(frameCount, maxFrames_);
+        const uint32_t pairs = (channels + 1U) / 2U;
+
+        loadWork(block, frames, pairs);
+        const bool ramping = coefficientsRamping_;
+        for (size_t band = 0; band < kBands; ++band)
+        {
+            runBand(band, frames, pairs, ramping);
+        }
+        statesClear_ = false;
+        applyOutputGain(frames, pairs);
+        storeWork(block, frames, pairs);
+
+        // A non-finite input (or state) poisons the recursion: start the next block clean.
+        if (!statesFinite())
+        {
+            zeroStates();
+        }
+        settleIfConverged();
+    }
+
+    void EQModule::seedStatesForTesting(double value) noexcept
+    {
+        for (auto& pair : ic1_)
+        {
+            pair.fill(simd_double2{value, value});
+        }
+        for (auto& pair : ic2_)
+        {
+            pair.fill(simd_double2{value, value});
+        }
+        statesClear_ = false;
+    }
+
+    bool EQModule::hasSubnormalState() const noexcept
+    {
+        const auto subnormal = [](const auto& pair)
+        {
+            return std::ranges::any_of(pair,
+                                       [](simd_double2 state)
+                                       {
+                                           return std::fpclassify(state.x) == FP_SUBNORMAL ||
+                                                  std::fpclassify(state.y) == FP_SUBNORMAL;
+                                       });
+        };
+        return std::ranges::any_of(ic1_, subnormal) || std::ranges::any_of(ic2_, subnormal);
+    }
 } // namespace AdaptiveSound

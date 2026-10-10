@@ -38,7 +38,11 @@ static auto testGoldenMasterStereoN2() -> void
     constexpr uint32_t kTotal = TestConstants::kTotalFrames1s;
     constexpr float kBoostDb = 6.0F;
     // Committed bit-exact signature of the current stereo output. See header note for re-baseline.
-    constexpr uint64_t kGoldenHash = 0xE7267654BA01D315ULL;
+    // Re-baselined in Sprint EQ's EQ1b (deliberate DSP change, engine-plan §9 "golden master
+    // re-baseline"): the +6 dB @ 1 kHz is now the accurate SVF graphic EQ (GraphicEQDesigner's
+    // 31 solved bells) instead of the single RBJ biquad of the retired fitter. Was
+    // 0xE7267654BA01D315.
+    constexpr uint64_t kGoldenHash = 0xE7AF0C67F9340785ULL;
     constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
 
     // Deterministic 1 s linear chirp 20 Hz -> 20 kHz, amplitude 0.5 (no RNG).
@@ -59,7 +63,7 @@ static auto testGoldenMasterStereoN2() -> void
     TargetState state = makeIdentityState();
     std::array<float, kEqBands> gains{};
     gains[kBand1kHzIndex] = kBoostDb;
-    state.eq = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(kSR));
+    state.eq = makeEqParams(gains, kSR);
     state.limiter.truePeakCeilingLinear =
         kTruePeakCeilingLinear; // active (overrides identity bypass)
     kernel.publishTargetState(state);
@@ -149,7 +153,7 @@ static auto testMultichannelViewDecode() -> void
 // T-C3: Per-channel independence — N-channel EQ does not mix channels.
 //
 // For each N in {4, 6, 8}: feed channel k a pure sine at a distinct DFT-bin-aligned
-// frequency through the kernel with an identity EQ (numBiquads=0, masterGain=1).
+// frequency through the kernel with an identity EQ (the default EQParams).
 // After processing, assert:
 //   - The OUTPUT channel k contains energy at its OWN frequency (power > noise floor).
 //   - The OUTPUT channel k contains NO energy at any OTHER channel's frequency
@@ -268,7 +272,7 @@ static auto testEQFrequencyResponseAccuracyN4() -> void
         kernel.initialize(TestConstants::kSampleRate48k, kFrames);
 
         TargetState state = makeIdentityState();
-        state.eq = EQModuleCoefficients::computeBiquadCascade(gains, kSR);
+        state.eq = makeEqParams(gains, TestConstants::kSampleRate48k);
         kernel.publishTargetState(state);
 
         TestABLN abl(kNumCh, kFrames);
@@ -396,8 +400,7 @@ static auto testLimiterLinkedGainLockstep() -> void
     kernel.initialize(kSR, kFrames);
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
@@ -1045,8 +1048,7 @@ static auto largeBufferLimiterTailCheckForSize(uint32_t bufSize) -> std::string
     kernel.initialize(kSR, bufSize);
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;
@@ -1148,12 +1150,13 @@ static auto testLargeBufferEQGainNoCutoff() -> void
     DSPKernel kernel;
     kernel.initialize(kSR, kBufSize);
 
-    // masterGain=2.0 forces the ramp path; ramp starts at unity (snapped) and
-    // trends toward 2.0, so every output sample > input * 0.9 at minimum.
+    // An EQ output gain of +6.02 dB (×2) with flat bands: the first target the EQ adopts after
+    // initialize() snaps, so every sample of the 1024-frame buffer — past the 512-frame default
+    // ceiling — must play ×2.
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 2.0F;
+    state.eq = EQParams{};
+    state.eq.outputGainDb = 20.0 * std::log10(2.0);
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = 10.0F; // bypass limiter
@@ -1230,8 +1233,7 @@ static auto testLargeBufferConsecutiveBuffers() -> void
 
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;

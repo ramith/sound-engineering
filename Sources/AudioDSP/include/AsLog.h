@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <string>
 #include <utility>
@@ -23,6 +24,23 @@ namespace AdaptiveSound::log
         std::string msg = std::format(fmt, std::forward<Args>(args)...);
         msg.push_back('\n');
         std::fwrite(msg.data(), 1, msg.size(), stderr);
+    }
+
+    // Debug-level lines: printed only when ADAPTIVESOUND_DEBUG_LOG is set in the environment (read
+    // once, thread-safely). For the per-publish control-plane trace (the [QW1] lines), which
+    // floods the log during an EQ drag (amendment 6); errors and rejections stay on line().
+    [[nodiscard]] inline bool debugEnabled() noexcept
+    {
+        static const bool enabled = std::getenv("ADAPTIVESOUND_DEBUG_LOG") != nullptr;
+        return enabled;
+    }
+
+    template <class... Args> void debug(std::format_string<Args...> fmt, Args&&... args)
+    {
+        if (debugEnabled())
+        {
+            line(fmt, std::forward<Args>(args)...);
+        }
     }
 
 } // namespace AdaptiveSound::log
