@@ -15,8 +15,9 @@
 //      (CausalLoudnessTap), after a 3 s warm-up on the prior, slewing at ≤ 1 dB/s.
 //
 // HOW FAST IT MOVES (the gain rides the EQ module's smoother; each change carries its τ):
-//   an EQ edit           with the coefficients, at the edit's τ (the τ rule); computed on a
-//                        decimated block set, refreshed in full after ~150 ms idle (A6)
+//   an EQ edit           with the coefficients, at the τ rule's gain τ (the bands' τ weighted
+//                        by their change, EQTargets::rampsFor); computed on a decimated block
+//                        set, refreshed in full after ~150 ms idle (A6)
 //   a new track          10 ms (a fresh start, or a gapless seam that allows it — below)
 //   a profile landing    500 ms (the prior → the track's own; "profile late")
 //   prefix → whole track 2 s (the refine)

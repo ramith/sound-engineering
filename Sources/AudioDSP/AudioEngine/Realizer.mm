@@ -418,15 +418,15 @@ void Realizer::realizeEq()
         // designed for another rate (engine-plan §6). Non-finite points never get here.
         AdaptiveSound::log::line("[EQ] Realizer: no EQ design at {} Hz — playing flat", sampleRate_);
         canonical_.eq = EQParams{};
-        publishedGainsDb_.fill(0.0);
+        publishedDesign_ = GraphicEQDesign{};
         (void)loudness_.onDesign(GraphicEQDesign(), false);
         return;
     }
-    const float ramp = EQTargets::rampSeconds(publishedGainsDb_, design.filterGainDb);
-    canonical_.eq = EQTargets::toParams(design, ramp);
-    publishedGainsDb_ = design.filterGainDb;
-    // The loudness-neutral gain rides with the coefficients, at their τ (decimated for a long
-    // profile; the idle refresh completes it).
+    // Each band glides at its own τ, from what was last published (amendment 15).
+    canonical_.eq = EQTargets::toParams(design, EQTargets::rampsFor(publishedDesign_, design));
+    publishedDesign_ = design;
+    // The loudness-neutral gain rides with the coefficients, at the rule's gain τ (decimated for a
+    // long profile; the idle refresh completes it).
     canonical_.eq.outputGainDb = loudness_.onDesign(design, eq_.isOn);
 }
 
@@ -497,7 +497,7 @@ void Realizer::applyGainChange(const TrackLoudnessGain::Change& change)
     // A gain-only publish: the coefficients' targets are unchanged, so only the EQ module's
     // output gain glides, at this change's τ.
     canonical_.eq.outputGainDb = change.gainDb;
-    canonical_.eq.rampSeconds = change.rampSeconds;
+    canonical_.eq.gainRampSeconds = change.rampSeconds;
     canonical_.sequenceNumber += 1;
     AdaptiveSound::log::debug("[EQ] loudness: gain {:+.2f} dB over τ {:.3f} s", change.gainDb,
                               change.rampSeconds);
@@ -581,11 +581,11 @@ void Realizer::publishCanonical()
 {
     // The SOLE publishTargetState call site. Per-publish detail is debug-level (amendment 6).
     AdaptiveSound::log::debug("[QW1] Realizer.publishCanonical seq={} intensity={:.4f} "
-                              "crossfeed{{enabled={} preset={}}} eq{{fs={} ramp={:.3f}s}}",
+                              "crossfeed{{enabled={} preset={}}} eq{{fs={} gainRamp={:.3f}s}}",
                               static_cast<unsigned long long>(canonical_.sequenceNumber),
                               canonical_.intensityLinear, canonical_.crossfeed.enabled,
                               canonical_.crossfeed.preset, canonical_.eq.designSampleRate,
-                              canonical_.eq.rampSeconds);
+                              canonical_.eq.gainRampSeconds);
     if (kernel_ != nullptr)
     {
         kernel_->publishTargetState(canonical_);
