@@ -40,7 +40,9 @@ namespace AdaptiveSound
     //                   EQ On ↔ Off stays level-fair against the bit-perfect Off).
     //   P2 full         Intensity settled at 1: EQ → coloration → Loudness → Limiter.
     //   P3 blend        otherwise: EQ → dry snapshot → coloration → equal-power blend → Loudness
-    //                   (its contribution faded as min(1, r/0.1), amendment 2) → Limiter.
+    //                   (its contribution faded as min(1, r/0.1), amendment 2, gliding at most a
+    //                   full 0 ↔ 1 per 2 s, decision 33) → Limiter. P1 and P2 wait for that glide:
+    //                   until it ends the blend runs at the endpoint.
     //
     // P0 ↔ P1/P3 switches cross-fade the undelayed input and the limiter's 3 ms-delayed output over
     // 5 ms, so a switch neither skips nor repeats audio; the 2 s hysteresis keeps a short Compare
@@ -101,6 +103,8 @@ namespace AdaptiveSound
         void copyBlock(const MultichannelView& block, std::vector<float>& scratch) const noexcept;
         // Cross-fade the processed block with the bypass copy, gliding bypassMix_ toward `toward`.
         void crossfadeWithBypass(const MultichannelView& block, float toward) noexcept;
+        // The normaliser's contribution an Intensity asks for: min(1, r/0.1).
+        [[nodiscard]] static float loudnessContributionAt(float intensity) noexcept;
 
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
@@ -133,10 +137,14 @@ namespace AdaptiveSound
         std::vector<float> bypassScratch_;
 
         // Per-sample scratch (maxFrames_ each): the equal-power gains and the normaliser's
-        // contribution weight min(1, r/0.1).
+        // contribution weight.
         std::vector<float> wetGainBuf_;
         std::vector<float> dryGainBuf_;
         std::vector<float> loudnessWeightBuf_;
+
+        // The normaliser's contribution (0 … 1) and its largest per-sample move (decision 33).
+        float loudnessContribution_ = 1.0F;
+        float loudnessContributionStep_ = 0.0F;
 
         // --- The bit-perfect path (P0) ---
         float bypassMix_ = 0.0F;          // weight of the undelayed input: 1 = P0, 0 = processed
