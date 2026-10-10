@@ -11,9 +11,11 @@
 #include "../include/TargetState.h"
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <memory>
+#include <span>
 
 using namespace AdaptiveSound;
 
@@ -255,6 +257,18 @@ static uint8_t deviceTypeToByte(AdaptiveSound::AudioDevice::Type type) {
     }
 }
 
+// Helper: the copyOutputDevice*C string contract — copy `value` into the caller's buffer
+// (NUL-terminated, truncated to fit) and return its full length, snprintf-style.
+static uint32_t copyDeviceString(const std::string& value, char* out, uint32_t capacity) {
+    if (out != nullptr && capacity > 0U) {
+        const std::span<char> buffer(out, capacity);
+        const size_t copied = std::min(value.size(), buffer.size() - 1U);
+        std::copy_n(value.begin(), copied, buffer.begin());
+        buffer[copied] = '\0';
+    }
+    return static_cast<uint32_t>(value.size());
+}
+
 extern "C" {
 
 // MARK: AU registration (in-process v3 instantiation; off-RT, main-thread during setup)
@@ -298,6 +312,7 @@ uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) AUD
         out.deviceID        = dev.id;
         out.sampleRate      = dev.sampleRate;
         out.bufferFrameSize = dev.bufferFrameSize;
+        out.transportType   = dev.transportType;
         out.deviceType      = deviceTypeToByte(dev.type);
 
         // Safe copy: ensure null-termination even if name is too long.
@@ -309,6 +324,16 @@ uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) AUD
     }
 
     return written;
+}
+
+uint32_t copyOutputDeviceUIDC(uint32_t deviceID, char* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT {
+    const auto device = static_cast<AudioDeviceID>(deviceID);
+    return copyDeviceString(AdaptiveSound::CoreAudioDevice::getDeviceUID(device), out, capacity);
+}
+
+uint32_t copyOutputDeviceModelUIDC(uint32_t deviceID, char* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT {
+    const auto device = static_cast<AudioDeviceID>(deviceID);
+    return copyDeviceString(AdaptiveSound::CoreAudioDevice::getDeviceModelUID(device), out, capacity);
 }
 
 uint32_t getDefaultOutputDeviceID() AUDIODSP_C_NOEXCEPT {

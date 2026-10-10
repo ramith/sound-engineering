@@ -43,6 +43,9 @@
 //     each width — proving the spatial AU is correctly inserted as the device-boundary stage and
 //     that the stereo path stays byte-identical.
 //
+//   DEV-UID (Sprint EQ) — the device-identity bridge against the live CoreAudio device set: every
+//     output reports its own UID through the C copy contract (VerifyDeviceIdentity.swift).
+//
 // Keep ALL gates green. Exit non-zero on any failure so this can gate commits/CI.
 
 @preconcurrency import AVFAudio
@@ -327,8 +330,21 @@ if !verifyM2d() {
 
 print("ALL M2-d CHECKS PASSED — file-load reconfigure processes at N and resolves device width "
     + "M = min(N, deviceChannels): 5.1-on-stereo -> 6/2, 5.1-on-7.1 -> 6/6, stereo-on-stereo -> 2/2")
+
+// =====================================================================================
+// DEV-UID — the device-identity bridge (UID / model UID / transport per output).
+// Implementation in VerifyDeviceIdentity.swift; orchestrated below.
+// =====================================================================================
+
+if !verifyDeviceIdentity() {
+    print("VERIFY FAIL: device identity (DEV-UID) check failed")
+    exit(1)
+}
+
+print("ALL DEV-UID CHECKS PASSED — every output reports its own UID through the C copy contract")
 print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
     + "M2-c (live reconfigure stereo->6->stereo) PASS + M2-d (device width M=min(N,device)) PASS + "
     + "M3-2 (SpatialRendererAU register) PASS + "
-    + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS ===")
+    + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS + "
+    + "DEV-UID (device identity) PASS ===")
 exit(0)

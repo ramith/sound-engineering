@@ -1,4 +1,5 @@
 import DesignTokenKit
+import EQEditKit
 import Foundation
 import PlaybackQueueKit
 
@@ -24,6 +25,13 @@ final class AudioViewModel {
     /// Control Center + the Now Playing widget (S10.4). One-directional hook (mirrors
     /// `onEngineReady`/`onError`); `nil` in tests. NEVER fired from the 20 Hz tick.
     var onNowPlayingRefresh: (() -> Void)?
+
+    /// Fired (on the main actor) when the output CHANGES IDENTITY — `selectedDevice` moves to a
+    /// device with another UID, appears (launch) or goes away — with the new output's key (`nil` =
+    /// none). Never for a re-read of the same output (a rate or buffer change; `refreshDevices`
+    /// re-selecting it). One-directional hook like `onEngineReady`, so whatever keys state per
+    /// output follows it with the window closed too. `nil` in tests.
+    var onOutputIdentityChanged: ((EQOutputKey?) -> Void)?
     /// Re-entrant `initialize()` guard. `true` from the moment an init is kicked off
     /// (`initializeEngine()` / `retryInitialization()`) until its `Task` finishes (success OR
     /// failure). A second init while one is in-flight would race the retry's teardown over the
@@ -61,7 +69,12 @@ final class AudioViewModel {
     /// Live BS.1770-5 loudness readout for the meters (polled at the timer rate).
     var loudness: LoudnessSnapshot = .unmeasured
     var errorMessage: String?
-    var selectedDevice: AudioDeviceModel?
+    /// The output the app plays on. Moving it to another output (by UID) fires
+    /// `onOutputIdentityChanged`; re-reading the same output does not.
+    var selectedDevice: AudioDeviceModel? {
+        didSet { announceOutputIdentityChange(from: oldValue) }
+    }
+
     var availableDevices: [AudioDeviceModel] = []
     var sampleRate: UInt32 = 0
     var bufferFrameSize: UInt32 = 0

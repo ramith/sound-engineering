@@ -38,11 +38,15 @@
 ///   1 = Builtin
 ///   2 = USB
 ///   3 = Wireless
+///
+/// The device's UID and model UID are strings of unbounded length, so they are read per device
+/// with copyOutputDeviceUIDC / copyOutputDeviceModelUIDC rather than carried here.
 typedef struct
 {
     uint32_t deviceID;        ///< Real CoreAudio AudioDeviceID
     uint32_t sampleRate;      ///< Nominal sample rate (Hz)
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
+    uint32_t transportType;   ///< kAudioDevicePropertyTransportType FourCC (0 = unknown)
     uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
     // Fixed-size C name buffer for the Swift bridging header. All four suppressed rules are
     // irreducible in THIS file, which must be valid ISO C11 (see the file header): the c-array
@@ -98,6 +102,19 @@ extern "C"
     /// @return            Number of entries written (0 on error or no devices found).
     uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices,
                                      uint32_t maxCount) AUDIODSP_C_NOEXCEPT;
+
+    /// Copy a device's persistent UID (kAudioDevicePropertyDeviceUID) into `out` as UTF-8,
+    /// NUL-terminated and truncated to fit `capacity` bytes. Returns the UID's full length in
+    /// bytes (excluding the NUL), snprintf-style: a result >= capacity means `out` was too small
+    /// and holds a truncated copy. Returns 0 when the device has no UID. `out` may be NULL only
+    /// with capacity 0 (to ask for the length).
+    uint32_t
+    copyOutputDeviceUIDC(uint32_t deviceID, char* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT;
+
+    /// Same contract as copyOutputDeviceUIDC, for the model UID (kAudioDevicePropertyModelUID),
+    /// which every unit of the same model shares. Returns 0 when the device reports none.
+    uint32_t
+    copyOutputDeviceModelUIDC(uint32_t deviceID, char* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT;
 
     /// Return the default output device ID, or 0 if none is available.
     uint32_t getDefaultOutputDeviceID(void) AUDIODSP_C_NOEXCEPT;
