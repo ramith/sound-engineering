@@ -46,6 +46,11 @@
 
         func publishEQ(points _: [Float], isOn _: Bool) {}
 
+        /// The graph format's rate, as the live engine reports before its AU exists.
+        func eqSampleRate() -> Double {
+            48000
+        }
+
         func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
             []
         }
