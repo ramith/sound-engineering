@@ -33,6 +33,12 @@
 // NaN input recovers within one block. The first target adopted after initialize() is applied
 // without a ramp (no fade-in after a re-allocation, engine-plan §6).
 //
+// Cost: the same work per sample at every rate — 31 bells per channel, two channels per register.
+// Budget (engine-plan §7, amendment 18), 8 channels, one core, optimised: 5 % at 192 kHz, the
+// pipeline's top supported rate (kMaxSupportedSampleRate); above it — the designer goes to 768 kHz
+// so the graph stays what plays — 5 % × fs / 192 kHz (10 % at 384 kHz, 20 % at 768 kHz). Gated by
+// EQ_Cpu_7_1_192k and EQ_Cpu_7_1_AboveSupportedRates.
+//
 // RT-safety: process() allocates nothing, takes no locks and calls no OS services. Every buffer is
 // sized in initialize() (off-RT) to the host's maximum frame count.
 
