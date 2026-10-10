@@ -34,6 +34,11 @@
 // Amendment 18 — rates above 192 kHz:
 //   EQ_Cpu_7_1_AboveSupportedRates — the EQ at 384 and 768 kHz × 8 within its stated budget,
 //                                    5 % × fs / 192 kHz (10 % / 20 % of one core)
+//
+// Amendment 19 — the predictor on pathological programmes:
+//   Loudness_Predictor_PathologicalBounded — sustained low sines, DC rumble, a near-Nyquist
+//                                    tone: the prediction never goes past the true change by more
+//                                    than 3 dB (its shortfall, up to ~8 dB, logged)
 
 namespace
 {
@@ -942,6 +947,192 @@ static auto testEqCpu71AboveSupportedRates() -> void
         }
     }
     logInfo(report);
+    if (!failures.empty())
+    {
+        logFail(kName, failures);
+        return;
+    }
+    logPass(kName);
+}
+
+namespace
+{
+    // A pathological programme (the break-it's finding 10): sustained sines (Hz, dBFS), a DC
+    // offset, pink noise underneath; the same on both channels.
+    struct FixTone
+    {
+        double hz = 0.0;
+        double dbfs = 0.0;
+    };
+
+    struct FixProgrammeSpec
+    {
+        double fs = kEngineFs;
+        std::vector<FixTone> tones;
+        double pinkDb = -40.0;
+        double dc = 0.0;
+    };
+
+    auto fixProgramme(const FixProgrammeSpec& spec) -> TlProgramme
+    {
+        constexpr double kSeconds = 6.0;
+        const auto frames = static_cast<size_t>(kSeconds * spec.fs);
+        std::mt19937 rng(11U);
+        const std::vector<double> pink = tlPinkNoise(frames, rng);
+        TlProgramme programme{spec.fs, TlChannels(2U, std::vector<float>(frames))};
+        const double pinkGain = std::pow(10.0, spec.pinkDb / 20.0);
+        for (size_t n = 0; n < frames; ++n)
+        {
+            double sample = spec.dc + (pinkGain * pink[n]);
+            for (const FixTone& tone : spec.tones)
+            {
+                sample +=
+                    std::pow(10.0, tone.dbfs / 20.0) *
+                    std::sin(2.0 * std::numbers::pi * tone.hz * static_cast<double>(n) / spec.fs);
+            }
+            programme.channels[0][n] = static_cast<float>(sample);
+            programme.channels[1][n] = static_cast<float>(sample);
+        }
+        return programme;
+    }
+
+    // How far a correction (the loudness-neutral gain follows −change) goes PAST the truth in its
+    // own direction: over-compensation (dB, ≥ 0).
+    auto fixOvershootDb(double changeDb, double trueDb) -> double
+    {
+        return (changeDb >= 0.0) ? std::max(0.0, changeDb - trueDb)
+                                 : std::max(0.0, trueDb - changeDb);
+    }
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Loudness_Predictor_PathologicalBounded — amendment 19. On programmes whose energy sits where the
+// curve changes faster than the predictor resolves (the break-it's finding 10: sustained low sines,
+// DC and sub-20 Hz rumble, a near-Nyquist tone), across jagged, bass and air curves:
+//   - the prediction never leaves the played curve's own range (the predictor's sane bound —
+//     checked first on a hand-made profile where BS.1770's gate alone would carry a +10 dB
+//     curve's change to +18.4 dB);
+//   - it never goes PAST the true change (libebur128 of the actually filtered programme) by more
+//     than 3 dB — the loudness-neutral gain cannot over-correct by more than that;
+//   - how far it falls SHORT (under-compensation, up to ~8 dB on a jagged curve) is logged: the
+//     band grid's resolution, documented in TrackLoudnessProfile.h.
+// (Music is untouched: EQ_LoudnessNeutral_OnOff's figures are unchanged.)
+// ---------------------------------------------------------------------------
+static auto testLoudnessPredictorPathologicalBounded() -> void
+{
+    static const char* const kName = "Loudness_Predictor_PathologicalBounded";
+    constexpr double kOvershootBoundDb = 3.0;
+    std::vector<std::pair<std::string, FixProgrammeSpec>> programmes;
+    for (const double hz : {20.0, 22.45, 25.2, 28.28, 31.75, 35.64, 40.0})
+    {
+        programmes.emplace_back(std::format("{:.1f} Hz sine −12 dBFS + pink −40", hz),
+                                FixProgrammeSpec{.tones = {{hz, -12.0}}});
+    }
+    programmes.emplace_back("DC 0.3 + 12 Hz rumble + pink −20",
+                            FixProgrammeSpec{.tones = {{12.0, -10.0}}, .pinkDb = -20.0, .dc = 0.3});
+    programmes.emplace_back("8 Hz −6 dBFS + pink −30",
+                            FixProgrammeSpec{.tones = {{8.0, -6.0}}, .pinkDb = -30.0});
+    programmes.emplace_back(
+        "44.1k: 21.5 kHz tone −20 + pink −30",
+        FixProgrammeSpec{.fs = 44100.0, .tones = {{21500.0, -20.0}}, .pinkDb = -30.0});
+    const std::vector<TlCurve> curves = {
+        {"alternating ±12", eqAlternatingCurve()},
+        {"alternating, negated", eqNegated(eqAlternatingCurve())},
+        {"+12 @ 20 Hz", eqFlatCurveWith(0U, 12.0F)},
+        {"−12 @ 20 Hz", eqFlatCurveWith(0U, -12.0F)},
+        {"Tone Bass +12", eqToneCurve({12, 0, 0, 0, 0})},
+        {"Tone Bass −12", eqToneCurve({-12, 0, 0, 0, 0})},
+        {"Tone Air +12", eqToneCurve({0, 0, 0, 0, 12})},
+        {"Tone Air −12", eqToneCurve({0, 0, 0, 0, -12})},
+    };
+    // The sane bound itself, on a hand-made profile where BS.1770's relative gate alone would carry
+    // the change past the curve: one loud block in band 100 and nine quiet ones in band 50 (all
+    // inside the plain set's gate); +10 dB on band 100 lifts the weighted set's gate over the quiet
+    // blocks, so the gated change would be 10·log10(10 / 0.145) = +18.4 dB for a +10 dB curve.
+    TrackLoudnessProfile handMade;
+    handMade.sampleRate = kEngineFs;
+    handMade.channelCount = 2U;
+    handMade.bandCount = TrackLoudness::bandCount(kEngineFs);
+    handMade.blockCount = 10U;
+    handMade.wholeTrack = true;
+    handMade.bandPower.assign(static_cast<size_t>(handMade.blockCount) * handMade.bandCount, 0.0F);
+    constexpr size_t kLoudBand = 100U;
+    constexpr size_t kQuietBand = 50U;
+    handMade.bandPower[kLoudBand] = 1.0F;
+    for (size_t block = 1U; block < handMade.blockCount; ++block)
+    {
+        handMade.bandPower[(block * handMade.bandCount) + kQuietBand] = 0.05F;
+    }
+    std::vector<double> lift(handMade.bandCount, 0.0);
+    lift[kLoudBand] = 10.0;
+    double clamped = 0.0;
+    if (!predictLoudnessChangeDb(handMade, lift, 1U, clamped) || clamped != 10.0)
+    {
+        logFail(kName,
+                std::format("a +10 dB curve predicted a {:+.3f} dB change (want exactly +10: the "
+                            "curve's own largest gain)",
+                            clamped));
+        return;
+    }
+
+    auto designer = eqMakeDesigner();
+    double worstOvershoot = 0.0;
+    double worstShortfall = 0.0;
+    std::string worstShortName;
+    std::string failures;
+    for (const auto& [programmeName, spec] : programmes)
+    {
+        const TlProgramme programme = fixProgramme(spec);
+        const TlProfiles profiles = tlProfile(programme, tlStereoWeights());
+        const double sourceLufs = tlEbur128Lufs(programme.channels, programme.sampleRate);
+        if (!profiles.whole || !std::isfinite(sourceLufs))
+        {
+            failures += std::format("{}: no profile or no source loudness; ", programmeName);
+            continue;
+        }
+        for (const TlCurve& curve : curves)
+        {
+            GraphicEQDesign design{};
+            double predicted = 0.0;
+            if (!designer->design(curve.points, programme.sampleRate, design) ||
+                !predictLoudnessChangeDb(*profiles.whole, design, 1U, predicted))
+            {
+                failures += std::format("{} / {}: no prediction; ", programmeName, curve.name);
+                continue;
+            }
+            const double truth = tlMeasuredChangeDb(programme, design, sourceLufs);
+            const double overshoot = fixOvershootDb(predicted, truth);
+            const double shortfall = std::abs(predicted - truth) - overshoot;
+            worstOvershoot = std::max(worstOvershoot, overshoot);
+            if (shortfall > worstShortfall)
+            {
+                worstShortfall = shortfall;
+                worstShortName = std::format("{} / {}", programmeName, curve.name);
+            }
+            if (!(overshoot <= kOvershootBoundDb))
+            {
+                failures += std::format(
+                    "{} / {}: predicted {:+.2f} dB goes {:.2f} dB past the "
+                    "true {:+.2f} (≤ {}); ",
+                    programmeName,
+                    curve.name,
+                    predicted,
+                    overshoot,
+                    truth,
+                    kOvershootBoundDb);
+            }
+        }
+    }
+    logInfo(
+        std::format("[info] {}: {} programmes × {} curves — worst overshoot past the true "
+                    "change {:.2f} dB (≤ {}); worst shortfall {:.2f} dB ({})\n",
+                    kName,
+                    programmes.size(),
+                    curves.size(),
+                    worstOvershoot,
+                    kOvershootBoundDb,
+                    worstShortfall,
+                    worstShortName));
     if (!failures.empty())
     {
         logFail(kName, failures);

@@ -214,7 +214,13 @@ namespace AdaptiveSound
         {
             return false;
         }
-        changeDb = change;
+        // A sane bound (amendment 19): the gain never compensates more than the curve changes
+        // anything — the change stays within the response's own [smallest, largest] gain. BS.1770's
+        // relative gate can carry a block set's change past that (quiet blocks drop out of the
+        // EQ'd set's gate while they stay in the source's), but the quiet blocks are still played:
+        // compensating for their dropping out would move the level for nothing heard.
+        const auto [lowest, highest] = std::ranges::minmax(bandGainDb);
+        changeDb = std::clamp(change, lowest, highest);
         return true;
     }
 
