@@ -36,6 +36,8 @@
 //                              44.1 kHz) + near-Nyquist gain guard + flat bit-transparency
 //   EqDesignerTests.inc   — Sprint EQ / EQ1a: the accurate 31-band graphic-EQ designer
 //                           (GraphicEQDesigner + the asEqDesign C-ABI) vs the Python oracle
+//   TrackLoudnessTests.inc — Sprint EQ / EQ1c: the track loudness profiler + the gated
+//                           loudness-change predictor + their C-ABI vs the libebur128 oracle
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -64,6 +66,7 @@
 #include "LimiterTruePeakTests.inc"
 #include "EqFrequencyResponseSweepTests.inc"
 #include "EqDesignerTests.inc"
+#include "TrackLoudnessTests.inc"
 #include "SoakRtAllocTests.inc"
 #include "SnapshotConcurrencyTests.inc"
 // clang-format on
@@ -75,7 +78,7 @@
 
 namespace
 {
-    constexpr std::array<TestEntry, 136U> kTests = {
+    constexpr std::array<TestEntry, 150U> kTests = {
         {
             // Phase 0 bypass tests
             {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
@@ -300,6 +303,34 @@ namespace
             {"EQ_Design_Rejects_NonFinite", testEqDesignRejectsNonFinite, true},
             {"Designer_TwoThreads", testDesignerTwoThreads, true},
             {"Designer_Timing", testDesignerTiming, false},
+            // Sprint EQ / EQ1c: the track loudness profiler + predictor vs the libebur128 oracle
+            // (parallel-safe: pure DSP, no env/tmp) — except Profiler_Timing, serial for its clock.
+            {"Loudness_Profile_MatchesEbur128", testLoudnessProfileMatchesEbur128, true},
+            {"Loudness_Predictor_Pink", testLoudnessPredictorPink, true},
+            {"Loudness_Predictor_Tonal808", testLoudnessPredictorTonal808, true},
+            {"Loudness_Predictor_Orchestral", testLoudnessPredictorOrchestral, true},
+            {"Loudness_Predictor_LoudMaster", testLoudnessPredictorLoudMaster, true},
+            {"Loudness_Predictor_RatesAndLayouts", testLoudnessPredictorRatesAndLayouts, true},
+            {
+                "Loudness_Profile_NoWindow_ParsevalAndTonal",
+                testLoudnessProfileNoWindow,
+                true,
+            },
+            {"Loudness_Profile_PrefixVsFull", testLoudnessProfilePrefixVsFull, true},
+            {
+                "Loudness_Profile_DecimationAndMemory",
+                testLoudnessProfileDecimationAndMemory,
+                true,
+            },
+            {"Loudness_Predictor_Properties", testLoudnessPredictorProperties, true},
+            {"Loudness_Profiler_RejectsBadInput", testLoudnessProfilerRejectsBadInput, true},
+            {"Loudness_Abi_LifecycleAndGuards", testLoudnessAbiLifecycleAndGuards, true},
+            {
+                "Loudness_Profile_SharedAcrossThreads",
+                testLoudnessProfileSharedAcrossThreads,
+                true,
+            },
+            {"Profiler_Timing", testProfilerTiming, false},
             // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
             // process-wide operator new/delete override scoped to the calling thread via a thread_local
             // flag; running them in the parallel worker pool alongside other allocating tests is fine

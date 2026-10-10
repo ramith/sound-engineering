@@ -29,6 +29,10 @@
 //                         fixture (ffmpeg-gated on <libavformat/avformat.h>).
 //   5. EQ designer      — asEqDesignerCreate / asEqDesign (two rates) / asEqDesignerDestroy
 //                         (headless DSP, no device).
+//   6. Track loudness   — asLoudnessProfilerCreate / Feed (one chunk rejected as non-finite) /
+//                         FinishPrefix / FinishFull / GetInfo / PredictChangeDb, the profiler
+//                         destroyed BEFORE its two profile handles (they outlive it), then
+//                         asLoudnessProfileDestroy (headless DSP, no device).
 //
 // PLANT-A-LEAK: with -DADAPTIVE_PLANT_LEAK=1 the LAST loudness iteration deliberately SKIPS
 // loudnessMeterDestroy, leaking exactly one handle. scripts/build-leak-check.sh builds that
@@ -38,13 +42,16 @@
 
 #import <Foundation/Foundation.h>
 
-// DeviceBridge.h: loudnessMeter* + CLoudnessReadout; re-exports PureModeBridge.h, MetadataBridge.h
-// and EQDesignBridge.h.
+// DeviceBridge.h: loudnessMeter* + CLoudnessReadout; re-exports PureModeBridge.h, MetadataBridge.h,
+// EQDesignBridge.h and TrackLoudnessBridge.h.
 #include "DeviceBridge.h"
 #include "FileDecodeSource.h" // AdaptiveSound::FileDecodeSource (C++ class)
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
+#include <numbers>
 
 // The fixtures directory (Tests/Fixtures/artwork-audio) is injected as a quoted string
 // literal by the build script, exactly like build-null-test.sh's ADAPTIVESOUND_TEST_DATA_DIR.
@@ -196,6 +203,57 @@ namespace
         (void)asEqDesign(designer, points, kBands, 44100.0, &output);
         asEqDesignerDestroy(designer);
     }
+
+    // Leg 6 — the track loudness profiler (Sprint EQ, EQ1c): create → feed 0.5 s of a 1 kHz
+    // stereo tone in 100 ms chunks (one extra chunk rejected as non-finite) → a prefix → the whole
+    // track → info + a prediction → destroy the profiler, then the profiles it left behind.
+    void runTrackLoudnessLeg()
+    {
+        constexpr double kRate = 48000.0;
+        constexpr uint32_t kChunkFrames = 4800U; // 100 ms
+        constexpr int kChunks = 5;
+        AsLoudnessProfiler* profiler =
+            asLoudnessProfilerCreate(kRate, 2U, kAudioChannelLayoutTag_Stereo);
+        AsEqDesigner* designer = asEqDesignerCreate();
+        if (profiler == nullptr || designer == nullptr)
+        {
+            asLoudnessProfilerDestroy(profiler);
+            asEqDesignerDestroy(designer);
+            return;
+        }
+        float tone[kChunkFrames] = {};
+        for (uint32_t frame = 0U; frame < kChunkFrames; ++frame)
+        {
+            tone[frame] = 0.25F * std::sin(2.0F * std::numbers::pi_v<float> * 1000.0F *
+                                           static_cast<float>(frame) / static_cast<float>(kRate));
+        }
+        const float* channels[2] = {tone, tone};
+        AsLoudnessProfile* prefix = nullptr;
+        for (int chunk = 0; chunk < kChunks; ++chunk)
+        {
+            (void)asLoudnessProfilerFeed(profiler, channels, 2U, kChunkFrames);
+            if (chunk == kChunks - 2)
+            {
+                prefix = asLoudnessProfilerFinishPrefix(profiler);
+            }
+        }
+        float poisoned[kChunkFrames] = {};
+        poisoned[0] = std::numeric_limits<float>::quiet_NaN();
+        const float* bad[2] = {tone, poisoned};
+        (void)asLoudnessProfilerFeed(profiler, bad, 2U, kChunkFrames); // rejected, consumes nothing
+        AsLoudnessProfile* whole = asLoudnessProfilerFinishFull(profiler);
+        asLoudnessProfilerDestroy(profiler);
+        AsLoudnessProfileInfo info{};
+        (void)asLoudnessProfileGetInfo(whole, &info);
+        constexpr uint32_t kBands = 31U;
+        float points[kBands] = {};
+        points[7] = 12.0F; // +12 dB at 100 Hz
+        double change = 0.0;
+        (void)asLoudnessPredictChangeDb(whole, designer, points, kBands, kRate, &change);
+        asLoudnessProfileDestroy(prefix);
+        asLoudnessProfileDestroy(whole);
+        asEqDesignerDestroy(designer);
+    }
 } // namespace
 
 int main()
@@ -209,6 +267,7 @@ int main()
             runFileDecodeLeg();
             runPureModeLeg();
             runEqDesignerLeg();
+            runTrackLoudnessLeg();
 #if __has_include(<libavformat/avformat.h>)
             runFfmpegMetadataLeg();
 #endif

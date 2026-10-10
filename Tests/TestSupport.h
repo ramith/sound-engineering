@@ -29,6 +29,7 @@
 #include <mutex>
 #include <numbers>
 #include <random>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -47,11 +48,14 @@
 #include "Limiting/LimiterModule.h"
 #include "Loudness/ChannelLayoutDecoder.h"
 #include "Loudness/LufsMeter.h"
+#include "Loudness/TrackLoudnessProfile.h"
+#include "Loudness/TrackLoudnessProfiler.h"
 #include "MultichannelView.h"
 #include "PureModeFormat.h"
 #include "PureModeSource.h"
 #include "Spatial/SpatialRenderKernel.h"
 #include "TargetState.h"
+#include "TrackLoudnessBridge.h"
 
 using namespace AdaptiveSound;
 
