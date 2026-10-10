@@ -38,6 +38,7 @@
 #include <AudioToolbox/AudioToolbox.h>
 #include <cassert>
 #include <cstdint>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -89,7 +90,14 @@ namespace AdaptiveSound
 
         // RT: noexcept, zero alloc/lock. Relays params to the worker, pushes samples
         // (drop on full), and applies the smoothed makeup gain in place.
-        void process(const LoudnessParams& params, const MultichannelView& block) noexcept;
+        //
+        // `contribution` (optional, one weight in [0, 1] per frame) scales the makeup gain's
+        // CONTRIBUTION in dB: the applied gain is makeup^w, so w = 1 is the full makeup and w = 0
+        // is 0 dB. The kernel fades it with the Intensity blend (amendment 2: makeup·min(1, r/0.1)),
+        // so the normalised blend and the normaliser-free EQ-only path meet at r = 0 with no step.
+        void process(const LoudnessParams& params,
+                     const MultichannelView& block,
+                     std::span<const float> contribution = {}) noexcept;
 
         // Lock-free telemetry getters (UI / Milestone 4); callable from any thread.
         [[nodiscard]] float measuredLufsIntegrated() const noexcept;
@@ -99,6 +107,11 @@ namespace AdaptiveSound
         [[nodiscard]] uint64_t droppedFrameCount() const noexcept;
 
       private:
+        // RT: apply the smoothed (and optionally contribution-weighted) makeup gain in place.
+        void applyMakeup(const MultichannelView& block,
+                         uint32_t safeCount,
+                         std::span<const float> contribution) noexcept;
+
         // Off-RT worker (runs on measurementThread_).
         void runMeasurementLoop(const std::stop_token& stopToken) noexcept;
         void updateMakeupGain(uint32_t newGatedBlocks) noexcept;

@@ -170,6 +170,7 @@ namespace AdaptiveSound
             dequeHead_ = 0U;
             dequeCount_ = 0U;
             sampleCounter_ = 0U;
+            detectorStale_ = false;
 
             computePolyphaseCoeffs();
         }
@@ -212,6 +213,13 @@ namespace AdaptiveSound
 
             // frameCount must not exceed the buffer capacity established in initialize().
             assert(frameCount <= maxFrames_);
+
+            // Resuming after the kernel's bit-perfect bypass primed the ring: the detector never
+            // saw the ring's last look-ahead window, so seed it before the first new sample.
+            if (detectorStale_)
+            {
+                reseedDetector(numChannels);
+            }
 
             // Process all frameCount samples — not just kDefaultMaxFrames.
             // grBuf_ and each ring are sized to maxFrames_ (and ringSize_ respectively)
@@ -272,7 +280,54 @@ namespace AdaptiveSound
             readHead_ = (readHead_ + safeCount) % ringSize_;
         }
 
+        // -----------------------------------------------------------------------
+        // prime() — RT-safe. The kernel's bit-perfect path (engine-plan §5.1, P0) returns the
+        // input untouched, so the limiter is not running; this keeps its look-ahead ring current
+        // anyway (write-only: no detection, no gain, no output). When processing resumes the ring
+        // already holds the newest 3 ms — no stale audio, no skipped or repeated samples — and the
+        // detector is re-seeded from it on the next process().
+        // -----------------------------------------------------------------------
+        void prime(const MultichannelView& block) noexcept
+        {
+            const uint32_t numChannels = std::min(block.channels(), kMaxChannels);
+            const uint32_t frames = std::min(block.frames(), maxFrames_);
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                for (uint32_t ch = 0U; ch < numChannels; ++ch)
+                {
+                    const float* buf = block.channel(ch);
+                    rings_[ch][writeHead_] = (buf != nullptr) ? buf[i] : 0.0F;
+                }
+                writeHead_ = (writeHead_ + 1U) % ringSize_;
+            }
+            readHead_ = (readHead_ + frames) % ringSize_;
+            detectorStale_ = true;
+        }
+
       private:
+        // Rebuild the detector state from the ring's last look-ahead window after a prime():
+        // release the envelope, then push each primed sample's true peak through the window-max
+        // deque in order, exactly as process() would have.
+        void reseedDetector(uint32_t numChannels) noexcept
+        {
+            envFastDb_ = 0.0;
+            envSlowDb_ = 0.0;
+            lfHoldCounter_ = 0U;
+            dequeHead_ = 0U;
+            dequeCount_ = 0U;
+            for (uint32_t back = lookaheadFrames_; back > 0U; --back)
+            {
+                const uint32_t pos = (writeHead_ + ringSize_ - back) % ringSize_;
+                double isp = 0.0;
+                for (uint32_t ch = 0U; ch < numChannels; ++ch)
+                {
+                    isp = std::max(isp, polyphaseIspPeak(ch, pos));
+                }
+                (void)updatePeakDeque(isp);
+            }
+            detectorStale_ = false;
+        }
+
         struct PeakEntry
         {
             uint64_t index = 0U;
@@ -459,6 +514,8 @@ namespace AdaptiveSound
         // (AC-2). Defaults to the 48 kHz value; always ≤ kMaxLimiterLookaheadFrames.
         uint32_t lookaheadFrames_ = kLimiterLookaheadFrames;
         uint32_t ringSize_ = kLimiterLookaheadFrames + kDefaultMaxFrames; // set in initialize()
+        // A prime() wrote samples the detector has not seen; process() re-seeds it first.
+        bool detectorStale_ = false;
     };
 
 } // namespace AdaptiveSound

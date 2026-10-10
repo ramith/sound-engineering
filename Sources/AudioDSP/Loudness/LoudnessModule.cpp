@@ -90,7 +90,8 @@ namespace AdaptiveSound
     }
 
     void LoudnessModule::process(const LoudnessParams& params,
-                                 const MultichannelView& block) noexcept
+                                 const MultichannelView& block,
+                                 std::span<const float> contribution) noexcept
     {
         const uint32_t frameCount = block.frames();
         if (frameCount == 0U)
@@ -153,6 +154,13 @@ namespace AdaptiveSound
             makeupGainRamp_.target = makeupGainLinear_.load(std::memory_order_acquire);
         }
 
+        applyMakeup(block, safeCount, contribution);
+    }
+
+    void LoudnessModule::applyMakeup(const MultichannelView& block,
+                                     uint32_t safeCount,
+                                     std::span<const float> contribution) noexcept
+    {
         // Identity fast path: ramp settled at unity → leave the signal untouched.
         const bool settled =
             std::abs(makeupGainRamp_.current - makeupGainRamp_.target) < kGainSettleEpsilon;
@@ -161,9 +169,12 @@ namespace AdaptiveSound
             return;
         }
 
+        const bool weighted = contribution.size() >= safeCount;
         for (uint32_t i = 0U; i < safeCount; ++i)
         {
-            rampBuf_[i] = makeupGainRamp_.tick();
+            const float makeup = makeupGainRamp_.tick();
+            // makeup^w scales the gain's dB contribution by w (w = 1 → the full makeup).
+            rampBuf_[i] = weighted ? std::pow(makeup, contribution[i]) : makeup;
         }
         const vDSP_Length count = static_cast<vDSP_Length>(safeCount);
 
