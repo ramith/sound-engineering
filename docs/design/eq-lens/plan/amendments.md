@@ -118,6 +118,32 @@ items, which only go live once pins exist:**
 13. **Pins on the same model:** confirm with the founder that a second unit of a pinned model sharing the
     first unit's pin is the intended behaviour (the model-UID fallback).
 
+## Added by the engine break-it (2026-10-10; tests in 31dea8e on `test/s10-8-eq-engine-break-it`)
+
+The fix round runs after EQ2. EQ2 itself closes finding 1 (the app still clamps, so presets play 3–9 dB
+under the graph), and it must land before the listening check.
+
+14. **Non-finite input** (findings 2, 3):
+    - one +Inf sample must not leave the limiter in a permanent NaN state;
+    - one NaN or Inf sample must not freeze the normaliser's K-weighting state.
+    Sanitise at the kernel input and make both states recover. Red tests:
+    `BreakIt_InfInput_KernelRecovers`, `BreakIt_NonFiniteInput_NormaliserKeepsAdapting`.
+15. **Per-band glide** (findings 5–8): each band follows its own time constant, from its own change and its
+    own jaggedness, instead of one τ from the curve's largest solved gain.
+    - A single ±12 point must settle in ≤ ~30 ms (today it takes 371 ms).
+    - Low-band gestures must not swell above the curve's own maximum.
+    - Bound the local swell's DURATION as well as its peak: adv_pair_S2 stayed above +3 dB for 211 ms.
+    Red tests: `BreakIt_TauRule_SinglePointIsNotJagged`, `BreakIt_Transitions_LowBandGestures`.
+16. **Decision 33:** crossing Intensity 0 glides the level over ~2 s. Gate it on the level's slew rate, not on
+    a per-sample step.
+17. **The P0 switch** (finding 9): bring the +0.74 LU level step entering bit-perfect down to ≤ 0.3 LU on a loud
+    master (decision 29's ceiling helps), and make the 5 ms fade equal-power, with no −3.3 dB dip.
+18. **Rates above 192 kHz** (finding 11): either cap the design rate (e.g., hold identity or resample above
+    384 kHz) or state a separate CPU budget; 768 kHz costs ~9 %.
+19. **The predictor on pathological programmes** (finding 10: sustained pure tones, DC rumble, near-Nyquist tones):
+    document the limits, and clamp |ΔL| to a sane bound so a mis-prediction never moves the level by more
+    than ~3 dB.
+
 ## Lanes and ownership (A1–A3)
 
 | Lane | PRs (order) | Notes |

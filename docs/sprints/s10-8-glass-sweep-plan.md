@@ -128,6 +128,10 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     because it would clash with S14's loudness compensation.
 32. **"Studio" is replaced by "Bass Boost"** (a new stored id). A saved "Studio" choice loads as Flat,
     which is close to what those users heard.
+33. **Crossing Intensity 0 glides the level** (2026-10-10, engine break-it). At 0 % the song plays at its
+    original level, without loudness levelling, which can be up to +10 dB louder (loud masters) or 15 dB
+    quieter. It used to land within ~0.1 s; now it glides over about 2 s. The end state is unchanged:
+    Intensity 0 with the EQ Off is bit-perfect.
 
 ## C. Scope
 
