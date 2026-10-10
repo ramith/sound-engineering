@@ -119,6 +119,15 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     EQ on, the limiter ceiling is −0.1 dBTP, which is no higher than the bit-perfect Off already sends,
     instead of −1 dBTP. Bluetooth outputs keep −1 dBTP because the link re-encodes. Measured: heavy
     limiting falls from 26 % to 7 % of the time, and On/Off mismatch is p90 0.57 dB.
+30. **The built-in presets are re-voiced** (2026-10-10) for the honest engine. Each is built from the
+    five Tone regions, so every shape is smooth, with peaks of +3 to +5 dB. Sizes follow Olive/Harman:
+    bass lifts at most +5 dB, cuts at most 2 dB. Today's shapes would now really play +10 dB (Warm).
+    Final tuning is by ear at the listening check. Proposal:
+    [preset-revoice.md](../design/eq-lens/plan/preset-revoice.md).
+31. **"Loudness" is renamed "Bass & Treble"** (the stored id stays "Loudness"). "Low Volume" was rejected
+    because it would clash with S14's loudness compensation.
+32. **"Studio" is replaced by "Bass Boost"** (a new stored id). A saved "Studio" choice loads as Flat,
+    which is close to what those users heard.
 
 ## C. Scope
 
