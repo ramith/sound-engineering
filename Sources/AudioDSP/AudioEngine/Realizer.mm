@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h> // Obj-C++ TU (dispatch); diagnostics go through AsLog
 
 #include "../EQ/EQTargets.h" // design → EQParams, and the τ rule
+#include "../Limiting/OutputCeiling.h" // decision 29: the EQ-only ceiling per transport
 #include "../include/AsLog.h" // AdaptiveSound::log — off-RT control-plane logging seam
 
 #include <algorithm> // std::clamp
@@ -111,6 +112,9 @@ namespace
 
     // The idle debounce before an edit's gain is refreshed at full resolution (A6).
     constexpr int64_t kLoudnessRefreshDelayNs = 150 * static_cast<int64_t>(NSEC_PER_MSEC);
+
+    // 20·log10: linear amplitude → dB (the ceiling in its log line).
+    constexpr double kAmplitudeDbScale = 20.0;
 
     // Run `work(Realizer&)` on `queue` if the Realizer still exists by then. A block captures a
     // C++ REFERENCE by reference, so the work and the weak reference move to the heap and the
@@ -282,6 +286,22 @@ void Realizer::reportTrackLoudnessFailure(uint64_t token)
     postWeak(queue_, weak_from_this(), [token](Realizer& self) {
         self.loudness_.onFailure(token);
         self.syncCausalEstimate(false);
+    });
+}
+
+void Realizer::setOutputTransport(uint32_t transportType)
+{
+    postWeak(queue_, weak_from_this(), [transportType](Realizer& self) {
+        const float ceiling = eqOnlyCeilingLinear(transportType);
+        if (ceiling == self.canonical_.limiter.eqOnlyCeilingLinear)
+        {
+            return;
+        }
+        self.canonical_.limiter.eqOnlyCeilingLinear = ceiling;
+        self.canonical_.sequenceNumber += 1;
+        AdaptiveSound::log::line("[EQ] output transport {:08x}: EQ-only ceiling {:+.1f} dBTP",
+                                 transportType, kAmplitudeDbScale * std::log10(static_cast<double>(ceiling)));
+        self.publishCanonical();
     });
 }
 

@@ -15,6 +15,10 @@ namespace AdaptiveSound
     constexpr size_t kCacheLineBytes = 64; // ARM64 / Apple Silicon cache line
     constexpr float kTruePeakCeilingLinear =
         0.891F; // approx -1 dBTP (10^(-1/20)=0.8913; literal is approximate)
+    // Founder decision 29: the true-peak ceiling of the EQ-only path (Intensity 0, EQ on) on a
+    // wired or built-in output, −0.1 dBTP (10^(−0.1/20) = 0.98855) — no higher than a bit-perfect
+    // Off of the same master already sends. A lossy wireless link keeps kTruePeakCeilingLinear.
+    constexpr float kEqOnlyWiredCeilingLinear = 0.98855F;
     // True-peak limiter look-ahead is a fixed TIME, not a fixed frame count: the gain
     // envelope must reach target within a constant number of attack time-constants
     // regardless of sample rate, or the −1 dBTP ceiling is exceeded at hi-res rates

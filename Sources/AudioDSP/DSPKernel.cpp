@@ -208,8 +208,14 @@ namespace AdaptiveSound
         eqModule_->process(block);
         if (intensityAtZero)
         {
-            // P1: EQ → Limiter. No coloration, no normaliser.
-            limiterModule_->process(state.limiter, block);
+            // P1: EQ → Limiter. No coloration, no normaliser; the limiter at the EQ-only ceiling
+            // (decision 29: −0.1 dBTP on a wired output, so a loud master's EQ On is not
+            // squashed under its bit-perfect Off). It only ever RAISES the ceiling, so a bypassed
+            // limiter (ceiling ≥ 1) stays bypassed.
+            LimiterParams eqOnly = state.limiter;
+            eqOnly.truePeakCeilingLinear =
+                std::max(state.limiter.truePeakCeilingLinear, state.limiter.eqOnlyCeilingLinear);
+            limiterModule_->process(eqOnly, block);
             return;
         }
         if (intensityAtOne)

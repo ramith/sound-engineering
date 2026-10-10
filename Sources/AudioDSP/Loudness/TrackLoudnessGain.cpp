@@ -244,6 +244,15 @@ namespace AdaptiveSound
         return std::nullopt;
     }
 
+    // THE GAPLESS-GROUP RULE (amendments item 3, as accepted for EQ1c part 2). A gapless seam is
+    // CONTINUOUS — the music sounds across it — only when both sides are above −50 LUFS: the
+    // previous track's last 400 ms block and the next track's first. A side that is not known
+    // (no whole-track profile yet for the previous track) counts as sounding, the conservative
+    // choice. At a continuous seam the gain may step by ≤ 0.2 dB; if the next track's own gain is
+    // further away, the group shares the gain that is playing (no step at all). Across SILENCE a
+    // step cannot be heard, so each track keeps its own gain. Literal sharing at every seam would
+    // be wrong here: every queue advance is gapless in this player, so one track's gain would
+    // stick to every track that followed it.
     std::optional<TrackLoudnessGain::Change> TrackLoudnessGain::resolveSeam(bool atSeam)
     {
         seamPending_ = false;
