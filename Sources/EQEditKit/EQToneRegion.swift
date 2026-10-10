@@ -10,8 +10,12 @@
 
 import Foundation
 
-enum EQToneRegion: Int, CaseIterable, Sendable {
+public enum EQToneRegion: Int, CaseIterable, Identifiable, Sendable {
     case bass, body, mids, presence, air
+
+    public var id: Int {
+        rawValue
+    }
 
     /// The weight of every region at every band: `bandWeights[region.rawValue][band]`,
     /// computed once at the exact band centres.
@@ -22,8 +26,9 @@ enum EQToneRegion: Int, CaseIterable, Sendable {
     /// Width of each crossover's rise, in octaves.
     private static let crossoverOctaves = 1.0
 
-    /// This region's weight at `hz`, in 0…1. The five weights sum to 1 at every frequency.
-    func weight(atHz hz: Double) -> Double {
+    /// This region's weight at `hz`, in 0…1: how much of a Tone move reaches that frequency (the graph
+    /// shades the region by it). The five weights sum to 1 at every frequency.
+    public func weight(atHz hz: Double) -> Double {
         let (lower, upper) = edgesHz
         let below = lower.map { Self.rise(atHz: hz, crossoverHz: $0) } ?? 1
         let above = upper.map { Self.rise(atHz: hz, crossoverHz: $0) } ?? 0

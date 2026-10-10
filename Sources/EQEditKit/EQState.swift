@@ -71,6 +71,13 @@ public struct EQState: Equatable, Sendable {
         return curve.isEdited(against: presetPoints)
     }
 
+    /// Whether switching this state to `preset` sets edits aside ("Bring back edits", decision 27):
+    /// this state is edited and `preset` is another one. Re-choosing its own preset resets it — the
+    /// user's explicit intent, so nothing is offered back.
+    func offersBringBack(switchingTo preset: EQPresetRef, myPresets: [String: [Float]]) -> Bool {
+        preset != self.preset && isEdited(myPresets: myPresets)
+    }
+
     /// Plays `curve` from now on. This is an edit: the EQ turns on, and a built-in edited back onto
     /// its own points becomes the reference again.
     public mutating func edit(to curve: EQCurve) {
