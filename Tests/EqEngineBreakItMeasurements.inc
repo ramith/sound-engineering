@@ -66,6 +66,9 @@ namespace
             intent.isOn = true;
             realizer->applyEq(intent);
             published.push_back(realizer->canonicalState().eq);
+            // The shape only: since EQ1c part 2 the Realizer publishes the loudness-neutral gain
+            // with the coefficients, and every reference here is the designer's shape read-back.
+            published.back().outputGainDb = 0.0;
         }
         realizer->shutdown();
         return published;
@@ -301,10 +304,17 @@ namespace
         }
     }
 
+    // The slowest band τ of a published target (s). Since the fix round (amendment 15) each band
+    // has its own; the reports print the slowest one.
+    auto bkSlowestTau(const EQParams& params) -> float
+    {
+        return std::ranges::max(params.bandRampSeconds);
+    }
+
     auto bkRuleTau(const EqCurve& from, const EqCurve& to) -> float
     {
-        return EQTargets::rampSeconds(tdDesign(from, kBkFs).filterGainDb,
-                                      tdDesign(to, kBkFs).filterGainDb);
+        return std::ranges::max(
+            EQTargets::rampsFor(tdDesign(from, kBkFs), tdDesign(to, kBkFs)).band);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -426,7 +436,7 @@ namespace
         bkReport(std::format("{} -> {}'s end (direct, tau {:.0f} ms)",
                              jaggedName,
                              hop.name,
-                             direct.events[1].params.rampSeconds * 1000.0F),
+                             bkSlowestTau(direct.events[1].params) * 1000.0F),
                  bkRun(direct, probes, kBkFs, totalFrames),
                  false);
         for (const double deltaMs : {10.0, 30.0, 60.0, 120.0, 250.0})
@@ -437,8 +447,8 @@ namespace
                                  jaggedName,
                                  hop.name,
                                  deltaMs,
-                                 hopped.events[1].params.rampSeconds * 1000.0F,
-                                 hopped.events[2].params.rampSeconds * 1000.0F),
+                                 bkSlowestTau(hopped.events[1].params) * 1000.0F,
+                                 bkSlowestTau(hopped.events[2].params) * 1000.0F),
                      bkRun(hopped, probes, kBkFs, totalFrames),
                      false);
         }
@@ -489,7 +499,7 @@ namespace
                 bkRealizerSequence({{0.0, (*pair)[0]}, {1.5, (*pair)[1]}}, kBkFs);
             bkReport(std::format("{} (tau {:.0f} ms)",
                                  name,
-                                 sequence.events[1].params.rampSeconds * 1000.0F),
+                                 bkSlowestTau(sequence.events[1].params) * 1000.0F),
                      bkRun(sequence, probes, kBkFs, totalFrames),
                      true);
         }
@@ -576,7 +586,7 @@ namespace
                 std::format("  {:34s} tau {:3.0f} ms: {:+6.2f} -> {:+6.2f} dB at {:.0f} Hz; 50% "
                             "at {:6.1f} ms, 90% at {:6.1f} ms",
                             step.name,
-                            sequence.events[1].params.rampSeconds * 1000.0F,
+                            bkSlowestTau(sequence.events[1].params) * 1000.0F,
                             GraphicEQDesigner::playedDb(sequence.endpoints[0], step.probeHz),
                             GraphicEQDesigner::playedDb(sequence.endpoints[1], step.probeHz),
                             step.probeHz,
@@ -711,9 +721,12 @@ namespace
             bkRealizerSequence({{0.0, a}, {0.8, b}}, kBkFs), tdProbes(2U), kBkFs, totalFrames);
     }
 
+    // "Calm" is the pre-fix-round rule's own class: no solved gain beyond 15 dB (the rule sent
+    // anything else to 160 ms). The search still covers exactly that class.
     auto bkCalm(const EqCurve& curve) -> bool
     {
-        return breakItMaxSolvedGainDb(curve, kBkFs) <= EQTargets::kJaggedGainDb;
+        constexpr double kCalmSolvedGainDb = 15.0;
+        return breakItMaxSolvedGainDb(curve, kBkFs) <= kCalmSolvedGainDb;
     }
 
     auto bkHillClimb(BkPair start, std::mt19937& rng) -> BkPair

@@ -12,21 +12,33 @@ namespace AdaptiveSound
     // Tone, drag and Off toggle of a normal curve).
     inline constexpr float kEqDefaultRampSeconds = 0.010F;
 
+    // The same glide time for every band.
+    [[nodiscard]] constexpr std::array<float, kEqBandCount> eqUniformRamp(float seconds) noexcept
+    {
+        std::array<float, kEqBandCount> ramp{};
+        ramp.fill(seconds);
+        return ramp;
+    }
+
     // The graphic EQ's FINISHED state (Sprint EQ, EQ1b): one Simper SVF bell per band, designed by
     // GraphicEQDesigner on the Realizer's queue. The RT module (EQModule) runs these coefficients
-    // directly and glides to a new set on one one-pole per sample ("S2", engine-plan §3) — it never
-    // designs. A default-constructed EQParams (designSampleRate 0, every m1 0) is the identity.
+    // directly and glides each band to its new pair on a one-pole per sample ("S2", engine-plan
+    // §3) — it never designs. A default-constructed EQParams (designSampleRate 0, every m1 0) is
+    // the identity.
     struct EQParams
     {
         std::array<double, kEqBandCount> k{};  // per-band SVF damping (> 0 for a design)
         std::array<double, kEqBandCount> m1{}; // per-band band-pass mix; all 0 = identity
-        // Broadband gain (dB) riding the same smoother — EQ1c's loudness-neutral gain; 0 until then.
+        // Broadband gain (dB) after the cascade — the loudness-neutral gain (EQ1c).
         double outputGainDb = 0.0;
+        // Each band's one-pole τ toward ITS target (amendment 15), chosen by the Realizer's τ rule
+        // (EQTargets::rampsFor) from the band's own bell. Read only for a band whose target moved.
+        std::array<float, kEqBandCount> bandRampSeconds = eqUniformRamp(kEqDefaultRampSeconds);
+        // The output gain's own τ. Read only when outputGainDb moved.
+        float gainRampSeconds = kEqDefaultRampSeconds;
         // The rate (k, m1) were designed for; 0 = no design (identity). The RT module holds its last
         // good target when this differs from its own rate (re-allocation, engine-plan §6).
         float designSampleRate = 0.0F;
-        // The one-pole τ toward THESE targets, chosen by the Realizer's τ rule (amendment 1).
-        float rampSeconds = kEqDefaultRampSeconds;
 
         // Member-wise value equality: the RT module adopts a snapshot only when it differs from the
         // last one it evaluated. A NaN member never compares equal, so such a snapshot is simply
@@ -137,11 +149,13 @@ namespace AdaptiveSound
     // Lock the layout (QW1 §3 F2) — N is the MEASURED size, NOT an assumption. History: 320 B
     // through QW1 (CrossfeedParams fit the alignas(64) slack); 640 B since Sprint EQ's EQ1b, whose
     // finished (k, m1) EQParams (512 B) replaced the 10-biquad float cascade (engine-plan §7
-    // estimated ~520 B for EQParams; measured with the compiler's record layout). The size itself
-    // is golden-master-NEUTRAL (the hash is over audio output); EQ1b re-baselined the golden master
-    // because the EQ's audio changed. If a FUTURE change trips this assert: re-MEASURE N, then
-    // re-confirm the golden-master hash (CF-1) still holds — never silently bump N.
-    constexpr size_t kMeasuredTargetStateBytes = 640;
+    // estimated ~520 B for EQParams; measured with the compiler's record layout); 768 B since the
+    // EQ engine's fix round, whose per-band glide times (amendment 15: 31 floats + the gain's) grew
+    // EQParams to 640 B. The size itself is golden-master-NEUTRAL (the hash is over audio output):
+    // EQ1b re-baselined the golden master because the EQ's audio changed; the fix round left it
+    // untouched. If a FUTURE change trips this assert: re-MEASURE N, then re-confirm the
+    // golden-master hash (CF-1) still holds — never silently bump N.
+    constexpr size_t kMeasuredTargetStateBytes = 768;
     static_assert(
         sizeof(TargetState) == kMeasuredTargetStateBytes,
         "TargetState size changed — re-measure N and re-confirm the golden master (CF-1)");
