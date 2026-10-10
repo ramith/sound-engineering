@@ -27,6 +27,11 @@
 // Pure C11; #pragma once guards double-include.
 #include "MetadataBridge.h"
 
+// Re-export the pure-C graphic-EQ designer (Sprint EQ, EQ1a) so `import AudioDSP` exposes
+// asEqDesignerCreate / asEqDesign / asEqDesignerDestroy to the Swift EQDesigner wrapper.
+// Pure C11; #pragma once guards double-include.
+#include "EQDesignBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.

@@ -142,6 +142,8 @@ xcrun clang++ \
     -I"$EBUR128_DIR" \
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/EQ/GraphicEQDesigner.cpp" \
+    "$REPO_ROOT/Sources/AudioDSP/EQ/EQDesignBridge.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp" \

@@ -27,6 +27,8 @@
 //                         and freed on destroy.
 //   4. FFmpeg metadata  — ffmpegOpenMetadata / scalar+tag+art accessors / Close over the flac
 //                         fixture (ffmpeg-gated on <libavformat/avformat.h>).
+//   5. EQ designer      — asEqDesignerCreate / asEqDesign (two rates) / asEqDesignerDestroy
+//                         (headless DSP, no device).
 //
 // PLANT-A-LEAK: with -DADAPTIVE_PLANT_LEAK=1 the LAST loudness iteration deliberately SKIPS
 // loudnessMeterDestroy, leaking exactly one handle. scripts/build-leak-check.sh builds that
@@ -36,7 +38,9 @@
 
 #import <Foundation/Foundation.h>
 
-#include "DeviceBridge.h"     // loudnessMeter* + CLoudnessReadout; re-exports PureModeBridge.h + MetadataBridge.h
+// DeviceBridge.h: loudnessMeter* + CLoudnessReadout; re-exports PureModeBridge.h, MetadataBridge.h
+// and EQDesignBridge.h.
+#include "DeviceBridge.h"
 #include "FileDecodeSource.h" // AdaptiveSound::FileDecodeSource (C++ class)
 
 #include <cstdint>
@@ -167,6 +171,31 @@ namespace
         ffmpegCloseMetadata(handle);
     }
 #endif
+
+    // Leg 5 — the graphic-EQ designer (Sprint EQ, EQ1a): create → design + read back at two
+    // rates (so the per-rate tables are rebuilt) → destroy. Pure DSP, no device.
+    void runEqDesignerLeg()
+    {
+        AsEqDesigner* designer = asEqDesignerCreate();
+        if (designer == nullptr)
+        {
+            return;
+        }
+        constexpr uint32_t kBands = 31U;
+        float points[kBands] = {};
+        points[17] = 6.0F; // +6 dB at 1 kHz
+        float centreDb[kBands] = {};
+        const double responseHz[2] = {100.0, 1000.0};
+        float responseDb[2] = {};
+        AsEqDesignOutput output{};
+        output.centreDb = centreDb;
+        output.responseHz = responseHz;
+        output.responseDb = responseDb;
+        output.responseCount = 2U;
+        (void)asEqDesign(designer, points, kBands, 48000.0, &output);
+        (void)asEqDesign(designer, points, kBands, 44100.0, &output);
+        asEqDesignerDestroy(designer);
+    }
 } // namespace
 
 int main()
@@ -179,6 +208,7 @@ int main()
             runLoudnessLeg(lastIteration);
             runFileDecodeLeg();
             runPureModeLeg();
+            runEqDesignerLeg();
 #if __has_include(<libavformat/avformat.h>)
             runFfmpegMetadataLeg();
 #endif
