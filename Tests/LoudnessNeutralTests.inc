@@ -27,6 +27,10 @@
 //                                       — the causal tap allocates nothing on the RT thread
 //   Realizer_LoudnessCost               — the worst profile (192 kHz, 6000 blocks): an edit's
 //                                         gain and the full refresh against budgets (serial)
+//   Limiter_EqOnlyCeiling               — EQ2, founder decision 29: the EQ-only path's ceiling is
+//                                         −0.1 dBTP on wired/built-in outputs, −1 dBTP on
+//                                         Bluetooth or an unknown link, −1 dBTP on every other
+//                                         path; the output never above its ceiling
 
 namespace
 {
@@ -35,6 +39,9 @@ namespace
     constexpr double kLnOnOffBoundDb = 0.15;
     constexpr double kLnSubBassBoundDb = 0.25;
     constexpr double kLnSeamStepDb = TrackLoudnessGain::kSeamStepDb;
+    // A programme the On/Off gate logs but does not bound: the −9 LUFS loud master, whose EQ On
+    // meets the EQ-only path's limiter (decision 29 accepted p90 0.57 / max 2.07 dB there).
+    constexpr double kLnLoggedOnly = std::numeric_limits<double>::infinity();
 
     // A kernel + Realizer at the engine rate, Intensity 0 (P1: EQ → limiter, no normaliser), with
     // `curve` published On.
@@ -43,10 +50,14 @@ namespace
         std::shared_ptr<DSPKernel> kernel = std::make_shared<DSPKernel>();
         std::shared_ptr<AdaptiveSound::Realizer> realizer;
 
-        explicit LnEngine(const EqCurve& curve, bool isOn = true)
+        // A wired (built-in) output unless told otherwise: the EQ-only ceiling is decision 29's.
+        explicit LnEngine(const EqCurve& curve,
+                          bool isOn = true,
+                          uint32_t transport = kAudioDeviceTransportTypeBuiltIn)
         {
             kernel->initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
             realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
+            realizer->setOutputTransport(transport);
             realizer->applyIntensity(0.0F);
             realizer->applyEq(engineEqIntent(curve, isOn));
         }
@@ -252,8 +263,10 @@ namespace
 
 // ---------------------------------------------------------------------------
 // EQ_LoudnessNeutral_OnOff — decision 26: with the track's profile in, EQ On plays at the same
-// integrated loudness as Off (engine-plan §9). The whole chain at Intensity 0 (EQ → limiter);
-// Off is the bit-perfect path, i.e. the programme itself.
+// integrated loudness as Off (engine-plan §9). The whole chain at Intensity 0 (EQ → limiter) on a
+// built-in output (decision 29's −0.1 dBTP ceiling); Off is the bit-perfect path, i.e. the
+// programme itself. The −9 LUFS loud master is logged, not bounded: there the limiter takes back
+// some of EQ On's peaks, which decision 29 accepted (p90 0.57 / max 2.07 dB).
 // ---------------------------------------------------------------------------
 static auto testEqLoudnessNeutralOnOff() -> void
 {
@@ -264,13 +277,14 @@ static auto testEqLoudnessNeutralOnOff() -> void
         const TlProgramme* programme;
         double boundDb;
     };
-    const std::array<Case, 5> cases = {
+    const std::array<Case, 6> cases = {
         {
             {"pink", &tlGatePink(), kLnOnOffBoundDb},
             {"tonal 808", &tlGate808(), kLnSubBassBoundDb},
             {"orchestral", &tlGateOrchestral(), kLnOnOffBoundDb},
             {"bright", &lnBrightProgramme(), kLnOnOffBoundDb},
             {"mix", &lnMixProgramme(), kLnOnOffBoundDb},
+            {"loud master", &tlGateLoudMaster(), kLnLoggedOnly},
         },
     };
     constexpr double kWindowSeconds = 10.0;
@@ -300,11 +314,16 @@ static auto testEqLoudnessNeutralOnOff() -> void
                 worstCurve = curve.name;
             }
         }
-        report += std::format("  {:<11} worst {:.3f} dB ({}), bound {:.2f}\n",
-                              test.label,
-                              worst,
-                              worstCurve,
-                              test.boundDb);
+        report += std::isinf(test.boundDb)
+                      ? std::format("  {:<11} worst {:.3f} dB ({}), logged (decision 29)\n",
+                                    test.label,
+                                    worst,
+                                    worstCurve)
+                      : std::format("  {:<11} worst {:.3f} dB ({}), bound {:.2f}\n",
+                                    test.label,
+                                    worst,
+                                    worstCurve,
+                                    test.boundDb);
         if (!(worst <= test.boundDb) && failure.empty())
         {
             failure = std::format("{}: On vs Off {:.3f} dB with {} (> {:.2f})",
@@ -876,6 +895,140 @@ static auto testRealizerLoudnessCost() -> void
     if (!(editMs <= kEditBudgetMs) || !(refreshMs <= kRefreshBudgetMs))
     {
         logFail(kName, "over budget");
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// Limiter_EqOnlyCeiling — founder decision 29 (EQ2). With Intensity 0 and the EQ on, the chain is
+// EQ → limiter, and its true-peak ceiling follows the output: −0.1 dBTP on a wired or built-in
+// output (no higher than the bit-perfect Off of the same master already sends), −1 dBTP on
+// Bluetooth or an unknown link (a lossy encoder needs the margin). Every other path keeps
+// −1 dBTP. A loud master (−9 LUFS) with a deep bass cut (the neutral gain lifts the rest) drives
+// the limiter; the output's true
+// peak (libebur128, cross-checked by the 32× sinc meter exactly as LimiterTruePeakTests.inc does)
+// must stay under its ceiling, and on a wired output it must actually USE the higher one.
+// ---------------------------------------------------------------------------
+static auto testLimiterEqOnlyCeiling() -> void
+{
+    static const char* const kName = "Limiter_EqOnlyCeiling";
+    constexpr double kWindowSeconds = 6.0;
+    constexpr double kSettleSeconds = 0.5;
+    constexpr double kWiredDbTp = -0.1;
+    constexpr double kLossyDbTp = -1.0;
+    constexpr double kUsesWiredCeilingDbTp =
+        -0.9; // above the old −1 dBTP by more than the meter's slack
+    struct Case
+    {
+        const char* label;
+        uint32_t transport;
+        float intensity;
+        double ceilingDbTp;
+    };
+    const std::array<Case, 5> cases = {
+        {
+            {"built-in, EQ-only", kAudioDeviceTransportTypeBuiltIn, 0.0F, kWiredDbTp},
+            {"USB, EQ-only", kAudioDeviceTransportTypeUSB, 0.0F, kWiredDbTp},
+            {"Bluetooth, EQ-only", kAudioDeviceTransportTypeBluetooth, 0.0F, kLossyDbTp},
+            {"unknown, EQ-only", 0U, 0.0F, kLossyDbTp},
+            {"built-in, Intensity 0.5", kAudioDeviceTransportTypeBuiltIn, 0.5F, kLossyDbTp},
+        },
+    };
+    const TlProgramme master = lnHead(tlGateLoudMaster(), kWindowSeconds);
+    const std::shared_ptr<const TrackLoudnessProfile> profile =
+        tlProfile(master, tlStereoWeights()).whole;
+    // A deep bass cut: the loudness-neutral gain then lifts everything else by several dB, so the
+    // EQ'd master's peaks press on the limiter (the scenario decision 29 is about).
+    EqCurve curve{};
+    std::fill(curve.begin(), curve.begin() + 11, -12.0F);
+    std::string report =
+        std::format("[info] {}: output true peak (libebur128 / sinc dBTP)\n", kName);
+    std::string failure;
+    // The transport table itself (Limiting/OutputCeiling.h): local lossless links get −0.1 dBTP;
+    // re-encoding links and links the device does not name keep −1 dBTP.
+    for (const uint32_t wired : {
+             kAudioDeviceTransportTypeBuiltIn,
+             kAudioDeviceTransportTypeUSB,
+             kAudioDeviceTransportTypeFireWire,
+             kAudioDeviceTransportTypeThunderbolt,
+             kAudioDeviceTransportTypePCI,
+             kAudioDeviceTransportTypeHDMI,
+             kAudioDeviceTransportTypeDisplayPort,
+             kAudioDeviceTransportTypeAVB,
+         })
+    {
+        if (eqOnlyCeilingLinear(wired) != kEqOnlyWiredCeilingLinear)
+        {
+            failure = std::format("transport {:08x} should get −0.1 dBTP", wired);
+        }
+    }
+    for (const uint32_t lossy : {
+             kAudioDeviceTransportTypeBluetooth,
+             kAudioDeviceTransportTypeBluetoothLE,
+             kAudioDeviceTransportTypeAirPlay,
+             kAudioDeviceTransportTypeVirtual,
+             kAudioDeviceTransportTypeAggregate,
+             kAudioDeviceTransportTypeUnknown,
+         })
+    {
+        if (eqOnlyCeilingLinear(lossy) != kTruePeakCeilingLinear)
+        {
+            failure = std::format("transport {:08x} should keep −1 dBTP", lossy);
+        }
+    }
+    for (const Case& test : cases)
+    {
+        LnEngine engine(curve, true, test.transport);
+        engine.realizer->applyIntensity(test.intensity);
+        engine.realizer->publishTrackLoudnessProfile(kLnTrackA, profile);
+        engine.realizer->setCurrentTrack(kLnTrackA, false);
+        engine.realizer->barrier();
+        const TlChannels out = lnRender(*engine.kernel, master, 0U, master.frames());
+        const auto settle = static_cast<size_t>(kSettleSeconds * kEngineFs);
+        std::vector<float> interleaved;
+        interleaved.reserve((out[0].size() - settle) * kOracleStereo);
+        for (size_t frame = settle; frame < out[0].size(); ++frame)
+        {
+            interleaved.push_back(out[0][frame]);
+            interleaved.push_back(out[1][frame]);
+        }
+        double oracle = 0.0;
+        if (!oracleDbTp(interleaved, static_cast<uint32_t>(kEngineFs), oracle))
+        {
+            failure = "libebur128 failed";
+            break;
+        }
+        const double sinc = sincTruePeakDbTp(settledWindow(interleaved));
+        report += std::format("  {:<24} {:+.2f} / {:+.2f} dBTP (ceiling {:+.1f})\n",
+                              test.label,
+                              oracle,
+                              sinc,
+                              test.ceilingDbTp);
+        const bool breach = oracle > test.ceilingDbTp + kCeilingMarginDb &&
+                            sinc > test.ceilingDbTp + kCeilingMarginDb;
+        if (breach && failure.empty())
+        {
+            failure = std::format("{}: {:+.2f} dBTP over its {:+.1f} dBTP ceiling",
+                                  test.label,
+                                  oracle,
+                                  test.ceilingDbTp);
+        }
+        if (test.ceilingDbTp == kWiredDbTp && !(oracle > kUsesWiredCeilingDbTp) && failure.empty())
+        {
+            failure = std::format(
+                "{}: {:+.2f} dBTP — the wired ceiling was not used", test.label, oracle);
+        }
+        if (test.ceilingDbTp == kLossyDbTp && !(sinc <= kLossyDbTp + kCeilingMarginDb) &&
+            failure.empty())
+        {
+            failure = std::format("{}: {:+.2f} dBTP — not held at −1 dBTP", test.label, sinc);
+        }
+    }
+    logInfo(report);
+    if (!failure.empty())
+    {
+        logFail(kName, failure);
         return;
     }
     logPass(kName);

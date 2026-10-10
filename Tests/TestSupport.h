@@ -48,6 +48,7 @@
 #include "FlushToZero.h"
 #include "GaplessSource.h"
 #include "Limiting/LimiterModule.h"
+#include "Limiting/OutputCeiling.h"
 #include "Loudness/ChannelLayoutDecoder.h"
 #include "Loudness/LufsMeter.h"
 #include "Loudness/TrackLoudnessProfile.h"

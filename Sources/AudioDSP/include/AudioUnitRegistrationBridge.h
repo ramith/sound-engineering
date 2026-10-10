@@ -80,13 +80,12 @@ extern "C"
     /// Returns 0 if `auUnit` is null.
     double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT;
 
-    /// The pre-EQ1b surface, kept until the bridge cuts over to publishEQ (EQ2): the same as
-    /// publishEQ(auUnit, bandGainsDb, count, true). `sampleRate` is IGNORED — the Realizer owns
-    /// the design rate now (engine-plan §6).
-    bool publishEQBandGains(void* auUnit,
-                            const float* bandGainsDb,
-                            uint32_t count,
-                            double sampleRate) AUDIODSP_C_NOEXCEPT;
+    /// Tell the live AdaptiveSoundAU which kind of output it plays on (Sprint EQ, EQ2; founder
+    /// decision 29): the device's kAudioDevicePropertyTransportType FourCC, 0 when unknown. It
+    /// sets the limiter ceiling of the EQ-only path (Intensity 0, EQ on): −0.1 dBTP on a wired or
+    /// built-in output, −1 dBTP on Bluetooth, AirPlay or an unknown link. Every other path keeps
+    /// −1 dBTP. Off-RT; called by the view model when the output changes. No-op if null.
+    void publishOutputTransport(void* auUnit, uint32_t transportType) AUDIODSP_C_NOEXCEPT;
 
     /// Hand the live AdaptiveSoundAU a track's loudness profile (Sprint EQ, EQ1c): the analyzer's
     /// prefix, then its whole-track profile. The engine keeps its own reference (the blocks are

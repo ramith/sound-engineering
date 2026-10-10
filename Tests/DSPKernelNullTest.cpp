@@ -373,6 +373,8 @@ namespace
         {"TrackLoudnessGain_Rules", testTrackLoudnessGainRules, true},
         {"Soak_DSPKernel_ZeroRtAlloc_CausalTap", testSoakDspKernelZeroRtAllocCausalTap, false},
         {"Realizer_LoudnessCost", testRealizerLoudnessCost, false},
+        // Sprint EQ / EQ2: decision 29's EQ-only ceiling.
+        {"Limiter_EqOnlyCeiling", testLimiterEqOnlyCeiling, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine

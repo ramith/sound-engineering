@@ -59,7 +59,7 @@ extern "C"
     /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6).
     /// It does NOT reach the RT kernel: it ignores paramID/value and returns false. The real
     /// control surfaces are the dedicated intent entry points routed through the Realizer —
-    /// `publishIntensity()` (the single intensity surface) and `publishEQBandGains()` for EQ — so
+    /// `publishIntensity()` (the single intensity surface) and `publishEQ()` for EQ — so
     /// there are never two contradictory parameter paths. See the impl note in AUAudioUnit.mm.
     ///
     /// @param auUnit      Opaque pointer to AUAudioUnit.
@@ -70,7 +70,7 @@ extern "C"
 
     /// DEAD STUB by design — kept only as part of the stable exported C-ABI (F6). There is no
     /// readable AU parameter store; the live values live in the Realizer's canonical TargetState.
-    /// Always returns 0.0f. See `setAUParameter` / `publishIntensity` / `publishEQBandGains`.
+    /// Always returns 0.0f. See `setAUParameter` / `publishIntensity` / `publishEQ`.
     ///
     /// @param auUnit      Opaque pointer to AUAudioUnit.
     /// @param paramID     Ignored.
@@ -88,7 +88,7 @@ extern "C"
     bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT;
 
     // publishIntensity(...) is declared in AudioUnitRegistrationBridge.h (sibling of
-    // publishEQBandGains, the other control-plane intent entry point) — declared once.
+    // publishEQ, the other control-plane intent entry point) — declared once.
     //
     // publishCrossfeed(...) likewise lives ONLY in AudioUnitRegistrationBridge.h (the same
     // control-plane intent surface) — declared once there, NOT here, to avoid a duplicate

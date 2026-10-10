@@ -104,11 +104,17 @@ namespace AdaptiveSound
 
     struct LimiterParams
     {
-        // Only user/control-facing parameter. Set ≥ 1.0 to bypass (zero-latency identity).
+        // The control-facing parameters. Set ≥ 1.0 to bypass (zero-latency identity).
         // Attack/release time constants and the look-ahead window are fixed design
         // constants of LimiterModule (computed off-RT in initialize()), not runtime
         // parameters — a runtime look-ahead can't resize the module's fixed ring anyway.
         float truePeakCeilingLinear = kTruePeakCeilingLinear;
+        // The ceiling of the EQ-only path (P1: Intensity 0 with the EQ on; founder decision 29):
+        // −0.1 dBTP on a wired or built-in output, −1 dBTP on a lossy wireless link or an unknown
+        // one. Set by the Realizer from the output's transport; P1 plays at the HIGHER of the two
+        // ceilings (a bypassed limiter stays bypassed); every other path uses
+        // truePeakCeilingLinear.
+        float eqOnlyCeilingLinear = kTruePeakCeilingLinear;
     };
 
     struct alignas(kCacheLineBytes) TargetState

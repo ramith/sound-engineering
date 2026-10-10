@@ -77,13 +77,22 @@ extension AudioViewModel {
 
     // MARK: - Control intents → engine
 
-    /// Hand the engine every playback control intent this view model owns — Intensity and
-    /// crossfeed — at engine-ready (also after device-loss `retryInitialization`, which re-runs
-    /// `initializeEngine`). The EQ publishes from `onEngineReady` (its own view model); after a
-    /// re-allocation the Realizer republishes its canonical state itself.
+    /// Hand the engine every playback control intent this view model owns — Intensity,
+    /// crossfeed and the output's transport — at engine-ready (also after device-loss
+    /// `retryInitialization`, which re-runs `initializeEngine`). The EQ publishes from
+    /// `onEngineReady` (its own view model); after a re-allocation the Realizer republishes its
+    /// canonical state itself.
     func publishPlaybackIntents() {
         publishIntensity()
         publishCrossfeed()
+        publishOutputTransport()
+    }
+
+    /// Tell the engine which kind of output it plays on (founder decision 29: the EQ-only path's
+    /// limiter ceiling follows it). Called whenever `selectedDevice` is set; the engine ignores a
+    /// transport it already has.
+    func publishOutputTransport() {
+        engine.publishOutputTransport(selectedDevice?.transportType ?? 0)
     }
 
     /// Publish `intensity`, clamped with a LOCAL (never re-assigned — see `intensity`).

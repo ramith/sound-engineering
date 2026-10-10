@@ -399,7 +399,7 @@ bool setAUParameter(void* auUnit, uint64_t paramID, float value) AUDIODSP_C_NOEX
     // is routed through the dedicated publishIntensity() C-ABI (design §1.5) — the single
     // intensity surface that posts to the Realizer's pending-intensity slot. We deliberately do
     // NOT also accept it here, to avoid two contradictory surfaces. EQ likewise drives the kernel
-    // via publishEQBandGains -> the Realizer, not an AU parameter tree. This stub stays part of
+    // via publishEQ -> the Realizer, not an AU parameter tree. This stub stays part of
     // the stable exported C-ABI; it returns false rather than caching values that never reach the
     // kernel. See publishIntensity().
     return false;
@@ -480,11 +480,11 @@ void setCurrentTrack(void* auUnit, uint64_t trackToken, bool gaplessSeam) AUDIOD
     }
 }
 
-bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) AUDIODSP_C_NOEXCEPT {
-    // The pre-EQ1b surface, kept until the bridge cuts over (EQ2). The Realizer owns the design
-    // rate now, so the caller's `sampleRate` is ignored.
-    (void)sampleRate;
-    return publishEQ(auUnit, bandGainsDb, count, true);
+void publishOutputTransport(void* auUnit, uint32_t transportType) AUDIODSP_C_NOEXCEPT {
+    // Sprint EQ, EQ2 (decision 29): the EQ-only path's limiter ceiling follows the output.
+    if (std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit)) {
+        realizer->setOutputTransport(transportType);
+    }
 }
 
 void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
@@ -530,7 +530,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
 
 void publishChannelLayoutTag(void* auHandle, AudioChannelLayoutTag tag) AUDIODSP_C_NOEXCEPT {
     if (auHandle == nullptr) { return; }
-    // Resolve the AU from the borrowed handle exactly as publishEQBandGains does (non-owning
+    // Resolve the AU from the borrowed handle exactly as publishEQ does (non-owning
     // __bridge borrow; no retain/release). The method decodes off-RT and publishes lock-free.
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auHandle;
     [audioUnit publishChannelLayoutTag:tag];
