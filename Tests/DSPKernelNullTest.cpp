@@ -39,6 +39,8 @@
 //                           loudness-change predictor + their C-ABI vs the libebur128 oracle
 //   EqTransitionTests.inc — Sprint EQ / EQ1b: time-domain curve transitions + the EQ's CPU
 //   EqEngineTests.inc     — Sprint EQ / EQ1b: the RT EQ in the kernel — paths, guards, re-allocation
+//   LoudnessNeutralTests.inc — Sprint EQ / EQ1c part 2: the loudness-neutral gain, live — the
+//                           per-track rules, gapless seams, the causal fallback, On vs Off
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -72,6 +74,7 @@
 #include "SnapshotConcurrencyTests.inc"
 #include "EqTransitionTests.inc" // after EqDesignerTests.inc (its curves)
 #include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
+#include "LoudnessNeutralTests.inc" // after TrackLoudnessTests.inc + EqEngineTests.inc (helpers)
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -356,6 +359,20 @@ namespace
         {"EQ_Reallocate_NewRate", testEqReallocateNewRate, true},
         {"Crossfeed_RederivedOnRateChange", testCrossfeedRederivedOnRateChange, true},
         {"Realizer_ReinitDuringDrain", testRealizerReinitDuringDrain, true},
+        // Sprint EQ / EQ1c part 2: the loudness-neutral gain, live (the timing and the RT-alloc
+        // soak are serial-only: the pool would skew the clock / the guard is process-wide).
+        {"EQ_LoudnessNeutral_OnOff", testEqLoudnessNeutralOnOff, true},
+        {"Loudness_ProfileLate", testLoudnessProfileLate, true},
+        {"Loudness_GaplessSeamStep", testLoudnessGaplessSeamStep, true},
+        {
+            "Loudness_AnalysisFails_CausalFallback",
+            testLoudnessAnalysisFailsCausalFallback,
+            true,
+        },
+        {"Loudness_EditDebounce", testLoudnessEditDebounce, true},
+        {"TrackLoudnessGain_Rules", testTrackLoudnessGainRules, true},
+        {"Soak_DSPKernel_ZeroRtAlloc_CausalTap", testSoakDspKernelZeroRtAllocCausalTap, false},
+        {"Realizer_LoudnessCost", testRealizerLoudnessCost, false},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine

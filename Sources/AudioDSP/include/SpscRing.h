@@ -71,6 +71,29 @@ namespace AdaptiveSound
             return written;
         }
 
+        // Producer (RT): write all `count` elements, or NONE when they do not all fit, so a record
+        // of several elements (an interleaved block of whole frames) is never split by a full
+        // ring. Returns whether it wrote them. noexcept, no allocation, never blocks.
+        [[nodiscard]] auto tryPushAll(const T* src, std::size_t count) noexcept -> bool
+        {
+            std::size_t tail = tail_.load(std::memory_order_relaxed);
+            if (freeSlots(tail) < count)
+            {
+                cachedHead_ = head_.load(std::memory_order_acquire);
+                if (freeSlots(tail) < count)
+                {
+                    return false;
+                }
+            }
+            for (std::size_t i = 0U; i < count; ++i)
+            {
+                slots_[tail] = src[i];
+                tail = (tail + 1U) & kMask;
+            }
+            tail_.store(tail, std::memory_order_release);
+            return true;
+        }
+
         // Consumer (worker): read up to `count` elements into dst; returns the number
         // actually read (< count means the ring drained). noexcept.
         [[nodiscard]] auto popBlock(T* dst, std::size_t count) noexcept -> std::size_t
@@ -124,6 +147,12 @@ namespace AdaptiveSound
 
       private:
         static constexpr std::size_t kMask = Capacity - 1U;
+
+        // Producer: the slots free ahead of `tail` by the cached head (one slot stays unused).
+        [[nodiscard]] auto freeSlots(std::size_t tail) const noexcept -> std::size_t
+        {
+            return (cachedHead_ - tail - 1U) & kMask;
+        }
 
         std::array<T, Capacity> slots_{};
 

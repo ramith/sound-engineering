@@ -4,6 +4,7 @@
 #include "include/FlushToZero.h"
 #include "include/MultichannelView.h"
 #include "Limiting/LimiterModule.h"
+#include "Loudness/CausalLoudnessTap.h"
 #include "Loudness/LoudnessModule.h"
 #include "Spatial/BRIRModule.h"
 #include "Spatial/CrossfeedModule.h"
@@ -13,6 +14,7 @@
 #include <cmath>
 #include <cstring>
 #include <span>
+#include <utility>
 
 namespace AdaptiveSound
 {
@@ -58,6 +60,7 @@ namespace AdaptiveSound
         crossfeedModule_ = std::make_unique<CrossfeedModule>();
         loudnessModule_ = std::make_unique<LoudnessModule>();
         limiterModule_ = std::make_unique<LimiterModule>();
+        causalTap_ = std::make_unique<CausalLoudnessTap>();
 
         eqModule_->initialize(sampleRate, maxFrames);
         clarityModule_->initialize(sampleRate, maxFrames);
@@ -65,6 +68,7 @@ namespace AdaptiveSound
         crossfeedModule_->initialize(sampleRate, maxFrames);
         loudnessModule_->initialize(sampleRate, maxFrames);
         limiterModule_->initialize(sampleRate, maxFrames);
+        causalTap_->initialize(sampleRate, maxFrames);
 
         // Pre-allocate every scratch off-RT, sized to the host's maximumFramesToRender.
         const auto planar = static_cast<size_t>(maxFrames_) * kMaxChannels;
@@ -102,6 +106,32 @@ namespace AdaptiveSound
         {
             loudnessModule_->publishChannelLayout(layout);
         }
+        if (causalTap_ != nullptr)
+        {
+            causalTap_->publishChannelLayout(layout);
+        }
+    }
+
+    void DSPKernel::startCausalLoudness(
+        std::function<void(std::shared_ptr<const TrackLoudnessProfile>)> sink) noexcept
+    {
+        if (causalTap_ != nullptr)
+        {
+            causalTap_->start(std::move(sink));
+        }
+    }
+
+    void DSPKernel::stopCausalLoudness() noexcept
+    {
+        if (causalTap_ != nullptr)
+        {
+            causalTap_->stop();
+        }
+    }
+
+    uint64_t DSPKernel::causalLoudnessFedFrames() const noexcept
+    {
+        return (causalTap_ != nullptr) ? causalTap_->fedFrames() : 0U;
     }
 
     void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept
@@ -114,6 +144,11 @@ namespace AdaptiveSound
         (void)targetStateSnapshot_.tryCopySnapshot(scratchState_);
         currentState_ = scratchState_;
         const TargetState& state = currentState_;
+        const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);
+
+        // The source, ahead of everything, for the causal loudness estimate (a no-op unless one
+        // runs: the fallback for a track whose loudness analysis failed).
+        causalTap_->push(block);
 
         // The EQ adopts its target on every path (even the bit-perfect one), so an EQ turned on
         // during the bypass is seen here.
@@ -131,7 +166,6 @@ namespace AdaptiveSound
 
         // P0 eligibility, with the 2 s hysteresis. The first block after initialize() has no
         // previous output to stay continuous with, so it snaps to its path.
-        const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);
         const bool identity = atZero && eqModule_->isIdentity();
         identityHeldFrames_ = identity ? (identityHeldFrames_ + block.frames()) : 0U;
         if (firstBlock_ && identity)

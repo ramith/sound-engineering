@@ -7,6 +7,8 @@
 
 #include <algorithm> // std::clamp
 #include <cmath>     // std::exp, std::isfinite
+#include <optional>  // the queue-taken loudness copy
+#include <utility>   // std::move
 
 namespace AdaptiveSound
 {
@@ -101,13 +103,41 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    // Marks the Realizer's own queue (dispatch_queue_set_specific), so shutdown() never
+    // dispatch_syncs onto the queue it is running on.
+    constexpr char kQueueKey = 0;
+
+    // The idle debounce before an edit's gain is refreshed at full resolution (A6).
+    constexpr int64_t kLoudnessRefreshDelayNs = 150 * static_cast<int64_t>(NSEC_PER_MSEC);
+
+    // Run `work(Realizer&)` on `queue` if the Realizer still exists by then. A block captures a
+    // C++ REFERENCE by reference, so the work and the weak reference move to the heap and the
+    // block owns them until it runs. The Realizer is only ever locked ON the queue — never on the
+    // caller's thread (the kernel's tap worker must never drop its last reference).
+    template <typename Work>
+    void postWeak(dispatch_queue_t queue, std::weak_ptr<Realizer> weak, Work work)
+    {
+        auto task = std::make_shared<Work>(std::move(work));
+        auto target = std::make_shared<std::weak_ptr<Realizer>>(std::move(weak));
+        dispatch_async(queue, ^{
+            if (std::shared_ptr<Realizer> self = target->lock())
+            {
+                (*task)(*self);
+            }
+        });
+    }
+} // namespace
+
 Realizer::Realizer(std::shared_ptr<DSPKernel> kernel, double sampleRate)
     : kernel_(std::move(kernel)), designer_(std::make_unique<GraphicEQDesigner>()),
-      sampleRate_(sampleRate), designRate_(sampleRate)
+      sampleRate_(sampleRate), designRate_(sampleRate), loudness_(sampleRate)
 {
     // Serial, off-main queue. The control plane is not latency critical and must never run on
     // the RT/render thread.
     queue_ = dispatch_queue_create("com.adaptivesound.realizer", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_set_specific(queue_, &kQueueKey, this, nullptr);
 }
 
 Realizer::~Realizer()
@@ -122,12 +152,33 @@ void Realizer::shutdown()
     {
         return;
     }
-    // Draining barrier: a dispatch_sync of an empty block on a SERIAL queue returns only after
-    // every previously-enqueued block has finished, so no drain runs after the caller drops the
-    // Realizer and releases the kernel.
+    // Draining barrier: a dispatch_sync on a SERIAL queue returns only after every
+    // previously-enqueued block has finished, so no drain runs after the caller drops the
+    // Realizer and releases the kernel. It also ends any causal loudness estimate, so the
+    // kernel's tap never calls back into a Realizer that is going away. On the queue itself
+    // (the last reference dropped by a block) there is nothing to wait for.
+    Realizer* self = this;
+    if (dispatch_get_specific(&kQueueKey) == this)
+    {
+        stopCausalEstimate();
+    }
+    else
+    {
+        dispatch_sync(queue_, ^{
+            self->stopCausalEstimate();
+        });
+    }
+    shutdown_ = true;
+}
+
+void Realizer::barrier()
+{
+    if (queue_ == nullptr)
+    {
+        return;
+    }
     dispatch_sync(queue_, ^{
                   });
-    shutdown_ = true;
 }
 
 void Realizer::postDrain()
@@ -206,6 +257,52 @@ void Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t prese
     }
 }
 
+void Realizer::publishTrackLoudnessProfile(uint64_t token,
+                                           std::shared_ptr<const TrackLoudnessProfile> profile)
+{
+    if (token == 0U || !profile)
+    {
+        return;
+    }
+    postWeak(queue_, weak_from_this(), [token, profile = std::move(profile)](Realizer& self) {
+        if (const auto change = self.loudness_.onProfile(token, profile))
+        {
+            self.applyGainChange(*change);
+        }
+        self.syncCausalEstimate(false); // a profile ends a running estimate
+    });
+}
+
+void Realizer::reportTrackLoudnessFailure(uint64_t token)
+{
+    if (token == 0U)
+    {
+        return;
+    }
+    postWeak(queue_, weak_from_this(), [token](Realizer& self) {
+        self.loudness_.onFailure(token);
+        self.syncCausalEstimate(false);
+    });
+}
+
+void Realizer::setCurrentTrack(uint64_t token, bool gaplessSeam)
+{
+    postWeak(queue_, weak_from_this(), [token, gaplessSeam](Realizer& self) {
+        const auto change = self.loudness_.onCurrentTrack(token, gaplessSeam);
+        if (change)
+        {
+            self.applyGainChange(*change);
+        }
+        AdaptiveSound::log::line("[EQ] loudness: track {:016x} audible ({}) — gain {:+.2f} dB{}",
+                                 static_cast<unsigned long long>(token),
+                                 gaplessSeam ? "gapless seam" : "fresh start",
+                                 self.loudness_.gainDb(),
+                                 self.loudness_.sharesGroupGain() ? ", shared by the gapless group"
+                                                                  : "");
+        self.syncCausalEstimate(true); // a new track: any estimate starts over
+    });
+}
+
 void Realizer::reinitializeKernel(uint32_t sampleRate, uint32_t maxFrames)
 {
     if (queue_ == nullptr || shutdown_)
@@ -229,10 +326,14 @@ void Realizer::reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames)
     }
     sampleRate_ = static_cast<double>(sampleRate);
     designRate_.store(sampleRate_, std::memory_order_release);
+    loudness_.setOutputRate(sampleRate_);
     // Re-realise every rate-dependent intent at the new rate. The EQ module snaps to the first
     // target it adopts after initialize(), so the curve plays at once — no fade-in from flat.
     realizeEq();
     realizeCrossfeed();
+    // initialize() rebuilt the kernel's causal tap: a running estimate starts again on it.
+    causalRunning_ = false;
+    syncCausalEstimate(false);
     canonical_.sequenceNumber += 1;
     AdaptiveSound::log::line("[EQ] Realizer.reinitializeKernel {} Hz, {} frames — EQ re-solved",
                              sampleRate, maxFrames);
@@ -270,6 +371,7 @@ void Realizer::drain()
     {
         eq_ = eq;
         realizeEq();
+        scheduleLoudnessRefresh();
     }
     if (intensityDirty)
     {
@@ -297,11 +399,15 @@ void Realizer::realizeEq()
         AdaptiveSound::log::line("[EQ] Realizer: no EQ design at {} Hz — playing flat", sampleRate_);
         canonical_.eq = EQParams{};
         publishedGainsDb_.fill(0.0);
+        (void)loudness_.onDesign(GraphicEQDesign(), false);
         return;
     }
     const float ramp = EQTargets::rampSeconds(publishedGainsDb_, design.filterGainDb);
     canonical_.eq = EQTargets::toParams(design, ramp);
     publishedGainsDb_ = design.filterGainDb;
+    // The loudness-neutral gain rides with the coefficients, at their τ (decimated for a long
+    // profile; the idle refresh completes it).
+    canonical_.eq.outputGainDb = loudness_.onDesign(design, eq_.isOn);
 }
 
 void Realizer::realizeCrossfeed()
@@ -310,27 +416,145 @@ void Realizer::realizeCrossfeed()
         deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.level, crossfeed_.preset, sampleRate_);
 }
 
+template <typename Work> void Realizer::runOnQueue(const Work& work)
+{
+    if (queue_ == nullptr || dispatch_get_specific(&kQueueKey) == this)
+    {
+        work();
+        return;
+    }
+    dispatch_sync(queue_, ^{
+        work();
+    });
+}
+
+TargetState Realizer::canonicalState()
+{
+    TargetState copy{};
+    runOnQueue([this, &copy] { copy = canonical_; });
+    return copy;
+}
+
+TrackLoudnessGain Realizer::loudnessGain()
+{
+    std::optional<TrackLoudnessGain> copy;
+    runOnQueue([this, &copy] { copy.emplace(loudness_); });
+    return *copy;
+}
+
 void Realizer::applyEq(const EqIntent& intent)
 {
-    eq_ = intent;
-    realizeEq();
-    canonical_.sequenceNumber += 1;
-    publishCanonical();
+    runOnQueue([this, intent] {
+        eq_ = intent;
+        realizeEq();
+        canonical_.sequenceNumber += 1;
+        publishCanonical();
+        scheduleLoudnessRefresh();
+    });
 }
 
 void Realizer::applyIntensity(float value)
 {
-    canonical_.intensityLinear = value;
-    canonical_.sequenceNumber += 1;
-    publishCanonical();
+    runOnQueue([this, value] {
+        canonical_.intensityLinear = value;
+        canonical_.sequenceNumber += 1;
+        publishCanonical();
+    });
 }
 
 void Realizer::applyCrossfeed(const CrossfeedIntent& intent)
 {
-    crossfeed_ = intent;
-    realizeCrossfeed();
+    runOnQueue([this, intent] {
+        crossfeed_ = intent;
+        realizeCrossfeed();
+        canonical_.sequenceNumber += 1;
+        publishCanonical();
+    });
+}
+
+void Realizer::applyGainChange(const TrackLoudnessGain::Change& change)
+{
+    // A gain-only publish: the coefficients' targets are unchanged, so only the EQ module's
+    // output gain glides, at this change's τ.
+    canonical_.eq.outputGainDb = change.gainDb;
+    canonical_.eq.rampSeconds = change.rampSeconds;
     canonical_.sequenceNumber += 1;
+    AdaptiveSound::log::debug("[EQ] loudness: gain {:+.2f} dB over τ {:.3f} s", change.gainDb,
+                              change.rampSeconds);
     publishCanonical();
+}
+
+void Realizer::stopCausalEstimate()
+{
+    if (causalRunning_ && kernel_ != nullptr)
+    {
+        kernel_->stopCausalLoudness();
+    }
+    causalRunning_ = false;
+    causalGeneration_ += 1; // any snapshot still in flight is dropped
+}
+
+void Realizer::syncCausalEstimate(bool restart)
+{
+    const bool wanted = loudness_.wantsCausalEstimate();
+    if (causalRunning_ && (restart || !wanted))
+    {
+        stopCausalEstimate();
+    }
+    if (!wanted || causalRunning_ || kernel_ == nullptr)
+    {
+        return;
+    }
+    // The tap's worker calls the sink, which only posts to the queue: the Realizer is never
+    // locked on the tap's thread, so its last reference can never be dropped there.
+    causalGeneration_ += 1;
+    const uint64_t generation = causalGeneration_;
+    kernel_->startCausalLoudness(
+        [weak = weak_from_this(), queue = queue_, generation](
+            std::shared_ptr<const TrackLoudnessProfile> profile) {
+            postWeak(queue,
+                     weak,
+                     [generation, snapshot = std::move(profile)](Realizer& self) {
+                         self.applyCausalSnapshot(generation, snapshot);
+                     });
+        });
+    causalRunning_ = true;
+    AdaptiveSound::log::line("[EQ] loudness: no track analysis — estimating from the audio as it plays");
+}
+
+void Realizer::applyCausalSnapshot(uint64_t generation,
+                                   std::shared_ptr<const TrackLoudnessProfile> profile)
+{
+    if (generation != causalGeneration_ || !causalRunning_)
+    {
+        return; // from an estimate that has since ended
+    }
+    if (const auto change = loudness_.onCausalSnapshot(std::move(profile)))
+    {
+        applyGainChange(*change);
+    }
+}
+
+void Realizer::scheduleLoudnessRefresh()
+{
+    if (!loudness_.needsRefresh())
+    {
+        return;
+    }
+    refreshGeneration_ += 1;
+    const uint64_t generation = refreshGeneration_;
+    std::weak_ptr<Realizer> weak = weak_from_this();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kLoudnessRefreshDelayNs), queue_, ^{
+        std::shared_ptr<Realizer> self = weak.lock();
+        if (self == nullptr || generation != self->refreshGeneration_)
+        {
+            return; // a later edit re-armed it
+        }
+        if (const auto change = self->loudness_.onRefresh())
+        {
+            self->applyGainChange(*change);
+        }
+    });
 }
 
 void Realizer::publishCanonical()

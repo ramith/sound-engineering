@@ -144,11 +144,12 @@ namespace AdaptiveSound
                         (bufs[ch] != nullptr) ? bufs[ch][frm] : 0.0F;
                 }
             }
+            // All or nothing: a partial push on a full ring would leave a part-frame in it and
+            // shift the worker's channel interleave for good (its reads are frame-aligned).
             const std::size_t want = static_cast<std::size_t>(safeCount) * numChannels;
-            const std::size_t pushed = sampleRing_.tryPushBlock(pushBuf_.data(), want);
-            if (pushed < want)
+            if (!sampleRing_.tryPushAll(pushBuf_.data(), want))
             {
-                droppedFrames_.fetch_add((want - pushed) / numChannels, std::memory_order_relaxed);
+                droppedFrames_.fetch_add(safeCount, std::memory_order_relaxed);
             }
 
             makeupGainRamp_.target = makeupGainLinear_.load(std::memory_order_acquire);

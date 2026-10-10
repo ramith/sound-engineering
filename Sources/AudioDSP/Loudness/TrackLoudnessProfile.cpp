@@ -7,6 +7,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
+#include <numbers>
+#include <numeric>
+#include <vector>
 
 namespace AdaptiveSound
 {
@@ -258,5 +262,81 @@ namespace AdaptiveSound
             return kSilenceLufs;
         }
         return loudness.plainLufs;
+    }
+
+    double blockLoudnessLufs(const TrackLoudnessProfile& profile, uint32_t index) noexcept
+    {
+        if (!wellFormed(profile) || index >= profile.blockCount)
+        {
+            return kSilenceLufs;
+        }
+        const std::span<const float> bands = profile.block(index);
+        const double energy = std::accumulate(bands.begin(),
+                                              bands.end(),
+                                              0.0,
+                                              [](double sum, float power)
+                                              { return sum + static_cast<double>(power); });
+        return (energy > kTinyEnergy) ? (kLufsOffset + (kDbPowerScale * std::log10(energy)))
+                                      : kSilenceLufs;
+    }
+
+    namespace
+    {
+        // |H(e^{jω})|² of one K-weighting stage.
+        [[nodiscard]] double biquadPower(const LufsBiquad& stage, double omega) noexcept
+        {
+            const double c1 = std::cos(omega);
+            const double s1 = std::sin(omega);
+            const double c2 = std::cos(2.0 * omega);
+            const double s2 = std::sin(2.0 * omega);
+            const double numRe = stage.b0 + (stage.b1 * c1) + (stage.b2 * c2);
+            const double numIm = -((stage.b1 * s1) + (stage.b2 * s2));
+            const double denRe = 1.0 + (stage.a1 * c1) + (stage.a2 * c2);
+            const double denIm = -((stage.a1 * s1) + (stage.a2 * s2));
+            return ((numRe * numRe) + (numIm * numIm)) / ((denRe * denRe) + (denIm * denIm));
+        }
+
+        // The pink prior's level: a typical programme loudness, well inside both gates.
+        constexpr double kPinkPriorLufs = -23.0;
+    } // namespace
+
+    std::shared_ptr<const TrackLoudnessProfile> makePinkPriorProfile(double sampleRate)
+    {
+        const uint32_t bands = TrackLoudness::bandCount(sampleRate);
+        if (bands == 0U)
+        {
+            return nullptr;
+        }
+        auto prior = std::make_shared<TrackLoudnessProfile>();
+        prior->sampleRate = sampleRate;
+        prior->channelCount = 1U;
+        prior->bandCount = bands;
+        prior->blockCount = 1U;
+        prior->bandPower.assign(bands, 0.0F);
+        const LufsKWeight kWeight = makeKWeighting(sampleRate);
+        std::vector<double> power(bands, 0.0);
+        double total = 0.0;
+        for (uint32_t band = 0U; band < bands; ++band)
+        {
+            const double lower = (band == 0U) ? 0.0 : TrackLoudness::edgeHz(band - 1U);
+            const double upper =
+                (band + 1U >= bands) ? (sampleRate / 2.0) : TrackLoudness::edgeHz(band);
+            const double centre = TrackLoudness::bandCentreHz(band, sampleRate);
+            const double omega = 2.0 * std::numbers::pi * centre / sampleRate;
+            const double octaves =
+                std::log(upper / std::max(lower, TrackLoudness::kLowestCentreFloorHz));
+            power[band] = std::max(0.0, octaves) * biquadPower(kWeight.shelf, omega) *
+                          biquadPower(kWeight.rlb, omega);
+            total += power[band];
+        }
+        const double target =
+            std::pow(kDecibelBase, (kPinkPriorLufs - kLufsOffset) / kDbPowerScale);
+        const double scale = (total > 0.0) ? (target / total) : 0.0;
+        for (uint32_t band = 0U; band < bands; ++band)
+        {
+            prior->bandPower[band] = static_cast<float>(power[band] * scale);
+        }
+        prior->sourceLoudnessLufs = profileLoudnessLufs(*prior);
+        return prior;
     }
 } // namespace AdaptiveSound
