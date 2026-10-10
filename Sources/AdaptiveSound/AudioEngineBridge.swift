@@ -2,6 +2,7 @@ import Accelerate
 @preconcurrency import AVFoundation
 import Foundation
 import os
+import TrackLoudnessKit
 
 // MARK: - AudioEngineBridge
 
@@ -172,6 +173,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// The handler receives the session that just ended and the live player node. Cleared on stop /
     /// seek / track-change (via `stopEnhancedResampler`) so a stale handler cannot fire.
     var onResamplerEOF: ((EnhancedResampleSession, AVAudioPlayerNode) -> Void)?
+
+    /// The track loudness analyzer (EQ1c): profiles the audible track and the next one for the
+    /// loudness-neutral EQ gain (`AudioEngineBridge+TrackLoudness.swift`). Thread-safe; its
+    /// requests return at once and run in order.
+    let loudnessAnalyzer = TrackLoudnessAnalyzer(log: { logUX($0) })
 
     /// Whether the Enhanced path is INTENDED to be playing — set when Enhanced playback starts,
     /// cleared on stop / device-loss / end-of-queue. The config-change + device-change re-establish
