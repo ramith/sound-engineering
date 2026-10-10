@@ -56,6 +56,9 @@ extension AudioViewModel {
                 // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
                 engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
+                // Launch publish (Sprint EQ engine-plan §5.4): the engine plays the Intensity and
+                // crossfeed the UI shows from the first block, not the kernel's own defaults.
+                publishPlaybackIntents()
                 // Fire the ready hook the instant the AU is live (e.g. EQ re-dispatches its
                 // restored "last setting" curve, which no-ops until now). This is the single
                 // ready-transition site, so it also covers device-loss `retryInitialization`.
@@ -70,6 +73,30 @@ extension AudioViewModel {
                 isEngineReady = false
             }
         }
+    }
+
+    // MARK: - Control intents → engine
+
+    /// Hand the engine every playback control intent this view model owns — Intensity and
+    /// crossfeed — at engine-ready (also after device-loss `retryInitialization`, which re-runs
+    /// `initializeEngine`). The EQ publishes from `onEngineReady` (its own view model); after a
+    /// re-allocation the Realizer republishes its canonical state itself.
+    func publishPlaybackIntents() {
+        publishIntensity()
+        publishCrossfeed()
+    }
+
+    /// Publish `intensity`, clamped with a LOCAL (never re-assigned — see `intensity`).
+    /// Synchronous, off-RT control-plane call (borrows the AU under the leaf lock). No Task:
+    /// publishIntensity has no suspension point, and an unstructured Task only risks applying an
+    /// earlier value after a later one under rapid slider drags (S3 finding F4).
+    func publishIntensity() {
+        engine.publishIntensity(max(0, min(1, intensity)))
+    }
+
+    /// Publish the crossfeed state (On/Off and strength).
+    func publishCrossfeed() {
+        engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength)
     }
 
     /// AWAITABLE teardown. The terminate path (`AppDelegate.applicationShouldTerminate`) awaits
