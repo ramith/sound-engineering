@@ -15,7 +15,7 @@ private enum CIntensityABI {
 extension AudioEngineBridge {
     /// Publish a new Reimagine intensity value (wet/dry blend, [0, 1]) to the live DSP AU.
     ///
-    /// Mirrors the `publishEQGains` pattern: borrows the AU handle passUnretained and calls
+    /// Mirrors the `publishEQ` pattern: borrows the AU handle passUnretained and calls
     /// the `publishIntensity` C-ABI (S6 §1.5). No-op when the AU is not yet instantiated.
     /// Must be called from a single control thread (the `@MainActor`).
     func publishIntensity(_ intensity: Float) {

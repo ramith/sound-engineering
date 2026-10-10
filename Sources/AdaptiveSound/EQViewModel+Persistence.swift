@@ -1,3 +1,4 @@
+import EQEditKit
 import Foundation
 
 // MARK: - EQViewModel Persistence
@@ -83,12 +84,12 @@ extension EQViewModel {
     /// mirroring `loadCustomPresets`' 31-band filter.
     ///
     /// Preset mapping: `presetRaw == nil` ⇒ Custom (`selectedPreset = nil`); a known rawValue ⇒
-    /// that `EQPreset`; an unknown/renamed rawValue degrades to Custom (`flatMap` → `nil`) while
+    /// that `EQBuiltInPreset`; an unknown/renamed rawValue degrades to Custom (`flatMap` → `nil`) while
     /// keeping the validated curve, so the user's last-heard shape is preserved.
     private func restoreLiveState() {
         guard let state = loadLiveState(), state.bandGains.count == 31 else { return }
         bandGains = state.bandGains.map { max(-12.0, min(12.0, $0)) }
-        selectedPreset = state.presetRaw.flatMap(EQPreset.init(rawValue:))
+        selectedPreset = state.presetRaw.flatMap(EQBuiltInPreset.init(rawValue:))
     }
 
     private func loadLiveState() -> EQLiveState? {

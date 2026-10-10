@@ -358,9 +358,10 @@ final class AudioViewModel {
     }
 
     /// Publish the 31-band EQ gain vector (dB) to the live DSP AU. Synchronous + off-RT;
-    /// called once per EQ change by `EQViewModel.dispatchAllBands()`.
+    /// called once per EQ change by `EQViewModel.dispatchAllBands()`. Today's EQ has no Off
+    /// (Flat is its "off"), so it always publishes On; the engine contract carries `isOn`.
     func publishEQGains(_ gainsDb: [Float]) {
-        engine.publishEQGains(gainsDb)
+        engine.publishEQ(points: gainsDb, isOn: true)
     }
 }
 
