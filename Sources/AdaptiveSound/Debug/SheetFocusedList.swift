@@ -15,5 +15,8 @@
         case rail
         /// A browse grid — its cursor on the fixture's tile (`SheetGridStates.cursor`).
         case grid
+        /// The EQ presets list — its cursor on the preset playing. (The EQ graph's cursor is seeded by
+        /// `SheetEQGraph`.)
+        case eqPresets
     }
 #endif
