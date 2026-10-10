@@ -34,18 +34,27 @@ extension EQViewModel {
         guard let data = defaults.data(forKey: Key.myPresets),
               let decoded = try? JSONDecoder().decode([String: [Float]].self, from: data)
         else { return [:] }
-        return decoded.filter { $0.value.count == EQBands.count && $0.value.allSatisfy(\.isFinite) }
+        return decoded.filter { EQCurve.isWellFormed($0.value) }
     }
 
     /// The stored slots: `eqStateV2`, or on the first launch after the upgrade the v1 EQ migrated
-    /// (`EQMigration`) and written at once, so it migrates once. Unreadable v2 data plays Flat and
-    /// stays on disk until the next write. A slot on a My Preset that no longer exists keeps its
-    /// curve as an edited Flat.
+    /// (`EQMigration`) and written at once, so it migrates once. A v1 build run since (a downgrade,
+    /// then this build again) left its EQ in `eqLiveStateV1`: the shared slot catches up with it and
+    /// is written at once (`EQMigration.catchUp`). Unreadable v2 data plays Flat and stays on disk
+    /// until the next write. A slot on a My Preset that no longer exists keeps its curve as an edited
+    /// Flat.
     static func loadStore(from defaults: UserDefaults, myPresets: [String: [Float]]) -> EQStore {
         var store: EQStore
         if let data = defaults.data(forKey: Key.store) {
             do {
-                store = try JSONDecoder().decode(EQStore.self, from: data)
+                let stored = try JSONDecoder().decode(EQStore.self, from: data)
+                store = EQMigration.catchUp(stored, withV1: defaults.data(forKey: Key.liveStateV1),
+                                            customPresets: myPresets)
+                if store != stored {
+                    write(store, to: defaults)
+                    logUX("EQ persistence: caught up with eqLiveStateV1 — shared "
+                        + "'\(stored[slot: nil].preset.displayName)' → '\(store[slot: nil].preset.displayName)'")
+                }
             } catch {
                 logUX("EQ persistence: eqStateV2 unreadable (\(error.localizedDescription)) — playing Flat")
                 store = EQStore(shared: .flat)

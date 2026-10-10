@@ -16,6 +16,13 @@ public struct EQCurve: Equatable, Codable, Sendable {
     /// The flat curve: every point at 0 dB. What the engine plays when the EQ is off.
     public static let flat = EQCurve(points: [Float](repeating: 0, count: EQBands.count))
 
+    /// Whether `points` can be played: one finite value per band. Points from storage or from a My
+    /// Preset are checked with this before they become a curve (`init(points:)` traps on a wrong
+    /// count).
+    public static func isWellFormed(_ points: [Float]) -> Bool {
+        points.count == EQBands.count && points.allSatisfy(\.isFinite)
+    }
+
     /// The curve that plays exactly `points` (each held in ±`EQBands.pointLimitDb`), with no
     /// Tone. `points` must hold one value per band.
     public init(points: [Float]) {
