@@ -8,8 +8,9 @@ import SwiftUI
 /// tab). Per-output memory isn't here: the composition root's Edge 5 switches the slot with any tab
 /// (or no window) showing, and the shell's `EQOutputToast` says so.
 ///
-/// The screen lets go of a held Compare on Esc (bubbling from whatever holds focus), on the window
-/// losing key or the app going to the background, and on a tab change (this view goes away).
+/// The screen lets go of a held Compare on Esc (anywhere in the app: `releasesCompareOnEscape`), on the
+/// window losing key or the app going to the background, and on a tab change (this view goes away); the
+/// app delegate lets go when the window closes.
 struct EQTabView: View {
     @Environment(EQViewModel.self) private var eq
     @Environment(\.appearsActive) private var appearsActive
@@ -17,9 +18,12 @@ struct EQTabView: View {
     @State private var presetSheet: EQPresetSheet?
 
     var body: some View {
+        // Two focus sections, so Tab finishes the rail (switch, presets, Tone) before the graph card.
         HStack(alignment: .top, spacing: CGFloat(EQScreenLayout.columnGap)) {
             EQRail(save: beginSave, rename: beginRename) { EQToneCard() }
+                .focusSection()
             EQGraphCard(save: beginSave)
+                .focusSection()
         }
         .padding(.horizontal, CGFloat(EQScreenLayout.insetHorizontal))
         .padding(.top, CGFloat(EQScreenLayout.insetTop))
@@ -29,7 +33,7 @@ struct EQTabView: View {
         .sheet(item: $presetSheet) { sheet in
             SaveCustomPresetView(sheet: sheet, eqViewModel: eq)
         }
-        .onKeyPress(.escape, action: releaseCompare)
+        .releasesCompareOnEscape(eq)
         .onChange(of: appearsActive) { _, active in
             if !active {
                 eq.endCompare()
@@ -45,11 +49,5 @@ struct EQTabView: View {
 
     private func beginRename(_ name: String) {
         presetSheet = .rename(name)
-    }
-
-    private func releaseCompare() -> KeyPress.Result {
-        guard eq.isComparing else { return .ignored }
-        eq.endCompare()
-        return .handled
     }
 }

@@ -45,12 +45,14 @@ struct SaveCustomPresetView: View {
                     .suppressesTransportSpace(while: $nameFocused)
                     .onAppear { nameFocused = true }
                     .onSubmit(commit)
-                    .accessibilityHint(note ?? "")
+                // The line keeps its room when empty, so the sheet doesn't jump; VoiceOver reads it
+                // whenever it says something, and hears it as it appears or changes.
                 Text(note ?? " ")
                     .font(DesignSystem.Font.caption)
                     .foregroundStyle(noteColor)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityHidden(true) // the field's hint carries it
+                    .accessibilityHidden(note == nil)
+                    .onChange(of: note) { _, line in announce(line) }
             }
 
             HStack {
@@ -132,5 +134,10 @@ struct SaveCustomPresetView: View {
 
     private func dismissSheet() {
         dismiss()
+    }
+
+    private func announce(_ line: String?) {
+        guard let line else { return }
+        AccessibilityNotification.Announcement(line).post()
     }
 }

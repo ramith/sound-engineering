@@ -14,15 +14,16 @@ public enum EQAudibleState: Equatable, Sendable {
     /// The audio engine isn't running yet: nothing plays, and the EQ plays as set once it starts.
     case engineNotReady
 
-    /// The state for these facts. The first that applies wins: no engine, then Pure Mode (no EQ can
-    /// play on either), then Off, then a held Compare.
+    /// The state for these facts. The first that applies wins: Off (the user's own switch — an EQ that
+    /// is off draws no response whatever else is true), then no engine, then Pure Mode (no EQ can play
+    /// on either), then a held Compare.
     public init(isOn: Bool, isComparing: Bool, pureModeEngaged: Bool, engineReady: Bool) {
-        self = if !engineReady {
+        self = if !isOn {
+            .off
+        } else if !engineReady {
             .engineNotReady
         } else if pureModeEngaged {
             .pureMode
-        } else if !isOn {
-            .off
         } else if isComparing {
             .comparing
         } else {
@@ -34,6 +35,14 @@ public enum EQAudibleState: Equatable, Sendable {
     /// plays instead: a flat 0 dB. A stopped engine still draws the EQ as it will play once it runs.
     public var drawsResponse: Bool {
         self == .playing || self == .engineNotReady
+    }
+
+    /// Whether the graph shows the readouts of an edit in progress — the keyboard cursor's, a Tone
+    /// slider's, with its shaded region: while the EQ plays, and where it is on but can't be heard yet
+    /// (Pure Mode, no engine), since editing goes on there. Off and a held Compare say what plays
+    /// instead; any edit ends both.
+    public var showsEditReadouts: Bool {
+        self == .playing || self == .pureMode || self == .engineNotReady
     }
 
     /// Whether Compare can be held (or is): only while the EQ really plays — there is nothing to

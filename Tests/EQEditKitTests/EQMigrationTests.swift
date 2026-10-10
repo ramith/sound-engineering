@@ -136,10 +136,30 @@ struct EQMigrationTests {
         #expect(EQMigration.catchUp(current, withV1: nil, customPresets: [:]) == current)
         // Written before the fingerprint existed: it records the blob on disk and keeps its own state.
         let older = EQStore(shared: edited)
+        #expect(older.v1Fingerprint == nil, "only a pre-rule store has no fingerprint at all")
         let vocalBlob = Self.v1("Vocal", EQBuiltInPreset.vocal.points)
         let adopted = EQMigration.catchUp(older, withV1: vocalBlob, customPresets: [:])
         #expect(adopted[slot: nil] == edited)
         #expect(adopted.v1Fingerprint == EQMigration.fingerprint(of: vocalBlob))
+        // …and with no blob on disk it records that there was none, keeping its state.
+        let marked = EQMigration.catchUp(older, withV1: nil, customPresets: [:])
+        #expect(marked[slot: nil] == edited && marked.v1Fingerprint == EQMigration.noV1Blob)
+    }
+
+    @Test("MIGRATE-10: a fresh install, then a downgrade that writes a v1 EQ, then this build again — it catches up")
+    func freshInstallThenDowngrade() {
+        // No v1 blob at first launch: the store says so, which is not the pre-rule "no fingerprint".
+        var store = EQMigration.store(fromV1: nil, customPresets: [:])
+        #expect(store[slot: nil] == .flat)
+        #expect(store.v1Fingerprint == EQMigration.noV1Blob)
+        // The user edits here, then runs a v1 build, which chooses Vocal and writes eqLiveStateV1.
+        store[slot: nil] = EQState(preset: .builtIn(.warm), curve: EQFixture.curve([20: 5]))
+        let vocalBlob = Self.v1("Vocal", EQBuiltInPreset.vocal.points)
+        let caughtUp = EQMigration.catchUp(store, withV1: vocalBlob, customPresets: [:])
+        #expect(caughtUp[slot: nil] == EQState(preset: .builtIn(.vocal), curve: nil), "the v1 EQ is the latest")
+        #expect(caughtUp.v1Fingerprint == EQMigration.fingerprint(of: vocalBlob))
+        // Once: the same blob again changes nothing.
+        #expect(EQMigration.catchUp(caughtUp, withV1: vocalBlob, customPresets: [:]) == caughtUp)
     }
 
     @Test("MIGRATE-05: a migrated store has no pins (v1's per-output map was never written)")

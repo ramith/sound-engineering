@@ -347,6 +347,7 @@ final class AudioViewModel {
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.defaults = defaults
         self.engine = engine
+        eqDesignRate = engine.eqSampleRate()
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
@@ -377,9 +378,16 @@ final class AudioViewModel {
         engine.publishEQ(points: points, isOn: isOn)
     }
 
-    /// The rate the engine designs the EQ at, so the EQ graph's played curve is designed the same way.
-    func eqSampleRate() -> Double {
-        engine.eqSampleRate()
+    /// The rate the engine designs the EQ at, polled with the other readouts (`pollEngineReadouts`) and
+    /// observed: the EQ graph's played curve is designed at it, and redraws when the output's rate moves.
+    private(set) var eqDesignRate: Double
+
+    /// Re-reads the EQ's design rate, writing only on a change (Observation has no equality gate).
+    func refreshEQDesignRate() {
+        let rate = engine.eqSampleRate()
+        if eqDesignRate != rate {
+            eqDesignRate = rate
+        }
     }
 }
 

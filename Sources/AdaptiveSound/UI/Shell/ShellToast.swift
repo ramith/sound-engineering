@@ -70,8 +70,18 @@ struct ShellToastHost: View {
     let open: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The token of a toast already up when the host appeared: stale, never shown or spoken.
+    /// The token of a toast already up when the host was created: stale, never shown or spoken.
     @State private var staleToken: Int?
+
+    init(toast: ShellToastSlot.Toast?, systemImage: String, hint: String, open: @escaping () -> Void) {
+        self.toast = toast
+        self.systemImage = systemImage
+        self.hint = hint
+        self.open = open
+        // A State's initial value is taken once, when the host is created: whatever toast is up then
+        // was raised while no window showed it.
+        _staleToken = State(initialValue: toast?.token)
+    }
 
     var body: some View {
         let shown = toast.flatMap { $0.token == staleToken ? nil : $0 }
@@ -86,7 +96,6 @@ struct ShellToastHost: View {
         .allowsHitTesting(shown != nil)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: shown != nil)
         .onChange(of: toast?.token) { _, _ in announce() }
-        .onAppear { staleToken = toast?.token }
     }
 
     /// Speak a newly raised message even though VoiceOver focus is elsewhere (the toast is non-modal and

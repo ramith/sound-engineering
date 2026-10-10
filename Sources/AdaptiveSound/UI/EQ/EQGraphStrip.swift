@@ -38,13 +38,29 @@ struct EQGraphStrip: View {
     }
 
     @ViewBuilder private var message: some View {
-        switch audible {
-        case .playing:
+        if audible == .playing {
             if toneReadout == nil, let keyboardReadout {
                 EQKeyboardReadout(text: keyboardReadout)
             } else {
                 EQGraphLegend(showsHint: !isDragging, toneReadout: toneReadout)
             }
+        } else if audible.showsEditReadouts, let toneReadout {
+            // Editing where the EQ is on but can't be heard yet (Pure Mode, no engine): the readout of
+            // what is being edited, in place of the state's line until the edit is done.
+            Text(toneReadout)
+                .foregroundStyle(DesignSystem.Color.labelSecondary)
+        } else if audible.showsEditReadouts, let keyboardReadout {
+            EQKeyboardReadout(text: keyboardReadout)
+        } else {
+            stateMessage
+        }
+    }
+
+    /// The line that says what plays when it isn't the curve on screen.
+    @ViewBuilder private var stateMessage: some View {
+        switch audible {
+        case .playing:
+            EmptyView()
         case .engineNotReady:
             stateCopy("The audio engine isn't running yet — the EQ plays as set once it starts.",
                       short: "Audio engine not running yet")
