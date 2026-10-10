@@ -178,6 +178,9 @@ static auto testEqReadbackEqualsEngine() -> void
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
     realizer->applyIntensity(0.0F); // P1: EQ → limiter (no normaliser, no coloration)
     realizer->applyEq(engineEqIntent(warm, true));
+    // Render from Intensity 0 (as the app allocates after its launch publish): a move to 0 while
+    // rendering glides the normaliser out over 2 s first (decision 33).
+    realizer->reinitializeKernel(static_cast<uint32_t>(kEngineFs), kEngineBlock);
 
     const std::vector<double> tones = {50.0, 200.0, 1000.0, 4000.0, 12000.0};
     const std::vector<double> measured = engineToneGainsDb(*kernel, tones, 0.02, 1.5);
@@ -976,6 +979,8 @@ static auto testEqReallocateKeepsCurve() -> void
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
     realizer->applyIntensity(0.0F);
     realizer->applyEq(engineEqIntent(warm, true));
+    // Render from Intensity 0 (decision 33 would glide the normaliser out over 2 s otherwise).
+    realizer->reinitializeKernel(static_cast<uint32_t>(kEngineFs), kEngineBlock);
     const std::vector<double> tones = {60.0, 400.0, 3000.0};
     const std::vector<double> before = engineToneGainsDb(*kernel, tones, 0.02, 1.0);
     // The host re-allocates (a channel-layout change at the same rate): the curve must survive,
