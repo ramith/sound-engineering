@@ -153,6 +153,21 @@ under the graph), and it must land before the listening check.
 - **`EQAudibleState.engineNotReady`** is a fifth state (ui-plan §4 has four): with no engine nothing plays,
   and the strip says so, while the graph still draws the EQ as it will play once the engine runs.
 
+## Recorded deviations from items 14–19 (the engine fix round, 2026-10-10)
+
+- **17: the 5 ms fade keeps the power for the streams' measured correlation**, not a plain equal-power law.
+  The two streams are the same audio 3 ms apart: broadband audio is nearly uncorrelated (equal-gain dipped it
+  −3.3 dB), but a tone that lines up with itself is not (equal-power bumps a 1 kHz tone +3 dB and fails
+  `Kernel_PathSwitch_NoGlitch`). The fade measures ρ over the block and holds equal-power at ρ = 0,
+  equal-gain at ρ = 1.
+- **18: a stated budget, not a cap**: 5 % × fs / 192 kHz of one core (10 % at 384 kHz, 20 % at 768 kHz;
+  measured 4.8 / 9.5 %). Holding the EQ flat above a cap would make the graph stop being what plays.
+- **19: no clamp of |ΔL| to ~3 dB**. Measured, it breaks decision 26 on ordinary music (On vs Off: 808
+  5.08 dB, mix 2.57, bright 2.19 against bounds of 0.15–0.25): real curves change real music by up to ~8 dB.
+  The predictor's pathological errors are under-compensation (up to 8.1 dB short); where it goes past the
+  true change it goes ≤ 2.78 dB past, which is now gated (≤ 3). The sane bound kept: a prediction never
+  leaves the played curve's own [smallest, largest] gain.
+
 ## Lanes and ownership (A1–A3)
 
 | Lane | PRs (order) | Notes |
