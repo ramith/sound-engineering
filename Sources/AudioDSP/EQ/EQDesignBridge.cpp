@@ -6,15 +6,11 @@
 // whole design and read-back succeed.
 
 #include "../include/EQDesignBridge.h"
+#include "EQDesignerHandle.h"
 #include "GraphicEQDesigner.h"
 #include <cstddef>
 #include <new>
 #include <span>
-
-struct AsEqDesigner
-{
-    AdaptiveSound::GraphicEQDesigner designer;
-};
 
 namespace
 {

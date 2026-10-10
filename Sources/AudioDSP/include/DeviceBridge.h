@@ -32,6 +32,11 @@
 // Pure C11; #pragma once guards double-include.
 #include "EQDesignBridge.h"
 
+// Re-export the pure-C track loudness profiler + loudness-change predictor (Sprint EQ, EQ1c) so
+// `import AudioDSP` exposes the asLoudnessProfiler* / asLoudnessProfile* / asLoudnessPredictChangeDb
+// API to the Swift TrackLoudnessAnalyzer. Pure C11; #pragma once guards double-include.
+#include "TrackLoudnessBridge.h"
+
 // MARK: - CDeviceInfo
 
 /// Flat C struct representing one audio output device.
