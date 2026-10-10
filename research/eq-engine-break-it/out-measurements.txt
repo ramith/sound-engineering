@@ -1,0 +1,459 @@
+
+===== tau-classes =====
+  Presence                                     max|solved|   4.33 dB  Off->it tau  10 ms
+  Clarity                                      max|solved|   3.83 dB  Off->it tau  10 ms
+  Warm                                         max|solved|   5.56 dB  Off->it tau  10 ms
+  Loudness                                     max|solved|   2.83 dB  Off->it tau  10 ms
+  Vocal                                        max|solved|   2.79 dB  Off->it tau  10 ms
+  Studio                                       max|solved|   1.81 dB  Off->it tau  10 ms
+  single band 3 (40 Hz) +6                     max|solved|   8.73 dB  Off->it tau  10 ms
+  single band 3 (40 Hz) +9                     max|solved|  13.23 dB  Off->it tau  40 ms
+  single band 3 (40 Hz) +12                    max|solved|  17.83 dB  Off->it tau 160 ms
+  single band 3 (40 Hz) -12                    max|solved|  17.83 dB  Off->it tau 160 ms
+  single band 10 (200 Hz) +6                   max|solved|   8.73 dB  Off->it tau  10 ms
+  single band 10 (200 Hz) +9                   max|solved|  13.23 dB  Off->it tau  40 ms
+  single band 10 (200 Hz) +12                  max|solved|  17.83 dB  Off->it tau 160 ms
+  single band 10 (200 Hz) -12                  max|solved|  17.83 dB  Off->it tau 160 ms
+  single band 17 (1000 Hz) +6                  max|solved|   8.73 dB  Off->it tau  10 ms
+  single band 17 (1000 Hz) +9                  max|solved|  13.23 dB  Off->it tau  40 ms
+  single band 17 (1000 Hz) +12                 max|solved|  17.84 dB  Off->it tau 160 ms
+  single band 17 (1000 Hz) -12                 max|solved|  17.84 dB  Off->it tau 160 ms
+  single band 24 (5012 Hz) +6                  max|solved|   8.78 dB  Off->it tau  10 ms
+  single band 24 (5012 Hz) +9                  max|solved|  13.30 dB  Off->it tau  40 ms
+  single band 24 (5012 Hz) +12                 max|solved|  17.93 dB  Off->it tau 160 ms
+  single band 24 (5012 Hz) -12                 max|solved|  17.93 dB  Off->it tau 160 ms
+  single band 27 (10000 Hz) +6                 max|solved|   8.87 dB  Off->it tau  10 ms
+  single band 27 (10000 Hz) +9                 max|solved|  13.46 dB  Off->it tau  40 ms
+  single band 27 (10000 Hz) +12                max|solved|  18.16 dB  Off->it tau 160 ms
+  single band 27 (10000 Hz) -12                max|solved|  18.16 dB  Off->it tau 160 ms
+  single band 30 (19953 Hz) +6                 max|solved|   7.17 dB  Off->it tau  10 ms
+  single band 30 (19953 Hz) +9                 max|solved|  10.76 dB  Off->it tau  10 ms
+  single band 30 (19953 Hz) +12                max|solved|  14.36 dB  Off->it tau  40 ms
+  single band 30 (19953 Hz) -12                max|solved|  14.36 dB  Off->it tau  40 ms
+  two adjacent +12 (1k, 1.25k)                 max|solved|  10.78 dB  Off->it tau  10 ms
+  cliff +12/-12 (1k/1.25k)                     max|solved|  24.80 dB  Off->it tau 160 ms
+  step 0 -> +12 at 1 kHz                       max|solved|  11.22 dB  Off->it tau  10 ms
+  bass +12 up to 100 Hz, hard edge             max|solved|  11.24 dB  Off->it tau  10 ms
+  3-band notch -6/-12/-6                       max|solved|  10.75 dB  Off->it tau  10 ms
+  Warm, 125 Hz dragged to +12                  max|solved|   8.01 dB  Off->it tau  10 ms
+  Warm, 125 Hz pulled to -12 (one point)       max|solved|  28.02 dB  Off->it tau 160 ms
+  Tone +12 +0 +0 +0 +0                         max|solved|   8.43 dB  Off->it tau  10 ms
+  Tone +0 +0 +12 +0 +0                         max|solved|   6.71 dB  Off->it tau  10 ms
+  Tone +0 +0 +0 +0 +12                         max|solved|  10.87 dB  Off->it tau  10 ms
+  Tone +12 +0 -12 +0 +12                       max|solved|  10.87 dB  Off->it tau  10 ms
+  Tone +12 -12 +12 -12 +12                     max|solved|  10.87 dB  Off->it tau  10 ms
+
+===== tau-from-published =====
+  alternating -> Off -> Warm's end (direct, tau 160 ms)      local  +0.17 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Off -> Warm] +10 ms (tau 160/10)           local  +0.83 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Off -> Warm] +30 ms (tau 160/10)           local  +0.41 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Off -> Warm] +60 ms (tau 160/10)           local  +0.15 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Off -> Warm] +120 ms (tau 160/10)          local  +0.14 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Off -> Warm] +250 ms (tau 160/10)          local  +0.12 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> Warm -> Presence's end (direct, tau 160 ms) local  +0.06 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Warm -> Presence] +10 ms (tau 160/10)      local  +0.02 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Warm -> Presence] +30 ms (tau 160/10)      local  +0.02 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Warm -> Presence] +60 ms (tau 160/10)      local  +0.02 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Warm -> Presence] +120 ms (tau 160/10)     local  +0.02 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Warm -> Presence] +250 ms (tau 160/10)     local  +0.02 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> Presence -> Off's end (direct, tau 160 ms)  local  +0.12 dB @   4439 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Presence -> Off] +10 ms (tau 160/10)       local  +0.01 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Presence -> Off] +30 ms (tau 160/10)       local  +0.01 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Presence -> Off] +60 ms (tau 160/10)       local  +0.01 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Presence -> Off] +120 ms (tau 160/10)      local  +0.01 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  alternating -> [Presence -> Off] +250 ms (tau 160/10)      local  +0.01 dB @     33 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> Off -> Warm's end (direct, tau 160 ms) local  +0.83 dB @   2205 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Off -> Warm] +10 ms (tau 160/10)     local  +1.10 dB @     44 Hz  peak +0.00 dB  longest >+1dB    9.8 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Off -> Warm] +30 ms (tau 160/10)     local  +0.89 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Off -> Warm] +60 ms (tau 160/10)     local  +0.64 dB @     29 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Off -> Warm] +120 ms (tau 160/10)    local  +0.42 dB @   2205 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Off -> Warm] +250 ms (tau 160/10)    local  +0.09 dB @     29 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> Warm -> Presence's end (direct, tau 160 ms) local  +0.95 dB @    204 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Warm -> Presence] +10 ms (tau 160/10) local  +0.02 dB @   3860 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Warm -> Presence] +30 ms (tau 160/10) local  +0.02 dB @   3860 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Warm -> Presence] +60 ms (tau 160/10) local  +0.13 dB @    719 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Warm -> Presence] +120 ms (tau 160/10) local  +0.29 dB @    719 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Warm -> Presence] +250 ms (tau 160/10) local  +0.34 dB @    719 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> Presence -> Off's end (direct, tau 160 ms) local  +0.95 dB @    204 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Presence -> Off] +10 ms (tau 160/10) local  +0.73 dB @    625 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Presence -> Off] +30 ms (tau 160/10) local  +0.71 dB @    625 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Presence -> Off] +60 ms (tau 160/10) local  +0.87 dB @    204 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Presence -> Off] +120 ms (tau 160/10) local  +0.95 dB @    204 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  v3_worst_tau40[A] -> [Presence -> Off] +250 ms (tau 160/10) local  +0.95 dB @    204 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> Off -> Warm's end (direct, tau 160 ms) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Off -> Warm] +10 ms (tau 160/10)    local  +0.06 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Off -> Warm] +30 ms (tau 160/10)    local  +0.06 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Off -> Warm] +60 ms (tau 160/10)    local  +0.06 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Off -> Warm] +120 ms (tau 160/10)   local  +0.06 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Off -> Warm] +250 ms (tau 160/10)   local  +0.06 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> Warm -> Presence's end (direct, tau 160 ms) local  +0.08 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Warm -> Presence] +10 ms (tau 160/10) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Warm -> Presence] +30 ms (tau 160/10) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Warm -> Presence] +60 ms (tau 160/10) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Warm -> Presence] +120 ms (tau 160/10) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Warm -> Presence] +250 ms (tau 160/10) local  +0.01 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> Presence -> Off's end (direct, tau 160 ms) local  +0.37 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Presence -> Off] +10 ms (tau 160/10) local  +0.04 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Presence -> Off] +30 ms (tau 160/10) local  +0.08 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Presence -> Off] +60 ms (tau 160/10) local  +0.08 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Presence -> Off] +120 ms (tau 160/10) local  +0.08 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  single +12 @ 1 kHz -> [Presence -> Off] +250 ms (tau 160/10) local  +0.08 dB @    828 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> Off -> Warm's end (direct, tau 160 ms) local  +0.21 dB @    270 Hz  peak +0.13 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Off -> Warm] +10 ms (tau 160/10) local  +0.23 dB @    101 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Off -> Warm] +30 ms (tau 160/10) local  +0.12 dB @    101 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Off -> Warm] +60 ms (tau 160/10) local  +0.02 dB @    101 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Off -> Warm] +120 ms (tau 160/10) local  +0.03 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Off -> Warm] +250 ms (tau 160/10) local  +0.05 dB @     44 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> Warm -> Presence's end (direct, tau 160 ms) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Warm -> Presence] +10 ms (tau 160/10) local  +0.03 dB @     88 Hz  peak +0.02 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Warm -> Presence] +30 ms (tau 160/10) local  +0.08 dB @    411 Hz  peak +0.06 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Warm -> Presence] +60 ms (tau 160/10) local  +0.14 dB @    311 Hz  peak +0.10 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Warm -> Presence] +120 ms (tau 160/10) local  +0.20 dB @    311 Hz  peak +0.13 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Warm -> Presence] +250 ms (tau 160/10) local  +0.21 dB @    270 Hz  peak +0.13 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> Presence -> Off's end (direct, tau 160 ms) local  +0.00 dB @   3860 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Presence -> Off] +10 ms (tau 160/10) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Presence -> Off] +30 ms (tau 160/10) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Presence -> Off] +60 ms (tau 160/10) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Presence -> Off] +120 ms (tau 160/10) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm w/ 125 Hz at -12 -> [Presence -> Off] +250 ms (tau 160/10) local  +0.00 dB @   8939 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+
+===== local-swells =====
+  adv_pair_S2 (tau 160 ms)                                   local  +4.74 dB @   2205 Hz  peak +0.00 dB  longest >+1dB  330.4 ms  >+3dB  211.4 ms
+           25 Hz  ref -11.97 dB (-24.65 vs curve max)  max -10.13  local +1.84  >+1dB  38.8 ms  >+3dB   0.0 ms  peak at + 28.9 ms
+           38 Hz  ref  +9.10 dB ( -3.58 vs curve max)  max +10.20  local +1.09  >+1dB  92.0 ms  >+3dB   0.0 ms  peak at +177.2 ms
+         1666 Hz  ref  -8.11 dB (-20.79 vs curve max)  max  -5.13  local +2.98  >+1dB 203.9 ms  >+3dB   0.0 ms  peak at + 98.6 ms
+         2205 Hz  ref  +0.52 dB (-12.16 vs curve max)  max  +5.26  local +4.74  >+1dB 330.4 ms  >+3dB 211.4 ms  peak at +104.5 ms
+         2917 Hz  ref  -4.99 dB (-17.67 vs curve max)  max  -2.76  local +2.23  >+1dB 254.3 ms  >+3dB   0.0 ms  peak at +144.8 ms
+         3355 Hz  ref  -7.25 dB (-19.93 vs curve max)  max  -5.22  local +2.03  >+1dB 148.8 ms  >+3dB   0.0 ms  peak at + 90.9 ms
+  v3_worst_tau40 (tau 160 ms)                                local  +1.44 dB @     38 Hz  peak -0.00 dB  longest >+1dB  103.2 ms  >+3dB    0.0 ms
+           38 Hz  ref +10.14 dB ( -2.61 vs curve max)  max +11.58  local +1.44  >+1dB 103.2 ms  >+3dB   0.0 ms  peak at +102.5 ms
+  worst_pair (tau 160 ms)                                    local  +0.24 dB @    952 Hz  peak +0.04 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+
+===== drag-latency =====
+  key step 1 kHz +11 -> +12          tau 160 ms: +11.01 -> +12.04 dB at 1000 Hz; 50% at  113.3 ms, 90% at  371.3 ms
+  key step 1 kHz +9 -> +10           tau  10 ms:  +8.97 ->  +9.99 dB at 1000 Hz; 50% at    9.1 ms, 90% at   25.3 ms
+  key step 1 kHz +5 -> +6            tau  10 ms:  +4.94 ->  +5.94 dB at 1000 Hz; 50% at    8.7 ms, 90% at   24.9 ms
+  Warm, 125 Hz -10 -> -12            tau 160 ms: -10.11 -> -12.20 dB at 126 Hz; 50% at   96.2 ms, 90% at  355.7 ms
+  alternating, 1 kHz +12 -> +6       tau 160 ms: -11.99 ->  +6.25 dB at 1000 Hz; 50% at  101.1 ms, 90% at  420.9 ms
+
+===== jagged-false-positives =====
+  Off -> +12 @ 40 Hz @ tau 10                                local  +3.81 dB @     50 Hz  peak +0.15 dB  longest >+1dB   74.4 ms  >+3dB   21.9 ms
+  Off -> +12 @ 40 Hz @ tau 40                                local  +2.57 dB @     50 Hz  peak +0.08 dB  longest >+1dB   68.8 ms  >+3dB    0.0 ms
+  Off -> +12 @ 40 Hz @ tau 160 (rule)                        local  +0.91 dB @     50 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 40 Hz @ tau 10                                local  +0.98 dB @     67 Hz  peak +0.41 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 40 Hz @ tau 40                                local  +0.77 dB @     25 Hz  peak +0.24 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 40 Hz @ tau 160 (rule)                        local  +0.41 dB @     25 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 200 Hz @ tau 10                               local  +2.18 dB @    154 Hz  peak +0.00 dB  longest >+1dB    9.6 ms  >+3dB    0.0 ms
+  Off -> +12 @ 200 Hz @ tau 40                               local  +0.75 dB @    154 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 200 Hz @ tau 160 (rule)                       local  +0.20 dB @    154 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 200 Hz @ tau 10                               local  +0.85 dB @     88 Hz  peak +0.20 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 200 Hz @ tau 40                               local  +0.40 dB @    117 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 200 Hz @ tau 160 (rule)                       local  +0.13 dB @    117 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 1000 Hz @ tau 10                              local  +0.53 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 1000 Hz @ tau 40                              local  +0.39 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 1000 Hz @ tau 160 (rule)                      local  +0.38 dB @   1259 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 1000 Hz @ tau 10                              local  +0.33 dB @    544 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 1000 Hz @ tau 40                              local  +0.10 dB @    544 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 1000 Hz @ tau 160 (rule)                      local  +0.08 dB @   1917 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 5012 Hz @ tau 10                              local  +0.14 dB @   3860 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 5012 Hz @ tau 40                              local  +0.10 dB @   3860 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 5012 Hz @ tau 160 (rule)                      local  +0.10 dB @   3860 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 5012 Hz @ tau 10                              local  +0.09 dB @   2917 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 5012 Hz @ tau 40                              local  +0.08 dB @   2536 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 5012 Hz @ tau 160 (rule)                      local  +0.08 dB @   2536 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 10000 Hz @ tau 10                             local  +0.26 dB @   7772 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 10000 Hz @ tau 40                             local  +0.26 dB @   7772 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +12 @ 10000 Hz @ tau 160 (rule)                     local  +0.26 dB @   7772 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 10000 Hz @ tau 10                             local  +0.10 dB @  15649 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 10000 Hz @ tau 40                             local  +0.10 dB @  15649 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> -12 @ 10000 Hz @ tau 160 (rule)                     local  +0.10 dB @  15649 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  key step +11 -> +12 @ 1 kHz @ tau 10                       local  +0.01 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  key step +11 -> +12 @ 1 kHz @ tau 40                       local  +0.00 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  key step +11 -> +12 @ 1 kHz @ tau 160 (rule)               local  +0.00 dB @   1449 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> +12 @ 1.26 kHz (move) @ tau 10              local  +0.29 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> +12 @ 1.26 kHz (move) @ tau 40              local  +0.26 dB @   1095 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> +12 @ 1.26 kHz (move) @ tau 160 (rule)      local  +0.25 dB @   1095 Hz  peak -0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> -12 @ 1 kHz (flip) @ tau 10                 local  +0.21 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> -12 @ 1 kHz (flip) @ tau 40                 local  +0.34 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  +12 @ 1 kHz -> -12 @ 1 kHz (flip) @ tau 160 (rule)         local  +0.40 dB @   1259 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm -> Warm w/ 125 Hz at -12 @ tau 10                     local  +1.75 dB @    154 Hz  peak +0.91 dB  longest >+1dB    8.1 ms  >+3dB    0.0 ms
+  Warm -> Warm w/ 125 Hz at -12 @ tau 40                     local  +0.38 dB @    154 Hz  peak +0.13 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Warm -> Warm w/ 125 Hz at -12 @ tau 160 (rule)             local  +0.22 dB @     58 Hz  peak +0.13 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +6 @ 20 Hz @ tau 10 (rule)                          local  +2.04 dB @     25 Hz  peak +2.04 dB  longest >+1dB   63.9 ms  >+3dB    0.0 ms
+  Off -> +6 @ 20 Hz @ tau 40                                 local  +1.46 dB @     25 Hz  peak +1.46 dB  longest >+1dB   51.9 ms  >+3dB    0.0 ms
+  Off -> +6 @ 20 Hz @ tau 10 (rule)                          local  +2.04 dB @     25 Hz  peak +2.04 dB  longest >+1dB   63.9 ms  >+3dB    0.0 ms
+  Off -> +8 @ 20 Hz @ tau 10 (rule)                          local  +2.78 dB @     25 Hz  peak +2.78 dB  longest >+1dB   83.7 ms  >+3dB    0.0 ms
+  Off -> +8 @ 20 Hz @ tau 40                                 local  +2.01 dB @     25 Hz  peak +2.01 dB  longest >+1dB   77.5 ms  >+3dB    0.0 ms
+  Off -> +8 @ 20 Hz @ tau 10 (rule)                          local  +2.78 dB @     25 Hz  peak +2.78 dB  longest >+1dB   83.7 ms  >+3dB    0.0 ms
+  Off -> +10 @ 20 Hz @ tau 10                                local  +3.53 dB @     25 Hz  peak +3.53 dB  longest >+1dB   92.5 ms  >+3dB   23.1 ms
+  Off -> +10 @ 20 Hz @ tau 40 (rule)                         local  +2.59 dB @     25 Hz  peak +2.59 dB  longest >+1dB   87.2 ms  >+3dB    0.0 ms
+  Off -> +10 @ 20 Hz @ tau 40 (rule)                         local  +2.59 dB @     25 Hz  peak +2.59 dB  longest >+1dB   87.2 ms  >+3dB    0.0 ms
+  Off -> +6 @ 25 Hz @ tau 10 (rule)                          local  +1.60 dB @     33 Hz  peak +0.00 dB  longest >+1dB   39.6 ms  >+3dB    0.0 ms
+  Off -> +6 @ 25 Hz @ tau 40                                 local  +1.03 dB @     33 Hz  peak +0.00 dB  longest >+1dB    4.3 ms  >+3dB    0.0 ms
+  Off -> +6 @ 25 Hz @ tau 10 (rule)                          local  +1.60 dB @     33 Hz  peak +0.00 dB  longest >+1dB   39.6 ms  >+3dB    0.0 ms
+  Off -> +8 @ 25 Hz @ tau 10 (rule)                          local  +2.15 dB @     33 Hz  peak +0.00 dB  longest >+1dB   47.7 ms  >+3dB    0.0 ms
+  Off -> +8 @ 25 Hz @ tau 40                                 local  +1.44 dB @     33 Hz  peak +0.00 dB  longest >+1dB   28.7 ms  >+3dB    0.0 ms
+  Off -> +8 @ 25 Hz @ tau 10 (rule)                          local  +2.15 dB @     33 Hz  peak +0.00 dB  longest >+1dB   47.7 ms  >+3dB    0.0 ms
+  Off -> +10 @ 25 Hz @ tau 10                                local  +2.70 dB @     33 Hz  peak +0.00 dB  longest >+1dB   83.4 ms  >+3dB    0.0 ms
+  Off -> +10 @ 25 Hz @ tau 40 (rule)                         local  +1.88 dB @     33 Hz  peak +0.00 dB  longest >+1dB   45.2 ms  >+3dB    0.0 ms
+  Off -> +10 @ 25 Hz @ tau 40 (rule)                         local  +1.88 dB @     33 Hz  peak +0.00 dB  longest >+1dB   45.2 ms  >+3dB    0.0 ms
+  Off -> +6 @ 32 Hz @ tau 10 (rule)                          local  +2.20 dB @     25 Hz  peak +0.04 dB  longest >+1dB   59.4 ms  >+3dB    0.0 ms
+  Off -> +6 @ 32 Hz @ tau 40                                 local  +1.42 dB @     25 Hz  peak +0.00 dB  longest >+1dB   31.7 ms  >+3dB    0.0 ms
+  Off -> +6 @ 32 Hz @ tau 10 (rule)                          local  +2.20 dB @     25 Hz  peak +0.04 dB  longest >+1dB   59.4 ms  >+3dB    0.0 ms
+  Off -> +8 @ 32 Hz @ tau 10 (rule)                          local  +2.92 dB @     25 Hz  peak +0.07 dB  longest >+1dB   65.8 ms  >+3dB    0.0 ms
+  Off -> +8 @ 32 Hz @ tau 40                                 local  +1.94 dB @     25 Hz  peak +0.01 dB  longest >+1dB   58.9 ms  >+3dB    0.0 ms
+  Off -> +8 @ 32 Hz @ tau 10 (rule)                          local  +2.92 dB @     25 Hz  peak +0.07 dB  longest >+1dB   65.8 ms  >+3dB    0.0 ms
+  Off -> +10 @ 32 Hz @ tau 10                                local  +3.61 dB @     25 Hz  peak +0.12 dB  longest >+1dB   78.5 ms  >+3dB   27.0 ms
+  Off -> +10 @ 32 Hz @ tau 40 (rule)                         local  +2.54 dB @     25 Hz  peak +0.04 dB  longest >+1dB   74.0 ms  >+3dB    0.0 ms
+  Off -> +10 @ 32 Hz @ tau 40 (rule)                         local  +2.54 dB @     25 Hz  peak +0.04 dB  longest >+1dB   74.0 ms  >+3dB    0.0 ms
+  Off -> +6 @ 40 Hz @ tau 10 (rule)                          local  +1.79 dB @     50 Hz  peak +0.01 dB  longest >+1dB   36.1 ms  >+3dB    0.0 ms
+  Off -> +6 @ 40 Hz @ tau 40                                 local  +1.04 dB @     50 Hz  peak +0.00 dB  longest >+1dB    3.4 ms  >+3dB    0.0 ms
+  Off -> +6 @ 40 Hz @ tau 10 (rule)                          local  +1.79 dB @     50 Hz  peak +0.01 dB  longest >+1dB   36.1 ms  >+3dB    0.0 ms
+  Off -> +8 @ 40 Hz @ tau 10 (rule)                          local  +2.41 dB @     50 Hz  peak +0.03 dB  longest >+1dB   51.4 ms  >+3dB    0.0 ms
+  Off -> +8 @ 40 Hz @ tau 40                                 local  +1.49 dB @     50 Hz  peak +0.00 dB  longest >+1dB   27.9 ms  >+3dB    0.0 ms
+  Off -> +8 @ 40 Hz @ tau 10 (rule)                          local  +2.41 dB @     50 Hz  peak +0.03 dB  longest >+1dB   51.4 ms  >+3dB    0.0 ms
+  Off -> +10 @ 40 Hz @ tau 10                                local  +3.11 dB @     50 Hz  peak +0.07 dB  longest >+1dB   69.6 ms  >+3dB    5.6 ms
+  Off -> +10 @ 40 Hz @ tau 40 (rule)                         local  +2.00 dB @     50 Hz  peak +0.02 dB  longest >+1dB   47.0 ms  >+3dB    0.0 ms
+  Off -> +10 @ 40 Hz @ tau 40 (rule)                         local  +2.00 dB @     50 Hz  peak +0.02 dB  longest >+1dB   47.0 ms  >+3dB    0.0 ms
+  Off -> +6 @ 50 Hz @ tau 10 (rule)                          local  +1.79 dB @     38 Hz  peak +0.00 dB  longest >+1dB   26.3 ms  >+3dB    0.0 ms
+  Off -> +6 @ 50 Hz @ tau 40                                 local  +0.91 dB @     38 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +6 @ 50 Hz @ tau 10 (rule)                          local  +1.79 dB @     38 Hz  peak +0.00 dB  longest >+1dB   26.3 ms  >+3dB    0.0 ms
+  Off -> +8 @ 50 Hz @ tau 10 (rule)                          local  +2.41 dB @     38 Hz  peak +0.00 dB  longest >+1dB   29.9 ms  >+3dB    0.0 ms
+  Off -> +8 @ 50 Hz @ tau 40                                 local  +1.25 dB @     38 Hz  peak +0.00 dB  longest >+1dB    9.9 ms  >+3dB    0.0 ms
+  Off -> +8 @ 50 Hz @ tau 10 (rule)                          local  +2.41 dB @     38 Hz  peak +0.00 dB  longest >+1dB   29.9 ms  >+3dB    0.0 ms
+  Off -> +10 @ 50 Hz @ tau 10                                local  +3.03 dB @     38 Hz  peak +0.00 dB  longest >+1dB   44.1 ms  >+3dB    1.5 ms
+  Off -> +10 @ 50 Hz @ tau 40 (rule)                         local  +1.63 dB @     38 Hz  peak +0.00 dB  longest >+1dB   25.3 ms  >+3dB    0.0 ms
+  Off -> +10 @ 50 Hz @ tau 40 (rule)                         local  +1.63 dB @     38 Hz  peak +0.00 dB  longest >+1dB   25.3 ms  >+3dB    0.0 ms
+  Off -> +6 @ 63 Hz @ tau 10 (rule)                          local  +1.87 dB @     50 Hz  peak +0.06 dB  longest >+1dB   28.6 ms  >+3dB    0.0 ms
+  Off -> +6 @ 63 Hz @ tau 40                                 local  +0.88 dB @     50 Hz  peak +0.00 dB  longest >+1dB    0.0 ms  >+3dB    0.0 ms
+  Off -> +6 @ 63 Hz @ tau 10 (rule)                          local  +1.87 dB @     50 Hz  peak +0.06 dB  longest >+1dB   28.6 ms  >+3dB    0.0 ms
+  Off -> +8 @ 63 Hz @ tau 10 (rule)                          local  +2.52 dB @     50 Hz  peak +0.11 dB  longest >+1dB   33.3 ms  >+3dB    0.0 ms
+  Off -> +8 @ 63 Hz @ tau 40                                 local  +1.24 dB @     50 Hz  peak +0.00 dB  longest >+1dB   13.1 ms  >+3dB    0.0 ms
+  Off -> +8 @ 63 Hz @ tau 10 (rule)                          local  +2.52 dB @     50 Hz  peak +0.11 dB  longest >+1dB   33.3 ms  >+3dB    0.0 ms
+  Off -> +10 @ 63 Hz @ tau 10                                local  +3.24 dB @     50 Hz  peak +0.20 dB  longest >+1dB   39.1 ms  >+3dB    6.5 ms
+  Off -> +10 @ 63 Hz @ tau 40 (rule)                         local  +1.65 dB @     50 Hz  peak +0.00 dB  longest >+1dB   24.3 ms  >+3dB    0.0 ms
+  Off -> +10 @ 63 Hz @ tau 40 (rule)                         local  +1.65 dB @     50 Hz  peak +0.00 dB  longest >+1dB   24.3 ms  >+3dB    0.0 ms
+
+===== calm-pair-search =====
+  random calm pairs (400): worst peak +0.189 dB, worst local +1.825 dB
+  hill-climbed calm pair (tau 10 ms)                         local  +4.48 dB @     33 Hz  peak +0.00 dB  longest >+1dB   38.8 ms  >+3dB   18.1 ms
+           33 Hz  ref  -7.62 dB (-16.78 vs curve max)  max  -3.14  local +4.48  >+1dB  38.8 ms  >+3dB  18.1 ms  peak at + 13.4 ms
+    A: -11.0 -7.6 -7.6 -7.6 -7.6 +1.0 +1.0 -10.0 -7.2 -4.0 -0.0 -10.0 -7.0 +1.0 -4.0 -0.0 -9.0 -1.0 -8.8 -2.0 -6.0 +1.0 -2.3 -4.0 -1.1 +1.0 +1.0 +6.4 +6.4 +6.4 +2.0
+    B: +2.0 +3.0 -6.9 -9.0 +0.0 +2.0 +7.0 +0.0 +1.0 -8.0 +0.0 -5.0 +2.0 +5.0 +6.0 +7.0 +0.0 +0.0 +0.0 +0.0 +2.0 +0.0 -7.0 +0.0 -7.0 +3.0 +6.0 +8.0 +9.0 +0.0 +0.0
+    max|solved| A 13.24, B 12.90
+
+===== cpu =====
+  (optimised build)
+   48000 Hz x 2 ch, block   16: settled   0.30 %, gliding   0.32 %
+   48000 Hz x 2 ch, block   64: settled   0.36 %, gliding   0.39 %
+   48000 Hz x 2 ch, block  512: settled   0.48 %, gliding   0.50 %
+   48000 Hz x 2 ch, block 4096: settled   0.51 %, gliding   0.52 %
+   48000 Hz x 8 ch, block   16: settled   0.55 %, gliding   0.63 %
+   48000 Hz x 8 ch, block   64: settled   0.55 %, gliding   0.61 %
+   48000 Hz x 8 ch, block  512: settled   0.55 %, gliding   0.60 %
+   48000 Hz x 8 ch, block 4096: settled   0.57 %, gliding   0.62 %
+  192000 Hz x 2 ch, block   16: settled   1.23 %, gliding   1.29 %
+  192000 Hz x 2 ch, block   64: settled   1.46 %, gliding   1.57 %
+  192000 Hz x 2 ch, block  512: settled   1.92 %, gliding   1.98 %
+  192000 Hz x 2 ch, block 4096: settled   2.00 %, gliding   2.04 %
+  192000 Hz x 8 ch, block   16: settled   2.24 %, gliding   2.61 %
+  192000 Hz x 8 ch, block   64: settled   2.20 %, gliding   2.41 %
+  192000 Hz x 8 ch, block  512: settled   2.20 %, gliding   2.37 %
+  192000 Hz x 8 ch, block 4096: settled   2.24 %, gliding   2.44 %
+  384000 Hz x 2 ch, block   16: settled   2.46 %, gliding   2.58 %
+  384000 Hz x 2 ch, block   64: settled   2.93 %, gliding   3.14 %
+  384000 Hz x 2 ch, block  512: settled   3.85 %, gliding   3.95 %
+  384000 Hz x 2 ch, block 4096: settled   3.99 %, gliding   4.08 %
+  384000 Hz x 8 ch, block   16: settled   4.43 %, gliding   5.04 %
+  384000 Hz x 8 ch, block   64: settled   4.40 %, gliding   4.88 %
+  384000 Hz x 8 ch, block  512: settled   4.39 %, gliding   4.79 %
+  384000 Hz x 8 ch, block 4096: settled   4.49 %, gliding   4.90 %
+  768000 Hz x 2 ch, block   16: settled   4.93 %, gliding   5.17 %
+  768000 Hz x 2 ch, block   64: settled   5.84 %, gliding   6.28 %
+  768000 Hz x 2 ch, block  512: settled   7.66 %, gliding   7.87 %
+  768000 Hz x 2 ch, block 4096: settled   7.99 %, gliding   8.17 %
+  768000 Hz x 8 ch, block   16: settled   8.83 %, gliding  10.03 %
+  768000 Hz x 8 ch, block   64: settled   8.80 %, gliding   9.66 %
+  768000 Hz x 8 ch, block  512: settled   8.77 %, gliding   9.57 %
+  768000 Hz x 8 ch, block 4096: settled   8.98 %, gliding   9.75 %
+
+===== app-safety-clamp-gap =====
+  Presence                 signed sum  +35.56 dB  graph peak  +8.00 dB, plays  +2.70 dB; worst gap  5.30 dB @   2000 Hz
+  Clarity                  signed sum  +42.84 dB  graph peak  +6.09 dB, plays  +1.71 dB; worst gap  4.38 dB @   7542 Hz
+  Warm                     signed sum +161.81 dB  graph peak +10.11 dB, plays  +0.75 dB; worst gap  9.36 dB @    489 Hz
+  Loudness                 signed sum  +56.57 dB  graph peak  +4.11 dB, plays  +0.87 dB; worst gap  3.24 dB @     21 Hz
+  Vocal                    signed sum  +45.70 dB  graph peak  +6.01 dB, plays  +1.58 dB; worst gap  4.43 dB @   3170 Hz
+  Studio                   signed sum   +6.66 dB  graph peak  +2.06 dB, plays  +2.06 dB; worst gap  0.00 dB @      0 Hz
+  Tone Bass +6             signed sum  +55.51 dB  graph peak  +6.16 dB, plays  +1.33 dB; worst gap  4.83 dB @     21 Hz
+  Tone Air +6              signed sum  +34.36 dB  graph peak  +6.12 dB, plays  +2.14 dB; worst gap  3.98 dB @  18945 Hz
+  Tone Bass +12 Air +12    signed sum +179.75 dB  graph peak +12.27 dB, plays  +0.82 dB; worst gap 11.45 dB @     21 Hz
+  single +12 @ 1 kHz       signed sum  +12.00 dB  graph peak +11.93 dB, plays +11.93 dB; worst gap  0.00 dB @      0 Hz
+  all +12                  signed sum +372.00 dB  graph peak +12.27 dB, plays  +0.40 dB; worst gap 11.87 dB @     21 Hz
+
+===== normaliser-poison =====
+  +Inf: before: makeup 0.5370 (-5.40 dB), integrated -6.01 LUFS | 6 s after: makeup 0.5370, integrated -6.01 LUFS, short-term -200.00, output finite=true
+  NaN: before: makeup 0.5370 (-5.40 dB), integrated -6.01 LUFS | 6 s after: makeup 0.5370, integrated -6.01 LUFS, short-term -200.00, output finite=true
+
+===== p0-switch =====
+  ceiling -1.0 dBTP: Intensity 0, EQ Warm -> Off at 3.0 s; bit-perfect from 5.219 s
+    1.5 s before P0 (P1: the limiter on a flat EQ): -9.08 LUFS, sample peak -2.99 dBFS (the source there: -8.34 LUFS, -1.80 dBFS)
+    1.5 s after P0 (bit-perfect): -9.97 LUFS, sample peak -1.01 dBFS
+  ceiling -0.1 dBTP: Intensity 0, EQ Warm -> Off at 3.0 s; bit-perfect from 5.219 s
+    1.5 s before P0 (P1: the limiter on a flat EQ): -8.60 LUFS, sample peak -2.10 dBFS (the source there: -8.34 LUFS, -1.80 dBFS)
+    1.5 s after P0 (bit-perfect): -9.97 LUFS, sample peak -1.01 dBFS
+  P1 -> P0 fade on white noise: worst 1 ms energy vs the input -3.32 dB (bit-perfect from 2.714 s)
+
+===== intensity-zero-swing =====
+  tone 0.50 FS, r 0.3 (normaliser adapted) -> r 0: level -9.99 -> -0.00 dB (swing +9.99); 10%..90% of it between 45 and 115 ms; worst change in any 50 ms 8.82 dB
+  tone 0.02 FS, r 0.3 (normaliser adapted) -> r 0: level +14.57 -> +0.00 dB (swing -14.57); 10%..90% of it between 35 and 110 ms; worst change in any 50 ms 10.21 dB
+
+===== designer-accuracy =====
+    44000 Hz: presets 0.084  hard 0.322  ramo(seed 1000) 0.445 dB
+    44100 Hz: presets 0.084  hard 0.322  ramo(seed 1000) 0.445 dB
+   192000 Hz: presets 0.082  hard 0.323  ramo(seed 1000) 0.437 dB
+   352800 Hz: presets 0.082  hard 0.323  ramo(seed 1000) 0.437 dB
+   384000 Hz: presets 0.082  hard 0.323  ramo(seed 1000) 0.437 dB
+   705600 Hz: presets 0.082  hard 0.323  ramo(seed 1000) 0.437 dB
+   768000 Hz: presets 0.082  hard 0.323  ramo(seed 1000) 0.437 dB
+  Rämö-style, 8 fresh seeds x 1000 commands x {44.1, 48, 192} k: worst 0.447 dB (claim 0.44, gate 0.6)
+  hill-climb (30000 designs, 48 k): worst centre error 0.476 dB; command: +12.0 -12.0 +12.0 +12.0 -12.0 +12.0 -12.0 +12.0 -12.0 +12.0 +12.0 -12.0 +12.0 +0.0 +12.0 -12.0 +12.0 +12.0 -12.0 +12.0 +12.0 -12.0 +12.0 -12.0 +12.0 +12.0 -12.0 +12.0 +12.0 -12.0 +12.0
+    the same command at  44100 Hz: 0.476 dB
+    the same command at  96000 Hz: 0.474 dB
+    the same command at 192000 Hz: 0.474 dB
+
+===== predictor-adversarial =====
+  gate 808 (bass cuts)                     source -16.00 LUFS (profile off by -0.0000 LU); worst |error| 0.137 dB 
+[info]     -12 @ 40 Hz              measured  +0.033  predicted  +0.024  error -0.0082 dB
+[info]     -6 @ 40 Hz               measured  +0.026  predicted  +0.020  error -0.0061 dB
+[info]     -12 @ 50 Hz              measured  -0.243  predicted  -0.251  error -0.0077 dB
+[info]     -6 @ 50 Hz               measured  -0.176  predicted  -0.163  error +0.0128 dB
+[info]     -12 @ 63 Hz              measured  -0.137  predicted  -0.144  error -0.0073 dB
+[info]     -6 @ 63 Hz               measured  -0.130  predicted  -0.137  error -0.0066 dB
+[info]     -12 @ 79 Hz              measured  -1.769  predicted  -1.854  error -0.0850 dB
+[info]     -6 @ 79 Hz               measured  -1.206  predicted  -1.203  error +0.0029 dB
+[info]     -12 @ 100 Hz             measured  -4.127  predicted  -3.989  error +0.1374 dB
+[info]     -6 @ 100 Hz              measured  -2.679  predicted  -2.566  error +0.1127 dB
+[info]     Tone Bass -12            measured -10.757  predicted -10.689  error +0.0678 dB
+[info]     Warm, negated (bass cut) measured  -8.504  predicted  -8.491  error +0.0126 dB
+  gate loud master (bass cuts)             source -9.00 LUFS (profile off by -0.0000 LU); worst |error| 0.116 dB 
+[info]     -12 @ 40 Hz              measured  +0.021  predicted  +0.015  error -0.0064 dB
+[info]     -6 @ 40 Hz               measured  +0.017  predicted  +0.012  error -0.0048 dB
+[info]     -12 @ 50 Hz              measured  -0.217  predicted  -0.201  error +0.0163 dB
+[info]     -6 @ 50 Hz               measured  -0.141  predicted  -0.131  error +0.0099 dB
+[info]     -12 @ 63 Hz              measured  -0.173  predicted  -0.158  error +0.0142 dB
+[info]     -6 @ 63 Hz               measured  -0.144  predicted  -0.129  error +0.0148 dB
+[info]     -12 @ 79 Hz              measured  -1.459  predicted  -1.457  error +0.0015 dB
+[info]     -6 @ 79 Hz               measured  -0.945  predicted  -0.964  error -0.0189 dB
+[info]     -12 @ 100 Hz             measured  -2.941  predicted  -2.824  error +0.1165 dB
+[info]     -6 @ 100 Hz              measured  -1.999  predicted  -1.923  error +0.0763 dB
+[info]     Tone Bass -12            measured  -5.455  predicted  -5.432  error +0.0231 dB
+[info]     Warm, negated (bass cut) measured  -5.965  predicted  -5.958  error +0.0069 dB
+  gate orchestral (bass cuts)              source -20.00 LUFS (profile off by -0.0000 LU); worst |error| 0.003 dB 
+[info]     -12 @ 40 Hz              measured  -0.000  predicted  -0.000  error -0.0000 dB
+[info]     -6 @ 40 Hz               measured  -0.000  predicted  -0.000  error -0.0000 dB
+[info]     -12 @ 50 Hz              measured  -0.000  predicted  -0.000  error -0.0001 dB
+[info]     -6 @ 50 Hz               measured  -0.000  predicted  -0.000  error -0.0000 dB
+[info]     -12 @ 63 Hz              measured  -0.000  predicted  -0.000  error -0.0001 dB
+[info]     -6 @ 63 Hz               measured  -0.000  predicted  -0.000  error -0.0001 dB
+[info]     -12 @ 79 Hz              measured  -0.000  predicted  -0.000  error -0.0001 dB
+[info]     -6 @ 79 Hz               measured  +0.000  predicted  +0.000  error -0.0001 dB
+[info]     -12 @ 100 Hz             measured  -0.002  predicted  -0.002  error -0.0000 dB
+[info]     -6 @ 100 Hz              measured  -0.001  predicted  -0.001  error -0.0001 dB
+[info]     Tone Bass -12            measured  -0.030  predicted  -0.031  error -0.0012 dB
+[info]     Warm, negated (bass cut) measured  -2.247  predicted  -2.244  error +0.0032 dB
+  31.6 Hz sine -12 dBFS + pink -40         source -20.44 LUFS (profile off by -0.0000 LU); worst |error| 8.058 dB 
+[info]     Warm                     measured  +7.617  predicted  +7.558  error -0.0589 dB
+[info]     alternating +-12         measured +11.999  predicted  +9.569  error -2.4299 dB
+[info]     alternating, negated     measured -11.914  predicted  -3.856  error +8.0579 dB
+[info]     -12 @ 31.6 Hz            measured -12.018  predicted  -8.898  error +3.1205 dB
+[info]     +12 @ 100 Hz             measured  -0.002  predicted  +0.033  error +0.0356 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.000  predicted  +0.002  error +0.0017 dB
+[info]     Tone Air +12             measured  +0.003  predicted  +0.005  error +0.0021 dB
+[info]     +12 @ 20 kHz             measured  +0.001  predicted  +0.001  error +0.0003 dB
+  25 Hz sine -12 dBFS + pink -40           source -23.08 LUFS (profile off by -0.0000 LU); worst |error| 8.246 dB 
+[info]     Warm                     measured  +7.284  predicted  +7.244  error -0.0398 dB
+[info]     alternating +-12         measured -11.833  predicted  -3.587  error +8.2462 dB
+[info]     alternating, negated     measured +11.977  predicted  +9.998  error -1.9788 dB
+[info]     -12 @ 31.6 Hz            measured  +0.011  predicted  -0.265  error -0.2757 dB
+[info]     +12 @ 100 Hz             measured  +0.001  predicted  +0.046  error +0.0453 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.000  predicted  +0.003  error +0.0028 dB
+[info]     Tone Air +12             measured  +0.006  predicted  +0.009  error +0.0035 dB
+[info]     +12 @ 20 kHz             measured  +0.001  predicted  +0.001  error +0.0004 dB
+  1000 Hz sine -12 + pink -40              source -11.99 LUFS (profile off by -0.0000 LU); worst |error| 0.694 dB 
+[info]     Warm                     measured  +5.747  predicted  +5.744  error -0.0029 dB
+[info]     alternating +-12         measured -11.981  predicted -11.287  error +0.6937 dB
+[info]     alternating, negated     measured +11.988  predicted +11.941  error -0.0473 dB
+[info]     -12 @ 31.6 Hz            measured  +0.000  predicted  -0.000  error -0.0000 dB
+[info]     +12 @ 100 Hz             measured  -0.000  predicted  +0.000  error +0.0004 dB
+[info]     cliff +12/-12 1k/1.26k   measured +12.095  predicted +12.031  error -0.0635 dB
+[info]     Tone Air +12             measured  +0.000  predicted  +0.001  error +0.0003 dB
+[info]     +12 @ 20 kHz             measured  +0.000  predicted  +0.000  error +0.0000 dB
+  1122 Hz sine (cliff slope) + pink -40    source -11.70 LUFS (profile off by -0.0000 LU); worst |error| 0.246 dB 
+[info]     Warm                     measured  +5.220  predicted  +5.215  error -0.0052 dB
+[info]     alternating +-12         measured  +0.015  predicted  +0.260  error +0.2459 dB
+[info]     alternating, negated     measured  -0.014  predicted  -0.122  error -0.1080 dB
+[info]     -12 @ 31.6 Hz            measured  -0.000  predicted  -0.000  error -0.0000 dB
+[info]     +12 @ 100 Hz             measured  +0.000  predicted  +0.000  error +0.0002 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.003  predicted  -0.120  error -0.1225 dB
+[info]     Tone Air +12             measured  +0.001  predicted  +0.003  error +0.0022 dB
+[info]     +12 @ 20 kHz             measured  +0.000  predicted  +0.000  error +0.0003 dB
+  DC 0.3 + 12 Hz rumble + pink -20         source -30.66 LUFS (profile off by -0.0000 LU); worst |error| 0.960 dB 
+[info]     Warm                     measured  +2.054  predicted  +2.770  error +0.7159 dB
+[info]     alternating +-12         measured  +2.287  predicted  +3.247  error +0.9601 dB
+[info]     alternating, negated     measured  +0.813  predicted  +0.301  error -0.5119 dB
+[info]     -12 @ 31.6 Hz            measured  -0.294  predicted  -0.373  error -0.0781 dB
+[info]     +12 @ 100 Hz             measured  +0.152  predicted  +0.172  error +0.0195 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.120  predicted  +0.121  error +0.0017 dB
+[info]     Tone Air +12             measured  +2.483  predicted  +2.484  error +0.0013 dB
+[info]     +12 @ 20 kHz             measured  +0.498  predicted  +0.499  error +0.0004 dB
+  left-only pink -20                       source -41.05 LUFS (profile off by -0.0000 LU); worst |error| 0.011 dB 
+[info]     Warm                     measured  +4.829  predicted  +4.826  error -0.0030 dB
+[info]     alternating +-12         measured  +5.463  predicted  +5.453  error -0.0106 dB
+[info]     alternating, negated     measured  +4.858  predicted  +4.851  error -0.0067 dB
+[info]     -12 @ 31.6 Hz            measured  -0.020  predicted  -0.020  error -0.0001 dB
+[info]     +12 @ 100 Hz             measured  +0.663  predicted  +0.662  error -0.0007 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.614  predicted  +0.616  error +0.0026 dB
+[info]     Tone Air +12             measured  +7.177  predicted  +7.177  error +0.0006 dB
+[info]     +12 @ 20 kHz             measured  +2.215  predicted  +2.216  error +0.0011 dB
+  95% silence, pink bursts                 source -29.93 LUFS (profile off by -0.0000 LU); worst |error| 0.011 dB 
+[info]     Warm                     measured  +4.820  predicted  +4.817  error -0.0034 dB
+[info]     alternating +-12         measured  +5.490  predicted  +5.488  error -0.0028 dB
+[info]     alternating, negated     measured  +4.787  predicted  +4.794  error +0.0072 dB
+[info]     -12 @ 31.6 Hz            measured  -0.025  predicted  -0.025  error +0.0005 dB
+[info]     +12 @ 100 Hz             measured  +0.588  predicted  +0.596  error +0.0080 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.593  predicted  +0.604  error +0.0109 dB
+[info]     Tone Air +12             measured  +7.111  predicted  +7.111  error +0.0005 dB
+[info]     +12 @ 20 kHz             measured  +2.175  predicted  +2.173  error -0.0024 dB
+  44.1k: 21.5 kHz tone -20 + pink -30      source -16.64 LUFS (profile off by -0.0000 LU); worst |error| 1.139 dB 
+[info]     Warm                     measured  +0.006  predicted  +0.006  error -0.0000 dB
+[info]     alternating +-12         measured  +9.887  predicted +10.839  error +0.9519 dB
+[info]     alternating, negated     measured  -9.800  predicted -10.717  error -0.9169 dB
+[info]     -12 @ 31.6 Hz            measured  -0.000  predicted  -0.000  error +0.0000 dB
+[info]     +12 @ 100 Hz             measured  +0.000  predicted  +0.001  error +0.0000 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.000  predicted  +0.000  error -0.0000 dB
+[info]     Tone Air +12             measured  +6.715  predicted  +7.769  error +1.0540 dB
+[info]     +12 @ 20 kHz             measured  +7.805  predicted  +8.944  error +1.1394 dB
+  44.1k: 21.9 kHz tone -20 + pink -30      source -16.64 LUFS (profile off by -0.0000 LU); worst |error| 0.712 dB 
+[info]     Warm                     measured  +0.006  predicted  +0.006  error -0.0000 dB
+[info]     alternating +-12         measured  +2.830  predicted  +3.542  error +0.7119 dB
+[info]     alternating, negated     measured  -2.812  predicted  -3.520  error -0.7078 dB
+[info]     -12 @ 31.6 Hz            measured  -0.000  predicted  -0.000  error +0.0000 dB
+[info]     +12 @ 100 Hz             measured  +0.000  predicted  +0.001  error +0.0000 dB
+[info]     cliff +12/-12 1k/1.26k   measured  +0.000  predicted  +0.000  error -0.0000 dB
+[info]     Tone Air +12             measured  +1.231  predicted  +1.620  error +0.3889 dB
+[info]     +12 @ 20 kHz             measured  +1.556  predicted  +2.032  error +0.4758 dB
+
+===== storm =====
+  control: 18472 intents, 38 re-allocations
+  render: 40068 blocks, RT allocations 0, non-finite samples 0, peak |x| 0.873 (input peak 0.5)
+
+===== rt-vs-readback =====
+   44100 Hz Warm           worst |RT − read-back| 0.00028 dB: 20 Hz +6.9711/+6.9711 32 Hz +7.6177/+7.6176 19953 Hz -0.0003/+0.0000 20500 Hz +0.0000/+0.0000 21500 Hz +0.0000/+0.0000
+   44100 Hz alternating    worst |RT − read-back| 0.00106 dB: 20 Hz +11.7786/+11.7786 32 Hz +12.0224/+12.0224 19953 Hz +11.8278/+11.8289 20500 Hz +13.0214/+13.0214 21500 Hz +9.8886/+9.8886
+   44100 Hz +12 @ 20 kHz   worst |RT − read-back| 0.00096 dB: 20 Hz -0.0000/-0.0000 32 Hz +0.0001/-0.0000 19953 Hz +12.0493/+12.0502 20500 Hz +12.3791/+12.3791 21500 Hz +7.8072/+7.8072
+  192000 Hz Warm           worst |RT − read-back| 0.00002 dB: 20 Hz +6.9711/+6.9711 25 Hz +7.2864/+7.2864 32 Hz +7.6176/+7.6176 40 Hz +7.9096/+7.9096 19953 Hz +0.0000/+0.0000
+  192000 Hz alternating    worst |RT − read-back| 0.00002 dB: 20 Hz +11.7779/+11.7779 25 Hz -12.1255/-12.1255 32 Hz +12.0213/+12.0212 40 Hz -11.8815/-11.8815 19953 Hz +11.8408/+11.8408
+  192000 Hz +12 @ 20 kHz   worst |RT − read-back| 0.00003 dB: 20 Hz -0.0000/-0.0000 25 Hz -0.0000/-0.0000 32 Hz +0.0000/-0.0000 40 Hz -0.0000/-0.0000 19953 Hz +12.0199/+12.0199
+  768000 Hz Warm           worst |RT − read-back| 0.00001 dB: 20 Hz +6.9711/+6.9711 25 Hz +7.2864/+7.2864 32 Hz +7.6176/+7.6176 40 Hz +7.9096/+7.9096 19953 Hz +0.0000/+0.0000
+  768000 Hz alternating    worst |RT − read-back| 0.00001 dB: 20 Hz +11.7779/+11.7779 25 Hz -12.1255/-12.1255 32 Hz +12.0212/+12.0212 40 Hz -11.8815/-11.8815 19953 Hz +11.8433/+11.8433
+  768000 Hz +12 @ 20 kHz   worst |RT − read-back| 0.00001 dB: 20 Hz +0.0000/-0.0000 25 Hz -0.0000/-0.0000 32 Hz +0.0000/-0.0000 40 Hz -0.0000/-0.0000 19953 Hz +12.0197/+12.0197

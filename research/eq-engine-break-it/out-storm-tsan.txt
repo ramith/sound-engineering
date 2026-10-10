@@ -1,0 +1,45 @@
+
+===== storm =====
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 256 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 96000 Hz, 1024 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 44100 Hz, 256 frames — EQ re-solved
+  control: 21561 intents, 37 re-allocations
+  render: 1192 blocks, RT allocations 0, non-finite samples 0, peak |x| 0.868 (input peak 0.5)
+
+=== Results: 0 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -41,6 +41,8 @@
 //   EqEngineTests.inc     — Sprint EQ / EQ1b: the RT EQ in the kernel — paths, guards, re-allocation
 //   LoudnessNeutralTests.inc — Sprint EQ / EQ1c part 2: the loudness-neutral gain, live — the
 //                           per-track rules, gapless seams, the causal fallback, On vs Off
+//   EqEngineBreakItTests.inc — Sprint EQ engine break-it: red tests pinning defects the gate above
+//                           misses (its measurement half: EqEngineBreakItMeasure.cpp, not gated)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -75,6 +77,7 @@
 #include "EqTransitionTests.inc" // after EqDesignerTests.inc (its curves)
 #include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
 #include "LoudnessNeutralTests.inc" // after TrackLoudnessTests.inc + EqEngineTests.inc (helpers)
+#include "EqEngineBreakItTests.inc" // after EqEngineTests.inc + EqTransitionTests.inc (helpers)
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -375,6 +378,15 @@ namespace
         {"Realizer_LoudnessCost", testRealizerLoudnessCost, false},
         // Sprint EQ / EQ2: decision 29's EQ-only ceiling.
         {"Limiter_EqOnlyCeiling", testLimiterEqOnlyCeiling, true},
+        // Sprint EQ break-it (engine): red tests pinning defects the gate above does not see.
+        {"BreakIt_InfInput_KernelRecovers", testBreakItInfInputKernelRecovers, true},
+        {
+            "BreakIt_NonFiniteInput_NormaliserKeepsAdapting",
+            testBreakItNonFiniteInputNormaliserKeepsAdapting,
+            false,
+        },
+        {"BreakIt_Transitions_LowBandGestures", testBreakItTransitionsLowBandGestures, true},
+        {"BreakIt_TauRule_SinglePointIsNotJagged", testBreakItTauRuleSinglePointIsNotJagged, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine
