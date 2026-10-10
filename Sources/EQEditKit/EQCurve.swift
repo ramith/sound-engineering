@@ -118,15 +118,13 @@ public struct EQCurve: Equatable, Codable, Sendable {
         tone = [Float](repeating: 0, count: EQToneRegion.allCases.count)
     }
 
-    /// How many of the points Tone `region` reaches the ±12 ceiling holds: base + Tone asks more of
-    /// them than a point can play, so moving the slider further does nothing there. The graph's Tone
-    /// readout ("· 3 points held") and the slider's VoiceOver value ("limited") say so, so a slider
-    /// never looks dead without a reason (breaker S2).
+    /// How many of the points Tone `region` reaches the ceiling holds (`isLimited(atBand:)`), so moving
+    /// the slider further does nothing there. The graph's Tone readout ("· 3 points held") and the
+    /// slider's VoiceOver value ("limited") say so: a slider never looks dead without a reason
+    /// (breaker S2).
     public func heldPointCount(in region: EQToneRegion) -> Int {
         let weights = EQToneRegion.bandWeights[region.rawValue]
-        return (0 ..< EQBands.count).count { band in
-            weights[band] > 0 && abs(base[band] + toneOffset(atBand: band)) > EQBands.pointLimitDb
-        }
+        return weights.indices.count { weights[$0] > 0 && isLimited(atBand: $0) }
     }
 
     // MARK: - Codable (base + tone; the invariant is checked, never trusted)

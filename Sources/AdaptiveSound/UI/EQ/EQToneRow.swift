@@ -5,7 +5,8 @@ import SwiftUI
 // MARK: - Tone row (EQ3t — one region of the Tone card)
 
 /// One Tone region on one line (UI plan §5.6, 29 pt): its name over its range on the graph's own axis
-/// ("Presence" / "2–6 kHz"), a centre-zero ±12 dB slider, and its level.
+/// ("Presence" / "2–6 kHz"), a centre-zero ±12 dB slider, and its level — one format at every value,
+/// "+3.0", "0.0", "-2.5" (`EQLevelText.number`; the column is too narrow for "+12.0 dB").
 ///
 /// The slider never writes the curve: a drag is a stroke on the view model (`beginStroke()`, a Tone
 /// sample per move, `endStroke()` — persisted and logged once), and a key or VoiceOver step is one
@@ -34,7 +35,7 @@ struct EQToneRow: View {
 
     var body: some View {
         let level = eq.tone(of: region)
-        HStack(spacing: CGFloat(EQLayout.toneRowGap)) {
+        HStack(spacing: CGFloat(EQScreenLayout.toneRowGap)) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(region.name)
                     .font(DesignSystem.Font.caption.weight(isHighlighted ? .semibold : .regular))
@@ -44,7 +45,7 @@ struct EQToneRow: View {
                     .foregroundStyle(DesignSystem.Color.labelTertiary(onSelectedRow: isHighlighted))
             }
             .lineLimit(1)
-            .frame(width: CGFloat(EQLayout.toneNameWidth), alignment: .leading)
+            .frame(width: CGFloat(EQScreenLayout.toneNameWidth), alignment: .leading)
             .accessibilityHidden(true)
 
             CarvedSlider(
@@ -60,15 +61,15 @@ struct EQToneRow: View {
             )
             .focused(focus, equals: region)
 
-            Text(EQToneText.value(level))
+            Text(EQLevelText.number(level))
                 .font(DesignSystem.Font.monoMicro)
                 .foregroundStyle(isHighlighted ? DesignSystem.Color.accentText : DesignSystem.Color.labelSecondary)
                 .lineLimit(1)
-                .frame(width: CGFloat(EQLayout.toneValueWidth), alignment: .trailing)
+                .frame(width: CGFloat(EQScreenLayout.toneValueWidth), alignment: .trailing)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, CGFloat(EQLayout.toneRowGap))
-        .frame(height: CGFloat(EQLayout.toneRowHeight))
+        .padding(.horizontal, CGFloat(EQScreenLayout.toneRowGap))
+        .frame(height: CGFloat(EQScreenLayout.toneRowHeight))
         .background(isHighlighted ? DesignSystem.Color.rowSelected : .clear,
                     in: RoundedRectangle(cornerRadius: DesignSystem.Radius.container))
         .contentShape(Rectangle())

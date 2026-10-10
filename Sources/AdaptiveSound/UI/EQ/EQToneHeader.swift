@@ -17,9 +17,9 @@ struct EQToneHeader: View {
     @Environment(EQViewModel.self) private var eq
 
     var body: some View {
-        HStack(spacing: CGFloat(EQLayout.toneRowGap)) {
+        HStack(spacing: CGFloat(EQScreenLayout.toneRowGap)) {
             Button(action: toggleFold) {
-                HStack(spacing: CGFloat(EQLayout.toneRowGap)) {
+                HStack(spacing: CGFloat(EQScreenLayout.toneRowGap)) {
                     Image(systemName: "chevron.right")
                         .imageScale(.small)
                         .rotationEffect(.degrees(isFolded ? 0 : 90))
@@ -58,6 +58,6 @@ struct EQToneHeader: View {
         // The rail's section-header inset (`NavSectionHeader`): the caption lines up with the
         // Equalizer card's "PRESETS" above it.
         .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
-        .frame(height: CGFloat(EQLayout.toneHeaderHeight))
+        .frame(height: CGFloat(EQScreenLayout.toneHeaderHeight))
     }
 }
