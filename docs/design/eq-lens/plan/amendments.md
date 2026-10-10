@@ -101,6 +101,23 @@ With Intensity 0 and the EQ on, the path is EQ → limiter, with no normaliser.
 9. **Loudness fallback wording** (A5): the UI plan's "curve fallback for ~10 s" is replaced by the
    behaviour in item 3. The UI shows nothing for it; the level simply settles.
 
+## Added by the EQ3a break-it pass (2026-10-10)
+
+EQ3a's own fix round fixed the drag, downgrade and data-robustness findings. **EQ4 inherits these
+items, which only go live once pins exist:**
+
+10. **C1:** Save while the output switches must save the curve that was showing when Save was pressed,
+    into the slot it came from. It becomes MAJOR once pins exist.
+11. **Toasts:**
+    - E2: no toast after a gap with no output;
+    - a toast raised while the window is closed must not appear or be spoken on reopen;
+    - the queue toast and the EQ output toast must not overlap (one shell toast slot, or stacked).
+12. **Preset names:**
+    - N1: a My Preset may not be named like a built-in, compared case-insensitively;
+    - N2: names that are empty or whitespace/newline-only are rejected.
+13. **Pins on the same model:** confirm with the founder that a second unit of a pinned model sharing the
+    first unit's pin is the intended behaviour (the model-UID fallback).
+
 ## Lanes and ownership (A1–A3)
 
 | Lane | PRs (order) | Notes |
