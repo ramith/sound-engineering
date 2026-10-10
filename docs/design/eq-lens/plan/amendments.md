@@ -144,6 +144,15 @@ under the graph), and it must land before the listening check.
     document the limits, and clamp |ΔL| to a sane bound so a mis-prediction never moves the level by more
     than ~3 dB.
 
+## Recorded deviations from the UI plan (the screen's fix round, 2026-10-10)
+
+- **`highlightedRegion` lives on `EQViewModel`**, not as `EQTabView` state (ui-plan §3.1): the Tone card and
+  the graph sit in different subtrees, and one observed property links them without plumbing.
+- **The +12 dB ceiling ghost is a dashed ring and tether** at the asked level, not a dashed requested curve
+  (ui-plan §4.3): the designer holds points at ±12, so no honest curve exists for a level the EQ can't play.
+- **`EQAudibleState.engineNotReady`** is a fifth state (ui-plan §4 has four): with no engine nothing plays,
+  and the strip says so, while the graph still draws the EQ as it will play once the engine runs.
+
 ## Lanes and ownership (A1–A3)
 
 | Lane | PRs (order) | Notes |

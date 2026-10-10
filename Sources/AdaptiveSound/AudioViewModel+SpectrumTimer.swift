@@ -143,6 +143,7 @@ extension AudioViewModel {
         if signalPath != freshPath {
             signalPath = freshPath
         }
+        refreshEQDesignRate()
     }
 
     @MainActor

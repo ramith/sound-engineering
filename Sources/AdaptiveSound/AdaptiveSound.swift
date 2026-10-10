@@ -126,6 +126,7 @@ struct AdaptiveSound: App {
                     appDelegate.libraryModel = library
                     appDelegate.nowPlaying = nowPlaying
                     appDelegate.playlists = playlistsModel // saves its waiting orders at quit (E4)
+                    appDelegate.eqViewModel = eqViewModel // lets a held Compare go when the window closes
                     // Register the remote-command handlers once (marks the app a media app so the
                     // media keys + Control Center transport route here). Idempotent.
                     nowPlaying.registerCommands()

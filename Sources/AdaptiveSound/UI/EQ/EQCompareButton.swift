@@ -46,10 +46,11 @@ struct EQCompareButton: View {
             .onChange(of: isHolding) { _, holding in hold(holding) }
             .onHover { isHovered = $0 }
             .focusable(interactions: .activate)
-            .focused($isFocused)
+            // Focused, the pill takes Space as well as Return, so the global play / pause gives way.
+            .suppressesTransportSpace(while: $isFocused)
             .focusEffectDisabled()
             .keyboardFocusRing(isFocused && showsKeyboardFocus, around: Capsule())
-            .onKeyPress(.return, phases: [.down, .up], action: holdReturn)
+            .onKeyPress(keys: [.return, .space], phases: [.down, .repeat, .up], action: holdKey)
             .onChange(of: isFocused) { _, focused in letGo(unless: focused) }
     }
 
@@ -68,9 +69,12 @@ struct EQCompareButton: View {
         }
     }
 
-    /// Return held on the focused pill holds Compare; its release lets go.
-    private func holdReturn(_ press: KeyPress) -> KeyPress.Result {
-        hold(press.phase == .down)
+    /// Return or Space held on the focused pill holds Compare; the release lets go. The key's repeats
+    /// are taken and ignored, so a held key never beeps.
+    private func holdKey(_ press: KeyPress) -> KeyPress.Result {
+        if press.phase != .repeat {
+            hold(press.phase == .down)
+        }
         return .handled
     }
 

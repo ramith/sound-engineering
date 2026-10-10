@@ -33,6 +33,9 @@ struct EQPresetRow: View {
             }
         }
         .buttonStyle(.plain)
+        // Not a Tab stop of its own: the LIST is the one stop, its arrows walk the rows (as the Songs
+        // rows and browse tiles). Clicks, the menu and VoiceOver are unaffected.
+        .focusable(false)
         .help(preset.displayName)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
