@@ -13,36 +13,45 @@ import SwiftUI
 /// binding, and attaches the row's accessibility (element + `.isSelected`). The row height scales
 /// with Dynamic Type (`@ScaledMetric`, matching HeroBand/FormatBadge) so the `.body` label never
 /// clips at large text sizes; the icon–label gap and inset match the mock.
-struct NavRow<Trailing: View>: View {
-    let icon: String
+///
+/// The leading mark is the Library's SF symbol (`NavRowSymbol`) by default; the EQ rail passes its
+/// preset's curve glyph and a denser row height (Sprint EQ, EQ3) — one row, two rails.
+struct NavRow<Leading: View, Trailing: View>: View {
     let label: String
     let active: Bool
     /// The rail holds key focus and this is the row the arrow keys act on (A3).
     let isKeyboardCursor: Bool
+    /// Where a label too long for the row gives way: its tail (the Library rail), or its middle for
+    /// names told apart by their endings (the EQ's My Presets).
+    let truncation: Text.TruncationMode
+    let leading: Leading
     let trailing: Trailing
 
-    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 38
+    /// Scales with the text size, relative to `.body` (set in `init`).
+    @ScaledMetric private var rowHeight: CGFloat
     @State private var hover = false
 
-    init(icon: String, label: String, active: Bool = false, isKeyboardCursor: Bool = false,
-         @ViewBuilder trailing: () -> Trailing) {
-        self.icon = icon
+    /// A row `rowHeight` tall at the default text size (the Library rail's 38 unless given).
+    init(label: String, active: Bool = false, isKeyboardCursor: Bool = false, rowHeight: CGFloat = 38,
+         truncation: Text.TruncationMode = .tail,
+         @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
         self.label = label
         self.active = active
         self.isKeyboardCursor = isKeyboardCursor
+        self.truncation = truncation
+        self.leading = leading()
         self.trailing = trailing()
+        _rowHeight = ScaledMetric(wrappedValue: rowHeight, relativeTo: .body)
     }
 
     var body: some View {
         HStack(spacing: 11) {
-            Image(systemName: icon)
-                .font(DesignSystem.Font.body)
-                .frame(width: 18)
+            leading
                 .accessibilityHidden(true) // decorative; the row's combined label carries the name
             Text(label)
                 .font(DesignSystem.Font.body.weight(active ? .semibold : .regular))
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .truncationMode(truncation)
             Spacer(minLength: 0)
             trailing
         }
@@ -75,8 +84,20 @@ struct NavRow<Trailing: View>: View {
     }
 }
 
+/// The Library rail's rows: an SF symbol leading.
+extension NavRow where Leading == NavRowSymbol {
+    init(icon: String, label: String, active: Bool = false, isKeyboardCursor: Bool = false,
+         @ViewBuilder trailing: () -> Trailing) {
+        self.init(label: label, active: active, isKeyboardCursor: isKeyboardCursor) {
+            NavRowSymbol(name: icon)
+        } trailing: {
+            trailing()
+        }
+    }
+}
+
 /// Trailing-free convenience for the plain category rows.
-extension NavRow where Trailing == EmptyView {
+extension NavRow where Leading == NavRowSymbol, Trailing == EmptyView {
     init(icon: String, label: String, active: Bool = false, isKeyboardCursor: Bool = false) {
         self.init(icon: icon, label: label, active: active, isKeyboardCursor: isKeyboardCursor) {
             EmptyView()
@@ -88,21 +109,32 @@ extension NavRow where Trailing == EmptyView {
 
 /// A rail section header (`png/01`): a heavy, letter-spaced tertiary caption + a trailing
 /// `accentText` "+" add button, optionally led by a glyph (Music Folders' folder icon). Shares
-/// the rail row inset so the caption lines up with the nav rows below it.
+/// the rail row inset so the caption lines up with the nav rows below it. A section with nothing to
+/// add (the EQ's built-in Presets) has no "+".
 struct NavSectionHeader: View {
+    /// The "+" button: its help (also its VoiceOver label), whether it is disabled, and its action.
+    private struct AddButton {
+        let help: String
+        let disabled: Bool
+        let action: () -> Void
+    }
+
     let title: String
     let icon: String?
-    let addHelp: String
-    let addDisabled: Bool
-    let add: () -> Void
+    private let addButton: AddButton?
 
     init(title: String, icon: String? = nil, addHelp: String, addDisabled: Bool,
          add: @escaping () -> Void) {
         self.title = title
         self.icon = icon
-        self.addHelp = addHelp
-        self.addDisabled = addDisabled
-        self.add = add
+        addButton = AddButton(help: addHelp, disabled: addDisabled, action: add)
+    }
+
+    /// A header with no "+".
+    init(title: String) {
+        self.title = title
+        icon = nil
+        addButton = nil
     }
 
     var body: some View {
@@ -120,14 +152,16 @@ struct NavSectionHeader: View {
                 .textCase(.uppercase)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
             Spacer(minLength: 0)
-            Button(action: add) {
-                Image(systemName: "plus")
+            if let addButton {
+                Button(action: addButton.action) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(DesignSystem.Color.accentText)
+                .disabled(addButton.disabled)
+                .help(addButton.help)
+                .accessibilityLabel(addButton.help)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(DesignSystem.Color.accentText)
-            .disabled(addDisabled)
-            .help(addHelp)
-            .accessibilityLabel(addHelp)
         }
         .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
         .padding(.top, DesignSystem.Spacing.small)

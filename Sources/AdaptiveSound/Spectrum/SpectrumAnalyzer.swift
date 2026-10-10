@@ -22,8 +22,8 @@
 //
 // Band mapping
 // ------------
-// - 44 bands, log-spaced from 40 Hz to 20 kHz at 1/6-octave steps.
-// - Band center frequencies: f_k = 40 * 2^(k/6), k = 0..43.
+// - 44 bands, log-spaced at 1/6-octave steps from 40 Hz — so up to ~5.7 kHz, not 20 kHz.
+// - Band center frequencies: f_k = 40 * 2^(k/6), k = 0..43 (`SpectrumConstants.bandCentreHz`).
 // - Band magnitude = max FFT bin magnitude inside the band's [lo, hi] range.
 // - Result mapped to dB (floor −80 dB), normalised to [0, 1].
 //
@@ -111,8 +111,6 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         // Pre-compute band-to-bin mapping
         bandRanges = Self.makeBandRanges(
             bandCount: SpectrumConstants.bandCount,
-            minHz: SpectrumConstants.minHz,
-            maxHz: SpectrumConstants.maxHz,
             fftSize: fftSize,
             sampleRate: sampleRate
         )
@@ -303,12 +301,10 @@ final class SpectrumAnalyzer: @unchecked Sendable {
     // MARK: - Band range computation (called off RT at init)
 
     /// Pre-compute FFT bin index ranges for each log-spaced band.
-    /// f_k = minHz * 2^(k/6), k = 0..bandCount-1 (1/6-octave spacing).
+    /// f_k = minHz * 2^(k/6), k = 0..bandCount-1 (1/6-octave spacing; `SpectrumConstants.bandCentreHz`).
     /// Band k covers [f_k / 2^(1/12), f_k * 2^(1/12)] (half-step on each side).
     private static func makeBandRanges(
         bandCount: Int,
-        minHz: Float,
-        maxHz _: Float,
         fftSize: Int,
         sampleRate: Float
     ) -> [BandRange] {
@@ -319,7 +315,7 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         let halfSemitone = powf(2.0, 1.0 / 12.0) // one half-step ratio
 
         for band in 0 ..< bandCount {
-            let center = minHz * powf(2.0, Float(band) / 6.0)
+            let center = SpectrumConstants.bandCentreHz(Float(band))
             let lo = center / halfSemitone
             let hi = center * halfSemitone
             let loBin = Int(lo / hzPerBin)
