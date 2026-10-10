@@ -28,6 +28,10 @@ final class EQViewModel {
     /// The output the sound plays on (`nil` before the first device); its slot is `current`.
     private(set) var output: EQOutputKey?
 
+    /// An output has played since launch. Only the first one is the launch's, with no toast: after a
+    /// gap with no output at all, the next one still says what it plays (break-it E2).
+    @ObservationIgnored private var hasSeenOutput = false
+
     /// The output-switch toast, shown by `EQOutputToast` in the shell overlay for 3 s (UI plan §4.4).
     let outputToast = ShellToastSlot(lifetime: .seconds(3))
 
@@ -142,38 +146,24 @@ final class EQViewModel {
         persist()
     }
 
-    /// Save what plays as the My Preset `name` (replacing one of that name), Tone baked in. The
-    /// current slot then plays that preset, unedited.
-    func save(as name: String) {
-        endStroke() // a discrete edit ends a drag first (+Stroke)
-        let name = name.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        let saved = current.saved(as: name)
-        bringBack = nil // Save keeps what plays; edits set aside earlier are no longer offered
-        customPresets[name] = saved.points
-        persistMyPresets()
-        setCurrent(saved)
-        persist()
-        logUX("EQ save preset '\(name)'")
-    }
-
     // MARK: - Outputs
 
     /// The sound moved to another output (Edge 5; fired only when the UID changes). Its slot — its
     /// pin, else shared — becomes current, and a drag in progress stays with the slot it was made
     /// on. When that changes what plays, it is sent, and the toast names the output and its EQ —
-    /// except at launch, when no output played before.
+    /// except for the launch's first output (after a gap with no output, the next one toasts: E2).
     func outputDidChange(to key: EQOutputKey?) {
         endStroke(beforeMovingTo: key)
         endCompare() // a held Compare never carries over to another output (decision 28)
         bringBack = nil // edits set aside belong to the output they were made on
         let before = current
-        let hadOutput = output != nil
+        let hadSeenOutput = hasSeenOutput
+        hasSeenOutput = hasSeenOutput || key != nil
         output = key
         logUX("EQ output → '\(key?.name ?? "none")' slot=\(store.slotID(for: key) ?? "shared")")
         guard current != before else { return }
         publish()
-        if hadOutput, let key {
+        if hadSeenOutput, let key {
             outputToast.show("\(key.name) · \(summary)")
         }
     }
@@ -236,6 +226,100 @@ final class EQViewModel {
         setCurrent(bringBack.edits)
         persist()
         logUX("EQ bring back edits → '\(presetLabel)'")
+    }
+}
+
+// MARK: - My Presets and the pin (EQ4)
+
+/// Save, rename and delete (the kit's `EQMyPresets`, names checked by `EQPresetName`) and the "Used on
+/// <output>" pin (`EQStore.pin` / `unpin`, decision 28). Each changes the slots and My Presets together,
+/// so it lives beside the state it writes; each ends a drag first, persists what it changed, and sends
+/// what plays — a change to what plays releases a held Compare, like every edit.
+extension EQViewModel {
+    /// How the current output stands with the pins; `nil` with no output, or one that can't be pinned.
+    var outputPin: EQOutputPin? {
+        store.pin(for: output)
+    }
+
+    /// What Save would save now: taken when the Save sheet opens (break-it C1).
+    func saveSource() -> EQSaveSource {
+        store.saveSource(for: output)
+    }
+
+    /// `typed` checked as a My Preset's name, for the sheet's inline copy (`renaming` one of them).
+    func nameCheck(_ typed: String, renaming: String? = nil) -> EQPresetName.Check {
+        EQPresetName.check(typed, among: customPresets.keys, renaming: renaming)
+    }
+
+    /// Save `source` as the My Preset `typed` names (replacing one of that name), the Tone baked in: the
+    /// slot it came from plays it, unedited — even after the output switched while the sheet was open.
+    func save(_ source: EQSaveSource, as typed: String) {
+        endStroke() // a discrete edit ends a drag first (+Stroke)
+        var saved: String?
+        changeSlots { store, myPresets in
+            saved = EQMyPresets.save(source, as: typed, store: &store, myPresets: &myPresets)
+        }
+        guard let saved else { return }
+        bringBack = nil // Save keeps what plays; edits set aside earlier are no longer offered
+        persistMyPresets()
+        persist()
+        logUX("EQ save preset '\(saved)'")
+    }
+
+    /// Rename the My Preset `name` to what `typed` names; every slot playing it, and edits set aside on
+    /// it, follow.
+    func renameMyPreset(_ name: String, to typed: String) {
+        endStroke() // a discrete edit ends a drag first (+Stroke)
+        var renamed: String?
+        changeSlots { store, myPresets in
+            renamed = EQMyPresets.rename(name, to: typed, store: &store, myPresets: &myPresets)
+        }
+        guard let renamed, renamed != name else { return }
+        bringBack = bringBack?.repointingMyPresets { $0 == name ? renamed : $0 }
+        persistMyPresets()
+        persist()
+        logUX("EQ rename preset '\(name)' → '\(renamed)'")
+    }
+
+    /// Delete the My Preset `name`. Whatever plays it keeps its sound, as an edited Flat.
+    func deleteMyPreset(_ name: String) {
+        endStroke() // a discrete edit ends a drag first (+Stroke)
+        guard customPresets[name] != nil else { return }
+        changeSlots { store, myPresets in
+            EQMyPresets.delete(name, store: &store, myPresets: &myPresets)
+        }
+        bringBack = bringBack?.repointingMyPresets { $0 == name ? nil : $0 }
+        persistMyPresets()
+        persist()
+        logUX("EQ delete preset '\(name)'")
+    }
+
+    /// The "Used on <output>" pin, pressed: pin the current output (it keeps exactly what plays now, and
+    /// its edits from then on), or unpin the pin it plays (the shared slot takes it over, so nothing
+    /// audible changes). Nothing for an output that can't be pinned.
+    func togglePin() {
+        guard let pin = outputPin else { return }
+        endStroke() // a discrete edit ends a drag first (+Stroke)
+        changeSlots { store, _ in
+            if pin.isPinned {
+                store.unpin(pin.output)
+            } else {
+                store.pin(pin.output)
+            }
+        }
+        persist()
+        logUX("EQ \(pin.isPinned ? "unpin" : "pin") → '\(pin.output.name)'")
+    }
+
+    /// The one write of the slots and My Presets together, then the one send. Only a change to what
+    /// plays releases a held Compare (pinning and unpinning keep the sound).
+    private func changeSlots(_ change: (inout EQStore, inout [String: [Float]]) -> Void) {
+        let before = current
+        change(&store, &customPresets)
+        if current != before, isComparing {
+            isComparing = false
+        }
+        publish()
     }
 }
 

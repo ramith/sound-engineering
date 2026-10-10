@@ -6,8 +6,8 @@ import SwiftUI
 
 /// One preset in the EQ rail: its curve glyph, its name, and "edited" on the preset playing with edits —
 /// the Library rail's `NavRow` at the EQ's denser 28 pt. A plain button (a `List`'s selection would race
-/// it); choosing plays at once. While edits are set aside, its context menu and a VoiceOver action
-/// bring them back, with no time limit (WCAG 2.2.1).
+/// it); choosing plays at once. Its context menu and VoiceOver actions are `EQPresetRowMenu`'s: bring
+/// back set-aside edits, the "Use on <output>" pin, and Rename / Delete on My Presets.
 struct EQPresetRow: View {
     let preset: EQPresetRef
     /// The 31 points the preset plays unedited, for its glyph.
@@ -16,10 +16,8 @@ struct EQPresetRow: View {
     /// The current preset plays with edits.
     let isEdited: Bool
     let isKeyboardCursor: Bool
-    /// The preset whose edits a switch set aside, while they can be brought back.
-    let setAside: String?
+    let menu: EQPresetRowMenu
     let choose: () -> Void
-    let bringBack: () -> Void
 
     var body: some View {
         Button(action: choose) {
@@ -38,13 +36,7 @@ struct EQPresetRow: View {
         .help(preset.displayName)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
-        .contextMenu { bringBackItem }
-        .accessibilityActions { bringBackItem }
-    }
-
-    @ViewBuilder private var bringBackItem: some View {
-        if let setAside {
-            Button("Bring Back Edits to \(setAside)", action: bringBack)
-        }
+        .contextMenu { menu }
+        .accessibilityActions { menu.voiceOverActions }
     }
 }

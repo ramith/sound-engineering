@@ -52,14 +52,15 @@ final class ShellToastSlot {
 
 // MARK: - Shell toast host (the view side)
 
-/// The shell's bottom-centre confirmation capsule for one `ShellToastSlot` — a sibling of the top
-/// `ErrorBanner`, overlaid on the content region on every tab. Tapping it runs `open`, which takes
-/// the user to what the toast is about.
+/// One `ShellToastSlot`'s confirmation capsule, in the shell's bottom stack (`ShellToasts`) on every
+/// tab. Tapping it runs `open`, which takes the user to what the toast is about.
 ///
 /// A **persistent host** (as `ErrorBanner`): the VoiceOver announcement is keyed on the toast's
-/// token, so a coalesced replace re-fires it, and `.onAppear` catches a toast already raised at
-/// mount. The idle host never intercepts clicks to the content beneath (review swiftui #8). Recipe:
-/// ultra-thin glass + a hairline (Regime A/`.overlay`, S10.7 §3.1). Motion honours Reduce Motion.
+/// token, so a coalesced replace re-fires it. A toast already up when the host appears was raised while
+/// no window showed it — an output switch with the window closed, a menu-bar action — so on reopen it is
+/// neither shown nor spoken (break-it 7). Idle, the host takes no room (the stack closes up) and never
+/// intercepts clicks to the content beneath (review swiftui #8). Recipe: ultra-thin glass + a hairline
+/// (Regime A/`.overlay`, S10.7 §3.1). Motion honours Reduce Motion.
 struct ShellToastHost: View {
     /// The toast to show; `nil` when none is raised or its owner hides it here.
     let toast: ShellToastSlot.Toast?
@@ -69,28 +70,29 @@ struct ShellToastHost: View {
     let open: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The token of a toast already up when the host appeared: stale, never shown or spoken.
+    @State private var staleToken: Int?
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            if let toast {
-                capsule(toast.message)
-                    .padding(.bottom, DesignSystem.Spacing.medium)
+        let shown = toast.flatMap { $0.token == staleToken ? nil : $0 }
+        ZStack {
+            if let shown {
+                capsule(shown.message)
                     .transition(reduceMotion
                         ? .opacity
                         : .move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .allowsHitTesting(toast != nil)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: toast != nil)
+        .allowsHitTesting(shown != nil)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: shown != nil)
         .onChange(of: toast?.token) { _, _ in announce() }
-        .onAppear { announce() }
+        .onAppear { staleToken = toast?.token }
     }
 
-    /// Speak the message even though VoiceOver focus is elsewhere (the toast is non-modal and never
-    /// steals focus).
+    /// Speak a newly raised message even though VoiceOver focus is elsewhere (the toast is non-modal and
+    /// never steals focus).
     private func announce() {
-        guard let toast else { return }
+        guard let toast, toast.token != staleToken else { return }
         AccessibilityNotification.Announcement(toast.message).post()
     }
 

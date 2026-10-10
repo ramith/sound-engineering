@@ -3,7 +3,8 @@ import SwiftUI
 // MARK: - EQ graph card title (Sprint EQ, EQ3)
 
 /// The preset playing, large, with its state: "Warm · Edited", or "Warm · Off" while the EQ is off. One
-/// line, middle-truncated, the full name in the tooltip. (EQ4's "Used on <output>" pin sits under it.)
+/// line, middle-truncated, the full name in the tooltip. The "Used on <output>" pin sits under it
+/// (`EQGraphHeading`).
 struct EQGraphTitle: View {
     @Environment(EQViewModel.self) private var eq
 

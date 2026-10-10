@@ -16,6 +16,14 @@ public enum EQPresetRef: Hashable, Sendable {
         }
     }
 
+    /// The name of one of My Presets (what Rename and Delete act on); `nil` for a built-in.
+    public var myPresetName: String? {
+        switch self {
+        case .builtIn: nil
+        case let .mine(name): name
+        }
+    }
+
     /// The points this preset plays today; `nil` for a My Preset that no longer exists.
     /// `myPresets` is the user's saved presets, name → points (`eqCustomPresetsV1`).
     func points(myPresets: [String: [Float]]) -> [Float]? {

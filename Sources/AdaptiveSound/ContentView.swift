@@ -25,15 +25,10 @@ struct ContentView: View {
                     ErrorBanner()
                         .environment(viewModel)
                 }
-                // Bottom sibling of ErrorBanner: the queue-add confirmation toast (S9.5 §10.4),
-                // visibility-gated (hidden on Now Playing) inside the view itself.
+                // Bottom sibling of ErrorBanner: the shell's toasts — the EQ's output switch and the
+                // queue-add confirmation — stacked, so two raised together never overlap (break-it 8).
                 .overlay(alignment: .bottom) {
-                    QueueToast()
-                        .environment(viewModel)
-                }
-                // Its sibling: the EQ's output-switch toast (Sprint EQ), on every tab.
-                .overlay(alignment: .bottom) {
-                    EQOutputToast()
+                    ShellToasts()
                         .environment(viewModel)
                 }
         } footer: {

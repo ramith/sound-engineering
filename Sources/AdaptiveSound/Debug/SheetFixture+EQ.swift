@@ -16,6 +16,8 @@
         private static let toneSample: [(EQToneRegion, Float)] = [(.presence, 3), (.bass, -2.5)]
         /// The Tone world's hovered row.
         private static let toneRegion = EQToneRegion.presence
+        /// The My Preset the rename world's sheet renames.
+        static let renamedPreset = "Late Night"
 
         /// Seeds the EQ for `variant`: every world plays "Warm · Edited" with My Presets saved and the
         /// engine running, with the Tone card open; each EQ world then puts the screen in its one state —
@@ -32,6 +34,7 @@
             case .eqOff: eq.isOn = false
             case .eqCompare: eq.beginCompare()
             case .eqPure: audio.signalPath.path = .pure
+            case .eqPinned: eq.togglePin()
             default: break
             }
         }
