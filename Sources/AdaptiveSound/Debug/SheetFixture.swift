@@ -1,4 +1,5 @@
 #if DEBUG
+    import CoreAudio
     import LibraryStore
     import SwiftUI
 
@@ -91,9 +92,12 @@
         /// The built-in speakers selected, a USB DAC beside them — every variant has an output device.
         private func seedDevices() {
             let speakers = AudioDeviceModel(id: 1, name: "MacBook Pro Speakers", sampleRate: 48000,
-                                            bufferFrameSize: 512, type: .builtin)
+                                            bufferFrameSize: 512, uid: "BuiltInSpeakerDevice", modelUID: nil,
+                                            transportType: kAudioDeviceTransportTypeBuiltIn, type: .builtin)
             let dac = AudioDeviceModel(id: 2, name: "Modi+ USB DAC", sampleRate: 96000,
-                                       bufferFrameSize: 512, type: .usb)
+                                       bufferFrameSize: 512, uid: "AppleUSBAudioEngine:Schiit:Modi+:1",
+                                       modelUID: "Modi+:30BE:0001",
+                                       transportType: kAudioDeviceTransportTypeUSB, type: .usb)
             audio.availableDevices = [speakers, dac]
             audio.selectedDevice = speakers
         }

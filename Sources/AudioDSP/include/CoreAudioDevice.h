@@ -25,6 +25,7 @@ namespace AdaptiveSound
         uint32_t sampleRate = 0;
         uint32_t bufferFrameSize = 0;
         Type type = Type::Unknown;
+        uint32_t transportType = 0; // kAudioDevicePropertyTransportType FourCC; 0 = unknown
     };
 
     // Core Audio device enumeration and management
@@ -49,8 +50,22 @@ namespace AdaptiveSound
         // Get device buffer frame size
         static uint32_t getDeviceBufferFrameSize(AudioDeviceID deviceID);
 
-        // Determine device type (builtin, USB, wireless, etc.)
-        static AudioDevice::Type getDeviceType(AudioDeviceID deviceID);
+        // Get the device's transport (kAudioDevicePropertyTransportType FourCC, e.g.
+        // kAudioDeviceTransportTypeBluetooth); 0 when unavailable.
+        static uint32_t getDeviceTransportType(AudioDeviceID deviceID);
+
+        // Get the device's persistent UID (kAudioDevicePropertyDeviceUID): the same output across
+        // reconnects and reboots, unlike its AudioDeviceID. Empty when unavailable.
+        static std::string getDeviceUID(AudioDeviceID deviceID);
+
+        // Get the device's model UID (kAudioDevicePropertyModelUID): shared by every unit of the
+        // same model. Empty when the device reports none.
+        static std::string getDeviceModelUID(AudioDeviceID deviceID);
+
+        // Classify a device (builtin, USB, wireless) from its transport, falling back to its name
+        // when the transport is unknown or unrecognized.
+        static AudioDevice::Type classifyDeviceType(uint32_t transportType,
+                                                    const std::string& name);
 
         // MARK: - Pure-Mode capability querying (Phase B — B1)
 

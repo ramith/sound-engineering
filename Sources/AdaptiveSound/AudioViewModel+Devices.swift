@@ -1,8 +1,19 @@
+import EQEditKit
 import Foundation
 
 // MARK: - AudioViewModel device management
 
 extension AudioViewModel {
+    /// `selectedDevice`'s `didSet`: fire `onOutputIdentityChanged` when the output itself changed
+    /// (`EQOutputKey.isOutputChange` — by UID), never for a re-read of the same output.
+    func announceOutputIdentityChange(from previous: AudioDeviceModel?) {
+        let key = selectedDevice?.outputKey
+        guard EQOutputKey.isOutputChange(from: previous?.outputKey, to: key) else { return }
+        logUX("output identity → '\(key?.name ?? "none")' uid=\(key?.uid ?? "-") "
+            + "model=\(key?.modelUID ?? "-") transport=\(selectedDevice?.transportCode ?? "-")")
+        onOutputIdentityChanged?(key)
+    }
+
     func selectDevice(_ device: AudioDeviceModel) {
         logUX("selectDevice: '\(device.name)' id=\(device.id)")
         Task {

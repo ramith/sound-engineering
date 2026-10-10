@@ -10,7 +10,7 @@ import Foundation
 /// `AudioDeviceModel` — no private engine state — so a separate file is safe.
 extension AudioEngineBridge {
     /// Enumerate output devices using the C-ABI bridge to CoreAudio.
-    /// Returns real device IDs, names, sample rates, and types — no mock data.
+    /// Returns real device IDs, UIDs, names, sample rates, transports and types — no mock data.
     func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
@@ -29,11 +29,15 @@ extension AudioEngineBridge {
                         return String(cString: base)
                     }
                     let deviceType = AudioDeviceModel.DeviceType(rawValue: info.deviceType)
+                    let modelUID = Self.deviceString(info.deviceID, copyOutputDeviceModelUIDC)
                     models.append(AudioDeviceModel(
                         id: info.deviceID,
                         name: name,
                         sampleRate: info.sampleRate,
                         bufferFrameSize: info.bufferFrameSize,
+                        uid: Self.deviceString(info.deviceID, copyOutputDeviceUIDC),
+                        modelUID: modelUID.isEmpty ? nil : modelUID,
+                        transportType: info.transportType,
                         type: deviceType
                     ))
                 }
@@ -52,6 +56,23 @@ extension AudioEngineBridge {
                 continuation.resume(returning: models)
             }
         }
+    }
+
+    /// Read one of the bridge's per-device strings (`copyOutputDeviceUIDC` /
+    /// `copyOutputDeviceModelUIDC`) whole: the C call returns the full length snprintf-style, so a
+    /// value longer than the first buffer is read again into one that fits. Empty when the device
+    /// has none.
+    private static func deviceString(
+        _ deviceID: UInt32,
+        _ copy: (UInt32, UnsafeMutablePointer<CChar>?, UInt32) -> UInt32
+    ) -> String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        let length = Int(copy(deviceID, &buffer, UInt32(buffer.count)))
+        if length >= buffer.count {
+            buffer = [CChar](repeating: 0, count: length + 1)
+            _ = copy(deviceID, &buffer, UInt32(buffer.count))
+        }
+        return String(utf8String: buffer) ?? ""
     }
 
     /// The device the engine currently targets — the app-selected device, or (at launch) the system
