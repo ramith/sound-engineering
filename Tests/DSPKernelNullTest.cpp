@@ -399,6 +399,11 @@ namespace
         {"Kernel_P0Switch_LoudMasterStep", testKernelP0SwitchLoudMasterStep, true},
         {"Kernel_P0Fade_KeepsPower", testKernelP0FadeKeepsPower, true},
         {"EQ_Cpu_7_1_AboveSupportedRates", testEqCpu71AboveSupportedRates, false},
+        {
+            "Loudness_Predictor_PathologicalBounded",
+            testLoudnessPredictorPathologicalBounded,
+            true,
+        },
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine
