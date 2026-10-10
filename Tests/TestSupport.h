@@ -17,12 +17,15 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <format>
 #include <functional>
+#include <limits>
+#include <memory>
 #include <mutex>
 #include <numbers>
 #include <random>
@@ -30,11 +33,15 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "DeviceCapability.h"
 #include "DSPKernel.h"
 #include "EQ/EQModuleCoefficients.h"
+#include "EQ/GraphicEQDesigner.h"
+#include "EQDesignBridge.h"
 #include "FileDecodeSource.h"
 #include "GaplessSource.h"
 #include "Limiting/LimiterModule.h"

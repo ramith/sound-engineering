@@ -61,6 +61,8 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/GaplessSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/AudioEngine/Realizer.mm"
+    "$REPO_ROOT/Sources/AudioDSP/EQ/GraphicEQDesigner.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/EQ/EQDesignBridge.cpp" # under test (the AsEqDesigner handle)
     # --- ADDED for the leak harness (NOT compiled by build-null-test.sh) ---
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" # under test
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridge.cpp"               # under test

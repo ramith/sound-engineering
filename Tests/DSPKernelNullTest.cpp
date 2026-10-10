@@ -34,6 +34,8 @@
 //                              ISP-detector accuracy vs the libebur128 true-peak oracle
 //   EqFrequencyResponseSweepTests.inc — S7/US-QA-03 31-band FR sweep (±6/±12 dB, 48 &
 //                              44.1 kHz) + near-Nyquist gain guard + flat bit-transparency
+//   EqDesignerTests.inc   — Sprint EQ / EQ1a: the accurate 31-band graphic-EQ designer
+//                           (GraphicEQDesigner + the asEqDesign C-ABI) vs the Python oracle
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -61,6 +63,7 @@
 #include "LoudnessOracleTests.inc"
 #include "LimiterTruePeakTests.inc"
 #include "EqFrequencyResponseSweepTests.inc"
+#include "EqDesignerTests.inc"
 #include "SoakRtAllocTests.inc"
 #include "SnapshotConcurrencyTests.inc"
 // clang-format on
@@ -72,7 +75,7 @@
 
 namespace
 {
-    constexpr std::array<TestEntry, 123U> kTests = {
+    constexpr std::array<TestEntry, 135U> kTests = {
         {
             // Phase 0 bypass tests
             {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
@@ -282,6 +285,20 @@ namespace
             {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
             {"EQ_CombinedBands_CutRunAndMixedSign", testEqCombinedBandsCutRunAndMixedSign, true},
             {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
+            // Sprint EQ / EQ1a: the graphic-EQ designer vs the Python oracle (parallel-safe: pure
+            // DSP, no env/tmp) — except Designer_Timing, serial so the pool cannot skew its clock.
+            {"EQ_Designer_MatchesOracle", testEqDesignerMatchesOracle, true},
+            {"EQ_ACGE_Presets_Tone_Smooth", testEqAcgePresetsToneSmooth, true},
+            {"EQ_ACGE_Ramo1000", testEqAcgeRamo1000, true},
+            {"EQ_ACGE_Hard", testEqAcgeHard, true},
+            {"EQ_ACGE_SingleBand", testEqAcgeSingleBand, true},
+            {"EQ_SvfBell_Exact", testEqSvfBellExact, true},
+            {"EQ_Ultrasonic_Property", testEqUltrasonicProperty, true},
+            {"EQ_Readback_MatchesIndependentEval", testEqReadbackMatchesIndependentEval, true},
+            {"EQ_Design_FlatFinite", testEqDesignFlatFinite, true},
+            {"EQ_Design_Rejects_NonFinite", testEqDesignRejectsNonFinite, true},
+            {"Designer_TwoThreads", testDesignerTwoThreads, true},
+            {"Designer_Timing", testDesignerTiming, false},
             // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
             // process-wide operator new/delete override scoped to the calling thread via a thread_local
             // flag; running them in the parallel worker pool alongside other allocating tests is fine
