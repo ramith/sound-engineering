@@ -197,7 +197,7 @@ extension AudioEngineBridge {
 
     // `dspAudioUnit` is declared on the main class body. It is WRITTEN on the arbitrary
     // `AVAudioUnit.instantiate` completion queue (`+Graph`) and nil'd on `engineQueue` teardown
-    // (`+Lifecycle`), while the MainActor control-plane publishers (publishEQGains /
+    // (`+Lifecycle`), while the MainActor control-plane publishers (publishEQ /
     // publishIntensity / publishCrossfeed / publishChannelLayout) read it. Those accesses MUST go
     // through the accessors below so the field is serialized on the leaf lock AND the reader holds a
     // STRONG ref for the whole C-ABI publish — otherwise a teardown-nil that drops the last ref

@@ -1,14 +1,15 @@
+import EQEditKit
 import Foundation
 
 // MARK: - EQViewModel
 
 /// Manages 31-band EQ state and dispatches gain changes to the DSP kernel.
 ///
-/// Preset shapes live in `EQPreset.gains` (the single source of truth).
+/// Preset shapes live in `EQBuiltInPreset.points` (the single source of truth).
 /// All mutations go through `commitCustomBandEdits()` or `selectPreset(_:)`,
 /// both of which call `dispatchAllBands()` exactly once per user action.
 ///
-/// Presets are typed as `EQPreset`; "Custom" is represented by setting
+/// Presets are typed as `EQBuiltInPreset`; "Custom" is represented by setting
 /// `selectedPreset` to `nil`. User-saved custom presets (`savedCustomPresets`)
 /// and per-output-device preset recall (`outputPresetMap`) are persisted to
 /// `UserDefaults`; see `EQViewModel+Persistence.swift`.
@@ -22,7 +23,7 @@ final class EQViewModel {
     var bandGains: [Float] = .init(repeating: 0.0, count: 31)
 
     /// The active named preset, or `nil` when the user has made custom edits.
-    var selectedPreset: EQPreset? = .flat
+    var selectedPreset: EQBuiltInPreset? = .flat
 
     // MARK: - Custom presets
 
@@ -80,10 +81,10 @@ final class EQViewModel {
 
     /// Apply a named preset: updates `bandGains` and dispatches all 31 bands
     /// to the DSP kernel in a single pass.
-    func selectPreset(_ preset: EQPreset) {
+    func selectPreset(_ preset: EQBuiltInPreset) {
         logUX("EQ preset → '\(preset.displayName)'")
         selectedPreset = preset
-        bandGains = preset.gains
+        bandGains = preset.points
         dispatchAllBands()
         persistLiveState()
     }
@@ -143,8 +144,8 @@ final class EQViewModel {
         let key = String(device.id)
         guard let presetID = outputPresetMap[key] else { return }
 
-        // Try named EQPreset first; fall back to saved custom.
-        if let preset = EQPreset(rawValue: presetID) {
+        // Try a built-in preset first; fall back to saved custom.
+        if let preset = EQBuiltInPreset(rawValue: presetID) {
             logUX("EQ recall: device '\(device.name)' → preset '\(presetID)'")
             selectPreset(preset)
             recallBannerMessage = "\(presetID) loaded for \(device.name)"

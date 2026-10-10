@@ -1,3 +1,4 @@
+import EQEditKit
 import SwiftUI
 
 // MARK: - EQ Preset Picker
@@ -18,11 +19,11 @@ struct EQPresetPickerView: View {
 
     // MARK: - Named preset groups (F6)
 
-    private static let analyticPresets: [EQPreset] = [.flat, .presence, .clarity, .warm]
-    private static let housePresets: [EQPreset] = [.loudness, .vocal, .studio]
+    private static let analyticPresets: [EQBuiltInPreset] = [.flat, .presence, .clarity, .warm]
+    private static let housePresets: [EQBuiltInPreset] = [.loudness, .vocal, .studio]
 
     var body: some View {
-        let selection = Binding<EQPreset?>(
+        let selection = Binding<EQBuiltInPreset?>(
             get: { eqViewModel.selectedPreset },
             set: { newPreset in
                 if let preset = newPreset {
@@ -33,18 +34,18 @@ struct EQPresetPickerView: View {
 
         Picker("Preset", selection: selection) {
             ForEach(Self.analyticPresets) { preset in
-                Text(preset.displayName).tag(EQPreset?.some(preset))
+                Text(preset.displayName).tag(EQBuiltInPreset?.some(preset))
             }
 
             Divider()
 
             ForEach(Self.housePresets) { preset in
-                Text(preset.displayName).tag(EQPreset?.some(preset))
+                Text(preset.displayName).tag(EQBuiltInPreset?.some(preset))
             }
 
             Divider()
 
-            Text("Custom").tag(EQPreset?.none)
+            Text("Custom").tag(EQBuiltInPreset?.none)
         }
         .pickerStyle(.menu)
         .labelsHidden() // the parent LabeledContent("Preset") supplies the VoiceOver label

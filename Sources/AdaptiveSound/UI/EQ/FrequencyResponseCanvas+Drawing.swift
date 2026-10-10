@@ -1,3 +1,4 @@
+import EQEditKit
 import SwiftUI
 
 // MARK: - FrequencyResponseCanvas coordinate map + drawing + curve math
@@ -12,7 +13,7 @@ import SwiftUI
 /// (previously the dots used a log-frequency x while the drag assumed evenly-spaced indices — two
 /// mappings that only agreed by coincidence).
 ///
-/// The frequency axis is DERIVED from `EQPreset.isoFrequencies` (not hard-coded 20 / 20000), and all
+/// The frequency axis is DERIVED from `EQBands.nominalHz` (not hard-coded 20 / 20000), and all
 /// frequency work is in log space: the interpolation feeds log-frequencies straight through, so there
 /// is no `pow(10,·)` → `log10(·)` round-trip to nudge the 20 kHz / 20 Hz endpoint a hair out of range
 /// — the round-trip that used to trip a guard and pin the curve's endpoint gain to 0 dB. The gain
@@ -37,7 +38,7 @@ struct EQPlotMap {
 
     /// Band centre frequencies in log10 space, computed once. The axis bounds are its endpoints, so
     /// the range tracks the band table automatically.
-    static let isoLogFreqs: [Double] = EQPreset.isoFrequencies.map { log10($0) }
+    static let isoLogFreqs: [Double] = EQBands.nominalHz.map { log10($0) }
     static let logFreqMin: Double = isoLogFreqs.first ?? log10(20)
     static let logFreqMax: Double = isoLogFreqs.last ?? log10(20000)
 
@@ -167,8 +168,8 @@ extension FrequencyResponseCanvas {
     /// regardless of the band's gain (the band's own dot sits within it), so it can never look
     /// detached from a dot. Uses the map's log-frequency x, same as the dots.
     func drawKeyboardCursor(context: inout GraphicsContext, map: EQPlotMap, bandIndex: Int) {
-        guard EQPreset.isoFrequencies.indices.contains(bandIndex) else { return }
-        let xPos = map.x(forFreq: EQPreset.isoFrequencies[bandIndex])
+        guard EQBands.nominalHz.indices.contains(bandIndex) else { return }
+        let xPos = map.x(forFreq: EQBands.nominalHz[bandIndex])
 
         let stripWidth: CGFloat = 10
         let strip = Path(CGRect(

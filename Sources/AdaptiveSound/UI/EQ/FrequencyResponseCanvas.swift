@@ -1,3 +1,4 @@
+import EQEditKit
 import SwiftUI
 
 // MARK: - Frequency Response Canvas
@@ -44,7 +45,7 @@ struct FrequencyResponseCanvas: View {
 
             drawGridAndLabels(context: &context, map: map)
 
-            let eqValues: [(freq: Double, gain: Double)] = EQPreset.isoFrequencies
+            let eqValues: [(freq: Double, gain: Double)] = EQBands.nominalHz
                 .enumerated()
                 .map { index, freq in (freq, Double(eqViewModel.bandGains[index])) }
 
@@ -94,7 +95,7 @@ struct FrequencyResponseCanvas: View {
         // this, the curve was a single read-only element editable only by dragging — unreachable by
         // VoiceOver (grep-verified: no other per-band input path exists).
         .accessibilityChildren {
-            ForEach(EQPreset.isoFrequencies.indices, id: \.self) { index in
+            ForEach(EQBands.nominalHz.indices, id: \.self) { index in
                 Rectangle()
                     .accessibilityLabel(Text(bandFrequencyLabel(index)))
                     .accessibilityValue(Text(bandGainLabel(index)))
@@ -109,7 +110,7 @@ struct FrequencyResponseCanvas: View {
 
     /// Move the keyboard-cursor band, clamped to 0…30.
     private func moveKeyboardCursor(_ delta: Int) {
-        keyboardBand = max(0, min(EQPreset.isoFrequencies.count - 1, keyboardBand + delta))
+        keyboardBand = max(0, min(EQBands.nominalHz.count - 1, keyboardBand + delta))
     }
 
     /// Nudge one band's gain (keyboard ↑/↓ or a VoiceOver increment/decrement) and commit. Unlike
@@ -125,7 +126,7 @@ struct FrequencyResponseCanvas: View {
     /// VoiceOver-spoken band frequency ("1 kilohertz" / "3150 hertz") — words, not "kHz"/"Hz",
     /// which VoiceOver would spell out letter by letter.
     private func bandFrequencyLabel(_ index: Int) -> String {
-        let hz = EQPreset.isoFrequencies[index]
+        let hz = EQBands.nominalHz[index]
         if hz >= 1000 {
             let kHz = hz / 1000
             let value = kHz.truncatingRemainder(dividingBy: 1) < 0.001
