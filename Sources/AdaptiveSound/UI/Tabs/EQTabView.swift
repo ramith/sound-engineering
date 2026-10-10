@@ -2,15 +2,11 @@ import SwiftUI
 
 // MARK: - EQ Tab View
 
+/// The EQ tab: the response graph over the preset / save controls. Per-output memory no longer lives
+/// here — the composition root's Edge 5 switches the slot with any tab (or no window) showing, and the
+/// shell's `EQOutputToast` says so.
 struct EQTabView: View {
     @Environment(EQViewModel.self) private var eqViewModel
-    @Environment(AudioViewModel.self) private var audioViewModel
-
-    // Display-only (drives the canvas + `logInterpolationModeChange`; no engine dispatch), so it
-    // persists directly at the view via AppStorage — NOT routed through the EQ view model.
-    // `$isUsingDiscreteSteps` still projects a Binding for EQControlsSection.
-    @AppStorage("eq.discreteSteps.v1") private var isUsingDiscreteSteps = false
-    @State private var bannerVisible = false
 
     var body: some View {
         // `.fill` (not `.stack`): the graph is an interactive drag surface, so it must NOT
@@ -24,74 +20,13 @@ struct EQTabView: View {
                     idealHeight: DesignSystem.Visualizer.responseGraphIdealHeight,
                     maxHeight: DesignSystem.Visualizer.responseGraphMaxHeight
                 ) {
-                    FrequencyResponseCanvas(
-                        eqViewModel: eqViewModel,
-                        isUsingDiscreteSteps: isUsingDiscreteSteps
-                    )
+                    FrequencyResponseCanvas(eqViewModel: eqViewModel)
                 }
                 .padding(.top, 20)
                 .padding(.horizontal)
 
-                EQControlsSection(
-                    eqViewModel: eqViewModel,
-                    isUsingDiscreteSteps: $isUsingDiscreteSteps
-                )
-            }
-            .overlay(alignment: .bottom) { recallBanner }
-            .animation(.easeInOut(duration: 0.3), value: bannerVisible)
-            .onChange(of: isUsingDiscreteSteps) { _, newValue in
-                eqViewModel.logInterpolationModeChange(newValue)
-            }
-            // F3: per-output recall wired here in the view — NOT via a cross-VM callback.
-            // Last-setting-wins-at-launch: skip the launch nil→value device resolution
-            // (`guard old != nil`) so it does NOT recall a device preset and clobber the
-            // restored "last setting" curve. Value→value user switches still recall.
-            // Known edge: a value→nil→value reconnect is also skipped — acceptable.
-            .onChange(of: audioViewModel.selectedDevice) { old, newDevice in
-                guard let device = newDevice else { return }
-                guard old != nil else { return }
-                eqViewModel.recallPresetForDevice(device)
-            }
-            .onChange(of: eqViewModel.recallBannerMessage) { _, message in
-                guard message != nil else { return }
-                bannerVisible = true
-                Task {
-                    try? await Task.sleep(for: .seconds(3))
-                    bannerVisible = false
-                    eqViewModel.recallBannerMessage = nil
-                }
+                EQControlsSection(eqViewModel: eqViewModel)
             }
         }
-    }
-
-    /// Non-modal auto-recall banner (F3), pinned to the bottom of the graph area.
-    @ViewBuilder private var recallBanner: some View {
-        if bannerVisible, let message = eqViewModel.recallBannerMessage {
-            EQRecallBanner(message: message)
-                .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-}
-
-// MARK: - EQ Recall Banner
-
-/// Transient non-modal banner shown when a preset is auto-recalled for a device.
-private struct EQRecallBanner: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(DesignSystem.Color.accentForeground)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(Color.asLabel)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        // Regime A/`.overlay` (S10.7 §3.1): transient recall banner floating over the EQ canvas.
-        .glassPanel(.overlay(.ultraThin), in: Capsule())
-        .overlay(Capsule().stroke(Color.asHairline, lineWidth: 0.5))
     }
 }

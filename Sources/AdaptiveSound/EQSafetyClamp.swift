@@ -4,9 +4,9 @@ import Foundation
 
 /// Hearing-safety cumulative-gain clamp for the 31-band EQ.
 ///
-/// Sits in the control path between band-gain *intent* (`EQViewModel.bandGains`,
-/// driven by presets, slider/canvas edits, and the future NL macro layer) and the
-/// values *published* to the DSP kernel. It enforces a ceiling on the **summed**
+/// Sits in the control path between band-gain *intent* (the EQ's points, driven by
+/// presets and graph edits) and the values *published* to the DSP kernel (applied in
+/// `AudioEngineBridge.publishEQ` until Sprint EQ's EQ2 retires it). It enforces a ceiling on the **summed**
 /// band gains so that a "boost everything" intent cannot stack into a dangerous
 /// cumulative level.
 ///

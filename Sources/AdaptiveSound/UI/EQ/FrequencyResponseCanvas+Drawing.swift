@@ -1,93 +1,11 @@
 import EQEditKit
 import SwiftUI
 
-// MARK: - FrequencyResponseCanvas coordinate map + drawing + curve math
+// MARK: - FrequencyResponseCanvas drawing + curve math
 
 //
 // Kept out of the main file so the SwiftUI view's own body stays under SwiftLint `type_body_length`.
-
-/// The EQ plot's coordinate map: the single source of truth for converting between screen points and
-/// the plot's two axes — a LOGARITHMIC frequency x-axis and a LINEAR gain y-axis — plus the inverse
-/// hit-test (`nearestBand(toX:)`). Drawing (grid / curve / dots / cursor) AND drag/keyboard
-/// hit-testing both go through this one map, so a point is placed and picked by identical math
-/// (previously the dots used a log-frequency x while the drag assumed evenly-spaced indices — two
-/// mappings that only agreed by coincidence).
-///
-/// The frequency axis is DERIVED from `EQBands.nominalHz` (not hard-coded 20 / 20000), and all
-/// frequency work is in log space: the interpolation feeds log-frequencies straight through, so there
-/// is no `pow(10,·)` → `log10(·)` round-trip to nudge the 20 kHz / 20 Hz endpoint a hair out of range
-/// — the round-trip that used to trip a guard and pin the curve's endpoint gain to 0 dB. The gain
-/// axis shows ±`gainSpan` dB; the tighter DSP band range (±12) is a clamp the editor applies, not a
-/// plot concern.
-struct EQPlotMap {
-    let left: CGFloat
-    let right: CGFloat
-    let top: CGFloat
-    let bottom: CGFloat
-
-    var width: CGFloat {
-        right - left
-    }
-
-    var height: CGFloat {
-        bottom - top
-    }
-
-    /// Visual half-span of the gain axis (the grid runs −`gainSpan` … +`gainSpan` dB).
-    static let gainSpan: Double = 20
-
-    /// Band centre frequencies in log10 space, computed once. The axis bounds are its endpoints, so
-    /// the range tracks the band table automatically.
-    static let isoLogFreqs: [Double] = EQBands.nominalHz.map { log10($0) }
-    static let logFreqMin: Double = isoLogFreqs.first ?? log10(20)
-    static let logFreqMax: Double = isoLogFreqs.last ?? log10(20000)
-
-    // MARK: Axis transforms
-
-    func x(forLogFreq logFreq: Double) -> CGFloat {
-        let span = Self.logFreqMax - Self.logFreqMin
-        let ratio = span > 0 ? (logFreq - Self.logFreqMin) / span : 0
-        return left + CGFloat(ratio) * width
-    }
-
-    func x(forFreq freq: Double) -> CGFloat {
-        x(forLogFreq: log10(freq))
-    }
-
-    func y(forGain gain: Double) -> CGFloat {
-        let ratio = (gain + Self.gainSpan) / (2 * Self.gainSpan)
-        return bottom - CGFloat(ratio) * height
-    }
-
-    /// Screen y → gain in the VISUAL span [−`gainSpan`, +`gainSpan`]. The editor clamps to the DSP range.
-    func gain(forY y: CGFloat) -> Double {
-        guard height > 0 else { return 0 }
-        let ratio = min(max(Double((bottom - y) / height), 0), 1)
-        return ratio * (2 * Self.gainSpan) - Self.gainSpan
-    }
-
-    // MARK: Inverse hit-test
-
-    /// The band whose plotted position is nearest screen `x` — the drag / keyboard pick. Because it
-    /// uses the SAME log-frequency placement as the dots, clicking on or beside a dot always selects
-    /// that dot's band; there is no separate linear-index mapping to drift out of sync with the
-    /// drawing, and an `x` past either edge resolves to the nearest end band.
-    func nearestBand(toX x: CGFloat) -> Int {
-        guard width > 0 else { return 0 }
-        let span = Self.logFreqMax - Self.logFreqMin
-        let logFreq = Self.logFreqMin + Double((x - left) / width) * span
-        var best = 0
-        var bestDistance = Double.greatestFiniteMagnitude
-        for (index, bandLogFreq) in Self.isoLogFreqs.enumerated() {
-            let distance = abs(bandLogFreq - logFreq)
-            if distance < bestDistance {
-                bestDistance = distance
-                best = index
-            }
-        }
-        return best
-    }
-}
+// Every position goes through the kit's `EQPlotMap`, the same map the drag hit-tests with.
 
 extension FrequencyResponseCanvas {
     // MARK: - Drawing Helpers

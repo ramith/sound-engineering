@@ -27,4 +27,15 @@ public struct EQOutputKey: Hashable, Codable, Sendable {
     public static func isOutputChange(from old: EQOutputKey?, to new: EQOutputKey?) -> Bool {
         old?.uid != new?.uid
     }
+
+    /// The UID prefix of the private aggregate CoreAudio builds around the default device for one
+    /// process (`CADefaultDeviceAggregate-<pid>-<n>`).
+    private static let privateAggregatePrefix = "CADefaultDeviceAggregate-"
+
+    /// Whether this output can have a slot of its own: it has a UID, and not one that changes every
+    /// launch — a process-private default-device aggregate is rebuilt under a new UID each run, so
+    /// a slot pinned to it could never be found again. Such an output plays the shared slot.
+    var isPinnable: Bool {
+        !uid.isEmpty && !uid.hasPrefix(Self.privateAggregatePrefix)
+    }
 }

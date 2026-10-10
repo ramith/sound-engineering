@@ -6,7 +6,7 @@ import SwiftUI
 /// content region (below the chrome) on every tab, so engine-init / device-loss / playback / scan
 /// failures — previously set on the model but shown in NO UI — are now visible and recoverable.
 ///
-/// Visual language matches `EQRecallBanner` (ultra-thin material + a hairline stroke), sized as a
+/// Visual language matches `ShellToastHost` (ultra-thin material + a hairline stroke), sized as a
 /// rounded card rather than a pill because it carries an icon, wrapping text, and up to two actions.
 ///
 /// Behaviour:
