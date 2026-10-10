@@ -16,8 +16,12 @@ import SwiftUI
 /// scrubber (PR 6) — one carved surface, two consumers. Vertically centered in whatever height
 /// the caller frames it to; the knob/thumb is the caller's concern.
 struct CarvedGroove: View {
-    /// The teal-filled portion, as a fraction [0, 1] of the track width.
+    /// Where the teal fill ends, as a fraction [0, 1] of the track width.
     let fillFraction: Double
+    /// Where the teal fill starts, as a fraction [0, 1] of the track width: the leading end by
+    /// default; a centre-zero track's centre (EQ3t), so the fill runs from there to `fillFraction`
+    /// on either side.
+    var fillOrigin: Double = 0
     /// Track (groove) thickness.
     var height: CGFloat = .init(GlassDecor.carvedTrackHeight)
     /// The groove's fill: the card groove by default; the footer scrubber, on the bare window,
@@ -39,7 +43,8 @@ struct CarvedGroove: View {
     var body: some View {
         let dark = colorScheme == .dark
         GeometryReader { geo in
-            let clamped = CGFloat(min(max(fillFraction, 0), 1))
+            let end = CGFloat(min(max(fillFraction, 0), 1))
+            let start = CGFloat(min(max(fillOrigin, 0), 1))
             ZStack(alignment: .leading) {
                 // Carved base: token fill + a top inner shade (the 8a inset shadow).
                 Capsule()
@@ -57,7 +62,8 @@ struct CarvedGroove: View {
 
                 Capsule()
                     .fill(fillStyle)
-                    .frame(width: geo.size.width * clamped, height: height)
+                    .frame(width: geo.size.width * abs(end - start), height: height)
+                    .offset(x: geo.size.width * min(start, end))
                     .shadow(color: (dark && glow) ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
                             radius: 5)
             }
@@ -88,30 +94,55 @@ struct CarvedKnob: View {
     }
 }
 
-/// The inspector slider's track+knob (S10.7 PR 5). Composes the shared `CarvedGroove` (fill to
+/// The carved slider's track+knob (S10.7 PR 5). Composes the shared `CarvedGroove` (fill to
 /// the knob CENTER, so the teal meets the knob at every position) + a `CarvedKnob` at the
 /// knob's inset travel position. `CarvedSlider` (UI/Controls) owns interaction.
+///
+/// A CENTRE-ZERO track (`origin` inside the track — the EQ's Tone sliders, ±12 dB, EQ3t) fills from
+/// the origin to the knob on either side, and a short tertiary mark in the groove shows where the
+/// origin is, so "0" reads with the knob away from it. At the origin the fill is empty and the
+/// knob covers the mark.
 struct CarvedTrack: View {
-    /// Filled fraction in [0, 1].
+    /// The knob's position, as a fraction [0, 1] of its travel.
     let fraction: Double
+    /// Where the fill grows from, as a fraction [0, 1] of the travel: the leading end by default.
+    var origin: Double = 0
 
     private static let knobSize = CGFloat(GlassDecor.sliderKnobSize)
+    /// The centre-zero mark: a hairline a little shorter than the knob.
+    private static let originMark = CGSize(width: 1, height: 10)
 
     var body: some View {
         GeometryReader { geo in
-            let usable = max(geo.size.width - Self.knobSize, 0)
-            let knobX = usable * CGFloat(min(max(fraction, 0), 1))
-            // The teal reaches the knob's CENTER at every position (identical to the PR-5
-            // fill width `knobX + knobSize/2`, expressed as a fraction of the track width).
-            let fillFraction = Double((knobX + Self.knobSize / 2) / max(geo.size.width, 1))
+            let width = geo.size.width
+            let isCentred = origin > 0 && origin < 1
+            // A leading (or trailing) origin starts the fill flush with the groove's own end; a
+            // centred one at the knob's centre there, so at the origin the fill is empty.
+            let fillOrigin = isCentred ? Self.knobCentre(atTravel: origin, width: width) : min(max(origin, 0), 1)
             ZStack(alignment: .leading) {
-                CarvedGroove(fillFraction: fillFraction)
+                // The teal reaches the knob's CENTER at every position (the PR-5 fill width
+                // `knobX + knobSize/2`, expressed as a fraction of the track width).
+                CarvedGroove(fillFraction: Self.knobCentre(atTravel: fraction, width: width), fillOrigin: fillOrigin)
+                if isCentred {
+                    Rectangle()
+                        .fill(DesignSystem.Color.labelTertiary)
+                        .frame(width: Self.originMark.width, height: Self.originMark.height)
+                        .offset(x: width * fillOrigin - Self.originMark.width / 2)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                }
                 CarvedKnob()
-                    .offset(x: knobX)
+                    .offset(x: max(width - Self.knobSize, 0) * CGFloat(min(max(fraction, 0), 1)))
                     .frame(maxHeight: .infinity, alignment: .center)
             }
         }
         .frame(height: Self.knobSize)
+    }
+
+    /// The knob's centre at `travel` (a fraction [0, 1] of its inset travel), as a fraction of a
+    /// track `width` wide.
+    private static func knobCentre(atTravel travel: Double, width: CGFloat) -> Double {
+        let usable = max(width - knobSize, 0)
+        return Double((knobSize / 2 + usable * CGFloat(min(max(travel, 0), 1))) / max(width, 1))
     }
 }
 

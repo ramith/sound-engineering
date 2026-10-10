@@ -89,8 +89,44 @@ public struct EQCurve: Equatable, Codable, Sendable {
     /// more than 0.05 dB away, or any Tone set (a Tone move counts even where the ceiling holds the
     /// points still). Points of the wrong count never match.
     func isEdited(against presetPoints: [Float]) -> Bool {
-        guard presetPoints.count == EQBands.count, tone.allSatisfy({ $0 == 0 }) else { return true }
+        guard presetPoints.count == EQBands.count, !hasTone else { return true }
         return zip(points, presetPoints).contains { abs($0 - $1) > Self.editedThresholdDb }
+    }
+
+    // MARK: - Tone (EQ3t; decision 24: a macro over the points, not a second mode)
+
+    /// Tone `region`'s level (dB).
+    public func tone(of region: EQToneRegion) -> Float {
+        tone[region.rawValue]
+    }
+
+    /// Whether any Tone region is set: Reset Tone has something to take back.
+    public var hasTone: Bool {
+        tone.contains { $0 != 0 }
+    }
+
+    /// Sets Tone `region` to `db`, held in ±12: every point the region reaches moves by the region's
+    /// weight there, and the base is untouched — so `resetTone()` takes exactly this back. A
+    /// non-finite level is ignored.
+    public mutating func setTone(_ region: EQToneRegion, to db: Float) {
+        guard db.isFinite else { return }
+        tone[region.rawValue] = db.clamped(within: EQBands.toneLimitDb)
+    }
+
+    /// Every Tone region back to 0: the points return to the base.
+    public mutating func resetTone() {
+        tone = [Float](repeating: 0, count: EQToneRegion.allCases.count)
+    }
+
+    /// How many of the points Tone `region` reaches the ±12 ceiling holds: base + Tone asks more of
+    /// them than a point can play, so moving the slider further does nothing there. The graph's Tone
+    /// readout ("· 3 points held") and the slider's VoiceOver value ("limited") say so, so a slider
+    /// never looks dead without a reason (breaker S2).
+    public func heldPointCount(in region: EQToneRegion) -> Int {
+        let weights = EQToneRegion.bandWeights[region.rawValue]
+        return (0 ..< EQBands.count).count { band in
+            weights[band] > 0 && abs(base[band] + toneOffset(atBand: band)) > EQBands.pointLimitDb
+        }
     }
 
     // MARK: - Codable (base + tone; the invariant is checked, never trusted)
