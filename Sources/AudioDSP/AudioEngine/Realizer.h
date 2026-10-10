@@ -16,22 +16,22 @@ namespace AdaptiveSound
 {
     // ------------------------------------------------------------------------
     // PendingSlot<T> — one coalescing intent slot (architect A-F15). The control thread write()s
-    // the newest intent and learns whether the slot just went clean → dirty (post one drain then);
-    // the drain take()s it. Both run under the Realizer's slotMutex_ (off-RT), never on the RT
-    // thread. T is a trivially copyable intent POD.
+    // the newest intent (a burst overwrites it); the drain take()s it. Both run under the
+    // Realizer's slotMutex_ (off-RT), never on the RT thread. Whether to post a drain is decided
+    // ONCE for all slots (Realizer::drainPosted_), not per slot: per-slot posting let every real
+    // drain re-arm each slot, so the serial queue grew without bound under a mixed burst and a
+    // re-allocation (dispatch_sync) waited seconds behind it. T is a trivially copyable POD.
     // ------------------------------------------------------------------------
     template <typename T> class PendingSlot
     {
         static_assert(std::is_trivially_copyable_v<T>, "an intent must be trivially copyable");
 
       public:
-        // Store the newest intent. True when the slot was clean (the caller posts a drain).
-        bool write(const T& value) noexcept
+        // Store the newest intent, replacing any not yet taken.
+        void write(const T& value) noexcept
         {
-            const bool wasClean = !dirty_;
             value_ = value;
             dirty_ = true;
-            return wasClean;
         }
 
         // Take the pending intent, if any, leaving the slot clean.
@@ -57,19 +57,20 @@ namespace AdaptiveSound
     // It owns the canonical TargetState and a shared_ptr<DSPKernel>, and it OWNS the design sample
     // rate: every intent is realised at the rate the kernel was last initialised at, so nothing
     // upstream passes a rate (engine-plan §6). Control-plane entry points (one control thread, the
-    // @MainActor) write a coalescing slot and post a drain to a serial queue on a clean → dirty
-    // transition; the drain realises only what changed, read-modify-writes the canonical state and
-    // publishes ONCE. The EQ is designed HERE, on the queue, by the Realizer's own
-    // GraphicEQDesigner (never shared with the UI's), into the finished (k, m1) the RT module runs,
-    // with the glide time from the τ rule (EQTargets.h).
+    // @MainActor) write a coalescing slot and post a drain to a serial queue only when none is
+    // pending (at most ONE untaken drain is ever queued, whatever the mix of intents); the drain
+    // realises only what changed, read-modify-writes the canonical state and publishes ONCE. The
+    // EQ is designed HERE, on the queue, by the Realizer's own GraphicEQDesigner (never shared
+    // with the UI's), into the finished (k, m1) the RT module runs, with the glide time from the
+    // τ rule (EQTargets.h).
     //
     // Re-allocation (engine-plan §6): reinitializeKernel() runs on the queue (dispatch_sync), so it
     // is serialised with every publish: it re-initialises the kernel, re-solves the EQ from the
     // stored points and re-derives the crossfeed at the new rate, and publishes once — the EQ
     // module snaps to that first target, so a rate or channel change never fades in from flat.
     //
-    // Threading: the slots are guarded by slotMutex_ (control-thread write vs drain read). Never
-    // taken on the RT thread. Everything else is queue-owned.
+    // Threading: the slots and drainPosted_ are guarded by slotMutex_ (control-thread write vs
+    // drain take). Never taken on the RT thread. Everything else is queue-owned.
     // ------------------------------------------------------------------------
     class Realizer : public std::enable_shared_from_this<Realizer>
     {
@@ -150,6 +151,9 @@ namespace AdaptiveSound
         void drain();
         void reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames);
         void postDrain();
+        // Write `intent` into `slot` under slotMutex_; true when the caller must post a drain
+        // (none was pending). Defined in Realizer.mm, its only user.
+        template <typename T> [[nodiscard]] bool writeSlot(PendingSlot<T>& slot, const T& intent);
         // Design the stored EQ intent at sampleRate_ into canonical_.eq (glide by the τ rule).
         void realizeEq();
         void realizeCrossfeed();
@@ -172,6 +176,7 @@ namespace AdaptiveSound
         PendingSlot<EqIntent> pendingEq_;
         PendingSlot<IntensityIntent> pendingIntensity_;
         PendingSlot<CrossfeedIntent> pendingCrossfeed_;
+        bool drainPosted_ = false; // a drain is queued and has not yet taken the slots
         bool shutdown_ = false;
     };
 
