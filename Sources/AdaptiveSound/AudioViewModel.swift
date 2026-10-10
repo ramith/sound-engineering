@@ -108,20 +108,18 @@ final class AudioViewModel {
 
     // MARK: - Reimagine Intensity (QW-A)
 
-    /// Wet/dry blend for all DSP enhancement stages (EQ, clarity, crossfeed).
-    /// 0.0 = bit-perfect bypass; 1.0 = full blend. Default 0.20.
+    /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial, crossfeed). The EQ
+    /// sits AHEAD of the blend and plays at every Intensity (Sprint EQ decision 25): 0.0 =
+    /// Reimagine off — the EQ alone, bit-perfect when the EQ is Off or flat; 1.0 = full blend.
+    /// Default 0.20, published at engine-ready (`publishPlaybackIntents()`).
     /// The slider binds this in 0...1, so the stored value is always in range; the engine call
     /// is clamped defensively with a LOCAL — NEVER re-assign `intensity` inside its own `didSet`
     /// (under @Observable a self-assignment re-fires the setter → infinite recursion → crash).
     /// Ops dispatched via `+IntensityControl`.
     var intensity: Float = 0.20 {
         didSet {
-            let clamped = max(0, min(1, intensity))
-            logUX("intensity → \(Int(clamped * 100)) %")
-            // Synchronous, off-RT control-plane call (borrows the AU under the leaf lock). No Task:
-            // publishIntensity has no suspension point, and an unstructured Task only risks applying
-            // an earlier value after a later one under rapid slider drags (S3 finding F4).
-            engine.publishIntensity(clamped)
+            logUX("intensity → \(Int(max(0, min(1, intensity)) * 100)) %")
+            publishIntensity()
         }
     }
 
@@ -132,7 +130,7 @@ final class AudioViewModel {
     var crossfeedEnabled: Bool = false {
         didSet {
             logUX("crossfeed → \(crossfeedEnabled ? "on" : "off") [\(crossfeedStrength.displayName)]")
-            engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength)
+            publishCrossfeed()
         }
     }
 
@@ -141,7 +139,7 @@ final class AudioViewModel {
         didSet {
             guard crossfeedEnabled else { return }
             logUX("crossfeed strength → \(crossfeedStrength.displayName)")
-            engine.publishCrossfeed(enabled: true, strength: crossfeedStrength)
+            publishCrossfeed()
         }
     }
 

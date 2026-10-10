@@ -117,12 +117,13 @@ struct ReimagineSectionView: View {
                          accessibilityLabel: "Reimagine Intensity",
                          accessibilityValueText: "\(percent) percent")
                 .disabled(isPureBypassed)
-                .help(bvm.intensity == 0 ? "0 % = bit-perfect bypass" : "")
+                // Sprint EQ decision 25: the EQ plays ahead of the blend, so 0 % is not a bypass.
+                .help(bvm.intensity == 0 ? "0 % — Reimagine off (your EQ still plays)" : "")
 
             // 8a caption row: micro mono under the slider (nearest audited token to the
             // spec's 32%-white is labelTertiary — a bespoke 32% token isn't worth the pair).
             HStack {
-                Text("Bypass")
+                Text("Off")
                     .font(DesignSystem.Font.monoMicro)
                     .foregroundStyle(Color.asLabelTertiary)
                 Spacer()
