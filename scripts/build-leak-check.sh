@@ -51,6 +51,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp"
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessModule.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/CausalLoudnessTap.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/ChannelLayoutDecoder.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/SpatialRenderKernel.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp"
@@ -65,6 +66,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQDesignBridge.cpp" # under test (the AsEqDesigner handle)
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessProfile.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessProfiler.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessGain.cpp"
     "$REPO_ROOT/Sources/AudioDSP/Loudness/TrackLoudnessBridge.cpp" # under test (the AsLoudnessProfiler/Profile handles)
     # --- ADDED for the leak harness (NOT compiled by build-null-test.sh) ---
     "$REPO_ROOT/Sources/AudioDSP/Loudness/LoudnessMeterBridge.cpp" # under test

@@ -18,6 +18,7 @@
 //
 
 #include "CApiNoexcept.h"
+#include "TrackLoudnessBridge.h" // AsLoudnessProfile (publishTrackLoudnessProfile)
 #include <AudioToolbox/AudioComponent.h>
 #include <CoreAudioTypes/CoreAudioBaseTypes.h>
 #include <stdbool.h>
@@ -86,6 +87,32 @@ extern "C"
                             const float* bandGainsDb,
                             uint32_t count,
                             double sampleRate) AUDIODSP_C_NOEXCEPT;
+
+    /// Hand the live AdaptiveSoundAU a track's loudness profile (Sprint EQ, EQ1c): the analyzer's
+    /// prefix, then its whole-track profile. The engine keeps its own reference (the blocks are
+    /// shared, not copied), so the caller may release `profile` right after. The Realizer turns it
+    /// into the loudness-neutral EQ gain once `trackToken` is the audible track. Off-RT; called by
+    /// the track analyzer only (amendments item 3), from any one thread at a time.
+    ///
+    /// @param auUnit      Borrowed (passUnretained) AUAudioUnit*; false if null.
+    /// @param trackToken  The track's identity token (non-zero; the same file → the same token).
+    /// @param profile     From asLoudnessProfilerFinishPrefix / FinishFull; non-null.
+    /// @return true if accepted; false on a null AU or profile, or a zero token.
+    bool publishTrackLoudnessProfile(void* auUnit,
+                                     uint64_t trackToken,
+                                     const AsLoudnessProfile* profile) AUDIODSP_C_NOEXCEPT;
+
+    /// Tell the live AdaptiveSoundAU that `trackToken` could not be analysed at all: its
+    /// loudness-neutral gain falls back to the causal running estimate of the audio as it plays.
+    /// Off-RT; called by the track analyzer only. No-op if `auUnit` is null or the token is 0.
+    void reportTrackLoudnessFailure(void* auUnit, uint64_t trackToken) AUDIODSP_C_NOEXCEPT;
+
+    /// Tell the live AdaptiveSoundAU which track is audible now: at a gapless seam
+    /// (`gaplessSeam` true — the gain steps by at most 0.2 dB where the music is continuous) or by
+    /// a fresh start. The same token again is a no-op. Off-RT; called by the playback bridge only
+    /// (at the audible seam and at a fresh start — never when the next track is merely
+    /// scheduled). No-op if `auUnit` is null.
+    void setCurrentTrack(void* auUnit, uint64_t trackToken, bool gaplessSeam) AUDIODSP_C_NOEXCEPT;
 
     /// Publish the source file's channel layout tag to the live AdaptiveSoundAU (Sprint 5b M2).
     /// Off-RT control plane: decodes `tag` into the per-channel BS.1770-5 loudness weights and

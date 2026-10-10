@@ -163,7 +163,9 @@ namespace
 } // namespace
 
 // ---------------------------------------------------------------------------
-// EQ_ReadbackEqualsEngine — what the UI reads back is what the engine plays (engine-plan §9).
+// EQ_ReadbackEqualsEngine — what the UI reads back is what the engine plays (engine-plan §9): the
+// played response is the read-back shape plus the loudness-neutral gain the Realizer published
+// with it (a broadband level, EQ1c — here the pink prior's, as no track is playing).
 // ---------------------------------------------------------------------------
 static auto testEqReadbackEqualsEngine() -> void
 {
@@ -191,15 +193,17 @@ static auto testEqReadbackEqualsEngine() -> void
     std::string perTone;
     for (size_t t = 0; t < tones.size(); ++t)
     {
-        const double readBack = GraphicEQDesigner::playedDb(design, tones[t]);
+        const double readBack =
+            GraphicEQDesigner::playedDb(design, tones[t]) + canonical.eq.outputGainDb;
         worst = std::max(worst, std::abs(measured[t] - readBack));
         perTone += std::format(" {:.0f} Hz {:+.4f}/{:+.4f}", tones[t], measured[t], readBack);
     }
     realizer->shutdown();
     logInfo(
-        std::format("[info] {}: RT (k, m1) == design bit-exact; kernel vs read-back {:.4f} dB "
-                    "(measured/read-back:{})\n",
+        std::format("[info] {}: RT (k, m1) == design bit-exact; kernel vs read-back + gain "
+                    "({:+.3f} dB) {:.4f} dB (measured/expected:{})\n",
                     kName,
+                    canonical.eq.outputGainDb,
                     worst,
                     perTone));
     if (!(worst <= kToleranceDb))
@@ -536,8 +540,7 @@ static auto testEqPublishRejectsNonFinite() -> void
         failure = "a NULL pointer or a wrong count was accepted";
     }
     realizer->shutdown(); // flush: nothing may have been published
-    if (failure.empty() &&
-        std::memcmp(&realizer->canonicalState().eq, &good, sizeof(EQParams)) != 0)
+    if (failure.empty() && realizer->canonicalState().eq != good)
     {
         failure = "a rejected publish changed the published EQ";
     }
