@@ -1,0 +1,5 @@
+% of one core (M4 Pro), double TPT SVF, 31 bands, S2 smoother:
+  48k x 2 : ramping 0.63%  settled 0.29%
+  192k x 2: ramping 2.42%  settled 1.17%
+  48k x 8 : ramping 0.67%  settled 0.50%
+  192k x 8: ramping 2.67%  settled 2.00%

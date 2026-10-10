@@ -1,0 +1,28 @@
+Item 2 (frozen-model half): transition swell of the two schemes under decision 26 (loudness-neutral gain).
+S1 = shared dB ramp: the 31 filter gains AND the output gain move on one one-pole (linear path in dB).
+S2 = finished-coefficient SVF smoother: per-band (k, m1) and the output gain (dB) move on one one-pole.
+Swell(s) = max_f [ net_s(f) - max(net_A(f), net_B(f)) ]: level that NEITHER endpoint has. Output gain = -dL on a
+pink K-weighted reference (a stand-in for the track predictor; both endpoints carry their own gain).
+pair                                          S1 dB-ramp  S2 (k,m1)
+breaker worst pair A->B                           +5.418     +0.309
+breaker worst pair B->A                           +5.418     +0.309
+alt+ -> alt-                                      +1.127     +1.982
+flat -> all+12                                    +0.031     +0.162
+all+12 -> flat                                    +0.031     +0.162
+every-third-down -> flat                          +1.805     +0.417
++12@1k -> flat                                    +0.000     +0.486
+
+Groups (max | p99):
+  42 preset pairs (incl. Flat/Off)           S1 +0.002 | +0.002    S2 +0.004 | +0.004
+  curve <-> Off, hard patterns (both ways)   S1 +2.123 | +2.123    S2 +2.117 | +2.117
+  150 smooth pairs                           S1 +0.339 | +0.219    S2 +0.595 | +0.351
+  200 random rough pairs (U+-12)             S1 +2.323 | +2.078    S2 +3.019 | +2.620
+  200 Rämö pairs                             S1 +3.522 | +3.185    S2 +4.383 | +4.278
+
+hill-climb for S1's own worst: S1 +7.506 dB (other scheme on that pair: +0.711)
+   A: +6 +6 +0 -12 +0 +0 -12 +12 +6 -12 +12 +12 -12 +12 +12 -12 +12 +12 -12 +12 +12 -12 +12 +12 -12 +12 +12 -12 +6 -12 +6
+   B: -6 +0 -6 +0 +12 +0 +6 +12 -12 +6 -12 +12 +6 +12 -12 +12 +12 +12 +12 -12 +12 +12 -12 +12 +0 -12 +12 +12 -12 +12 +6
+
+hill-climb for S2's own worst: S2 +6.397 dB (other scheme on that pair: +3.561)
+   A: +6 -12 +12 +6 +0 +0 -12 +0 +12 +0 -12 -6 -12 +12 +12 -12 +12 +12 -12 -12 +12 -12 -12 +12 -12 +6 +12 -12 +6 +6 -12
+   B: -12 -12 -6 +12 +12 +6 +6 -6 +12 -12 +6 +12 +0 +12 -12 +12 +12 -12 +12 -12 -12 +12 -12 -12 +6 -12 +12 +6 -12 +0 -12

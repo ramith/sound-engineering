@@ -1,0 +1,9 @@
+Item 2 follow-up: can the adversarial jagged transitions be tamed? S2 with (a) tau 10 ms direct, (b) tau 30 ms
+direct, (c) direct path but routed through Off (flat, gain 0) when the Realizer's path check predicts a swell:
+A -> Off at T0, Off -> B at T0 + 40 ms. Same overshoot metrics as trans_td.py (local [Hz] / peak, dB).
+pair                                S2 tau10 direct          S2 tau30 direct         S2 tau10 via Off         S1 tau10 via Off
+breaker worst pair A->B     +2.89 [   29] / +0.31  +1.42 [   29] / +0.31 +12.97 [  204] / +0.00 +12.84 [  204] / +0.12
+breaker worst pair B->A     +4.09 [   50] / +3.89  +2.15 [   50] / +1.95 +12.66 [   29] / -0.01 +12.67 [   29] / +0.55
+S1-adversarial              +4.01 [   38] / +1.48  +1.08 [   58] / +0.11  +9.77 [   38] / -0.01  +9.74 [   38] / +0.68
+S2-adversarial             +12.56 [   25] / +3.27  +8.25 [   25] / +0.10 +16.30 [   25] / +0.05 +16.70 [   25] / +0.26
+alt+ -> alt-                +2.60 [   44] / -0.04  +1.55 [   44] / -0.01  +4.80 [  177] / -0.01  +4.79 [  177] / -0.02

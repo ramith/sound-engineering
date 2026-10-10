@@ -1,0 +1,6 @@
+Item 4: predictor resolution trade-off (bins per octave, block hop) -- error vs measured, 7 tracks x 15 curves.
+  1/ 6 oct bins, hop 100 ms: max 1.272 dB, p90 0.373, mean 0.106  (floats per minute of audio: 39600)
+  1/12 oct bins, hop 100 ms: max 0.180 dB, p90 0.046, mean 0.016  (floats per minute of audio: 79200)
+  1/24 oct bins, hop 100 ms: max 0.112 dB, p90 0.036, mean 0.011  (floats per minute of audio: 158400)
+  1/12 oct bins, hop 400 ms: max 0.143 dB, p90 0.087, mean 0.025  (floats per minute of audio: 19800)
+  1/ 6 oct bins, hop 400 ms: max 1.305 dB, p90 0.409, mean 0.114  (floats per minute of audio: 9900)

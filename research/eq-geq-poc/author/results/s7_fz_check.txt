@@ -1,0 +1,4 @@
+slowest band, seeded 1e-300, silence in:
+  FZ=0: subnormal-state samples 161 / 200000, states exactly 0 from sample -1 (y=9.15399e-298)
+  FZ=1: subnormal-state samples 0 / 200000, states exactly 0 from sample -1 (y=9.15445e-298)
+=> the check fails without FZ (yes) and passes with FZ (yes)

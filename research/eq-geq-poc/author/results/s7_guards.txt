@@ -1,0 +1,8 @@
+Item 7: solver guards. Flat and near-flat commands must give finite gains (the |g| < 1e-3 prototype guard), and
+the C-ABI rule rejects non-finite input before the solver ever sees it.
+  flat                           finite through all passes: True; max|g| 0 dB; centre err 0.000
+  one band exactly 0 among +6    finite through all passes: True; max|g| 6.23 dB; centre err 0.107
+  1e-9 everywhere                finite through all passes: True; max|g| 9.11e-10 dB; centre err 0.000
+  +12 / exactly 0 alternating    finite through all passes: True; max|g| 18 dB; centre err 0.114
+  an unguarded 'divide by the previous gain' rebuild after a flat solve: non-finite entries in B = 1891/1891 (why the guard is in the spec)
+  a NaN target reaching the solver: the solve fails outright (LinAlgError: SVD did not converge in Linear Least Squares) -> the C-ABI must reject non-finite input
