@@ -141,6 +141,11 @@ namespace AdaptiveSound
         // start. The same token again is a no-op (a re-establish of the same file).
         void setCurrentTrack(uint64_t token, bool gaplessSeam);
 
+        // --- The output (any thread; posts to the queue) ----------------------------------
+        // The output's transport (kAudioDevicePropertyTransportType FourCC; 0 = unknown): sets
+        // the EQ-only path's limiter ceiling (founder decision 29, Limiting/OutputCeiling.h).
+        void setOutputTransport(uint32_t transportType);
+
         // The rate the EQ is designed at (the kernel's rate). Any thread.
         [[nodiscard]] double eqDesignSampleRate() const noexcept
         {

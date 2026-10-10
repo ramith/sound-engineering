@@ -72,7 +72,10 @@ final class AudioViewModel {
     /// The output the app plays on. Moving it to another output (by UID) fires
     /// `onOutputIdentityChanged`; re-reading the same output does not.
     var selectedDevice: AudioDeviceModel? {
-        didSet { announceOutputIdentityChange(from: oldValue) }
+        didSet {
+            announceOutputIdentityChange(from: oldValue)
+            publishOutputTransport()
+        }
     }
 
     var availableDevices: [AudioDeviceModel] = []

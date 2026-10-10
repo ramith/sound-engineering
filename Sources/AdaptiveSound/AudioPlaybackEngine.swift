@@ -46,6 +46,9 @@ extension AudioPlaybackEngine {
 
     /// Default: no-op. Conformers that host the DSP AU override this.
     func publishCrossfeed(enabled _: Bool, strength _: CrossfeedStrength) {}
+
+    /// Default: no-op. Conformers that host the DSP AU override this.
+    func publishOutputTransport(_: UInt32) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -174,6 +177,12 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
     /// No-op if the AU is not yet instantiated. Default impl: no-op.
     func publishIntensity(_ intensity: Float)
+
+    /// Tell the live DSP AU which kind of output it plays on: the device's
+    /// `kAudioDevicePropertyTransportType` (0 = unknown). Founder decision 29: the EQ-only path's
+    /// limiter ceiling is −0.1 dBTP on a wired or built-in output and −1 dBTP on Bluetooth.
+    /// Synchronous, off-RT. No-op if the AU is not yet instantiated. Default impl: no-op.
+    func publishOutputTransport(_ transportType: UInt32)
 
     /// Publish a crossfeed state change to the live DSP AU (QW1 §3).
     /// No-op if the AU is not yet instantiated. Default impl: no-op. Synchronous + off-RT: it
