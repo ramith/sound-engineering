@@ -1,0 +1,10 @@
+Item 5: limiter load at Intensity 0 with the EQ On (new Branch 1b: EQ -> limiter, no normaliser, so the level stays
+the source's). 4x true peak over -1 dBTP: worst excess and share of 10 ms frames, EQ On (loudness-neutral) vs the
+source itself (which Intensity 0 + EQ Off plays bit-perfect, unlimited).
+  old recording            source TP excess -4.19 dB (0.00 % frames) | EQ On worst -2.09 dB (0.00 %) [+12 @100 Hz]
+  band excerpt             source TP excess -4.51 dB (0.00 % frames) | EQ On worst -2.98 dB (0.00 %) [+12 @100 Hz]
+  gen band                 source TP excess +0.24 dB (0.04 % frames) | EQ On worst +1.33 dB (0.18 %) [Presence]
+  gen cinematic            source TP excess +0.01 dB (0.02 % frames) | EQ On worst +2.96 dB (1.98 %) [Tone B+6 Bo-3 P+4 A+6]
+  gen folkpop              source TP excess +0.01 dB (0.02 % frames) | EQ On worst +2.86 dB (3.18 %) [Tone B+6 Bo-3 P+4 A+6]
+  remaster 3.7 min         source TP excess -2.13 dB (0.00 % frames) | EQ On worst -0.28 dB (0.00 %) [+12 @100 Hz]
+  LOUD master (-9 LUFS)    source TP excess +0.79 dB (7.91 % frames) | EQ On worst +4.29 dB (8.91 %) [+12 @100 Hz]

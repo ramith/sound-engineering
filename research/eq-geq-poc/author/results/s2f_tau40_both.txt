@@ -1,0 +1,5 @@
+Item 2 fairness check: does a slow ramp also rescue S1? S1 vs S2 at tau 40 ms on the pinned adversarial pairs.
+  breaker A->B     S1 tau40  +5.43/+5.43   S2 tau40  +1.12/+0.31  (local/peak dB)
+  breaker B->A     S1 tau40  +5.39/+5.39   S2 tau40  +1.69/+1.49  (local/peak dB)
+  S1-adversarial   S1 tau40  +6.98/+6.64   S2 tau40  +0.82/+0.08  (local/peak dB)
+  S2-adversarial   S1 tau40  +7.33/+0.50   S2 tau40  +7.03/+0.01  (local/peak dB)

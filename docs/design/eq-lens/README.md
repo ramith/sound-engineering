@@ -25,6 +25,11 @@ audio-dsp verification of today's engine (below). Founder decisions 21–23 in t
 - **27 — Preset switch with unsaved edits:** switch at once, with a "Bring back edits" message.
 - **28 — Compare = hold to hear without the EQ** at the same loudness. A pinned output remembers
   exactly what was last heard on it.
+- **29 — Loud masters, EQ-only path:** limiter ceiling −0.1 dBTP (like the original), −1 dBTP on
+  Bluetooth.
+
+**Build plan:** [plan/amendments.md](plan/amendments.md) (wins), [plan/engine-plan.md](plan/engine-plan.md),
+[plan/ui-plan.md](plan/ui-plan.md). Evidence: [evidence/](evidence/). Prototype: `research/eq-geq-poc/`.
 
 Evidence for 25–28: the plan check plus a three-reviewer adversarial panel (breaker, state-of-the-art
 challenger, architect), backed by a literature survey and a survey of how other players implement

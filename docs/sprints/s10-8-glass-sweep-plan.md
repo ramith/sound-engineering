@@ -115,6 +115,10 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
 28. **Compare = press and hold to hear the song without the EQ** at the same loudness; let go to
     return. The engine needs only On/Off. A pinned output remembers exactly what was last heard on
     it, edits and Tone included (default, not a founder question).
+29. **Loud masters in the EQ-only path peak like the original** (2026-10-10). With Intensity 0 and the
+    EQ on, the limiter ceiling is −0.1 dBTP, which is no higher than the bit-perfect Off already sends,
+    instead of −1 dBTP. Bluetooth outputs keep −1 dBTP because the link re-encodes. Measured: heavy
+    limiting falls from 26 % to 7 % of the time, and On/Off mismatch is p90 0.57 dB.
 
 ## C. Scope
 
@@ -278,17 +282,25 @@ Play contexts are added to the kit only by the PR that uses them (hostile Periph
 **Founder checks:** no blue on any surface the app draws; dragging an EQ point, a preset, Save,
 and switching output device all still work.
 
-### Sprint EQ — the honest 31-point EQ, V1b layout (decisions 21–24; ~23 points)
+### Sprint EQ — the honest 31-point EQ, V1b layout (decisions 21–29; ~20 points)
 
-Design, evidence and scope: [docs/design/eq-lens/](../design/eq-lens/README.md).
+Design and decisions: [docs/design/eq-lens/](../design/eq-lens/README.md). **Build plan:**
+[plan/amendments.md](../design/eq-lens/plan/amendments.md), which wins where the others differ, then
+[engine-plan.md](../design/eq-lens/plan/engine-plan.md) and [ui-plan.md](../design/eq-lens/plan/ui-plan.md).
+These came out of a plan check plus a three-reviewer adversarial panel; evidence is in `eq-lens/evidence/`.
 
-| PR | Scope | Size | Tests / audits |
+| Lane | PR | Scope | Size |
 |---|---|---|---|
-| EQ1 | Engine: an accurate 31-band graphic EQ (Välimäki & Liski), sections 10 → ≥ 31 | L+ | C++ gate: per-band and per-preset played response vs target; null / bypass bit-exact; RT-alloc soak; CPU at 7.1 |
-| EQ2 | Automatic headroom (the summed-dB clamp deleted; preamp via `masterGainLinear`) + the played-curve read-back | M+M | no frequency above the source; preset loudness before/after |
-| EQ3 | The V1b screen: the left rail (Equalizer card: On/Off, Presets, My Presets) + the graph card (31 points over ±12 dB with today's neighbours-follow drag, the played curve, readout, headroom + ceiling, Compare, Reset, Save); keyboard + VoiceOver; the keyboard cursor follows the click | L+ | R4 for the curve, points and ceiling, both modes; LAY-EQ-01 at 880×640; the live keyboard pass |
-| EQ3t | The Tone card: five region macros over the 31 points (region shading + readout on hover/drag), Reset Tone, fold-to-one-line (remembered); a preset choice resets Tone, Save bakes it in | M | Tone → points → played response test; fold at 880×640 |
-| EQ4 | Presets: My Presets (rename / delete), the "Used on <output>" pin writing per-output memory, the presets re-voiced | M | the founder's listening check |
+| DSP | EQ0 | The contract: kit value types (`base` / `tone` / `points`), `publishEQ(points:isOn:)`, `eqSampleRate()`, a stub | S 0.5 |
+| DSP | DEV-UID | Device UID, model UID and transport type through the bridge and model | S 0.5 |
+| DSP | EQ1a | The pure designer: bell + WLS solve (5 passes) + `played(for:)`, C++ with gate tests against the prototype | M 1.5 |
+| DSP | EQ1b | The real-time engine: double SVF with jaggedness-keyed (k, m1) smoothing; kernel order (EQ ahead of Intensity); the four paths + limiter switch fix; `reinitializeKernel`; launch publish | L 4 |
+| DSP | EQ1c | Track loudness analysis (prefix first, cache, gapless seam, fallback) → the loudness-neutral gain | M 2.5 |
+| DSP | EQ2 | Bridge cut-over, `EQSafetyClamp` deleted, the decision-29 ceiling | S 1 |
+| UI | EQ3a | Kit logic + view model + `eqStateV2` persistence (unedited built-ins as references) + `EQPlotMap` | M 2 |
+| UI | EQ3 | The V1b screen: rail, graph card, drag, hold-Compare, bring-back message, keyboard + VoiceOver | L 3 |
+| UI | EQ3t | The Tone card (in parallel with EQ3) | M 2 |
+| UI | EQ4 | My Presets rename/delete, the "Used on" pin (app-level, UID-keyed), the presets re-voiced | M 2 |
 
 **Founder checks:** a 10-minute listening check of the presets, of dragging and of the Tone
 sliders; On/Off and Compare feel level-fair; a saved preset comes back; switching output recalls
