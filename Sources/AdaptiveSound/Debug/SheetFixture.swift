@@ -73,6 +73,11 @@
         func root(for appearance: SheetAppearance) -> some View {
             browse.browsePlace = nil
             return ContentView()
+                .overlay {
+                    if variant == .eqRename {
+                        SheetEQRenameStandIn(name: Self.renamedPreset, eq: eq)
+                    }
+                }
                 .environment(audio)
                 .environment(eq)
                 .environment(library)

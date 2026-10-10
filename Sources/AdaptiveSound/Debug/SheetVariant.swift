@@ -39,6 +39,11 @@
         /// 880×640, where every preset then fits without a scroll.
         case eqTone = "tone"
         case eqFolded = "folded"
+        /// The My Presets and pin worlds (EQ4): the output pinned ("Used on MacBook Pro Speakers"
+        /// under the preset's name), and the Rename sheet open on a My Preset (drawn in the window: a
+        /// real sheet is a window of its own, out of an offscreen render's reach).
+        case eqPinned = "pinned"
+        case eqRename = "rename"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -96,7 +101,8 @@
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates: [.library]
-            case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded: [.eq]
+            case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
+                 .eqPinned, .eqRename: [.eq]
             }
             return request.tabs.filter { wanted?.contains($0) ?? true }
         }

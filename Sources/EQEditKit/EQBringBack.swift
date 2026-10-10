@@ -25,4 +25,13 @@ public struct EQBringBack: Equatable, Sendable {
         guard let existing, preset != current.preset else { return existing }
         return EQBringBack(edits: existing.edits, offer: next)
     }
+
+    /// The same offer after My Presets were renamed or deleted under it (EQ4): `newName` as
+    /// `EQStore.repointMyPresets`, so edits set aside on a renamed preset come back under its new name,
+    /// and on a deleted one as an edited Flat with the same sound.
+    public func repointingMyPresets(_ newName: (String) -> String?) -> EQBringBack {
+        var edits = edits
+        edits.repointMyPreset(newName)
+        return EQBringBack(edits: edits, offer: offer)
+    }
 }
