@@ -5,8 +5,8 @@ import SwiftUI
 /// Modal sheet that prompts the user for a name and saves the current
 /// 31-band state as a named custom preset in `EQViewModel`.
 ///
-/// Presented from `EQControlsSection` when the user presses "Save as Custom…"
-/// (only enabled while the EQ is edited, `EQViewModel.isEdited`).
+/// Presented by the EQ tab from the graph card's "Save…" and My Presets' "+" (both enabled only
+/// while the EQ is edited, `EQViewModel.isEdited`).
 struct SaveCustomPresetView: View {
     let eqViewModel: EQViewModel
 

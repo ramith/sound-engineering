@@ -8,9 +8,6 @@ import SwiftUI
 // directly; these aliases are migrated out incrementally with visual verification.
 
 extension Color {
-    /// Primary accent — icon, selection, checkmark (teal)
-    static let asAccent = DesignSystem.Color.accent
-
     /// Neutral surfaces (no warm tint)
     static let asWindow = DesignSystem.Color.window
     static let asCard = DesignSystem.Color.card
