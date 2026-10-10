@@ -44,7 +44,7 @@
 
         func setParameter(_: UInt32, value _: Float) async throws {}
 
-        func publishEQGains(_: [Float]) {}
+        func publishEQ(points _: [Float], isOn _: Bool) {}
 
         func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
             []

@@ -139,6 +139,19 @@ struct AudioEngineProtocolTests {
         #expect(mock.setParameterCallCount == 1)
     }
 
+    // MARK: publishEQ()
+
+    @Test("publishEQ() captures the points and the On/Off flag, once per publish")
+    func publishEQCapturesArgs() {
+        let mock = MockAudioEngine()
+        let points = (0 ..< 31).map { Float($0) / 3 - 5 }
+        mock.publishEQ(points: points, isOn: true)
+        mock.publishEQ(points: points, isOn: false)
+        #expect(mock.publishEQCallCount == 2)
+        #expect(mock.lastPublishedEQ?.points == points)
+        #expect(mock.lastPublishedEQ?.isOn == false)
+    }
+
     // MARK: readSpectrumBands()
 
     @Test("readSpectrumBands() returns false when no data")

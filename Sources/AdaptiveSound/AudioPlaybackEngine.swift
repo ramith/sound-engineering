@@ -159,10 +159,12 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Set a DSP parameter by ID (e.g. master gain = 0).
     func setParameter(_ id: UInt32, value: Float) async throws
 
-    /// Publish a 31-band EQ gain vector (dB) to the live DSP AU. `gainsDb` must have 31
-    /// elements. Synchronous, off-RT, non-throwing: it computes the biquad cascade and
-    /// atomically hands it to the kernel. No-op if no live AU (e.g. engine not initialized).
-    func publishEQGains(_ gainsDb: [Float])
+    /// Publish the EQ to the live DSP AU (the engine side of the Sprint EQ contract): the 31
+    /// `points` (dB, one per band, `EQBands`) that are drawn, and whether the EQ plays at all.
+    /// `isOn == false` plays the flat curve whatever `points` hold. Synchronous, off-RT,
+    /// non-throwing; the engine validates its input (count, finite, ±12 dB) and coalesces bursts.
+    /// No-op if no live AU (e.g. engine not initialized).
+    func publishEQ(points: [Float], isOn: Bool)
 
     /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
     /// No-op if the AU is not yet instantiated. Default impl: no-op.

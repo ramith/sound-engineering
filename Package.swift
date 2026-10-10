@@ -20,7 +20,7 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
-                "LibraryBrowseKit", "DesignTokenKit",
+                "LibraryBrowseKit", "DesignTokenKit", "EQEditKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -180,6 +180,15 @@ let package = Package(
             dependencies: [],
             path: "Sources/DesignTokenKit"
         ),
+        // Pure EQ editing contract (Sprint EQ, EQ0). Same rationale as PlaybackQueueKit: the
+        // band grid, the Tone weights, the curve maths (base + tone -> points) and the built-in
+        // presets live outside the non-importable app target, so EQEditKitTests gate the exact
+        // code the editor and the engine adapter run. Pure Swift, zero deps, no AppKit/SwiftUI.
+        .target(
+            name: "EQEditKit",
+            dependencies: [],
+            path: "Sources/EQEditKit"
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
@@ -227,6 +236,13 @@ let package = Package(
             name: "LibraryBrowseKitTests",
             dependencies: ["LibraryBrowseKit", "LibraryStore"],
             path: "Tests/LibraryBrowseKitTests"
+        ),
+        // EQ0: the kit's contract — band grid, Tone partition of unity, the base/tone -> points
+        // maths and its clamps, the Codable invariant, and the presets' stable ids and shapes.
+        .testTarget(
+            name: "EQEditKitTests",
+            dependencies: ["EQEditKit"],
+            path: "Tests/EQEditKitTests"
         ),
         // S10.7 rig (design §7): RES resolver cube, TOK palette invariants, the PERMANENT R4
         // contrast audit (pure WCAG math over Kit data), and the SlotFit truncation net. The
