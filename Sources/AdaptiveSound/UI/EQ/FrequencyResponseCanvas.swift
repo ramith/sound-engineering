@@ -5,7 +5,6 @@ import SwiftUI
 
 struct FrequencyResponseCanvas: View {
     let eqViewModel: EQViewModel
-    let isUsingDiscreteSteps: Bool
 
     // Plot-margin constants — single source of truth for drawing and gesture handler.
     // The right inset is wide (was 20): the 20 kHz band sits at `plotRight`, and the whole
@@ -20,15 +19,17 @@ struct FrequencyResponseCanvas: View {
     /// Captured layout size for gesture coordinate mapping.
     @State private var canvasSize: CGSize = .zero
 
-    /// Tracks the last touched band within a drag stroke for gap-fill interpolation.
-    @State private var lastBandIndex: Int?
+    /// Whether the drag under way has begun its stroke (its first sample did); cleared when it ends.
+    /// `isDragging` resets even on a drag the system cancels (which never reaches `onEnded`).
+    @State private var strokeBegan = false
+    @GestureState private var isDragging = false
 
     /// The band the keyboard arrow keys currently target, and whether the canvas holds keyboard
-    /// focus (A-H1). The mouse drag and VoiceOver each edit independently of this cursor — it exists
-    /// purely so a sighted keyboard-only user can see and move the band they're about to adjust. A
-    /// vertical column highlight marks this band only while `canvasFocused`.
+    /// focus (A-H1). A click moves it to the clicked band and focuses the graph (UI plan §5.3), which
+    /// is also what lets Esc reach a drag. A vertical column marks this band in keyboard mode only.
     @State private var keyboardBand = 15
     @FocusState private var canvasFocused: Bool
+    @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
 
     /// Per-keystroke / per-VoiceOver-swipe gain increment (dB).
     private let gainStep: Float = 1.0
@@ -45,62 +46,67 @@ struct FrequencyResponseCanvas: View {
 
             drawGridAndLabels(context: &context, map: map)
 
-            let eqValues: [(freq: Double, gain: Double)] = EQBands.nominalHz
-                .enumerated()
-                .map { index, freq in (freq, Double(eqViewModel.bandGains[index])) }
+            let eqValues: [(freq: Double, gain: Double)] = zip(EQBands.nominalHz, eqViewModel.points)
+                .map { freq, gain in (freq, Double(gain)) }
 
             drawFrequencyResponseCurve(context: &context, eqValues: eqValues, map: map)
             drawISOOctaveDots(context: &context, eqValues: eqValues, map: map)
 
             // Keyboard-editing cursor (A-H1): a vertical "selected frequency column" highlight on the
-            // targeted band, drawn only while the canvas holds keyboard focus, so an arrow-key user
+            // targeted band, drawn while the canvas holds focus in keyboard mode, so an arrow-key user
             // can see which band they're adjusting (the band's own dot sits within the column).
-            if canvasFocused {
+            if canvasFocused && showsKeyboardFocus {
                 drawKeyboardCursor(context: &context, map: map, bandIndex: keyboardBand)
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                .onChanged { value in updateEQFromDrag(location: value.location) }
-                .onEnded { _ in
-                    lastBandIndex = nil
-                    // Persist once at drag-end (not per-sample — see commitCustomBandEdits).
-                    eqViewModel.persistLiveState()
-                }
+                .updating($isDragging) { _, dragging, _ in dragging = true }
+                .onChanged { value in strokeSample(at: value.location) }
+                .onEnded { _ in endStroke() }
         )
+        // A stroke never outlives its drag: a cancelled drag resets `isDragging`, and a tab switch
+        // mid-drag takes the graph away.
+        .onChange(of: isDragging) { _, dragging in
+            if !dragging {
+                endStroke()
+            }
+        }
+        .onDisappear { endStroke() }
         .background(Color.asCard)
         .clipShape(.rect(cornerRadius: 9))
         .overlay {
             RoundedRectangle(cornerRadius: 9).stroke(Color.asHairline, lineWidth: 0.5)
         }
         // Keyboard editing (A-H1): Tab focuses the canvas, ← / → move the band cursor, ↑ / ↓ adjust
-        // the targeted band's gain by ±`gainStep` dB. Coexists with the mouse `DragGesture` above.
+        // the targeted band's gain by ±`gainStep` dB. Esc cancels a drag (else it bubbles).
         .focusable()
         .focused($canvasFocused)
+        // The app's keyboard ring in place of the system focus effect (S10.8 D3): a click focuses the
+        // graph without leaving a ring behind; keyboard mode shows it, inside the surface's clip.
+        .focusEffectDisabled()
+        .keyboardFocusRing(canvasFocused && showsKeyboardFocus,
+                           around: RoundedRectangle(cornerRadius: 9).inset(by: ControlMetrics.focusRingOutset))
         .onKeyPress(.leftArrow) { moveKeyboardCursor(-1); return .handled }
         .onKeyPress(.rightArrow) { moveKeyboardCursor(1); return .handled }
-        .onKeyPress(.upArrow) { adjustBand(keyboardBand, by: gainStep); return .handled }
-        .onKeyPress(.downArrow) { adjustBand(keyboardBand, by: -gainStep); return .handled }
+        .onKeyPress(.upArrow) { eqViewModel.nudge(band: keyboardBand, by: gainStep); return .handled }
+        .onKeyPress(.downArrow) { eqViewModel.nudge(band: keyboardBand, by: -gainStep); return .handled }
+        .onKeyPress(.escape) { eqViewModel.cancelStroke() ? .handled : .ignored }
         .accessibilityElement()
         .accessibilityLabel("Frequency Response Curve")
-        .accessibilityValue(
-            "EQ Preset: \(eqViewModel.selectedPresetName), "
-                + "Blending: \(isUsingDiscreteSteps ? "Discrete Steps" : "Smooth Curve")"
-        )
+        .accessibilityValue("EQ Preset: \(eqViewModel.summary)")
         .accessibilityHint("Adjust each band from the elements inside, or drag the curve with a pointer.")
         // VoiceOver editing (A-H1): synthetic, a11y-only children — NOT rendered and NOT hit-tested,
         // so they can't intercept the mouse `DragGesture`. Each is an adjustable element: VoiceOver
-        // focuses a band and swipes up/down to change its gain ("1 kilohertz, +3 decibels"). Before
-        // this, the curve was a single read-only element editable only by dragging — unreachable by
-        // VoiceOver (grep-verified: no other per-band input path exists).
+        // focuses a band and swipes up/down to change its gain ("1 kilohertz, +3 decibels").
         .accessibilityChildren {
             ForEach(EQBands.nominalHz.indices, id: \.self) { index in
                 Rectangle()
                     .accessibilityLabel(Text(bandFrequencyLabel(index)))
                     .accessibilityValue(Text(bandGainLabel(index)))
                     .accessibilityAdjustableAction { direction in
-                        adjustBand(index, by: direction == .increment ? gainStep : -gainStep)
+                        eqViewModel.nudge(band: index, by: direction == .increment ? gainStep : -gainStep)
                     }
             }
         }
@@ -111,16 +117,6 @@ struct FrequencyResponseCanvas: View {
     /// Move the keyboard-cursor band, clamped to 0…30.
     private func moveKeyboardCursor(_ delta: Int) {
         keyboardBand = max(0, min(EQBands.nominalHz.count - 1, keyboardBand + delta))
-    }
-
-    /// Nudge one band's gain (keyboard ↑/↓ or a VoiceOver increment/decrement) and commit. Unlike
-    /// the drag path — which persists once at `.onEnded` — each discrete step both dispatches to the
-    /// DSP (`commitCustomBandEdits` clamps + marks custom) and persists, since there is no stroke end.
-    private func adjustBand(_ index: Int, by delta: Float) {
-        guard eqViewModel.bandGains.indices.contains(index) else { return }
-        eqViewModel.bandGains[index] = max(-12.0, min(12.0, eqViewModel.bandGains[index] + delta))
-        eqViewModel.commitCustomBandEdits()
-        eqViewModel.persistLiveState()
     }
 
     /// VoiceOver-spoken band frequency ("1 kilohertz" / "3150 hertz") — words, not "kHz"/"Hz",
@@ -139,7 +135,7 @@ struct FrequencyResponseCanvas: View {
 
     /// VoiceOver-spoken band gain ("+3 decibels" / "-4.5 decibels" / "0 decibels").
     private func bandGainLabel(_ index: Int) -> String {
-        let gain = (eqViewModel.bandGains[index] * 10).rounded() / 10
+        let gain = (eqViewModel.points[index] * 10).rounded() / 10
         let sign = gain > 0 ? "+" : ""
         return "\(sign)\(gain.formatted(.number.precision(.fractionLength(1)))) decibels"
     }
@@ -159,67 +155,27 @@ struct FrequencyResponseCanvas: View {
 
     // MARK: - Gesture Handler
 
-    private func updateEQFromDrag(location: CGPoint) {
+    /// One pointer sample of a drag, at the dot nearest the pointer and the pointer's level (the kit
+    /// holds it in ±12). The first sample begins the stroke: the keyboard cursor follows the click
+    /// and the graph takes focus. The view model shapes the curve (`EQStroke`) and sends it.
+    private func strokeSample(at location: CGPoint) {
         guard canvasSize.width > 0, canvasSize.height > 0 else { return }
         let map = plotMap(for: canvasSize)
         guard map.width > 0, map.height > 0 else { return }
-
-        // Same coordinate map as the drawing: the picked band is the dot nearest the pointer, and the
-        // gain is the pointer's position on the visual axis, clamped to the DSP range [-12, +12] dB
-        // (the kernel's hard limit — the canvas must never write out-of-range gains).
-        let bandIndex = map.nearestBand(toX: location.x)
-        let cursorGain = Float(max(-12.0, min(12.0, map.gain(forY: location.y))))
-
-        if let previousIndex = lastBandIndex, abs(bandIndex - previousIndex) > 1 {
-            fillGapBetweenBands(
-                from: previousIndex,
-                to: bandIndex,
-                startGain: eqViewModel.bandGains[previousIndex],
-                endGain: cursorGain
-            )
-        } else {
-            eqViewModel.bandGains[bandIndex] = cursorGain
+        let band = map.nearestBand(toX: location.x)
+        if !strokeBegan {
+            strokeBegan = true
+            keyboardBand = band
+            canvasFocused = true
+            eqViewModel.beginStroke()
         }
-
-        if !isUsingDiscreteSteps {
-            applySmoothShoulder(centerIndex: bandIndex, targetGain: cursorGain)
-        }
-
-        lastBandIndex = bandIndex
-
-        // Clamp every band to the DSP range, mark custom, and dispatch once.
-        // Called once per drag sample — the kernel requires a full band update.
-        eqViewModel.commitCustomBandEdits()
+        eqViewModel.updateStroke(band: band, db: Float(map.gain(forY: location.y)))
     }
 
-    /// Linearly interpolates gain between `from` and `to` band indices.
-    private func fillGapBetweenBands(
-        from startIndex: Int,
-        to endIndex: Int,
-        startGain: Float,
-        endGain: Float
-    ) {
-        let steps = abs(endIndex - startIndex)
-        let direction = endIndex > startIndex ? 1 : -1
-        for step in 1 ... steps {
-            let progress = Float(step) / Float(steps)
-            let interpolatedGain = startGain + (endGain - startGain) * progress
-            let targetIndex = startIndex + step * direction
-            eqViewModel.bandGains[targetIndex] = max(-12.0, min(12.0, interpolatedGain))
-        }
-    }
-
-    /// Blends ±1 and ±2 neighbours of `centerIndex` toward `targetGain`.
-    private func applySmoothShoulder(centerIndex: Int, targetGain: Float) {
-        let neighborWeights: [(offset: Int, weight: Float)] = [(1, 0.75), (2, 0.25)]
-        for (offset, weight) in neighborWeights {
-            for sign in [-1, 1] {
-                let neighborIndex = centerIndex + offset * sign
-                guard eqViewModel.bandGains.indices.contains(neighborIndex) else { continue }
-                let existing = eqViewModel.bandGains[neighborIndex]
-                let blended = existing + (targetGain - existing) * weight
-                eqViewModel.bandGains[neighborIndex] = max(-12.0, min(12.0, blended))
-            }
-        }
+    /// The drag is over — released, cancelled, or the graph went away: the stroke is kept (the view
+    /// model persists and logs it once; a second call is a no-op).
+    private func endStroke() {
+        strokeBegan = false
+        eqViewModel.endStroke()
     }
 }

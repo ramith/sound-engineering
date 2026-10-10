@@ -31,6 +31,11 @@ struct ContentView: View {
                     QueueToast()
                         .environment(viewModel)
                 }
+                // Its sibling: the EQ's output-switch toast (Sprint EQ), on every tab.
+                .overlay(alignment: .bottom) {
+                    EQOutputToast()
+                        .environment(viewModel)
+                }
         } footer: {
             NowPlayingBar()
                 .environment(viewModel)

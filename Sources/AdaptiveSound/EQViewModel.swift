@@ -3,192 +3,157 @@ import Foundation
 
 // MARK: - EQViewModel
 
-/// Manages 31-band EQ state and dispatches gain changes to the DSP kernel.
+/// The EQ the user edits and hears (the Sprint EQ contract, review §2). It holds one `EQStore` of
+/// slots — `shared` for every unpinned output, one per pinned output — and the CURRENT output's
+/// slot is `current`. Every editing rule lives in `EQEditKit`; this owns the state, sends it to the
+/// engine from ONE place (`publish()`), and persists it (`+Persistence`).
 ///
-/// Preset shapes live in `EQBuiltInPreset.points` (the single source of truth).
-/// All mutations go through `commitCustomBandEdits()` or `selectPreset(_:)`,
-/// both of which call `dispatchAllBands()` exactly once per user action.
-///
-/// Presets are typed as `EQBuiltInPreset`; "Custom" is represented by setting
-/// `selectedPreset` to `nil`. User-saved custom presets (`savedCustomPresets`)
-/// and per-output-device preset recall (`outputPresetMap`) are persisted to
-/// `UserDefaults`; see `EQViewModel+Persistence.swift`.
+/// - Edits: choosing a preset and Save here; the drag and the keyboard step in `+Stroke`. Every edit
+///   goes through `edit(to:)` or `setCurrent(_:)`, and every edit turns the EQ on.
+/// - Outputs: `outputDidChange(to:)`, wired at the composition root (Edge 5), makes the new output's
+///   slot current — with the window closed too — and raises `outputToast` when that changes the sound.
+/// - The graph's played curve (EQ3, from EQ1a's designer) is a memo on (`points`, the engine's design
+///   rate): `points` is its one input from here, so it joins beside `current` with no other change.
 @MainActor
 @Observable
 final class EQViewModel {
     // MARK: - State
 
-    /// Per-band gains in dB, indexed 0–30 for ISO 266 1/3-octave bands.
-    /// Range: -12 to +12 dB per band. Observed by the canvas and sliders.
-    var bandGains: [Float] = .init(repeating: 0.0, count: 31)
+    /// Every slot the EQ remembers, persisted whole as `eqStateV2`.
+    private(set) var store: EQStore
 
-    /// The active named preset, or `nil` when the user has made custom edits.
-    var selectedPreset: EQBuiltInPreset? = .flat
+    /// The user's saved presets (My Presets), name → points; persisted as `eqCustomPresetsV1`.
+    private(set) var customPresets: [String: [Float]]
 
-    // MARK: - Custom presets
+    /// The output the sound plays on (`nil` before the first device); its slot is `current`.
+    private(set) var output: EQOutputKey?
 
-    /// User-saved custom presets: a name → 31-band gain array map.
-    /// Persisted to UserDefaults; loaded on init.
-    var savedCustomPresets: [String: [Float]] = [:]
+    /// The output-switch toast, shown by `EQOutputToast` in the shell overlay for 3 s (UI plan §4.4).
+    let outputToast = ShellToastSlot(lifetime: .seconds(3))
 
-    // MARK: - Per-output recall
-
-    /// Device ID (UInt32) → preset identifier (raw value string or custom-preset name).
-    /// Persisted to UserDefaults; loaded on init.
-    var outputPresetMap: [String: String] = [:]
-
-    // MARK: - Banner
-
-    /// Non-nil when an auto-recall banner should be shown. Cleared by the view after display.
-    var recallBannerMessage: String?
-
-    // MARK: - Derived state
-
-    /// Display name shown in preset picker and accessibility values.
-    var selectedPresetName: String {
-        selectedPreset?.displayName ?? "Custom"
-    }
-
-    // MARK: - Private
+    /// The drag in progress (`+Stroke`); internal so that extension can drive it. Never observed.
+    @ObservationIgnored var stroke: ActiveStroke?
 
     private let audioViewModel: AudioViewModel
 
-    /// Where the custom presets, the per-output map and the live curve persist
-    /// (`EQViewModel+Persistence.swift`): the launch's `AppDataLocation.defaults`. The debug
+    /// Where the EQ persists (`+Persistence`): the launch's `AppDataLocation.defaults`. The debug
     /// picture-sheet renderer injects its own suite so a render never reads or writes the user's EQ.
     let defaults: UserDefaults
 
-    // MARK: - Init
+    // MARK: - Derived (never stored)
+
+    /// What the current output plays: its pinned slot, else the shared one.
+    var current: EQState {
+        store[slot: store.slotID(for: output)]
+    }
+
+    /// The 31 points drawn and sent.
+    var points: [Float] {
+        current.points
+    }
+
+    /// Whether the current state differs from its preset (the "Edited" rule).
+    var isEdited: Bool {
+        current.isEdited(myPresets: customPresets)
+    }
+
+    /// The preset as it plays: "Warm", "Warm · edited", "Late Night".
+    var presetLabel: String {
+        let name = current.preset.displayName
+        return isEdited ? "\(name) · edited" : name
+    }
+
+    /// One line for the EQ as it plays: `presetLabel`, or "Off".
+    var summary: String {
+        current.isOn ? presetLabel : "Off"
+    }
 
     init(audioViewModel: AudioViewModel, defaults: UserDefaults) {
         self.audioViewModel = audioViewModel
         self.defaults = defaults
-        loadPersistedState()
-        // "Remember last setting" — HEADLESS re-dispatch of the restored curve.
-        //
-        // `dispatchAllBands()` no-ops until `audioViewModel.isEngineReady`, which is still false
-        // here at init. So we hook the engine-ready lifecycle transition to re-dispatch once the
-        // AU is live — even with the EQ tab closed (the DSP graph runs regardless of which tab is
-        // visible). This is a lifecycle hook (analogous to the engine's `onOutputDevicesChanged`),
-        // NOT the F3-forbidden device-recall callback. `[weak self]` — no retain cycle.
-        audioViewModel.onEngineReady = { [weak self] in self?.dispatchAllBands() }
-        // Also dispatch once now: idempotent — no-ops if the engine isn't ready yet (the hook
-        // above will fire), dispatches immediately if the engine is already up.
-        dispatchAllBands()
+        let myPresets = Self.loadMyPresets(from: defaults)
+        customPresets = myPresets
+        store = Self.loadStore(from: defaults, myPresets: myPresets)
+        // Headless re-send: `publish()` no-ops until the engine is up, so this hook sends the restored
+        // EQ the moment it is — with the EQ tab closed too. A lifecycle hook, not a device recall.
+        audioViewModel.onEngineReady = { [weak self] in self?.publish() }
+        publish()
     }
 
-    // MARK: - Preset Selection
+    // MARK: - Presets
 
-    /// Apply a named preset: updates `bandGains` and dispatches all 31 bands
-    /// to the DSP kernel in a single pass.
-    func selectPreset(_ preset: EQBuiltInPreset) {
+    /// Choose a preset: its points, Tone at 0, and the EQ on. Re-choosing the current preset resets
+    /// it. A My Preset that no longer exists is ignored.
+    func choose(_ preset: EQPresetRef) {
+        guard let state = EQState(choosing: preset, myPresets: customPresets) else { return }
         logUX("EQ preset → '\(preset.displayName)'")
-        selectedPreset = preset
-        bandGains = preset.points
-        dispatchAllBands()
-        persistLiveState()
+        setCurrent(state)
+        persist()
     }
 
-    /// Apply a saved custom preset by name. No-op if the name is not found.
-    func selectCustomPreset(named name: String) {
-        guard let gains = savedCustomPresets[name] else { return }
-        logUX("EQ custom preset → '\(name)'")
-        selectedPreset = nil
-        bandGains = gains
-        dispatchAllBands()
-        persistLiveState()
+    /// Save what plays as the My Preset `name` (replacing one of that name), Tone baked in. The
+    /// current slot then plays that preset, unedited.
+    func save(as name: String) {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let saved = current.saved(as: name)
+        customPresets[name] = saved.points
+        persistMyPresets()
+        setCurrent(saved)
+        persist()
+        logUX("EQ save preset '\(name)'")
     }
 
-    // MARK: - Per-Band Editing
+    // MARK: - Outputs
 
-    /// Commit canvas-drawn ("custom") edits. The `FrequencyResponseCanvas` mutates
-    /// `bandGains` in place during a drag, then calls this to **defensively clamp
-    /// every band to the DSP range [-12, +12] dB**, mark the preset custom, and
-    /// dispatch once. Centralizes the DSP-range guarantee that direct `bandGains`
-    /// writes would otherwise bypass.
-    ///
-    /// Called once PER DRAG SAMPLE (~60-120 Hz) — dispatch-only, deliberately. Persisting the
-    /// live state here would JSON-encode + UserDefaults-write on every pointer move during the
-    /// most latency-sensitive interaction in the app. The canvas persists once via
-    /// `persistLiveState()` from `DragGesture.onEnded` instead (architect review).
-    func commitCustomBandEdits() {
-        for index in bandGains.indices {
-            bandGains[index] = max(-12.0, min(12.0, bandGains[index]))
-        }
-        selectedPreset = nil
-        dispatchAllBands()
-    }
-
-    // MARK: - Save Custom Preset
-
-    /// Save the current band state as a named custom preset.
-    ///
-    /// Overwrites silently if `name` already exists. Persists to UserDefaults.
-    /// Only meaningful when `selectedPreset == nil` (i.e. user has made custom edits)
-    /// but the caller is responsible for gating the UI control.
-    func saveCustomPreset(name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        logUX("EQ save custom preset '\(trimmed)'")
-        savedCustomPresets[trimmed] = bandGains
-        persistCustomPresets()
-    }
-
-    // MARK: - Per-Output Recall
-
-    /// Recall the preset previously mapped to `device`, if any.
-    ///
-    /// Called from `onChange(of: selectedDevice)` in the view (F3: view-driven, no
-    /// cross-VM callback). Shows a non-modal banner on successful recall.
-    func recallPresetForDevice(_ device: AudioDeviceModel) {
-        let key = String(device.id)
-        guard let presetID = outputPresetMap[key] else { return }
-
-        // Try a built-in preset first; fall back to saved custom.
-        if let preset = EQBuiltInPreset(rawValue: presetID) {
-            logUX("EQ recall: device '\(device.name)' → preset '\(presetID)'")
-            selectPreset(preset)
-            recallBannerMessage = "\(presetID) loaded for \(device.name)"
-        } else if savedCustomPresets[presetID] != nil {
-            logUX("EQ recall: device '\(device.name)' → custom '\(presetID)'")
-            selectCustomPreset(named: presetID)
-            recallBannerMessage = "\(presetID) loaded for \(device.name)"
-        } else {
-            // Mapping references a preset that no longer exists; remove stale entry.
-            logUX("EQ recall: stale map for device '\(device.name)' (preset '\(presetID)' gone)")
-            outputPresetMap.removeValue(forKey: key)
-            persistOutputPresetMap()
+    /// The sound moved to another output (Edge 5; fired only when the UID changes). Its slot — its
+    /// pin, else shared — becomes current, and a drag in progress stays with the output it was made
+    /// on. When that changes what plays, it is sent, and the toast names the output and its EQ —
+    /// except at launch, when no output played before.
+    func outputDidChange(to key: EQOutputKey?) {
+        endStroke()
+        let before = current
+        let hadOutput = output != nil
+        output = key
+        logUX("EQ output → '\(key?.name ?? "none")' slot=\(store.slotID(for: key) ?? "shared")")
+        guard current != before else { return }
+        publish()
+        if hadOutput, let key {
+            outputToast.show("\(key.name) · \(summary)")
         }
     }
 
-    // MARK: - Dispatch
+    // MARK: - Writing and sending
 
-    /// Publish the full 31-band gain vector to the live DSP AU. Called exactly
-    /// once per user action — never in a per-band loop. Used by `selectPreset`
-    /// and `commitCustomBandEdits`.
-    ///
-    /// The published gains pass through `EQSafetyClamp`: if the summed band gains
-    /// exceed the cumulative hearing-safety ceiling, all bands are proportionally
-    /// scaled down before reaching the kernel. `bandGains` itself is left untouched,
-    /// so sliders/canvas keep showing the user's intent while the kernel only ever
-    /// receives a hearing-safe shape.
-    ///
-    /// Guarded on engine readiness: a no-op until the AU is live, which also closes
-    /// the (very narrow) teardown race against `shutdown()`.
-    func dispatchAllBands() {
+    /// An edit: the current slot plays `curve` from now on, and the EQ turns on.
+    func edit(to curve: EQCurve) {
+        var state = current
+        state.edit(to: curve)
+        setCurrent(state)
+    }
+
+    /// Writes `state` into the current output's slot and sends it: the path every change takes.
+    func setCurrent(_ state: EQState) {
+        store[slot: store.slotID(for: output)] = state
+        publish()
+    }
+
+    /// THE dispatch (the contract's one send): what the current slot plays. A no-op until the engine
+    /// is up (`onEngineReady` re-sends). The engine validates and coalesces, so a drag sends every
+    /// pointer sample.
+    private func publish() {
         guard audioViewModel.isEngineReady else { return }
-        let safeGains = EQSafetyClamp.clamped(bandGains)
-        let maxBoost = safeGains.max() ?? 0
-        let maxCut = safeGains.min() ?? 0
-        logUX("EQ dispatch: preset='\(selectedPresetName)' "
-            + "maxBoost=\(String(format: "%+.1f", maxBoost))dB "
-            + "maxCut=\(String(format: "%+.1f", maxCut))dB")
-        audioViewModel.publishEQGains(safeGains)
-    }
-
-    /// Log an interpolation-mode change. Called from the EQ tab view's onChange handler
-    /// so the log remains in the view model (which already imports Foundation).
-    func logInterpolationModeChange(_ discrete: Bool) {
-        logUX("EQ interpolation → \(discrete ? "discrete" : "smooth")")
+        audioViewModel.publishEQ(points: current.points, isOn: current.isOn)
     }
 }
+
+#if DEBUG
+    extension EQViewModel {
+        /// Picture sheets: every output plays `points` as an edited Flat (neither persisted nor sent).
+        func seedRenderFixture(points: [Float]) {
+            var state = EQState.flat
+            state.edit(to: EQCurve(points: points))
+            store = EQStore(shared: state)
+        }
+    }
+#endif

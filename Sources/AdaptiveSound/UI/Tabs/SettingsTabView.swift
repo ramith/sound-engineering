@@ -89,7 +89,7 @@ struct SettingsTabView: View {
 
                 PureModeSettingsSection(
                     audioViewModel: audioViewModel,
-                    eqPresetName: eqViewModel.selectedPresetName
+                    eqPresetName: eqViewModel.summary
                 )
             }
             .padding(.horizontal, 16)
