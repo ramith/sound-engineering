@@ -67,16 +67,16 @@
             eq.updateStroke(band: sample.band, db: Float(sample.requestedDb))
         }
 
-        /// "Warm · Edited": Warm with a dip drawn in around 3 kHz (a real stroke, neighbours following).
+        /// "Warm · Edited": Warm with a lift drawn in at 1.25 kHz (a real stroke, neighbours following).
         private static func editedWarm() -> EQState {
             var stroke = EQStroke(start: EQCurve(points: EQBuiltInPreset.warm.points))
-            return EQState(preset: .builtIn(.warm), curve: stroke.curve(movingTo: 22, db: -1.5))
+            return EQState(preset: .builtIn(.warm), curve: stroke.curve(movingTo: 18, db: 2.5))
         }
 
-        /// Warm under a +6 dB Bass Tone: the low points ask past +12 dB and are held there ("limited").
+        /// Warm under a +10 dB Bass Tone: the low points (+3 dB) ask past +12 dB and are held there ("limited").
         private static func toneLimitedState() -> EQState {
             var curve = EQCurve(points: EQBuiltInPreset.warm.points)
-            curve.setTone(.bass, to: 6)
+            curve.setTone(.bass, to: 10)
             return EQState(preset: .builtIn(.warm), curve: curve)
         }
 

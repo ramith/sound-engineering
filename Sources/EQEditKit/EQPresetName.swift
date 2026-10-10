@@ -3,7 +3,9 @@
 //
 // - Spaces and line breaks at either end don't count, and a line break inside becomes a space (a
 //   pasted name stays one line). Nothing left is no name (N2).
-// - A built-in's name is taken, in any case: "warm" would read exactly like Warm next to it (N1).
+// - A built-in's name is taken, in any case: "warm" would read exactly like Warm next to it (N1). So
+//   are the built-ins' stored ids ("Loudness", shown as "Bass & Treble") and the retired ones
+//   ("Studio"), which a saved state may still name.
 // - My Presets' names are unique in any case: saving onto one replaces it under its own name; renaming
 //   onto another is refused.
 
@@ -23,7 +25,7 @@ public enum EQPresetName {
     /// Why a name is refused.
     public enum Problem: Equatable, Sendable {
         case empty
-        /// A built-in preset's name (its display name).
+        /// A built-in preset's name — its display name, its stored id, or a retired one's — as written there.
         case builtIn(String)
         /// Rename only: another of My Presets has it.
         case taken(String)
@@ -32,7 +34,7 @@ public enum EQPresetName {
         public var message: String {
             switch self {
             case .empty: "Type a name — spaces alone don't make one."
-            case let .builtIn(name): "“\(name)” is a built-in preset. Choose another name."
+            case let .builtIn(name): "“\(name)” is reserved for a built-in preset. Choose another name."
             case let .taken(name): "You already have a preset named “\(name)”."
             }
         }
@@ -44,14 +46,17 @@ public enum EQPresetName {
                              renaming original: String? = nil) -> Check {
         let name = normalized(typed)
         guard !name.isEmpty else { return .invalid(.empty) }
-        let builtIn = EQBuiltInPreset.allCases.first { matches(name, $0.displayName) || matches(name, $0.rawValue) }
-        if let builtIn {
-            return .invalid(.builtIn(builtIn.displayName))
+        if let reserved = reservedNames.first(where: { matches(name, $0) }) {
+            return .invalid(.builtIn(reserved))
         }
         let existing = myPresets.first { $0 != original && matches(name, $0) }
         guard let existing else { return .new(name) }
         return original == nil ? .replaces(existing) : .invalid(.taken(existing))
     }
+
+    /// Every name a My Preset can't take: each built-in's display name and stored id, and the retired ids.
+    static let reservedNames: [String] = EQBuiltInPreset.allCases.flatMap { [$0.displayName, $0.rawValue] }
+        + EQBuiltInPreset.retired.keys.sorted()
 
     /// The name as it is stored: one line, with no spaces or line breaks at either end.
     static func normalized(_ typed: String) -> String {

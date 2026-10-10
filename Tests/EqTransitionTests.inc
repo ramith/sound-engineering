@@ -368,9 +368,9 @@ static auto testEqTransitionsRealistic() -> void
         "Presence",
         "Clarity",
         "Warm",
-        "Loudness",
+        "Bass & Treble",
         "Vocal",
-        "Studio",
+        "Bass Boost",
     };
     for (size_t i = 0; i < kEqPresetCurves.size(); ++i)
     {

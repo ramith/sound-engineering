@@ -629,9 +629,9 @@ namespace
             "Presence",
             "Clarity",
             "Warm",
-            "Loudness",
+            "Bass & Treble",
             "Vocal",
-            "Studio",
+            "Bass Boost",
         };
         constexpr size_t kExtraCurves = 2U;
         std::vector<TlCurve> curves;

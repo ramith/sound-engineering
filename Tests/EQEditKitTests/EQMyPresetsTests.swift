@@ -31,9 +31,11 @@ struct EQMyPresetsTests {
         }
     }
 
-    @Test("MINE-02: a built-in's name is refused in any case, by its name or its id (N1)")
+    @Test("MINE-02: a built-in's name is refused in any case — display names, stored ids, retired ids (N1)")
     func builtInNames() {
-        for typed in ["Warm", "warm", "  WARM ", "Flat", "studio", "Loudness"] {
+        let reserved = ["Warm", "warm", "  WARM ", "Flat", "Bass & Treble", "bass & treble", "Bass Boost",
+                        "BASS BOOST", "BassBoost", "Loudness", "loudness", "Studio", "studio", "STUDIO"]
+        for typed in reserved {
             guard case let .invalid(.builtIn(name)) = EQPresetName.check(typed, among: [String]()) else {
                 Issue.record("\(typed) was accepted")
                 continue
@@ -41,7 +43,9 @@ struct EQMyPresetsTests {
             #expect(name.caseInsensitiveCompare(typed.trimmingCharacters(in: .whitespaces)) == .orderedSame)
         }
         #expect(EQPresetName.check("Warmer", among: [String]()) == .new("Warmer"))
-        #expect(EQPresetName.Problem.builtIn("Warm").message == "“Warm” is a built-in preset. Choose another name.")
+        #expect(EQPresetName.check("Bass", among: [String]()) == .new("Bass"))
+        #expect(EQPresetName.Problem.builtIn("Studio").message
+            == "“Studio” is reserved for a built-in preset. Choose another name.")
     }
 
     @Test("MINE-03: a name is one trimmed line; saving onto one of My Presets replaces it under its own name")
