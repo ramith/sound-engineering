@@ -138,6 +138,15 @@ void Realizer::postDrain()
     });
 }
 
+template <typename T> bool Realizer::writeSlot(PendingSlot<T>& slot, const T& intent)
+{
+    const std::scoped_lock lock(slotMutex_);
+    slot.write(intent);
+    const bool post = !drainPosted_;
+    drainPosted_ = true;
+    return post;
+}
+
 bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
 {
     if (pointsDb == nullptr || count != static_cast<uint32_t>(kEqBandCount))
@@ -157,14 +166,10 @@ bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
         intent.points[band] = std::clamp(point, -kEQMaxGainDb, kEQMaxGainDb);
     }
 
-    bool wasClean = false;
-    {
-        const std::scoped_lock lock(slotMutex_);
-        wasClean = pendingEq_.write(intent);
-    }
+    const bool post = writeSlot(pendingEq_, intent);
     AdaptiveSound::log::debug("[QW1] Realizer.setPendingEq on={} -> {}", isOn,
-                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-    if (wasClean)
+                              post ? "POST drain" : "coalesced (drain pending)");
+    if (post)
     {
         postDrain();
     }
@@ -174,14 +179,10 @@ bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
 void Realizer::setPendingIntensity(float value)
 {
     const IntensityIntent intent{.value = std::clamp(value, 0.0F, 1.0F)};
-    bool wasClean = false;
-    {
-        const std::scoped_lock lock(slotMutex_);
-        wasClean = pendingIntensity_.write(intent);
-    }
+    const bool post = writeSlot(pendingIntensity_, intent);
     AdaptiveSound::log::debug("[QW1] Realizer.setPendingIntensity value={:.4f} -> {}", intent.value,
-                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-    if (wasClean)
+                              post ? "POST drain" : "coalesced (drain pending)");
+    if (post)
     {
         postDrain();
     }
@@ -195,15 +196,11 @@ void Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t prese
         .level = std::clamp(level, 0.0F, 1.0F),
         .preset = std::clamp(preset, 0U, kMaxPreset),
     };
-    bool wasClean = false;
-    {
-        const std::scoped_lock lock(slotMutex_);
-        wasClean = pendingCrossfeed_.write(intent);
-    }
+    const bool post = writeSlot(pendingCrossfeed_, intent);
     AdaptiveSound::log::debug("[QW1] Realizer.setPendingCrossfeed enabled={} level={:.4f} preset={} -> {}",
                               intent.enabled, intent.level, intent.preset,
-                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-    if (wasClean)
+                              post ? "POST drain" : "coalesced (drain pending)");
+    if (post)
     {
         postDrain();
     }
@@ -246,8 +243,9 @@ void Realizer::drain()
 {
     dispatch_assert_queue_debug(queue_);
 
-    // Take the dirty slots under the lock, then realise and publish without it. A slot rewritten
-    // after the take goes clean → dirty again and posts a fresh drain, so no intent is lost.
+    // Take the dirty slots and clear drainPosted_ under the lock, then realise and publish without
+    // it. A write after the take finds no drain pending and posts a fresh one, so no intent is
+    // lost — and at most one untaken drain is ever queued.
     EqIntent eq{};
     IntensityIntent intensity{};
     CrossfeedIntent crossfeed{};
@@ -259,10 +257,11 @@ void Realizer::drain()
         eqDirty = pendingEq_.take(eq);
         intensityDirty = pendingIntensity_.take(intensity);
         crossfeedDirty = pendingCrossfeed_.take(crossfeed);
+        drainPosted_ = false;
     }
     if (!eqDirty && !intensityDirty && !crossfeedDirty)
     {
-        return; // spurious wake (an earlier coalesced drain took the slot)
+        return; // defensive: a posted drain always finds the slot whose write posted it
     }
     AdaptiveSound::log::debug("[QW1] Realizer.drain: eq={} intensity={} crossfeed={}",
                               static_cast<int>(eqDirty), static_cast<int>(intensityDirty),

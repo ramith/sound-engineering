@@ -456,8 +456,8 @@ bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, 
 
 void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     // S6 Tier-3 (3a): the single intensity control surface (design §1.5). Clamps to [0,1]
-    // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
-    // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
+    // inside the Realizer, sets the pending-intensity slot, and posts a drain when none is
+    // pending. The intensity slot is SEPARATE from the EQ slot, so an
     // interleaved intensity intent is never dropped by an EQ burst. Off-RT; no-op if null.
     AdaptiveSound::log::debug("[QW1] C-ABI publishIntensity intensity={:.4f}", intensity);
     if (auUnit == nullptr) {
@@ -475,8 +475,8 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
 
 void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) AUDIODSP_C_NOEXCEPT {
     // QW1 §3: the single crossfeed control surface. Sets the Realizer's pending-crossfeed slot
-    // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain on a
-    // clean->dirty transition; the off-RT coefficient derivation, the canonical read-modify-write,
+    // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain when
+    // none is pending; the off-RT coefficient derivation, the canonical read-modify-write,
     // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
     // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
     // The Realizer derives the coefficients at the rate it owns. Off-RT; no-op if null.
