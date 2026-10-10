@@ -37,7 +37,9 @@ private let eqReallocToneSpacingHz = 250
 private func wholeCycleWindow(rate: Double) -> Range<Int> {
     let fs = Int(rate)
     var (lhs, rhs) = (fs, eqReallocToneSpacingHz)
-    while rhs != 0 { (lhs, rhs) = (rhs, lhs % rhs) }
+    while rhs != 0 {
+        (lhs, rhs) = (rhs, lhs % rhs)
+    }
     let period = fs / lhs // samples per whole cycle of the tone spacing
     let span = (Int(totalFrames) - eqReallocSettleFrames) / period * period
     return eqReallocSettleFrames ..< eqReallocSettleFrames + span
