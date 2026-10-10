@@ -6,9 +6,9 @@ import SwiftUI
 struct PureModeSettingsSection: View {
     @Bindable var audioViewModel: AudioViewModel
 
-    /// The current EQ preset display name, threaded in from the parent view so the card
+    /// The EQ as it plays ("Warm · edited" / "Off"), threaded in from the parent view so the card
     /// remains a pure value-snapshot read (consistent with the F4 pattern). The parent
-    /// reads this from `EQViewModel.selectedPresetName` via its own Environment access.
+    /// reads this from `EQViewModel.summary` via its own Environment access.
     let eqPresetName: String
 
     var body: some View {

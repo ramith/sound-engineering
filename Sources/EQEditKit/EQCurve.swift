@@ -47,6 +47,33 @@ public struct EQCurve: Equatable, Codable, Sendable {
         }
     }
 
+    // MARK: - Editing (EQ3a)
+
+    /// How far a point may sit from its preset's before the curve counts as edited (dB).
+    private static let editedThresholdDb: Float = 0.05
+
+    /// Sets the point at `band` so it PLAYS `db` (held in ±12): the base takes whatever the Tone
+    /// layer doesn't (base = db − Tone offset), so the point lands on `db` within float error
+    /// (≤ 1e-5 dB) whatever Tone is set. A band outside the grid, or a non-finite level, is ignored.
+    public mutating func setPoint(_ band: Int, to db: Float) {
+        guard base.indices.contains(band), db.isFinite else { return }
+        let point = db.clamped(within: EQBands.pointLimitDb)
+        base[band] = (point - toneOffset(atBand: band)).clamped(within: EQBands.baseLimitDb)
+    }
+
+    /// The same points with the Tone baked into the base and Tone at 0: what Save keeps.
+    func baked() -> EQCurve {
+        EQCurve(points: points)
+    }
+
+    /// Whether this curve plays something other than `presetPoints` — the "Edited" rule: any point
+    /// more than 0.05 dB away, or any Tone set (a Tone move counts even where the ceiling holds the
+    /// points still). Points of the wrong count never match.
+    func isEdited(against presetPoints: [Float]) -> Bool {
+        guard presetPoints.count == EQBands.count, tone.allSatisfy({ $0 == 0 }) else { return true }
+        return zip(points, presetPoints).contains { abs($0 - $1) > Self.editedThresholdDb }
+    }
+
     // MARK: - Codable (base + tone; the invariant is checked, never trusted)
 
     private enum CodingKeys: String, CodingKey {

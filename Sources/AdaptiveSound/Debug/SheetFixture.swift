@@ -40,6 +40,7 @@
             audio = AudioViewModel(defaults: defaults,
                                    engine: SheetEngine(before: monitor.before, after: monitor.after))
             eq = EQViewModel(audioViewModel: audio, defaults: defaults)
+            audio.onOutputIdentityChanged = { [weak eq] key in eq?.outputDidChange(to: key) } // Edge 5
             browse = LibraryBrowseModel(audio: audio, library: library)
             playlists = PlaylistsModel(library: library, audio: audio)
             let songs = variant == .empty ? [] : Self.songs()
@@ -57,8 +58,7 @@
             artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
             seedDevices()
             seedPlayback(songs)
-            eq.bandGains = Self.eqCurve()
-            eq.selectedPreset = nil // a hand-drawn curve reads "Custom"
+            eq.seedRenderFixture(points: Self.eqCurve()) // a hand-drawn curve reads "Flat · edited"
             nowPlaying.audio = audio
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
         }

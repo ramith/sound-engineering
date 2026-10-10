@@ -62,7 +62,12 @@ struct AdaptiveSound: App {
         lib.onStoreReady = { [weak audio] in audio?.hydrateQueueOnLaunch() }
         _audioViewModel = State(initialValue: audio)
         _library = State(initialValue: lib)
-        _eqViewModel = State(initialValue: EQViewModel(audioViewModel: audio, defaults: location.defaults))
+        let eq = EQViewModel(audioViewModel: audio, defaults: location.defaults)
+        // Edge 5 (Sprint EQ): per-output EQ memory follows the output's IDENTITY — the hook fires only
+        // when the device UID changes, never on a rate or buffer re-read — from here, so the slot
+        // switches with any tab showing and with the window closed (resident menu-bar mode).
+        audio.onOutputIdentityChanged = { [weak eq] key in eq?.outputDidChange(to: key) }
+        _eqViewModel = State(initialValue: eq)
         // S9.4: the browse model is owned HERE (above the tab switch) and injected, so Library
         // nav/selection/loaded state survives tab changes (LibraryTabView is switch-destroyed). It
         // composes BOTH peers — library reads + audio play verbs.

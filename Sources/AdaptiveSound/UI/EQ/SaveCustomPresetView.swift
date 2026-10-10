@@ -6,7 +6,7 @@ import SwiftUI
 /// 31-band state as a named custom preset in `EQViewModel`.
 ///
 /// Presented from `EQControlsSection` when the user presses "Save as Custom…"
-/// (only enabled when `selectedPreset == nil`, i.e. the bands have been edited).
+/// (only enabled while the EQ is edited, `EQViewModel.isEdited`).
 struct SaveCustomPresetView: View {
     let eqViewModel: EQViewModel
 
@@ -55,7 +55,7 @@ struct SaveCustomPresetView: View {
 
     private func commitSave() {
         guard canSave else { return }
-        eqViewModel.saveCustomPreset(name: presetName)
+        eqViewModel.save(as: presetName)
         isPresented = false
     }
 }

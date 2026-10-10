@@ -137,21 +137,9 @@ final class LibraryBrowseModel {
     /// in-flight actor call, hence the epoch.
     private var searchEpoch = SearchEpoch()
 
-    /// Queue-add toast (S9.5 §10.4). State lives HERE (Library is the only queue-adder — arch #4, not
-    /// a global service); the shell-hosted `QueueToast` view renders + announces off `queueToast`.
-    /// The current toast, or nil. No `didSet` (so no @Observable self-assign trap); the `token` is a
-    /// monotonic key the VIEW uses as its announce + animation trigger, so a coalesced replace with an
-    /// IDENTICAL string still re-announces/re-renders (review swiftui #1/#5).
-    struct QueueToastState: Equatable {
-        let message: String
-        let token: Int
-    }
-
-    private(set) var queueToast: QueueToastState?
-    private var queueToastToken = 0
-    /// Single cancellable dismiss task (cancel-and-respawn) — NOT one task per raise. The post-sleep
-    /// `!Task.isCancelled` guard stops a superseded task from clearing a newer toast (review swiftui #3).
-    private var queueToastDismissTask: Task<Void, Never>?
+    /// Queue-add toast (S9.5 §10.4), ~2 s. State lives HERE (Library is the only queue-adder — arch
+    /// #4, not a global service); the shell-hosted `QueueToast` view renders + announces it.
+    let queueToast = ShellToastSlot(lifetime: .seconds(2))
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []
@@ -416,39 +404,18 @@ final class LibraryBrowseModel {
     // MARK: - Queue toast (S9.5 §10.4)
 
     /// Raise the visibility-gated queue-add toast for a completed add. Silent for Play Now, on the
-    /// Now Playing tab, or whenever `QueueToastDecision` suppresses it (see `raiseToast` for the
-    /// coalesce/auto-dismiss mechanics).
+    /// Now Playing tab, or whenever `QueueToastDecision` suppresses it (`ShellToastSlot` coalesces
+    /// and auto-dismisses).
     func showQueueToast(_ verb: QueueVerb, added: Int) {
         guard let message = QueueToastDecision.message(
             verb: verb, addedCount: added, isNowPlayingTab: audio.selectedTab == .nowPlaying
         ) else { return }
-        raiseToast(message)
+        queueToast.show(message)
     }
 
     /// Raise a plain-message toast on the shell surface (S10.3 playlist-add "Added N songs to …").
     func showToast(_ message: String) {
-        raiseToast(message)
-    }
-
-    /// Shared raise+coalesce+auto-dismiss for the shell toast (queue add / playlist add): replaces
-    /// the text + resets the ~2 s timer (single cancellable task; post-sleep guard prevents a
-    /// superseded task clearing the newer toast); the token re-announces even an identical string.
-    private func raiseToast(_ message: String) {
-        queueToastToken &+= 1
-        queueToast = QueueToastState(message: message, token: queueToastToken)
-        queueToastDismissTask?.cancel()
-        queueToastDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            self?.queueToast = nil
-        }
-    }
-
-    /// Clear the toast immediately — tap-through / entering Now Playing — so the render gate can't let
-    /// a stale toast reappear on return to a gated tab within the window (review swiftui #2).
-    func dismissQueueToast() {
-        queueToastDismissTask?.cancel()
-        queueToast = nil
+        queueToast.show(message)
     }
 }
 

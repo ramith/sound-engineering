@@ -9,11 +9,11 @@ import SwiftUI
 ///   Group 1 — Analytic: Flat, Presence, Clarity, Warm
 ///   Group 2 — House curves: Loudness, Vocal, Studio
 ///   Divider
-///   Custom (read-only; reflects canvas/slider edits)
+///   The EQ's own line (read-only), when it isn't an unedited built-in: "Warm · edited", a saved
+///   preset's name
 ///
-/// Selecting a real preset routes through `EQViewModel.selectPreset`, which
-/// updates `bandGains` and dispatches once. "Custom" is a read-only reflection
-/// tag — its setter is intentionally a no-op.
+/// Choosing a built-in routes through `EQViewModel.choose`, which applies it and sends it once;
+/// choosing the built-in already shown edited resets it. The read-only line's setter is a no-op.
 struct EQPresetPickerView: View {
     let eqViewModel: EQViewModel
 
@@ -22,12 +22,18 @@ struct EQPresetPickerView: View {
     private static let analyticPresets: [EQBuiltInPreset] = [.flat, .presence, .clarity, .warm]
     private static let housePresets: [EQBuiltInPreset] = [.loudness, .vocal, .studio]
 
+    /// The built-in the EQ plays unedited; `nil` for an edit or a saved preset.
+    private var uneditedBuiltIn: EQBuiltInPreset? {
+        guard case let .builtIn(preset) = eqViewModel.current.preset, !eqViewModel.isEdited else { return nil }
+        return preset
+    }
+
     var body: some View {
         let selection = Binding<EQBuiltInPreset?>(
-            get: { eqViewModel.selectedPreset },
+            get: { uneditedBuiltIn },
             set: { newPreset in
                 if let preset = newPreset {
-                    eqViewModel.selectPreset(preset)
+                    eqViewModel.choose(.builtIn(preset))
                 }
             }
         )
@@ -43,12 +49,14 @@ struct EQPresetPickerView: View {
                 Text(preset.displayName).tag(EQBuiltInPreset?.some(preset))
             }
 
-            Divider()
+            if uneditedBuiltIn == nil {
+                Divider()
 
-            Text("Custom").tag(EQBuiltInPreset?.none)
+                Text(eqViewModel.presetLabel).tag(EQBuiltInPreset?.none)
+            }
         }
         .pickerStyle(.menu)
         .labelsHidden() // the parent LabeledContent("Preset") supplies the VoiceOver label
-        .accessibilityValue(eqViewModel.selectedPresetName)
+        .accessibilityValue(eqViewModel.presetLabel)
     }
 }

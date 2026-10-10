@@ -1,102 +1,68 @@
 import EQEditKit
 import Foundation
 
-// MARK: - EQViewModel Persistence
+// MARK: - EQViewModel persistence
 
-/// UserDefaults-backed persistence (the injected `defaults` — `AppDataLocation`'s) for saved
-/// custom presets and the per-output-device preset recall map. All keys are versioned so a
-/// future schema change can migrate or discard stale data without a crash.
-///
-/// Format v1:
-///   `eqCustomPresetsV1`   — JSON-encoded `[String: [Float]]`
-///   `eqOutputPresetMapV1` — JSON-encoded `[String: String]`
-///   `eqLiveStateV1`       — JSON-encoded `EQLiveState` (active preset + 31-band gains)
+/// The EQ persists through the injected `defaults` (`AppDataLocation`'s) under two keys:
+///   `eqStateV2`         — JSON `EQStore`: every slot, written whole (one value, so the slots can
+///                         never disagree on disk) on each discrete action and at stroke end, never
+///                         per drag sample;
+///   `eqCustomPresetsV1` — JSON `[String: [Float]]`: My Presets, unchanged from v1 (a downgrade
+///                         still reads it).
+/// v1's `eqLiveStateV1` is read once, by the migration, and left in place for one release so a
+/// downgrade still finds its EQ. v1's `eqOutputPresetMapV1` was never written and is dropped.
 extension EQViewModel {
-    // MARK: - UserDefaults keys
-
-    private enum UDKey {
-        static let customPresets = "eqCustomPresetsV1"
-        static let outputPresetMap = "eqOutputPresetMapV1"
-        static let liveState = "eqLiveStateV1"
+    private enum Key {
+        static let store = "eqStateV2"
+        static let myPresets = "eqCustomPresetsV1"
+        static let liveStateV1 = "eqLiveStateV1"
     }
 
-    // MARK: - Load
-
-    /// Load all persisted collections from UserDefaults and restore the last live EQ state.
-    /// Called once from `init`; tolerates missing or corrupted data silently.
-    func loadPersistedState() {
-        savedCustomPresets = loadCustomPresets()
-        outputPresetMap = loadOutputPresetMap()
-        restoreLiveState()
-        logUX("EQ persistence: loaded \(savedCustomPresets.count) custom preset(s), "
-            + "\(outputPresetMap.count) device mapping(s), live='\(selectedPresetName)'")
+    /// Write every slot.
+    func persist() {
+        Self.write(store, to: defaults)
     }
 
-    // MARK: - Custom Presets
-
-    /// Persist `savedCustomPresets` to UserDefaults as JSON.
-    func persistCustomPresets() {
-        guard let data = try? JSONEncoder().encode(savedCustomPresets) else { return }
-        defaults.set(data, forKey: UDKey.customPresets)
+    /// Write My Presets.
+    func persistMyPresets() {
+        guard let data = try? JSONEncoder().encode(customPresets) else { return }
+        defaults.set(data, forKey: Key.myPresets)
     }
 
-    private func loadCustomPresets() -> [String: [Float]] {
-        guard
-            let data = defaults.data(forKey: UDKey.customPresets),
-            let decoded = try? JSONDecoder().decode([String: [Float]].self, from: data)
+    /// My Presets as stored; one with the wrong count or a non-finite value is skipped.
+    static func loadMyPresets(from defaults: UserDefaults) -> [String: [Float]] {
+        guard let data = defaults.data(forKey: Key.myPresets),
+              let decoded = try? JSONDecoder().decode([String: [Float]].self, from: data)
         else { return [:] }
-        // Validate: each array must be exactly 31 bands.
-        return decoded.filter { $0.value.count == 31 }
+        return decoded.filter { $0.value.count == EQBands.count && $0.value.allSatisfy(\.isFinite) }
     }
 
-    // MARK: - Output Preset Map
-
-    /// Persist `outputPresetMap` to UserDefaults as JSON.
-    func persistOutputPresetMap() {
-        guard let data = try? JSONEncoder().encode(outputPresetMap) else { return }
-        defaults.set(data, forKey: UDKey.outputPresetMap)
+    /// The stored slots: `eqStateV2`, or on the first launch after the upgrade the v1 EQ migrated
+    /// (`EQMigration`) and written at once, so it migrates once. Unreadable v2 data plays Flat and
+    /// stays on disk until the next write. A slot on a My Preset that no longer exists keeps its
+    /// curve as an edited Flat.
+    static func loadStore(from defaults: UserDefaults, myPresets: [String: [Float]]) -> EQStore {
+        var store: EQStore
+        if let data = defaults.data(forKey: Key.store) {
+            do {
+                store = try JSONDecoder().decode(EQStore.self, from: data)
+            } catch {
+                logUX("EQ persistence: eqStateV2 unreadable (\(error.localizedDescription)) — playing Flat")
+                store = EQStore(shared: .flat)
+            }
+        } else {
+            store = EQMigration.store(fromV1: defaults.data(forKey: Key.liveStateV1), customPresets: myPresets)
+            write(store, to: defaults)
+            logUX("EQ persistence: migrated eqLiveStateV1 → eqStateV2")
+        }
+        store.repointMyPresets { myPresets[$0] == nil ? nil : $0 }
+        logUX("EQ persistence: loaded \(myPresets.count) My Preset(s), "
+            + "shared='\(store[slot: nil].preset.displayName)'")
+        return store
     }
 
-    private func loadOutputPresetMap() -> [String: String] {
-        guard
-            let data = defaults.data(forKey: UDKey.outputPresetMap),
-            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return decoded
-    }
-
-    // MARK: - Live State ("remember last setting")
-
-    /// Persist the CURRENT active EQ (selected preset + band gains) to UserDefaults as JSON.
-    /// Called after every committed mutation (`selectPreset` / `selectCustomPreset` /
-    /// `commitCustomBandEdits`). `presetRaw = selectedPreset?.rawValue` — `nil` means Custom.
-    func persistLiveState() {
-        let state = EQLiveState(presetRaw: selectedPreset?.rawValue, bandGains: bandGains)
-        guard let data = try? JSONEncoder().encode(state) else { return }
-        defaults.set(data, forKey: UDKey.liveState)
-    }
-
-    /// Restore the last live EQ state into `bandGains` + `selectedPreset`.
-    ///
-    /// Defense-in-depth (matching `commitCustomBandEdits`): the decoded gains must be exactly
-    /// 31 bands, and every band is clamped to the DSP range `[-12, +12]` dB. Missing / corrupt /
-    /// wrong-count data leaves the current defaults untouched (`.flat` / zeros) — never crashes,
-    /// mirroring `loadCustomPresets`' 31-band filter.
-    ///
-    /// Preset mapping: `presetRaw == nil` ⇒ Custom (`selectedPreset = nil`); a known rawValue ⇒
-    /// that `EQBuiltInPreset`; an unknown/renamed rawValue degrades to Custom (`flatMap` → `nil`) while
-    /// keeping the validated curve, so the user's last-heard shape is preserved.
-    private func restoreLiveState() {
-        guard let state = loadLiveState(), state.bandGains.count == 31 else { return }
-        bandGains = state.bandGains.map { max(-12.0, min(12.0, $0)) }
-        selectedPreset = state.presetRaw.flatMap(EQBuiltInPreset.init(rawValue:))
-    }
-
-    private func loadLiveState() -> EQLiveState? {
-        guard
-            let data = defaults.data(forKey: UDKey.liveState),
-            let decoded = try? JSONDecoder().decode(EQLiveState.self, from: data)
-        else { return nil }
-        return decoded
+    private static func write(_ store: EQStore, to defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(store) else { return }
+        defaults.set(data, forKey: Key.store)
     }
 }
