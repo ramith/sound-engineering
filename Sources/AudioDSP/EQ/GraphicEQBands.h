@@ -29,13 +29,14 @@
 // References: V. Välimäki & J. Liski, "Accurate Cascade Graphic Equalizer," IEEE SPL 24(2), 2017;
 // A. Simper (Cytomic), "Linear Trap Integrated SVF"; R. Bristow-Johnson, "Audio EQ Cookbook".
 
+#include "../include/AudioConstants.h"
 #include <cmath>
 #include <numbers>
 
 namespace AdaptiveSound::GraphicEQ
 {
     // The number of bands, and the per-band array length everywhere in the EQ.
-    constexpr int kBandCount = 31;
+    constexpr int kBandCount = kEqBandCount;
 
     // Exact base-10 third-octave centres f_m = 10^(1.3 + 0.1·m): 19.95 Hz … 19.95 kHz. The UI
     // labels them with the rounded ISO 266 names (20, 25, 31.5 … 20 k); the maths uses these.

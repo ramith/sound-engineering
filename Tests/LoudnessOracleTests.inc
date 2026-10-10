@@ -427,9 +427,9 @@ static auto testCrossfeedLoudnessNeutral() -> void
     {
         auto kernel = std::make_shared<DSPKernel>();
         kernel->initialize(kOracleRate48k, 512U);
-        auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel);
-        realizer->applyCrossfeed(1U, 1.0F, kCfBauerPreset,
-                                 static_cast<double>(kOracleRate48k));
+        auto realizer =
+            std::make_shared<AdaptiveSound::Realizer>(kernel, static_cast<double>(kOracleRate48k));
+        realizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kCfBauerPreset});
         params = realizer->canonicalState().crossfeed;
         realizer->shutdown();
     }

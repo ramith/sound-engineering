@@ -16,7 +16,7 @@
 // gain. This file generalises that exact measurement approach across ALL 31 ISO bands,
 // both supported sample rates, and the boost/cut extremes, and adds the near-Nyquist
 // regression guard the S6 stability review flagged. It reuses the shared helpers
-// (goertzelPower, sliceRms, makeIdentityState, kCenterFrequencies, computeBiquadCascade).
+// (goertzelPower, sliceRms, makeIdentityState, makeEqParams, GraphicEQ::centreHz).
 //
 // MEASUREMENT METHOD (matches the single-band test's spirit, generalised):
 //   Drive a unit-amplitude sine at the band's EXACT center frequency through the real
@@ -58,7 +58,7 @@ namespace
         kernel.initialize(sampleRate, frames);
 
         TargetState state = makeIdentityState();
-        state.eq = EQModuleCoefficients::computeBiquadCascade(gains, static_cast<float>(sampleRate));
+        state.eq = makeEqParams(gains, sampleRate);
         kernel.publishTargetState(state);
 
         TestABL abl(frames);
@@ -81,7 +81,7 @@ namespace
     auto measureBandGainDb(int band, float gainDb, uint32_t sampleRate, uint32_t frames)
         -> double
     {
-        const float toneHz = EQModuleCoefficients::kCenterFrequencies[static_cast<size_t>(band)];
+        const float toneHz = static_cast<float>(GraphicEQ::centreHz(band));
 
         std::array<float, kEqBands> flat{};
         std::array<float, kEqBands> boosted{};
@@ -115,10 +115,9 @@ namespace
         for (int sign = 0; sign < 2; ++sign)
         {
             const float g = (sign == 0) ? gainDb : -gainDb;
-            for (int band = 0; band < EQModuleCoefficients::kNumBands; ++band)
+            for (int band = 0; band < kEqBandCount; ++band)
             {
-                const float fc =
-                    EQModuleCoefficients::kCenterFrequencies[static_cast<size_t>(band)];
+                const float fc = static_cast<float>(GraphicEQ::centreHz(band));
                 if (fc >= nyquist)
                 {
                     continue; // center at/above Nyquist is unmeasurable; skip (none at these rates)
@@ -210,14 +209,13 @@ static auto testEqSweepExtremesPlusMinus12() -> void
 }
 
 // ---------------------------------------------------------------------------
-// EQ_NearNyquistBandsApplyGain — the S6 Schur-Cohn regression guard.
+// EQ_NearNyquistBandsApplyGain — the near-Nyquist regression guard (S6; kept for the SVF EQ).
 //
-// At 44.1 kHz, the 16 kHz and 20 kHz band centers sit at 0.726 and 0.907 of Nyquist.
-// validateMinimumPhase() (Schur-Cohn on poles AND zeros) MUST NOT wrongly reject these
-// high-Q sections and silently fall the cascade back to identity. We assert the measured
-// response at those centers shows a real boost (and a real cut), not ~0 dB. If a band
-// silently collapses to identity, the measured gain is ~0 dB and this fails LOUD with the
-// band + measured-vs-expected numbers.
+// At 44.1 kHz, the 16 kHz and 20 kHz band centers sit at 0.726 and 0.907 of Nyquist. The
+// bells there MUST NOT silently collapse to the identity. We assert the measured response at
+// those centers shows a real boost (and a real cut), not ~0 dB. If a band silently collapses
+// to identity, the measured gain is ~0 dB and this fails LOUD with the band +
+// measured-vs-expected numbers.
 // ---------------------------------------------------------------------------
 static auto testEqNearNyquistBandsApplyGain() -> void
 {
@@ -231,7 +229,7 @@ static auto testEqNearNyquistBandsApplyGain() -> void
     std::ostringstream report;
     for (const int band : nearNyquistBands)
     {
-        const float fc = EQModuleCoefficients::kCenterFrequencies[static_cast<size_t>(band)];
+        const float fc = static_cast<float>(GraphicEQ::centreHz(band));
         for (const float g : testGains)
         {
             // Boost
@@ -287,8 +285,8 @@ static auto testEqNearNyquistBandsApplyGain() -> void
 
 // ---------------------------------------------------------------------------
 // EQ_FlatIsBitTransparentBypass — all 31 bands flat (0 dB) → EQ output is bit-identical
-// to input. computeBiquadCascade short-circuits the all-zeros case to a single identity
-// biquad; the EQModule's identity path must then leave the samples bit-for-bit unchanged.
+// to input. The flat design is the EQ module's identity (every m1 exactly 0), which skips the
+// SVF cascade; the identity path must then leave the samples bit-for-bit unchanged.
 //
 // This is the EQ-stage analogue of the existing intensity-0 / golden-master bypass
 // contract (which we reference, not duplicate: GoldenMaster_StereoN2_v1 +
@@ -316,7 +314,7 @@ static auto testEqFlatIsBitTransparentBypass() -> void
         kernel.initialize(sampleRate, kFrames);
         TargetState state = makeIdentityState();
         std::array<float, kEqBands> flat{}; // all zeros -> pass-through cascade
-        state.eq = EQModuleCoefficients::computeBiquadCascade(flat, sr);
+        state.eq = makeEqParams(flat, sampleRate);
         kernel.publishTargetState(state);
 
         TestABL abl(kFrames);
@@ -373,7 +371,7 @@ namespace
     auto measureMultiBandGainDb(const std::array<float, kEqBands>& gains, int band,
                                 uint32_t sampleRate, uint32_t frames) -> double
     {
-        const float toneHz = EQModuleCoefficients::kCenterFrequencies[static_cast<size_t>(band)];
+        const float toneHz = static_cast<float>(GraphicEQ::centreHz(band));
         std::array<float, kEqBands> flat{};
         const std::vector<float> flatOut = runEqSineAt(flat, sampleRate, toneHz, frames);
         const std::vector<float> mixOut = runEqSineAt(gains, sampleRate, toneHz, frames);

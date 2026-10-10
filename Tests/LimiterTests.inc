@@ -104,8 +104,7 @@ static auto testLimiterCeilingEnforcement() -> void
     // Publish state with the default ceiling (0.891) — active limiting.
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     // limiter: default LimiterParams — truePeakCeilingLinear = kTruePeakCeilingLinear
@@ -187,8 +186,7 @@ static auto testLimiterGRResponseTime() -> void
     // Active limiting state (default ceiling = 0.891)
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     kernel.publishTargetState(state);
@@ -244,8 +242,7 @@ static auto testLimiterNearNyquistCeiling() -> void
     kernel.initialize(kSR, kFrames);
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U; // default limiter ceiling (0.891)
     kernel.publishTargetState(state);
@@ -312,8 +309,7 @@ static auto limiterHotNoiseSoakBody(uint32_t numCh,
 
     TargetState state{};
     state.intensityLinear = 1.0F;
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     state.clarity.enabled = 0U;
     state.loudness.enabled = 0U;
     state.limiter.truePeakCeilingLinear = kCeiling;

@@ -9,7 +9,7 @@
 
 // ---------------------------------------------------------------------------
 // EQ audibility tests (Sprint 5 — Milestone 2): the EQ is now in the live graph
-// and driven by computeBiquadCascade -> publishTargetState. These validate that a
+// and driven by GraphicEQDesigner -> publishTargetState. These validate that a
 // band boost actually changes the signal by the right amount (FR accuracy) and
 // that a large coefficient change does not produce an audible boundary click
 // (the zipper measurement that the audio-dsp review flagged as make-or-break).

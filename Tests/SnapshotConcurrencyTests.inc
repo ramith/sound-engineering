@@ -7,7 +7,7 @@
 // TWO independent tear detectors (the transport is generic, so we verify it from two angles):
 //   1. RACE1 (below) — a REALISTIC TargetState payload; the producer stamps a monotonic generation
 //      into several fields (sequenceNumber = gen, intensityLinear = gen, loudness.makeupGainLinear =
-//      2·gen, eq.numBiquads = gen%11) and every accepted copy must satisfy those relations for a
+//      2·gen, eq.m1[30] = gen%11) and every accepted copy must satisfy those relations for a
 //      SINGLE gen. Generation 0 is the constructor's IDENTITY seed (default members, e.g.
 //      intensityLinear = 1.0 — NOT zeros), which a reader may legitimately claim before it observes
 //      the first real publish; a gen-0 accept is therefore validated against the seed ITSELF (a
@@ -35,11 +35,11 @@ static auto acceptedTargetStateConsistent(const AdaptiveSound::TargetState& out)
         const AdaptiveSound::TargetState seed{};
         return (out.intensityLinear == seed.intensityLinear) &&
                (out.loudness.makeupGainLinear == seed.loudness.makeupGainLinear) &&
-               (out.eq.numBiquads == seed.eq.numBiquads);
+               (out.eq.m1.back() == seed.eq.m1.back());
     }
     return (out.intensityLinear == static_cast<float>(gen)) &&
            (out.loudness.makeupGainLinear == static_cast<float>(2U * gen)) &&
-           (out.eq.numBiquads == static_cast<uint8_t>(gen % 11U));
+           (out.eq.m1.back() == static_cast<double>(gen % 11U));
 }
 
 static auto testSnapshotSeqlockConcurrentNoTear() -> void
@@ -65,7 +65,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
         uint64_t refGen;       // out.sequenceNumber
         uint64_t intensityGen; // out.intensityLinear decoded back to a gen
         uint64_t makeupGen;    // out.loudness.makeupGainLinear / 2 decoded to a gen
-        uint32_t numBiquads;   // out.eq.numBiquads (a later payload word)
+        uint32_t eqWord;       // out.eq.m1[30] (a later payload word)
     };
     std::array<TearSample, 16> tearSamples{};
     std::atomic<size_t> tearSampleCount{0U};
@@ -96,7 +96,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
                         gen,
                         static_cast<uint64_t>(out.intensityLinear),
                         static_cast<uint64_t>(out.loudness.makeupGainLinear / 2.0F),
-                        static_cast<uint32_t>(out.eq.numBiquads),
+                        static_cast<uint32_t>(out.eq.m1.back()),
                     };
                 }
             }
@@ -115,7 +115,7 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
         state.sequenceNumber = gen;
         state.intensityLinear = static_cast<float>(gen);
         state.loudness.makeupGainLinear = static_cast<float>(2U * gen);
-        state.eq.numBiquads = static_cast<uint8_t>(gen % 11U);
+        state.eq.m1.back() = static_cast<double>(gen % 11U);
         snapshot.publish(state);
     }
 
@@ -132,10 +132,9 @@ static auto testSnapshotSeqlockConcurrentNoTear() -> void
         for (size_t i = 0; i < sampleCount; ++i)
         {
             const auto& s = tearSamples[i];
-            logInfo("  [tear] refGen=" + std::to_string(s.refGen) +
-                    " intensityGen=" + std::to_string(s.intensityGen) +
-                    " makeupGen=" + std::to_string(s.makeupGen) +
-                    " numBiquads=" + std::to_string(s.numBiquads) + " (expected " +
+            logInfo("  [tear] refGen=" + std::to_string(s.refGen) + " intensityGen=" +
+                    std::to_string(s.intensityGen) + " makeupGen=" + std::to_string(s.makeupGen) +
+                    " eqWord=" + std::to_string(s.eqWord) + " (expected " +
                     std::to_string(s.refGen % 11U) + ")\n");
         }
         logFail(kName, "torn read: " + std::to_string(tornReads.load()) +

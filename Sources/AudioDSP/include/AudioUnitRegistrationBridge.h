@@ -60,16 +60,28 @@ extern "C"
                                   uint32_t inChannels,
                                   uint32_t outChannels) AUDIODSP_C_NOEXCEPT;
 
-    /// Publish a full 31-band EQ gain vector (dB) to the live AdaptiveSoundAU (Sprint 5 M2).
-    /// Off-RT control plane: computes the minimum-phase biquad cascade and atomically publishes
-    /// an updated TargetState snapshot to the kernel. Does NOT touch the render thread. Must be
-    /// called from a single control thread (the EQ view model on the main actor).
+    /// Publish the EQ to the live AdaptiveSoundAU (Sprint EQ, engine-plan §8): the 31 points the
+    /// UI draws (dB) and On/Off. Off-RT control plane: the trust boundary validates, then the
+    /// Realizer designs the cascade on its queue at the kernel's own sample rate and publishes
+    /// the finished coefficients; the RT module glides to them. Off is a true bypass (the
+    /// identity). Must be called from a single control thread (the main actor).
     ///
-    /// @param auUnit       Borrowed (passUnretained) AUAudioUnit*; must be non-null.
-    /// @param bandGainsDb  Pointer to `count` floats, gains in dB. Must be non-null.
-    /// @param count        Must be exactly 31 (the ISO band count); any other value is rejected.
-    /// @param sampleRate   Coefficient design sample rate in Hz (must be > 0).
-    /// @return true if validated and published; false on any validation failure.
+    /// @param auUnit    Borrowed (passUnretained) AUAudioUnit*; false if null.
+    /// @param pointsDb  `count` points in dB; non-null.
+    /// @param count     Must be exactly 31.
+    /// @param isOn      false plays the identity (the points are kept for the next On).
+    /// @return true if accepted; false — the last good EQ keeps playing — on a null pointer, a
+    ///         wrong count or any non-finite point. Finite points are clamped to ±12 dB.
+    bool
+    publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT;
+
+    /// The sample rate the EQ is designed at (the kernel's current rate), for the UI's read-back.
+    /// Returns 0 if `auUnit` is null.
+    double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT;
+
+    /// The pre-EQ1b surface, kept until the bridge cuts over to publishEQ (EQ2): the same as
+    /// publishEQ(auUnit, bandGainsDb, count, true). `sampleRate` is IGNORED — the Realizer owns
+    /// the design rate now (engine-plan §6).
     bool publishEQBandGains(void* auUnit,
                             const float* bandGainsDb,
                             uint32_t count,

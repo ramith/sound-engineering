@@ -51,9 +51,6 @@ namespace
 @property (nonatomic, readonly) AUInternalRenderBlock internalRenderBlock;
 // Borrow the off-main control owner (used by the C-ABI to post EQ/intensity intents).
 - (std::shared_ptr<AdaptiveSound::Realizer>)realizer;
-// The kernel's current design sample rate (single source of truth, _sampleRate). Used by the
-// crossfeed C-ABI, whose signature omits the sample rate (the kernel already knows it).
-- (uint32_t)kernelSampleRate;
 @end
 
 @implementation AdaptiveSoundAU
@@ -79,7 +76,7 @@ namespace
     // and is the sole producer of feed-forward control through publishTargetState. It holds
     // a shared_ptr<DSPKernel> copy, so the kernel cannot be freed while a drain is in flight;
     // -dealloc drains the Realizer's queue BEFORE releasing the kernel (see below).
-    _realizer = std::make_shared<AdaptiveSound::Realizer>(_kernel);
+    _realizer = std::make_shared<AdaptiveSound::Realizer>(_kernel, static_cast<double>(_sampleRate));
 
     // Capture the kernel by value (shared_ptr copy) so the render block never touches `self`
     // nor promotes a __weak reference on the audio thread — i.e. no Obj-C runtime calls
@@ -156,10 +153,11 @@ namespace
 
     // Adopt the host-negotiated output sample rate (device SR can change since -init) and the
     // host's per-call frame ceiling as the single source of truth, then re-prepare the SAME
-    // kernel. DSPKernel::initialize() rebuilds its modules in place (RAII frees the old ones)
-    // and is noexcept; the v3 contract guarantees allocate runs while the AU is not rendering,
-    // so this never races process(). The render block is untouched and stays valid because it
-    // co-owns this same kernel instance.
+    // kernel THROUGH THE REALIZER (engine-plan §6): reinitializeKernel() runs on the Realizer's
+    // queue (dispatch_sync), so the re-initialisation is serialised with every publish, and it
+    // re-solves the EQ and re-derives the crossfeed at the new rate before rendering resumes —
+    // a rate or channel change never plays flat. The v3 contract guarantees allocate runs while
+    // the AU is not rendering; the render block co-owns this same kernel instance.
     const double negotiatedSampleRate = self.outputBusses[0].format.sampleRate;
     if (negotiatedSampleRate > 0.0) {
         _sampleRate = static_cast<uint32_t>(negotiatedSampleRate);
@@ -168,7 +166,7 @@ namespace
     if (hostMaxFrames > 0U) {
         _bufferFrames = static_cast<uint32_t>(hostMaxFrames);
     }
-    _kernel->initialize(_sampleRate, _bufferFrames);
+    _realizer->reinitializeKernel(_sampleRate, _bufferFrames);
     return YES;
 }
 
@@ -217,18 +215,11 @@ namespace
     return _realizer;
 }
 
-// Off-RT control plane. The kernel's current design sample rate (_sampleRate is the single source
-// of truth, re-synced in allocateRenderResources). The crossfeed C-ABI uses this so its signature
-// need not carry the sample rate.
-- (uint32_t)kernelSampleRate {
-    return _sampleRate;
-}
-
 // Off-RT control plane. Forwards a fully-formed TargetState directly to the RT kernel via the
 // lock-free double-buffer (SPSC producer side; never called on the render thread). Retained
 // only for the publishTargetState C-ABI (tests). NOTE: this is a SECOND publish plane parallel
 // to the Realizer; the two are unordered w.r.t. each other (design §1.4). Production control
-// flows through the Realizer (publishEQBandGains/publishIntensity), not this.
+// flows through the Realizer (publishEQ/publishIntensity/publishCrossfeed), not this.
 - (void)publishState:(const TargetState&)state {
     if (_kernel != nullptr) { _kernel->publishTargetState(state); }
 }
@@ -429,25 +420,38 @@ bool publishTargetState(void* auUnit, const void* state) AUDIODSP_C_NOEXCEPT {
     return true;
 }
 
-bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) AUDIODSP_C_NOEXCEPT {
-    // S6 Tier-3 (3a): re-pointed to set the Realizer's pending-EQ slot and post a drain,
-    // instead of synchronously computing the cascade + publishing here. The cascade design
-    // (computeBiquadCascade) now runs OFF-MAIN inside the Realizer's drain, bursts coalesce to
-    // a single publish, and the Realizer is the sole caller of publishTargetState. The slot
-    // setter validates the 31-band/SR/non-null contract and returns false on mismatch.
-    AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains count={} sampleRate={:.1f}", count,
-                             sampleRate);
+bool publishEQ(void* auUnit, const float* pointsDb, uint32_t count, bool isOn) AUDIODSP_C_NOEXCEPT {
+    // Sprint EQ (engine-plan §8): the points the UI draws + On/Off. The Realizer validates (the
+    // trust boundary), designs on its queue at the kernel's rate and publishes; the RT module
+    // glides to the finished coefficients.
     if (auUnit == nullptr) {
-        AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains SKIP — auUnit == nullptr");
+        AdaptiveSound::log::line("[EQ] C-ABI publishEQ SKIP — auUnit == nullptr");
         return false;
     }
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer == nullptr) {
-        AdaptiveSound::log::line("[QW1] C-ABI publishEQBandGains SKIP — realizer == nil");
+        AdaptiveSound::log::line("[EQ] C-ABI publishEQ SKIP — realizer == nil");
         return false;
     }
-    return realizer->setPendingEqGains(bandGainsDb, count, sampleRate);
+    AdaptiveSound::log::debug("[QW1] C-ABI publishEQ count={} on={}", count, isOn);
+    return realizer->setPendingEq(pointsDb, count, isOn);
+}
+
+double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT {
+    if (auUnit == nullptr) {
+        return 0.0;
+    }
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
+    return (realizer != nullptr) ? realizer->eqDesignSampleRate() : 0.0;
+}
+
+bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) AUDIODSP_C_NOEXCEPT {
+    // The pre-EQ1b surface, kept until the bridge cuts over (EQ2). The Realizer owns the design
+    // rate now, so the caller's `sampleRate` is ignored.
+    (void)sampleRate;
+    return publishEQ(auUnit, bandGainsDb, count, true);
 }
 
 void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
@@ -455,7 +459,7 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     // inside the Realizer, sets the pending-intensity slot, and posts a drain on a
     // clean->dirty transition. The intensity slot is SEPARATE from the EQ slot, so an
     // interleaved intensity intent is never dropped by an EQ burst. Off-RT; no-op if null.
-    AdaptiveSound::log::line("[QW1] C-ABI publishIntensity intensity={:.4f}", intensity);
+    AdaptiveSound::log::debug("[QW1] C-ABI publishIntensity intensity={:.4f}", intensity);
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[QW1] C-ABI publishIntensity SKIP — auUnit == nullptr");
         return;
@@ -475,9 +479,9 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     // clean->dirty transition; the off-RT coefficient derivation, the canonical read-modify-write,
     // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
     // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
-    // The design coefficient sample rate is the kernel's current rate. Off-RT; no-op if null.
-    AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed enabled={} level={:.4f} preset={}",
-                             enabled, level, preset);
+    // The Realizer derives the coefficients at the rate it owns. Off-RT; no-op if null.
+    AdaptiveSound::log::debug("[QW1] C-ABI publishCrossfeed enabled={} level={:.4f} preset={}",
+                              enabled, level, preset);
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
         return;
@@ -485,8 +489,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer != nullptr) {
-        const double sampleRate = [audioUnit kernelSampleRate];
-        (void)realizer->setPendingCrossfeed(enabled, level, preset, sampleRate);
+        realizer->setPendingCrossfeed(enabled, level, preset);
     } else {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
     }

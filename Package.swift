@@ -252,8 +252,8 @@ let package = Package(
             dependencies: ["DesignTokenKit"],
             path: "Tests/DesignTokenKitTests"
         ),
-        // Obj-C++ bridge: wraps EQModule and EQModuleCoefficients in a pure-C
-        // interface (EQTestBridge.h) for Swift test consumption.
+        // C++ test bridge: wraps the production graphic EQ (GraphicEQDesigner + the real-time
+        // EQModule) in a pure-C interface (EQTestBridge.h) for Swift test consumption.
         //
         // Separated from AudioDSPTests because SwiftPM 5.9 does not support
         // mixed-language source targets (Swift + Obj-C++ in the same directory).
@@ -275,24 +275,15 @@ let package = Package(
                 .unsafeFlags(["-Wall", "-Wextra", "-fno-exceptions", "-fno-rtti"]),
             ]
         ),
-        // DSP integration tests — exercises real EQModule and EQModuleCoefficients
-        // through the AudioDSPTestBridge pure-C interface.
-        //
-        // Uses the Swift Testing framework (same as AudioViewModelTests) so tests
-        // run under `swift test` on CLT-only environments without requiring full Xcode.
-        //
-        // Contains two @Suite structs:
-        //   EQTests                      — signal-path tests comparing the Swift reference
-        //                                  biquad against the real vDSP-backed EQModule
-        //   EQModuleCoefficientsTests    — coefficient-design tests migrated from the
-        //                                  standalone EQModuleCoefficientsTests.cpp main()
+        // DSP integration tests — the production graphic EQ (design + real-time cascade) end to
+        // end through the AudioDSPTestBridge pure-C interface (Swift Testing). The C++ gate
+        // (`make gate`) owns the oracle accuracy and the transition/path proofs.
         .testTarget(
             name: "AudioDSPTests",
             dependencies: ["AudioDSPTestBridge"],
             path: "Tests/AudioDSPTests",
             swiftSettings: [
-                // Expose EQTestBridge.h types (CEQParams, CEQBiquadCoeffs, …) and
-                // functions (computeEQCoefficientsC, eqModuleProcessC) to Swift.
+                // Expose the EQTestBridge.h functions (eqStreamC, eqPlayedCentresC) to Swift.
                 .unsafeFlags([
                     "-import-objc-header",
                     "Sources/AudioDSPTestBridge/include/EQTestBridge.h",

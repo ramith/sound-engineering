@@ -12,7 +12,6 @@ namespace AdaptiveSound
     // The multichannel epic pre-allocates all per-channel storage at this ceiling so the
     // render thread never reallocates; the active channel count (≤ this) is read per render.
     constexpr uint32_t kMaxChannels = 8U;
-    constexpr int kCoeffsPerBiquad = 5;    // vDSP packs [b0,b1,b2,a1,a2]
     constexpr size_t kCacheLineBytes = 64; // ARM64 / Apple Silicon cache line
     constexpr float kTruePeakCeilingLinear =
         0.891F; // approx -1 dBTP (10^(-1/20)=0.8913; literal is approximate)
@@ -35,7 +34,10 @@ namespace AdaptiveSound
     constexpr float kClarityDefaultRatioRecip = 0.5F; // 1/ratio for 2:1 compression
 
     // EQ gain / audible-band limits (product/DSP-system level, shared)
-    constexpr float kEQMaxGainDb = 12.0F;         // per-band gain clamp magnitude
+    constexpr float kEQMaxGainDb = 12.0F; // per-band gain clamp magnitude
+    // The graphic EQ's band count: 31 exact third-octave bands, 20 Hz … 20 kHz — the one
+    // definition the designer, TargetState and the RT module size their per-band arrays by.
+    constexpr int kEqBandCount = 31;
     constexpr float kAudibleBandMinHz = 20.0F;    // lower edge of the audible band (Hz)
     constexpr float kAudibleBandMaxHz = 20000.0F; // upper edge of the audible band (Hz)
 

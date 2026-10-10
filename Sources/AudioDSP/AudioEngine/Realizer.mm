@@ -2,11 +2,11 @@
 
 #import <Foundation/Foundation.h> // Obj-C++ TU (dispatch); diagnostics go through AsLog
 
-#include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
+#include "../EQ/EQTargets.h" // design → EQParams, and the τ rule
+#include "../include/AsLog.h" // AdaptiveSound::log — off-RT control-plane logging seam
 
 #include <algorithm> // std::clamp
-#include <cmath>     // std::exp, M_PI
-#include <cstring>   // std::memcpy
+#include <cmath>     // std::exp, std::isfinite
 
 namespace AdaptiveSound
 {
@@ -101,19 +101,19 @@ namespace
     }
 } // namespace
 
-Realizer::Realizer(std::shared_ptr<DSPKernel> kernel) : kernel_(std::move(kernel))
+Realizer::Realizer(std::shared_ptr<DSPKernel> kernel, double sampleRate)
+    : kernel_(std::move(kernel)), designer_(std::make_unique<GraphicEQDesigner>()),
+      sampleRate_(sampleRate), designRate_(sampleRate)
 {
-    // Serial, off-main queue. Default QoS (utility-ish): the control plane is not latency
-    // critical and must never run on the RT/render thread.
+    // Serial, off-main queue. The control plane is not latency critical and must never run on
+    // the RT/render thread.
     queue_ = dispatch_queue_create("com.adaptivesound.realizer", DISPATCH_QUEUE_SERIAL);
 }
 
 Realizer::~Realizer()
 {
     // Defensive: if the owner forgot to call shutdown(), drain now so no block outlives us.
-    // shutdown() is idempotent.
     shutdown();
-    // ARC manages dispatch_queue_t lifetime under -fobjc-arc; nothing to release manually.
 }
 
 void Realizer::shutdown()
@@ -122,250 +122,227 @@ void Realizer::shutdown()
     {
         return;
     }
-    // Draining barrier (design §1, the review's BLOCKER): a dispatch_sync of an empty block
-    // on a SERIAL queue does not return until every previously-enqueued block has finished.
-    // dispatch_suspend would NOT be sufficient (it leaves enqueued blocks pending). After
-    // this returns, no queued drain block can run, so the caller may safely drop its
-    // shared_ptr<Realizer> and release the kernel.
+    // Draining barrier: a dispatch_sync of an empty block on a SERIAL queue returns only after
+    // every previously-enqueued block has finished, so no drain runs after the caller drops the
+    // Realizer and releases the kernel.
     dispatch_sync(queue_, ^{
                   });
     shutdown_ = true;
 }
 
-bool Realizer::setPendingEqGains(const float* gainsDb, uint32_t count, double sampleRate)
+void Realizer::postDrain()
 {
-    // Control-plane contract mirrors the old publishEQBandGains: 31-band ISO grid, valid SR,
-    // non-null pointer. Reject mismatches rather than partially filling.
-    if (gainsDb == nullptr)
+    std::shared_ptr<Realizer> self = shared_from_this();
+    dispatch_async(queue_, ^{
+        self->drain();
+    });
+}
+
+bool Realizer::setPendingEq(const float* pointsDb, uint32_t count, bool isOn)
+{
+    if (pointsDb == nullptr || count != static_cast<uint32_t>(kEqBandCount))
     {
         return false;
     }
-    if (count != static_cast<uint32_t>(EQModuleCoefficients::kNumBands))
+    EqIntent intent{};
+    intent.isOn = isOn;
+    for (size_t band = 0; band < intent.points.size(); ++band)
     {
-        return false;
-    }
-    if (!(sampleRate > 0.0)) // also rejects NaN
-    {
-        return false;
+        const float point = pointsDb[band];
+        if (!std::isfinite(point))
+        {
+            AdaptiveSound::log::line("[EQ] Realizer.setPendingEq REJECT — point {} is not finite", band);
+            return false;
+        }
+        intent.points[band] = std::clamp(point, -kEQMaxGainDb, kEQMaxGainDb);
     }
 
-    // Write the slot on the control thread. The cascade is NOT computed here; it is designed
-    // off-main inside drain() (design §1.3 "EQ dirty -> computeBiquadCascade off-main, here").
     bool wasClean = false;
     {
-        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
-        wasClean = !pendingEqGains_.dirty;
-        std::memcpy(pendingEqGains_.gainsDb.data(), gainsDb, sizeof(pendingEqGains_.gainsDb));
-        pendingEqGains_.sampleRate = static_cast<float>(sampleRate);
-        pendingEqGains_.dirty = true;
+        const std::scoped_lock lock(slotMutex_);
+        wasClean = pendingEq_.write(intent);
     }
-
-    AdaptiveSound::log::line("[QW1] Realizer.setPendingEqGains count={} sampleRate={:.1f} -> {}",
-                             count, sampleRate,
-                             wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-
-    // Post a drain ONLY on a clean->dirty transition. If a drain is already pending (slot was
-    // still dirty), the in-flight drain will read the freshly-overwritten slot — true
-    // "compute once per burst" coalescing.
+    AdaptiveSound::log::debug("[QW1] Realizer.setPendingEq on={} -> {}", isOn,
+                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
     if (wasClean)
     {
-        std::shared_ptr<Realizer> self = shared_from_this();
-        dispatch_async(queue_, ^{
-            self->drain();
-        });
+        postDrain();
     }
     return true;
 }
 
 void Realizer::setPendingIntensity(float value)
 {
-    // Clamp to [0,1] at the surface (design §1.5: publishIntensity clamps).
-    const float clamped = std::clamp(value, 0.0F, 1.0F);
-
+    const IntensityIntent intent{.value = std::clamp(value, 0.0F, 1.0F)};
     bool wasClean = false;
     {
-        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
-        wasClean = !pendingIntensity_.dirty;
-        pendingIntensity_.value = clamped;
-        pendingIntensity_.dirty = true;
+        const std::scoped_lock lock(slotMutex_);
+        wasClean = pendingIntensity_.write(intent);
     }
-
-    AdaptiveSound::log::line("[QW1] Realizer.setPendingIntensity value={:.4f} (clamped={:.4f}) -> {}",
-                             value, clamped,
-                             wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-
-    // Separate slot from EQ -> an interleaved intensity intent is never dropped by an EQ
-    // burst. Post a drain only on a clean->dirty transition (coalesces intensity bursts).
+    AdaptiveSound::log::debug("[QW1] Realizer.setPendingIntensity value={:.4f} -> {}", intent.value,
+                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
     if (wasClean)
     {
-        std::shared_ptr<Realizer> self = shared_from_this();
-        dispatch_async(queue_, ^{
-            self->drain();
-        });
+        postDrain();
     }
 }
 
-bool Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset,
-                                   double sampleRate)
+void Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset)
 {
-    // Reject an invalid design sample rate rather than packing a NaN/garbage coefficient.
-    if (!(sampleRate > 0.0)) // also rejects NaN
-    {
-        return false;
-    }
-
-    // Clamp at the surface (QW1 §3): level to [0,1], preset to the valid CrossfeedPreset range.
-    // kStrong is the highest enum value (=2), so clamp the preset index to [0, kStrong].
     constexpr uint32_t kMaxPreset = static_cast<uint32_t>(CrossfeedPreset::Strong);
-    const float clampedLevel = std::clamp(level, 0.0F, 1.0F);
-    const uint32_t clampedPreset = std::clamp(preset, 0U, kMaxPreset);
-
+    const CrossfeedIntent intent{
+        .enabled = enabled,
+        .level = std::clamp(level, 0.0F, 1.0F),
+        .preset = std::clamp(preset, 0U, kMaxPreset),
+    };
     bool wasClean = false;
     {
-        const std::scoped_lock lock(slotMutex_); // OWN-2: guard vs the drain-thread read
-        wasClean = !pendingCrossfeed_.dirty;
-        pendingCrossfeed_.enabled = enabled;
-        pendingCrossfeed_.level = clampedLevel;
-        pendingCrossfeed_.preset = clampedPreset;
-        pendingCrossfeed_.sampleRate = static_cast<float>(sampleRate);
-        pendingCrossfeed_.dirty = true;
+        const std::scoped_lock lock(slotMutex_);
+        wasClean = pendingCrossfeed_.write(intent);
     }
-
-    AdaptiveSound::log::line(
-        "[QW1] Realizer.setPendingCrossfeed enabled={} level={:.4f} preset={} sampleRate={:.1f} -> {}",
-        enabled, clampedLevel, clampedPreset, sampleRate,
-        wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
-
-    // Separate slot from EQ/intensity → an interleaved crossfeed intent is never dropped by another
-    // burst. Post a drain only on a clean->dirty transition (coalesces crossfeed bursts).
+    AdaptiveSound::log::debug("[QW1] Realizer.setPendingCrossfeed enabled={} level={:.4f} preset={} -> {}",
+                              intent.enabled, intent.level, intent.preset,
+                              wasClean ? "POST drain (clean->dirty)" : "coalesced (drain in flight)");
     if (wasClean)
     {
-        std::shared_ptr<Realizer> self = shared_from_this();
-        dispatch_async(queue_, ^{
-            self->drain();
-        });
+        postDrain();
     }
-    return true;
+}
+
+void Realizer::reinitializeKernel(uint32_t sampleRate, uint32_t maxFrames)
+{
+    if (queue_ == nullptr || shutdown_)
+    {
+        reinitializeOnQueue(sampleRate, maxFrames); // no queue left to serialise with
+        return;
+    }
+    // Serialise with every publish (the use-after-free race of architect F3). The Realizer never
+    // waits on the allocating thread, so this cannot deadlock.
+    Realizer* self = this;
+    dispatch_sync(queue_, ^{
+        self->reinitializeOnQueue(sampleRate, maxFrames);
+    });
+}
+
+void Realizer::reinitializeOnQueue(uint32_t sampleRate, uint32_t maxFrames)
+{
+    if (kernel_ != nullptr)
+    {
+        kernel_->initialize(sampleRate, maxFrames);
+    }
+    sampleRate_ = static_cast<double>(sampleRate);
+    designRate_.store(sampleRate_, std::memory_order_release);
+    // Re-realise every rate-dependent intent at the new rate. The EQ module snaps to the first
+    // target it adopts after initialize(), so the curve plays at once — no fade-in from flat.
+    realizeEq();
+    realizeCrossfeed();
+    canonical_.sequenceNumber += 1;
+    AdaptiveSound::log::line("[EQ] Realizer.reinitializeKernel {} Hz, {} frames — EQ re-solved",
+                             sampleRate, maxFrames);
+    publishCanonical();
 }
 
 void Realizer::drain()
 {
-    // Sole canonical-state mutation path. In debug, assert we are on the realizer queue so a
-    // stray caller (or a future cross-thread bug) trips immediately.
     dispatch_assert_queue_debug(queue_);
 
-    // Read-and-clear the dirty slots up front. A slot rewritten AFTER this read (by a
-    // concurrent control-thread burst) flips dirty=true again and, because we cleared it,
-    // looks "clean" to the next setPending* call -> that call posts a fresh drain. So no
-    // intent is lost across the read/clear boundary.
-    // Read-and-clear under slotMutex_ (OWN-2): a control-thread setPending* may be writing a slot
-    // concurrently. Copy each dirty slot into a local, then RELEASE the lock before the expensive
-    // recompute/publish below — never hold the slot lock across computeBiquadCascade.
+    // Take the dirty slots under the lock, then realise and publish without it. A slot rewritten
+    // after the take goes clean → dirty again and posts a fresh drain, so no intent is lost.
+    EqIntent eq{};
+    IntensityIntent intensity{};
+    CrossfeedIntent crossfeed{};
     bool eqDirty = false;
-    std::array<float, static_cast<size_t>(EQModuleCoefficients::kNumBands)> eqGains{};
-    float eqSampleRate = 0.0F;
     bool intensityDirty = false;
-    float intensityValue = 1.0F;
     bool crossfeedDirty = false;
-    PendingCrossfeed crossfeed{};
     {
         const std::scoped_lock lock(slotMutex_);
-        eqDirty = pendingEqGains_.dirty;
-        if (eqDirty)
-        {
-            eqGains = pendingEqGains_.gainsDb;
-            eqSampleRate = pendingEqGains_.sampleRate;
-            pendingEqGains_.dirty = false;
-        }
-
-        intensityDirty = pendingIntensity_.dirty;
-        if (intensityDirty)
-        {
-            intensityValue = pendingIntensity_.value;
-            pendingIntensity_.dirty = false;
-        }
-
-        // Third per-intent read-and-clear block (QW1 §3). Same coalescing contract: a rewrite
-        // after this read flips dirty=true again and posts a fresh drain, so no intent is lost.
-        crossfeedDirty = pendingCrossfeed_.dirty;
-        if (crossfeedDirty)
-        {
-            crossfeed = pendingCrossfeed_;
-            pendingCrossfeed_.dirty = false;
-        }
+        eqDirty = pendingEq_.take(eq);
+        intensityDirty = pendingIntensity_.take(intensity);
+        crossfeedDirty = pendingCrossfeed_.take(crossfeed);
     }
-
     if (!eqDirty && !intensityDirty && !crossfeedDirty)
     {
-        return; // spurious wake (slot already drained by an earlier coalesced block)
+        return; // spurious wake (an earlier coalesced drain took the slot)
     }
-
-    AdaptiveSound::log::line("[QW1] Realizer.drain applying dirty slots: eq={} intensity={} crossfeed={}",
-                             static_cast<int>(eqDirty), static_cast<int>(intensityDirty),
-                             static_cast<int>(crossfeedDirty));
-
-    // Recompute ONLY what changed, RMW the canonical state field-by-field (so the other
-    // modules keep their last-set values), bump sequenceNumber ONCE, publish ONCE.
+    AdaptiveSound::log::debug("[QW1] Realizer.drain: eq={} intensity={} crossfeed={}",
+                              static_cast<int>(eqDirty), static_cast<int>(intensityDirty),
+                              static_cast<int>(crossfeedDirty));
     if (eqDirty)
     {
-        canonical_.eq = EQModuleCoefficients::computeBiquadCascade(eqGains, eqSampleRate);
+        eq_ = eq;
+        realizeEq();
     }
     if (intensityDirty)
     {
-        canonical_.intensityLinear = intensityValue;
+        canonical_.intensityLinear = intensity.value;
     }
     if (crossfeedDirty)
     {
-        // Coefficients derived OFF-RT here (the Realizer's serial queue), from {preset, level, fs}.
-        canonical_.crossfeed = deriveCrossfeedParams(
-            crossfeed.enabled, crossfeed.level, crossfeed.preset,
-            static_cast<double>(crossfeed.sampleRate));
+        crossfeed_ = crossfeed;
+        realizeCrossfeed();
     }
     canonical_.sequenceNumber += 1;
     publishCanonical();
 }
 
-void Realizer::applyEqGains(
-    const std::array<float, static_cast<size_t>(EQModuleCoefficients::kNumBands)>& gains,
-    float sampleRate)
+void Realizer::realizeEq()
 {
-    // Synchronously-callable RMW (testability, design §1.7). EQ design happens here, off the
-    // RT thread. Bumps sequenceNumber and publishes once. Preserves all non-EQ fields.
-    canonical_.eq = EQModuleCoefficients::computeBiquadCascade(gains, sampleRate);
+    // Off is the flat design: k = k0 and m1 = 0 exactly — the RT module's identity.
+    const std::array<float, kEqBandCount> flat{};
+    const std::array<float, kEqBandCount>& points = eq_.isOn ? eq_.points : flat;
+    GraphicEQDesign design{};
+    if (!designer_->design(points, sampleRate_, design))
+    {
+        // Outside the design domain (a rate under 44 kHz): play the identity, never a curve
+        // designed for another rate (engine-plan §6). Non-finite points never get here.
+        AdaptiveSound::log::line("[EQ] Realizer: no EQ design at {} Hz — playing flat", sampleRate_);
+        canonical_.eq = EQParams{};
+        publishedGainsDb_.fill(0.0);
+        return;
+    }
+    const float ramp = EQTargets::rampSeconds(publishedGainsDb_, design.filterGainDb);
+    canonical_.eq = EQTargets::toParams(design, ramp);
+    publishedGainsDb_ = design.filterGainDb;
+}
+
+void Realizer::realizeCrossfeed()
+{
+    canonical_.crossfeed =
+        deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.level, crossfeed_.preset, sampleRate_);
+}
+
+void Realizer::applyEq(const EqIntent& intent)
+{
+    eq_ = intent;
+    realizeEq();
     canonical_.sequenceNumber += 1;
     publishCanonical();
 }
 
 void Realizer::applyIntensity(float value)
 {
-    // Synchronously-callable RMW (testability, design §1.7). Preserves all non-intensity
-    // fields. Caller is responsible for clamping (setPendingIntensity clamps at the surface).
     canonical_.intensityLinear = value;
     canonical_.sequenceNumber += 1;
     publishCanonical();
 }
 
-void Realizer::applyCrossfeed(uint32_t enabled, float level, uint32_t preset, double sampleRate)
+void Realizer::applyCrossfeed(const CrossfeedIntent& intent)
 {
-    // Synchronously-callable RMW (testability, design §1.7). Derives the coefficients OFF-RT here,
-    // RMW canonical_.crossfeed (preserving every other field). Caller is responsible for clamping
-    // (setPendingCrossfeed clamps level/preset at the surface).
-    canonical_.crossfeed = deriveCrossfeedParams(enabled, level, preset, sampleRate);
+    crossfeed_ = intent;
+    realizeCrossfeed();
     canonical_.sequenceNumber += 1;
     publishCanonical();
 }
 
 void Realizer::publishCanonical()
 {
-    // The SOLE publishTargetState call site. Calls the kernel DIRECTLY (never captures the
-    // ObjC AU). The kernel is guaranteed alive: blocks capture shared_from_this(), and
-    // shutdown() drains before the owner releases the kernel.
-    AdaptiveSound::log::line("[QW1] Realizer.publishCanonical seq={} intensity={:.4f} "
-                             "crossfeed{{enabled={} preset={}}} eq{{numBiquads={}}}",
-                             static_cast<unsigned long long>(canonical_.sequenceNumber),
-                             canonical_.intensityLinear, canonical_.crossfeed.enabled,
-                             canonical_.crossfeed.preset,
-                             static_cast<unsigned>(canonical_.eq.numBiquads));
+    // The SOLE publishTargetState call site. Per-publish detail is debug-level (amendment 6).
+    AdaptiveSound::log::debug("[QW1] Realizer.publishCanonical seq={} intensity={:.4f} "
+                              "crossfeed{{enabled={} preset={}}} eq{{fs={} ramp={:.3f}s}}",
+                              static_cast<unsigned long long>(canonical_.sequenceNumber),
+                              canonical_.intensityLinear, canonical_.crossfeed.enabled,
+                              canonical_.crossfeed.preset, canonical_.eq.designSampleRate,
+                              canonical_.eq.rampSeconds);
     if (kernel_ != nullptr)
     {
         kernel_->publishTargetState(canonical_);

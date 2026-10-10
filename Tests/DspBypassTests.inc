@@ -228,12 +228,12 @@ static auto testChirpBypasses() -> void
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: EQ module identity at numBiquads=0 with unity masterGain
+// Test 5: the EQ module is a bit-exact identity for the default EQParams (no design)
 // ---------------------------------------------------------------------------
 
-static auto testEQModuleIdentityAtZeroBiquads() -> void
+static auto testEQModuleIdentityByDefault() -> void
 {
-    static const char* const kName = "EQModuleIdentityAtZeroBiquads";
+    static const char* const kName = "EQModuleIdentityByDefault";
     constexpr uint32_t kFrames = TestConstants::kFrames512;
     constexpr float kDC = TestConstants::kConstantDC;
 
@@ -245,8 +245,7 @@ static auto testEQModuleIdentityAtZeroBiquads() -> void
     abl.right.assign(kFrames, kDC);
 
     TargetState state = makeIdentityState();
-    state.eq.numBiquads = 0U;
-    state.eq.masterGainLinear = 1.0F;
+    state.eq = EQParams{}; // identity
     kernel.publishTargetState(state);
     kernel.process(abl.abl(), kFrames);
 

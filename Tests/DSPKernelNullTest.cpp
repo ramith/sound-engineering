@@ -3,12 +3,11 @@
 // Null test: verifies DSPKernel::process() produces bit-identical output to input
 // under two conditions:
 //   (a) intensityLinear == 0  -> early-return bypass (Phase 0 requirement)
-//   (b) identity EQ (numBiquads=0, masterGainLinear=1) -> full chain at unity
+//   (b) identity EQ (the default EQParams) -> full chain at unity
 //
 // This is the Phase 0 canary for the signal chain.  Every future module must pass
 // this test (or a variant) before merging.
 //
-// Standalone executable; same pattern as EQModuleCoefficientsTests.cpp.
 // Build: ./scripts/build-null-test.sh
 // Run:   ./Tests/DSPKernelNullTest
 //
@@ -38,6 +37,8 @@
 //                           (GraphicEQDesigner + the asEqDesign C-ABI) vs the Python oracle
 //   TrackLoudnessTests.inc — Sprint EQ / EQ1c: the track loudness profiler + the gated
 //                           loudness-change predictor + their C-ABI vs the libebur128 oracle
+//   EqTransitionTests.inc — Sprint EQ / EQ1b: time-domain curve transitions + the EQ's CPU
+//   EqEngineTests.inc     — Sprint EQ / EQ1b: the RT EQ in the kernel — paths, guards, re-allocation
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -69,6 +70,8 @@
 #include "TrackLoudnessTests.inc"
 #include "SoakRtAllocTests.inc"
 #include "SnapshotConcurrencyTests.inc"
+#include "EqTransitionTests.inc" // after EqDesignerTests.inc (its curves)
+#include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -78,285 +81,306 @@
 
 namespace
 {
-    constexpr std::array<TestEntry, 150U> kTests = {
+    constexpr auto kTests = std::to_array<TestEntry>({
+        // Phase 0 bypass tests
+        {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
+        {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
+        // Identity-chain tests
+        {"WhiteNoiseBypasses", testWhiteNoiseBypasses, true},
+        {"ChirpSignalBypasses", testChirpBypasses, true},
+        {"EQModuleIdentityByDefault", testEQModuleIdentityByDefault, true},
+        {"ZeroInputProducesZeroOutput", testZeroInputProducesZeroOutput, true},
+        {"MultiChunkStatePreservation", testMultiChunkStatePreservation, true},
+        // Limiter tests (Sprint 4)
+        {"Limiter_BypassIsIdentity", testLimiterBypassIsIdentity, true},
+        {"Limiter_CeilingEnforcement", testLimiterCeilingEnforcement, true},
+        {"Limiter_GRResponseWithin2ms", testLimiterGRResponseTime, true},
+        {"Limiter_NearNyquistCeiling", testLimiterNearNyquistCeiling, true},
+        {"Limiter_HotNoiseSoak", testLimiterHotNoiseSoak, true},
+        // Loudness / BS.1770-5 tests (Sprint 4 — Milestone 2)
+        {"Loudness_KWeightingLowCut", testLoudnessKWeightingLowCut, true},
+        {"Loudness_IntegratedAccuracy", testLoudnessIntegratedAccuracy, true},
+        {"Loudness_AbsoluteGate", testLoudnessAbsoluteGate, true},
+        {"Loudness_RelativeGate", testLoudnessRelativeGate, true},
+        {"Loudness_MakeupRoundTrip", testLoudnessMakeupRoundTrip, true},
+        {"Loudness_TruePeakKernel_InterSample", testLoudnessTruePeakKernelInterSample, true},
+        {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, true},
+        // EQ audibility tests (Sprint 5 — Milestone 2)
+        {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, true},
+        {"EQ_CoefficientSwapNoClick", testEQCoefficientSwapNoClick, true},
+        // Multichannel epic safety net (Sprint 5b — S0-M1)
+        {"GoldenMaster_StereoN2_v1", testGoldenMasterStereoN2, true},
+        {"MultichannelView_Decode", testMultichannelViewDecode, true},
+        {"PerChannelIndependence_N4_6_8", testPerChannelIndependence, true},
+        {"EQ_FrequencyResponseAccuracy_N4", testEQFrequencyResponseAccuracyN4, true},
+        {"EQ_CoefficientSwapNoClick_N4", testEQCoefficientSwapNoClickN4, true},
+        {"Limiter_LinkedGainLockstep", testLimiterLinkedGainLockstep, true},
+        {"Limiter_HotNoiseSoak_N8", testLimiterHotNoiseSoakN8, true},
+        {"Reconfiguration_Stereo_5p1_Stereo", testReconfigurationContinuity, true},
+        // S1-C2a: N-channel BS.1770-5 LUFS meter (Gate C)
+        {"Loudness_Multichannel_BS1770_Weights", testLoudnessMultichannelBS1770Weights, true},
+        // M1-1: ChannelLayout decoder (Gate D)
+        {"ChannelLayout_Decode_GateD", testChannelLayoutDecodeGateD, true},
+        // M1-2: decode→meter path (Gate E)
+        {"Loudness_DecodedLayout_Weights", testLoudnessDecodedLayoutWeights, true},
+        // Large-buffer regression fence
+        {"Kernel_LargeBuffer_LimiterTailCorrect", testLargeBufferLimiterTailCorrect, true},
+        {"Kernel_LargeBuffer_EQGainNoCutoff", testLargeBufferEQGainNoCutoff, true},
+        {"Kernel_LargeBuffer_ConsecutiveBuffers", testLargeBufferConsecutiveBuffers, true},
+        // SpatialRenderKernel (Sprint 5b, M3-1)
+        {"SpatialRender_PassthroughRoute", testSpatialRenderPassthroughRoute, true},
+        // Pure-Mode policy (Phase B — B1)
+        {"PureMode_HdmiBitPerfect", testPureModeHdmiBitPerfect, true},
+        {"PureMode_HdmiRateUnsupported", testPureModeHdmiRateUnsupported, true},
+        {"PureMode_BluetoothLossy", testPureModeBluetoothLossy, true},
+        {"PureMode_BuiltInRateMatchedFloat", testPureModeBuiltInRateMatchedFloat, true},
+        {"PureMode_BuiltInRateUnsupported", testPureModeBuiltInRateUnsupported, true},
+        {"PureMode_VirtualDevice", testPureModeVirtualDevice, true},
+        {"PureMode_RateEpsilonAndMax", testPureModeRateEpsilonAndMax, true},
+        // Pure-Mode format conversion (Phase B — B2a)
+        {"Convert_Int16Saturation", testConvertInt16Saturation, true},
+        {"Convert_Int32Saturation", testConvertInt32Saturation, true},
+        {"Convert_24In32Alignment", testConvert24In32Alignment, true},
+        {"Convert_FloatPassthrough", testConvertFloatPassthrough, true},
+        {"Convert_UnsupportedWritesSilence", testConvertUnsupportedWritesSilence, true},
+        {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
+        // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
         {
-            // Phase 0 bypass tests
-            {"IntensityZero_BitExactPassthrough", testIntensityZeroIsBitExact, true},
-            {"IntensityZero_MultiChunkBitExact", testIntensityZeroMultiChunk, true},
-            // Identity-chain tests
-            {"WhiteNoiseBypasses", testWhiteNoiseBypasses, true},
-            {"ChirpSignalBypasses", testChirpBypasses, true},
-            {"EQModuleIdentityAtZeroBiquads", testEQModuleIdentityAtZeroBiquads, true},
-            {"ZeroInputProducesZeroOutput", testZeroInputProducesZeroOutput, true},
-            {"MultiChunkStatePreservation", testMultiChunkStatePreservation, true},
-            // Limiter tests (Sprint 4)
-            {"Limiter_BypassIsIdentity", testLimiterBypassIsIdentity, true},
-            {"Limiter_CeilingEnforcement", testLimiterCeilingEnforcement, true},
-            {"Limiter_GRResponseWithin2ms", testLimiterGRResponseTime, true},
-            {"Limiter_NearNyquistCeiling", testLimiterNearNyquistCeiling, true},
-            {"Limiter_HotNoiseSoak", testLimiterHotNoiseSoak, true},
-            // Loudness / BS.1770-5 tests (Sprint 4 — Milestone 2)
-            {"Loudness_KWeightingLowCut", testLoudnessKWeightingLowCut, true},
-            {"Loudness_IntegratedAccuracy", testLoudnessIntegratedAccuracy, true},
-            {"Loudness_AbsoluteGate", testLoudnessAbsoluteGate, true},
-            {"Loudness_RelativeGate", testLoudnessRelativeGate, true},
-            {"Loudness_MakeupRoundTrip", testLoudnessMakeupRoundTrip, true},
-            {"Loudness_TruePeakKernel_InterSample", testLoudnessTruePeakKernelInterSample, true},
-            {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, true},
-            // EQ audibility tests (Sprint 5 — Milestone 2)
-            {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, true},
-            {"EQ_CoefficientSwapNoClick", testEQCoefficientSwapNoClick, true},
-            // Multichannel epic safety net (Sprint 5b — S0-M1)
-            {"GoldenMaster_StereoN2_v1", testGoldenMasterStereoN2, true},
-            {"MultichannelView_Decode", testMultichannelViewDecode, true},
-            {"PerChannelIndependence_N4_6_8", testPerChannelIndependence, true},
-            {"EQ_FrequencyResponseAccuracy_N4", testEQFrequencyResponseAccuracyN4, true},
-            {"EQ_CoefficientSwapNoClick_N4", testEQCoefficientSwapNoClickN4, true},
-            {"Limiter_LinkedGainLockstep", testLimiterLinkedGainLockstep, true},
-            {"Limiter_HotNoiseSoak_N8", testLimiterHotNoiseSoakN8, true},
-            {"Reconfiguration_Stereo_5p1_Stereo", testReconfigurationContinuity, true},
-            // S1-C2a: N-channel BS.1770-5 LUFS meter (Gate C)
-            {"Loudness_Multichannel_BS1770_Weights", testLoudnessMultichannelBS1770Weights, true},
-            // M1-1: ChannelLayout decoder (Gate D)
-            {"ChannelLayout_Decode_GateD", testChannelLayoutDecodeGateD, true},
-            // M1-2: decode→meter path (Gate E)
-            {"Loudness_DecodedLayout_Weights", testLoudnessDecodedLayoutWeights, true},
-            // Large-buffer regression fence
-            {"Kernel_LargeBuffer_LimiterTailCorrect", testLargeBufferLimiterTailCorrect, true},
-            {"Kernel_LargeBuffer_EQGainNoCutoff", testLargeBufferEQGainNoCutoff, true},
-            {"Kernel_LargeBuffer_ConsecutiveBuffers", testLargeBufferConsecutiveBuffers, true},
-            // SpatialRenderKernel (Sprint 5b, M3-1)
-            {"SpatialRender_PassthroughRoute", testSpatialRenderPassthroughRoute, true},
-            // Pure-Mode policy (Phase B — B1)
-            {"PureMode_HdmiBitPerfect", testPureModeHdmiBitPerfect, true},
-            {"PureMode_HdmiRateUnsupported", testPureModeHdmiRateUnsupported, true},
-            {"PureMode_BluetoothLossy", testPureModeBluetoothLossy, true},
-            {"PureMode_BuiltInRateMatchedFloat", testPureModeBuiltInRateMatchedFloat, true},
-            {"PureMode_BuiltInRateUnsupported", testPureModeBuiltInRateUnsupported, true},
-            {"PureMode_VirtualDevice", testPureModeVirtualDevice, true},
-            {"PureMode_RateEpsilonAndMax", testPureModeRateEpsilonAndMax, true},
-            // Pure-Mode format conversion (Phase B — B2a)
-            {"Convert_Int16Saturation", testConvertInt16Saturation, true},
-            {"Convert_Int32Saturation", testConvertInt32Saturation, true},
-            {"Convert_24In32Alignment", testConvert24In32Alignment, true},
-            {"Convert_FloatPassthrough", testConvertFloatPassthrough, true},
-            {"Convert_UnsupportedWritesSilence", testConvertUnsupportedWritesSilence, true},
-            {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
-            // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
-            {
-                "PureModeBridge_TranslatesAllDecisionBranches",
-                testPureModeBridgeTranslatesAllDecisionBranches,
-                true,
-            },
-            {"PureModeBridge_NullArgsAreNoOp", testPureModeBridgeNullArgsAreNoOp, true},
-            {
-                "PureModeBridge_RateArrayCopiedFaithfully",
-                testPureModeBridgeRateArrayCopiedFaithfully,
-                true,
-            },
-            // Pure-Mode file decode (Phase B — B2b) — SERIAL: mutate env + /tmp paths
-            {"FileDecode_BitExact_Auto", testFileDecodeBitExactAuto, false},
-            {"FileDecode_BitExact_Apple", testFileDecodeBitExactApple, false},
-            // Expanded B2b coverage (FileDecodeTests.inc) — SERIAL: mutate env + /tmp paths
-            {"FileDecode_OpenFailurePaths", testFileDecodeOpenFailurePaths, false},
-            {"FileDecode_CloseIdempotent", testFileDecodeCloseIdempotent, false},
-            {"FileDecode_FormatGetters", testFileDecodeFormatGetters, false},
-            {"FileDecode_BitExact_24bit", testFileDecodeBitExact24bit, false},
-            {"FileDecode_BitExact_Float32", testFileDecodeBitExactFloat32, false},
-            {"FileDecode_NativeRates", testFileDecodeNativeRates, false},
-            {"FileDecode_Mono_BitExact", testFileDecodeMonoBitExact, false},
-            {"FileDecode_Multichannel_4ch", testFileDecodeMultichannel4ch, false},
-            {
-                "FileDecode_PullChannelMismatchSilence",
-                testFileDecodePullChannelMismatchSilence,
-                false,
-            },
-            {"FileDecode_EofAndFinishedFlag", testFileDecodeEofAndFinishedFlag, false},
-            {"FileDecode_FinishedFlagRingTail", testFileDecodeFinishedFlagRingTail, false},
-            {"FileDecode_PullBeforeDecodeZeroPads", testFileDecodePullBeforeDecodeZeroPads, false},
-            {"FileDecode_BackendEquivalence", testFileDecodeBackendEquivalence, false},
-            {"FileDecode_RingWraparound", testFileDecodeRingWraparound, false},
-            // Seek coverage (FileDecodeSource::seek) — SERIAL: mutate env + /tmp paths
-            {"FileDecode_Seek_SampleAccurateWav16", testFileDecodeSeekSampleAccurateWav16, false},
-            {
-                "FileDecode_Seek_ToZeroReproducesFromOpen",
-                testFileDecodeSeekToZeroReproducesFromOpen,
-                false,
-            },
-            {"FileDecode_Seek_PastEofLandsAtEnd", testFileDecodeSeekPastEofLandsAtEnd, false},
-            {
-                "FileDecode_Seek_BackendEquivalenceAfterSeek",
-                testFileDecodeSeekBackendEquivalenceAfterSeek,
-                false,
-            },
-            {
-                "FileDecode_Seek_RepeatedRapidNoStaleNoLeak",
-                testFileDecodeSeekRepeatedRapidNoStaleNoLeak,
-                false,
-            },
-            {
-                "FileDecode_Seek_MidStreamDistinctChannels",
-                testFileDecodeSeekMidStreamDistinctChannels,
-                false,
-            },
-            // Gapless DECODE-LAYER decode->concatenate contract — SERIAL: write fixtures to test-data/.
-            {"Gapless_SeamFrameAccuracy", testGaplessSeamFrameAccuracy, false},
-            {"Gapless_TotalFrameCount_48kOnly", testGaplessTotalFrameCount48kOnly, false},
-            {
-                "Gapless_SampleRateMismatch_ProducesFrameCountForEach",
-                testGaplessSampleRateMismatchProducesFrameCountForEach,
-                false,
-            },
-            {"Gapless_ShortFile_DrainCorrectly", testGaplessShortFileDrainCorrectly, false},
-            {"Gapless_OpenFailure_SecondSource", testGaplessOpenFailureSecondSource, false},
-            // B5 / L1: Pure-Mode software-chain bit-exact round-trip — SERIAL: mutate env + /tmp paths.
-            {"RoundTrip_BitExact_16bit", testRoundTripBitExact16bit, false},
-            {"RoundTrip_BitExact_24bit", testRoundTripBitExact24bit, false},
-            // Pure-path gapless STAGE 2 (GaplessSource) — SERIAL: write fixtures to test-data/.
-            {"PureGapless_SeamSampleAccurate", testPureGaplessSeamSampleAccurate, false},
-            {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
-            {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
-            {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
-            // S6 Tier-3 (3d) Pure gapless behavioral-contract conformance — SERIAL: write fixtures.
-            {
-                "GaplessContract_TransitionCountPerSeam",
-                testGaplessContractTransitionCountPerSeam,
-                false,
-            },
-            {"GaplessContract_ClearCancelsOnDeck", testGaplessContractClearCancelsOnDeck, false},
-            {"GaplessContract_EndOfQueueSignals", testGaplessContractEndOfQueueSignals, false},
-            {
-                "GaplessContract_PositionRezeroesAtSeam",
-                testGaplessContractPositionRezeroesAtSeam,
-                false,
-            },
-            {
-                "GaplessContract_PollReapsRetiredSource",
-                testGaplessContractPollReapsRetiredSource,
-                false,
-            },
-            // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
-            {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
-            // QW1 CF-11: the 4th Realizer surface — crossfeed RMW + clamp (parallel-safe).
-            {"Realizer_Crossfeed_4SurfaceRMW_Clamp", testRealizerCrossfeedSurfaceRMW, true},
-            // S6 Tier-3 (3b) steerable wet/dry intensity (parallel-safe: no env/tmp).
-            {"Intensity_EndpointsBitExact_Settled", testIntensityEndpointsBitExact, true},
-            {
-                "Intensity_SettledRampConvergesToHardBranch",
-                testIntensitySettledRampConvergesToHardBranch,
-                true,
-            },
-            {"Intensity_EqualPowerAtHalf", testIntensityEqualPowerAtHalf, true},
-            {
-                "Intensity_LevelPeakSafetyIntermediate",
-                testIntensityLevelPeakSafetyIntermediate,
-                true,
-            },
-            {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
-            // QW1 — crossfeed DSP conformance CF-1..CF-9 (parallel-safe: pure DSP, no env/tmp).
-            {
-                "Crossfeed_Bypass_BitExact_GoldenMaster",
-                testCrossfeedBypassBitExactGoldenMaster,
-                true,
-            },
-            {"Crossfeed_NonStereo_PassThrough", testCrossfeedNonStereoPassThrough, true},
-            {"Crossfeed_Mono_LevelNeutral", testCrossfeedMonoLevelNeutral, true},
-            {"Crossfeed_ChannelSeparation", testCrossfeedChannelSeparation, true},
-            {"Crossfeed_LpfCharacteristic", testCrossfeedLpfCharacteristic, true},
-            {"Crossfeed_NoNaNInf", testCrossfeedNoNaNInf, true},
-            {"Crossfeed_ClickFreeEnableDisable", testCrossfeedClickFreeEnableDisable, true},
-            {"Crossfeed_CoeffRecomputeAcrossRates", testCrossfeedCoeffRecomputeAcrossRates, true},
-            {"Crossfeed_ReadBothWriteBoth", testCrossfeedReadBothWriteBoth, true},
-            // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
-            {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
-            {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
-            // QW1 CF-10: crossfeed ebur128 loudness-neutrality (real decorrelated stereo).
-            {"Crossfeed_ebur128_LevelNeutral", testCrossfeedLoudnessNeutral, true},
-            // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
-            // (parallel-safe: pure DSP, no env/tmp).
-            {
-                "Limiter_TruePeak_CeilingGuarantee_vs_ebur128",
-                testLimiterTruePeakCeilingGuarantee,
-                true,
-            },
-            {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
-            // S7 / US-QA-03: 31-band EQ frequency-response sweep + bit-transparent bypass.
-            // Parallel-safe: pure DSP, no env/tmp, fresh kernel per run.
-            {"EQ_Sweep31Bands_48k", testEqSweep31Bands48k, true},
-            {"EQ_Sweep31Bands_44k", testEqSweep31Bands44k, true},
-            {"EQ_SweepExtremes_PlusMinus12", testEqSweepExtremesPlusMinus12, true},
-            {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
-            {"EQ_CombinedBands_CutRunAndMixedSign", testEqCombinedBandsCutRunAndMixedSign, true},
-            {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
-            // Sprint EQ / EQ1a: the graphic-EQ designer vs the Python oracle (parallel-safe: pure
-            // DSP, no env/tmp) — except Designer_Timing, serial so the pool cannot skew its clock.
-            {"EQ_Bands_MatchKit", testEqBandsMatchKit, true},
-            {"EQ_Designer_MatchesOracle", testEqDesignerMatchesOracle, true},
-            {"EQ_ACGE_Presets_Tone_Smooth", testEqAcgePresetsToneSmooth, true},
-            {"EQ_ACGE_Ramo1000", testEqAcgeRamo1000, true},
-            {"EQ_ACGE_Hard", testEqAcgeHard, true},
-            {"EQ_ACGE_SingleBand", testEqAcgeSingleBand, true},
-            {"EQ_SvfBell_Exact", testEqSvfBellExact, true},
-            {"EQ_Ultrasonic_Property", testEqUltrasonicProperty, true},
-            {"EQ_Readback_MatchesIndependentEval", testEqReadbackMatchesIndependentEval, true},
-            {"EQ_Design_FlatFinite", testEqDesignFlatFinite, true},
-            {"EQ_Design_Rejects_NonFinite", testEqDesignRejectsNonFinite, true},
-            {"Designer_TwoThreads", testDesignerTwoThreads, true},
-            {"Designer_Timing", testDesignerTiming, false},
-            // Sprint EQ / EQ1c: the track loudness profiler + predictor vs the libebur128 oracle
-            // (parallel-safe: pure DSP, no env/tmp) — except Profiler_Timing, serial for its clock.
-            {"Loudness_Profile_MatchesEbur128", testLoudnessProfileMatchesEbur128, true},
-            {"Loudness_Predictor_Pink", testLoudnessPredictorPink, true},
-            {"Loudness_Predictor_Tonal808", testLoudnessPredictorTonal808, true},
-            {"Loudness_Predictor_Orchestral", testLoudnessPredictorOrchestral, true},
-            {"Loudness_Predictor_LoudMaster", testLoudnessPredictorLoudMaster, true},
-            {"Loudness_Predictor_RatesAndLayouts", testLoudnessPredictorRatesAndLayouts, true},
-            {
-                "Loudness_Profile_NoWindow_ParsevalAndTonal",
-                testLoudnessProfileNoWindow,
-                true,
-            },
-            {"Loudness_Profile_PrefixVsFull", testLoudnessProfilePrefixVsFull, true},
-            {
-                "Loudness_Profile_DecimationAndMemory",
-                testLoudnessProfileDecimationAndMemory,
-                true,
-            },
-            {"Loudness_Predictor_Properties", testLoudnessPredictorProperties, true},
-            {"Loudness_Profiler_RejectsBadInput", testLoudnessProfilerRejectsBadInput, true},
-            {"Loudness_Abi_LifecycleAndGuards", testLoudnessAbiLifecycleAndGuards, true},
-            {
-                "Loudness_Profile_SharedAcrossThreads",
-                testLoudnessProfileSharedAcrossThreads,
-                true,
-            },
-            {"Profiler_Timing", testProfilerTiming, false},
-            // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
-            // process-wide operator new/delete override scoped to the calling thread via a thread_local
-            // flag; running them in the parallel worker pool alongside other allocating tests is fine
-            // for correctness (the flag is thread_local) but the Gapless soak spins on real decode
-            // threads and the DSPKernel soaks are long, so keep them serial to avoid skewing the pool.
-            {"Soak_DSPKernel_ZeroRtAlloc_FullChain", testSoakDspKernelZeroRtAllocFullChain, false},
-            {"Soak_DSPKernel_ZeroRtAlloc_Blend", testSoakDspKernelZeroRtAllocBlend, false},
-            // QW1 CF-12: crossfeed-on blend soak (rtAllocs==0).
-            {
-                "Soak_DSPKernel_ZeroRtAlloc_CrossfeedBlend",
-                testSoakDspKernelZeroRtAllocCrossfeedBlend,
-                false,
-            },
-            {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
-            // S6 RACE-1: wait-free triple-buffer parameter snapshot — concurrent publish/read, no torn read
-            // (realistic TargetState payload; gen-0 identity-seed handled — see the .inc header).
-            {"Snapshot_Seqlock_ConcurrentNoTear_RACE1", testSnapshotSeqlockConcurrentNoTear, true},
-            // Hardening (2026-07-10): whole-payload, all-words-equal tear detector over multiple fresh
-            // rounds — independent cross-check of the generic transport, no seed special-case.
-            {
-                "Snapshot_TripleBuffer_WholePayloadNoTear",
-                testSnapshotTripleBufferWholePayloadNoTear,
-                true,
-            },
+            "PureModeBridge_TranslatesAllDecisionBranches",
+            testPureModeBridgeTranslatesAllDecisionBranches,
+            true,
         },
-    };
+        {"PureModeBridge_NullArgsAreNoOp", testPureModeBridgeNullArgsAreNoOp, true},
+        {
+            "PureModeBridge_RateArrayCopiedFaithfully",
+            testPureModeBridgeRateArrayCopiedFaithfully,
+            true,
+        },
+        // Pure-Mode file decode (Phase B — B2b) — SERIAL: mutate env + /tmp paths
+        {"FileDecode_BitExact_Auto", testFileDecodeBitExactAuto, false},
+        {"FileDecode_BitExact_Apple", testFileDecodeBitExactApple, false},
+        // Expanded B2b coverage (FileDecodeTests.inc) — SERIAL: mutate env + /tmp paths
+        {"FileDecode_OpenFailurePaths", testFileDecodeOpenFailurePaths, false},
+        {"FileDecode_CloseIdempotent", testFileDecodeCloseIdempotent, false},
+        {"FileDecode_FormatGetters", testFileDecodeFormatGetters, false},
+        {"FileDecode_BitExact_24bit", testFileDecodeBitExact24bit, false},
+        {"FileDecode_BitExact_Float32", testFileDecodeBitExactFloat32, false},
+        {"FileDecode_NativeRates", testFileDecodeNativeRates, false},
+        {"FileDecode_Mono_BitExact", testFileDecodeMonoBitExact, false},
+        {"FileDecode_Multichannel_4ch", testFileDecodeMultichannel4ch, false},
+        {
+            "FileDecode_PullChannelMismatchSilence",
+            testFileDecodePullChannelMismatchSilence,
+            false,
+        },
+        {"FileDecode_EofAndFinishedFlag", testFileDecodeEofAndFinishedFlag, false},
+        {"FileDecode_FinishedFlagRingTail", testFileDecodeFinishedFlagRingTail, false},
+        {"FileDecode_PullBeforeDecodeZeroPads", testFileDecodePullBeforeDecodeZeroPads, false},
+        {"FileDecode_BackendEquivalence", testFileDecodeBackendEquivalence, false},
+        {"FileDecode_RingWraparound", testFileDecodeRingWraparound, false},
+        // Seek coverage (FileDecodeSource::seek) — SERIAL: mutate env + /tmp paths
+        {"FileDecode_Seek_SampleAccurateWav16", testFileDecodeSeekSampleAccurateWav16, false},
+        {
+            "FileDecode_Seek_ToZeroReproducesFromOpen",
+            testFileDecodeSeekToZeroReproducesFromOpen,
+            false,
+        },
+        {"FileDecode_Seek_PastEofLandsAtEnd", testFileDecodeSeekPastEofLandsAtEnd, false},
+        {
+            "FileDecode_Seek_BackendEquivalenceAfterSeek",
+            testFileDecodeSeekBackendEquivalenceAfterSeek,
+            false,
+        },
+        {
+            "FileDecode_Seek_RepeatedRapidNoStaleNoLeak",
+            testFileDecodeSeekRepeatedRapidNoStaleNoLeak,
+            false,
+        },
+        {
+            "FileDecode_Seek_MidStreamDistinctChannels",
+            testFileDecodeSeekMidStreamDistinctChannels,
+            false,
+        },
+        // Gapless DECODE-LAYER decode->concatenate contract — SERIAL: write fixtures to test-data/.
+        {"Gapless_SeamFrameAccuracy", testGaplessSeamFrameAccuracy, false},
+        {"Gapless_TotalFrameCount_48kOnly", testGaplessTotalFrameCount48kOnly, false},
+        {
+            "Gapless_SampleRateMismatch_ProducesFrameCountForEach",
+            testGaplessSampleRateMismatchProducesFrameCountForEach,
+            false,
+        },
+        {"Gapless_ShortFile_DrainCorrectly", testGaplessShortFileDrainCorrectly, false},
+        {"Gapless_OpenFailure_SecondSource", testGaplessOpenFailureSecondSource, false},
+        // B5 / L1: Pure-Mode software-chain bit-exact round-trip — SERIAL: mutate env + /tmp paths.
+        {"RoundTrip_BitExact_16bit", testRoundTripBitExact16bit, false},
+        {"RoundTrip_BitExact_24bit", testRoundTripBitExact24bit, false},
+        // Pure-path gapless STAGE 2 (GaplessSource) — SERIAL: write fixtures to test-data/.
+        {"PureGapless_SeamSampleAccurate", testPureGaplessSeamSampleAccurate, false},
+        {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
+        {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
+        {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
+        // S6 Tier-3 (3d) Pure gapless behavioral-contract conformance — SERIAL: write fixtures.
+        {
+            "GaplessContract_TransitionCountPerSeam",
+            testGaplessContractTransitionCountPerSeam,
+            false,
+        },
+        {"GaplessContract_ClearCancelsOnDeck", testGaplessContractClearCancelsOnDeck, false},
+        {"GaplessContract_EndOfQueueSignals", testGaplessContractEndOfQueueSignals, false},
+        {
+            "GaplessContract_PositionRezeroesAtSeam",
+            testGaplessContractPositionRezeroesAtSeam,
+            false,
+        },
+        {
+            "GaplessContract_PollReapsRetiredSource",
+            testGaplessContractPollReapsRetiredSource,
+            false,
+        },
+        // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
+        {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
+        // QW1 CF-11: the 4th Realizer surface — crossfeed RMW + clamp (parallel-safe).
+        {"Realizer_Crossfeed_4SurfaceRMW_Clamp", testRealizerCrossfeedSurfaceRMW, true},
+        // S6 Tier-3 (3b) steerable wet/dry intensity (parallel-safe: no env/tmp).
+        {"Intensity_EndpointsBitExact_Settled", testIntensityEndpointsBitExact, true},
+        {
+            "Intensity_SettledRampConvergesToHardBranch",
+            testIntensitySettledRampConvergesToHardBranch,
+            true,
+        },
+        {"Intensity_EqualPowerAtHalf", testIntensityEqualPowerAtHalf, true},
+        {
+            "Intensity_LevelPeakSafetyIntermediate",
+            testIntensityLevelPeakSafetyIntermediate,
+            true,
+        },
+        {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
+        // QW1 — crossfeed DSP conformance CF-1..CF-9 (parallel-safe: pure DSP, no env/tmp).
+        {
+            "Crossfeed_Bypass_BitExact_GoldenMaster",
+            testCrossfeedBypassBitExactGoldenMaster,
+            true,
+        },
+        {"Crossfeed_NonStereo_PassThrough", testCrossfeedNonStereoPassThrough, true},
+        {"Crossfeed_Mono_LevelNeutral", testCrossfeedMonoLevelNeutral, true},
+        {"Crossfeed_ChannelSeparation", testCrossfeedChannelSeparation, true},
+        {"Crossfeed_LpfCharacteristic", testCrossfeedLpfCharacteristic, true},
+        {"Crossfeed_NoNaNInf", testCrossfeedNoNaNInf, true},
+        {"Crossfeed_ClickFreeEnableDisable", testCrossfeedClickFreeEnableDisable, true},
+        {"Crossfeed_CoeffRecomputeAcrossRates", testCrossfeedCoeffRecomputeAcrossRates, true},
+        {"Crossfeed_ReadBothWriteBoth", testCrossfeedReadBothWriteBoth, true},
+        // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
+        {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
+        {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
+        // QW1 CF-10: crossfeed ebur128 loudness-neutrality (real decorrelated stereo).
+        {"Crossfeed_ebur128_LevelNeutral", testCrossfeedLoudnessNeutral, true},
+        // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
+        // (parallel-safe: pure DSP, no env/tmp).
+        {
+            "Limiter_TruePeak_CeilingGuarantee_vs_ebur128",
+            testLimiterTruePeakCeilingGuarantee,
+            true,
+        },
+        {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
+        // S7 / US-QA-03: 31-band EQ frequency-response sweep + bit-transparent bypass.
+        // Parallel-safe: pure DSP, no env/tmp, fresh kernel per run.
+        {"EQ_Sweep31Bands_48k", testEqSweep31Bands48k, true},
+        {"EQ_Sweep31Bands_44k", testEqSweep31Bands44k, true},
+        {"EQ_SweepExtremes_PlusMinus12", testEqSweepExtremesPlusMinus12, true},
+        {"EQ_NearNyquistBandsApplyGain", testEqNearNyquistBandsApplyGain, true},
+        {"EQ_CombinedBands_CutRunAndMixedSign", testEqCombinedBandsCutRunAndMixedSign, true},
+        {"EQ_FlatIsBitTransparentBypass", testEqFlatIsBitTransparentBypass, true},
+        // Sprint EQ / EQ1a: the graphic-EQ designer vs the Python oracle (parallel-safe: pure
+        // DSP, no env/tmp) — except Designer_Timing, serial so the pool cannot skew its clock.
+        {"EQ_Bands_MatchKit", testEqBandsMatchKit, true},
+        {"EQ_Designer_MatchesOracle", testEqDesignerMatchesOracle, true},
+        {"EQ_ACGE_Presets_Tone_Smooth", testEqAcgePresetsToneSmooth, true},
+        {"EQ_ACGE_Ramo1000", testEqAcgeRamo1000, true},
+        {"EQ_ACGE_Hard", testEqAcgeHard, true},
+        {"EQ_ACGE_SingleBand", testEqAcgeSingleBand, true},
+        {"EQ_SvfBell_Exact", testEqSvfBellExact, true},
+        {"EQ_Ultrasonic_Property", testEqUltrasonicProperty, true},
+        {"EQ_Readback_MatchesIndependentEval", testEqReadbackMatchesIndependentEval, true},
+        {"EQ_Design_FlatFinite", testEqDesignFlatFinite, true},
+        {"EQ_Design_Rejects_NonFinite", testEqDesignRejectsNonFinite, true},
+        {"Designer_TwoThreads", testDesignerTwoThreads, true},
+        {"Designer_Timing", testDesignerTiming, false},
+        // Sprint EQ / EQ1c: the track loudness profiler + predictor vs the libebur128 oracle
+        // (parallel-safe: pure DSP, no env/tmp) — except Profiler_Timing, serial for its clock.
+        {"Loudness_Profile_MatchesEbur128", testLoudnessProfileMatchesEbur128, true},
+        {"Loudness_Predictor_Pink", testLoudnessPredictorPink, true},
+        {"Loudness_Predictor_Tonal808", testLoudnessPredictorTonal808, true},
+        {"Loudness_Predictor_Orchestral", testLoudnessPredictorOrchestral, true},
+        {"Loudness_Predictor_LoudMaster", testLoudnessPredictorLoudMaster, true},
+        {"Loudness_Predictor_RatesAndLayouts", testLoudnessPredictorRatesAndLayouts, true},
+        {
+            "Loudness_Profile_NoWindow_ParsevalAndTonal",
+            testLoudnessProfileNoWindow,
+            true,
+        },
+        {"Loudness_Profile_PrefixVsFull", testLoudnessProfilePrefixVsFull, true},
+        {
+            "Loudness_Profile_DecimationAndMemory",
+            testLoudnessProfileDecimationAndMemory,
+            true,
+        },
+        {"Loudness_Predictor_Properties", testLoudnessPredictorProperties, true},
+        {"Loudness_Profiler_RejectsBadInput", testLoudnessProfilerRejectsBadInput, true},
+        {"Loudness_Abi_LifecycleAndGuards", testLoudnessAbiLifecycleAndGuards, true},
+        {
+            "Loudness_Profile_SharedAcrossThreads",
+            testLoudnessProfileSharedAcrossThreads,
+            true,
+        },
+        {"Profiler_Timing", testProfilerTiming, false},
+        // Sprint EQ / EQ1b: the real-time EQ — transitions, paths, guards, re-allocation.
+        // Serial: the CPU report, the FPCR-owning FZ/denormal tests, the paced normaliser
+        // test and the soak (the pool would skew or race them).
+        {"EQ_Transitions_Realistic", testEqTransitionsRealistic, true},
+        {"EQ_Transitions_Adversarial", testEqTransitionsAdversarial, true},
+        {"EQ_Cpu_7_1_192k", testEqCpu71At192k, false},
+        {"EQ_ReadbackEqualsEngine", testEqReadbackEqualsEngine, true},
+        {"EQ_ResponseIndependentOfIntensity", testEqResponseIndependentOfIntensity, true},
+        {"EQ_Off_BitExact", testEqOffBitExact, true},
+        {"EQ_BitPerfect_P0", testEqBitPerfectP0, true},
+        {"Kernel_PathSwitch_NoGlitch", testKernelPathSwitchNoGlitch, true},
+        {"Path_Switch_AfterNormaliserAdapted", testPathSwitchAfterNormaliserAdapted, false},
+        {"EQ_PublishRejectsNonFinite", testEqPublishRejectsNonFinite, true},
+        {"EQ_RT_IgnoresBadSnapshot", testEqRtIgnoresBadSnapshot, true},
+        {"EQ_NaNInput_Recovers", testEqNaNInputRecovers, true},
+        {"EQ_FZ_Set_OnRenderThread", testEqFzSetOnRenderThread, false},
+        {"EQ_NoSubnormalStates", testEqNoSubnormalStates, false},
+        {"RtSwappableResource_Lifecycle", testRtSwappableResourceLifecycle, true},
+        {"Soak_DSPKernel_ZeroRtAlloc_EqPaths", testSoakDspKernelZeroRtAllocEqPaths, false},
+        {"EQ_Reallocate_KeepsCurve", testEqReallocateKeepsCurve, true},
+        {"EQ_Reallocate_NewRate", testEqReallocateNewRate, true},
+        {"Crossfeed_RederivedOnRateChange", testCrossfeedRederivedOnRateChange, true},
+        {"Realizer_ReinitDuringDrain", testRealizerReinitDuringDrain, true},
+        // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
+        // process-wide operator new/delete override scoped to the calling thread via a thread_local
+        // flag; running them in the parallel worker pool alongside other allocating tests is fine
+        // for correctness (the flag is thread_local) but the Gapless soak spins on real decode
+        // threads and the DSPKernel soaks are long, so keep them serial to avoid skewing the pool.
+        {"Soak_DSPKernel_ZeroRtAlloc_FullChain", testSoakDspKernelZeroRtAllocFullChain, false},
+        {"Soak_DSPKernel_ZeroRtAlloc_Blend", testSoakDspKernelZeroRtAllocBlend, false},
+        // QW1 CF-12: crossfeed-on blend soak (rtAllocs==0).
+        {
+            "Soak_DSPKernel_ZeroRtAlloc_CrossfeedBlend",
+            testSoakDspKernelZeroRtAllocCrossfeedBlend,
+            false,
+        },
+        {"Soak_GaplessSource_ZeroRtAlloc_Pull", testSoakGaplessSourceZeroRtAllocPull, false},
+        // S6 RACE-1: wait-free triple-buffer parameter snapshot — concurrent publish/read, no torn read
+        // (realistic TargetState payload; gen-0 identity-seed handled — see the .inc header).
+        {"Snapshot_Seqlock_ConcurrentNoTear_RACE1", testSnapshotSeqlockConcurrentNoTear, true},
+        // Hardening (2026-07-10): whole-payload, all-words-equal tear detector over multiple fresh
+        // rounds — independent cross-check of the generic transport, no seed special-case.
+        {
+            "Snapshot_TripleBuffer_WholePayloadNoTear",
+            testSnapshotTripleBufferWholePayloadNoTear,
+            true,
+        },
+    });
 } // namespace
 
 // ---------------------------------------------------------------------------
