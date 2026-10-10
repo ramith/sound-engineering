@@ -142,7 +142,8 @@ namespace AdaptiveSound
         device.name = getDeviceName(deviceID);
         device.sampleRate = getDeviceSampleRate(deviceID);
         device.bufferFrameSize = getDeviceBufferFrameSize(deviceID);
-        device.type = getDeviceType(deviceID);
+        device.transportType = getDeviceTransportType(deviceID);
+        device.type = classifyDeviceType(device.transportType, device.name);
         return device;
     }
 
@@ -241,51 +242,66 @@ namespace AdaptiveSound
         return bufferSize;
     }
 
-    AudioDevice::Type CoreAudioDevice::getDeviceType(AudioDeviceID deviceID)
+    uint32_t CoreAudioDevice::getDeviceTransportType(AudioDeviceID deviceID)
+    {
+        return getUInt32Property(deviceID,
+                                 {
+                                     kAudioDevicePropertyTransportType,
+                                     kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain,
+                                 });
+    }
+
+    std::string CoreAudioDevice::getDeviceUID(AudioDeviceID deviceID)
+    {
+        return getStringProperty(deviceID,
+                                 {
+                                     kAudioDevicePropertyDeviceUID,
+                                     kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain,
+                                 });
+    }
+
+    std::string CoreAudioDevice::getDeviceModelUID(AudioDeviceID deviceID)
+    {
+        return getStringProperty(deviceID,
+                                 {
+                                     kAudioDevicePropertyModelUID,
+                                     kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain,
+                                 });
+    }
+
+    AudioDevice::Type CoreAudioDevice::classifyDeviceType(uint32_t transportType,
+                                                          const std::string& name)
     {
         // Prefer the authoritative CoreAudio transport type (kAudioDevicePropertyTransportType);
         // a USB DAC named "SomeDAC" or a non-Apple BT headset would be misclassified by a name
         // heuristic. Fall back to the name only when the transport type is unavailable/unrecognized.
-        AudioObjectPropertyAddress transportAddr{
-            kAudioDevicePropertyTransportType,
-            kAudioObjectPropertyScopeGlobal,
-            kAudioObjectPropertyElementMain,
-        };
-
-        UInt32 transportType = 0;
-        UInt32 dataSize = sizeof(transportType);
-        OSStatus status = AudioObjectGetPropertyData(
-            deviceID, &transportAddr, 0, nullptr, &dataSize, &transportType);
-
-        if (status == noErr)
+        switch (transportType)
         {
-            switch (transportType)
-            {
-                case kAudioDeviceTransportTypeBluetooth:
-                case kAudioDeviceTransportTypeBluetoothLE:
-                case kAudioDeviceTransportTypeAirPlay:
-                    return AudioDevice::Type::Wireless;
-                case kAudioDeviceTransportTypeUSB:
-                    return AudioDevice::Type::USB;
-                case kAudioDeviceTransportTypeBuiltIn:
-                    return AudioDevice::Type::Builtin;
-                default:
-                    break; // unrecognized transport — fall through to the name heuristic
-            }
+            case kAudioDeviceTransportTypeBluetooth:
+            case kAudioDeviceTransportTypeBluetoothLE:
+            case kAudioDeviceTransportTypeAirPlay:
+                return AudioDevice::Type::Wireless;
+            case kAudioDeviceTransportTypeUSB:
+                return AudioDevice::Type::USB;
+            case kAudioDeviceTransportTypeBuiltIn:
+                return AudioDevice::Type::Builtin;
+            default:
+                break; // unknown (0) or unrecognized transport — fall through to the name heuristic
         }
 
         // Fallback heuristic when the transport type is unknown.
-        std::string deviceName = getDeviceName(deviceID);
-        if (deviceName.contains("AirPods") || deviceName.contains("Bluetooth") ||
-            deviceName.contains("wireless"))
+        if (name.contains("AirPods") || name.contains("Bluetooth") || name.contains("wireless"))
         {
             return AudioDevice::Type::Wireless;
         }
-        if (deviceName.contains("USB"))
+        if (name.contains("USB"))
         {
             return AudioDevice::Type::USB;
         }
-        if (deviceName.contains("Built-in"))
+        if (name.contains("Built-in"))
         {
             return AudioDevice::Type::Builtin;
         }
@@ -414,21 +430,12 @@ namespace AdaptiveSound
         DeviceCapability cap;
         cap.id = deviceID;
 
-        // Transport type (authoritative; same selector as getDeviceType()).
-        AudioObjectPropertyAddress transportAddr{
-            kAudioDevicePropertyTransportType,
-            kAudioObjectPropertyScopeGlobal,
-            kAudioObjectPropertyElementMain,
-        };
-        UInt32 transportType = 0;
-        UInt32 dataSize = sizeof(transportType);
-        OSStatus status = AudioObjectGetPropertyData(
-            deviceID, &transportAddr, 0, nullptr, &dataSize, &transportType);
-        if (status != noErr)
+        // Transport type (authoritative; the same query device enumeration classifies with).
+        const uint32_t transportType = getDeviceTransportType(deviceID);
+        if (transportType == 0)
         {
             AdaptiveSound::log::line(
-                "[CoreAudioDevice] Failed to get transport type for capability");
-            transportType = 0;
+                "[CoreAudioDevice] No transport type for capability (unavailable or unknown)");
         }
         cap.transportType = transportType;
 
