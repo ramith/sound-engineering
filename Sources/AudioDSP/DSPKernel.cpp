@@ -320,18 +320,66 @@ namespace AdaptiveSound
         return std::min(1.0F, intensity / kLoudnessFadeIntensity);
     }
 
+    float DSPKernel::streamCorrelation(const MultichannelView& block,
+                                       uint32_t frames) const noexcept
+    {
+        double cross = 0.0;
+        double processedEnergy = 0.0;
+        double inputEnergy = 0.0;
+        for (uint32_t ch = 0U; ch < block.channels(); ++ch)
+        {
+            const float* processed = block.channel(ch);
+            if (processed == nullptr)
+            {
+                continue;
+            }
+            const float* input = bypassScratch_.data() + (static_cast<size_t>(ch) * maxFrames_);
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                cross += static_cast<double>(processed[i]) * input[i];
+                processedEnergy += static_cast<double>(processed[i]) * processed[i];
+                inputEnergy += static_cast<double>(input[i]) * input[i];
+            }
+        }
+        const double norm = std::sqrt(processedEnergy * inputEnergy);
+        // Anti-correlated streams are faded as uncorrelated ones: positive gains cannot keep their
+        // power anyway, and the endpoints stay exact only for ρ ≥ 0.
+        return (norm > 0.0) ? static_cast<float>(std::clamp(cross / norm, 0.0, 1.0)) : 0.0F;
+    }
+
     void DSPKernel::crossfadeWithBypass(const MultichannelView& block, float toward) noexcept
     {
-        // Equal-gain cross-fade, out = (1 − w)·processed + w·input, w gliding linearly toward
-        // `toward` over 5 ms. The two streams are the same audio 3 ms apart (the limiter's
-        // look-ahead), so a fade beats the skip or repeat a hard switch would make.
+        // A constant-POWER cross-fade between the processed block and the undelayed input,
+        // w gliding linearly toward `toward` over 5 ms (amendment 17). The two streams are the same
+        // audio 3 ms apart (the limiter's look-ahead), so a fade beats the skip or repeat a hard
+        // switch would make — but how alike they are depends on the content: broadband audio is
+        // nearly uncorrelated 3 ms apart (an equal-GAIN fade dips it −3 dB mid-way), a low or
+        // periodic tone nearly identical (an equal-POWER one would bump it +3 dB). So when a fade
+        // starts it measures the streams' correlation ρ over the block (all channels), and holds
+        //   input = sin(w·π/2),  processed = −ρ·input + √(1 − input²·(1 − ρ²)),
+        // whose sum keeps the power for that ρ: equal-power at ρ = 0, equal-gain at ρ = 1, and a
+        // constant envelope for a tone (ρ = cos of its phase shift). Limits: ρ comes from one render
+        // block, so a low mono tone in a very small block can wander (up to +2.7 dB at 30 Hz with
+        // 128 frames, ±0.5 dB at 512) for the ~2 ms mid-fade; content anti-correlated 3 ms apart
+        // (a tone near 167 Hz, 500 Hz …) still dips there — no positive-gain fade avoids that.
         const uint32_t safeCount = std::min(block.frames(), maxFrames_);
+        if ((bypassMix_ == 0.0F || bypassMix_ == 1.0F) && bypassMix_ != toward)
+        {
+            bypassCorrelation_ = streamCorrelation(block, safeCount);
+        }
+        const float rho = bypassCorrelation_;
+        const float uncorrelated = 1.0F - (rho * rho);
         const float step = (toward > bypassMix_) ? bypassMixStep_ : -bypassMixStep_;
         for (uint32_t i = 0U; i < safeCount; ++i)
         {
             bypassMix_ = (step > 0.0F) ? std::min(toward, bypassMix_ + step)
                                        : std::max(toward, bypassMix_ + step);
-            wetGainBuf_[i] = bypassMix_;
+            const float inputGain = (bypassMix_ >= 1.0F) ? 1.0F : std::sin(bypassMix_ * kHalfPi);
+            wetGainBuf_[i] =
+                (bypassMix_ >= 1.0F)
+                    ? 0.0F
+                    : (-rho * inputGain) + std::sqrt(1.0F - (inputGain * inputGain * uncorrelated));
+            dryGainBuf_[i] = inputGain;
         }
         for (uint32_t ch = 0U; ch < block.channels(); ++ch)
         {
@@ -343,8 +391,7 @@ namespace AdaptiveSound
             const float* input = bypassScratch_.data() + (static_cast<size_t>(ch) * maxFrames_);
             for (uint32_t i = 0U; i < safeCount; ++i)
             {
-                const float mix = wetGainBuf_[i];
-                out[i] = ((1.0F - mix) * out[i]) + (mix * input[i]);
+                out[i] = (wetGainBuf_[i] * out[i]) + (dryGainBuf_[i] * input[i]);
             }
         }
     }
