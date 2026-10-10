@@ -155,6 +155,44 @@ namespace AdaptiveSound
         }
     };
 
+    // THE BS.1770-5 K-weighting filter for `sampleRate`, with cleared state: the stage-1 high
+    // shelf and the stage-2 RLB high-pass, each re-derived from its analog prototype by the
+    // bilinear transform with prewarp (libebur128's form), so it is exact at any rate. The one
+    // derivation shared by LufsMeter and the track loudness profiler (TrackLoudnessProfiler).
+    //
+    // The RLB numerator is the standard's UNNORMALISED (1, −2, 1): BS.1770-5 Table 2 gives
+    // b = 1, −2, 1 with a1 = −1.99004745, a2 = 0.99007225 at 48 kHz, so the high-pass passes
+    // +0.043 dB above its corner and the −0.691 offset is calibrated against exactly that.
+    // Dividing the numerator by a0 as well (as this meter did before Sprint EQ, EQ1c) read 0.043
+    // LU low at 48 kHz (0.047 at 44.1 kHz) against libebur128 and the standard.
+    [[nodiscard]] inline auto makeKWeighting(double sampleRate) noexcept -> LufsKWeight
+    {
+        LufsKWeight filter{};
+        // Stage 1: the high shelf.
+        {
+            const double warp = std::tan(std::numbers::pi * kKwShelfF0Hz / sampleRate);
+            const double Vh = std::pow(kDecibelBase, kKwShelfGainDb / kDbAmplitudeScale);
+            const double Vb = std::pow(Vh, kKwShelfVbExponent);
+            const double a0 = 1.0 + (warp / kKwShelfQ) + (warp * warp);
+            filter.shelf.b0 = (Vh + (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
+            filter.shelf.b1 = 2.0 * ((warp * warp) - Vh) / a0;
+            filter.shelf.b2 = (Vh - (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
+            filter.shelf.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
+            filter.shelf.a2 = (1.0 - (warp / kKwShelfQ) + (warp * warp)) / a0;
+        }
+        // Stage 2: the RLB high-pass (numerator 1, −2, 1 — not divided by a0; see above).
+        {
+            const double warp = std::tan(std::numbers::pi * kKwRlbF0Hz / sampleRate);
+            const double a0 = 1.0 + (warp / kKwRlbQ) + (warp * warp);
+            filter.rlb.b0 = 1.0;
+            filter.rlb.b1 = -2.0;
+            filter.rlb.b2 = 1.0;
+            filter.rlb.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
+            filter.rlb.a2 = (1.0 - (warp / kKwRlbQ) + (warp * warp)) / a0;
+        }
+        return filter;
+    }
+
     class LufsMeter
     {
       public:
@@ -175,8 +213,8 @@ namespace AdaptiveSound
             // Restore stereo defaults so prepare() is always a clean slate.
             numChannels_ = 2U;
             weights_.fill(kBs1770WeightLRC);
-            computeShelf();
-            computeRlb();
+            // Every channel slot runs the same coefficients; only its delay state differs.
+            chanK_.fill(makeKWeighting(sampleRate_));
             reset();
         }
 
@@ -418,46 +456,6 @@ namespace AdaptiveSound
             integratedLufs_ = (gatedCount == 0U)
                                   ? blockLoudness(absGatedMeanEnergy)
                                   : blockLoudness(gatedEnergy / static_cast<double>(gatedCount));
-        }
-
-        // Stage-1 high-shelf coefficients (bilinear + prewarp; libebur128 form).
-        // Coefficients are computed once into chanK_[0] then copied to all other
-        // channel slots — all channels share identical coefficients; only the delay
-        // state (z1, z2) differs per channel.
-        void computeShelf() noexcept
-        {
-            const double warp = std::tan(std::numbers::pi * kKwShelfF0Hz / sampleRate_);
-            const double Vh = std::pow(kDecibelBase, kKwShelfGainDb / kDbAmplitudeScale);
-            const double Vb = std::pow(Vh, kKwShelfVbExponent);
-            const double a0 = 1.0 + (warp / kKwShelfQ) + (warp * warp);
-            chanK_[0].shelf.b0 = (Vh + (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
-            chanK_[0].shelf.b1 = 2.0 * ((warp * warp) - Vh) / a0;
-            chanK_[0].shelf.b2 = (Vh - (Vb * warp / kKwShelfQ) + (warp * warp)) / a0;
-            chanK_[0].shelf.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
-            chanK_[0].shelf.a2 = (1.0 - (warp / kKwShelfQ) + (warp * warp)) / a0;
-            // Copy coefficients to all remaining channel slots (state resets independently).
-            for (uint32_t ch = 1U; ch < kMaxChannels; ++ch)
-            {
-                chanK_[ch].shelf = chanK_[0].shelf;
-            }
-        }
-
-        // Stage-2 RLB high-pass coefficients (bilinear + prewarp).
-        // Same copy-broadcast pattern as computeShelf().
-        void computeRlb() noexcept
-        {
-            const double warp = std::tan(std::numbers::pi * kKwRlbF0Hz / sampleRate_);
-            const double a0 = 1.0 + (warp / kKwRlbQ) + (warp * warp);
-            chanK_[0].rlb.b0 = 1.0 / a0;
-            chanK_[0].rlb.b1 = -2.0 / a0;
-            chanK_[0].rlb.b2 = 1.0 / a0;
-            chanK_[0].rlb.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
-            chanK_[0].rlb.a2 = (1.0 - (warp / kKwRlbQ) + (warp * warp)) / a0;
-            // Copy coefficients to all remaining channel slots.
-            for (uint32_t ch = 1U; ch < kMaxChannels; ++ch)
-            {
-                chanK_[ch].rlb = chanK_[0].rlb;
-            }
         }
 
         // K-weighting filter cascades — one per channel (kMaxChannels slots).
