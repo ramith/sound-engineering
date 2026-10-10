@@ -15,7 +15,7 @@ namespace AdaptiveSound
 
         // A parameter within this RELATIVE distance of its target snaps to it and stops ramping.
         // Not 1e-12 (engine-plan §7): a double one-pole stalls one ulp/α short of its target, which
-        // is ~7e-12 relative at τ 160 ms / 192 kHz, so a 1e-12 test would never settle. 1e-9
+        // is ~1.3e-11 relative at τ 300 ms / 192 kHz, so a 1e-12 test would never settle. 1e-9
         // changes the response by ~1e-8 dB — inaudible — and settles at every supported τ and rate.
         constexpr double kSettleRelative = 1e-9;
 
@@ -51,7 +51,7 @@ namespace AdaptiveSound
         m1Target_.fill(0.0);
         gainDbTarget_ = 0.0;
         snapToTargets();
-        coefficientAlpha_ = 1.0;
+        bandAlpha_.fill(1.0);
         gainAlpha_ = 1.0;
         snapNextAdopt_ = true;
         seen_ = EQParams{};
@@ -100,18 +100,22 @@ namespace AdaptiveSound
         {
             mix = params.m1;
         }
-        const double alpha = onePoleAlpha(params.rampSeconds);
-        if (damping != kTarget_ || mix != m1Target_)
+        for (size_t band = 0; band < kBands; ++band)
         {
-            kTarget_ = damping;
-            m1Target_ = mix;
-            coefficientAlpha_ = alpha;
-            coefficientsRamping_ = true;
+            // A band whose target moved glides there at ITS OWN τ (amendment 15). The others keep
+            // going where they were going, at the pace they already had.
+            if (damping[band] != kTarget_[band] || mix[band] != m1Target_[band])
+            {
+                kTarget_[band] = damping[band];
+                m1Target_[band] = mix[band];
+                bandAlpha_[band] = onePoleAlpha(params.bandRampSeconds[band]);
+                bandRamping_[band] = true;
+            }
         }
         if (params.outputGainDb != gainDbTarget_)
         {
             gainDbTarget_ = params.outputGainDb;
-            gainAlpha_ = alpha;
+            gainAlpha_ = onePoleAlpha(params.gainRampSeconds);
             gainRamping_ = true;
         }
         if (snapNextAdopt_)
@@ -127,8 +131,13 @@ namespace AdaptiveSound
         kCurrent_ = kTarget_;
         m1Current_ = m1Target_;
         gainDbCurrent_ = gainDbTarget_;
-        coefficientsRamping_ = false;
+        bandRamping_.fill(false);
         gainRamping_ = false;
+    }
+
+    bool EQModule::anyBandRamping() const noexcept
+    {
+        return std::ranges::any_of(bandRamping_, [](bool ramping) { return ramping; });
     }
 
     void EQModule::zeroStates() noexcept
@@ -146,7 +155,7 @@ namespace AdaptiveSound
 
     bool EQModule::isIdentity() const noexcept
     {
-        if (coefficientsRamping_ || gainRamping_ || gainDbCurrent_ != 0.0)
+        if (gainRamping_ || gainDbCurrent_ != 0.0 || anyBandRamping())
         {
             return false;
         }
@@ -170,7 +179,7 @@ namespace AdaptiveSound
             ic2[pair] = ic2_[pair][band];
         }
         const double prewarp = prewarp_[band];
-        const double alpha = coefficientAlpha_;
+        const double alpha = bandAlpha_[band];
         const double kGoal = kTarget_[band];
         const double mixGoal = m1Target_[band];
         double damping = kCurrent_[band];
@@ -266,20 +275,15 @@ namespace AdaptiveSound
 
     void EQModule::settleIfConverged() noexcept
     {
-        if (coefficientsRamping_)
+        for (size_t band = 0; band < kBands; ++band)
         {
-            bool converged = true;
-            for (size_t band = 0; band < kBands && converged; ++band)
+            const double scale = kTarget_[band] + std::abs(m1Target_[band]);
+            if (bandRamping_[band] && closeTo(kCurrent_[band], kTarget_[band], scale) &&
+                closeTo(m1Current_[band], m1Target_[band], scale))
             {
-                const double scale = kTarget_[band] + std::abs(m1Target_[band]);
-                converged = closeTo(kCurrent_[band], kTarget_[band], scale) &&
-                            closeTo(m1Current_[band], m1Target_[band], scale);
-            }
-            if (converged)
-            {
-                kCurrent_ = kTarget_;
-                m1Current_ = m1Target_;
-                coefficientsRamping_ = false;
+                kCurrent_[band] = kTarget_[band];
+                m1Current_[band] = m1Target_[band];
+                bandRamping_[band] = false;
             }
         }
         if (gainRamping_ && closeTo(gainDbCurrent_, gainDbTarget_, 1.0 + std::abs(gainDbTarget_)))
@@ -382,10 +386,9 @@ namespace AdaptiveSound
         const uint32_t pairs = (channels + 1U) / 2U;
 
         loadWork(block, frames, pairs);
-        const bool ramping = coefficientsRamping_;
         for (size_t band = 0; band < kBands; ++band)
         {
-            runBand(band, frames, pairs, ramping);
+            runBand(band, frames, pairs, bandRamping_[band]);
         }
         statesClear_ = false;
         applyOutputGain(frames, pairs);

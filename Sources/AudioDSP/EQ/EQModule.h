@@ -5,20 +5,27 @@
 // 31 bilinear bells (GraphicEQBands.h) per channel, run as Simper's trapezoidal state-variable
 // filter in DOUBLE precision, two channels per NEON register (simd_double2 lanes = a channel pair).
 // The module never designs: it runs the FINISHED per-band (k, m1) the Realizer's GraphicEQDesigner
-// produced, and glides to a new set on one one-pole per sample ("S2"):
+// produced, and glides each band to its new pair on a one-pole per sample ("S2"):
 //
 //   k ← k + α(k* − k),  m1 ← m1 + α(m1* − m1),  a1 = 1 / (1 + g(g + k)),  a2 = g·a1,  a3 = g·a2
 //
 // so every intermediate state is itself a stable bell (k stays a convex combination of positive
 // values) and the transition never swells beyond the louder endpoint the way a dB-domain ramp of
-// the solved gains does (engine-plan §3.1). The broadband output gain (EQ1c's loudness-neutral
-// gain; 0 dB until then) rides the same one-pole in dB. α comes from EQParams::rampSeconds, the
-// Realizer's τ rule (amendment 1: 10 / 40 / 160 ms).
+// the solved gains does (engine-plan §3.1).
 //
-// Settled: once every parameter is within a relative 1e-9 of its target it snaps and the per-
-// sample smoothing stops. At the identity (every m1 == 0, 0 dB, settled) the cascade is skipped
-// and its states are zeroed, so the module is a bit-exact pass-through — the kernel's bit-perfect
-// path keys on isIdentity().
+// EACH BAND HAS ITS OWN α (amendment 15), from EQParams::bandRampSeconds — the Realizer's τ rule
+// (EQTargets::rampsFor). A bell is a resonator with its own time constant, 1 / (π·k·f): 40 ms and
+// more in the bottom octave, under 1 ms at the top. Re-tuning it faster than it can follow leaves
+// a ringing remainder that beats against the programme, so a low band needs a slow glide and a high
+// band does not; one τ for the whole curve was either too fast for the bass or needlessly slow
+// for everything else. A band takes its new α only when its own target moves; a band already at
+// its target is not smoothed at all. The broadband output gain (the loudness-neutral gain) has its
+// own one-pole, in dB, at EQParams::gainRampSeconds.
+//
+// Settled: a band within a relative 1e-9 of its target snaps to it and its per-sample smoothing
+// stops. At the identity (every m1 == 0, 0 dB, everything settled) the cascade is skipped and its
+// states are zeroed, so the module is a bit-exact pass-through — the kernel's bit-perfect path
+// keys on isIdentity().
 //
 // Guards (engine-plan §7): a snapshot with a non-finite or non-positive coefficient is ignored (the
 // last good target keeps playing); one designed for another sample rate is held off (identity if
@@ -53,7 +60,8 @@ namespace AdaptiveSound
 
         // RT, once per render block on EVERY kernel path (even the bit-perfect bypass, so an EQ
         // turned on is seen there): adopt `params` if they changed since the last block. A target
-        // adopted in the first block after initialize() snaps; any later one glides.
+        // adopted in the first block after initialize() snaps; any later one glides, each band at
+        // its own τ.
         void update(const EQParams& params) noexcept;
 
         // RT: run the cascade in place (a no-op at the identity).
@@ -84,6 +92,7 @@ namespace AdaptiveSound
 
       private:
         using BandArray = std::array<double, kEqBandCount>;
+        using BandFlags = std::array<bool, kEqBandCount>;
         using PairStates = std::array<std::array<simd_double2, kEqBandCount>, kChannelPairs>;
 
         // RT: take `params` as the new target (or hold / ignore it; see the file header).
@@ -91,6 +100,7 @@ namespace AdaptiveSound
         void snapToTargets() noexcept;
         void zeroStates() noexcept;
         [[nodiscard]] double onePoleAlpha(float rampSeconds) const noexcept;
+        [[nodiscard]] bool anyBandRamping() const noexcept;
 
         // RT: run band `band` over the work buffer for `pairs` channel pairs, advancing its glide
         // when `ramping`. Dispatches to runBandPairs for the compile-time pair count.
@@ -103,7 +113,8 @@ namespace AdaptiveSound
         void runBandPairs(size_t band, uint32_t frames) noexcept;
         // RT: apply the output gain (constant or ramping) to the work buffer.
         void applyOutputGain(uint32_t frames, uint32_t pairs) noexcept;
-        // RT: snap the parameters that reached their targets; zero the states at the identity.
+        // RT: snap every band (and the gain) that reached its target; zero the states at the
+        // identity.
         void settleIfConverged() noexcept;
         // RT: the block into / out of the double work buffer; and the state finiteness check.
         void loadWork(const MultichannelView& block, uint32_t frames, uint32_t pairs) noexcept;
@@ -125,9 +136,9 @@ namespace AdaptiveSound
         BandArray m1Target_{};
         double gainDbCurrent_ = 0.0;
         double gainDbTarget_ = 0.0;
-        double coefficientAlpha_ = 1.0; // one-pole α of the (k, m1) glide
-        double gainAlpha_ = 1.0;        // one-pole α of the output-gain glide
-        bool coefficientsRamping_ = false;
+        BandArray bandAlpha_{};   // per band: the one-pole α of its (k, m1) glide
+        double gainAlpha_ = 1.0;  // the one-pole α of the output-gain glide
+        BandFlags bandRamping_{}; // per band: still gliding to its target
         bool gainRamping_ = false;
         bool snapNextAdopt_ = true;
         bool statesClear_ = true;

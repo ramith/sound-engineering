@@ -212,7 +212,7 @@ namespace AdaptiveSound
         std::unique_ptr<GraphicEQDesigner> designer_;
         EqIntent eq_{};
         CrossfeedIntent crossfeed_{};
-        std::array<double, kEqBandCount> publishedGainsDb_{}; // the τ rule's "from" endpoint
+        GraphicEQDesign publishedDesign_{}; // the τ rule's "from" endpoint (rate 0: none yet)
         double sampleRate_ = 0.0;
         std::atomic<double> designRate_{0.0}; // sampleRate_, readable from any thread
         TrackLoudnessGain loudness_;

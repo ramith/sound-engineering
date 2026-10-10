@@ -11,6 +11,13 @@
 //                                    there, and finite in the very block that carried it
 //   Limiter_NonFiniteInput_StaysFinite   — the limiter alone (process() and after prime())
 //   LufsMeter_NonFiniteSample_IsSilence  — the meter alone: the readings equal a run with zeros
+//
+// Amendment 15 — each band glides at its own τ (EQTargets::rampsFor):
+//   EQ_Transitions_SinglePoints  — one point to ±12 dB and back across the spectrum, and the bass
+//                                    cuts: local ≤ +1.0 dB, peak ≤ +0.6 dB
+//   EQ_SinglePoint_SettlesFast   — a single ±12 point (and a key step) at 1 kHz and up reaches 90 %
+//                                    within ~30 ms (≤ 35); the lower bands' settle times are reported
+//   (and EQ_Transitions_Adversarial's new duration bound: ≤ 60 ms above +3 dB)
 
 namespace
 {
@@ -256,5 +263,188 @@ static auto testLufsMeterNonFiniteSampleIsSilence() -> void
             }
         }
     }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// EQ_Transitions_SinglePoints — amendment 15, the everyday gesture the one-τ rule got wrong: one
+// point pulled to ±12 dB (and back), at every third band from 20 Hz to 20 kHz, plus the bass cuts
+// the break-it's red test does not cover (−6 / −8 dB at 20–63 Hz, both directions). Each band now
+// glides at its own τ: local ≤ +1.0 dB (never a moment above +1 dB) and peak ≤ +0.6 dB. (The
+// worst, +0.56 dB, is a −12 dB cut at 158 Hz: its flanking bells rise a little ahead of it, a
+// few ms above the 0 dB around it. A ±12 dB point is the extreme gesture; the presets and Tone
+// stay within EQ_Transitions_Realistic's +0.5 dB.)
+// ---------------------------------------------------------------------------
+static auto testEqTransitionsSinglePoints() -> void
+{
+    static const char* const kName = "EQ_Transitions_SinglePoints";
+    constexpr double kFs = 48000.0;
+    constexpr double kLocalBoundDb = 1.0;
+    constexpr double kPeakBoundDb = 0.6;
+    const auto switchFrame = static_cast<uint32_t>(0.5 * kFs);
+    const auto totalFrames = static_cast<uint32_t>(1.3 * kFs);
+    const std::vector<double> probes = tdProbes(2U);
+    std::vector<std::pair<size_t, float>> points;
+    for (size_t band = 0U; band < static_cast<size_t>(kEqBandCount); band += 3U)
+    {
+        points.emplace_back(band, 12.0F);
+        points.emplace_back(band, -12.0F);
+    }
+    for (size_t band = 0U; band <= 5U; ++band)
+    {
+        points.emplace_back(band, -6.0F);
+        points.emplace_back(band, -8.0F);
+    }
+    double worstLocal = -std::numeric_limits<double>::infinity();
+    double worstPeak = -std::numeric_limits<double>::infinity();
+    std::string worstName;
+    std::string failures;
+    std::string report;
+    for (const auto& [band, gain] : points)
+    {
+        const EqCurve point = eqFlatCurveWith(band, gain);
+        const double hz = GraphicEQ::centreHz(static_cast<int>(band));
+        for (const bool release : {false, true})
+        {
+            const std::string name = release
+                                         ? std::format("{:+.0f} dB @ {:.0f} Hz → Off", gain, hz)
+                                         : std::format("Off → {:+.0f} dB @ {:.0f} Hz", gain, hz);
+            const TdOvershoot result =
+                tdOvershoot(release ? tdPairEvents(point, EqCurve{}, kFs, switchFrame)
+                                    : tdPairEvents(EqCurve{}, point, kFs, switchFrame),
+                            probes,
+                            kFs,
+                            switchFrame,
+                            totalFrames);
+            if (result.localDb > worstLocal)
+            {
+                worstLocal = result.localDb;
+                worstName = std::format("{} @ {:.0f} Hz", name, result.localProbeHz);
+            }
+            worstPeak = std::max(worstPeak, result.peakDb);
+            report += std::format("[info]   {:26s} local {:+5.2f} @ {:5.0f} Hz / peak {:+5.2f}\n",
+                                  name,
+                                  result.localDb,
+                                  result.localProbeHz,
+                                  result.peakDb);
+            if (!(result.localDb <= kLocalBoundDb) || !(result.peakDb <= kPeakBoundDb))
+            {
+                failures += std::format(
+                    "{}: local {:+.3f} dB @ {:.0f} Hz (≤ {}), peak {:+.3f} dB "
+                    "(≤ {}); ",
+                    name,
+                    result.localDb,
+                    result.localProbeHz,
+                    kLocalBoundDb,
+                    result.peakDb,
+                    kPeakBoundDb);
+            }
+        }
+    }
+    if (!failures.empty())
+    {
+        logInfo(report);
+        logFail(kName, failures);
+        return;
+    }
+    logInfo(
+        std::format("[info] {}: {} transitions, worst local {:+.3f} dB ({}), worst peak "
+                    "{:+.3f} dB\n",
+                    kName,
+                    2U * points.size(),
+                    worstLocal,
+                    worstName,
+                    worstPeak));
+    logPass(kName);
+}
+
+namespace
+{
+    // How long (ms) after the switch a band's own centre tone takes to settle within 10 % (in
+    // dB) of the change, gliding from `from` to `to` by the τ rule.
+    auto fixSettleMs(const EqCurve& from, const EqCurve& to, size_t band, double fs) -> double
+    {
+        const auto switchFrame = static_cast<uint32_t>(0.25 * fs);
+        const auto totalFrames = static_cast<uint32_t>(1.5 * fs);
+        const double hz = GraphicEQ::centreHz(static_cast<int>(band));
+        const GraphicEQDesign a = tdDesign(from, fs);
+        const GraphicEQDesign b = tdDesign(to, fs);
+        const double fromDb = GraphicEQDesigner::playedDb(a, hz);
+        const double toDb = GraphicEQDesigner::playedDb(b, hz);
+        const double tolerance = 0.1 * std::abs(toDb - fromDb);
+        const std::vector<TdEvent> events = tdPairEvents(from, to, fs, switchFrame);
+        auto module = std::make_unique<EQModule>();
+        module->initialize(static_cast<uint32_t>(fs), kTdBlockFrames);
+        TestABLN abl(2U, kTdBlockFrames);
+        const std::vector<double> probe = {hz};
+        size_t next = 0U;
+        uint32_t lastOutside = switchFrame;
+        for (uint32_t start = 0U; start < totalFrames; start += kTdBlockFrames)
+        {
+            const uint32_t frames = std::min(kTdBlockFrames, totalFrames - start);
+            for (; next < events.size() && events[next].frame <= start; ++next)
+            {
+                module->update(events[next].params);
+            }
+            tdFillProbes(abl, probe, fs, start, frames);
+            module->process(MultichannelView::fromABL(abl.abl(), frames));
+            for (uint32_t i = 0U; i < frames; ++i)
+            {
+                const double envDb =
+                    20.0 * std::log10(std::hypot(abl.channels[0][i], abl.channels[1][i]) /
+                                      kTdProbeAmplitude);
+                if (start + i >= switchFrame && std::abs(envDb - toDb) > tolerance)
+                {
+                    lastOutside = start + i;
+                }
+            }
+        }
+        return 1000.0 * static_cast<double>(lastOutside - switchFrame) / fs;
+    }
+} // namespace
+
+// ---------------------------------------------------------------------------
+// EQ_SinglePoint_SettlesFast — amendment 15: "a single ±12 point must settle in ≤ ~30 ms (today it
+// takes 371 ms)". Measured on the band's own centre tone through the real module: Off → ±12 dB and
+// the key step +11 → +12, at every band from 1 kHz up, reach 90 % of the change (in dB) within
+// 35 ms — the 10 ms floor's own 90 % on the (k, m1) path is ~2.6 τ, plus the bell's ring and the
+// probe's beat; measured 25–33 ms.
+// Below 1 kHz a band glides at its own ring time (the physics, not a class): the settle times are
+// reported down to 20 Hz.
+// ---------------------------------------------------------------------------
+static auto testEqSinglePointSettlesFast() -> void
+{
+    static const char* const kName = "EQ_SinglePoint_SettlesFast";
+    constexpr double kFs = 48000.0;
+    constexpr double kBoundMs = 35.0;       // amendment 15: "≤ ~30 ms"
+    constexpr size_t kFirstBoundBand = 17U; // 1 kHz
+    std::string report = std::format(
+        "[info] {}: 90 % settle (ms) at the band's centre — "
+        "Off → +12 / Off → −12 / +11 → +12\n",
+        kName);
+    for (size_t band = 0U; band < static_cast<size_t>(kEqBandCount); band += 2U)
+    {
+        const std::array<double, 3> settle = {
+            fixSettleMs(EqCurve{}, eqFlatCurveWith(band, 12.0F), band, kFs),
+            fixSettleMs(EqCurve{}, eqFlatCurveWith(band, -12.0F), band, kFs),
+            fixSettleMs(eqFlatCurveWith(band, 11.0F), eqFlatCurveWith(band, 12.0F), band, kFs),
+        };
+        report += std::format("[info]   {:6.0f} Hz: {:6.1f} / {:6.1f} / {:6.1f}\n",
+                              GraphicEQ::centreHz(static_cast<int>(band)),
+                              settle[0],
+                              settle[1],
+                              settle[2]);
+        if (band >= kFirstBoundBand && !(std::ranges::max(settle) <= kBoundMs))
+        {
+            logInfo(report);
+            logFail(kName,
+                    std::format("{:.0f} Hz takes {:.1f} ms to settle (≤ {})",
+                                GraphicEQ::centreHz(static_cast<int>(band)),
+                                std::ranges::max(settle),
+                                kBoundMs));
+            return;
+        }
+    }
+    logInfo(report);
     logPass(kName);
 }

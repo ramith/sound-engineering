@@ -11,8 +11,11 @@
 // (time-varying, linear) filter's response to e^{jωn} — no Hilbert transform needed. Per probe:
 //   local = 20·log10(max envelope after the switch / max(steady A, steady B)),
 //   peak  = 20·log10(max over probes of the post-switch maximum / max over probes of the louder
-//           steady endpoint) — the transition is never louder than the louder endpoint.
-// The glide time is the Realizer's τ rule (EQTargets::rampSeconds) on the solved gains of A and B.
+//           steady endpoint) — the transition is never louder than the louder endpoint;
+//   and how LONG a probe spends above its louder endpoint: > +1 dB and > +3 dB (ms, the longest
+//   total over the probes; amendment 15 bounds the swell's duration as well as its height).
+// The glide times are the Realizer's τ rule (EQTargets::rampsFor) on the designs of A and B: one
+// τ per band (amendment 15).
 // There is no output gain yet (EQ1c's loudness-neutral gain): both endpoints play at their own
 // level, as the module plays them today.
 //
@@ -21,9 +24,11 @@
 //                                and a 120 Hz drag of Warm's 125 Hz band to +12: local ≤ +0.75 dB,
 //                                peak ≤ +0.5 dB (engine-plan §3.2)
 //   EQ_Transitions_Adversarial — the breaker's TD-searched jagged pairs (fixtures v3_worst_tau40,
-//                                v3_worst_tau10) at the rule's 160 ms: peak ≤ +1.0 dB (amendment 1);
+//                                v3_worst_tau10) at the rule's τ: peak ≤ +1.0 dB (amendment 1);
 //                                the earlier pinned pairs (worst_pair, adv_pair_S1/S2, the
-//                                alternating flip): peak ≤ +2.0 dB; local logged
+//                                alternating flip): peak ≤ +2.0 dB; every pair, both directions,
+//                                spends ≤ 60 ms above +3 dB (amendment 15: adv_pair_S2 spent
+//                                211 ms there under the one-τ rule); local and > +1 dB logged
 //   EQ_Cpu_7_1_192k            — % of one core for 8 channels at 192 kHz, settled and gliding
 
 namespace
@@ -68,11 +73,17 @@ namespace
     {
         const GraphicEQDesign a = tdDesign(from, fs);
         const GraphicEQDesign b = tdDesign(to, fs);
-        const float ramp = EQTargets::rampSeconds(a.filterGainDb, b.filterGainDb);
         return {
             TdEvent{0U, EQTargets::toParams(a, EQTargets::kRampSeconds)},
-            TdEvent{switchFrame, EQTargets::toParams(b, ramp)},
+            TdEvent{switchFrame, EQTargets::toParams(b, EQTargets::rampsFor(a, b))},
         };
+    }
+
+    // The slowest and the fastest band τ of a published target (ms), for the reports.
+    auto tdTauRangeMs(const EQParams& params) -> std::pair<double, double>
+    {
+        const auto [fastest, slowest] = std::ranges::minmax(params.bandRampSeconds);
+        return {1000.0 * static_cast<double>(fastest), 1000.0 * static_cast<double>(slowest)};
     }
 
     struct TdProbeResult
@@ -80,6 +91,7 @@ namespace
         double steadyA = 0.0;
         double steadyB = 0.0;
         double maxAfter = 0.0;
+        std::vector<float> after; // the envelope from the switch to the end of steady B
     };
 
     // One run's analysis windows (frame indices; see tdRun) and per-probe accumulators.
@@ -97,6 +109,7 @@ namespace
         double sumA = 0.0;
         double sumB = 0.0;
         double maxAfter = 0.0;
+        std::vector<float> after;
     };
 
     // The quadrature probes for frames [start, start + frames): probe p's cos on channel 2p, its
@@ -141,6 +154,7 @@ namespace
                 if (n >= windows.switchFrame && n < windows.bEnd)
                 {
                     acc.maxAfter = std::max(acc.maxAfter, env);
+                    acc.after.push_back(static_cast<float>(env));
                 }
             }
         }
@@ -188,6 +202,7 @@ namespace
             results[p].steadyB =
                 accumulators[p].sumB / static_cast<double>(windows.bEnd - windows.bStart);
             results[p].maxAfter = accumulators[p].maxAfter;
+            results[p].after = std::move(accumulators[p].after);
         }
         return results;
     }
@@ -197,7 +212,19 @@ namespace
         double localDb = -std::numeric_limits<double>::infinity();
         double localProbeHz = 0.0;
         double peakDb = 0.0;
+        double msAbove1Db = 0.0; // the longest any probe spends > +1 dB over its louder endpoint
+        double msAbove3Db = 0.0; // … > +3 dB
     };
+
+    // How long (ms) the envelope after the switch spends above `steady` raised by `marginDb`.
+    auto tdMsAbove(const std::vector<float>& after, double steady, double marginDb, double fs)
+        -> double
+    {
+        const double threshold = steady * std::pow(10.0, marginDb / 20.0);
+        const auto count = std::ranges::count_if(
+            after, [threshold](float env) { return static_cast<double>(env) > threshold; });
+        return 1000.0 * static_cast<double>(count) / fs;
+    }
 
     // The overshoot of one transition over every probe (four per run).
     auto tdOvershoot(const std::vector<TdEvent>& events,
@@ -228,6 +255,10 @@ namespace
                 }
                 loudestAfter = std::max(loudestAfter, stats[p].maxAfter);
                 loudestSteady = std::max(loudestSteady, steady);
+                result.msAbove1Db =
+                    std::max(result.msAbove1Db, tdMsAbove(stats[p].after, steady, 1.0, fs));
+                result.msAbove3Db =
+                    std::max(result.msAbove3Db, tdMsAbove(stats[p].after, steady, 3.0, fs));
             }
         }
         result.peakDb = 20.0 * std::log10(loudestAfter / loudestSteady);
@@ -340,8 +371,8 @@ namespace
                 }
             }
             const GraphicEQDesign next = tdDesign(curve, fs);
-            const float ramp = EQTargets::rampSeconds(previous.filterGainDb, next.filterGainDb);
-            events.push_back({frame, EQTargets::toParams(next, ramp)});
+            events.push_back(
+                {frame, EQTargets::toParams(next, EQTargets::rampsFor(previous, next))});
             previous = next;
             frame += stepFrames;
         }
@@ -397,6 +428,7 @@ static auto testEqTransitionsRealistic() -> void
 
     double worstLocal = -std::numeric_limits<double>::infinity();
     double worstPeak = -std::numeric_limits<double>::infinity();
+    double longestAbove1Db = 0.0;
     std::string worstLocalName;
     for (const auto& [name, events] : transitions)
     {
@@ -407,6 +439,7 @@ static auto testEqTransitionsRealistic() -> void
             worstLocalName = std::format("{} @ {:.0f} Hz", name, result.localProbeHz);
         }
         worstPeak = std::max(worstPeak, result.peakDb);
+        longestAbove1Db = std::max(longestAbove1Db, result.msAbove1Db);
         if (!(result.localDb <= kLocalBoundDb) || !(result.peakDb <= kPeakBoundDb))
         {
             logFail(kName,
@@ -420,13 +453,15 @@ static auto testEqTransitionsRealistic() -> void
             return;
         }
     }
-    logInfo(std::format(
-        "[info] {}: {} transitions, worst local {:+.3f} dB ({}), worst peak {:+.3f} dB\n",
-        kName,
-        transitions.size(),
-        worstLocal,
-        worstLocalName,
-        worstPeak));
+    logInfo(
+        std::format("[info] {}: {} transitions, worst local {:+.3f} dB ({}), worst peak "
+                    "{:+.3f} dB, longest above +1 dB {:.1f} ms\n",
+                    kName,
+                    transitions.size(),
+                    worstLocal,
+                    worstLocalName,
+                    worstPeak,
+                    longestAbove1Db));
     logPass(kName);
 }
 
@@ -458,32 +493,49 @@ static auto testEqTransitionsAdversarial() -> void
             {"alternating flip", &altFlip, 2.0, 2U},
         },
     };
-    std::string report =
-        std::format("[info] {}: TD overshoot local / peak (dB), τ by the rule\n", kName);
+    constexpr double kAbove3DbBoundMs = 60.0;
+    std::string report = std::format(
+        "[info] {}: TD overshoot local / peak (dB) and the time "
+        "above +1 / +3 dB (ms), τ by the rule\n",
+        kName);
     for (const Case& c : cases)
     {
-        const auto& [from, to] = *c.pair;
-        const float ramp = EQTargets::rampSeconds(tdDesign(from, kFs).filterGainDb,
-                                                  tdDesign(to, kFs).filterGainDb);
-        const TdOvershoot result = tdOvershoot(tdPairEvents(from, to, kFs, switchFrame),
-                                               tdProbes(c.probeStride),
-                                               kFs,
-                                               switchFrame,
-                                               totalFrames);
-        report += std::format(
-            "[info]   {:18s} τ {:3.0f} ms: local {:+6.2f} @ {:5.0f} Hz / peak {:+5.2f} (≤ {})\n",
-            c.name,
-            ramp * 1000.0F,
-            result.localDb,
-            result.localProbeHz,
-            result.peakDb,
-            c.peakBoundDb);
-        if (!(result.peakDb <= c.peakBoundDb))
+        for (const bool reversed : {false, true})
         {
-            logInfo(report);
-            logFail(kName,
-                    std::format("{}: peak {:+.3f} dB > {}", c.name, result.peakDb, c.peakBoundDb));
-            return;
+            const auto& [first, second] = *c.pair;
+            const EqCurve& from = reversed ? second : first;
+            const EqCurve& to = reversed ? first : second;
+            const std::vector<TdEvent> events = tdPairEvents(from, to, kFs, switchFrame);
+            const auto [fastestMs, slowestMs] = tdTauRangeMs(events.back().params);
+            const TdOvershoot result =
+                tdOvershoot(events, tdProbes(c.probeStride), kFs, switchFrame, totalFrames);
+            const std::string name = std::format("{}{}", c.name, reversed ? " (back)" : "");
+            report += std::format(
+                "[info]   {:25s} τ {:3.0f}–{:3.0f} ms: local {:+6.2f} @ {:5.0f} "
+                "Hz / peak {:+5.2f} (≤ {}) / > +1 dB {:5.1f}, > +3 dB {:5.1f} "
+                "(≤ {})\n",
+                name,
+                fastestMs,
+                slowestMs,
+                result.localDb,
+                result.localProbeHz,
+                result.peakDb,
+                c.peakBoundDb,
+                result.msAbove1Db,
+                result.msAbove3Db,
+                kAbove3DbBoundMs);
+            if (!(result.peakDb <= c.peakBoundDb) || !(result.msAbove3Db <= kAbove3DbBoundMs))
+            {
+                logInfo(report);
+                logFail(kName,
+                        std::format("{}: peak {:+.3f} dB (≤ {}), {:.1f} ms above +3 dB (≤ {})",
+                                    name,
+                                    result.peakDb,
+                                    c.peakBoundDb,
+                                    result.msAbove3Db,
+                                    kAbove3DbBoundMs));
+                return;
+            }
         }
     }
     logInfo(report);
@@ -536,8 +588,9 @@ static auto testEqCpu71At192k() -> void
     const EqCurve warm = kEqPresetCurves[kEqPresetWarm];
     const EqCurve vocal = kEqPresetCurves[4];
     const EQParams warmParams = makeEqParams(warm, kFs);
-    // A 2 s glide: the slowest τ (160 ms) keeps the coefficients moving for the whole run.
-    const EQParams vocalParams = makeEqParams(vocal, kFs, EQTargets::kJaggedRampSeconds * 4.0F);
+    // A glide slow enough (τ 0.64 s) to keep every band's coefficients moving for the whole run.
+    constexpr float kGlideSeconds = 0.64F;
+    const EQParams vocalParams = makeEqParams(vocal, kFs, kGlideSeconds);
     const auto run = [&](const EQParams& target)
     {
         module->update(target);

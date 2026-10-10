@@ -261,14 +261,12 @@ static auto testBreakItTransitionsLowBandGestures() -> void
     std::string failures;
     for (const Case& c : cases)
     {
-        const float ramp = EQTargets::rampSeconds(tdDesign(c.from, kFs).filterGainDb,
-                                                  tdDesign(c.to, kFs).filterGainDb);
-        const TdOvershoot result = tdOvershoot(
-            tdPairEvents(c.from, c.to, kFs, switchFrame), probes, kFs, switchFrame, totalFrames);
+        const std::vector<TdEvent> events = tdPairEvents(c.from, c.to, kFs, switchFrame);
+        const TdOvershoot result = tdOvershoot(events, probes, kFs, switchFrame, totalFrames);
         report += std::format(
-            "[info]   {:24s} τ {:3.0f} ms: local {:+5.2f} @ {:4.0f} Hz / peak {:+5.2f}\n",
+            "[info]   {:24s} τ ≤ {:3.0f} ms: local {:+5.2f} @ {:4.0f} Hz / peak {:+5.2f}\n",
             c.name,
-            ramp * 1000.0F,
+            tdTauRangeMs(events.back().params).second,
             result.localDb,
             result.localProbeHz,
             result.peakDb);
@@ -302,11 +300,14 @@ static auto testBreakItTransitionsLowBandGestures() -> void
 // +11 → +12 key step takes 371 ms to reach 90 % (vs 25 ms for +9 → +10). Measured at 10 ms, those
 // single-point transitions are clean (≤ +0.53 dB local at 1 kHz and above; M13), so the slow
 // class buys nothing there. Pins: a single point at ±12 dB, at 1 kHz and above, is not jagged.
+// (Fix round, amendment 15: the τ rule is per band now, so this reads the dragged band's own τ, and
+// "not jagged" is the amendment's own bound — the band reaches 90 % within ~30 ms: τ·ln 10 ≤ 30 ms.)
 // ---------------------------------------------------------------------------
 static auto testBreakItTauRuleSinglePointIsNotJagged() -> void
 {
     static const char* const kName = "BreakIt_TauRule_SinglePointIsNotJagged";
     constexpr double kFs = 48000.0;
+    constexpr double kNinetyPercentBoundSeconds = 0.030; // amendment 15: "settle in ≤ ~30 ms"
     std::string report = std::format("[info] {}: Off → one point, the rule's τ\n", kName);
     std::string failures;
     const GraphicEQDesign off = tdDesign(EqCurve{}, kFs);
@@ -315,7 +316,7 @@ static auto testBreakItTauRuleSinglePointIsNotJagged() -> void
         for (const float gain : {12.0F, -12.0F})
         {
             const GraphicEQDesign point = tdDesign(eqFlatCurveWith(band, gain), kFs);
-            const float ramp = EQTargets::rampSeconds(off.filterGainDb, point.filterGainDb);
+            const float ramp = EQTargets::rampsFor(off, point).band[band];
             const double hz = GraphicEQ::centreHz(static_cast<int>(band));
             report += std::format(
                 "[info]   {:+.0f} dB @ {:5.0f} Hz: max |solved| {:.2f} dB → τ {:.0f} ms\n",
@@ -323,12 +324,14 @@ static auto testBreakItTauRuleSinglePointIsNotJagged() -> void
                 hz,
                 breakItMaxSolvedGainDb(eqFlatCurveWith(band, gain), kFs),
                 ramp * 1000.0F);
-            if (ramp >= EQTargets::kJaggedRampSeconds)
+            if (!(static_cast<double>(ramp) * std::numbers::ln10 <= kNinetyPercentBoundSeconds))
             {
-                failures += std::format("{:+.0f} dB @ {:.0f} Hz is classed jagged ({:.0f} ms); ",
-                                        gain,
-                                        hz,
-                                        ramp * 1000.0F);
+                failures += std::format(
+                    "{:+.0f} dB @ {:.0f} Hz glides like a jagged curve "
+                    "(τ {:.0f} ms); ",
+                    gain,
+                    hz,
+                    ramp * 1000.0F);
             }
         }
     }
