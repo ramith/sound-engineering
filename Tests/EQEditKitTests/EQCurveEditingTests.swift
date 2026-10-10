@@ -87,4 +87,24 @@ struct EQCurveEditingTests {
         // Points of the wrong count never match.
         #expect(EQCurve.flat.isEdited(against: [0, 0, 0]))
     }
+
+    @Test("EDIT-07: \"limited\" — base + Tone asking past ±12 dB, never a point set exactly there")
+    func limited() {
+        // 80 Hz sits wholly in Bass: base +10 with Bass +6 asks for +16 and is held at +12.
+        var base = [Float](repeating: 0, count: EQBands.count)
+        base[6] = 10
+        base[28] = -10 // 12.5 kHz, wholly Air: −10 with Air −4 asks for −14
+        let curve = EQCurve(base: base, tone: EQFixture.tone([.bass: 6, .air: -4]))
+        #expect(curve.points[6] == 12 && curve.isLimited(atBand: 6))
+        #expect(curve.points[28] == -12 && curve.isLimited(atBand: 28))
+        #expect(!curve.isLimited(atBand: 17), "1 kHz is untouched")
+        // A point the user sets exactly to the ceiling under a Tone lands on it and is not limited.
+        var set = curve
+        for band in [6, 13, 28] {
+            set.setPoint(band, to: band == 28 ? -12 : 12)
+            #expect(!set.isLimited(atBand: band), "band \(band)")
+        }
+        // Off the grid: never.
+        #expect(!curve.isLimited(atBand: -1) && !curve.isLimited(atBand: EQBands.count))
+    }
 }

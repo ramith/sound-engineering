@@ -32,8 +32,9 @@ public struct EQPlotMap: Sendable {
         bottom - top
     }
 
-    /// Visual half-span of the gain axis (the grid runs −`gainSpan` … +`gainSpan` dB).
-    static let gainSpan: Double = 20
+    /// Visual half-span of the gain axis: the ±12 dB a point may take plus a 3 dB margin (ui-plan §5.6),
+    /// where a stroke past the ceiling shows the level it asked for. (EQ3; was ±20.)
+    static let gainSpan: Double = 15
 
     /// Band centre frequencies in log10 space, computed once. The axis bounds are its endpoints, so
     /// the range tracks the band table automatically.
