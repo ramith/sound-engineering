@@ -10,6 +10,8 @@ import SwiftUI
 struct EQEqualizerCard: View {
     @Environment(EQViewModel.self) private var eq
     let save: () -> Void
+    /// Opens the Rename sheet for one of My Presets.
+    let rename: (String) -> Void
 
     /// The presets list's natural height (the card hugs it plus the title row and padding).
     @State private var listHeight: CGFloat = 0
@@ -27,7 +29,7 @@ struct EQEqualizerCard: View {
             .accessibilityFocused($switchHasVoiceOverFocus)
             .padding(.horizontal, DesignSystem.LayoutMetrics.railRowInset)
             .frame(height: CGFloat(EQScreenLayout.titleRowHeight))
-            EQPresetList(save: save, contentHeight: $listHeight)
+            EQPresetList(save: save, rename: rename, contentHeight: $listHeight)
         }
         .padding(CGFloat(EQScreenLayout.railCardPadding))
         .huggingGlassPanel(contentHeight: hugHeight)

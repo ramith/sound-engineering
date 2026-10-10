@@ -10,12 +10,14 @@ import SwiftUI
 struct EQRail<ToneCard: View>: View {
     /// Opens the Save sheet (My Presets' "+").
     let save: () -> Void
+    /// Opens the Rename sheet for one of My Presets.
+    let rename: (String) -> Void
     /// The Tone card, built by the caller (the memberwise init takes the builder).
     @ViewBuilder let toneCard: ToneCard
 
     var body: some View {
         VStack(spacing: CGFloat(EQScreenLayout.railCardGap)) {
-            EQEqualizerCard(save: save)
+            EQEqualizerCard(save: save, rename: rename)
             toneCard
                 .fixedSize(horizontal: false, vertical: true)
         }

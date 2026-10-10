@@ -84,6 +84,50 @@ public struct EQStore: Equatable, Sendable {
             pinned[id]?.state.repointMyPreset(newName)
         }
     }
+
+    // MARK: - Pins (EQ4; decision 28: a pinned output remembers exactly what was last heard on it)
+
+    /// How `output` stands with the pins (`nil`: no output, or one that can't be pinned).
+    public func pin(for output: EQOutputKey?) -> EQOutputPin? {
+        guard let output, output.isPinnable else { return nil }
+        guard let pin = slotID(for: output).flatMap({ pinned[$0]?.key }) else { return .unpinned(output) }
+        return pin.uid == output.uid ? .pinned(output) : .sharedWith(pin, on: output)
+    }
+
+    /// Pins `output`: it gets a slot of its own holding exactly what it plays now — edits and Tone
+    /// included — so nothing audible changes, and from then on its edits are its own. An output that
+    /// can't be pinned (`EQOutputKey.isPinnable`) or already has its own pin is left as it is; one that
+    /// plays another unit's pin (the model-UID fallback) gets its own copy of it.
+    public mutating func pin(_ output: EQOutputKey) {
+        guard output.isPinnable, pinned[output.uid] == nil else { return }
+        let playing = self[slot: slotID(for: output)]
+        pinned[output.uid] = PinnedSlot(key: output, state: playing)
+        unreadablePins[output.uid] = nil
+    }
+
+    /// Unpins the pin `output` plays — its own, or the one it shares with its model — and that pin's
+    /// state becomes the shared slot's, so nothing audible changes (ui-plan §3.3). Every output that
+    /// played the pin plays shared from then on. Nothing to do when `output` plays shared already.
+    public mutating func unpin(_ output: EQOutputKey?) {
+        guard let id = slotID(for: output), let slot = pinned.removeValue(forKey: id) else { return }
+        shared = slot.state
+    }
+
+    // MARK: - Save (EQ4; break-it C1)
+
+    /// What Save takes when its sheet opens: what plays on `output`, and the slot it plays in.
+    public func saveSource(for output: EQOutputKey?) -> EQSaveSource {
+        let id = slotID(for: output)
+        return EQSaveSource(state: self[slot: id], slotID: id)
+    }
+
+    /// Saves `source` as the My Preset `name`: its slot — the one it came from, whatever plays now —
+    /// plays that preset unedited, the Tone baked in. Returns the saved state.
+    mutating func save(_ source: EQSaveSource, as name: String) -> EQState {
+        let saved = source.state.saved(as: name)
+        self[slot: source.slotID] = saved
+        return saved
+    }
 }
 
 // MARK: - Codable ({"version": 2, "shared": state, "pinned": {uid: {"key", "state"}}, "v1Fingerprint"})

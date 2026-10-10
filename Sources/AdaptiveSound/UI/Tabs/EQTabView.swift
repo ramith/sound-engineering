@@ -13,11 +13,12 @@ import SwiftUI
 struct EQTabView: View {
     @Environment(EQViewModel.self) private var eq
     @Environment(\.appearsActive) private var appearsActive
-    @State private var isSaving = false
+    /// The Save or Rename sheet, while one is open.
+    @State private var presetSheet: EQPresetSheet?
 
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(EQScreenLayout.columnGap)) {
-            EQRail(save: beginSave) { EQToneCard() }
+            EQRail(save: beginSave, rename: beginRename) { EQToneCard() }
             EQGraphCard(save: beginSave)
         }
         .padding(.horizontal, CGFloat(EQScreenLayout.insetHorizontal))
@@ -25,8 +26,8 @@ struct EQTabView: View {
         .padding(.bottom, CGFloat(EQScreenLayout.insetBottom))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { GlowField(glows: GlowFieldSpec.libraryGlows) }
-        .sheet(isPresented: $isSaving) {
-            SaveCustomPresetView(eqViewModel: eq, isPresented: $isSaving)
+        .sheet(item: $presetSheet) { sheet in
+            SaveCustomPresetView(sheet: sheet, eqViewModel: eq)
         }
         .onKeyPress(.escape, action: releaseCompare)
         .onChange(of: appearsActive) { _, active in
@@ -37,8 +38,13 @@ struct EQTabView: View {
         .onDisappear(perform: eq.endCompare)
     }
 
+    /// Save takes what plays now, and the slot it plays in, as the sheet opens (break-it C1).
     private func beginSave() {
-        isSaving = true
+        presetSheet = .save(eq.saveSource())
+    }
+
+    private func beginRename(_ name: String) {
+        presetSheet = .rename(name)
     }
 
     private func releaseCompare() -> KeyPress.Result {
