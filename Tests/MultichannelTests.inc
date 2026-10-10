@@ -669,13 +669,14 @@ namespace
             kw.shelf.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
             kw.shelf.a2 = (1.0 - (warp / kKwShelfQ) + (warp * warp)) / a0;
         }
-        // Stage 2: RLB high-pass
+        // Stage 2: RLB high-pass. BS.1770-5 Table 2's numerator is the UNNORMALISED 1, −2, 1
+        // (only the denominator is divided by a0), as libebur128 has it.
         {
             const double warp = std::tan(M_PI * kKwRlbF0Hz / sampleRate);
             const double a0 = 1.0 + (warp / kKwRlbQ) + (warp * warp);
-            kw.rlb.b0 = 1.0 / a0;
-            kw.rlb.b1 = -2.0 / a0;
-            kw.rlb.b2 = 1.0 / a0;
+            kw.rlb.b0 = 1.0;
+            kw.rlb.b1 = -2.0;
+            kw.rlb.b2 = 1.0;
             kw.rlb.a1 = 2.0 * ((warp * warp) - 1.0) / a0;
             kw.rlb.a2 = (1.0 - (warp / kKwRlbQ) + (warp * warp)) / a0;
         }
