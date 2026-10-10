@@ -60,6 +60,9 @@ extension AudioEngineBridge {
         }
 
         guard activePathKind == .enhanced else { return }
+        // Prefetch the armed track's loudness profile for its seam (the engine switches to it
+        // only when it becomes AUDIBLE, at bumpTransitionCount — never here).
+        prefetchTrackLoudness(fileURL)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             resampleQueue.async {
                 self.onDeckURL = fileURL
@@ -176,7 +179,8 @@ extension AudioEngineBridge {
 
     // MARK: - Position continuity at seams
 
-    /// Bump `gaplessTransitionCount` and reset the position base to re-zero the new track.
+    /// Bump `gaplessTransitionCount` and reset the position base to re-zero the new track, and
+    /// tell the engine `nextURL` is the audible track now (its loudness-neutral EQ gain).
     ///
     /// Called at every real seam (never on seek or stop). Captures the player's current
     /// `sampleTime` to set `enhancedPositionBaseSeconds` so `currentPlaybackPosition()` reports
@@ -188,8 +192,9 @@ extension AudioEngineBridge {
     /// to track-A-duration and counting forward from there.
     ///
     /// MUST be called on `resampleQueue` (all gapless state lives there).
-    func bumpTransitionCount(player: AVAudioPlayerNode) {
+    func bumpTransitionCount(player: AVAudioPlayerNode, nextURL: URL) {
         gaplessTransitionCount &+= 1
+        trackBecameAudible(nextURL, gaplessSeam: true)
 
         // Capture the player's sampleTime off the audio thread (safe — CoreAudio property read).
         // The player is still running at the seam, so sampleTime is the hardware clock position at

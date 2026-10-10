@@ -20,7 +20,7 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
-                "LibraryBrowseKit", "DesignTokenKit", "EQEditKit",
+                "LibraryBrowseKit", "DesignTokenKit", "EQEditKit", "TrackLoudnessKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -189,6 +189,19 @@ let package = Package(
             dependencies: [],
             path: "Sources/EQEditKit"
         ),
+        // Track loudness analysis (Sprint EQ, EQ1c part 2; amendments item 3): the analyzer that
+        // decodes a track a second time (AVAudioFile) and streams it into AudioDSP's C++ profiler
+        // (TrackLoudnessBridge.h, via the module map), with its jobs, cache and failure rules. Its
+        // own library so TrackLoudnessKitTests gate the code the playback bridge runs.
+        .target(
+            name: "TrackLoudnessKit",
+            dependencies: ["AudioDSP"],
+            path: "Sources/TrackLoudnessKit",
+            linkerSettings: [
+                // AVAudioFile decodes the track; not supplied transitively by AudioDSP.
+                .linkedFramework("AVFoundation"),
+            ]
+        ),
         // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
         // with CLT (Testing.framework), not XCTest.
         .testTarget(
@@ -243,6 +256,13 @@ let package = Package(
             name: "EQEditKitTests",
             dependencies: ["EQEditKit"],
             path: "Tests/EQEditKitTests"
+        ),
+        // EQ1c part 2: the analyzer end to end on generated WAVs — prefix then whole, the cache,
+        // latest-wins and promotion, failure reported once and never re-decoded.
+        .testTarget(
+            name: "TrackLoudnessKitTests",
+            dependencies: ["TrackLoudnessKit"],
+            path: "Tests/TrackLoudnessKitTests"
         ),
         // S10.7 rig (design §7): RES resolver cube, TOK palette invariants, the PERMANENT R4
         // contrast audit (pure WCAG math over Kit data), and the SlotFit truncation net. The
