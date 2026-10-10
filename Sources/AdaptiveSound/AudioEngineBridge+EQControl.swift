@@ -34,11 +34,20 @@ extension AudioEngineBridge {
         }
     }
 
+    /// The rate the EQ is designed at (`AudioPlaybackEngine.eqSampleRate`): the live AU's, else the
+    /// graph format's — what the next publish would design at, so the graph's played curve matches.
+    func eqSampleRate() -> Double {
+        dspAudioUnitRef.map(Self.eqDesignSampleRate(of:)) ?? Self.graphSampleRate
+    }
+
+    /// The graph format's rate: the EQ's design rate whenever the AU's own can't be read.
+    private static let graphSampleRate = 48000.0
+
     /// The rate the EQ is designed at: the AU's negotiated output-bus rate, falling back to the
     /// 48 kHz graph format when the bus isn't queryable. (`AUAudioUnitBusArray` is not a Swift
     /// collection, hence the count check.)
     private static func eqDesignSampleRate(of unit: AVAudioUnit) -> Double {
         let busArray = unit.auAudioUnit.outputBusses
-        return busArray.count >= 1 ? busArray[0].format.sampleRate : 48000.0
+        return busArray.count >= 1 ? busArray[0].format.sampleRate : graphSampleRate
     }
 }

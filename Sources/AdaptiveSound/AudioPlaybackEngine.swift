@@ -166,6 +166,11 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// No-op if no live AU (e.g. engine not initialized).
     func publishEQ(points: [Float], isOn: Bool)
 
+    /// The sample rate (Hz) the EQ is designed at — the live DSP AU's, else the graph's 48 kHz before
+    /// it exists — so the graph's played curve (`EQDesigner`) is designed exactly as the engine plays
+    /// it. Synchronous, off-RT, cheap enough to read on every redraw.
+    func eqSampleRate() -> Double
+
     /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
     /// No-op if the AU is not yet instantiated. Default impl: no-op.
     func publishIntensity(_ intensity: Float)
