@@ -45,8 +45,9 @@ namespace AdaptiveSound
     //                   until it ends the blend runs at the endpoint.
     //
     // P0 ↔ P1/P3 switches cross-fade the undelayed input and the limiter's 3 ms-delayed output over
-    // 5 ms, so a switch neither skips nor repeats audio; the 2 s hysteresis keeps a short Compare
-    // hold at Intensity 0 from switching at all.
+    // 5 ms at constant power (correlation-compensated, amendment 17), so a switch neither skips nor
+    // repeats audio nor dips; the 2 s hysteresis keeps a short Compare hold at Intensity 0 from
+    // switching at all.
     class DSPKernel
     {
       public:
@@ -103,6 +104,9 @@ namespace AdaptiveSound
         void copyBlock(const MultichannelView& block, std::vector<float>& scratch) const noexcept;
         // Cross-fade the processed block with the bypass copy, gliding bypassMix_ toward `toward`.
         void crossfadeWithBypass(const MultichannelView& block, float toward) noexcept;
+        // The correlation (clamped to [0, 1]) of the processed block and the bypass copy.
+        [[nodiscard]] float streamCorrelation(const MultichannelView& block,
+                                              uint32_t frames) const noexcept;
         // The normaliser's contribution an Intensity asks for: min(1, r/0.1).
         [[nodiscard]] static float loudnessContributionAt(float intensity) noexcept;
 
@@ -149,6 +153,7 @@ namespace AdaptiveSound
         // --- The bit-perfect path (P0) ---
         float bypassMix_ = 0.0F;          // weight of the undelayed input: 1 = P0, 0 = processed
         float bypassMixStep_ = 1.0F;      // per-sample change of bypassMix_ (5 ms cross-fade)
+        float bypassCorrelation_ = 0.0F;  // the two streams' ρ, measured when a fade starts
         uint64_t identityHeldFrames_ = 0; // frames Intensity 0 + EQ identity has held so far
         uint64_t bypassHoldFrames_ = 0;   // the 2 s hysteresis before P0
         bool firstBlock_ = true;          // the first block after initialize() snaps the path

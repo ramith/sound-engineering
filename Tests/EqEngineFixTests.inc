@@ -23,6 +23,13 @@
 //   Intensity_Zero_LevelGlide    — the normaliser's makeup leaves / rejoins the level as a ~2 s
 //                                    glide (10–90 % ≥ 1 s; ≤ 0.5 dB in any 50 ms once Intensity
 //                                    has ramped)
+//
+// Amendment 17 — entering and leaving bit-perfect (P0):
+//   Kernel_P0Switch_LoudMasterStep — the level step entering P0 on the −9 LUFS loud master
+//                                    ≤ 0.3 LU on a wired output (−0.1 dBTP); Bluetooth logged
+//   Kernel_P0Fade_KeepsPower       — the 5 ms fade keeps the power: noise ±0.5 dB (equal-gain
+//                                    dipped −2.5), tones' envelopes ±0.5 dB (equal-power would
+//                                    bump an in-phase tone +3)
 
 namespace
 {
@@ -610,6 +617,287 @@ static auto testIntensityZeroLevelGlide() -> void
     if (!failures.empty())
     {
         logFail(kName, failures);
+        return;
+    }
+    logPass(kName);
+}
+
+namespace
+{
+    struct FixP0Step
+    {
+        double stepLu = 0.0;    // how much quieter the EQ-only path played than the source
+        double p0Seconds = 0.0; // when the bit-perfect path took over (0: never)
+    };
+
+    // The gate's −9 LUFS loud master at Intensity 0 through the kernel: EQ Warm, then Off at 3 s,
+    // on an output whose EQ-only ceiling is `eqOnlyCeiling`. Compares the 1.5 s before the
+    // bit-perfect path takes over with the source there (libebur128): the level step entering P0.
+    auto fixP0Step(float eqOnlyCeiling) -> FixP0Step
+    {
+        const TlProgramme& master = tlGateLoudMaster();
+        const auto fs = static_cast<uint32_t>(master.sampleRate);
+        TargetState state{}; // normaliser ON, limiter ON at −1 dBTP
+        state.intensityLinear = 0.0F;
+        state.limiter.eqOnlyCeilingLinear = eqOnlyCeiling;
+        state.eq = makeEqParams(kEqPresetCurves[kEqPresetWarm], fs);
+        DSPKernel kernel;
+        kernel.publishTargetState(state);
+        kernel.initialize(fs, kEngineBlock);
+        TestABL abl(kEngineBlock);
+        std::array<std::vector<float>, 2> out;
+        const size_t total = std::min<size_t>(master.frames(), static_cast<size_t>(8U) * fs);
+        const size_t offAt = static_cast<size_t>(3U) * fs;
+        size_t p0 = 0U;
+        for (size_t start = 0U; start + kEngineBlock <= total; start += kEngineBlock)
+        {
+            if (start <= offAt && offAt < start + kEngineBlock)
+            {
+                state.eq = makeEqParams(EqCurve{}, fs);
+                kernel.publishTargetState(state);
+            }
+            const auto offset = static_cast<std::ptrdiff_t>(start);
+            std::copy_n(master.channels[0].begin() + offset, kEngineBlock, abl.left.begin());
+            std::copy_n(master.channels[1].begin() + offset, kEngineBlock, abl.right.begin());
+            kernel.process(abl.abl(), kEngineBlock);
+            const bool exact =
+                std::equal(abl.left.begin(), abl.left.end(), master.channels[0].begin() + offset) &&
+                std::equal(abl.right.begin(), abl.right.end(), master.channels[1].begin() + offset);
+            if (p0 == 0U && start > offAt && exact)
+            {
+                p0 = start;
+            }
+            out[0].insert(out[0].end(), abl.left.begin(), abl.left.end());
+            out[1].insert(out[1].end(), abl.right.begin(), abl.right.end());
+        }
+        if (p0 == 0U)
+        {
+            return {};
+        }
+        const auto span = static_cast<std::ptrdiff_t>(fs) + static_cast<std::ptrdiff_t>(fs / 2U);
+        const auto end = static_cast<std::ptrdiff_t>(p0);
+        const auto window = [&](const auto& channels)
+        {
+            return std::vector<std::vector<float>>{
+                std::vector<float>(channels[0].begin() + end - span, channels[0].begin() + end),
+                std::vector<float>(channels[1].begin() + end - span, channels[1].begin() + end),
+            };
+        };
+        const double played = tlEbur128Lufs(window(out), master.sampleRate);
+        const double source = tlEbur128Lufs(window(master.channels), master.sampleRate);
+        return {
+            .stepLu = source - played,
+            .p0Seconds = static_cast<double>(p0) / master.sampleRate,
+        };
+    }
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Kernel_P0Switch_LoudMasterStep — amendment 17 (the break-it's finding 9): on a loud master at
+// Intensity 0, an EQ turned Off (or a Compare held past 2 s) plays through the EQ-only limiter
+// until the bit-perfect path takes over — and then the limiter's gain reduction lifts at once.
+// That step was +0.74 LU at −1 dBTP. With decision 29's ceiling on a wired output (−0.1 dBTP) it
+// must be ≤ 0.3 LU; a lossy wireless output keeps −1 dBTP (logged).
+// ---------------------------------------------------------------------------
+static auto testKernelP0SwitchLoudMasterStep() -> void
+{
+    static const char* const kName = "Kernel_P0Switch_LoudMasterStep";
+    constexpr double kStepBoundLu = 0.3;
+    const FixP0Step wired = fixP0Step(kEqOnlyWiredCeilingLinear);
+    const FixP0Step wireless = fixP0Step(kTruePeakCeilingLinear);
+    logInfo(
+        std::format("[info] {}: level step entering bit-perfect on the −9 LUFS loud master — "
+                    "wired (−0.1 dBTP) {:+.3f} LU at {:.2f} s, Bluetooth (−1 dBTP, logged) "
+                    "{:+.3f} LU at {:.2f} s\n",
+                    kName,
+                    wired.stepLu,
+                    wired.p0Seconds,
+                    wireless.stepLu,
+                    wireless.p0Seconds));
+    if (wired.p0Seconds == 0.0 || wireless.p0Seconds == 0.0)
+    {
+        logFail(kName, "the bit-perfect path never took over");
+        return;
+    }
+    if (!(std::abs(wired.stepLu) <= kStepBoundLu))
+    {
+        logFail(kName,
+                std::format(
+                    "a {:+.3f} LU step entering bit-perfect (≤ {})", wired.stepLu, kStepBoundLu));
+        return;
+    }
+    logPass(kName);
+}
+
+namespace
+{
+    // Fills block `abl` with the signal from frame `first` on.
+    using FixFill = std::function<void(TestABLN&, uint64_t)>;
+
+    struct FixFade
+    {
+        double fadePowerDb = 0.0; // Σ out² / Σ in² over the middle 60 % of the P0 → P1 fades
+        double lowestDb = 0.0;    // the envelope's extremes over the whole run (quadrature pairs)
+        double highestDb = 0.0;
+    };
+
+    // Intensity 0, the normaliser off: three cycles of P0 → (EQ on: a −0.5 dB bell at 20 Hz, so
+    // nearly flat) P1 → (EQ off; the 2 s hysteresis) P0 on `channels` channels of `fill`. The
+    // P0 → P1 fade starts exactly with the block after the publish, so its power is read there;
+    // for quadrature pairs (cos on channel 2p, sin on 2p + 1) the envelope |out| / |in| is exact
+    // at every sample, so its extremes over the whole run cover both directions' fades.
+    auto fixFade(uint32_t channels, const FixFill& fill) -> FixFade
+    {
+        const auto fs = static_cast<uint32_t>(kEngineFs);
+        TargetState state{};
+        state.loudness.enabled = 0U;
+        state.intensityLinear = 0.0F;
+        DSPKernel kernel;
+        kernel.publishTargetState(state); // P0 from the first block
+        kernel.initialize(fs, kEngineBlock);
+        TestABLN abl(channels, kEngineBlock);
+        const auto fadeFrames = static_cast<uint32_t>(0.005 * kEngineFs);
+        uint64_t frame = 0U;
+        double outEnergy = 0.0;
+        double inEnergy = 0.0;
+        FixFade fade{
+            .lowestDb = std::numeric_limits<double>::infinity(),
+            .highestDb = -std::numeric_limits<double>::infinity(),
+        };
+        std::vector<std::vector<float>> input(channels);
+        const auto runBlock = [&](bool foldFade)
+        {
+            fill(abl, frame);
+            for (uint32_t ch = 0U; ch < channels; ++ch)
+            {
+                input[ch] = abl.channels[ch];
+            }
+            kernel.process(abl.abl(), kEngineBlock);
+            frame += kEngineBlock;
+            for (uint32_t ch = 0U; ch < channels; ++ch)
+            {
+                for (uint32_t i = foldFade ? fadeFrames / 5U : kEngineBlock;
+                     i < (4U * fadeFrames) / 5U;
+                     ++i)
+                {
+                    outEnergy += static_cast<double>(abl.channels[ch][i]) * abl.channels[ch][i];
+                    inEnergy += static_cast<double>(input[ch][i]) * input[ch][i];
+                }
+            }
+            for (uint32_t pair = 0U; pair + 1U < channels; pair += 2U)
+            {
+                for (uint32_t i = 0U; i < kEngineBlock; ++i)
+                {
+                    const double ratio =
+                        std::hypot(abl.channels[pair][i], abl.channels[pair + 1U][i]) /
+                        std::hypot(input[pair][i], input[pair + 1U][i]);
+                    fade.lowestDb = std::min(fade.lowestDb, 20.0 * std::log10(ratio));
+                    fade.highestDb = std::max(fade.highestDb, 20.0 * std::log10(ratio));
+                }
+            }
+        };
+        for (uint32_t b = 0U; b < engineBlocksFor(0.1); ++b)
+        {
+            runBlock(false); // P0, its limiter ring primed: the fades below have both streams
+        }
+        for (int cycle = 0; cycle < 3; ++cycle)
+        {
+            state.eq = makeEqParams(eqFlatCurveWith(0U, -0.5F), fs);
+            kernel.publishTargetState(state);
+            runBlock(true); // P0 → P1 fades here
+            for (uint32_t b = 0U; b < engineBlocksFor(0.3); ++b)
+            {
+                runBlock(false);
+            }
+            state.eq = makeEqParams(EqCurve{}, fs);
+            kernel.publishTargetState(state);
+            for (uint32_t b = 0U; b < engineBlocksFor(2.6); ++b) // P1 → P0 fades in here
+            {
+                runBlock(false);
+            }
+        }
+        fade.fadePowerDb = 10.0 * std::log10(outEnergy / inEnergy);
+        return fade;
+    }
+
+    // A quadrature tone at `hz` on every channel pair.
+    auto fixQuadratureFill(double hz, double amplitude) -> FixFill
+    {
+        return [hz, amplitude](TestABLN& abl, uint64_t first)
+        {
+            const double omega = 2.0 * std::numbers::pi * hz / kEngineFs;
+            for (uint32_t i = 0U; i < abl.frames; ++i)
+            {
+                const double phase = omega * static_cast<double>(first + i);
+                for (uint32_t pair = 0U; pair + 1U < abl.numChannels; pair += 2U)
+                {
+                    abl.channels[pair][i] = static_cast<float>(amplitude * std::cos(phase));
+                    abl.channels[pair + 1U][i] = static_cast<float>(amplitude * std::sin(phase));
+                }
+            }
+        };
+    }
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Kernel_P0Fade_KeepsPower — amendment 17: the 5 ms fade between the bit-perfect path and the
+// processed one keeps the level. The two streams are the same audio 3 ms apart; the equal-GAIN
+// fade dipped broadband audio −3.3 dB mid-way (the break-it's finding 9), and a plain equal-power
+// one would bump a tone that lines up with itself (1 kHz: 3 whole periods) +3 dB. The fade now
+// keeps each channel's power for the correlation it measures when it starts:
+//   - white noise on 8 channels: the power over the middle of the P0 → P1 fades within ±0.5 dB of
+//     the input's (equal-gain: −2.5 dB there);
+//   - quadrature tones at 60 Hz (65° apart: a −1.5 dB dip at equal gain) and 1 kHz (in phase: a
+//     +3 dB bump at equal power): the envelope within ±0.5 dB of the input's at every sample of
+//     the run, both directions' fades included.
+// ---------------------------------------------------------------------------
+static auto testKernelP0FadeKeepsPower() -> void
+{
+    static const char* const kName = "Kernel_P0Fade_KeepsPower";
+    constexpr double kNoiseBoundDb = 0.5;
+    constexpr double kToneBoundDb = 0.5;
+    constexpr uint32_t kNoiseChannels = 8U;
+    std::mt19937 rng(17U);
+    std::normal_distribution<float> gauss(0.0F, 0.05F);
+    const FixFade noise =
+        fixFade(kNoiseChannels,
+                [&](TestABLN& abl, uint64_t /*first*/)
+                {
+                    for (auto& channel : abl.channels)
+                    {
+                        std::ranges::generate(channel, [&] { return gauss(rng); });
+                    }
+                });
+    const FixFade low = fixFade(2U, fixQuadratureFill(60.0, 0.25));
+    const FixFade mid = fixFade(2U, fixQuadratureFill(1000.0, 0.25));
+    logInfo(
+        std::format("[info] {}: white noise, fade power {:+.3f} dB; 60 Hz envelope "
+                    "{:+.3f} … {:+.3f} dB; 1 kHz envelope {:+.3f} … {:+.3f} dB\n",
+                    kName,
+                    noise.fadePowerDb,
+                    low.lowestDb,
+                    low.highestDb,
+                    mid.lowestDb,
+                    mid.highestDb));
+    const bool noiseKept = std::abs(noise.fadePowerDb) <= kNoiseBoundDb;
+    const bool tonesKept = std::max({
+                               std::abs(low.lowestDb),
+                               std::abs(low.highestDb),
+                               std::abs(mid.lowestDb),
+                               std::abs(mid.highestDb),
+                           }) <= kToneBoundDb;
+    if (!noiseKept || !tonesKept)
+    {
+        logFail(kName,
+                std::format("noise fade power {:+.3f} dB (±{}), tone envelopes 60 Hz {:+.3f} … "
+                            "{:+.3f}, 1 kHz {:+.3f} … {:+.3f} dB (±{})",
+                            noise.fadePowerDb,
+                            kNoiseBoundDb,
+                            low.lowestDb,
+                            low.highestDb,
+                            mid.lowestDb,
+                            mid.highestDb,
+                            kToneBoundDb));
         return;
     }
     logPass(kName);
