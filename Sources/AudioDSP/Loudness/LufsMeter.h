@@ -40,6 +40,11 @@
 // Gating uses a bounded histogram of block loudness (libebur128's approach), so
 // memory is O(bins), not O(program length).
 //
+// Non-finite input (Sprint EQ fix round, amendment 14): a NaN or an infinity is measured as
+// silence. One such sample in the K-weighting recursion would otherwise make every later hop NaN,
+// which blockLoudness() reads as silence — the meter (and the normaliser it drives) would stay
+// frozen until the next reset(). Finite input is measured exactly as before.
+//
 // References:
 //   - ITU-R BS.1770-5 (2023), Annex 1 (K-weighting + gating + channel weights).
 //   - EBU Tech 3341 (EBU Mode metering); EBU R128.
@@ -55,6 +60,7 @@
 #include <numbers>
 
 #include "../include/AudioConstants.h"
+#include "../include/FiniteSamples.h"
 
 namespace AdaptiveSound
 {
@@ -266,7 +272,7 @@ namespace AdaptiveSound
                 for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
                     const double ky = chanK_[ch].processSample(
-                        static_cast<double>(samples[(frm * numChannels) + ch]));
+                        static_cast<double>(finiteOrSilence(samples[(frm * numChannels) + ch])));
                     accum_[ch] += ky * ky;
                 }
                 if (++hopSampleCount_ >= hopFrames_)
@@ -285,8 +291,8 @@ namespace AdaptiveSound
             {
                 for (uint32_t ch = 0U; ch < numChannels; ++ch)
                 {
-                    const double ky =
-                        chanK_[ch].processSample(static_cast<double>(channels[ch][frm]));
+                    const double ky = chanK_[ch].processSample(
+                        static_cast<double>(finiteOrSilence(channels[ch][frm])));
                     accum_[ch] += ky * ky;
                 }
                 if (++hopSampleCount_ >= hopFrames_)

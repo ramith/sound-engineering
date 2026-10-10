@@ -1,6 +1,7 @@
 #include "include/DSPKernel.h"
 #include "Clarity/ClarityModule.h"
 #include "EQ/EQModule.h"
+#include "include/FiniteSamples.h"
 #include "include/FlushToZero.h"
 #include "include/MultichannelView.h"
 #include "Limiting/LimiterModule.h"
@@ -145,6 +146,17 @@ namespace AdaptiveSound
         currentState_ = scratchState_;
         const TargetState& state = currentState_;
         const MultichannelView block = MultichannelView::fromABL(ioData, inNumberFrames);
+
+        // A NaN or an infinity is not audio (amendment 14): it plays as silence on EVERY path, the
+        // bit-perfect one included, so nothing downstream — a filter state, the normaliser, the
+        // limiter, the device — ever meets one. A finite block is only read, never written.
+        for (uint32_t ch = 0U; ch < block.channels(); ++ch)
+        {
+            if (float* samples = block.channel(ch); samples != nullptr)
+            {
+                scrubNonFinite(samples, block.frames());
+            }
+        }
 
         // The source, ahead of everything, for the causal loudness estimate (a no-op unless one
         // runs: the fallback for a track whose loudness analysis failed).

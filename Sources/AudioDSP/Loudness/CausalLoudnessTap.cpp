@@ -1,6 +1,7 @@
 // CausalLoudnessTap.cpp — the causal running loudness estimate. See CausalLoudnessTap.h.
 
 #include "CausalLoudnessTap.h"
+#include "../include/FiniteSamples.h"
 #include "../include/FlushToZero.h"
 #include "TrackLoudnessProfiler.h"
 #include <algorithm>
@@ -133,9 +134,8 @@ namespace AdaptiveSound
             float* dst = planar_.data() + (static_cast<size_t>(ch) * kChunkFrames);
             for (size_t i = 0U; i < frames; ++i)
             {
-                const float sample = chunk_[(i * channels) + ch];
-                dst[i] =
-                    std::isfinite(sample) ? sample : 0.0F; // the profiler rejects non-finite PCM
+                // The profiler rejects non-finite PCM outright.
+                dst[i] = finiteOrSilence(chunk_[(i * channels) + ch]);
             }
             pointers[ch] = dst;
         }
