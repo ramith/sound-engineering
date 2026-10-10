@@ -63,18 +63,23 @@ func connectMultichannelGraph(
 
 /// Allocate + fill an input buffer where each channel carries a DISTINCT non-silent tone
 /// (frequency rises per channel), so genuine per-channel flow is distinguishable from a copy
-/// or silence. Returns nil if allocation or channel access fails.
+/// or silence. The tones are at `format`'s rate. Returns nil if allocation or channel access fails.
 func makeSyntheticInput(format: AVAudioFormat, channelCount: AVAudioChannelCount) -> AVAudioPCMBuffer? {
     guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: totalFrames) else { return nil }
     buffer.frameLength = totalFrames
     for channel in 0 ..< Int(channelCount) {
         guard let data = buffer.floatChannelData?[channel] else { return nil }
-        let channelHz = toneHz + Double(channel) * 250.0 // 1000, 1250, 1500, ... Hz per channel
+        let channelHz = syntheticToneHz(channel: channel)
         for frame in 0 ..< Int(totalFrames) {
-            data[frame] = toneAmplitude * Float(sin(2.0 * Double.pi * channelHz * Double(frame) / sampleRate))
+            data[frame] = toneAmplitude * Float(sin(2.0 * Double.pi * channelHz * Double(frame) / format.sampleRate))
         }
     }
     return buffer
+}
+
+/// The tone `makeSyntheticInput` puts on `channel`: 1000, 1250, 1500, ... Hz.
+func syntheticToneHz(channel: Int) -> Double {
+    toneHz + Double(channel) * 250.0
 }
 
 /// Offline-render the running `engine` and capture per-channel output. Returns the captured
