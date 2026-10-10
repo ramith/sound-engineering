@@ -1,0 +1,9 @@
+Item 2: S2 ramp-time sweep on the pinned adversarial pairs, and a realistic drag (TD overshoot, dB: local [Hz] / peak).
+pair                            tau 10 ms              tau 20 ms              tau 40 ms              tau 60 ms
+breaker A->B        +2.89 [   29]/+0.31  +1.92 [   29]/+0.31  +1.12 [   29]/+0.31  +0.78 [   29]/+0.31
+breaker B->A        +4.09 [   50]/+3.89  +2.87 [   50]/+2.67  +1.69 [   50]/+1.49  +1.16 [   50]/+0.96
+S1-adversarial      +4.01 [   38]/+1.48  +1.67 [   38]/+0.22  +0.82 [   58]/+0.08  +0.50 [   58]/+0.06
+S2-adversarial     +12.56 [   25]/+3.27  +9.79 [   25]/+1.12  +7.03 [   25]/+0.01  +5.26 [   25]/-0.04
+alt+ -> alt-        +2.60 [   44]/-0.04  +2.01 [   44]/-0.02  +1.27 [   44]/-0.01  +0.86 [   44]/-0.01
+realistic drag Warm 125 Hz -> +12 (5 steps @120 Hz), S1: local +0.08 [77] / peak +0.01
+realistic drag Warm 125 Hz -> +12 (5 steps @120 Hz), S2: local +0.08 [77] / peak +0.01

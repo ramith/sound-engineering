@@ -884,5 +884,27 @@ the session rather than memory.
   - loudness-neutral EQ (revises 23);
   - a "Bring back edits" message after a preset switch;
   - Compare = hold to hear without the EQ.
-- **Next:** one revision round by the authors (engine + UI, on the reconciled contract), then one
-  verify pass by the three reviewers on their own findings only, then the build.
+
+### Revision and verify pass (2026-10-10)
+
+- **Revision (one round).** Engine v2 and UI v2 each carry a disposition row for every finding.
+  - The engine's transition scheme was settled by measuring both candidates. The shared dB ramp swelled
+    +6.6 dB on adversarial pairs, so it was replaced by smoothing the finished (k, m1) SVF coefficients.
+  - Solver: 5 refinement passes, worst 0.32 dB at 44.1–192 kHz.
+  - The loudness-neutral gain needs a load-time track profile: 0.11 dB, where the while-playing estimate
+    is 2.7 dB off in the first 10 s.
+  - The kernel has four paths, with a fix for the limiter's 3 ms look-ahead on path switches.
+- **Verify (one pass, own findings only).** All three: OPEN ITEMS, closed in
+  [plan/amendments.md](../design/eq-lens/plan/amendments.md) rather than by another round.
+  - **Architect:** 15/19 closed; one contract confirmed. New: unedited built-ins must be stored as
+    references, or the re-voice marks everyone "Edited" (N1); the track-analysis owner, cancellation,
+    cache, failure path, seam timing and cost bound (N2); six text mismatches between the plans.
+  - **Breaker:** B1, M2, M3, m1–m10 closed. It re-opened part of M1: the transition peak is +4.51 dB, not
+    1.49, fixed by keying τ on jaggedness (160 ms → ≤ +1.0 dB). New: a level step of up to 15 dB at the
+    Intensity-0 boundary (it predates the sprint); the analysis needs late, gapless and failure behaviour.
+  - **SOTA:** all closed; it accepts the 5 passes, the 1/24-octave bins, the pre-analysis in R1 and the
+    (k, m1) smoother (reproduced independently: +6.62 vs 0.00 dB). It reframed the loud-master question
+    with time-in-limiting data → **founder decision 29**.
+- **Committed:** the build plan (`eq-lens/plan/`: amendments, engine, UI), the evidence
+  (`eq-lens/evidence/`: two surveys, three reviews, three verifies), and the reference prototype with the
+  adversarial fixtures (`research/eq-geq-poc/`).

@@ -1,0 +1,8 @@
+Item 4: what a press-and-hold Compare hears. With the static loudness-neutral gain (integrated match), the
+short-term (3 s) loudness of On vs Off still wanders as the music's spectrum changes. p05..p95 and max of
+L_short(On) - L_short(Off) over 3 s windows (1 s hop), 7 tracks.
+  Warm                     p05 -0.79  p95 +0.88  max|.| 2.31 dB
+  Presence                 p05 -1.17  p95 +0.83  max|.| 2.53 dB
+  Tone B+6 Bo-3 P+4 A+6    p05 -2.87  p95 +0.88  max|.| 6.41 dB
+  +12 @100 Hz              p05 -2.15  p95 +1.87  max|.| 3.57 dB
+  -12 @1 kHz               p05 -0.26  p95 +0.15  max|.| 2.13 dB

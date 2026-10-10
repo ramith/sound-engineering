@@ -1,0 +1,3 @@
+Item 4 cost check: a block's 1/24-oct band powers formed as the SUM of its four 100 ms hop spectra (one 8k FFT per
+hop, reused by 4 blocks) instead of one 32k FFT per 400 ms block. Predictor error vs measured, 7 tracks x 15 curves.
+  hop-sum blocks, 1/24 oct: max 0.420 dB, p90 0.067, mean 0.032; numpy analysis time for 493 s of audio: 0.65 s

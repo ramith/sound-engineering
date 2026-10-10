@@ -1,0 +1,38 @@
+Item 2 (time-domain half): S1 (shared dB ramp) vs S2 (finished (k, m1) smoother), both with the loudness-neutral
+output gain riding the same smoother, tau = 10 ms, 48 kHz, double TPT SVF. Sine probes through cpp/tdsim.
+  TD overshoot local: max envelope after the switch / max(steady A, steady B) at the same probe frequency.
+  TD overshoot peak : max over probes of the post-switch envelope / max over probes of max(steady A, steady B).
+  SB  : Wishnick-style sideband energy (85 ms Hann, 5 ms hop, +-1 ERB around the probe removed), max over the
+        transition, dB re the window energy; SBref = the same on an ideal analytic dB/phase crossfade (tau 10 ms).
+  Etr : energy of (output - ideal crossfade) / energy of the ideal, over the transition window, dB.
+A) Time-domain overshoot (dB): local [worst probe Hz] / peak
+transition                                   S1 dB-ramp                  S2 (k,m1)
+breaker worst pair A->B       +5.41 [   952] /  +5.41   +2.89 [    29] /  +0.31
+breaker worst pair B->A       +6.71 [   204] /  +5.37   +4.09 [    50] /  +3.89
+S1-adversarial pair           +6.94 [   952] /  +6.59   +4.01 [    38] /  +1.48
+S2-adversarial pair          +12.93 [    25] /  +3.30  +12.56 [    25] /  +3.27
+alt+ -> alt-                  +4.77 [    58] /  -0.06   +2.60 [    44] /  -0.04
+Warm -> Off                   +0.02 [   154] /  -0.00   +0.02 [   154] /  -0.00
+Off -> Warm                   +0.10 [    33] /  +0.00   +0.10 [    33] /  +0.00
+alternating -> Off            +0.30 [  3355] /  -0.02   +0.17 [    50] /  -0.01
+Off -> alternating            +2.23 [   117] /  +0.00   +1.09 [    33] /  +0.00
+every-third-down -> Off       +1.87 [    33] /  +1.09   +0.25 [    25] /  +0.00
+Off -> all+12                 +0.43 [    25] /  +0.33   +0.47 [    25] /  +0.37
+42 preset pairs (incl. Off)  S1 local +0.277 peak +0.026 | S2 local +0.282 peak +0.026
+
+B) Sidebands and tracking: SBref | S1 SB, Etr | S2 SB, Etr  (dB)
+  Off -> Warm             100 Hz  SBref   -32.0 | S1   -32.2,   -47.8 | S2   -32.1,   -48.6
+  Off -> Warm            1000 Hz  SBref   -47.9 | S1   -48.0,   -60.7 | S2   -47.9,   -70.2
+  Off -> Warm            4000 Hz  SBref   -61.3 | S1   -61.3,   -70.4 | S2   -61.3,   -69.6
+  Warm -> Presence        100 Hz  SBref   -27.0 | S1   -26.8,   -47.5 | S2   -26.9,   -47.2
+  Warm -> Presence       1000 Hz  SBref   -40.5 | S1   -40.1,   -49.9 | S2   -40.2,   -51.1
+  Warm -> Presence       4000 Hz  SBref   -70.6 | S1   -70.5,   -69.0 | S2   -70.5,   -70.6
+  Presence -> Off         100 Hz  SBref   -33.9 | S1   -33.9,   -81.5 | S2   -33.9,   -80.5
+  Presence -> Off        1000 Hz  SBref   -47.8 | S1   -47.5,   -63.4 | S2   -47.5,   -65.6
+  Presence -> Off        4000 Hz  SBref   -67.2 | S1   -65.4,   -63.1 | S2   -65.4,   -65.7
+  alternating -> Off      100 Hz  SBref   -26.0 | S1   -22.4,   -26.7 | S2   -22.9,   -27.7
+  alternating -> Off     1000 Hz  SBref   -45.1 | S1   -35.4,   -36.0 | S2   -35.8,   -28.3
+  alternating -> Off     4000 Hz  SBref   -61.0 | S1   -51.9,   -35.4 | S2   -51.4,   -27.3
+  breaker worst pair      100 Hz  SBref   -24.9 | S1   -16.8,   -20.8 | S2   -20.8,   -27.3
+  breaker worst pair     1000 Hz  SBref   -50.1 | S1   -40.6,   -12.0 | S2   -46.3,   -26.1
+  breaker worst pair     4000 Hz  SBref   -60.7 | S1   -53.4,   -15.9 | S2   -53.4,   -19.3
