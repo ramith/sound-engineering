@@ -43,6 +43,10 @@
 //     each width — proving the spatial AU is correctly inserted as the device-boundary stage and
 //     that the stereo path stays byte-identical.
 //
+//   EQ1b (Sprint EQ) — a re-allocation keeps the EQ: one engine re-formatted stereo@48k -> 6ch@44.1k ->
+//     stereo@48k with an EQ published once plays it as designed (within 0.1 dB) at every step
+//     (VerifyEQReallocation.swift).
+//
 //   DEV-UID (Sprint EQ) — the device-identity bridge against the live CoreAudio device set: every
 //     output reports its own UID through the C copy contract (VerifyDeviceIdentity.swift).
 //
@@ -251,6 +255,19 @@ if !verifyLiveReconfigure() {
 print("ALL M2-c CHECKS PASSED — single-engine stereo->6->stereo reconfigure renders at each width")
 
 // =====================================================================================
+// EQ1b (Sprint EQ) — a re-allocation keeps the EQ: the M2-c dance through stereo@48k -> 6ch@44.1k ->
+// stereo@48k with an EQ published once, played as designed (within 0.1 dB) at every step.
+// VerifyEQReallocation.swift.
+// =====================================================================================
+
+if !verifyEQReallocation() {
+    print("VERIFY FAIL: EQ re-allocation (EQ1b) check failed")
+    exit(1)
+}
+
+print("ALL EQ1b CHECKS PASSED — the EQ survives re-allocations (width and rate) within 0.1 dB")
+
+// =====================================================================================
 // M3-2 — SpatialRendererAU smoke check: register + instantiate the NEW device-boundary
 // N->M render-stage AU (subtype 'aspz') via its own component description, and assert it
 // is non-nil and its auAudioUnit class is SpatialRendererAU. This is the wrapper/C-ABI
@@ -343,7 +360,8 @@ if !verifyDeviceIdentity() {
 
 print("ALL DEV-UID CHECKS PASSED — every output reports its own UID through the C copy contract")
 print("=== SUMMARY: M1 (stereo passthrough) PASS + M2-b (multichannel 2/6/8) PASS + "
-    + "M2-c (live reconfigure stereo->6->stereo) PASS + M2-d (device width M=min(N,device)) PASS + "
+    + "M2-c (live reconfigure stereo->6->stereo) PASS + EQ1b (EQ survives re-allocation) PASS + "
+    + "M2-d (device width M=min(N,device)) PASS + "
     + "M3-2 (SpatialRendererAU register) PASS + "
     + "M3-3 (two-AU graph + spatial-AU bit-exact identity, 2/6/8) PASS + "
     + "DEV-UID (device identity) PASS ===")

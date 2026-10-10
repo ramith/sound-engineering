@@ -5,7 +5,8 @@
 // functions in the VerifyAUGraph executable; they reference the shared harness globals
 // (sampleRate, renderBlockSize) and helpers (instantiateAU, makeSyntheticInput,
 // renderMultichannel, assertGenuineMultichannel) declared elsewhere in the same module.
-// main.swift orchestrates by calling verifyLiveReconfigure().
+// main.swift orchestrates by calling verifyLiveReconfigure(); the EQ1b re-allocation check
+// (VerifyEQReallocation.swift) reuses the same reconfigure dance (`reconfigureAndRender`).
 //
 // Unlike M2-b (a fresh engine per width), here ONE engine is re-widthed in place:
 // stereo -> 6ch -> stereo. After each step the graph must render at the new width with genuine
@@ -24,57 +25,82 @@ import AudioFormatKit
 import AVFoundation
 import Foundation
 
-/// One step of the live reconfigure: re-enable manual rendering at `format` on the SAME running
-/// `engine` (stop -> re-enable -> start, the offline width-change dance), re-feed a synthetic
-/// per-channel input, render, and assert genuine N-channel flow. Returns true on PASS.
+/// The one running engine a reconfigure re-formats in place: player -> AU -> mainMixer -> output.
+/// `make` attaches the nodes; every reconfigure (re)connects them at the step's format.
+struct ReconfigurableGraph {
+    let engine: AVAudioEngine
+    let player: AVAudioPlayerNode
+    let unit: AVAudioUnit
+
+    static func make(unit: AVAudioUnit) -> Self {
+        let graph = Self(engine: AVAudioEngine(), player: AVAudioPlayerNode(), unit: unit)
+        graph.engine.attach(graph.player)
+        graph.engine.attach(unit)
+        return graph
+    }
+}
+
+/// Re-format the SAME running `graph` to `channelCount` at `rate` (stop -> reconnect -> re-enable
+/// manual rendering -> start, the offline format-change dance, which re-allocates the AU's render
+/// resources), re-feed a synthetic per-channel input (`makeSyntheticInput`) and render it.
+/// Returns the captured [channel][frame] output, or nil on any failure (a "`check` FAIL `label`"
+/// line already printed). Shared by M2-c and the EQ1b re-allocation check.
 ///
 /// This is the offline analogue of `reconfigureGraph`'s manual-rendering branch: the existing
 /// connections are rebuilt at the new format (mixer->output included) before re-enabling.
-func reconfigureStep(
-    engine: AVAudioEngine,
-    player: AVAudioPlayerNode,
-    unit: AVAudioUnit,
-    channelCount: AVAudioChannelCount
-) -> Bool {
+func reconfigureAndRender(
+    _ graph: ReconfigurableGraph,
+    channelCount: AVAudioChannelCount,
+    rate: Double = sampleRate,
+    check: String
+) -> [[Float]]? {
     let label = "[reconfig->\(channelCount)ch]"
+    let engine = graph.engine
 
-    guard let stepFormat = multichannelFormat(for: channelCount, sampleRate: sampleRate),
+    guard let stepFormat = multichannelFormat(for: channelCount, sampleRate: rate),
           stepFormat.channelCount == channelCount
     else {
-        print("M2-c FAIL \(label): multichannelFormat returned nil or wrong width")
-        return false
+        print("\(check) FAIL \(label): multichannelFormat returned nil or wrong width")
+        return nil
     }
 
-    // Teardown for an offline WIDTH change: stop (player + engine), reconnect every edge at the
+    // Teardown for an offline FORMAT change: stop (player + engine), reconnect every edge at the
     // new format (mixer->output is the critical line), then re-enable manual rendering + start.
-    player.stop()
+    graph.player.stop()
     engine.stop()
-    engine.connect(player, to: unit, format: stepFormat)
-    engine.connect(unit, to: engine.mainMixerNode, format: stepFormat)
+    engine.connect(graph.player, to: graph.unit, format: stepFormat)
+    engine.connect(graph.unit, to: engine.mainMixerNode, format: stepFormat)
     engine.connect(engine.mainMixerNode, to: engine.outputNode, format: stepFormat)
 
     do {
         try engine.enableManualRenderingMode(.offline, format: stepFormat, maximumFrameCount: renderBlockSize)
         try engine.start()
     } catch {
-        print("M2-c FAIL \(label): re-enable manual rendering / start threw: \(error)")
-        return false
+        print("\(check) FAIL \(label): re-enable manual rendering / start threw: \(error)")
+        return nil
     }
 
     let renderWidth = engine.manualRenderingFormat.channelCount
     if renderWidth != channelCount {
-        print("M2-c FAIL \(label): post-reconfigure render width \(renderWidth) != \(channelCount)")
-        return false
+        print("\(check) FAIL \(label): post-reconfigure render width \(renderWidth) != \(channelCount)")
+        return nil
     }
 
     guard let input = makeSyntheticInput(format: stepFormat, channelCount: channelCount) else {
-        print("M2-c FAIL \(label): could not build synthetic input buffer")
-        return false
+        print("\(check) FAIL \(label): could not build synthetic input buffer")
+        return nil
     }
-    player.scheduleBuffer(input, at: nil, options: [], completionHandler: nil)
-    player.play()
+    graph.player.scheduleBuffer(input, at: nil, options: [], completionHandler: nil)
+    graph.player.play()
 
-    guard let captured = renderMultichannel(engine: engine, channelCount: channelCount, label: label) else {
+    return renderMultichannel(engine: engine, channelCount: channelCount, label: label)
+}
+
+/// One step of the live reconfigure: re-width the SAME running `graph` and render
+/// (`reconfigureAndRender`), then assert genuine N-channel flow. Returns true on PASS.
+func reconfigureStep(_ graph: ReconfigurableGraph, channelCount: AVAudioChannelCount) -> Bool {
+    let label = "[reconfig->\(channelCount)ch]"
+    guard let captured = reconfigureAndRender(graph, channelCount: channelCount, check: "M2-c") else {
         return false
     }
     if !assertGenuineMultichannel(captured, channelCount: channelCount, label: label) {
@@ -93,15 +119,12 @@ func verifyLiveReconfigure() -> Bool {
         print("M2-c FAIL: AU instantiate returned nil")
         return false
     }
-    let rcEngine = AVAudioEngine()
-    let rcPlayer = AVAudioPlayerNode()
-    rcEngine.attach(rcPlayer)
-    rcEngine.attach(unit)
-    defer { rcEngine.stop() }
+    let graph = ReconfigurableGraph.make(unit: unit)
+    defer { graph.engine.stop() }
 
     // The reconfigure sequence (stereo -> 6 -> stereo) on ONE engine instance.
     let widths: [AVAudioChannelCount] = [2, 6, 2]
-    for width in widths where !reconfigureStep(engine: rcEngine, player: rcPlayer, unit: unit, channelCount: width) {
+    for width in widths where !reconfigureStep(graph, channelCount: width) {
         return false
     }
     print("M2-c PASS: stereo -> 6 -> stereo completed on one running engine, crash-free + continuous")
