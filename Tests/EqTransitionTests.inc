@@ -341,6 +341,86 @@ namespace
         },
     };
 
+    // The EQ's CPU (EQ_Cpu_*): % of one core for 8 channels at `fs`, settled on Warm and then
+    // gliding to Vocal, over `seconds` of audio each. A fresh noise block every time — copied (a
+    // 16 KB copy, inside the timing, so the figure errs high), not re-generated (the RNG stays out
+    // of it). Processing the same buffer in place would compound the curve block after block until
+    // the samples overflow, and time arithmetic on infinities rather than music.
+    struct TdCpu
+    {
+        double settled = 0.0;
+        double gliding = 0.0;
+    };
+
+    auto tdEqCpuPercent(uint32_t fs, uint32_t seconds) -> TdCpu
+    {
+        constexpr uint32_t kChannels = 8U;
+        auto module = std::make_unique<EQModule>();
+        module->initialize(fs, kTdBlockFrames);
+        TestABLN abl(kChannels, kTdBlockFrames);
+        std::vector<std::vector<float>> source(kChannels, std::vector<float>(kTdBlockFrames));
+        std::mt19937 rng(7U);
+        std::uniform_real_distribution<float> noise(-0.25F, 0.25F);
+        for (auto& channel : source)
+        {
+            for (float& sample : channel)
+            {
+                sample = noise(rng);
+            }
+        }
+        const auto fill = [&]
+        {
+            for (uint32_t ch = 0U; ch < kChannels; ++ch)
+            {
+                std::ranges::copy(source[ch], abl.channels[ch].begin());
+            }
+        };
+        const EQParams warmParams = makeEqParams(kEqPresetCurves[kEqPresetWarm], fs);
+        // A glide slow enough (τ 0.64 s) to keep every band's coefficients moving for the run.
+        constexpr float kGlideSeconds = 0.64F;
+        const EQParams vocalParams = makeEqParams(kEqPresetCurves[4], fs, kGlideSeconds);
+        const auto run = [&](const EQParams& target)
+        {
+            module->update(target);
+            const auto start = std::chrono::steady_clock::now();
+            for (uint32_t done = 0U; done < fs * seconds; done += kTdBlockFrames)
+            {
+                fill();
+                module->process(MultichannelView::fromABL(abl.abl(), kTdBlockFrames));
+            }
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            return 100.0 * std::chrono::duration<double>(elapsed).count() /
+                   static_cast<double>(seconds);
+        };
+        (void)run(warmParams); // snap to Warm, then settle
+        TdCpu cpu;
+        cpu.settled = run(warmParams);
+        cpu.gliding = run(vocalParams);
+        return cpu;
+    }
+
+    // The EQ's CPU budget at `fs` (% of one core, 8 channels; engine-plan §7, amendment 18): 5 % at
+    // the pipeline's worst supported format, 192 kHz — and above it, where the EQ still plays (its
+    // designer goes to 768 kHz) but the pipeline's supported range ends, the same work per sample:
+    // 5 % × fs / 192 kHz. The bound applies to an optimised, uninstrumented build; -O0 and the
+    // sanitizers only report.
+#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
+    constexpr const char* kTdCpuBuild = "optimised";
+    auto tdEqCpuBudgetPercent(uint32_t fs) -> double
+    {
+        constexpr double kBudgetAt192kPercent = 5.0;
+        return kBudgetAt192kPercent *
+               std::max(1.0,
+                        static_cast<double>(fs) / static_cast<double>(kMaxSupportedSampleRate));
+    }
+#else
+    constexpr const char* kTdCpuBuild = "unoptimised";
+    auto tdEqCpuBudgetPercent(uint32_t /*fs*/) -> double
+    {
+        return 1000.0; // -O0 / sanitizers: report only
+    }
+#endif
+
     // The research's realistic drag (trans_td3.py): Warm's 125 Hz band (index 8) raised to +12 in
     // 0.5 dB steps at 120 Hz, the neighbours following by the stroke-start rule (±1: 75 %,
     // ±2: 25 %).
@@ -551,76 +631,24 @@ static auto testEqTransitionsAdversarial() -> void
 static auto testEqCpu71At192k() -> void
 {
     static const char* const kName = "EQ_Cpu_7_1_192k";
-#if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
-    constexpr double kBudgetPercent = 5.0;
-    constexpr const char* kBuild = "optimised";
-#else
-    constexpr double kBudgetPercent = 1000.0; // -O0 / sanitizers: report only
-    constexpr const char* kBuild = "unoptimised";
-#endif
     constexpr uint32_t kFs = 192000U;
-    constexpr uint32_t kChannels = 8U;
     constexpr uint32_t kSeconds = 2U;
-    auto module = std::make_unique<EQModule>();
-    module->initialize(kFs, kTdBlockFrames);
-    TestABLN abl(kChannels, kTdBlockFrames);
-    // A fresh noise block every time — copied (a 16 KB copy, inside the timing, so the figure errs
-    // high), not re-generated (the RNG stays out of it). Processing the same buffer in place would
-    // compound the curve block after block until the samples overflow, and time arithmetic on
-    // infinities rather than music.
-    std::vector<std::vector<float>> source(kChannels, std::vector<float>(kTdBlockFrames));
-    std::mt19937 rng(7U);
-    std::uniform_real_distribution<float> noise(-0.25F, 0.25F);
-    for (auto& channel : source)
-    {
-        for (float& sample : channel)
-        {
-            sample = noise(rng);
-        }
-    }
-    const auto fill = [&]
-    {
-        for (uint32_t ch = 0U; ch < kChannels; ++ch)
-        {
-            std::ranges::copy(source[ch], abl.channels[ch].begin());
-        }
-    };
-    const EqCurve warm = kEqPresetCurves[kEqPresetWarm];
-    const EqCurve vocal = kEqPresetCurves[4];
-    const EQParams warmParams = makeEqParams(warm, kFs);
-    // A glide slow enough (τ 0.64 s) to keep every band's coefficients moving for the whole run.
-    constexpr float kGlideSeconds = 0.64F;
-    const EQParams vocalParams = makeEqParams(vocal, kFs, kGlideSeconds);
-    const auto run = [&](const EQParams& target)
-    {
-        module->update(target);
-        const auto start = std::chrono::steady_clock::now();
-        for (uint32_t done = 0U; done < kFs * kSeconds; done += kTdBlockFrames)
-        {
-            fill();
-            module->process(MultichannelView::fromABL(abl.abl(), kTdBlockFrames));
-        }
-        const auto elapsed = std::chrono::steady_clock::now() - start;
-        return 100.0 * std::chrono::duration<double>(elapsed).count() /
-               static_cast<double>(kSeconds);
-    };
-    (void)run(warmParams); // snap to Warm, then settle
-    const double settled = run(warmParams);
-    const double gliding = run(vocalParams);
+    const double budget = tdEqCpuBudgetPercent(kFs);
+    const TdCpu cpu = tdEqCpuPercent(kFs, kSeconds);
     logInfo(std::format(
         "[info] {} ({} build): 8 ch @ 192 kHz — settled {:.2f} %, gliding {:.2f} % of one "
         "core (budget {} %)\n",
         kName,
-        kBuild,
-        settled,
-        gliding,
-        kBudgetPercent));
-    if (!(std::max(settled, gliding) <= kBudgetPercent))
+        kTdCpuBuild,
+        cpu.settled,
+        cpu.gliding,
+        budget));
+    if (!(std::max(cpu.settled, cpu.gliding) <= budget))
     {
         logFail(kName,
                 std::format("{:.2f} % of one core exceeds {} %",
-                            std::max(settled, gliding),
-                            kBudgetPercent));
+                            std::max(cpu.settled, cpu.gliding),
+                            budget));
         return;
     }
     logPass(kName);

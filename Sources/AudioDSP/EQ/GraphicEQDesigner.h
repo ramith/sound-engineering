@@ -57,7 +57,9 @@ namespace AdaptiveSound
         static constexpr double kGuardGainDb = 1e-3;     // the |prototype gain| floor (no 0/0)
         static constexpr double kMidpointWeight = 0.5;   // WLS weight of a midpoint (centres: 1)
         // The design domain. Below ~44 kHz the top centre (19.95 kHz) is not safely below
-        // Nyquist; 768 kHz bounds the tables' precision far beyond any device rate.
+        // Nyquist; 768 kHz bounds the tables' precision far beyond any device rate. Above the
+        // pipeline's supported 192 kHz the EQ still plays, at a CPU budget that scales with the
+        // rate (EQModule.h; amendment 18).
         static constexpr double kMinSampleRateHz = 44000.0;
         static constexpr double kMaxSampleRateHz = 768000.0;
 
