@@ -19,6 +19,9 @@ struct HeaderPillChrome: ViewModifier {
     }
 
     let tone: Tone
+    /// The pointer is over a pill that acts on a click (the EQ header's Reset and Compare): the chip's
+    /// hover wash over the fill.
+    var isHovered = false
 
     /// 30 pt at the default text size.
     @ScaledMetric(relativeTo: .body) private var height = ControlMetrics.pillHeight
@@ -27,7 +30,10 @@ struct HeaderPillChrome: ViewModifier {
         content
             .padding(.horizontal, CGFloat(FilterPillMetrics.horizontalInset))
             .frame(height: height)
-            .background(fill, in: Capsule())
+            .background {
+                Capsule().fill(fill)
+                    .overlay { Capsule().fill(isHovered ? DesignSystem.Color.controlHover : .clear) }
+            }
             .overlay(Capsule().strokeBorder(edge, lineWidth: edgeWidth))
     }
 
@@ -54,8 +60,8 @@ struct HeaderPillChrome: ViewModifier {
 }
 
 extension View {
-    /// Wear the header pills' capsule (`HeaderPillChrome`).
-    func headerPillChrome(_ tone: HeaderPillChrome.Tone) -> some View {
-        modifier(HeaderPillChrome(tone: tone))
+    /// Wear the header pills' capsule (`HeaderPillChrome`), washed while `isHovered`.
+    func headerPillChrome(_ tone: HeaderPillChrome.Tone, isHovered: Bool = false) -> some View {
+        modifier(HeaderPillChrome(tone: tone, isHovered: isHovered))
     }
 }
