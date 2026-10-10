@@ -215,6 +215,7 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
     AdaptiveSound::DoubleBufferSnapshot<GenStampedPayload> snapshot;
 
     std::atomic<bool> readerStop{false};
+    std::atomic<bool> readerRunning{false};
     std::atomic<uint64_t> accepted{0U};
     std::atomic<uint64_t> torn{0U};
     std::atomic<uint64_t> backwards{0U};
@@ -224,6 +225,7 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
     std::thread reader([&] {
         GenStampedPayload out{};
         uint64_t last = 0U;
+        readerRunning.store(true, std::memory_order_release);
         while (!readerStop.load(std::memory_order_relaxed))
         {
             if (!snapshot.tryCopySnapshot(out))
@@ -245,11 +247,25 @@ static auto runWholePayloadRound(uint64_t publishes) -> WholePayloadRoundResult
         }
     });
 
+    // Under a busy parallel pool the writer can finish every publish before the reader thread is
+    // even scheduled (it then reads nothing and the round "accepts zero"): start publishing only
+    // once the reader runs, and stop it only once it has read something (or after a generous
+    // deadline — a transport that never delivers still fails the round).
+    while (!readerRunning.load(std::memory_order_acquire))
+    {
+        std::this_thread::yield();
+    }
     for (uint64_t gen = 1U; gen <= publishes; ++gen)
     {
         GenStampedPayload state{};
         state.words.fill(gen);
         snapshot.publish(state);
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (accepted.load(std::memory_order_relaxed) == 0U &&
+           std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::yield();
     }
     readerStop.store(true, std::memory_order_relaxed);
     reader.join();
