@@ -68,6 +68,18 @@ public struct EQCurve: Equatable, Codable, Sendable {
         base[band] = (point - toneOffset(atBand: band)).clamped(within: EQBands.baseLimitDb)
     }
 
+    /// How far past ±12 dB base + Tone must ask before a point counts as held there: float sums of a
+    /// point set exactly to ±12 under a Tone land within ~1e-6 of it, and must not read "limited".
+    private static let limitToleranceDb: Float = 1e-4
+
+    /// Whether the ceiling holds the point at `band` (ui-plan §4.3, "limited"): base + Tone asks for
+    /// more than the ±12 dB a point may take, so moving Tone further doesn't move this point. A band
+    /// off the grid is never limited.
+    public func isLimited(atBand band: Int) -> Bool {
+        guard base.indices.contains(band) else { return false }
+        return abs(base[band] + toneOffset(atBand: band)) > EQBands.pointLimitDb + Self.limitToleranceDb
+    }
+
     /// The same points with the Tone baked into the base and Tone at 0: what Save keeps.
     func baked() -> EQCurve {
         EQCurve(points: points)

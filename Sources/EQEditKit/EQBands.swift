@@ -21,8 +21,9 @@ public enum EQBands {
     /// The nominal list rounds these for display; the maths never does.
     static let centreHz: [Double] = (0 ..< count).map { pow(10, 1.3 + 0.1 * Double($0)) }
 
-    /// The ±dB range of a point: what is drawn and what the engine is sent.
-    static let pointLimitDb: Float = 12
+    /// The ±dB range of a point: what is drawn and what the engine is sent. Its +12 is the EQ's ceiling,
+    /// which the graph draws whenever a boost reaches it.
+    public static let pointLimitDb: Float = 12
 
     /// The ±dB range of the user's base layer. Wider than a point, so a point the user sets can
     /// land exactly under a Tone offset (base = point − Tone) without being cut short.
