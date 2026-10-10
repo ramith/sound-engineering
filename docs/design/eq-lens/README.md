@@ -27,6 +27,9 @@ audio-dsp verification of today's engine (below). Founder decisions 21–23 in t
   exactly what was last heard on it.
 - **29 — Loud masters, EQ-only path:** limiter ceiling −0.1 dBTP (like the original), −1 dBTP on
   Bluetooth.
+- **30–32 — Presets re-voiced** (smooth Tone-built shapes, +3 to +5 dB peaks); "Loudness" → "Bass & Treble";
+  "Studio" → "Bass Boost" (a saved Studio loads as Flat). [plan/preset-revoice.md](plan/preset-revoice.md),
+  ![old vs new presets](png/preset-revoice.png)
 
 **Build plan:** [plan/amendments.md](plan/amendments.md) (wins), [plan/engine-plan.md](plan/engine-plan.md),
 [plan/ui-plan.md](plan/ui-plan.md). Evidence: [evidence/](evidence/). Prototype: `research/eq-geq-poc/`.
