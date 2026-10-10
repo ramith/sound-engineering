@@ -79,9 +79,9 @@ struct EQPinTests {
     func sameModelSharesThePin() {
         var store = EQStore(shared: .flat)
         store.pin(Self.pods)
-        store[slot: Self.pods.uid] = EQState(preset: .builtIn(.studio), curve: nil)
+        store[slot: Self.pods.uid] = EQState(preset: .builtIn(.bassBoost), curve: nil)
         #expect(store.pin(for: Self.secondPods) == .sharedWith(Self.pods, on: Self.secondPods))
-        #expect(store[slot: store.slotID(for: Self.secondPods)].preset == .builtIn(.studio))
+        #expect(store[slot: store.slotID(for: Self.secondPods)].preset == .builtIn(.bassBoost))
         // An edit on the second pair rewrites the first pair's memory: the documented behaviour.
         store[slot: store.slotID(for: Self.secondPods)] = EQState(preset: .builtIn(.vocal), curve: nil)
         #expect(store[slot: store.slotID(for: Self.pods)].preset == .builtIn(.vocal))
@@ -95,11 +95,11 @@ struct EQPinTests {
     func unpinFromTheSharingUnit() {
         var store = EQStore(shared: .flat)
         store.pin(Self.pods)
-        store[slot: Self.pods.uid] = EQState(preset: .builtIn(.studio), curve: nil)
+        store[slot: Self.pods.uid] = EQState(preset: .builtIn(.bassBoost), curve: nil)
         store.unpin(Self.secondPods)
         #expect(store.pinned.isEmpty)
         #expect(store.pin(for: Self.pods) == .unpinned(Self.pods))
-        #expect(store[slot: nil].preset == .builtIn(.studio))
+        #expect(store[slot: nil].preset == .builtIn(.bassBoost))
     }
 
     @Test("PIN-07: pinning again is a no-op; pinning replaces an unreadable pin of the same UID")

@@ -121,7 +121,7 @@ struct EQMigrationTests {
         #expect(caughtUp.v1Fingerprint == EQMigration.fingerprint(of: vocalBlob))
         // Caught up once: the same blob again changes nothing, so the edits made here since survive.
         var edited = caughtUp
-        edited[slot: nil] = EQState(preset: .builtIn(.studio), curve: EQFixture.curve([20: 5]))
+        edited[slot: nil] = EQState(preset: .builtIn(.bassBoost), curve: EQFixture.curve([20: 5]))
         #expect(EQMigration.catchUp(edited, withV1: vocalBlob, customPresets: Self.customPresets) == edited)
         // A rule-2 blob catches up as that My Preset.
         let podcast = try #require(Self.customPresets["Podcast"])
@@ -131,7 +131,7 @@ struct EQMigrationTests {
 
     @Test("MIGRATE-09: no v1 blob, or a store from before the rule, never loses the v2 EQ")
     func catchUpNeverGuesses() {
-        let edited = EQState(preset: .builtIn(.studio), curve: EQFixture.curve([20: 5]))
+        let edited = EQState(preset: .builtIn(.bassBoost), curve: EQFixture.curve([20: 5]))
         let current = EQStore(shared: edited, pinned: [:], v1Fingerprint: "cbf29ce484222325")
         #expect(EQMigration.catchUp(current, withV1: nil, customPresets: [:]) == current)
         // Written before the fingerprint existed: it records the blob on disk and keeps its own state.

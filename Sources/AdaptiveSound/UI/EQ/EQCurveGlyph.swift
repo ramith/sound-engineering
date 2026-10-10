@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - EQ curve glyph (Sprint EQ, EQ3)
 
 /// A preset's shape in miniature — its 31 points across the row's leading column, over a hairline 0 dB,
-/// on the graph's own ±12 dB scale so glyphs compare honestly (a near-flat Studio reads near flat).
+/// on the graph's own ±12 dB scale so glyphs compare honestly (a gentle +3 dB Presence reads gentle).
 /// Decorative: the row's name carries it for VoiceOver.
 struct EQCurveGlyph: View {
     let points: [Float]
