@@ -83,11 +83,12 @@ namespace
 
 // ---------------------------------------------------------------------------
 // Test: endpoints are bit-exact (settled).
-//   x==1 (settled) → output byte-identical to the legacy full chain.
-//   x==0 (settled) → output byte-identical to the input (early-return bypass).
-// The golden master already pins x==1 globally; this adds an explicit per-call assert and
-// the x==0 identity. We use an ACTIVE non-trivial state (EQ boost + active limiter) so the
-// x==1 path actually exercises the full chain rather than an identity no-op.
+//   x==1 (settled) → output byte-identical to the full chain.
+//   x==0 (settled), EQ on → the EQ-only path (EQ → limiter), byte-identical to x==1 here (stub
+//                    coloration, normaliser off) — the EQ still plays at Intensity 0 (decision 25).
+//   x==0 (settled), EQ off → output byte-identical to the input (the bit-perfect path).
+// We use an ACTIVE non-trivial state (EQ boost + active limiter) so the x==1 path actually
+// exercises the full chain rather than an identity no-op.
 // ---------------------------------------------------------------------------
 static auto testIntensityEndpointsBitExact() -> void
 {
@@ -107,7 +108,7 @@ static auto testIntensityEndpointsBitExact() -> void
     TargetState active = makeIdentityState();
     std::array<float, kEqBands> gains{};
     gains[kBand1kHzIndex] = kBoostDb;
-    active.eq = EQModuleCoefficients::computeBiquadCascade(gains, kSR);
+    active.eq = makeEqParams(gains, TestConstants::kSampleRate48k);
     active.limiter.truePeakCeilingLinear = kTruePeakCeilingLinear; // active
 
     // Reference: today's full chain via the dedicated x==1 hard branch.
@@ -122,11 +123,23 @@ static auto testIntensityEndpointsBitExact() -> void
         return;
     }
 
-    // x==0 path must equal the input byte-for-byte (early-return bypass, no decode/copy).
+    // x==0 with the EQ ON is the EQ-only path (decision 25: the EQ sits ahead of the blend and
+    // still plays at Intensity 0): EQ → limiter. With the stub coloration and the normaliser
+    // disabled (makeIdentityState), the full chain at x==1 is that same EQ → limiter, so the two
+    // endpoints must be byte-identical — the EQ's sound does not depend on Intensity.
     const std::vector<float> atZero = runIntensityOnce(active, 0.0F, input);
-    if (std::memcmp(atZero.data(), input.data(), kFrames * sizeof(float)) != 0)
+    if (std::memcmp(atZero.data(), wetRef.data(), kFrames * sizeof(float)) != 0)
     {
-        logFail(kName, "x==0 settled output not bit-identical to the input (bypass broken)");
+        logFail(kName,
+                "x==0 with the EQ on is not the EQ-only path (≠ the x==1 EQ → limiter chain)");
+        return;
+    }
+
+    // x==0 with the EQ at its identity is the bit-perfect path: output == input byte-for-byte.
+    const std::vector<float> bypassed = runIntensityOnce(makeIdentityState(), 0.0F, input);
+    if (std::memcmp(bypassed.data(), input.data(), kFrames * sizeof(float)) != 0)
+    {
+        logFail(kName, "x==0 with the EQ off is not bit-identical to the input (bypass broken)");
         return;
     }
 
