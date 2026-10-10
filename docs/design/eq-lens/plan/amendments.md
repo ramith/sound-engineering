@@ -109,7 +109,7 @@ items, which only go live once pins exist:**
 10. **C1:** Save while the output switches must save the curve that was showing when Save was pressed,
     into the slot it came from. It becomes MAJOR once pins exist.
 11. **Toasts:**
-    - E2: no toast after a gap with no output;
+    - E2: a switch after a gap with no output must STILL show the toast (it was missing);
     - a toast raised while the window is closed must not appear or be spoken on reopen;
     - the queue toast and the EQ output toast must not overlap (one shell toast slot, or stacked).
 12. **Preset names:**
