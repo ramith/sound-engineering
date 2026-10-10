@@ -167,3 +167,32 @@ private struct LightEdge<EdgeShape: InsettableShape>: ViewModifier {
         }
     }
 }
+
+// MARK: - EQ point handle (Sprint EQ, EQ3 — ui-plan §2)
+
+/// The EQ graph's ACTIVE point — the one being dragged or under the keyboard cursor: the brand
+/// `iconFill` teal (the carved knob's family), a white rim that sets it off the curve, the carved
+/// sliders' teal glow in dark only (grammar rule 6), and in light the knob's dark edge, since the
+/// gradient's bright top alone is under 3:1 on the white lens (R4-EQ-04). Appearance-aware, so it
+/// lives in this sanctioned file. Decorative: the graph's VoiceOver points carry it.
+struct EQPointHandle: View {
+    let diameter: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Circle()
+            .fill(DesignSystem.Gradient.iconFill)
+            .overlay {
+                Circle()
+                    .inset(by: 1)
+                    .strokeBorder(SwiftUI.Color(token: GlassDecor.knobFill.dark), lineWidth: 1.5)
+            }
+            .lightEdge(GlassDecor.knobRingLight, in: Circle())
+            .frame(width: diameter, height: diameter)
+            .shadow(color: colorScheme == .dark ? SwiftUI.Color(token: GlassDecor.sliderGlowDark) : .clear,
+                    radius: 8)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
