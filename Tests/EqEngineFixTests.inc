@@ -30,6 +30,10 @@
 //   Kernel_P0Fade_KeepsPower       — the 5 ms fade keeps the power: noise ±0.5 dB (equal-gain
 //                                    dipped −2.5), tones' envelopes ±0.5 dB (equal-power would
 //                                    bump an in-phase tone +3)
+//
+// Amendment 18 — rates above 192 kHz:
+//   EQ_Cpu_7_1_AboveSupportedRates — the EQ at 384 and 768 kHz × 8 within its stated budget,
+//                                    5 % × fs / 192 kHz (10 % / 20 % of one core)
 
 namespace
 {
@@ -898,6 +902,49 @@ static auto testKernelP0FadeKeepsPower() -> void
                             mid.lowestDb,
                             mid.highestDb,
                             kToneBoundDb));
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// EQ_Cpu_7_1_AboveSupportedRates — amendment 18 (the break-it's finding 11): the designer, the
+// Realizer and the module accept rates up to 768 kHz, above the pipeline's supported 192 kHz, and
+// there the EQ cost 4.4–4.7 % (384 kHz × 8) and 8.7–9.4 % (768 kHz × 8) of one core — over the
+// 192 kHz budget. The work per sample is the same at every rate (31 bells per channel), so the
+// budget is stated per rate: 5 % × fs / 192 kHz — 10 % at 384 kHz, 20 % at 768 kHz (a margin for
+// the M1 Pro floor's ×1.4–1.8). Holding the EQ off above a cap was rejected: the graph would no
+// longer be what plays. Optimised builds only; -O0 and the sanitizers report. Serial-only.
+// ---------------------------------------------------------------------------
+static auto testEqCpu71AboveSupportedRates() -> void
+{
+    static const char* const kName = "EQ_Cpu_7_1_AboveSupportedRates";
+    constexpr uint32_t kSeconds = 1U;
+    std::string report =
+        std::format("[info] {} ({} build): 8 ch, % of one core\n", kName, kTdCpuBuild);
+    std::string failures;
+    for (const uint32_t fs : {384000U, 768000U})
+    {
+        const double budget = tdEqCpuBudgetPercent(fs);
+        const TdCpu cpu = tdEqCpuPercent(fs, kSeconds);
+        report +=
+            std::format("[info]   {:3d} kHz: settled {:.2f} %, gliding {:.2f} % (budget {} %)\n",
+                        fs / 1000U,
+                        cpu.settled,
+                        cpu.gliding,
+                        budget);
+        if (!(std::max(cpu.settled, cpu.gliding) <= budget))
+        {
+            failures += std::format("{} kHz: {:.2f} % of one core exceeds {} %; ",
+                                    fs / 1000U,
+                                    std::max(cpu.settled, cpu.gliding),
+                                    budget);
+        }
+    }
+    logInfo(report);
+    if (!failures.empty())
+    {
+        logFail(kName, failures);
         return;
     }
     logPass(kName);
