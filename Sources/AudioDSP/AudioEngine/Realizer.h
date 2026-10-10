@@ -3,7 +3,8 @@
 #include "../EQ/GraphicEQDesigner.h" // the Realizer's own designer (owner-local, architect F9)
 #include "../include/DSPKernel.h"
 #include "../include/TargetState.h"
-#include "../Spatial/CrossfeedModule.h" // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
+#include "../Loudness/TrackLoudnessGain.h" // the loudness-neutral EQ gain (EQ1c)
+#include "../Spatial/CrossfeedModule.h"    // kMaxCrossfeedDelayFrames (off-RT coeff clamp)
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -69,6 +70,15 @@ namespace AdaptiveSound
     // stored points and re-derives the crossfeed at the new rate, and publishes once — the EQ
     // module snaps to that first target, so a rate or channel change never fades in from flat.
     //
+    // Loudness-neutral gain (EQ1c, decision 26): the EQ module plays the curve and then −ΔL, how
+    // much louder the curve makes the current track. The track analyzer and the playback bridge
+    // post the track's profile, a failed analysis and the audible track change
+    // (publishTrackLoudnessProfile / reportTrackLoudnessFailure / setCurrentTrack — never the EQ
+    // view model); TrackLoudnessGain decides the gain and its glide, and the Realizer publishes it
+    // in canonical_.eq.outputGainDb, so it rides the EQ module's smoother. An EQ edit carries a
+    // decimated estimate with its coefficients, refreshed in full after 150 ms idle (A6). A track
+    // whose analysis failed runs the kernel's causal estimate (DSPKernel::startCausalLoudness).
+    //
     // Threading: the slots and drainPosted_ are guarded by slotMutex_ (control-thread write vs
     // drain take). Never taken on the RT thread. Everything else is queue-owned.
     // ------------------------------------------------------------------------
@@ -119,6 +129,18 @@ namespace AdaptiveSound
         // Crossfeed: level clamped to [0,1], preset to the valid CrossfeedPreset range.
         void setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset);
 
+        // --- Track loudness (any thread; each posts to the queue) ------------------------
+        // A track's loudness profile from the analyzer (a prefix, then the whole track; the
+        // engine keeps this reference, so the caller may drop its own). token 0 or a null
+        // profile is ignored.
+        void publishTrackLoudnessProfile(uint64_t token,
+                                         std::shared_ptr<const TrackLoudnessProfile> profile);
+        // The analyzer could not profile `token` at all: it falls back to the causal estimate.
+        void reportTrackLoudnessFailure(uint64_t token);
+        // `token` became the audible track: at a gapless seam (`gaplessSeam`), or by a fresh
+        // start. The same token again is a no-op (a re-establish of the same file).
+        void setCurrentTrack(uint64_t token, bool gaplessSeam);
+
         // The rate the EQ is designed at (the kernel's rate). Any thread.
         [[nodiscard]] double eqDesignSampleRate() const noexcept
         {
@@ -133,19 +155,25 @@ namespace AdaptiveSound
         void reinitializeKernel(uint32_t sampleRate, uint32_t maxFrames);
 
         // Teardown / draining barrier. Idempotent. Must be called before releasing the kernel.
+        // Ends any causal loudness estimate.
         void shutdown();
 
+        // Off-RT, never on the queue itself: returns once every block posted before the call has
+        // run (tests and diagnostics read queue-owned state after it).
+        void barrier();
+
         // --- Synchronously-callable intent application (tests; design §1.7) -------------
-        // The read-modify-write + single publish on the CALLING thread; the drain calls these.
+        // The read-modify-write + single publish, run ON the queue (dispatch_sync; inline when
+        // already there), so a test never races the queue's own blocks (the loudness refresh).
         void applyEq(const EqIntent& intent);
         void applyIntensity(float value);
         void applyCrossfeed(const CrossfeedIntent& intent);
 
-        // Read-only canonical-state accessor for tests/diagnostics.
-        const TargetState& canonicalState() const noexcept
-        {
-            return canonical_;
-        }
+        // Tests/diagnostics: COPIES of the canonical state and of the loudness-gain state, taken
+        // on the queue (dispatch_sync), so a reader never races the queue's own blocks (the
+        // loudness refresh, a causal snapshot) however busy it is.
+        [[nodiscard]] TargetState canonicalState();
+        [[nodiscard]] TrackLoudnessGain loudnessGain();
 
       private:
         void drain();
@@ -159,6 +187,18 @@ namespace AdaptiveSound
         void realizeCrossfeed();
         void publishCanonical();
 
+        // Loudness (queue): publish a gain-only change; keep the causal estimate running exactly
+        // when TrackLoudnessGain wants it (`restart`: a new estimate even if one runs); the 150 ms
+        // idle refresh after an edit.
+        void applyGainChange(const TrackLoudnessGain::Change& change);
+        void syncCausalEstimate(bool restart);
+        void stopCausalEstimate();
+        void scheduleLoudnessRefresh();
+        void applyCausalSnapshot(uint64_t generation,
+                                 std::shared_ptr<const TrackLoudnessProfile> profile);
+        // Run `work()` on the queue and wait (inline when already on it). Defined in Realizer.mm.
+        template <typename Work> void runOnQueue(const Work& work);
+
         std::shared_ptr<DSPKernel> kernel_; // outlives us (drained before release)
         dispatch_queue_t queue_ = nullptr;  // serial, off-main; sole publisher
 
@@ -170,6 +210,10 @@ namespace AdaptiveSound
         std::array<double, kEqBandCount> publishedGainsDb_{}; // the τ rule's "from" endpoint
         double sampleRate_ = 0.0;
         std::atomic<double> designRate_{0.0}; // sampleRate_, readable from any thread
+        TrackLoudnessGain loudness_;
+        bool causalRunning_ = false;
+        uint64_t causalGeneration_ = 0U;  // bumped per estimate: stale snapshots are dropped
+        uint64_t refreshGeneration_ = 0U; // bumped per edit: only the last edit's refresh runs
 
         // --- Coalescing slots (control thread writes, drain takes; under slotMutex_) --------
         std::mutex slotMutex_;

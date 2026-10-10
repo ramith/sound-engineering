@@ -36,6 +36,7 @@
 #include "../include/AudioConstants.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -121,4 +122,19 @@ namespace AdaptiveSound
     // The gated loudness (LUFS) of a profile's blocks with no curve: the value stored as
     // sourceLoudnessLufs. kSilenceLufs (−200) when no block passes the gates.
     [[nodiscard]] double profileLoudnessLufs(const TrackLoudnessProfile& profile) noexcept;
+
+    // The loudness (LUFS) of one block (j < blockCount): −0.691 + 10·log10 Σ_b P_j(b), ungated;
+    // kSilenceLufs for a silent block or an index out of range. Used to tell a continuous gapless
+    // seam (music on both sides) from one across silence.
+    [[nodiscard]] double blockLoudnessLufs(const TrackLoudnessProfile& profile,
+                                           uint32_t index) noexcept;
+
+    // The pink-noise prior (engine-plan §4.3): a one-block profile of K-weighted pink noise on the
+    // band grid at `sampleRate`, at −23 LUFS. Pink noise has equal power per octave, so each
+    // 1/24-octave band carries ln(upper/lower) of it (the lowest edge floored at 10 Hz), shaped
+    // by the K-weighting's |K(f)|² at the band's centre. It stands in for a track whose profile
+    // has not landed yet: −ΔL on it is within ~3.4 dB of the track's own (s4b). nullptr for a rate
+    // outside the grid's domain.
+    [[nodiscard]] std::shared_ptr<const TrackLoudnessProfile>
+    makePinkPriorProfile(double sampleRate);
 } // namespace AdaptiveSound

@@ -9,6 +9,8 @@
 #include "ParameterRamp.h"
 #include "TargetState.h"
 #include <AudioToolbox/AudioToolbox.h>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -21,7 +23,9 @@ namespace AdaptiveSound
     class BRIRModule;
     class CrossfeedModule;
     class LimiterModule;
+    class CausalLoudnessTap;
     class MultichannelView;
+    struct TrackLoudnessProfile;
 
     // DSP Kernel: the signal chain, EQ FIRST (Sprint EQ decision 25):
     //
@@ -66,6 +70,17 @@ namespace AdaptiveSound
         // tag changes.  Harmless no-op if loudnessModule_ is not yet initialised.
         void publishChannelLayout(const ChannelLayout& layout) noexcept;
 
+        // Off-RT (the Realizer's queue): the causal running loudness estimate of the kernel's input
+        // (CausalLoudnessTap, EQ1c) — the fallback for a track whose loudness analysis failed.
+        // start: a fresh estimate whose profile-so-far reaches `sink` (on the tap's worker) after
+        // every second of audio; stop: no further calls once it returns. initialize() ends any
+        // estimate (the Realizer restarts it after a re-allocation).
+        void startCausalLoudness(
+            std::function<void(std::shared_ptr<const TrackLoudnessProfile>)> sink) noexcept;
+        void stopCausalLoudness() noexcept;
+        // Diagnostics (any thread): the frames the current causal estimate has analysed.
+        [[nodiscard]] uint64_t causalLoudnessFedFrames() const noexcept;
+
         // Read-only view of the EQ stage between process() calls (tests/diagnostics only).
         [[nodiscard]] const EQModule* eqModule() const noexcept
         {
@@ -97,6 +112,7 @@ namespace AdaptiveSound
         std::unique_ptr<CrossfeedModule> crossfeedModule_;
         std::unique_ptr<LoudnessModule> loudnessModule_;
         std::unique_ptr<LimiterModule> limiterModule_;
+        std::unique_ptr<CausalLoudnessTap> causalTap_; // the input, for the causal estimate
 
         // Lock-free parameter transport (wait-free SPSC triple-buffer snapshot).
         DoubleBufferSnapshot<TargetState> targetStateSnapshot_;

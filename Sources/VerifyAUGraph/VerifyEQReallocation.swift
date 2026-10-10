@@ -11,10 +11,12 @@
 // first start; the first allocation's dispatch_sync runs after those drains on the Realizer's
 // serial queue, so the curve is in place for block one.
 //
-// At every step, each channel's tone (`syntheticToneHz`) must play at the gain the designer reads
-// back for the curve at that rate (`asEqDesign`) within 0.1 dB, and a step at an earlier step's
-// rate must play the same as it within 0.1 dB (engine-plan §10). The -12 dBFS tones plus at most
-// +6 dB stay below the safety limiter.
+// At every step, each channel's tone (`syntheticToneHz`) must play the curve's SHAPE the designer
+// reads back at that rate (`asEqDesign`) within 0.1 dB — on top of one broadband level, the
+// loudness-neutral EQ gain (EQ1c; with no track playing, the pink prior's), taken from channel 0,
+// whose 1 kHz tone sits on a 0 dB point — and a step at an earlier step's rate must play the same
+// as it within 0.1 dB (engine-plan §10). The -12 dBFS tones plus at most +6 dB stay below the
+// safety limiter.
 
 @preconcurrency import AVFAudio
 import AVFoundation
@@ -91,14 +93,17 @@ private func checkPlayedEQ(_ captured: [[Float]], rate: Double, reference: [Doub
         return nil
     }
     let measured = zip(captured, hz).map { toneGainDb($0, hz: $1, rate: rate) }
-    let designError = zip(measured, expected).map { abs($0 - Double($1)) }.max() ?? .infinity
+    // The broadband level the EQ adds to its shape (the loudness-neutral gain): channel 0's offset.
+    let level = (measured.first ?? 0) - Double(expected.first ?? 0)
+    let designError = zip(measured, expected).map { abs($0 - level - Double($1)) }.max() ?? .infinity
     let drift = zip(measured, reference ?? measured).map { abs($0 - $1) }.max() ?? .infinity
     let measuredText = measured.map { String(format: "%+.3f", $0) }.joined(separator: ", ")
     let expectedText = expected.map { String(format: "%+.3f", $0) }.joined(separator: ", ")
     // `!(x <= tolerance)` so a NaN measurement fails too.
-    if !(designError <= eqReallocToleranceDb) {
+    if !(designError <= eqReallocToleranceDb) || !(abs(level) <= 12) {
         print("EQ1b FAIL \(label): played [\(measuredText)] dB vs designed [\(expectedText)] dB "
-            + "(worst \(String(format: "%.3f", designError)) dB > \(eqReallocToleranceDb) dB) — the EQ was lost")
+            + "(shape worst \(String(format: "%.3f", designError)) dB > \(eqReallocToleranceDb) dB, level "
+            + "\(String(format: "%+.3f", level)) dB) — the EQ was lost")
         return nil
     }
     if !(drift <= eqReallocToleranceDb) {
@@ -107,7 +112,8 @@ private func checkPlayedEQ(_ captured: [[Float]], rate: Double, reference: [Doub
         return nil
     }
     print("EQ1b PASS \(label): played [\(measuredText)] dB = designed [\(expectedText)] dB "
-        + "(worst \(String(format: "%.3f", designError)) dB, drift \(String(format: "%.3f", drift)) dB)")
+        + "+ the loudness-neutral \(String(format: "%+.3f", level)) dB (shape worst "
+        + "\(String(format: "%.3f", designError)) dB, drift \(String(format: "%.3f", drift)) dB)")
     return measured
 }
 

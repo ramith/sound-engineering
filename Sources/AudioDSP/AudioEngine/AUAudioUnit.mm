@@ -11,6 +11,7 @@
 #include "../include/TargetState.h"
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
+#include "../Loudness/TrackLoudnessHandle.h"  // AsLoudnessProfile: one shared profile reference
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -445,6 +446,38 @@ double eqDesignSampleRate(void* auUnit) AUDIODSP_C_NOEXCEPT {
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     return (realizer != nullptr) ? realizer->eqDesignSampleRate() : 0.0;
+}
+
+// The live AU's Realizer, borrowed for one C-ABI call (nullptr when there is none).
+static std::shared_ptr<AdaptiveSound::Realizer> borrowRealizer(void* auUnit) noexcept {
+    if (auUnit == nullptr) {
+        return nullptr;
+    }
+    AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
+    return [audioUnit realizer];
+}
+
+bool publishTrackLoudnessProfile(void* auUnit, uint64_t trackToken, const AsLoudnessProfile* profile) AUDIODSP_C_NOEXCEPT {
+    // Sprint EQ, EQ1c: the analyzer's profile. The handle's shared reference is copied — the
+    // blocks are not — so the engine's copy outlives the caller's handle.
+    std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit);
+    if (realizer == nullptr || profile == nullptr || trackToken == 0U || !profile->profile) {
+        return false;
+    }
+    realizer->publishTrackLoudnessProfile(trackToken, profile->profile);
+    return true;
+}
+
+void reportTrackLoudnessFailure(void* auUnit, uint64_t trackToken) AUDIODSP_C_NOEXCEPT {
+    if (std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit)) {
+        realizer->reportTrackLoudnessFailure(trackToken);
+    }
+}
+
+void setCurrentTrack(void* auUnit, uint64_t trackToken, bool gaplessSeam) AUDIODSP_C_NOEXCEPT {
+    if (std::shared_ptr<AdaptiveSound::Realizer> realizer = borrowRealizer(auUnit)) {
+        realizer->setCurrentTrack(trackToken, gaplessSeam);
+    }
 }
 
 bool publishEQBandGains(void* auUnit, const float* bandGainsDb, uint32_t count, double sampleRate) AUDIODSP_C_NOEXCEPT {
