@@ -1,13 +1,16 @@
 import LibraryStore
 import SwiftUI
 
-// MARK: - Detail page actions (S10.8 E2/E3 — the header's Play and ⋯)
+// MARK: - Detail page actions (S10.8 E2/E3 — the header's Play, Shuffle and ⋯)
 
-/// The page's actions, on the header pills: Play (the teal pill — the whole page from the top) and
-/// ⋯ (Play Next, Add to Queue, Add to Playlist for the whole page). Off while the page has no songs.
+/// The page's actions, on the header pills: Play (the teal pill — the whole page from the top),
+/// Shuffle (an artist's or a genre's page) and ⋯ (Play Next, Add to Queue, Add to Playlist for the
+/// whole page). Off while the page has no songs.
 struct LibraryDetailActions: View {
     /// The page's songs in the order shown.
     let rows: [LibraryTrackDisplay]
+    /// The page offers Shuffle (an artist's or a genre's; an album's page never had it).
+    let offersShuffle: Bool
     /// "Add to Playlist…": the page's searchable picker, for these songs.
     let choosePlaylist: ([Int64]) -> Void
 
@@ -18,6 +21,9 @@ struct LibraryDetailActions: View {
             Button("Play", systemImage: "play.fill", action: play)
                 .buttonStyle(.pill)
                 .controlSize(.large)
+            if offersShuffle {
+                HeaderPillButton("Shuffle", systemImage: "shuffle", action: shuffle)
+            }
             moreMenu
         }
         .disabled(rows.isEmpty)
@@ -47,6 +53,11 @@ struct LibraryDetailActions: View {
 
     private func play() {
         model.play(rows, startAt: 0)
+    }
+
+    /// Shuffle on, then the page from a random song.
+    private func shuffle() {
+        model.shuffle(rows)
     }
 
     private func playNext() {

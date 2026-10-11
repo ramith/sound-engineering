@@ -22,20 +22,21 @@ struct LibraryCategoryRoot: View {
     }
 }
 
-/// The destination for a pushed `LibraryRoute` (album / artist / genre detail, or a selected playlist).
+/// The destination for a pushed `LibraryRoute`: an album, artist or genre page — one view,
+/// `LibraryDetailPage` (S10.8 E2/E3) — or a selected playlist. Each page wears `.id(route)`: another
+/// page is a fresh view, with its own load, selection and scroll, so a page's `ref` never changes
+/// under it (the page relies on that).
 struct LibraryRouteView: View {
     let route: LibraryRoute
 
     var body: some View {
         switch route {
         case let .album(id):
-            // `.id`: another page is a fresh view — its own load, selection and scroll. The page relies
-            // on it: its `ref` never changes under it.
             LibraryDetailPage(ref: .album(id)).id(route)
         case let .artist(id):
-            ArtistDetailView(artistID: id)
+            LibraryDetailPage(ref: .artist(id)).id(route)
         case let .genre(id):
-            GenreDetailView(genreID: id)
+            LibraryDetailPage(ref: .genre(id)).id(route)
         case let .playlist(id):
             PlaylistDetailView(playlistID: id)
         }
