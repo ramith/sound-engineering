@@ -1,0 +1,3 @@
+clipA_seetha.wav -12 dB: bright 0.40 | -6 dB: bright 0.39 | +0 dB: bright 0.40 | +6 dB: bright 0.42 | +12 dB: bright 0.43
+clipB_band.wav -12 dB: bright 0.47 | -6 dB: bright 0.48 | +0 dB: bright 0.48 | +6 dB: bright 0.48 | +12 dB: bright 0.49
+clipC_full.wav -12 dB: bright 0.41 | -6 dB: bright 0.41 | +0 dB: bright 0.42 | +6 dB: bright 0.43 | +12 dB: bright 0.43

@@ -908,3 +908,48 @@ the session rather than memory.
 - **Committed:** the build plan (`eq-lens/plan/`: amendments, engine, UI), the evidence
   (`eq-lens/evidence/`: two surveys, three reviews, three verifies), and the reference prototype with the
   adversarial fixtures (`research/eq-geq-poc/`).
+
+### Build, break-it, review and fix rounds (2026-10-10)
+
+- **Build:** EQ0, DEV-UID, EQ1a, EQ3a (+ its break-it fix round), EQ1c part 1, EQ3, EQ1b, EQ3t, EQ4 (UI +
+  the preset re-voice, decisions 30–32), EQ1c part 2, EQ2. Parallel worktree agents. Each piece was gated in its
+  worktree, then fast-forwarded or cherry-picked.
+- **A gate hole found and closed:** a worktree's strict gate skips swiftformat, because `.swiftformat` excludes
+  `.claude` and the path contains it. One format error reached the merged branch. From then on: swiftformat lint on
+  main after every merge, and agents lint changed files by explicit path.
+- **Engine break-it** (independent audio-dsp agent):
+  - **Core held:** read-back exact; numerics to 768 kHz; re-allocation exact; a 20k-intent storm with 0 RT
+    allocations and no races.
+  - **Found:**
+    - the app still clamped before EQ2 (BLOCKER, closed by EQ2);
+    - one +Inf / NaN sample left the limiter at NaN or froze the normaliser;
+    - a single-τ glide (a ±12 point lagged 371 ms; bass gestures swelled +2.9 dB);
+    - the Intensity-0 level swing (founder decision 33: glide ~2 s);
+    - the P0 step; CPU above 192 kHz; predictor pathologies.
+  - **Fix round:**
+    - per-band τ (a point settles in ~26 ms; bass swell ≤ 0.5 dB);
+    - non-finite input → silence;
+    - a ~1.5 s Intensity-0 glide;
+    - P0 step +0.13 LU, with a correlation-aware fade;
+    - a stated CPU budget above 192 kHz;
+    - a curve-range clamp on the predictor. A literal ±3 dB clamp was measured and rejected: it breaks decision 26
+      on music.
+- **UI code review (2 MAJOR, 14 MINOR) + my live pass in the running test-library app:**
+  - **Live pass:** all behaviour passed — presets, graph click/keys/drag/Esc, Tone, On/Off, hold-Compare by mouse /
+    Return / VoiceOver, Bring back, pin, Save validation, rename, delete.
+  - **It found:** Space did nothing on Compare; the Save validation line wasn't in the accessibility tree; the
+    graph's AX children were full-width strips; the Tab order.
+  - **One UI fix round:** the decisions moved into a gated `EQSession`; the toast after a no-output gap; Esc restores
+    Bring back; one pin per model; all keyboard/VO items. **Re-checked live: all pass.**
+- **Final strict gate on main @ ee0ec5b:** EXIT 0 — 192/192 C++ (debug, ASan/UBSan, TSan), 563 Swift tests,
+  VerifyLibraryStore 154/154, VerifyAUGraph, 0 leaks.
+
+### Founder check (2026-10-11)
+
+The listening check passed for now: "Warm muted the hiss" on the old recording; Vocal, Presence, Clarity,
+Bass & Treble and Bass Boost "sounded ok"; Tone sliders work; "everything seems to work". **The founder will
+keep testing for several days and report problems.**
+
+One fix: the My Preset delete dialog (a native alert: system blue ring, red button) doesn't match the theme →
+one themed app dialog for the delete confirmation and the Save / Rename sheet. The playlist and folder
+confirmations follow in Sprints E and F.
