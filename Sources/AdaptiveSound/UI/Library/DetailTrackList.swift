@@ -38,9 +38,10 @@ struct DetailTrackList: View {
         @Environment(\.sheetSongSelection) private var sheetSongSelection
     #endif
 
-    /// The row area's insets from the card — Songs' (6 above and below, 12 at the sides).
-    private static let verticalInset: CGFloat = 6
-    private static let horizontalInset: CGFloat = 12
+    /// The Library card's row area insets (`LayoutMetrics`), shared with Songs, the grids and a
+    /// playlist's rows.
+    private static let verticalInset = DesignSystem.LayoutMetrics.cardRowAreaInsetV
+    private static let horizontalInset = DesignSystem.LayoutMetrics.cardRowAreaInsetH
 
     var body: some View {
         let pass = RowPass(cursorID: ringCursorID, nowPlayingID: viewModel.playingTrackID,
