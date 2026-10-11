@@ -132,6 +132,8 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     original level, without loudness levelling, which can be up to +10 dB louder (loud masters) or 15 dB
     quieter. It used to land within ~0.1 s; now it glides over about 2 s. The end state is unchanged:
     Intensity 0 with the EQ Off is bit-perfect.
+34. **A genre's detail page uses its 2×2 cover mosaic as the header** (2026-10-11, Sprint E plan check): the
+    same picture as its tile in the Genres grid, so the page reads as opened from that tile.
 
 ## C. Scope
 
