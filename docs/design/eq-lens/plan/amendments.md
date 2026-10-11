@@ -152,6 +152,10 @@ under the graph), and it must land before the listening check.
   (ui-plan §4.3): the designer holds points at ±12, so no honest curve exists for a level the EQ can't play.
 - **`EQAudibleState.engineNotReady`** is a fifth state (ui-plan §4 has four): with no engine nothing plays,
   and the strip says so, while the graph still draws the EQ as it will play once the engine runs.
+- **For Sprints E and F:** the app's other native confirmations — delete playlist
+  (`LibrarySidebar.swift`), remove missing (`PlaylistDetailView.swift`), remove folder
+  (`MusicFoldersSection.swift`) — adopt the themed `AppDialog` the EQ's Delete and Save sheets use (founder,
+  2026-10-11).
 
 ## Recorded deviations from items 14–19 (the engine fix round, 2026-10-10)
 

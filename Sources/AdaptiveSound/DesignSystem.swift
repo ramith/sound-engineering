@@ -103,6 +103,8 @@ enum DesignSystem {
         /// (on the deep dark base the vivid values already clear text AA).
         static let statusWarningText = from(Palette.statusWarningText)
         static let statusErrorText = from(Palette.statusErrorText)
+        /// A destructive action's pill fill (the dialog's Delete), under `statusErrorText`.
+        static let destructiveFill = from(Palette.destructiveFill)
 
         /// Row-fill tints for a selectable list row (queue / History): the now-playing row reads
         /// stronger than a merely-selected one. Accent-derived (the derivation is asserted by
