@@ -52,4 +52,18 @@ struct FixedRowRevealTests {
         // The signature takes no rows at all: the lazy stack is never asked to place one.
         #expect(offset(1_000_000, top: 0, height: 480) == 47_999_580) // its bottom + inset, 48,000,060, less 480
     }
+
+    @Test("a span of any height — a row with its section header (E3) — follows the same rule")
+    func spanWithHeader() {
+        /// A row at 276–324 with its 44 pt header above it: the span 232–324, 6 pt insets.
+        func offset(top: Double, height: Double) -> Double? {
+            FixedRowReveal.offset(revealingSpanAt: 232, height: 92, inset: 6, visibleTop: top, visibleHeight: height)
+        }
+        #expect(offset(top: 300, height: 200) == 232) // above: the header comes in at the top
+        #expect(offset(top: 0, height: 200) == 136) // below: 232 + 92 + 12 = 336, less 200
+        #expect(offset(top: 232, height: 104) == nil) // header, row and both insets just fit
+        // The index form is this with the row's own span.
+        #expect(FixedRowReveal.offset(revealingSpanAt: 240, height: 48, inset: 6, visibleTop: 480, visibleHeight: 480)
+            == self.offset(5, top: 480))
+    }
 }

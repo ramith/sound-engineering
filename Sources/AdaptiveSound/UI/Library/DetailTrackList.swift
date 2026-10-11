@@ -49,6 +49,7 @@ struct DetailTrackList: View {
             LazyVStack(spacing: 0) {
                 ForEach(layout.items) { item in
                     switch item {
+                    case let .header(_, title, year): DetailSectionHeader(title: title, year: year)
                     case let .row(track, number): row(track, number: number, pass: pass)
                     }
                 }
@@ -97,10 +98,11 @@ struct DetailTrackList: View {
     private func row(_ track: LibraryTrackDisplay, number: Int?, pass: RowPass) -> some View {
         let isNowPlaying = track.id == pass.nowPlayingID
         let isSelected = selection.contains(track.id)
+        let secondary = secondaryLine(track)
         return Button {
             handleClick(track)
         } label: {
-            DetailTrackRow(track: track, number: number, secondary: "", isNowPlaying: isNowPlaying,
+            DetailTrackRow(track: track, number: number, secondary: secondary, isNowPlaying: isNowPlaying,
                            isPlaybackActive: pass.isPlaybackActive, isSelected: isSelected,
                            isKeyboardCursor: track.id == pass.cursorID)
         }
@@ -116,13 +118,21 @@ struct DetailTrackList: View {
                             showInfo: { infoTarget = $0 }, choosePlaylist: choosePlaylist)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(DetailTrackRow.accessibilityLabel(for: track, secondary: ""))
+        .accessibilityLabel(DetailTrackRow.accessibilityLabel(for: track, secondary: secondary))
         .accessibilityValue(DetailTrackRow.accessibilityValue(number: number, isNowPlaying: isNowPlaying))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { play(from: track.id) }
         .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
         .accessibilityAction(named: Text("Add to Queue")) { model.append([track]) }
         .accessibilityAction(named: Text("Info")) { infoTarget = track }
+    }
+
+    /// The line under a title: on a genre page (one flat list of many artists' songs), "Artist ·
+    /// Album" — the Songs convention; none on an album or artist page, whose header (or album header)
+    /// already says both.
+    private func secondaryLine(_ track: LibraryTrackDisplay) -> String {
+        guard layout.arrangement == .flat else { return "" }
+        return [track.artistDisplayName, track.albumName ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: Play, selection and keys
@@ -159,13 +169,15 @@ struct DetailTrackList: View {
         max(Int((visibleSpan.rect.height - 2 * Self.verticalInset) / LibraryRowChrome.height) - 1, 1)
     }
 
-    /// Scrolls the cursor row into view — as little as needed — by arithmetic on the fixed row
-    /// height (`FixedRowReveal`), never by the lazy stack's id lookup, which builds every row up to it.
+    /// Scrolls the cursor row into view — as little as needed, with its album header when it is the
+    /// album's first song — by arithmetic on the fixed row and header heights (`FixedRowReveal`), never
+    /// by the lazy stack's id lookup, which builds every row up to it.
     private func revealCursor() {
-        guard let cursor = selection.cursor, let index = layout.index(of: cursor),
-              let offset = FixedRowReveal.offset(revealing: index, rowHeight: LibraryRowChrome.height,
-                                                 inset: Self.verticalInset,
-                                                 visibleTop: visibleSpan.rect.minY,
+        guard let cursor = selection.cursor, let index = layout.index(of: cursor) else { return }
+        let span = layout.span(ofRow: index, rowHeight: LibraryRowChrome.height,
+                               headerHeight: DetailSectionHeader.height)
+        guard let offset = FixedRowReveal.offset(revealingSpanAt: span.top, height: span.height,
+                                                 inset: Self.verticalInset, visibleTop: visibleSpan.rect.minY,
                                                  visibleHeight: visibleSpan.rect.height)
         else { return }
         rowScroll.scrollTo(y: offset)

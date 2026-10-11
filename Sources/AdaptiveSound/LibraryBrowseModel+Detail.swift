@@ -9,15 +9,28 @@ import LibraryStore
 /// `+Facets` and `+Play`.
 @MainActor
 extension LibraryBrowseModel {
-    /// An album page's content: its title, album artist, year and cover over its songs in disc /
-    /// track order. Nil for the other pages, which move onto it in E3.
-    func detailContent(_ ref: FacetRef) async -> LibraryDetailContent? {
-        guard case let .album(id) = ref else { return nil }
-        let album = await album(id: id)
+    /// A page's content, over its songs as the tile's verbs read them (`facetTracks`):
+    /// - an album: its title, album artist, year and cover; its songs in disc / track order, numbered;
+    /// - an artist: its name; its songs under one header per album, numbered within each;
+    /// - a genre: its name; one flat list (its cover mosaic is the Genres grid's, read live by the
+    ///   header — decision 34).
+    func detailContent(_ ref: FacetRef) async -> LibraryDetailContent {
         let tracks = await facetTracks(ref)
-        return LibraryDetailContent(title: album?.title ?? "", subtitle: album?.albumArtist, year: album?.year,
-                                    artworkKey: album?.artworkKey,
-                                    layout: DetailTrackLayout(tracks: tracks, arrangement: .album))
+        switch ref {
+        case let .album(id):
+            let album = await album(id: id)
+            return LibraryDetailContent(title: album?.title ?? "", subtitle: album?.albumArtist, year: album?.year,
+                                        artworkKey: album?.artworkKey,
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .album))
+        case let .artist(id):
+            let artist = await artist(id: id)
+            return LibraryDetailContent(title: artist?.name ?? "", subtitle: nil, year: nil, artworkKey: nil,
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .byAlbum))
+        case let .genre(id):
+            let genre = await genre(id: id)
+            return LibraryDetailContent(title: genre?.name ?? "", subtitle: nil, year: nil, artworkKey: nil,
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .flat))
+        }
     }
 }
 

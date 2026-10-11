@@ -49,7 +49,7 @@
             browse = LibraryBrowseModel(audio: audio, library: library)
             playlists = PlaylistsModel(library: library, audio: audio)
             let songs = variant == .empty ? [] : Self.songs()
-            detailPage = variant.page == nil ? nil : Self.albumPage()
+            detailPage = variant.page.map(Self.detailPage(for:))
             selectedSongs = variant == .pageStates ? Self.pageSelection
                 : Set(songs.filter { $0.title == Self.selectedTitle }.map(\.id))
             let showsGrid = variant.category != .songs

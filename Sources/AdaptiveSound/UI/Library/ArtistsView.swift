@@ -44,29 +44,3 @@ struct ArtistsGridView: View {
         }
     }
 }
-
-// MARK: - Artist detail (grouped by album)
-
-/// One artist's songs, GROUPED by album (founder decision Q-a) — reuses `FacetTrackListView` in its
-/// grouped mode. Loads the header facet + tracks into local `@State` (mirrors `AlbumDetailView`),
-/// keyed on `artistID`. Track-artist lens (`tracksDisplay(byArtist:)`) — songs this artist performs.
-struct ArtistDetailView: View {
-    let artistID: Int64
-
-    @Environment(LibraryBrowseModel.self) private var model
-    @State private var artist: ArtistFacet?
-    @State private var tracks: [LibraryTrackDisplay] = []
-
-    var body: some View {
-        FacetTrackListView(
-            title: artist?.name ?? "",
-            backLabel: "Back to Artists",
-            tracks: tracks,
-            groupByAlbum: true
-        )
-        .task(id: artistID) {
-            artist = await model.artist(id: artistID)
-            tracks = await model.tracks(byArtist: artistID)
-        }
-    }
-}

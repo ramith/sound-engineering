@@ -16,7 +16,7 @@
         /// The album page (`SheetVariant.page`, album 10): "Roja" — the playing song's album, so its
         /// playing row shows — with a cover, the album artist, the year and eight songs, one in Tamil
         /// script.
-        static func albumPage() -> LibraryDetailContent {
+        private static func albumPage() -> LibraryDetailContent {
             let songs = albumSongs(albumID: 10, title: "Roja", year: 1992, artist: "A. R. Rahman", [
                 PageSong(401, "Chinna Chinna Aasai", 1, 296), PageSong(402, "Kadhal Rojave", 2, 301),
                 PageSong(403, "Pudhu Vellai Mazhai", 3, 312), PageSong(4, playingTitle, 4, 245),
@@ -26,6 +26,69 @@
             return LibraryDetailContent(title: "Roja", subtitle: "A. R. Rahman", year: 1992,
                                         artworkKey: "page-roja",
                                         layout: DetailTrackLayout(tracks: songs, arrangement: .album))
+        }
+
+        /// The world's page (`SheetVariant.page`): album 10, artist 1, or genre 23.
+        static func detailPage(for ref: LibraryBrowseModel.FacetRef) -> LibraryDetailContent {
+            switch ref {
+            case .album: albumPage()
+            case .artist: artistPage()
+            case .genre: genrePage()
+            }
+        }
+
+        /// The artist page: "A. R. Rahman" (artist 1), four albums in the store's album order, each
+        /// under its header with its year — the playing song in "Roja", one song with no track number
+        /// (numbered by its place in its album), Tamil script and a long album title.
+        private static func artistPage() -> LibraryDetailContent {
+            let artist = "A. R. Rahman"
+            let songs = albumSongs(albumID: 4, title: "Bombay", year: 1995, artist: artist, [
+                PageSong(2, "கண்ணாளனே", 3, 357), PageSong(502, "Hamma Hamma", 4, 333),
+            ]) + albumSongs(albumID: 9, title: "Rockstar", year: 2011, artist: artist, [
+                PageSong(3, "Kun Faya Kun", 7, 473), PageSong(504, "Nadaan Parindey", 9, 380),
+                PageSong(505, "Sadda Haq", nil, 375),
+            ]) + albumSongs(albumID: 10, title: "Roja", year: 1992, artist: artist, [
+                PageSong(401, "Chinna Chinna Aasai", 1, 296), PageSong(4, playingTitle, 4, 245),
+            ]) + albumSongs(albumID: 11, title: "Slumdog Millionaire (Music from the Motion Picture)", year: 2008,
+                            artist: artist, [PageSong(5, "Jai Ho", 14, 319), PageSong(509, "O... Saya", 2, 214)])
+            return LibraryDetailContent(title: artist, subtitle: nil, year: nil, artworkKey: nil,
+                                        layout: DetailTrackLayout(tracks: songs, arrangement: .byAlbum))
+        }
+
+        /// The genre page: "Soundtrack" (genre 23, whose tile is a full mosaic), one flat list of many
+        /// artists' songs, each with "Artist · Album" — the playing song among them, a long title, a
+        /// song with no artist or album, and accented names.
+        private static func genrePage() -> LibraryDetailContent {
+            let songs = albumSongs(albumID: 9, title: "Rockstar", year: 2011, artist: "A. R. Rahman", [
+                PageSong(3, "Kun Faya Kun", 7, 473),
+            ]) + albumSongs(albumID: 10, title: "Roja", year: 1992, artist: "A. R. Rahman", [
+                PageSong(4, playingTitle, 4, 245),
+            ]) + albumSongs(albumID: 11, title: "Slumdog Millionaire", year: 2008, artist: "A. R. Rahman", [
+                PageSong(5, "Jai Ho", 14, 319),
+            ]) + albumSongs(albumID: 21, title: "Amélie", year: 2001, artist: "Yann Tiersen", [
+                PageSong(611, "Comptine d’un autre été, l’après-midi", 5, 140),
+            ]) + albumSongs(albumID: 22, title: "Inception", year: 2010, artist: "Hans Zimmer", [
+                PageSong(612, "Time", 12, 275),
+            ]) + albumSongs(albumID: 23, title: "Interstellar", year: 2014, artist: "Hans Zimmer", [
+                PageSong(613, "Cornfield Chase", 2, 126),
+            ]) + albumSongs(albumID: 24, title: "The Good, the Bad and the Ugly", year: 1966,
+                            artist: "Ennio Morricone", [
+                                PageSong(614, "The Ecstasy of Gold (From “The Good, the Bad and the Ugly”) — "
+                                    + "Remastered 2004 Version, Original Motion Picture Soundtrack", 11, 202),
+                            ]) + [unknownSong]
+            return LibraryDetailContent(title: "Soundtrack", subtitle: nil, year: nil, artworkKey: nil,
+                                        layout: DetailTrackLayout(tracks: songs, arrangement: .flat))
+        }
+
+        /// A song with no artist and no album, as the store projects one ("" artist, nil album).
+        private static var unknownSong: LibraryTrackDisplay {
+            LibraryTrackDisplay(
+                id: 615, url: URL(filePath: "/fixture/page/615.flac"), title: "Untitled Field Recording 07",
+                artistID: nil, artistName: "", albumID: nil, albumName: nil, format: "FLAC", trackNo: nil,
+                durationMs: 188_000, year: nil, artworkKey: nil, dateAdded: 0, sampleRate: 96000, bitDepth: 24,
+                discNo: nil, fileSize: 90_000_000, playCount: 0, lastPlayed: nil, albumArtistName: nil,
+                genreName: "Soundtrack"
+            )
         }
 
         /// One song of a page fixture: its id, title, track number and length in seconds.

@@ -9,7 +9,7 @@ import SwiftUI
 /// one to three, the guitars glyph with none — `CoverArrangement`), from the cover read that loads
 /// with the genres (`loadGenres`, paths already warmed); its subtitle is "N songs". Hides 0-song
 /// genres (e.g. one orphaned by a retag) via `FacetListVisibility`; opening a genre pushes
-/// `.genre(id)` → `GenreDetailView`.
+/// `.genre(id)` → its page (`LibraryDetailPage`, with the same mosaic as its header — decision 34).
 struct GenresListView: View {
     @Environment(LibraryBrowseModel.self) private var model
 
@@ -36,28 +36,5 @@ struct GenresListView: View {
                                   artworkKeys: covers[genre.id] ?? [])
             }
         )
-    }
-}
-
-/// A genre's songs — FLAT (founder Q-a: only Artists group by album), with "Artist · Album" on each
-/// row's secondary line. Loads its header facet + tracks into local `@State`, keyed on `genreID`.
-struct GenreDetailView: View {
-    let genreID: Int64
-
-    @Environment(LibraryBrowseModel.self) private var model
-    @State private var genre: GenreFacet?
-    @State private var tracks: [LibraryTrackDisplay] = []
-
-    var body: some View {
-        FacetTrackListView(
-            title: genre?.name ?? "",
-            backLabel: "Back to Genres",
-            tracks: tracks,
-            groupByAlbum: false
-        )
-        .task(id: genreID) {
-            genre = await model.genre(id: genreID)
-            tracks = await model.tracks(inGenre: genreID)
-        }
     }
 }
