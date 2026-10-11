@@ -58,11 +58,11 @@ struct EQPresetList: View {
             }
             .onKeyPress(.return, action: renameCurrent)
             .onDeleteCommand(perform: currentMine.map { name in { deleting = name } })
-            .confirmationDialog(deleteTitle, isPresented: isConfirmingDelete, titleVisibility: .visible,
-                                presenting: deleting) { name in
-                Button("Delete", role: .destructive) { eq.deleteMyPreset(name) }
-            } message: { _ in
-                Text("Whatever plays it now keeps its sound.")
+            // The app's themed dialog, as a sheet (the window's own modality), not the system alert.
+            .sheet(isPresented: isConfirmingDelete) {
+                if let deleting {
+                    EQDeletePresetDialog(name: deleting, delete: { confirmDelete(deleting) }, cancel: cancelDelete)
+                }
             }
             .onChange(of: eq.current.preset, initial: true) { _, preset in proxy.scrollTo(preset) }
             #if DEBUG
@@ -125,8 +125,13 @@ struct EQPresetList: View {
         return .handled
     }
 
-    private var deleteTitle: String {
-        deleting.map { "Delete “\($0)”?" } ?? ""
+    private func confirmDelete(_ name: String) {
+        deleting = nil
+        eq.deleteMyPreset(name)
+    }
+
+    private func cancelDelete() {
+        deleting = nil
     }
 
     /// The delete confirmation is up while a deletion waits on it; dismissing it cancels.

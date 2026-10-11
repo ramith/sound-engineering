@@ -73,11 +73,7 @@
         func root(for appearance: SheetAppearance) -> some View {
             browse.browsePlace = nil
             return ContentView()
-                .overlay {
-                    if variant == .eqRename {
-                        SheetEQRenameStandIn(name: Self.renamedPreset, eq: eq)
-                    }
-                }
+                .overlay { dialogStandIn }
                 .environment(audio)
                 .environment(eq)
                 .environment(library)
@@ -95,6 +91,20 @@
                 .environment(\.sheetGridStates, variant == .gridStates ? Self.gridStates : SheetGridStates())
                 .environment(\.sheetEQGraph, Self.eqGraphSeed(for: variant))
                 .defaultAppStorage(defaults)
+        }
+
+        /// The dialog world's sheet, drawn in the window (`SheetDialogStandIn`): Save, Rename or Delete.
+        @ViewBuilder private var dialogStandIn: some View {
+            switch variant {
+            case .eqSave:
+                SheetDialogStandIn { SaveCustomPresetView(sheet: .save(eq.saveSource()), eqViewModel: eq) }
+            case .eqRename:
+                SheetDialogStandIn { SaveCustomPresetView(sheet: .rename(Self.renamedPreset), eqViewModel: eq) }
+            case .eqDelete:
+                SheetDialogStandIn { EQDeletePresetDialog(name: Self.renamedPreset, delete: {}, cancel: {}) }
+            default:
+                EmptyView()
+            }
         }
 
         /// The built-in speakers selected, a USB DAC beside them — every variant has an output device.

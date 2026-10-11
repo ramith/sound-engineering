@@ -62,6 +62,9 @@ struct TokenInvariantTests {
             #expect(pair.light == pair.dark,
                     "\(name) is appearance-independent (accent-derived)")
         }
+        // The destructive pill's fill is the error red's own, at documented alphas: no new hue.
+        #expect(Palette.destructiveFill.light == Palette.statusError.light.opacity(0.12))
+        #expect(Palette.destructiveFill.dark == Palette.statusError.dark.opacity(0.16))
     }
 
     /// The 8a concentric chain (§3.2): outer radii are never smaller than inner ones.

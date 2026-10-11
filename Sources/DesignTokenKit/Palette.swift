@@ -249,6 +249,11 @@ public enum Palette {
     /// Toggled-on chip fill (repeat/shuffle active): accent-derived like the row tints
     /// (TOK-04 asserts the derivation); the glyph on it is `accentText`.
     public static let controlActiveFill = AppearancePair(both: accent.light.opacity(0.16))
+    /// A destructive action's pill (the dialog's Delete, S10.8 EQ): the error red's own fill at the
+    /// chip tints' strength, under `statusErrorText` with its edge — the error family, never the
+    /// system red. DERIVED from `statusError` (TOK-04), no new hue; R4-DIALOG-01 audits it.
+    public static let destructiveFill = AppearancePair(light: statusError.light.opacity(0.12),
+                                                       dark: statusError.dark.opacity(0.16))
     /// The selected segment of the mini capsule pair (Up Next / Recent). Light is SOLID
     /// white (the realigned light mock's raised segment — the grammar's white-card move),
     /// dark the 8a white-12% lift.
@@ -297,7 +302,8 @@ public enum Palette {
         ("lensFill", lensFill), ("badgeFill", badgeFill), ("panelFill", panelFill),
         ("tabTrack", tabTrack), ("accentText", accentText), ("focusRing", focusRing),
         ("accentFill", accentFill), ("accentForeground", accentForeground), ("controlHover", controlHover),
-        ("controlActiveFill", controlActiveFill), ("segmentSelected", segmentSelected),
+        ("controlActiveFill", controlActiveFill), ("destructiveFill", destructiveFill),
+        ("segmentSelected", segmentSelected),
         ("accentTitle", accentTitle), ("meterHot", meterHot), ("meterHotText", meterHotText),
         ("glassRim", GlassDecor.rim), ("glassHairline", GlassDecor.glassHairline),
         ("glassShadow", GlassDecor.shadowColor),
