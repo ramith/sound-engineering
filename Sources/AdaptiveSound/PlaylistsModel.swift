@@ -232,10 +232,9 @@ final class PlaylistsModel {
         if detail.isEmpty {
             detailState = .loading
         }
-        guard let store else {
-            detailState = .loading
-            return
-        }
+        // No store (the launch build, or the picture-sheet fixture): an empty detail already shows
+        // loading, and rows already on screen stay, as every store-backed loader leaves them.
+        guard let store else { return }
         do {
             let entries = try await store.entries(inPlaylist: id)
             let byID = try await store.tracksDisplay(ids: entries.map(\.trackID))
@@ -297,6 +296,18 @@ final class PlaylistsModel {
         guard !files.isEmpty else { return false }
         let start = entryID.flatMap { id in entries.firstIndex { $0.id == id } } ?? 0
         audio.playNowWithUndo(files, startAt: start)
+        return true
+    }
+
+    /// Shuffle the open playlist (the header's Shuffle, S10.8 E4): shuffle on, then a Play from a random
+    /// playable entry — replacing the queue with the same undo as Play. Returns whether it replaced.
+    /// The album / artist / genre pages' Shuffle (`LibraryBrowseModel.shuffle`), with Play's undo.
+    @discardableResult
+    func shufflePlaylist() -> Bool {
+        let files = playableFiles()
+        guard !files.isEmpty else { return false }
+        audio.shuffleEnabled = true
+        audio.playNowWithUndo(files, startAt: Int.random(in: files.indices))
         return true
     }
 
@@ -365,7 +376,7 @@ final class PlaylistsModel {
             await loadTree()
             return missing.count
         } catch {
-            actionError = "Couldn’t remove the missing tracks: \(error.localizedDescription)"
+            actionError = "Couldn’t remove the missing songs: \(error.localizedDescription)"
             return 0
         }
     }
@@ -452,21 +463,17 @@ extension PlaylistsModel {
     }
 }
 
-// MARK: - Detail row model
-
-/// One row of an open playlist: its `PlaylistEntry` (the stable id + position — the reorder/remove
-/// key Chunk C needs) plus the resolved library track, or nil when the track can't be resolved
-/// (moved/deleted — Chunk F renders the "unavailable" state + Locate). `Identifiable` on the ENTRY
-/// id (not the track) so duplicates of the same track in one playlist stay distinct rows.
-struct PlaylistDetailEntry: Identifiable {
-    let entry: PlaylistEntry
-    let display: LibraryTrackDisplay?
-    /// True when the track resolved AND its file exists on disk (S10.3 F). False = "unavailable":
-    /// the file moved/was deleted (a loose file gone, or a move not yet reconciled) or the track row
-    /// is absent — the row is badged, SKIPPED on play (never halts), and offered Locate / Remove.
-    let isAvailable: Bool
-
-    var id: Int64 {
-        entry.id
+#if DEBUG
+    extension PlaylistsModel {
+        /// Picture-sheet renderer only (`Debug/SheetFixture+Playlist.swift`): show `fixture` in the rail
+        /// and `open` as the open playlist with `rows`, without a store. Lives here because the tree and
+        /// the detail have private setters.
+        func seedRenderFixture(playlists fixture: [Playlist], open: Int64, rows: [PlaylistDetailEntry]) {
+            playlists = fixture
+            treeState = fixture.isEmpty ? .empty : .loaded
+            openPlaylistID = open
+            detail = rows
+            detailState = rows.isEmpty ? .empty : .loaded
+        }
     }
-}
+#endif
