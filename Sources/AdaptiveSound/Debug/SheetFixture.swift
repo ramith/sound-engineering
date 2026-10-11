@@ -33,8 +33,10 @@
         private let keyboardFocus = KeyboardTransportFocus()
         private let defaults: UserDefaults
         private let selectedSongs: Set<LibraryTrackDisplay.ID>
-        /// The browse grids' covers (`SheetArtwork`) — only in a grid variant's world.
+        /// The browse grids' and pages' covers (`SheetArtwork`) — only in a grid or page variant's world.
         private let artwork: [String: NSImage]
+        /// The album, artist or genre page a page variant's world opens (`+Detail`).
+        private let detailPage: LibraryDetailContent?
 
         init(defaults: UserDefaults, variant: SheetVariant) {
             self.defaults = defaults
@@ -47,7 +49,9 @@
             browse = LibraryBrowseModel(audio: audio, library: library)
             playlists = PlaylistsModel(library: library, audio: audio)
             let songs = variant == .empty ? [] : Self.songs()
-            selectedSongs = Set(songs.filter { $0.title == Self.selectedTitle }.map(\.id))
+            detailPage = variant.page == nil ? nil : Self.albumPage()
+            selectedSongs = variant == .pageStates ? Self.pageSelection
+                : Set(songs.filter { $0.title == Self.selectedTitle }.map(\.id))
             let showsGrid = variant.category != .songs
             browse.seedRenderFixture(songs: songs, albums: showsGrid ? Self.albums() : [])
             if showsGrid {
@@ -58,7 +62,9 @@
                 browse.genreCoverKeys = Self.genreCovers()
                 browse.selectedCategory = variant.category
             }
-            artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
+            // A page opens over its category's grid, as a click on its tile opens it.
+            browse.path = variant.page.map { [$0.route] } ?? []
+            artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys() + Self.pageArtworkKeys) : [:]
             if variant.opensPlaylist {
                 Self.seedPlaylist(playlists, browse: browse, songs: songs)
             }
@@ -94,6 +100,7 @@
                 .environment(\.sheetArtwork, artwork)
                 .environment(\.sheetGridStates, variant == .gridStates ? Self.gridStates : SheetGridStates())
                 .environment(\.sheetEQGraph, Self.eqGraphSeed(for: variant))
+                .environment(\.sheetDetailPage, detailPage)
                 .defaultAppStorage(defaults)
         }
 

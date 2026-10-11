@@ -29,7 +29,9 @@ struct LibraryRouteView: View {
     var body: some View {
         switch route {
         case let .album(id):
-            AlbumDetailView(albumID: id)
+            // `.id`: another page is a fresh view — its own load, selection and scroll. The page relies
+            // on it: its `ref` never changes under it.
+            LibraryDetailPage(ref: .album(id)).id(route)
         case let .artist(id):
             ArtistDetailView(artistID: id)
         case let .genre(id):

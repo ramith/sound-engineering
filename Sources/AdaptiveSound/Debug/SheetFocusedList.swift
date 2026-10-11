@@ -15,6 +15,9 @@
         case rail
         /// A browse grid — its cursor on the fixture's tile (`SheetGridStates.cursor`).
         case grid
+        /// An album, artist or genre page's song list — its cursor on the fixture's first selected row.
+        /// The list takes key focus itself when its page opens, so it needs no seed.
+        case detail
         /// The EQ presets list — its cursor on the preset playing. (The EQ graph's cursor is seeded by
         /// `SheetEQGraph`.)
         case eqPresets
