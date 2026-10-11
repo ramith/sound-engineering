@@ -47,6 +47,14 @@
         case eqSave = "save"
         case eqRename = "rename"
         case eqDelete = "delete"
+        /// The playlist page (S10.8 E4) — the Library tab only, in every appearance at both sizes: a
+        /// playlist open in the card, two of its files missing.
+        case playlist
+        /// Its dialogs, open over it (drawn in the window, as the EQ's): delete the playlist, remove the
+        /// missing songs, and a failure's OK-only notice.
+        case playlistDelete = "playlist-delete"
+        case playlistRemoveMissing = "playlist-remove-missing"
+        case playlistFailure = "playlist-failure"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -74,12 +82,20 @@
             category != .songs
         }
 
-        /// The default window size and the hard minimum for `standard` and the grids; the minimum
-        /// alone for the long presets list (where the card scrolls) and the folded Tone card; the
-        /// default size for the rest.
+        /// A playlist world: its fixture opens a playlist in the Library card.
+        var opensPlaylist: Bool {
+            switch self {
+            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: true
+            default: false
+            }
+        }
+
+        /// The default window size and the hard minimum for `standard`, the grids and the playlist page;
+        /// the minimum alone for the long presets list (where the card scrolls) and the folded Tone
+        /// card; the default size for the rest.
         var sizes: [NSSize] {
             switch self {
-            case .standard, .albums, .artists, .genres: [Self.defaultSize, Self.minimumSize]
+            case .standard, .albums, .artists, .genres, .playlist: [Self.defaultSize, Self.minimumSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
@@ -104,16 +120,17 @@
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates: [.library]
+            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: [.library]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }
             return request.tabs.filter { wanted?.contains($0) ?? true }
         }
 
-        /// The requested appearances this variant renders: all of them for `standard` and the grids,
-        /// dark and light for the other extras.
+        /// The requested appearances this variant renders: all of them for `standard`, the grids and
+        /// the playlist page, dark and light for the other extras.
         func appearances(of request: SheetRequest) -> [SheetAppearance] {
-            self == .standard || (isGrid && self != .gridStates)
+            self == .standard || self == .playlist || (isGrid && self != .gridStates)
                 ? request.appearances
                 : request.appearances.filter { $0 == .dark || $0 == .light }
         }

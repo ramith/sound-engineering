@@ -39,6 +39,8 @@ struct LibrarySidebar: View {
     @State var renameError: String?
     /// The playlist row a library-track drag is hovering over (drop highlight), or nil.
     @State private var dropTargetPlaylistID: Int64?
+    /// The playlist whose deletion waits on its confirmation (S10.8 E4), or nil.
+    @State private var deletingPlaylist: Playlist?
     @FocusState var renameFieldFocused: Bool
 
     /// Keyboard-command focus for the scroll area (a ScrollView/LazyVStack doesn't own key focus the
@@ -111,6 +113,10 @@ struct LibrarySidebar: View {
             if case let .success(url) = result {
                 model.addFolder(url)
             }
+        }
+        // The app's themed dialog, as a sheet (the window's own modality), not the system alert.
+        .sheet(item: $deletingPlaylist) { playlist in
+            PlaylistDeleteDialog(name: playlist.name, delete: { confirmDelete(playlist) }, cancel: cancelDelete)
         }
         .task { await playlists.loadTree() }
         // Load the tree once the async store finishes building (a visit before then shows nothing).
@@ -205,7 +211,8 @@ struct LibrarySidebar: View {
             .simultaneousGesture(TapGesture(count: 2).onEnded { beginRename(playlist) })
             .contextMenu {
                 Button("Rename") { beginRename(playlist) }
-                Button("Delete", role: .destructive) { deletePlaylist(playlist) }
+                // Confirmed first: a deleted playlist can't be brought back.
+                Button("Delete…", role: .destructive) { deletingPlaylist = playlist }
             }
             .id(SidebarSelection.playlist(playlist.id)) // the arrow keys' `scrollTo` target (A3)
         }
@@ -263,6 +270,16 @@ struct LibrarySidebar: View {
             }
         }
         return true
+    }
+
+    /// The delete confirmation's Delete: close it, then delete.
+    private func confirmDelete(_ playlist: Playlist) {
+        deletingPlaylist = nil
+        deletePlaylist(playlist)
+    }
+
+    private func cancelDelete() {
+        deletingPlaylist = nil
     }
 
     /// Delete a playlist; if it was the open/selected one, redirect nav back to the current category

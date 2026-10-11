@@ -54,9 +54,10 @@ struct SongsListView: View {
     /// The guide's row area is a scroll view with "6×12 padding": 6 above/below, 12 at each side,
     /// and NO gap between rows (48pt rows at a 48pt pitch, png/02). The first cut read the 6 as
     /// inter-row spacing and dropped the 12 — rows sat 6pt apart (about one row in nine lost)
-    /// and ran edge to edge, so a playing/selected row's fill touched the card border.
-    private static let listVerticalInset: CGFloat = 6
-    private static let listHorizontalInset: CGFloat = 12
+    /// and ran edge to edge, so a playing/selected row's fill touched the card border. The card's
+    /// row-area token (`LayoutMetrics`), shared with the grids and a playlist's rows.
+    private static let listVerticalInset = DesignSystem.LayoutMetrics.cardRowAreaInsetV
+    private static let listHorizontalInset = DesignSystem.LayoutMetrics.cardRowAreaInsetH
     /// Everything that is not a column: gaps + row padding + the row area's side insets.
     private static func chromeWidth(columnCount: Int) -> CGFloat {
         columnSpacing * CGFloat(max(columnCount - 1, 0)) + rowHorizontalPadding + 2 * listHorizontalInset

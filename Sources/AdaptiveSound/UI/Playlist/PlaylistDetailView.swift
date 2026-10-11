@@ -10,7 +10,9 @@ import UniformTypeIdentifiers
 /// (with a `PlaylistEntryDragItem` grip). Chunk C: the three play verbs (Play replaces the queue
 /// with a one-level restore-queue undo; Play Next / Add to Queue), tap-to-play-from-row, grip-drag
 /// reorder, remove, and ↑/↓/Return/⌫ keys — the same scaffold the queue's `PlaylistItemList` uses.
-/// S10.8 E4 adds Move to Top / Up / Down / to Bottom (`+Moves`): row menu, ⌥⌘-arrow keys, VoiceOver.
+/// S10.8 E4 adds Move to Top / Up / Down / to Bottom (`+Moves`): row menu, ⌥⌘-arrow keys, VoiceOver;
+/// then the Library card's header (`PlaylistDetailHeader`: Play / Shuffle / ⋯) and row area, and the
+/// app's themed dialogs for its confirmation and failures.
 /// Chunk F renders the unavailable state for an entry whose file moved/was deleted. Several members
 /// are `internal` (not `private`) so the same-type `PlaylistDetailView+Actions` extension (split out
 /// for type-body length) can reach them.
@@ -36,8 +38,9 @@ struct PlaylistDetailView: View {
     /// The entry being re-pointed via Locate… (drives the file importer); nil when closed (F).
     /// `internal` so the `+Actions` extension's `missingRowActions` can set it.
     @State var locatingEntryID: Int64?
-    /// Confirm before the irreversible bulk "Remove missing" (no undo — F review).
-    @State private var confirmingRemoveMissing = false
+    /// Confirm before the irreversible bulk "Remove missing" (no undo — F review). `internal` for the
+    /// `+Actions` extension's dialog verbs.
+    @State var confirmingRemoveMissing = false
 
     /// Track-number column sized to the widest index, so a 3-digit position never wraps (queue idiom).
     private var numberColumnWidth: CGFloat {
@@ -47,8 +50,7 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 0.5)
+            PlaylistDetailHeader(play: { playNow() }, shuffle: shuffleNow, removeMissing: askToRemoveMissing)
             content
         }
         // No background of its own: it sits on the Library card (S10.8 D1 — the opaque window fill
@@ -70,96 +72,21 @@ struct PlaylistDetailView: View {
             }
             locatingEntryID = nil
         }
-        // A per-action failure (Locate URL-conflict, remove-missing) — a transient alert, NOT the
-        // pane-wide load-error state (F review).
-        .alert("Couldn’t Complete That", isPresented: Binding(
-            get: { model.actionError != nil },
-            set: {
-                if !$0 {
-                    model.clearActionError()
-                }
+        // The page's dialogs, in the app's themed dialog on ONE sheet (the window's own modality, not
+        // the system alert): a per-action failure (Locate, remove-missing, a reorder save) — a
+        // transient notice, NOT the pane-wide load-error state (F review) — or the confirmation the
+        // irreversible bulk remove-missing asks first. A failure that lands while the confirmation is
+        // up takes the sheet, and the confirmation comes back once it is dismissed.
+        .sheet(isPresented: isShowingDialog) {
+            if let message = model.actionError {
+                PlaylistFailureNotice(message: message, dismiss: model.clearActionError)
+            } else {
+                PlaylistRemoveMissingDialog(count: model.missingEntryCount, remove: removeMissing,
+                                            cancel: cancelRemoveMissing)
             }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.actionError ?? "")
-        }
-        // Bulk remove is irreversible → confirm (F review).
-        .confirmationDialog(
-            "Remove \(model.missingEntryCount) missing \(model.missingEntryCount == 1 ? "track" : "tracks")?",
-            isPresented: $confirmingRemoveMissing, titleVisibility: .visible
-        ) {
-            Button("Remove Missing", role: .destructive) { Task { await model.removeMissingEntries() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The playlist entries for files that are missing from disk will be removed. This can’t be undone.")
         }
         // Reload whenever the selected playlist changes (a new sidebar selection reuses this view).
         .task(id: playlistID) { await model.loadDetail(id: playlistID) }
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.medium) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Playlist")
-                    .font(DesignSystem.Font.micro)
-                    .tracking(0.5)
-                    .textCase(.uppercase)
-                    .foregroundStyle(DesignSystem.Color.labelSecondary)
-                Text(model.openPlaylist?.name ?? "Playlist")
-                    .font(DesignSystem.Font.sectionTitle)
-                    .foregroundStyle(DesignSystem.Color.label)
-                    .lineLimit(1)
-            }
-            Spacer()
-            playVerbs
-            Text(countLine)
-                .font(DesignSystem.Font.monoSmall)
-                .foregroundStyle(DesignSystem.Color.labelTertiary)
-        }
-        .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
-        .padding(.vertical, DesignSystem.Spacing.medium)
-    }
-
-    private var playVerbs: some View {
-        HStack(spacing: DesignSystem.Spacing.small) {
-            Button { playNow() } label: { Label("Play", systemImage: "play.fill") }
-                .buttonStyle(.pill)
-            Button { _ = model.playPlaylistNext() } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            .labelStyle(.iconOnly)
-            .help("Play Next")
-            Button { _ = model.appendPlaylist() } label: {
-                Label("Add to Queue", systemImage: "text.append")
-            }
-            .labelStyle(.iconOnly)
-            .help("Add to Queue")
-            // Bulk "Remove missing" (F) — only when some entries' files are gone. Disabled during a
-            // scan/reconcile (availability is unreliable then — files flicker to "missing").
-            if model.missingEntryCount > 0 {
-                Menu {
-                    Button("Remove \(model.missingEntryCount) Missing", systemImage: "trash", role: .destructive) {
-                        confirmingRemoveMissing = true
-                    }
-                    .disabled(model.isLibraryPopulating)
-                } label: {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
-                .labelStyle(.iconOnly)
-                .help(missingHelp)
-            }
-        }
-        .disabled(model.detailState != .loaded)
-    }
-
-    private var countLine: String {
-        let total = model.detail.count
-        let base = "\(total.formatted(.number)) \(total == 1 ? "track" : "tracks")"
-        let missing = model.missingEntryCount
-        return missing > 0 ? "\(base) · \(missing) unavailable" : base
     }
 
     // MARK: Content
@@ -202,6 +129,10 @@ private extension PlaylistDetailView {
                             .id(row.id) // the arrow keys' `scrollTo` target (A3)
                     }
                 }
+                // The card's row area, as Songs and the grids (E4): a row's card never touches the
+                // card's edge.
+                .padding(.vertical, DesignSystem.LayoutMetrics.cardRowAreaInsetV)
+                .padding(.horizontal, DesignSystem.LayoutMetrics.cardRowAreaInsetH)
             }
             // All-unavailable (missing-file) rows = no cursor row = no focus stop.
             .focusable(keyboardCursor != nil)
@@ -351,24 +282,18 @@ private extension PlaylistDetailView {
     /// A missing-file entry (F): its metadata dimmed, with a trailing warning-badge MENU (Locate /
     /// Remove) — a visible, click-and-keyboard-reachable affordance, not just right-click (review).
     /// Not tappable-to-play (skipped on play). VoiceOver reads it as one element + the same actions.
+    /// On the playable rows' card (E4): the grip's slot, so its number and title line up with theirs,
+    /// and one line at their 36pt pitch (decision 5), the artist after the title.
     func unavailableRow(index: Int, row: PlaylistDetailEntry) -> some View {
         HStack(spacing: 12) {
+            // A missing entry has no grip (it can't be dragged); the slot stays.
+            Color.clear.frame(width: DesignSystem.QueueRow.gripHitWidth, height: 0)
             Text(index + 1, format: .number.grouping(.never))
                 .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
                 .frame(width: numberColumnWidth, alignment: .trailing)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(row.display?.title ?? "Unknown Track")
-                    .font(DesignSystem.Font.body)
-                    .foregroundStyle(DesignSystem.Color.labelSecondary)
-                    .lineLimit(1)
-                if let artist = row.display?.artistName, !artist.isEmpty {
-                    Text(artist)
-                        .font(DesignSystem.Font.caption)
-                        .foregroundStyle(DesignSystem.Color.labelTertiary)
-                        .lineLimit(1)
-                }
-            }
+            unavailableTitle(row)
+                .lineLimit(1)
             Spacer()
             Menu {
                 missingRowActions(row)
@@ -389,14 +314,28 @@ private extension PlaylistDetailView {
             .pillMenuStyle()
             .help("File missing — moved or deleted. Locate… to re-point it, or remove it.")
         }
+        // `PlaylistItemRow`'s card metrics: its padding, its 34pt card and the 2pt seam between cards.
         .padding(.vertical, DesignSystem.Spacing.xSmall)
         .padding(.horizontal, DesignSystem.Spacing.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: DesignSystem.QueueRow.cardMinHeight, alignment: .leading)
+        .padding(.vertical, DesignSystem.QueueRow.cardSeam / 2)
         .contentShape(Rectangle())
         .contextMenu { missingRowActions(row) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.display?.title ?? "Unknown Track"), unavailable — file missing")
         .accessibilityActions { missingRowActions(row) }
+    }
+
+    /// "Title · Artist", dimmed: the title secondary, the artist (when tagged) tertiary and smaller.
+    func unavailableTitle(_ row: PlaylistDetailEntry) -> Text {
+        let title = Text(row.display?.title ?? "Unknown Track")
+            .font(DesignSystem.Font.body)
+            .foregroundStyle(DesignSystem.Color.labelSecondary)
+        guard let artist = row.display?.artistName, !artist.isEmpty else { return title }
+        let byline = Text(" · \(artist)")
+            .font(DesignSystem.Font.caption)
+            .foregroundStyle(DesignSystem.Color.labelTertiary)
+        return Text("\(title)\(byline)")
     }
 }
 

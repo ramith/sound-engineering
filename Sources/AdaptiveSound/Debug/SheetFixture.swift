@@ -18,7 +18,8 @@
     /// One fixture per `SheetVariant`: `empty` seeds no songs and no queue; the ring variants seed
     /// the standard world and draw keyboard focus in their lists (`root(for:)`); the grid variants
     /// add the browse grids' albums, artists, genres and covers (`+Browse`) and open their category;
-    /// the EQ worlds put the EQ screen in one state each (`+EQ`). Every world's engine reads "ready"
+    /// the playlist worlds open a playlist (`+Playlist`); the EQ worlds put the EQ screen in one state
+    /// each (`+EQ`). Every world's engine reads "ready"
     /// (nothing is ever started) except `eqEngine`'s.
     @MainActor
     final class SheetFixture {
@@ -58,6 +59,9 @@
                 browse.selectedCategory = variant.category
             }
             artwork = showsGrid ? SheetArtwork.images(for: Self.browseArtworkKeys()) : [:]
+            if variant.opensPlaylist {
+                Self.seedPlaylist(playlists, browse: browse, songs: songs)
+            }
             seedDevices()
             seedPlayback(songs)
             Self.seedEQ(eq, audio: audio, defaults: defaults, for: variant) // "Warm · Edited", then the world's
@@ -93,7 +97,8 @@
                 .defaultAppStorage(defaults)
         }
 
-        /// The dialog world's sheet, drawn in the window (`SheetDialogStandIn`): Save, Rename or Delete.
+        /// The dialog world's sheet, drawn in the window (`SheetDialogStandIn`): the EQ's Save, Rename or
+        /// Delete; a playlist's Delete, Remove Missing or failure notice.
         @ViewBuilder private var dialogStandIn: some View {
             switch variant {
             case .eqSave:
@@ -102,6 +107,13 @@
                 SheetDialogStandIn { SaveCustomPresetView(sheet: .rename(Self.renamedPreset), eqViewModel: eq) }
             case .eqDelete:
                 SheetDialogStandIn { EQDeletePresetDialog(name: Self.renamedPreset, delete: {}, cancel: {}) }
+            case .playlistDelete:
+                SheetDialogStandIn { PlaylistDeleteDialog(name: Self.openPlaylist.name, delete: {}, cancel: {}) }
+            case .playlistRemoveMissing:
+                SheetDialogStandIn { PlaylistRemoveMissingDialog(count: playlists.missingEntryCount, remove: {},
+                                                                 cancel: {}) }
+            case .playlistFailure:
+                SheetDialogStandIn { PlaylistFailureNotice(message: Self.playlistFailure, dismiss: {}) }
             default:
                 EmptyView()
             }
