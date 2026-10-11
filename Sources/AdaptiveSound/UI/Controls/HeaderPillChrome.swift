@@ -16,6 +16,9 @@ struct HeaderPillChrome: ViewModifier {
         /// The Columns pill: the chip's "on" fill (`controlActiveFill`, the accent at 16%) and a
         /// teal edge.
         case active
+        /// A destructive action (the dialog's Delete): the error red's tint (`destructiveFill`) and
+        /// a `statusErrorText` edge — the app's error family, not the system red.
+        case destructive
     }
 
     let tone: Tone
@@ -31,16 +34,21 @@ struct HeaderPillChrome: ViewModifier {
             .padding(.horizontal, CGFloat(FilterPillMetrics.horizontalInset))
             .frame(height: height)
             .background {
-                Capsule().fill(fill)
-                    .overlay { Capsule().fill(isHovered ? DesignSystem.Color.controlHover : .clear) }
+                Self.capsule.fill(fill)
+                    .overlay { Self.capsule.fill(isHovered ? DesignSystem.Color.controlHover : .clear) }
             }
-            .overlay(Capsule().strokeBorder(edge, lineWidth: edgeWidth))
+            .overlay(Self.capsule.strokeBorder(edge, lineWidth: edgeWidth))
     }
+
+    /// The pill's shape: fully round ends. Circular, not the continuous default, whose corners need more
+    /// straight edge than a pill this short has — its stroke then overran the ends as two vertical ticks.
+    private static let capsule = Capsule(style: .circular)
 
     private var fill: Color {
         switch tone {
         case .neutral: DesignSystem.Color.card
         case .active: DesignSystem.Color.controlActiveFill
+        case .destructive: DesignSystem.Color.destructiveFill
         }
     }
 
@@ -48,13 +56,14 @@ struct HeaderPillChrome: ViewModifier {
         switch tone {
         case .neutral: DesignSystem.Color.hairline
         case .active: DesignSystem.Color.accent.opacity(0.30)
+        case .destructive: DesignSystem.Color.statusErrorText
         }
     }
 
     private var edgeWidth: CGFloat {
         switch tone {
         case .neutral: 0.5
-        case .active: ControlMetrics.stateRingWidth
+        case .active, .destructive: ControlMetrics.stateRingWidth
         }
     }
 }

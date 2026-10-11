@@ -33,4 +33,10 @@ enum ControlMetrics {
     /// Columns pills and the large teal pill — so a header's pills stay one height; each scales it
     /// with Dynamic Type (relative to `.body`).
     static let pillHeight: CGFloat = 30
+    /// A dialog's width (`AppDialog`): room for a name field and a two-line message.
+    static let dialogWidth: CGFloat = 340
+    /// A dialog's padding, all round.
+    static let dialogPadding: CGFloat = 20
+    /// Between a dialog's buttons, and between a header's pills.
+    static let pillGap: CGFloat = 10
 }

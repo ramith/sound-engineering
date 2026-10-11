@@ -27,10 +27,12 @@ struct HeaderPillFace<Content: View>: View {
     private var foreground: Color {
         if !isEnabled {
             DesignSystem.Color.labelDisabled
-        } else if tone == .active {
-            DesignSystem.Color.accentText
         } else {
-            DesignSystem.Color.label
+            switch tone {
+            case .neutral: DesignSystem.Color.label
+            case .active: DesignSystem.Color.accentText
+            case .destructive: DesignSystem.Color.statusErrorText
+            }
         }
     }
 }

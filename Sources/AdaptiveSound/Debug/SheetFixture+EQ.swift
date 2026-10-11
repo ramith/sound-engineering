@@ -16,7 +16,7 @@
         private static let toneSample: [(EQToneRegion, Float)] = [(.presence, 3), (.bass, -2.5)]
         /// The Tone world's hovered row.
         private static let toneRegion = EQToneRegion.presence
-        /// The My Preset the rename world's sheet renames.
+        /// The My Preset the rename and delete worlds' dialogs act on.
         static let renamedPreset = "Late Night"
 
         /// Seeds the EQ for `variant`: every world plays "Warm · Edited" with My Presets saved and the
