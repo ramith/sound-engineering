@@ -4,9 +4,9 @@ import SwiftUI
 // MARK: - Playlist page header (S10.8 E4 — the Library card's header)
 
 /// The playlist page's header, on the Library card's grammar (`LibraryCardHeader`, Sprint D): the
-/// playlist's name, the count line under it, and the page's verbs as the header's pills — Play (the
-/// teal pill), Shuffle and ⋯ (`PlaylistMoreMenu`), the album, artist and genre pages' set. No Filter: a
-/// playlist is played and moved in its own order.
+/// playlist's name, the count line under it, and the page's verbs as the header's pills
+/// (`LibraryPageActions`, the album, artist and genre pages' set) — Play (the teal pill), Shuffle and ⋯
+/// (`PlaylistMoreMenu`). No Filter: a playlist is played and moved in its own order.
 ///
 /// The count line is "12 songs · 48 min", ending "· 2 unavailable" while files are missing; where it
 /// doesn't fit on one line the duration goes first ("12 songs · 2 unavailable"). VoiceOver reads it
@@ -21,12 +21,7 @@ struct PlaylistDetailHeader: View {
 
     var body: some View {
         LibraryCardHeader(title: model.openPlaylist?.name ?? "Playlist", count: countLine, compactCount: compactCount) {
-            Group {
-                Button("Play", systemImage: "play.fill", action: play)
-                    .buttonStyle(.pill)
-                    .controlSize(.large)
-                    .controlFocusRing(around: Capsule(style: .circular))
-                HeaderPillButton("Shuffle", systemImage: "shuffle", action: shuffle)
+            LibraryPageActions(play: play, shuffle: shuffle) {
                 PlaylistMoreMenu(removeMissing: removeMissing)
             }
             // The pills keep their size; a long name truncates instead.
