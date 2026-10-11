@@ -1,9 +1,9 @@
 import LibraryBrowseKit
 import Testing
 
-// MARK: - FacetAlbumGrouping (S9.6 — album-section runs from album-ordered tracks)
+// MARK: - FacetAlbumGrouping (S9.6; S10.8 E3 — one section per album)
 
-@Suite("FacetAlbumGrouping — consecutive album runs")
+@Suite("FacetAlbumGrouping — one section per album, in first-appearance order")
 struct FacetAlbumGroupingTests {
     /// A minimal stub — the grouping is generic over `AlbumGroupable`, so no `LibraryTrackDisplay`.
     private struct Row: AlbumGroupable, Identifiable, Equatable {
@@ -50,5 +50,19 @@ struct FacetAlbumGroupingTests {
     @Test("empty input → no sections")
     func empty() {
         #expect(FacetAlbumGrouping.sections(from: [Row]()).isEmpty)
+    }
+
+    @Test("a song read apart from its album joins that album's ONE section (ids stay unique)")
+    func splitAlbumJoinsItsSection() {
+        let rows = [
+            Row(id: 1, albumID: 10, albumName: "A", year: 2001),
+            Row(id: 2, albumID: 20, albumName: "B", year: 2005),
+            Row(id: 3, albumID: 10, albumName: "A", year: 2001),
+            Row(id: 4, albumID: nil, albumName: nil, year: nil),
+            Row(id: 5, albumID: nil, albumName: nil, year: nil),
+        ]
+        let sections = FacetAlbumGrouping.sections(from: rows)
+        #expect(sections.map(\.id) == [10, 20, -1]) // first-appearance order
+        #expect(sections.map { $0.tracks.map(\.id) } == [[1, 3], [2], [4, 5]])
     }
 }

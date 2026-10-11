@@ -13,10 +13,10 @@ public protocol AlbumGroupable {
 
 extension LibraryTrackDisplay: AlbumGroupable {}
 
-/// One album run within a grouped facet detail (the Artists tab).
+/// One album's songs within a grouped facet detail (an artist's page).
 public struct FacetAlbumSection<Track>: Identifiable {
-    /// The album id, or `-1` for a track with no album. Distinct per section because the input is
-    /// album-ordered (a no-album run is contiguous → a single `-1` section), so ids don't collide.
+    /// The album id, or `-1` for the songs with no album. Distinct per section: an album is one
+    /// section however its songs arrive.
     public let id: Int64
     public let title: String
     /// A bare year string (never thousands-grouped), or nil when the album year is non-positive.
@@ -32,17 +32,21 @@ public struct FacetAlbumSection<Track>: Identifiable {
 }
 
 public enum FacetAlbumGrouping {
-    /// Group already album/disc/track-ordered `tracks` into consecutive per-album sections in ONE
-    /// O(n) pass (the input is album-ordered, so a same-album run is contiguous — no per-row sort).
-    /// A track with no album groups under "Unknown Album" (`id -1`); a non-positive year → nil.
+    /// Group album/disc/track-ordered `tracks` into one section per album, in ONE O(n) pass: the
+    /// albums in the order they first appear, each album's songs in their order. The store's reads
+    /// are album-ordered, so an album's songs arrive together; one that arrived apart still joins its
+    /// album's ONE section (never a second section with the same id). A track with no album groups
+    /// under "Unknown Album" (`id -1`); a non-positive year → nil.
     public static func sections<Track: AlbumGroupable>(
         from tracks: [Track]
     ) -> [FacetAlbumSection<Track>] {
-        tracks.reduce(into: []) { sections, track in
+        var sectionOfAlbum: [Int64: Int] = [:]
+        return tracks.reduce(into: []) { sections, track in
             let albumID = track.albumID ?? -1
-            if sections.last?.id == albumID {
-                sections[sections.count - 1].tracks.append(track)
+            if let index = sectionOfAlbum[albumID] {
+                sections[index].tracks.append(track)
             } else {
+                sectionOfAlbum[albumID] = sections.count
                 let year = (track.year ?? 0) > 0 ? String(track.year ?? 0) : nil
                 sections.append(FacetAlbumSection(
                     id: albumID, title: track.albumName ?? "Unknown Album", year: year, tracks: [track]

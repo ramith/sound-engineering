@@ -14,8 +14,15 @@ public enum FixedRowReveal {
     /// span is too short to hold it); nil when it is already fully in view.
     public static func offset(revealing index: Int, rowHeight: Double, inset: Double,
                               visibleTop: Double, visibleHeight: Double) -> Double? {
-        let top = Double(index) * rowHeight // the row's top, less its inset
-        let bottom = top + rowHeight + 2 * inset // the row's bottom, plus its inset
+        offset(revealingSpanAt: Double(index) * rowHeight, height: rowHeight, inset: inset,
+               visibleTop: visibleTop, visibleHeight: visibleHeight)
+    }
+
+    /// The same for any span of the content — `top` (less the inset) and `height` — such as a row
+    /// with the fixed-height section header above it (`DetailTrackLayout.span(ofRow:…)`).
+    public static func offset(revealingSpanAt top: Double, height: Double, inset: Double,
+                              visibleTop: Double, visibleHeight: Double) -> Double? {
+        let bottom = top + height + 2 * inset // the span's bottom, plus its inset
         if top < visibleTop {
             return top
         }

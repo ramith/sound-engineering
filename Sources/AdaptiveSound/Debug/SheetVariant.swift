@@ -24,9 +24,12 @@
         case genres
         /// The Genres grid with one tile hovered and the keyboard ring on another (D5's states).
         case gridStates = "grid-states"
-        /// The album page (S10.8 E2) — the Library tab only, dark and light, at both sizes: its cover,
-        /// header and songs, the playing song among them.
+        /// The detail pages (S10.8 E2/E3) — the Library tab only, dark and light, at both sizes, the
+        /// playing song on each: an album's (its cover), an artist's (its albums' headers) and a
+        /// genre's (its cover mosaic, decision 34).
         case albumPage = "album-page"
+        case artistPage = "artist-page"
+        case genrePage = "genre-page"
         /// The album page's list holding key focus: two songs selected, the keyboard ring on the first.
         case pageStates = "page-states"
         /// The EQ worlds (Sprint EQ, EQ3) — the EQ tab only: a drag under way (the readout, the
@@ -80,7 +83,10 @@
         /// The album, artist or genre page the world opens, over its category's grid.
         var page: LibraryBrowseModel.FacetRef? {
             switch self {
-            case .albumPage, .pageStates: .album(10) // "Roja" (`SheetFixture.albumPage`)
+            // `SheetFixture.detailPage(for:)`: "Roja", "A. R. Rahman", "Soundtrack".
+            case .albumPage, .pageStates: .album(10)
+            case .artistPage: .artist(1)
+            case .genrePage: .genre(23)
             default: nil
             }
         }
@@ -113,7 +119,8 @@
         /// card; the default size for the rest.
         var sizes: [NSSize] {
             switch self {
-            case .standard, .albums, .artists, .genres, .playlist, .albumPage: [Self.defaultSize, Self.minimumSize]
+            case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage:
+                [Self.defaultSize, Self.minimumSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
@@ -138,7 +145,8 @@
             case .ring: [.nowPlaying, .library, .eq]
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
-            case .albums, .artists, .genres, .gridStates, .albumPage, .pageStates: [.library]
+            case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates:
+                [.library]
             case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: [.library]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
