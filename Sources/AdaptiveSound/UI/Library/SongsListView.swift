@@ -35,8 +35,8 @@ struct SongsListView: View {
     /// The row area's scroll position: the KEYBOARD sets it, to keep the cursor in view (A3) — never
     /// a click, which must not move a row out from under a double-click.
     @State private var rowScroll = ScrollPosition()
-    /// The row area's visible span, for the keys alone (`VisibleSpan`).
-    @State private var visibleSpan = VisibleSpan()
+    /// The row area's visible span, for the keys alone (`ListVisibleSpan`).
+    @State private var visibleSpan = ListVisibleSpan()
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
     #if DEBUG
@@ -96,23 +96,11 @@ struct SongsListView: View {
             .scrollContentBackground(.hidden)
         }
         .dynamicTypeSize(.small ... .xxLarge)
-        // An empty list (a filter matching nothing) has no cursor row — and so is no focus stop.
-        .focusable(!model.visibleSongs.isEmpty)
-        .focused(focus, equals: .content)
-        // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
-        .focusEffectDisabled()
-        .onKeyPress(keys: Self.navigationKeys) { navigate($0) }
-        .onKeyPress(.return) { playCursorRow() }
-        .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
-        // ⌘A and Edit ▸ Select All: the standard `selectAll:` action, sent to the focused list.
-        .onCommand(#selector(NSStandardKeyBindingResponding.selectAll(_:))) {
-            selection.selectAll(in: rowIDs)
-        }
-        .onExitCommand { selection.clear() } // Esc — the macOS cancel command
-        // VoiceOver hears a count change it cannot see: ⇧-arrows, ⌘A and Esc change only the tint.
-        .onChange(of: selection.ids.count) { _, count in
-            AccessibilityNotification.Announcement(SongsAccessibility.selectionAnnouncement(count: count)).post()
-        }
+        // The full keyboard set on the selection kit (SEL-01…08), shared with the detail pages; Return
+        // plays the cursor row alone (decision 11: on Songs, just that song).
+        .modifier(ListSelectionKeyboard(selection: $selection, rows: model.visibleSongs, title: \.title,
+                                        focus: focus, ringVisible: showsRing, pageRows: { rowsPerPage },
+                                        revealCursor: revealCursor, activate: playRow))
         .sheet(item: $addToPlaylistTarget) { target in
             PlaylistPickerSheet(trackIDs: target.trackIDs)
         }
@@ -226,7 +214,7 @@ struct SongsListView: View {
             probe?.countListPass()
         #endif
         return RowPass(columns: columns, titleWidth: titleWidth, cursorID: ringCursorID,
-                       nowPlayingID: currentTrackID, isPlaybackActive: viewModel.isPlaying)
+                       nowPlayingID: viewModel.playingTrackID, isPlaybackActive: viewModel.isPlaying)
     }
 
     private func row(_ track: LibraryTrackDisplay, number: Int, pass: RowPass) -> some View {
@@ -248,7 +236,11 @@ struct SongsListView: View {
         // (as `BrowseTile` and the facet rows). Clicks, the menu and VoiceOver are unaffected.
         .focusable(false)
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.playTrackNextNow(track) })
-        .contextMenu { menuItems(clicked: track) }
+        .contextMenu {
+            LibrarySongMenu(clicked: track, actsOnSelection: selection.menuActsOnSelection(clicked: track.id),
+                            selectedTracks: selectedTracks, playClicked: { model.playTrackNextNow(track) },
+                            showInfo: { infoTarget = $0 }, choosePlaylist: choosePlaylist)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(SongsAccessibility.rowLabel(for: track))
         .accessibilityValue(rowAccessibilityValue(for: track, isNowPlaying: isNowPlaying))
@@ -257,12 +249,6 @@ struct SongsListView: View {
         .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
         .accessibilityAction(named: Text("Add to Queue")) { model.append([track]) }
         .accessibilityAction(named: Text("Info")) { infoTarget = track }
-    }
-
-    private var currentTrackID: Int64? {
-        guard viewModel.isPlaying, let index = viewModel.selectedTrackIndex,
-              index < viewModel.queue.count else { return nil }
-        return viewModel.queue[index].file.trackID
     }
 
     /// The row's spoken value + a "Now playing" suffix for the current track — the equalizer is the
@@ -308,58 +294,20 @@ struct SongsListView: View {
         SongsRowResolver.orderedSelection(in: model.visibleSongs, selection: selection.ids)
     }
 
-    /// The row's context menu: the whole selection when the clicked row is one of several selected,
-    /// else the clicked row. SwiftUI builds it with the row, for every row it builds, so building it
-    /// is O(1) (`ListSelection.menuActsOnSelection`); the selection's tracks are resolved in the actions.
-    @ViewBuilder
-    private func menuItems(clicked track: LibraryTrackDisplay) -> some View {
-        if selection.menuActsOnSelection(clicked: track.id) {
-            Button("Play") { model.play(selectedTracks(), startAt: 0) }
-            Button("Play Next") { model.playNext(selectedTracks()) }
-            Button("Add to Queue") { model.append(selectedTracks()) }
-            Divider()
-            addToPlaylistMenu { selectedTracks().map(\.id) }
-            Divider()
-            Button("Info", systemImage: "info.circle") { infoTarget = selectedTracks().first }
-        } else {
-            Button("Play") { model.playTrackNextNow(track) }
-            Button("Play Next") { model.playNext([track]) }
-            Button("Add to Queue") { model.append([track]) }
-            Divider()
-            addToPlaylistMenu { [track.id] }
-            Divider()
-            Button("Info", systemImage: "info.circle") { infoTarget = track }
-        }
-    }
-
-    private func addToPlaylistMenu(trackIDs: @escaping () -> [Int64]) -> some View {
-        AddToPlaylistMenu(resolveTrackIDs: trackIDs, onChooseMore: { ids in
-            addToPlaylistTarget = AddToPlaylistTarget(trackIDs: ids)
-        })
+    /// "Add to Playlist…" from a row's menu: the searchable picker, for these songs.
+    private func choosePlaylist(_ trackIDs: [Int64]) {
+        addToPlaylistTarget = AddToPlaylistTarget(trackIDs: trackIDs)
     }
 }
 
 // MARK: - Selection + keyboard
 
-/// Same-file extension (type-body length): reaches the list's private selection state.
+/// Same-file extension (type-body length): reaches the list's private selection state. The keys
+/// themselves are `ListSelectionKeyboard`'s; this is what only Songs knows.
 private extension SongsListView {
-    /// The keys `navigate` moves the cursor with.
-    static let navigationKeys: Set<KeyEquivalent> = [.upArrow, .downArrow, .home, .end, .pageUp, .pageDown]
-
-    /// Type-to-select keys: letters, digits, punctuation and symbols. Not Space — the app-wide play /
-    /// pause key (§H) — so a search never starts or goes on with it, queue or no queue.
-    static let typeSelectCharacters = CharacterSet.alphanumerics.union(.punctuationCharacters).union(.symbols)
-
     /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
     var rowsPerPage: Int {
-        max(Int((visibleSpan.rect.height - 2 * Self.listVerticalInset) / SongRow.height) - 1, 1)
-    }
-
-    /// The row area's visible span, in its content's coordinates. A REFERENCE kept in `@State`: it is
-    /// written on every scroll frame but read only when a key moves the cursor, so scrolling never
-    /// re-renders the list (a value in `@State` would, frame by frame, over every visible row).
-    final class VisibleSpan {
-        var rect = CGRect.zero
+        max(Int((visibleSpan.rect.height - 2 * Self.listVerticalInset) / LibraryRowChrome.height) - 1, 1)
     }
 
     /// Scrolls the cursor row into view — as little as needed, none when it is already in view — by
@@ -369,7 +317,7 @@ private extension SongsListView {
     func revealCursor() {
         guard let cursor = selection.cursor,
               let index = model.visibleSongs.firstIndex(where: { $0.id == cursor }),
-              let offset = FixedRowReveal.offset(revealing: index, rowHeight: SongRow.height,
+              let offset = FixedRowReveal.offset(revealing: index, rowHeight: LibraryRowChrome.height,
                                                  inset: Self.listVerticalInset,
                                                  visibleTop: visibleSpan.rect.minY,
                                                  visibleHeight: visibleSpan.rect.height)
@@ -400,58 +348,22 @@ private extension SongsListView {
 
     func handleClick(_ track: LibraryTrackDisplay) {
         focus.wrappedValue = .content
-        let flags = NSEvent.modifierFlags
-        selection.click(track.id, extend: flags.contains(.shift), toggle: flags.contains(.command), in: rowIDs)
+        selection.click(track.id, modifiers: NSEvent.modifierFlags, in: rowIDs)
     }
 
-    /// ↑/↓, Home / End, Page Up / Down — with ⇧, extending the range from the anchor. Asks the row
-    /// area to scroll the cursor into view. A key that moves nothing bubbles, and so does one held
-    /// with ⌘, ⌥ or ⌃ (`BrowseKeyboard`'s rule): those are the app's and the system's shortcuts,
-    /// never a plain step.
-    func navigate(_ press: KeyPress) -> KeyPress.Result {
-        guard !press.isShortcut, navigate(key: press.key, extend: press.modifiers.contains(.shift)) else {
-            return .ignored
-        }
-        return .handled
-    }
-
-    /// The move `key` makes (`extend` = ⇧ held); false when it moves nothing.
-    func navigate(key: KeyEquivalent, extend: Bool) -> Bool {
-        guard let movement = movement(for: key), selection.move(movement, extend: extend, in: rowIDs) != nil
-        else { return false }
-        revealCursor()
-        return true
-    }
-
-    func movement(for key: KeyEquivalent) -> ListSelection<RowID>.Movement? {
-        switch key {
-        case .upArrow: .step(-1)
-        case .downArrow: .step(1)
-        case .pageUp: .page(-rowsPerPage)
-        case .pageDown: .page(rowsPerPage)
-        case .home: .first
-        case .end: .last
-        default: nil
-        }
-    }
-
-    /// Return: play the cursor row — the ring row, or the selected cursor row while the ring is
-    /// hidden (`ListSelection.activate`, which claims a ring-only row first).
-    func playCursorRow() -> KeyPress.Result {
-        guard let id = selection.activate(in: rowIDs, ringVisible: showsRing),
-              let track = model.visibleSongs.first(where: { $0.id == id }) else { return .ignored }
-        model.playTrackNextNow(track)
-        return .handled
-    }
-
-    /// Type-to-select over the displayed titles, in the current order — `BrowseKeyboard`'s rule: on
-    /// the key-down only (a held key does not repeat into the search), and a key with ⌘, ⌥ or ⌃ is
-    /// a shortcut, not typing. A key that matches nothing is still consumed, so it doesn't beep.
-    func typeSelect(_ press: KeyPress) -> KeyPress.Result {
-        guard !press.isShortcut else { return .ignored }
-        if selection.typeSelect(press.characters, at: .now, in: model.visibleSongs, title: \.title) != nil {
+    #if DEBUG
+        /// The perf run's key press (`make songs-perf`): the move a key makes, then the cursor into
+        /// view — the path `ListSelectionKeyboard` takes for a real key. False when it moves nothing.
+        func navigate(key: KeyEquivalent, extend: Bool) -> Bool {
+            guard selection.move(key: key, extend: extend, in: rowIDs, pageRows: rowsPerPage) else { return false }
             revealCursor()
+            return true
         }
-        return .handled
+    #endif
+
+    /// Return: the cursor row plays alone (decision 11).
+    func playRow(_ id: RowID) {
+        guard let track = model.visibleSongs.first(where: { $0.id == id }) else { return }
+        model.playTrackNextNow(track)
     }
 }

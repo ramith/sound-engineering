@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The Albums root: the shared browse scaffold (`BrowseGridRoot` → `BrowseGrid`) over the loaded
 /// albums — each tile its cover, title and album artist (VoiceOver adds the year). Single-click a
-/// tile → OPEN the album (AlbumDetailView); Play comes from the hover button and the context menu;
+/// tile → OPEN the album (`LibraryDetailPage`); Play comes from the hover button and the context menu;
 /// the keyboard and the return place are the grid's. Filters on title OR album artist. Warms one
 /// batched artwork query per album set. The `.loaded`-but-empty state is the library-wide "No Music
 /// Found": every album was removed.

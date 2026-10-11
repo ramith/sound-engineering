@@ -142,8 +142,9 @@ extension LibraryBrowseModel {
         }
     }
 
-    /// An album's songs in disc / track order; an artist's or a genre's as their pages list them.
-    private func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
+    /// An album's songs in disc / track order; an artist's or a genre's as their pages list them —
+    /// what a tile's verbs enqueue and what its page shows (`detailContent`).
+    func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
         switch ref {
         case let .album(id): return await tracks(inAlbum: id)
         case let .artist(id): return await tracks(byArtist: id)
