@@ -21,7 +21,7 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
         // A literal three-row stack: fixed chrome, flexible content, fixed footer. The content
         // region is given an EXPLICIT frame (the rectangle between the bands), NOT a
         // `.safeAreaInset`. A safe-area inset only shrinks the *safe area*, not the *frame* — so
-        // a plain `VStack` (e.g. AlbumDetailView's fixed header) or a `NavigationSplitView`,
+        // a plain `VStack` (e.g. a Library page's fixed header) or a `NavigationSplitView`,
         // which lay their content out from the top of their frame, rendered UP behind the chrome.
         // An explicit frame physically bounds every tab — split view included — to this rectangle.
         VStack(spacing: 0) {

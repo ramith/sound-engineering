@@ -24,6 +24,11 @@
         case genres
         /// The Genres grid with one tile hovered and the keyboard ring on another (D5's states).
         case gridStates = "grid-states"
+        /// The album page (S10.8 E2) — the Library tab only, dark and light, at both sizes: its cover,
+        /// header and songs, the playing song among them.
+        case albumPage = "album-page"
+        /// The album page's list holding key focus: two songs selected, the keyboard ring on the first.
+        case pageStates = "page-states"
         /// The EQ worlds (Sprint EQ, EQ3) — the EQ tab only: a drag under way (the readout, the
         /// neighbours following); a stroke past the +12 dB ceiling; 12 My Presets at 880×640 (the
         /// Equalizer card scrolls); Off; Compare held; Pure Mode; and the engine not running.
@@ -67,19 +72,32 @@
             self == .standard ? nil : rawValue
         }
 
-        /// The Library category the world opens on.
+        /// The Library category the world opens on (a page's: the grid it was opened from).
         var category: LibraryCategory {
+            page?.category ?? gridCategory ?? .songs
+        }
+
+        /// The album, artist or genre page the world opens, over its category's grid.
+        var page: LibraryBrowseModel.FacetRef? {
+            switch self {
+            case .albumPage, .pageStates: .album(10) // "Roja" (`SheetFixture.albumPage`)
+            default: nil
+            }
+        }
+
+        /// A browse-grid world's category: its fixture shows that grid on the Library tab alone.
+        private var gridCategory: LibraryCategory? {
             switch self {
             case .albums: .albums
             case .artists: .artists
             case .genres, .gridStates: .genres
-            default: .songs
+            default: nil
             }
         }
 
-        /// A browse-grid world: its fixture shows its grid on the Library tab alone.
+        /// A browse-grid world (not a page).
         private var isGrid: Bool {
-            category != .songs
+            gridCategory != nil
         }
 
         /// A playlist world: its fixture opens a playlist in the Library card.
@@ -95,7 +113,7 @@
         /// card; the default size for the rest.
         var sizes: [NSSize] {
             switch self {
-            case .standard, .albums, .artists, .genres, .playlist: [Self.defaultSize, Self.minimumSize]
+            case .standard, .albums, .artists, .genres, .playlist, .albumPage: [Self.defaultSize, Self.minimumSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
             }
@@ -108,6 +126,7 @@
             case .ring: [.queue, .songs]
             case .ringRail: [.rail, .eqPresets]
             case .gridStates: [.grid]
+            case .pageStates: [.detail]
             default: []
             }
         }
@@ -119,7 +138,7 @@
             case .ring: [.nowPlaying, .library, .eq]
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
-            case .albums, .artists, .genres, .gridStates: [.library]
+            case .albums, .artists, .genres, .gridStates, .albumPage, .pageStates: [.library]
             case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: [.library]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]

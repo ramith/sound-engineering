@@ -7,10 +7,11 @@ import SwiftUI
 
 /// One row of the Twin Panels song list. Renders an ORDERED set of visible columns (the frozen
 /// # + Title group first, then the metadata columns) at their fixed widths — Title is the one
-/// flexible column (the caller passes its resolved width). Visual only + ENV-FREE: the list owns
-/// selection, play, the context menu, keyboard, and the row's single VoiceOver element, keeping
-/// this row off any `@Environment(Observable)` a11y host. No artwork / no play-triangle — the
-/// #/equalizer column is the sole now-playing indicator (explicit design decision).
+/// flexible column (the caller passes its resolved width) — on the Library rows' card
+/// (`LibraryRowChrome`, shared with the album, artist and genre pages). Visual only + ENV-FREE: the
+/// list owns selection, play, the context menu, keyboard, and the row's single VoiceOver element,
+/// keeping this row off any `@Environment(Observable)` a11y host. No artwork / no play-triangle —
+/// the #/equalizer column is the sole now-playing indicator (explicit design decision).
 struct SongRow: View {
     let track: LibraryTrackDisplay
     /// 1-based position in the visible list (the mock's leading number, not `trackNo`).
@@ -26,14 +27,7 @@ struct SongRow: View {
     /// read from the environment, so the row stays env-object-free.
     let isKeyboardCursor: Bool
 
-    /// The fixed row height — also the list's pitch (no gap between rows), from which it sizes a
-    /// Page Up / Down.
-    static let height: CGFloat = 48
-    /// The row card's corner radius (fill, now-playing ring and keyboard ring share it).
-    private static let cornerRadius: CGFloat = 11
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hover = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -42,18 +36,7 @@ struct SongRow: View {
                     .frame(width: width(for: column), alignment: alignment(for: column))
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: Self.height)
-        .background(rowFill, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
-        .overlay {
-            if isNowPlaying {
-                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                    .strokeBorder(DesignSystem.Color.accent.opacity(0.36), lineWidth: 1)
-            }
-        }
-        .keyboardCursorRing(isKeyboardCursor, cornerRadius: Self.cornerRadius)
-        .contentShape(Rectangle())
-        .onHover { hover = $0 }
+        .libraryRowChrome(isNowPlaying: isNowPlaying, isSelected: isSelected, isKeyboardCursor: isKeyboardCursor)
     }
 
     private func width(for column: SongColumn) -> CGFloat {
@@ -65,18 +48,6 @@ struct SongRow: View {
             return .center
         }
         return column.isTrailing ? .trailing : .leading
-    }
-
-    private var rowFill: Color {
-        if isNowPlaying {
-            DesignSystem.Color.rowNowPlaying
-        } else if isSelected {
-            DesignSystem.Color.rowSelected
-        } else if hover {
-            DesignSystem.Color.controlHover
-        } else {
-            .clear
-        }
     }
 
     // MARK: Cells
