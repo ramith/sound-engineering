@@ -973,3 +973,32 @@ analog-matched top bands, and a per-curve peak scan for loud masters.
    mid-gate twice; their committed work and gate logs survived, and the coordinator finished from them.
 5. **Pure-kit decision logic (`EQSession`) made the UI testable.** The UI review's MAJORs were untestable view-model
    rules until they moved into the kit. Design for that from the start next time.
+
+## Sprint E — detail pages and playlists (E2–E4; E1 and E4's moves shipped in the pull-forward)
+
+### Plan check and split (2026-10-11, coordinator)
+
+**Already built** in the behaviour pull-forward:
+- the selection kit (`ListSelection`, SEL-01…08) on Songs;
+- grid keys and place restore;
+- playlist Move Up / Down / to Top (`ListMove`, `CoalescingWriter`).
+
+**What is left, measured against the code:**
+- `AlbumDetailView` and `FacetTrackListView` (artist and genre) still use `List(selection:)` with a
+  `TapGesture(count: 2)` on top. That pairing races and drops clicks on macOS (a known issue), so moving onto the
+  kit fixes it as well.
+- The playlist header and insets.
+- The native playlist confirmations: delete playlist, remove missing, and the error alert. These adopt Sprint EQ's
+  `AppDialog`. The music-folder dialog stays with Sprint F.
+- **Founder decision 34:** a genre's page uses its cover mosaic as the header.
+
+**Two agents in parallel worktrees, split by file:**
+
+| Piece | Scope | Owns |
+|---|---|---|
+| **Detail pages (E2 + E3)** | One shared detail track list on `ListSelection`, with plain button rows, the full SEL-01…08 keyboard set, decision 11's double-click and Return, drag-to-playlist, the context menu, VoiceOver actions and the info popover. Album keeps its fields and disc/track order; artist keeps its album grouping (PLAY-02: queue order = shown order); genre gets the mosaic header. Pages sit inside the Library card. | `AlbumDetailView`, `FacetTrackListView`, `TrackRow`, the new shared list, the play contexts in LibraryBrowseKit |
+| **Playlist + dialogs (E4 rest)** | The playlist header and insets; `AppDialog` for delete playlist, remove missing, and "Couldn't Complete That" | `UI/Playlist/PlaylistDetailView*`, `LibrarySidebar*`, `AppDialog` |
+
+**Routine** (decision 18 + retros): keyboard and selection work gets a break-it pass plus my live pass BEFORE the
+code review; sheets for changed screens; swiftformat on main after each merge (the worktree gate skips it);
+agents resumed by raw ID.
