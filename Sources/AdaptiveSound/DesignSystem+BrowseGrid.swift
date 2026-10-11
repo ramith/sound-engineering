@@ -8,11 +8,11 @@ extension DesignSystem {
     /// three grids — and the keyboard maths over them — can't drift. Derived from existing tokens
     /// where the design derives them (the plate is concentric with the art's `Radius.control`).
     enum BrowseGrid {
-        /// The grid area's insets inside the card — the Songs row area's: 12 at each side, so a
-        /// tile's plate sits where a row card does and its art lines up with the header text (20),
-        /// and 6 above and below.
-        static let areaInsetH: CGFloat = 12
-        static let areaInsetV: CGFloat = 6
+        /// The grid area's insets inside the card — the card's row area (`LayoutMetrics`): 12 at each
+        /// side, so a tile's plate sits where a row card does and its art lines up with the header
+        /// text (20), and 6 above and below.
+        static let areaInsetH = LayoutMetrics.cardRowAreaInsetH
+        static let areaInsetV = LayoutMetrics.cardRowAreaInsetV
         /// Between tiles, across and down.
         static let spacing: CGFloat = 12
         /// The narrowest a tile gets before a column drops, and the fewest columns there are.

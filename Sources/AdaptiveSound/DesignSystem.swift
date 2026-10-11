@@ -277,6 +277,11 @@ enum DesignSystem {
         /// Horizontal content inset shared by the Twin Panels rail's nav rows, section headers,
         /// and inline folder rows so every item lines up on one edge (S10.8 PR-C).
         static let railRowInset: CGFloat = 12
+        /// The Library card's row area — the scroll view under the card header that holds Songs' rows,
+        /// a browse grid's tiles and a playlist's rows: the guide's "6×12 padding" (png/02), 12 at each
+        /// side so a row's card never touches the card's edge, and 6 above and below.
+        static let cardRowAreaInsetH: CGFloat = 12
+        static let cardRowAreaInsetV: CGFloat = 6
     }
 
     // MARK: Artwork sizes
