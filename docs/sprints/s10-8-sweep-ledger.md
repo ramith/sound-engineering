@@ -953,3 +953,23 @@ keep testing for several days and report problems.**
 One fix: the My Preset delete dialog (a native alert: system blue ring, red button) doesn't match the theme →
 one themed app dialog for the delete confirmation and the Save / Rename sheet. The playlist and folder
 confirmations follow in Sprints E and F.
+
+### Merge (2026-10-11)
+
+PR #73 merged. The founder's listening stays open for several days; anything heard becomes a small follow-up
+fix. Carried to later sprints: playlist and music-folder confirmations adopt `AppDialog` (E, F). Later:
+analog-matched top bands, and a per-curve peak scan for loud masters.
+
+### Mini-retro — Sprint EQ
+
+1. **The adversarial design panel paid for itself.** Three blind reviewers, backed by the literature and by other
+   players' real source code, found the Intensity-blend blocker, the unsound headroom premise and the loud-master
+   trade-off before any code existed. One revision plus one verify kept it bounded.
+2. **Break-it on the implemented engine found what the design review couldn't:** non-finite input, the wrong glide
+   key, and the Intensity-0 swing. Measured-number disputes were settled by measurement, never by opinion.
+3. **Worktree gates have a blind spot:** swiftformat skips `.claude/` paths. Always lint on main after a
+   fast-forward merge.
+4. **Agents resume across sessions only by raw ID,** so record IDs before every pause. Usage limits killed agents
+   mid-gate twice; their committed work and gate logs survived, and the coordinator finished from them.
+5. **Pure-kit decision logic (`EQSession`) made the UI testable.** The UI review's MAJORs were untestable view-model
+   rules until they moved into the kit. Design for that from the start next time.
