@@ -255,4 +255,23 @@ struct ListSelectionBreakItTests {
         #expect(click.ids.count > 1, "⌘A then ⇧-click left only \(click.ids.sorted())")
         #expect(click.contains(4))
     }
+
+    /// A shown row, for `SongsRowResolver`.
+    private struct Row: Identifiable {
+        let id: Int64
+    }
+
+    @Test("MINOR — a right-click acts on “the selection” only when more than the clicked row of it is shown")
+    func menuActsOnShownSelection() {
+        var selection = ListSelection<Int64>()
+        selection.click(2, extend: false, toggle: false, in: rows)
+        selection.click(4, extend: false, toggle: true, in: rows) // 2 and 4 selected
+        let shown: [Int64] = [1, 2, 3, 5] // a filter (Songs) or a reload (a page) hid row 4
+        let resolved = SongsRowResolver.orderedSelection(in: shown.map(Row.init), selection: selection.ids)
+        // Right-click row 2: its menu acts on “the selection”, which is row 2 alone on screen — so its Play
+        // replaces the queue with that one song, where the row’s own Play plays the page from it.
+        let actsOnSelection = selection.menuActsOnSelection(clicked: 2)
+        #expect(!actsOnSelection || resolved.count > 1,
+                "the menu acts on a selection of \(resolved.count) shown song")
+    }
 }
