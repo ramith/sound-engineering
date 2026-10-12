@@ -98,7 +98,7 @@ characters, cyclomatic complexity ≤ 8. Every new file below is planned at ≤ 
 
 | File | Change |
 |---|---|
-| `UI/Tabs/EQTabView.swift` | The V1b root: `HStack { EQRail; EQGraphCard }`, Library insets (22 / 22 / 18, gap 20), `GlowField(glows: .libraryGlows)` behind. Owns `@State highlightedRegion: EQToneRegion?`. |
+| `UI/Tabs/EQTabView.swift` | The V1b root: `HStack { EQRail; EQGraphCard }`, Library insets (22 / 22 / 18, gap 20), `GlowField(glows: .libraryGlows)` behind *(superseded by Sprint F1: one `appGlows` field is mounted once in `TabContentView` behind every tab but Now Playing; EQ no longer mounts its own)*. Owns `@State highlightedRegion: EQToneRegion?`. |
 | `UI/EQ/FrequencyResponseCanvas*.swift` | Replaced by the `EQGraph*` files. `EQPlotMap` moves to the kit. |
 | `UI/EQ/SaveCustomPresetView.swift` | A rename mode; the curve glyph of what will be saved. The path stays allow-listed. |
 | `EQViewModel*.swift` | Reshaped to the contract (EQ3a only). Split: `EQViewModel.swift` (state, the single dispatch, memoized `played`), `+Stroke`, `+Presets` (choose, save, rename, delete, bring back), `+Outputs` (pin, unpin, `outputDidChange`, the toast state), `+Persistence` (`eqStateV2` + migration call). |
