@@ -30,6 +30,19 @@ enum DecoderKindUI {
     case ffmpeg
 }
 
+// MARK: - DeviceVolume
+
+/// The output device's own (hardware) volume, as Pure Mode reads it. Pure never scales the
+/// bit-perfect stream, so this is the one gain on the Pure path — what Master Gain shows and sets
+/// while Pure plays.
+enum DeviceVolume: Equatable {
+    /// The device has no volume the app can set (none on its main output, or not settable): its
+    /// level is set on the device itself.
+    case fixed
+    /// The device's volume in dB on its own scale (0 dB = its full level), as the device reports it.
+    case decibels(Float)
+}
+
 // MARK: - SignalPathInfo
 
 /// Snapshot of the active signal path, updated at 20 Hz from `engine.currentSignalPath()`.
@@ -61,6 +74,10 @@ struct SignalPathInfo: Equatable {
     /// Bluetooth device disconnected). The view model surfaces this and clears `isPlaying`; the
     /// flag is cleared on the next `startAudio`.
     var interrupted: Bool = false
+
+    /// The output device's own volume while Pure plays — read when Pure starts (in the same snapshot
+    /// that turns the path Pure) and kept current by a listener on the device. `nil` on Enhanced.
+    var deviceVolume: DeviceVolume?
 
     // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
 

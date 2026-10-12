@@ -42,7 +42,7 @@ protocol AudioPlaybackEngineMirror: AnyObject {
     func seek(to seconds: Double) async
     func currentPlaybackPosition() -> Double?
     func currentSignalPath() -> SignalPathInfoMirror
-    func setParameter(_ id: UInt32, value: Float) async throws
+    func publishMasterGain(decibels: Float)
     func publishEQ(points: [Float], isOn: Bool)
     func eqSampleRate() -> Double
     func enumerateOutputDevices() async throws -> [AudioDeviceModelMirror]
@@ -96,7 +96,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     private(set) var startAudioCallCount = 0
     private(set) var stopAudioCallCount = 0
     private(set) var seekCallCount = 0
-    private(set) var setParameterCallCount = 0
+    private(set) var publishMasterGainCallCount = 0
     private(set) var enumerateDevicesCallCount = 0
     private(set) var selectDeviceCallCount = 0
     private(set) var readSpectrumCallCount = 0
@@ -108,8 +108,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
     private(set) var lastStartedURL: URL?
     private(set) var lastStartedPureMode: Bool = false
     private(set) var lastSeekedSeconds: Double?
-    private(set) var lastSetParameterID: UInt32?
-    private(set) var lastSetParameterValue: Float?
+    private(set) var lastPublishedMasterGain: Float?
     /// The last EQ published: the 31 points and whether the EQ plays.
     private(set) var lastPublishedEQ: (points: [Float], isOn: Bool)?
     private(set) var lastSelectedDeviceID: UInt32?
@@ -234,10 +233,9 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         mockSignalPath
     }
 
-    func setParameter(_ id: UInt32, value: Float) async throws {
-        setParameterCallCount += 1
-        lastSetParameterID = id
-        lastSetParameterValue = value
+    func publishMasterGain(decibels: Float) {
+        publishMasterGainCallCount += 1
+        lastPublishedMasterGain = decibels
     }
 
     func publishEQ(points: [Float], isOn: Bool) {
