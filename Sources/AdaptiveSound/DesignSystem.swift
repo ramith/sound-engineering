@@ -70,8 +70,8 @@ enum DesignSystem {
         static let accentFill = from(Palette.accentFill)
         static let accentForeground = from(Palette.accentForeground)
 
-        /// Alternates (swap into accent to change feel). #0A84FF.
-        static let blue = from(Palette.blue)
+        // (`blue` had one consumer, Monitoring's AFTER, which S10.8 F1 moved to the analyzer's ramp
+        // (decision 4); the Kit `Palette.blue` token stays in the audited registry.)
 
         /// Surfaces (elevation stack) — dark = pre-S9-T (#1E1E1E window, pre-D10); light =
         /// first pass (gray base, white raised cards, darker inset). (`panel` had one
