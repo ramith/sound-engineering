@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A compact, `Canvas`-based spectrum visualiser for a single tap point + channel.
 ///
-/// Designed to be embedded inside `MonitorChannelRowView` for the Monitoring tab.
+/// Designed to be embedded inside `MonitorStageView` (a half of a channel's lens) for the Monitoring tab.
 /// The caller owns the band data array and passes it in; this view is pure drawing.
 ///
 /// - `bands`: Normalised magnitudes in [0, 1], one element per FFT band.
