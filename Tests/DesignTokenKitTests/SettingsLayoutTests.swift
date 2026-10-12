@@ -18,14 +18,13 @@ struct SettingsLayoutTests {
     private static let margin = 2.0
 
     /// The status labels, as `SignalPathStatus` draws them.
-    private static let statusLabels = ["Active path", "Format", "Decoder", "EQ Preset"]
+    private static let statusLabels = ["Playing through", "Format", "Decoder", "EQ Preset"]
     /// The widest value of each fixed vocabulary: the path, a hi-res format at its widest rate
     /// (`SignalPathInfo.rateString`, 5 digits + " kHz") and bit string (`bitsString`), the decoder, the
-    /// Pure bypass, and the longest built-in preset edited (`EQSession.presetLabel`). A My Preset's name
-    /// is the user's own and unbounded: it wraps in the value column rather than truncating.
+    /// EQ while Pure plays, and the longest built-in preset edited (`EQSession.presetLabel`). A My
+    /// Preset's name is the user's own and unbounded: it wraps in the value column rather than truncating.
     private static let statusValues = [
-        "Enhanced (AVAudioEngine)", "705.6 kHz · 32-bit float", "Apple ExtAudioFile", "— (Pure bypassed)",
-        "Bass & Treble · edited",
+        "Enhanced", "705.6 kHz · 32-bit float", "FFmpeg", "Off in Pure Mode", "Bass & Treble · edited",
     ]
 
     /// `DesignSystem.Font.caption` (callout) — the status labels.
