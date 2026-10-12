@@ -17,9 +17,7 @@ struct PureModeSettingsSection: View {
                               detail: "DSP/EQ bypassed, bit-perfect HAL output, per-track rate match. "
                                   + "Applies on the next track / play.",
                               isOn: $audioViewModel.pureModeEnabled)
-            Rectangle()
-                .fill(DesignSystem.Color.hairline)
-                .frame(height: 1)
+            Hairline()
             SignalPathStatus(
                 info: audioViewModel.signalPath,
                 requested: audioViewModel.pureModeEnabled,

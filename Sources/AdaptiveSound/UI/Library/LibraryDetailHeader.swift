@@ -40,9 +40,7 @@ struct LibraryDetailHeader: View {
             .padding(.top, 12)
             .padding(.bottom, 14)
             .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
-            Rectangle()
-                .fill(DesignSystem.Color.hairline)
-                .frame(height: 1)
+            Hairline()
                 .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
         }
     }

@@ -59,9 +59,7 @@ struct LibraryCardHeader<Controls: View>: View {
             .padding(.top, 16)
             .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
             .padding(.bottom, 14)
-            Rectangle()
-                .fill(DesignSystem.Color.hairline)
-                .frame(height: 1)
+            Hairline()
                 .padding(.horizontal, DesignSystem.LayoutMetrics.screenInsetH)
         }
     }

@@ -159,9 +159,7 @@ struct SongsListView: View {
         // the columns they label. The hairline still spans the full card width.
         .padding(.horizontal, Self.rowHorizontalPadding / 2 + Self.listHorizontalInset)
         .frame(height: 30)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(DesignSystem.Color.hairline).frame(height: 1)
-        }
+        .overlay(alignment: .bottom) { Hairline() }
     }
 
     @ViewBuilder
