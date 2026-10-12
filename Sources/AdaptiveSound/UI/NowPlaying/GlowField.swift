@@ -3,8 +3,9 @@ import SwiftUI
 
 // MARK: - Glow Field (S10.7 PR 2 — design §3.3)
 
-/// The ambient content glows behind the Now Playing tab — the light the glass-look panels
-/// visibly sit over (Regime C decoration). Rendered ENTIRELY from `GlowFieldSpec` Kit data:
+/// The ambient content glows behind every tab — the light the glass-look panels visibly sit
+/// over (Regime C decoration): Now Playing's art-sampled three-glow field, and the app glow the
+/// shell mounts once behind the other tabs (S10.8 F1). Rendered ENTIRELY from `GlowFieldSpec` Kit data:
 /// three shapes whose falloff is authored in radial-gradient stops reading the SAME
 /// `falloffFraction` profile the R4 geometric audit samples (exact-linear, matching the 8a
 /// mock's CSS `radial-gradient(closest-side, peak → 0)` — no `.blur`, zero filter passes).
@@ -15,8 +16,8 @@ import SwiftUI
 /// suppressed under Reduce Transparency / Increase Contrast — all via the pure
 /// `glowFieldIsVisible` resolver behind `GlowFieldGate` (RES-04).
 struct GlowField: View {
-    /// Which glows to render. Defaults to the Now Playing three-glow field; the Library screen
-    /// passes `GlowFieldSpec.libraryGlows` (a single teal pool) for its Twin Panels backdrop.
+    /// Which glows to render. Defaults to the Now Playing three-glow field; the shell's
+    /// `TabContentView` passes `GlowFieldSpec.appGlows` (a single teal pool) for every other tab.
     var glows: [GlowFieldSpec.Glow] = GlowFieldSpec.glows
 
     /// D8 (PR 7): per-slot sampled-palette overrides — a nil slot (or nil array) keeps the

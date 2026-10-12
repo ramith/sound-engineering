@@ -1,7 +1,7 @@
 // R4-EQ — the EQ graph's contrast audit (Sprint EQ, EQ3; ui-plan §6). Own file, same posture as
 // R4-FOCUS / R4-CHIP: it shares only the thresholds and the glow grid with the base R4 suite.
 //
-// The graph sits on a lens, on the graph card, over the Library glow — and paints washes of its own
+// The graph sits on a lens, on the graph card, over the app glow — and paints washes of its own
 // under the curve: the analyzer silhouette, a Tone region's shading, the active band's column and the
 // curve's area fill (`EQGraphDecor`). They STACK, so every mark is audited on the lens with none of
 // them and with all of them, in both appearances, and on the opaque lens Reduce Transparency and
@@ -39,14 +39,14 @@ struct EQAuditTests {
         return lenses
     }
 
-    /// The Library glow under the EQ screen, composited at every sampled point of both reference sizes.
+    /// The app glow under the EQ screen, composited at every sampled point of both reference sizes.
     private static func glowSites(_ appearance: TokenAppearance) -> [Backdrop] {
         ContrastAuditTests.glowGeometries.flatMap { geometry in
             ContrastAuditTests.gridPoints().map { point in
                 ("@(\(point.x),\(point.y)) \(geometry.width)pt", GlowFieldSpec.compositeBackdrop(
                     unitX: point.x, unitY: point.y,
                     containerWidth: geometry.width, containerHeight: geometry.height,
-                    appearance: appearance, glows: GlowFieldSpec.libraryGlows
+                    appearance: appearance, glows: GlowFieldSpec.appGlows
                 ))
             }
         }

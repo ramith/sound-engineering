@@ -46,13 +46,15 @@ public enum GlowFieldSpec {
              unitCenterX: 0.634, unitCenterY: 0.621),
     ]
 
-    /// The Library screen's single ambient glow (S10.8 — the D1 "other tabs get the glow"
-    /// follow-through). ONE teal pool upper-left-of-center per the Twin Panels mock (png/00 /
-    /// LIBRARY_GUIDE PR-B), NOT NP's three-glow field. Reuses `Palette.glowTeal` (no new
-    /// color); center/size derived from the mock CSS (glow div 1100×640 at left 8% / top 120
-    /// on the 1440×920 window, gradient origin 40%/30%) mapped into the content region's unit
-    /// space (below the ~90pt top chrome). Founder-tunable in the by-eye rounds like `glows`.
-    public static let libraryGlows: [Glow] = [
+    /// The app glow: the single ambient pool behind every tab but Now Playing — Library, EQ,
+    /// Monitoring and Settings (S10.8 F1, decision 2; born as the Library's Twin Panels backdrop).
+    /// The shell mounts it ONCE (`TabContentView`), so a tab switch leaves it still. ONE teal pool
+    /// upper-left-of-center per the Twin Panels mock (png/00 / LIBRARY_GUIDE PR-B), NOT NP's
+    /// three-glow field. Reuses `Palette.glowTeal` (no new color); center/size derived from the
+    /// mock CSS (glow div 1100×640 at left 8% / top 120 on the 1440×920 window, gradient origin
+    /// 40%/30%) mapped into the content region's unit space (below the ~90pt top chrome).
+    /// Founder-tunable in the by-eye rounds like `glows`.
+    public static let appGlows: [Glow] = [
         Glow(color: Palette.glowTeal, unitWidth: 0.76, unitHeight: 0.85,
              unitCenterX: 0.385, unitCenterY: 0.30),
     ]
@@ -90,7 +92,7 @@ public enum GlowFieldSpec {
     /// The composite glow color at a unit point in a container of the given size:
     /// every glow's falloff-attenuated color folded over the window base, in render order.
     /// This is the function the R4 geometric audit samples. `glows` defaults to the Now
-    /// Playing three-glow field; pass another set (e.g. `libraryGlows`) to audit a different
+    /// Playing three-glow field; pass another set (e.g. `appGlows`) to audit a different
     /// screen's backdrop through the SAME falloff math the render reads. `overrideColors`
     /// (D8, PR 7) is the per-slot sampled-palette override — a `nil` slot keeps the brand
     /// token; entries carry their OWN alpha (the clamp forces the slot's token alpha). The
