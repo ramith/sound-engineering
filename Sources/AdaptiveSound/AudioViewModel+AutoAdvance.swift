@@ -25,9 +25,7 @@ extension AudioViewModel {
             // arming edge; the normal end-of-queue path below is what usually counts the
             // final track).
             countPlayIfNaturalEndQualifies()
-            pendingNextIndex = nil
-            isPlaying = false
-            playbackPosition = 0
+            stopAtEndOfQueue()
             return
         }
 
@@ -62,6 +60,17 @@ extension AudioViewModel {
                 logUX("trackTransition: no further track to queue")
             }
         }
+    }
+
+    /// The queue ran out (S10.8 G): stop the engine for real. Flipping only the flags left it running
+    /// behind a stopped footer — a scrub then played audio the footer didn't show, and Space started
+    /// the song again over it. The stop also clears the length, so the scrubber goes inert; the last
+    /// song stays selected, and Play starts it from the top. `isPlaying` drops at once, so the next
+    /// 20 Hz tick doesn't read the ended engine again before the stop lands.
+    func stopAtEndOfQueue() {
+        stopPlayback()
+        isPlaying = false
+        playbackPosition = 0
     }
 }
 
