@@ -111,7 +111,13 @@ player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
 ### Device model (pin vs. follow)
 
 - App-selected device is **authoritative** by default. A Settings toggle (`pinPlaybackToSelectedDevice`, default `true`) chooses behaviour when a **new** device connects mid-playback: **PIN** re-asserts the selected device; **FOLLOW** adopts the newly-connected default and re-establishes playback on it.
-- Resilience: an `AVAudioEngineConfigurationChange` observer re-establishes the Enhanced path after route/format changes; a `kAudioDevicePropertyDeviceIsAlive` listener **pauses** the Pure path on device loss (never auto-jumps).
+- Resilience *(superseded by Sprint G, 2026-10-13 — kept for history)*: an `AVAudioEngineConfigurationChange` observer re-establishes the Enhanced path after route/format changes; a `kAudioDevicePropertyDeviceIsAlive` listener **pauses** the Pure path on device loss (never auto-jumps).
+- **One output-device path (Sprint G):** every output event — the device list, the system default output (`kAudioHardwarePropertyDefaultOutputDevice`), the app device's `DeviceIsAlive`, and `AVAudioEngineConfigurationChange` — goes through `AudioEngineBridge+OutputDeviceMonitor.swift` on `configChangeQueue`, which reads fresh facts and asks one tested rule, `OutputDevicePolicy.action` (`OutputDeviceKit`).
+  - **Device lost while playing → pause, on Enhanced and Pure alike** (never continue on another device); the selection then moves to the new system default.
+  - **System default changed outside the app:** PIN re-asserts the app's device while Enhanced plays or is about to start (idle: left alone); FOLLOW adopts it fully — selection, per-output EQ, transport / limiter ceiling, rate readout, crossfeed check (`AudioViewModel.adoptOutput`).
+  - **Device chosen while Pure plays:** playback restarts at the playhead on the new device; the normal start path picks Pure or falls back to Enhanced.
+  - The app's own default changes settle without a loop (`selectDevice` sets the app device before the system default).
+  - The output menu lists only user-selectable devices: hidden devices, private aggregates and the app's own `CADefaultDeviceAggregate-…` are excluded (`DeviceListPolicy`, C++; Sprint G).
 
 ### Two bit-perfect concepts (don't conflate them)
 
