@@ -134,6 +134,8 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     Intensity 0 with the EQ Off is bit-perfect.
 34. **A genre's detail page uses its 2×2 cover mosaic as the header** (2026-10-11, Sprint E plan check): the
     same picture as its tile in the Genres grid, so the page reads as opened from that tile.
+35. **An artist's detail page uses its tile's cover as the header** (2026-10-12), consistent with albums and genres.
+36. **Every Library page has the same Play · Shuffle · ⋯ set** (2026-10-12): the album page gains Shuffle.
 
 ## C. Scope
 
