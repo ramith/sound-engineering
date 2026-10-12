@@ -378,39 +378,4 @@ extern "C"
         }
         return session->gapless->ended() ? 1 : 0;
     }
-
-    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar) AUDIODSP_C_NOEXCEPT
-    {
-        if (deviceID == 0)
-        {
-            return 0;
-        }
-        Float32 clamped = scalar;
-        if (clamped < 0.0F)
-        {
-            clamped = 0.0F;
-        }
-        else if (clamped > 1.0F)
-        {
-            clamped = 1.0F;
-        }
-        const AudioObjectPropertyAddress addr{
-            kAudioDevicePropertyVolumeScalar,
-            kAudioObjectPropertyScopeOutput,
-            kAudioObjectPropertyElementMain,
-        };
-        const auto dev = static_cast<AudioObjectID>(deviceID);
-        if (AudioObjectHasProperty(dev, &addr) == 0)
-        {
-            return 0; // device has no master output volume scalar
-        }
-        Boolean settable = 0;
-        if (AudioObjectIsPropertySettable(dev, &addr, &settable) != noErr || settable == 0)
-        {
-            return 0;
-        }
-        const OSStatus status =
-            AudioObjectSetPropertyData(dev, &addr, 0, nullptr, sizeof(clamped), &clamped);
-        return status == noErr ? 1 : 0;
-    }
 } // extern "C"

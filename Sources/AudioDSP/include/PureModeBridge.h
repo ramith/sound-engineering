@@ -179,12 +179,6 @@ extern "C"
     /// Returns 0 for a NULL handle.
     int pureModeEnginePlaybackEnded(void* engine) AUDIODSP_C_NOEXCEPT;
 
-    /// Set the device's hardware master volume (kAudioDevicePropertyVolumeScalar, output scope,
-    /// 0..1, clamped). Hardware/analog-domain, so the rendered stream stays bit-perfect — this
-    /// gives Pure Mode a working volume control WITHOUT exclusive hog mode. Returns 1 on success, 0
-    /// if the device has no settable master volume (the caller treats that as "volume on device").
-    int pureModeSetDeviceVolume(uint32_t deviceID, float scalar) AUDIODSP_C_NOEXCEPT;
-
 #ifdef __cplusplus
 } // extern "C"
 #endif
