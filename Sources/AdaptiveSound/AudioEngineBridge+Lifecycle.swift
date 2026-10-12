@@ -30,16 +30,16 @@ extension AudioEngineBridge {
                     self.performEngineTeardown()
                 }
 
-                // Capture the current default output device so Pure Mode can open the right
-                // HAL engine. Updated in selectDevice(_:) and by the device-change listener.
+                // The app starts on the current default output (Pure opens its HAL engine on it).
+                // Moved by selectDevice(_:) and by the output rule (OutputDeviceMonitor).
                 self.setCurrentDeviceID(getDefaultOutputDeviceID())
 
                 let engine = AVAudioEngine()
                 self.setAvEngine(engine)
                 self.observeConfigurationChanges(of: engine)
 
-                // Refresh the device picker when devices are added/removed (BT connect/disconnect).
-                self.registerDeviceListListener()
+                // Watch the output: devices added/removed, the system default, this device alive.
+                self.registerOutputDeviceListeners()
 
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
@@ -91,8 +91,7 @@ extension AudioEngineBridge {
     ///  5. Reset every field to its idle value (drops the meter wrapper — see step 3 ordering).
     private func performEngineTeardown() {
         stopEnhancedResampler()
-        unregisterDeviceAliveListener()
-        unregisterDeviceListListener()
+        unregisterOutputDeviceListeners()
         removeSpectrumTap()
         removeConfigChangeObserver()
         tearDownActiveEngine()

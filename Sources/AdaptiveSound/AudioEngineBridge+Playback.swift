@@ -86,6 +86,10 @@ extension AudioEngineBridge {
             throw AudioBridgeError.engineNotInitialized
         }
 
+        // The engine plays on the system default: make it the app's device first (pinned), or
+        // take the default as the app's device (follow) — e.g. headphones connected while paused.
+        alignOutputForEnhancedStart()
+
         if !engine.isRunning {
             try engine.start()
         }

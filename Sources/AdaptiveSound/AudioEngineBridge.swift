@@ -186,11 +186,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// to bail and leave playback silently dead. Intent is the durable truth; the node state is not.
     var enhancedPlayIntent: Bool = false
 
-    /// User preference for what happens when a NEW output device connects mid-playback (set by the
-    /// view model from a Settings toggle). `true` (default) = "app-authoritative": re-pin the selected
-    /// device so playback stays put. `false` = "follow": adopt the newly-connected device as the
-    /// target. Consumed by `handleDeviceSetChange()`.
-    var pinPlaybackToSelectedDevice: Bool = true
+    /// Backing storage for "Keep playback on this device" — guarded by `stateLock` (written from the
+    /// main actor, read by the output rule on `configChangeQueue` / `engineQueue`). `true` (default) =
+    /// pinned: the app's device wins over the system default. `false` = follow the system default.
+    /// Access ONLY via `setPinPlaybackToSelectedDevice(_:)` / `pinsPlaybackToSelectedDevice`.
+    var storedPinPlaybackToSelectedDevice: Bool = true
 
     // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
 
@@ -211,32 +211,26 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// track change, or reconfigure cleanly abandons every queued-but-not-yet-played buffer.
     var resampleGeneration: UInt64 = 0
 
-    /// CoreAudio property-listener token for the device-is-alive notification on the device Pure is
-    /// rendering on. Registered when Pure starts; removed on teardown. On the device disappearing,
-    /// playback pauses (see AudioEngineBridge+PureModeDeviceMonitor.swift).
-    var deviceAliveListenerBlock: AudioObjectPropertyListenerBlock?
+    // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
-    /// The device the alive-listener was registered on, so we UNregister from the SAME device.
-    var aliveListenerDeviceID: UInt32 = 0
+    /// The device-list (`kAudioHardwarePropertyDevices`) and system-default-output
+    /// (`kAudioHardwarePropertyDefaultOutputDevice`) listeners. Registered in `initialize()`, removed
+    /// in the engine teardown; both confined to `engineQueue`.
+    var deviceListListener: AudioPropertyListener?
+    var defaultOutputListener: AudioPropertyListener?
 
-    /// The EXACT dispatch queue the alive-listener block was registered on, retained so removal
-    /// passes the identical queue instance rather than re-deriving one (F5). `AudioObjectRemove…`
-    /// only unregisters when the (object, address, queue, block) tuple matches the Add call; a
-    /// re-derived queue would silently fail to remove and leak the listener.
-    var aliveListenerQueue: DispatchQueue?
+    /// The `kAudioDevicePropertyDeviceIsAlive` listener on the app's device (`currentDeviceID`), on
+    /// Enhanced and Pure alike. Re-bound whenever the target changes; confined to `configChangeQueue`.
+    var targetAliveListener: AudioPropertyListener?
 
-    /// Invoked on the main thread when the available-output-device set changes. Set by the view
-    /// model; fired by the `kAudioHardwarePropertyDevices` listener (see AudioEngineBridge+Devices).
+    /// Whether the output listeners are live (initialize → teardown). Confined to
+    /// `configChangeQueue`, so an event that arrives after teardown can't re-bind a listener.
+    var isMonitoringOutput = false
+
+    /// Invoked on the main thread when the device list or the app's device changes (a device
+    /// connected or went away; the app adopted the system default; playback paused for a lost
+    /// device). Set by the view model, which re-reads the devices (`refreshDevices`).
     var onOutputDevicesChanged: (@MainActor () -> Void)?
-
-    /// CoreAudio property-listener token for the device-list (add/remove) notification.
-    /// Registered in `initialize()`, removed in `shutdown()`.
-    var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
-
-    /// The EXACT dispatch queue the device-list listener was registered on, retained so removal
-    /// passes the identical queue instance rather than re-deriving one (F5, same rationale as
-    /// `aliveListenerQueue`).
-    var deviceListListenerQueue: DispatchQueue?
 
     /// Observer for `AVAudioEngineConfigurationChange`. Without it, a hardware route change
     /// (Bluetooth disconnect, USB unplug, default-device switch) leaves `AVAudioEngine` stopped and
@@ -259,11 +253,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     let engineQueue = DispatchQueue(label: "com.adaptivesound.engine")
 
     /// Re-entrancy guard for `reestablishEnhancedAfterConfigChange`. Exclusively accessed on
-    /// `configChangeQueue` (both the FOLLOW-mode dispatch and the config-change notification handler
-    /// run there). A FOLLOW device-connect fires BOTH paths — the explicit `configChangeQueue.async`
-    /// in `handleDeviceSetChange` AND the subsequent `AVAudioEngineConfigurationChange` notification —
-    /// causing a second `seekEnhancedResampler` that abandons the first re-prime → audible dropout.
-    /// This flag lets the second entry early-return. `defer` ensures it is always cleared.
+    /// `configChangeQueue`, where every output event is decided (AudioEngineBridge+OutputDeviceMonitor).
+    /// `defer` ensures it is always cleared.
     var isReestablishing: Bool = false
 
     // Engine lifecycle (initialize / shutdown) lives in AudioEngineBridge+Lifecycle.swift.

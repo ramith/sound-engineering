@@ -6,32 +6,16 @@ import Foundation
 extension AudioEngineBridge {
     /// Resume rendering after a hardware configuration change (route / default-device / format
     /// change), which stops `AVAudioEngine` — otherwise the app silently goes quiet on a Bluetooth
-    /// or USB change (incl. a device merely *connecting* and stealing the system default).
+    /// or USB change (incl. a device merely *connecting* and stealing the system default). Whether
+    /// to restart, and on which device, is the output rule's call
+    /// (AudioEngineBridge+OutputDeviceMonitor): a lost device pauses instead of carrying on from the
+    /// fallback (break-it B3), a pinned device is put back as the default first (B4), Pure and idle
+    /// are left alone (Pure runs its own HAL engine; an idle engine must not seize a device).
     func observeConfigurationChanges(of engine: AVAudioEngine) {
         configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
-            guard let self else { return }
-            self.configChangeQueue.async {
-                guard let engine = self.avEngineRef else { return }
-                let intentSnap = self.resampleQueue.sync { self.enhancedPlayIntent }
-                logUX("config-change fired: path=\(self.activePathKind == .pure ? "Pure" : "Enhanced") "
-                    + "engineRunning=\(engine.isRunning) playerPlaying=\(self.playerNodeRef?.isPlaying ?? false) "
-                    + "intent=\(intentSnap) default=\(getDefaultOutputDeviceID()) "
-                    + "selected=\(self.currentDeviceID)")
-                // While Pure Mode owns the device (hog mode + a per-track nominal-rate change),
-                // those very changes fire this notification. The Enhanced AVAudioEngine is
-                // intentionally stopped and must NOT try to restart on the hogged device — doing so
-                // fails with -10875 (invalid output HW format) and contends for the device. The
-                // Pure path runs its own HAL engine; leave it alone. Device loss for the Pure path
-                // is handled (paused) by the CoreAudio device-alive listener in
-                // AudioEngineBridge+PureModeDeviceMonitor.swift.
-                guard self.activePathKind != .pure else { return }
-                // After a device-loss pause we are intentionally stopped — don't auto-restart on the
-                // config change that the disconnect itself fires. Cleared on the next startAudio.
-                guard !self.loadSignalPath().interrupted else { return }
-                self.reestablishEnhancedAfterConfigChange(engine: engine)
-            }
+            self?.outputDeviceDidChange(.engineReconfigured)
         }
     }
 
@@ -43,15 +27,12 @@ extension AudioEngineBridge {
     /// completion chain that was feeding the player is broken when its buffers are flushed) — which
     /// is why a device switch on a rate-mismatched file went intermittently silent. So we re-drive
     /// the scheduler from the current playhead, reusing the seek machinery, on the now-current
-    /// output device. Runs on `configChangeQueue` (serialized — see `observeConfigurationChanges`).
-    /// Internal (not private) so the device-set handler in `AudioEngineBridge+Devices.swift` can
-    /// drive a re-establish when "follow the newly-connected device" mode adopts a new default.
+    /// output device. Runs on `configChangeQueue`, called by the output rule
+    /// (AudioEngineBridge+OutputDeviceMonitor) on a configuration change or a followed device.
     func reestablishEnhancedAfterConfigChange(engine: AVAudioEngine) {
-        // Re-entrancy guard: a FOLLOW-mode device connect dispatches one re-establish explicitly
-        // (handleDeviceSetChange) AND causes AVAudioEngineConfigurationChange to fire a second one
-        // on the same configChangeQueue serial queue. The second call must early-return to prevent
-        // a double seekEnhancedResampler that abandons the first re-prime → audible dropout.
-        // Both this flag and all callers are confined to configChangeQueue — no atomics needed.
+        // Re-entrancy guard: a nested re-establish must early-return rather than run a second
+        // seekEnhancedResampler that abandons the first re-prime → audible dropout. The flag and
+        // all callers are confined to configChangeQueue — no atomics needed.
         guard !isReestablishing else {
             logUX("reestablish: skipping re-entrant call (already in progress)")
             return
