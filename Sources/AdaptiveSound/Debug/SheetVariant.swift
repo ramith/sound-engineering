@@ -67,10 +67,12 @@
         case playlistFailure = "playlist-failure"
         /// The Settings worlds (S10.8 F2) — the Settings tab only: Pure Mode asked for and waiting for the
         /// next track, with "Keep playback on this device" off (both switch positions, both helper
-        /// lines); Pure asked for but unavailable (the warning line); and no output device at all.
+        /// lines); Pure asked for but unavailable (the warning line); no output device at all; and Pure
+        /// playing bit-perfect on the USB DAC (the teal "Pure (HAL-direct)", the EQ bypassed).
         case settingsStates = "settings-states"
         case settingsFallback = "pure-fallback"
         case settingsNoDevices = "no-devices"
+        case settingsPure = "settings-pure"
         /// The rail's remove-folder confirmation (S10.8 F2), open over the Library (drawn in the window,
         /// as the EQ's and the playlists' dialogs).
         case folderRemove = "folder-remove"
@@ -161,7 +163,7 @@
                 [.library]
             case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
                  .playlistFailure, .folderRemove: [.library]
-            case .settingsStates, .settingsFallback, .settingsNoDevices: [.settings]
+            case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure: [.settings]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }
