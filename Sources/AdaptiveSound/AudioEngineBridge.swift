@@ -1,5 +1,6 @@
 import Accelerate
 @preconcurrency import AVFoundation
+import EQEditKit
 import Foundation
 import os
 import TrackLoudnessKit
@@ -211,6 +212,18 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// track change, or reconfigure cleanly abandons every queued-but-not-yet-played buffer.
     var resampleGeneration: UInt64 = 0
 
+    // MARK: - Master Gain (methods in AudioEngineBridge+MasterGain.swift)
+
+    /// The app's Master Gain in dB, which the player plays (`applyMasterGain`). Confined to
+    /// `engineQueue`: written by `publishMasterGain`, read where a player is built or started.
+    var masterGainDecibels: Float = MasterGainLaw.unity
+
+    /// The device Pure plays on, whose volume Master Gain shows and sets, and the listener following
+    /// that volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on
+    /// `engineQueue` (Pure start), taken on `engineQueue` / `configChangeQueue` (teardown), read on
+    /// the main thread (`setDeviceVolume`).
+    var deviceVolumeWatch: DeviceVolumeWatch?
+
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
     /// The device-list (`kAudioHardwarePropertyDevices`) and system-default-output
@@ -244,7 +257,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
     /// Serial queue that owns ALL transport / graph mutation: `startAudio`, `stopAudio`, `seek`,
-    /// `setParameter`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
+    /// `publishMasterGain`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
     /// their bodies here (previously each dispatched onto the CONCURRENT `DispatchQueue.global()`,
     /// so they could interleave on `avEngine` / `playerNode` / `pureEngine` / `activePath`). One
     /// serial queue makes those transitions mutually exclusive (P2-B). It may call

@@ -53,6 +53,8 @@ extension AudioEngineBridge {
                 // signal path into the mixer.
                 let player = AVAudioPlayerNode()
                 self.setPlayerNode(player)
+                // A (re)built player plays the stored Master Gain from its first buffer (G-GAIN-1).
+                self.applyMasterGain()
                 engine.attach(player)
 
                 // Instantiate both AUs and build the two-AU graph; the (nested) completion handlers

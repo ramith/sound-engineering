@@ -49,6 +49,14 @@ extension AudioPlaybackEngine {
 
     /// Default: no-op. Conformers that host the DSP AU override this.
     func publishOutputTransport(_: UInt32) {}
+
+    /// Default: no-op. Conformers with a player override this.
+    func publishMasterGain(decibels _: Float) {}
+
+    /// Default: `nil` — nothing plays on Pure, so there is no device volume to set.
+    func setDeviceVolume(decibels _: Float) -> DeviceVolume? {
+        nil
+    }
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -157,10 +165,21 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// playback tap. Lock-free; safe to poll from the UI. `.unmeasured` if unavailable.
     func currentLoudness() -> LoudnessSnapshot
 
-    // MARK: DSP Parameters
+    // MARK: Master Gain
 
-    /// Set a DSP parameter by ID (e.g. master gain = 0).
-    func setParameter(_ id: UInt32, value: Float) async throws
+    /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). The
+    /// player plays it at its linear gain from then on, on every Enhanced start and after a rebuild
+    /// too. Never reaches Pure: the bit-perfect stream is not scaled (see `setDeviceVolume`).
+    /// Synchronous and off-RT; calls apply in the order made. Default impl: no-op.
+    func publishMasterGain(decibels: Float)
+
+    /// While Pure plays, set the output device's own volume to `decibels` (clamped to the device's
+    /// range and to 0 dB at most; −∞ is its minimum) and return what the device reads afterwards,
+    /// which the signal-path snapshot carries too. `nil` when Pure is not playing. Synchronous —
+    /// call it on the main thread, where the device's volume listener also runs. Default impl: `nil`.
+    func setDeviceVolume(decibels: Float) -> DeviceVolume?
+
+    // MARK: DSP Parameters
 
     /// Publish the EQ to the live DSP AU (the engine side of the Sprint EQ contract): the 31
     /// `points` (dB, one per band, `EQBands`) that are drawn, and whether the EQ plays at all.

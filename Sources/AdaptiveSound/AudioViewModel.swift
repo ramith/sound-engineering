@@ -162,20 +162,27 @@ final class AudioViewModel {
 
     // MARK: - Master Gain
 
-    /// Last volume value logged (formatted), so a slider DRAG coalesces to one line per distinct
-    /// displayed value instead of ~25 identical lines.
-    private var lastVolLogged: String = ""
+    /// Last Master Gain readout logged, so a slider DRAG coalesces to one line per distinct displayed
+    /// level instead of ~25 identical lines (`logMasterGain`).
+    var lastMasterGainLogged: String = ""
 
-    var masterGain: Float = 0.7 {
+    /// Master Gain: the app's own level in dB (S10.8 G; founder decision 2026-10-12, "Show the real
+    /// level"). Turn-down only — 0 dB, unity, at the top and by default (what plays at launch);
+    /// `MasterGainLaw` maps it to the slider and to the player's linear gain, and the inspector reads
+    /// it back as it plays. Published on every change and at engine-ready. On Pure the bit-perfect
+    /// stream is never scaled: the slider shows and sets the output device's own volume instead
+    /// (`+MasterGain`). Not kept across launches (a post-R1 item).
+    var masterGain: Float = MasterGainLaw.unity {
         didSet {
-            let volStr = secs(Double(masterGain))
-            if volStr != lastVolLogged {
-                logUX("vol → \(volStr) (\(pureModeEngaged ? "Pure HW" : "Enhanced"))")
-                lastVolLogged = volStr
-            }
-            setParameter(masterGainParameterID, value: masterGain)
+            logMasterGain("master gain → \(MasterGainLaw.text(masterGain))")
+            publishMasterGain()
         }
     }
+
+    /// The last level the user set on the output device while Pure plays, and what the device read
+    /// back then — so the knob holds the level asked for until something else moves the device
+    /// (`masterGainControl`).
+    var deviceVolumeRequest: DeviceVolumeRequest?
 
     // MARK: - Spectrum Analyzer State
 
@@ -343,7 +350,6 @@ final class AudioViewModel {
     /// Where the now-playing cursor persists (`+QueueHydration`): the launch's
     /// `AppDataLocation.defaults`. The picture-sheet renderer injects its own suite.
     let defaults: UserDefaults
-    private let masterGainParameterID: UInt32 = 0
 
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.defaults = defaults
@@ -362,16 +368,6 @@ final class AudioViewModel {
     // AudioViewModel+Playback.swift.
 
     // MARK: - Parameter Control
-
-    func setParameter(_ id: UInt32, value: Float) {
-        Task {
-            do {
-                try await engine.setParameter(id, value: value)
-            } catch {
-                errorMessage = "Parameter update failed: \(error.localizedDescription)"
-            }
-        }
-    }
 
     /// Publish the EQ (its 31 points, dB, and whether it plays) to the live DSP AU. Synchronous +
     /// off-RT; called by `EQViewModel.publish()`, the EQ's one dispatch, on every change.
