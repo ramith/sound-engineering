@@ -56,7 +56,8 @@ struct MonitoringTabView: View {
 // MARK: - Monitoring Tab Content
 
 /// The populated content once MonitoringViewModel is ready: the header over one lens per channel.
-/// Extracted to keep MonitoringTabView's body below the function-body length limit.
+/// Extracted to keep MonitoringTabView's body below the function-body length limit. It reads only the
+/// channel count; the bands are read by `MonitorChannelColumn`, so the poll redraws the lenses alone.
 private struct MonitoringTabContent: View {
     let monitorVM: MonitoringViewModel
     let isPlaying: Bool
@@ -82,8 +83,13 @@ private struct MonitoringTabContent: View {
                         MonitoringEmptyView()
                             .frame(height: CGFloat(MonitorLayout.rowsHeight(regionHeight: regionHeight)))
                     } else {
-                        channelRows(rowHeight: MonitorLayout.rowHeight(channelCount: monitorVM.channelCount,
-                                                                       regionHeight: regionHeight))
+                        MonitorChannelColumn(
+                            monitorVM: monitorVM,
+                            isPlaying: isPlaying,
+                            reduceMotion: reduceMotion,
+                            rowHeight: MonitorLayout.rowHeight(channelCount: monitorVM.channelCount,
+                                                               regionHeight: regionHeight)
+                        )
                     }
                 }
                 .padding(.top, CGFloat(MonitorLayout.insetTop))
@@ -91,39 +97,6 @@ private struct MonitoringTabContent: View {
                 .padding(.bottom, CGFloat(MonitorLayout.insetBottom))
             }
         }
-    }
-
-    private func channelRows(rowHeight: Double) -> some View {
-        VStack(spacing: CGFloat(MonitorLayout.rowGap)) {
-            ForEach(0 ..< monitorVM.channelCount, id: \.self) { channelIndex in
-                let total = monitorVM.channelCount
-                let before = bandArray(monitorVM.beforeBands, channel: channelIndex)
-                let after = bandArray(monitorVM.afterBands, channel: channelIndex)
-
-                MonitorChannelRowView(
-                    channelLabel: ChannelLabels.label(for: channelIndex, total: total),
-                    spokenName: ChannelLabels.spokenName(for: channelIndex, total: total),
-                    beforeBands: before,
-                    afterBands: after,
-                    isActive: isPlaying
-                )
-                .frame(height: CGFloat(rowHeight))
-                // Only animate when reduce-motion is off; skip on first appearance.
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: before)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: after)
-            }
-        }
-        // Every lens in one layer under every row (`MonitorLensStack`): no lens's shadow on another's bars.
-        .background {
-            MonitorLensStack(count: monitorVM.channelCount, rowHeight: rowHeight)
-        }
-    }
-
-    private func bandArray(_ arrays: [[Float]], channel: Int) -> [Float] {
-        guard channel < arrays.count else {
-            return [Float](repeating: 0, count: SpectrumConstants.bandCount)
-        }
-        return arrays[channel]
     }
 }
 
