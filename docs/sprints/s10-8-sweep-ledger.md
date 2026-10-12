@@ -1140,3 +1140,25 @@ is not keyboard or data work. swiftformat runs on main after each merge.
 
 No blue; the glow on Library, EQ, Monitoring and Settings, not Now Playing; the output device switch and "Keep
 playback on this device"; the folder dialog's Cancel; the EQ. "Things are looking good."
+
+### Merge (2026-10-12)
+
+PR #75 merged as 89a7677. At the founder's ask the final strict gate ran in CI (`strict-ci.yml`, the PR run and
+the push-to-main run) instead of locally; the combined branch had passed locally before the fix round (EXIT 0, 651
+tests). Carried forward to Sprint G: the three items logged above (pill-menu VoiceOver split, the app's own aggregate
+device in the device menu, the Pure Mode caption wording).
+
+### Mini-retro — Sprint F
+
+1. **Split by file, merged without conflicts.** F1 and F2 shared no file, so F1 cherry-picked cleanly onto F2.
+   Each agent flagged the one cross-piece dependency (F1 alone left two Settings captions under 4.5:1; F2's cards
+   fix them) instead of reaching into the other's files.
+2. **Review in parallel with the gate.** The code review read code while the gate ran, and the fix round built in
+   its own worktree, so neither waited on the other. Bringing the fixes in before their gate finished (the founder's
+   call) moved the live pass forward by about 15 minutes, with no loss: the code was unchanged.
+3. **Test keys by effect, not by the focus probe.** Inside a sheet, AX reports only the container as focused. Tab +
+   Space proved Tab reaches Remove; the test library's relaunch re-scan made a real Remove safe to try.
+4. **A live pass finds what review can't.** The pill-menu VoiceOver split and the aggregate device in the menu were
+   both invisible in code review and sheets, and both predate F. They are logged for G, not fixed out of scope.
+5. **Colours stay the founder's check.** Without Screen Recording the live pass can't see colour. The founder's
+   check covered the teal switches, the keyboard ring and the glow.
