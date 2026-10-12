@@ -10,6 +10,23 @@
         /// ring, on the 2nd.
         static let pageSelection: Set<LibraryTrackDisplay.ID> = [402, 403]
 
+        /// The page-states page: the album page's "Roja" as a TWO-disc album (a "Disc 1" / "Disc 2"
+        /// sub-header each, track numbers starting again), one song by another artist (named after
+        /// its title, decision 12's compilations), the playing row, and — from `pageSelection` — two
+        /// selected rows with the keyboard ring.
+        private static func albumStatesPage() -> LibraryDetailContent {
+            let songs = albumSongs(albumID: 10, title: "Roja", year: 1992, artist: "A. R. Rahman", [
+                PageSong(401, "Chinna Chinna Aasai", 1, 296), PageSong(402, "Kadhal Rojave", 2, 301),
+                PageSong(403, "Pudhu Vellai Mazhai", 3, 312), PageSong(4, playingTitle, 4, 245),
+                PageSong(405, "Rukkumani Rukkumani", 5, 317), PageSong(406, "Tamizha Tamizha", 1, 330, disc: 2),
+                PageSong(407, "காதல் ரோஜாவே", 2, 301, disc: 2, artist: "S. P. Balasubrahmanyam"),
+                PageSong(408, "Kadhal Rojave (Sad Version)", 3, 119, disc: 2),
+            ])
+            return LibraryDetailContent(title: "Roja", subtitle: "A. R. Rahman", year: 1992,
+                                        artworkKey: "page-roja",
+                                        layout: DetailTrackLayout(tracks: songs, arrangement: .album))
+        }
+
         /// Every cover key the page fixtures use.
         static let pageArtworkKeys = ["page-roja"]
 
@@ -28,12 +45,17 @@
                                         layout: DetailTrackLayout(tracks: songs, arrangement: .album))
         }
 
-        /// The world's page (`SheetVariant.page`): album 10, artist 1, or genre 23.
-        static func detailPage(for ref: LibraryBrowseModel.FacetRef) -> LibraryDetailContent {
-            switch ref {
+        /// The world's page (`SheetVariant.page`): album 10 (its states version for `pageStates`),
+        /// artist 1, or genre 23; nil for a world that opens none.
+        static func detailPage(for variant: SheetVariant) -> LibraryDetailContent? {
+            if variant == .pageStates {
+                return albumStatesPage()
+            }
+            return switch variant.page {
             case .album: albumPage()
             case .artist: artistPage()
             case .genre: genrePage()
+            case nil: nil
             }
         }
 
@@ -95,32 +117,38 @@
             )
         }
 
-        /// One song of a page fixture: its id, title, track number and length in seconds.
+        /// One song of a page fixture: its id, title, track number and length in seconds — on disc 1
+        /// and by its album's artist unless told otherwise.
         struct PageSong {
             let id: Int64
             let title: String
             let track: Int?
             let seconds: Int64
+            let disc: Int
+            let artist: String?
 
-            init(_ id: Int64, _ title: String, _ track: Int?, _ seconds: Int64) {
+            init(_ id: Int64, _ title: String, _ track: Int?, _ seconds: Int64, disc: Int = 1,
+                 artist: String? = nil) {
                 self.id = id
                 self.title = title
                 self.track = track
                 self.seconds = seconds
+                self.disc = disc
+                self.artist = artist
             }
         }
 
-        /// One album's songs as the store reads them: disc 1, in the order given, a FLAC / M4A mix.
+        /// One album's songs as the store reads them: in the order given, a FLAC / M4A mix.
         private static func albumSongs(albumID: Int64, title: String, year: Int, artist: String,
                                        _ songs: [PageSong]) -> [LibraryTrackDisplay] {
             songs.map { song in
                 let format = song.id % 2 == 0 ? "FLAC" : "M4A"
                 return LibraryTrackDisplay(
                     id: song.id, url: URL(filePath: "/fixture/page/\(song.id).\(format.lowercased())"),
-                    title: song.title, artistID: 100, artistName: artist, albumID: albumID,
+                    title: song.title, artistID: 100, artistName: song.artist ?? artist, albumID: albumID,
                     albumName: title, format: format, trackNo: song.track,
                     durationMs: song.seconds * 1000, year: year, artworkKey: nil, dateAdded: 0,
-                    sampleRate: 48000, bitDepth: format == "FLAC" ? 24 : nil, discNo: 1,
+                    sampleRate: 48000, bitDepth: format == "FLAC" ? 24 : nil, discNo: song.disc,
                     fileSize: song.seconds * 600_000, playCount: 0, lastPlayed: nil, albumArtistName: artist,
                     genreName: "Soundtrack"
                 )

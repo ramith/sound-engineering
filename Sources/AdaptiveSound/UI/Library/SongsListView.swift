@@ -99,7 +99,7 @@ struct SongsListView: View {
         // The full keyboard set on the selection kit (SEL-01…08), shared with the detail pages; Return
         // plays the cursor row alone (decision 11: on Songs, just that song).
         .modifier(ListSelectionKeyboard(selection: $selection, rows: model.visibleSongs, title: \.title,
-                                        focus: focus, ringVisible: showsRing, pageRows: { rowsPerPage },
+                                        focus: focus, ringVisible: showsRing, pageRows: { _ in rowsPerPage },
                                         revealCursor: revealCursor, activate: playRow))
         .sheet(item: $addToPlaylistTarget) { target in
             PlaylistPickerSheet(trackIDs: target.trackIDs)
@@ -355,7 +355,8 @@ private extension SongsListView {
         /// The perf run's key press (`make songs-perf`): the move a key makes, then the cursor into
         /// view — the path `ListSelectionKeyboard` takes for a real key. False when it moves nothing.
         func navigate(key: KeyEquivalent, extend: Bool) -> Bool {
-            guard selection.move(key: key, extend: extend, in: rowIDs, pageRows: rowsPerPage) else { return false }
+            guard selection.move(key: key, extend: extend, in: rowIDs, pageRows: { _ in rowsPerPage })
+            else { return false }
             revealCursor()
             return true
         }

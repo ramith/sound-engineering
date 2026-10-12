@@ -13,3 +13,16 @@ public protocol DetailTrack: AlbumGroupable, Identifiable {
     /// The tagged track number within its disc, or nil when untagged.
     var trackNo: Int? { get }
 }
+
+extension DetailTrack {
+    /// The track number as a page uses it: a real one (1 or more). Zero or less is a tagger's "none"
+    /// and counts as untagged — it neither orders a song nor leads its row.
+    var taggedTrackNo: Int? {
+        trackNo.flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    /// The disc number as a page uses it: a real one (1 or more), as `taggedTrackNo`.
+    var taggedDiscNo: Int? {
+        discNo.flatMap { $0 > 0 ? $0 : nil }
+    }
+}

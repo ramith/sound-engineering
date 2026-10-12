@@ -2,21 +2,24 @@ import Foundation
 
 // MARK: - AlbumTrackOrder (S10.8 E3 — an album's songs in playing order)
 
-/// The order of one album's songs on a detail page — an album's page, and each album of an artist's
-/// page: by disc, then track number, then title. The pages order their own rows rather than trust
-/// the read's (which puts an untagged song first), so every page of an album agrees.
+/// The order of one album's songs on a detail page — an album's page, each album of an artist's
+/// page, and each album's run on a genre's page: by disc, then track number, then title. The pages
+/// order their own rows rather than trust the read's (which puts an untagged song first), so every
+/// page of an album agrees.
 enum AlbumTrackOrder {
     /// An album's songs in playing order. A song with a track number but no disc counts as disc 1 (a
     /// single-disc album rarely tags it); one with no track number follows its disc's numbered songs,
     /// and one with neither ends the album. Ties — and the untagged — go by title, then stay as read.
+    /// A number of zero or less is no number (`taggedTrackNo` / `taggedDiscNo`).
     static func playing<Track: DetailTrack>(_ tracks: [Track]) -> [Track] {
         tracks.enumerated().sorted { left, right in
-            let (leftPlace, rightPlace) = (place(of: left.element), place(of: right.element))
-            if leftPlace.disc != rightPlace.disc {
-                return leftPlace.disc < rightPlace.disc
+            let (leftDisc, rightDisc) = (disc(of: left.element) ?? .max, disc(of: right.element) ?? .max)
+            if leftDisc != rightDisc {
+                return leftDisc < rightDisc
             }
-            if leftPlace.track != rightPlace.track {
-                return leftPlace.track < rightPlace.track
+            let (leftTrack, rightTrack) = (left.element.taggedTrackNo ?? .max, right.element.taggedTrackNo ?? .max)
+            if leftTrack != rightTrack {
+                return leftTrack < rightTrack
             }
             return titleOrder(left, right)
         }.map(\.element)
@@ -28,10 +31,10 @@ enum AlbumTrackOrder {
         tracks.enumerated().sorted { titleOrder($0, $1) }.map(\.element)
     }
 
-    /// Where a song sits in its album: its disc and track, the missing ones last.
-    private static func place(of track: some DetailTrack) -> (disc: Int, track: Int) {
-        let trackNo = track.trackNo ?? .max
-        return (track.discNo ?? (track.trackNo == nil ? .max : 1), trackNo)
+    /// The disc a song plays on: its tagged disc; disc 1 for a numbered track with no disc tag; nil
+    /// for a song with neither — it has no place among the discs.
+    static func disc(of track: some DetailTrack) -> Int? {
+        track.taggedDiscNo ?? (track.taggedTrackNo == nil ? nil : 1)
     }
 
     /// Title order as the Finder sorts names (case-blind, "Track 2" before "Track 10"); equal titles

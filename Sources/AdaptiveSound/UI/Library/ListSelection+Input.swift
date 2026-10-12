@@ -12,16 +12,17 @@ extension ListSelection {
     }
 
     /// The move a navigation key makes over `rows` (`extend` = ⇧ held): ↑/↓ a row, Page Up / Down
-    /// `pageRows` rows, Home / End the first / last row. False when the key is none of them or moves
-    /// nothing (an arrow past either end, an empty list), so it can bubble. The one path a key press
+    /// the list's page — `pageRows(-1)` rows up, `pageRows(1)` down, asked only for a Page key — and
+    /// Home / End the first / last row. False when the key is none of them or moves nothing (an arrow
+    /// past either end, an empty list), so it can bubble. The one path a key press
     /// (`ListSelectionKeyboard`) and the Songs perf run (`SongsListProbe`) both take.
     mutating func move(key: KeyEquivalent, extend: Bool, in rows: some BidirectionalCollection<ID>,
-                       pageRows: Int) -> Bool {
+                       pageRows: (_ direction: Int) -> Int) -> Bool {
         let movement: Movement? = switch key {
         case .upArrow: .step(-1)
         case .downArrow: .step(1)
-        case .pageUp: .page(-pageRows)
-        case .pageDown: .page(pageRows)
+        case .pageUp: .page(-pageRows(-1))
+        case .pageDown: .page(pageRows(1))
         case .home: .first
         case .end: .last
         default: nil
