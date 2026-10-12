@@ -1095,3 +1095,48 @@ What the code holds today:
 
 **Routine** (decision 18): sheets for the changed screens, my live pass, a code review, one fix round. No break-it: this
 is not keyboard or data work. swiftformat runs on main after each merge.
+
+### Build, review and fix round (2026-10-12)
+
+- **Build (two parallel agents):**
+  - **F2:** Settings as 720 pt readable-width glass cards (`SettingsCard`, `SettingsSwitchRow`, `SignalPathStatus`,
+    `DeviceDetailRow`); the chrome's device pill extracted as the shared `OutputDevicePill`, its current device a
+    native checked menu item with the app's keyboard ring; both switches on the accent tokens; `MusicFolderRemoveDialog`
+    on `AppDialog`; sheet worlds for the Settings states and the folder dialog.
+    - Deviations from the brief: the output Picker's "None" item went with the Picker; the switches sit at the row's
+      trailing edge; the status text is 12 pt (was 10); the inner boxed panels became hairline rows.
+  - **F1:** one `appGlows` field (was `libraryGlows`), mounted once in `TabContentView` behind every tab but Now Playing.
+    The tab switch sits in a `ZStack`, so the glow stays put between those four tabs and fades only to and from Now
+    Playing. The opaque `Screen` / Monitoring backgrounds are gone; `AppShell`'s base stays (it shows through the Now
+    Playing crossfade). Monitoring: BEFORE grey, AFTER the analyzer's teal→lime (`MonitorPalette`), tags on text
+    tokens because the ramp fails as text. `DesignSystem.Color.blue` deleted. Audits: R4-GLOW-APP-01/02, R4-MON-01..04.
+    - F1 alone left two Settings captions at 4.07:1 and 4.48:1 on the bare glow; F2's cards fix both (R4-GLOW-APP-02).
+- **Merge:** F2 fast-forwarded; F1 cherry-picked (no shared files). Gate on the combined branch: EXIT 0 (651 tests).
+- **Code review** (0 BLOCKER, 3 should-fix):
+  - the device pill's size in three places, so LAY-SET-01b measured its own literal;
+  - 720 pt defined twice, and `Screen` kept options nothing used;
+  - `.scrollClipDisabled()` changed nothing visible and might let hidden content take clicks;
+  - nits: the unused `Palette.blue`, a stale comment, straight quotes, a stray divider (plus 8 hairline copies), no
+    sheet with Pure Mode running, VoiceOver reading "bullet" and "k-H-z", and the switch's system-blue focus ring
+    under Full Keyboard Access.
+- **ONE fix round** closed all ten: Kit pill metrics; one readable width; `Palette.blue` retired; one `Hairline` view;
+  a `settings-pure` world; the scroll clip kept; one spoken-rate helper; the switch on the app's keyboard ring.
+- **My live pass** (test library, after the fixes), all passing:
+  - both device menus check the device in use; switching to the speakers and back moves the check and both pills;
+  - "Keep playback on this device" toggles by click and by Tab + Space;
+  - the folder dialog: Esc, Return and Cancel keep the folder; Tab reaches Remove and Remove removes (songs in
+    playlists stay; a relaunch restored the folder, 10,043 songs);
+  - the EQ: a preset, a point drag (neighbours follow), Save opens and Esc closes;
+  - every tab renders; the app idles at 0.3 % CPU paused (the glow does not animate).
+  - Not live-checkable here: colours (no Screen Recording). The founder checked them.
+  - The AX focus probe can't see SwiftUI focus inside a sheet (it reports the container); test dialog keys by effect.
+- **Logged for Sprint G (all predate F):**
+  - VoiceOver reads every `pillMenuStyle()` menu (device, Sort, Columns) as 2–3 separate menu buttons, one per label
+    child;
+  - the device menu lists the app's own `CADefaultDeviceAggregate-<pid>` device;
+  - the Pure Mode caption repeats "bit-perfect HAL output" (plan §I's wording half).
+
+### Founder check (2026-10-12)
+
+No blue; the glow on Library, EQ, Monitoring and Settings, not Now Playing; the output device switch and "Keep
+playback on this device"; the folder dialog's Cancel; the EQ. "Things are looking good."
