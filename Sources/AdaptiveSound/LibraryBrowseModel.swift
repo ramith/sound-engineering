@@ -140,6 +140,9 @@ final class LibraryBrowseModel {
     /// Queue-add toast (S9.5 §10.4), ~2 s. State lives HERE (Library is the only queue-adder — arch
     /// #4, not a global service); the shell-hosted `QueueToast` view renders + announces it.
     let queueToast = ShellToastSlot(lifetime: .seconds(2))
+    /// "Queue replaced · Restore previous queue" (S10.8 E review 18): raised by every Library play that
+    /// replaces the queue (`offerQueueRestore`), shown once on the Library card (`QueueRestoreToast`).
+    let restoreToast = ShellToastSlot(lifetime: .seconds(6))
 
     /// Library folders (the "Music Folders" management surface — S9 IA change).
     private(set) var roots: [LibraryFolder] = []

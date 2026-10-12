@@ -33,10 +33,6 @@ struct PlaylistDetailView: View {
     @FocusState var listFocused: Bool
     /// Draw the cursor ring only while the user navigates by keyboard (A-review).
     @Environment(\.showsKeyboardFocus) private var showsKeyboardFocus
-    /// Transient "Restore previous queue" affordance after a Play-replace; the token re-triggers the
-    /// auto-dismiss even on a repeated Play.
-    @State var restoreToastToken: Int?
-    @State var restoreDismissTask: Task<Void, Never>?
     /// The entry being re-pointed via Locate… (drives the file importer); nil when closed (F).
     /// `internal` so the `+Actions` extension's `missingRowActions` can set it.
     @State var locatingEntryID: Int64?
@@ -55,7 +51,6 @@ struct PlaylistDetailView: View {
         // No background of its own: it sits on the Library card (S10.8 D1 — the opaque window fill
         // it painted was the hard edge against the glow).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlay(alignment: .bottom) { restoreToast }
         // Locate… (F): pick the moved file → re-point the track (id preserved) → it resolves.
         .fileImporter(
             isPresented: Binding(get: { locatingEntryID != nil },
@@ -323,34 +318,5 @@ private extension PlaylistDetailView {
             .font(DesignSystem.Font.caption)
             .foregroundStyle(DesignSystem.Color.labelTertiary)
         return Text("\(title)\(byline)")
-    }
-}
-
-// MARK: - Restore-queue undo toast
-
-private extension PlaylistDetailView {
-    @ViewBuilder var restoreToast: some View {
-        if restoreToastToken != nil, model.canRestorePreviousQueue {
-            HStack(spacing: DesignSystem.Spacing.medium) {
-                Text("Queue replaced")
-                    .font(DesignSystem.Font.caption)
-                    .foregroundStyle(DesignSystem.Color.label)
-                Button("Restore previous queue") {
-                    model.restorePreviousQueue()
-                    dismissRestoreToast()
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(DesignSystem.Color.accentForeground)
-            }
-            .padding(.horizontal, DesignSystem.Spacing.medium)
-            .padding(.vertical, DesignSystem.Spacing.small)
-            // Regime A/`.overlay` (S10.7 §3.1): a restore-toast floating over the list. The
-            // `.bar` substrate preserves this pill's shipped look exactly (PR 1a is
-            // zero-visual-change); S10.8 may unify it onto `.ultraThin`.
-            .glassPanel(.overlay(.bar), in: Capsule())
-            .overlay(Capsule().stroke(DesignSystem.Color.hairline, lineWidth: 0.5))
-            .padding(.bottom, DesignSystem.Spacing.large)
-            .transition(.opacity)
-        }
     }
 }
