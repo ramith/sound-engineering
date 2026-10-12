@@ -26,10 +26,19 @@ extension View {
     ///
     /// `.menuIndicator(.hidden)`: the pill draws its own chevron where the design wants it.
     /// `.fixedSize()`: a pill hugs its label instead of stretching to the proposed width.
+    ///
+    /// `.accessibilityElement(children: .combine)`: the pill is ONE element to VoiceOver. A `.button`
+    /// menu with a plain button style gives every child of its label (icon, text, chevron, readout)
+    /// an element of its own, each a menu button copying the menu's label, value and hint, so
+    /// VoiceOver stopped 2–4 times on one pill (live AX dump, 2026-10-12). Combining merges them into
+    /// one menu button over the whole pill that keeps its press (opens the menu), its role and the
+    /// label, value and hint set after this. `.ignore` would drop the menu role and the press, and
+    /// `.contain` keeps the per-child buttons. Keyboard focus is untouched: still one Tab stop.
     func pillMenuStyle() -> some View {
         menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .accessibilityElement(children: .combine)
     }
 }
