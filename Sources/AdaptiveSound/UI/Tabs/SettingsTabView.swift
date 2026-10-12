@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Settings tab (S10.8 F2): one floating glass card per section — Output Device, then Pure Mode —
 /// in a column at most the readable width, centred in the tab on the Twin Panels insets
-/// (`SettingsLayout`), over the tab's glow. The column scrolls on a short window (fixes bug 4 —
+/// (`SettingsLayout`), over the app glow. The column scrolls on a short window (fixes bug 4 —
 /// Settings clipped its lower sections) with the scroll clip off, so the cards' shadows aren't cut at
 /// its edges; the shell's content region still bounds them.
 struct SettingsTabView: View {
