@@ -1,4 +1,3 @@
-import DesignTokenKit
 import SwiftUI
 
 // MARK: - Library tab (S9.4)
@@ -42,10 +41,8 @@ struct LibraryTabView: View {
         .padding(.top, 22)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Twin Panels backdrop (S10.8 PR-B): window base + one soft teal glow behind both
-        // cards (png/00). GlowField paints DesignSystem.Color.window and gates the glow to
-        // dark / no-Reduce-Transparency; the two floating cards (PR-C/D) then sit over it.
-        .background { GlowField(glows: GlowFieldSpec.libraryGlows) }
+        // No backdrop here: the two floating cards sit over the app glow the shell mounts behind
+        // every tab but Now Playing (`TabContentView`, S10.8 F1).
         // The playlist dialogs, hosted ONCE for the tab (S10.8 E fix round): a failure is the model's,
         // whichever page raised it — the rail, an Add to Playlist on any page, the playlist page.
         .playlistDialogSheet()
