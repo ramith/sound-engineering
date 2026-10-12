@@ -148,6 +148,10 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
     /// correlated subquery; sorting on it is a BR5 temp-b-tree hazard, §11.1/§12.1). S9.5
     /// §12.1 "Genre" column.
     public let genreName: String?
+    /// The album's year as its page shows it (`albums.year`, S10.8 E), or `nil` when the song has
+    /// no album or the album's year is unknown. Distinct from `year`, the SONG's own: an artist page
+    /// heads each album with the album's year, not with whichever song of it is read first.
+    public let albumYear: Int?
 
     /// Duration in seconds — the `AudioFile`-shaped convenience the UI consumes.
     public var durationSeconds: Double {
@@ -173,7 +177,7 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
         trackNo: Int?, durationMs: Int64, year: Int?, artworkKey: String?,
         dateAdded: Int64, sampleRate: Int?, bitDepth: Int?, discNo: Int?,
         fileSize: Int64, playCount: Int64, lastPlayed: Int64?,
-        albumArtistName: String?, genreName: String?
+        albumArtistName: String?, genreName: String?, albumYear: Int? = nil
     ) {
         self.id = id
         self.url = url
@@ -196,6 +200,7 @@ public struct LibraryTrackDisplay: Sendable, Identifiable, Equatable {
         self.lastPlayed = lastPlayed
         self.albumArtistName = albumArtistName
         self.genreName = genreName
+        self.albumYear = albumYear
     }
 }
 

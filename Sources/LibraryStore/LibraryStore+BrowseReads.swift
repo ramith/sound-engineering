@@ -49,7 +49,8 @@ extension LibraryTrackDisplay: FetchableRecord {
             playCount: row[18],
             lastPlayed: row[19],
             albumArtistName: row[20],
-            genreName: row[21]
+            genreName: row[21],
+            albumYear: (row[22] as Int?).flatMap { $0 > 0 ? $0 : nil } // 0 = unknown (schema default)
         )
     }
 }
@@ -60,7 +61,8 @@ public extension LibraryStore {
     /// The projected columns for a `LibraryTrackDisplay` row, in the fixed order
     /// `LibraryTrackDisplay.init(row:)` decodes. Table-qualified (`t.`) because every Display
     /// read LEFT JOINs `artists`/`albums`; `artist_name` is `COALESCE`d to '' while `album_name`
-    /// stays a true optional (NULL → nil). Indices 0–16 MUST NOT shift; §12.1 APPENDS 17–21.
+    /// stays a true optional (NULL → nil). Indices 0–16 MUST NOT shift; §12.1 APPENDS 17–21; S10.8 E
+    /// appends 22, the album's year (from the already-joined `albums`).
     internal static let displayTrackColumns =
         "t.id, t.url, t.name, t.format, t.album_id, t.artist_id, t.title, t.track_no, "
             + "t.disc_no, t.year, t.duration_ms, t.artwork_key, "
@@ -68,7 +70,7 @@ public extension LibraryStore {
             + "t.date_added, t.sample_rate, t.bit_depth, "
             + "t.file_size, t.play_count, t.last_played, aa.name AS album_artist_name, "
             + "(SELECT MIN(g.name) FROM track_genres tg JOIN genres g ON g.id = tg.genre_id "
-            + "WHERE tg.track_id = t.id) AS genre_name"
+            + "WHERE tg.track_id = t.id) AS genre_name, al.year AS album_year"
 
     // MARK: - Shared SQL fragments (identical text drives the read AND its EXPLAIN)
 

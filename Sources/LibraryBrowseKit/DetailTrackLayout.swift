@@ -59,24 +59,26 @@ public struct DetailTrackLayout<Track: DetailTrack> {
 
     public init(tracks: [Track], arrangement: DetailTrackArrangement) {
         self.arrangement = arrangement
-        let albums = FacetAlbumGrouping.sections(from: tracks)
+        // The albums in an order no scan can change (year, title, id; loose songs last).
+        let albums = FacetAlbumGrouping.pageOrder(FacetAlbumGrouping.sections(from: tracks))
         switch arrangement {
         case .album:
-            items = Self.albumRows(tracks, albumID: albums.first?.id ?? FacetAlbumGrouping.noAlbumID)
+            items = Self.albumRows(tracks, albumID: albums.first?.id ?? FacetAlbumGrouping.noAlbumID,
+                                   isWholeAlbum: true)
         case .byAlbum:
             // A header per album (`FacetAlbumGrouping`), then its songs in the album's own order;
             // the songs with no album, by title.
             items = albums.flatMap { album in
                 [.header(albumID: album.id, title: album.title, year: album.year)]
                     + (album.id == FacetAlbumGrouping.noAlbumID ? Self.looseRows(album.tracks)
-                        : Self.albumRows(album.tracks, albumID: album.id))
+                        : Self.albumRows(album.tracks, albumID: album.id, isWholeAlbum: false))
             }
         case .flat:
             // One list, each album's run in that album's own order — so a genre agrees with the
             // album's and the artist's pages — with no headers or numbers.
             items = albums.flatMap { album in
                 album.id == FacetAlbumGrouping.noAlbumID ? Self.looseRows(album.tracks)
-                    : AlbumTrackOrder.playing(album.tracks).map { .row($0, number: nil, disc: nil) }
+                    : AlbumTrackOrder.playing(album.tracks).map { .row($0.track, number: nil, disc: nil) }
             }
         }
         // The rows ARE the songs drawn, top to bottom — so the queue can only be the shown order (PLAY-02).
@@ -111,21 +113,21 @@ public struct DetailTrackLayout<Track: DetailTrack> {
     }
 
     /// One album's songs as rows: in playing order (`AlbumTrackOrder` — disc, track, title), each led by
-    /// its track number, under a sub-header per disc when the album has more than one. An album with
-    /// NO track numbers is numbered by place; in an album that has some, an untagged song shows none —
-    /// a number made up from its place would read as its track.
-    private static func albumRows(_ tracks: [Track], albumID: Int64) -> [Item] {
+    /// its track number, under a sub-header per disc when the album has more than one. An untagged
+    /// song shows no number — one made up from its place would read as its track — except on an
+    /// album's own page (`isWholeAlbum`) when the WHOLE album has none: then it is numbered by place.
+    /// An artist's page holds only some of an album's songs, so it never numbers by place.
+    private static func albumRows(_ tracks: [Track], albumID: Int64, isWholeAlbum: Bool) -> [Item] {
         let ordered = AlbumTrackOrder.playing(tracks)
-        let numbersByPlace = ordered.allSatisfy { $0.taggedTrackNo == nil }
-        let discs = ordered.map { AlbumTrackOrder.disc(of: $0) }
-        let isMultiDisc = Set(discs.compactMap(\.self)).count > 1
+        let numbersByPlace = isWholeAlbum && ordered.allSatisfy { $0.track.taggedTrackNo == nil }
+        let isMultiDisc = Set(ordered.compactMap(\.disc)).count > 1
         var items: [Item] = []
-        for (place, track) in ordered.enumerated() {
-            if isMultiDisc, place == 0 || discs[place] != discs[place - 1] {
-                items.append(.discHeader(albumID: albumID, disc: discs[place]))
+        for (place, entry) in ordered.enumerated() {
+            if isMultiDisc, place == 0 || entry.disc != ordered[place - 1].disc {
+                items.append(.discHeader(albumID: albumID, disc: entry.disc))
             }
-            items.append(.row(track, number: numbersByPlace ? place + 1 : track.taggedTrackNo,
-                              disc: isMultiDisc ? discs[place] : nil))
+            items.append(.row(entry.track, number: numbersByPlace ? place + 1 : entry.track.taggedTrackNo,
+                              disc: isMultiDisc ? entry.disc : nil))
         }
         return items
     }
@@ -177,6 +179,16 @@ public struct DetailTrackLayout<Track: DetailTrack> {
             lower += direction
         }
         return max(count, 1)
+    }
+}
+
+/// Two layouts are equal when they show the same songs in the same order the same way: everything a
+/// layout draws — headers, numbers, discs — follows from its rows and its arrangement. So a reload
+/// that changed nothing compares equal (and isn't published), and comparing one layout with itself
+/// is O(1) (the rows share storage).
+extension DetailTrackLayout: Equatable where Track: Equatable {
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.arrangement == rhs.arrangement && lhs.rows == rhs.rows
     }
 }
 

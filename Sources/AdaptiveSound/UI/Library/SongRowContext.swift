@@ -23,9 +23,12 @@ struct SongRowContext {
     /// "Add to Playlist…": the host's searchable picker, for these songs.
     let choosePlaylist: ([Int64]) -> Void
 
-    /// The selected songs in display order — resolved when a menu item is CHOSEN: an O(N) walk, never
-    /// run while a row is built (the S10.8 End-key hang).
-    func selectedTracks() -> [LibraryTrackDisplay] {
-        SongsRowResolver.orderedSelection(in: rows, selection: selection.wrappedValue.ids)
+    /// What a menu item chosen on `track`'s row acts on: the shown selection, in display order, when
+    /// the row is one of several selected rows on screen; else the row alone. Resolved when the item
+    /// is CHOSEN: an O(N) walk, never run while a row is built (the S10.8 End-key hang).
+    func menuTargets(clicked track: LibraryTrackDisplay) -> [LibraryTrackDisplay] {
+        let current = selection.wrappedValue
+        guard current.menuActsOnSelection(clicked: track.id, in: rows.lazy.map(\.id)) else { return [track] }
+        return SongsRowResolver.orderedSelection(in: rows, selection: current.ids)
     }
 }

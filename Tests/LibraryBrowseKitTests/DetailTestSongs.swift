@@ -12,6 +12,8 @@ struct DetailTestSong: DetailTrack, Equatable {
     var year: Int?
     var discNo: Int?
     var trackNo: Int?
+    var albumYear: Int?
+    var discFolder: DiscFolder?
 }
 
 /// The reads the DetailTrackLayout suites lay out, and how they print what a page draws.

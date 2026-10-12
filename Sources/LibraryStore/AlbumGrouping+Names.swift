@@ -66,21 +66,36 @@ public extension AlbumGrouping {
     /// "Disc 1 (Remastered)"); brackets around the whole name ("[CD 1]") are ignored. Anything else
     /// is an album folder of its own: "CD Collection", "Discography", "CD 1234", "CD 100 Hits".
     static func isFoldedFolderName(_ name: String) -> Bool {
-        var lower = name.lowercased().trimmingCharacters(in: .whitespaces)
-        if lower.count >= 2, let first = lower.first, let last = lower.last, "[(".contains(first), "])".contains(last) {
-            lower = String(lower.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
-        }
-        if bonusFolderNames.contains(lower) {
-            return true
-        }
-        guard let prefix = ["disc", "disk", "cd"].first(where: { lower.hasPrefix($0) }) else { return false }
+        let lower = foldedFolderKey(name)
+        return bonusFolderNames.contains(lower) || discNumber(ofKey: lower) != nil
+    }
+
+    /// The disc a disc folder's name gives ("CD 2" → 2, "Disc Two of 3" → 2, "[CD 1]" → 1), or nil
+    /// for a name that is not a disc folder (`isFoldedFolderName`'s rule, so the two can't drift). A
+    /// set ripped one folder per disc with no disc tags is ordered by it (S10.8 E: the album pages).
+    static func discNumber(ofFolderName name: String) -> Int? {
+        discNumber(ofKey: foldedFolderKey(name))
+    }
+
+    /// A folder name as the fold rules read it: lowercased, trimmed, brackets around the whole name
+    /// dropped.
+    private static func foldedFolderKey(_ name: String) -> String {
+        let lower = name.lowercased().trimmingCharacters(in: .whitespaces)
+        guard lower.count >= 2, let first = lower.first, let last = lower.last, "[(".contains(first),
+              "])".contains(last) else { return lower }
+        return String(lower.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// `discNumber(ofFolderName:)` on a `foldedFolderKey`.
+    private static func discNumber(ofKey lower: String) -> Int? {
+        guard let prefix = ["disc", "disk", "cd"].first(where: { lower.hasPrefix($0) }) else { return nil }
         let afterPrefix = lower.dropFirst(prefix.count).drop { " -_.#".contains($0) }
         let digits = afterPrefix.prefix { $0.isASCII && $0.isNumber }
         if (1 ... 3).contains(digits.count), let number = Int(digits), number < 100 {
-            return isDiscQualifier(afterPrefix.dropFirst(digits.count))
+            return isDiscQualifier(afterPrefix.dropFirst(digits.count)) ? number : nil
         }
-        guard let word = discNumberWords.first(where: { afterPrefix.hasPrefix($0) }) else { return false }
-        return isDiscQualifier(afterPrefix.dropFirst(word.count))
+        guard let index = discNumberWords.firstIndex(where: { afterPrefix.hasPrefix($0) }) else { return nil }
+        return isDiscQualifier(afterPrefix.dropFirst(discNumberWords[index].count)) ? index + 1 : nil
     }
 
     /// What may follow a disc number (C2 final round): nothing; " of N"; then nothing, a " - subtitle"

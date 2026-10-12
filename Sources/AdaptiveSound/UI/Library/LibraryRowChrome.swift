@@ -29,10 +29,12 @@ struct LibraryRowChrome: ViewModifier {
                 }
             }
             .keyboardCursorRing(isKeyboardCursor, cornerRadius: size.cornerRadius)
+            // The seam between two compact rows' cards (none at Songs' size) — INSIDE the hit shape,
+            // so the row takes a click over its whole pitch (card + seam) and the rows tile the list
+            // with no dead gap between them (S10.8 E break-it 8), as the queue's rows do.
+            .padding(.vertical, size.seam / 2)
             .contentShape(Rectangle())
             .onHover { hover = $0 }
-            // The seam between two compact rows' cards (none at Songs' size).
-            .padding(.vertical, size.seam / 2)
     }
 
     private var fill: Color {

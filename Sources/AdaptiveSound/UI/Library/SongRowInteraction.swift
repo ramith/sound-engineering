@@ -11,7 +11,8 @@ import SwiftUI
 /// - a double-click plays the row (`SongRowContext.play`: the song on Songs, the page from that song
 ///   on a page);
 /// - it drags onto a sidebar playlist (US-PLIST-03) — a reference-add by id, never a file move;
-/// - the song menu (`LibrarySongMenu`), on the selection when this row is one of several selected;
+/// - the song menu (`LibrarySongMenu`), on the selection when this row is one of several selected
+///   rows on screen;
 /// - ONE VoiceOver element: play as its default action, then Play Next, Add to Queue, Add to
 ///   Playlist… and Info as named actions, so every verb the menu has is reachable without it.
 /// It is no focus stop of its own: the LIST is the one Tab stop and the cursor ring its cue.
@@ -32,9 +33,7 @@ struct SongRowInteraction: ViewModifier {
         .draggable(LibraryTrackDragItem(trackID: track.id))
         .simultaneousGesture(TapGesture(count: 2).onEnded { play() })
         .contextMenu {
-            LibrarySongMenu(clicked: track,
-                            actsOnSelection: context.selection.wrappedValue.menuActsOnSelection(clicked: track.id),
-                            selectedTracks: context.selectedTracks, playClicked: play,
+            LibrarySongMenu(targets: { context.menuTargets(clicked: track) }, playClicked: play,
                             showInfo: context.showInfo, choosePlaylist: context.choosePlaylist)
         }
         .accessibilityElement(children: .ignore)
