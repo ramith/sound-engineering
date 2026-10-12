@@ -39,7 +39,7 @@ struct OutputDeviceSettingsSection: View {
     /// What the switch does, in its current position.
     private var pinDetail: String {
         audioViewModel.pinPlaybackToSelectedDevice
-            ? "Connecting headphones or a Bluetooth device won't move playback — switch to it here."
-            : "Playback follows a newly-connected device."
+            ? "Connecting headphones or a Bluetooth device won’t move playback — switch to it here."
+            : "Playback follows a newly connected device."
     }
 }
