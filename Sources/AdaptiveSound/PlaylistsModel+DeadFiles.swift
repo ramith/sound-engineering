@@ -4,8 +4,8 @@ import LibraryStore
 // MARK: - PlaylistsModel + dead/missing-file resolution (F)
 
 /// Missing-file resolution helpers, split from `PlaylistsModel` for type-body length. The mutating
-/// verbs (`removeMissingEntries` / `relocateEntry`) stay in the main file (they set `actionError`,
-/// whose setter is file-private); these are stateless / read-only.
+/// verbs (`confirmRemoveMissing` / `relocateEntry`) stay in the main file (they move the dialog
+/// latch, which is file-private); these are stateless / read-only.
 extension PlaylistsModel {
     /// Off-main file-existence resolution (F): entry ids whose track resolved AND whose file exists.
     /// `PlaylistEntry` / `LibraryTrackDisplay` are `Sendable`, so the `fileExists` stat loop runs
@@ -27,6 +27,12 @@ extension PlaylistsModel {
     /// affordance + the count-line suffix.
     var missingEntryCount: Int {
         detail.count { !$0.isAvailable }
+    }
+
+    /// The unavailable (missing-file) entries of the open detail, in order: what Remove Missing asks
+    /// about, and what an open confirmation is re-checked against.
+    var missingEntryIDs: [Int64] {
+        detail.filter { !$0.isAvailable }.map(\.id)
     }
 
     /// Whether a scan / metadata pass / reconcile is populating the library — availability is a live

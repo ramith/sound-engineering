@@ -2,10 +2,9 @@ import SwiftUI
 
 // MARK: - PlaylistDetailView + actions (split out for type-body length)
 
-/// Play / reorder / restore-toast actions for the playlist detail, plus the missing-file (F) helpers
-/// and the page's dialogs (E4). A same-type extension, split from `PlaylistDetailView` for type-body
-/// length; reaches its `internal` state. (The keyboard-cursor keys live beside the track list, in the
-/// main file.)
+/// Play / reorder / restore-toast actions for the playlist detail, plus the missing-file (F)
+/// helpers. A same-type extension, split from `PlaylistDetailView` for type-body length; reaches
+/// its `internal` state. (The keyboard-cursor keys live beside the track list, in the main file.)
 extension PlaylistDetailView {
     /// Locate / Remove for a missing entry — shared by the badge menu, the row context menu, and the
     /// VoiceOver rotor so all three stay in sync.
@@ -31,6 +30,14 @@ extension PlaylistDetailView {
         if model.shufflePlaylist() {
             raiseRestoreToast()
         }
+    }
+
+    /// A row's Play Next: that song after the current one, confirmed by the queue toast as on the
+    /// album, artist and genre pages.
+    func playEntryNext(_ entryID: Int64) {
+        let added = model.playEntryNext(entryID)
+        guard added > 0 else { return } // the entry is gone or unplayable: nothing went in, no toast
+        library.showQueueToast(.playNext, added: added)
     }
 
     func raiseRestoreToast() {
@@ -59,34 +66,5 @@ extension PlaylistDetailView {
         ids.move(fromOffsets: IndexSet(integer: from), toOffset: from < to ? to + 1 : to)
         model.reorderEntries(ids)
         return true
-    }
-
-    // MARK: Dialogs (E4 — the app's themed dialog, one sheet)
-
-    /// The sheet is up while a failure waits to be read or the bulk remove-missing waits on its
-    /// confirmation. A dismissal clears the confirmation; a failure clears only through its OK — so a
-    /// dismissal that lands just after a failure arrived (the confirmation's Remove, then the store
-    /// failing) can't swallow it.
-    var isShowingDialog: Binding<Bool> {
-        Binding(get: { model.actionError != nil || confirmingRemoveMissing }, set: { shown in
-            if !shown, model.actionError == nil {
-                confirmingRemoveMissing = false
-            }
-        })
-    }
-
-    /// The ⋯ menu's Remove Missing…: confirm first (no undo — F review).
-    func askToRemoveMissing() {
-        confirmingRemoveMissing = true
-    }
-
-    /// The confirmation's Remove: close it, then drop every entry whose file is missing.
-    func removeMissing() {
-        confirmingRemoveMissing = false
-        Task { await model.removeMissingEntries() }
-    }
-
-    func cancelRemoveMissing() {
-        confirmingRemoveMissing = false
     }
 }

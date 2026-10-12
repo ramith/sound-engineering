@@ -18,22 +18,46 @@ import PlaybackQueueKit
 // track may appear more than once — the S9 dedupe-on-add contract is retired. Reorder identity
 // is `QueueItem.id` (see `movePlaylistItems`).
 
-/// A one-level restore point for the "Play (replace queue)" undo (S10.3): the queue slots + the
-/// selected index, snapshotted before a destructive replace.
-struct QueueRestorePoint {
-    let items: [QueueItem]
-    let index: Int?
-}
+// The one-level "Restore previous queue" point is `PlaybackQueueKit.QueueRestorePoint` (S10.3; the
+// rule for which queue it remembers is unit-tested there).
 
 @MainActor
 extension AudioViewModel {
-    /// Replace the queue with `tracks` and start playing from `startAt`, first SNAPSHOTTING the
-    /// current queue so the caller can offer a one-level "Restore previous queue" undo (S10.3
-    /// D-play). Use this for the playlist "Play" verb; plain `playNow` stays the un-undoable path.
+    /// Replace the queue with `tracks` and start playing from `startAt`, UNDOABLY: it holds the
+    /// one-level "Restore previous queue" point (S10.3 D-play) — the queue, selection and shuffle
+    /// setting it took away. A page's "Play"; plain `playNow` stays the un-undoable path.
     func playNowWithUndo(_ tracks: [AudioFile], startAt index: Int = 0) {
         guard !tracks.isEmpty else { return }
-        queueRestorePoint = QueueRestorePoint(items: queue, index: selectedTrackIndex)
-        playNow(tracks, startAt: index)
+        replacingQueueUndoably { playNow(tracks, startAt: index) }
+    }
+
+    /// A page's "Shuffle": shuffle on, then replace the queue with `tracks` and play from a random
+    /// one, so what follows shuffles through the engine's on-deck pick. `undoable` holds the restore
+    /// point `playNowWithUndo` holds — which remembers that shuffle was off.
+    func shufflePlay(_ tracks: [AudioFile], undoable: Bool) {
+        guard !tracks.isEmpty else { return }
+        let replace = {
+            self.shuffleEnabled = true
+            self.playNow(tracks, startAt: Int.random(in: tracks.indices))
+        }
+        if undoable {
+            replacingQueueUndoably(replace)
+        } else {
+            replace()
+        }
+    }
+
+    /// Runs `replace` (a queue replace) and holds the point that undoes it: the queue, selection and
+    /// shuffle setting from before it — or, where it only replaced the last undoable replace's
+    /// untouched queue (a double-click, a held Return, Play then Shuffle), what that replace's point
+    /// already restores (`QueueRestorePoint.afterReplace`).
+    private func replacingQueueUndoably(_ replace: () -> Void) {
+        let replaced = queue
+        let index = selectedTrackIndex
+        let shuffle = shuffleEnabled
+        replace()
+        queueRestorePoint = .afterReplace(held: queueRestorePoint, replaced: replaced, index: index,
+                                          shuffle: shuffle, installed: queue.map(\.id))
     }
 
     /// Whether a "Restore previous queue" undo is available.
@@ -41,18 +65,20 @@ extension AudioViewModel {
         queueRestorePoint != nil
     }
 
-    /// Restore the queue captured by the last `playNowWithUndo` (one-level). An empty previous queue
-    /// clears; otherwise the slots are restored and playback resumes at the previously selected track
-    /// (a pragmatic one-level undo — position within the track is not preserved). A previous queue
-    /// with NO selection is restored with the engine stopped (never left playing a gone track).
+    /// Restore what the last undoable replace took away (one-level): the shuffle setting, then the
+    /// queue. An empty previous queue clears; otherwise the slots are restored and playback resumes at
+    /// the previously selected track (a pragmatic one-level undo — position within the track is not
+    /// preserved). A previous queue with NO selection is restored with the engine stopped (never left
+    /// playing a gone track).
     func restorePreviousQueue() {
         guard let point = queueRestorePoint else { return }
         queueRestorePoint = nil
-        guard !point.items.isEmpty else {
+        shuffleEnabled = point.shuffle // first: the play below primes the on-deck under it
+        guard !point.slots.isEmpty else {
             clearPlaylist()
             return
         }
-        queue = point.items
+        queue = point.slots
         scheduleQueueMirror()
         if let index = point.index, index < queue.count {
             playTrack(at: index) // resume at the previously-selected track
