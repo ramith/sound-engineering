@@ -35,7 +35,8 @@ struct NowPlayingTabView: View {
             .padding(.bottom, CGFloat(NowPlayingLayout.contentInset))
         }
         // The ambient glow field (PR 2): window base + the three 8a glows behind the whole
-        // tab — art-tinted per D8 (PR 7). Other tabs keep the plain base until S10.8 (D1).
+        // tab — art-tinted per D8 (PR 7). Every other tab sits on the app glow instead
+        // (`TabContentView`, S10.8 F1).
         .background { GlowField(sampledPalette: glowSampler.palette) }
         // D8: re-sample when the artwork resolves. `currentArtwork` is token-guarded — it
         // reads nil during the resolve gap right after a track change, which resets the
