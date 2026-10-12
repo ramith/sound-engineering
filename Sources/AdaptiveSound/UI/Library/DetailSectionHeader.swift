@@ -26,8 +26,8 @@ struct DetailSectionHeader: View {
             }
             Spacer(minLength: 0)
         }
-        // The rows' content starts 12 pt into their card.
-        .padding(.horizontal, 12)
+        // The rows' content starts this far into their card.
+        .padding(.horizontal, LibraryRowMetrics.horizontalPadding)
         .padding(.bottom, 6)
         .frame(height: Self.height, alignment: .bottom)
         .accessibilityElement(children: .ignore)

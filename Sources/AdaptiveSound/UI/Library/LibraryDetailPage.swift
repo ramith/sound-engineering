@@ -36,7 +36,8 @@ struct LibraryDetailPage: View {
                     ContentUnavailableView("No Songs", systemImage: "music.note")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .list:
-                    DetailTrackList(layout: content.layout, focus: $focus, choosePlaylist: choosePlaylist)
+                    DetailTrackList(layout: content.layout, albumArtist: content.subtitle, focus: $focus,
+                                    choosePlaylist: choosePlaylist)
                 }
             }
         }

@@ -5,10 +5,11 @@ import SwiftUI
 // MARK: - Detail page row (S10.8 E2/E3 — the album, artist and genre pages' song row)
 
 /// One song on an album, artist or genre page, on the Library rows' card (`LibraryRowChrome`, as
-/// Songs): its number, its title (and, on a genre page, "Artist · Album" under it) and its time —
-/// a single-line row at the queue and playlist rows' 36 pt pitch, a two-line row at Songs' 48 pt
-/// (`LibraryRowSize`). The playing row reads as on Songs — the number becomes the equalizer, the
-/// title the accent.
+/// Songs): its number, its title and its time — a single-line row at the queue and playlist rows'
+/// 36 pt pitch, a two-line row at Songs' 48 pt (`LibraryRowSize`). On an album's page a song by
+/// someone other than the album's artist names them after its title (a compilation's rows); on a
+/// genre's page "Artist · Album" sits under it. The playing row reads as on Songs — the number
+/// becomes the equalizer, the title the accent.
 /// Visual only and free of environment objects: the list owns selection, play, the menu, the keys
 /// and the row's one VoiceOver element (`accessibilityLabel` / `accessibilityValue` below).
 struct DetailTrackRow: View {
@@ -18,6 +19,8 @@ struct DetailTrackRow: View {
     let showsNumberColumn: Bool
     /// The track number in that column; nil leaves it blank (an untagged song among tagged ones).
     let number: Int?
+    /// The song's artist, after its title on the same line — where it is not the album's (nil: none).
+    let inlineArtist: String?
     /// The line under the title ("" hides it).
     let secondary: String
     let isNowPlaying: Bool
@@ -26,23 +29,26 @@ struct DetailTrackRow: View {
     /// The list holds key focus and this is the row its keys act on (A3).
     let isKeyboardCursor: Bool
 
-    /// The number column — Songs' # column, so a page's numbers sit where Songs' do.
-    private static let numberWidth: CGFloat = 34
-    /// Songs' gap between columns.
-    private static let columnSpacing: CGFloat = 14
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: Self.columnSpacing) {
+        HStack(spacing: LibraryRowMetrics.columnSpacing) {
             if showsNumberColumn {
                 numberCell
-                    .frame(width: Self.numberWidth)
+                    .frame(width: LibraryRowMetrics.numberColumnWidth)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(track.title)
-                    .font(DesignSystem.Font.body.weight(isNowPlaying ? .semibold : .regular))
-                    .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentTitle : DesignSystem.Color.label)
+                HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.small) {
+                    Text(track.title)
+                        .font(DesignSystem.Font.body.weight(isNowPlaying ? .semibold : .regular))
+                        .foregroundStyle(isNowPlaying ? DesignSystem.Color.accentTitle : DesignSystem.Color.label)
+                        .layoutPriority(1) // the title keeps its width; a long artist truncates first
+                    if let inlineArtist {
+                        Text(inlineArtist)
+                            .font(DesignSystem.Font.caption)
+                            .foregroundStyle(DesignSystem.Color.labelSecondary)
+                    }
+                }
                 if !secondary.isEmpty {
                     Text(secondary)
                         .font(DesignSystem.Font.caption)
@@ -60,7 +66,8 @@ struct DetailTrackRow: View {
                           isKeyboardCursor: isKeyboardCursor)
     }
 
-    /// The equalizer on the playing row, else the track number — or nothing for a song without one.
+    /// The equalizer on the playing row (its bars still while paused), else the track number — or
+    /// nothing for a song without one.
     @ViewBuilder
     private var numberCell: some View {
         if isNowPlaying {
@@ -76,15 +83,17 @@ struct DetailTrackRow: View {
 
     // MARK: VoiceOver
 
-    /// The row's spoken name: its title, the line under it, and its time ("Jai Ho, A. R. Rahman ·
-    /// Slumdog Millionaire, 5 min 19 sec").
-    static func accessibilityLabel(for track: LibraryTrackDisplay, secondary: String) -> String {
-        ([track.title] + (secondary.isEmpty ? [] : [secondary]) + [spokenDuration(track.durationSeconds)])
-            .joined(separator: ", ")
+    /// The row's spoken name: its title, the artist or line shown with it, and its time ("Jai Ho,
+    /// A. R. Rahman · Slumdog Millionaire, 5 min 19 sec").
+    static func accessibilityLabel(for track: LibraryTrackDisplay, inlineArtist: String?,
+                                   secondary: String) -> String {
+        ([track.title, inlineArtist, secondary.isEmpty ? nil : secondary, spokenDuration(track.durationSeconds)]
+            as [String?]).compactMap(\.self).joined(separator: ", ")
     }
 
-    /// The row's spoken value: its track number, and "Now playing" on the playing row — the equalizer
-    /// is the only visual cue, which VoiceOver can't see.
+    /// The row's spoken value: its disc (in an album with more than one) and track number, and "Now
+    /// playing" on the current song's row — the equalizer is the only visual cue, which VoiceOver
+    /// can't see.
     static func accessibilityValue(disc: Int?, number: Int?, isNowPlaying: Bool) -> String {
         [disc.map { "Disc \($0)" }, number.map { "Track \($0)" }, isNowPlaying ? "Now playing" : nil]
             .compactMap(\.self).joined(separator: ", ")
