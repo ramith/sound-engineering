@@ -20,7 +20,7 @@ let package = Package(
             name: "AdaptiveSound",
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
-                "LibraryBrowseKit", "DesignTokenKit", "EQEditKit", "TrackLoudnessKit",
+                "LibraryBrowseKit", "DesignTokenKit", "EQEditKit", "TrackLoudnessKit", "OutputDeviceKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -189,6 +189,15 @@ let package = Package(
             dependencies: [],
             path: "Sources/EQEditKit"
         ),
+        // Pure output-device rule (Sprint G): what the engine does when its device goes away, the
+        // system default changes, or the engine reconfigures — pinned vs follow, Enhanced vs Pure.
+        // Same rationale as PlaybackQueueKit: outside the non-importable app target so
+        // OutputDeviceKitTests gate the exact rule the bridge runs. Pure Swift, zero deps, no UI.
+        .target(
+            name: "OutputDeviceKit",
+            dependencies: [],
+            path: "Sources/OutputDeviceKit"
+        ),
         // Track loudness analysis (Sprint EQ, EQ1c part 2; amendments item 3): the analyzer that
         // decodes a track a second time (AVAudioFile) and streams it into AudioDSP's C++ profiler
         // (TrackLoudnessBridge.h, via the module map), with its jobs, cache and failure rules. Its
@@ -260,6 +269,13 @@ let package = Package(
             name: "EQEditKitTests",
             dependencies: ["EQEditKit"],
             path: "Tests/EQEditKitTests"
+        ),
+        // Sprint G: the output-device rule — a lost device pauses on both paths, a default change is
+        // re-asserted (pinned) or adopted (follow), Pure moves with its device, no loops.
+        .testTarget(
+            name: "OutputDeviceKitTests",
+            dependencies: ["OutputDeviceKit"],
+            path: "Tests/OutputDeviceKitTests"
         ),
         // EQ1c part 2: the analyzer end to end on generated WAVs — prefix then whole, the cache,
         // latest-wins and promotion, failure reported once and never re-decoded.
