@@ -7,7 +7,7 @@
 /// the EQ's, so a card's top edge stays put across a tab switch. The column scrolls when the window is
 /// too short for it.
 ///
-/// Pure Mode's card ends in the signal-path status rows: a fixed label column ("Active path",
+/// Pure Mode's card ends in the signal-path status rows: a fixed label column ("Playing through",
 /// "Format", "Decoder", "EQ Preset") beside the values, which take the rest of the card's width and
 /// wrap rather than truncate.
 public enum SettingsLayout {
@@ -39,8 +39,9 @@ public enum SettingsLayout {
 
     // MARK: The status rows (Pure Mode's signal path)
 
-    /// The label column: a fixed slot its widest label must fit (SLOT-07).
-    public static let statusLabelWidth: Double = 110
+    /// The label column: a fixed slot its widest label ("Playing through") must fit at large text
+    /// (SLOT-07).
+    public static let statusLabelWidth: Double = 128
     /// The gap between the label column and the values.
     public static let statusColumnGap: Double = 8
 

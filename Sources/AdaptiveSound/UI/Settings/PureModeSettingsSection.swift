@@ -13,9 +13,9 @@ struct PureModeSettingsSection: View {
 
     var body: some View {
         SettingsCard(title: "Pure Mode (Bit-Perfect)") {
-            SettingsSwitchRow(title: "Bit-perfect HAL output",
-                              detail: "DSP/EQ bypassed, bit-perfect HAL output, per-track rate match. "
-                                  + "Applies on the next track / play.",
+            SettingsSwitchRow(title: "Play bit-perfect",
+                              detail: "Sends each track to your device untouched: no EQ or effects, and the "
+                                  + "device follows the track’s sample rate. Starts with the next track.",
                               isOn: $audioViewModel.pureModeEnabled)
             Hairline()
             SignalPathStatus(

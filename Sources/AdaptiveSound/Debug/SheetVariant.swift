@@ -68,7 +68,7 @@
         /// The Settings worlds (S10.8 F2) — the Settings tab only: Pure Mode asked for and waiting for the
         /// next track, with "Keep playback on this device" off (both switch positions, both helper
         /// lines); Pure asked for but unavailable (the warning line); no output device at all; and Pure
-        /// playing bit-perfect on the USB DAC (the teal "Pure (HAL-direct)", the EQ bypassed).
+        /// playing bit-perfect on the USB DAC (the teal "Pure", the EQ "Off in Pure Mode").
         case settingsStates = "settings-states"
         case settingsFallback = "pure-fallback"
         case settingsNoDevices = "no-devices"
