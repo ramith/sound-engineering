@@ -65,13 +65,14 @@
             }
         }
 
-        /// Stereo before/after monitor bands: "after" is "before" lifted by the EQ curve over the
-        /// analyzer's dB range, so the two traces differ the way the real Monitoring tab shows.
-        static func monitorSpectra() -> (before: [[Float]], after: [[Float]]) {
+        /// Before/after monitor bands for `channels` channels: "after" is "before" lifted by the EQ curve
+        /// over the analyzer's dB range, so the two traces differ the way the real Monitoring tab shows.
+        /// Each channel's ripple phase is 1.7 on from the last's, so stereo stays as it always was.
+        static func monitorSpectra(channels: Int) -> (before: [[Float]], after: [[Float]]) {
             let count = SpectrumConstants.bandCount
             let curve = eqCurve()
             let displayRangeDb = -SpectrumConstants.noiseFloorDB // 0...1 spans noise floor → 0 dB
-            let before = [0, 1.7].map { spectrum(count: count, phase: $0) }
+            let before = (0 ..< channels).map { spectrum(count: count, phase: Float($0) * 1.7) }
             let after = before.map { channel in
                 channel.indices.map { index in
                     let band = Int((Float(index) / Float(count - 1) * Float(curve.count - 1)).rounded())

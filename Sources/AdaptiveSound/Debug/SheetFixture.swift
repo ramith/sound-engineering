@@ -19,7 +19,8 @@
     /// the standard world and draw keyboard focus in their lists (`root(for:)`); the grid variants
     /// add the browse grids' albums, artists, genres and covers (`+Browse`) and open their category;
     /// the playlist worlds open a playlist (`+Playlist`); the EQ worlds put the EQ screen in one state
-    /// each (`+EQ`). Every world's engine reads "ready"
+    /// each (`+EQ`); the Monitoring worlds serve mono, 5.1 or 7.1 spectra (stereo elsewhere). Every
+    /// world's engine reads "ready"
     /// (nothing is ever started) except `eqEngine`'s.
     @MainActor
     final class SheetFixture {
@@ -41,7 +42,7 @@
         init(defaults: UserDefaults, variant: SheetVariant) {
             self.defaults = defaults
             self.variant = variant
-            let monitor = Self.monitorSpectra()
+            let monitor = Self.monitorSpectra(channels: variant.monitorChannels)
             audio = AudioViewModel(defaults: defaults,
                                    engine: SheetEngine(before: monitor.before, after: monitor.after))
             eq = EQViewModel(audioViewModel: audio, defaults: defaults)
