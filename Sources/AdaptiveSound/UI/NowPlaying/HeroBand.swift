@@ -228,9 +228,7 @@ enum SignalPathAccessibility {
             return "Playback paused, output device disconnected"
         }
         let pathText = info.path == .pure ? "Pure mode" : "Enhanced mode"
-        let rateText = info.achievedSampleRate > 0
-            ? info.formattedRate.replacing(" kHz", with: " kilohertz")
-            : "unknown rate"
+        let rateText = info.achievedSampleRate > 0 ? info.spokenRate : "unknown rate"
         var parts = [pathText, rateText]
         if info.bitDepth > 0 {
             parts.append("\(info.bitDepth)-bit \(info.isFloat ? "float" : "integer")")

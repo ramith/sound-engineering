@@ -62,15 +62,15 @@ struct AudioDeviceModel: Identifiable, Equatable, Hashable {
         return String(bytes: bytes, encoding: .macOSRoman) ?? String(transportType)
     }
 
-    /// Returns the sample rate as a human-readable kHz string.
-    /// Uses integer display when the rate is an exact multiple of 1000 Hz (e.g. "48 kHz"),
-    /// and one decimal place otherwise (e.g. "44.1 kHz").
+    /// The sample rate as a kHz string — "48 kHz", "44.1 kHz" — by the app's one rate formatter
+    /// (`SignalPathInfo.rateString`), so a device's rate reads as the signal path's does.
     var displayKHz: String {
-        let khz = Double(sampleRate) / 1000.0
-        if sampleRate % 1000 == 0 {
-            return "\(sampleRate / 1000) kHz"
-        }
-        return String(format: "%.1f kHz", khz)
+        SignalPathInfo.rateString(Double(sampleRate))
+    }
+
+    /// The same rate as VoiceOver speaks it ("48 kilohertz").
+    var spokenKHz: String {
+        SignalPathInfo.spokenRateString(Double(sampleRate))
     }
 
     var displayName: String {

@@ -448,9 +448,7 @@ private struct FooterSignalSlot: View {
             return "Playback paused, output device disconnected"
         }
         let pathStr = info.path == .pure ? "Pure mode" : "Enhanced mode"
-        let rate = info.achievedSampleRate > 0
-            ? info.formattedRate.replacing(" kHz", with: " kilohertz")
-            : "unknown rate"
+        let rate = info.achievedSampleRate > 0 ? info.spokenRate : "unknown rate"
         return "\(pathStr), \(rate)"
     }
 }
