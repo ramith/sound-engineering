@@ -71,6 +71,7 @@
             library.isReconciling = variant == .playlistRemoveMissingScan // a scan under way: Remove is off
             seedDevices()
             seedPlayback(songs)
+            Self.seedSettings(audio, for: variant)
             Self.seedEQ(eq, audio: audio, defaults: defaults, for: variant) // "Warm · Edited", then the world's
             nowPlaying.audio = audio
             nowPlaying.seedRenderFixture(ResolvedTrackMeta(artist: "A. R. Rahman", album: "Roja", artworkKey: nil))
@@ -106,7 +107,7 @@
         }
 
         /// The dialog world's sheet, drawn in the window (`SheetDialogStandIn`): the EQ's Save, Rename or
-        /// Delete; a playlist's Delete, Remove Missing or failure notice.
+        /// Delete; a playlist's Delete, Remove Missing or failure notice; a music folder's Remove.
         @ViewBuilder private var dialogStandIn: some View {
             switch variant {
             case .eqSave:
@@ -124,6 +125,8 @@
                 }
             case .playlistFailure:
                 SheetDialogStandIn { PlaylistFailureNotice(message: Self.playlistFailure, dismiss: {}) }
+            case .folderRemove:
+                SheetDialogStandIn { MusicFolderRemoveDialog(path: Self.removedFolder, remove: {}, cancel: {}) }
             default:
                 EmptyView()
             }
