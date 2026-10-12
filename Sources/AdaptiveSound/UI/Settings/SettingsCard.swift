@@ -16,12 +16,13 @@ struct SettingsCard<Accessory: View, Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: CGFloat(GlassDecor.panelRadius), style: .continuous)
         VStack(alignment: .leading, spacing: CGFloat(SettingsLayout.rowGap)) {
-            HStack(spacing: DesignSystem.Spacing.small) {
+            // The spacer is the row's one gap, so the row is exactly what LAY-SET-01b budgets.
+            HStack(spacing: 0) {
                 Text(title)
                     .font(DesignSystem.Font.sectionTitle)
                     .foregroundStyle(DesignSystem.Color.label)
                     .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: DesignSystem.Spacing.small)
+                Spacer(minLength: CGFloat(SettingsLayout.titleAccessoryGap))
                 accessory
             }
             .frame(minHeight: CGFloat(SettingsLayout.titleRowMinHeight))

@@ -26,7 +26,9 @@ public enum SettingsLayout {
     /// The gap between a card's rows: its title row, the device rows, a switch row, the status rows.
     public static let rowGap: Double = 12
     /// The title row's least height: the device pill's, so every card's title sits at one height.
-    public static let titleRowMinHeight: Double = 32
+    public static let titleRowMinHeight = DevicePillMetrics.minHeight
+    /// The least gap between a card's title and the control trailing it (Output Device's device pill).
+    public static let titleAccessoryGap: Double = 24
 
     /// A card's width in a window `windowWidth` wide: the readable width, or the window less its
     /// insets where that is narrower.

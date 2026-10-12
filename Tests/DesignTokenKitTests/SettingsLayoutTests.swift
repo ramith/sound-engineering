@@ -72,19 +72,20 @@ struct SettingsLayoutTests {
         }
     }
 
-    /// Each card's title row: the title, and on Output Device the chrome's device pill at its width cap
-    /// (`OutputDevicePill.maxWidth`, 302 pt) — side by side at the minimum window, never pushed under.
+    /// Each card's title row as `SettingsCard` lays it out: the title, the least gap
+    /// (`titleAccessoryGap`, the row's only spacing) and, on Output Device, the chrome's device pill at
+    /// its width cap (`DevicePillMetrics.maxWidth`) — side by side at the minimum window, never pushed
+    /// under.
     @Test("LAY-SET-01b: a card's title row holds its title beside the device pill at the 880 pt window")
     func titleRowFits() {
         let title = NSFont.systemFont(ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize,
                                       weight: .semibold)
-        let pillMaxWidth = 302.0
-        let spacing = 8.0 // the row's minimum gap, `DesignSystem.Spacing.small`
         let inner = SettingsLayout.cardWidth(windowWidth: Self.minimumWindow) - 2 * SettingsLayout.cardPadding
         for name in ["Output Device", "Pure Mode (Bit-Perfect)"] {
             let measured = NSAttributedString(string: name, attributes: [.font: title]).size().width * Self.largeText
-            #expect(measured + spacing + pillMaxWidth <= inner - Self.margin,
-                    "'\(name)' at large text (\(measured) pt) + the pill don't fit the \(inner) pt row")
+            let row = measured + SettingsLayout.titleAccessoryGap + DevicePillMetrics.maxWidth
+            #expect(row <= inner - Self.margin,
+                    "'\(name)' at large text + the gap + the pill (\(row) pt) don't fit the \(inner) pt row")
         }
     }
 }
