@@ -8,6 +8,7 @@ public enum DetailTrackArrangement: Sendable {
     /// An artist's page: its songs under one header per album, each album in its own playing order
     /// and numbered by track; the songs with no album under "Unknown Album", by title.
     case byAlbum
-    /// A genre's page: one flat list as read, no numbers (each row names its artist and album instead).
+    /// A genre's page: one flat list, album after album as read — each album's songs in its own
+    /// playing order, as on its other pages — with no numbers (each row names its artist and album).
     case flat
 }

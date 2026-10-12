@@ -25,8 +25,9 @@ struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
     let focus: FocusState<CardFocus?>.Binding
     /// The cursor's ring is drawn (Return's rule: an unanchored cursor activates only while ringed).
     let ringVisible: Bool
-    /// The rows a Page key moves — read when the key is pressed: the visible height is not state.
-    let pageRows: () -> Int
+    /// The rows a Page Up (−1) or Page Down (+1) moves — asked when the key is pressed: the visible
+    /// height is not state, and a list with headers pages by what fits from the cursor's row.
+    let pageRows: (_ direction: Int) -> Int
     /// Scroll the cursor row into view, after a key moved it.
     let revealCursor: () -> Void
     /// Return on row `id`: play it.
@@ -74,7 +75,7 @@ struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
     private func navigate(_ press: KeyPress) -> KeyPress.Result {
         guard !press.isShortcut,
               selection.move(key: press.key, extend: press.modifiers.contains(.shift), in: rowIDs,
-                             pageRows: pageRows())
+                             pageRows: pageRows)
         else { return .ignored }
         revealCursor()
         return .handled

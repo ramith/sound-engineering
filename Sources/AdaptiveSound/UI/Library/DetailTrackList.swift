@@ -51,7 +51,8 @@ struct DetailTrackList: View {
                 ForEach(layout.items) { item in
                     switch item {
                     case let .header(_, title, year): DetailSectionHeader(title: title, year: year)
-                    case let .row(track, number): row(track, number: number, pass: pass)
+                    case let .discHeader(_, disc): DetailDiscHeader(disc: disc)
+                    case let .row(track, number, disc): row(track, number: number, disc: disc, pass: pass)
                     }
                 }
             }
@@ -65,7 +66,7 @@ struct DetailTrackList: View {
         .scrollContentBackground(.hidden)
         .dynamicTypeSize(.small ... .xxLarge)
         .modifier(ListSelectionKeyboard(selection: $selection, rows: layout.rows, title: \.title, focus: focus,
-                                        ringVisible: showsRing, pageRows: { rowsPerPage },
+                                        ringVisible: showsRing, pageRows: pageRows,
                                         revealCursor: revealCursor, activate: play(from:)))
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))
@@ -96,7 +97,7 @@ struct DetailTrackList: View {
         let isPlaybackActive: Bool
     }
 
-    private func row(_ track: LibraryTrackDisplay, number: Int?, pass: RowPass) -> some View {
+    private func row(_ track: LibraryTrackDisplay, number: Int?, disc: Int?, pass: RowPass) -> some View {
         let isNowPlaying = track.id == pass.nowPlayingID
         let isSelected = selection.contains(track.id)
         let secondary = secondaryLine(track)
@@ -121,7 +122,8 @@ struct DetailTrackList: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(DetailTrackRow.accessibilityLabel(for: track, secondary: secondary))
-        .accessibilityValue(DetailTrackRow.accessibilityValue(number: number, isNowPlaying: isNowPlaying))
+        .accessibilityValue(DetailTrackRow.accessibilityValue(disc: disc, number: number,
+                                                              isNowPlaying: isNowPlaying))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { play(from: track.id) }
         .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
@@ -172,17 +174,28 @@ struct DetailTrackList: View {
         layout.arrangement == .flat ? .regular : .compact
     }
 
-    /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
-    private var rowsPerPage: Int {
-        max(Int((visibleSpan.rect.height - 2 * Self.verticalInset) / rowSize.pitch) - 1, 1)
+    /// The list's fixed heights: its one row pitch, and the album and disc headers'.
+    private var metrics: DetailListMetrics {
+        DetailListMetrics(rowHeight: rowSize.pitch, albumHeaderHeight: DetailSectionHeader.height,
+                          discHeaderHeight: DetailDiscHeader.height)
     }
 
-    /// Scrolls the cursor row into view — as little as needed, with its album header when it is the
-    /// album's first song — by arithmetic on the page's fixed row pitch and header height
+    /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view —
+    /// counted from the cursor's row by what fits (`DetailTrackLayout.pageRows`), so the album and
+    /// disc headers between the rows take their share of the screen.
+    private func pageRows(_ direction: Int) -> Int {
+        guard let cursor = selection.keyboardCursor(in: layout.rows.lazy.map(\.id))?.id,
+              let index = layout.index(of: cursor) else { return 1 }
+        return layout.pageRows(from: index, direction: direction,
+                               viewportHeight: visibleSpan.rect.height - 2 * Self.verticalInset, metrics: metrics)
+    }
+
+    /// Scrolls the cursor row into view — as little as needed, with the album or disc header above
+    /// it when it is their first song — by arithmetic on the page's fixed row pitch and header heights
     /// (`FixedRowReveal`), never by the lazy stack's id lookup, which builds every row up to it.
     private func revealCursor() {
         guard let cursor = selection.cursor, let index = layout.index(of: cursor) else { return }
-        let span = layout.span(ofRow: index, rowHeight: rowSize.pitch, headerHeight: DetailSectionHeader.height)
+        let span = layout.span(ofRow: index, metrics: metrics)
         guard let offset = FixedRowReveal.offset(revealingSpanAt: span.top, height: span.height,
                                                  inset: Self.verticalInset, visibleTop: visibleSpan.rect.minY,
                                                  visibleHeight: visibleSpan.rect.height)

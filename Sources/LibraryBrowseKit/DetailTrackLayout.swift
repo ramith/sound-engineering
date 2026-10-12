@@ -1,26 +1,32 @@
 // MARK: - DetailTrackLayout (S10.8 E2/E3 — a detail page's song list, as it is shown)
 
 /// The song list of an album, artist or genre page as it is SHOWN: the songs in display order, what
-/// the list draws (`items` — the songs, and an artist page's album headers), and what playing a row
-/// plays. Built once per load from the page's read and its `DetailTrackArrangement`, so the list does
-/// no per-row work of its own.
+/// the list draws (`items` — the songs, an artist page's album headers, a multi-disc album's disc
+/// headers), and what playing a row plays. Built once per load from the page's read and its
+/// `DetailTrackArrangement`, so the list does no per-row work of its own.
 ///
 /// `rows` is the ONE order on the page: the selection kit's rows (`ListSelection`), the keys' order,
 /// and the play order — so what plays is always what is shown, top to bottom (PLAY-02), even where
 /// the grouping or an album's own order (`AlbumTrackOrder`) moved a song from its place in the read.
-/// Knows nothing of Songs' columns or sort (COL-01).
+/// A browse tile's verbs take the same order (`pageOrder`). Knows nothing of Songs' columns or sort
+/// (COL-01).
 public struct DetailTrackLayout<Track: DetailTrack> {
     /// One line of the list.
     public enum Item: Identifiable {
         /// An artist page's album header: its title and year (nil when unknown).
         case header(albumID: Int64, title: String, year: String?)
-        /// A song, and the number that leads it (nil: none).
-        case row(Track, number: Int?)
+        /// A disc's sub-header, in an album with more than one disc; nil: the songs with no disc
+        /// number, which end the album.
+        case discHeader(albumID: Int64, disc: Int?)
+        /// A song, the number that leads it (nil: none), and — where its album has more than one
+        /// disc — its disc.
+        case row(Track, number: Int?, disc: Int?)
 
         public var id: ItemID {
             switch self {
             case let .header(albumID, _, _): .header(albumID)
-            case let .row(track, _): .row(track.id)
+            case let .discHeader(albumID, disc): .discHeader(albumID: albumID, disc: disc)
+            case let .row(track, _, _): .row(track.id)
             }
         }
     }
@@ -28,6 +34,7 @@ public struct DetailTrackLayout<Track: DetailTrack> {
     /// A line's identity in the list.
     public enum ItemID: Hashable {
         case header(Int64)
+        case discHeader(albumID: Int64, disc: Int?)
         case row(Track.ID)
     }
 
@@ -38,54 +45,94 @@ public struct DetailTrackLayout<Track: DetailTrack> {
     public let items: [Item]
     /// Each row's place in `rows`, by id — so a click, a key or Return finds its row without a scan.
     private let positions: [Track.ID: Int]
-    /// How many album headers sit above each row (an artist page; empty on the others, which have none).
-    private let headersAbove: [Int]
+    /// The headers above each row, for placing it by arithmetic.
+    private let headers: [RowHeaders]
+
+    /// The headers above one row: how many of each kind in all, and which sit directly on it.
+    private struct RowHeaders: Sendable {
+        var albumsAbove = 0
+        var discsAbove = 0
+        /// An album header and/or a disc header sits directly above this row: it starts them.
+        var leadsAlbum = false
+        var leadsDisc = false
+    }
 
     public init(tracks: [Track], arrangement: DetailTrackArrangement) {
         self.arrangement = arrangement
+        let albums = FacetAlbumGrouping.sections(from: tracks)
         switch arrangement {
         case .album:
-            items = Self.albumRows(tracks)
-            headersAbove = []
+            items = Self.albumRows(tracks, albumID: albums.first?.id ?? FacetAlbumGrouping.noAlbumID)
         case .byAlbum:
             // A header per album (`FacetAlbumGrouping`), then its songs in the album's own order;
             // the songs with no album, by title.
-            let albums = FacetAlbumGrouping.sections(from: tracks)
             items = albums.flatMap { album in
                 [.header(albumID: album.id, title: album.title, year: album.year)]
                     + (album.id == FacetAlbumGrouping.noAlbumID ? Self.looseRows(album.tracks)
-                        : Self.albumRows(album.tracks))
+                        : Self.albumRows(album.tracks, albumID: album.id))
             }
-            headersAbove = albums.indices.flatMap { Array(repeating: $0 + 1, count: albums[$0].tracks.count) }
         case .flat:
-            items = tracks.map { .row($0, number: nil) }
-            headersAbove = []
+            // One list, each album's run in that album's own order — so a genre agrees with the
+            // album's and the artist's pages — with no headers or numbers.
+            items = albums.flatMap { album in
+                album.id == FacetAlbumGrouping.noAlbumID ? Self.looseRows(album.tracks)
+                    : AlbumTrackOrder.playing(album.tracks).map { .row($0, number: nil, disc: nil) }
+            }
         }
         // The rows ARE the songs drawn, top to bottom — so the queue can only be the shown order (PLAY-02).
-        rows = items.compactMap { item in
-            if case let .row(track, _) = item {
-                return track
+        var rows: [Track] = []
+        var headers: [RowHeaders] = []
+        var pending = RowHeaders()
+        for item in items {
+            switch item {
+            case .header:
+                pending.albumsAbove += 1
+                pending.leadsAlbum = true
+            case .discHeader:
+                pending.discsAbove += 1
+                pending.leadsDisc = true
+            case let .row(track, _, _):
+                rows.append(track)
+                headers.append(pending)
+                pending.leadsAlbum = false
+                pending.leadsDisc = false
             }
-            return nil
         }
+        self.rows = rows
+        self.headers = headers
         // A page lists a song once (the reads are one row per song); were one listed twice, the first wins.
         positions = Dictionary(rows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// One album's songs as rows: in playing order (`AlbumTrackOrder` — disc, track, title), each led by
-    /// its track number. An album with NO track numbers is numbered by place; in an album that has
-    /// some, an untagged song shows none — a number made up from its place would read as its track.
-    private static func albumRows(_ tracks: [Track]) -> [Item] {
-        let ordered = AlbumTrackOrder.playing(tracks)
-        let numbersByPlace = ordered.allSatisfy { $0.trackNo == nil }
-        return ordered.enumerated().map { place, track in
-            .row(track, number: numbersByPlace ? place + 1 : track.trackNo)
-        }
+    /// The page's songs in the order it shows them — what a browse tile's Play, Play Next, Add to
+    /// Queue and Add to Playlist take, so a tile and its page can't disagree.
+    public static func pageOrder(_ tracks: [Track], arrangement: DetailTrackArrangement) -> [Track] {
+        DetailTrackLayout(tracks: tracks, arrangement: arrangement).rows
     }
 
-    /// An artist's songs with no album: by title, unnumbered (their track numbers are other albums').
+    /// One album's songs as rows: in playing order (`AlbumTrackOrder` — disc, track, title), each led by
+    /// its track number, under a sub-header per disc when the album has more than one. An album with
+    /// NO track numbers is numbered by place; in an album that has some, an untagged song shows none —
+    /// a number made up from its place would read as its track.
+    private static func albumRows(_ tracks: [Track], albumID: Int64) -> [Item] {
+        let ordered = AlbumTrackOrder.playing(tracks)
+        let numbersByPlace = ordered.allSatisfy { $0.taggedTrackNo == nil }
+        let discs = ordered.map { AlbumTrackOrder.disc(of: $0) }
+        let isMultiDisc = Set(discs.compactMap(\.self)).count > 1
+        var items: [Item] = []
+        for (place, track) in ordered.enumerated() {
+            if isMultiDisc, place == 0 || discs[place] != discs[place - 1] {
+                items.append(.discHeader(albumID: albumID, disc: discs[place]))
+            }
+            items.append(.row(track, number: numbersByPlace ? place + 1 : track.taggedTrackNo,
+                              disc: isMultiDisc ? discs[place] : nil))
+        }
+        return items
+    }
+
+    /// Songs with no album: by title, unnumbered (their track numbers are other albums').
     private static func looseRows(_ tracks: [Track]) -> [Item] {
-        AlbumTrackOrder.byTitle(tracks).map { .row($0, number: nil) }
+        AlbumTrackOrder.byTitle(tracks).map { .row($0, number: nil, disc: nil) }
     }
 
     /// The row's place in `rows`, or nil when it is not on the page.
@@ -100,14 +147,39 @@ public struct DetailTrackLayout<Track: DetailTrack> {
         index(of: id).map { (rows, $0) }
     }
 
+    // MARK: Placing a row (scroll into view, Page Up / Down)
+
     /// Where row `index` sits in the list's content, for scrolling it into view by arithmetic
-    /// (`FixedRowReveal`): its top, less the list's inset, and its height — every row `rowHeight` tall,
-    /// every album header `headerHeight`. An album's first song brings its header with it, so moving
-    /// up onto it shows which album it is in.
-    public func span(ofRow index: Int, rowHeight: Double, headerHeight: Double) -> (top: Double, height: Double) {
-        let headers = headersAbove.isEmpty ? 0 : headersAbove[index]
-        let top = Double(index) * rowHeight + Double(headers) * headerHeight
-        let startsAlbum = headers > 0 && (index == 0 || headersAbove[index - 1] != headers)
-        return startsAlbum ? (top - headerHeight, rowHeight + headerHeight) : (top, rowHeight)
+    /// (`FixedRowReveal`): its top, less the list's inset, and its height. The first song of an album
+    /// or of a disc brings the header above it, so moving up onto it shows where it belongs.
+    public func span(ofRow index: Int, metrics: DetailListMetrics) -> (top: Double, height: Double) {
+        let above = headers[index]
+        let top = Double(index) * metrics.rowHeight + Double(above.albumsAbove) * metrics.albumHeaderHeight
+            + Double(above.discsAbove) * metrics.discHeaderHeight
+        let lead = (above.leadsAlbum ? metrics.albumHeaderHeight : 0) + (above.leadsDisc ? metrics.discHeaderHeight : 0)
+        return (top - lead, metrics.rowHeight + lead)
+    }
+
+    /// How many rows a Page Up (`direction` −1) or Page Down (+1) moves from row `index`: as many as
+    /// fit in one viewport less the row left behind (which stays in view) — walked span by span, so
+    /// the headers between the rows count for their height. At least one; fewer at either end.
+    public func pageRows(from index: Int, direction: Int, viewportHeight: Double,
+                         metrics: DetailListMetrics) -> Int {
+        var room = viewportHeight - metrics.rowHeight
+        var count = 0
+        var lower = direction > 0 ? index + 1 : index // the lower row of each step: its lead-in lies between
+        while rows.indices.contains(lower), lower - (direction > 0 ? 0 : 1) >= 0 {
+            room -= span(ofRow: lower, metrics: metrics).height
+            if room < 0 {
+                break
+            }
+            count += 1
+            lower += direction
+        }
+        return max(count, 1)
     }
 }
+
+extension DetailTrackLayout: Sendable where Track: Sendable, Track.ID: Sendable {}
+extension DetailTrackLayout.Item: Sendable where Track: Sendable, Track.ID: Sendable {}
+extension DetailTrackLayout.ItemID: Sendable where Track.ID: Sendable {}

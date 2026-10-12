@@ -22,16 +22,16 @@ extension LibraryBrowseModel {
             let album = await album(id: id)
             return LibraryDetailContent(title: album?.title ?? "", subtitle: album?.albumArtist, year: album?.year,
                                         artworkKey: album?.artworkKey,
-                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .album))
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: ref.arrangement))
         case let .artist(id):
             let artist = await artist(id: id)
             return LibraryDetailContent(title: artist?.name ?? "", subtitle: nil, year: nil,
                                         artworkKey: artist?.artworkKey,
-                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .byAlbum))
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: ref.arrangement))
         case let .genre(id):
             let genre = await genre(id: id)
             return LibraryDetailContent(title: genre?.name ?? "", subtitle: nil, year: nil, artworkKey: nil,
-                                        layout: DetailTrackLayout(tracks: tracks, arrangement: .flat))
+                                        layout: DetailTrackLayout(tracks: tracks, arrangement: ref.arrangement))
         }
     }
 }
@@ -44,6 +44,16 @@ extension LibraryBrowseModel.FacetRef {
         case .album: .albums
         case .artist: .artists
         case .genre: .genres
+        }
+    }
+
+    /// How this facet's page arranges its songs — ONE mapping, shared by the page (`detailContent`)
+    /// and the tile's verbs (`facetRows`), so both take the same order.
+    var arrangement: DetailTrackArrangement {
+        switch self {
+        case .album: .album
+        case .artist: .byAlbum
+        case .genre: .flat
         }
     }
 }
