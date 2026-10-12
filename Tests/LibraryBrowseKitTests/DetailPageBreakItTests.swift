@@ -162,6 +162,30 @@ struct DetailPageBreakItTests {
         }
     }
 
+    @Test("MINOR — an artist’s (and a genre’s) album order does not depend on the scan order")
+    func albumOrderDoesNotDependOnScanOrder() async throws {
+        let albums = [("Alpha", 1990), ("Zulu", 2010)]
+        var artistPages: [[String]] = []
+        var genrePages: [[String]] = []
+        // The same four songs, scanned “Alpha” first, then “Zulu” first.
+        for scanOrder in [albums, Array(albums.reversed())] {
+            let library = try await Library.make()
+            defer { library.discard() }
+            for (album, year) in scanOrder {
+                for track in 1 ... 2 {
+                    try await library.add("\(album)/0\(track).flac",
+                                          song("\(album) \(track)", on: album, year: year, track: track))
+                }
+            }
+            try await library.settle()
+            try await artistPages.append(library.artistPage("Rahman").rows.map(\.title))
+            try await genrePages.append(library.genrePage("Film").rows.map(\.title))
+        }
+        // Today both pages list albums by their store row id — whichever the scan happened to reach first.
+        #expect(artistPages[0] == artistPages[1], "the artist page")
+        #expect(genrePages[0] == genrePages[1], "the genre page")
+    }
+
     // MARK: What an artist page shows of an album
 
     @Test("MINOR — an artist page’s album header shows the ALBUM’s year, as the album’s own page does")
