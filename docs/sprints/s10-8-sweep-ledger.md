@@ -1052,3 +1052,23 @@ every row kept: "379 songs · 271 unavailable", and no sweep. The themed dialog 
 neutral Cancel, outlined red Remove) was checked; Cancel kept all the entries; renaming the folder back restored
 the playlist. "Things are ok." This was the one check the test library couldn't do, because it sweeps a renamed
 file instead.
+
+### Merge (2026-10-12)
+
+PR #74 merged as f6f73b2. Carried forward to Sprint F: the music-folder confirmation adopts `AppDialog`.
+
+### Mini-retro — Sprint E
+
+1. **Three independent sources, one fix round.** The break-it, the code review and my live pass all ran before
+   any fixing, and their findings were split by file between the two builders. One round closed all three, with no
+   second loop.
+2. **Agents' file ownership must name shared seams.** Fixes collided only where a seam crossed owners (the shuffle
+   verb, the restore toast). The coordinator sequenced them: merge one, then the other rebases and finishes. Name
+   cross-owner seams in the split next time.
+3. **The test library can't fake a "missing" file.** The watcher sweeps a renamed file. Missing-file paths need a real
+   offline root; the founder's folder rename proved the paused-root guard on real data. Consider a fixture that
+   simulates an unreachable root.
+4. **Usage limits stopped agents three times;** every resume by raw ID lost nothing. Commit early: agents with
+   committed work resumed cleanly.
+5. **A flaky sanitizer timing tripwire** (Sprint EQ's 768 kHz CPU test) surfaced in another sprint's gate. Fixed at
+   its root (scale per rate), not retried.
