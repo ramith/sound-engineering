@@ -3,9 +3,9 @@ import SwiftUI
 
 // MARK: - Signal-path status (Settings › Pure Mode)
 
-/// Compact live readout of the achieved signal path, at the foot of the Pure Mode card: Active path,
-/// Format, Decoder and EQ Preset — omits Exclusive (always false) and Decision — then why Pure isn't
-/// playing yet, when it was asked for.
+/// Compact live readout of the achieved signal path, at the foot of the Pure Mode card: Playing
+/// through, Format, Decoder and EQ Preset — omits Exclusive (always false) and Decision — then why
+/// Pure isn't playing yet, when it was asked for.
 ///
 /// The labels sit in a fixed column and the values take the rest of the card's width, wrapping rather
 /// than truncating (a My Preset's name is the user's own); SLOT-07 holds both at the 880 pt window.
@@ -18,7 +18,7 @@ struct SignalPathStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            statusRow(label: "Active path", value: pathText, accent: info.path == .pure)
+            statusRow(label: "Playing through", value: pathText, accent: info.path == .pure)
             statusRow(label: "Format", value: formatText, spokenValue: formatSpoken)
             statusRow(label: "Decoder", value: decoderText)
             statusRow(label: "EQ Preset", value: eqPresetDisplay)
@@ -28,14 +28,14 @@ struct SignalPathStatus: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(DesignSystem.Color.statusWarningText)
                         .accessibilityHidden(true) // the line says it
-                    Text("Pure requested but not available on this device/track — using Enhanced.")
+                    Text("Pure Mode can’t play this track on this device, so it’s playing Enhanced.")
                         .font(DesignSystem.Font.caption)
                         .foregroundStyle(DesignSystem.Color.labelSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
             } else if requested && info.path != .pure {
-                Text("Pure enabled — will engage when the next track starts.")
+                Text("Pure Mode starts with the next track.")
                     .font(DesignSystem.Font.caption)
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -44,7 +44,7 @@ struct SignalPathStatus: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A label and its value, read as one element: "Format, 48 kilohertz, 24-bit int" — `spokenValue`
+    /// A label and its value, read as one element: "Format, 48 kilohertz, 24-bit" — `spokenValue`
     /// where the drawn value reads badly aloud.
     private func statusRow(label: String, value: String, spokenValue: String? = nil,
                            accent: Bool = false) -> some View {
@@ -64,13 +64,13 @@ struct SignalPathStatus: View {
     }
 
     private var pathText: String {
-        info.path == .pure ? "Pure (HAL-direct)" : "Enhanced (AVAudioEngine)"
+        info.path == .pure ? "Pure" : "Enhanced"
     }
 
     private var decoderText: String {
         switch info.decoder {
         case .some(.ffmpeg): return "FFmpeg"
-        case .some(.apple): return "Apple ExtAudioFile"
+        case .some(.apple): return "Apple"
         case .none: return "—"
         }
     }
@@ -88,8 +88,8 @@ struct SignalPathStatus: View {
         return [info.spokenRate, info.formattedBits].compactMap(\.self).joined(separator: ", ")
     }
 
-    /// Show the preset name, or "—" when Pure mode is active (EQ bypassed).
+    /// The preset as it plays, or "Off in Pure Mode" while Pure plays (it bypasses the EQ).
     private var eqPresetDisplay: String {
-        info.path == .pure ? "— (Pure bypassed)" : eqPresetName
+        info.path == .pure ? "Off in Pure Mode" : eqPresetName
     }
 }
