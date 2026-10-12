@@ -26,10 +26,12 @@ public extension LibraryStore {
     /// (Same text as `LibraryStore+DAO`'s `selectTrackIDByURLSQL`, kept file-private per module.)
     private static let selectTrackIDByURLSQL = "SELECT id FROM tracks WHERE url = ?;"
     /// The id-preserving relocation UPDATE (url/folder/path/name/format + move-signature + last-seen).
+    /// Like `stampLastSeen`, it never LOWERS `last_seen_scan` (an overlapping walk's later stamp
+    /// stands — S10.8 G, G-LIB-01).
     private static let moveMatchedSQL = """
     UPDATE tracks SET
         url = ?, folder_id = ?, relative_path = ?, name = ?, format = ?,
-        file_size = ?, mtime = ?, inode = ?, dev = ?, last_seen_scan = ?
+        file_size = ?, mtime = ?, inode = ?, dev = ?, last_seen_scan = MAX(last_seen_scan, ?)
     WHERE id = ?;
     """
 
@@ -59,8 +61,8 @@ public extension LibraryStore {
 
     /// Move-match: an id-preserving relocation discovered during a scan/reconcile. In ONE
     /// write it updates url/folder_id/relative_path/name/format, refreshes the move-signature,
-    /// AND stamps `last_seen_scan = generation` — so the end-of-walk sweep does NOT then
-    /// delete the just-moved row. Preserves the stable `id` (+ references). Throws
+    /// AND stamps `last_seen_scan` up to `generation` (never down) — so the end-of-walk sweep does
+    /// NOT then delete the just-moved row. Preserves the stable `id` (+ references). Throws
     /// `URLConflict` on a url collision. Does NOT touch `metadata_scanned` (a pure move keeps
     /// the same bytes, so tags stay valid).
     func moveMatched(id trackID: Int64, to file: ScannedFile, newFolderID: Int64?, generation: Int64) async throws {

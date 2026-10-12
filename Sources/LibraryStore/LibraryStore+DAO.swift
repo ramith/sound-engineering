@@ -50,8 +50,11 @@ public extension LibraryStore {
     /// Relocate a track in place (url/folder/relative_path) by its stable id (M6).
     private static let moveTrackSQL =
         "UPDATE tracks SET url = ?, folder_id = ?, relative_path = ? WHERE id = ?;"
-    /// Refresh ONLY `last_seen_scan` for the row at `url` (liveness, not content).
-    private static let stampLastSeenSQL = "UPDATE tracks SET last_seen_scan = ? WHERE url = ?;"
+    /// Refresh ONLY `last_seen_scan` for the row at `url` (liveness, not content) — never LOWER it:
+    /// two walks of one folder can overlap, and a later walk's sweep reaps what its own stamp missed
+    /// (`stampLastSeen`, S10.8 G, G-LIB-01).
+    private static let stampLastSeenSQL =
+        "UPDATE tracks SET last_seen_scan = MAX(last_seen_scan, ?) WHERE url = ?;"
     /// The ids of tracks directly in a folder (captured before a folder delete).
     private static let selectTrackIDsInFolderSQL = "SELECT id FROM tracks WHERE folder_id = ?;"
     /// Delete a single track row by its stable id.
@@ -60,9 +63,10 @@ public extension LibraryStore {
     private static let deleteFolderByIDSQL = "DELETE FROM folders WHERE id = ?;"
 
     /// Upsert ONE scanned file, keyed on `url` (`ON CONFLICT(url) DO UPDATE`). The conflict SET
-    /// fires ONLY when a content field differs (idempotency); `last_seen_scan` is stamped
-    /// separately (see `stampLastSeen`). dev + inode are the move-signature — bound on insert AND
-    /// set on the conflict UPDATE, but DELIBERATELY absent from the no-bump WHERE predicate.
+    /// fires ONLY when a content field differs (idempotency); `last_seen_scan` is bound on insert
+    /// and otherwise left to `stampLastSeen`, its one writer for a seen row (it never lowers it).
+    /// dev + inode are the move-signature — bound on insert AND set on the conflict UPDATE, but
+    /// DELIBERATELY absent from the no-bump WHERE predicate.
     private static let upsertTrackSQL = """
     INSERT INTO tracks(
         url, folder_id, relative_path, name, format,
@@ -77,7 +81,6 @@ public extension LibraryStore {
         mtime = excluded.mtime,
         inode = excluded.inode,
         dev = excluded.dev,
-        last_seen_scan = excluded.last_seen_scan,
         metadata_scanned = 0
     WHERE tracks.file_size <> excluded.file_size
        OR tracks.mtime <> excluded.mtime
@@ -199,7 +202,8 @@ public extension LibraryStore {
     ///
     /// IDEMPOTENT (design §6-E): an unchanged row is NOT bumped — the conflict update only
     /// writes when a signature/name/format/folder field actually differs; `last_seen_scan`
-    /// is refreshed unconditionally (liveness, not content) so orphan detection stays correct.
+    /// is refreshed every time, never lowered (liveness, not content) so orphan detection stays
+    /// correct.
     @discardableResult
     func upsert(_ files: [ScannedFile], folderID: Int64?, generation: Int64) async throws -> [Int64] {
         let now = LibraryStore.nowSeconds()
@@ -305,9 +309,9 @@ public extension LibraryStore {
                 file.fileSize, file.mtime, file.inode, file.dev, dateAdded, generation,
             ]
         )
-        // The conflict-update's WHERE means an UNCHANGED row makes no row-change, so
-        // last_seen_scan would NOT be refreshed by that path. Stamp it unconditionally (it is
-        // liveness, not content) so orphan detection stays correct (idempotency preserved).
+        // The conflict-update never writes last_seen_scan (and its WHERE skips an UNCHANGED row),
+        // so stamp it here, every time (liveness, not content), never lowering it — orphan
+        // detection stays correct and idempotency is preserved.
         try Self.stampLastSeen(db, url: key, generation: generation)
         let id = try Self.rowID(db, forURL: key)
         // Seed the search index for a brand-new track (findable by filename immediately). On an
@@ -319,7 +323,14 @@ public extension LibraryStore {
         return id
     }
 
-    /// Refresh ONLY `last_seen_scan` for the row at `url` (no content columns).
+    /// Refresh ONLY `last_seen_scan` for the row at `url` (no content columns), never lowering it.
+    ///
+    /// Two walks of one folder can overlap (S10.8 G, G-LIB-01): the later walk takes the higher
+    /// generation, and where it passes a song first, the earlier walk's late stamp must not pull the
+    /// song back below it — or the later walk's end-of-walk sweep (`last_seen_scan < generation`)
+    /// deletes a song that is on disk, with its play count, loved flag and every playlist entry.
+    /// The app never runs two walks of one folder at once either; this is the store's own
+    /// guarantee, whatever the caller does.
     private static func stampLastSeen(_ db: Database, url key: String, generation: Int64) throws {
         try db.execute(sql: stampLastSeenSQL, arguments: [generation, key])
     }
