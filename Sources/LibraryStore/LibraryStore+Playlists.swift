@@ -137,6 +137,10 @@ public extension LibraryStore {
         "SELECT COALESCE(MAX(position), -1) FROM playlist_entries WHERE playlist_id = ?;"
     private static let insertEntrySQL =
         "INSERT INTO playlist_entries(playlist_id, track_id, position, added_at) VALUES (?, ?, ?, ?);"
+    /// `insertEntrySQL` for a track that still has a row (else inserts nothing): `replaceEntries`.
+    private static let insertEntryIfTrackExistsSQL =
+        "INSERT INTO playlist_entries(playlist_id, track_id, position, added_at) "
+            + "SELECT ?, id, ?, ? FROM tracks WHERE id = ?;"
     private static let deleteEntryByIDSQL = "DELETE FROM playlist_entries WHERE id = ? AND playlist_id = ?;"
     private static let deleteAllEntriesSQL = "DELETE FROM playlist_entries WHERE playlist_id = ?;"
     private static let selectPlaylistExistsSQL = "SELECT 1 FROM playlists WHERE id = ?;"
@@ -381,6 +385,10 @@ public extension LibraryStore {
     /// Replace a playlist's entire contents with `trackIDs` (in order), dense `0..n-1`, in ONE
     /// transaction — the snapshot primitive behind the S10.2 queue mirror. An empty `trackIDs`
     /// just clears it. Throws `.notFound` for an absent playlist.
+    ///
+    /// An id with no song row any more is skipped, not an error (S10.8 G, G-LIB-04): the in-memory
+    /// queue keeps playing a song whose folder was removed or whose file was swept, and one such
+    /// slot must not fail the whole snapshot (a foreign-key error) for the rest of the session.
     func replaceEntries(playlistID: Int64, trackIDs: [Int64]) async throws {
         try await dbWriter.write { db in
             guard try Int64.fetchOne(db, sql: Self.selectPlaylistExistsSQL, arguments: [playlistID]) != nil else {
@@ -388,8 +396,10 @@ public extension LibraryStore {
             }
             try db.execute(sql: Self.deleteAllEntriesSQL, arguments: [playlistID])
             let now = LibraryStore.nowSeconds()
-            for (index, trackID) in trackIDs.enumerated() {
-                try db.execute(sql: Self.insertEntrySQL, arguments: [playlistID, trackID, Int64(index), now])
+            var position: Int64 = 0
+            for trackID in trackIDs {
+                try db.execute(sql: Self.insertEntryIfTrackExistsSQL, arguments: [playlistID, position, now, trackID])
+                position += Int64(db.changesCount)
             }
         }
     }

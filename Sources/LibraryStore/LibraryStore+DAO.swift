@@ -138,12 +138,15 @@ public extension LibraryStore {
         }
     }
 
-    /// Remove a scan root, KEEPING any playlist-referenced tracks as loose.
+    /// Remove a scan root, KEEPING any tracks a USER playlist references as loose.
     ///
     /// Locked semantics (design §8 "Remove folder"): removing a root must not delete a
     /// track a playlist references — those detach to loose (`folder_id`→NULL via
-    /// `ON DELETE SET NULL`) and survive; only tracks NO playlist references are deleted.
-    /// S10.1 (Gate 1 / SEQ-1): `unreferencedTrackIDs` now filters against `playlist_entries`.
+    /// `ON DELETE SET NULL`) and survive; only tracks NO user playlist references are deleted.
+    /// S10.1 (Gate 1 / SEQ-1): `unreferencedTrackIDs` filters against `playlist_entries`. The
+    /// built-in queue mirror does not count (S10.8 G, G-LIB-04): the dialog promises "Songs from this
+    /// folder leave your library unless they’re in a playlist", and a queued song kept as a loose row
+    /// would stay in Songs, Albums and Artists for good after the queue moved on.
     func removeRoot(id folderID: Int64) async throws {
         try await dbWriter.write { db in
             let detaching = try Self.trackIDs(db, inFolder: folderID)
@@ -356,11 +359,13 @@ public extension LibraryStore {
         try db.execute(sql: deleteFolderByIDSQL, arguments: [folderID])
     }
 
-    /// The DISTINCT set of track ids referenced by ANY playlist entry (Gate-1 filter).
+    /// The DISTINCT set of track ids a USER playlist entry references (Gate-1 filter); the built-in
+    /// queue mirror ("current") is not a playlist the user keeps songs in.
     private static let selectReferencedTrackIDsSQL =
-        "SELECT DISTINCT track_id FROM playlist_entries;"
+        "SELECT DISTINCT e.track_id FROM playlist_entries e JOIN playlists p ON p.id = e.playlist_id "
+            + "WHERE p.is_builtin = 0;"
 
-    /// From `candidates`, the ids NO playlist entry references (design §5, removeRoot).
+    /// From `candidates`, the ids NO user playlist entry references (design §5, removeRoot).
     ///
     /// S10.1 closes SEQ-1 Gate 1: a playlist-referenced track is NEVER returned here, so
     /// `removeRoot` leaves it in place (detached to loose via `folder_id → NULL`) instead of
