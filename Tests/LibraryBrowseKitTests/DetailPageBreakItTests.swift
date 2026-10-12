@@ -84,7 +84,7 @@ struct DetailPageBreakItTests {
 
     /// The number that leads `title`’s row on the page ("blank": none).
     private func numberShown(for title: String, on page: Page) -> String {
-        for case let .row(track, number) in page.items where track.title == title {
+        for case let .row(track, number, _) in page.items where track.title == title {
             return number.map { String($0) } ?? "blank"
         }
         return "no such row"
@@ -270,7 +270,7 @@ struct ListSelectionBreakItTests {
         let resolved = SongsRowResolver.orderedSelection(in: shown.map(Row.init), selection: selection.ids)
         // Right-click row 2: its menu acts on “the selection”, which is row 2 alone on screen — so its Play
         // replaces the queue with that one song, where the row’s own Play plays the page from it.
-        let actsOnSelection = selection.menuActsOnSelection(clicked: 2)
+        let actsOnSelection = selection.menuActsOnSelection(clicked: 2, in: shown)
         #expect(!actsOnSelection || resolved.count > 1,
                 "the menu acts on a selection of \(resolved.count) shown song")
     }

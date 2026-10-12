@@ -47,12 +47,23 @@ public struct ListSelection<ID: Hashable> {
         ids.contains(id)
     }
 
-    /// Whether a context-menu click on `id` acts on the whole selection — `id` is one of several
-    /// selected rows — rather than on the clicked row alone. O(1) and blind to the rows by design: a
-    /// list builds each row's menu with the row, eagerly, so a scan here runs once per row built
-    /// (the S10.8 End-key hang); the selection's tracks are resolved when a menu item is chosen.
-    public func menuActsOnSelection(clicked id: ID) -> Bool {
-        ids.count > 1 && ids.contains(id)
+    /// Whether a context-menu item chosen on row `id` acts on the whole selection — `id` is one of
+    /// SEVERAL selected rows that `rows` shows — rather than on the clicked row alone. A selected row a
+    /// filter or a reload hid doesn't count (S10.8 E break-it 10): with only the clicked row of the
+    /// selection on screen, the menu acts as that row's own does (on a page, Play plays the page from
+    /// it). It walks `rows`, so it is asked when an item is CHOSEN — never while a row's menu is built,
+    /// which happens with every row the list builds (the S10.8 End-key hang).
+    public func menuActsOnSelection<Rows: Sequence>(clicked id: ID, in rows: Rows) -> Bool
+        where Rows.Element == ID {
+        guard ids.count > 1, ids.contains(id) else { return false }
+        var shown = 0
+        for row in rows where ids.contains(row) {
+            shown += 1
+            if shown > 1 {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: The keyboard cursor
@@ -108,10 +119,34 @@ public struct ListSelection<ID: Hashable> {
     }
 
     /// ⌘A — exactly the rows handed in: the CURRENT (filtered) rows, so a filter-hidden row is not
-    /// selected, and one selected earlier is let go. The anchor and cursor stay.
-    public mutating func selectAll<Rows: Sequence>(in rows: Rows) where Rows.Element == ID {
+    /// selected, and one selected earlier is let go. The anchor and cursor stay — a filter-hidden one
+    /// too, so clearing the filter takes the range on from it. With NO anchor (a list just opened, or
+    /// after Esc) it starts at the cursor's row, else the first row, so a ⇧-key or ⇧-click after ⌘A
+    /// narrows the range instead of collapsing it to one row (S10.8 E break-it 7).
+    public mutating func selectAll<Rows: Collection>(in rows: Rows) where Rows.Element == ID {
         typeSelectBuffer.reset()
         ids = Set(rows)
+        if anchor == nil {
+            anchor = cursor.flatMap { ids.contains($0) ? $0 : nil } ?? rows.first
+        }
+        if cursor == nil {
+            cursor = anchor
+        }
+    }
+
+    /// The list's rows were replaced (a page reloaded under it): only the selected rows it still
+    /// shows stay selected, and an anchor or cursor it no longer shows is let go — no ghost ids, which
+    /// a menu or a ⇧-range would otherwise count (S10.8 E review 12). Unlike a filter (SEL-08), a
+    /// reload doesn't hide rows to bring them back.
+    public mutating func keepOnly<Rows: Sequence>(_ rows: Rows) where Rows.Element == ID {
+        let shown = Set(rows)
+        ids.formIntersection(shown)
+        if let anchor, !shown.contains(anchor) {
+            self.anchor = nil
+        }
+        if let cursor, !shown.contains(cursor) {
+            self.cursor = nil
+        }
     }
 
     /// Esc — nothing selected and no anchor. The cursor stays, so the ring keeps its row (now
