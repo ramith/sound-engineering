@@ -1,4 +1,3 @@
-import AppKit
 import LibraryBrowseKit
 import LibraryStore
 import SwiftUI
@@ -6,17 +5,20 @@ import SwiftUI
 // MARK: - Detail page song list (S10.8 E2/E3 — one list for the album, artist and genre pages)
 
 /// The song list of an album, artist or genre page, on the selection kit (`ListSelection`) like
-/// Songs: plain button rows in a lazy stack (a `List(selection:)` races a row's double-click and drops
-/// clicks on macOS), the full keyboard set (`ListSelectionKeyboard`, SEL-01…08), and the song menu,
-/// VoiceOver actions and Info popover Songs has. What a page adds is its play context (decision 11):
-/// a double-click, Return or Play on a row plays the PAGE, in the order shown, from that song on
-/// (`DetailTrackLayout.playFromRow`). A row drags onto a sidebar playlist (a reference-add by id).
+/// Songs, and sharing Songs' row behaviour (`SongRowInteraction`: click, double-click, drag to a
+/// playlist, the song menu, VoiceOver's actions) and keyboard (`ListSelectionKeyboard`, SEL-01…08,
+/// with ⌘↩ / ⇧⌘↩ / ⌘I for the menu's verbs). What a page adds is its play context (decision 11): a
+/// double-click, Return or Play on a row plays the PAGE, in the order shown, from that song on
+/// (`DetailTrackLayout.playFromRow`).
 ///
 /// The selection is kept by id, so it survives the page reloading under it (a library change).
 struct DetailTrackList: View {
     typealias RowID = LibraryTrackDisplay.ID
 
     let layout: DetailTrackLayout<LibraryTrackDisplay>
+    /// An album page's album artist: a song by anyone else names its artist after its title
+    /// (decision 12's compilations). Nil on the other pages.
+    let albumArtist: String?
     /// The page's one focus value: the list is its `.content` stop.
     let focus: FocusState<CardFocus?>.Binding
     /// "Add to Playlist…": the page's searchable picker, for these songs.
@@ -44,8 +46,7 @@ struct DetailTrackList: View {
     private static let horizontalInset = DesignSystem.LayoutMetrics.cardRowAreaInsetH
 
     var body: some View {
-        let pass = RowPass(cursorID: ringCursorID, nowPlayingID: viewModel.playingTrackID,
-                           isPlaybackActive: viewModel.isPlaying)
+        let pass = rowPass
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(layout.items) { item in
@@ -67,7 +68,9 @@ struct DetailTrackList: View {
         .dynamicTypeSize(.small ... .xxLarge)
         .modifier(ListSelectionKeyboard(selection: $selection, rows: layout.rows, title: \.title, focus: focus,
                                         ringVisible: showsRing, pageRows: pageRows,
-                                        revealCursor: revealCursor, activate: play(from:)))
+                                        revealCursor: revealCursor, activate: play(from:),
+                                        playNext: model.playNext, addToQueue: model.append,
+                                        showInfo: { infoTarget = $0 }))
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))
         }
@@ -91,44 +94,43 @@ struct DetailTrackList: View {
 
     /// What every row of one list pass shares, read once per pass, so a row does O(1) work.
     private struct RowPass {
-        /// The ring row (nil: no ring) and the playing row.
+        /// The ring row (nil: no ring) and the current song's row.
         let cursorID: RowID?
         let nowPlayingID: RowID?
         let isPlaybackActive: Bool
+        /// The rows' shared behaviour (`SongRowInteraction`): a row's own play is the page from it on.
+        let interaction: SongRowContext
+    }
+
+    private var rowPass: RowPass {
+        let interaction = SongRowContext(model: model, rows: layout.rows, selection: $selection, focus: focus,
+                                         play: { play(from: $0.id) }, showInfo: { infoTarget = $0 },
+                                         choosePlaylist: choosePlaylist)
+        return RowPass(cursorID: ringCursorID, nowPlayingID: viewModel.playingTrackID,
+                       isPlaybackActive: viewModel.isPlaying, interaction: interaction)
     }
 
     private func row(_ track: LibraryTrackDisplay, number: Int?, disc: Int?, pass: RowPass) -> some View {
         let isNowPlaying = track.id == pass.nowPlayingID
-        let isSelected = selection.contains(track.id)
+        let artist = inlineArtist(track)
         let secondary = secondaryLine(track)
-        return Button {
-            handleClick(track)
-        } label: {
-            DetailTrackRow(track: track, size: rowSize, showsNumberColumn: layout.arrangement != .flat,
-                           number: number, secondary: secondary, isNowPlaying: isNowPlaying,
-                           isPlaybackActive: pass.isPlaybackActive, isSelected: isSelected,
-                           isKeyboardCursor: track.id == pass.cursorID)
-        }
-        .buttonStyle(.plain)
-        // Not a focus stop of its own: the LIST is the one Tab stop and the cursor ring its cue.
-        .focusable(false)
-        // Drag a song onto a sidebar playlist (US-PLIST-03) — a reference-add by id, never a file move.
-        .draggable(LibraryTrackDragItem(trackID: track.id))
-        .simultaneousGesture(TapGesture(count: 2).onEnded { play(from: track.id) })
-        .contextMenu {
-            LibrarySongMenu(clicked: track, actsOnSelection: selection.menuActsOnSelection(clicked: track.id),
-                            selectedTracks: selectedTracks, playClicked: { play(from: track.id) },
-                            showInfo: { infoTarget = $0 }, choosePlaylist: choosePlaylist)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(DetailTrackRow.accessibilityLabel(for: track, secondary: secondary))
-        .accessibilityValue(DetailTrackRow.accessibilityValue(disc: disc, number: number,
-                                                              isNowPlaying: isNowPlaying))
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { play(from: track.id) }
-        .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
-        .accessibilityAction(named: Text("Add to Queue")) { model.append([track]) }
-        .accessibilityAction(named: Text("Info")) { infoTarget = track }
+        return DetailTrackRow(track: track, size: rowSize, showsNumberColumn: layout.arrangement != .flat,
+                              number: number, inlineArtist: artist, secondary: secondary,
+                              isNowPlaying: isNowPlaying, isPlaybackActive: pass.isPlaybackActive,
+                              isSelected: selection.contains(track.id), isKeyboardCursor: track.id == pass.cursorID)
+            .songRowInteraction(
+                track, in: pass.interaction,
+                label: DetailTrackRow.accessibilityLabel(for: track, inlineArtist: artist, secondary: secondary),
+                value: DetailTrackRow.accessibilityValue(disc: disc, number: number, isNowPlaying: isNowPlaying)
+            )
+    }
+
+    /// On an album's page, the artist of a song that is not the album artist's — a compilation's
+    /// rows, a guest's song — to show after its title. Nil where the page's header already names them.
+    private func inlineArtist(_ track: LibraryTrackDisplay) -> String? {
+        guard layout.arrangement == .album, let albumArtist, !track.artistName.isEmpty,
+              track.artistName.localizedCaseInsensitiveCompare(albumArtist) != .orderedSame else { return nil }
+        return track.artistName
     }
 
     /// The line under a title: on a genre page (one flat list of many artists' songs), "Artist ·
@@ -145,17 +147,6 @@ struct DetailTrackList: View {
     private func play(from id: RowID) {
         guard let request = layout.playFromRow(id) else { return }
         model.play(request.tracks, startAt: request.startIndex)
-    }
-
-    /// The selected songs in display order — resolved when a menu item is CHOSEN, never while a row
-    /// is built.
-    private func selectedTracks() -> [LibraryTrackDisplay] {
-        SongsRowResolver.orderedSelection(in: layout.rows, selection: selection.ids)
-    }
-
-    private func handleClick(_ track: LibraryTrackDisplay) {
-        focus.wrappedValue = .content
-        selection.click(track.id, modifiers: NSEvent.modifierFlags, in: layout.rows.lazy.map(\.id))
     }
 
     /// The ring is drawn while the list holds key focus AND the user navigates by keyboard.

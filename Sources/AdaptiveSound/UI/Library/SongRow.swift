@@ -30,7 +30,7 @@ struct SongRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: LibraryRowMetrics.columnSpacing) {
             ForEach(columns) { column in
                 cell(for: column)
                     .frame(width: width(for: column), alignment: alignment(for: column))

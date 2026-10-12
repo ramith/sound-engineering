@@ -19,7 +19,7 @@ struct LibraryRowChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 12)
+            .padding(.horizontal, LibraryRowMetrics.horizontalPadding)
             .frame(height: size.cardHeight)
             .background(fill, in: RoundedRectangle(cornerRadius: size.cornerRadius, style: .continuous))
             .overlay {

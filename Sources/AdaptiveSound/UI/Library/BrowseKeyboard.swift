@@ -43,7 +43,8 @@ struct BrowseKeyboard<Item: Identifiable>: ViewModifier where Item.ID == Int64 {
             .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .home, .end, .pageUp, .pageDown]) {
                 navigate($0)
             }
-            .onKeyPress(keys: [.return]) { $0.isShortcut ? .ignored : openCursorTile() }
+            // On the key-down only: a held Return must not open the page again and again.
+            .onKeyPress(keys: [.return], phases: .down) { $0.isShortcut ? .ignored : openCursorTile() }
             .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
             .onChange(of: isFocused) { _, focused in navigator.focusChanged(focused) }
             .onAppear(perform: restorePlace)
