@@ -1,13 +1,15 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Monitoring Tab View
 
 /// Dedicated signal-monitoring tab.
 ///
-/// v1 layout: one full-width row per channel (N-channel aware — 1 row mono,
-/// 2 rows stereo, up to 8 rows for 7.1). Each row shows the per-channel BEFORE
-/// (pre-DSP, neutral grey) vs AFTER (post-DSP, the analyzer's teal → lime) spectrum
-/// side by side (S10.8 F1, decision 4).
+/// One full-width analyzer lens per channel (N-channel aware — 1 lens mono,
+/// 2 stereo, up to 8 for 7.1), sharing the tab's height and scrolling past what fits
+/// (S10.8 G1, `MonitorLayout`). Each lens shows the channel's BEFORE (pre-DSP,
+/// neutral grey) and AFTER (post-DSP, the analyzer's teal → lime) spectrum side by
+/// side, each half under its own tag (decision 4).
 ///
 /// **Tab-visibility-gated polling**: an async Task starts when this view appears
 /// and is cancelled when it disappears; `MonitoringViewModel` does the actual
@@ -53,7 +55,7 @@ struct MonitoringTabView: View {
 
 // MARK: - Monitoring Tab Content
 
-/// The populated content once MonitoringViewModel is ready.
+/// The populated content once MonitoringViewModel is ready: the header over one lens per channel.
 /// Extracted to keep MonitoringTabView's body below the function-body length limit.
 private struct MonitoringTabContent: View {
     let monitorVM: MonitoringViewModel
@@ -61,38 +63,59 @@ private struct MonitoringTabContent: View {
     let reduceMotion: Bool
 
     var body: some View {
-        // `Screen` provides the scroll + fill + top-align (was a bespoke ScrollView); the app glow
-        // shows through it. The `.task`/polling lifecycle lives on MonitoringTabView (unchanged), so
-        // swapping only this inner content view's container doesn't affect start/stop-on-tab-switch.
-        Screen {
-            VStack(spacing: DesignSystem.Spacing.small) {
-                MonitoringHeaderView()
+        // The region's height sets each lens's (`MonitorLayout`, S10.8 G1): with few channels the lenses
+        // divide what the header leaves; past `rowMinHeight` each keeps that and the column scrolls. The
+        // `.task`/polling lifecycle lives on MonitoringTabView (unchanged), so this container doesn't
+        // affect start/stop-on-tab-switch. The scroll view spans the whole content region and the
+        // lenses sit inside its insets, so its clip — the region's own edge, which the shell clips
+        // anyway — never cuts a lens's shadow at rest, and a scrolled-away lens never draws (or takes
+        // clicks) over the chrome: no `.scrollClipDisabled()`, as Settings.
+        GeometryReader { proxy in
+            let regionHeight = Double(proxy.size.height)
+            // edgeToEdge: the column brings its own (Twin Panels) insets rather than Screen's.
+            Screen(edgeToEdge: true) {
+                VStack(spacing: CGFloat(MonitorLayout.headerGap)) {
+                    MonitoringHeaderView()
+                        .frame(height: CGFloat(MonitorLayout.headerHeight), alignment: .top)
 
-                if monitorVM.channelCount == 0 {
-                    MonitoringEmptyView()
-                } else {
-                    channelRows
+                    if monitorVM.channelCount == 0 {
+                        MonitoringEmptyView()
+                            .frame(height: CGFloat(MonitorLayout.rowsHeight(regionHeight: regionHeight)))
+                    } else {
+                        channelRows(rowHeight: MonitorLayout.rowHeight(channelCount: monitorVM.channelCount,
+                                                                       regionHeight: regionHeight))
+                    }
                 }
+                .padding(.top, CGFloat(MonitorLayout.insetTop))
+                .padding(.horizontal, CGFloat(MonitorLayout.insetHorizontal))
+                .padding(.bottom, CGFloat(MonitorLayout.insetBottom))
             }
         }
     }
 
-    private var channelRows: some View {
-        ForEach(0 ..< monitorVM.channelCount, id: \.self) { channelIndex in
-            let label = ChannelLabels.label(for: channelIndex, total: monitorVM.channelCount)
-            let before = bandArray(monitorVM.beforeBands, channel: channelIndex)
-            let after = bandArray(monitorVM.afterBands, channel: channelIndex)
+    private func channelRows(rowHeight: Double) -> some View {
+        VStack(spacing: CGFloat(MonitorLayout.rowGap)) {
+            ForEach(0 ..< monitorVM.channelCount, id: \.self) { channelIndex in
+                let total = monitorVM.channelCount
+                let before = bandArray(monitorVM.beforeBands, channel: channelIndex)
+                let after = bandArray(monitorVM.afterBands, channel: channelIndex)
 
-            MonitorChannelRowView(
-                channelIndex: channelIndex,
-                channelLabel: label,
-                beforeBands: before,
-                afterBands: after,
-                isActive: isPlaying
-            )
-            // Only animate when reduce-motion is off; skip on first appearance.
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: before)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: after)
+                MonitorChannelRowView(
+                    channelLabel: ChannelLabels.label(for: channelIndex, total: total),
+                    spokenName: ChannelLabels.spokenName(for: channelIndex, total: total),
+                    beforeBands: before,
+                    afterBands: after,
+                    isActive: isPlaying
+                )
+                .frame(height: CGFloat(rowHeight))
+                // Only animate when reduce-motion is off; skip on first appearance.
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: before)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: after)
+            }
+        }
+        // Every lens in one layer under every row (`MonitorLensStack`): no lens's shadow on another's bars.
+        .background {
+            MonitorLensStack(count: monitorVM.channelCount, rowHeight: rowHeight)
         }
     }
 
@@ -106,7 +129,8 @@ private struct MonitoringTabContent: View {
 
 // MARK: - Monitoring Header View
 
-/// Section header displayed above the channel rows.
+/// Section header displayed above the channel lenses, framed to `MonitorLayout.headerHeight`
+/// (LAY-MON-01f measures its two lines).
 private struct MonitoringHeaderView: View {
     var body: some View {
         HStack {
@@ -124,7 +148,6 @@ private struct MonitoringHeaderView: View {
 
             LegendView()
         }
-        .padding(.bottom, DesignSystem.Spacing.xSmall)
     }
 }
 
@@ -175,33 +198,5 @@ private struct MonitoringEmptyView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityLabel("Monitoring unavailable — audio engine not ready")
-    }
-}
-
-// MARK: - Channel Labels
-
-/// Maps a 0-based channel index to a human-readable label.
-///
-/// Follows the conventional channel ordering used by AVAudioChannelLayout / ITU-R BS.775:
-///   0=L, 1=R, 2=C, 3=LFE, 4=Ls, 5=Rs, 6=Lss, 7=Rss
-enum ChannelLabels {
-    private static let mono = ["M"]
-    private static let stereo = ["L", "R"]
-    private static let surround51 = ["L", "R", "C", "LFE", "Ls", "Rs"]
-    private static let surround71 = ["L", "R", "C", "LFE", "Ls", "Rs", "Lss", "Rss"]
-
-    static func label(for index: Int, total: Int) -> String {
-        let table: [String]
-        switch total {
-        case 1: table = mono
-        case 2: table = stereo
-        case 6: table = surround51
-        case 8: table = surround71
-        default:
-            // Fallback for non-standard layouts: "Ch 1", "Ch 2", …
-            return "Ch \(index + 1)"
-        }
-        guard index < table.count else { return "Ch \(index + 1)" }
-        return table[index]
     }
 }

@@ -1,113 +1,58 @@
+import DesignTokenKit
 import SwiftUI
 
 // MARK: - Monitor Channel Row View
 
-/// One full-width row in the Monitoring tab representing a single audio channel.
+/// One audio channel in the Monitoring tab: what sits on its analyzer lens (S10.8 G1). The lens itself is
+/// `MonitorLensStack`'s, drawn in one layer under every row so no lens's shadow falls on another's bars.
 ///
-/// Each row shows the BEFORE spectrum (neutral grey, left half) and the AFTER spectrum
-/// (the analyzer's teal → lime, right half), separated by a hairline — decision 4's colours
-/// (S10.8 F1, `MonitorColors`). The layout mirrors the design in
-/// `docs/sprints/05-sprint-5-monitoring-tab-design.md`.
+/// The channel's name sits in a fixed leading column; then the BEFORE half (neutral grey) and the AFTER
+/// half (the analyzer's teal → lime), split by a hairline, each under its own tag (`MonitorStageView`) —
+/// decision 4's colours (`MonitorColors`), told apart by position and label too. Every size comes from
+/// `MonitorLayout`; the caller sets the height (the lenses share the tab's), and the halves fill it.
 ///
-/// - `channelIndex`:  0-based index into the engine's channel list.
-/// - `channelLabel`:  Human-readable name, e.g. "L", "R", "C", "Ls".
-/// - `beforeBands`:   Latest normalised band magnitudes from the pre-DSP tap.
-/// - `afterBands`:    Latest normalised band magnitudes from the post-DSP tap.
-/// - `isActive`:      `true` while the engine is playing; dims the spectra when `false`.
+/// - `channelLabel`: The drawn name, e.g. "L", "C", "Ls" (`ChannelLabels`).
+/// - `spokenName`:   What VoiceOver reads, e.g. "Left channel".
+/// - `beforeBands`:  Latest normalised band magnitudes from the pre-DSP tap.
+/// - `afterBands`:   Latest normalised band magnitudes from the post-DSP tap.
+/// - `isActive`:     `true` while the engine is playing; dims the spectra when `false`.
 struct MonitorChannelRowView: View {
-    let channelIndex: Int
     let channelLabel: String
+    let spokenName: String
     let beforeBands: [Float]
     let afterBands: [Float]
     let isActive: Bool
 
-    // MARK: Constants
-
-    private enum Layout {
-        static let rowHeight: CGFloat = 72
-        static let labelWidth: CGFloat = 28
-        static let stageLabelHeight: CGFloat = 14
-        static let hairlineWidth: CGFloat = 0.5
-        static let horizontalPadding: CGFloat = 12
-        static let verticalPadding: CGFloat = 8
-        static let cornerRadius: CGFloat = DesignSystem.Radius.container
-        static let innerSpacing: CGFloat = DesignSystem.Spacing.xSmall
-    }
-
-    // MARK: Body
+    /// The rule between the halves: as thin as `Hairline`'s (which draws only horizontal rules).
+    private static let dividerWidth: CGFloat = 1
 
     var body: some View {
-        VStack(spacing: 0) {
-            channelHeaderRow
-            spectraRow
-        }
-        .padding(.horizontal, Layout.horizontalPadding)
-        .padding(.vertical, Layout.verticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: Layout.cornerRadius, style: .continuous)
-                .fill(DesignSystem.Color.card)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Layout.cornerRadius, style: .continuous)
-                .stroke(DesignSystem.Color.hairline, lineWidth: 0.5)
-        )
-        // VoiceOver: announce the row as a unit, naming channel + state.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityRowLabel)
-    }
-
-    // MARK: Sub-views
-
-    private var channelHeaderRow: some View {
-        HStack(spacing: Layout.innerSpacing) {
+        HStack(alignment: .top, spacing: 0) {
+            // Centred in the tag line, as the tags are, so the name reads on their line.
             Text(channelLabel)
                 .font(DesignSystem.Font.bodyMedium)
                 .foregroundStyle(DesignSystem.Color.label)
-                .frame(width: Layout.labelWidth, alignment: .leading)
+                .lineLimit(1)
+                .frame(width: CGFloat(MonitorLayout.labelColumnWidth),
+                       height: CGFloat(MonitorLayout.tagLineHeight), alignment: .leading)
 
-            Spacer()
-
-            HStack(spacing: Layout.innerSpacing) {
-                // The tags are TEXT, so each takes its side's text colour, not its bars' fill (R4-MON-03).
-                stageTag(title: "BEFORE", color: MonitorColors.beforeText)
-                stageTag(title: "AFTER", color: MonitorColors.afterText)
-            }
-        }
-        .frame(height: Layout.stageLabelHeight)
-        .padding(.bottom, Layout.innerSpacing)
-    }
-
-    private var spectraRow: some View {
-        // Two equal halves separated by a hairline. `.frame(maxWidth: .infinity)` splits the width
-        // 50/50 natively — no `GeometryReader` (which forced a layout pass per channel row just to
-        // compute the halves by hand).
-        HStack(spacing: 0) {
-            SpectrumMiniView(bands: beforeBands, barColors: .uniform(MonitorColors.beforeFill), isActive: isActive)
-                .frame(maxWidth: .infinity)
+            // Equally flexible, so the two halves split the width evenly, gap included.
+            MonitorStageView(title: "Before", tagColor: MonitorColors.beforeText, bands: beforeBands,
+                             barColors: .uniform(MonitorColors.beforeFill), isActive: isActive)
+                .padding(.trailing, CGFloat(MonitorLayout.halfGap))
 
             Rectangle()
                 .fill(DesignSystem.Color.hairline)
-                .frame(width: Layout.hairlineWidth)
+                .frame(width: Self.dividerWidth)
 
-            SpectrumMiniView(bands: afterBands, barColors: .analyzerRamp, isActive: isActive)
-                .frame(maxWidth: .infinity)
+            MonitorStageView(title: "After", tagColor: MonitorColors.afterText, bands: afterBands,
+                             barColors: .analyzerRamp, isActive: isActive)
+                .padding(.leading, CGFloat(MonitorLayout.halfGap))
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: Layout.rowHeight)
-    }
-
-    // MARK: Helpers
-
-    private func stageTag(title: String, color: Color) -> some View {
-        Text(title)
-            .font(DesignSystem.Font.micro)
-            .tracking(0.5)
-            .textCase(.uppercase)
-            .foregroundStyle(color)
-    }
-
-    private var accessibilityRowLabel: String {
-        let state = isActive ? "active" : "idle"
-        return "Channel \(channelIndex + 1), \(channelLabel), before and after spectrum, \(state)"
+        .padding(CGFloat(MonitorLayout.lensPadding))
+        // VoiceOver: the row is one element, named for its channel; the bars are hidden (`SpectrumMiniView`).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spokenName), before and after spectrum")
+        .accessibilityValue(isActive ? "active" : "idle")
     }
 }
