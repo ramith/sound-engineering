@@ -106,25 +106,6 @@ extension LibraryBrowseModel {
         }
     }
 
-    // MARK: Detail reads (mirror album(id:)/tracks(inAlbum:); loaded into the detail's local state)
-
-    func artist(id: Int64) async -> ArtistFacet? {
-        try? await store?.artist(id: id)
-    }
-
-    func genre(id: Int64) async -> GenreFacet? {
-        try? await store?.genre(id: id)
-    }
-
-    /// Songs by this track-artist (`artist_id`), album/disc/track order.
-    func tracks(byArtist id: Int64) async -> [LibraryTrackDisplay] {
-        (try? await store?.tracksDisplay(byArtist: id)) ?? []
-    }
-
-    func tracks(inGenre id: Int64) async -> [LibraryTrackDisplay] {
-        (try? await store?.tracksDisplay(inGenre: id)) ?? []
-    }
-
     // MARK: Whole-facet play verbs (browse tiles — read-then-enqueue)
 
     /// A browse tile's album, artist or genre: what its queue verbs read, and the page it opens.
@@ -144,20 +125,22 @@ extension LibraryBrowseModel {
 
     /// A facet's songs as the store reads them (album, disc, track) — the raw read under a page
     /// (`detailContent`) and a tile's verbs (`facetRows`), which both put it in the PAGE's order.
-    func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
+    /// Throws as the store does, so a page can tell a failed read from an empty one.
+    nonisolated func readFacetTracks(_ ref: FacetRef, from store: LibraryStore) async throws -> [LibraryTrackDisplay] {
         switch ref {
-        case let .album(id): return await tracks(inAlbum: id)
-        case let .artist(id): return await tracks(byArtist: id)
-        case let .genre(id): return await tracks(inGenre: id)
+        case let .album(id): try await store.tracksDisplay(inAlbum: id)
+        case let .artist(id): try await store.tracksDisplay(byArtist: id)
+        case let .genre(id): try await store.tracksDisplay(inGenre: id)
         }
     }
 
-    /// A facet's songs in the order its PAGE shows them (`DetailTrackLayout.pageOrder`, by the
-    /// facet's arrangement) — the ONE order a tile's Play, Play Next, Add to Queue and Add to Playlist
-    /// take, so a tile can never queue an album differently from its page (the page re-orders the
-    /// read: disc, track, title).
+    /// A facet's songs in the order its PAGE shows them (`DetailTrackLayout`, by the facet's
+    /// arrangement, laid out off the main actor) — the ONE order a tile's Play, Play Next, Add to
+    /// Queue and Add to Playlist take, so a tile can never queue an album differently from its page
+    /// (the page re-orders the read: disc, track, title). Empty when the read fails.
     func facetRows(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
-        await DetailTrackLayout.pageOrder(facetTracks(ref), arrangement: ref.arrangement)
+        guard let store, let tracks = try? await readFacetTracks(ref, from: store) else { return [] }
+        return await Self.layout(tracks, arrangement: ref.arrangement).rows
     }
 
     /// The track ids of a whole facet, in its page's order — for a tile's reference-add to a
