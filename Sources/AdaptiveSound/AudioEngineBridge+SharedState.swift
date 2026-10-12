@@ -72,6 +72,19 @@ extension AudioEngineBridge {
         withStateLock { storedCurrentDeviceID = value }
     }
 
+    // MARK: - "Keep playback on this device"
+
+    /// Thread-safe read of the pin preference (the output rule's `pinned` fact).
+    var pinsPlaybackToSelectedDevice: Bool {
+        withStateLock { storedPinPlaybackToSelectedDevice }
+    }
+
+    /// Thread-safe write of the pin preference (the `AudioPlaybackEngine` requirement; the view
+    /// model pushes its Settings switch here).
+    func setPinPlaybackToSelectedDevice(_ pin: Bool) {
+        withStateLock { storedPinPlaybackToSelectedDevice = pin }
+    }
+
     // MARK: - lastFileURL
 
     /// Thread-safe read of the last successfully scheduled file URL.
@@ -112,11 +125,11 @@ extension AudioEngineBridge {
 
     // `activePath` and `pureEngine` are declared on the main class body (extensions cannot add
     // stored properties) but — like the `stored*` fields above — must be touched ONLY through these
-    // accessors. They are written from `engineQueue` (start/stop/seek/shutdown) AND
-    // `configChangeQueue` (device-loss `pauseForDeviceLoss` → `tearDownPure`), and read from the
-    // MainActor 20 Hz poll (`currentPlaybackPosition` / `trackTransitionCount` / `playbackEnded`),
-    // so every access is serialized on the leaf lock. Direct field access outside these accessors is
-    // a data race (S6 finding UAF-1).
+    // accessors. They are written from `engineQueue` (start/stop/seek/shutdown and the device-loss
+    // teardown), and read from the MainActor 20 Hz poll (`currentPlaybackPosition` /
+    // `trackTransitionCount` / `playbackEnded`) and the output rule on `configChangeQueue`, so every
+    // access is serialized on the leaf lock. Direct field access outside these accessors is a data
+    // race (S6 finding UAF-1).
 
     /// Thread-safe snapshot of the active output path. When you also need the Pure engine handle,
     /// prefer `withPureEngine` so the path check and the handle read are one atomic operation.

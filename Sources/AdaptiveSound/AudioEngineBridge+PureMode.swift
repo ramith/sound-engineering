@@ -6,17 +6,16 @@ import Foundation
 
 /// Pure-Mode orchestration: capability evaluation, engine lifecycle, transport routing,
 /// and seek helpers. All stored properties (pureEngine, activePath,
-/// cachedSignalPath, lastFileURL, currentDeviceID,
-/// deviceAliveListenerBlock, aliveListenerDeviceID) live on the main class body
+/// cachedSignalPath, lastFileURL, currentDeviceID) live on the main class body
 /// in AudioEngineBridge.swift (Swift extensions cannot add stored properties).
 ///
-/// Device-monitoring (the device-alive listener + pause-on-device-loss) lives in
-/// AudioEngineBridge+PureModeDeviceMonitor.swift.
+/// Device monitoring (the alive listener on the app's device, pause on device loss) is shared
+/// with the Enhanced path in AudioEngineBridge+OutputDeviceMonitor.swift.
 ///
 /// Concurrency: the transport entry points (`seek`) run on the serial `engineQueue`; the
 /// internal helpers (`startPure`, `tearDownPure`, `stopEnhancedPlayback`) are called from there or
-/// from other serial transport bodies. The CoreAudio listener blocks re-dispatch their work onto
-/// `configChangeQueue` (device-loss) and are never called on the audio thread.
+/// from other serial transport bodies, the device-loss pause included. Nothing here runs on the
+/// audio thread.
 extension AudioEngineBridge {
     // MARK: - Capability Evaluation
 
@@ -93,9 +92,9 @@ extension AudioEngineBridge {
     func startPure(fileURL: URL, deviceID: UInt32) -> Bool {
         // Lazily create the engine session (create ONLY when the field is nil — the RT-safety
         // invariant). All pureEngine/activePath access goes through the stateLock accessors (S6
-        // UAF-1). This runs on engineQueue BEFORE the device-alive listener is registered (see
-        // registerDeviceAliveListener below), so no concurrent device-loss teardown can free the
-        // session mid-start; the guarded writes only keep the field consistent for the MainActor
+        // UAF-1). This runs on engineQueue, where the device-loss teardown runs too
+        // (pauseForDeviceLoss → stopPlaybackAfterDeviceLoss), so none can free the session
+        // mid-start; the guarded writes only keep the field consistent for the MainActor
         // poll. We borrow the RAW `handle` (a POD pointer) for the C-ABI calls; the FIELD remains the
         // sole strong owner of the wrapper, so a failure-path `detachPureEngineForTeardown()` drop is
         // the last reference and destroys deterministically OUTSIDE the lock.
@@ -145,11 +144,8 @@ extension AudioEngineBridge {
         // not change how loud the device is) into the snapshot that turns the path Pure, and follow it.
         pureInfo.deviceVolume = watchDeviceVolume(deviceID: deviceID)
         storeSignalPath(pureInfo)
-
-        // Register a device-alive listener for the device we just hogged.
-        // Ordering invariant: register AFTER activePath is set to .pure so the
-        // alive-listener's fallback fires only while we are actually in Pure mode.
-        registerDeviceAliveListener(deviceID: deviceID)
+        // No listener of its own: Pure plays on the app's device, which the output monitor already
+        // watches (and pauses for, on loss) on both paths.
 
         let info = pureInfo
         NSLog(
@@ -254,11 +250,7 @@ extension AudioEngineBridge {
 
     /// Stop and destroy the Pure-Mode engine. This releases hog mode and restores
     /// the device's nominal sample rate. Safe to call when pureEngine is nil.
-    ///
-    /// Invariant: `unregisterDeviceAliveListener()` is called first so no alive-listener
-    /// callback fires after `pureEngine` is set to nil.
     func tearDownPure() {
-        unregisterDeviceAliveListener()
         unwatchDeviceVolume()
         // Detach the session + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
         // teardown OUTSIDE the lock: `stop()` restores the device rate + releases hog, and dropping
@@ -266,9 +258,9 @@ extension AudioEngineBridge {
         // decode thread). This guarantees a concurrent MainActor poll / seek / setNextTrack that
         // borrowed the handle via withPureEngine either completed its C-ABI call before the detach
         // returned, or now sees activePath == .enhanced and skips — never a freed handle (S6 UAF-1).
-        // detachPureEngineForTeardown is idempotent, so a racing engineQueue teardown and
-        // configChangeQueue device-loss teardown cannot double-free (the loser gets nil). The drop
-        // runs on the CALLER's serial queue (engineQueue / configChangeQueue), never under stateLock.
+        // detachPureEngineForTeardown is idempotent, so a second teardown (a stop after the
+        // device-loss pause) cannot double-free (it gets nil). The drop runs on the caller's queue
+        // (engineQueue — the device-loss pause included), never under stateLock.
         if let session = detachPureEngineForTeardown() {
             session.stop()
             // `session` drops at the end of this scope → deinit → pureModeEngineDestroy, OUTSIDE the
