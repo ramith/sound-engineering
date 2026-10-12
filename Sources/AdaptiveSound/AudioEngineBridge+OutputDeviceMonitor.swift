@@ -203,7 +203,8 @@ extension AudioEngineBridge {
         if let engine = avEngineRef, engine.isRunning {
             engine.stop()
         }
-        storeInterruptedSignalPath() // tearDownPure ran on this queue after the flag; keep it set
+        // Again: a start that ran on this queue in between cleared the flag, and has just stopped too.
+        storeInterruptedSignalPath()
     }
 
     private func storeInterruptedSignalPath() {
