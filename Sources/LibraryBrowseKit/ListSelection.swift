@@ -138,6 +138,19 @@ public struct ListSelection<ID: Hashable> {
         return target
     }
 
+    /// The rows a keyboard verb acts on (Play Next, Add to Queue, Info — the row menu's verbs from
+    /// the keys): the selected rows that are shown, in display order; with none, the cursor row under
+    /// Return's rule (`ListKeyboardCursor.activationTarget` — an unanchored cursor only while its ring
+    /// is drawn, so a verb never acts on a row nothing on screen marks). Empty when there is neither.
+    public func actionTargets<Rows: Collection>(in rows: Rows, ringVisible: Bool) -> [ID]
+        where Rows.Element == ID {
+        let selected = rows.filter(ids.contains)
+        if !selected.isEmpty {
+            return selected
+        }
+        return keyboardCursor(in: rows)?.activationTarget(ringVisible: ringVisible).map { [$0] } ?? []
+    }
+
     /// Type-to-select: `typed` extends the search (a pause of `TypeSelectBuffer.timeout`
     /// starts a new one), and the selection, anchor and cursor jump to the FIRST row in `rows` order
     /// whose `title` starts with it — ignoring case, diacritics and width. Returns that row, or nil when no

@@ -11,10 +11,15 @@ import SwiftUI
 /// Return, which activates the cursor row. VoiceOver hears each change of the selection's size,
 /// which only the row tint shows.
 ///
-/// A key held with ⌘, ⌥ or ⌃ is a shortcut (`KeyPress.isShortcut`) and bubbles, as does a key that
-/// moves nothing. The list supplies its rows in display order — ids and a title, nothing of its
-/// columns or sort (COL-01) — and what it alone knows: its page size, how to bring the cursor row
-/// into view, and what Return does.
+/// The row menu's verbs have keys too, so they need neither the pointer nor VoiceOver: ⌘↩ Play
+/// Next, ⇧⌘↩ Add to Queue, ⌘I Info — on the selection, or else the cursor row
+/// (`ListSelection.actionTargets`). Return and its ⌘ forms act once per press: a held key does not
+/// repeat them.
+///
+/// Any other key held with ⌘, ⌥ or ⌃ is a shortcut (`KeyPress.isShortcut`) and bubbles, as does a
+/// key that moves nothing. The list supplies its rows in display order — ids and a title, nothing
+/// of its columns or sort (COL-01) — and what it alone knows: its page size, how to bring the cursor
+/// row into view, and what the verbs do.
 struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
     @Binding var selection: ListSelection<Row.ID>
     /// The rows shown, in display order — what every verb acts on.
@@ -32,6 +37,12 @@ struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
     let revealCursor: () -> Void
     /// Return on row `id`: play it.
     let activate: (Row.ID) -> Void
+    /// ⌘↩ — Play Next, for these rows.
+    let playNext: ([Row]) -> Void
+    /// ⇧⌘↩ — Add to Queue, for these rows.
+    let addToQueue: ([Row]) -> Void
+    /// ⌘I — Info, for this row.
+    let showInfo: (Row) -> Void
 
     /// The keys that move the cursor.
     private static var navigationKeys: Set<KeyEquivalent> {
@@ -52,8 +63,10 @@ struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
             // The system effect would outline the whole list; the cursor row's ring replaces it (A3).
             .focusEffectDisabled()
             .onKeyPress(keys: Self.navigationKeys) { navigate($0) }
-            .onKeyPress(.return) { activateCursorRow() }
+            // On the key-down only: a held Return must not play, or queue, again and again.
+            .onKeyPress(.return, phases: .down) { returnKey($0) }
             .onKeyPress(characters: Self.typeSelectCharacters, phases: .down) { typeSelect($0) }
+            .onKeyPress(keys: ["i", "I"], phases: .down) { infoKey($0) }
             // ⌘A and Edit ▸ Select All: the standard `selectAll:` action, sent to the focused list.
             .onCommand(#selector(NSStandardKeyBindingResponding.selectAll(_:))) {
                 selection.selectAll(in: rowIDs)
@@ -81,11 +94,43 @@ struct ListSelectionKeyboard<Row: Identifiable>: ViewModifier {
         return .handled
     }
 
+    /// Return plays the cursor row; ⌘↩ queues the targets next; ⇧⌘↩ adds them to the queue. With
+    /// any other modifier it is someone else's key.
+    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
+        switch press.modifiers.intersection([.command, .shift, .option, .control]) {
+        case []: activateCursorRow()
+        case .command: act(playNext)
+        case [.command, .shift]: act(addToQueue)
+        default: .ignored
+        }
+    }
+
+    /// ⌘I: Info for the first target. A plain "i" is type-to-select's.
+    private func infoKey(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.intersection([.command, .shift, .option, .control]) == .command else {
+            return .ignored
+        }
+        return act { targets in
+            if let first = targets.first {
+                showInfo(first)
+            }
+        }
+    }
+
     /// Return: the cursor row — the ring row, or the selected cursor row while the ring is hidden
     /// (`ListSelection.activate`, which claims a ring-only row first).
     private func activateCursorRow() -> KeyPress.Result {
         guard let id = selection.activate(in: rowIDs, ringVisible: ringVisible) else { return .ignored }
         activate(id)
+        return .handled
+    }
+
+    /// Runs a keyboard verb on its targets — the shown selection, or else the cursor row
+    /// (`ListSelection.actionTargets`). With no target the key bubbles.
+    private func act(_ verb: ([Row]) -> Void) -> KeyPress.Result {
+        let ids = Set(selection.actionTargets(in: rowIDs, ringVisible: ringVisible))
+        guard !ids.isEmpty else { return .ignored }
+        verb(rows.filter { ids.contains($0.id) })
         return .handled
     }
 

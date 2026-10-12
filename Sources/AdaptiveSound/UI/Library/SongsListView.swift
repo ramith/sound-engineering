@@ -48,9 +48,10 @@ struct SongsListView: View {
 
     /// Inter-column gap, the row's own horizontal padding (both sides), and the row AREA's inset
     /// from the card edge (each side) — the chrome the layout math must budget so Title fills
-    /// exactly / overflow triggers correctly.
-    private static let columnSpacing: CGFloat = 14
-    private static let rowHorizontalPadding: CGFloat = 24
+    /// exactly / overflow triggers correctly. The row's measures are the Library rows' shared ones
+    /// (`LibraryRowMetrics`).
+    private static let columnSpacing = LibraryRowMetrics.columnSpacing
+    private static let rowHorizontalPadding = 2 * LibraryRowMetrics.horizontalPadding
     /// The guide's row area is a scroll view with "6×12 padding": 6 above/below, 12 at each side,
     /// and NO gap between rows (48pt rows at a 48pt pitch, png/02). The first cut read the 6 as
     /// inter-row spacing and dropped the 12 — rows sat 6pt apart (about one row in nine lost)
@@ -100,7 +101,9 @@ struct SongsListView: View {
         // plays the cursor row alone (decision 11: on Songs, just that song).
         .modifier(ListSelectionKeyboard(selection: $selection, rows: model.visibleSongs, title: \.title,
                                         focus: focus, ringVisible: showsRing, pageRows: { _ in rowsPerPage },
-                                        revealCursor: revealCursor, activate: playRow))
+                                        revealCursor: revealCursor, activate: playRow,
+                                        playNext: model.playNext, addToQueue: model.append,
+                                        showInfo: { infoTarget = $0 }))
         .sheet(item: $addToPlaylistTarget) { target in
             PlaylistPickerSheet(trackIDs: target.trackIDs)
         }
@@ -206,6 +209,8 @@ struct SongsListView: View {
         let cursorID: RowID?
         let nowPlayingID: RowID?
         let isPlaybackActive: Bool
+        /// The rows' shared behaviour (`SongRowInteraction`): a row's own play is just that song.
+        let interaction: SongRowContext
     }
 
     /// This list pass's `RowPass` — in the perf run (`make songs-perf`), also one counted pass.
@@ -213,8 +218,12 @@ struct SongsListView: View {
         #if DEBUG
             probe?.countListPass()
         #endif
+        let interaction = SongRowContext(model: model, rows: model.visibleSongs, selection: $selection,
+                                         focus: focus, play: model.playTrackNextNow,
+                                         showInfo: { infoTarget = $0 }, choosePlaylist: choosePlaylist)
         return RowPass(columns: columns, titleWidth: titleWidth, cursorID: ringCursorID,
-                       nowPlayingID: viewModel.playingTrackID, isPlaybackActive: viewModel.isPlaying)
+                       nowPlayingID: viewModel.playingTrackID, isPlaybackActive: viewModel.isPlaying,
+                       interaction: interaction)
     }
 
     private func row(_ track: LibraryTrackDisplay, number: Int, pass: RowPass) -> some View {
@@ -222,33 +231,15 @@ struct SongsListView: View {
             probe?.countRowBuild(number: number)
         #endif
         let isNowPlaying = track.id == pass.nowPlayingID
-        return Button {
-            handleClick(track)
-        } label: {
-            SongRow(track: track, number: number, columns: pass.columns, titleWidth: pass.titleWidth,
-                    isNowPlaying: isNowPlaying,
-                    isPlaybackActive: pass.isPlaybackActive,
-                    isSelected: selection.contains(track.id),
-                    isKeyboardCursor: track.id == pass.cursorID)
-        }
-        .buttonStyle(.plain)
-        // Not a focus stop of its own: the LIST is the one Tab stop and the cursor ring its cue
-        // (as `BrowseTile` and the facet rows). Clicks, the menu and VoiceOver are unaffected.
-        .focusable(false)
-        .simultaneousGesture(TapGesture(count: 2).onEnded { model.playTrackNextNow(track) })
-        .contextMenu {
-            LibrarySongMenu(clicked: track, actsOnSelection: selection.menuActsOnSelection(clicked: track.id),
-                            selectedTracks: selectedTracks, playClicked: { model.playTrackNextNow(track) },
-                            showInfo: { infoTarget = $0 }, choosePlaylist: choosePlaylist)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(SongsAccessibility.rowLabel(for: track))
-        .accessibilityValue(rowAccessibilityValue(for: track, isNowPlaying: isNowPlaying))
-        .accessibilityAddTraits(selection.contains(track.id) ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { model.playTrackNextNow(track) }
-        .accessibilityAction(named: Text("Play Next")) { model.playNext([track]) }
-        .accessibilityAction(named: Text("Add to Queue")) { model.append([track]) }
-        .accessibilityAction(named: Text("Info")) { infoTarget = track }
+        return SongRow(track: track, number: number, columns: pass.columns, titleWidth: pass.titleWidth,
+                       isNowPlaying: isNowPlaying,
+                       isPlaybackActive: pass.isPlaybackActive,
+                       isSelected: selection.contains(track.id),
+                       isKeyboardCursor: track.id == pass.cursorID)
+            // Click, double-click (just this song), drag to a playlist, the menu and VoiceOver — the
+            // one row behaviour Songs shares with the album, artist and genre pages.
+            .songRowInteraction(track, in: pass.interaction, label: SongsAccessibility.rowLabel(for: track),
+                                value: rowAccessibilityValue(for: track, isNowPlaying: isNowPlaying))
     }
 
     /// The row's spoken value + a "Now playing" suffix for the current track — the equalizer is the
@@ -286,13 +277,7 @@ struct SongsListView: View {
         }
     }
 
-    // MARK: Play + context (mirror the former SongsTable)
-
-    /// The selected tracks in display order, without filter-hidden ones — resolved when a menu item is
-    /// CHOSEN: an O(N) walk, so never while the menu is built (it is built with every row).
-    private func selectedTracks() -> [LibraryTrackDisplay] {
-        SongsRowResolver.orderedSelection(in: model.visibleSongs, selection: selection.ids)
-    }
+    // MARK: Play + context
 
     /// "Add to Playlist…" from a row's menu: the searchable picker, for these songs.
     private func choosePlaylist(_ trackIDs: [Int64]) {
@@ -344,11 +329,6 @@ private extension SongsListView {
     /// The row wearing the focus ring, or nil (no ring).
     var ringCursorID: RowID? {
         showsRing ? keyboardCursor?.id : nil
-    }
-
-    func handleClick(_ track: LibraryTrackDisplay) {
-        focus.wrappedValue = .content
-        selection.click(track.id, modifiers: NSEvent.modifierFlags, in: rowIDs)
     }
 
     #if DEBUG
