@@ -270,7 +270,9 @@ enum DesignSystem {
         static let screenInsetH: CGFloat = 20
         static let screenInsetV: CGFloat = 16
         static let sectionGap: CGFloat = 20
-        static let readableMaxWidth: CGFloat = 720
+        /// The readable width: form-like content's widest (the error banner, Settings' card column).
+        /// Forwarded from the Kit's `SettingsLayout`, so LAY-SET-01 budgets the column the app draws.
+        static let readableMaxWidth = CGFloat(SettingsLayout.columnMaxWidth)
         /// The Twin Panels rail-card width (S10.8 PR-C; was 200), one value for the Library rail and the
         /// EQ rail. Forwarded from the Kit's `EQScreenLayout`, so LAY-EQ-01 budgets the rail the app draws.
         static let sidebarIdeal = CGFloat(EQScreenLayout.railWidth)
