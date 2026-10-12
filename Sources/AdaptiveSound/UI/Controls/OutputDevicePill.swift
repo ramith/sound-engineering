@@ -99,6 +99,6 @@ struct OutputDevicePill: View {
     private var deviceAccessibilityValue: String {
         let name = viewModel.selectedDevice?.displayName ?? "No device selected"
         guard achievedRate > 0 else { return name }
-        return "\(name), \(SignalPathInfo.rateString(achievedRate).replacing(" kHz", with: " kilohertz"))"
+        return "\(name), \(SignalPathInfo.spokenRateString(achievedRate))"
     }
 }

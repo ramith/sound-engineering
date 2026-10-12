@@ -24,6 +24,9 @@ struct DeviceDetailRow: View {
                     .foregroundStyle(DesignSystem.Color.labelTertiary)
             }
         }
-        .accessibilityElement(children: .combine)
+        // One element, read without the bullets and with "kilohertz", not "k-H-z".
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(device.displayName), device ID \(device.id), \(device.spokenKHz), "
+            + "\(device.bufferFrameSize) frames")
     }
 }
