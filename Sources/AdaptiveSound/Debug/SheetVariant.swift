@@ -65,6 +65,15 @@
         case playlistRemoveMissing = "playlist-remove-missing"
         case playlistRemoveMissingScan = "playlist-remove-missing-scan"
         case playlistFailure = "playlist-failure"
+        /// The Settings worlds (S10.8 F2) — the Settings tab only: Pure Mode asked for and waiting for the
+        /// next track, with "Keep playback on this device" off (both switch positions, both helper
+        /// lines); Pure asked for but unavailable (the warning line); and no output device at all.
+        case settingsStates = "settings-states"
+        case settingsFallback = "pure-fallback"
+        case settingsNoDevices = "no-devices"
+        /// The rail's remove-folder confirmation (S10.8 F2), open over the Library (drawn in the window,
+        /// as the EQ's and the playlists' dialogs).
+        case folderRemove = "folder-remove"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -151,7 +160,8 @@
             case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates:
                 [.library]
             case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
-                 .playlistFailure: [.library]
+                 .playlistFailure, .folderRemove: [.library]
+            case .settingsStates, .settingsFallback, .settingsNoDevices: [.settings]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }
