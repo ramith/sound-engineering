@@ -248,7 +248,7 @@ let package = Package(
         // UI-glue in the non-importable app target).
         .testTarget(
             name: "LibraryBrowseKitTests",
-            dependencies: ["LibraryBrowseKit", "LibraryStore"],
+            dependencies: ["LibraryBrowseKit", "LibraryStore", "LibraryScan"],
             path: "Tests/LibraryBrowseKitTests"
         ),
         // EQ0: the kit's contract — band grid, Tone partition of unity, the base/tone -> points
