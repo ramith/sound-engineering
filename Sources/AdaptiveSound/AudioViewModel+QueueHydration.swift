@@ -1,5 +1,6 @@
 import Foundation
 import LibraryStore
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel queue hydration + cursor persistence (S10.2, sub-step 2c)
 
@@ -58,7 +59,7 @@ extension AudioViewModel {
     }
 
     /// Restore selection + offset + shuffle/repeat, PAUSED: `isPlaying` stays false. The offset is
-    /// clamped to the resolved track's duration, stashed in `pausedResumePosition` so the FIRST
+    /// clamped to the resolved track's duration, stashed in `resumePoint` (that slot's) so the FIRST
     /// Play resumes there (reusing the position-preserving resume seek), and mirrored into
     /// `playbackPosition` so the scrubber shows the resume point rather than 0:00 (QA #5b/#5c).
     private func restoreCursor(itemCount: Int) {
@@ -68,7 +69,7 @@ extension AudioViewModel {
             let duration = queue[index].file.durationSeconds
             let offset = duration > 0 ? min(saved, duration) : saved
             if offset > 0 {
-                pausedResumePosition = offset
+                resumePoint = ResumePoint(slot: queue[index].id, seconds: offset)
                 playbackPosition = offset
             }
         }
