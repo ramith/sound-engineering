@@ -81,4 +81,52 @@ struct LibraryBreakItGTests {
         let entries = try await store.entries(inPlaylist: playlist)
         #expect(entries.count == 1, "the playlist entry of the song went with it (ON DELETE CASCADE)")
     }
+
+    // MARK: New Playlist beside a lower-case "new playlist" (G-LIB-03)
+
+    /// The rail "+" (and Add to Playlist, New Playlist) names a playlist "New Playlist", else the lowest
+    /// free "New Playlist N" (createUntitledPlaylist). It reads the names taken with a case-blind LIKE but
+    /// tests them with a case-SENSITIVE Set, while the unique index on playlist names is COLLATE NOCASE
+    /// (v6). So once any playlist is called "new playlist" (or "NEW PLAYLIST 2", ...), every create picks
+    /// that name again and fails: "Couldn’t create a playlist: UNIQUE constraint failed".
+    @Test("G-LIB-03: New Playlist still creates beside a playlist named new playlist in lower case")
+    func untitledPlaylistBesideLowerCaseName() async throws {
+        let library = try await Library.make()
+        defer { library.discard() }
+        let store = library.store
+        _ = try await store.createPlaylist(name: "new playlist")
+
+        let created = try? await store.createUntitledPlaylist()
+        #expect(created != nil, "New Playlist failed beside \"new playlist\"")
+        let names = try await store.playlists().filter { !$0.isBuiltin }.map(\.name)
+        #expect(names.count == 2)
+    }
+
+    // MARK: Remove a folder whose songs are in the queue (G-LIB-04)
+
+    /// "Remove “~/Music/X” from your library? … Songs from this folder leave your library unless
+    /// they’re in a playlist." removeRoot keeps every song ANY playlist_entries row names — and the
+    /// queue is mirrored into the built-in "current" playlist (AudioViewModel+QueueMirror). So the
+    /// songs in the queue when the folder goes (the album just played) stay in Songs, Albums and
+    /// Artists as loose rows; loose rows are never swept, so they stay after the queue moves on, and
+    /// the user has no way to remove them.
+    @Test("G-LIB-04: a removed folder leaves no song that only the queue held")
+    func removedFolderLeavesNoQueueOnlySong() async throws {
+        let library = try await Library.make()
+        defer { library.discard() }
+        let store = library.store
+        let generation = try await store.beginScanGeneration()
+        let ids = try await store.upsertReconciling([library.file("Queued"), library.file("Idle")],
+                                                    folderID: library.root, generation: generation)
+        // The queue holds "Queued" (the mirror of the in-memory queue).
+        let queue = try await store.currentPlaylistID()
+        try await store.replaceEntries(playlistID: queue, trackIDs: [ids[0]])
+
+        try await store.removeRoot(id: library.root)
+        // The queue moves on.
+        try await store.replaceEntries(playlistID: queue, trackIDs: [])
+
+        let remaining = try await store.allTracks(sortedBy: .name).map(\.name)
+        #expect(remaining.isEmpty, "songs of the removed folder still in the library: \(remaining)")
+    }
 }
