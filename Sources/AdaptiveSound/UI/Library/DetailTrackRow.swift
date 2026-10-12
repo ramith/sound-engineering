@@ -85,7 +85,8 @@ struct DetailTrackRow: View {
 
     /// The row's spoken value: its track number, and "Now playing" on the playing row — the equalizer
     /// is the only visual cue, which VoiceOver can't see.
-    static func accessibilityValue(number: Int?, isNowPlaying: Bool) -> String {
-        ((number.map { ["Track \($0)"] } ?? []) + (isNowPlaying ? ["Now playing"] : [])).joined(separator: ", ")
+    static func accessibilityValue(disc: Int?, number: Int?, isNowPlaying: Bool) -> String {
+        [disc.map { "Disc \($0)" }, number.map { "Track \($0)" }, isNowPlaying ? "Now playing" : nil]
+            .compactMap(\.self).joined(separator: ", ")
     }
 }

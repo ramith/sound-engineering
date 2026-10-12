@@ -142,8 +142,8 @@ extension LibraryBrowseModel {
         }
     }
 
-    /// An album's songs in disc / track order; an artist's or a genre's as their pages list them —
-    /// what a tile's verbs enqueue and what its page shows (`detailContent`).
+    /// A facet's songs as the store reads them (album, disc, track) — the raw read under a page
+    /// (`detailContent`) and a tile's verbs (`facetRows`), which both put it in the PAGE's order.
     func facetTracks(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
         switch ref {
         case let .album(id): return await tracks(inAlbum: id)
@@ -152,27 +152,35 @@ extension LibraryBrowseModel {
         }
     }
 
-    /// The track ids of a whole facet — for a tile's reference-add to a playlist (S10.3). Wraps
-    /// the private `facetTracks` read; empty facet → empty (a no-op add).
+    /// A facet's songs in the order its PAGE shows them (`DetailTrackLayout.pageOrder`, by the
+    /// facet's arrangement) — the ONE order a tile's Play, Play Next, Add to Queue and Add to Playlist
+    /// take, so a tile can never queue an album differently from its page (the page re-orders the
+    /// read: disc, track, title).
+    func facetRows(_ ref: FacetRef) async -> [LibraryTrackDisplay] {
+        await DetailTrackLayout.pageOrder(facetTracks(ref), arrangement: ref.arrangement)
+    }
+
+    /// The track ids of a whole facet, in its page's order — for a tile's reference-add to a
+    /// playlist (S10.3). An empty facet → empty (a no-op add).
     func facetTrackIDs(_ ref: FacetRef) async -> [Int64] {
-        await facetTracks(ref).map(\.id)
+        await facetRows(ref).map(\.id)
     }
 
     /// Replace the queue with the whole facet and play (silent, like Play Now everywhere).
     func playFacet(_ ref: FacetRef) async {
-        let files = await facetTracks(ref).map(AudioFile.init)
+        let files = await facetRows(ref).map(AudioFile.init)
         guard !files.isEmpty else { return }
         audio.playNow(files)
     }
 
     func playFacetNext(_ ref: FacetRef) async {
-        let files = await facetTracks(ref).map(AudioFile.init)
+        let files = await facetRows(ref).map(AudioFile.init)
         guard !files.isEmpty else { return } // empty facet → submit nothing, stay silent (gate B-3)
         showQueueToast(.playNext, added: audio.playNext(files))
     }
 
     func appendFacet(_ ref: FacetRef) async {
-        let files = await facetTracks(ref).map(AudioFile.init)
+        let files = await facetRows(ref).map(AudioFile.init)
         guard !files.isEmpty else { return } // empty facet → silent (never a false "Already in Queue")
         showQueueToast(.addToQueue, added: audio.appendToQueue(files))
     }

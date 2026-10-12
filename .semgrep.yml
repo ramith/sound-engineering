@@ -242,6 +242,7 @@ rules:
         - 'Sources/LibraryBrowseKit/DetailTrackArrangement.swift'
         - 'Sources/LibraryBrowseKit/DetailTrackLayout.swift'
         - 'Sources/LibraryBrowseKit/AlbumTrackOrder.swift'
+        - 'Sources/LibraryBrowseKit/DetailListMetrics.swift'
     pattern-regex: '(?m)^(?!\s*//).*(\b(SongColumn\w*|SongSortMapping|SortOrder|KeyPathComparator|LibraryTrackDisplay)\b|^\s*import\s+LibraryStore\b)'
 
   # --- S10.8 C2 (docs/sprints/s10-8-glass-sweep-plan.md §E, ALB-04): ONE missing-artist string.
