@@ -58,10 +58,11 @@ final class AudioViewModel {
     /// Live playhead position in seconds (polled at the spectrum-timer rate).
     var playbackPosition: Double = 0
     /// Resume point for a position-preserving Pause (D2 / UI-3): set by `pause()` to the playhead
-    /// at the moment of pausing, consumed + cleared by `play()` to resume from there via a seek.
-    /// `nil` means "not paused" — any explicit new-track action (playTrack/next/previous/stop)
-    /// clears it. Internal (not `@Observable`-bound to UI); it only gates the resume logic.
-    var pausedResumePosition: Double?
+    /// at the moment of pausing, moved by a scrub while paused, consumed + cleared by `play()` to
+    /// resume from there via a seek. It belongs to the paused song's queue SLOT, not its row
+    /// (S10.8 G): a queue edit that shifts the row keeps it. Any explicit new-track action
+    /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`.
+    var resumePoint: ResumePoint<UUID>?
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
     /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
     /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
@@ -264,19 +265,32 @@ final class AudioViewModel {
     /// Use playTrack() or startPlayback() to actually play the selected track.
     var selectedTrackIndex: Int? {
         didSet {
-            // Selecting a DIFFERENT track invalidates any position-preserving resume point (D2):
-            // the paused offset belonged to the previously-selected track, so it must not seek the
-            // newly-selected one. Centralizes the "explicit new-track action clears the resume
-            // point" contract that arrow-key reselection previously skipped — and which S10.2 2c's
-            // launch RESTORE-PAUSED would otherwise let leak onto whatever the user arrows to
-            // before pressing Play (QA break-it #1). A same-value re-assignment (re-selecting the
-            // paused track) preserves the resume point. Not self-assignment → no @Observable
-            // didSet recursion.
+            // Selecting a DIFFERENT slot drops the position-preserving resume point (D2): the paused
+            // offset belonged to the previously-selected song, so it must not seek the newly-selected
+            // one. Centralizes the "explicit new-track action clears the resume point" contract that
+            // arrow-key reselection previously skipped — and which S10.2 2c's launch RESTORE-PAUSED
+            // would otherwise let leak onto whatever the user arrows to before pressing Play (QA
+            // break-it #1). Compared by SLOT, not row (S10.8 G): removing or moving another row
+            // re-anchors the index and keeps the point; removing the paused song slides another slot
+            // into the same row and drops it. Not self-assignment → no @Observable didSet recursion.
+            if resumePoint != nil, pausedResumePosition == nil {
+                resumePoint = nil
+            }
             if selectedTrackIndex != oldValue {
-                pausedResumePosition = nil
                 onNowPlayingRefresh?() // track change (incl. gapless advance) → refresh Now Playing (S10.4)
             }
         }
+    }
+
+    /// The queue slot of the selected song (`nil` = none, or an index out of range).
+    var selectedSlotID: UUID? {
+        selectedTrackIndex.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].id : nil }
+    }
+
+    /// Where Play resumes the selected song: the resume point when it belongs to the selected slot.
+    /// `nil` means "not paused" (the scrubber and Now Playing read it as such).
+    var pausedResumePosition: Double? {
+        resumePoint?.seconds(resuming: selectedSlotID)
     }
 
     /// Whether a manual Next would advance (honors shuffle / repeat / end-of-queue) — the single
