@@ -107,10 +107,9 @@ extension AudioViewModel {
                 } else {
                     logUX("playbackEnded — no next track, stopping")
                     // §12.3: true end-of-queue / single-track completion — count the track that
-                    // just finished before clearing isPlaying below.
+                    // just finished before the stop clears isPlaying.
                     countPlayIfNaturalEndQualifies()
-                    isPlaying = false
-                    playbackPosition = 0
+                    stopAtEndOfQueue()
                 }
             }
         }
