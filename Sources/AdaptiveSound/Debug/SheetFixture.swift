@@ -68,6 +68,7 @@
             if variant.opensPlaylist {
                 Self.seedPlaylist(playlists, browse: browse, songs: songs)
             }
+            library.isReconciling = variant == .playlistRemoveMissingScan // a scan under way: Remove is off
             seedDevices()
             seedPlayback(songs)
             Self.seedEQ(eq, audio: audio, defaults: defaults, for: variant) // "Warm · Edited", then the world's
@@ -116,9 +117,11 @@
                 SheetDialogStandIn { EQDeletePresetDialog(name: Self.renamedPreset, delete: {}, cancel: {}) }
             case .playlistDelete:
                 SheetDialogStandIn { PlaylistDeleteDialog(name: Self.openPlaylist.name, delete: {}, cancel: {}) }
-            case .playlistRemoveMissing:
-                SheetDialogStandIn { PlaylistRemoveMissingDialog(count: playlists.missingEntryCount, remove: {},
-                                                                 cancel: {}) }
+            case .playlistRemoveMissing, .playlistRemoveMissingScan:
+                SheetDialogStandIn {
+                    PlaylistRemoveMissingDialog(count: playlists.missingEntryCount,
+                                                isScanning: playlists.isLibraryPopulating, remove: {}, cancel: {})
+                }
             case .playlistFailure:
                 SheetDialogStandIn { PlaylistFailureNotice(message: Self.playlistFailure, dismiss: {}) }
             default:

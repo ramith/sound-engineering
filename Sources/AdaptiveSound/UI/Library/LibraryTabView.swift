@@ -43,6 +43,9 @@ struct LibraryTabView: View {
         // cards (png/00). GlowField paints DesignSystem.Color.window and gates the glow to
         // dark / no-Reduce-Transparency; the two floating cards (PR-C/D) then sit over it.
         .background { GlowField(glows: GlowFieldSpec.libraryGlows) }
+        // The playlist dialogs, hosted ONCE for the tab (S10.8 E fix round): a failure is the model's,
+        // whichever page raised it — the rail, an Add to Playlist on any page, the playlist page.
+        .playlistDialogSheet()
         // Live-fill the grid as a scan / metadata pass / reconcile completes while the tab is
         // open. Coalesced to `libraryRevision` (bumped when metadata builds the album rows) — not
         // per metadata tick, and not the earlier `lastScanResult` (design §7; review B1).

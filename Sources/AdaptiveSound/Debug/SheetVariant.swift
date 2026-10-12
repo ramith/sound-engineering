@@ -59,9 +59,11 @@
         /// playlist open in the card, two of its files missing.
         case playlist
         /// Its dialogs, open over it (drawn in the window, as the EQ's): delete the playlist, remove the
-        /// missing songs, and a failure's OK-only notice.
+        /// missing songs — and the same while the library is being scanned, when Remove is off and the
+        /// dialog says why — and a failure's OK-only notice.
         case playlistDelete = "playlist-delete"
         case playlistRemoveMissing = "playlist-remove-missing"
+        case playlistRemoveMissingScan = "playlist-remove-missing-scan"
         case playlistFailure = "playlist-failure"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
@@ -109,7 +111,8 @@
         /// A playlist world: its fixture opens a playlist in the Library card.
         var opensPlaylist: Bool {
             switch self {
-            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: true
+            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
+                 .playlistFailure: true
             default: false
             }
         }
@@ -147,7 +150,8 @@
             case .ringRail: [.library, .eq]
             case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates:
                 [.library]
-            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistFailure: [.library]
+            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
+                 .playlistFailure: [.library]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }

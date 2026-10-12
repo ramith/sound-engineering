@@ -11,14 +11,16 @@ import UniformTypeIdentifiers
 /// with a one-level restore-queue undo; Play Next / Add to Queue), tap-to-play-from-row, grip-drag
 /// reorder, remove, and ↑/↓/Return/⌫ keys — the same scaffold the queue's `PlaylistItemList` uses.
 /// S10.8 E4 adds Move to Top / Up / Down / to Bottom (`+Moves`): row menu, ⌥⌘-arrow keys, VoiceOver;
-/// then the Library card's header (`PlaylistDetailHeader`: Play / Shuffle / ⋯) and row area, and the
-/// app's themed dialogs for its confirmation and failures.
+/// then the Library card's header (`PlaylistDetailHeader`: Play / Shuffle / ⋯) and row area. Its
+/// confirmation and failures show in the Library tab's one dialog (`PlaylistDialogSheet`).
 /// Chunk F renders the unavailable state for an entry whose file moved/was deleted. Several members
 /// are `internal` (not `private`) so the same-type `PlaylistDetailView+Actions` extension (split out
 /// for type-body length) can reach them.
 struct PlaylistDetailView: View {
     let playlistID: Int64
     @Environment(PlaylistsModel.self) var model
+    /// The queue toast's owner (a row's Play Next confirms there, as on the other pages).
+    @Environment(LibraryBrowseModel.self) var library
 
     /// Keyboard-selected row (a ScrollView/LazyVStack doesn't own key focus like a `List`).
     @State var selectedEntryID: Int64?
@@ -38,9 +40,6 @@ struct PlaylistDetailView: View {
     /// The entry being re-pointed via Locate… (drives the file importer); nil when closed (F).
     /// `internal` so the `+Actions` extension's `missingRowActions` can set it.
     @State var locatingEntryID: Int64?
-    /// Confirm before the irreversible bulk "Remove missing" (no undo — F review). `internal` for the
-    /// `+Actions` extension's dialog verbs.
-    @State var confirmingRemoveMissing = false
 
     /// Track-number column sized to the widest index, so a 3-digit position never wraps (queue idiom).
     private var numberColumnWidth: CGFloat {
@@ -50,7 +49,7 @@ struct PlaylistDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlaylistDetailHeader(play: { playNow() }, shuffle: shuffleNow, removeMissing: askToRemoveMissing)
+            PlaylistDetailHeader(play: { playNow() }, shuffle: shuffleNow)
             content
         }
         // No background of its own: it sits on the Library card (S10.8 D1 — the opaque window fill
@@ -71,19 +70,6 @@ struct PlaylistDetailView: View {
                 Task { await model.relocateEntry(id, to: url) }
             }
             locatingEntryID = nil
-        }
-        // The page's dialogs, in the app's themed dialog on ONE sheet (the window's own modality, not
-        // the system alert): a per-action failure (Locate, remove-missing, a reorder save) — a
-        // transient notice, NOT the pane-wide load-error state (F review) — or the confirmation the
-        // irreversible bulk remove-missing asks first. A failure that lands while the confirmation is
-        // up takes the sheet, and the confirmation comes back once it is dismissed.
-        .sheet(isPresented: isShowingDialog) {
-            if let message = model.actionError {
-                PlaylistFailureNotice(message: message, dismiss: model.clearActionError)
-            } else {
-                PlaylistRemoveMissingDialog(count: model.missingEntryCount, remove: removeMissing,
-                                            cancel: cancelRemoveMissing)
-            }
         }
         // Reload whenever the selected playlist changes (a new sidebar selection reuses this view).
         .task(id: playlistID) { await model.loadDetail(id: playlistID) }
@@ -142,7 +128,8 @@ private extension PlaylistDetailView {
             .focusEffectDisabled()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onKeyPress(keys: [.upArrow, .downArrow]) { arrowKey($0, proxy: proxy) }
-            .onKeyPress(.return) { playCursorRow() }
+            // Key-down only: a held Return must not replace the queue again on every repeat.
+            .onKeyPress(.return, phases: .down) { _ in playCursorRow() }
             // The system Delete command (⌫, ⌦, Edit ▸ Delete): macOS delivers ⌫ as U+007F, which
             // a key-press match on `KeyEquivalent.delete` (U+0008) never sees — see the queue.
             .onDeleteCommand(perform: removeCommand)
@@ -266,7 +253,7 @@ private extension PlaylistDetailView {
             .accessibilityActions { moveAccessibilityActions(for: row.id, at: index) }
             .contextMenu {
                 Button("Play") { playNow(startingAt: row.id) }
-                Button("Play Next") { _ = model.playEntryNext(row.id) } // this track, not the whole list
+                Button("Play Next") { playEntryNext(row.id) } // this track, not the whole list
                 Divider()
                 moveMenuItems(for: row.id, at: index)
                 Divider()
