@@ -5,17 +5,18 @@ import LibraryStore
 // MARK: - LibraryModel library-scan seam (S8.2b — was AudioViewModel+LibraryScan)
 
 //
-// The store-population path for adding a music folder. Adding a folder SCANS it into the
-// persistent library store (the browse UI reads the store); it never touches the play queue
-// (S9 IA change — the queue is built by the Library's Play / Play Next / Add to Queue verbs).
+// The store-population path for adding a music folder. Adding a folder registers it and then
+// WALKS it into the persistent library store (the browse UI reads the store); it never touches the
+// play queue (S9 IA change — the queue is built by the Library's Play / Play Next / Add to Queue
+// verbs).
 //
-// A `Task` retained in `scanTask` drives the scan.
-// The heavy per-file walk runs OFF the main actor inside `LibraryScanner`'s
-// `nonisolated` scan; `performScan` itself is `@MainActor` (extension inheritance) and
-// only publishes results there — so just `Sendable` types cross. Cancellation: a
-// re-trigger (which reassigns `scanTask`, cancelling the prior) or teardown
-// (`shutdown()`) cancels it, making `LibraryScanner`'s per-file `checkCancellation()`
-// throw and SKIP its sweep (no wrongful delete).
+// The walk is one of the folder walks `walkSchedule` runs (`LibraryModel+Walks`): one per folder at
+// a time, one add at a time, so a second add waits for the first instead of cancelling it (S10.8 G,
+// G-LIB-06). The heavy per-file walk runs OFF the main actor inside `LibraryScanner`'s
+// `nonisolated` scan; `performAddWalk` itself is `@MainActor` (extension inheritance) and only
+// publishes results there — so just `Sendable` types cross. Cancellation (removing the folder,
+// quitting) makes `LibraryScanner`'s per-file `checkCancellation()` throw and SKIP its sweep (no
+// wrongful delete). The add's metadata pass then runs on `scanTask`.
 
 extension LibraryModel {
     /// Construct the persistent store at `location` off-main at init (design §7). Failure is
@@ -50,20 +51,20 @@ extension LibraryModel {
         startLibraryWatcher()
         await refreshWatchedRoots()
         startVolumeMonitor() // NSWorkspace mount/unmount → pause/resume + remount re-stamp (5b)
-        // Network roots have no FSEvents live-watch — reconcile them once at launch (D2 split).
-        for root in networkRoots {
-            scheduleReconcile(folderID: root.folderID, root: root.url)
-        }
         #if DEBUG
-            // Test library (`-ASTestLibrary <folder>`, Debug/TestLibrary.swift): scan its music folder
-            // on every launch. An exact root re-adds as a no-op, so a re-run only picks up changes —
-            // and the scan's own metadata pass reads every pending song, so it stands in for the
-            // launch re-read below (no start-then-cancel).
+            // Test library (`-ASTestLibrary <folder>`, Debug/TestLibrary.swift): add its music folder
+            // on every launch. An exact root re-adds as a no-op, so a re-run only picks up changes.
+            // Registered BEFORE the catch-up, which then finds its walk under way and adds none (no
+            // start-then-cancel); its own metadata pass reads every pending song, so it stands in for
+            // the launch re-read below.
             if let folder = location.testMusicFolder {
                 scanFolderIntoLibrary(folder)
+                await folderAddTask?.value
+                await catchUpLibraryFolders()
                 return
             }
         #endif
+        await catchUpLibraryFolders()
         if let store {
             await resumePendingMetadata(store)
         }
@@ -73,15 +74,17 @@ extension LibraryModel {
     /// derived-data version bump queues (`LibraryStore.derivedDataRefreshed`), or a pass cut off
     /// at quit — including one cut off after its last song but before its end-of-pass album
     /// regroup (`isAlbumRegroupOwed`, C2 fix round B2). Without this they would wait for the next
-    /// folder change. Runs on `scanTask`, so adding a folder (whose own pass reads every pending
-    /// song) or quitting cancels it. The sidebar shows "Reading tags…" while it runs; the Albums
-    /// grid reloads when it ends.
+    /// folder change. Runs after the launch catch-up, whose reconciles read their own folders'
+    /// pending songs, so it reads only what they left (never the same song twice). Runs on
+    /// `scanTask`, so a folder add's pass (which reads every pending song) supersedes it, and
+    /// quitting cancels it. The sidebar shows "Reading tags…" while it runs; the Albums grid
+    /// reloads when it ends.
     private func resumePendingMetadata(_ store: LibraryStore) async {
         let pending = (try? await store.tracksNeedingMetadata(limit: 1)) ?? []
         let regroupOwed = (try? await store.isAlbumRegroupOwed()) ?? false
         guard !pending.isEmpty || regroupOwed, let generation = try? await store.beginScanGeneration() else { return }
-        // A folder added while the reads above awaited owns `scanTask` now, and its pass reads every
-        // pending song and regroups — never overwrite (and so orphan, uncancellable) it (B3).
+        // A folder added meanwhile owns `scanTask` now, and its pass reads every pending song and
+        // regroups — never overwrite (and so orphan, uncancellable) it (B3).
         guard scanTask == nil else { return }
         let reason = store.derivedDataRefreshed
             ? "full re-read for derived data v\(LibraryStore.derivedDataVersion)" : "resuming an interrupted pass"
@@ -91,76 +94,33 @@ extension LibraryModel {
         }
     }
 
-    /// Scan `url` INTO the persistent library store (the browse UI's source of truth). Cancels
-    /// any prior scan, then off-main: reject nested/overlapping roots (surfaced via
-    /// `onError`), `addRoot`, then walk + reconcile with a progress closure that hops to
-    /// `@MainActor` to publish state.
+    /// Add `url` to the persistent library store (the browse UI's source of truth): validate it
+    /// FIRST (a nested/overlapping root is rejected via `onError`, and nothing else is touched),
+    /// register it, then ask for its walk — which waits for any add walking another folder, never
+    /// cancels it (S10.8 G, G-LIB-06). Adds register one at a time, in order (`folderAddTask`), so
+    /// each is validated against the folders registered before it.
     ///
     /// Never touches the play queue (S9 IA change) — adding a folder only scans.
     func scanFolderIntoLibrary(_ url: URL) {
-        // Cancel a prior in-flight scan (re-trigger) before starting the next — the
-        // old scanner observes cancellation per file and skips its sweep.
-        scanTask?.cancel()
-        scanProgress = nil
-        guard let store else {
+        guard store != nil else {
             logUX("scanFolderIntoLibrary: store not ready; skipping (playlist unaffected)")
             return
         }
-        // A plain `Task` (not `.detached`): the heavy walk is already off-main inside
-        // `LibraryScanner`'s `nonisolated` scan, so detachment buys nothing here.
-        scanTask = Task(priority: .utility) { [weak self] in
-            await self?.performScan(url, store: store)
+        let earlier = folderAddTask
+        folderAddTask = Task { @MainActor [weak self] in
+            await earlier?.value
+            await self?.registerLibraryFolder(url)
         }
     }
 
-    /// Remove a registered library root. Deletes its store rows (tracks → orphaned albums/
-    /// artists/genres are swept), so browse drops the folder's content — but the audio files on
-    /// disk and the in-memory QUEUE are untouched: the queue is URL-keyed and not a store
-    /// reference, so a queued or currently-playing track from this folder keeps playing. Cancels
-    /// any pending/queued reconcile for the root BEFORE the delete so a late reconcile can't
-    /// re-insert its rows (design §5 / AC-14), then re-points the FSEvents watcher and bumps
-    /// `libraryRevision`. ADDITIVE: never touches the play queue/engine (those live on the audio VM).
-    func removeLibraryFolder(id folderID: Int64) async {
+    /// Validate `url` against the registered roots, register it (the root's on-disk (dev,inode)
+    /// dedups a case-variant path for the same directory on a case-insensitive volume, QS3), cover
+    /// it with the FSEvents watcher, and ask for its add walk.
+    private func registerLibraryFolder(_ url: URL) async {
         guard let store else { return }
-        // Cancel an in-flight ADD scan of THIS folder before deleting its row: otherwise the
-        // walk's next batch UPSERTs a now-dangling folder_id → FK failure + a spurious
-        // "scan failed" error + wasted work (AC-14, review 1b). `scanTask` is a single shared
-        // task, so only cancel when the active scan targets this folder; await it so no batch
-        // lands after the delete. A METADATA pass running meanwhile (the launch re-read, or this
-        // folder's own pass — `scanProgress` is nil then) is left running: it skips every song
-        // whose row the delete removes (`applyExtractedResult` writes nothing for a gone row —
-        // S10.8 C2 fix round, B3) and its end-of-pass regroup settles the rest.
-        if scanProgress?.folderID == folderID {
-            let scan = scanTask
-            scan?.cancel()
-            await scan?.value
-        }
-        reconcileDebounce[folderID]?.cancel()
-        reconcileDebounce[folderID] = nil
-        pendingReconcile.remove(folderID)
-        reconcileState[folderID] = nil
-        do {
-            try await store.removeRoot(id: folderID)
-            await refreshWatchedRoots() // drop the removed root from the FSEvents watch set
-            libraryRevision &+= 1 // browse reloads and drops the folder's albums/songs
-            logUX("removeLibraryFolder: removed root \(folderID)")
-        } catch {
-            onError?("Couldn't remove folder: \(error.localizedDescription)")
-            logUX("removeLibraryFolder: FAILED for root \(folderID) — \(error)")
-        }
-    }
-
-    /// Validates the root, registers it, then walks + reconciles. Runs on the main
-    /// actor (extension inheritance) but AWAITS `LibraryScanner`'s `nonisolated` walk,
-    /// so the heavy per-file work executes off the main actor; progress + the final
-    /// result are published on the main actor. Errors are surfaced via `onError`;
-    /// a `CancellationError` is silent (an expected re-trigger/teardown), leaving
-    /// committed batches valid.
-    private func performScan(_ url: URL, store: LibraryStore) async {
-        // Hold security-scoped access across the whole scan — the walk reads files
-        // under `url`. Inert under the Developer-ID posture (returns false); correct
-        // once sandbox bookmarks land (S8.4). Per-process, so it covers the off-main
-        // walk, and this scan owns its own scope independent of the view's Task.
+        // Hold security-scoped access while registering — the validation and the (dev,inode) read
+        // touch `url`. Inert under the Developer-ID posture (returns false); correct once sandbox
+        // bookmarks land (S8.4). The walk reads the root by its stored path, like a reconcile.
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -170,39 +130,106 @@ extension LibraryModel {
         do {
             let existing = try await store.roots().map { URL(fileURLWithPath: $0.path) }
             try LibraryScanner().validateNewRoot(url, against: existing)
-            // Pass the root's on-disk (dev,inode) so addRoot dedups a case-variant path
-            // for the same directory on a case-insensitive volume (QS3).
             let signature = LibraryScanner.deviceInode(of: url)
             let folderID = try await store.addRoot(url, dev: signature.dev, inode: signature.inode)
-            // Cover the newly registered root with the live FSEvents watcher (S8.4).
-            await refreshWatchedRoots()
+            await refreshWatchedRoots() // cover the newly registered root with the watcher (S8.4)
+            requestWalk(.add, of: folderID)
+        } catch let conflict as NestedRootConflict {
+            publishScanRejection(conflict)
+        } catch {
+            onError?("Library scan failed: \(error.localizedDescription)")
+            logUX("scanFolderIntoLibrary: registering '\(Self.makeDisplayPath(url))' FAILED — \(error)")
+        }
+    }
+
+    /// Remove a registered library root. Deletes its store rows (tracks → orphaned albums/
+    /// artists/genres are swept), so browse drops the folder's content — but the audio files on
+    /// disk and the in-memory QUEUE are untouched: the queue is URL-keyed and not a store
+    /// reference, so a queued or currently-playing track from this folder keeps playing. Stops
+    /// every walk of the root BEFORE the delete so a late walk can't re-insert its rows (design §5
+    /// / AC-14), then re-points the FSEvents watcher and bumps `libraryRevision`. ADDITIVE: never
+    /// touches the play queue/engine (those live on the audio VM).
+    func removeLibraryFolder(id folderID: Int64) async {
+        guard let store else { return }
+        // Stop walking THIS folder before deleting its row — drop a pending debounce and a waiting
+        // walk, and cancel + await its running walk (an add's or a reconcile's): otherwise the
+        // walk's next batch UPSERTs a now-dangling folder_id → FK failure + a spurious "scan failed"
+        // error + wasted work (AC-14, review 1b). A library-wide METADATA pass running meanwhile
+        // (`scanTask`: the launch re-read, or an add's pass) is left running: it skips every song
+        // whose row the delete removes (`applyExtractedResult` writes nothing for a gone row —
+        // S10.8 C2 fix round, B3) and its end-of-pass regroup settles the rest.
+        reconcileDebounce[folderID]?.cancel()
+        reconcileDebounce[folderID] = nil
+        walkSchedule.beginRemoving(folderID)
+        if let walk = walkTasks[folderID] {
+            walk.cancel()
+            await walk.value
+        }
+        reconcileState[folderID] = nil
+        do {
+            try await store.removeRoot(id: folderID)
+            walkSchedule.endRemoving(folderID)
+            await refreshWatchedRoots() // drop the removed root from the FSEvents watch set
+            libraryRevision &+= 1 // browse reloads and drops the folder's albums/songs
+            logUX("removeLibraryFolder: removed root \(folderID)")
+        } catch {
+            walkSchedule.endRemoving(folderID)
+            onError?("Couldn't remove folder: \(error.localizedDescription)")
+            logUX("removeLibraryFolder: FAILED for root \(folderID) — \(error)")
+            requestWalk(.reconcile, of: folderID) // it stays; its stopped walk is owed a re-run
+        }
+    }
+
+    /// The walk that follows registering a folder (`walkSchedule` runs it as the folder's walk): walk
+    /// the root by its stored path into the store, publishing progress, then hand the walk's
+    /// generation to the library-wide metadata pass. Runs on the main actor (extension inheritance)
+    /// but AWAITS `LibraryScanner`'s `nonisolated` walk, so the heavy per-file work executes off the
+    /// main actor. Errors are surfaced via `onError`; a `CancellationError` is silent (removing the
+    /// folder, quitting), leaving committed batches valid.
+    func performAddWalk(_ root: WatchedRoot, store: LibraryStore) async {
+        // Hold security-scoped access across the walk. Inert under the Developer-ID posture (returns
+        // false); correct once sandbox bookmarks land (S8.4) — the same as a reconcile.
+        let didAccess = root.url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                root.url.stopAccessingSecurityScopedResource()
+            }
+        }
+        do {
             let result = try await LibraryScanner().scan(
-                root: url, folderID: folderID, into: store,
+                root: root.url, folderID: root.folderID, into: store,
                 progress: { snapshot in
                     Task { @MainActor [weak self] in self?.scanProgress = snapshot }
                 }
             )
             publishScanResult(result)
-            // After the structural scan (NOT inline — locked decision): enrich new/changed
-            // rows with tags + art, reusing this scan's generation. Runs on the same
-            // `scanTask`, so a re-trigger/teardown cancels the pass too. The pass ends by
-            // regrouping albums + reaping orphan facets (SF-2, S10.8 C2) — no separate sweep here.
-            await runMetadataPass(store, generation: result.generation)
+            // After the structural scan (NOT inline — locked decision): enrich new/changed rows
+            // with tags + art, reusing this walk's generation. The pass ends by regrouping albums +
+            // reaping orphan facets (SF-2, S10.8 C2) — no separate sweep here.
+            startFullMetadataPass(store, generation: result.generation)
         } catch is CancellationError {
-            await MainActor.run { [weak self] in self?.scanProgress = nil }
+            scanProgress = nil
         } catch let unreachable as RootUnreachableError {
             // Empty-walk safety guard tripped (unmounted/zombie volume or deleted root): the
             // rows are preserved, NOT swept. Silent like cancellation — a background non-event.
-            logUX("performScan: root unreachable (folder \(unreachable.folderID); "
+            logUX("performAddWalk: root unreachable (folder \(unreachable.folderID); "
                 + "\(unreachable.storedRowCount) rows preserved) — sweep refused")
-            await MainActor.run { [weak self] in self?.scanProgress = nil }
-        } catch let conflict as NestedRootConflict {
-            publishScanRejection(conflict)
+            scanProgress = nil
         } catch {
-            await MainActor.run { [weak self] in
-                self?.scanProgress = nil
-                self?.onError?("Library scan failed: \(error.localizedDescription)")
-            }
+            scanProgress = nil
+            onError?("Library scan failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Start the library-wide metadata pass on `scanTask`, superseding the one running (the launch
+    /// re-read, or an earlier add's): this pass reads every pending song too, so the older one is
+    /// cancelled and awaited first — two full passes never read the same songs at once.
+    private func startFullMetadataPass(_ store: LibraryStore, generation: Int64) {
+        let superseded = scanTask
+        superseded?.cancel()
+        scanTask = Task(priority: .utility) { [weak self] in
+            await superseded?.value
+            await self?.runMetadataPass(store, generation: generation)
         }
     }
 
@@ -215,10 +242,10 @@ extension LibraryModel {
             + "swept=\(result.orphansSwept)")
     }
 
-    /// Surface a nested/overlapping-root rejection on the main actor (design §6, O-2).
+    /// Surface a nested/overlapping-root rejection on the main actor (design §6, O-2). Nothing was
+    /// registered, and a walk of another folder carries on.
     @MainActor
     private func publishScanRejection(_ conflict: NestedRootConflict) {
-        scanProgress = nil
         let relation = conflict.kind == .descendantOfExisting ? "inside" : "contains"
         onError?("Folder \(relation) an existing library folder — "
             + "'\(conflict.newRoot)' overlaps '\(conflict.existingRoot)'")

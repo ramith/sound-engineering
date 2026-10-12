@@ -49,7 +49,7 @@ extension LibraryModel {
         for root in watchedRoots where RootReachabilityProbe.isReachable(root.url) {
             let signature = LibraryScanner.deviceInode(of: root.url)
             try? await store.restampRoot(id: root.folderID, dev: signature.dev, inode: signature.inode)
-            scheduleReconcile(folderID: root.folderID, root: root.url)
+            scheduleReconcile(folderID: root.folderID)
         }
     }
 }
