@@ -34,9 +34,9 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
 
             // `maxHeight: .infinity` claims the space between the bands; `.top` alignment forces
             // an over-tall child to spill DOWNWARD (never up into the chrome); `.clipped()`
-            // confines that spill. L4's `Screen` scrolls (.stack) or fills (.fill) WITHIN this
-            // same rectangle, so the clip is only a backstop for a `.fill` child that overflows —
-            // not a second scroll clip that would fight `Screen`'s own ScrollView.
+            // confines that spill. L4's `Screen` scrolls WITHIN this same rectangle, so the clip is
+            // only a backstop for a tab that lays out its own panes and overflows — not a second
+            // scroll clip that would fight `Screen`'s own ScrollView.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .clipped()

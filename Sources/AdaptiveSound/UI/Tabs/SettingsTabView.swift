@@ -12,7 +12,7 @@ struct SettingsTabView: View {
 
     var body: some View {
         // edgeToEdge: the column brings its own (Twin Panels) insets rather than Screen's.
-        Screen(mode: .stack, edgeToEdge: true) {
+        Screen(edgeToEdge: true) {
             VStack(spacing: CGFloat(SettingsLayout.cardGap)) {
                 OutputDeviceSettingsSection(audioViewModel: audioViewModel)
                 PureModeSettingsSection(audioViewModel: audioViewModel, eqPresetName: eqViewModel.summary)

@@ -1,38 +1,24 @@
 import SwiftUI
 
-/// The only sanctioned way to occupy the shell's content region.
+/// A tab that stacks its sections in the shell's content region: a vertical stack, inside a
+/// `ScrollView` so a short window scrolls rather than clips, filling the region and top-aligned
+/// (never centred) — Monitoring and Settings. (Now Playing, Library and EQ lay out their own panes.)
 ///
-/// Always fills the region and top-aligns (never centers). It paints NO background: the app glow the
-/// shell mounts behind every tab but Now Playing shows through (`TabContentView`, S10.8 F1).
-/// `.stack` wraps content in a `ScrollView` so short windows scroll instead of clipping;
-/// `.fill` hands the child the whole region edge-to-edge. `readableWidth` caps form-like
-/// screens at `LayoutMetrics.readableMaxWidth`; `edgeToEdge` drops the standard insets.
+/// It paints NO background: the app glow the shell mounts behind every tab but Now Playing shows
+/// through (`TabContentView`, S10.8 F1). `edgeToEdge` drops the standard insets, for content that
+/// brings its own.
 struct Screen<Content: View>: View {
-    var mode: ScreenMode = .stack
-    var readableWidth = false
     var edgeToEdge = false
     @ViewBuilder var content: Content
 
-    private var contentMaxWidth: CGFloat {
-        readableWidth ? DesignSystem.LayoutMetrics.readableMaxWidth : .infinity
-    }
-
     var body: some View {
-        Group {
-            switch mode {
-            case .stack:
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: DesignSystem.LayoutMetrics.sectionGap) {
-                        content
-                    }
-                    .frame(maxWidth: contentMaxWidth, alignment: .top)
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .padding(.horizontal, edgeToEdge ? 0 : DesignSystem.LayoutMetrics.screenInsetH)
-                    .padding(.vertical, edgeToEdge ? 0 : DesignSystem.LayoutMetrics.screenInsetV)
-                }
-            case .fill:
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: DesignSystem.LayoutMetrics.sectionGap) {
                 content
             }
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, edgeToEdge ? 0 : DesignSystem.LayoutMetrics.screenInsetH)
+            .padding(.vertical, edgeToEdge ? 0 : DesignSystem.LayoutMetrics.screenInsetV)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
