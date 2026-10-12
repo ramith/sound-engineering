@@ -150,9 +150,10 @@ green "playlist add/drop path ok (no moveItem/copyItem — reference-add only)."
 step "S10.7 layer-policy guards (Kit purity + fixed-band Dynamic Type clamp)"
 # DesignTokenKit's testability contract IS its zero-UI-imports purity (design §3.2 R0): the
 # moment it imports SwiftUI/AppKit, the headless RES/TOK/R4 tests stop meaning anything.
-# EQEditKit (Sprint EQ) holds the same contract for the EQ editing rules.
-if grep -rnE '^import(\s+(struct|class|enum|protocol|func|typealias|var|let))?\s+(SwiftUI|AppKit)' Sources/DesignTokenKit/ Sources/EQEditKit/; then
-  red "ERROR: a pure Kit (DesignTokenKit / EQEditKit) imports a UI framework — Kits stay headless (s10-7 design §3.2)."
+# EQEditKit (Sprint EQ) holds the same contract for the EQ editing rules, OutputDeviceKit (Sprint G)
+# for the output-device rule.
+if grep -rnE '^import(\s+(struct|class|enum|protocol|func|typealias|var|let))?\s+(SwiftUI|AppKit)' Sources/DesignTokenKit/ Sources/EQEditKit/ Sources/OutputDeviceKit/; then
+  red "ERROR: a pure Kit (DesignTokenKit / EQEditKit / OutputDeviceKit) imports a UI framework — Kits stay headless (s10-7 design §3.2)."
   exit 1
 fi
 # A fixed ShellMetrics band must clamp text scale or accessibility text sizes overflow the
