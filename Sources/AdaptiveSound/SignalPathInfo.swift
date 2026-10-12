@@ -96,12 +96,12 @@ extension SignalPathInfo {
         rateString(rate).replacing(" kHz", with: " kilohertz")
     }
 
-    /// Formats bit depth + float/int kind into a compact string, e.g. "32-bit float", "24-bit int".
+    /// Formats bit depth into a compact string in plain words: "24-bit" for integer PCM (the usual
+    /// case, so it goes unsaid) and "32-bit float" when the samples are floating point.
     /// Returns `nil` when neither `bitDepth` nor `isFloat` carries information (Enhanced path idle).
     static func bitsString(bitDepth: UInt32, isFloat: Bool) -> String? {
         if bitDepth > 0 {
-            let kind = isFloat ? "float" : "int"
-            return "\(bitDepth)-bit \(kind)"
+            return isFloat ? "\(bitDepth)-bit float" : "\(bitDepth)-bit"
         }
         if isFloat {
             return "float"
