@@ -4,10 +4,10 @@ import SwiftUI
 
 extension View {
     /// The app's keyboard ring on a control that is a Tab stop of its own under Full Keyboard
-    /// Access — the icon chip, the capsule switch, Songs' Sort and Columns pills — in place of the
-    /// system focus effect. It follows the control's own key focus and shows only while the window
-    /// is keyboard-driven (`showsKeyboardFocus`), so a click never leaves a ring behind; drawn
-    /// outside `shape` by `keyboardFocusRing(_:around:)`.
+    /// Access — the icon chip, the capsule switch, Songs' Sort and Columns pills, the on/off switch
+    /// (`GlassSwitchStyle`) — in place of the system focus effect. It follows the control's own key
+    /// focus and shows only while the window is keyboard-driven (`showsKeyboardFocus`), so a click
+    /// never leaves a ring behind; drawn outside `shape` by `keyboardFocusRing(_:around:)`.
     ///
     /// Apply it to the focusable control itself (after `.focusable(…)` where the control needs
     /// one), so it binds the control's focus rather than a container's.

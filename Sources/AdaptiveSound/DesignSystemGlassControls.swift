@@ -168,6 +168,9 @@ struct GlassSwitchStyle: ToggleStyle {
                 .labelsHidden()
                 .tint(DesignSystem.Color.accentFill)
                 .lightEdge(GlassDecor.controlEdgeLight, in: Capsule())
+                // A Tab stop under Full Keyboard Access: the app's teal ring around the track, shown
+                // only while keyboard-driven, in place of the system ring in the user's (blue) accent.
+                .controlFocusRing(around: Capsule())
         }
     }
 }
