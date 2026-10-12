@@ -53,13 +53,7 @@ extension AudioViewModel {
     @MainActor
     func tickTransport() {
         // Poll the playhead + loudness + signal path every tick.
-        // While playing, follow the engine. While PAUSED (position-preserving Pause, D2), freeze the
-        // scrubber at the paused spot. Only a genuine stop (not playing, not paused) zeroes it.
-        if isPlaying {
-            playbackPosition = engine.currentPlaybackPosition() ?? playbackPosition
-        } else if pausedResumePosition == nil, playbackPosition != 0 {
-            playbackPosition = 0
-        }
+        pollPlayhead()
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
         // accrues only while playing → a pause/stall/seek never mis-counts).
         accruePlayThrough()
@@ -119,6 +113,23 @@ extension AudioViewModel {
                     playbackPosition = 0
                 }
             }
+        }
+    }
+
+    /// The scrubber's playhead, each tick. While PAUSED (position-preserving Pause, D2) it shows where
+    /// Play resumes — also while pausing, before the engine has stopped, so a scrub then isn't
+    /// overwritten by the engine's last ticks (S10.8 G). While playing it follows the engine. Only a
+    /// genuine stop (not playing, not paused) zeroes it.
+    @MainActor
+    private func pollPlayhead() {
+        if let resumeAt = pausedResumePosition {
+            if playbackPosition != resumeAt {
+                playbackPosition = resumeAt
+            }
+        } else if isPlaying {
+            playbackPosition = engine.currentPlaybackPosition() ?? playbackPosition
+        } else if playbackPosition != 0 {
+            playbackPosition = 0
         }
     }
 
