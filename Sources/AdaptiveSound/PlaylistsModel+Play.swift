@@ -61,13 +61,6 @@ extension PlaylistsModel {
         return audio.appendToQueue(files)
     }
 
-    /// Whether a "Restore previous queue" undo is available (a Play-replace happened).
-    var canRestorePreviousQueue: Bool {
-        audio.canRestorePreviousQueue
-    }
-
-    /// Restore the queue that a "Play" replaced (one-level undo).
-    func restorePreviousQueue() {
-        audio.restorePreviousQueue()
-    }
+    // The undo of a Play or Shuffle (the queue's restore point) is the Library card's one toast,
+    // `QueueRestoreToast`, raised through `LibraryBrowseModel.offerQueueRestore` (S10.8 E review 18).
 }

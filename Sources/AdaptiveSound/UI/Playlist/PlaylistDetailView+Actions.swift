@@ -16,19 +16,20 @@ extension PlaylistDetailView {
         }
     }
 
-    /// Play the playlist (replace queue, undoable), optionally from a tapped row, and raise the
-    /// transient restore-queue affordance — ONLY if a replace actually happened (an all-unavailable
-    /// playlist no-ops, and must not resurface a stale toast from an earlier real Play).
+    /// Play the playlist (replace queue, undoable), optionally from a tapped row, and offer the undo
+    /// — the Library card's one restore toast (`QueueRestoreToast`, review 18) — ONLY if a replace
+    /// actually happened (an all-unavailable playlist no-ops, and must not resurface a stale toast
+    /// from an earlier real Play).
     func playNow(startingAt entryID: Int64? = nil) {
         if model.playPlaylist(startingAt: entryID) {
-            raiseRestoreToast()
+            library.offerQueueRestore()
         }
     }
 
     /// The header's Shuffle (E4): Play's replace, from a random song with shuffle on — and Play's undo.
     func shuffleNow() {
         if model.shufflePlaylist() {
-            raiseRestoreToast()
+            library.offerQueueRestore()
         }
     }
 
@@ -38,22 +39,6 @@ extension PlaylistDetailView {
         let added = model.playEntryNext(entryID)
         guard added > 0 else { return } // the entry is gone or unplayable: nothing went in, no toast
         library.showQueueToast(.playNext, added: added)
-    }
-
-    func raiseRestoreToast() {
-        let token = (restoreToastToken ?? 0) &+ 1
-        restoreToastToken = token
-        restoreDismissTask?.cancel()
-        restoreDismissTask = Task { [token] in
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled, restoreToastToken == token else { return }
-            restoreToastToken = nil
-        }
-    }
-
-    func dismissRestoreToast() {
-        restoreDismissTask?.cancel()
-        restoreToastToken = nil
     }
 
     /// Move `fromID` to land AT `toEntryID`'s row and persist the new order — matching the queue's
