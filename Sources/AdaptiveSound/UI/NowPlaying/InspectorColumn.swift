@@ -23,9 +23,9 @@ struct InspectorColumn: View {
                 MasterGainSliderView()
                 ReimagineSectionView()
                 signalDetail
-                sectionDivider
+                Hairline()
                 LoudnessMetersView()
-                sectionDivider
+                Hairline()
                 HeadphonesSectionView()
             }
             .padding([.horizontal, .top], 14)
@@ -52,13 +52,6 @@ struct InspectorColumn: View {
         .background { InspectorCardGlow() }
         .frame(width: CGFloat(NowPlayingLayout.inspectorWidth))
         .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    /// Realigned section divider: a 1px hairline run between the inspector's sections.
-    private var sectionDivider: some View {
-        Rectangle()
-            .fill(Color.asHairline)
-            .frame(height: 1)
     }
 
     /// Decoder + bit-depth detail (§5: the audiophile home for what left the hero badges).
