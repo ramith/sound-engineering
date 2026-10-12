@@ -1044,3 +1044,11 @@ agents resumed by raw ID.
 - **Live re-check:** drag a Songs row ✓, a seam click ✓, ⌘↩ ✓, ⇧⌘↩ ✓, ⌘I ✓, the restore toast ✓.
   - Not live-checkable: Remove Missing. The test library sweeps a renamed file instead of marking it missing.
 - **Final strict gate on the branch @ 709f50b: EXIT 0** (192/192 × 3, 154/154 × 2, all Swift tests, 0 leaks).
+
+### Founder check (2026-10-12)
+
+The founder checked Remove Missing on the real library. Renaming the watched folder `music2026` paused it with
+every row kept: "379 songs · 271 unavailable", and no sweep. The themed dialog ("Remove 271 missing songs?",
+neutral Cancel, outlined red Remove) was checked; Cancel kept all the entries; renaming the folder back restored
+the playlist. "Things are ok." This was the one check the test library couldn't do, because it sweeps a renamed
+file instead.
