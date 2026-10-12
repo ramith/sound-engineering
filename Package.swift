@@ -234,6 +234,7 @@ let package = Package(
                 "QueueRestorePointTests.swift",
                 "ResumePointTests.swift",
                 "SeekRouteTests.swift",
+                "PlaybackOrderTests.swift",
                 "PlayThroughTrackerTests.swift",
                 "NowPlayingSnapshotTests.swift",
             ]
