@@ -189,13 +189,16 @@ public extension LibraryStore {
     }
 
     /// "New Playlist", else the lowest "New Playlist N" (N ≥ 2) not already taken (Apple-style).
+    /// Taken case-blind, like the NOCASE name index: "new playlist" takes "New Playlist" (S10.8 G,
+    /// G-LIB-03).
     static func lowestUnusedDefaultName(taken: Set<String>) -> String {
+        let taken = Set(taken.map { $0.lowercased() })
         let base = "New Playlist"
-        if !taken.contains(base) {
+        if !taken.contains(base.lowercased()) {
             return base
         }
         var n = 2
-        while taken.contains("\(base) \(n)") {
+        while taken.contains("\(base) \(n)".lowercased()) {
             n += 1
         }
         return "\(base) \(n)"
