@@ -176,7 +176,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "aa-album-cover-deterministic", run: checkAlbumCoverDeterministic),
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
-    ] + moveMatchCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
+    ] + moveMatchCheckCases() + walkOverlapCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
         + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
         + songsSortCheckCases() + decodeCoverageCheckCases() + hardeningCheckCases()
         + playlistSpineCheckCases() + playlistFolderCheckCases()
@@ -389,7 +389,8 @@ private func printRunSummary(passed: Int, total: Int) {
         + "OPEN-06 unfinished v7 refused [hot WAL byte-identical], SCHEMA-6 + OPEN-02 extended; "
         + "S10.8 D5 genre covers: GC-01 ranking [songs, tie → artwork key, perGenre cap], GC-02 membership "
         + "[album once, cover once, art-less skipped, no-cover genre absent, two genres count], GC-03 empty, "
-        + "GC-04 EXPLAIN no-SCAN-tracks, GC-05 300 genres [reference parity + 100 ms bound], GC-06 write path) ===")
+        + "GC-04 EXPLAIN no-SCAN-tracks, GC-05 300 genres [reference parity + 100 ms bound], GC-06 write path; "
+        + "S10.8 G: WO1 overlapping walks never lower a stamp [the later sweep keeps what either saw]) ===")
     print("ALL LIBRARY-STORE CHECKS PASSED — store opens/migrates + schema v\(currentSchemaVersion); "
         + "DAO CRUD/upsert/moveTrack/facets correct; WAL snapshot isolation + stress integrity ok; "
         + "idempotent + id-stable; tolerates a filesystem that diverged from the store")
