@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DeviceCapability.h" // CoreAudio-free; safe to include here
+#include "DeviceListPolicy.h" // HAL-free menu rule over DeviceListFacts
 #include <CoreAudio/CoreAudio.h>
 #include <cstdint>
 #include <string>
@@ -32,7 +33,8 @@ namespace AdaptiveSound
     class CoreAudioDevice
     {
       public:
-        // Enumerate all output devices
+        // Enumerate the output devices a user may pick: every device deviceListVerdict() lists
+        // (DeviceListPolicy.h) — no input-only, hidden or process-private devices.
         static std::vector<AudioDevice> enumerateOutputDevices();
 
         // Query properties of a specific device
@@ -82,6 +84,10 @@ namespace AdaptiveSound
         static DeviceCapability queryCapability(AudioDeviceID deviceID);
 
       private:
+        // Read the properties the device-list rule decides on (the HAL half of
+        // deviceListVerdict). Off the audio thread; releases every CF object it copies.
+        static DeviceListFacts readDeviceListFacts(AudioDeviceID deviceID);
+
         // Helper: Convert device ID to name
         static std::string deviceNameFromID(AudioDeviceID deviceID);
 

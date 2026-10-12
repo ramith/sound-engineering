@@ -79,56 +79,30 @@ namespace AdaptiveSound
             return devices;
         }
 
-        // Filter for output-capable devices
+        // Keep the devices a user may pick; the rule itself is deviceListVerdict (DeviceListPolicy).
         for (AudioDeviceID deviceID : deviceIDs)
         {
-            // DIAGNOSTIC: name every raw device in the CoreAudio set and log whether it passes the
-            // output-stream filter. Debugging "connected BT headphone doesn't appear in the picker" —
-            // this distinguishes the device being ABSENT from CoreAudio's device set entirely vs.
-            // PRESENT but excluded (its output stream isn't negotiated/ready yet, e.g. a BT device
-            // mid-A2DP-handshake reports zero output streams).
-            const std::string candidateName = getDeviceName(deviceID);
-
-            // Check if device has output channels
-            AudioObjectPropertyAddress outputChannelsAddr{
-                kAudioDevicePropertyStreamConfiguration,
-                kAudioObjectPropertyScopeOutput,
-                kAudioObjectPropertyElementMain,
-            };
-
-            UInt32 bufferListSize = 0;
-
-            status = AudioObjectGetPropertyDataSize(
-                deviceID, &outputChannelsAddr, 0, nullptr, &bufferListSize);
-
-            bool included = false;
-            UInt32 outputStreams = 0;
-            if (status == noErr && bufferListSize > 0)
+            const DeviceListFacts facts = readDeviceListFacts(deviceID);
+            const DeviceListVerdict verdict = deviceListVerdict(facts);
+            if (verdict == DeviceListVerdict::Listed)
             {
-                // RAII-owned storage for the AudioBufferList (control-plane; size from API).
-                std::vector<std::byte> bufferStorage(bufferListSize);
-                auto* bufferList = reinterpret_cast<AudioBufferList*>(bufferStorage.data());
-                status = AudioObjectGetPropertyData(
-                    deviceID, &outputChannelsAddr, 0, nullptr, &bufferListSize, bufferList);
-
-                if (status == noErr)
-                {
-                    outputStreams = bufferList->mNumberBuffers;
-                    if (outputStreams > 0)
-                    {
-                        AudioDevice device = queryDevice(deviceID);
-                        devices.push_back(device);
-                        included = true;
-                    }
-                }
+                devices.push_back(queryDevice(deviceID));
             }
 
+            // DIAGNOSTIC: every raw device in the CoreAudio set, the facts the menu rule read and
+            // its verdict. Tells a device ABSENT from CoreAudio's set apart from one PRESENT but
+            // excluded, and why — e.g. a BT device mid-A2DP-handshake reports zero output streams;
+            // this app's own CADefaultDeviceAggregate is a private aggregate.
             AdaptiveSound::log::line(
-                "[CoreAudioDevice] candidate id={} '{}' outputStreams={} -> {}",
+                "[CoreAudioDevice] candidate id={} '{}' uid='{}' outputStreams={} hidden={} "
+                "aggregate={} -> {}",
                 static_cast<unsigned int>(deviceID),
-                candidateName.c_str(),
-                static_cast<unsigned int>(outputStreams),
-                included ? "included" : "EXCLUDED (no output stream)");
+                facts.name,
+                facts.uid,
+                facts.outputStreamCount,
+                facts.isHidden,
+                aggregatePrivacyString(facts.aggregatePrivacy),
+                deviceListVerdictString(verdict));
         }
 
         AdaptiveSound::log::line("[CoreAudioDevice] Enumerated {} output devices", devices.size());
@@ -145,6 +119,78 @@ namespace AdaptiveSound
         device.transportType = getDeviceTransportType(deviceID);
         device.type = classifyDeviceType(device.transportType, device.name);
         return device;
+    }
+
+    // MARK: - Device-list facts (the HAL reads behind deviceListVerdict)
+
+    // Buffers in the device's OUTPUT stream configuration: 0 for an input-only device, or for an
+    // output that isn't ready yet (a BT device mid-A2DP-handshake reports none).
+    static uint32_t outputStreamCount(AudioDeviceID deviceID)
+    {
+        const AudioObjectPropertyAddress configAddr{
+            kAudioDevicePropertyStreamConfiguration,
+            kAudioObjectPropertyScopeOutput,
+            kAudioObjectPropertyElementMain,
+        };
+
+        UInt32 dataSize = 0;
+        OSStatus status =
+            AudioObjectGetPropertyDataSize(deviceID, &configAddr, 0, nullptr, &dataSize);
+        if (status != noErr || dataSize < sizeof(AudioBufferList::mNumberBuffers))
+        {
+            return 0;
+        }
+
+        // RAII-owned storage for the AudioBufferList (control-plane; size from API).
+        std::vector<std::byte> storage(dataSize);
+        auto* bufferList = reinterpret_cast<AudioBufferList*>(storage.data());
+        status =
+            AudioObjectGetPropertyData(deviceID, &configAddr, 0, nullptr, &dataSize, bufferList);
+        return status == noErr ? bufferList->mNumberBuffers : 0U;
+    }
+
+    // An aggregate's privacy, from its composition dictionary. Plain devices have no composition.
+    static AggregatePrivacy readAggregatePrivacy(AudioDeviceID deviceID)
+    {
+        const AudioObjectPropertyAddress compositionAddr{
+            kAudioAggregateDevicePropertyComposition,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain,
+        };
+        if (AudioObjectHasProperty(deviceID, &compositionAddr) == 0)
+        {
+            return AggregatePrivacy::NotAggregate;
+        }
+
+        CFDictionaryRef composition = nullptr;
+        UInt32 dataSize = sizeof(CFDictionaryRef);
+        const OSStatus status = AudioObjectGetPropertyData(
+            deviceID, &compositionAddr, 0, nullptr, &dataSize, static_cast<void*>(&composition));
+        if (status != noErr || composition == nullptr)
+        {
+            return AggregatePrivacy::Unknown;
+        }
+
+        const AggregatePrivacy privacy = aggregatePrivacyFromComposition(composition);
+        // "The caller is responsible for releasing the returned CFObject" (AudioHardware.h).
+        CFRelease(composition);
+        return privacy;
+    }
+
+    DeviceListFacts CoreAudioDevice::readDeviceListFacts(AudioDeviceID deviceID)
+    {
+        DeviceListFacts facts;
+        facts.outputStreamCount = outputStreamCount(deviceID);
+        facts.isHidden = getUInt32Property(deviceID,
+                                           {
+                                               kAudioDevicePropertyIsHidden,
+                                               kAudioObjectPropertyScopeGlobal,
+                                               kAudioObjectPropertyElementMain,
+                                           }) != 0;
+        facts.aggregatePrivacy = readAggregatePrivacy(deviceID);
+        facts.uid = getDeviceUID(deviceID);
+        facts.name = getDeviceName(deviceID);
+        return facts;
     }
 
     AudioDeviceID CoreAudioDevice::getDefaultOutputDevice()
