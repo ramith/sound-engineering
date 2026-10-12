@@ -1072,3 +1072,26 @@ PR #74 merged as f6f73b2. Carried forward to Sprint F: the music-folder confirma
    committed work resumed cleanly.
 5. **A flaky sanitizer timing tripwire** (Sprint EQ's 768 kHz CPU test) surfaced in another sprint's gate. Fixed at
    its root (scale per rate), not retried.
+
+## Sprint F — glow and Settings (F1, F2; F3/F4 superseded by Sprint EQ)
+
+### Plan check and split (2026-10-12, coordinator)
+
+What the code holds today:
+- The glow is mounted per screen: Library, plus EQ's own copy (`GlowField(glows: GlowFieldSpec.libraryGlows)`).
+- `Screen.swift:37`, `MonitoringTabView.swift:36` and `AppShell.swift:51` paint opaque `window` backgrounds.
+- Settings (`SettingsTabView` + `PureModeSettingsSection`) is a plain form: a native output Picker, and the "Keep
+  playback on this device" switch in **system blue** (an R1 blocker, recorded in Sprint B).
+- Monitoring's BEFORE / AFTER are teal / **blue** (an R1 blocker); decision 4 says neutral grey / the analyzer's
+  teal→lime.
+- `MusicFoldersSection.swift:48` is the last native `.alert` confirmation (carried from Sprint E).
+
+**Two agents in parallel worktrees, split by file:**
+
+| Piece | Scope | Owns |
+|---|---|---|
+| **F1 glow + Monitoring colours** | One glow behind every tab except Now Playing, mounted once (the "library" glow renamed app-wide); EQ's own mount and the opaque `Screen` / Monitoring backgrounds removed; the glow audit renamed for all tabs; Monitoring BEFORE / AFTER bars, legend and tags on decision 4's colours (layout untouched; G1 restyles it) | `AppShell`, `Screen`, `MonitoringTabView` + Monitoring colour sites, `EQTabView` / `LibraryTabView` glow mounts, the glow spec, the audits |
+| **F2 Settings + folder dialog** | Settings as readable-width glass cards with scroll clipping off; the chrome's device pill reused, its current device reading "checked" to VoiceOver; both switches on the accent tokens; the Pure Mode status lines kept; SLOT fit for the status column; the remove-folder confirmation in `AppDialog` | `SettingsTabView`, `PureModeSettingsSection`, the device-pill extraction (`ChromeBar` read / extract), `MusicFoldersSection` |
+
+**Routine** (decision 18): sheets for the changed screens, my live pass, a code review, one fix round. No break-it: this
+is not keyboard or data work. swiftformat runs on main after each merge.
