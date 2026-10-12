@@ -156,7 +156,7 @@ extension AudioViewModel {
         pendingNextIndex = nil
         // An explicit stop is not a pause: drop any position-preserving resume point so the next
         // Play starts from the top (D2).
-        pausedResumePosition = nil
+        resumePoint = nil
         // Fire-and-forget for the normal (non-shutdown) stop path — behaviour unchanged.
         // The actual stop sequence lives in `performStop()` so `shutdown()` can `await` it.
         Task { await performStop() }

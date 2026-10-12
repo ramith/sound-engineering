@@ -232,6 +232,7 @@ let package = Package(
                 "QueueOpsTests.swift",
                 "QueueInsertTests.swift",
                 "QueueRestorePointTests.swift",
+                "ResumePointTests.swift",
                 "PlayThroughTrackerTests.swift",
                 "NowPlayingSnapshotTests.swift",
             ]

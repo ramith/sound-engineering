@@ -12,7 +12,7 @@ extension AudioViewModel {
         // pointing at the SAME track the engine already armed (`engine.setNextTrack`). Doing
         // neither desynced audio ⟂ the ▶/History ⟂ play-count at the gapless seam (QA: reorder a
         // playing queue → wrong next track). Dups-safe (QueueItem.id, not URL/index).
-        let selID = selectedTrackIndex.flatMap { $0 < queue.count ? queue[$0].id : nil }
+        let selID = selectedSlotID
         let pendingID = pendingNextIndex.flatMap { $0 < queue.count ? queue[$0].id : nil }
         queue.move(fromOffsets: source, toOffset: destination)
         selectedTrackIndex = selID.flatMap { id in queue.firstIndex { $0.id == id } }
@@ -78,6 +78,11 @@ extension AudioViewModel {
         }
 
         if selectedTrackIndex == index {
+            // The paused (or stopped) current song left the queue (S10.8 G): its place and length go
+            // with it, so the song that slides into its row starts from the top and the footer shows
+            // no stale length. The re-selection below drops its resume point (another slot).
+            playbackPosition = 0
+            duration = 0
             selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
         } else if let cur = selectedTrackIndex, cur > index {
             selectedTrackIndex = cur - 1

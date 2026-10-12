@@ -1,4 +1,5 @@
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel transport (track selection / skip / press-play)
 
@@ -8,14 +9,14 @@ extension AudioViewModel {
     /// position-preserving Pause resume point (D2) — the new track starts from 0.
     func playTrack(at index: Int) {
         guard index < playlist.count else { return }
-        pausedResumePosition = nil
+        resumePoint = nil
         selectedTrackIndex = index
         startPlayback()
     }
 
     /// Press-Play entry point. Three cases:
     /// - Resuming from a position-preserving Pause (`pausedResumePosition` set): restart the current
-    ///   track and seek back to the paused offset (D2).
+    ///   track and seek back to the paused offset (D2) — or to where a scrub while paused moved it.
     /// - Nothing selected yet (e.g. right after loading a folder): pick the starting track — first,
     ///   or random when shuffle is on — then play from the top.
     /// - A track is already selected: (re)start it from the top.
@@ -23,8 +24,9 @@ extension AudioViewModel {
     /// the first Play press.)
     func play() {
         // Resume from a Pause: consume + clear the saved offset and seek back to it after start.
-        if let resumeAt = pausedResumePosition {
-            pausedResumePosition = nil
+        let resumeAt = pausedResumePosition
+        resumePoint = nil
+        if let resumeAt {
             startPlayback(resumeFrom: resumeAt)
             return
         }
@@ -42,7 +44,7 @@ extension AudioViewModel {
     /// a larger true-suspend engine change.
     func pause() {
         guard isPlaying else { return }
-        pausedResumePosition = playbackPosition
+        resumePoint = selectedSlotID.map { ResumePoint(slot: $0, seconds: playbackPosition) }
         logUX("pause at \(secs(playbackPosition))s")
         // Clear the on-deck slot so `tickSpectrum` won't auto-advance after we stop the engine.
         pendingNextIndex = nil
@@ -72,7 +74,7 @@ extension AudioViewModel {
         guard let current = selectedTrackIndex else { return }
         guard let next = computeNextIndex(current: current, playlistCount: playlist.count,
                                           manualSkip: true) else { return }
-        pausedResumePosition = nil // explicit track change: don't resume the old paused offset
+        resumePoint = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = next
         if isPlaying {
             startPlayback()
@@ -86,7 +88,7 @@ extension AudioViewModel {
         guard let current = selectedTrackIndex else { return }
         guard let previous = computePreviousIndex(current: current,
                                                   playlistCount: playlist.count) else { return }
-        pausedResumePosition = nil // explicit track change: don't resume the old paused offset
+        resumePoint = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = previous
         if isPlaying {
             startPlayback()
