@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// v1 layout: one full-width row per channel (N-channel aware — 1 row mono,
 /// 2 rows stereo, up to 8 rows for 7.1). Each row shows the per-channel BEFORE
-/// (pre-DSP, teal) vs AFTER (post-DSP, blue) spectrum side by side.
+/// (pre-DSP, neutral grey) vs AFTER (post-DSP, the analyzer's teal → lime) spectrum
+/// side by side (S10.8 F1, decision 4).
 ///
 /// **Tab-visibility-gated polling**: an async Task starts when this view appears
 /// and is cancelled when it disappears; `MonitoringViewModel` does the actual
@@ -33,7 +34,7 @@ struct MonitoringTabView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignSystem.Color.window)
+        // No background: the app glow shows through (`TabContentView`, S10.8 F1).
         .task {
             // Create once — .task is cancelled/re-run if the view leaves and re-enters
             // the hierarchy (tab switch), so this also handles stopping + restarting.
@@ -129,19 +130,19 @@ private struct MonitoringHeaderView: View {
 
 // MARK: - Legend View
 
-/// Small colour legend: BEFORE (teal) / AFTER (blue).
+/// Small colour legend: BEFORE (neutral grey) / AFTER (the analyzer's teal → lime).
 private struct LegendView: View {
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.medium) {
-            legendItem(color: DesignSystem.Color.accent, label: "Before")
-            legendItem(color: DesignSystem.Color.blue, label: "After")
+            legendItem(swatch: MonitorColors.beforeFill, label: "Before")
+            legendItem(swatch: MonitorColors.afterSwatch, label: "After")
         }
     }
 
-    private func legendItem(color: Color, label: String) -> some View {
+    private func legendItem(swatch: some ShapeStyle, label: String) -> some View {
         HStack(spacing: DesignSystem.Spacing.xSmall) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(color)
+                .fill(swatch)
                 .frame(width: 12, height: 4)
 
             Text(label)

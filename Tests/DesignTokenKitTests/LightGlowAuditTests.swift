@@ -1,7 +1,7 @@
 // R4 over the LIGHT glow field (S10.8 B2b — the pale glow, the founder's pick). The base glow
 // audits are dark; the field paints in light too, so its light composite is audited here
-// through the SAME `compositeBackdrop` fold the render reads: Now
-// Playing's three glows and the Library's single pool, both geometries, every grid point — the
+// through the SAME `compositeBackdrop` fold the render reads: Now Playing's three glows and the
+// app glow's single pool (every other tab, S10.8 F1), both geometries, every grid point — the
 // brand pastels, and a lattice of art-sampled pastels (the D8 light lift) in every slot.
 
 import DesignTokenKit
@@ -19,7 +19,7 @@ struct LightGlowAuditTests {
 
     private static let glowSets = [
         GlowSet(name: "Now Playing", glows: GlowFieldSpec.glows, artSampled: true),
-        GlowSet(name: "Library", glows: GlowFieldSpec.libraryGlows, artSampled: false),
+        GlowSet(name: "App (Library, EQ, Monitoring, Settings)", glows: GlowFieldSpec.appGlows, artSampled: false),
     ]
 
     /// Sampled light palettes: one cover hue in every slot at a time, around the hue circle

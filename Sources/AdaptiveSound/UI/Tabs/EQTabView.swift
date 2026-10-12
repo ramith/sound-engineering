@@ -4,9 +4,9 @@ import SwiftUI
 // MARK: - EQ Tab View (Sprint EQ, EQ3 — the V1b screen, decision 24)
 
 /// The EQ tab: the rail (Equalizer card, then EQ3t's Tone card) beside the graph card, on the Library's
-/// Twin Panels insets over the same glow (mounted here, as Library does, until F1 mounts one for every
-/// tab). Per-output memory isn't here: the composition root's Edge 5 switches the slot with any tab
-/// (or no window) showing, and the shell's `EQOutputToast` says so.
+/// Twin Panels insets over the app glow the shell mounts behind every tab but Now Playing
+/// (`TabContentView`, S10.8 F1). Per-output memory isn't here: the composition root's Edge 5 switches the
+/// slot with any tab (or no window) showing, and the shell's `EQOutputToast` says so.
 ///
 /// The screen lets go of a held Compare on Esc (anywhere in the app: `releasesCompareOnEscape`), on the
 /// window losing key or the app going to the background, and on a tab change (this view goes away); the
@@ -29,7 +29,6 @@ struct EQTabView: View {
         .padding(.top, CGFloat(EQScreenLayout.insetTop))
         .padding(.bottom, CGFloat(EQScreenLayout.insetBottom))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background { GlowField(glows: GlowFieldSpec.libraryGlows) }
         .sheet(item: $presetSheet) { sheet in
             SaveCustomPresetView(sheet: sheet, eqViewModel: eq)
         }

@@ -48,6 +48,9 @@ struct AppShell<Header: View, Content: View, Footer: View>: View {
                 // specular top edge replaces the old top `Hairline` + `panel` fill.
                 .chromeBand(lightFrom: .bottom)
         }
+        // The window base under everything, painted where nothing else does — mid-crossfade between
+        // two tabs, both backdrops (Now Playing's field, the app glow) are part-transparent, and the
+        // window must never show the desktop through (S10.8 F1). Each band and tab paints over it.
         .background(DesignSystem.Color.window)
         .frame(
             minWidth: DesignSystem.ShellMetrics.windowMinWidth,

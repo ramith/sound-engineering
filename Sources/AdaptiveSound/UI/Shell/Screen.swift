@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The only sanctioned way to occupy the shell's content region.
 ///
-/// Always fills the region, top-aligns (never centers), and paints the window background.
+/// Always fills the region and top-aligns (never centers). It paints NO background: the app glow the
+/// shell mounts behind every tab but Now Playing shows through (`TabContentView`, S10.8 F1).
 /// `.stack` wraps content in a `ScrollView` so short windows scroll instead of clipping;
 /// `.fill` hands the child the whole region edge-to-edge. `readableWidth` caps form-like
 /// screens at `LayoutMetrics.readableMaxWidth`; `edgeToEdge` drops the standard insets.
@@ -34,6 +35,5 @@ struct Screen<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(DesignSystem.Color.window)
     }
 }
