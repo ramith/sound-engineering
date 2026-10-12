@@ -30,6 +30,8 @@ func playlistSpineCheckCases() -> [CheckCase] {
         CheckCase(label: "pl-loose-add", run: checkPlaylistLooseAdd),
         CheckCase(label: "pl-gate1-referenced-kept", run: checkPlaylistGate1ReferencedKept),
         CheckCase(label: "pl-gate1-unreferenced-swept", run: checkPlaylistGate1UnreferencedSwept),
+        CheckCase(label: "pl-gate1-queue-not-kept", run: checkPlaylistGate1QueueNotKept),
+        CheckCase(label: "pl-replace-skips-gone", run: checkPlaylistReplaceSkipsGone),
         CheckCase(label: "pl-file-gone-drop", run: checkPlaylistFileGoneDrop),
         CheckCase(label: "pl-persist-reopen", run: checkPlaylistPersistAcrossReopen),
     ]
