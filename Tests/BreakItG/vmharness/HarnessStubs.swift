@@ -38,7 +38,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     func currentPlaybackPosition() -> Double? { position }
     func currentSignalPath() -> SignalPathInfo { SignalPathInfo() }
     func currentLoudness() -> LoudnessSnapshot { .unmeasured }
-    func setParameter(_: UInt32, value _: Float) async throws {}
+    var parameters: [UInt32: Float] = [:]
+    func setParameter(_ id: UInt32, value: Float) async throws { parameters[id] = value }
     func publishEQ(points _: [Float], isOn _: Bool) {}
     func eqSampleRate() -> Double { 48000 }
     func enumerateOutputDevices() async throws -> [AudioDeviceModel] { [] }
