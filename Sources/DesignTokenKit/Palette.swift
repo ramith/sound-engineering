@@ -61,8 +61,6 @@ public enum Palette {
     public static let onAccent = AppearancePair(both: RGBAColor(
         red: 12.0 / 255.0, green: 20.0 / 255.0, blue: 19.0 / 255.0
     ))
-    /// Alternate accent (swap-in blue).
-    public static let blue = AppearancePair(both: RGBAColor(red: 0.039, green: 0.518, blue: 1.0)) // #0A84FF
 
     /// Teal TEXT/glyph on dark surfaces and tinted chips (S10.8 PR C — the Realigned
     /// Target's `asTealText` #6FE0D0). Light per the split-text-vs-fill pattern
@@ -291,7 +289,7 @@ public enum Palette {
         ("window", window), ("card", card), ("panel", panel), ("hairline", hairline),
         ("label", label), ("labelSecondary", labelSecondary), ("labelTertiary", labelTertiary),
         ("labelDisabled", labelDisabled), ("labelNav", labelNav),
-        ("accent", accent), ("accentDeep", accentDeep), ("onAccent", onAccent), ("blue", blue),
+        ("accent", accent), ("accentDeep", accentDeep), ("onAccent", onAccent),
         ("statusWarning", statusWarning), ("statusError", statusError),
         ("statusWarningText", statusWarningText), ("statusErrorText", statusErrorText),
         ("rowNowPlaying", rowNowPlaying), ("rowSelected", rowSelected),
