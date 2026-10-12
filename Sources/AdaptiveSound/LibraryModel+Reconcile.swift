@@ -10,12 +10,19 @@ struct WatchedRoot: Equatable {
     let folderID: Int64
     let url: URL
     let normalizedPath: String
+
+    /// The root for a registered `folder` (its stored, normalized path).
+    init(_ folder: LibraryFolder) {
+        folderID = folder.id
+        url = URL(fileURLWithPath: folder.path)
+        normalizedPath = PathNormalizer.normalizedString(forPath: folder.path)
+    }
 }
 
 /// Per-root live reconcile state (coarse — for the S9 browse UI's reassurance affordance).
 enum ReconcileState: Equatable {
     case watching // local volume, live-watched via FSEvents
-    case onDemandOnly // network volume — no FSEvents; reconciles on-demand / at launch
+    case onDemandOnly // network volume — no FSEvents; reconciles at launch + on a volume change
     case paused // volume/folder currently unreachable
     case catchingUp // a reconcile is running
 }
@@ -25,7 +32,8 @@ enum ReconcileState: Equatable {
 //
 // Replaces the old non-recursive DispatchSource monitor: ONE recursive FSEvents `LibraryWatcher`
 // drives the persistent-store reconcile. On a filesystem change under a watched store root we
-// debounce (~1 s), then re-scan that root into the store (reusing the already-verified
+// debounce (~1 s), then ask the walk schedule for a reconcile of that root (`LibraryModel+Walks`:
+// one walk per folder at a time), which re-scans it into the store (reusing the already-verified
 // LibraryScanner.scan → move-match → metadata pass, which ends with the album regroup + facet
 // sweep). The queue is NOT folder-bound (S9 IA change), so a disk change never rewrites it. The
 // watcher's `@Sendable` sink hops to @MainActor FIRST (the SIGTRAP lesson) before touching any state.
@@ -49,13 +57,9 @@ extension LibraryModel {
         if let store {
             roots = (try? await store.roots()) ?? []
         }
-        let all = roots.map {
-            WatchedRoot(folderID: $0.id, url: URL(fileURLWithPath: $0.path),
-                        normalizedPath: PathNormalizer.normalizedString(forPath: $0.path))
-        }
+        let all = roots.map(WatchedRoot.init)
         watchedRoots = all
         var localURLs: [URL] = []
-        var network: [WatchedRoot] = []
         for root in all {
             if isLocalVolume(root.url) {
                 localURLs.append(root.url)
@@ -63,13 +67,11 @@ extension LibraryModel {
                     reconcileState[root.folderID] = .watching
                 }
             } else {
-                network.append(root)
                 reconcileState[root.folderID] = .onDemandOnly
                 logUX("watch: '\(root.url.lastPathComponent)' is on a network volume — FSEvents "
-                    + "unavailable; reconciles on-demand + at launch only")
+                    + "unavailable; reconciles at launch + on a volume change only")
             }
         }
-        networkRoots = network
         // Watch the store roots only. The queue is no longer folder-bound (S9 IA change), so
         // there is no visible-folder leg to add for a playlist refresh.
         libraryWatcher?.setRoots(localURLs)
@@ -92,9 +94,7 @@ extension LibraryModel {
             }
         }
         for folderID in affected {
-            if let root = watchedRoots.first(where: { $0.folderID == folderID }) {
-                scheduleReconcile(folderID: folderID, root: root.url)
-            }
+            scheduleReconcile(folderID: folderID)
         }
     }
 
@@ -103,42 +103,27 @@ extension LibraryModel {
         path == rootPath || PathNormalizer.isComponentBoundaryDescendant(path, of: rootPath)
     }
 
-    /// Debounce (~1 s after the last event) → reconcile that root. Coalesces a burst.
-    func scheduleReconcile(folderID: Int64, root: URL) {
+    /// Debounce (~1 s after the last event) → ask for a reconcile of that root. Coalesces a burst;
+    /// a reconcile asked for while the folder walks runs once after it (`walkSchedule`), so a late
+    /// change is not lost and two walks of one folder never overlap.
+    func scheduleReconcile(folderID: Int64) {
         reconcileDebounce[folderID]?.cancel()
         reconcileDebounce[folderID] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(1000))
             guard !Task.isCancelled, let self else { return }
             // Debounce fired — drop our own now-completed handle so the map doesn't accumulate
             // finished Tasks (S3 LOW-b). We are the current entry (not cancelled), and this runs
-            // synchronously on the MainActor before runReconcile, so it can't wipe a newer schedule;
-            // a re-run schedules a fresh handle via runReconcile's pendingReconcile path.
+            // synchronously on the MainActor, so it can't wipe a newer schedule.
             self.reconcileDebounce[folderID] = nil
-            await self.runReconcile(folderID: folderID, root: root)
-        }
-    }
-
-    /// Gate on `reconcilingRoots` so same-root reconciles never overlap; a burst arriving mid-
-    /// reconcile coalesces into ONE re-run afterward (the late change is not lost).
-    private func runReconcile(folderID: Int64, root: URL) async {
-        guard let store else { return }
-        if reconcilingRoots.contains(folderID) {
-            pendingReconcile.insert(folderID); return
-        }
-        reconcilingRoots.insert(folderID)
-        isReconciling = true
-        await performReconcile(folderID: folderID, root: root, store: store)
-        reconcilingRoots.remove(folderID)
-        isReconciling = !reconcilingRoots.isEmpty
-        if pendingReconcile.remove(folderID) != nil {
-            scheduleReconcile(folderID: folderID, root: root)
+            self.requestWalk(.reconcile, of: folderID)
         }
     }
 
     /// Reconcile one already-registered root into the store (NO validate/addRoot preamble): the
-    /// same scan → move-match → metadata pass (album regroup + facet sweep) the on-demand path
-    /// runs. Catches the empty-walk guard + cancellation silently (background non-events).
-    private func performReconcile(folderID: Int64, root: URL, store: LibraryStore) async {
+    /// same scan → move-match → metadata pass (album regroup + facet sweep) an add runs, with this
+    /// root's own metadata pass. Runs as the root's walk (`LibraryModel+Walks`). Catches the
+    /// empty-walk guard + cancellation silently (background non-events).
+    func performReconcile(folderID: Int64, root: URL, store: LibraryStore) async {
         // Proactive reachability precheck (slice 5b): an unmounted volume / deleted folder → skip
         // the walk entirely (paused). The empty-walk backstop (slice 3) remains the actual safety.
         guard RootReachabilityProbe.isReachable(root) else {

@@ -5,7 +5,7 @@ import LibraryStore
 // MARK: - LibraryModel metadata-pass seam (S8.3 — was AudioViewModel+LibraryMetadata)
 
 //
-// The enrichment half, chained after `performScan` (design §6): once the structural scan
+// The enrichment half, chained after a folder walk (design §6): once the structural scan
 // has upserted rows, this fills tags + cover art for the ones that still need it (and, at
 // launch, `resumePendingMetadata` runs it alone for songs left pending — S10.8 C2). Mirrors
 // the scan seam — `runMetadataPass` is `@MainActor` (extension inheritance) and only
@@ -13,7 +13,8 @@ import LibraryStore
 // the main actor inside `MetadataScanner`'s bounded task group, and store WRITES serialize
 // on the actor. Only `Sendable` types cross. The pass ENDS with the album regroup + orphan
 // facet and artwork sweeps, so `libraryRevision` bumps after the library is consistent.
-// Cancellation (a re-trigger/teardown cancelling `scanTask`) makes the pass throw and SKIP them.
+// Cancellation (a newer full pass superseding `scanTask`, removing the folder, quitting) makes the
+// pass throw and SKIP them.
 
 extension LibraryModel {
     /// Run the metadata pass over the store's pending-metadata tracks — all of them, or one

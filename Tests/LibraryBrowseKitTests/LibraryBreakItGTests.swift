@@ -40,13 +40,14 @@ struct LibraryBreakItGTests {
 
     // MARK: Two walks of one folder at once (G-LIB-01)
 
-    /// Two walks of ONE music folder overlap whenever an add-scan (LibraryModel.performScan: adding a
-    /// folder, or re-adding one, the only manual rescan) runs while a live reconcile of the same folder
-    /// (runReconcile: an FSEvents change in it, or ANY volume mount or unmount, handleVolumeChange)
-    /// walks it. runReconcile gates only on other reconciles, never on scanTask. The later walk takes
-    /// the higher generation (max(last_seen_scan) + 1); where it passes a song before the earlier walk
-    /// does, the earlier walk then LOWERS that song to its own generation (stampLastSeen writes
-    /// unconditionally), and the later walk, ending, sweeps (last_seen_scan < its generation) a song
+    /// Two walks of ONE music folder overlapped (before S10.8 G) whenever an add-scan (adding a folder,
+    /// or re-adding one, the only manual rescan) ran while a live reconcile of the same folder (an
+    /// FSEvents change in it, or ANY volume mount or unmount) walked it: the reconcile gated only on
+    /// other reconciles. LibraryModel now runs one walk per folder (`FolderWalkSchedule`); this pins
+    /// the store's own guarantee, whatever the caller does. The later walk takes the higher generation
+    /// (max(last_seen_scan) + 1); where it passed a song before the earlier walk did, the earlier walk
+    /// then LOWERED that song to its own generation (stampLastSeen wrote unconditionally; it now never
+    /// lowers a stamp), and the later walk, ending, swept (last_seen_scan < its generation) a song
     /// that is on disk and that both walks saw: its play count, loved flag and, through ON DELETE
     /// CASCADE, every playlist entry of it.
     @Test("G-LIB-01: a song both overlapping walks saw survives the later walk sweep")
