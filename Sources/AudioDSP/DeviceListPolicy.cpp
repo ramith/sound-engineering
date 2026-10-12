@@ -18,10 +18,11 @@ namespace AdaptiveSound
     {
         // LAST RESORT, kept on purpose. CoreAudio names the aggregate it builds around the default
         // devices for one process `CADefaultDeviceAggregate-<pid>-<n>`. Apple documents neither
-        // the device nor its name, and only the owning process can see it, so its flags cannot be
-        // checked from outside the app; the private-aggregate rule above is meant to catch it, and
-        // this prefix catches it if that rule ever does not. The same prefix is what eqMac filters
-        // its output list on (Outputs.isDeviceAllowed) and what EQOutputKey.isPinnable keys off.
+        // the device nor its name, and a private aggregate is visible only to the process that
+        // made it (AudioHardware.h), so its flags cannot be checked from outside the app. The
+        // private-aggregate rule in deviceListVerdict is meant to catch it; this prefix catches it
+        // if that rule ever does not. eqMac filters its output list on the same name
+        // (Outputs.isDeviceAllowed), and EQOutputKey.isPinnable keys off the same prefix.
         constexpr std::string_view kProcessDefaultAggregatePrefix = "CADefaultDeviceAggregate-";
 
         bool isProcessDefaultAggregate(const DeviceListFacts& facts)
