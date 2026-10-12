@@ -228,11 +228,11 @@ rules:
     severity: ERROR
     message: >-
       The selection kit (ListSelection, TypeSelectBuffer, ListKeyboardCursor) and the detail pages'
-      list kit (DetailTrack, DetailTrackArrangement, DetailTrackLayout) must not depend on Songs'
-      columns, sort or row type (COL-01): the album, artist and genre pages have none of them. A
-      list hands the selection kit its rows' ids in display order and, for type-to-select, the title
-      it shows; the detail kit sees a song only through `DetailTrack` (id, album, track number).
-      Comment lines are not matched.
+      list kit (DetailTrack, DetailTrackArrangement, DetailTrackLayout, AlbumTrackOrder) must not
+      depend on Songs' columns, sort or row type (COL-01): the album, artist and genre pages have
+      none of them. A list hands the selection kit its rows' ids in display order and, for
+      type-to-select, the title it shows; the detail kit sees a song only through `DetailTrack` (id,
+      title, album, disc and track number). Comment lines are not matched.
     paths:
       include:
         - 'Sources/LibraryBrowseKit/ListSelection.swift'
@@ -241,6 +241,7 @@ rules:
         - 'Sources/LibraryBrowseKit/DetailTrack.swift'
         - 'Sources/LibraryBrowseKit/DetailTrackArrangement.swift'
         - 'Sources/LibraryBrowseKit/DetailTrackLayout.swift'
+        - 'Sources/LibraryBrowseKit/AlbumTrackOrder.swift'
     pattern-regex: '(?m)^(?!\s*//).*(\b(SongColumn\w*|SongSortMapping|SortOrder|KeyPathComparator|LibraryTrackDisplay)\b|^\s*import\s+LibraryStore\b)'
 
   # --- S10.8 C2 (docs/sprints/s10-8-glass-sweep-plan.md §E, ALB-04): ONE missing-artist string.

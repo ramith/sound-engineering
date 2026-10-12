@@ -103,7 +103,8 @@ struct DetailTrackList: View {
         return Button {
             handleClick(track)
         } label: {
-            DetailTrackRow(track: track, number: number, secondary: secondary, isNowPlaying: isNowPlaying,
+            DetailTrackRow(track: track, size: rowSize, showsNumberColumn: layout.arrangement != .flat,
+                           number: number, secondary: secondary, isNowPlaying: isNowPlaying,
                            isPlaybackActive: pass.isPlaybackActive, isSelected: isSelected,
                            isKeyboardCursor: track.id == pass.cursorID)
         }
@@ -165,18 +166,23 @@ struct DetailTrackList: View {
         showsRing ? selection.keyboardCursor(in: layout.rows.lazy.map(\.id))?.id : nil
     }
 
+    /// The rows' size: single-line rows (an album's, an artist's) at the queue and playlist rows'
+    /// 36 pt pitch; a genre's two-line rows at Songs' 48 pt. One size per page, so the pitch is fixed.
+    private var rowSize: LibraryRowSize {
+        layout.arrangement == .flat ? .regular : .compact
+    }
+
     /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
     private var rowsPerPage: Int {
-        max(Int((visibleSpan.rect.height - 2 * Self.verticalInset) / LibraryRowChrome.height) - 1, 1)
+        max(Int((visibleSpan.rect.height - 2 * Self.verticalInset) / rowSize.pitch) - 1, 1)
     }
 
     /// Scrolls the cursor row into view — as little as needed, with its album header when it is the
-    /// album's first song — by arithmetic on the fixed row and header heights (`FixedRowReveal`), never
-    /// by the lazy stack's id lookup, which builds every row up to it.
+    /// album's first song — by arithmetic on the page's fixed row pitch and header height
+    /// (`FixedRowReveal`), never by the lazy stack's id lookup, which builds every row up to it.
     private func revealCursor() {
         guard let cursor = selection.cursor, let index = layout.index(of: cursor) else { return }
-        let span = layout.span(ofRow: index, rowHeight: LibraryRowChrome.height,
-                               headerHeight: DetailSectionHeader.height)
+        let span = layout.span(ofRow: index, rowHeight: rowSize.pitch, headerHeight: DetailSectionHeader.height)
         guard let offset = FixedRowReveal.offset(revealingSpanAt: span.top, height: span.height,
                                                  inset: Self.verticalInset, visibleTop: visibleSpan.rect.minY,
                                                  visibleHeight: visibleSpan.rect.height)

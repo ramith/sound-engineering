@@ -11,7 +11,8 @@ import LibraryStore
 extension LibraryBrowseModel {
     /// A page's content, over its songs as the tile's verbs read them (`facetTracks`):
     /// - an album: its title, album artist, year and cover; its songs in disc / track order, numbered;
-    /// - an artist: its name; its songs under one header per album, numbered within each;
+    /// - an artist: its name and its tile's cover (decision 35); its songs under one header per
+    ///   album, numbered within each;
     /// - a genre: its name; one flat list (its cover mosaic is the Genres grid's, read live by the
     ///   header — decision 34).
     func detailContent(_ ref: FacetRef) async -> LibraryDetailContent {
@@ -24,7 +25,8 @@ extension LibraryBrowseModel {
                                         layout: DetailTrackLayout(tracks: tracks, arrangement: .album))
         case let .artist(id):
             let artist = await artist(id: id)
-            return LibraryDetailContent(title: artist?.name ?? "", subtitle: nil, year: nil, artworkKey: nil,
+            return LibraryDetailContent(title: artist?.name ?? "", subtitle: nil, year: nil,
+                                        artworkKey: artist?.artworkKey,
                                         layout: DetailTrackLayout(tracks: tracks, arrangement: .byAlbum))
         case let .genre(id):
             let genre = await genre(id: id)

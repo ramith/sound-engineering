@@ -32,6 +32,9 @@ public struct FacetAlbumSection<Track>: Identifiable {
 }
 
 public enum FacetAlbumGrouping {
+    /// The id of the section that holds the songs with no album ("Unknown Album").
+    public static let noAlbumID: Int64 = -1
+
     /// Group album/disc/track-ordered `tracks` into one section per album, in ONE O(n) pass: the
     /// albums in the order they first appear, each album's songs in their order. The store's reads
     /// are album-ordered, so an album's songs arrive together; one that arrived apart still joins its
@@ -42,7 +45,7 @@ public enum FacetAlbumGrouping {
     ) -> [FacetAlbumSection<Track>] {
         var sectionOfAlbum: [Int64: Int] = [:]
         return tracks.reduce(into: []) { sections, track in
-            let albumID = track.albumID ?? -1
+            let albumID = track.albumID ?? noAlbumID
             if let index = sectionOfAlbum[albumID] {
                 sections[index].tracks.append(track)
             } else {

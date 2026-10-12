@@ -13,7 +13,8 @@ struct LibraryDetailContent {
     /// "1992 · 8 songs · 38 min" — the album's year (when known), the count and the running time,
     /// as Songs' header counts its songs.
     let countLine: String
-    /// An album's cover; nil for one without (and on the other pages).
+    /// An album's cover, or an artist's tile cover (decision 35); nil without one. A genre's mosaic
+    /// is not here: the header reads it live from the Genres grid's covers.
     let artworkKey: String?
     let layout: DetailTrackLayout<LibraryTrackDisplay>
 
