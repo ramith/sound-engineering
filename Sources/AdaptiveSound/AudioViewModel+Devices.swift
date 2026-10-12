@@ -1,5 +1,6 @@
 import EQEditKit
 import Foundation
+import OutputDeviceKit
 
 // MARK: - AudioViewModel device management
 
@@ -14,6 +15,7 @@ extension AudioViewModel {
         onOutputIdentityChanged?(key)
     }
 
+    /// The pill: make `device` the output the app plays on.
     func selectDevice(_ device: AudioDeviceModel) {
         logUX("selectDevice: '\(device.name)' id=\(device.id)")
         Task {
@@ -24,18 +26,10 @@ extension AudioViewModel {
                     errorMessage = "Failed to select device: \(device.name)"
                     return
                 }
-
-                selectedDevice = device
-                sampleRate = device.sampleRate
-                bufferFrameSize = device.bufferFrameSize
                 errorMessage = nil
                 logUX("selectDevice: ok '\(device.name)' id=\(device.id) "
                     + "\(device.displayKHz) buf=\(device.bufferFrameSize)")
-                // QW-C: auto-disable crossfeed when switching to a non-headphone device.
-                if crossfeedEnabled && !deviceIsHeadphones {
-                    crossfeedEnabled = false
-                    logUX("selectDevice: crossfeed auto-disabled (non-headphone device)")
-                }
+                adoptOutput(device)
             } catch {
                 logUX("selectDevice: error '\(device.name)' — \(error.localizedDescription)")
                 errorMessage = "Device selection failed: \(error.localizedDescription)"
@@ -43,18 +37,17 @@ extension AudioViewModel {
         }
     }
 
-    /// Re-enumerate output devices after the device set changes (connect/disconnect), preserving the
-    /// current selection when it still exists. Invoked on the main actor via `onOutputDevicesChanged`.
+    /// Re-read the devices and the engine's device after the output changed: a device connected or
+    /// went away, the engine adopted the system default (follow), or it paused for a lost device.
+    /// Invoked on the main actor via `onOutputDevicesChanged`.
     func refreshDevices() {
         Task {
             guard let devices = try? await engine.enumerateOutputDevices() else { return }
             availableDevices = devices
-            // Reflect the engine's ACTUAL target after the connect-behaviour handler ran: PIN mode
-            // re-pinned the selected device; FOLLOW mode adopted the newly-connected one. If that
-            // target isn't listed, keep the current selection when still present, else fall to first.
+            // The engine's device is the truth (the output rule pinned, re-asserted or adopted it).
             let engineDeviceID = engine.currentOutputDeviceID()
             if let target = devices.first(where: { $0.id == engineDeviceID }) {
-                selectedDevice = target
+                adoptOutput(target)
             } else {
                 // Break-it MAJOR-1: the engine's target DIED (mid-play disconnect / PIN
                 // re-assert failure). Keep a listed selection (or fall to the first device)
@@ -70,15 +63,35 @@ extension AudioViewModel {
                     selectDevice(chosen)
                 }
             }
-            // QW-C: auto-disable crossfeed if the new selected device is not a headphone type.
-            if crossfeedEnabled && !deviceIsHeadphones {
-                crossfeedEnabled = false
-                logUX("refreshDevices: crossfeed auto-disabled (non-headphone device)")
-            }
             logUX("refreshDevices: \(devices.count) device(s) "
                 + "[\(devices.map(\.name).joined(separator: " | "))] "
                 + "selected='\(selectedDevice?.name ?? "none")'")
         }
+    }
+
+    /// Everything that follows the output the app plays on, in one place for the pill and the
+    /// engine's own moves (follow, a lost device): the selection (its `didSet` re-keys the per-output
+    /// EQ by UID and publishes the transport for the limiter ceiling), the rate and buffer readouts,
+    /// the crossfeed headphone check, and — when Pure is playing — playback itself: the HAL engine
+    /// is bound to its device, so it restarts on the new one at the playhead (Pure if that device
+    /// allows it, else Enhanced). Enhanced follows the system default on its own.
+    private func adoptOutput(_ device: AudioDeviceModel) {
+        let moved = selectedDevice?.id != device.id
+        selectedDevice = device
+        sampleRate = device.sampleRate
+        bufferFrameSize = device.bufferFrameSize
+        // QW-C: auto-disable crossfeed when the output is not a headphone-class device.
+        if crossfeedEnabled, !deviceIsHeadphones {
+            crossfeedEnabled = false
+            logUX("output: crossfeed auto-disabled (non-headphone device)")
+        }
+        guard moved else { return }
+        let path = engine.currentSignalPath()
+        guard OutputDevicePolicy.playbackMovesWithOutput(
+            isPlaying: isPlaying, onPure: path.path == .pure, interrupted: path.interrupted
+        ) else { return }
+        logUX("output moved while Pure plays — restarting on '\(device.name)' at \(secs(playbackPosition))s")
+        startPlayback(resumeFrom: playbackPosition)
     }
 
     func retryInitialization() {
