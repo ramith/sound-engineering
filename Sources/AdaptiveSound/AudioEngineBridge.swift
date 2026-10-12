@@ -1,5 +1,6 @@
 import Accelerate
 @preconcurrency import AVFoundation
+import EQEditKit
 import Foundation
 import os
 import TrackLoudnessKit
@@ -225,6 +226,18 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// re-derived queue would silently fail to remove and leak the listener.
     var aliveListenerQueue: DispatchQueue?
 
+    // MARK: - Master Gain (methods in AudioEngineBridge+MasterGain.swift)
+
+    /// The app's Master Gain in dB, which the player plays (`applyMasterGain`). Confined to
+    /// `engineQueue`: written by `publishMasterGain`, read where a player is built or started.
+    var masterGainDecibels: Float = MasterGainLaw.unity
+
+    /// The device Pure plays on, whose volume Master Gain shows and sets, and the listener following
+    /// that volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on
+    /// `engineQueue` (Pure start), taken on `engineQueue` / `configChangeQueue` (teardown), read on
+    /// the main thread (`setDeviceVolume`).
+    var deviceVolumeWatch: DeviceVolumeWatch?
+
     /// Invoked on the main thread when the available-output-device set changes. Set by the view
     /// model; fired by the `kAudioHardwarePropertyDevices` listener (see AudioEngineBridge+Devices).
     var onOutputDevicesChanged: (@MainActor () -> Void)?
@@ -250,7 +263,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     let configChangeQueue = DispatchQueue(label: "com.adaptivesound.config-change")
 
     /// Serial queue that owns ALL transport / graph mutation: `startAudio`, `stopAudio`, `seek`,
-    /// `setParameter`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
+    /// `publishMasterGain`, `selectDevice`, `enumerateOutputDevices`, `initialize`, and `shutdown` route
     /// their bodies here (previously each dispatched onto the CONCURRENT `DispatchQueue.global()`,
     /// so they could interleave on `avEngine` / `playerNode` / `pureEngine` / `activePath`). One
     /// serial queue makes those transitions mutually exclusive (P2-B). It may call

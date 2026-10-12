@@ -42,8 +42,6 @@
             .unmeasured
         }
 
-        func setParameter(_: UInt32, value _: Float) async throws {}
-
         func publishEQ(points _: [Float], isOn _: Bool) {}
 
         /// The graph format's rate, as the live engine reports before its AU exists.

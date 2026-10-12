@@ -140,7 +140,10 @@ extension AudioEngineBridge {
         // Publish the handle-then-path invariant: pureEngine is already set (above), so the instant
         // activePath becomes .pure the poll's withPureEngine can safely borrow it.
         setActivePath(.pure)
-        let pureInfo = makeSignalPathInfo(from: state)
+        var pureInfo = makeSignalPathInfo(from: state)
+        // Master Gain shows the device's own volume on Pure: read it (never set it — engaging Pure must
+        // not change how loud the device is) into the snapshot that turns the path Pure, and follow it.
+        pureInfo.deviceVolume = watchDeviceVolume(deviceID: deviceID)
         storeSignalPath(pureInfo)
 
         // Register a device-alive listener for the device we just hogged.
@@ -256,6 +259,7 @@ extension AudioEngineBridge {
     /// callback fires after `pureEngine` is set to nil.
     func tearDownPure() {
         unregisterDeviceAliveListener()
+        unwatchDeviceVolume()
         // Detach the session + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
         // teardown OUTSIDE the lock: `stop()` restores the device rate + releases hog, and dropping
         // the wrapper at the end of this block runs its deinit → pureModeEngineDestroy (joins the
