@@ -1162,3 +1162,34 @@ device in the device menu, the Pure Mode caption wording).
    both invisible in code review and sheets, and both predate F. They are logged for G, not fixed out of scope.
 5. **Colours stay the founder's check.** Without Screen Recording the live pass can't see colour. The founder's
    check covered the teal switches, the keyboard ring and the glow.
+
+## Sprint G — Monitoring, then close-out (G1, G2)
+
+### Plan check and split (2026-10-12, coordinator)
+
+**Delivery model (founder, 2026-10-12): parallel lanes, a branch and a draft PR per change, CI runs the full gate.**
+Builders run a fast check locally (swiftformat on the touched files, swiftlint, semgrep, periphery, build, Swift
+tests, picture sheets); every PR's `strict-ci.yml` run is the full gate, and main only takes green PRs. A lane that
+touches C++, the audio engine or the library store also runs the full local gate before its push. Planned at
+about 4–5 hours wall-clock (about 2–3 hours less than local gates on one branch).
+
+What the code holds today:
+- Monitoring (after F1): one card per channel, BEFORE / AFTER halves with both tags together top-right; decision-4
+  colours already in `MonitorPalette`.
+- Every `pillMenuStyle()` menu (device, Sort, Columns, page ⋯, playlist ⋯) is 2–3 `AXMenuButton`s to VoiceOver.
+- The device list comes from the C++ enumeration (`CoreAudioDevice.cpp`) and includes the app's own
+  `CADefaultDeviceAggregate-<pid>-0`.
+- Settings still shows developer wording (decision 37 rewrites it).
+- Instruments' `xctrace` 16.0 is available; the stress library has 5.1 and 7.1 channel-check files.
+
+| Lane | Branch | Scope | Check |
+|---|---|---|---|
+| 1 · G1 | `sprint/s10-8-g1-monitoring` | each channel on a lens; each tag over its own half; rows share the height, more channels scroll; LAY-MON-01 (1/2/6/8); R4-MON on the lens; sheet worlds | fast |
+| 2a | `sprint/s10-8-g-pill-menu-a11y` | every pill menu one VoiceOver element, fixed once in the shared style | fast |
+| 2b | `sprint/s10-8-g-hide-internal-devices` | hide hidden / private aggregate devices in the C++ enumeration (a testable predicate) | full local |
+| 3 | `sprint/s10-8-g-settings-wording` | decision 37's wording, curly typography, matching VoiceOver labels | fast |
+| 4 | `breakit/s10-8-g-library`, `breakit/s10-8-g-playback-shell` | whole-app break-it (two breakers; Monitoring is broken on G1's branch); R1 blockers become fix PRs by area, post-R1 items are logged | — |
+| 5 | (coordinator) | Instruments: Albums grid scroll on the 10k library; Monitoring with the 7.1 file, on a quiet machine, output routed to a silent device | — |
+
+At the end: the five-tab matrix in this ledger, then the founder's check on main (the quick look, the one-time
+keyboard / VoiceOver / appearance / grayscale walk, and the purple-accent test).

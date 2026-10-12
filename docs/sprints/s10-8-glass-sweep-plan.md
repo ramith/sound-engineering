@@ -136,6 +136,7 @@ sprint before it starts. R1 ships the day Sprint G passes (no soak), on the foun
     same picture as its tile in the Genres grid, so the page reads as opened from that tile.
 35. **An artist's detail page uses its tile's cover as the header** (2026-10-12), consistent with albums and genres.
 36. **Every Library page has the same Play · Shuffle · ⋯ set** (2026-10-12): the album page gains Shuffle.
+37. **Settings in plain words** (2026-10-12): technical names leave Settings ("ID 94 • … • 512 frames" → the rate; "Bit-perfect HAL output" → "Play bit-perfect"; "Active path: Enhanced (AVAudioEngine)" → "Playing through: Enhanced"; "Apple ExtAudioFile" → "Apple"; the Pure notices as plain sentences). Built in Sprint G (lane 3).
 
 ## C. Scope
 
@@ -398,7 +399,7 @@ actions listed under that sprint's "Founder checks"; say what looks wrong.
 | Genres | Genre counts total 265 of 379 songs: 114 songs unreachable from Genres. | No |
 | Playlists | Rows show no artist or album. | No |
 | Albums, Artists | Most covers missing; whether folder images are read is unchecked. | No |
-| Settings | "Output Device" is both heading and label; developer wording in details. | Fixed in F2 |
+| Settings | "Output Device" is both heading and label; developer wording in details. | Heading fixed in F2; the wording was kept in F2 and is rewritten in Sprint G (decision 37) |
 
 ## J. Review dispositions
 
