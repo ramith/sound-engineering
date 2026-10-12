@@ -403,7 +403,7 @@ namespace
     // the pipeline's worst supported format, 192 kHz — and above it, where the EQ still plays (its
     // designer goes to 768 kHz) but the pipeline's supported range ends, the same work per sample:
     // 5 % × fs / 192 kHz. The bound applies to an optimised, uninstrumented build; -O0 and the
-    // sanitizers only report.
+    // sanitizers get only a catastrophic-regression tripwire, scaled the same way.
 #if defined(__OPTIMIZE__) && !__has_feature(address_sanitizer) && !__has_feature(thread_sanitizer)
     constexpr const char* kTdCpuBuild = "optimised";
     auto tdEqCpuBudgetPercent(uint32_t fs) -> double
@@ -415,9 +415,15 @@ namespace
     }
 #else
     constexpr const char* kTdCpuBuild = "unoptimised";
-    auto tdEqCpuBudgetPercent(uint32_t /*fs*/) -> double
+    // -O0 and the sanitizers run 10–100× slower, so they get no budget, only a tripwire for a
+    // catastrophic regression. It scales per rate like the real budget (the same work per
+    // sample): a fixed 1000 % was crossed by TSan at 768 kHz under ordinary machine load.
+    auto tdEqCpuBudgetPercent(uint32_t fs) -> double
     {
-        return 1000.0; // -O0 / sanitizers: report only
+        constexpr double kTripwireAt192kPercent = 1000.0;
+        return kTripwireAt192kPercent *
+               std::max(1.0,
+                        static_cast<double>(fs) / static_cast<double>(kMaxSupportedSampleRate));
     }
 #endif
 
