@@ -203,13 +203,13 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// its selection in step with the bridge's `currentDeviceID`. `0` if none. Default impl: `0`.
     func currentOutputDeviceID() -> UInt32
 
-    /// Set the "when a new device connects" preference. `true` = keep playback on the selected device
-    /// (app-authoritative; re-pin it). `false` = follow the newly-connected device. Default: no-op.
+    /// Set "Keep playback on this device". `true` = the selected device wins over the system default
+    /// (re-asserted while Enhanced plays or starts). `false` = follow the system default. Default: no-op.
     func setPinPlaybackToSelectedDevice(_ pin: Bool)
 
-    /// Invoked on the main thread when the set of available output devices changes (a device was
-    /// added or removed, e.g. Bluetooth connect/disconnect). The view model re-enumerates in
-    /// response so the picker stays current.
+    /// Invoked on the main thread when the output changed: a device was added or removed, the
+    /// engine adopted the system default (follow), or it paused for a lost device. The view model
+    /// re-reads the devices and the engine's device (`currentOutputDeviceID`) in response.
     var onOutputDevicesChanged: (@MainActor () -> Void)? { get set }
 
     // MARK: Spectrum

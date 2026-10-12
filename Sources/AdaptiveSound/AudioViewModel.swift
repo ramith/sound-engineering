@@ -89,10 +89,10 @@ final class AudioViewModel {
         didSet { logUX("pureMode → \(pureModeEnabled)") }
     }
 
-    /// When a new output device connects mid-playback: `true` (default) keeps playback on the
-    /// currently-selected device (app-authoritative — you switch deliberately in the picker);
-    /// `false` follows the newly-connected device. Pushed to the engine, which acts on it when the
-    /// device set changes.
+    /// "Keep playback on this device". `true` (default): the selected device wins over the system
+    /// default (a device that connects, or Control Center ▸ Sound, doesn't move playback — you switch
+    /// in the picker). `false`: the app follows the system default. Pushed to the engine, whose
+    /// output rule (`OutputDevicePolicy`) acts on it; a lost device pauses either way.
     var pinPlaybackToSelectedDevice: Bool = true {
         didSet {
             engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
