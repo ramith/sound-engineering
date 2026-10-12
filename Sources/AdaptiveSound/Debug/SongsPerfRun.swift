@@ -162,14 +162,14 @@
             let start = clip.bounds.origin.y
             for _ in 0 ..< scrollFrames {
                 var origin = clip.bounds.origin
-                origin.y += document.isFlipped ? -LibraryRowChrome.height : LibraryRowChrome.height
+                origin.y += document.isFlipped ? -LibraryRowSize.regular.pitch : LibraryRowSize.regular.pitch
                 clip.scroll(to: origin)
                 scrollView.reflectScrolledClipView(clip)
                 host.layoutSubtreeIfNeeded()
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.005))
             }
             let elapsed = settle(host, probe: probe)
-            let moved = Int(abs(clip.bounds.origin.y - start) / LibraryRowChrome.height)
+            let moved = Int(abs(clip.bounds.origin.y - start) / LibraryRowSize.regular.pitch)
             print("songs-perf: scroll     \(moved) rows up by frame, \(report(elapsed, probe: probe))")
             var failures: [String] = []
             if moved < scrollFrames {

@@ -37,21 +37,25 @@
             }
         }
 
-        /// The artist page: "A. R. Rahman" (artist 1), four albums in the store's album order, each
-        /// under its header with its year — the playing song in "Roja", one song with no track number
-        /// (numbered by its place in its album), Tamil script and a long album title.
+        /// The artist page: "A. R. Rahman" (artist 1) under its tile's cover (decision 35), four albums
+        /// in the store's album order, each under its header with its year — the playing song in
+        /// "Roja", Tamil script and a long album title. The songs arrive in TITLE order, so the sheet
+        /// shows the page's own order: "Rockstar" and "Slumdog Millionaire" by track (3, 7, 9 and 2,
+        /// 14), and Bombay's song with no track number last, its number blank.
         private static func artistPage() -> LibraryDetailContent {
             let artist = "A. R. Rahman"
             let songs = albumSongs(albumID: 4, title: "Bombay", year: 1995, artist: artist, [
-                PageSong(2, "கண்ணாளனே", 3, 357), PageSong(502, "Hamma Hamma", 4, 333),
+                PageSong(502, "Hamma Hamma", 4, 333), PageSong(503, "Kehna Hi Kya", nil, 352),
+                PageSong(2, "கண்ணாளனே", 3, 357),
             ]) + albumSongs(albumID: 9, title: "Rockstar", year: 2011, artist: artist, [
                 PageSong(3, "Kun Faya Kun", 7, 473), PageSong(504, "Nadaan Parindey", 9, 380),
-                PageSong(505, "Sadda Haq", nil, 375),
+                PageSong(505, "Sadda Haq", 3, 375),
             ]) + albumSongs(albumID: 10, title: "Roja", year: 1992, artist: artist, [
                 PageSong(401, "Chinna Chinna Aasai", 1, 296), PageSong(4, playingTitle, 4, 245),
             ]) + albumSongs(albumID: 11, title: "Slumdog Millionaire (Music from the Motion Picture)", year: 2008,
                             artist: artist, [PageSong(5, "Jai Ho", 14, 319), PageSong(509, "O... Saya", 2, 214)])
-            return LibraryDetailContent(title: artist, subtitle: nil, year: nil, artworkKey: nil,
+            // The cover of its tile in the Artists grid (`artists()`: artist 1 shows album 4's).
+            return LibraryDetailContent(title: artist, subtitle: nil, year: nil, artworkKey: "album-4",
                                         layout: DetailTrackLayout(tracks: songs, arrangement: .byAlbum))
         }
 
