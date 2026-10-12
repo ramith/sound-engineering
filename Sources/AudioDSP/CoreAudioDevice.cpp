@@ -36,7 +36,7 @@ namespace AdaptiveSound
 
     // NOTE (Stage-2 review OWN-1): a C++ default-output-device listener API used to live here
     // (addDefaultDeviceListener / removeDefaultDeviceListener / a static callback trampoline). It had
-    // ZERO callers — the Swift layer (AudioEngineBridge+Devices / +PureModeDeviceMonitor) does its own
+    // ZERO callers — the Swift layer (AudioEngineBridge+OutputDeviceMonitor) does its own
     // correctly-balanced AudioObjectAdd/RemovePropertyListenerBlock — and it was defective (the block
     // was registered but never removed, its "can't remove block listeners" comment was false, and the
     // single-listener statics raced on the concurrent dispatch queue). Deleted rather than fixed.
