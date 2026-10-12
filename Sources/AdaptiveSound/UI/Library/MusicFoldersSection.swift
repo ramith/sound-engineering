@@ -4,11 +4,12 @@ import SwiftUI
 
 // MARK: - Music Folders section (S9 IA → S10.8 inline rail section)
 
-/// The Library's folder list with a per-root remove (confirmed via `.alert`). Rendered inline in
-/// the Twin Panels navigation rail (`LibrarySidebar`), under the "Music Folders" section header, as
-/// plain rows inside the rail card's OWN ScrollView (S10.8 PR-C retired the earlier footer
-/// accordion, so a nested scroll here would fight the card's scroll). Adding lives on the section
-/// header's "+" — NOT here — kept there for the one-click add UX (§6).
+/// The Library's folder list with a per-root remove (confirmed in the app's themed dialog,
+/// `MusicFolderRemoveDialog`). Rendered inline in the Twin Panels navigation rail (`LibrarySidebar`),
+/// under the "Music Folders" section header, as plain rows inside the rail card's OWN ScrollView
+/// (S10.8 PR-C retired the earlier footer accordion, so a nested scroll here would fight the card's
+/// scroll). Adding lives on the section header's "+" — NOT here — kept there for the one-click add
+/// UX (§6).
 ///
 /// `.task`/`.onChange` refresh `model.roots` and the per-row "Scanning…" hint while the rail is
 /// mounted (i.e. while the Library tab is open).
@@ -45,21 +46,21 @@ struct MusicFoldersSection: View {
         // hint) appears once its scan starts; libraryRevision covers completion.
         .onChange(of: library.scanProgress?.folderID) { _, _ in Task { await model.loadRoots() } }
         .onChange(of: library.libraryRevision) { _, _ in Task { await model.loadRoots() } }
-        .alert(
-            removeTarget.map { "Remove \"\(abbreviatedPath($0.path))\" from your library?" } ?? "",
-            isPresented: Binding(get: { removeTarget != nil }, set: {
-                if !$0 {
-                    removeTarget = nil
-                }
-            }),
-            presenting: removeTarget
-        ) { root in
-            Button("Remove", role: .destructive) { Task { await model.removeFolder(id: root.id) } }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("The audio files on disk aren't deleted. Songs from this folder leave your "
-                + "library unless they're in a playlist.")
+        // The app's themed dialog, as a sheet (the window's own modality), not the system alert.
+        .sheet(item: $removeTarget) { root in
+            MusicFolderRemoveDialog(path: abbreviatedPath(root.path), remove: { confirmRemove(root) },
+                                    cancel: cancelRemove)
         }
+    }
+
+    /// Remove: close the dialog, then let the folder go — its files stay on disk.
+    private func confirmRemove(_ root: LibraryFolder) {
+        removeTarget = nil
+        Task { await model.removeFolder(id: root.id) }
+    }
+
+    private func cancelRemove() {
+        removeTarget = nil
     }
 
     private func rootRow(_ root: LibraryFolder) -> some View {
