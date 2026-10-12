@@ -5,8 +5,8 @@ import SwiftUI
 
 /// One Settings section as a floating glass card, on the `.panel` glass the Library's and the EQ's
 /// cards wear: the section's title — with a control trailing it, as the Library card header carries
-/// its pills — over the section's rows (`SettingsLayout`). It paints no backdrop of its own: the tab's
-/// glow shows around it. VoiceOver reads it as one container named by its title.
+/// its pills — over the section's rows (`SettingsLayout`). It paints no backdrop of its own: the app
+/// glow (`TabContentView`) shows around it. VoiceOver reads it as one container named by its title.
 struct SettingsCard<Accessory: View, Content: View>: View {
     let title: String
     /// The control on the title row's trailing edge (Output Device's device pill), or nothing.
