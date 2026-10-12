@@ -76,6 +76,12 @@
         /// The rail's remove-folder confirmation (S10.8 F2), open over the Library (drawn in the window,
         /// as the EQ's and the playlists' dialogs).
         case folderRemove = "folder-remove"
+        /// The Monitoring worlds (S10.8 G1) — the Monitoring tab only, dark and light at both sizes: mono
+        /// (one lens filling the height), 5.1 and 7.1 (the lenses at their least height, the column
+        /// scrolling with the next lens peeking at the bottom). Stereo is every other world's.
+        case monitorMono = "1ch"
+        case monitor51 = "6ch"
+        case monitor71 = "8ch"
 
         /// The scene's default window size (`AdaptiveSound.body`'s `.defaultSize`).
         private static let defaultSize = NSSize(width: 1000, height: 720)
@@ -128,15 +134,26 @@
             }
         }
 
-        /// The default window size and the hard minimum for `standard`, the grids and the playlist page;
-        /// the minimum alone for the long presets list (where the card scrolls) and the folded Tone
-        /// card; the default size for the rest.
+        /// The default window size and the hard minimum for `standard`, the grids, the playlist page and
+        /// the Monitoring worlds; the minimum alone for the long presets list (where the card scrolls) and
+        /// the folded Tone card; the default size for the rest.
         var sizes: [NSSize] {
             switch self {
-            case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage:
+            case .standard, .albums, .artists, .genres, .playlist, .albumPage, .artistPage, .genrePage,
+                 .monitorMono, .monitor51, .monitor71:
                 [Self.defaultSize, Self.minimumSize]
             case .eqMany, .eqFolded: [Self.minimumSize]
             default: [Self.defaultSize]
+            }
+        }
+
+        /// The channels the fixture engine serves the Monitoring tab: stereo, but in the Monitoring worlds.
+        var monitorChannels: Int {
+            switch self {
+            case .monitorMono: 1
+            case .monitor51: 6
+            case .monitor71: 8
+            default: 2
             }
         }
 
@@ -159,11 +176,11 @@
             case .ring: [.nowPlaying, .library, .eq]
             case .empty: [.nowPlaying, .library]
             case .ringRail: [.library, .eq]
-            case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates:
-                [.library]
-            case .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
+            case .albums, .artists, .genres, .gridStates, .albumPage, .artistPage, .genrePage, .pageStates,
+                 .playlist, .playlistDelete, .playlistRemoveMissing, .playlistRemoveMissingScan,
                  .playlistFailure, .folderRemove: [.library]
             case .settingsStates, .settingsFallback, .settingsNoDevices, .settingsPure: [.settings]
+            case .monitorMono, .monitor51, .monitor71: [.monitoring]
             case .eqDrag, .eqCeiling, .eqMany, .eqOff, .eqCompare, .eqPure, .eqEngine, .eqTone, .eqFolded,
                  .eqPinned, .eqSave, .eqRename, .eqDelete: [.eq]
             }
