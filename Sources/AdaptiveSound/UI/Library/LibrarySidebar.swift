@@ -243,11 +243,9 @@ struct LibrarySidebar: View {
         }
     }
 
-    /// A 1px hairline run separating rail sections (mock: `white 7%`, inset).
+    /// A hairline run separating rail sections (mock: `white 7%`, inset).
     private var sectionDivider: some View {
-        Rectangle()
-            .fill(DesignSystem.Color.hairline)
-            .frame(height: 1)
+        Hairline()
             .padding(.horizontal, DesignSystem.Spacing.small)
             .padding(.vertical, 6)
     }

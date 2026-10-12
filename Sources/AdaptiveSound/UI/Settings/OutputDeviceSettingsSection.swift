@@ -24,12 +24,12 @@ struct OutputDeviceSettingsSection: View {
                         .foregroundStyle(DesignSystem.Color.labelTertiary)
                 }
             } else {
+                // The rule parts the device from the switch, so it goes with the device: with none
+                // selected, the switch sits right under the title.
                 if let device = audioViewModel.selectedDevice {
                     DeviceDetailRow(device: device)
+                    Hairline()
                 }
-                Rectangle()
-                    .fill(DesignSystem.Color.hairline)
-                    .frame(height: 1)
                 SettingsSwitchRow(title: "Keep playback on this device", detail: pinDetail,
                                   isOn: $audioViewModel.pinPlaybackToSelectedDevice)
             }

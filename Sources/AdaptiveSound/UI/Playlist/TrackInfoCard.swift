@@ -23,7 +23,7 @@ struct TrackInfoCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             titleBlock
-            divider
+            Hairline()
             metadataGroup
             pathBlock
         }
@@ -56,15 +56,6 @@ struct TrackInfoCard: View {
 
             FormatBadgeView(format: file.format)
         }
-    }
-
-    // MARK: - Divider
-
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.asHairline)
-            .frame(maxWidth: .infinity)
-            .frame(height: 1)
     }
 
     // MARK: - Metadata group
