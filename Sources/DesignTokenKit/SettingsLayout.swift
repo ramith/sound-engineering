@@ -13,7 +13,8 @@
 public enum SettingsLayout {
     // MARK: The column
 
-    /// The column's widest: the readable width (720, as `DesignSystem.LayoutMetrics.readableMaxWidth`).
+    /// The column's widest: the app's readable width, defined here — `DesignSystem.LayoutMetrics
+    /// .readableMaxWidth` forwards it, so the error banner caps at the same 720.
     public static let columnMaxWidth: Double = 720
     /// The content inset from the content region's top, sides and bottom (the Twin Panels insets).
     public static let insetTop = EQScreenLayout.insetTop
