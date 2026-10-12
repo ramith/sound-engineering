@@ -141,6 +141,57 @@ func checkPlaylistReplaceEntries(number: Int, url: URL) async -> Bool {
     } catch { printFail(number, "pl-replace-entries threw: \(error)"); return false }
 }
 
+/// pl-replace-skips-gone (S10.8 G, G-LIB-04): a snapshot naming a song whose row is gone (its folder
+/// removed, its file swept) — the queue keeps playing it — skips that id instead of failing the
+/// whole write on the foreign key; the kept entries stay dense and in order.
+func checkPlaylistReplaceSkipsGone(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(
+            url, root: "/M/RSG", paths: ["/M/RSG/a.flac", "/M/RSG/b.flac", "/M/RSG/c.flac"]
+        )
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let queue = try await store.currentPlaylistID()
+        try await store.delete(id: t[1])
+        try await store.replaceEntries(playlistID: queue, trackIDs: [t[0], t[1], t[2], t[1], t[0]])
+        let after = try await store.entries(inPlaylist: queue)
+        guard after.map(\.trackID) == [t[0], t[2], t[0]], after.map(\.position) == [0, 1, 2] else {
+            printFail(number, "replaceEntries with a gone id: \(after.map { ($0.trackID, $0.position) })")
+            return false
+        }
+        printPass(number, "replaceEntries skips a song with no row (dense, in order) instead of failing the "
+            + "queue snapshot on the foreign key (G-LIB-04)")
+        return true
+    } catch { printFail(number, "pl-replace-skips-gone threw: \(error)"); return false }
+}
+
+/// pl-gate1-queue-not-kept (S10.8 G, G-LIB-04): removeRoot keeps a song a USER playlist names, but
+/// not one only the queue mirror names — "Songs from this folder leave your library unless they’re in
+/// a playlist". The queue loses the removed song's entry; the kept song keeps both entries.
+func checkPlaylistGate1QueueNotKept(number: Int, url: URL) async -> Bool {
+    do {
+        let seeded = try await seedTracks(url, root: "/M/GQ", paths: ["/M/GQ/kept.flac", "/M/GQ/queued.flac"])
+        let store = seeded.store
+        let t = seeded.trackIDs
+        let playlist = try await store.createPlaylist(name: "GQ")
+        _ = try await store.appendEntry(playlistID: playlist, trackID: t[0])
+        let queue = try await store.currentPlaylistID()
+        try await store.replaceEntries(playlistID: queue, trackIDs: [t[1], t[0]])
+        try await store.removeRoot(id: seeded.rootID)
+        let remaining = try await store.allTracks(sortedBy: .name).map(\.id)
+        let queued = try await store.entries(inPlaylist: queue).map(\.trackID)
+        let kept = try await store.entries(inPlaylist: playlist).map(\.trackID)
+        guard remaining == [t[0]], queued == [t[0]], kept == [t[0]] else {
+            printFail(number, "removeRoot with a queued song: tracks \(remaining) (want [\(t[0])]), queue \(queued), "
+                + "playlist \(kept)")
+            return false
+        }
+        printPass(number, "removeRoot keeps the song a user playlist names and drops the one only the queue named "
+            + "(G-LIB-04)")
+        return true
+    } catch { printFail(number, "pl-gate1-queue-not-kept threw: \(error)"); return false }
+}
+
 /// pl-clear-entries: clearEntries empties one playlist without touching another.
 func checkPlaylistClearEntries(number: Int, url: URL) async -> Bool {
     do {
