@@ -2,8 +2,7 @@
 //
 // A new SwiftPM library target `LibraryScan` (depends on `LibraryStore`), linked by
 // BOTH the app and the harness so the walk has ONE implementation and never drifts.
-// `supportedExtensions` is the SINGLE SOURCE OF TRUTH the app's `AudioFileEnumerator`
-// references.
+// `supportedExtensions` is the SINGLE SOURCE OF TRUTH for which files a walk admits.
 //
 // S8.2a (produce-and-write core):
 //   • one root per `scan` call → one per-root generation (M-A)
@@ -33,11 +32,11 @@ import LibraryStore
 /// Recursively scans a registered root and reconciles its audio files into the store.
 public struct LibraryScanner: Sendable {
     /// The audio container extensions a scan admits (lowercased) — the SINGLE
-    /// SOURCE OF TRUTH shared with the app's `AudioFileEnumerator`, so the two
-    /// walks can never diverge (design §2). AVAudioFile natively supports these on
-    /// macOS.
+    /// SOURCE OF TRUTH for which files reach the library (design §2). AVAudioFile and
+    /// ExtAudioFile natively open these on macOS. "aif" is the spelling Music, iTunes
+    /// and Logic give every AIFF they write (S10.8 G, G-LIB-02).
     public static let supportedExtensions: Set<String> = [
-        "flac", "mp3", "wav", "aac", "m4a", "alac", "aiff", "ogg",
+        "flac", "mp3", "wav", "aac", "m4a", "alac", "aiff", "aif", "ogg",
     ]
 
     /// Rows accumulated before a batch `upsert` (one `BEGIN IMMEDIATE…COMMIT` each).
