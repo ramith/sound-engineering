@@ -56,8 +56,8 @@ extension AudioViewModel {
                 // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
                 engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
-                // Launch publish (Sprint EQ engine-plan §5.4): the engine plays the Intensity and
-                // crossfeed the UI shows from the first block, not the kernel's own defaults.
+                // Launch publish (Sprint EQ engine-plan §5.4): the engine plays the Intensity,
+                // crossfeed and Master Gain the UI shows from the first block, not its own defaults.
                 publishPlaybackIntents()
                 // Fire the ready hook the instant the AU is live (e.g. EQ re-dispatches its
                 // restored "last setting" curve, which no-ops until now). This is the single
@@ -78,13 +78,14 @@ extension AudioViewModel {
     // MARK: - Control intents → engine
 
     /// Hand the engine every playback control intent this view model owns — Intensity,
-    /// crossfeed and the output's transport — at engine-ready (also after device-loss
+    /// crossfeed, Master Gain and the output's transport — at engine-ready (also after device-loss
     /// `retryInitialization`, which re-runs `initializeEngine`). The EQ publishes from
     /// `onEngineReady` (its own view model); after a re-allocation the Realizer republishes its
     /// canonical state itself.
     func publishPlaybackIntents() {
         publishIntensity()
         publishCrossfeed()
+        publishMasterGain()
         publishOutputTransport()
     }
 
