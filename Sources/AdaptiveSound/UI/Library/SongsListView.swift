@@ -307,7 +307,7 @@ struct SongsListView: View {
 private extension SongsListView {
     /// Page Up / Down move a screenful less one row, so the row the cursor left stays in view.
     var rowsPerPage: Int {
-        max(Int((visibleSpan.rect.height - 2 * Self.listVerticalInset) / LibraryRowChrome.height) - 1, 1)
+        max(Int((visibleSpan.rect.height - 2 * Self.listVerticalInset) / LibraryRowSize.regular.pitch) - 1, 1)
     }
 
     /// Scrolls the cursor row into view — as little as needed, none when it is already in view — by
@@ -317,7 +317,7 @@ private extension SongsListView {
     func revealCursor() {
         guard let cursor = selection.cursor,
               let index = model.visibleSongs.firstIndex(where: { $0.id == cursor }),
-              let offset = FixedRowReveal.offset(revealing: index, rowHeight: LibraryRowChrome.height,
+              let offset = FixedRowReveal.offset(revealing: index, rowHeight: LibraryRowSize.regular.pitch,
                                                  inset: Self.listVerticalInset,
                                                  visibleTop: visibleSpan.rect.minY,
                                                  visibleHeight: visibleSpan.rect.height)

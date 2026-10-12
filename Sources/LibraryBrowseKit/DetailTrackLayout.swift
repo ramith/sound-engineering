@@ -7,8 +7,8 @@
 ///
 /// `rows` is the ONE order on the page: the selection kit's rows (`ListSelection`), the keys' order,
 /// and the play order — so what plays is always what is shown, top to bottom (PLAY-02), even where
-/// the grouping moved a song away from its place in the read. Knows nothing of Songs' columns or
-/// sort (COL-01).
+/// the grouping or an album's own order (`AlbumTrackOrder`) moved a song from its place in the read.
+/// Knows nothing of Songs' columns or sort (COL-01).
 public struct DetailTrackLayout<Track: DetailTrack> {
     /// One line of the list.
     public enum Item: Identifiable {
@@ -45,27 +45,47 @@ public struct DetailTrackLayout<Track: DetailTrack> {
         self.arrangement = arrangement
         switch arrangement {
         case .album:
-            rows = tracks
-            items = tracks.enumerated().map { index, track in .row(track, number: track.trackNo ?? index + 1) }
+            items = Self.albumRows(tracks)
             headersAbove = []
         case .byAlbum:
-            // A header per album (`FacetAlbumGrouping`), then its songs, each numbered within its album.
+            // A header per album (`FacetAlbumGrouping`), then its songs in the album's own order;
+            // the songs with no album, by title.
             let albums = FacetAlbumGrouping.sections(from: tracks)
-            rows = albums.flatMap(\.tracks)
             items = albums.flatMap { album in
                 [.header(albumID: album.id, title: album.title, year: album.year)]
-                    + album.tracks.enumerated().map { position, track in
-                        .row(track, number: track.trackNo ?? position + 1)
-                    }
+                    + (album.id == FacetAlbumGrouping.noAlbumID ? Self.looseRows(album.tracks)
+                        : Self.albumRows(album.tracks))
             }
             headersAbove = albums.indices.flatMap { Array(repeating: $0 + 1, count: albums[$0].tracks.count) }
         case .flat:
-            rows = tracks
             items = tracks.map { .row($0, number: nil) }
             headersAbove = []
         }
+        // The rows ARE the songs drawn, top to bottom — so the queue can only be the shown order (PLAY-02).
+        rows = items.compactMap { item in
+            if case let .row(track, _) = item {
+                return track
+            }
+            return nil
+        }
         // A page lists a song once (the reads are one row per song); were one listed twice, the first wins.
         positions = Dictionary(rows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// One album's songs as rows: in playing order (`AlbumTrackOrder` — disc, track, title), each led by
+    /// its track number. An album with NO track numbers is numbered by place; in an album that has
+    /// some, an untagged song shows none — a number made up from its place would read as its track.
+    private static func albumRows(_ tracks: [Track]) -> [Item] {
+        let ordered = AlbumTrackOrder.playing(tracks)
+        let numbersByPlace = ordered.allSatisfy { $0.trackNo == nil }
+        return ordered.enumerated().map { place, track in
+            .row(track, number: numbersByPlace ? place + 1 : track.trackNo)
+        }
+    }
+
+    /// An artist's songs with no album: by title, unnumbered (their track numbers are other albums').
+    private static func looseRows(_ tracks: [Track]) -> [Item] {
+        AlbumTrackOrder.byTitle(tracks).map { .row($0, number: nil) }
     }
 
     /// The row's place in `rows`, or nil when it is not on the page.
