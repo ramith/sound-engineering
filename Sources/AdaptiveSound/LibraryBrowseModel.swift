@@ -388,16 +388,6 @@ final class LibraryBrowseModel {
         }
     }
 
-    // MARK: - Detail reads (album)
-
-    func album(id: Int64) async -> AlbumFacet? {
-        try? await store?.album(id: id)
-    }
-
-    func tracks(inAlbum albumID: Int64) async -> [LibraryTrackDisplay] {
-        (try? await store?.tracksDisplay(inAlbum: albumID)) ?? []
-    }
-
     // Play actions (play / playNext / append / playTrackNextNow) live in `LibraryBrowseModel+Play`;
     // a browse tile's (an album, artist or genre) in `+Facets` (same-type extensions, for length).
 

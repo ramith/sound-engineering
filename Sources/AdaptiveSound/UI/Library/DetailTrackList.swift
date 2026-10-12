@@ -16,11 +16,17 @@ struct DetailTrackList: View {
     typealias RowID = LibraryTrackDisplay.ID
 
     let layout: DetailTrackLayout<LibraryTrackDisplay>
+    /// The list is on screen. False while a reload finds no songs: the list keeps its rows, its
+    /// selection and its scroll, hidden — out of reach of the pointer, the keys and VoiceOver — under
+    /// the page's "No Songs" until songs come back (review 13).
+    let isShown: Bool
     /// An album page's album artist: a song by anyone else names its artist after its title
     /// (decision 12's compilations). Nil on the other pages.
     let albumArtist: String?
     /// The page's one focus value: the list is its `.content` stop.
     let focus: FocusState<CardFocus?>.Binding
+    /// The list has taken key focus on this page: it does once, when it first appears.
+    @Binding var tookFocus: Bool
     /// "Add to Playlist…": the page's searchable picker, for these songs.
     let choosePlaylist: ([Int64]) -> Void
 
@@ -66,7 +72,12 @@ struct DetailTrackList: View {
         }
         .scrollContentBackground(.hidden)
         .dynamicTypeSize(.small ... .xxLarge)
-        .modifier(ListSelectionKeyboard(selection: $selection, rows: layout.rows, title: \.title, focus: focus,
+        .opacity(isShown ? 1 : 0)
+        .allowsHitTesting(isShown)
+        .accessibilityHidden(!isShown)
+        // Hidden, it has no rows to act on — and so is no focus stop and takes no key.
+        .modifier(ListSelectionKeyboard(selection: $selection, rows: isShown ? layout.rows : [], title: \.title,
+                                        focus: focus,
                                         ringVisible: showsRing, pageRows: pageRows,
                                         revealCursor: revealCursor, activate: play(from:),
                                         playNext: model.playNext, addToQueue: model.append,
@@ -80,13 +91,17 @@ struct DetailTrackList: View {
             selection.keepOnly(reloaded.rows.lazy.map(\.id))
         }
         // The page opens from a grid that held key focus (a click on a tile focuses it, as Return
-        // does), so the keys go on here: ↓ claims the first song. The write waits a turn, as the
-        // grid's own restore does — the list may not be a focus target on its first appearance.
+        // does), so the keys go on here: ↓ claims the first song — once per page, when it first has
+        // songs (review 13). The write waits a turn, as the grid's own restore does — the list may
+        // not be a focus target on its first appearance.
         .onAppear {
+            guard !tookFocus else { return }
+            tookFocus = true
             Task { @MainActor in
                 focus.wrappedValue = .content
             }
         }
+
         #if DEBUG
         .onAppear {
             guard !sheetSongSelection.isEmpty else { return }

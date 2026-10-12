@@ -7,9 +7,14 @@ import SwiftUI
 /// line, its actions under them, and a hairline inset with the text. The art is the page's tile art
 /// (`BrowseArt`) — an album's cover, an artist's (decision 35), a genre's mosaic (decision 34) — so
 /// the page reads as opened from that tile.
+///
+/// Its chrome draws at once, before the page's first read lands (review 14): the back pill (and ⌘[)
+/// works from the first frame, and the art, title and pills keep their places — the placeholder art,
+/// an empty title, the pills off — so nothing jumps when the content arrives.
 struct LibraryDetailHeader: View {
     let ref: LibraryBrowseModel.FacetRef
-    let content: LibraryDetailContent
+    /// The page's content; nil until its first read lands.
+    let content: LibraryDetailContent?
     /// "Add to Playlist…": the page's searchable picker, for these songs.
     let choosePlaylist: ([Int64]) -> Void
 
@@ -45,21 +50,21 @@ struct LibraryDetailHeader: View {
     /// Title, subtitle and count line, with the page's actions under them.
     private var titles: some View {
         VStack(alignment: .leading, spacing: DesignSystem.Spacing.xSmall) {
-            Text(content.title)
+            Text(content?.title ?? "")
                 .font(DesignSystem.Font.displayTitle)
                 .foregroundStyle(DesignSystem.Color.label)
                 .lineLimit(2)
-            if let subtitle = content.subtitle {
+            if let subtitle = content?.subtitle {
                 Text(subtitle)
                     .font(DesignSystem.Font.sectionTitle)
                     .foregroundStyle(DesignSystem.Color.labelSecondary)
                     .lineLimit(1)
             }
-            Text(content.countLine)
+            Text(content?.countLine ?? "")
                 .font(DesignSystem.Font.monoSmall)
                 .foregroundStyle(DesignSystem.Color.labelTertiary)
                 .lineLimit(1)
-            LibraryDetailActions(rows: content.layout.rows, choosePlaylist: choosePlaylist)
+            LibraryDetailActions(rows: content?.layout.rows ?? [], choosePlaylist: choosePlaylist)
                 .padding(.top, DesignSystem.Spacing.small)
         }
     }
@@ -69,7 +74,8 @@ struct LibraryDetailHeader: View {
     /// read, live, so it follows a library change); the section's placeholder glyph without any.
     private var artworkKeys: [String] {
         switch ref {
-        case .album, .artist: content.artworkKey.map { [$0] } ?? []
+        case .album, .artist: content?.artworkKey.map { [$0] } ?? []
+
         case let .genre(id): model.genreCoverKeys[id] ?? []
         }
     }
