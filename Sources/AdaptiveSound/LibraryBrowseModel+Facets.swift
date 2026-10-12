@@ -149,11 +149,13 @@ extension LibraryBrowseModel {
         await facetRows(ref).map(\.id)
     }
 
-    /// Replace the queue with the whole facet and play (silent, like Play Now everywhere).
+    /// Replace the queue with the whole facet, in its page's order, and play — undoably, as a page's
+    /// Play (review 18).
     func playFacet(_ ref: FacetRef) async {
         let files = await facetRows(ref).map(AudioFile.init)
         guard !files.isEmpty else { return }
-        audio.playNow(files)
+        audio.playNowWithUndo(files)
+        offerQueueRestore()
     }
 
     func playFacetNext(_ ref: FacetRef) async {
@@ -168,12 +170,12 @@ extension LibraryBrowseModel {
         showQueueToast(.addToQueue, added: audio.appendToQueue(files))
     }
 
-    /// Shuffle a facet's already-loaded tracks (detail-header Shuffle): enable shuffle and play from
-    /// a random index, so subsequent tracks shuffle via the engine's on-deck logic.
+    /// A page's Shuffle: shuffle on, the page from a random song — undoably, the restore point
+    /// remembering shuffle's setting before it (`AudioViewModel.shufflePlay`, review 15 and 18).
     func shuffle(_ tracks: [LibraryTrackDisplay]) {
         let files = tracks.map(AudioFile.init)
         guard !files.isEmpty else { return }
-        audio.shuffleEnabled = true
-        audio.playNow(files, startAt: Int.random(in: 0 ..< files.count))
+        audio.shufflePlay(files, undoable: true)
+        offerQueueRestore()
     }
 }

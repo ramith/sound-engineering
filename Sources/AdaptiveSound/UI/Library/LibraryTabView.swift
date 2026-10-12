@@ -33,6 +33,9 @@ struct LibraryTabView: View {
             // pages and playlists too — none of them paints a card or a background of its own.
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The one "Restore previous queue" for every page's queue replace (review 18), at the
+                // card's foot — where the playlist page drew its own.
+                .overlay(alignment: .bottom) { QueueRestoreToast() }
                 .libraryDetailCard()
         }
         .padding(.horizontal, 22)
