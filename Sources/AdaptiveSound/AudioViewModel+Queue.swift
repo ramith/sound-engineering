@@ -190,8 +190,9 @@ extension AudioViewModel {
     /// primitive for the queue-mutation ops. It sets `pendingNextIndex` and pushes the
     /// URL to the engine, but DOES NOT call `computeNextIndex` (so it never re-rolls a
     /// shuffle pick) and DOES NOT touch `lastTransitionCount` (that baseline belongs to
-    /// `startPlayback`/the transition, design §6).
-    private func armOnDeck(index: Int?) {
+    /// `startPlayback`/the transition, design §6). Also re-arms after a shuffle / repeat change
+    /// (`+Playlist`, S10.8 G).
+    func armOnDeck(index: Int?) {
         pendingNextIndex = index
         let url: URL? = index.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].file.absoluteURL : nil }
         Task { [weak self] in

@@ -1,4 +1,5 @@
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel playlist editing
 
@@ -127,16 +128,41 @@ extension AudioViewModel {
         stopPlayback()
     }
 
-    /// Toggle shuffle mode.
+    /// Toggle shuffle mode. Applies to the end of the song playing (S10.8 G).
     func toggleShuffle() {
+        let old = playbackOrder
         shuffleEnabled.toggle()
         logUX("shuffle → \(shuffleEnabled)")
+        rearmOnDeck(switchingFrom: old)
     }
 
-    /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0
+    /// Cycle through repeat modes: 0 (off) → 1 (all) → 2 (one) → 0. Applies to the end of the song
+    /// playing (S10.8 G).
     func cycleRepeatMode() {
+        let old = playbackOrder
         repeatMode = (repeatMode + 1) % 3
         let label = ["off", "all", "one"][repeatMode]
         logUX("repeat → \(label) (\(repeatMode))")
+        rearmOnDeck(switchingFrom: old)
+    }
+
+    /// Shuffle and repeat as one value, for `PlaybackOrder`'s rule.
+    private var playbackOrder: PlaybackOrder {
+        PlaybackOrder(shuffle: shuffleEnabled, repeatMode: repeatMode)
+    }
+
+    /// Re-arm the gapless on-deck after a shuffle / repeat change while a song plays, so the change
+    /// applies to THIS song's end (S10.8 G): the on-deck was picked under the old order when the song
+    /// started, and the engine plays whatever is armed at the seam. Repeat One arms this song; Repeat
+    /// All on the last song arms the first; Repeat off moves on (`PlaybackOrder.onDeck`). Not while
+    /// paused or stopped: resume (`primeGaplessPipeline`) picks under the order in force then.
+    private func rearmOnDeck(switchingFrom old: PlaybackOrder) {
+        guard isPlaying, pausedResumePosition == nil, let current = selectedTrackIndex else { return }
+        let next = playbackOrder.onDeck(switchingFrom: old, current: current, count: queue.count,
+                                        armed: pendingNextIndex, randomPick: QueueAdvance.uniformRandomExcluding)
+        guard next != pendingNextIndex else { return }
+        logUX("on-deck re-armed for the new order: \(pendingNextIndex.map(String.init) ?? "none") → "
+            + (next.map(String.init) ?? "none"))
+        armOnDeck(index: next)
     }
 }
