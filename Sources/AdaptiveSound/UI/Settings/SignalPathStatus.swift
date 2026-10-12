@@ -19,7 +19,7 @@ struct SignalPathStatus: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             statusRow(label: "Active path", value: pathText, accent: info.path == .pure)
-            statusRow(label: "Format", value: formatText)
+            statusRow(label: "Format", value: formatText, spokenValue: formatSpoken)
             statusRow(label: "Decoder", value: decoderText)
             statusRow(label: "EQ Preset", value: eqPresetDisplay)
 
@@ -44,7 +44,10 @@ struct SignalPathStatus: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func statusRow(label: String, value: String, accent: Bool = false) -> some View {
+    /// A label and its value, read as one element: "Format, 48 kilohertz, 24-bit int" — `spokenValue`
+    /// where the drawn value reads badly aloud.
+    private func statusRow(label: String, value: String, spokenValue: String? = nil,
+                           accent: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: CGFloat(SettingsLayout.statusColumnGap)) {
             Text(label)
                 .font(DesignSystem.Font.caption)
@@ -56,7 +59,8 @@ struct SignalPathStatus: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label), \(spokenValue ?? value)")
     }
 
     private var pathText: String {
@@ -76,6 +80,12 @@ struct SignalPathStatus: View {
         let rateStr = info.formattedRate
         guard let bitsStr = info.formattedBits else { return rateStr }
         return "\(rateStr) · \(bitsStr)"
+    }
+
+    /// `formatText` read aloud: the rate in kilohertz, not "k-H-z", and a pause for the dot.
+    private var formatSpoken: String {
+        guard info.achievedSampleRate > 0 else { return formatText }
+        return [info.spokenRate, info.formattedBits].compactMap(\.self).joined(separator: ", ")
     }
 
     /// Show the preset name, or "—" when Pure mode is active (EQ bypassed).

@@ -89,6 +89,13 @@ extension SignalPathInfo {
         return String(format: "%.1f kHz", Double(rateHz) / 1000.0)
     }
 
+    /// `rateString` as VoiceOver speaks it — "48 kilohertz", "44.1 kilohertz": read aloud, "kHz" is
+    /// three letters. Every spoken rate goes through here (the device pill, the footer, the hero, the
+    /// Settings rows).
+    static func spokenRateString(_ rate: Double) -> String {
+        rateString(rate).replacing(" kHz", with: " kilohertz")
+    }
+
     /// Formats bit depth + float/int kind into a compact string, e.g. "32-bit float", "24-bit int".
     /// Returns `nil` when neither `bitDepth` nor `isFloat` carries information (Enhanced path idle).
     static func bitsString(bitDepth: UInt32, isFloat: Bool) -> String? {
@@ -107,6 +114,11 @@ extension SignalPathInfo {
     /// Sample rate formatted for display, using `achievedSampleRate`.
     var formattedRate: String {
         SignalPathInfo.rateString(achievedSampleRate)
+    }
+
+    /// Sample rate as VoiceOver speaks it, using `achievedSampleRate`.
+    var spokenRate: String {
+        SignalPathInfo.spokenRateString(achievedSampleRate)
     }
 
     /// Bit-depth + kind formatted for display, using `bitDepth` and `isFloat`.
