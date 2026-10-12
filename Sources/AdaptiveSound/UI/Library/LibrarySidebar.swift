@@ -39,8 +39,6 @@ struct LibrarySidebar: View {
     @State var renameError: String?
     /// The playlist row a library-track drag is hovering over (drop highlight), or nil.
     @State private var dropTargetPlaylistID: Int64?
-    /// The playlist whose deletion waits on its confirmation (S10.8 E4), or nil.
-    @State private var deletingPlaylist: Playlist?
     @FocusState var renameFieldFocused: Bool
 
     /// Keyboard-command focus for the scroll area (a ScrollView/LazyVStack doesn't own key focus the
@@ -98,9 +96,12 @@ struct LibrarySidebar: View {
             .onKeyPress(keys: [.return]) { press in
                 editingPlaylistID == nil && !press.isShortcut ? renameCursorPlaylist() : .ignored
             }
+            // The system Delete command (⌫, ⌦, Edit ▸ Delete) on the selected playlist asks to delete
+            // it. A command, not a key-press match: macOS delivers ⌫ as U+007F (see the queue).
+            .onDeleteCommand(perform: deleteCommand)
             #if DEBUG
-            // Picture-sheet ring-rail variant: focus, so the ring marks the selected category.
-            .sheetFocusSeed(.rail) { sidebarFocused = true }
+                // Picture-sheet ring-rail variant: focus, so the ring marks the selected category.
+                .sheetFocusSeed(.rail) { sidebarFocused = true }
             #endif
         }
         // Content-height floating glass card (shared with the NP inspector via `.huggingGlassPanel`):
@@ -113,10 +114,6 @@ struct LibrarySidebar: View {
             if case let .success(url) = result {
                 model.addFolder(url)
             }
-        }
-        // The app's themed dialog, as a sheet (the window's own modality), not the system alert.
-        .sheet(item: $deletingPlaylist) { playlist in
-            PlaylistDeleteDialog(name: playlist.name, delete: { confirmDelete(playlist) }, cancel: cancelDelete)
         }
         .task { await playlists.loadTree() }
         // Load the tree once the async store finishes building (a visit before then shows nothing).
@@ -211,8 +208,8 @@ struct LibrarySidebar: View {
             .simultaneousGesture(TapGesture(count: 2).onEnded { beginRename(playlist) })
             .contextMenu {
                 Button("Rename") { beginRename(playlist) }
-                // Confirmed first: a deleted playlist can't be brought back.
-                Button("Delete…", role: .destructive) { deletingPlaylist = playlist }
+                // Confirmed first, in the Library tab's one playlist dialog (`PlaylistDialogSheet`).
+                Button("Delete…", role: .destructive) { playlists.askToDelete(playlist) }
             }
             .id(SidebarSelection.playlist(playlist.id)) // the arrow keys' `scrollTo` target (A3)
         }
@@ -271,30 +268,6 @@ struct LibrarySidebar: View {
         }
         return true
     }
-
-    /// The delete confirmation's Delete: close it, then delete.
-    private func confirmDelete(_ playlist: Playlist) {
-        deletingPlaylist = nil
-        deletePlaylist(playlist)
-    }
-
-    private func cancelDelete() {
-        deletingPlaylist = nil
-    }
-
-    /// Delete a playlist; if it was the open/selected one, redirect nav back to the current category
-    /// so the detail pane doesn't orphan on a `.playlist(deletedID)` route that resolves to nothing.
-    /// Only redirects on a CONFIRMED delete — a failed delete leaves the row, so nav must stay put.
-    /// Not a rail jump: the category root comes back as the user left it (Filter text and place).
-    private func deletePlaylist(_ playlist: Playlist) {
-        let wasSelected = model.sidebarSelection == .playlist(playlist.id)
-        Task {
-            let deleted = await playlists.deletePlaylist(id: playlist.id)
-            if deleted, wasSelected {
-                model.showCategoryRoot()
-            }
-        }
-    }
 }
 
 // MARK: - Keyboard cursor (↑/↓)
@@ -348,5 +321,15 @@ private extension LibrarySidebar {
               let playlist = playlists.playlists.first(where: { $0.id == id }) else { return .ignored }
         beginRename(playlist)
         return .handled
+    }
+
+    /// The Delete command's action: on a selected playlist, ask to delete it (the confirmation, whose
+    /// default is Cancel). Nil — which disables Edit ▸ Delete and lets ⌫ bubble — on a category, with
+    /// a drill-down open, or while a name is being edited (⌫ is the field's then).
+    var deleteCommand: (() -> Void)? {
+        guard editingPlaylistID == nil,
+              case let .remove(.playlist(id)) = keyboardCursor?.deleteAction(ringVisible: showsRing),
+              let playlist = playlists.playlists.first(where: { $0.id == id }) else { return nil }
+        return { playlists.askToDelete(playlist) }
     }
 }

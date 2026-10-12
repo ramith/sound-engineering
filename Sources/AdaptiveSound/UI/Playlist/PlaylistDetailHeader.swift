@@ -14,15 +14,13 @@ import SwiftUI
 struct PlaylistDetailHeader: View {
     let play: () -> Void
     let shuffle: () -> Void
-    /// Asks to remove the entries whose files are missing (the page confirms first).
-    let removeMissing: () -> Void
 
     @Environment(PlaylistsModel.self) private var model
 
     var body: some View {
         LibraryCardHeader(title: model.openPlaylist?.name ?? "Playlist", count: countLine, compactCount: compactCount) {
             LibraryPageActions(play: play, shuffle: shuffle) {
-                PlaylistMoreMenu(removeMissing: removeMissing)
+                PlaylistMoreMenu()
             }
             // The pills keep their size; a long name truncates instead.
             .fixedSize()

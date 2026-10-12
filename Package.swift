@@ -231,6 +231,7 @@ let package = Package(
                 "QueueAdvanceTests.swift",
                 "QueueOpsTests.swift",
                 "QueueInsertTests.swift",
+                "QueueRestorePointTests.swift",
                 "PlayThroughTrackerTests.swift",
                 "NowPlayingSnapshotTests.swift",
             ]

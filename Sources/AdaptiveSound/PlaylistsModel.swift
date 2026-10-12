@@ -47,18 +47,32 @@ final class PlaylistsModel {
 
     // Open-playlist detail (rendered read-only by `PlaylistDetailView` in B; Chunk C wires
     // play/remove/reorder onto the SAME loaded rows).
+
+    /// The playlist whose page is open, or nil.
     private(set) var openPlaylistID: Int64?
-    private(set) var detail: [PlaylistDetailEntry] = []
+    /// The open playlist's rows. Each change re-checks an open Remove Missing confirmation against
+    /// the entries still missing (`PlaylistDialogLatch.missingChanged`) — only while one is up, so a
+    /// reload doesn't write (and so re-publish) the dialog for nothing.
+    private(set) var detail: [PlaylistDetailEntry] = [] {
+        didSet {
+            if case .confirmRemoveMissing = dialogs.dialog {
+                dialogs.missingChanged(to: Set(missingEntryIDs))
+            }
+        }
+    }
+
     private(set) var detailState: LoadState = .idle
     private var detailEpoch = 0
     /// Saves each playlist's newest on-screen order, one write at a time (E4: `reorderEntries`).
     @ObservationIgnored private let orderWriter: CoalescingWriter<Int64, [Int64]>
-    /// The failed save behind `actionError`, so a later successful save of that playlist withdraws it.
+    /// The failed save behind a failure notice, so a later successful save of that playlist withdraws it.
     @ObservationIgnored private var orderFailure: (playlistID: Int64, message: String)?
 
-    /// A transient per-ACTION error (Locate / Remove-missing) shown as an alert — never routed through
-    /// `detailState` (a failed row-action mustn't blow the whole pane into load-error; F review).
-    private(set) var actionError: String?
+    /// The Library tab's one playlist dialog (S10.8 E fix round): a per-ACTION failure's notice —
+    /// never routed through `detailState` (a failed row-action mustn't blow the whole pane into
+    /// load-error; F review) — or the Remove Missing confirmation. One latched value, moved only by
+    /// the verbs under "Dialogs" below, and shown once, by `LibraryTabView`'s sheet.
+    private var dialogs = PlaylistDialogLatch()
 
     /// The `library.libraryRevision` last folded in, so `reloadOnLibraryChange` refreshes exactly
     /// once per library-content change (a track deletion CASCADE-drops entries → counts move).
@@ -131,7 +145,7 @@ final class PlaylistsModel {
 
     /// Create a new "New Playlist"-style untitled playlist, reload, and return its id so the sidebar
     /// can select it and drop straight into inline-rename. Nil if the store isn't ready or the
-    /// create failed (surfaced via `treeState`).
+    /// create failed (said in the failure notice).
     @discardableResult
     func createPlaylist() async -> Int64? {
         guard let store else { return nil }
@@ -140,7 +154,7 @@ final class PlaylistsModel {
             await loadTree()
             return id
         } catch {
-            treeState = .failed(error.localizedDescription)
+            fail("Couldn’t create a playlist: \(error.localizedDescription)")
             return nil
         }
     }
@@ -154,24 +168,31 @@ final class PlaylistsModel {
         await loadTree()
     }
 
-    /// Delete a playlist and reload. Clears the open detail if it was the deleted one (so a stale
-    /// detail can't linger after its playlist is gone). Built-in deletion never reaches here
-    /// (filtered). RETURNS whether the delete succeeded, so the caller only redirects nav on success
-    /// (a failed delete leaves the row + surfaces via `treeState`, and nav must not jump away).
-    @discardableResult
-    func deletePlaylist(id: Int64) async -> Bool {
+    /// Delete a playlist (`confirmDelete`). Built-in deletion never reaches here (filtered). RETURNS
+    /// whether the delete succeeded, so the caller only redirects nav on success: a failed delete
+    /// leaves the row, says so in the failure notice, and nav must not jump away.
+    ///
+    /// On success its row leaves the rail and its open detail closes AT ONCE (so a stale detail can't
+    /// linger after its playlist is gone), with no suspension before the return — the caller leaves
+    /// the page in the same main-actor turn, and no frame shows the page closed (its "Playlist" title
+    /// over a spinner). The tree is then re-read behind, to confirm.
+    private func deletePlaylist(id: Int64) async -> Bool {
         guard let store else { return false }
         do {
             try await store.deletePlaylist(id: id)
-            if openPlaylistID == id {
-                closeDetail()
-            }
-            await loadTree()
-            return true
         } catch {
-            treeState = .failed(error.localizedDescription)
+            fail("Couldn’t delete \(quotedName(of: id)): \(error.localizedDescription)")
             return false
         }
+        playlists.removeAll { $0.id == id }
+        if playlists.isEmpty {
+            treeState = .empty
+        }
+        if openPlaylistID == id {
+            closeDetail()
+        }
+        Task { await loadTree() }
+        return true
     }
 
     // MARK: - Add to playlist (US-PLIST-02 — reference-add, never a file move)
@@ -191,7 +212,7 @@ final class PlaylistsModel {
             }
             return entryIDs.count
         } catch {
-            treeState = .failed(error.localizedDescription)
+            fail("Couldn’t add to \(quotedName(of: playlistID)): \(error.localizedDescription)")
             return 0
         }
     }
@@ -210,7 +231,8 @@ final class PlaylistsModel {
             await loadTree()
             return id
         } catch {
-            treeState = .failed(error.localizedDescription)
+            await loadTree() // a playlist created before its add failed still shows
+            fail("Couldn’t create the playlist: \(error.localizedDescription)")
             return nil
         }
     }
@@ -273,76 +295,7 @@ final class PlaylistsModel {
         return playlists.first { $0.id == openPlaylistID }
     }
 
-    // MARK: - Play verbs (delegate to AudioViewModel; C)
-
-    /// Playable entries of the open playlist, in order — the AVAILABLE ones (track resolved AND file
-    /// on disk). Unavailable (missing-file) entries are SKIPPED on play, never halting (F); the UI
-    /// still shows them, badged, with Locate / Remove.
-    private var resolvedEntries: [PlaylistDetailEntry] {
-        detail.filter(\.isAvailable)
-    }
-
-    private func playableFiles() -> [AudioFile] {
-        resolvedEntries.compactMap(\.display).map { AudioFile($0) }
-    }
-
-    /// Play the open playlist NOW — REPLACES the queue, with a one-level "Restore previous queue"
-    /// undo (D-play). Starts at `entryID` (a tapped row) or the top. Returns whether it actually
-    /// replaced (false if nothing is playable) so the caller only raises the undo toast on a replace.
-    @discardableResult
-    func playPlaylist(startingAt entryID: Int64? = nil) -> Bool {
-        let entries = resolvedEntries
-        let files = entries.compactMap(\.display).map { AudioFile($0) }
-        guard !files.isEmpty else { return false }
-        let start = entryID.flatMap { id in entries.firstIndex { $0.id == id } } ?? 0
-        audio.playNowWithUndo(files, startAt: start)
-        return true
-    }
-
-    /// Shuffle the open playlist (the header's Shuffle, S10.8 E4): shuffle on, then a Play from a random
-    /// playable entry — replacing the queue with the same undo as Play. Returns whether it replaced.
-    /// The album / artist / genre pages' Shuffle (`LibraryBrowseModel.shuffle`), with Play's undo.
-    @discardableResult
-    func shufflePlaylist() -> Bool {
-        let files = playableFiles()
-        guard !files.isEmpty else { return false }
-        audio.shuffleEnabled = true
-        audio.playNowWithUndo(files, startAt: Int.random(in: files.indices))
-        return true
-    }
-
-    /// Insert the WHOLE open playlist's tracks right after the current one (header Play Next).
-    @discardableResult
-    func playPlaylistNext() -> Int {
-        let files = playableFiles()
-        guard !files.isEmpty else { return 0 }
-        return audio.playNext(files)
-    }
-
-    /// Insert a SINGLE entry's track right after the current one (per-row "Play Next"). Returns count.
-    @discardableResult
-    func playEntryNext(_ entryID: Int64) -> Int {
-        guard let display = resolvedEntries.first(where: { $0.id == entryID })?.display else { return 0 }
-        return audio.playNext([AudioFile(display)])
-    }
-
-    /// Append the open playlist's tracks to the end of the queue (Add to Queue). Returns the count.
-    @discardableResult
-    func appendPlaylist() -> Int {
-        let files = playableFiles()
-        guard !files.isEmpty else { return 0 }
-        return audio.appendToQueue(files)
-    }
-
-    /// Whether a "Restore previous queue" undo is available (a Play-replace happened).
-    var canRestorePreviousQueue: Bool {
-        audio.canRestorePreviousQueue
-    }
-
-    /// Restore the queue that a "Play" replaced (one-level undo).
-    func restorePreviousQueue() {
-        audio.restorePreviousQueue()
-    }
+    // Play verbs (`playPlaylist`, `shufflePlaylist`, …) are in `PlaylistsModel+Play` — file length.
 
     // MARK: - Entry mutation (C)
 
@@ -355,41 +308,82 @@ final class PlaylistsModel {
             await loadDetail(id: playlistID)
             await loadTree()
         } catch {
-            detailState = .failed(error.localizedDescription)
+            // A per-action notice, never the pane-wide load error (F review): the rows are unchanged.
+            fail("Couldn’t remove the song from \(quotedName(of: playlistID)): \(error.localizedDescription)")
         }
     }
 
     // Reorder (`reorderEntries`) is in the same-file extension below — type-body length.
 
-    // MARK: - Dead/missing-file handling (F)
+    // MARK: - Dialogs (S10.8 E fix round — one latched value, `PlaylistDialogLatch`)
 
-    /// Remove ALL unavailable (missing-file) entries from the open playlist (bulk "Remove missing").
-    /// Returns the count removed; reloads detail + tree.
-    @discardableResult
-    func removeMissingEntries() async -> Int {
-        guard let store, let playlistID = openPlaylistID else { return 0 }
-        let missing = detail.filter { !$0.isAvailable }.map(\.entry.id)
-        guard !missing.isEmpty else { return 0 }
+    /// The dialog the Library tab's sheet shows now, or nil.
+    var dialog: PlaylistDialog? {
+        dialogs.dialog
+    }
+
+    /// A playlist action failed: its notice takes the sheet (dropping an open confirmation).
+    private func fail(_ message: String) {
+        dialogs.fail(message)
+    }
+
+    /// The failure notice's OK.
+    func dismissFailure() {
+        dialogs.dismissFailure()
+    }
+
+    /// A confirmation's Cancel.
+    func cancelConfirmation() {
+        dialogs.cancel()
+    }
+
+    /// The rail's Delete… (its menu, or the Delete key): ask first — a deleted playlist can't be
+    /// brought back.
+    func askToDelete(_ playlist: Playlist) {
+        dialogs.askToDelete(playlistID: playlist.id, name: playlist.name)
+    }
+
+    /// The delete confirmation's Delete: deletes the confirmed playlist, once. Returns its id when it
+    /// was deleted — the caller then leaves its page, if that is the one showing — or nil (nothing
+    /// confirmed; the delete failed, which the failure notice says).
+    func confirmDelete() async -> Int64? {
+        guard let playlistID = dialogs.confirmDelete() else { return nil }
+        return await deletePlaylist(id: playlistID) ? playlistID : nil
+    }
+
+    /// The ⋯ menu's Remove Missing…: ask first (no undo — F review), for exactly the entries missing
+    /// now. Not during a scan / metadata pass / reconcile, when files flicker "missing".
+    func askToRemoveMissing() {
+        dialogs.askToRemoveMissing(missingEntryIDs, isLibraryPopulating: isLibraryPopulating)
+    }
+
+    /// The confirmation's Remove (bulk "Remove missing", F): drops exactly the confirmed entries —
+    /// the ones missing when it was asked, less any whose file has come back since — then reloads
+    /// detail + tree. Never during a scan, and once per confirmation.
+    func confirmRemoveMissing() async {
+        guard let store, let playlistID = openPlaylistID,
+              let entries = dialogs.confirmRemoveMissing(isLibraryPopulating: isLibraryPopulating) else { return }
         do {
-            try await store.removeEntries(ids: missing, playlistID: playlistID)
+            try await store.removeEntries(ids: entries, playlistID: playlistID)
             await loadDetail(id: playlistID)
             await loadTree()
-            return missing.count
         } catch {
-            actionError = "Couldn’t remove the missing songs: \(error.localizedDescription)"
-            return 0
+            fail("Couldn’t remove the missing songs: \(error.localizedDescription)")
         }
     }
 
-    func clearActionError() {
-        actionError = nil
+    /// "“Road Trip”" for a failure's message, or "the playlist" once its row is gone.
+    private func quotedName(of playlistID: Int64) -> String {
+        playlists.first { $0.id == playlistID }.map { "“\($0.name)”" } ?? "the playlist"
     }
+
+    // MARK: - Dead/missing-file handling (F)
 
     /// Locate: re-point a missing entry's TRACK to a user-chosen file, preserving the track id (so
     /// every playlist referencing it is fixed at once), then reload so it resolves. Reuses the
     /// id-preserving `moveTrack` seam; the file becomes loose (`folder_id = nil`) until a rescan
     /// re-associates it — a full metadata re-scan is out of F scope. A URL already owned by another
-    /// track throws `URLConflict` (caught → surfaced via `detailState`).
+    /// track throws `URLConflict` (caught → said in the failure notice).
     func relocateEntry(_ entryID: Int64, to url: URL) async {
         guard let store, let playlistID = openPlaylistID,
               let trackID = detail.first(where: { $0.id == entryID })?.entry.trackID else { return }
@@ -398,9 +392,9 @@ final class PlaylistsModel {
             await loadDetail(id: playlistID)
         } catch is URLConflict {
             // The picked file is already another track's — a per-row failure, NOT a pane-wide error.
-            actionError = "That file is already in your library under a different track."
+            fail("That file is already in your library under a different track.")
         } catch {
-            actionError = "Couldn’t relocate the file: \(error.localizedDescription)"
+            fail("Couldn’t relocate the file: \(error.localizedDescription)")
         }
     }
 }
@@ -438,27 +432,25 @@ extension PlaylistsModel {
                 await loadDetail(id: playlistID)
             }
         } catch {
-            // A per-action alert (F review), never the pane-wide load error — naming the playlist,
+            // A per-action notice (F review), never the pane-wide load error — naming the playlist,
             // since it may not be the one on screen. Re-read once this write has ENDED, so the
             // failed order is no longer laid over the read and the stored order shows again;
             // nothing was written, so any read is current.
-            let name = playlists.first { $0.id == playlistID }.map { "“\($0.name)”" } ?? "a playlist"
+            let name = quotedName(of: playlistID)
             let message = "Couldn’t save the new order of \(name): \(error.localizedDescription)"
             orderFailure = (playlistID, message)
-            actionError = message
+            fail(message)
             if openPlaylistID == playlistID {
                 Task { await loadDetail(id: playlistID) }
             }
         }
     }
 
-    /// A save of `playlistID` succeeded: its earlier failure is moot, so its alert goes — unless
-    /// another error has replaced it since.
+    /// A save of `playlistID` succeeded: its earlier failure is moot, so its notice goes — unless
+    /// another dialog has replaced it since.
     private func withdrawOrderFailure(of playlistID: Int64) {
         guard let failure = orderFailure, failure.playlistID == playlistID else { return }
-        if actionError == failure.message {
-            actionError = nil
-        }
+        dialogs.withdrawFailure(failure.message)
         orderFailure = nil
     }
 }

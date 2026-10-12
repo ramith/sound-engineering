@@ -231,8 +231,9 @@ final class AudioViewModel {
 
     /// One-level snapshot of the queue captured just before a destructive "Play (replace queue)"
     /// (S10.3 D-play), so the UI can offer a transient "Restore previous queue" undo. Cleared once
-    /// restored or superseded by the next snapshotting replace. Not UI-bound beyond the undo affordance.
-    var queueRestorePoint: QueueRestorePoint?
+    /// restored; the next undoable replace supersedes it — unless that replace only replaced this
+    /// one's untouched queue (`QueueRestorePoint.afterReplace`). Not UI-bound beyond the undo affordance.
+    var queueRestorePoint: QueueRestorePoint<QueueItem>?
 
     /// Debounce handle for the queue→"current"-playlist snapshot mirror (S10.2, `+QueueMirror`).
     /// A queue edit schedules a mirror; a newer edit cancels the pending one so only the settled
