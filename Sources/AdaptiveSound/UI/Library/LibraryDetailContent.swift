@@ -5,8 +5,9 @@ import LibraryStore
 
 /// What an album, artist or genre page shows: its header's text and cover, and its songs as the
 /// list shows them (`DetailTrackLayout`). Loaded as one value (`LibraryBrowseModel.detailContent`),
-/// so a reload replaces the page in one step — the list's selection, kept by id, carries over.
-struct LibraryDetailContent {
+/// so a reload replaces the page in one step — the list's selection, kept by id, carries over — and
+/// a reload that found the same page compares equal and isn't published (review 19).
+struct LibraryDetailContent: Equatable, Sendable {
     let title: String
     /// The line under the title: an album's album artist; nil on the other pages.
     let subtitle: String?
