@@ -91,6 +91,9 @@ extension AudioEngineBridge {
         }
 
         installSpectrumTap()
+        // Every Enhanced start plays the Master Gain the inspector shows (G-GAIN-1). The player also
+        // keeps its volume across graph reconnects; this makes the start not depend on that.
+        applyMasterGain()
 
         if let url = fileURL {
             // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
@@ -266,31 +269,6 @@ extension AudioEngineBridge {
         // Cache the freshest reliable playhead for the config-change re-establish path.
         setLastKnownEnhancedPositionSeconds(position)
         return position
-    }
-
-    func setParameter(_ id: UInt32, value: Float) async throws {
-        return await withCheckedContinuation { continuation in
-            self.engineQueue.async {
-                if id == 0 {
-                    // Pure path: never apply software gain to the bit-perfect stream. Instead drive
-                    // the device's HARDWARE master volume (analog/HW domain → stays bit-perfect), so
-                    // the in-app slider controls volume even without exclusive hog mode. A device with
-                    // no settable master volume returns 0 (volume then via the OS / device only).
-                    if self.activePathKind == .pure {
-                        // Volume routing is logged once at the view-model layer (coalesced); not
-                        // here — setParameter fires per slider tick and would spam the log.
-                        _ = pureModeSetDeviceVolume(self.currentDeviceID, value)
-                        continuation.resume()
-                        return
-                    }
-                    // Enhanced path: master gain parameter → player node volume.
-                    if let playerNode = self.playerNode {
-                        playerNode.volume = value
-                    }
-                }
-                continuation.resume()
-            }
-        }
     }
 
     // MARK: - Private helpers

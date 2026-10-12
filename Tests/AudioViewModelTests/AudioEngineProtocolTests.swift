@@ -128,15 +128,14 @@ struct AudioEngineProtocolTests {
         #expect(mock.stopAudioCallCount == 2)
     }
 
-    // MARK: setParameter()
+    // MARK: publishMasterGain()
 
-    @Test("setParameter() captures ID and value")
-    func setParameterCapturesArgs() async throws {
+    @Test("publishMasterGain() captures the level in dB, once per publish")
+    func publishMasterGainCapturesLevel() {
         let mock = MockAudioEngine()
-        try await mock.setParameter(0, value: 0.75)
-        #expect(mock.lastSetParameterID == 0)
-        #expect(mock.lastSetParameterValue == 0.75)
-        #expect(mock.setParameterCallCount == 1)
+        mock.publishMasterGain(decibels: -3)
+        #expect(mock.lastPublishedMasterGain == -3)
+        #expect(mock.publishMasterGainCallCount == 1)
     }
 
     // MARK: publishEQ()
