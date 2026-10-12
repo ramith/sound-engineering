@@ -6,15 +6,15 @@ import Testing
 // MARK: - Sprint G break-it: two REAL walks of one music folder at once (G-LIB-01b)
 
 /// The scanner-level twin of G-LIB-01 (LibraryBreakItGTests): two real LibraryScanner walks of ONE
-/// folder on disk, the way LibraryModel lets them overlap (performScan, the add or re-add of a folder,
-/// is never gated against runReconcile, a live reconcile of the same folder). The first walk is the
+/// folder on disk, the way LibraryModel let them overlap before S10.8 G (the add or re-add of a folder
+/// was never gated against a live reconcile of the same folder; `FolderWalkSchedule` now is, and the
+/// store never lowers a stamp, which is what this pins). The first walk is the
 /// slower one: its progress callback holds it 200 ms per 256-file batch, standing in for a walk that
 /// leads over a cold disk or NAS (the second walk follows over a warm cache) or a utility-priority
 /// add-scan behind a user-initiated reconcile (a volume mount, handleVolumeChange). The second walk
 /// overtakes it, and its end-of-walk sweep deletes files that are on disk.
 ///
-/// Needs the LibraryScan target, which this break-it branch adds to LibraryBrowseKitTests in
-/// Package.swift (a test-only dependency).
+/// Needs the LibraryScan target, a test-only dependency of LibraryBrowseKitTests (Package.swift).
 @Suite("Sprint G break-it — two walks of one folder on disk")
 struct LibraryScanRaceGTests {
     /// Set once, read by the polling test: the first walk has written its first batch.

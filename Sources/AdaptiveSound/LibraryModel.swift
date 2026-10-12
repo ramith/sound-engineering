@@ -68,10 +68,21 @@ final class LibraryModel {
     /// (review B1 — `lastScanResult` is set BEFORE metadata builds the album rows).
     var libraryRevision = 0
 
-    /// The in-flight scan `Task`, held so a re-trigger can cancel the prior scan
-    /// before starting the next (mirrors the folder-monitor debounce). Cancelling it
-    /// makes the scanner throw `CancellationError` mid-walk and SKIP its sweep.
+    /// The library-wide metadata pass: after an add's walk, or the launch re-read of pending songs.
+    /// A newer one supersedes it — cancels and awaits it, then reads every pending song itself
+    /// (`startFullMetadataPass`). The folder WALKS run on `walkTasks`.
     var scanTask: Task<Void, Never>?
+
+    /// Which folder walks (adds and reconciles) may start: one per folder, one add at a time
+    /// (S10.8 G — G-LIB-01 / 05 / 06). The one place the walks are serialised; see
+    /// `LibraryModel+Walks.swift`.
+    var walkSchedule = FolderWalkSchedule()
+    /// The walk in flight for each folder (`walkSchedule`'s running walks), held so removing the
+    /// folder, or quitting, can cancel it.
+    var walkTasks: [Int64: Task<Void, Never>] = [:]
+    /// The latest folder add's registration. Adds register one at a time, in order, so each is
+    /// validated against the folders registered before it (`scanFolderIntoLibrary`).
+    var folderAddTask: Task<Void, Never>?
 
     /// The artwork cache (S8.3), built alongside `store` in `makeLibraryStore` at
     /// `AppDataLocation.artworkCacheURL`. `nil` if the store failed to construct.
@@ -94,11 +105,8 @@ final class LibraryModel {
     /// that must be reconciled.
     var watchedRoots: [WatchedRoot] = []
     /// Per-root reconcile debounce tasks (coalesce a burst → one reconcile ~1 s after the last event).
+    /// A reconcile asked for while its folder walks runs once after it (`walkSchedule`).
     var reconcileDebounce: [Int64: Task<Void, Never>] = [:]
-    /// Roots with a reconcile in flight, and roots whose reconcile must re-run (a burst arrived
-    /// mid-reconcile) — so same-root reconciles never overlap and a late change is not lost.
-    var reconcilingRoots: Set<Int64> = []
-    var pendingReconcile: Set<Int64> = []
 
     // MARK: - Reconcile observability (S8.4 slice 5b — coarse state for the S9 browse UI)
 
@@ -110,8 +118,6 @@ final class LibraryModel {
     var lastReconcileError: String?
     /// Per-root live state (watching / on-demand-only / paused / catching-up).
     var reconcileState: [Int64: ReconcileState] = [:]
-    /// Roots on network volumes: FSEvents can't watch them, so they reconcile on-demand + at launch.
-    var networkRoots: [WatchedRoot] = []
     /// NSWorkspace mount/unmount observer tokens (removed in `shutdown()`).
     var volumeMonitorTokens: [any NSObjectProtocol] = []
 
@@ -129,16 +135,23 @@ final class LibraryModel {
         init(storeless _: Void) {}
     #endif
 
-    /// Ordered library teardown: stop the FSEvents watcher + NSWorkspace volume monitor and cancel
-    /// every in-flight reconcile + scan, so nothing writes to the store after this returns. Awaited
-    /// by `AppDelegate.applicationShouldTerminate` BEFORE `AudioViewModel.shutdown()` tears the
-    /// engine down (P2-C ordering — the detached scan/reconcile observe per-file cancellation and
-    /// skip their sweeps, so the store is quiescent by the time the C audio handles are freed).
+    /// Ordered library teardown: stop the FSEvents watcher + NSWorkspace volume monitor, start no
+    /// more walks, and cancel every in-flight walk (add or reconcile), folder add and metadata pass,
+    /// so nothing writes to the store after this returns. Awaited by
+    /// `AppDelegate.applicationShouldTerminate` BEFORE `AudioViewModel.shutdown()` tears the engine
+    /// down (P2-C ordering — the walks observe per-file cancellation and skip their sweeps, so the
+    /// store is quiescent by the time the C audio handles are freed). The next launch's catch-up
+    /// walks every folder again (`catchUpLibraryFolders`).
     func shutdown() {
         logUX("libraryModel shutdown")
         libraryWatcher?.stop()
         stopVolumeMonitor()
+        walkSchedule.stop()
+        folderAddTask?.cancel()
         for task in reconcileDebounce.values {
+            task.cancel()
+        }
+        for task in walkTasks.values {
             task.cancel()
         }
         scanTask?.cancel()
