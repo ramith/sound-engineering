@@ -156,12 +156,13 @@ extension AudioEngineBridge {
         trackBecameAudible(fileURL, gaplessSeam: false)
 
         // 3. Stop + reset the player before scheduling so the new file replaces (not queues after)
-        //    the current one. Also stop any prior streaming-resampler session (bumps the generation
-        //    so its in-flight buffers abandon themselves) before this new track supersedes it.
+        //    the current one — ALWAYS, playing or not (S10.8 G): a node that is not playing can
+        //    still hold a queued segment (one scheduled while its engine was stopped), and skipping
+        //    the stop played it ahead of the new file. Also stop any prior streaming-resampler
+        //    session first: that bumps both epochs, so its in-flight buffers abandon themselves and
+        //    the `.dataPlayedBack` completions this stop fires don't roll a gapless seam.
         stopEnhancedResampler()
-        if playerNode.isPlaying {
-            playerNode.stop()
-        }
+        playerNode.stop()
         // Fresh play schedules the whole file from frame 0 → no position offset. (A later seek sets
         // this to the seek target; see currentPlaybackPosition.)
         setEnhancedPositionBaseSeconds(0)

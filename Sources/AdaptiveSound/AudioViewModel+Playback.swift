@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel playback control (start / prime / seek)
 
@@ -120,16 +121,26 @@ extension AudioViewModel {
         }
     }
 
-    /// Seek to `seconds` from the start of the current file.
-    /// Updates `playbackPosition` immediately to avoid UI jitter while the engine seeks.
+    /// Seek to `seconds` from the start of the current file (`SeekRoute`, S10.8 G). Playing: the
+    /// engine seeks. Paused: only the resume point moves, and Play resumes there — the engine is
+    /// stopped, and a segment scheduled onto it would play ahead of the next song. Stopped: nothing
+    /// is loaded, so nothing moves. Updates `playbackPosition` immediately to avoid UI jitter.
     func seek(to seconds: Double) {
+        let route = SeekRoute.route(isPlaying: isPlaying, isPaused: pausedResumePosition != nil)
         logUX("seek → \(secs(seconds))s "
             + "(from \(secs(playbackPosition))s, dur \(secs(duration))s, "
-            + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"))")
+            + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"), route=\(route))")
+        switch route {
+        case .engine:
+            Task {
+                await engine.seek(to: seconds)
+            }
+        case .resumePoint:
+            resumePoint?.move(to: seconds)
+        case .ignore:
+            return
+        }
         playbackPosition = seconds
         onNowPlayingRefresh?() // re-anchor the Control Center scrubber to the new position (S10.4)
-        Task {
-            await engine.seek(to: seconds)
-        }
     }
 }

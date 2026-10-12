@@ -185,11 +185,17 @@ extension AudioEngineBridge {
                 // Enhanced path: best-effort re-schedule.
                 // Stops the player and reschedules from the target frame. Rate-mismatched files
                 // use seekEnhancedResampler; 48 kHz passthrough files use seekEnhancedBestEffort.
-                guard let player = self.playerNode,
+                // Only with play intent (S10.8 G): paused, stopped, ended or after a device loss the
+                // engine is stopped, and `play()` on a stopped engine is a no-op — the re-scheduled
+                // segment would stay queued on the player and play ahead of the next song. Where a
+                // paused song resumes is the view model's resume point, not the engine's.
+                let playIntent = self.resampleQueue.sync { self.enhancedPlayIntent }
+                guard playIntent,
+                      let player = self.playerNode,
                       let url = self.lastFileURL
                 else {
-                    logUX("engine seek: path=Enhanced "
-                        + "target=\(secs(seconds))s result=no-op (no player/url)")
+                    logUX("engine seek: path=Enhanced target=\(secs(seconds))s "
+                        + "result=no-op (\(playIntent ? "no player/url" : "no play intent"))")
                     continuation.resume()
                     return
                 }
