@@ -1002,3 +1002,45 @@ analog-matched top bands, and a per-curve peak scan for loud masters.
 **Routine** (decision 18 + retros): keyboard and selection work gets a break-it pass plus my live pass BEFORE the
 code review; sheets for changed screens; swiftformat on main after each merge (the worktree gate skips it);
 agents resumed by raw ID.
+
+### Build, break-it, review and fix round (2026-10-11 – 12)
+
+- **Build (two parallel agents):**
+  - **E4-rest:** the playlist header on `LibraryCardHeader`; the themed `AppDialog` for delete playlist (it now confirms; before, it deleted at once), remove missing, and the failure notice (a new OK-only form).
+  - **E2 + E3:** one `LibraryDetailPage` + `DetailTrackList` on `ListSelection` for album, artist and genre. Plain button rows replace `List(selection:)` + `TapGesture(count: 2)`, which dropped clicks.
+  - One `LibraryPageActions` set (Play · Shuffle · ⋯) on every Library page.
+  - Founder decisions 34–36: the genre mosaic, the artist tile cover, and Shuffle on albums.
+  - A Sprint EQ timing tripwire flaked under TSan at 768 kHz. It now scales per rate.
+- **Break-it** (0 BLOCKER, 1 MAJOR, 12 MINOR; 8 red tests). The MAJOR predates E: albums ripped one folder per disc with no disc tags interleaved their discs.
+- **Code review** (0 BLOCKER, 6 MAJOR):
+  - tile order ≠ page order;
+  - a held Return repeated `playNow`;
+  - Remove Missing during a scan / the set confirmed;
+  - the shared sheet's state;
+  - the queue restore point overwritten by a double-click;
+  - keyboard / VoiceOver reach for the menu verbs.
+- **My live pass** (test library), all passing:
+  - selection keys and clicks;
+  - drag to a playlist;
+  - ⌘[;
+  - double-click plays the page from that song;
+  - artist / genre pages; End/Home on 500 rows;
+  - the delete dialog (Cancel focused, Return / Esc cancel, Delete returns to the category).
+- **ONE fix round** for all three sources:
+  - `facetRows` (tile = page order);
+  - Return on key-down only;
+  - ⌘↩ / ⇧⌘↩ / ⌘I and a VoiceOver Add to Playlist;
+  - `PlaylistDialogLatch` (22 tests);
+  - `QueueRestorePoint`, which survives a double-click and restores shuffle;
+  - every queue-replacing Library play can be undoable (one restore toast);
+  - shared `SongRowInteraction`: Songs rows now drag to playlists;
+  - a disc cue; disc numbers from folder names;
+  - the album's year; a stable album order;
+  - no made-up track numbers;
+  - ⌘A anchors ⇧-extend;
+  - rows cover their whole pitch;
+  - the layout built off the main actor.
+  - The song read gains the album's year (a read only, no schema change).
+- **Live re-check:** drag a Songs row ✓, a seam click ✓, ⌘↩ ✓, ⇧⌘↩ ✓, ⌘I ✓, the restore toast ✓.
+  - Not live-checkable: Remove Missing. The test library sweeps a renamed file instead of marking it missing.
+- **Final strict gate on the branch @ 709f50b: EXIT 0** (192/192 × 3, 154/154 × 2, all Swift tests, 0 leaks).
