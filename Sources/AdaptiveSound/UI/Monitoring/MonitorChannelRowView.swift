@@ -4,8 +4,9 @@ import SwiftUI
 
 /// One full-width row in the Monitoring tab representing a single audio channel.
 ///
-/// Each row shows the BEFORE spectrum (teal, left half) and the AFTER spectrum
-/// (blue, right half), separated by a hairline. The layout mirrors the design in
+/// Each row shows the BEFORE spectrum (neutral grey, left half) and the AFTER spectrum
+/// (the analyzer's teal → lime, right half), separated by a hairline — decision 4's colours
+/// (S10.8 F1, `MonitorColors`). The layout mirrors the design in
 /// `docs/sprints/05-sprint-5-monitoring-tab-design.md`.
 ///
 /// - `channelIndex`:  0-based index into the engine's channel list.
@@ -32,11 +33,6 @@ struct MonitorChannelRowView: View {
         static let cornerRadius: CGFloat = DesignSystem.Radius.container
         static let innerSpacing: CGFloat = DesignSystem.Spacing.xSmall
     }
-
-    // Semantic colour tokens from the design spec:
-    // teal (#1F9D8B family) = BEFORE, blue (#0A84FF) = AFTER.
-    private let beforeColor = DesignSystem.Color.accent // teal
-    private let afterColor = DesignSystem.Color.blue // blue
 
     // MARK: Body
 
@@ -72,10 +68,9 @@ struct MonitorChannelRowView: View {
             Spacer()
 
             HStack(spacing: Layout.innerSpacing) {
-                // The tag is TEXT: the bare `accent` is ≈ 2.5:1 on the light card (R4-TINT-02);
-                // `accentForeground` is the same teal in dark. The bars keep `beforeColor`.
-                stageTag(title: "BEFORE", color: DesignSystem.Color.accentForeground)
-                stageTag(title: "AFTER", color: afterColor)
+                // The tags are TEXT, so each takes its side's text colour, not its bars' fill (R4-MON-03).
+                stageTag(title: "BEFORE", color: MonitorColors.beforeText)
+                stageTag(title: "AFTER", color: MonitorColors.afterText)
             }
         }
         .frame(height: Layout.stageLabelHeight)
@@ -87,14 +82,14 @@ struct MonitorChannelRowView: View {
         // 50/50 natively — no `GeometryReader` (which forced a layout pass per channel row just to
         // compute the halves by hand).
         HStack(spacing: 0) {
-            SpectrumMiniView(bands: beforeBands, color: beforeColor, isActive: isActive)
+            SpectrumMiniView(bands: beforeBands, barColors: .uniform(MonitorColors.beforeFill), isActive: isActive)
                 .frame(maxWidth: .infinity)
 
             Rectangle()
                 .fill(DesignSystem.Color.hairline)
                 .frame(width: Layout.hairlineWidth)
 
-            SpectrumMiniView(bands: afterBands, color: afterColor, isActive: isActive)
+            SpectrumMiniView(bands: afterBands, barColors: .analyzerRamp, isActive: isActive)
                 .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
