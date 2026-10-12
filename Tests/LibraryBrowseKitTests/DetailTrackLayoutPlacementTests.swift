@@ -18,8 +18,8 @@ struct DetailTrackLayoutPlacementTests {
     @Test("a row's span at the 36 pt pitch: fixed rows and headers; an album's first song brings its header")
     func spansAtCompactPitch() {
         let grouped = DetailTrackLayout(tracks: artist, arrangement: .byAlbum)
-        // The stack: h 0–44, 41 44–80, 42 80–116, h 116–160, 21 160–196, 22 196–232, h 232–276,
-        // 31 276–312, 32 312–348.
+        // The stack: h 0–44, 21 44–80, 22 80–116, h 116–160, 31 160–196, 32 196–232, h 232–276,
+        // 41 276–312, 42 312–348 (albums by year, the loose songs last).
         let spans = (0 ..< 6).map { grouped.span(ofRow: $0, metrics: metrics) }
         #expect(spans.map(\.top) == [0, 80, 116, 196, 232, 312])
         #expect(spans.map(\.height) == [80, 36, 80, 36, 80, 36])

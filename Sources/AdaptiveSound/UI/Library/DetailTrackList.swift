@@ -74,6 +74,11 @@ struct DetailTrackList: View {
         .popover(item: $infoTarget, arrowEdge: .trailing) { track in
             TrackInfoCard(file: AudioFile(track))
         }
+        // The page reloaded under the list: only the selected rows it still shows stay selected — no
+        // ghost ids for a menu, a ⇧-range or VoiceOver's count to trip on (review 12, break-it 10).
+        .onChange(of: layout) { _, reloaded in
+            selection.keepOnly(reloaded.rows.lazy.map(\.id))
+        }
         // The page opens from a grid that held key focus (a click on a tile focuses it, as Return
         // does), so the keys go on here: ↓ claims the first song. The write waits a turn, as the
         // grid's own restore does — the list may not be a focus target on its first appearance.

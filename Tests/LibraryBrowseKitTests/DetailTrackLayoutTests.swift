@@ -113,20 +113,20 @@ struct DetailTrackLayoutTests {
     func artistGroupsByAlbum() {
         let layout = DetailTrackLayout(tracks: artist, arrangement: .byAlbum)
         #expect(drawn(layout) == [
-            "h-1 Unknown Album -", "41#-", "42#-", // loose songs: by title, other albums' numbers not shown
-            "h4 Bombay 1995", "21#3", "22#4",
+            "h4 Bombay 1995", "21#3", "22#4", // albums by year (break-it 5)
             "h9 Rockstar 2011", "31#7", "32#-", // the untagged song after the numbered one, blank
+            "h-1 Unknown Album -", "41#-", "42#-", // loose songs last, by title, other albums' numbers not shown
         ])
-        #expect(layout.rows.map(\.id) == [41, 42, 21, 22, 31, 32])
+        #expect(layout.rows.map(\.id) == [21, 22, 31, 32, 41, 42])
     }
 
     @Test("PLAY-01 artist: a row plays the artist's songs, album by album, from that row on", arguments: [
-        (Int64(41), 0), (Int64(22), 3), (Int64(32), 5),
+        (Int64(21), 0), (Int64(32), 3), (Int64(42), 5),
     ])
     func artistPlaysFromRow(id: Int64, start: Int) throws {
         let layout = DetailTrackLayout(tracks: artist, arrangement: .byAlbum)
         let request = try #require(layout.playFromRow(id))
-        #expect(request.tracks.map(\.id) == [41, 42, 21, 22, 31, 32])
+        #expect(request.tracks.map(\.id) == [21, 22, 31, 32, 41, 42])
         #expect(request.startIndex == start)
     }
 
@@ -143,8 +143,8 @@ struct DetailTrackLayoutTests {
         ]
         let layout = DetailTrackLayout(tracks: read, arrangement: .byAlbum)
         #expect(drawn(layout) == [
+            "h6 Dil Se 1998", "61#1", "63#2", "62#3", // by year: 1998, then 2007
             "h5 Guru 2007", "53#2", "52#4", "51#5",
-            "h6 Dil Se 1998", "61#1", "63#2", "62#3",
         ])
         let shown = DetailTestSongs.drawnSongs(layout)
         #expect(shown != read.map(\.id)) // the page's order is not the read's
@@ -158,11 +158,11 @@ struct DetailTrackLayoutTests {
 
     // MARK: Genre (E3)
 
-    @Test("a genre is one flat list, album after album as read, with no numbers or headers")
+    @Test("a genre is one flat list, album after album by year, loose songs last, with no numbers or headers")
     func genreIsFlat() {
-        let read = [artist[5], artist[2], artist[0]]
+        let read = [artist[5], artist[2], artist[0]] // Rockstar 2011, Bombay 1995, a loose song
         let layout = DetailTrackLayout(tracks: read, arrangement: .flat)
-        #expect(drawn(layout) == ["31#-", "21#-", "42#-"])
+        #expect(drawn(layout) == ["21#-", "31#-", "42#-"])
     }
 
     @Test("a genre orders each album's run as that album's own pages do — disc, track, title")
@@ -176,13 +176,21 @@ struct DetailTrackLayoutTests {
     }
 
     @Test("PLAY-01 genre: a row plays the genre's songs from that row on", arguments: [
-        (Int64(31), 0), (Int64(21), 1), (Int64(42), 2),
+        (Int64(21), 0), (Int64(31), 1), (Int64(42), 2),
     ])
     func genrePlaysFromRow(id: Int64, start: Int) throws {
         let layout = DetailTrackLayout(tracks: [artist[5], artist[2], artist[0]], arrangement: .flat)
         let request = try #require(layout.playFromRow(id))
-        #expect(request.tracks.map(\.id) == [31, 21, 42])
+        #expect(request.tracks.map(\.id) == [21, 31, 42])
         #expect(request.startIndex == start)
+    }
+
+    @Test("two layouts are equal when they show the same rows the same way — however the read was ordered")
+    func layoutsCompareByWhatTheyShow() {
+        let one = DetailTrackLayout(tracks: album, arrangement: .album)
+        #expect(one == DetailTrackLayout(tracks: album.reversed(), arrangement: .album)) // same page
+        #expect(one != DetailTrackLayout(tracks: album, arrangement: .flat)) // drawn another way
+        #expect(one != DetailTrackLayout(tracks: Array(album.dropLast()), arrangement: .album)) // a song left
     }
 
     // MARK: A tile's verbs (the page's order)
