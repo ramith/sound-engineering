@@ -57,6 +57,7 @@ SOURCES=(
     "$REPO_ROOT/Sources/AudioDSP/Spatial/CrossfeedModule.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModePolicy.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeBridgePolicy.cpp"
+    "$REPO_ROOT/Sources/AudioDSP/DeviceListPolicy.cpp" # CoreAudioDevice.cpp's menu rule
     "$REPO_ROOT/Sources/AudioDSP/PureModeFormat.cpp"
     "$REPO_ROOT/Sources/AudioDSP/PureModeSource.cpp"
     "$REPO_ROOT/Sources/AudioDSP/FileDecodeSource.cpp"

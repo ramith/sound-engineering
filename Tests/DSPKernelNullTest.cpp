@@ -44,6 +44,8 @@
 //   EqEngineBreakItTests.inc — Sprint EQ engine break-it: red tests pinning defects the gate above
 //                           misses (its measurement half: EqEngineBreakItMeasure.cpp, not gated)
 //   EqEngineFixTests.inc  — Sprint EQ engine fix round (amendments 14–19): each fix's own gate
+//   DeviceListPolicyTests.inc — Sprint G: the output-device menu rule (no hidden / private /
+//                           process-default aggregate devices) + the aggregate-composition decode
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -80,6 +82,7 @@
 #include "LoudnessNeutralTests.inc" // after TrackLoudnessTests.inc + EqEngineTests.inc (helpers)
 #include "EqEngineBreakItTests.inc" // after EqEngineTests.inc + EqTransitionTests.inc (helpers)
 #include "EqEngineFixTests.inc"     // after EqEngineBreakItTests.inc (helpers)
+#include "DeviceListPolicyTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -404,6 +407,17 @@ namespace
             testLoudnessPredictorPathologicalBounded,
             true,
         },
+        // Sprint G: the output-device menu rule (parallel-safe: pure, no HAL, no env/tmp).
+        {"DeviceList_KeepsRealOutputs", testDeviceListKeepsRealOutputs, true},
+        {
+            "DeviceList_KeepsVirtualAndUserAggregates",
+            testDeviceListKeepsVirtualAndUserAggregates,
+            true,
+        },
+        {"DeviceList_HidesInternalDevices", testDeviceListHidesInternalDevices, true},
+        {"DeviceList_RuleOrder", testDeviceListRuleOrder, true},
+        {"DeviceList_CompositionDecode", testDeviceListCompositionDecode, true},
+        {"DeviceList_VerdictStrings", testDeviceListVerdictStrings, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine
