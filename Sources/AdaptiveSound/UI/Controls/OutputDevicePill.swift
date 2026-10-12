@@ -11,8 +11,8 @@ import SwiftUI
 ///   which VoiceOver reads as "checked" (a checkmark image beside the name read as nothing). Choosing
 ///   an item selects that device. The check follows the device actually in use: a failed switch
 ///   leaves it where it was.
-/// - **Width:** the pill hugs its content up to `maxWidth`, then the name truncates, so an
-///   aggregate device's long name can't blow out the bar.
+/// - **Size:** the pill hugs its content up to `DevicePillMetrics.maxWidth`, then the name truncates,
+///   so an aggregate device's long name can't blow out the bar.
 /// - **Keyboard:** a Tab stop under Full Keyboard Access with the app's keyboard ring, like the
 ///   Library's Sort and Columns pills.
 struct OutputDevicePill: View {
@@ -24,12 +24,6 @@ struct OutputDevicePill: View {
     private var achievedRate: Double {
         viewModel.signalPath.achievedSampleRate
     }
-
-    /// The pill's maximum width. It HUGS its content up to this cap, then the device name
-    /// truncates. (It was a fixed 302pt slot while the tab strip sat directly to its right, so
-    /// a device change could not slide the tabs; the tabs moved to the chrome's right edge in
-    /// S10.8 founder round 1, so only the pill's own trailing edge moves now.)
-    private static let maxWidth: CGFloat = 302
 
     var body: some View {
         Menu {
@@ -86,8 +80,8 @@ struct OutputDevicePill: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 32)
-        .frame(maxWidth: Self.maxWidth, alignment: .leading)
+        .frame(minHeight: CGFloat(DevicePillMetrics.minHeight))
+        .frame(maxWidth: CGFloat(DevicePillMetrics.maxWidth), alignment: .leading)
         // The 8a glass "small-control" fill (the .badge role — same white-8% recipe the
         // mock's device pill uses).
         .glassPanel(.badge, in: Capsule())
