@@ -1,17 +1,17 @@
 # Adaptive Sound — macOS Audio Enhancement Engine
 
-A personal, open-source audio enhancement app for macOS that turns any good-quality song into a personal, perceptually-tuned, spatially-rendered mix steerable via plain language.
+A personal, open-source music player for macOS — bit-perfect playback of your own library first, then adaptive sound: a perceptually-tuned, spatially-rendered mix you steer with one *Reimagine* control. *(The "steerable via plain language" goal was cut from scope on 2026-07-12.)*
 
 [![Strict CI](https://github.com/ramith/sound-engineering/actions/workflows/strict-ci.yml/badge.svg)](https://github.com/ramith/sound-engineering/actions/workflows/strict-ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS_26_(Apple_Silicon)-blue)
 ![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)
 ![C++](https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-120_null_%2B_71_Swift-brightgreen)
+![Tests](https://img.shields.io/badge/tests-202_null_%2B_700%2B_Swift-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-not_tracked-lightgrey)
 ![License](https://img.shields.io/badge/license-TBD-lightgrey)
 ![Last commit](https://img.shields.io/github/last-commit/ramith/sound-engineering)
 
-**Status:** In active development — building a **bit-perfect macOS audiophile player** first, then the adaptive-sound differentiation (masking-aware clarity, steerable *Reimagine*, spatial rendering). Current focus: **S8 — the library spine**. See [`docs/product/roadmap.md`](docs/product/roadmap.md) for the phase/release plan and [`docs/sprints/sprint-plan.md`](docs/sprints/sprint-plan.md) for what's next.
+**Status:** **R1 = v1.0.0-alpha — release in progress** (the release PR merged 2026-10-13; the tag waits on a green CI; [release notes](docs/releases/v1.0.0-alpha.md)). A **bit-perfect macOS audiophile player** first, then the adaptive-sound differentiation (masking-aware clarity, steerable *Reimagine*, spatial rendering). The one prose status line is [`docs/sprints/sprint-plan.md` §Status](docs/sprints/sprint-plan.md#status); the phase/release plan is [`docs/product/roadmap.md`](docs/product/roadmap.md).
 
 ---
 
@@ -30,11 +30,19 @@ A personal, open-source audio enhancement app for macOS that turns any good-qual
 ```
 sound-engineering/
 ├── Sources/
-│   ├── AdaptiveSound/       # SwiftUI app (UI, Models, Monitoring, Spectrum, Loudness, AudioEngineBridge)
-│   ├── AudioDSP/            # C++ real-time DSP (AudioEngine, EQ, Limiting, Loudness, Clarity, Spatial)
-│   ├── AudioFormatKit/      # decode (runtime FFmpeg-or-Apple)
-│   ├── LibraryScan/         # folder scan + FSEvents watch
-│   ├── LibraryStore/        # persistent SQLite library store
+│   ├── AdaptiveSound/       # SwiftUI app (UI, view models, AudioEngineBridge — the only code that touches AVFAudio/CoreAudio)
+│   ├── AudioDSP/            # C++ real-time DSP + the two AUs, the Realizer, the Pure HAL engine, decode (Apple-first, FFmpeg dlopen fallback)
+│   ├── AudioDSPTestBridge/  # C++ test seam for the Swift EQ tests
+│   ├── AudioFormatKit/      # device-width multichannel format resolver (shared with VerifyAUGraph)
+│   ├── DesignTokenKit/      # Liquid Glass design tokens + layout maths
+│   ├── EQEditKit/           # EQ editing model, presets, per-output pins, Master Gain law
+│   ├── LibraryBrowseKit/    # browse / list / selection decisions
+│   ├── LibraryScan/         # folder scan + FSEvents watch + metadata/artwork
+│   ├── LibraryStore/        # persistent library store (GRDB.swift over the system SQLite)
+│   ├── OutputDeviceKit/     # the output-device rule (pin / follow / device loss)
+│   ├── PlaybackQueueKit/    # queue, order, resume, transport snapshot
+│   ├── StoreSQLiteShim/     # one C SQLite option Swift can't call
+│   ├── TrackLoudnessKit/    # load-time track loudness analysis (loudness-neutral EQ)
 │   ├── SRCQualityMeasure/   # sample-rate-conversion quality harness
 │   ├── VerifyAUGraph/       # headless AU-graph gate
 │   └── VerifyLibraryStore/  # headless library-store gate
@@ -73,6 +81,7 @@ make test           # Run the Swift test suite
 make gate           # DSP correctness gate (C++ null-test + VerifyAUGraph + VerifyLibraryStore)
 make strict-gate    # Full pre-merge gate (build + swift test + gate + clang-tidy + sanitizers)
 make format         # Format code (Swift + C++)
+make dist           # Release bundle: ad-hoc-signed .app, zip, disk image, SHA256SUMS.txt (dist/)
 make profile        # Build + profile with Instruments
 make run-test-library    # Debug copy on an isolated test library (~10k generated tracks), beside your own
 make reset-test-library  # Start the test library over (never touches your own library or settings)
@@ -83,7 +92,7 @@ make help           # Show all targets
 
 ## Testing & CI
 
-The **DSP correctness gate** is a C++ null-test harness — [`scripts/build-null-test.sh`](scripts/build-null-test.sh) — that compiles the real production kernel and asserts a stable golden master (`0xE7267654BA01D315`) plus bit-exact bypass at intensity 0. The Swift suites run headless via `swift test` (native swift-testing) and in Xcode. `VerifyAUGraph` and `VerifyLibraryStore` are `swift run` integration gates for the audio graph and the library store. **[Strict CI](.github/workflows/strict-ci.yml)** runs `make strict-gate` (with FFmpeg present) on every push to `main` and every PR.
+The **DSP correctness gate** is a C++ null-test harness — [`scripts/build-null-test.sh`](scripts/build-null-test.sh) — that compiles the real production kernel and asserts a stable golden master (`0xE7AF0C67F9340785`, re-baselined in Sprint EQ) plus bit-exact bypass at intensity 0 with the EQ flat or off. The Swift suites run headless via `swift test` (native swift-testing) and in Xcode. `VerifyAUGraph` and `VerifyLibraryStore` are `swift run` integration gates for the audio graph and the library store. **[Strict CI](.github/workflows/strict-ci.yml)** runs `make strict-gate` (with FFmpeg present) on GitHub-hosted `macos-26` on every push to `main` and every PR; **[release](.github/workflows/release.yml)** builds and publishes a `v*` tag with build-provenance attestations.
 
 ---
 
@@ -116,7 +125,7 @@ For detailed setup, coding standards, pre-commit hooks, and profiling guidance, 
 **Pre-commit hooks** run automatically on `git commit` to enforce:
 - C++ formatting & static analysis (clang-format, clang-tidy)
 - Swift formatting & linting (swiftformat, swiftlint)
-- Audio-thread safety checks (ASan, TSan)
+- *(ASan / UBSan / TSan, leak detection and the main-thread stall self-test run in `make strict-gate`, not the hook)*
 
 ---
 
@@ -124,13 +133,13 @@ For detailed setup, coding standards, pre-commit hooks, and profiling guidance, 
 
 **Strategy:** reach competitive parity as a *player* first, then build the Adaptive Sound differentiation on a credible base. Authoritative plan: [`docs/product/roadmap.md`](docs/product/roadmap.md) · [`docs/sprints/sprint-plan.md`](docs/sprints/sprint-plan.md).
 
-**Shipped (on `main`):** loudness safety (Sprint 4) · 31-band EQ + N-channel multichannel + Monitoring (Sprint 5/5b) · bit-perfect **Pure Mode** + gapless playback · S6 architecture-review gate · S7 DSP regression gate · QW1 differentiators (crossfeed, Reimagine intensity knob, tonal presets).
+**Shipped (on `main`, released as R1 = v1.0.0-alpha):** loudness safety (Sprint 4) · N-channel multichannel + Monitoring (Sprint 5/5b) · bit-perfect **Pure Mode** + gapless playback · S6 architecture-review gate · S7 DSP regression gate · QW1 differentiators (crossfeed, Reimagine intensity knob, tonal presets) · the GRDB library spine + browse/search (S8–S9) · queue, playlists, Recently Played, media keys (S10.1–S10.6) · the Liquid Glass UI in dark and light (S10.7–S10.8) · an honest, loudness-neutral 31-band EQ (Sprint EQ) · the output-device and app↔engine threading rules (Sprint G).
 
-**Phase 1 — player maturity / parity (S8–S14):** library spine (**S8, current focus**) → browse/search (S9) → queue/playlists/media keys (S10) → CUE + format hardening (S11) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → loudness compensation (S14). → release **R1** after S10, **R2** ("audiophile-credible") after S14.
+**Phase 1 — player maturity / parity (S8–S14):** library spine (S8 ✅) → browse/search (S9 ✅) → queue/playlists/media keys + the release UX (S10.x ✅) → CUE + format hardening (S11) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → loudness compensation (S14). → release **R1** after S10 (v1.0.0-alpha, in progress), **R2** ("audiophile-credible") after S14.
 
 **Phase 2 — the Adaptive Sound differentiation (S15–S18):** masking model → clarity / Arbiter → full Reimagine mapping → BRIR spatial render. → release **R3** after S17.
 
-**Won't, this horizon (long-horizon vision):** stem separation / object engine (Phase 1.5) · system-wide capture via Core Audio process taps (Phase 2) · natural-language tuning.
+**Won't, this horizon (long-horizon vision):** stem separation / object engine (Phase 1.5) · system-wide capture via Core Audio process taps (Phase 2) · generative re-imagination. **Cut (2026-07-12):** natural-language tuning and hearing personalization.
 
 ---
 
@@ -150,7 +159,7 @@ See [`docs/`](docs/) for the complete architecture, requirements, and design rec
 
 ## Visual identity
 
-The shipped UI uses a **teal `DesignSystem`** (neutral surfaces, system fonts) — see [`Sources/AdaptiveSound/DesignSystem.swift`](Sources/AdaptiveSound/DesignSystem.swift). The earlier *Flux* / Sunset-gradient / Space-Grotesk concept kit (in [`assets/`](assets/)) was **superseded**; its integration plan is archived at [`docs/session-notes/brand-integration-plan.md`](docs/session-notes/brand-integration-plan.md) for provenance.
+The shipped UI is **Liquid Glass** on a teal `DesignSystem` (token fills, dark and light) — see [`Sources/AdaptiveSound/DesignSystem.swift`](Sources/AdaptiveSound/DesignSystem.swift), `DesignSystemGlass.swift` and [`Sources/DesignTokenKit/`](Sources/DesignTokenKit/); designs in [`docs/design/`](docs/design/). The earlier *Flux* / Sunset-gradient / Space-Grotesk concept kit (in [`assets/`](assets/)) was **superseded**; its integration plan is archived at [`docs/session-notes/brand-integration-plan.md`](docs/session-notes/brand-integration-plan.md) for provenance.
 
 ---
 
