@@ -58,7 +58,10 @@ extension AudioViewModel {
         // path, the loudness, the EQ design rate), so the tick never waits on the player or the
         // hardware (the disconnect freeze, S10.8 G).
         let snapshot = engine.snapshot()
-        let transport = snapshot.transport
+        // A sample older than the latest start / seek / stop describes the playback that request
+        // replaces: neither its playhead nor its end flag is acted on (MAJOR-1, S10.8 G review).
+        let transport: TransportSnapshot? =
+            snapshot.transport.isCurrent(for: transportEpoch) ? snapshot.transport : nil
         // Poll the playhead + loudness + signal path every tick.
         pollPlayhead(transport)
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
@@ -86,7 +89,7 @@ extension AudioViewModel {
         }
 
         // --- Gapless auto-advance poll ---
-        if isPlaying {
+        if isPlaying, let transport {
             let currentCount = transport.transitionCount
             if currentCount > lastTransitionCount {
                 // A gapless seam completed: the on-deck track is now current.
@@ -132,13 +135,13 @@ extension AudioViewModel {
     /// overwritten by the engine's last ticks (S10.8 G). While playing it follows the engine. Only a
     /// genuine stop (not playing, not paused) zeroes it.
     @MainActor
-    private func pollPlayhead(_ transport: TransportSnapshot) {
+    private func pollPlayhead(_ transport: TransportSnapshot?) {
         if let resumeAt = pausedResumePosition {
             if playbackPosition != resumeAt {
                 playbackPosition = resumeAt
             }
         } else if isPlaying {
-            playbackPosition = transport.position ?? playbackPosition
+            playbackPosition = transport?.position ?? playbackPosition
         } else if playbackPosition != 0 {
             playbackPosition = 0
         }

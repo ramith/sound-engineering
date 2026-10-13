@@ -32,7 +32,13 @@ struct SignalPathInfoMirror: Equatable {
     var fellBackToEnhanced: Bool = false
 }
 
-// MARK: - Protocol mirror (matches AudioPlaybackEngine exactly)
+// MARK: - Protocol mirror (models the engine's state; NOT the current protocol's shape)
+
+// The live protocol (`AudioPlaybackEngine`) serves the engine's state to the main thread as ONE
+// copy, `snapshot() -> EngineSnapshot` (S10.8 G, the disconnect freeze), and numbers start / seek /
+// stop requests with an epoch. This mirror predates that and keeps the older per-field reads
+// (`currentPlaybackPosition`, `trackTransitionCount`, `playbackEnded`, …) as stand-ins for the fields
+// the snapshot carries; the epoch gate is mirrored in `MockAdvanceController`.
 
 protocol AudioPlaybackEngineMirror: AnyObject {
     func initialize() async throws -> Bool

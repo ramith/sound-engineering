@@ -86,4 +86,16 @@ struct TransportSnapshotTests {
             }
         }
     }
+
+    @Test("VM-TS-04: a sample is current only once the engine has begun the latest requested operation")
+    func epochGatesStaleSamples() {
+        // The engine's last begun operation was #3: its samples (and a transitional one) carry epoch 3.
+        let sample = TransportSnapshot(epoch: 3, position: 41, transitionCount: 2, ended: true)
+        #expect(sample.isCurrent(for: 3))
+        #expect(sample.isCurrent(for: 2), "a newer engine sample answers an older request too")
+        // The reader asked for #4 (a start, still queued behind a slow device): #3's end flag and
+        // playhead belong to the playback #4 replaces — not current.
+        #expect(!sample.isCurrent(for: 4))
+        #expect(TransportSnapshot().isCurrent(for: 0))
+    }
 }

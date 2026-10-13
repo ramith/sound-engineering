@@ -47,6 +47,13 @@ final class MockAdvanceController {
 
     var engineTransitionCount: UInt64 = 0
     var engineEndedFlag: Bool = false
+    /// The engine's playhead, as its snapshot carries it.
+    var enginePosition: Double?
+    /// The epoch of the latest request the engine has BEGUN (`TransportSnapshot.epoch`): its
+    /// snapshot describes that request's playback. `requestedEpoch` is the view model's latest
+    /// request; the tick ignores the snapshot while it is older (S10.8 G, the stale-ended stop).
+    var engineEpoch: UInt64 = 0
+    private(set) var requestedEpoch: UInt64 = 0
     var startAudioThrows: Bool = false
     /// Models the async restart window on a Pure rate-transition advance: when `true`, `startPlayback`
     /// only records the call and returns WITHOUT resetting `engineEndedFlag`/`isPlaying`/`pendingNextIndex`
@@ -64,6 +71,7 @@ final class MockAdvanceController {
         startPlaybackCallCount += 1
         lastStartedIndex = idx
         lastStartedPureMode = pureModeEnabled
+        requestedEpoch += 1
 
         if startAudioThrows {
             errorMessage = "Playback failed: simulated error"
@@ -79,6 +87,8 @@ final class MockAdvanceController {
             return
         }
 
+        // The engine begins the start (its transitional snapshot: this epoch, no end flag).
+        engineEpoch = requestedEpoch
         // Reset transition baseline.
         lastTransitionCount = engineTransitionCount
         engineEndedFlag = false
@@ -108,6 +118,9 @@ final class MockAdvanceController {
     /// and `engineEndedFlag` to drive the state machine.
     func tick() {
         guard isPlaying else { return }
+        // A snapshot from before the latest request describes the playback it replaces.
+        guard engineEpoch >= requestedEpoch else { return }
+        playbackPosition = enginePosition ?? playbackPosition
 
         if engineTransitionCount > lastTransitionCount {
             lastTransitionCount = engineTransitionCount
@@ -125,6 +138,21 @@ final class MockAdvanceController {
                 playbackPosition = 0
             }
         }
+    }
+
+    // MARK: - Mirror of seek(to:) while playing
+
+    /// The scrubber moves at once; the engine's seek is a numbered request it reaches later.
+    func seek(to seconds: Double) {
+        requestedEpoch += 1
+        playbackPosition = seconds
+    }
+
+    /// The engine reaches the latest request (its transitional snapshot lands).
+    func engineBeginsLatestRequest(position: Double?) {
+        engineEpoch = requestedEpoch
+        enginePosition = position
+        engineEndedFlag = false
     }
 
     // MARK: - Mirror of handleTrackTransition()

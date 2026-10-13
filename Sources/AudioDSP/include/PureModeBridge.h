@@ -117,10 +117,14 @@ extern "C"
     /// Destroy with pureModeEngineDestroy().
     void* pureModeEngineCreate(void) AUDIODSP_C_NOEXCEPT;
 
-    /// Open `filePath`, query+evaluate `deviceID`, configure and start bit-perfect render.
-    /// Resets the position counters to 0. Returns 1 on success, 0 on failure.
-    int
-    pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT;
+    /// Open `filePath`, query+evaluate `deviceID`, configure and start bit-perfect render from
+    /// `startSeconds` into the file (0 = the top): the source is positioned BEFORE render starts, so
+    /// a resume is never a play-from-0-then-seek. The position counters report from there. Returns
+    /// 1 on success, 0 on failure.
+    int pureModeEngineStart(void* engine,
+                            uint32_t deviceID,
+                            const char* filePath,
+                            double startSeconds) AUDIODSP_C_NOEXCEPT;
 
     /// Stop render, seek the source to `seconds`, restart render. Returns 1 on success, 0 on
     /// failure (the seek precondition — pullFloat not running — is satisfied internally).

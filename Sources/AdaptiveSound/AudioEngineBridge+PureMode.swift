@@ -87,15 +87,17 @@ extension AudioEngineBridge {
     /// - Parameters:
     ///   - fileURL:  The file to play (security-scoped access is managed here).
     ///   - deviceID: The CoreAudio device to open in exclusive / integer mode.
+    ///   - startAt:  Where in the file to start, in seconds (a resume, a move to another device):
+    ///               the source is positioned before render starts, so nothing from 0:00 is heard.
     /// - Returns: `true` on success; `false` on any failure (caller falls back to Enhanced).
     @discardableResult
-    func startPure(fileURL: URL, deviceID: UInt32) -> Bool {
+    func startPure(fileURL: URL, deviceID: UInt32, startAt: Double) -> Bool {
         // Lazily create the engine session (create ONLY when the field is nil — the RT-safety
         // invariant). All pureEngine/activePath access goes through the stateLock accessors (S6
-        // UAF-1). This runs on engineQueue, where the device-loss teardown runs too
-        // (pauseForDeviceLoss → stopPlaybackAfterDeviceLoss), so none can free the session
-        // mid-start; the guarded writes only keep the field consistent for the MainActor
-        // poll. We borrow the RAW `handle` (a POD pointer) for the C-ABI calls; the FIELD remains the
+        // UAF-1). This runs on engineQueue, where every Pure call and teardown runs (the device-loss
+        // one included), so none can free the session mid-start; the guarded writes only keep the
+        // field consistent for the other queues' reads. We borrow the RAW `handle` (a POD pointer)
+        // for the C-ABI calls; the FIELD remains the
         // sole strong owner of the wrapper, so a failure-path `detachPureEngineForTeardown()` drop is
         // the last reference and destroys deterministically OUTSIDE the lock.
         if pureEngineHandle == nil {
@@ -115,7 +117,7 @@ extension AudioEngineBridge {
 
         var startResult: Int32 = 0
         fileURL.path.withCString { pathPtr in
-            startResult = pureModeEngineStart(engine, deviceID, pathPtr)
+            startResult = pureModeEngineStart(engine, deviceID, pathPtr, max(startAt, 0))
         }
 
         guard startResult == 1 else {
@@ -165,12 +167,16 @@ extension AudioEngineBridge {
     /// Enhanced path: stops the player, reschedules the `AVAudioFile` from the
     /// target frame to end. For rate-mismatched files the streaming resampler is
     /// restarted from the target frame via `seekEnhancedResampler`.
-    func seek(to seconds: Double) async {
+    ///
+    /// `epoch` numbers the request (see `TransportSnapshot`): a transitional sample at the target is
+    /// published first, so the view model's playhead never jumps back to the old place meanwhile.
+    func seek(to seconds: Double, epoch: UInt64) async {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                // Pure seek borrows the handle UNDER stateLock so a concurrent device-loss teardown
-                // (configChangeQueue) cannot free it mid-seek (S6 UAF-1). Log AFTER releasing the
-                // lock (no logUX under the leaf lock). nil ⇒ not Pure ⇒ fall through to Enhanced.
+                self.beginTransportOperation(epoch: epoch, position: max(seconds, 0))
+                // Pure seek: `withPureEngine` borrows the session on engineQueue, where every Pure
+                // call and teardown is serialized, and calls OUTSIDE stateLock (the seek stops and
+                // restarts the HAL). nil ⇒ not Pure ⇒ fall through to Enhanced.
                 if let result = self.withPureEngine({ pureModeEngineSeek($0, seconds) }) {
                     logUX("engine seek: path=Pure target=\(secs(seconds))s "
                         + "result=\(result == 1 ? "ok" : "failed(\(result))")")

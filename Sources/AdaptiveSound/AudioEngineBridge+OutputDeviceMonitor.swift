@@ -213,6 +213,7 @@ extension AudioEngineBridge {
         }
         // Again: a start that ran on this queue in between cleared the flag, and has just stopped too.
         storeInterruptedSignalPath()
+        stopTransportClock() // nothing plays: the final sample below is the last
         sampleTransport()
     }
 
