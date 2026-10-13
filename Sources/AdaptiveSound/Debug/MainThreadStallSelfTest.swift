@@ -2,7 +2,6 @@
     import AppKit
     @preconcurrency import AVFoundation
     import Foundation
-    import PlaybackQueueKit
 
     // MARK: - `make main-thread-stall` (S10.8 G, the disconnect freeze)
 
