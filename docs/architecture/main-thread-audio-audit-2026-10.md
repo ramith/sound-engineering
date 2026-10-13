@@ -1,4 +1,4 @@
-> **Status (2026-10-13):** findings S1-A…S3 fixed on `sprint/s10-8-g-fix-main-thread-stall` (rules: [architecture.md, "Threading rules (app ↔ engine)"](architecture.md); regression test `make main-thread-stall` reproduces Experiments 1–2); the Pure-seek side finding is fixed on `sprint/s10-8-g-fix-pure-seek`; `accruePlayThrough` is deferred past R1. The `scratchpad/audit-mt/` artifacts named below were not kept.
+> **Status (2026-10-13):** findings S1-A…S3 fixed (rules: [architecture.md, "Threading rules (app ↔ engine)"](architecture.md#threading-rules-app--engine); regression test `make main-thread-stall` reproduces Experiments 1–2) and the Pure-seek side finding fixed — both **merged in PR #86** (`f115cca`; the Pure-seek fix is `ffaea17` + `f115cca`); `accruePlayThrough` is deferred past R1. The `scratchpad/audit-mt/` artifacts named below were not kept. **The file:line references below are as of `5b348fe`, before the fix** (e.g. the bridge's `currentPlaybackPosition` is gone; the tick now reads `snapshot()`).
 
 # Audit: every path where the main thread can wait on audio
 
