@@ -1,0 +1,77 @@
+name: Release
+
+# Builds the distribution artifacts on GitHub's macOS runner when a version tag (`v*`) is pushed,
+# attests their build provenance, and publishes them as a GitHub Release.
+# The attestation is signed through Sigstore with this workflow's GitHub OIDC identity and logged in
+# the public transparency log (the same mechanism as npm --provenance). Anyone can check that a
+# download was built by this workflow from the tagged commit:
+#   gh attestation verify AdaptiveSound-<version>-macos-arm64.dmg --repo ramith/sound-engineering
+# Apple trust (Developer ID signing + notarization) is a later step; until then `make dist` signs ad hoc.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write      # create the GitHub Release
+  id-token: write      # the OIDC token Sigstore signs the attestation with
+  attestations: write  # store the attestation in this repository
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build, attest, publish
+    # The same runner as strict-ci (macOS 26, Xcode 26, Apple Silicon), so the release builds with
+    # the toolchain the merge gate verified.
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install FFmpeg headers
+        # As in strict-ci: the libavformat headers under /opt/homebrew/include compile in
+        # FileDecodeSource's FFmpeg decode branch. At run time the app dlopens FFmpeg when the user
+        # has it (Homebrew) and otherwise uses Apple's decoders.
+        run: brew install ffmpeg || true
+
+      - name: Check the tag matches the app version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          SHORT="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/AdaptiveSound/Info.plist)"
+          case "$TAG" in
+            "$SHORT" | "$SHORT"-*) echo "tag $GITHUB_REF_NAME matches CFBundleShortVersionString $SHORT" ;;
+            *) echo "::error::tag $GITHUB_REF_NAME does not match CFBundleShortVersionString $SHORT"; exit 1 ;;
+          esac
+          test -f "docs/releases/${GITHUB_REF_NAME}.md" || { echo "::error::missing docs/releases/${GITHUB_REF_NAME}.md"; exit 1; }
+
+      - name: Build distribution artifacts
+        run: make dist DIST_NAME="${GITHUB_REF_NAME#v}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.dmg
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          case "$GITHUB_REF_NAME" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.dmg dist/SHA256SUMS.txt \
+            --verify-tag $PRERELEASE \
+            --title "AdaptiveSound ${GITHUB_REF_NAME#v}" \
+            --notes-file "docs/releases/${GITHUB_REF_NAME}.md"

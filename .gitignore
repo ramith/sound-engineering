@@ -50,3 +50,6 @@ scripts/hal-spike*
 # Keep the directory (README) tracked so the path resolves on a fresh clone.
 /test-data/*
 !/test-data/README.md
+
+# Distribution artifacts (make dist)
+dist/
