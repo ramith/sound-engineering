@@ -123,6 +123,7 @@ A story is done when:
 | EP-IMMERSION | **(was EP-SPAT + EP-HEADTRACK)** BRIR-first binaural (HRTF + room reflections/reverb), room synthesis, head-tracking (opt-in), speaker M/S + ambience (mono-safe) | 1 | FR-SPAT-01..07, LD-14, DEP-03 | Externalisation works (ABX vs dry-HRTF); spatial adoption |
 | EP-ADAPT | **(absorbs EP-AMBIENT)** Pre-analysis pipeline (look-ahead, cached), content/genre, on-demand ambient, conservative cadence | 1 | FR-ADAPT-01/04..08, NFR-PERF-02/04 | Adaptation imperceptible-as-motion; adapts with foresight |
 | EP-REIMAGINE | **(new)** The single intensity control (0 = bit-faithful → full reimagine); mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
+| EP-MCP | **(new, founder 2026-10-13)** Agent control surface: every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP client) can drive the app, over the same command / state API as the UI | unscheduled (placement: 2026-10 council) | FR-AGENT-01 | 100 % of user-facing actions have an MCP tool; an end-to-end agent demo (Claude Desktop + OpenClaw) |
 | EP-PROFILE | Named profiles, device↔profile binding, A/B mode | 1 | FR-DEVICE-04/05 | D30 active-use > 40% |
 | EP-UI | Now Playing, DSP + **Reimagine** controls, onboarding, dark mode, accessibility, l10n-ready | 0→1 | FR-UI-01..07, NFR-ACC-01..04, NFR-L10N-01/03 | Rating > 4.3; onboarding < 3 min |
 | EP-PRIVACY | Mic permission (on-demand), sandbox | 1 | NFR-PRIV-01..05 | No mic data in outbound traffic |
@@ -1740,6 +1741,37 @@ As a **developer** I want the repository to carry a licence, so that others may 
 **Priority:** Must | **Estimate:** 1 sp | **Traceability:** LD-9, PRD §6, CON-12, R-10
 
 ---
+
+## Planned (unscheduled) — Agent control surface *(new — 2026-10-13)*
+
+### EP-MCP — Agent control surface (MCP)
+
+> **Founder decision 2026-10-13:** "expose all functionality of the player via a MCP so that a LLM (and even
+> openclaw) can drive it." **Placement and size:** set by the 2026-10 product council. **Depends on:** one command /
+> state API shared with the UI (the council's transport command / reducer and engine-event work). Without it, MCP
+> becomes a second, divergent control path. **Relationship to the 2026-07-12 cut:** in-app conversational tuning
+> (EP-NLT) stays withdrawn; this is an external control surface. An LLM adjusting the EQ through it is a consequence the
+> founder confirms explicitly.
+
+**Principles:**
+- **One command layer:** every MCP tool maps 1:1 onto a UI command, and the coverage table is generated from the
+  command catalogue.
+- **Local only, consented:** off by default; an explicit enable in Settings; per-client scopes (read / control /
+  library-modify); destructive operations confirmed.
+- **Hearing-safety clamps** apply server-side to every client.
+- **Shared with macOS automation:** one intent catalogue, also exposed as App Intents (Shortcuts / Siri), where it fits.
+
+| ID | Story | Notes |
+|---|---|---|
+| SP-MCP-01 | **Spike: the connection design.** A stdio shim CLI (`adaptivesound-mcp`, launched by the MCP client) talking to the running app over XPC / a local socket, vs Streamable HTTP on localhost. Authentication, consent, discovery; sharing the command catalogue with App Intents | Decides US-MCP-01 |
+| US-MCP-01 | As a user, I can turn on "Allow AI agents to control AdaptiveSound", see which clients are connected, and revoke them; nothing is reachable when it's off | Local only; per-client token and scopes |
+| US-MCP-02 | As an agent, I can control **transport and the queue**: play / pause / stop / next / previous / seek; add, remove, reorder and clear the queue; shuffle and repeat; play next / add to queue | Same commands as the UI's transport |
+| US-MCP-03 | As an agent, I can **search and browse the library** (songs, albums, artists, genres, playlists) and play any of them, using stable entity ids exposed as MCP resources | One search semantics (council LIB-05) |
+| US-MCP-04 | As an agent, I can **manage playlists**: create, rename, delete (confirmed), add, remove, reorder | — |
+| US-MCP-05 | As an agent, I can **shape the sound**: choose an EQ preset, set points or Tone, switch the EQ on / off, set Master Gain, crossfeed and Intensity, all within server-enforced safety limits | Hearing-safety clamps server-side |
+| US-MCP-06 | As an agent, I can **manage output**: list and select devices, pin to a device, turn Pure Mode on / off, and read the signal path | — |
+| US-MCP-07 | As an agent, I can **read the player's state** (now playing, queue, signal path, loudness) and **subscribe to changes** (track change, play / pause, device change) | Built on the engine event channel |
+| US-MCP-08 | **Proof:** contract tests per tool (headless); a coverage check (every UI command has a tool); an end-to-end demo with Claude Desktop and OpenClaw; a security review | Gate before release |
 
 ## Spike / Research Stories
 
