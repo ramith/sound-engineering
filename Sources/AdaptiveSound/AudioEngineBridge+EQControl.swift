@@ -19,13 +19,13 @@ extension AudioEngineBridge {
     /// the curve itself at its own rate — what plays is what the graph reads back. Off plays the
     /// identity. No-op if the AU isn't live.
     func publishEQ(points: [Float], isOn: Bool) {
-        // Strong borrow under the leaf lock (`dspAudioUnitRef`): keeps the AU alive across the
+        // Strong borrow under the leaf lock (`dspAURef`): keeps the AU alive across the
         // C-ABI call even if a concurrent teardown nils the field (S3 finding F1).
-        guard let unit = dspAudioUnitRef else {
+        guard let unit = dspAURef else {
             logUX("[QW1] bridge.publishEQ SKIP — no DSP AU handle (count=\(points.count))")
             return
         }
-        let handle = Unmanaged.passUnretained(unit.auAudioUnit).toOpaque()
+        let handle = Unmanaged.passUnretained(unit).toOpaque()
         let accepted = points.withUnsafeBufferPointer { buffer in
             CEQABI.publish(handle, buffer.baseAddress, UInt32(buffer.count), isOn)
         }
@@ -38,16 +38,16 @@ extension AudioEngineBridge {
     /// rate its Realizer designs at, the kernel's — else the graph format's 48 kHz, so the graph's
     /// played curve is designed exactly as the engine plays it.
     func eqSampleRate() -> Double {
-        guard let unit = dspAudioUnitRef else { return Self.graphSampleRate }
-        let rate = CEQABI.designRate(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque())
+        guard let unit = dspAURef else { return Self.graphSampleRate }
+        let rate = CEQABI.designRate(Unmanaged.passUnretained(unit).toOpaque())
         return rate > 0 ? rate : Self.graphSampleRate
     }
 
     /// Tell the engine which kind of output it plays on (`AudioPlaybackEngine.publishOutputTransport`;
     /// founder decision 29): the EQ-only path's limiter ceiling follows it. No-op if the AU isn't live.
     func publishOutputTransport(_ transportType: UInt32) {
-        guard let unit = dspAudioUnitRef else { return }
-        CEQABI.transport(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(), transportType)
+        guard let unit = dspAURef else { return }
+        CEQABI.transport(Unmanaged.passUnretained(unit).toOpaque(), transportType)
     }
 
     /// The graph format's rate: the EQ's design rate whenever the AU's own can't be read.

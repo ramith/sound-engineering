@@ -53,7 +53,7 @@ extension AudioEngineBridge: TrackLoudnessSink {
     /// Run `body` with the live AU's borrowed handle; a no-op when the AU is not live. The strong
     /// borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
     private func withLoudnessAU(_ body: (UnsafeMutableRawPointer) -> Void) {
-        guard let unit = dspAudioUnitRef else { return }
-        body(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque())
+        guard let unit = dspAURef else { return }
+        body(Unmanaged.passUnretained(unit).toOpaque())
     }
 }
