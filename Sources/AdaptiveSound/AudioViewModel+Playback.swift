@@ -59,7 +59,12 @@ extension AudioViewModel {
             do {
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
                                             startAt: resumeFrom ?? 0, epoch: epoch)
+                // A stop or pause asked while this start ran owns the transport now: neither prime
+                // the queue nor mark playing over the stopped engine. (A seek or a newer start does
+                // not end this one — only a stop does.)
+                guard transportStopEpoch < epoch else { return }
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                guard transportStopEpoch < epoch else { return }
                 isPlaying = true
                 errorMessage = nil
             } catch {
