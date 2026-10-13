@@ -16,6 +16,7 @@
 //
 
 #include "include/PureModeBridge.h"
+#include "include/AsLog.h"
 #include "include/CoreAudioDevice.h"
 #include "include/DeviceCapability.h"
 #include "include/FileDecodeSource.h"
@@ -29,6 +30,7 @@
 #include <memory>
 #include <new>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -103,6 +105,39 @@ namespace
             *outRateCount = written;
         }
     }
+
+    // Engines and sources a render pass outlived (HALOutputEngine::renderMayStillRun): kept
+    // reachable, never freed — that pass may still be reading them. Never destroyed (a static
+    // destructor at exit would free them too). Control plane only (engineQueue). Empty in practice:
+    // it takes a render pass stuck inside the gate after its output unit was stopped and disposed.
+    struct ParkedRender
+    {
+        std::unique_ptr<GaplessSource> gapless;
+        std::unique_ptr<HALOutputEngine> engine;
+    };
+
+    std::vector<ParkedRender>& parkedRenders()
+    {
+        static auto* parked = new std::vector<ParkedRender>();
+        return *parked;
+    }
+
+    // After session.engine->stop(): if a render pass outlived it, park the engine and the source it
+    // reads instead of letting the session free them, and give the session fresh ones (DSP-06:
+    // never free memory a running pass reads; no change on the real-time side).
+    void parkIfRenderOutlivedStop(PureModeSession& session)
+    {
+        if (!session.engine->renderMayStillRun())
+        {
+            return;
+        }
+        AdaptiveSound::log::line(
+            "[PureMode] a render pass outlived the output's teardown: "
+            "parking its engine and source (kept, never freed)");
+        parkedRenders().push_back({std::move(session.gapless), std::move(session.engine)});
+        session.gapless = std::make_unique<GaplessSource>();
+        session.engine = std::make_unique<HALOutputEngine>();
+    }
 } // namespace
 
 extern "C"
@@ -143,6 +178,7 @@ extern "C"
         // Re-starting an already-running session: stop render first. setCurrent() below (with
         // render stopped) clears any prior active/armed source inside the GaplessSource.
         session->engine->stop();
+        parkIfRenderOutlivedStop(*session);
 
         auto source = std::make_unique<FileDecodeSource>();
         if (!source->open(filePath))
@@ -262,6 +298,7 @@ extern "C"
         // Stop render before tearing down members: the HALOutputEngine dtor restores the device
         // rate + releases hog; the FileDecodeSource dtor joins its decode thread.
         session->engine->stop();
+        parkIfRenderOutlivedStop(*session);
         // balances pureModeEngineCreate()
         delete session;
     }
