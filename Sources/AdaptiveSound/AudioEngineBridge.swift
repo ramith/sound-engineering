@@ -19,9 +19,11 @@ import TrackLoudnessKit
 /// Swift actor and NOT `@MainActor`. ALL mutable stored state is confined to one of the
 /// bridge's serial dispatch queues — `engineQueue` (transport/graph/device lifecycle),
 /// `resampleQueue` (streaming-resampler + gapless state), `configChangeQueue` (device/
-/// config re-establish) — OR is guarded by the leaf `os_unfair_lock` (`stateLock`, see
-/// `AudioEngineBridge+SharedState.swift`) for the small set of fields the MainActor 20 Hz
-/// poll reads while a queue writes. No field is mutated from two domains without that
+/// config re-establish), `deviceVolumeQueue` (the Pure device's volume) — OR is guarded by the
+/// leaf `os_unfair_lock` (`stateLock`, see `AudioEngineBridge+SharedState.swift`) for the small
+/// set of fields the main thread's `snapshot()` and borrows read while a queue writes. The main
+/// thread never waits on a queue or on AVFAudio: docs/architecture/architecture.md, "Threading
+/// rules (app ↔ engine)". No field is mutated from two domains without that
 /// discipline; the lock is a leaf (no other lock/queue taken while held) so no deadlock
 /// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
 /// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /

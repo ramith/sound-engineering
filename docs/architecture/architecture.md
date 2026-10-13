@@ -106,7 +106,7 @@ player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
 
 - **Enhanced gapless** (`AudioEngineBridge+Gapless.swift`): resampler→resampler / passthrough→passthrough / cross-rate seams without `player.stop()`; AAC priming / MP3 LAME delay trimming is handled automatically by `AVAudioFile`/`ExtAudioFile` edit lists.
 - **Pure gapless** (`GaplessSource`, C++): same-rate sample-accurate seams armed via the `pureModeEngineSetNextTrack` C-ABI; a rate/format mismatch advances with a brief reconfigure gap.
-- **Auto-advance**: the view model polls `trackTransitionCount()` / `playbackEnded()` at 20 Hz (`AudioViewModel.tickSpectrum`) and arms the next on-deck track.
+- **Auto-advance**: the view model's 20 Hz tick reads the seam count and end flag from the engine's `snapshot()` copy (`TransportSnapshot`, Sprint G; it used to poll `trackTransitionCount()` / `playbackEnded()` live) and arms the next on-deck track.
 
 ### Device model (pin vs. follow)
 
@@ -118,6 +118,32 @@ player → effectsAU (N→N) → spatialAU ('aspz', N→M) → mainMixer
   - **Device chosen while Pure plays:** playback restarts at the playhead on the new device; the normal start path picks Pure or falls back to Enhanced.
   - The app's own default changes settle without a loop (`selectDevice` sets the app device before the system default).
   - The output menu lists only user-selectable devices: hidden devices, private aggregates and the app's own `CADefaultDeviceAggregate-…` are excluded (`DeviceListPolicy`, C++; Sprint G).
+
+### Threading rules (app ↔ engine)
+
+*Sprint G, 2026-10 — the disconnect freeze. Evidence: [main-thread-audio-audit-2026-10.md](main-thread-audio-audit-2026-10.md).*
+
+**Why.** Every AVFAudio accessor on a node of a live `AVAudioEngine` — `isPlaying`, `lastRenderTime`, `playerTime(forNodeTime:)`, `volume`, `outputFormat`, `installTap`, even `.auAudioUnit` of an attached unit, on *any* node — takes ONE engine-wide recursive mutex (`AVAudioNodeImplBase::GetAttachAndEngineLock`). `stop`, `start`, `pause` and `connect` hold it for their whole run, including the time they wait on the HAL; `player.stop()` also runs pending completion handlers synchronously inside it. When a device dies, macOS holds the device's lock for seconds, so a `player.stop()` waits in `GetDeviceLatency` and every other caller waits behind it. Switching headphones off froze the app for 3–7 s because the main thread's tick asked `isPlaying`. Shown by the audit's two offline experiments (a completion handler sleeping inside `stop()`; a slow `allocateRenderResources` inside `engine.start()`) and by forum thread [770787](https://developer.apple.com/forums/thread/770787). The same rule covers the CoreAudio HAL itself (`AudioObject*`, `AudioUnit*`, the Pure C-ABI).
+
+**The rules.**
+
+1. **The main thread never calls into AVFAudio engine objects, the HAL, an AU, or the Pure C-ABI, and never `.sync`s onto a bridge queue or takes a lock held across such work.** It reaches the engine only through `AudioPlaybackEngine`, whose synchronous surface is copy-or-hand-off only: `snapshot()` (one `EngineSnapshot`: transport, signal path, loudness, EQ design rate), the publishes (EQ / intensity / crossfeed / layout / loudness, which borrow the effects AU's pointer via `withEffectsAU`), `requestDeviceVolume` (queued, latest wins), the spectrum and monitoring reads (lock-free buffers), the pin and device id. Everything that waits runs on a bridge queue.
+2. **Queue ownership.**
+
+   | Queue | Owns |
+   |---|---|
+   | `engineQueue` | Transport and graph: start / stop / seek, the graph build and reconfigure, initialize / teardown, every Pure C-ABI call (`withPureEngine` asserts it), the transport clock (a 30 Hz timer, running only while playing, that samples the playhead, seam count and end flag and publishes `TransportSnapshot`). |
+   | `resampleQueue` | The streaming resampler and the gapless seam state; the buffer scheduling and completion chain. |
+   | `configChangeQueue` | Every output-device event (device list, system default, `DeviceIsAlive`, `AVAudioEngineConfigurationChange`) and the re-establish. |
+   | `deviceVolumeQueue` | The Pure device's volume: the user's sets and the device's change listener. |
+
+   Waits run one way only, so no cycle can form: `engineQueue` may `.sync` onto `configChangeQueue` (listener bind / unbind) and `resampleQueue`; `configChangeQueue` onto `resampleQueue`; `resampleQueue` waits on no queue, and nothing `.sync`s onto `engineQueue`. CoreAudio listeners never run on the main queue.
+3. **Numbered transport requests.** The view model numbers each start / seek / stop (`nextTransportEpoch()`), and the engine publishes a transitional snapshot stamped with that number at the top of the operation, before any slow work. The view model ignores older snapshots (`TransportSnapshot.isCurrent(for:)`), so the replaced track's end flag or playhead can never act on the new one (the SFB `sequenceNumber` pattern).
+4. **`stateLock` is a leaf.** It is held only to copy or swap a field: no callouts, no HAL or AVFAudio work, no last release of an object under it (swap out, release after unlocking). The effects AU is ONE value (`EffectsUnit`: node + `AUAudioUnit`), borrowed with a count; the teardown waits for the borrows to end before releasing it, so a main-thread borrow can never become the last owner.
+5. **Completion handlers only hop** (`resampleQueue.async`): `stop()` runs them inside the engine lock.
+6. **Device loss pauses first.** The alive listener marks the path interrupted before any HAL read, so the main thread sees the pause at once even while the stop waits on the dying device.
+
+**Enforced by:** semgrep `main-thread-no-audio-hardware` (all of `Sources/AdaptiveSound` except the bridge's own files: engine-bound `AVAudio*` types, the bridge's node accessors, HAL / AU / Pure calls, `.sync` onto a bridge queue), `coreaudio-listener-not-on-main` and `bridge-not-main-actor`; and `make main-thread-stall` in the strict gate — the real bridge and view model on an offline engine, holding the engine lock for 2.5 s, failing if any main-thread entry takes 25 ms (or more than 1% take 5 ms). A regex can't follow calls, so a new synchronous member of `AudioPlaybackEngine` must be added to the self-test's `EntryProbe`.
 
 ### Two bit-perfect concepts (don't conflate them)
 
