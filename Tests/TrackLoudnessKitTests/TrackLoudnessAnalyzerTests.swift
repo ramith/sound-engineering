@@ -102,6 +102,23 @@ struct TrackLoudnessAnalyzerTests {
         #expect(events.count(whole: identity.token) == 1)
     }
 
+    @Test("ANALYZER-06: a prefetch that finished before its track became current is re-published from the cache")
+    func finishedPrefetchRepublished() async throws {
+        let url = try Fixtures.noise(named: "prefetch-finished", seconds: 6)
+        let identity = try #require(TrackIdentity(url: url))
+        let sink = RecordingSink()
+        let log = LogRecorder()
+        let analyzer = TrackLoudnessAnalyzer(prefixSeconds: 2, log: log.record)
+        analyzer.analyze(url, identity: identity, as: .next, sink: sink)
+        _ = await sink.wait(keeping: analyzer) { $0.count(whole: identity.token) == 1 }
+        analyzer.analyze(url, identity: identity, as: .current, sink: sink)
+        let events = await sink.wait(keeping: analyzer) { $0.count(whole: identity.token) >= 2 }
+        let wholes = events.filter(\.isWhole)
+        #expect(log.count(containing: "analysing") == 1)
+        #expect(wholes.count == 2)
+        #expect(Set(wholes.map(\.profile)).count == 1) // the same profile, so the engine's gain stays
+    }
+
     @Test("IDENTITY-01: the same file keeps its token; a rewritten file gets a new one; never 0")
     func identityToken() throws {
         let url = try Fixtures.noise(named: "identity", seconds: 1)
