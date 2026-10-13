@@ -41,9 +41,6 @@ extension AudioEngineBridge {
                 // Watch the output: devices added/removed, the system default, this device alive.
                 self.registerOutputDeviceListeners()
 
-                // Sample the transport for the view model's tick, off the main thread.
-                self.startTransportClock()
-
                 // Use stereo 48 kHz float to support any input file (mono, stereo, WebM, etc).
                 // AVAudio converts any file format to match this; it is also the AU bus format.
                 guard let format = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2) else {
@@ -86,7 +83,7 @@ extension AudioEngineBridge {
     /// (LEAK #1). MUST run on `engineQueue`.
     ///
     /// Order is load-bearing:
-    ///  0. Stop the transport clock (its samples read the graph about to be torn down).
+    ///  0. Stop the transport clock if it runs (its samples read the graph about to be torn down).
     ///  1. Stop the streaming-resampler loop FIRST (bump generation + drop session) so no in-flight
     ///     buffer schedules onto the graph we're about to tear down.
     ///  2. Remove the CoreAudio property listeners before touching anything else.

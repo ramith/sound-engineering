@@ -35,6 +35,39 @@ struct AutoAdvanceReconfigureGapTests {
         #expect(ctrl.startPlaybackCallCount == 2,
                 "No double-advance: the second tick must not launch another startPlayback")
         #expect(ctrl.selectedTrackIndex == 1, "Selection must not jump a second time")
+        // …and must not STOP either (S10.8 G review): the stale end flag belongs to track 0, the
+        // playback the in-flight start replaces, so the tick ignores it.
+        #expect(ctrl.isPlaying, "tick 2 must not stop the track that is still starting")
+
+        // The engine begins the start: a current snapshot, no end flag. Playback continues.
+        ctrl.engineBeginsLatestRequest(position: nil)
+        ctrl.tick()
+        #expect(ctrl.isPlaying)
+        #expect(ctrl.selectedTrackIndex == 1)
+    }
+
+    // MARK: VM-AA-RGAP-2: a lagging snapshot never moves the scrubber back
+
+    @Test("VM-AA-RGAP-2: while a seek is queued, the old playhead is ignored; then the engine's is followed")
+    func laggingSnapshotIgnored() {
+        let ctrl = MockAdvanceController()
+        ctrl.playlist = makeTracks(count: 3)
+        ctrl.playTrack(at: 0)
+        ctrl.enginePosition = 90
+        ctrl.tick()
+        #expect(ctrl.playbackPosition == 90)
+
+        // Scrub to 0:30 while playing; the engine is busy (a slow device start) and still reports 1:30.
+        ctrl.seek(to: 30)
+        for _ in 0 ..< 5 {
+            ctrl.tick()
+            #expect(ctrl.playbackPosition == 30, "the scrubber must not jump back to the old place")
+        }
+        // The engine reaches the seek; from then on its playhead is followed.
+        ctrl.engineBeginsLatestRequest(position: 30)
+        ctrl.enginePosition = 30.5
+        ctrl.tick()
+        #expect(ctrl.playbackPosition == 30.5)
     }
 
     // MARK: VM-AA-RTR-1: track ends before VM armed next — regression target

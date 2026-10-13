@@ -69,9 +69,14 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// thread. Published on `engineQueue` only (the clock, and the end of start / stop / seek).
     let transportSnapshots = SnapshotChannel(TransportSnapshot())
 
-    /// The clock: a timer on `engineQueue` that samples the transport ~30 times a second. Created in
-    /// `initialize()`, cancelled in the teardown; confined to `engineQueue`.
+    /// The clock: a timer on `engineQueue` that samples the transport ~30 times a second while
+    /// something plays (started by a start, cancelled by a stop, the device-loss pause and the
+    /// teardown). Confined to `engineQueue`.
     var transportClock: DispatchSourceTimer?
+
+    /// The epoch of the latest transport operation the engine has begun (`TransportSnapshot.epoch`),
+    /// stamped on every sample. Confined to `engineQueue`.
+    var transportEpoch: UInt64 = 0
 
     /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
     /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3). It is the stage that maps the

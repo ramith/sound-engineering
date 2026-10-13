@@ -63,6 +63,11 @@ final class AudioViewModel {
     /// (S10.8 G): a queue edit that shifts the row keeps it. Any explicit new-track action
     /// (playTrack/next/previous/stop) clears it. Read it through `pausedResumePosition`.
     var resumePoint: ResumePoint<UUID>?
+    /// The number of the latest transport request (start, seek, stop) sent to the engine. The tick
+    /// ignores engine samples older than it (`TransportSnapshot.isCurrent(for:)`): until the engine
+    /// reaches the request — it can queue behind a slow device start — they describe the playback
+    /// the request replaces. Not UI-bound.
+    @ObservationIgnored var transportEpoch: UInt64 = 0
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
     /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
     /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
@@ -286,6 +291,13 @@ final class AudioViewModel {
                 onNowPlayingRefresh?() // track change (incl. gapless advance) → refresh Now Playing (S10.4)
             }
         }
+    }
+
+    /// Number the next transport request (see `transportEpoch`). Call it synchronously, before the
+    /// request's `Task`, so no tick in between reads the replaced playback as current.
+    func nextTransportEpoch() -> UInt64 {
+        transportEpoch &+= 1
+        return transportEpoch
     }
 
     /// The queue slot of the selected song (`nil` = none, or an index out of range).
