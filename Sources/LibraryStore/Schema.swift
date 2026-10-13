@@ -32,7 +32,7 @@ import GRDB
 /// means: register a new migration in `LibraryStore.makeMigrator` (with a new `Schema.MigrationID`)
 /// whose body writes `schema_info` at the new version, AND bump this constant — the migration
 /// creates/backfills the schema; this constant is the value the harness expects to read back.
-public let currentSchemaVersion = 7
+public let currentSchemaVersion = 8
 
 /// The reserved "unknown artist" sentinel rowid seeded at v1 for the M1 album key.
 public let unknownArtistID: Int64 = 0
@@ -80,6 +80,9 @@ public enum Schema {
         /// v6 → v7: album artists (S10.8 C2) — the raw album tags on `tracks`, the folder-keyed
         /// album identity, and `schema_info.derived_version`. See `Schema+AlbumArtists.swift`.
         public static let v7 = "v7-album-artists"
+        /// v7 → v8: `folders.volume_uuid` — the drive a root is bound to (R1, sweep evidence). See
+        /// `Schema+RootVolume.swift`.
+        public static let v8 = "v8-root-volume"
     }
 
     /// The complete set of `CREATE` statements for schema v1, ordered so a

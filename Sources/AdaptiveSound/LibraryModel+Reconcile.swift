@@ -23,7 +23,7 @@ struct WatchedRoot: Equatable {
 enum ReconcileState: Equatable {
     case watching // local volume, live-watched via FSEvents
     case onDemandOnly // network volume — no FSEvents; reconciles at launch + on a volume change
-    case paused // volume/folder currently unreachable
+    case paused // its last walk was refused (SweepRefusal): unreachable, another drive, or not read in full
     case catchingUp // a reconcile is running
 }
 
@@ -121,16 +121,11 @@ extension LibraryModel {
 
     /// Reconcile one already-registered root into the store (NO validate/addRoot preamble): the
     /// same scan → move-match → metadata pass (album regroup + facet sweep) an add runs, with this
-    /// root's own metadata pass. Runs as the root's walk (`LibraryModel+Walks`). Catches the
-    /// empty-walk guard + cancellation silently (background non-events).
+    /// root's own metadata pass. Runs as the root's walk (`LibraryModel+Walks`). Catches a refused
+    /// sweep + cancellation silently (background non-events). The scanner decides whether the root is
+    /// walked at all: an unmounted volume, a deleted folder or another drive at its path is not
+    /// (`SweepRefusal`), and the root is paused with its rows preserved.
     func performReconcile(folderID: Int64, root: URL, store: LibraryStore) async {
-        // Proactive reachability precheck (slice 5b): an unmounted volume / deleted folder → skip
-        // the walk entirely (paused). The empty-walk backstop (slice 3) remains the actual safety.
-        guard RootReachabilityProbe.isReachable(root) else {
-            reconcileState[folderID] = .paused
-            logUX("reconcile: folder \(folderID) unreachable (volume/folder gone) — paused, rows preserved")
-            return
-        }
         reconcileState[folderID] = .catchingUp
         let didAccess = root.startAccessingSecurityScopedResource()
         defer {
@@ -150,10 +145,10 @@ extension LibraryModel {
             logUX("reconcile: folder \(folderID) — seen=\(result.filesSeen) swept=\(result.orphansSwept)")
         } catch is CancellationError {
             // expected on teardown / re-trigger
-        } catch let unreachable as RootUnreachableError {
+        } catch let refusal as SweepRefusal {
             reconcileState[folderID] = .paused
-            logUX("reconcile: root unreachable (folder \(unreachable.folderID); "
-                + "\(unreachable.storedRowCount) rows preserved) — sweep refused")
+            logUX("reconcile: sweep refused (folder \(refusal.folderID): \(refusal.reason); "
+                + "\(refusal.storedRowCount) rows preserved) — paused")
         } catch {
             lastReconcileError = error.localizedDescription
             logUX("reconcile: folder \(folderID) failed — \(error.localizedDescription)")

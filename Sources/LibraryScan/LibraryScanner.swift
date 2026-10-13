@@ -23,6 +23,16 @@
 //     the sweep — no orphan is wrongly deleted from a partial view (this is why the
 //     sweep is end-of-walk, not interleaved).
 //
+// R1 (council P5A-01/02) — a sweep needs POSITIVE evidence that what it deletes is gone; else the
+// scan throws `SweepRefusal` (SweepRefusal.swift has the reasons):
+//   • THE ROOT'S OWN DRIVE — the root is walked only when it is there, on the volume it is bound to
+//     (`LibraryStore.restampRoot`), and swept only if it is still that same directory on that same
+//     volume when the walk ends. The identity is read through a seam (`init(rootIdentity:)`).
+//   • A COMPLETE WALK — every error the enumerator reports, and every audio file that is there but
+//     can't be read, makes the walk incomplete; so does a walk that saw nothing (S8.4 slice 3). An
+//     incomplete walk still commits what it found, and refuses the sweep when it would delete anything.
+//   • ONE DRIVE PER ROOT — a volume mounted inside the root is never walked (`walk`).
+//
 // Root-rejection (`validateNewRoot`) lives in RootValidation.swift; the caller runs
 // it BEFORE `addRoot` + `scan` (design §6).
 
@@ -44,7 +54,14 @@ public struct LibraryScanner: Sendable {
     /// size + keeps each actor hop short so a long scan does not starve S9 reads.
     private static let batchSize = 256
 
-    public init() {}
+    /// Reads what is at a root's path now — nil when it is not reachable. The real filesystem by default
+    /// (`RootReachabilityProbe.identity(of:)`); a seam, so a test can stand in a drive that is swapped,
+    /// or goes away, under a walk without mounting one.
+    private let rootIdentity: @Sendable (URL) -> RootIdentity?
+
+    public init(rootIdentity: @escaping @Sendable (URL) -> RootIdentity? = RootReachabilityProbe.identity(of:)) {
+        self.rootIdentity = rootIdentity
+    }
 
     /// The `(dev, inode)` on-disk identity of `url` (an `lstat`, symlinks unresolved) —
     /// the same signature `makeScannedFile` captures per file, exposed so a caller can
@@ -59,17 +76,18 @@ public struct LibraryScanner: Sendable {
     /// Scan `root` (already `addRoot`'ed → `folderID`) and reconcile its subtree into
     /// `store`. Runs off the main actor (the caller wraps it in a detached task).
     ///
-    /// Call flow (per root, design §2 + §5):
-    ///   `let gen = try await store.beginScanGeneration()` (per-root, M-A) → walk →
-    ///   per file `try Task.checkCancellation()`, guard regular-file + supported ext →
-    ///   build `ScannedFile` → batch (~256) → `upsert` + fire `progress` → after the
-    ///   FULL walk, `sweepOrphans(inFolders:[folderID], olderThan:gen)`.
+    /// Call flow (per root, design §2 + §5, R1):
+    ///   `let gen = try await store.beginScanGeneration()` (per-root, M-A) → read the root's identity
+    ///   and re-stamp it (`restampRoot`: refused on another drive) → walk → per file
+    ///   `try Task.checkCancellation()`, guard regular-file + supported ext → build `ScannedFile` →
+    ///   batch (~256) → `upsert` + fire `progress` → after the FULL walk, the root must still be the
+    ///   one walked → `sweepOrphans(inFolders:[folderID], olderThan:gen)`, given positive evidence.
     ///
     /// - Throws: `CancellationError` if the task is cancelled mid-walk (the sweep is
-    ///   then skipped; committed batches stay valid); `RootUnreachableError` if the walk
-    ///   saw ZERO files while the store still held rows for this root (the empty-walk
-    ///   safety guard, S8.4 slice 3 — the sweep is refused, rows preserved); or whatever
-    ///   `store` throws.
+    ///   then skipped; committed batches stay valid); `SweepRefusal` when the walk is not evidence of
+    ///   which of the root's songs are gone — the root is not there or is on another drive (not
+    ///   walked), it changed under the walk, or the walk was incomplete or empty while the sweep would
+    ///   delete something (rows preserved); or whatever `store` throws.
     /// - Returns: a `ScanResult` (generation, filesSeen, filesSkipped, orphansSwept,
     ///   trackIDs in walk order).
     public func scan(
@@ -77,28 +95,36 @@ public struct LibraryScanner: Sendable {
         progress: (@Sendable (ScanProgress) -> Void)? = nil
     ) async throws -> ScanResult {
         let generation = try await store.beginScanGeneration()
-        // Pre-scan magnitude for the empty-walk safety guard below.
         let preCount = try await store.trackCount(inFolder: folderID)
+        func refusal(_ reason: SweepRefusal.Reason) -> SweepRefusal {
+            SweepRefusal(folderID: folderID, reason: reason, storedRowCount: preCount)
+        }
+        // THE ROOT'S OWN DRIVE: walk the root only when it is there, on the volume it is bound to. The
+        // re-stamp binds an unbound root and refreshes its (dev, inode); another drive is left untouched.
+        guard let identity = rootIdentity(root) else { throw refusal(.rootVanished) }
+        guard try await store.restampRoot(id: folderID, to: identity) else { throw refusal(.differentVolume) }
         let walked = try await walk(
             root: root, folderID: folderID, into: store,
             generation: generation, progress: progress
         )
-        // EMPTY-WALK SAFETY GUARD (S8.4 slice 3, founder-approved "never wipe on an empty
-        // walk"): if the walk enumerated ZERO files but the store held rows for this root,
-        // REFUSE the sweep and throw — an unmounted/zombie-mounted volume or a deleted root
-        // folder is indistinguishable from "every file deleted" via an empty walk, so
-        // deletion must be positively evidenced by a successful non-empty walk, never
-        // inferred from an empty one. The rows (and their user-state) are preserved; a later
-        // reconcile of a reachable root reaps genuine deletions. A legitimately empty-but-
-        // reachable root (preCount 0) still sweeps to a harmless no-op.
-        if walked.filesSeen == 0, preCount > 0 {
-            throw RootUnreachableError(folderID: folderID, storedRowCount: preCount)
+        // The walk is evidence only of the root it began on — not of one that went away under it, or of
+        // another drive mounted at its path meanwhile.
+        if let reason = change(of: root, since: identity) {
+            throw refusal(reason)
         }
-        // End-of-walk sweep (design §5, §9 D-sweep): reconciles deletions for THIS
-        // root only. Reached ONLY after the walk completes — a cancellation throws in
-        // `walk`, so a cancelled scan never sweeps (no wrongful delete). Single-root
-        // scoped (M-A): never touches another root's rows.
-        let orphansSwept = try await store.sweepOrphans(inFolders: [folderID], olderThan: generation)
+        // End-of-walk sweep (design §5, §9 D-sweep): reconciles deletions for THIS root only (M-A),
+        // reached ONLY after the walk completes (a cancellation throws in `walk`). A walk that could
+        // not read everything, or saw nothing (S8.4 slice 3, founder-approved "never wipe on an empty
+        // walk"), is not evidence that what it missed is gone: no sweep — refused when it would delete.
+        let orphansSwept: Int
+        if let reason = walked.missingEvidence {
+            guard try await store.orphanCount(inFolders: [folderID], olderThan: generation) == 0 else {
+                throw refusal(reason)
+            }
+            orphansSwept = 0
+        } else {
+            orphansSwept = try await store.sweepOrphans(inFolders: [folderID], olderThan: generation)
+        }
 
         return ScanResult(
             generation: generation, filesSeen: walked.filesSeen,
@@ -106,13 +132,48 @@ public struct LibraryScanner: Sendable {
         )
     }
 
+    /// How the root changed since the walk read `start`: gone from its path, on another volume, or
+    /// another directory there (replaced, or its volume remounted). nil when it is the same.
+    private func change(of root: URL, since start: RootIdentity) -> SweepRefusal.Reason? {
+        guard let now = rootIdentity(root) else { return .rootVanished }
+        guard now.volumeUUID == start.volumeUUID else { return .differentVolume }
+        return now == start ? nil : .rootVanished
+    }
+
     // MARK: - Walk
 
-    /// The accumulated result of walking a root: what a full traversal upserted.
+    /// The accumulated result of walking a root: what a full traversal upserted, and what it could
+    /// not read.
     private struct WalkOutcome {
         var filesSeen = 0
         var filesSkipped = 0
+        /// Errors the enumerator reported (a folder it may not open, a drive failing under it) plus
+        /// audio files that are there but could not be read. Any → the walk is incomplete.
+        var unreadable = 0
         var trackIDs: [Int64] = []
+
+        /// Why this walk is not evidence that the songs it did not see are gone — nil when it is.
+        var missingEvidence: SweepRefusal.Reason? {
+            if unreadable > 0 {
+                return .incompleteWalk
+            }
+            return filesSeen == 0 ? .emptyWalk : nil
+        }
+
+        /// Count one enumerated entry; the file to upsert, if it is one.
+        mutating func record(_ admission: Admission) -> ScannedFile? {
+            switch admission {
+            case let .audio(scanned):
+                filesSeen += 1
+                return scanned
+            case .unreadable:
+                unreadable += 1
+            case .skipped:
+                break
+            }
+            filesSkipped += 1
+            return nil
+        }
     }
 
     /// Walk `root`, upserting supported files into `folderID` in ~`batchSize`
@@ -120,6 +181,14 @@ public struct LibraryScanner: Sendable {
     /// (§5) so a cancel is observed within one file; throwing here means the caller's
     /// end-of-walk sweep is skipped. Extracted from `scan` to keep both bodies within
     /// the function-length limit.
+    ///
+    /// A COMPLETE walk (R1): with no error handler the enumerator skips what it cannot read and says
+    /// nothing (Apple: a nil errorHandler "continues to enumerate items as if you had specified a block
+    /// that returned true"). Every error is counted, and the walk goes on (true) so it still sees all
+    /// it can. ONE DRIVE PER ROOT: Apple documents that the enumerator traverses a mount point — another
+    /// volume mounted inside the root — though on macOS 26 the URL enumerator was seen not to. Either
+    /// way it is skipped here: the root's drive is the walk's evidence (`scan`), and songs on a drive
+    /// that comes and goes inside the root would be swept whenever it is away.
     private func walk(
         root: URL, folderID: Int64, into store: LibraryStore,
         generation: Int64, progress: (@Sendable (ScanProgress) -> Void)?
@@ -128,10 +197,15 @@ public struct LibraryScanner: Sendable {
         var batch: [ScannedFile] = []
         batch.reserveCapacity(Self.batchSize)
 
+        var enumerationErrors = 0
         let enumerator = FileManager.default.enumerator(
             at: root,
-            includingPropertiesForKeys: Array(FileSignature.resourceKeys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            includingPropertiesForKeys: Array(FileSignature.walkKeys),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { _, _ in
+                enumerationErrors += 1
+                return true
+            }
         )
 
         if let enumerator {
@@ -140,11 +214,10 @@ public struct LibraryScanner: Sendable {
                 // and the sweep in `scan` is skipped because this throws first.
                 try Task.checkCancellation()
                 guard let fileURL = next as? URL else { continue }
-                guard let scanned = Self.makeScannedFile(fileURL: fileURL, root: root) else {
-                    outcome.filesSkipped += 1
-                    continue
+                if FileSignature.isMountPoint(fileURL) {
+                    enumerator.skipDescendants()
                 }
-                outcome.filesSeen += 1
+                guard let scanned = outcome.record(Self.admit(fileURL: fileURL, root: root)) else { continue }
                 batch.append(scanned)
                 if batch.count >= Self.batchSize {
                     let ids = try await store.upsertReconciling(batch, folderID: folderID, generation: generation)
@@ -161,34 +234,61 @@ public struct LibraryScanner: Sendable {
             outcome.trackIDs.append(contentsOf: ids)
             progress?(ScanProgress(folderID: folderID, filesSeenSoFar: outcome.filesSeen))
         }
+        outcome.unreadable += enumerationErrors
         return outcome
     }
 
     // MARK: - Per-file → ScannedFile
 
+    /// What a walk makes of one enumerated entry.
+    enum Admission {
+        /// A supported audio file that is there: upserted, and seen.
+        case audio(ScannedFile)
+        /// Not an audio file: a directory (a `music.mp3/` one too), another extension, a symlink.
+        case skipped
+        /// A listed audio file the walk could not read, or find there any more: the walk is incomplete.
+        case unreadable
+    }
+
     /// Build a `ScannedFile` for `fileURL` under `root`, or `nil` to SKIP it
     /// (a directory — including a `music.mp3/` directory — an unsupported
     /// extension, or an unreadable/vanished file: a TOCTOU skip, never a crash,
-    /// design §8). Preserves `AudioFileEnumerator`'s `try?`-skip discipline.
+    /// design §8; a walk counts the last kind as unreadable, `admit`). Preserves
+    /// `AudioFileEnumerator`'s `try?`-skip discipline.
     /// `public` so the headless harness (a separate target) can read a single file's
     /// scan signature for `classify` assertions (the swift-test-is-broken harness boundary).
     public static func makeScannedFile(fileURL: URL, root: URL) -> ScannedFile? {
-        // ONE resourceValues fetch (§3). A failed fetch (file vanished) → skip.
-        guard let attributes = FileSignature.attributes(of: fileURL),
-              attributes.isRegularFile else {
-            return nil
+        guard case let .audio(scanned) = admit(fileURL: fileURL, root: root) else { return nil }
+        return scanned
+    }
+
+    /// Admit `fileURL` under `root` — the walk's per-entry decision, which `makeScannedFile` exposes.
+    /// The extension is checked first (no I/O). A listed audio file is admitted only when it is there:
+    /// its attributes read AND its `lstat` succeeds (prefetched attributes outlive a file, or a drive,
+    /// gone since the listing). Otherwise it is UNREADABLE, and the walk incomplete — even for a file
+    /// deleted since it was listed: "not found" is no evidence when its drive may be what went, and the
+    /// next walk, which no longer lists it, is.
+    static func admit(fileURL: URL, root: URL) -> Admission {
+        guard supportedExtensions.contains(fileURL.pathExtension.lowercased()) else {
+            return .skipped
         }
-        let ext = fileURL.pathExtension.lowercased()
-        guard supportedExtensions.contains(ext) else {
-            return nil
+        // ONE resourceValues fetch (§3).
+        guard let attributes = FileSignature.attributes(of: fileURL) else {
+            return .unreadable
         }
-        // ONE lstat for st_ino AND st_dev (§3, M-B); nil-tolerant.
+        guard attributes.isRegularFile else {
+            return .skipped
+        }
+        // ONE lstat for st_ino AND st_dev (§3, M-B) — and the proof the file is there.
         let signature = FileSignature.deviceInode(of: fileURL)
+        guard signature.inode != nil else {
+            return .unreadable
+        }
         let name = fileURL.deletingPathExtension().lastPathComponent
         let format = fileURL.pathExtension.uppercased()
         let relativePath = RelativePathResolver.relativePath(forFile: fileURL, root: root)
 
-        return ScannedFile(
+        return .audio(ScannedFile(
             url: fileURL,
             relativePath: relativePath,
             name: name,
@@ -197,6 +297,6 @@ public struct LibraryScanner: Sendable {
             mtime: attributes.mtime,
             inode: signature.inode,
             dev: signature.dev
-        )
+        ))
     }
 }

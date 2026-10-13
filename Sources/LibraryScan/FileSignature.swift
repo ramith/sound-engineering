@@ -10,9 +10,10 @@
 //     seconds, matching the schema + `LibraryStore.nowSeconds()`.
 //   • `lstat` (NOT `stat`) — a symlink keeps its own distinct entry, consistent
 //     with `PathNormalizer`'s no-resolve policy.
-//   • `inode`/`dev` are nil-tolerant: a failed `lstat` yields nil for both; the
-//     file is still tracked, only that one move-signal is lost (`(size,mtime)`
-//     still discriminates).
+//   • `inode`/`dev` are nil-tolerant: a failed `lstat` yields nil for both. A WALK no
+//     longer admits such a file, though (R1, sweep evidence): the enumerator's prefetched
+//     attributes outlive a file — or a whole drive — gone since it was listed, so the
+//     `lstat` is the walk's proof the file is there (`LibraryScanner.admit`).
 //   • `URLResourceValues` has no inode field, and `.fileResourceIdentifierKey` is
 //     opaque/non-persistable — hence the explicit `lstat`.
 
@@ -39,6 +40,10 @@ enum FileSignature {
     static let resourceKeys: Set<URLResourceKey> = [
         .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
     ]
+
+    /// The keys a walk's enumerator prefetches per entry: a file's `resourceKeys`, and whether a
+    /// directory is the root of a mounted volume (`isMountPoint`).
+    static let walkKeys: Set<URLResourceKey> = resourceKeys.union([.isVolumeKey])
 
     /// Fetch the attributes for `fileURL` in one `resourceValues` call, or `nil` if
     /// the file could not be read (skipped, never a crash).
@@ -71,5 +76,11 @@ enum FileSignature {
             return DeviceInode(inode: nil, dev: nil)
         }
         return DeviceInode(inode: Int64(info.st_ino), dev: Int64(info.st_dev))
+    }
+
+    /// Whether `url` is the root of a mounted volume (another drive mounted inside a walked folder).
+    /// Read from the enumerator's prefetched `walkKeys`.
+    static func isMountPoint(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isVolumeKey]).isVolume) == true
     }
 }

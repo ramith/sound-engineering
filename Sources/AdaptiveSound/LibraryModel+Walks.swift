@@ -25,9 +25,9 @@ extension LibraryModel {
     /// FSEvents stream starts at "now", so a song copied in or deleted while the app was closed would
     /// otherwise never show (or never leave) until something else changed in its folder. A reconcile
     /// of each root — cheap for unchanged files — except one already walking (the test library's own
-    /// add). An unreachable root is not walked: the reconcile's precheck pauses it and its songs stay
-    /// (`RootReachabilityProbe`; the empty-walk guard backs it). Returns when those walks end, so the
-    /// launch metadata pass that follows reads only the pending songs they left.
+    /// add). An unreachable root, or another drive at its path, is not walked: the scanner refuses it
+    /// (`SweepRefusal`), the reconcile pauses it and its songs stay. Returns when those walks end, so
+    /// the launch metadata pass that follows reads only the pending songs they left.
     ///
     /// Chosen over resuming the FSEvents stream from a saved event id: a full walk also covers network
     /// folders (no FSEvents), a volume changed on another Mac, and a purged or wrapped event history,

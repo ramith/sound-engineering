@@ -177,7 +177,7 @@ func allCheckCases() -> [CheckCase] {
         CheckCase(label: "ab-metadata-pass-cancellation", run: checkMetadataPassCancellation),
         CheckCase(label: "ac-real-no-tags", run: checkRealNoTags),
     ] + moveMatchCheckCases() + walkOverlapCheckCases() + facetSweepCheckCases() + folderWatchCheckCases()
-        + reachabilityCheckCases() + browseReadsCheckCases() + searchCheckCases()
+        + reachabilityCheckCases() + sweepEvidenceCheckCases() + browseReadsCheckCases() + searchCheckCases()
         + songsSortCheckCases() + decodeCoverageCheckCases() + hardeningCheckCases()
         + playlistSpineCheckCases() + playlistFolderCheckCases()
         + playlistScanCheckCases()

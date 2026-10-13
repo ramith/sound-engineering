@@ -7,11 +7,11 @@ import LibraryScan
 //
 // FSEvents pauses when a watched external/NAS volume unmounts and does not reliably announce a
 // remount. NSWorkspace mount/unmount notifications are the responsiveness trigger: on any volume
-// change we re-point the watcher at the now-available roots, RE-STAMP the on-disk (dev,inode)
-// identity of any root that became reachable (a remount may reassign st_dev — keeps addRoot's
-// identity-dedup correct), and kick a catch-up reconcile. An unreachable root is left paused by
-// the reconcile precheck. The data-loss SAFETY does not depend on any of this — it is the
-// empty-walk backstop (slice 3); this layer is responsiveness + identity hygiene.
+// change we re-point the watcher at the now-available roots and kick a catch-up reconcile of each
+// root that is reachable. The reconcile's walk re-stamps the root's identity — or, when the drive
+// now at its path is not the root's own (two same-named drives mount at the same path, R1), refuses
+// to walk, sweep or re-stamp it and leaves it paused (`LibraryScanner.scan`). The data-loss SAFETY
+// does not depend on any of this layer — it is the scanner's (`SweepRefusal`); this is responsiveness.
 
 extension LibraryModel {
     /// Subscribe to NSWorkspace mount/unmount. Called once from `makeLibraryStore`; tokens are
@@ -41,14 +41,11 @@ extension LibraryModel {
     }
 
     /// A volume mounted or unmounted: re-point the watcher at the currently-available roots, then
-    /// for each root that is now reachable re-stamp its `(dev,inode)` identity (a remount may have
-    /// reassigned st_dev) and schedule a catch-up reconcile. Unreachable roots stay paused.
+    /// schedule a catch-up reconcile of each root that is now reachable — its walk re-stamps the
+    /// root's identity, or refuses another drive at its path. Unreachable roots stay paused.
     private func handleVolumeChange() async {
         await refreshWatchedRoots()
-        guard let store else { return }
         for root in watchedRoots where RootReachabilityProbe.isReachable(root.url) {
-            let signature = LibraryScanner.deviceInode(of: root.url)
-            try? await store.restampRoot(id: root.folderID, dev: signature.dev, inode: signature.inode)
             scheduleReconcile(folderID: root.folderID)
         }
     }

@@ -1,6 +1,7 @@
-// ChecksReachability — S8.4 Slice 5b headless checks: the reconcile reachability precheck
-// (`RootReachabilityProbe`) and root identity re-stamp (`restampRoot`). The volume-unmount /
-// NSWorkspace / remount behaviors are manual (they need a real drive); these pin the pure logic.
+// ChecksReachability — S8.4 Slice 5b headless checks: the reachability probe
+// (`RootReachabilityProbe`) and the root identity re-stamp (`restampRoot`), which since R1 binds a
+// root to its drive and refuses another one. The volume-unmount / NSWorkspace / remount behaviors are
+// manual (they need a real drive); these pin the pure logic (ChecksSweepEvidence walks it).
 
 import Foundation
 import LibraryScan
@@ -23,37 +24,68 @@ func checkRootReachability(number: Int, url _: URL) async -> Bool {
             printFail(number, "reachability: a non-existent path was reported reachable"); return false
         }
         printPass(number, "reachability probe: a live directory is reachable; a file or a missing path is "
-            + "NOT — the precheck that skips a reconcile of an unmounted/deleted root (the empty-walk "
-            + "backstop remains the actual safety)")
+            + "NOT — what a walk reads first, so an unmounted/deleted root is not walked (SweepRefusal)")
         return true
     } catch {
         printFail(number, "reachability threw: \(error)"); return false
     }
 }
 
-// MARK: - Root identity re-stamp (remount)
+// MARK: - Root identity re-stamp (remount; another drive at the path)
 
 func checkRestampRoot(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
-        let rootA = try ScanFixtureBuilder.makeCaseRoot("restamp-A")
-        let rootB = try ScanFixtureBuilder.makeCaseRoot("restamp-B")
-        let rootC = try ScanFixtureBuilder.makeCaseRoot("restamp-C")
-        let idA = try await store.addRoot(rootA, dev: 1, inode: 1)
-        // Re-stamp A's on-disk identity to (5,5), as a remount with a new device number would.
-        try await store.restampRoot(id: idA, dev: 5, inode: 5)
-        // A NEW path carrying the re-stamped identity dedups to A → the re-stamp took effect.
-        guard try await store.addRoot(rootB, dev: 5, inode: 5) == idA else {
-            printFail(number, "restamp: a root with the re-stamped (dev,inode) did NOT dedup to it"); return false
-        }
-        // A NEW path carrying the OLD identity no longer matches A → a distinct root.
-        guard try await store.addRoot(rootC, dev: 1, inode: 1) != idA else {
-            printFail(number, "restamp: the OLD (dev,inode) still matched after the re-stamp"); return false
-        }
-        printPass(number, "restampRoot: refreshes a root's on-disk (dev,inode) identity so a remount with a "
-            + "new device number keeps addRoot's identity-dedup (QS3) correct")
+        guard try await restampFollowsTheRootsOwnDrive(store, number: number),
+              try await restampOfAnUnboundRoot(store, number: number) else { return false }
+        printPass(number, "restampRoot: binds an unbound root to its drive, then refreshes its on-disk "
+            + "(dev,inode) on THAT drive (a remount's new device number keeps addRoot's dedup, QS3, "
+            + "correct) and refuses — changing nothing — another drive at its path, or one with no UUID; "
+            + "a root on a volume with no UUID stays unbound (known limitation); a missing root is a no-op")
         return true
     } catch {
         printFail(number, "restamp threw: \(error)"); return false
     }
+}
+
+/// A root bound to drive A: re-stamped on A (a remount with a new st_dev) it follows; drive B, or a
+/// volume with no UUID, at its path is refused and leaves the stamp as it was.
+private func restampFollowsTheRootsOwnDrive(_ store: LibraryStore, number: Int) async throws -> Bool {
+    let idA = try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-A"), dev: 1, inode: 1)
+    guard try await store.restampRoot(id: idA, to: RootIdentity(dev: 5, inode: 5, volumeUUID: "VOL-A")),
+          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-B"), dev: 5, inode: 5) == idA,
+          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-C"), dev: 1, inode: 1) != idA else {
+        printFail(number, "restamp: binding an unbound root did not refresh its (dev,inode)"); return false
+    }
+    let otherDrives = [
+        RootIdentity(dev: 9, inode: 9, volumeUUID: "VOL-B"), RootIdentity(dev: 9, inode: 9, volumeUUID: nil),
+    ]
+    for other in otherDrives {
+        guard try await !store.restampRoot(id: idA, to: other) else {
+            printFail(number, "restamp: another drive (\(other.volumeUUID ?? "no UUID")) was accepted"); return false
+        }
+    }
+    guard try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-D"), dev: 9, inode: 9) != idA,
+          try await store.restampRoot(id: idA, to: RootIdentity(dev: 6, inode: 6, volumeUUID: "VOL-A")),
+          try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-E"), dev: 6, inode: 6) == idA else {
+        printFail(number, "restamp: a refused drive re-stamped the root, or its own drive's remount did not")
+        return false
+    }
+    guard try await store.restampRoot(id: 999_999, to: RootIdentity(dev: 1, inode: 1, volumeUUID: "VOL-A")) else {
+        printFail(number, "restamp: a missing folder id was refused (expected a no-op)"); return false
+    }
+    return true
+}
+
+/// A root on a volume with no UUID stays unbound (today's behaviour, the documented limitation): any
+/// volume re-stamps it, and the first with a UUID binds it.
+private func restampOfAnUnboundRoot(_ store: LibraryStore, number: Int) async throws -> Bool {
+    let idF = try await store.addRoot(ScanFixtureBuilder.makeCaseRoot("restamp-F"), dev: 20, inode: 20)
+    guard try await store.restampRoot(id: idF, to: RootIdentity(dev: 21, inode: 21, volumeUUID: nil)),
+          try await store.restampRoot(id: idF, to: RootIdentity(dev: 22, inode: 22, volumeUUID: "VOL-C")),
+          try await !store.restampRoot(id: idF, to: RootIdentity(dev: 23, inode: 23, volumeUUID: "VOL-D")) else {
+        printFail(number, "restamp: a root with no volume UUID did not stay unbound until one with a UUID")
+        return false
+    }
+    return true
 }
