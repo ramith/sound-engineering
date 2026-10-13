@@ -100,8 +100,8 @@ extension AudioViewModel {
 
     /// Prime the gapless pipeline after `startAudio` succeeds: reset the transition-counter
     /// baseline and arm the on-deck track so the engine can pre-schedule it. Runs on the main
-    /// actor (the VM's isolation); the `engine.setNextTrack`/`trackTransitionCount` calls hop to
-    /// the engine's own queues internally. Behaviour is identical to the previously-inlined block.
+    /// actor (the VM's isolation): the baseline comes from the snapshot copy, and
+    /// `engine.setNextTrack` hops to the engine's own queues.
     private func primeGaplessPipeline(startIndex: Int?, pureMode: Bool) async {
         lastTransitionCount = engine.snapshot().transport.transitionCount // fresh: startAudio sampled it
 
