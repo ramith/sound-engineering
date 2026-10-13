@@ -2,7 +2,8 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.5 — QW1 (crossfeed / Reimagine intensity knob / tonal presets) back-filled as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Version:** 2.6 — reconciled to the code at R1 / v1.0.0-alpha (product council, 2026-10-13); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Change note (2026-10-13, council):** every story re-checked against `main` (a206107). S8–S10.8 deliveries marked with a back-link (PR / sprint ledger / design doc + the main code location); partial and missing work forward-linked to a roadmap sprint (S11–S18) or to the new **Post-R1 fix pool** (US-R1F-01…07) and release items (US-REL-01/02, US-QA-07). Reversed decisions are annotated, not deleted. Proven-by anchors that no longer exist in the code (`NowPlayingWidget`, `EQPresetPickerView`, the `VerifyAUGraph` FR sweep) were corrected.
 **Change note (2026-07-12):** Removed natural-language tuning (EP-NLT/US-NLT-*/SPIKE-NLT-ARCH) and hearing personalization stories from scope — founder decision; git has the prior text.
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
@@ -20,6 +21,8 @@ Every story carries a **Status**, one of exactly four values:
 - **Superseded** — replaced by a different decision; kept for provenance.
 
 **Rule:** a Shipped story collapses to a one-line status row *in place* — `**Status:** Shipped · proven-by: <stable module / verify-gate name>` — keeping its `#### US-XXX` header, its `As a …` line, and its `Traceability:` field. The **proven-by** anchor is a stable module name or verify-gate (e.g. `LoudnessModule` + libebur128 oracle gate; `GaplessController` conformance suite), **never** a commit hash, a gate count, or a point-in-time metric — those live in `git` + `sprint-plan.md` and must not be re-imported here (that re-import is exactly the drift this pass removes). Planned / forward stories keep their full bodies and acceptance criteria.
+
+> **Amended 2026-10-13 (council):** a delivered story also carries a **back-link** — `delivered: PR #NN (sprint) · <design doc / ledger> · <main code location>` — so a requirement traces to the PR where it shipped (a PR number is a stable identifier, unlike a commit hash or a count). A story that shipped only in part is marked **Partly shipped** (what exists · what is missing → forward link); its acceptance criteria stay, because they define the missing half. Stories whose body records a founder rule (EP-LIBRARY / EP-PLAYLIST) keep their bodies even when shipped — the rule is the rationale. A **Forward** link names the roadmap sprint (S11–S18) or the backlog story that will close the gap; "Post-R1 pool" means accepted but not yet scheduled (see [Post-R1 fix pool](#post-r1-fix-pool-new--2026-10-13)).
 
 ---
 
@@ -98,7 +101,7 @@ A story is ready to enter a sprint when:
 A story is done when:
 1. All acceptance criteria pass (including referenced FR/NFR criteria).
 2. Unit and/or integration tests are written and green.
-3. The feature works on Apple Silicon (M1 or later) under macOS 14 Sonoma.
+3. The feature works on Apple Silicon (M1 or later) under ~~macOS 14 Sonoma~~ **macOS 26** (the deployment floor since PR #87; `Package.swift` `.macOS(.v26)`).
 4. No new XRuns, memory leaks, or audio-thread allocations introduced (verified by Instruments).
 5. VoiceOver labels and keyboard navigation verified for any new UI control.
 6. Code reviewed by at least one other engineer.
@@ -132,6 +135,22 @@ A story is done when:
 
 > **Re-anchor note (v2.3, 2026-06-19):** Several Phase-0/Phase-1 epics now carry shipped Done stories (back-filled from the two-path engine, Pure Mode, decode, EQ, limiter, loudness, gapless, device-resilience, signal-path transparency). **EP-STEM**, **EP-SYSWIDE**, and **EP-VDEVICE** are tagged **⛔ Won't, this horizon** per sprint-plan.md §6B — entries retained as the future roadmap, marked out-of-window. **DSD** (a feature, not an epic) is deferred post-R2, gated on acquiring a DSD DAC. See the v2.3 change note.
 
+> **Epic status at R1 (verified in the code, 2026-10-13):**
+>
+> | Epic | Where it stands | Back-link / forward link |
+> |---|---|---|
+> | EP-ENGINE | Shipped (two-path engine, param bus, Realizer plumbing); the perceptual Arbiter is not built | S6 (#15), S7 gates; Arbiter → S15–S16 |
+> | EP-PLAYER | Mostly shipped: library playback, transport, queue, metadata, gapless, persistence | S9 #23, S10.2 #54, S10.4 #58, S10.6 #57, PR #85; gaps → S11, US-R1F-01/05 |
+> | EP-LIBRARY / EP-PLAYLIST | Shipped except single-file play / loose add UI (US-LIB-02, US-PLIST-02), folder-to-folder move (US-LIB-07, superseded) and root recovery (US-LIB-08) | S8 #15 #17, S10.1 #53, S10.3 #59 #60, Sprint C #70, PR #85 |
+> | EP-TONAL | Partly: 31-band graphic EQ (Sprint EQ #73), presets, limiter, LUFS normalisation; no parametric, correction, loudness comp, bass enhancement | S12, S13, S14; US-TON-04 unscheduled |
+> | EP-DEVICE | Partly: enumeration, device policy (pin / follow, pause on loss), per-output EQ memory, crossfeed; no profiles, classification or spatial modes | PR #85, #73; S13 |
+> | EP-UI | Partly: Now Playing, EQ, Monitoring, Settings, Library in Liquid Glass, dark + light, VoiceOver / keyboard; no onboarding, l10n or adaptive feedback | S10.7 #61, S10.8 #62–#85 |
+> | EP-ADAPT / EP-PERCEPTUAL | Not built, except the signal-path readout (US-ADAPT-06) and load-time track loudness analysis | S15–S17 |
+> | EP-REIMAGINE | Knob shipped (QW1); it now scales only the adaptive enhancement (decision 25); the mapping is not built | S17 |
+> | EP-IMMERSION | Not built beyond crossfeed (BRIR stub) | S18 |
+> | EP-PRIVACY | No microphone, network or telemetry code exists; the sandbox story is superseded (Developer-ID, not sandboxed) | US-PRIV-02 |
+> | EP-QA | Shipped, except the THD+N oracle | US-QA-07 (new) |
+
 > **Epic migration note (v2.0):** `EP-SPAT` + `EP-HEADTRACK` → **`EP-IMMERSION`** (BRIR-first); `EP-AMBIENT` → folded into **`EP-ADAPT`**; perceptual decision-making split out into **`EP-PERCEPTUAL`**. Existing `US-SPAT-*` / `US-AMBIENT-*` stories below now live under the renamed epics; affected stories are annotated rather than rewritten.
 
 ---
@@ -147,6 +166,8 @@ A story is done when:
 #### US-ENG-01 [Enabler] — AVAudioEngine graph bootstrap
 
 As a **developer** I want a runnable AVAudioEngine graph that opens the default Core Audio output device, renders silence, and reports its buffer size and sample rate, so that all subsequent DSP modules have a stable audio thread to attach to.
+
+**Status (2026-10-13):** Shipped · proven-by: `VerifyAUGraph` (the AU in the live graph, offline render) + the RT-allocation soak (US-QA-06) · delivered: Sprint 4–5b (PR #14, #15) · `AudioEngineBridge+Graph.swift`. *(The floor is now macOS 26 on Apple Silicon — `Package.swift` `.macOS(.v26)`, PR #87 — not macOS 14.)*
 
 **Acceptance Criteria:**
 - Engine initialises on macOS 14 without errors on Apple Silicon (M1+).
@@ -166,6 +187,8 @@ As a **developer** I want a runnable AVAudioEngine graph that opens the default 
 
 As a **developer** I want a C++ DSP module framework that exposes a process(buffer, frames) interface and includes a working 10-band biquad EQ (all bands pass-through at 0 dB by default), so that tonal and adaptive modules can be slotted in without redesigning the chain.
 
+**Status (2026-10-13):** Shipped (with the band-count deviation above) · proven-by: the C++ null-test harness (`EqTests.inc`, `EqFrequencyResponseSweepTests.inc` — `EQ_FlatIsBitTransparentBypass`) · `Sources/AudioDSP/DSPKernel.cpp`, `EQ/EQModule.h`. *(Sprint EQ, PR #73, replaced the cascade with an accurate 31-band graphic EQ — one Simper SVF bell per band, `EQ/GraphicEQBands.h` — so a flat band is an exact identity. The THD+N criterion is not yet gated → US-QA-07.)*
+
 **Acceptance Criteria:**
 - Framework compiles with -Wall -Wextra -fno-exceptions on the audio thread translation unit (CON-01/CON-02 guard).
 - 10-band biquad EQ with frequency, gain, and Q per band; at 0 dB all bands, output is bit-identical to input (NFR-QUAL-03).
@@ -182,6 +205,8 @@ As a **developer** I want a C++ DSP module framework that exposes a process(buff
 
 As a **developer** I want a single-producer, single-consumer ring buffer (e.g., TPCircularBuffer) wiring the UI/adaptivity thread to the DSP audio thread, so that all parameter updates arrive without mutex or blocking on the render callback.
 
+**Status (2026-10-13):** Shipped (different mechanism) · proven-by: `SnapshotConcurrencyTests.inc` under `make tsan` · delivered: S6 (#15) + PR #31 (wait-free SPSC triple-buffer snapshot) · `include/RtSwappableResource.h`, `include/SpscRing.h`, `AudioEngine/Realizer.h`. *(Not TPCircularBuffer: the control plane publishes a whole `TargetState` snapshot through an in-house triple buffer, and `SpscRing` carries the loudness samples. DEP-09 is therefore unused.)*
+
 **Acceptance Criteria:**
 - Parameter messages are consumed by the audio thread within the next render cycle after being enqueued (FR-ADAPT-02).
 - Instruments Thread State Trace: zero audio-thread preemptions attributable to lock acquisition during a 5-minute stress test (FR-ADAPT-02 AC).
@@ -196,6 +221,8 @@ As a **developer** I want a single-producer, single-consumer ring buffer (e.g., 
 #### US-ENG-04 [Enabler] — Parameter smoothing / ramp engine
 
 As a **developer** I want every DSP parameter change applied via a per-block linear ramp of at least 50 ms, so that automated and user-driven EQ changes never produce audible zipper noise.
+
+**Status (2026-10-13):** Shipped (different law) · proven-by: `EqTransitionTests.inc`, `IntensityTests.inc` · `include/ParameterRamp.h`, `EQ/EQModule.h:13-23`. *(Deviation: smoothing is a per-sample **one-pole** (exponential) ramp, not a linear ≥ 50 ms one. Each EQ band has its own time constant from its bell's own response time (`EQTargets::rampsFor`, Sprint EQ engine-plan amendment 15; 40 ms+ in the bottom octave, under 1 ms at the top); Intensity uses τ = 32 ms; the loudness normaliser glides over ~2 s when Intensity crosses 0 (decision 33).)*
 
 **Acceptance Criteria:**
 - See FR-ADAPT-03 Given/When/Then: gain 0 → +6 dB on a 1 kHz sine wave produces no audible click; ramp is >= 50 ms; verified by scope/FFT.
@@ -212,6 +239,7 @@ As a **developer** I want every DSP parameter change applied via a per-block lin
 As a **developer** I want a transparent true-peak limiter as the final stage in the DSP chain, so that no upstream gain change can cause the output to exceed -1 dBTP and damage hearing or clip the DAC.
 
 **Status:** Shipped · proven-by: Enhanced-chain true-peak limiter stage (8× ISP oversampling, control-plane-adjustable threshold; bypassed in Pure Mode) + dual-oracle true-peak gate
+*(Amended 2026-10-10, Sprint EQ decision 29, PR #73: with Intensity 0 and the EQ on, the ceiling is **−0.1 dBTP** on a local lossless output (built-in, USB, Thunderbolt, HDMI…) and stays −1 dBTP on Bluetooth / AirPlay — `Limiting/OutputCeiling.h:19-38`, `DSPKernel.cpp` P1 branch. The full chain keeps −1 dBTP. The ceiling follows the output when it changes — PR #85.)*
 **Traceability:** FR-TONAL-07, NFR-QUAL-01
 
 ---
@@ -219,6 +247,8 @@ As a **developer** I want a transparent true-peak limiter as the final stage in 
 #### US-ENG-06 [Enabler] — Sample-rate conversion and device negotiation
 
 As a **developer** I want the DSP chain to query the output device's preferred sample rate and perform high-quality SRC when the source file's rate differs, so that a 44.1 kHz file plays correctly on a 48 kHz device and vice versa.
+
+**Status (2026-10-13):** Shipped · proven-by: `SRCQualityMeasure` (US-QA-04) · `AudioEngineBridge+EnhancedResampler.swift` (Enhanced: an explicit `AVAudioConverter` at `.max` quality into the 48 kHz graph; 48 kHz files take the `scheduleFile` passthrough) + `HALOutputEngine` (Pure: the device is switched to each track's rate, US-ENG-07).
 
 **Acceptance Criteria:**
 - See FR-DEVICE-06 Given/When/Then: 44.1 kHz file on 48 kHz device plays at correct pitch and duration.
@@ -235,6 +265,7 @@ As a **developer** I want the DSP chain to query the output device's preferred s
 As a **Ramith** I want a bit-perfect playback path that drives the DAC directly through the CoreAudio HAL, takes the device into hog mode, matches the device's physical sample rate to each track, and bypasses all DSP, so that the bits I bought reach the DAC unaltered — something Apple Music itself does not do on macOS.
 
 **Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
+*(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:100-104`. Open: KI-PB-01, KI-PB-05, KI-SET-02 in [known-issues.md](known-issues.md).)*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -244,6 +275,7 @@ As a **Ramith** I want a bit-perfect playback path that drives the DAC directly 
 As a **developer** I want a runtime engine that selects between the bit-perfect **Pure** path and the DSP **Enhanced** path (with automatic fallback) on a per-session/per-track basis, so that the listener gets bit-exact output when no processing is requested and the full N-channel DSP graph when it is.
 
 **Status:** Shipped · proven-by: two-path engine (Pure = US-ENG-07; Enhanced = two-AU N-channel graph ≤7.1, 48 kHz float, EQ → loudness → limiter → spatial-passthrough) on the Tier-3 DSP spine (`Realizer` + `RtSwappableResource<T>` + steerable equal-power wet/dry intensity, intensity-0 = bit-exact anchor)
+*(Amended 2026-10-10, Sprint EQ decision 25, PR #73: the EQ now runs AHEAD of the wet/dry blend — the dry tap is the EQ'd signal — so Intensity scales only the adaptive enhancement (today: loudness normalisation + crossfeed; Clarity / BRIR are stubs). The bit-exact anchor is now **Intensity 0 with the EQ Off** (`DSPKernel.cpp:191-210`, `EQModule::isIdentity`, with a 2 s hold); Intensity 0 with the EQ on plays EQ → limiter. Pure Mode is unchanged. Since PR #86 the main thread reads the engine only through `EngineSnapshot` / `TransportSnapshot` — architecture.md "Threading rules".)*
 **Traceability:** FR-PLAY-01, NFR-QUAL-01..04, NFR-PERF-01, CON-01, CON-02
 
 ---
@@ -253,6 +285,7 @@ As a **developer** I want a runtime engine that selects between the bit-perfect 
 As a **Marcus** I want the engine to measure program loudness to the BS.1770-5 standard and normalize playback toward a target LUFS, so that tracks and albums play back at a consistent perceived level without me riding the volume knob.
 
 **Status:** Shipped · proven-by: `LoudnessModule` (BS.1770-5 integrated-loudness meter + ramped LUFS-normalization makeup gain, off-RT; not applied in Pure Mode) + libebur128 oracle gate
+*(Since Sprint EQ, PR #73: each track is also analysed at load time, off the audio path — `TrackLoudnessKit/TrackLoudnessAnalyzer.swift` (a ~25 s prefix at once, then the whole track; the next track prefetched) — feeding the loudness-neutral EQ gain (decision 26). The normaliser's contribution fades in over Intensity 0 → 10 % and glides ~2 s when Intensity crosses 0 (decision 33), so at Intensity 0 a track plays at its original level. Target: −16 LUFS, `AudioConstants.h:34`. The runtime meter is the in-house `LufsMeter`; libebur128 is a test-only oracle.)*
 **Traceability:** FR-TONAL-07, NFR-QUAL-01, NFR-PERF-04
 
 ---
@@ -285,7 +318,7 @@ As a **developer** I want the BS.1770-5 loudness meter validated against the lib
 
 As a **developer** I want every one of the 31 EQ bands swept for frequency-response accuracy and the flat/bypass case proven bit-transparent, so that the EQ is provably correct end-to-end (incl. near-Nyquist).
 
-**Status:** Shipped · proven-by: `VerifyAUGraph` 31-band FR sweep + bit-transparent-bypass test (clears the S6 P1-A Schur-Cohn stability concern)
+**Status:** Shipped · proven-by: ~~`VerifyAUGraph` 31-band FR sweep~~ the C++ null-test harness's `Tests/EqFrequencyResponseSweepTests.inc` (`EQ_Sweep31Bands_48k` / `_44k`, `EQ_SweepExtremes_PlusMinus12`, `EQ_NearNyquistBandsApplyGain`, `EQ_FlatIsBitTransparentBypass`) + bit-transparent-bypass test (clears the S6 P1-A Schur-Cohn stability concern) *(anchor corrected 2026-10-13: the sweep never lived in `VerifyAUGraph`; Sprint EQ, PR #73, added `EqEngineTests.inc` / `EqEngineBreakItTests.inc` for the new engine)*
 **Traceability:** FR-TONAL-01, NFR-QUAL-03
 
 ---
@@ -336,7 +369,8 @@ As a **developer** I want a soak test proving zero audio-thread allocations and 
 
 As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files into the app and hear them immediately, so that I can load my existing library without format conversion.
 
-**Status:** Shipped (decode path) · proven-by: `FileDecodeSource` (runtime FFmpeg-via-`dlopen` with baked major-version guard, or Apple `ExtAudioFile`; FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC). ⚠ Deviation: **Opus** replaced OGG-Vorbis on the shipped list. Broader player UX (flat in-memory playlist + folder monitor) is shipped; persistent library/browse/queue remains the unbuilt critical path (S8–S10).
+**Status:** Shipped (decode path) · proven-by: `FileDecodeSource` (runtime FFmpeg-via-`dlopen` with baked major-version guard, or Apple `ExtAudioFile`; FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC). ~~⚠ Deviation: **Opus** replaced OGG-Vorbis on the shipped list. Broader player UX (flat in-memory playlist + folder monitor) is shipped; persistent library/browse/queue remains the unbuilt critical path (S8–S10).~~
+*(Corrected 2026-10-13 against the code: the import path is now the **library scan**, not a drag-in — the flat playlist + folder monitor were retired in the S9 IA change (7058667). The scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`, `Sources/LibraryScan/LibraryScanner.swift:38-40`; `.aif` added by PR #85). So OGG **is** on the list and **Opus is not**: `.opus` / `.oga` play through the optional FFmpeg fallback but are never scanned (KI-LIB-05 → S11). Apple's decoder is the default; FFmpeg is used only when the user has it installed (R1 release notes). Persistent library / browse / queue shipped in S8–S10. Dragging a file in is not possible today → US-LIB-02.)*
 **Traceability:** FR-PLAY-01, FR-PLAY-06
 
 ---
@@ -344,6 +378,8 @@ As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files in
 #### US-PLAY-02 — Playback controls (play, pause, skip, seek, volume)
 
 As a **Marcus** I want play, pause, skip forward, skip backward, seek, and volume controls that respond within 100 ms, so that I can manage playback without breaking my listening flow.
+
+**Status (2026-10-13):** Shipped · delivered: transport in S9 (PR #23) + the footer transport (PR #24); media keys + Control Center in S10.4 (PR #58, [design](../sprints/s10-4-macos-system-control-design.md), `NowPlayingController.swift:89-104`); paused-scrub / end-of-queue / Master Gain law fixes in PR #85 (`PlaybackQueueKit/SeekRoute.swift`, `ResumePoint.swift`, `EQEditKit/MasterGainLaw.swift`). Keyboard: Space, ⌘→ / ⌘←, ⌘. (Controls menu, `AdaptiveSound.swift:162-192`). Volume = **Master Gain** (turn-down only, 0 dB at the top; on Pure it drives the device volume). Open: KI-PB-04, KI-PB-07, KI-PB-10 in [known-issues.md](known-issues.md) → US-R1F-01.
 
 **Acceptance Criteria:**
 - See FR-PLAY-02 Given/When/Then: any control activated within 100 ms, no audio glitch.
@@ -359,6 +395,8 @@ As a **Marcus** I want play, pause, skip forward, skip backward, seek, and volum
 
 As a **Marcus** I want to build and reorder a playback queue and toggle shuffle and repeat, so that I can manage long listening sessions without manually restarting the app.
 
+**Status (2026-10-13):** Shipped · delivered: queue verbs in S9 (PR #23); persistent queue, Up Next｜History, grip-drag + context-menu (Move Up / Down / to Top) + keyboard reorder in S10.2 (PR #54, [design](../sprints/s10-2-queue-ux-design.md), `UI/Playlist/PlaylistItemList.swift`); a mid-song shuffle / repeat change re-arms the next track (PR #85, `PlaybackQueueKit/PlaybackOrder.swift`). Open: KI-PB-01 (Pure ignores the re-arm), KI-PB-02, KI-PB-03 (shuffle + repeat off never ends), KI-PB-08, KI-PB-09 → US-R1F-01/02. *(Drag from the Library into the queue was deprioritized 2026-07-14 — roadmap "Deferred".)*
+
 **Acceptance Criteria:**
 - See FR-PLAY-03 Given/When/Then: drag-to-reorder in a 5-track queue; new order reflected immediately; next track plays in updated order.
 - Remove track from queue without stopping current playback.
@@ -372,6 +410,8 @@ As a **Marcus** I want to build and reorder a playback queue and toggle shuffle 
 #### US-PLAY-04 — Track metadata and album art display
 
 As a **Ramith** I want to see track title, artist, album, album art, and duration in the Now Playing view, so that I know what is playing without switching apps.
+
+**Status (2026-10-13):** Shipped · delivered: tags + embedded art off-main in S8.3 (PR #15, [design](../sprints/s8-3-metadata-art-design.md), `LibraryScan/MetadataExtractor.swift`, `ArtworkCache.swift`); the Now Playing hero in S10.7 / S10.8 (PR #61, #62, `UI/NowPlaying/HeroBand.swift`); loose-file tags + the footer resolver in S10.4 (PR #58); album artists / Various Artists in Sprint C (PR #70). Open: KI-PB-06 (duration `--:--` after relaunch).
 
 **Acceptance Criteria:**
 - See FR-PLAY-04 Given/When/Then: ID3v2-tagged file; all metadata fields populated correctly.
@@ -387,6 +427,8 @@ As a **Ramith** I want to see track title, artist, album, album art, and duratio
 
 As a **Marcus** I want the app to restore my queue and playback position when I reopen it, so that I can resume exactly where I stopped.
 
+**Status (2026-10-13):** Partly shipped · delivered: S10.2 (PR #54) — the queue lives in the built-in "current" playlist and is restored PAUSED at the saved track + offset, with shuffle / repeat (`AudioViewModel+QueueHydration.swift`, cursor keys `queue.cursor.*`); the EQ state persists (`EQEditKit/EQStore.swift`). **Missing:** the listening settings (Pure, device pin, Master Gain, Intensity, crossfeed) reset at launch (KI-SET-01 → US-R1F-05); the restored song's duration (KI-PB-06 → US-R1F-01). There is no "profile" concept (US-DEVICE-04 → S13). A queued file that moved is skipped on play (playlist dead-file handling, PR #60).
+
 **Acceptance Criteria:**
 - See FR-PLAY-05 Given/When/Then: app closed paused at 2:34; on relaunch, queue restored and track pre-loaded at 2:34 with same profile active.
 - State written atomically to UserDefaults or a local JSON file on pause/close; partial writes do not corrupt state.
@@ -400,6 +442,8 @@ As a **Marcus** I want the app to restore my queue and playback position when I 
 #### US-PLAY-06 — Unsupported format error surfacing
 
 As a **Tom** I want the app to name the unsupported format and explain why it cannot play it when I drag in an unsupported file, so that I am not left wondering why the track is silent.
+
+**Status (2026-10-13):** Planned · not built: there is no file drag-in (US-LIB-02), and the scan skips unlisted extensions silently (`LibraryScanner.swift:182-184`). **Forward:** S11 (format hardening) — the scan should report what it skipped.
 
 **Acceptance Criteria:**
 - See FR-PLAY-06 Given/When/Then: unsupported format dragged in; inline error names the format and links to supported-formats list.
@@ -423,6 +467,7 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 - Edge case (related Pure same-rate gapless predicate limitation, deferred from Stage 2a): `sameRateGaplessCompatible` compares `bitsPerChannel`, which is `0` for compressed formats — so MIXING a compressed (AAC, bits=0) and an uncompressed (WAV, bits=16) track at the same rate forces a needless reconfigure gap even though both decode to the same float format. Either exclude bits-per-channel from the predicate when a source is compressed, or normalise the compressed value to the decoded float format. (Consecutive same-format tracks — e.g. an all-AAC library — are unaffected.)
 
 **Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** gapless Stage 1 (`cf33e5d`) + Stage 2a (`2e2242a`) — Pure `GaplessSource` + the `FileDecodeSource` FFmpeg backend
+**Status (2026-10-13):** Planned · still open in the code (`FileDecodeSource.cpp` relies on Apple's edit lists; `sameRateGaplessCompatible` still compares bits-per-channel, `GaplessSource.cpp:67`). **Forward:** S11 ("close gapless Stage 2b").
 **Traceability:** FR-PLAY-01, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -432,6 +477,7 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 As a **Marcus** I want consecutive tracks to play without a gap at the boundary, so that albums mastered to flow together (live recordings, DJ mixes, concept albums) play seamlessly.
 
 **Status:** Shipped · proven-by: `GaplessController` conformance suite + lock-free `GaplessSource` (Enhanced-path full + Pure-path same-rate). Deferred refinement — lossy AAC/MP3 encoder-delay trim on the FFmpeg backend + the compressed/uncompressed format-match-predicate edge case — is **US-PLAY-07** (Could).
+*(Re-checked 2026-10-13: open seam defects KI-GAP-01 (a gap at the 48 kHz seam), KI-GAP-02 (resampled seams switch ~0.4 s early), KI-GAP-03 and ENH-001 → US-R1F-02.)*
 **Traceability:** FR-PLAY-01, FR-PLAY-03, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -441,6 +487,7 @@ As a **Marcus** I want consecutive tracks to play without a gap at the boundary,
 As a **Marcus** I want playback to advance automatically to the next track in the queue when the current one ends, so that an album or playlist plays through without my intervention.
 
 **Status:** Shipped · proven-by: transition-delta auto-advance path (robust to multiple boundaries per UI tick — S6 P2-I fix; honours repeat/shuffle per US-PLAY-03)
+*(Since PR #85 / #86: the end of the queue really stops (`stopAtEndOfQueue`), and the tick reads the seam count and end flag from `TransportSnapshot` with numbered transport requests, so a replaced track's end flag can't stop the next one.)*
 **Traceability:** FR-PLAY-02, FR-PLAY-03
 
 ---
@@ -457,6 +504,7 @@ As a **Marcus** I want a "Recently Played" view that lists each track once with 
 - Rework of the S10.2 History tab. Design: [recently-played-frecency-design.md](../sprints/recently-played-frecency-design.md). Data model: a decayed-score accumulator column (`frecency_score`, schema v4); the durable `play_count`/`last_played` are unchanged.
 
 **Priority:** Should | **Phase:** 1 | **Sprint-chunk:** S10.6 | **Estimate:** 5 sp | **Dependencies:** US-PLAY-05 (session state), S10.2 (queue/History surface)
+**Status (2026-10-13):** Shipped · delivered: S10.6 (PR #57, [design](../sprints/recently-played-frecency-design.md)) · proven-by: `PlaybackQueueKit/PlayThroughTracker.swift` (≥60 % heard, 240 s cap, 30 s floor) + VerifyLibraryStore `ChecksFrecency.swift` · UI `UI/Playlist/RecentlyPlayedRow.swift`. Open: KI-PB-14 (stalled ticks count as heard), KI-PB-15.
 
 ---
 
@@ -471,6 +519,7 @@ As a **Marcus** I want a "Recently Played" view that lists each track once with 
 As a **Tom** I want a graphic EQ where I can drag the response curve per band and see the resulting curve update in real time, so that I can fine-tune the sound to my preference as a manual escape hatch.
 
 **Status:** Shipped · proven-by: 31-band EQ path (migrated onto Tier-3 `RtSwappableResource<T>` + off-RT `Realizer` cascade realization) + `VerifyAUGraph` 31-band FR sweep. ⚠ Deviation: this backlog (here + the US-ENG-02 scaffold) specified a **10-band parametric** EQ; what shipped is a **31-band graphic** EQ — recorded for traceability honesty (band count + interaction model changed; FR-TONAL-01 intent still met). Still missing (not this Done): EQ **presets** (US-TON-06), **parametric** bands + **device-correction/AutoEq import** (US-TON-02) → S12/S13.
+*(Rebuilt 2026-10-11 in **Sprint EQ**, PR #73 — decisions 21–33 in the [glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md), design in [docs/design/eq-lens/](../design/eq-lens/README.md). The old engine did not play what it showed (a 1–2 bell fitter under a summed-dB clamp); now: an accurate 31-band graphic EQ (`EQ/GraphicEQBands.h`, ±12 dB per point, `EQEditKit/EQBands.swift:24-33`), the 31 points the only thing on the graph, five **Tone** macros (Bass / Body / Mids / Presence / Air) that move them, a loudness-neutral output gain from the track's own spectrum, the played-curve graph, hold-to-Compare, "Bring back edits", per-output pins. The EQ now always plays in full, ahead of the Intensity blend (decision 25). Presets are US-TON-06 (shipped). Parametric bands + AutoEq import → S12; device correction → S13.)*
 **Traceability:** FR-TONAL-01, FR-UI-02
 
 ---
@@ -478,6 +527,8 @@ As a **Tom** I want a graphic EQ where I can drag the response curve per band an
 #### US-TON-02 — Device correction EQ (headphone and speaker profiles)
 
 As a **Marcus** I want the app to automatically apply a frequency response correction for my AirPods Pro or Sony WH-1000XM5, so that the headphones sound as neutrally balanced as the driver allows right out of the box.
+
+**Status (2026-10-13):** Planned · not built (no correction data or AutoEq import in the code). The nearest shipped piece is the per-output EQ memory ("Used on <output>" pins, `EQEditKit/EQOutputPin.swift`, PR #73). **Forward:** S12 (AutoEq `ParametricEQ.txt` import) + S13 (correction auto-load by identified device).
 
 **Acceptance Criteria:**
 - See FR-TONAL-02 Given/When/Then: "Apple AirPods Pro 2" identified; correction profile loaded and togglable on/off with audible difference.
@@ -494,6 +545,8 @@ As a **Marcus** I want the app to automatically apply a frequency response corre
 
 As a **Ramith** I want the app to automatically boost bass and treble when I turn the volume down, so that music sounds full and warm even at low volume.
 
+**Status (2026-10-13):** Planned · not built. **Forward:** S14 (loudness compensation, ISO-226). *(Naming note: the "Loudness" preset was renamed "Bass & Treble" so it does not clash with S14 — decision 31. These AC's figures (+6–10 dB bass, +12 dB cap) disagree with FR-TONAL-03's provisional values (50 % fraction, +6 dB bass / +4 dB treble caps); S14 must settle one set — SPIKE-LOUDNESS-COMP-TUNING.)*
+
 **Acceptance Criteria:**
 - See FR-TONAL-03 Given/When/Then: volume reduced by 20 dB; bass (80–200 Hz) increases ~6–10 dB; highs (8–12 kHz) increases ~3–5 dB per ISO 226 curves; applied within one DSP processing block.
 - Compensation updates on every volume change event (FR-ADAPT-05).
@@ -508,6 +561,8 @@ As a **Ramith** I want the app to automatically boost bass and treble when I tur
 #### US-TON-04 — Psychoacoustic bass enhancement for small speakers
 
 As a **Ramith** I want the app to generate harmonic partials of sub-bass frequencies on small or built-in speakers so that I can feel bass weight even though the speakers cannot reproduce low fundamentals.
+
+**Status (2026-10-13):** Planned · not built; **unscheduled** (no S11–S18 sprint covers it; it also waits on SPIKE-IPREVIEW).
 
 **Acceptance Criteria:**
 - See FR-TONAL-04 Given/When/Then (updated): MacBook built-in speakers, bass-heavy track; enhancement active; harmonic partials of sub-bass (below 80 Hz) audible from a **mono-summed (L+R) low-band** signal; no distortion artefacts on casual listen.
@@ -525,6 +580,8 @@ As a **Ramith** I want the app to generate harmonic partials of sub-bass frequen
 
 As a **Marcus** I want the app to apply appropriate compression per content type (e.g., preserve dynamics for classical, more compression for podcasts), so that every genre sounds natural and intelligible without me touching any settings.
 
+**Status (2026-10-13):** Planned · not built; **unscheduled**. The default it would adapt from does hold: there is no program compressor anywhere in the chain (EQ → [Clarity / BRIR stubs] → Crossfeed → Loudness → Limiter, `DSPKernel.cpp`) — LD-17 / FR-TONAL-05. It needs content classification (US-ADAPT-02) and ambient sensing (US-AMB-01), neither scheduled.
+
 **Acceptance Criteria:**
 - See FR-TONAL-05 Given/When/Then: classical track, Quiet ambient; ratio < 1.5:1; switching to Loud ambient increases ratio ≥ 3:1.
 - Attack and release parameters are genre-appropriate per the Adaptivity Signal Matrix.
@@ -539,7 +596,8 @@ As a **Marcus** I want the app to apply appropriate compression per content type
 
 As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Boost, Podcast, Film, Classical, Electronic) and save custom variations, so that I can quickly switch tonal characters without manual EQ work.
 
-**Status:** Shipped (QW1) · proven-by: `EQPresetPickerView` + `SaveCustomPresetView` + `EQViewModel+Persistence` (house-curve presets + Save-as-Custom + per-output recall). Founder by-ear verification still pending.
+**Status:** Shipped (QW1) · proven-by: ~~`EQPresetPickerView`~~ + `SaveCustomPresetView` + `EQViewModel+Persistence` (house-curve presets + Save-as-Custom + per-output recall). Founder by-ear verification still pending.
+*(Updated 2026-10-13: `EQPresetPickerView` no longer exists. Sprint EQ, PR #73, re-voiced the built-ins (decision 30) — **7** of them, each built from the five Tone regions: Flat, Presence, Clarity, Warm, Bass & Treble (decision 31, id "Loudness"), Vocal, Bass Boost (decision 32, replaces "Studio", which loads as Flat) — `EQEditKit/EQBuiltInPreset.swift:23-71`; plus **My Presets** (`EQMyPresets.swift`, `UI/EQ/EQPresetList.swift`, `SaveCustomPresetView`), and per-output pins (`EQOutputPin.swift`). So the list is 7 named built-ins, not the 8 (Neutral / Warm / Bright / Bass Boost / Podcast / Film / Classical / Electronic) the AC named.)*
 **Traceability:** FR-TONAL-06, FR-DEVICE-04
 
 ---
@@ -553,6 +611,8 @@ As a **Tom** I want to select from named presets (Neutral, Warm, Bright, Bass Bo
 #### US-ADAPT-01 [Enabler] — FFT spectrum analysis pipeline
 
 As a **developer** I want a real-time FFT analysis pipeline running on a non-real-time background thread that feeds spectral data into the adaptivity engine within 5 seconds of a track starting, so that all content-aware features have the signal data they need.
+
+**Status (2026-10-13):** Partly shipped (different purpose) · a real-time FFT exists for the analyzer and the Monitoring tab (`Spectrum/SpectrumAnalyzer.swift`, a Swift tap on the mixer; `Monitoring/MonitorTap.swift`), and load-time track loudness analysis exists (`TrackLoudnessKit`, PR #73); **no feature pipeline feeds an adaptivity engine** (none exists). **Forward:** S15 (masking-model spike) is the first adaptive-analysis work; content features remain unscheduled.
 
 **Acceptance Criteria:**
 - FFT runs on a non-real-time thread (separate from the audio render callback); audio thread is not blocked (CON-02).
@@ -570,6 +630,8 @@ As a **developer** I want a real-time FFT analysis pipeline running on a non-rea
 
 As a **Marcus** I want the app to automatically detect whether I am playing classical, electronic, rock, acoustic, or speech and adjust the tonal and dynamic profile accordingly, so that every genre sounds like it was specifically tuned.
 
+**Status (2026-10-13):** Planned · not built; **unscheduled** (no S11–S18 sprint classifies content).
+
 **Acceptance Criteria:**
 - See FR-ADAPT-01 Given/When/Then: electronic track with dominant bass + 4/4 drum pattern; classified as "Electronic" within 5 s; genre-tuned curve applied.
 - Six minimum classifications: speech, classical, electronic/bass-heavy, acoustic/folk, rock/metal, other.
@@ -585,6 +647,8 @@ As a **Marcus** I want the app to automatically detect whether I am playing clas
 #### US-ADAPT-03 — Volume-level tracking and signal dispatch
 
 As a **developer** I want the adaptivity engine to monitor current playback volume continuously and dispatch updated compensation curve parameters to the DSP chain within 100 ms of any volume change, so that Fletcher-Munson compensation is always current.
+
+**Status (2026-10-13):** Planned · not built. **Forward:** S14 (loudness compensation). *(Today the only volume control is Master Gain, `AudioViewModel+MasterGain.swift`; on Pure it is the device's volume.)*
 
 **Acceptance Criteria:**
 - See FR-ADAPT-05 Given/When/Then: volume 50% → 30%; compensation EQ parameters update within 100 ms; no audio dropout.
@@ -602,6 +666,8 @@ As a **developer** I want the adaptivity engine to monitor current playback volu
 
 As a **Tom** I want to open a debug/analysis view that shows exactly which signals are driving which DSP changes in real time, so that I can understand and trust what the engine is doing.
 
+**Status (2026-10-13):** Planned · still not built (no adaptivity engine exists). **Forward:** S16–S17.
+
 **Acceptance Criteria:**
 - See FR-ADAPT-07 Given/When/Then: adaptivity engine active; Transparency view open; each active signal listed with current value and DSP adjustment; updates at ≥ 2 Hz.
 - View shows at minimum: Volume level → bass/treble gain; Genre → EQ curve name; Device type → spatialisation mode.
@@ -617,6 +683,8 @@ As a **Tom** I want to open a debug/analysis view that shows exactly which signa
 
 As a **Tom** I want a master Adaptation Strength slider (0–100%) that lets me dial back how aggressively the engine modifies the sound, so that I can choose how much automation I want while keeping my manual EQ corrections.
 
+**Status (2026-10-13):** Planned · not built as specified. The closest shipped control is the Reimagine **Intensity** knob, which since decision 25 (PR #73) scales only the adaptive enhancement and leaves the EQ intact — exactly this story's shape — but there is no adaptation for it to scale yet. **Forward:** S17 (full Reimagine mapping).
+
 **Acceptance Criteria:**
 - See FR-ADAPT-08 Given/When/Then: Adaptation Strength = 0%; content/volume/ambient all change; DSP parameters do not change from baseline (verifiable in Transparency view).
 - At 100% (default), full adaptive range is active.
@@ -631,7 +699,7 @@ As a **Tom** I want a master Adaptation Strength slider (0–100%) that lets me 
 
 As a **Ramith** I want a Roon-style readout of exactly how the engine is handling the current track — bit-perfect Pure vs DSP Enhanced, the active sample rate, and which decode backend is in use — so that I can trust the playback path and confirm bit-exactness at a glance.
 
-**Status:** Shipped · proven-by: signal-path transparency readout (Pure/Enhanced path · active rate · decode backend, updated per-track without restart). ⚠ Scope-distinction: this is the **SIGNAL-PATH** transparency view — *not* the **ADAPTATION**-transparency view (US-ADAPT-04, which attributes signals→DSP changes and remains unbuilt). Kept separate for traceability honesty; do **not** conflate.
+**Status:** Shipped · proven-by: signal-path transparency readout (Pure/Enhanced path · active rate · decode backend, updated per-track without restart) — `UI/Settings/SignalPathStatus.swift`, `SignalPathInfo.swift`; reworded in plain words by decision 37 (PR #85: "Playing through: Enhanced", "Apple"). ⚠ Scope-distinction: this is the **SIGNAL-PATH** transparency view — *not* the **ADAPTATION**-transparency view (US-ADAPT-04, which attributes signals→DSP changes and remains unbuilt). Kept separate for traceability honesty; do **not** conflate.
 **Traceability:** FR-UI-01, FR-ADAPT-07 (signal-path subset; full FR-ADAPT-07 → US-ADAPT-04)
 
 ---
@@ -646,6 +714,8 @@ As a **Ramith** I want a Roon-style readout of exactly how the engine is handlin
 
 As a **developer** I want the app to enumerate all available Core Audio output devices on launch and register an AudioObjectAddPropertyListenerBlock callback so that device changes are detected immediately, so that profile switching logic has a reliable device event source.
 
+**Status (2026-10-13):** Shipped · delivered: S5 / S6 (PR #15) + the one output-device path of Sprint G (PR #85) · proven-by: `DeviceListPolicyTests.inc` (C++) + `OutputDeviceKitTests` · `CoreAudioDevice.cpp` (enumeration), `DeviceListPolicy.cpp` (hides hidden devices, private aggregates and the app's own `CADefaultDeviceAggregate-…`), `AudioEngineBridge+OutputDeviceMonitor.swift` (device list, system default, `DeviceIsAlive` and config-change listeners on `configChangeQueue`, never main). Names + type + rate show in the output pill and Settings (`UI/Controls/OutputDevicePill.swift`, `UI/Settings/DeviceDetailRow.swift`). Open: KI-DEV-02 (HDMI / DisplayPort read "(Unknown)").
+
 **Acceptance Criteria:**
 - See FR-DEVICE-01 Given/When/Then: two devices connected; both appear with correct names and type icons.
 - Callback fires on the non-real-time thread within 100 ms of a device plug/unplug event.
@@ -659,6 +729,8 @@ As a **developer** I want the app to enumerate all available Core Audio output d
 #### US-DEVICE-02 — Device-change auto-profile switching with crossfade
 
 As a **Marcus** I want the DSP profile to switch automatically within 500 ms when I plug in or unplug headphones, with no audio dropout and a smooth crossfade, so that my listening is never interrupted.
+
+**Status (2026-10-13):** Partly shipped · what exists: the **per-output EQ** — a pinned output recalls exactly what was last heard on it, and an output change raises a toast naming the output and its EQ ("AirPods Pro · Late Night") — Sprint EQ, PR #73 (`EQEditKit/EQOutputPin.swift`, `EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`); the pin / follow rule and the limiter ceiling, rate readout and crossfeed check follow the output — PR #85 (`OutputDeviceKit/OutputDevicePolicy.swift`, `AudioViewModel.adoptOutput`). **Missing:** whole DSP profiles and a category fallback → S13. Open: KI-EQ-01.
 
 **Acceptance Criteria:**
 - See FR-DEVICE-02 Given/When/Then: AirPods Pro profile saved; AirPods connected; profile loaded within 500 ms; no dropout.
@@ -675,6 +747,8 @@ As a **Marcus** I want the DSP profile to switch automatically within 500 ms whe
 
 As a **developer** I want connected output devices classified into six categories (in-ear headphones, over-ear headphones, built-in speakers, external speakers, DAC/amplifier, unknown) using device name heuristics and Core Audio transport type, so that spatialisation mode and bass enhancement are selected automatically.
 
+**Status (2026-10-13):** Partly shipped · the type comes from the CoreAudio transport alone — built-in / USB / wireless (Bluetooth, BLE, AirPlay) / unknown, with a name fallback (`CoreAudioDevice.cpp:321-354`); "headphones" means USB or wireless (`AudioViewModel.swift:159-171`). No in-ear / over-ear / DAC split, no data-source query. **Defect:** wired headphones in the Mac's own jack report the built-in transport, so crossfeed is disabled for them (KI-DEV-01). **Forward:** S13 (identified-device correction needs this) + US-R1F-06 for KI-DEV-01.
+
 **Acceptance Criteria:**
 - See FR-DEVICE-03 Given/When/Then: AirPods Pro identified as "in-ear headphones"; HRTF + headphone correction pipeline auto-selected.
 - Built-in MacBook speaker classified as "built-in speakers"; speaker widening and psychoacoustic bass enhancement selected.
@@ -688,6 +762,8 @@ As a **developer** I want connected output devices classified into six categorie
 #### US-DEVICE-04 — Named profile creation, editing, and device association
 
 As a **Tom** I want to create named DSP profiles ("Night Mode — AirPods," "Office — Sony"), link them to specific output devices, and switch between them from the device menu, so that I can maintain different listening setups without re-configuring the app every time I switch headphones.
+
+**Status (2026-10-13):** Planned · not built (no profile model). Nearest shipped: My Presets + per-output EQ pins (PR #73). **Forward:** S13 (profile JSON import / export implies the profile model).
 
 **Acceptance Criteria:**
 - See FR-DEVICE-04 Given/When/Then: "Night Mode — AirPods" created with custom EQ; AirPods connected; app offers to auto-load; manual switch also available.
@@ -704,6 +780,8 @@ As a **Tom** I want to create named DSP profiles ("Night Mode — AirPods," "Off
 
 As a **Tom** I want to export any profile as a JSON file and import it on another Mac, so that I can share my carefully tuned settings with other users.
 
+**Status (2026-10-13):** Planned · not built. **Forward:** S13.
+
 **Acceptance Criteria:**
 - See FR-DEVICE-05 Given/When/Then: profile exported; imported on different Mac; all parameters correctly restored and audible.
 - Export uses a versioned schema; import validates schema version before applying.
@@ -717,6 +795,8 @@ As a **Tom** I want to export any profile as a JSON file and import it on anothe
 #### US-DEVICE-06 — Speaker stereo widening and spatialisation mode auto-switch
 
 As a **Ramith** I want the app to automatically switch to stereo widening mode when I am using MacBook speakers and back to HRTF mode when I plug in headphones, so that I get the appropriate spatialisation for each device without manual intervention.
+
+**Status (2026-10-13):** Planned · not built (no speaker M/S or HRTF mode exists; `BRIRModule.h` is a pass-through stub). Only crossfeed auto-disables on a non-headphone output (`AudioViewModel+Devices.swift:83-86`). **Forward:** S18 for the headphone side (BRIR); the speaker M/S + ambience mode is **unscheduled**.
 
 **Acceptance Criteria:**
 - See FR-SPAT-06 Given/When/Then: active output is speakers; HRTF inactive; stereo width processing applied; mid/side balance adjustable.
@@ -732,7 +812,7 @@ As a **Ramith** I want the app to automatically switch to stereo widening mode w
 
 As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed on headphones so that hard-panned elements feel less fatiguing and more natural over long listening sessions.
 
-**Status:** Shipped (QW1) · proven-by: `CrossfeedModule` (Bauer/bs2b, knob-scaled, headphone-gated) + `AudioEngineBridge+CrossfeedControl` + `CrossfeedStrength`. Founder by-ear verification still pending. ⚠ Open caveat: the **OQ-17 / SPIKE-LIBBS2B** licence gate (libbs2b MIT vs clean-room Bauer reimpl) is presumed resolved by shipping but its written spike outcome was **not** confirmed against code in this audit — see the OQ-17 row.
+**Status:** Shipped (QW1) · proven-by: `CrossfeedModule` (Bauer/bs2b, knob-scaled, headphone-gated) + `AudioEngineBridge+CrossfeedControl` + `CrossfeedStrength`. Founder by-ear verification still pending. ~~⚠ Open caveat: the **OQ-17 / SPIKE-LIBBS2B** licence gate (libbs2b MIT vs clean-room Bauer reimpl) is presumed resolved by shipping but its written spike outcome was **not** confirmed against code in this audit — see the OQ-17 row.~~ *(Resolved, verified 2026-10-13: the QW1 design §2 decided "do NOT link the LGPL bs2b library — implement the ~20 lines of math from first principles" ([qw1 design](../sprints/qw1-quick-win-differentiators-design.md)); the code is an in-house one-pole cross-path low-pass + ITD delay using bs2b's published coefficient sets — `Spatial/CrossfeedModule.h`, no libbs2b in `third_party/`. Crossfeed lives in the Now Playing inspector (`UI/NowPlaying/InspectorColumn.swift`), off by default; Relaxed / Default / Strong. **Defect:** unavailable on wired headphones in the Mac's own jack — KI-DEV-01.)*
 **Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
 
 ---
@@ -740,6 +820,8 @@ As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed
 #### US-DEVICE-08 — Bluetooth device sample-rate negotiation and auto-adaptation
 
 As a **Marcus** I want the app to detect my Bluetooth device's native sample rate (e.g., 44.1 kHz on AirPods) and automatically adapt to it, rather than forcing 48 kHz resampling on the device, so that I get better battery life and lower latency on wireless headphones.
+
+**Status (2026-10-13):** Planned · not built; unscheduled (Phase 1.5 Could). Today Enhanced runs a 48 kHz graph whatever the device, and Pure falls back to Enhanced on Bluetooth by design (`PureModePolicy.cpp:100-104`).
 
 **Acceptance Criteria:**
 - See FR-DEVICE-01 + new AC: device enumerated; native sample rate detected via CoreAudio property API (kAudioDevicePropertyNominalSampleRate).
@@ -763,6 +845,7 @@ As a **Marcus** I want the app to detect my Bluetooth device's native sample rat
 As a **Marcus** I want playback to survive a device disappearing (BT/USB unplug, sleep) and a setting that controls whether playback **follows** a newly-connected device or **pins** to the current one, so that an accidental disconnect doesn't kill the session and I decide what happens when a new DAC appears.
 
 **Status:** Shipped · proven-by: engine device-loss serialization (engineQueue + leaf lock; pause/recover, HAL hog-mode release, no `-10875` storm) + pin/follow connect-behavior setting (S6 P1-B/P1-C hardening, see [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md))
+*(Reworked before R1: Sprint G, PR #85, made it **one output-device path** with one tested rule (`OutputDeviceKit/OutputDevicePolicy.swift`, `AudioEngineBridge+OutputDeviceMonitor.swift`): a lost device **pauses on Enhanced too** (it used to carry on out of the speakers), keeps the song's place, and shows "Output device disconnected — playback paused. Press Play to continue."; a system-default change made outside the app is followed or re-asserted; Pure moves with a newly chosen device. PR #86 then removed the 3–7 s freeze on disconnect: the main thread never waits on the engine ([evidence](../architecture/evidence/main-thread-stall-2026-10/README.md)). The pin setting is not kept across launches — KI-SET-01.)*
 **Traceability:** FR-DEVICE-01, FR-DEVICE-02, NFR-REL-01, NFR-REL-03
 
 ---
@@ -776,6 +859,8 @@ As a **Marcus** I want playback to survive a device disappearing (BT/USB unplug,
 #### US-UI-01 — Now Playing view with spectrum analyser
 
 As a **Marcus** I want a persistent Now Playing view showing album art, track metadata, playback controls, a real-time spectrum analyser at ≥ 30 fps, and the active profile name, so that I can see what is playing and how the engine is processing it at a glance.
+
+**Status (2026-10-13):** Shipped with deviations · delivered: S10.7 Liquid Glass Now Playing (PR #61, [design](../sprints/s10-7-liquid-glass-design.md)) + S10.8 part 1 (PR #62, [realign ledger](../sprints/s10-8-realign-ledger.md)) · `UI/NowPlaying/NowPlayingTabView.swift`, `HeroBand.swift`, `UI/Spectrum/SpectrumAnalyzerView.swift` (dB grid, peak-hold caps). **Deviations:** the analyzer updates at **20 Hz** (the shared main-thread tick, `AudioViewModel+SpectrumTimer.swift:35`), not ≥ 30 fps; it has its own FFT tap on the mixer (no adaptivity pipeline exists to share); it is hidden from VoiceOver as decorative (the lens is one element), with no text summary; there is no "active profile name" (no profiles).
 
 **Acceptance Criteria:**
 - See FR-UI-01 Given/When/Then: track playing; spectrum analyser updates ≥ 30 fps; all metadata visible without scrolling on 13-inch MacBook display.
@@ -791,6 +876,8 @@ As a **Marcus** I want a persistent Now Playing view showing album art, track me
 
 As a **Tom** I want a single panel that exposes EQ bands, spatialisation toggle, dynamics controls, and profile selector without navigating into settings, so that I can tune the sound mid-session without losing my flow.
 
+**Status (2026-10-13):** Shipped with deviations · the **EQ tab** (Sprint EQ V1b layout, PR #73: Equalizer card + Tone card + graph card; `UI/Tabs/EQTabView.swift`, `UI/EQ/`). Crossfeed, Intensity and Master Gain sit in the Now Playing inspector instead (`UI/NowPlaying/InspectorColumn.swift`); there is no spatialisation toggle, dynamics control or profile selector (none exist).
+
 **Acceptance Criteria:**
 - See FR-UI-02 Given/When/Then: panel open; EQ band adjusted; change audible in next render cycle (< 23 ms at 512 frames); EQ curve visualisation updates immediately.
 - Panel accessible via keyboard shortcut (no mouse required) — NFR-ACC-02.
@@ -804,6 +891,8 @@ As a **Tom** I want a single panel that exposes EQ bands, spatialisation toggle,
 #### US-UI-03 — First-run onboarding wizard
 
 As a **Ramith** I want a first-run wizard that detects my output device, explains what the app does in one screen, and lets me start listening in under 3 minutes without being forced to complete any step, so that I can get value immediately without learning anything about audio.
+
+**Status (2026-10-13):** Planned · not built — the app opens straight into its five tabs (Now Playing, Library, EQ, Monitoring, Settings — `TabSelection.swift`); the empty Library offers "add a music folder" (`UI/Library/LibraryEmptyStateView.swift`). **Unscheduled.**
 
 **Acceptance Criteria:**
 - See FR-UI-04 Given/When/Then: user skips all steps; main player view reached within 10 seconds with default settings active.
@@ -820,6 +909,8 @@ As a **Ramith** I want a first-run wizard that detects my output device, explain
 
 As a **Ramith** I want the app to match macOS dark or light mode automatically and switch in real time, so that it feels native and does not clash with the rest of my desktop.
 
+**Status (2026-10-13):** Shipped · delivered: S10.7 (PR #61) for the dark Liquid Glass base, Sprint B (PR #69) for the designed light mode (pale-glow backdrop, decision 16), then every tab in S10.8 (PR #63–#85) · colours are tokens in `DesignTokenKit` / `DesignSystem*.swift`; Reduce Transparency / Increase Contrast honoured. Open: KI-EQ-03 (unverified shadow darkening).
+
 **Acceptance Criteria:**
 - See FR-UI-06 Given/When/Then: system switches to Dark Mode while app is open; all windows update to dark theme without restart; no illegible text or invisible controls.
 - All colours defined using semantic NSColor/SwiftUI Color tokens (not hardcoded hex values).
@@ -832,6 +923,8 @@ As a **Ramith** I want the app to match macOS dark or light mode automatically a
 #### US-UI-05 — VoiceOver and keyboard accessibility
 
 As a **developer** I want every interactive control to have a meaningful VoiceOver label and be operable via keyboard alone, so that the app meets macOS accessibility standards at launch.
+
+**Status (2026-10-13):** Shipped · delivered: PR #30 (Songs a11y), PR #42 / #43 (interaction + EQ band VoiceOver / keyboard), PR #45 / #46 (fonts on text-style tokens), PR #71 (keyboard selection, grid arrows), PR #85 (each pill menu one VoiceOver element); the founder's one-time keyboard / VoiceOver / appearance walk was the last R1 check. Reduce Motion is read in 19 source files. *(macOS 26 does not scale SwiftUI text styles with a Dynamic Type setting, so layouts hold by reflow, not clamps.)* Open: KI-UI-01 (VoiceOver keeps the app busy), KI-EQ-02.
 
 **Acceptance Criteria:**
 - See FR-UI-05 Given/When/Then: VoiceOver enabled; DSP controls panel navigated via arrow keys; every slider and button announces label and current value.
@@ -847,6 +940,8 @@ As a **developer** I want every interactive control to have a meaningful VoiceOv
 
 As a **developer** I want all user-visible strings stored in .strings files from day one with no hardcoded English strings in UI components, so that future localisation requires only translation without code changes.
 
+**Status (2026-10-13):** Planned · not built — there is no `.strings` / `.xcstrings` catalog and no lint rule; UI text is SwiftUI string literals (localizable keys by type, but never extracted). **Unscheduled** (post-R1 pool).
+
 **Acceptance Criteria:**
 - All strings in Views and ViewModels reference NSLocalizedString or SwiftUI LocalizedStringKey; no inline string literals in UI code (NFR-L10N-01).
 - Build lint rule or CI check fails if a hardcoded UI string is introduced.
@@ -860,6 +955,8 @@ As a **developer** I want all user-visible strings stored in .strings files from
 #### US-UI-07 — Adaptive UI feedback (engine activity indicators)
 
 As a **Marcus** I want subtle visual feedback when the adaptivity engine changes a DSP parameter, so that I can see the engine working without it being distracting.
+
+**Status (2026-10-13):** Planned · not built (no adaptivity engine). **Forward:** S16–S17.
 
 **Acceptance Criteria:**
 - See FR-UI-07 Given/When/Then: bass EQ updated by 3 dB; bass band indicator briefly animates; does not disrupt user interaction.
@@ -880,6 +977,8 @@ As a **Marcus** I want subtle visual feedback when the adaptivity engine changes
 
 As a **Ramith** I want the app to explain in plain language why it needs the microphone before requesting permission, and I want to know that ambient sensing will simply be unavailable (not broken) if I deny, so that I feel safe granting or declining without anxiety.
 
+**Status (2026-10-13):** Planned · not built — there is no microphone code at all (no `AVCaptureDevice` / input node; no `NSMicrophoneUsageDescription` in `Info.plist`). **Unscheduled** (waits on US-AMB-01).
+
 **Acceptance Criteria:**
 - See NFR-PRIV-02 Given/When/Then: user denies microphone; all features except ambient adaptation function normally; persistent dismissable banner shown.
 - NSMicrophoneUsageDescription string: "Used only to sense room noise — never recorded or transmitted." or equivalent.
@@ -893,6 +992,8 @@ As a **Ramith** I want the app to explain in plain language why it needs the mic
 #### US-PRIV-02 — App sandbox compliance and entitlements declaration
 
 As a **developer** I want the app to be fully sandboxed per App Store requirements with all entitlements declared and justified, so that it passes App Store review and the privacy nutrition label is accurate.
+
+**Status (2026-10-13):** **Superseded** — the founder confirmed **Developer-ID distribution, NOT sandboxed** ([S8.1 design](../sprints/s8-1-persistent-store-design.md) D5, 2026-07): music-folder roots persist as plain absolute paths. R1 ships as an ad-hoc-signed DMG from GitHub (PR #87); signing + notarization is US-REL-01. No entitlements file exists. The AC below are kept for provenance.
 
 **Acceptance Criteria:**
 - App is sandboxed (com.apple.security.app-sandbox = true).
@@ -909,6 +1010,8 @@ As a **developer** I want the app to be fully sandboxed per App Store requiremen
 
 As a **developer** I want an opt-in analytics framework that is clearly described at onboarding, excludes audio content and hearing data, and respects opt-out immediately, so that optional anonymous quality and diagnostics data (crash-free rate, audio-engine error counts) can be collected ethically if the project chooses to implement telemetry at all (LD-9 — no commercial analytics purpose).
 
+**Status (2026-10-13):** Planned · not built — the app makes **no network calls** (no `URLSession` anywhere in `Sources/`), so NFR-PRIV-04 holds trivially. **Unscheduled**; SPIKE-TELEMETRY is open.
+
 **Acceptance Criteria:**
 - See NFR-PRIV-04 Given/When/Then: user opts out; no analytics events sent after opt-out (verified by Charles Proxy).
 - Opt-in dialog at first launch; default is opted-out.
@@ -924,7 +1027,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 ## Phase 0 Stories (Continued) — Library & Playlist Foundation *(new — v2.4, 2026-07-02)*
 
-> **Context:** these two epics formalize a set of domain rules/use-cases the founder stated directly (2026-07-02) ahead of the S8 library-spine build, so the persistent store schema (see [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md)) is *designed against* them rather than retrofitted after the fact. **No FR/NFR IDs exist for this domain** — `requirements.md` predates the persistent-library feature entirely (it only covers flat-playlist playback under `FR-PLAY-*`). Stories below trace to the S8.1 design doc and to `sprint-plan.md`'s S8–S10 scope, the same pattern already used for `EP-QA` (US-QA-01..06), which trace to sprint docs rather than invented FR-IDs. **All stories in this section are Draft — pending sprint planning review; none are Done.** Every story is tagged with its sprint-chunk so sprint boundaries stay clean: **S8.1** (store schema — design exists, implementation pending), **S8.2** (folder scan), **S8.4** (incremental rescan / move detection), **S9** (browse UI), **S10** (queue + playlists UI). Nothing here is scheduled for S8.3 (metadata/artwork extraction) — that chunk is orthogonal to these rules.
+> **Context:** these two epics formalize a set of domain rules/use-cases the founder stated directly (2026-07-02) ahead of the S8 library-spine build, so the persistent store schema (see [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md)) is *designed against* them rather than retrofitted after the fact. **No FR/NFR IDs exist for this domain** — `requirements.md` predates the persistent-library feature entirely (it only covers flat-playlist playback under `FR-PLAY-*`). Stories below trace to the S8.1 design doc and to `sprint-plan.md`'s S8–S10 scope, the same pattern already used for `EP-QA` (US-QA-01..06), which trace to sprint docs rather than invented FR-IDs. ~~**All stories in this section are Draft — pending sprint planning review; none are Done.**~~ *(Superseded 2026-10-13: most of these shipped in S8–S10.3 — see each story's Status line. Not delivered: US-LIB-02 / US-PLIST-02 (no UI entry point), US-LIB-08; superseded: US-LIB-07.)* Every story is tagged with its sprint-chunk so sprint boundaries stay clean: **S8.1** (store schema — design exists, implementation pending), **S8.2** (folder scan), **S8.4** (incremental rescan / move detection), **S9** (browse UI), **S10** (queue + playlists UI). Nothing here is scheduled for S8.3 (metadata/artwork extraction) — that chunk is orthogonal to these rules.
 
 ### EP-LIBRARY — Persistent Library: Scan Folders, Single-File Play, Durable Identity, Duplicates
 
@@ -935,6 +1038,8 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 #### US-LIB-01 — Multiple independent scan folders
 
 As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live Bootlegs," "Podcasts") and have the app treat each as an independent library root that I can play from, browse, or remove independently, so that I am not forced to consolidate my collection into one folder tree to get library features.
+
+**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:365-366`.)* Open: KI-LIB-02 (paused / failed folders are invisible).
 
 **Acceptance Criteria:**
 - The store's `folders` table supports multiple root rows (`parent_id IS NULL`, `is_root = 1`); no artificial limit on the number of roots (S8.1 schema already supports this — `folders.id` is a normal auto-increment key, not a singleton).
@@ -951,6 +1056,8 @@ As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live
 
 As a **Ramith** I want to open and play a single audio file that is not inside any of my scan folders (e.g., a one-off download or an email attachment), so that I am not forced to import or copy a file into my library just to hear it once.
 
+**Status (2026-10-13):** Planned · **not delivered**. The schema supports it (nullable `folder_id`, `LibraryStore.addLooseFile`, `LibraryStore+DAO.swift:226`) and a loose file reads its embedded tags (S10.4, `EmbeddedMetadataReader`), but the app has **no entry point** for a single file: no Finder drop target, no Open… panel, no `CFBundleDocumentTypes` / `application(_:open:)`. The only file entry (the folder chooser that dumped a folder into the flat list) was removed with the S9 IA change (7058667, [s9 IA design](../sprints/s9-library-ia-queue-design.md) §4/§5) and no replacement was built; the AC's "keep working exactly as it does today" no longer holds. Raised as a council finding. **Forward:** Post-R1 pool (unscheduled).
+
 **Acceptance Criteria:**
 - A file opened via Finder drag-and-drop, the macOS Open panel, or "open with" plays immediately through the existing playback engine (US-PLAY-01/US-ENG-07/08) without requiring a library entry to exist first — this path must keep working exactly as it does today (S8.1 §7: "the running app is byte-identical" — this story extends that guarantee forward through S8.2+).
 - The played file is **not required** to be written into the persistent store to play; if/when it is added to a playlist (US-PLIST-02), *that* action creates its track row with `folder_id = NULL` (loose file) — playing alone never does.
@@ -965,6 +1072,8 @@ As a **Ramith** I want to open and play a single audio file that is not inside a
 #### US-LIB-03 — Stable durable track identity, independent of file path
 
 As a **developer** I want every track to have a stable integer identity (the store's `tracks.id`) that playlists and any future per-track state (play counts, ratings) reference, rather than referencing the file's URL/path directly, so that a filesystem move or a metadata retag never silently breaks a playlist or loses history.
+
+**Status (2026-10-13):** Shipped · `playlist_entries.track_id` references `tracks.id` (S10.1, PR #53, [design](../sprints/s10-1-playlist-queue-store-design.md)); the drag payload is `LibraryTrackDragItem { trackID }` (S10.3). The store is GRDB-backed (PR #47) — `final class LibraryStore`, not an actor.
 
 **Acceptance Criteria:**
 - All playlist-membership references (US-PLIST-01) point at `tracks.id` (a stable integer), never at `tracks.url` or a raw path string.
@@ -981,6 +1090,8 @@ As a **developer** I want every track to have a stable integer identity (the sto
 
 As a **Ramith** I want the app to treat two copies of the same song living in two different scan folders (e.g., a FLAC rip in "Lossless" and an MP3 of the same track in "Car") as two distinct, independent tracks — each playable, each addable to playlists on its own — rather than trying to detect and collapse them into one, so that I never lose a file or have the "wrong" copy silently substituted.
 
+**Status (2026-10-13):** Shipped · no dedupe anywhere: `UNIQUE(url)` is the only uniqueness key on tracks; `content_hash` on `tracks` remains unused (it is used only for the artwork cache).
+
 **Acceptance Criteria:**
 - A song residing in exactly one scan folder is the normal case (per the founder's stated invariant); a second (or third...) copy of that same song under a **different** scan folder is a **distinct row** in `tracks` (distinct `url`, distinct `folder_id`, distinct `id`) — not an error, not a warning, not something the scanner attempts to merge.
 - Two files with identical audio content but different paths are never collapsed into a single library entry by default. The `content_hash` column exists in the S8.1 schema for a **future, explicitly opt-in** dedupe/"show duplicates" feature (per S8.1 Open Decision D3: "Defer. Column provisioned, unused in S8.1/8.2; path-uniqueness is enough for R1.") — this story confirms that deferral and pins the default behavior (no auto-dedupe) as a hard requirement, not just an implementation shortcut.
@@ -996,6 +1107,8 @@ As a **Ramith** I want the app to treat two copies of the same song living in tw
 
 As a **developer** I want re-scanning a folder whose files have not changed to produce zero new rows and zero spurious updates (no `mtime`/`date_added` churn), so that the "duplicates are normal, don't dedupe" rule (US-LIB-04) never gets confused with "the same file re-scanned" (which is not a duplicate at all).
 
+**Status (2026-10-13):** Shipped · proven-by: VerifyLibraryStore idempotency checks (S8.1). *(Hardened by PR #85, G-LIB-01: a stamp is never lowered — `last_seen_scan = MAX(last_seen_scan, ?)` — so two overlapping walks of one folder can no longer sweep songs that are on disk.)*
+
 **Acceptance Criteria:**
 - Re-scanning an unchanged file (same `url`, same `(file_size, mtime, inode)` signature) results in exactly one row, unchanged, per the S8.1 delta-friendly upsert contract (`ON CONFLICT(url) DO UPDATE`, classified as "unchanged" by `classify(_:)`).
 - This is explicitly **the boundary case that separates US-LIB-04 (cross-folder duplicate = normal, two rows) from a re-scan (same-folder same-file = one row, no-op)** — the acceptance test set must include both cases side by side so the distinction is provable, not just described.
@@ -1009,6 +1122,8 @@ As a **developer** I want re-scanning a folder whose files have not changed to p
 #### US-LIB-06 — Filesystem move updates a track in place, preserving playlist membership
 
 As a **Ramith** I want moving a file from one scan folder to another (or renaming/relocating it within a scan folder) to be recognized by a rescan as "the same track that moved," updating its stored location in place, so that every playlist it belonged to still contains it after the move — not a broken reference plus an orphaned new entry.
+
+**Status (2026-10-13):** Shipped · delivered: S8.4 (PR #17, [design](../sprints/s8-4-live-watch-move-match-design.md)) — D1 was reversed at S8.4 as this story asked: an id-preserving move on the `(dev, inode, size, mtime)` + format signature (`LibraryStore+MoveMatch.swift`), live via FSEvents (`LibraryScan/LibraryWatcher.swift`) · proven-by: VerifyLibraryStore `ChecksMoveMatch.swift`. **Limitation:** a copy-then-delete move gets a new id (SEQ-1 Gate 2; `content_hash` deferred).
 
 **Acceptance Criteria:**
 - A rescan that finds a file at a **new** path whose content/identity signature matches a previously-known track (see Note below on the matching heuristic) updates that track's `url`/`folder_id`/`relative_path` **in place**; `tracks.id` does not change.
@@ -1025,6 +1140,8 @@ As a **Ramith** I want moving a file from one scan folder to another (or renamin
 
 As a **Ramith** I want dragging a song (or songs) from one scan folder's browse view into another scan folder to physically relocate the file(s) on disk — not just re-file them in the database — so that folder-to-folder drag behaves the way Finder-style file organization actually expects.
 
+**Status (2026-10-13):** **Superseded** — folder browse was cut with S10.5 (founder, 2026-07-17: not a differentiator; [sprint-plan](../sprints/sprint-plan.md) S10.5 row), so there is no in-app folder view to drag between and no `FileManager` move anywhere in the app. Moves made in Finder are reconciled id-preserving by US-LIB-06. The AC below are kept for provenance.
+
 **Acceptance Criteria:**
 - Dropping track(s) from scan-folder A's browse view onto scan-folder B (in the browse UI) performs an actual `FileManager` move of the underlying file(s) from A's directory tree to B's, then reconciles the store per US-LIB-06 (in-place update, `tracks.id` unchanged, playlist membership intact) — it is explicitly **not** a copy, and it is explicitly **not** a database-only re-parent with the file left in place.
 - This is the deliberate contrast with playlist drag-and-drop (US-PLIST-03/04): dropping into a **playlist** is a reference-add (US-PLIST-04), dropping into a **scan folder** is a potential real move (this story) — the UI/UX must make the distinction between "playlist" drop targets and "scan folder" drop targets unambiguous (different visual affordance), since the filesystem consequence is different.
@@ -1039,6 +1156,8 @@ As a **Ramith** I want dragging a song (or songs) from one scan folder's browse 
 #### US-LIB-08 — Corrupt/missing-store recovery does not lose scan-folder registrations
 
 As a **developer** I want the list of registered scan-folder roots to be recoverable independently of the rest of the store's corruption-recovery path, so that a quarantine-and-rebuild event (S8.1 §5) does not force the listener to re-register every scan folder from scratch on top of losing their scan history.
+
+**Status (2026-10-13):** Planned · not built. A corrupt store is quarantined with its WAL sidecars (`StoreQuarantine.swift`) and a fresh one created, so roots are lost; `folders.bookmark` stays reserved-unused (Developer-ID, not sandboxed — S8.1 D5). Since Sprint C (PR #70) the store takes a pre-upgrade backup (`StoreBackup.swift`) and **refuses**, never wipes, a store it can't safely open. **Unscheduled** (post-R1 pool).
 
 **Acceptance Criteria:**
 - On store quarantine + fresh-create (S8.1 §5 policy: corrupt file → rename `library.corrupt-<ts>.sqlite3` + create fresh), the app can re-populate `folders` root rows without founder/user having to manually re-pick each folder via a file picker — at minimum, the security-scoped `bookmark` blob per root (already provisioned in the S8.1 schema, §3: `folders.bookmark`) must be resolvable independent of the rest of the corrupted DB, or a lightweight sidecar (e.g., a small JSON of root bookmarks in App Support, alongside the SQLite file) must exist for this purpose.
@@ -1059,6 +1178,8 @@ As a **developer** I want the list of registered scan-folder roots to be recover
 
 As a **Ramith** I want a track to be able to belong to any number of playlists at once, and each playlist to hold an arbitrary, user-arrangeable ordering of its tracks, so that I can organize the same song into "Workout," "Chill," and "2026 Favorites" simultaneously without the app treating that as a conflict.
 
+**Status (2026-10-13):** Shipped · delivered: schema + DAO in S10.1 (PR #53, `LibraryStore+Playlists.swift`, own entry id + position, a track may repeat); the UI in S10.3 (PR #59: create / rename / delete, reorder, Move Up / Down in PR #71) · proven-by: VerifyLibraryStore `ChecksPlaylists*.swift`. *(Playlist folders: the data layer shipped dormant in PR #59 — `LibraryStore+PlaylistFolders.swift` — and the UI was cut 2026-07-16.)*
+
 **Acceptance Criteria:**
 - The store schema (an addition beyond what S8.1 ships — S8.1's scope is explicitly library-only, per its §1 table: "S10 queue/playlist tables" is listed as deferred) adds a `playlists` table (id, name, `is_builtin`, `created_at`) and a `playlist_entries` join table (`playlist_id`, `track_id` referencing `tracks.id` — **not** `tracks.url` — per US-LIB-03 — plus an explicit `position` / ordering column and its own entry id, since the same `track_id` can legitimately appear more than once in one playlist, e.g. an intro track re-used later).
 - A track appearing in zero playlists is valid (not every track needs to be organized); a track appearing in many playlists is valid and is the expected common case, not an edge case.
@@ -1074,6 +1195,8 @@ As a **Ramith** I want a track to be able to belong to any number of playlists a
 
 As a **Ramith** I want to add a single audio file to a playlist even when that file is not inside any of my scan folders, so that a one-off track (a promo download, a friend's demo) can live in a playlist alongside my scanned library without first importing it as a full library citizen.
 
+**Status (2026-10-13):** Planned · **store-only**. `addLooseFileToPlaylist` exists and is gated (`LibraryStore+Playlists.swift:422`, one transaction), but **no UI calls it** — no Finder drop onto a playlist, no Add File… (the only `.fileImporter` on a playlist is Locate…, `PlaylistDetailView.swift:55`). `sprint-plan.md` lists "add a single non-library file" as shipped in S10.3; the code disagrees. Raised as a council finding. **Forward:** Post-R1 pool, with US-LIB-02.
+
 **Acceptance Criteria:**
 - Adding a file via Finder drag-and-drop or the Open panel directly onto a playlist (not onto the main library view) creates a `tracks` row with `folder_id = NULL` (a "loose" / non-scan-folder track, per US-LIB-02's schema accommodation) if one doesn't already exist for that exact `url`, then adds a `playlist_entries` row referencing it.
 - A loose track added to a playlist this way behaves identically to a scan-folder track for playback, metadata display, and further playlist membership (it can be added to additional playlists, reordered, removed) — the only difference is `folder_id IS NULL` and it is invisible to folder-scoped browse views (US-LIB-01's "which folder" provenance) since it has no folder.
@@ -1087,6 +1210,8 @@ As a **Ramith** I want to add a single audio file to a playlist even when that f
 #### US-PLIST-03 — Drag a song from a scan folder or another playlist into a playlist
 
 As a **Ramith** I want to drag a song (or a multi-select of songs) from a scan-folder browse view, or from one playlist, and drop it onto a different playlist, so that building and curating a playlist feels the same regardless of where the song is coming from.
+
+**Status (2026-10-13):** Partly shipped · delivered: S10.3 (PR #59, [design](../sprints/s10-3-playlists-ux-design.md)) — drag a song from Songs onto a sidebar playlist (`UI/Library/SongRowInteraction.swift:33` → `LibrarySidebar.swift:200`, through `LibraryBrowseKit/PlaylistDropRouter.swift`), and **Add to Playlist** menus on Songs, detail pages and tiles (`UI/Playlist/AddToPlaylistMenu.swift`), which take a multi-selection. **Missing:** a multi-selection drag adds only the row under the pointer (KI-LIB-04 → US-R1F-04); dragging from one playlist into another is not supported (a playlist row's drag is the reorder grip).
 
 **Acceptance Criteria:**
 - Dragging from a scan-folder browse view (US-LIB-01/US-LIB-07 context) onto a playlist and dropping it into another playlist both use the identical drop handler and produce the identical result: a new `playlist_entries` row in the **destination** playlist referencing the existing `tracks.id` (US-LIB-03) — the source (folder browse, or the source playlist) is completely unaffected.
@@ -1102,6 +1227,8 @@ As a **Ramith** I want to drag a song (or a multi-select of songs) from a scan-f
 
 As a **developer** I want dropping a song onto a playlist to be implemented so that it is architecturally impossible for it to touch the filesystem, so that the "playlist add ≠ file move" invariant the founder stated cannot be violated by a future refactor that conflates it with the folder-to-folder move handler (US-LIB-07).
 
+**Status (2026-10-13):** Shipped · type-level: the drop payload is a track id (`LibraryTrackDragItem`), the router's only outcome is an add (`PlaylistDropRouter`), and `scripts/strict-gate.sh:131-140` fails the gate on any `FileManager` move / copy in the playlist UI, model, router or DAO.
+
 **Acceptance Criteria:**
 - The playlist drop handler's only side effect is an INSERT into `playlist_entries` (plus, if the source track doesn't yet have a `tracks` row — the loose-file case, US-PLIST-02 — an INSERT into `tracks` with `folder_id = NULL`); it never calls any `FileManager` move/copy/relocate API, and this is enforced by keeping the playlist-drop code path and the folder-to-folder-move code path (US-LIB-07) as two separate, non-shared handlers rather than one generic "drop" handler with a folder-vs-playlist branch buried inside it.
 - This story is explicitly the architectural/testable counterpart to US-LIB-07: a regression test (or code-review checklist item) asserts that dropping onto any playlist target across a stress set of source types (scan-folder track, another-playlist track, loose file) never results in a changed `mtime` or moved path for the underlying file on disk.
@@ -1115,6 +1242,8 @@ As a **developer** I want dropping a song onto a playlist to be implemented so t
 #### US-PLIST-05 — Playlist naming: user-provided, or auto-named "untitled-N"
 
 As a **Ramith** I want a newly-created playlist to take the name I type, or if I don't type one, to be auto-named "untitled-1," "untitled-2," and so on, so that I never end up with an unnamed or ambiguously-named playlist cluttering my list.
+
+**Status (2026-10-13):** Shipped with a deviation · ~~"untitled-N"~~ the default name is Apple-style **"New Playlist", then the lowest free "New Playlist N" (N ≥ 2)**, taken case-blind (`LibraryStore+Playlists.swift:185-209`; S10.1 design; case-blind since PR #85 / G-LIB-03). An empty or whitespace name, or the reserved "current", is **rejected** rather than re-auto-named; a duplicate user name is rejected (`PlaylistNameConflict`, NOCASE index). The built-in can't be renamed or deleted (`builtinImmutable`).
 
 **Acceptance Criteria:**
 - Playlist creation accepts an optional user-provided name; if omitted (or left as empty string), the app assigns the lowest-numbered unused `"untitled-N"` name (N starting at 1), scanning existing playlist names to avoid collision — e.g., if "untitled-1" and "untitled-3" exist but "untitled-2" was renamed away, the next auto-name is "untitled-2," not "untitled-4" (lowest-unused, not a monotonic counter, to avoid unbounded drift from rename/delete churn — *flagging this as the recommended default; founder may prefer a monotonic counter instead, which is the simpler alternative if collision-avoidance-by-scan is judged unnecessary complexity*).
@@ -1131,6 +1260,8 @@ As a **Ramith** I want a newly-created playlist to take the name I type, or if I
 
 As a **Ramith** I want a built-in playlist named "current" that always represents whatever is queued/now-playing, so that the existing queue concept (US-PLAY-03) and the new playlist concept are unified into one model rather than two parallel, inconsistent systems.
 
+**Status (2026-10-13):** Partly shipped · the built-in "current" playlist exists, can't be renamed or deleted (store-enforced), and persists the queue (S10.1 PR #53, S10.2 PR #54). **Deviation:** the queue is still an in-memory array **mirrored** into "current" by a debounced snapshot (`AudioViewModel+QueueMirror.swift`), not operations on its entries — the unification the AC asks for is a persistence mirror; shuffle is a session order and doesn't rewrite positions (as the AC wants). **Missing:** "Save queue as playlist" (no such command). A loose queue slot can't persist (logged, latent: no loose entry point exists). **Forward:** Post-R1 pool.
+
 **Acceptance Criteria:**
 - Exactly one `playlists` row has `is_builtin = 1` and `name = "current"`; it is created once, at first launch after S10 ships (or via a one-time migration for existing installs), and can never be deleted or renamed by the user (delete/rename UI affordances are disabled/hidden for it, and the store layer rejects a delete/rename attempt on a builtin row defensively, not just via UI graying-out).
 - The existing queue behaviors — drag-to-reorder, remove, shuffle, repeat (US-PLAY-03), auto-advance (US-PLAY-09), gapless (US-PLAY-08), session-state restore (US-PLAY-05) — become, architecturally, operations on the "current" playlist's `playlist_entries` rather than a separate in-memory queue data structure; this is the unification this story requires, not merely a coincidental same-named list.
@@ -1146,6 +1277,8 @@ As a **Ramith** I want a built-in playlist named "current" that always represent
 
 As a **Ramith** I want to create as many playlists as I want, so that my organizational scheme (by mood, by activity, by year, by project) is not constrained by an arbitrary cap.
 
+**Status (2026-10-13):** Shipped · proven-by: the S10.3 scale checks (PR #60, VerifyLibraryStore `ChecksPlaylistScan.swift`).
+
 **Acceptance Criteria:**
 - No hard-coded limit on the number of `playlists` rows (beyond SQLite's own practical ceilings, which are far beyond any realistic personal-library scale).
 - The browse/list UI for "all my playlists" (S10 scope) scales to at least low hundreds of playlists without a perceptible slowdown (indexed query, not a full unindexed scan — reuses the same indexing discipline the S8.1 schema already applies to `tracks`/`albums` facets).
@@ -1159,6 +1292,8 @@ As a **Ramith** I want to create as many playlists as I want, so that my organiz
 #### US-PLIST-08 — Playlist membership survives a scan-folder move
 
 As a **Ramith** I want a playlist that contains a song to still contain that exact song after I've moved its file from one scan folder to another via folder-to-folder drag-and-drop (US-LIB-07), so that reorganizing my library on disk never quietly breaks the playlists I've curated.
+
+**Status (2026-10-13):** Shipped (as a Finder move) · proven-by: the store-level seam check (S10.1, PR #53) and the real-scanner seam + scan-isolation checks (S10.3, PR #60, `ChecksPlaylistScan.swift`). Because US-LIB-07 is superseded, the move under test is a filesystem move reconciled by the scanner, not an in-app drag.
 
 **Acceptance Criteria:**
 - This story is the explicit **integration test** that ties EP-LIBRARY's durable-identity/move handling (US-LIB-06, US-LIB-07) to EP-PLAYLIST's membership model (US-PLIST-01): given a track that is a member of ≥2 playlists, performing a folder-to-folder move (US-LIB-07) on that track's file, then re-querying every playlist that contained it, returns the identical membership (same playlists, same relative position) as before the move.
@@ -1182,6 +1317,8 @@ As a **Ramith** I want a playlist that contains a song to still contain that exa
 
 As a **Marcus** I want binaural HRTF rendering that places the soundstage outside my head when I use headphones, so that listening feels three-dimensional and less fatiguing on long commutes.
 
+**Status (2026-10-13):** Planned · not built — `Spatial/BRIRModule.h` is a bit-exact pass-through stub; no libmysofa / SOFA / FFTConvolver code. **Forward:** S18 (SPIKE-BRIR + BRIR spatial render v1).
+
 **Acceptance Criteria:**
 - See FR-SPAT-01 Given/When/Then: stereo track, headphone device active, HRTF mode enabled; naive listener ABX test shows audible spatial difference vs. bypass at statistically significant rate.
 - HRTF rendering is implemented as **custom SOFA-HRIR partitioned convolution** using **libmysofa (BSD-3)** for SOFA loading and **vDSP / FFTConvolver (MIT)** for convolution (DEP-06, DEP-12). Apple PHASE / AVAudioEnvironmentNode / AUSpatialMixer are explicitly NOT used for HRTF (their HRTFs are fixed and non-replaceable — see FR-SPAT-01 and `docs/session-notes/prior-art.md`).
@@ -1200,6 +1337,8 @@ As a **Marcus** I want binaural HRTF rendering that places the soundstage outsid
 
 As a **Marcus** I want to choose from at least 3 HRTF profiles, so that I can pick the one that sounds most natural for my head shape.
 
+**Status (2026-10-13):** Planned · not built. **Forward:** after S18 (needs the BRIR engine).
+
 **Acceptance Criteria:**
 - See FR-SPAT-02 Given/When/Then: HRTF selector open; renders immediately on selection, no restart.
 - Non-medical framing: profiles labelled as "listening preference" variants, not audiological recommendations.
@@ -1212,6 +1351,8 @@ As a **Marcus** I want to choose from at least 3 HRTF profiles, so that I can pi
 #### US-SPAT-03 — Virtual room convolution (studio, living room, concert hall IRs)
 
 As a **Marcus** I want to optionally place a virtual listening room around my music, so that I can experience a concert hall or studio feel on headphones.
+
+**Status (2026-10-13):** Planned · not built. **Forward:** S18.
 
 **Acceptance Criteria:**
 - See FR-SPAT-05 Given/When/Then: room IR selected; convolution enabled; output contains reverb consistent with IR RT60; CPU within NFR-PERF-01 budget.
@@ -1230,6 +1371,8 @@ As a **Marcus** I want to optionally place a virtual listening room around my mu
 #### US-HT-01 — CoreMotion AirPods head-tracking integration
 
 As a **Marcus** I want the HRTF soundstage to remain fixed in space when I turn my head while wearing AirPods, so that the music stays in front of me and the experience feels like real speakers in a room.
+
+**Status (2026-10-13):** Planned · not built (no `CMHeadphoneMotionManager` use); **unscheduled** — S18 covers BRIR v1 only.
 
 **Acceptance Criteria:**
 - See FR-SPAT-04 Given/When/Then: AirPods Pro active, head-tracking enabled, 30-degree rotation; soundstage counter-compensates; perceived source does not move with head; lag < 20 ms.
@@ -1255,6 +1398,8 @@ As a **Marcus** I want the HRTF soundstage to remain fixed in space when I turn 
 #### US-AMB-01 — On-demand ambient noise sample and DSP adaptation
 
 As a **Marcus** I want to tap "Adapt to my environment" and have the app sample the room noise for 3 seconds and adjust the EQ and dynamics accordingly, without keeping the microphone on.
+
+**Status (2026-10-13):** Planned · not built (no microphone code); **unscheduled**.
 
 **Acceptance Criteria:**
 - See FR-ADAPT-04 first Given/When/Then: "Adapt to my environment" tapped; noisy room (>65 dBA); 3 s sample completes; ambient classified "Loud"; DSP adapted; mic released; orange indicator clears within 1 s.
@@ -1292,6 +1437,8 @@ As a **Tom** I want to sync my profiles across my Macs via iCloud and export/imp
 
 As a **Tom** I want to quickly toggle between enhanced and bypassed audio with loudness-matched levels so that I can hear exactly what the Adaptivity Engine is adding.
 
+**Status (2026-10-13):** Partly shipped · the EQ's **hold-to-Compare** (Sprint EQ decision 28, PR #73, `UI/EQ/EQCompareButton.swift`) plays the song without the EQ at the same loudness while held — an EQ-only A/B, loudness-fair because the EQ is loudness-neutral (decision 26). A whole-enhancement A/B toggle with LUFS matching is not built. **Forward:** S12 (A/B LUFS-matched bypass).
+
 **Acceptance Criteria:**
 - Single button or keyboard shortcut toggles between enhanced and bypass mode.
 - Loudness is matched (LUFS-matched, ± 0.5 LU) so the comparison is fair (loudness preference bias eliminated).
@@ -1313,6 +1460,8 @@ As a **Tom** I want to quickly toggle between enhanced and bypassed audio with l
 ## Phase 1 Stories (Continued) — Perceptual Engine & Reimagine
 
 ### EP-PERCEPTUAL — Typed Contributors, Perceptual Arbiter, Off-RT Realizer
+
+> **Status (2026-10-13):** all three stories Planned · not built. The shipped `Realizer` (`AudioEngine/Realizer.h`) is control-plane plumbing (it owns `TargetState` and realizes the EQ / crossfeed / intensity intents off-RT); there is no Arbiter, masking model or L-M biquad fitter, and Sprint EQ (PR #73) chose an exact per-band SVF graphic EQ instead of a fitted cascade for the user EQ. **Forward:** US-PERC-01 / -03 → S15 (spike) + S16; US-PERC-02 → S16.
 
 **US-PERC-01 | Typed-contributor model + Arbiter** [Enabler]
 As a **developer** I want an Arbiter that composes **typed** contributions (EQ-curve + per-band dynamic + transient + spatial) in the **ERB/Bark** domain with a masking + partial-loudness model and enforces governing-principle clamps, producing a per-stem TargetState, so that clarity/adaptive moves compose correctly.
@@ -1346,7 +1495,8 @@ Traceability: LD-12, FR-ADAPT, OQ-22
 **US-RMG-01 | Single Reimagine intensity control (0 = bit-faithful)**
 As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can dial how much the app transforms my music.
 
-**Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + `NowPlayingWidget` knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
+**Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + ~~`NowPlayingWidget`~~ knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
+*(Updated 2026-10-13: the knob is the "Intensity" carved slider in the Now Playing inspector — `ReimagineSectionView`, `UI/NowPlaying/InspectorColumn.swift:79-114` (S10.7, PR #61); default 20 % (`AudioViewModel.swift:132`), not kept across launches (KI-SET-01). Since decision 25 (PR #73) it scales only the adaptive enhancement and never the EQ; "0 % — Reimagine off (your EQ still plays)". Bit-exact = Intensity 0 **and** EQ Off.)*
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
 
 **US-RMG-02 | Intensity→parameter mapping (mix-range)**
@@ -1354,6 +1504,7 @@ As a **developer** I want the knob to crossfade original↔processed and scale c
 Acceptance: FR-REIMAGINE-03/04; ramped (FR-ADAPT-03); mapping curve per SPIKE-REIMAGINE-MAP.
 Priority: Must | Phase: 1 | Estimate: 5 sp | Dependencies: US-RMG-01, SPIKE-REIMAGINE-MAP
 Traceability: FR-REIMAGINE-03, FR-REIMAGINE-04, LD-16
+Status (2026-10-13): Planned · not built. **Forward:** S17 (Reimagine intensity — full mapping).
 
 ---
 
@@ -1504,6 +1655,84 @@ True per-instrument source separation is the **Phase-1.5 own-player stem engine*
 
 ---
 
+## Post-R1 fix pool *(new — 2026-10-13)*
+
+> **Why this section exists:** R1 (v1.0.0-alpha, PR #87) shipped with a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
+
+#### US-R1F-01 — Transport and queue correctness after R1
+
+As a **Marcus** I want play, pause, repeat, shuffle and the queue to do exactly what the screen says, so that I never hear a different song from the one named, or a queue that never ends.
+
+**Covers:** KI-PB-01 (HIGH: Pure ignores a re-armed next track — clear the Pure deck before re-arming, and confirm on a USB DAC), KI-PB-03, KI-PB-04 (a "start in flight" state both the toggle and `pause()` consult), KI-PB-05, KI-PB-06, KI-PB-07, KI-PB-08, KI-PB-09, KI-PB-10, KI-PB-14.
+**Acceptance:** each KI's scenario has a regression test (the breaker B VM harness pattern — `breakit/s10-8-g-playback-shell`, `Tests/BreakItG/vmharness`) and passes; KI-PB-01 is reproduced and fixed on hardware.
+**Priority:** Must (KI-PB-01) / Should | **Estimate:** 8 sp | **Traceability:** FR-PLAY-02, FR-PLAY-03, FR-PLAY-05, NFR-REL-03
+
+#### US-R1F-02 — Seamless seams
+
+As a **Marcus** I want every track change to be seamless, so that gapless albums never get a silence or an early title change.
+
+**Covers:** KI-GAP-01 (48 kHz seam gap), KI-GAP-02 (resampled seams switch ~0.4 s early; apply presentation latency), KI-GAP-03, KI-PB-02, ENH-001 (2-deep on-deck). Natural partner of S11's gapless Stage 2b (US-PLAY-07).
+**Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-PLAY-01, NFR-QUAL-03 · candidate for **S11**
+
+#### US-R1F-03 — Library honesty and safety
+
+As a **Ramith** I want the library to tell me when a folder is unreachable or a scan failed, and never to delete a playlist entry because a drive is unplugged, so that I can trust what I see.
+
+**Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item), KI-LIB-03 (retry a failed metadata pass; refresh Songs).
+**Priority:** Must (KI-LIB-01) / Should | **Estimate:** 5 sp | **Traceability:** EP-LIBRARY, US-LIB-01, US-PLIST-02
+
+#### US-R1F-04 — Library and playlist polish
+
+As a **Tom** I want browsing, filtering and playlists to behave the same everywhere, so that the app feels predictable.
+
+**Covers:** KI-PB-11, KI-PB-12, KI-PB-13, KI-PB-15, KI-LIB-04 (drag the whole selection), KI-LIB-06, KI-LIB-07, KI-LIB-08, KI-LIB-09, KI-LIB-10.
+**Priority:** Should / Could | **Estimate:** 5 sp | **Traceability:** US-PLIST-03, US-PLAY-03, US-PLAY-10
+
+#### US-R1F-05 — Keep the listening settings, and one honest level
+
+As a **Ramith** I want Pure Mode, the device pin, Master Gain, Intensity and crossfeed to survive a relaunch, and Master Gain to mean the same level on both paths, so that the app never comes back louder than I left it.
+
+**Covers:** KI-SET-01, KI-SET-02 (a Master Gain cut must carry into Pure, or Pure must show it is louder), KI-SET-03.
+**Acceptance:** each setting has a defaults key read at launch (Master Gain at least); switching Enhanced → Pure never raises the level without the user seeing it.
+**Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-PLAY-05, US-PLAY-05, NFR-REL-03
+
+#### US-R1F-06 — EQ and output-device fixes
+
+As a **Marcus** I want crossfeed on my wired headphones and an EQ that never silently loses my edits.
+
+**Covers:** KI-DEV-01 (classify the built-in jack's headphone data source as headphones — `kAudioDevicePropertyDataSource` — and stop treating AirPlay speakers as headphones), KI-DEV-02 (HDMI / DisplayPort transport types), KI-EQ-01 (unpin offers Bring back, or keeps the shared EQ), KI-EQ-02, KI-EQ-03 (visual check).
+**Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-SPAT-03, FR-DEVICE-03, US-DEVICE-03, US-DEVICE-07, US-TON-06
+
+#### US-R1F-07 — Engine and test-harness hygiene
+
+As a **developer** I want the known races and gaps in our own checks closed, so that the gates keep catching what the break-it rounds found by hand.
+
+**Covers:** KI-ENG-01 (`SpectrumDoubleBuffer` → the named-atomic triple buffer), KI-ENG-02 (port the breaker's engineQueue-holder and first-play modes; bound <5 ms), KI-ENG-03, KI-ENG-04, KI-UI-01 (measure VoiceOver load before changing anything), ENH-002 (N-channel UI meter). Related, and **parked by the founder** until after R1: the broader app ↔ engine concurrency cleanup, whose starting map is [main-thread-audio-audit-2026-10.md](../architecture/main-thread-audio-audit-2026-10.md).
+**Priority:** Should / Could | **Estimate:** 3 sp | **Traceability:** NFR-PERF-01, NFR-QUAL-02, CON-01/02
+
+#### US-QA-07 — THD+N oracle
+
+As a **developer** I want the bypass THD+N measured against the −90 dB budget in the C++ gate, so that the last S7 oracle exists.
+
+**Status:** Planned · the one S7 oracle never built (no THD measurement anywhere in `Tests/`). **Acceptance:** NFR-QUAL-01 (≤ −90 dB at 1 kHz, 0 dBFS, bypass) as a harness test; the Enhanced chain at Intensity 0 / EQ flat measured too.
+**Priority:** Should | **Estimate:** 2 sp | **Traceability:** NFR-QUAL-01 · candidate for **R2** ("QA gate green")
+
+#### US-REL-01 — Developer ID signing and notarization
+
+As a **Marcus** I want to open the downloaded app without a security detour, so that installing it feels trustworthy.
+
+**Status:** Planned · R1 is ad-hoc signed and not notarized by founder decision 13 ("the first item of any release beyond the founder's Mac"), `Makefile` `dist` + `.github/workflows/release.yml` (PR #87). **Acceptance:** Developer ID signature with the hardened runtime and the `disable-library-validation` entitlement the FFmpeg `dlopen` needs; notarized and stapled in the release workflow.
+**Priority:** Must before a wider release | **Estimate:** 2 sp | **Traceability:** NFR-INSTALL-01, ASM-03, CON-08
+
+#### US-REL-02 — Choose and add the open-source licence
+
+As a **developer** I want the repository to carry a licence, so that others may legally use, share and build on it (LD-9).
+
+**Status:** Planned · the repository is **public** (GitHub `ramith/sound-engineering`) and has **no LICENSE file**, while PRD §6 says the licence "only needs to be in place before the repository is made public". Raised as a council finding. Note the dependency posture: GRDB.swift (MIT) is linked; FFmpeg is never bundled (it is `dlopen`ed only if the user installed it).
+**Priority:** Must | **Estimate:** 1 sp | **Traceability:** LD-9, PRD §6, CON-12, R-10
+
+---
+
 ## Spike / Research Stories
 
 Spikes are time-boxed investigations. Each produces a written decision or recommendation that unblocks one or more user stories. Spikes do not produce shippable code.
@@ -1521,6 +1750,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Go/no-go recommendation for FR-SPAT-01 scope; note that dataset licence (Apache-2.0) is already confirmed
 
 **Time-box:** 2 days (reduced from 3 — dataset selection resolved) | **Phase:** 1 | **Estimate:** 2 sp | **Blocks:** US-SPAT-01
+**Status (2026-10-13):** Planned · **Forward:** S18 (SPIKE-BRIR + BRIR spatial render v1).
 **Traceability:** FR-SPAT-01, FR-SPAT-02, ASM-04, DEP-06, DEP-12, OQ-04 (resolved: SADIE II default)
 
 ---
@@ -1536,6 +1766,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Ongoing curation process and owner identified
 
 **Time-box:** 3 days | **Phase:** 0 | **Estimate:** 2 sp | **Blocks:** US-TON-02
+**Status (2026-10-13):** Planned · **Forward:** S12 (AutoEq import) / S13 (device correction).
 **Traceability:** FR-TONAL-02, ASM-05, DEP-07, OQ-08 (resolved: AutoEq MIT computed curves)
 
 ---
@@ -1551,6 +1782,7 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Audio engineer sign-off
 
 **Time-box:** 2 days | **Phase:** 1 (must complete before US-AMB-01) | **Estimate:** 2 sp
+**Status (2026-10-13):** Planned · unscheduled (US-AMB-01 is unscheduled).
 **Traceability:** FR-ADAPT-04, NFR-PERF-04, OQ-03
 
 ---
@@ -1604,11 +1836,14 @@ Spikes are time-boxed investigations. Each produces a written decision or recomm
 - Go/no-go sign-off for public release of FR-TONAL-04
 
 **Time-box:** Depends on IP counsel availability — not a fixed time-box; must complete before Phase 0 public release | **Phase:** 0 (before public release, not before engineering) | **Estimate:** 1 sp (BA coordination only; legal cost is external)
+**Status (2026-10-13):** Not needed yet — no bass-enhancement code exists, so R1's public release did not ship FR-TONAL-04. Still required before US-TON-04 ships.
 **Traceability:** FR-TONAL-04, CON-11, OQ-16
 
 ---
 
 #### SPIKE-LIBBS2B — libbs2b licence dispute resolution (OQ-17)
+
+**Status (2026-10-13):** ✅ **Resolved by decision, not by spike** — the QW1 design §2 records bs2b as **LGPL** and rules "do NOT link the LGPL bs2b library — implement the ~20 lines of math from first principles" ([qw1 design](../sprints/qw1-quick-win-differentiators-design.md)); the shipped `CrossfeedModule` is that reimplementation. The text below is kept for provenance.
 
 **Goal:** Resolve the disputed libbs2b licence (MIT vs. GPL-2.0+) before shipping FR-SPAT-03 (crossfeed). This is a short investigation, not a technical prototype.
 
@@ -1653,16 +1888,19 @@ Time-box: 5 days | Estimate: 5 sp | Refs: FR-STEM-01/05 (validation protocol), a
 **Goal:** Define the mapping from the 0–100% knob to crossfade + spatial spread + unmask depth (mix-range and stem-range ceiling), and validate with a small listening test that the progression feels natural and that 0% is unmistakably "faithful".
 **Output:** the mapping curve (FR-REIMAGINE-03) + test findings.
 Time-box: 3 days | Estimate: 3 sp | Refs: FR-REIMAGINE-03/04, OQ-21
+Status (2026-10-13): Planned · **Forward:** S17.
 
 #### SPIKE-MASKING-MODEL — Moore-Glasberg roex excitation-pattern implementation + validation
 **Goal (locked model choice, 2026-06-13):** Implement the roex(p) excitation-pattern masking model on the ERB-rate scale (34 bands, 50 Hz–16 kHz) as locked in architecture.md §4 (ADR-006 amendment). Prototype on vDSP to confirm off-RT cost; unit-test masking-aware clarity decisions (before/after) on 8–10 representative tracks; document the roex parameter fitting and the absolute-threshold floor (ISO 226); validate arbitration logic (governing-principle locks + additive composition + proportional clamping) in the Arbiter unit tests.
 **Output:** (1) vDSP implementation of roex convolution + masked-threshold per-frame computation; (2) unit tests (masking-aware EQ vs. naive level-match A/B); (3) arbitration code + tests for governing-principle locks (confirmed-user-move clamps) and multi-contributor composition; (4) off-RT cost profile (sec/frame, vDSP utilization); (5) documentation of roex parameters and ISO 226 absolute threshold application.
 Time-box: 4 days | Estimate: 5 sp | Refs: architecture.md §4 (Moore-Glasberg roex lock, arbitration rules), LD-12 (masking domain), US-PERC-01/03 (Arbiter + clarity contributor), US-STEM-04 (between-stem unmasking)
+Status (2026-10-13): Planned · **Forward:** S15 (SPIKE: masking model + arbitration).
 
 #### SPIKE-BRIR — BRIR room synthesis + externalisation validation
 **Goal:** Validate the BRIR-first immersion: synthesise (image-source + FDN) or source CC0/CC-BY room responses combined with the SADIE-II HRIR; ABX-test externalisation **vs. the dry-HRTF minimal mode**; confirm convolution cost fits the budget.
 **Output:** a default "treated room" BRIR + alternates, and evidence BRIR externalises better than dry HRTF (FR-SPAT-01).
 Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
+Status (2026-10-13): Planned · **Forward:** S18.
 
 #### SPIKE-TELEMETRY — Crash reporting and analytics SDK selection
 
@@ -1674,6 +1912,7 @@ Time-box: 4 days | Estimate: 5 sp | Refs: FR-SPAT-01/05, LD-14
 - Integration effort estimate
 
 **Time-box:** 2 days | **Phase:** 0 | **Estimate:** 1 sp | **Blocks:** US-PRIV-03
+**Status (2026-10-13):** Planned · unscheduled. R1 has no telemetry and no crash reporting, so the PRD's measured KPIs (D7 retention, crash-free rate, …) can't be measured.
 **Traceability:** NFR-PRIV-04, OQ-10
 
 ---
@@ -1693,18 +1932,19 @@ The following items are tracked from OQ-* and must be resolved before the storie
 
 | Item | Blocks | Urgency |
 |------|--------|---------|
-| SPIKE-LOUDNESS-COMP-TUNING — FR-TONAL-03 loudness-compensation fraction validation | Phase 0 Polish: determine whether 50% (provisional) is the correct fraction; test frequency-variable fractions; validate gain caps (+6 dB bass, +4 dB treble). MUSHRA-style listening test, 10+ listeners, 4–6 tracks at −15 dB and −25 dB SPL offsets. Audio-dsp endorses 50% as provisional with precedent (THX Loudness Plus, broadcast 40–60% range); Phase 0 testing will lock final value (likely 40–55%). | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with provisional values. |
-| SPIKE-HEARING-SAFETY-VALIDATION — per-band gain / loudness-safety numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user gain requests (a large boost should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. |
+| SPIKE-LOUDNESS-COMP-TUNING — FR-TONAL-03 loudness-compensation fraction validation | Phase 0 Polish: determine whether 50% (provisional) is the correct fraction; test frequency-variable fractions; validate gain caps (+6 dB bass, +4 dB treble). MUSHRA-style listening test, 10+ listeners, 4–6 tracks at −15 dB and −25 dB SPL offsets. Audio-dsp endorses 50% as provisional with precedent (THX Loudness Plus, broadcast 40–60% range); Phase 0 testing will lock final value (likely 40–55%). | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with provisional values. *(2026-10-13: loudness compensation is not built; this belongs to **S14**.)* |
+| SPIKE-HEARING-SAFETY-VALIDATION — per-band gain / loudness-safety numeric clamps UX validation | Phase 0 Polish: validate whether the locked hearing-safety bounds (+10 dB per-band, +12 dB cumulative, −9 LUFS session cap, confirmation gate at +8 dB) are appropriately responsive to user gain requests (a large boost should feel satisfied by +10 dB, not over-constrained). Measure: (a) Can users achieve their desired adjustments within the bounds? (b) Is the confirmation gate at +8 dB triggering appropriately (not too frequent, not missed)? (c) Is the session loudness tracker visible/useful? Test with 5–8 listeners, naturalistic usage over 1–2 weeks. Accept outcome: if +10 dB is perceived as too tight, widen to +12 dB. If confirmation gate is noise, move to +10 dB. If no feedback, lock the bounds as-is. | Phase 0 Polish — before Phase 0 release gates; implementation unblocked with locked numeric values. *(2026-10-13: the bounds it would validate are the architecture §11 **design**, enforced by an Arbiter that does not exist; nothing shipped uses them. The shipped EQ instead has a +12 dB per-point ceiling and a loudness-neutral gain, with the −1 dBTP limiter catching peaks (Sprint EQ decisions 23 / 26, PR #73). Re-scope with S16.)* |
 | ~~OQ-02 — monetization / feature gating model~~ | ~~Feature flag architecture across all phases~~ | **Resolved and removed (LD-9).** Project is personal / open-source and non-commercial. No feature-flag or paywall architecture required anywhere. |
 | OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-SYSWIDE/EP-VDEVICE, which are out-of-window |
-| OQ-07 — macOS minimum deployment target | ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice | Medium — before Phase 0 Sprint 1; critical for Phase 2 tap-vs-driver decision |
-| OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this |
-| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design |
-| OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed) | SPIKE-LIBBS2B → US-DEVICE-07 | Medium — blocks US-DEVICE-07; clean-room reimplement is ready fallback |
+| ~~OQ-07 — macOS minimum deployment target~~ | ~~ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice~~ | **Resolved:** the floor is **macOS 26 on Apple Silicon** (`Package.swift` `.macOS(.v26)`; `Info.plist` `LSMinimumSystemVersion` 26.0, PR #87). Any future tap path is far above 14.2. |
+| OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this. *(R1 ships with none: no network code at all.)* |
+| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design. *(R1 shipped publicly without bass enhancement, so it was not blocked.)* |
+| ~~OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed)~~ | ~~SPIKE-LIBBS2B → US-DEVICE-07~~ | **Resolved (QW1 design §2):** bs2b treated as LGPL and not linked; the Bauer crossfeed was reimplemented in-house (`CrossfeedModule`). |
 | ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
 | ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
-| OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation |
+| OQ-18 — Min-phase vs linear-phase per content | SPIKE / US-PERC-02 (off-RT Realizer) | High — before Realizer implementation (→ S16). *(The shipped graphic EQ is minimum-phase IIR, an SVF bell per band.)* |
 | OQ-19 — Stem-engine render budget (caps) | SPIKE-PERF-BUDGET → EP-STEM QualityProfile caps | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-STEM, which is out-of-window |
 | OQ-20 — 6-stem quality-gating policy | SPIKE-SEP-QUALITY → US-STEM-06 | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-STEM, which is out-of-window |
-| OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 |
-| OQ-22 — Masking + partial-loudness model choice | SPIKE-MASKING-MODEL → US-PERC-01/03, US-STEM-04 | Medium — before EP-PERCEPTUAL |
+| OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 (→ S17). *(Narrowed by decision 25: the mapping must never include the EQ.)* |
+| OQ-22 — Masking + partial-loudness model choice | SPIKE-MASKING-MODEL → US-PERC-01/03, US-STEM-04 | Medium — before EP-PERCEPTUAL (→ S15) |
+| US-REL-02 — the open-source licence | the public repository (LD-9, PRD §6) | **High — the repository is already public without one** (new, council 2026-10-13) |
