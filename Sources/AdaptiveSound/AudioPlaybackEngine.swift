@@ -127,8 +127,9 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Seek to `seconds` from the start of the current file.
     /// In the Pure path this is handled natively by the HAL engine. In the
     /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
-    /// `epoch` numbers the request, as for `startAudio`.
-    func seek(to seconds: Double, epoch: UInt64) async
+    /// `epoch` numbers the request, as for `startAudio`. Throws `AudioBridgeError.seekFailed` when
+    /// the Pure path could not move (playback carries on where it was).
+    func seek(to seconds: Double, epoch: UInt64) async throws
 
     // MARK: Master Gain
 
