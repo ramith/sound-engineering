@@ -9,17 +9,15 @@
 // the source at once — under `make tsan` also a data-race check, the "source" being a plain buffer
 // ordered only by the gate) and progress (a close() waits for at most the one pass already inside;
 // a pass that starts after it is turned away — the property the first gate lacked, which let a
-// back-to-back render starve close() on a loaded CI runner). The interleavings are forced with
-// atomics, not sleeps; the only clocks are safety bounds (`kNoTimeout`) a correct gate never
-// reaches.
+// back-to-back render starve close() on a loaded CI runner). No assertion rests on a wall clock:
+// the progress property is checked on one thread, step by step; the threaded tests force their
+// interleavings with atomics and wait with RenderGate::kWaitForever — they need the scheduler to
+// run a runnable thread, never a deadline that a loaded runner can miss.
 //
 // Tests: RenderGate_ClosedGateTurnsRenderAway, RenderGate_CloseWaitsForRenderInside,
 //        RenderGate_PendingCloseBarsReentry, RenderGate_ConcurrentNeverOverlaps.
 
 #include "RenderGate.h"
-
-// A close() bound no correct gate reaches: the success paths below never wait on a clock.
-static constexpr std::chrono::microseconds kNoTimeout = std::chrono::minutes{1};
 
 static auto testRenderGateClosedGateTurnsRenderAway() -> void
 {
@@ -97,7 +95,7 @@ static auto testRenderGateCloseWaitsForRenderInside() -> void
     std::thread closer(
         [&]
         {
-            closed.store(gate.close(kNoTimeout), std::memory_order_relaxed);
+            closed.store(gate.close(RenderGate::kWaitForever), std::memory_order_relaxed);
             closerReturned.store(true, std::memory_order_release);
         });
     while (!gate.isClosed()) // the close is pending: no new pass may start
@@ -124,51 +122,49 @@ static auto testRenderGateCloseWaitsForRenderInside() -> void
     }
 }
 
-// The progress guarantee. A close() that is waiting for the pass inside must not lose to the
-// render's NEXT pass: once that pass leaves, the render's re-entry is turned away and close()
-// returns. The first gate let the render straight back in (close() could only win in the instant
-// between two passes), so a back-to-back render starved it. Bounded on that regression: the closer
-// gives up after kStarvationBound instead of hanging the suite.
+// The progress guarantee, step by step on one thread (no clock, no scheduler). A close requested
+// while a pass is inside takes effect at once: once that pass leaves, the render's NEXT pass is
+// turned away and the wait for quiet is over. The first gate had no such step — its close() could
+// only win in the instant between two passes — so a render re-entering back to back starved it.
 static auto testRenderGatePendingCloseBarsReentry() -> void
 {
     static const char* const kName = "RenderGate_PendingCloseBarsReentry";
     using AdaptiveSound::RenderGate;
-    static constexpr std::chrono::microseconds kStarvationBound = std::chrono::seconds{5};
     std::string err;
     RenderGate gate;
-    if (!gate.tryEnter()) // this thread is the render, now inside
+    if (!gate.tryEnter()) // a pass is inside
     {
         logFail(kName, "a fresh gate turned the render away");
         return;
     }
-    std::atomic<bool> closerReturned{false};
-    std::atomic<bool> closed{false};
-    std::thread closer(
-        [&]
-        {
-            closed.store(gate.close(kStarvationBound), std::memory_order_relaxed);
-            closerReturned.store(true, std::memory_order_release);
-        });
-    while (!gate.isClosed() && !closerReturned.load(std::memory_order_acquire))
+    if (!gate.requestClose())
     {
-        std::this_thread::yield();
+        err += "requestClose() did not see the pass inside; ";
     }
     if (!gate.isClosed())
     {
-        err += "a waiting close() never closed the gate to new passes; ";
+        err += "a requested close did not close the gate to new passes at once; ";
+    }
+    if (gate.awaitQuiet(std::chrono::microseconds{0}))
+    {
+        err += "the gate reported quiet with a pass inside; ";
     }
     gate.leave();
     // Back to back, as a render loop does it: the pending close must win.
-    const bool reentered = gate.tryEnter();
-    if (reentered)
+    if (gate.tryEnter())
     {
-        err += "the render re-entered past a pending close() (the starvation path); ";
+        err += "the render re-entered past a pending close (the starvation path); ";
         gate.leave();
     }
-    closer.join();
-    if (!closed.load(std::memory_order_relaxed))
+    if (!gate.awaitQuiet(std::chrono::microseconds{0}))
     {
-        err += "close() did not succeed; ";
+        err += "the gate was not quiet once the one pass inside had left; ";
+    }
+    // A close requested on an idle gate has nothing to wait for.
+    gate.open();
+    if (gate.requestClose())
+    {
+        err += "requestClose() on an idle gate reported a pass inside; ";
     }
     gate.open();
     if (!gate.tryEnter())
@@ -263,7 +259,7 @@ namespace
         auto seekOnce(int generation) -> bool
         {
             const auto began = std::chrono::steady_clock::now();
-            if (!gate.close(kNoTimeout))
+            if (!gate.close(AdaptiveSound::RenderGate::kWaitForever))
             {
                 return false;
             }

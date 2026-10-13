@@ -13,14 +13,15 @@
 //
 // The guarantee close() gives (R1 fix): it waits for AT MOST the one render pass already inside,
 // never for a render that starts after it. One atomic word with two bits:
-//   kClosed     set by close() (fetch_or) and cleared by open() — only the control plane writes it;
+//   kClosed     set by requestClose() (fetch_or), cleared by open() — only the control plane writes it;
 //   kRendering  set by the render's tryEnter (CAS 0 -> kRendering) and cleared by leave()
 //               (fetch_and) — only the render writes it.
 // All four operations are read-modify-writes of ONE atomic, so they are totally ordered (its
-// modification order). close()'s fetch_or is the linearization point: a tryEnter ordered after it
-// sees kClosed and fails, so kRendering can only still be set by a pass that entered BEFORE it —
-// the in-flight one — and close() waits for that bit alone to clear. The render's side stays
-// wait-free (one CAS in, one fetch_and out).
+// modification order). close() = requestClose() + awaitQuiet(). requestClose()'s fetch_or is the
+// linearization point: a tryEnter ordered after it sees kClosed and fails, so kRendering can only
+// still be set by a pass that entered BEFORE it — the in-flight one — and awaitQuiet() waits for
+// that bit alone to clear. The render's side stays wait-free (one CAS in, one fetch_and out), and
+// requestClose() is wait-free too: the control plane wins at once, however often the render runs.
 //
 // The first version (one state, close = CAS Open -> Closed, polled every 50 µs) promised the same
 // in its comment but did not keep it: close() could only win in the instant between one pass's
@@ -49,6 +50,9 @@ namespace AdaptiveSound
     class RenderGate
     {
       public:
+        // A timeout meaning "no deadline" for close() / awaitQuiet().
+        static constexpr std::chrono::microseconds kWaitForever = std::chrono::microseconds::max();
+
         // RT: true -> the caller may pull and MUST call leave() after; false -> closed: render
         // silence and do not touch the source. Wait-free.
         [[nodiscard]] bool tryEnter() noexcept
@@ -64,25 +68,42 @@ namespace AdaptiveSound
             state_.fetch_and(static_cast<uint8_t>(~kRendering), std::memory_order_release);
         }
 
-        // Control plane: close the gate to new passes at once, then wait for the pass already
-        // inside, if any, to leave. True when closed with no pass inside: no render pulls until
-        // open(). The wait is for that ONE pass (a few hundred µs of RT work on the HAL IO thread);
-        // `timeout` is a safety net against a render thread stopped mid-pass, which an RT render
-        // never is — on it the gate reopens, nothing changed, and close() returns false.
+        // Control plane: close the gate to new passes, then wait for the pass already inside, if
+        // any, to leave — requestClose() + awaitQuiet(). True when closed with no pass inside: no
+        // render pulls until open(). The wait is for that ONE pass (well under a millisecond of RT
+        // work on the HAL IO thread). `timeout` is a safety net against a render thread stopped
+        // mid-pass, which an RT render never is: on it the gate reopens, nothing changed, and
+        // close() returns false. kWaitForever: no deadline.
         [[nodiscard]] bool close(std::chrono::microseconds timeout) noexcept
         {
-            const uint8_t before = state_.fetch_or(kClosed, std::memory_order_acq_rel);
-            if ((before & kRendering) == 0U)
+            if (!requestClose() || awaitQuiet(timeout))
             {
                 return true;
             }
-            const auto deadline = std::chrono::steady_clock::now() + timeout;
+            open();
+            return false;
+        }
+
+        // Control plane, step 1 — wait-free: from now on every tryEnter() fails. Returns whether a
+        // pass that entered before it is still inside (then call awaitQuiet before touching the
+        // source).
+        [[nodiscard]] bool requestClose() noexcept
+        {
+            return (state_.fetch_or(kClosed, std::memory_order_acq_rel) & kRendering) != 0U;
+        }
+
+        // Control plane, step 2: wait until the pass inside (the only one there can be after
+        // requestClose) has left. True once it has; false if `timeout` passed first.
+        [[nodiscard]] bool awaitQuiet(std::chrono::microseconds timeout) const noexcept
+        {
+            const bool bounded = timeout != kWaitForever;
+            const auto deadline = bounded ? std::chrono::steady_clock::now() + timeout
+                                          : std::chrono::steady_clock::time_point::max();
             int spins = 0;
             while ((state_.load(std::memory_order_acquire) & kRendering) != 0U)
             {
-                if (std::chrono::steady_clock::now() >= deadline)
+                if (bounded && std::chrono::steady_clock::now() >= deadline)
                 {
-                    state_.fetch_and(static_cast<uint8_t>(~kClosed), std::memory_order_release);
                     return false;
                 }
                 // A pass is short: yield a few times, then sleep in small steps.
