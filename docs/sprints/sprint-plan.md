@@ -97,6 +97,17 @@ Founder decisions that shaped R1 (rationale kept; detail in the linked records):
 
 ---
 
+**Planned, not yet scheduled — EP-MCP agent control surface (founder, 2026-10-13):**
+- **What:** every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP
+  client) can drive the app: transport, queue, library, playlists, EQ / sound, output / Pure, and state.
+- **Placement and size:** set by the 2026-10 council.
+- **Depends on:** one command / state API shared with the UI (the transport command layer and the engine event
+  channel).
+- **Backlog:** [EP-MCP](../product/backlog.md#ep-mcp--agent-control-surface-mcp); roadmap
+  [Agent control surface](../product/roadmap.md).
+
+---
+
 ## 5. Deferred
 
 **Next wave, after R2 — gated on hardware:**
