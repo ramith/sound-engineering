@@ -1,5 +1,6 @@
 #if DEBUG
     import Foundation
+    import PlaybackQueueKit
 
     // MARK: - Picture-sheet audio engine
 
@@ -30,8 +31,8 @@
 
         func seek(to _: Double) async {}
 
-        func currentPlaybackPosition() -> Double? {
-            nil
+        func transportSnapshot() -> TransportSnapshot {
+            TransportSnapshot()
         }
 
         func currentSignalPath() -> SignalPathInfo {
