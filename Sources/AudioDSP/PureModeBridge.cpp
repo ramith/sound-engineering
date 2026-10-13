@@ -213,26 +213,32 @@ extern "C"
         {
             return 0;
         }
-        FileDecodeSource* active = session->gapless->activeSource();
-        if (active == nullptr)
+        // Hold the render FIRST. The FileDecodeSource::seek precondition is that pullFloat is not
+        // running, and the render thread swaps the active track at a gapless seam inside pullFloat,
+        // so even which source is active is only stable once no render is in flight. Holding is no
+        // HAL call: the device keeps running (silence) and the session stays configured. This used
+        // to be engine->stop() — teardown(), which disposed the unit, so the start() after it
+        // failed and every Pure seek went silent (S10.8 G audit). A render that will not go quiet
+        // refuses the seek: playback carries on where it was.
+        if (!session->engine->holdRender())
         {
             return 0;
         }
-
-        // Seek operates on the ACTIVE track ONLY and does NOT disturb the armed next (transitions_
-        // must not increment on a seek). Satisfy the FileDecodeSource::seek precondition (pullFloat
-        // must not run concurrently) by stopping render around the seek (control-plane).
-        session->engine->stop();
-        const bool seekOk = active->seek(seconds);
-
-        const double rate = active->sampleRate();
-        const double clampedSeconds = (seconds > 0.0) ? seconds : 0.0;
-        const uint64_t seekBaseFrames =
-            (rate > 0.0) ? static_cast<uint64_t>(std::llround(clampedSeconds * rate)) : 0U;
-        // Re-base the active track's position so display resumes from the seek target.
-        session->gapless->resetActiveBase(seekBaseFrames);
-
-        session->engine->start();
+        FileDecodeSource* active = session->gapless->activeSource();
+        bool seekOk = false;
+        // The ACTIVE track only; the armed next stays armed (a seek is not a transition).
+        if (active != nullptr && active->seek(seconds))
+        {
+            seekOk = true;
+            const double rate = active->sampleRate();
+            const double clampedSeconds = (seconds > 0.0) ? seconds : 0.0;
+            const uint64_t seekBaseFrames =
+                (rate > 0.0) ? static_cast<uint64_t>(std::llround(clampedSeconds * rate)) : 0U;
+            // Re-base the active track's position so display resumes from the seek target. A failed
+            // reposition decodes on from where it was, so its position is NOT re-based.
+            session->gapless->resetActiveBase(seekBaseFrames);
+        }
+        session->engine->releaseRender();
         return seekOk ? 1 : 0;
     }
 

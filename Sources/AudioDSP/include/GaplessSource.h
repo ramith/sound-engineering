@@ -89,8 +89,9 @@ namespace AdaptiveSound
         // Borrow the ACTIVE track's source for a control-plane operation (seek, or a compatibility
         // check against a candidate next track). Returns nullptr when there is no active track.
         // The returned pointer is owned by this GaplessSource; the caller MUST NOT delete it and
-        // MUST NOT retain it past the control-plane operation. For a seek the caller is responsible
-        // for the FileDecodeSource::seek precondition (render stopped).
+        // MUST NOT retain it past the control-plane operation. Read it with render held
+        // (HALOutputEngine::holdRender): the render thread swaps the active track at a seam, and a
+        // seek needs pullFloat quiet (FileDecodeSource::seek's precondition).
         [[nodiscard]] FileDecodeSource* activeSource() const noexcept;
 
         // --- Poll plane (off-RT) ---

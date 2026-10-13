@@ -126,8 +126,9 @@ extern "C"
                             const char* filePath,
                             double startSeconds) AUDIODSP_C_NOEXCEPT;
 
-    /// Stop render, seek the source to `seconds`, restart render. Returns 1 on success, 0 on
-    /// failure (the seek precondition — pullFloat not running — is satisfied internally).
+    /// Hold render (silence; the device keeps running), seek the active track to `seconds`,
+    /// release render. Returns 1 on success; 0 when the decoder could not reposition, or the
+    /// render would not go quiet (then nothing moved and playback carries on where it was).
     int pureModeEngineSeek(void* engine, double seconds) AUDIODSP_C_NOEXCEPT;
 
     /// Stop the engine (control-plane). Idempotent; NULL-safe.
