@@ -157,7 +157,7 @@ extension AudioEngineBridge {
             }
             logUX("gapless: roll failed — cannot open '\(nextURL.lastPathComponent)'")
             // Degradation: fall back to a clean start on the global queue (stops + restarts,
-            // brief gap). Sets playbackEnded if avEngine is gone (engine was shut down).
+            // brief gap). Sets gaplessPlaybackEnded if avEngine is gone (engine was shut down).
             DispatchQueue.global().async { [weak self] in
                 guard let self else { return }
                 guard let engine = self.avEngine else {
