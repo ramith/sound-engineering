@@ -51,22 +51,23 @@ struct AutoAdvanceDeviceLossTests {
 
     // MARK: VM-AA-13: device-loss interrupt during advance — mock only
 
-    @Test("VM-AA-13: device-loss interrupt clears pending on-deck and stops playback")
+    @Test("VM-AA-13: device-loss interrupt clears pending on-deck and pauses in place")
     func deviceLossInterruptClearsOnDeck() {
         let ctrl = MockAdvanceController()
         ctrl.playlist = makeTracks(count: 3)
         ctrl.playTrack(at: 0)
+        ctrl.playbackPosition = 90
 
         #expect(ctrl.pendingNextIndex == 1)
 
-        // Simulate a device-loss interrupt (mirrors the signalPath.interrupted branch in tickSpectrum).
+        // Simulate a device-loss interrupt (mirrors the signalPath.interrupted branch in
+        // tickTransport): a pause that keeps the place (S10.8 G), not a stop to 0:00.
         ctrl.pendingNextIndex = nil
         ctrl.isPlaying = false
-        ctrl.playbackPosition = 0
 
         #expect(ctrl.pendingNextIndex == nil, "Device-loss must clear pendingNextIndex")
         #expect(ctrl.isPlaying == false, "Device-loss must stop isPlaying")
-        #expect(ctrl.playbackPosition == 0)
+        #expect(ctrl.playbackPosition == 90, "Device-loss keeps the playhead")
 
         // A subsequent tick must be a no-op (no spurious advance).
         ctrl.engineTransitionCount = 1
