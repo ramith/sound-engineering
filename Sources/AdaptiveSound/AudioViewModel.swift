@@ -68,6 +68,10 @@ final class AudioViewModel {
     /// reaches the request — it can queue behind a slow device start — they describe the playback
     /// the request replaces. Not UI-bound.
     @ObservationIgnored var transportEpoch: UInt64 = 0
+    /// The number of the latest stop or pause request (`nextStopEpoch()`). A start numbered before
+    /// it was abandoned while it ran, so its `Task` neither primes the queue nor marks playing over
+    /// the stop (the UI showed Playing over a stopped engine — S10.8 G review). Not UI-bound.
+    @ObservationIgnored var transportStopEpoch: UInt64 = 0
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
     /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
     /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
@@ -298,6 +302,13 @@ final class AudioViewModel {
     func nextTransportEpoch() -> UInt64 {
         transportEpoch &+= 1
         return transportEpoch
+    }
+
+    /// Number the next STOP or PAUSE request: a transport request (`nextTransportEpoch()`) that
+    /// also ends any start still in flight (`transportStopEpoch`).
+    func nextStopEpoch() -> UInt64 {
+        transportStopEpoch = nextTransportEpoch()
+        return transportStopEpoch
     }
 
     /// The queue slot of the selected song (`nil` = none, or an index out of range).

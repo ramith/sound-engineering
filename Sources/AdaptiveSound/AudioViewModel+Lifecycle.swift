@@ -168,7 +168,7 @@ extension AudioViewModel {
     /// stays at the paused spot; `pause()` has already recorded `pausedResumePosition` for resume.
     func performPause() async {
         do {
-            let epoch = nextTransportEpoch()
+            let epoch = nextStopEpoch()
             await engine.setNextTrack(nil)
             try await engine.stopAudio(epoch: epoch)
             isPlaying = false
@@ -182,7 +182,7 @@ extension AudioViewModel {
     /// `await` this to guarantee ordering and avoid a use-after-free of the C handles (P2-C).
     func performStop() async {
         do {
-            let epoch = nextTransportEpoch()
+            let epoch = nextStopEpoch()
             await engine.setNextTrack(nil)
             try await engine.stopAudio(epoch: epoch)
             isPlaying = false
