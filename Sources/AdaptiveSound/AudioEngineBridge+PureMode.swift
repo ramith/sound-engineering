@@ -162,7 +162,8 @@ extension AudioEngineBridge {
 
     /// Seek to `seconds` in the current file.
     ///
-    /// Pure path: `pureModeEngineSeek` stops render, seeks, restarts internally.
+    /// Pure path: `pureModeEngineSeek` holds render (silence; the device keeps running), seeks the
+    /// decoder and releases render. A seek that did not move throws `AudioBridgeError.seekFailed`.
     ///
     /// Enhanced path: stops the player, reschedules the `AVAudioFile` from the
     /// target frame to end. For rate-mismatched files the streaming resampler is
@@ -170,21 +171,25 @@ extension AudioEngineBridge {
     ///
     /// `epoch` numbers the request (see `TransportSnapshot`): a transitional sample at the target is
     /// published first, so the view model's playhead never jumps back to the old place meanwhile.
-    func seek(to seconds: Double, epoch: UInt64) async {
-        return await withCheckedContinuation { continuation in
+    func seek(to seconds: Double, epoch: UInt64) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.engineQueue.async {
                 self.beginTransportOperation(epoch: epoch, position: max(seconds, 0))
                 // Pure seek: `withPureEngine` borrows the session on engineQueue, where every Pure
-                // call and teardown is serialized, and calls OUTSIDE stateLock (the seek stops and
-                // restarts the HAL). nil ⇒ not Pure ⇒ fall through to Enhanced.
+                // call and teardown is serialized, and calls OUTSIDE stateLock (the seek waits for
+                // a render pass and joins the decode thread). nil ⇒ not Pure ⇒ fall through to
+                // Enhanced.
                 if let result = self.withPureEngine({ pureModeEngineSeek($0, seconds) }) {
                     logUX("engine seek: path=Pure target=\(secs(seconds))s "
                         + "result=\(result == 1 ? "ok" : "failed(\(result))")")
-                    if result != 1 {
-                        NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
-                    }
+                    // The settled sample: after a failed seek, the place it really plays from.
                     self.sampleTransport()
-                    continuation.resume()
+                    if result == 1 {
+                        continuation.resume()
+                    } else {
+                        NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
+                        continuation.resume(throwing: AudioBridgeError.seekFailed)
+                    }
                     return
                 }
 

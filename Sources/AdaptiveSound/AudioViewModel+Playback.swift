@@ -137,7 +137,13 @@ extension AudioViewModel {
         case .engine:
             let epoch = nextTransportEpoch() // the old playhead is ignored until the seek lands
             Task {
-                await engine.seek(to: seconds, epoch: epoch)
+                do {
+                    try await engine.seek(to: seconds, epoch: epoch)
+                } catch {
+                    // A Pure seek that did not move: say so; the next tick shows where it plays.
+                    logUX("seek → \(secs(seconds))s failed: \(error.localizedDescription)")
+                    errorMessage = error.localizedDescription
+                }
             }
         case .resumePoint:
             resumePoint?.move(to: seconds)
