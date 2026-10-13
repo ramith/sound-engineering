@@ -27,6 +27,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 |---|---|---|---|
 | KI-PB-01 | Pure ignores a changed next track while another is armed (Repeat / Shuffle toggle, Play Next, reorder) | HIGH (needs a live check) | US-R1F-01 |
 | KI-LIB-01 | "Remove Missing…" deletes entries whose drive is merely unplugged | HIGH | US-R1F-03 |
+| KI-MC-01 | A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped | HIGH | S18 (binaural fold); interim → US-R1F-08 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | US-R1F-02 |
 | KI-PB-03 | Shuffle on + Repeat off never ends the queue | MEDIUM | US-R1F-01 |
 | KI-PB-04 | Play / Space during a slow start restarts the song instead of pausing | MEDIUM | US-R1F-01 |
@@ -238,6 +239,23 @@ tick can see a seam that did not happen.
 The short-track advance is a fresh-start reconfigure **gap**, not a gapless seam. Making it seamless for arbitrarily-short tracks needs an engine-side **2-deep on-deck queue** — a single on-deck slot can't arm track C until track B is current at the seam, and B may be shorter than the arm latency + the 20 Hz poll interval. Scheduled against the gapless backlog (US-PLAY-08 lineage); low priority (only tiny tracks; fallback is a brief gap, not a stop). ~~Guarded by `VM-AA-RTR-1` (`withKnownIssue` — fails when fixed, prompting a proper assertion).~~ *(Corrected 2026-10-13: `VM-AA-RTR-1` still exists — `Tests/AudioViewModelTests/AutoAdvanceReconfigureGapTests.swift:88` — but `withKnownIssue` was dropped in c63ba7f; it now asserts the fresh-start advance against mocks, so nothing fails when the seamless fix lands. The engine still has one on-deck slot: `onDeckURL`, `AudioEngineBridge.swift:163`.)*
 
 ---
+
+## Multichannel
+
+### KI-MC-01 — A 5.1 / 7.1 file on a stereo output drops centre, LFE and surrounds
+
+**Status:** OPEN · **Severity:** HIGH (wrong audio: on most 5.1 music the centre carries the lead vocal) · **Source:**
+the council's architecture reconciliation (2026-10-13), re-verified here · **Forward:** S18 replaces the interim
+truncation with the binaural fold ([S4 design](../sprints/05-sprint-5b-s4-binaural-design.md)); an interim fix (a
+standard fold-down until then) is a founder decision → US-R1F-08.
+
+The Enhanced graph processes at the file's width N and renders to the device width M = min(N, device) at the spatial
+AU (`AudioFormatKit/MultichannelFormat.swift:89-104`, wired in `AudioEngineBridge+Graph.swift:63-73`). When M < N the
+kernel runs a **channel-truncation stub**: it copies the first M input channels and discards the rest
+(`AudioDSP/Spatial/SpatialRenderKernel.cpp:59-89`, `routeBinauralStub`, "THIS IS NOT THE FINAL BINAURAL BEHAVIOUR").
+With the MPEG 5.1 order L R C LFE Ls Rs (`MultichannelFormat.swift:53-54`), a stereo output keeps L and R only. The
+"no naive downmix" mandate is why it isn't a matrix fold — but silence for four channels is worse than a naive fold.
+The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" without this caveat.
 
 ## Settings and levels
 
@@ -500,7 +518,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool |
-| **Lossy gapless on the FFmpeg backend** keeps encoder delay / padding (Apple's decoder trims it) | `FileDecodeSource.cpp` | US-PLAY-07 → S11 |
+| **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp:7-16` (Apple first, FFmpeg only if Apple can't open the file); `AudioEngineBridge+Gapless.swift:36-41` | US-PLAY-07 → S11 |
 | **DSD** is not supported | Deferred past R2, gated on a DSD DAC ([sprint-plan](../sprints/sprint-plan.md) §5) | post-R2 |
 
 ---
