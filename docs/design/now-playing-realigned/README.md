@@ -1,5 +1,7 @@
 # AdaptiveSound — Now Playing realignment package
 
+> **Status (reconciled 2026-10-13):** PR-A..G **shipped** — merged via PR #62 (S10.8 part 1); part 1 closed 2026-10-06 with 14 recorded deviations, and the light pass moved to Sprint B (PR #69). Record: the [realign ledger](../../sprints/s10-8-realign-ledger.md) (as built, tokens landed with their consumers, so several PRs have two commits). Kept as the design input; *as-built* notes in italics below.
+
 **For: a Claude session (Opus) in VS Code, repo `ramith/sound-engineering`.**
 This package supersedes the earlier DEVIATIONS.md plan. The visual truth is NOT the old 7a mock anymore — it is the **Realigned Target**, which keeps the layout the app already has and applies the designed styling on top of it. Do not restructure the layout.
 
@@ -34,4 +36,4 @@ html/support.js                                  keep both files in the same fol
 
 - **Styling only.** The current build's layout skeleton is correct. If a change requires moving a view to a different parent, stop and re-read the guide — only PR-E (inspector hugging its content) changes any frame behavior.
 - **Colors**: teal family only — `#3FD0BA` (bright), `#1FA893` (mid), `#14897A` (deep), text-on-teal `#0C1413`, teal text `#6FE0D0` / `#7EE8D8`. Amber warning `#F0B429`. Never introduce a new hue.
-- **"Glass" here is styled, not blurred** for the top and bottom bars (nothing scrolls behind them). Only the floating inspector card uses a real material/blur.
+- **"Glass" here is styled, not blurred** for the top and bottom bars (nothing scrolls behind them). Only the floating inspector card uses a real material/blur. *(As built: the inspector uses the Regime-B panel fill — 72 %, no blur — realign ledger deviation 14.)*
