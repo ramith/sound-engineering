@@ -13,4 +13,6 @@ These docs are kept for their **findings and the rejected/deferred/reverted rati
 | 5 | *(no stage doc)* | `LibraryStore` | **Stage 5 became a full GRDB.swift adoption** — the DAO was rebuilt on GRDB rather than reviewed in place. See the current `Sources/LibraryStore/` + the SUPERSEDED note in [`../sprints/s8-1-persistent-store-design.md`](../sprints/s8-1-persistent-store-design.md). |
 | 6 | *(no stage doc)* | SQL | **Subsumed** by the Stage-5 GRDB adoption (GRDB owns schema/migration/query). |
 
-All stages merged to `main` — see the git log for the exact PRs.
+All stages merged to `main` — see the git log for the exact PRs. *(Stages 1–4: PRs #34–#46; Stage 5, the GRDB adoption: #47–#49.)*
+
+**Next review:** the post-R1 product council (2026-10-13) — product, process, architecture, roadmap and a staged code review; its report will live in `2026-10-council/` in this directory.
