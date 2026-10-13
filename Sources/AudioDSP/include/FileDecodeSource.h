@@ -58,9 +58,9 @@ namespace AdaptiveSound
         // pre-seek audio, and restarts decoding. Returns false if the backend reposition failed
         // (playback still resumes from the prior position so the source is never left dead).
         //
-        // PRECONDITION: pullFloat() MUST NOT run concurrently. The HAL engine satisfies this by
-        // stopping render around a seek (control-plane). NOT RT-safe; never call from the audio
-        // thread.
+        // PRECONDITION: pullFloat() MUST NOT run concurrently. The Pure seek satisfies this by
+        // holding the HAL engine's render gate around it (HALOutputEngine::holdRender). NOT
+        // RT-safe; never call from the audio thread.
         [[nodiscard]] bool seek(double seconds);
 
         // RT thread: drain interleaved float from the ring, zero-padding any short fill. noexcept,

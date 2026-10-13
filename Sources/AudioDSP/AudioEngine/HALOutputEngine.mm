@@ -20,10 +20,12 @@
 #include "../include/HALOutputEngine.h"
 #include "../include/PureModeFormat.h"
 #include "../include/PureModeSource.h"
+#include "../include/RenderGate.h"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -465,6 +467,7 @@ class HALOutputEngine::Impl
         {
             return true;
         }
+        gate_.open(); // a teardown closed it; a fresh session pulls again
         if (AudioOutputUnitStart(unit_) != noErr)
         {
             AdaptiveSound::log::line("[HALOutputEngine] AudioOutputUnitStart failed");
@@ -478,6 +481,22 @@ class HALOutputEngine::Impl
     void stop()
     {
         teardown();
+    }
+
+    bool holdRender()
+    {
+        if (!gate_.close(kHoldRenderTimeout))
+        {
+            AdaptiveSound::log::line("[HALOutputEngine] a render pass did not finish within {} ms",
+                                     kHoldRenderTimeout.count());
+            return false;
+        }
+        return true;
+    }
+
+    void releaseRender()
+    {
+        gate_.open();
     }
 
     [[nodiscard]] AchievedOutputState achievedState() const
@@ -811,13 +830,21 @@ class HALOutputEngine::Impl
             return noErr;
         }
 
-        // Pull interleaved float from the source (RT-safe). A short/zero fill is zero-padded.
+        // Pull interleaved float from the source (RT-safe), only inside the render gate: while the
+        // control plane holds it (a seek moving the decoder, a teardown) render silence and leave
+        // the source alone. A short/zero fill is zero-padded.
+        if (!gate_.tryEnter())
+        {
+            zeroFill(ioData);
+            return noErr;
+        }
         PureModeSource* src = source_.load(std::memory_order_acquire);
         uint32_t produced = 0U;
         if (src != nullptr)
         {
             produced = src->pullFloat(scratch_.data(), frames, channels);
         }
+        gate_.leave();
         if (produced < frames)
         {
             const size_t startSample = static_cast<size_t>(produced) * channels;
@@ -888,11 +915,23 @@ class HALOutputEngine::Impl
 
     void teardown() noexcept
     {
+        // The barrier for the source is the render gate, not the unit stop: once it is closed no
+        // render pulls, even if AudioOutputUnitStop fails or the IO thread runs on until dispose.
+        if (!gate_.close(kHoldRenderTimeout))
+        {
+            AdaptiveSound::log::line("[HALOutputEngine] teardown: a render pass did not finish");
+        }
         if (unit_ != nullptr)
         {
             if (started_)
             {
-                AudioOutputUnitStop(unit_);
+                const OSStatus stopped = AudioOutputUnitStop(unit_);
+                if (stopped != noErr)
+                {
+                    AdaptiveSound::log::line(
+                        "[HALOutputEngine] AudioOutputUnitStop failed ({}); disposing the unit",
+                        static_cast<int>(stopped));
+                }
                 started_ = false;
             }
             if (initialized_)
@@ -950,6 +989,10 @@ class HALOutputEngine::Impl
     // format ever needed to change mid-session these would have to be published atomically (e.g.
     // packed into a POD behind DoubleBufferSnapshot<T>); today that path does not exist.
     std::atomic<PureModeSource*> source_{nullptr};
+    // Render ⇄ control-plane handshake around every source access (RenderGate.h).
+    RenderGate gate_;
+    // How long holdRender() / teardown wait for a render pass already inside the gate.
+    static constexpr std::chrono::milliseconds kHoldRenderTimeout{100};
     uint32_t rfChannels_ = 0U;
     uint32_t rfBits_ = 0U;
     bool rfIsFloat_ = false;
@@ -983,6 +1026,16 @@ bool HALOutputEngine::start()
 void HALOutputEngine::stop()
 {
     impl_->stop();
+}
+
+bool HALOutputEngine::holdRender()
+{
+    return impl_->holdRender();
+}
+
+void HALOutputEngine::releaseRender()
+{
+    impl_->releaseRender();
 }
 
 AchievedOutputState HALOutputEngine::achievedState() const
