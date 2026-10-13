@@ -112,18 +112,22 @@ extension AudioEngineBridge {
                     continuation.resume()
                     return
                 }
-                // engineQueue never waits on this global queue, so the sync can't deadlock; it holds
-                // only this worker while a transport change finishes.
-                let result = self.engineQueue.sync {
+                // Hand the opened decoder to engineQueue by its address (a C handle; the ownership
+                // moves with it): no worker blocks while a transport change finishes there.
+                let decoderAddress = UInt(bitPattern: decoder)
+                self.engineQueue.async {
+                    guard let decoder = UnsafeMutableRawPointer(bitPattern: decoderAddress) else {
+                        continuation.resume()
+                        return
+                    }
                     // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder.
-                    self.withPureEngine { pureModeEngineArmOpenedNextTrack($0, decoder) }
+                    if let result = self.withPureEngine({ pureModeEngineArmOpenedNextTrack($0, decoder) }) {
+                        logUX("pure setNextTrack '\(url.lastPathComponent)' → \(Self.pureArmLabel(result))")
+                    } else {
+                        pureModeDestroyDecodeSource(decoder)
+                    }
+                    continuation.resume()
                 }
-                if let result {
-                    logUX("pure setNextTrack '\(url.lastPathComponent)' → \(Self.pureArmLabel(result))")
-                } else {
-                    pureModeDestroyDecodeSource(decoder)
-                }
-                continuation.resume()
             }
         }
     }
@@ -138,7 +142,7 @@ extension AudioEngineBridge {
     }
 
     // The seam count and the end flag reach the view model through the transport snapshot
-    // (`transportSnapshot()`, AudioEngineBridge+TransportClock), sampled off the main thread.
+    // (`snapshot()`'s transport, AudioEngineBridge+TransportClock), sampled off the main thread.
 
     // MARK: - Arm helpers (called on resampleQueue)
 
@@ -168,17 +172,17 @@ extension AudioEngineBridge {
     /// tell the engine `nextURL` is the audible track now (its loudness-neutral EQ gain).
     ///
     /// Called at every real seam (never on seek or stop). Captures the player's current
-    /// `sampleTime` to set `enhancedPositionBaseSeconds` so `currentPlaybackPosition()` reports
+    /// `sampleTime` to set `enhancedPositionBaseSeconds` so `liveEnhancedPosition()` reports
     /// 0.0 for the first sample of the new track and grows from there.
     ///
     /// N-2 fix: when `playerTime(forNodeTime:)` returns nil (engine reconfiguring at the seam),
     /// use `-lastKnownEnhancedPositionSeconds` as the base. This counteracts the accumulated
-    /// sampleTime so `currentPlaybackPosition()` reads ~0 for the new track instead of jumping
+    /// sampleTime so `liveEnhancedPosition()` reads ~0 for the new track instead of jumping
     /// to track-A-duration and counting forward from there.
     ///
     /// MUST be called on `resampleQueue` (all gapless state lives there).
     func bumpTransitionCount(player: AVAudioPlayerNode, nextURL: URL) {
-        gaplessTransitionCount &+= 1
+        gaplessTransitionCounter.wrappingAdd(1, ordering: .acquiringAndReleasing)
         trackBecameAudible(nextURL, gaplessSeam: true)
 
         // Capture the player's sampleTime off the audio thread (safe — CoreAudio property read).

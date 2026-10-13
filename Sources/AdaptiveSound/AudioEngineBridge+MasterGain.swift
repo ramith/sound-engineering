@@ -37,14 +37,33 @@ extension AudioEngineBridge {
 
     /// See `AudioPlaybackEngine.requestDeviceVolume`. Returns at once: the set and its read-back run
     /// on `deviceVolumeQueue` — HAL calls, which can wait while macOS reconfigures a device, never on
-    /// the main thread. The device's volume listener runs on that queue too, so a listener read can
-    /// never land between this write and its read-back and leave an older level in the snapshot.
+    /// the main thread. Latest value wins (the Realizer's pending-slot pattern): a drag stores its
+    /// newest level and posts at most one drain, so a slow or dying device never builds a backlog
+    /// of stale levels to replay. The device's volume listener runs on the same queue, so a listener
+    /// read can never land between a write and its read-back and leave an older level in the snapshot.
     func requestDeviceVolume(decibels: Float) {
-        deviceVolumeQueue.async {
-            guard let device = self.withStateLock({ self.deviceVolumeWatch?.deviceID }) else { return }
+        let post = withStateLock { () -> Bool in
+            pendingDeviceVolume = decibels
+            defer { deviceVolumeDrainPosted = true }
+            return !deviceVolumeDrainPosted
+        }
+        guard post else { return }
+        deviceVolumeQueue.async { self.drainDeviceVolumeRequests() }
+    }
+
+    /// Apply the newest requested level until none is pending. On `deviceVolumeQueue`.
+    private func drainDeviceVolumeRequests() {
+        while let decibels = withStateLock({ () -> Float? in
+            let level = pendingDeviceVolume
+            pendingDeviceVolume = nil
+            if level == nil {
+                deviceVolumeDrainPosted = false
+            }
+            return level
+        }) {
+            guard let device = withStateLock({ deviceVolumeWatch?.deviceID }) else { continue }
             DeviceHardwareVolume.set(device, decibels: decibels)
-            let volume = DeviceHardwareVolume.read(device)
-            self.storeDeviceVolume(volume, answering: decibels)
+            storeDeviceVolume(DeviceHardwareVolume.read(device), answering: decibels)
         }
     }
 

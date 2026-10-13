@@ -134,7 +134,7 @@ extension AudioEngineBridge {
         }
         // Detach both AUs (graph is stopped; safe to mutate) and drop the strong refs.
         if let engine = avEngine {
-            if let effectsUnit = dspAudioUnit {
+            if let effectsUnit = effectsNode {
                 engine.detach(effectsUnit)
             }
             if let spatialUnit = spatialAudioUnit {
@@ -143,22 +143,19 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Reset every stored field to its post-shutdown idle value and destroy the loudness meter.
+    /// Reset every stored field to its post-shutdown idle value and drop the taps' analysis.
     private func resetGraphStateAfterShutdown() {
-        setDspAudioUnit(nil)
+        setEffectsUnit(nil)
         spatialAudioUnit = nil
         setAvEngine(nil)
         setPlayerNode(nil)
         referenceToneBuffer = nil
-        spectrumAnalyzer = nil
-        beforeAnalyzers = []
-        afterAnalyzers = []
         setActivePath(.enhanced)
         storeSignalPath(.init())
         // Tap already removed above (removeSpectrumTap ran in shutdown before tearDownActiveEngine),
-        // so no RT callback can still hold the meter's raw handle. Dropping the wrapper here runs its
-        // deinit → loudnessMeterDestroy. This runs on engineQueue; the meter field is not stateLock-
-        // guarded, so no lock ordering concern applies. Constraint: destroy ONLY after removeTap.
-        loudnessMeter = nil
+        // so no RT callback can still hold the meter's raw handle. Dropping the analysis here runs
+        // the wrappers' deinits (→ loudnessMeterDestroy) — after a main-thread poll's strong copy,
+        // if one is in flight. Constraint: destroy ONLY after removeTap.
+        setTapAnalysis(TapAnalysis())
     }
 }
