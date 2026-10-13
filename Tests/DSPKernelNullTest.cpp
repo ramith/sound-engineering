@@ -46,6 +46,8 @@
 //   EqEngineFixTests.inc  — Sprint EQ engine fix round (amendments 14–19): each fix's own gate
 //   DeviceListPolicyTests.inc — Sprint G: the output-device menu rule (no hidden / private /
 //                           process-default aggregate devices) + the aggregate-composition decode
+//   RenderGateTests.inc   — Sprint G: the render gate a Pure seek holds instead of stopping the
+//                           output unit (exclusion, close-waits, concurrent no-overlap under TSan)
 //
 // The kTests registry array and main() are defined here, AFTER all includes.
 
@@ -83,6 +85,7 @@
 #include "EqEngineBreakItTests.inc" // after EqEngineTests.inc + EqTransitionTests.inc (helpers)
 #include "EqEngineFixTests.inc"     // after EqEngineBreakItTests.inc (helpers)
 #include "DeviceListPolicyTests.inc"
+#include "RenderGateTests.inc"
 // clang-format on
 
 // ---------------------------------------------------------------------------
@@ -418,6 +421,10 @@ namespace
         {"DeviceList_RuleOrder", testDeviceListRuleOrder, true},
         {"DeviceList_CompositionDecode", testDeviceListCompositionDecode, true},
         {"DeviceList_VerdictStrings", testDeviceListVerdictStrings, true},
+        // Sprint G: the Pure seek's render gate (parallel-safe: own threads, no HAL, no env/tmp).
+        {"RenderGate_ClosedGateTurnsRenderAway", testRenderGateClosedGateTurnsRenderAway, true},
+        {"RenderGate_CloseWaitsForRenderInside", testRenderGateCloseWaitsForRenderInside, true},
+        {"RenderGate_ConcurrentNeverOverlaps", testRenderGateConcurrentNeverOverlaps, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local
         // flag; running them in the parallel worker pool alongside other allocating tests is fine
