@@ -108,15 +108,20 @@ extension LibraryStore {
     }
 
     /// Bring an EXISTING file up to `migrator`'s schema on one plain connection, which writes nothing
-    /// until the file is known intact, current-or-behind, and backed up — and then checks the result
-    /// has the shape this build's schema has. Throws a corruption error for a damaged file and
-    /// `StoreOpenRefusal` for one that must be left alone. The connection closes on return, before
-    /// the pool opens.
+    /// until the file is known intact, current-or-behind, of a shape this build's schema has, and
+    /// backed up. Throws a corruption error for a damaged file and `StoreOpenRefusal` for one that must
+    /// be left alone. The connection closes on return, before the pool opens.
     private static func upgradeInPlace(url: URL, migrator: DatabaseMigrator, stamp: String) throws {
         let connection = try DatabaseQueue(path: url.path, configuration: makeLookFirstConfiguration())
         let upToDate = try connection.read { db in
             guard try String.fetchOne(db, sql: integrityCheckSQL) == "ok" else { throw FailedIntegrityCheck() }
             guard try !migrator.hasBeenSuperseded(db) else { throw StoreOpenRefusal.newerVersion }
+            // Before any write: a store an unfinished test build left at v7 is refused untouched, even
+            // when a later step (v8 on) is pending. A store whose v7 THIS build applies has its shape.
+            if try migrator.appliedIdentifiers(db).contains(Schema.MigrationID.v7),
+               try Schema.v7ShapeProblem(db) != nil {
+                throw StoreOpenRefusal.unfinishedTestVersion
+            }
             return try migrator.hasCompletedMigrations(db)
         }
         if !upToDate {
@@ -128,10 +133,6 @@ extension LibraryStore {
                 throw StoreOpenRefusal.backupFailed(error)
             }
             try migrator.migrate(connection)
-        }
-        try connection.read { db in
-            guard try migrator.appliedIdentifiers(db).contains(Schema.MigrationID.v7) else { return }
-            guard try Schema.v7ShapeProblem(db) == nil else { throw StoreOpenRefusal.unfinishedTestVersion }
         }
     }
 

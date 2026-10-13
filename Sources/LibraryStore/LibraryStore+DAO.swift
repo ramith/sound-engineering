@@ -90,10 +90,20 @@ public extension LibraryStore {
        OR tracks.folder_id IS NOT excluded.folder_id;
     """
 
-    /// The folder-scoped orphan DELETE mirroring `deleteSearchRowsForSweep`. `placeholders` is the
-    /// `?,?,…` list for the folder ids (bound, never spliced); `last_seen_scan < ?` is the last bind.
+    /// The orphans of a sweep: the rows in the folders not seen since the generation. `placeholders` is
+    /// the `?,?,…` list for the folder ids (bound, never spliced); `last_seen_scan < ?` is the last bind.
+    private static func orphansWhereSQL(placeholders: String) -> String {
+        "folder_id IN (\(placeholders)) AND last_seen_scan < ?"
+    }
+
+    /// The folder-scoped orphan DELETE mirroring `deleteSearchRowsForSweep`.
     private static func deleteTracksForSweepSQL(placeholders: String) -> String {
-        "DELETE FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?;"
+        "DELETE FROM tracks WHERE \(orphansWhereSQL(placeholders: placeholders));"
+    }
+
+    /// The orphan COUNT — what the same sweep would delete.
+    private static func countTracksForSweepSQL(placeholders: String) -> String {
+        "SELECT count(*) FROM tracks WHERE \(orphansWhereSQL(placeholders: placeholders));"
     }
 
     // MARK: - Scan roots
@@ -276,6 +286,19 @@ public extension LibraryStore {
                 arguments: StatementArguments(folderIDs + [generation])
             )
             return db.changesCount
+        }
+    }
+
+    /// How many rows `sweepOrphans(inFolders:olderThan:)` would delete — the ones the walk did not
+    /// see. A walk that is not evidence of what is gone refuses its sweep only when this is non-zero
+    /// (`LibraryScanner.scan`): with nothing unseen there is no deletion to refuse.
+    func orphanCount(inFolders folderIDs: [Int64], olderThan generation: Int64) async throws -> Int {
+        guard !folderIDs.isEmpty else { return 0 }
+        return try await dbWriter.read { db in
+            try Int.fetchOne(
+                db, sql: Self.countTracksForSweepSQL(placeholders: databaseQuestionMarks(count: folderIDs.count)),
+                arguments: StatementArguments(folderIDs + [generation])
+            ) ?? 0
         }
     }
 

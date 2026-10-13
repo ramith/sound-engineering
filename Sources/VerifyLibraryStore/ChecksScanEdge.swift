@@ -12,10 +12,11 @@
 //     folderID → FK violation → the scan rethrows before any commit or sweep.
 //   • cross-directory move (QS2) — the realistic move shape: signature preserved,
 //     relative_path updated, so S8.4's matcher can reunite it.
-//   • root vanishes entirely (QS5 / S8.4) — external-drive-unmount or deleted folder: a
-//     re-scan sees 0 files, so the EMPTY-WALK GUARD refuses the sweep and throws
-//     RootUnreachableError — every row + its user-state is preserved (never wipe on an
-//     empty walk; founder-approved S8.4 slice 3).
+//   • root vanishes entirely (QS5 / S8.4) — external-drive-unmount or deleted folder: the
+//     re-scan does not walk it and throws SweepRefusal(.rootVanished); a root that is there but
+//     EMPTIED walks 0 files, so the EMPTY-WALK GUARD refuses the sweep (.emptyWalk) — every row +
+//     its user-state is preserved either way (never wipe on an empty walk; founder-approved S8.4
+//     slice 3).
 //   • edge (QS4) — an unreadable (chmod 000) subdir doesn't abort the scan; a symlink
 //     is its own entry with its OWN lstat inode (design §3 policy, finally tested).
 //   • root identity (QS3) — addRoot dedups by on-disk (dev,inode), so a case-variant
@@ -219,20 +220,22 @@ func checkVanishedRoot(number: Int, url: URL) async -> Bool {
     do {
         let store = try await LibraryStore(url: url, appBuild: "verify")
         guard try await vanishedRootPreservesRows(store, number: number) else { return false }
-        printPass(number, "vanished root (external-drive unmount / deleted folder): a re-scan whose whole "
-            + "directory is gone walks 0 files, so the EMPTY-WALK GUARD refuses the sweep and throws "
-            + "RootUnreachableError — every row + its user-state is preserved (never wipe on an empty walk)")
+        printPass(number, "vanished root (external-drive unmount / deleted folder): a re-scan of a root "
+            + "whose directory is gone is not walked (SweepRefusal .rootVanished), and one that is there but "
+            + "emptied walks 0 files, so the EMPTY-WALK GUARD refuses the sweep (.emptyWalk) — every row + "
+            + "its user-state is preserved (never wipe on an empty walk)")
         return true
     } catch {
         printFail(number, "vanished-root threw: \(error)"); return false
     }
 }
 
-/// The founder's "FS changes while the app is not running" scenario at the ROOT level: the
-/// entire root directory disappears (external-drive unmount, or the folder deleted). A
-/// re-scan enumerates NOTHING — and under the S8.4 empty-walk guard the scanner REFUSES to
-/// sweep a populated root to zero, throwing `RootUnreachableError` instead. Every row (and
-/// its durable user-state) survives; a wrongful sweep here would be catastrophic mass-loss.
+/// The founder's "FS changes while the app is not running" scenario at the ROOT level. First the
+/// root's songs vanish but the directory stays (a zombie mount enumerating nothing, or every file
+/// deleted): the walk sees NOTHING, and under the S8.4 empty-walk guard the scanner REFUSES to sweep
+/// a populated root to zero (`.emptyWalk`). Then the entire root directory disappears (external-drive
+/// unmount, or the folder deleted): the scanner does not walk it (`.rootVanished`). Every row (and its
+/// durable user-state) survives; a wrongful sweep here would be catastrophic mass-loss.
 private func vanishedRootPreservesRows(_ store: LibraryStore, number: Int) async throws -> Bool {
     let root = try ScanFixtureBuilder.makeCaseRoot("vanished-root")
     for index in 0 ..< 5 {
@@ -249,14 +252,10 @@ private func vanishedRootPreservesRows(_ store: LibraryStore, number: Int) async
     }
     try await store.setUserState(trackID: sampleID, playCount: 7, loved: true, rating: 3)
 
+    try FileManager.default.removeItem(at: root.appendingPathComponent("Sub")) // the songs vanish
+    guard try await sweepRefused(root, folderID, store, because: .emptyWalk, number: number) else { return false }
     try FileManager.default.removeItem(at: root) // the whole root directory vanishes (unmount-like)
-    do {
-        _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-        printFail(number, "vanished-root: scan did NOT throw — it swept a populated root to zero (mass-loss!)")
-        return false
-    } catch is RootUnreachableError {
-        // Expected: the empty-walk guard refused the sweep.
-    }
+    guard try await sweepRefused(root, folderID, store, because: .rootVanished, number: number) else { return false }
     guard try await store.tracks(inFolder: folderID).count == 5 else {
         printFail(number, "vanished-root: rows were swept despite the empty-walk guard"); return false
     }
@@ -264,6 +263,23 @@ private func vanishedRootPreservesRows(_ store: LibraryStore, number: Int) async
         printFail(number, "vanished-root: user-state lost on a preserved row"); return false
     }
     return true
+}
+
+/// Re-scan `root`, which must REFUSE its sweep for `reason` (a printed failure otherwise).
+private func sweepRefused(
+    _ root: URL, _ folderID: Int64, _ store: LibraryStore, because reason: SweepRefusal.Reason, number: Int
+) async throws -> Bool {
+    do {
+        _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+        printFail(number, "vanished-root: scan did NOT throw — it swept a populated root to zero (mass-loss!)")
+        return false
+    } catch let refusal as SweepRefusal {
+        guard refusal.reason == reason else {
+            printFail(number, "vanished-root: the sweep was refused for \(refusal.reason), expected \(reason)")
+            return false
+        }
+        return true
+    }
 }
 
 // MARK: - QS4 — permission-denied subdir + symlink policy
