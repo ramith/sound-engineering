@@ -136,6 +136,16 @@ public enum OutputDevicePolicy {
         isPlaying && onPure && !interrupted
     }
 
+    /// Where Play resumes after the engine paused for a lost device: a real pause, so the song's
+    /// place is kept — the last playhead read while it played (the engine reports none once its
+    /// device is gone), within the song. `nil` when nothing was playing: no pause, nothing to keep.
+    /// Only Play resumes it; no device event ever does (pause on disconnect, never auto-jump).
+    public static func resumeAfterDeviceLoss(isPlaying: Bool, lastPlayhead: Double, duration: Double) -> Double? {
+        guard isPlaying else { return nil }
+        let atLeastZero = lastPlayhead.isFinite ? max(lastPlayhead, 0) : 0
+        return duration > 0 ? min(atLeastZero, duration) : atLeastZero
+    }
+
     /// The system default is a real device other than the app's.
     private static func defaultElsewhere(_ facts: OutputDeviceFacts) -> Bool {
         facts.systemDefault != 0 && facts.systemDefault != facts.target

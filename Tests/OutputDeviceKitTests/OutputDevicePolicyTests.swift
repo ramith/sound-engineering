@@ -259,4 +259,41 @@ struct OutputDevicePolicyTests {
         )
         #expect(lost.description == "pause (device lost), adopt \(Self.deviceB)")
     }
+
+    // MARK: - A device-loss pause keeps the song's place
+
+    @Test("OUTDEV-17: a device lost at 1:30 pauses at 1:30, not 0:00")
+    func lossKeepsThePlace() {
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: true, lastPlayhead: 90, duration: 240) == 90)
+        // A duration not known yet (an M4A still measuring) keeps the playhead as it is.
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: true, lastPlayhead: 90, duration: 0) == 90)
+    }
+
+    @Test("OUTDEV-18: the kept place stays within the song")
+    func lossPlaceClamped() {
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: true, lastPlayhead: -1, duration: 240) == 0)
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: true, lastPlayhead: 250, duration: 240) == 240)
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: true, lastPlayhead: .nan, duration: 240) == 0)
+    }
+
+    @Test("OUTDEV-19: nothing playing → no pause to keep; and no device event resumes a lost-device pause")
+    func lossWhileStoppedAndNoAutoResume() {
+        #expect(OutputDevicePolicy.resumeAfterDeviceLoss(isPlaying: false, lastPlayhead: 90, duration: 240) == nil)
+        // After the pause the view model is not playing: a device choice or an adopted default
+        // never restarts it (only Play does) — on Pure or not, interrupted or not.
+        for onPure in [true, false] {
+            for interrupted in [true, false] {
+                #expect(!OutputDevicePolicy.playbackMovesWithOutput(isPlaying: false, onPure: onPure,
+                                                                    interrupted: interrupted))
+            }
+        }
+        // And the engine's rule asks for no restart while idle, whatever the event (a reconnect too).
+        for event in Self.allEvents where event != .enhancedStarting {
+            let action = OutputDevicePolicy.action(
+                for: event, facts: Self.facts(target: Self.deviceB, systemDefault: Self.deviceB, playback: .idle,
+                                              pinned: false)
+            )
+            #expect(!action.reestablishEnhanced, "\(event)")
+        }
+    }
 }
