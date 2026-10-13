@@ -2,7 +2,7 @@
 ## Adaptive Sound — Object-Based Spatial Music Renderer (macOS)
 
 **Document ID:** PRD-ASE-001  
-**Version:** 0.7 — aligned to architecture.md v0.3 (architecture is the source of truth)  
+**Version:** 0.8 — reconciled to the code at R1 / v1.0.0-alpha (2026-10-13); targets still aligned to architecture.md v0.3  
 **Date:** 2026-06-13  
 **Author:** Business Analyst (Lead)  
 **Status:** Open for stakeholder review  
@@ -42,6 +42,8 @@
 
 > **v0.7 (2026-07-12): removed natural-language tuning (FR-NLT, LD-8) and hearing personalization (FR-HEAR, FR-ADAPT-06) from scope — founder decision.** Both features are withdrawn (neither was built) and may be re-added later. Also withdrawn as wholly-dependent on those features: FR-STEM-04 (per-stem NL targeting), OQ-05/OQ-11/OQ-12/OQ-13/OQ-14/OQ-15, ASM-09, Journeys 2.2 and 2.7, and the associated §5 matrix / stakeholder / glossary / registry rows. Prior specs remain in git history. Historical change notes (v0.2–v0.6) are left intact as a changelog and still name the withdrawn IDs.
 
+> **v0.8 (2026-10-13, product council): reconciled to the code.** The code is the state of the product. Added the **§3.0 Requirement status matrix** — every FR / NFR marked against `main` at a206107 (R1 / v1.0.0-alpha), with a back-link to the PR / design doc and the code location, and a forward link to the roadmap sprint (S11–S18) or backlog story that closes a gap. Requirements are **not** rewritten to match the code: where a founder decision changed the target, the requirement carries an **"As-built"** annotation naming the decision (Sprint EQ decisions 25 / 29 / 30 for FR-REIMAGINE-02, NFR-QUAL-03, FR-TONAL-06/07; S8.1 D5 for NFR-PRIV-05; QW1 §2 for OQ-17 / DEP-16); where the code looks like a defect, it is described and linked to [known-issues.md](known-issues.md). Resolved: OQ-07 (macOS 26 floor), OQ-17. Corrected: ASM-01, ASM-02, DEP-09, DEP-11, CON-12.
+
 ---
 
 ## 0. Locked Decisions (as of 2026-06-13)
@@ -60,17 +62,17 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 | LD-6 | Ambient mic sensing | **On-demand sampling only** — no continuous/always-on mic. See revised FR-ADAPT-04 and Journey 2.5. |
 | LD-7 | Spatial | **BRIR-first** (superseded by LD-14): default binaural = BRIR (HRTF + early reflections + late reverb); dry HRTF = minimal mode; SADIE II (Apache-2.0) is the anechoic HRIR core. Custom HRTF measurement deferred. |
 | LD-8 | *Withdrawn 2026-07-12* | Natural-language / conversational tuning removed from scope (founder decision); may be re-added. |
-| LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. |
+| LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. *As-built (2026-10-13): the repository is public and R1 is released, but no LICENSE file exists yet → backlog US-REL-02.* |
 | LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
 | **LD-11** | Source quality & non-goals | Assume good-quality sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise/de-clip/upsample to "fix" bad audio). Network may be used for non-sensitive, latency-tolerant work; core playback + RT DSP stay **offline-capable**. |
 | **LD-12** | Perceptual tonal model | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial); the dB curve is a realization/interchange format only. |
 | **LD-13** | Phase realization | **Minimum-phase by default**; phase mode chosen by content (transient density from pre-analysis); linear/mixed-phase opt-in or band-limited where it genuinely helps (pre-ringing, not latency, is the real cost). |
 | **LD-14** | BRIR-first immersion | Headphone spatialization defaults to a **binaural room response** (HRTF + early reflections + late reverb); dry HRTF = minimal mode; head-tracking opt-in for music. Speakers = **M/S width + ambience extraction (mono-safe)**; crosstalk-cancellation opt-in (centered near-field only); crossfeed opt-in. |
 | **LD-15** | Stem-based object engine (Phase 1.5) | Offline **6-stem** separation (vocals/drums/bass/guitar/piano/other), cached to SSD; **full per-stem chains incl. spatial placement**, re-summed to binaural; masking computed **between stems**. **Own-player-only** — the live tap path (Phase 2) is mix-level only; real-time-lite separation is a research track. |
-| **LD-16** | "Reimagine" intensity knob | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. |
+| **LD-16** | "Reimagine" intensity knob | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. *As-built (Sprint EQ decision 25, 2026-10-10, PR #73): the user's EQ runs **ahead** of the knob and always plays in full; the knob scales only the adaptive enhancement. Bit-faithful = **0 % with the EQ Off** (or Pure Mode).* |
 | **LD-17** | Dynamics & loudness | **No program DRC by default** (transparent LUFS normalization + true-peak safety limiter only). Loudness compensation = **fraction of the equal-loudness contour difference** (ISO 226) + per-device SPL calibration + loudness-matched makeup, **rate-limited to volume changes only**. |
 | **LD-18** | Target hardware & runtime posture | Floor = Apple-Silicon Pro-class (M1 Pro, 2021) / ≥16 GB; shipping generation far above (M4 38-TOPS NE; M4 Pro/Max 10–12 P-cores, 273–546 GB/s, 64–128 GB; M5 per-GPU-core neural accelerators ~4× M4 GPU-AI). App is foreground/sole-occupancy ("lean-back listening") and may use many cores + occupy memory generously. Large headroom on current hardware; design for the floor, exploit the abundance. Supersedes the base-8 GB-Air framing; **downgrades the stem-render risk to Low** — see revised NFR-PERF-06. **Power:** default max-quality on AC; auto-lighter (Efficiency profile) on battery, user-overridable. |
-| **LD-19** | App shape | Full-window lean-back listening experience (now-playing + visualizer + Reimagine dial) **plus a menu-bar extra** for quick control; both share one app-level engine. Refines FR-UI. |
+| **LD-19** | App shape | Full-window lean-back listening experience (now-playing + visualizer + Reimagine dial) **plus a menu-bar extra** for quick control; both share one app-level engine. Refines FR-UI. *As-built: the full window has five tabs (Now Playing, Library, EQ, Monitoring, Settings); the menu-bar extra has transport only (title, Play/Pause, Next, Previous, Open, Quit — `MenuBarView.swift`, PR #25), no Reimagine or volume.* |
 
 ---
 
@@ -127,7 +129,83 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 
 ---
 
-> **Implementation status (as-built vs. specified) — audit snapshot.** This PRD specifies *target* behavior: "shall" is a requirement, not a claim that the behavior exists today. Verified against `Sources/` on `main` as of this audit, the current build is a Phase-0 own-player implementing only a **subset** of what follows. The unbuilt requirements remain valid and STAY, but are **planned, not current** — confirm against the code before assuming any behavior is live. For what is actually built vs. planned, see `sprint-plan.md` §Status + the source — this section does not enumerate it.
+> **Implementation status (as-built vs. specified) — audit snapshot.** This PRD specifies *target* behavior: "shall" is a requirement, not a claim that the behavior exists today. Verified against `Sources/` on `main` as of this audit, the current build is a Phase-0 own-player implementing only a **subset** of what follows. The unbuilt requirements remain valid and STAY, but are **planned, not current** — confirm against the code before assuming any behavior is live. ~~For what is actually built vs. planned, see `sprint-plan.md` §Status + the source — this section does not enumerate it.~~ *(Superseded 2026-10-13: §3.0 below now enumerates it, per requirement, verified against the code; sprint-plan §Status stays the one prose status line.)*
+
+### 3.0 Requirement status matrix (verified against the code, 2026-10-13 — `main` a206107, R1 / v1.0.0-alpha)
+
+**Status:** **Delivered** (as specified) · **Delivered†** (delivered with a recorded deviation — see the requirement's As-built note) · **Partial** · **Not built** · **Won't** (this horizon — roadmap "Deferred") · **Superseded** · **N/A**. Paths are under `Sources/` unless noted; PR numbers are GitHub PRs; KI-* are entries in [known-issues.md](known-issues.md); US-* are [backlog](backlog.md) stories.
+
+| Req | Status | Where it lives / back-link | Forward link |
+|---|---|---|---|
+| FR-PLAY-01 | Delivered† | Library scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScan/LibraryScanner.swift:38-40`; S8.2 PR #15, `.aif` PR #85); decode = Apple `ExtAudioFile` / `AVAudioFile`, FFmpeg only as an optional runtime fallback (`AudioDSP/FileDecodeSource.cpp:7-16`) | `.opus` / `.oga` → S11 (KI-LIB-05); a single file outside the library → US-LIB-02 |
+| FR-PLAY-02 | Delivered | Transport + Master Gain (S9 PR #23, PR #24); media keys + Control Center (`AdaptiveSound/NowPlayingController.swift:89-104`, S10.4 PR #58); paused-scrub / end-of-queue fixes (PR #85) | KI-PB-04, KI-PB-07, KI-PB-10 → US-R1F-01 |
+| FR-PLAY-03 | Delivered | Grip-drag / menu / keyboard reorder, remove, shuffle, repeat (S10.2 PR #54; `UI/Playlist/PlaylistItemList.swift`, `PlaybackQueueKit/PlaybackOrder.swift`); mid-song re-arm (PR #85) | KI-PB-01 (HIGH), KI-PB-02, KI-PB-03 → US-R1F-01/02 |
+| FR-PLAY-04 | Delivered | Tags + embedded art off-main (S8.3 PR #15; `LibraryScan/MetadataExtractor.swift`, `ArtworkCache.swift`); Now Playing hero (S10.7 PR #61) | KI-PB-06 |
+| FR-PLAY-05 | Partial | Queue + track + offset + shuffle / repeat restored paused (`AdaptiveSound/AudioViewModel+QueueHydration.swift`, S10.2 PR #54); EQ state persists (`EQEditKit/EQStore.swift`) | Settings reset at launch → US-R1F-05 (KI-SET-01); no "profile" → S13 |
+| FR-PLAY-06 | Not built | The scan skips unlisted files silently (`LibraryScanner.swift:182-184`); there is no file import | S11 |
+| FR-SPAT-01 | Not built | `AudioDSP/Spatial/BRIRModule.h` is a bit-exact pass-through stub | S18 |
+| FR-SPAT-02 | Not built | — | after S18 |
+| FR-SPAT-03 | Delivered† | In-house Bauer crossfeed, opt-in, Relaxed / Default / Strong (`AudioDSP/Spatial/CrossfeedModule.h`; QW1, PR #15); licence question closed (OQ-17) | Headphone detection misses the built-in jack → US-R1F-06 (KI-DEV-01) |
+| FR-SPAT-04 | Not built | No `CMHeadphoneMotionManager` use | Unscheduled (US-HT-01) |
+| FR-SPAT-05 | Not built | — | S18 |
+| FR-SPAT-06 | Not built | — | Unscheduled (US-DEVICE-06) |
+| FR-SPAT-07 | Partial | Only crossfeed auto-disables on a non-headphone output (`AdaptiveSound/AudioViewModel+Devices.swift:83-86`) | S18 / US-DEVICE-06 |
+| FR-TONAL-01 | Delivered† | 31-band graphic EQ, ±12 dB per point, an exact SVF bell per band (`AudioDSP/EQ/GraphicEQBands.h`, `EQEditKit/EQBands.swift:24-33`; Sprint EQ PR #73) | Parametric bands → S12 |
+| FR-TONAL-02 | Not built | Nearest: per-output EQ memory (`EQEditKit/EQOutputPin.swift`, PR #73) | S12 (AutoEq import) + S13 |
+| FR-TONAL-03 | Not built | — | S14 |
+| FR-TONAL-04 | Not built | — | Unscheduled (US-TON-04; SPIKE-IPREVIEW) |
+| FR-TONAL-05 | Delivered (default) / Not built (adaptive part) | No program compressor anywhere in the chain (`AudioDSP/DSPKernel.cpp`) | Ambient / genre-driven ratio: unscheduled (US-TON-05) |
+| FR-TONAL-06 | Delivered† | 7 built-in presets + My Presets + Save (`EQEditKit/EQBuiltInPreset.swift:23-71`, `EQMyPresets.swift`; QW1, re-voiced in PR #73) | — |
+| FR-TONAL-07 | Delivered† | 8× oversampled true-peak limiter, last stage (`AudioDSP/Limiting/LimiterModule.h`); EQ-only ceiling per transport (`Limiting/OutputCeiling.h:19-38`, decision 29) | — |
+| FR-ADAPT-01 | Not built | — | Unscheduled (US-ADAPT-02) |
+| FR-ADAPT-02 | Delivered | `TargetState` snapshot via a wait-free SPSC triple buffer (PR #31), `AudioDSP/include/RtSwappableResource.h`, `SpscRing.h` | — |
+| FR-ADAPT-03 | Delivered† | Per-sample one-pole smoothing, per-band time constants (`AudioDSP/include/ParameterRamp.h`, `EQ/EQModule.h:13-23`) | — |
+| FR-ADAPT-04 | Not built | No microphone code | Unscheduled (US-AMB-01) |
+| FR-ADAPT-05 | Not built | — | S14 |
+| FR-ADAPT-07 | Partial | Signal-path readout only (`UI/Settings/SignalPathStatus.swift`, US-ADAPT-06) | S16–S17 (US-ADAPT-04) |
+| FR-ADAPT-08 | Not built | Nearest: the Intensity knob, which scales only the adaptive enhancement (decision 25) | S17 |
+| FR-DEVICE-01 | Delivered | `AudioDSP/CoreAudioDevice.cpp`; `DeviceListPolicy.cpp` hides hidden / private aggregate devices (PR #85); name, type, rate in `UI/Settings/DeviceDetailRow.swift` | KI-DEV-02 → US-R1F-06 |
+| FR-DEVICE-02 | Partial | Per-output EQ recall + output toast (`EQEditKit/EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`, PR #73); pin / follow / pause-on-loss rule (`OutputDeviceKit/OutputDevicePolicy.swift`, PR #85) | Whole profiles → S13 |
+| FR-DEVICE-03 | Partial | Transport-only: built-in / USB / wireless / unknown (`CoreAudioDevice.cpp:321-354`) | S13; KI-DEV-01 → US-R1F-06 |
+| FR-DEVICE-04 | Not built | Nearest: My Presets + per-output pins | S13 |
+| FR-DEVICE-05 | Not built | — | S13 |
+| FR-DEVICE-06 | Delivered | Enhanced: `AVAudioConverter` at `.max` into the 48 kHz graph (`AdaptiveSound/AudioEngineBridge+EnhancedResampler.swift`); Pure: the device follows each track's rate (`HALOutputEngine`) | — |
+| FR-UI-01 | Delivered† | Now Playing (S10.7 PR #61, S10.8 PR #62); the analyzer ticks at 20 Hz (`AudioViewModel+SpectrumTimer.swift:35`) | — |
+| FR-UI-02 | Delivered† | The EQ tab (V1b, PR #73); crossfeed / Intensity / Master Gain in the Now Playing inspector | Profile selector → S13 |
+| FR-UI-03 | Partial | `MenuBarExtra` (`AdaptiveSound.swift:198`, `MenuBarView.swift`, PR #25): transport only | Unscheduled |
+| FR-UI-04 | Not built | — | Unscheduled (US-UI-03) |
+| FR-UI-05 | Delivered† | VoiceOver + keyboard (PR #30, #42, #43, #71, #85); the spectrum is hidden as decorative, with no text summary | KI-UI-01 → US-R1F-07 |
+| FR-UI-06 | Delivered | Dark (S10.7 PR #61) + designed light mode (Sprint B PR #69) | — |
+| FR-UI-07 | Not built | — | S16–S17 |
+| FR-SYS-01…08 | Won't | None (no process tap, no AudioServerPlugIn) | — |
+| FR-REIMAGINE-01 | Delivered | "Intensity" slider (`UI/NowPlaying/InspectorColumn.swift:79-114`); equal-power blend (`DSPKernel.cpp`) | — |
+| FR-REIMAGINE-02 | Delivered† | Bit-exact at Intensity 0 **with the EQ Off** (`DSPKernel.cpp:191-210`; decision 25); C++ null test | — |
+| FR-REIMAGINE-03 | Not built | — | S17 |
+| FR-REIMAGINE-04 | Partial | Default 20 % (`AudioViewModel.swift:132`); no stem range to gate | S17 |
+| FR-STEM-01…06 | Won't | — | — |
+| NFR-PERF-01 | Partial | RT-allocation soak in the gate; the 60-minute XRun check is a manual Instruments procedure ([s7-soak](../sprints/s7-soak-instruments-procedure.md)) | — |
+| NFR-PERF-02 | Delivered | Quality-first posture (`.max` SRC, 8× ISP limiter, double-precision off-RT design) | — |
+| NFR-PERF-03 | Delivered | `Tests/SoakRtAllocTests.inc` | — |
+| NFR-PERF-04 | Partial | Track loudness pre-analysis + next-track prefetch (`TrackLoudnessKit/TrackLoudnessAnalyzer.swift`, PR #73); no content classification | S15+ |
+| NFR-PERF-05 / -06 | Won't | — | — |
+| NFR-QUAL-01 | Not built (no gate) | No THD+N measurement in `Tests/` | US-QA-07 |
+| NFR-QUAL-02 | Partial | No in-app XRun counter; manual procedure | KI-GAP-01 (seam gap) → US-R1F-02 |
+| NFR-QUAL-03 | Delivered† | Golden master `0xE7267654BA01D315` (T-C1, `Tests/MultichannelTests.inc`, in the C++ null-test harness); Pure `Tests/RoundTripTests.inc`; decision 25 | — |
+| NFR-QUAL-04 | Delivered | `SRCQualityMeasure`; Pure plays the file's own rate | — |
+| NFR-PRIV-01 / -02 | N/A | No microphone access in the code | US-AMB-01 |
+| NFR-PRIV-04 | Delivered (trivially) | No telemetry and no network calls anywhere | — |
+| NFR-PRIV-05 | Superseded | Developer-ID, not sandboxed (S8.1 design D5); no entitlements file | US-REL-01 |
+| NFR-REL-01 | Not measurable | No crash reporting | SPIKE-TELEMETRY |
+| NFR-REL-02 | Delivered | Device loss pauses, keeps the place, shows a banner (PR #85); no main-thread freeze (PR #86) | — |
+| NFR-REL-03 | Partial | 13 blockers fixed (PR #85); open defects remain | US-R1F-01…06 |
+| NFR-INSTALL-01 | Delivered† | Drag-to-Applications DMG, `make dist` + release workflow (PR #87); ad-hoc signed, not notarized (decision 13) | US-REL-01 |
+| NFR-INSTALL-02 / -03 | Won't | — | — |
+| NFR-INSTALL-04 | Partial | The library, artwork cache and backups stay in `~/Library/Application Support/AdaptiveSound/` after the app is deleted (`AdaptiveSound/AppDataLocation.swift`) | — |
+| NFR-ACC-01 / -02 | Delivered | See FR-UI-05; Controls menu shortcuts (Space, ⌘→, ⌘←, ⌘., ⌘0) | — |
+| NFR-ACC-03 | Partial | Fonts on text-style tokens (PR #45, #46); macOS 26 does not scale them with a text-size setting | — |
+| NFR-ACC-04 | Delivered | Reduce Motion honoured (S10.7 PR #61 onward) | — |
+| NFR-L10N-01 / -02 | Not built | No `.strings` / `.xcstrings` catalog | Unscheduled (US-UI-06) |
+| NFR-L10N-03 | Delivered | No locale use in `AudioDSP/` | — |
 
 ---
 
@@ -139,6 +217,8 @@ The app shall play local audio files in common formats (MP3, AAC, FLAC, ALAC, WA
 > Given a local audio file in a supported format is added to the queue,  
 > When the user presses Play,  
 > Then audio begins within 500 ms and is routed through the full DSP chain with no audible artifacts.
+
+> **As-built (2026-10-13):** files enter through the **library scan**, which admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`). Apple's decoder is the default; FFmpeg is a runtime fallback used only if the user installed it. `.opus` / `.oga` play via FFmpeg but are never scanned (KI-LIB-05 → S11). There is no way to add a single file outside a music folder (US-LIB-02). In Pure Mode the "full DSP chain" is bypassed by design. The 500 ms start time is not measured by any gate.
 
 **FR-PLAY-02** — Playback Controls (P1)  
 The app shall provide standard playback controls: play, pause, skip forward, skip backward, seek, and volume adjustment.
@@ -208,6 +288,8 @@ The app shall offer adjustable crossfeed to reduce unnatural extreme stereo pann
 > When crossfeed is enabled at the default level (Bauer stereophonic-to-binaural, ~700 Hz crossover),  
 > Then channel separation is measurably reduced (verifiable via FFT analysis) without perceived image collapse.
 
+> **As-built (QW1, PR #15):** shipped as an in-house reimplementation (`CrossfeedModule`), off by default, with Relaxed (650 Hz, −9.5 dB) / Default (700 Hz, −9.0 dB) / Strong (700 Hz, −6.0 dB) from bs2b's published coefficient sets; libbs2b is not linked (OQ-17 resolved). It is offered only on an output classed as headphones (USB or wireless transport), so wired headphones in the Mac's own jack can't use it — KI-DEV-01.
+
 **FR-SPAT-04** — Head-Tracked Soundstage via AirPods Motion (P2, opt-in) *(revised per LD-14)*  
 When AirPods (3rd gen or later, AirPods Pro 1/2, AirPods Max) are the active output **and the user opts in**, the app shall use **CMHeadphoneMotionManager** (macOS 14+) head-tracking to stabilise the soundstage relative to a fixed world reference. Head-tracking is **off by default for music** (many listeners prefer a head-locked music stage); its externalisation benefit is largely already delivered by the BRIR path.
 
@@ -243,7 +325,7 @@ The app shall automatically choose spatial processing mode based on device type 
 **FR-TONAL-01** — Parametric EQ Engine (P1) *(revised per LD-12/LD-13)*  
 The app shall provide a parametric EQ (≥10 bands; adjustable frequency, gain ±20 dB, Q). The canonical tonal target is a composable curve realized **off-RT** as **minimum-phase biquads by default**; **linear/mixed-phase FIR is opt-in or selected by content** (transient-dense material stays minimum-phase to avoid pre-ringing — LD-13). The RT kernel runs finished coefficients only (no design/fitting on the audio thread).
 
-> **⚠ Deviation (as-built):** the shipped EQ is a **31-band graphic** EQ (fixed bands, ±12 dB), not the parametric ≥10-band / ±20 dB / adjustable-Q engine specified here. The parametric spec stays as the target; the graphic build meets the live / accurate / resettable intent. Reconcile graphic-vs-parametric — see backlog US-TON-01.
+> **⚠ Deviation (as-built):** the shipped EQ is a **31-band graphic** EQ (fixed bands, ±12 dB), not the parametric ≥10-band / ±20 dB / adjustable-Q engine specified here. The parametric spec stays as the target; the graphic build meets the live / accurate / resettable intent. Reconcile graphic-vs-parametric — see backlog US-TON-01. *(Updated 2026-10-13: Sprint EQ, PR #73, rebuilt it so what is drawn is what plays — one exact SVF bell per band, a loudness-neutral output gain, five Tone macros; the old engine played a fraction of what it showed. It is minimum-phase IIR; the RT kernel runs finished coefficients only, as specified. Parametric bands → **S12**.)*
 
 > Given the user sets band 3 to 200 Hz, +6 dB, Q=1.0,  
 > When audio plays,  
@@ -290,12 +372,16 @@ The app shall include a preset library with at least 8 named tonal presets (e.g.
 > When applied,  
 > Then EQ parameters change to preset values within one render cycle, and a "Save as Custom" button appears if the user subsequently adjusts any parameter.
 
+> **As-built (Sprint EQ decisions 30–32, PR #73):** **7** built-in presets — Flat, Presence, Clarity, Warm, Bass & Treble, Vocal, Bass Boost — each built from the five Tone regions (peaks of +3 to +5 dB), plus **My Presets** (Save, rename, delete) and per-output pins. The named list above (8, incl. Podcast / Film / Classical / Electronic) is not what shipped; a saved "Studio" loads as Flat.
+
 **FR-TONAL-07** — True Peak Limiting (P1)  
 A transparent true-peak limiter shall be the final DSP stage, preventing output from exceeding -1 dBTP regardless of upstream gain.
 
 > Given upstream DSP adds +6 dB gain to a 0 dBFS signal,  
 > When the limiter is in the chain,  
 > Then the output true peak is ≤ -1 dBTP (verified by a reference meter).
+
+> **As-built (Sprint EQ decision 29, PR #73):** the limiter is the last stage of the Enhanced chain at −1 dBTP. With Intensity 0 and the EQ on, the ceiling is **−0.1 dBTP** on a local lossless output (built-in, USB, Thunderbolt, HDMI…) and −1 dBTP on Bluetooth / AirPlay (`Limiting/OutputCeiling.h`), so a loud master's EQ On is not squashed under its bit-perfect Off. In the bit-perfect bypass and in Pure Mode no limiter runs (the bits are the file's).
 
 ---
 
@@ -325,6 +411,8 @@ All DSP parameter changes pushed by the adaptivity engine shall be applied via p
 > Given an EQ band gain changes from 0 dB to +6 dB in a single update,  
 > When the audio thread processes this change,  
 > Then the gain transitions smoothly over ≥ 50 ms; no click or zipper artifact is audible on a sine wave test signal.
+
+> **As-built:** smoothing is per-sample **one-pole** (exponential), not a linear ≥ 50 ms ramp. Each EQ band uses its own time constant, set by its bell's response time (40 ms+ in the bottom octave, under 1 ms at the top; Sprint EQ engine-plan amendment 15); Intensity uses τ = 32 ms; the loudness normaliser glides ~2 s across Intensity 0 (decision 33). Zipper-free transitions are gated (`EqTransitionTests.inc`).
 
 **FR-ADAPT-04** — Ambient Noise Sensing — On-Demand (P1) *(revised per LD-6: on-demand, not continuous)*  
 The app shall sample the microphone **only when the user triggers "Adapt to my environment"**, capturing a short window (~3 s) to estimate ambient SPL and classify it into at least 3 bands (Quiet/Moderate/Loud). The mic shall not be held open between samples — no always-on listening, no persistent macOS mic indicator during normal playback.
@@ -422,6 +510,8 @@ The app shall display a persistent Now Playing view showing album art, track met
 > Given a track is playing,  
 > When the Now Playing view is open,  
 > Then the spectrum analyser updates at ≥ 30 fps and all metadata is visible without scrolling on a 13-inch MacBook display.
+
+> **As-built (S10.7 / S10.8, PR #61 / #62):** album art (with art-sampled glows), title / artist / album / badges, the footer transport and a dB-gridded analyzer lens with peak-hold caps. The analyzer updates at **20 Hz**, the shared main-thread tick (`AudioViewModel+SpectrumTimer.swift:35`), not ≥ 30 fps; there is no "active profile name" (no profiles exist). Not reconciled by any recorded decision — see the council report.
 
 **FR-UI-02** — DSP Controls Panel (P1)  
 A DSP controls panel shall expose EQ bands, spatialization toggle, dynamics controls, and profile selector in a single view without requiring navigation into settings.
@@ -567,6 +657,8 @@ At 0%, the stem engine and all transformation stages shall be bypassed and the o
 > When a loopback capture is compared to the source file,
 > Then the captured audio is bit-identical to the source (MD5-equal).
 
+> **As-built (Sprint EQ decision 25, 2026-10-10, PR #73):** the user's EQ now runs **ahead** of the Intensity blend and always plays in full, so Intensity 0 means "Reimagine off, your EQ still plays". The bit-identical output holds at **Intensity 0 with the EQ Off** (after a 2 s hold — `DSPKernel.cpp:191-210`), and in Pure Mode. Gated by the C++ null test (golden master T-C1); an on-device loopback MD5 capture is not automated.
+
 **FR-REIMAGINE-03** — Continuous Mapping, Phased Ceiling (P1)  
 The intensity→parameter mapping shall crossfade original↔processed and scale spatial spread / unmask depth along the way. **Phase 1** implements the mix-level range; **Phase 1.5** raises the ceiling into the stem-based spatial range. The exact mapping curve is an open item (OQ — user-tested).
 
@@ -703,6 +795,8 @@ At **Reimagine intensity 0%** (and in any explicit bypass), the stem engine and 
 > When a loopback capture is compared to the source file,  
 > Then the captured audio is bit-identical to the source (verified by MD5 comparison).
 
+> **As-built:** see FR-REIMAGINE-02 — bit-transparent at Intensity 0 **with the EQ Off** (decision 25) and in Pure Mode; proven by the C++ null test's golden master (T-C1) and, for Pure, `Tests/RoundTripTests.inc`.
+
 **NFR-QUAL-04** — Sample Rate Support (P1)  
 The DSP engine shall support sample rates of 44.1 kHz, 48 kHz, 88.2 kHz, and 96 kHz without quality degradation. Sample-rate conversion, when required, shall use a high-quality algorithm (SSRC class or equivalent, stopband attenuation ≥ 90 dB).
 
@@ -732,6 +826,8 @@ If the app collects any usage telemetry, it shall be strictly opt-in, clearly de
 **NFR-PRIV-05** — App Sandbox Compliance (P1)  
 The companion app (not the HAL plug-in) shall be sandboxed per App Store requirements. Any entitlements required (e.g., com.apple.security.device.microphone) shall be declared and justified in the app's entitlements file.
 
+> **Superseded (S8.1 design D5, founder-confirmed 2026-07):** distribution is **Developer-ID, not sandboxed** — music-folder roots persist as plain absolute paths and `folders.bookmark` is reserved-unused. R1 is an ad-hoc-signed DMG from GitHub (PR #87); signing + notarization is backlog US-REL-01, and it will need the `disable-library-validation` entitlement for the FFmpeg `dlopen`. No App Store build is planned.
+
 ---
 
 ### 4.4 Reliability and Stability (NFR-REL)
@@ -745,6 +841,8 @@ If the audio engine encounters an unrecoverable error (e.g., device disconnected
 > Given the active output device is forcibly disconnected mid-playback,  
 > When the error is detected,  
 > Then playback stops cleanly, an error banner appears, and the user can resume playback after reconnecting or selecting another device.
+
+> **As-built (PR #85, #86):** on device loss both paths pause, keep the song's place, and show "Output device disconnected — playback paused. Press Play to continue."; nothing auto-resumes; the selection moves to the new system default. Since PR #86 the main thread never waits on the dying device (no beach ball).
 
 **NFR-REL-03** — State Consistency (P1)  
 No combination of user actions (rapid profile switching, device hotplug, simultaneous seek and device change) shall leave the DSP engine or UI in an inconsistent state (e.g., wrong profile applied, incorrect device shown).
@@ -767,7 +865,7 @@ If the AudioServerPlugIn fails to load after coreaudiod restart (e.g., due to a 
 > Then coreaudiod ignores the plug-in, audio falls back to built-in speakers, and the companion app detects the failure within 10 seconds and shows a recovery prompt.
 
 **NFR-INSTALL-04** — Clean Uninstall (P1)  
-Uninstalling the app (Phase 1 / tap path: delete from Applications or disable tap — no files to remove beyond app bundle; driver fallback path: in-app uninstall) shall leave no residual files in /Library/Audio/Plug-Ins/HAL/, /Library/LaunchDaemons/, or application support directories. For the tap path, "clean uninstall" means: tap stopped, original output unmuted, TCC permission may be revoked by the user independently in System Settings — no additional cleanup required by the app.
+Uninstalling the app (Phase 1 / tap path: delete from Applications or disable tap — no files to remove beyond app bundle; driver fallback path: in-app uninstall) shall leave no residual files in /Library/Audio/Plug-Ins/HAL/, /Library/LaunchDaemons/, or application support directories. *(As-built: R1 writes no system files, but the user's library — `library.sqlite3`, its pre-upgrade backups and the artwork cache — lives in `~/Library/Application Support/AdaptiveSound/` and the settings in the app's defaults (`AppDataLocation.swift`); deleting the app leaves them, as on any macOS app. That data holds playlists and play history, so keeping it is arguably right; an explicit "remove my library" path is not built.)* For the tap path, "clean uninstall" means: tap stopped, original output unmuted, TCC permission may be revoked by the user independently in System Settings — no additional cleanup required by the app.
 
 ---
 
@@ -831,9 +929,9 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 
 | ID | Assumption | Impact if Wrong |
 |----|-----------|----------------|
-| ASM-01 | Target users have macOS 14 (Sonoma) or later. API availability (CoreMotion for AirPods, AudioObjectAddPropertyListenerBlock, AVAudioEngine) assumed on this baseline. | Lower deployment target would restrict head-tracking (AirPods CoreMotion requires macOS 14+) and other APIs. |
-| ASM-02 | The app will be distributed outside the Mac App Store initially (to avoid sandboxing restrictions on AudioServerPlugIn in Phase 2). | App Store distribution would require separate entitlement review for HAL plug-ins; currently not straightforward. |
-| ASM-03 | Developer ID signing and notarization are in place before any Phase 2 beta. | Without notarization, macOS Gatekeeper blocks plug-in load; system audio fails silently. |
+| ASM-01 | ~~Target users have macOS 14 (Sonoma) or later.~~ **Superseded (PR #87): the floor is macOS 26 (Tahoe) on Apple Silicon** — `Package.swift` `.macOS(.v26)`, `Info.plist` `LSMinimumSystemVersion` 26.0 (it said 14.0 until R1 while the package already targeted 26). API availability (CoreMotion for AirPods, AudioObjectAddPropertyListenerBlock, AVAudioEngine) assumed on this baseline. | Lower deployment target would restrict head-tracking (AirPods CoreMotion requires macOS 14+) and other APIs. |
+| ASM-02 | The app will be distributed outside the Mac App Store initially (to avoid sandboxing restrictions on AudioServerPlugIn in Phase 2). *Confirmed: Developer-ID, not sandboxed (S8.1 D5); R1 ships as a GitHub release DMG (PR #87).* | App Store distribution would require separate entitlement review for HAL plug-ins; currently not straightforward. |
+| ASM-03 | Developer ID signing and notarization are in place before any Phase 2 beta. *(R1 itself is ad-hoc signed and not notarized — founder decision 13; users click Open Anyway once. → backlog US-REL-01.)* | Without notarization, macOS Gatekeeper blocks plug-in load; system audio fails silently. |
 | ASM-04 | **SADIE II (Apache-2.0)** is confirmed as the default shipped HRTF dataset (OQ-04 resolved). Additional datasets KEMAR and CIPIC are also available under permissive/compatible terms. IRCAM Listen is explicitly avoided (unverifiable license). Custom HRTF measurement is deferred per LD-7. | Resolved — SADIE II covers the requirement; no blocking risk. |
 | ASM-05 | Device correction EQ curves are sourced from **AutoEq computed parametric curves (MIT, + attribution)**. Raw measurement databases from upstream measurers are not shipped (may be CC-BY-NC-SA); only AutoEq's derived curves are included. Upstream measurement provenance must be verified per curve before shipping (OQ-08 resolved as AutoEq, but provenance check is ongoing). | Without verified correction curves, headphone EQ is generic; differentiating feature weakens. Provenance verification is a per-model ongoing task. |
 | ASM-06 | The content/genre classifier runs as a lightweight on-device ML model (Core ML) or a signal-processing heuristic, not a cloud inference call. | Cloud inference would violate real-time requirements, add latency, and raise privacy concerns. |
@@ -856,7 +954,7 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | CON-09 | AudioDriverKit dext is NOT an alternative for virtual audio devices — Apple does not grant the required entitlements for this use case. Use AudioServerPlugIn only (driver path). | WWDC21 session 10190; Apple Developer Forums confirmation. |
 | CON-10 | The Core Audio process tap primary path requires macOS **14.2 or later** (minimum floor; exact version — 14.2 vs. 14.4 — must be confirmed by inspecting `<CoreAudio/AudioHardwareTapping.h>` SDK headers before engineering begins). This constraint interacts with OQ-07 (minimum OS deployment target). | `docs/session-notes/prior-art.md` §5 open verifications; SDK headers. |
 | CON-11 | Bass harmonic generation must be derived from a **mono-summed (L+R) low band**. Per-channel (stereo) harmonic generation is prohibited — it falls within Waves patent US-11,102,577 (active, filed 2018, ~2038 expiry). Formal IP review required before public release (see OQ-16). The MaxxBass approach (US-5,930,373) appears expired (~2019) but must be verified on USPTO before reliance. | `docs/session-notes/prior-art.md` §6 patent watch. |
-| CON-12 | All third-party code and data shipped in the app (libraries, HRTF datasets, EQ correction curves, ML model weights) must be under **permissive, redistributable licences** (MIT, BSD-2/3, Apache-2.0, Boost, 0BSD, ISC, zlib, public-domain, or equivalent). Copyleft (GPL/AGPL/LGPL) code and NC-licensed weights/data are reference-only and must not be shipped. This constraint implements LD-9 at the dependency level. Approved shipable picks: libmysofa (BSD-3), FFTConvolver (MIT), libebur128 (MIT), libASPL (MIT), SADIE II (Apache-2.0), AutoEq computed curves (MIT — verify upstream measurement provenance per `docs/session-notes/prior-art.md` §5), Demucs+MLX (MIT). libbs2b licence is disputed and must be resolved before shipping (see OQ-17). | LD-9; `docs/session-notes/prior-art.md` §1–§5. |
+| CON-12 | All third-party code and data shipped in the app (libraries, HRTF datasets, EQ correction curves, ML model weights) must be under **permissive, redistributable licences** (MIT, BSD-2/3, Apache-2.0, Boost, 0BSD, ISC, zlib, public-domain, or equivalent). Copyleft (GPL/AGPL/LGPL) code and NC-licensed weights/data are reference-only and must not be shipped. This constraint implements LD-9 at the dependency level. Approved shipable picks: libmysofa (BSD-3), FFTConvolver (MIT), libebur128 (MIT), libASPL (MIT), SADIE II (Apache-2.0), AutoEq computed curves (MIT — verify upstream measurement provenance per `docs/session-notes/prior-art.md` §5), Demucs+MLX (MIT). libbs2b licence is disputed and must be resolved before shipping (see OQ-17). *As-built (2026-10-13): shipped and linked = GRDB.swift (MIT, the library store, PR #47) + Apple frameworks; libebur128 (MIT) is vendored **test-only**; FFmpeg (LGPL / GPL builds) is **never bundled** — it is `dlopen`ed at runtime only if the user installed it (`FileDecodeSource.cpp`), so it is not "shipped"; libbs2b is not used (OQ-17 resolved). No licence file exists for the project itself yet (US-REL-02).* | LD-9; `docs/session-notes/prior-art.md` §1–§5. |
 
 ### 6.3 Dependencies
 
@@ -870,14 +968,14 @@ The following table maps each input signal consumed by the Adaptivity Engine to 
 | DEP-06 | HRTF datasets: **SADIE II (Apache-2.0)** — primary default; also KEMAR (cite), CIPIC (commercial OK — common NC claim is false), ARI (CC BY-SA — keep data under SA). Loaded via **libmysofa (BSD-3)**. IRCAM Listen is **avoided** (license unverifiable — see `docs/session-notes/prior-art.md` §5; SADIE II covers the use case). OQ-04 resolved: SADIE II is the default; custom HRTF measurement deferred per LD-7. | External data + OSS library | Low — SADIE II Apache-2.0 confirmed; libmysofa BSD-3 confirmed. |
 | DEP-07 | Headphone correction EQ curves: **AutoEq computed parametric curves (MIT, + attribution)**. Ship AutoEq's *computed* curves only — do not republish raw measurement databases unchecked (upstream measurers may be CC-BY-NC-SA; verify per `docs/session-notes/prior-art.md` §5). OQ-08 resolved: AutoEq MIT computed curves are the source. | External data | Medium — MIT code; upstream measurement provenance requires per-file verification. |
 | DEP-08 | ServiceManagement / **SMAppService** (Phase 2 privileged helper, driver fallback path). SMJobBless is deprecated in macOS 13+; use SMAppService. | Platform | Medium — SMAppService is the current API; evaluate migration path confirmed. |
-| DEP-09 | TPCircularBuffer or CARingBuffer (lock-free ring buffer) | OSS library | Low — well-tested, MIT/BSD licensed. |
+| DEP-09 | ~~TPCircularBuffer or CARingBuffer (lock-free ring buffer)~~ *Not used: in-house `SpscRing.h` + `RtSwappableResource.h` (triple buffer, PR #31).* | OSS library | Low — well-tested, MIT/BSD licensed. |
 | DEP-10 | Core ML / SoundAnalysis (off-RT content classification, LD-5 Phase 2 upgrade) | Platform | Low — available macOS 12+; fallback to DSP heuristic classifier possible. Never used on the audio render thread (see BNNS Graph constraint in §3.4). |
-| DEP-11 | **libebur128 (MIT)** — LUFS / true-peak measurement per ITU-R BS.1770 (replaces any bespoke LUFS implementation). | OSS library | Low — MIT confirmed; well-maintained. |
+| DEP-11 | **libebur128 (MIT)** — LUFS / true-peak measurement per ITU-R BS.1770 ~~(replaces any bespoke LUFS implementation)~~. *As-built: the runtime meter is the in-house RT-safe `LufsMeter` (`Loudness/LufsMeter.h`); libebur128 v1.2.6 is vendored as the **test-only** conformance oracle (`third_party/libebur128`, US-QA-01).* | OSS library | Low — MIT confirmed; well-maintained. |
 | DEP-12 | **FFTConvolver (MIT)** — partitioned convolution engine for SOFA HRIR and linear-phase EQ. Confirm `LICENSE` file path in-repo before vendoring (README says MIT; canonical `/LICENSE` path 404'd — see `docs/session-notes/prior-art.md` §5). | OSS library | Low risk once file confirmed. |
 | DEP-13 | **libASPL (MIT)** — AudioServerPlugIn framework (driver fallback path). | OSS library | Low — MIT confirmed. |
 | DEP-14 | **Demucs + MLX port (code MIT; weights NC-trained, auto-downloaded on first run, not redistributed)** — future offline source-separation feature (LD-15, Phase 1.5+). Offline-only / heavy; not on the audio thread. Code is MIT; weights are licensed under NC terms from MUSDB18-HQ training data and must be downloaded on first run, not bundled. | OSS library + model | Medium — MIT code confirmed; weights license requires download-on-first-run approach and gates any commercial distribution. |
 | DEP-15 | **BNNS Graph (Apple Accelerate)** — RT-safe ML inference on the audio thread. Single-threaded, no runtime allocation. | Platform | Low — part of Accelerate framework, stable. |
-| DEP-16 | **libbs2b** (crossfeed) — ⚠️ license disputed (MIT vs. GPL-2.0+; see `docs/session-notes/prior-art.md` §5 and OQ-17). Do not ship until licence is confirmed. Algorithm is public; reimplement on biquads if not clearly permissive. | OSS library (disputed) | High until resolved — see OQ-17. |
+| DEP-16 | **libbs2b** (crossfeed) — ⚠️ license disputed (MIT vs. GPL-2.0+; see `docs/session-notes/prior-art.md` §5 and OQ-17). Do not ship until licence is confirmed. Algorithm is public; reimplement on biquads if not clearly permissive. *Resolved: not used — reimplemented in-house (QW1 §2, `CrossfeedModule`).* | OSS library (disputed) | ~~High until resolved~~ None — not a dependency. |
 
 ---
 
@@ -895,17 +993,17 @@ The following items are unresolved and require founder/product-owner decisions b
 | OQ-04 | HRTF / Spatialization | Which HRTF data set(s) will ship in Phase 1? | FR-SPAT-01 and FR-SPAT-02 scope and timeline depend on this decision. | ✓ Resolved (LD-7 + prior-art pass): **SADIE II (Apache-2.0)** is the default dataset; custom HRTF measurement deferred. IRCAM Listen avoided (unverifiable license). Rendering is custom SOFA-HRIR partitioned convolution (libmysofa + FFTConvolver) — Apple PHASE/AVAudioEnvironmentNode HRTFs are non-replaceable. See DEP-06 and FR-SPAT-01. |
 | OQ-05 | *Withdrawn 2026-07-12 (feature removed from scope)* | Hearing personalization removed (founder decision); the hearing-calibration positioning question no longer applies. May be re-added with the feature. | — | — |
 | OQ-06 | Phase 1 Scope — Streaming Sources | Does Phase 1 (own player) include any streaming source integration (Spotify Connect, Apple Music API, YouTube Music)? Or is Phase 1 strictly local file playback only? The question materially affects FR-PLAY-* and the breadth of source support. | A Spotify Connect or MusicKit integration is weeks of additional work; must be scoped before sprint planning. | ✓ Resolved (LD-4): local files only in Phase 1 |
-| OQ-07 | macOS Version — Minimum Deployment Target | The draft assumes macOS 14 for AirPods CoreMotion. Is this acceptable, or does the market require macOS 13 (or 12) support? Lowering the target eliminates head-tracking and may affect other API choices. Additional constraint from prior-art pass: the **process-tap primary Phase 2 path requires macOS 14.2 or later** (CON-10); the exact floor (14.2 vs. 14.4) must be confirmed in `<CoreAudio/AudioHardwareTapping.h>` before Phase 2 engineering begins. If the minimum OS is set below 14.2, the driver fallback path (FR-SYS-01..06) becomes the Phase 2 mechanism for those users. | Determines which APIs are available, whether the tap primary path is viable for the target user base, and the Phase 2 installer approach. | Medium |
+| OQ-07 | macOS Version — Minimum Deployment Target | The draft assumes macOS 14 for AirPods CoreMotion. Is this acceptable, or does the market require macOS 13 (or 12) support? Lowering the target eliminates head-tracking and may affect other API choices. Additional constraint from prior-art pass: the **process-tap primary Phase 2 path requires macOS 14.2 or later** (CON-10); the exact floor (14.2 vs. 14.4) must be confirmed in `<CoreAudio/AudioHardwareTapping.h>` before Phase 2 engineering begins. If the minimum OS is set below 14.2, the driver fallback path (FR-SYS-01..06) becomes the Phase 2 mechanism for those users. | Determines which APIs are available, whether the tap primary path is viable for the target user base, and the Phase 2 installer approach. | ✓ Resolved (PR #87): **macOS 26 on Apple Silicon** (`Package.swift`, `Info.plist`). |
 | OQ-08 | Device Correction Library — Scope | How many headphone/speaker models will be included in the correction library at launch? Who owns ongoing library curation? | FR-TONAL-02 cannot be validated without knowing the minimum supported device count. | ✓ Resolved (prior-art pass): **AutoEq computed parametric curves (MIT + attribution)** are the source. Raw measurement databases are not shipped (provenance uncertain). Ongoing per-model provenance verification is required (see DEP-07 and CON-12). Minimum model count and curation owner remain to be confirmed in SPIKE-DEVCORRLIB. |
 | OQ-09 | Content / Genre Classifier — Approach | Will the content classifier be a Core ML model (requires training data, model management, CoreML conversion pipeline) or a DSP heuristic (spectral centroid, BPM estimation, onset detection)? The ML approach is more accurate but has higher cold-start and maintenance cost. | FR-ADAPT-01 acceptance criteria and engineering estimates differ substantially between the two approaches. | ✓ Resolved (LD-5): heuristics in Phase 1, Core ML later |
-| OQ-10 | Telemetry and Crash Reporting | Will the app use a third-party crash reporting SDK (e.g., Sentry, Firebase Crashlytics)? If so, which one, and how does this interact with the App Store privacy label and NFR-PRIV-04? | Data residency, privacy disclosure, and SDK dependency must be confirmed before SDK is integrated. | Medium |
+| OQ-10 | Telemetry and Crash Reporting | Will the app use a third-party crash reporting SDK (e.g., Sentry, Firebase Crashlytics)? If so, which one, and how does this interact with the App Store privacy label and NFR-PRIV-04? | Data residency, privacy disclosure, and SDK dependency must be confirmed before SDK is integrated. | Medium *(R1 has none: no network code at all.)* |
 | OQ-11 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language / conversational tuning removed (founder decision); the text-interpretation-mechanism question no longer applies. May be re-added with the feature. | — | — |
 | OQ-12 | *Withdrawn 2026-07-12 (feature removed from scope)* | Concerned instrument source-separation for NL requests; NL tuning removed (founder decision). Source separation for the stem engine remains covered by FR-STEM-*. May be re-added with the feature. | — | — |
 | OQ-13 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language tuning removed (founder decision); the ambiguity/clarification-UX question no longer applies. May be re-added with the feature. | — | — |
 | OQ-14 | *Withdrawn 2026-07-12 (feature removed from scope)* | Natural-language tuning removed (founder decision); the multilingual-support question no longer applies. May be re-added with the feature. | — | — |
 | OQ-15 | *Withdrawn 2026-07-12 (feature removed from scope)* | Concerned reconciliation of NL text preferences with automatic adaptation and the hearing profile; both features removed (founder decision). May be re-added with them. | — | — |
 | OQ-16 | Patents — Psychoacoustic Bass Enhancement IP Review | CON-11 requires formal IP review before any public release of FR-TONAL-04. Specific items: (a) Verify US-5,930,373 (Waves/MaxxBass, ~2019) is truly expired on USPTO before relying on it. (b) Verify the mono-summed NLD approach is clearly outside Waves US-11,102,577 (active, ~2038). (c) Check whether any Xperi/SRS virtual-bass patents are still active and whether the mono-summed design avoids them. This is a formal legal/IP task, not a technical investigation — requires qualified IP counsel. Engineering may proceed with the mono-summed design; public release is blocked until this review is complete. | Public release of FR-TONAL-04 is blocked without IP review sign-off. Engineering is unblocked (use mono-summed design per CON-11). | High — blocks public release |
-| OQ-17 | libbs2b License Dispute | `docs/session-notes/prior-art.md` §5 notes conflicting reports on the libbs2b licence: one source found MIT in source headers; another reported GPL-2.0+. This must be resolved before libbs2b is shipped (CON-12). Action: open the canonical `LICENSE` / source header in the upstream repo. If not clearly MIT, reimplement the Bauer crossfeed algorithm from the public specification (a small number of biquad filters + delay — trivial to reimplement cleanly). FR-SPAT-03 / US-DEVICE-07 are blocked on this resolution. | FR-SPAT-03 (crossfeed) cannot be shipped with libbs2b until confirmed permissive. Reimplementation unblocks the feature if licence is not clear. | Medium — blocks crossfeed shipping |
+| OQ-17 | libbs2b License Dispute | `docs/session-notes/prior-art.md` §5 notes conflicting reports on the libbs2b licence: one source found MIT in source headers; another reported GPL-2.0+. This must be resolved before libbs2b is shipped (CON-12). Action: open the canonical `LICENSE` / source header in the upstream repo. If not clearly MIT, reimplement the Bauer crossfeed algorithm from the public specification (a small number of biquad filters + delay — trivial to reimplement cleanly). FR-SPAT-03 / US-DEVICE-07 are blocked on this resolution. | FR-SPAT-03 (crossfeed) cannot be shipped with libbs2b until confirmed permissive. Reimplementation unblocks the feature if licence is not clear. | ✓ Resolved (QW1 design §2): bs2b treated as LGPL and not linked; crossfeed reimplemented in-house and shipped (`CrossfeedModule`). |
 | OQ-18 | DSP — Phase realization per content | Minimum-phase is the default (LD-13). Open: should transient-dense content force minimum-phase even where linear/mixed-phase is otherwise selected, and what transient-density threshold triggers the switch? Resolve before the Realizer is implemented. | Realizer design + FR-TONAL-01 acceptance. | High |
 | OQ-19 | Stem engine — feasibility budget | Measured per-stem RT cost, total memory for 6 cached stems + BRIR kernels, and worst-case render on a base Apple-Silicon laptop are unknown (NFR-PERF-06). A spike must measure these before Phase 1.5 scope is committed. | Gates Phase 1.5 scope; informs QualityProfile scaling. | High — gates Phase 1.5 |
 | OQ-20 | Stem engine — quality-gating policy | What objective + perceptual criteria gate a separated stem as "usable" vs. merged into "other", and how does confidence bound the Reimagine ceiling per track (FR-STEM-05)? | FR-STEM-05 acceptance; user-perceived quality. | High |
@@ -927,8 +1025,8 @@ The following items are unresolved and require founder/product-owner decisions b
 | FR-SYS | Phase 2 System-Wide Enhancement |
 | FR-REIMAGINE | Reimagine Intensity Control |
 | FR-STEM | Stem-Based Object Engine (Phase 1.5) |
-| FR-LIB | *(reserved namespace)* Library domain — multiple scan folders, single-file play, durable track identity, cross-folder duplicates. No FR text/AC authored yet; currently specified as **EP-LIBRARY** stories (US-LIB-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. |
-| FR-PLIST | *(reserved namespace)* Playlist domain — many-to-many ordered membership, DnD reference-add vs. folder-move, built-in "current" queue, naming. No FR text/AC authored yet; currently specified as **EP-PLAYLIST** stories (US-PLIST-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. |
+| FR-LIB | *(reserved namespace)* Library domain — multiple scan folders, single-file play, durable track identity, cross-folder duplicates. No FR text/AC authored yet; currently specified as **EP-LIBRARY** stories (US-LIB-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. *(2026-10-13: shipped in S8–S10.3 except single-file play — see each story's Status in the backlog.)* |
+| FR-PLIST | *(reserved namespace)* Playlist domain — many-to-many ordered membership, DnD reference-add vs. folder-move, built-in "current" queue, naming. No FR text/AC authored yet; currently specified as **EP-PLAYLIST** stories (US-PLIST-*) in `backlog.md` + `s8-1-persistent-store-design.md`. Promote to full FRs when convenient. *(2026-10-13: shipped in S10.1–S10.3 except the loose-file add UI; folder-to-folder move superseded.)* |
 | NFR-PERF | Performance |
 | NFR-QUAL | Audio Quality |
 | NFR-PRIV | Privacy |
