@@ -246,8 +246,8 @@ The short-track advance is a fresh-start reconfigure **gap**, not a gapless seam
 
 **Status:** OPEN · **Severity:** HIGH (wrong audio: on most 5.1 music the centre carries the lead vocal) · **Source:**
 the council's architecture reconciliation (2026-10-13), re-verified here · **Forward:** S18 replaces the interim
-truncation with the binaural fold ([S4 design](../sprints/05-sprint-5b-s4-binaural-design.md)); an interim fix (a
-standard fold-down until then) is a founder decision → US-R1F-08.
+truncation with the binaural fold ([S4 design](../sprints/05-sprint-5b-s4-binaural-design.md)); an interim fix (the S4
+design's Apple `AVAudioEnvironmentNode` fold pulled forward, or a standard fold-down) is a founder decision → US-R1F-08.
 
 The Enhanced graph processes at the file's width N and renders to the device width M = min(N, device) at the spatial
 AU (`AudioFormatKit/MultichannelFormat.swift:89-104`, wired in `AudioEngineBridge+Graph.swift:63-73`). When M < N the
