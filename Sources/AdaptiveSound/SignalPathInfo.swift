@@ -45,7 +45,7 @@ enum DeviceVolume: Equatable {
 
 // MARK: - SignalPathInfo
 
-/// Snapshot of the active signal path, updated at 20 Hz from `engine.currentSignalPath()`.
+/// Snapshot of the active signal path, updated at 20 Hz from `engine.snapshot()`.
 /// Equatable so `@Observable` change tracking suppresses redundant UI renders when state is stable.
 struct SignalPathInfo: Equatable {
     /// Whether the Enhanced or Pure HAL path is rendering.

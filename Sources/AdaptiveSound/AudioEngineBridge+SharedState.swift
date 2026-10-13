@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import os
+import Synchronization
 
 // MARK: - AudioEngineBridge shared playback-context state (one leaf lock)
 
@@ -70,6 +71,27 @@ extension AudioEngineBridge {
     /// Thread-safe write of the current target device ID.
     func setCurrentDeviceID(_ value: UInt32) {
         withStateLock { storedCurrentDeviceID = value }
+    }
+
+    // MARK: - Cross-queue flags (named acquire/release atomics — no lock, no queue hop)
+
+    /// The Enhanced play intent (see `enhancedPlayIntentFlag`). Read and written from any queue.
+    var enhancedPlayIntent: Bool {
+        get { enhancedPlayIntentFlag.load(ordering: .acquiring) }
+        set { enhancedPlayIntentFlag.store(newValue, ordering: .releasing) }
+    }
+
+    /// Completed gapless seams on the Enhanced path (see `gaplessTransitionCounter`). One writer:
+    /// the seam handler on `resampleQueue`.
+    var gaplessTransitionCount: UInt64 {
+        get { gaplessTransitionCounter.load(ordering: .acquiring) }
+        set { gaplessTransitionCounter.store(newValue, ordering: .releasing) }
+    }
+
+    /// The Enhanced end-of-queue flag (see `gaplessEndedFlag`).
+    var gaplessPlaybackEnded: Bool {
+        get { gaplessEndedFlag.load(ordering: .acquiring) }
+        set { gaplessEndedFlag.store(newValue, ordering: .releasing) }
     }
 
     // MARK: - "Keep playback on this device"

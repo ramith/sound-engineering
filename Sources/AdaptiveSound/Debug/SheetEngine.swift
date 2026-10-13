@@ -1,6 +1,5 @@
 #if DEBUG
     import Foundation
-    import PlaybackQueueKit
 
     // MARK: - Picture-sheet audio engine
 
@@ -31,24 +30,12 @@
 
         func seek(to _: Double) async {}
 
-        func transportSnapshot() -> TransportSnapshot {
-            TransportSnapshot()
-        }
-
-        func currentSignalPath() -> SignalPathInfo {
-            SignalPathInfo()
-        }
-
-        func currentLoudness() -> LoudnessSnapshot {
-            .unmeasured
+        /// Nothing runs: the empty snapshot, at the graph format's rate.
+        func snapshot() -> EngineSnapshot {
+            EngineSnapshot()
         }
 
         func publishEQ(points _: [Float], isOn _: Bool) {}
-
-        /// The graph format's rate, as the live engine reports before its AU exists.
-        func eqSampleRate() -> Double {
-            48000
-        }
 
         func enumerateOutputDevices() async throws -> [AudioDeviceModel] {
             []

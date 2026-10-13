@@ -189,7 +189,7 @@ extension AudioEngineBridge {
                 // engine is stopped, and `play()` on a stopped engine is a no-op — the re-scheduled
                 // segment would stay queued on the player and play ahead of the next song. Where a
                 // paused song resumes is the view model's resume point, not the engine's.
-                let playIntent = self.resampleQueue.sync { self.enhancedPlayIntent }
+                let playIntent = self.enhancedPlayIntent
                 guard playIntent,
                       let player = self.playerNode,
                       let url = self.lastFileURL
@@ -235,9 +235,7 @@ extension AudioEngineBridge {
     func stopEnhancedPlayback() {
         // No longer intending to play the Enhanced path (deliberate stop, or handing the device to
         // Pure) — so a config/device change must not auto-resume it.
-        // Write under resampleQueue (its designated owner). stopEnhancedResampler() also acquires
-        // resampleQueue.sync internally; that's fine — they are sequential, not nested.
-        resampleQueue.sync { enhancedPlayIntent = false }
+        enhancedPlayIntent = false
         // Bump the generation + drop the session FIRST so no in-flight resampler buffer schedules
         // onto the player we're about to stop (or onto a graph we're about to hand to Pure mode).
         // stopEnhancedResampler also clears onResamplerEOF and onPassthroughEOF so no stale
