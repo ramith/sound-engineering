@@ -1,6 +1,8 @@
 # Adaptive Tone: an AI that reads ahead, sets the tone for each song, and learns from "better / not" (proposal)
 
-*2026-10-10. A proposal only: nothing is built, and no product code was changed. Branch read: `feat/s10-8-eq` @ `8faff1a`.*
+*2026-10-10. A proposal only: nothing is built, and no product code was changed. Branch read: `feat/s10-8-eq` @ `8faff1a` (pre-merge; Sprint EQ then merged as PR #73). File:line references below are as of that commit unless marked "now".*
+
+> **Status (reconciled 2026-10-13):** still a **proposal awaiting a founder decision** — no adaptive-tone code and no `research/adaptive-tone-poc/` exist. It is not on the schedule; the [roadmap](../../product/roadmap.md) lists it under "Proposals awaiting a founder decision" (it overlaps the S15–S17 adaptive thesis). Since it was written, EQ2 shipped (PR #73), so AT1's dependency is met.
 
 **What the founder asked for.** "Plug in a neural network to dynamically read ahead the song we are playing, then suggest the best EQ levels (+ tone) during mid-song play, and that controls the entire playback. We can instruct the network to stick to a particular theme, and give the user a simple control to steer it: 'it sounds better, or not'." The founder also asked for a literature and market study, done systematically, before any proposal.
 
@@ -126,7 +128,7 @@
   - Converged by about 10–20 answers [B:B10].
   - The stored default changes only after at least 2 consistent answers [B:B01, B05].
   - Slow forgetting, because preferences drift [B:B13].
-- **Fair A/B.** EQ3's hold-Compare (`EQViewModel.swift:202-218`) is generalised:
+- **Fair A/B.** EQ3's hold-Compare (`EQViewModel.swift:202-218`; now `EQSession.beginCompare` / `endCompare`, `EQEditKit/EQSession.swift:159-170`) is generalised:
   - curve-vs-curve, not curve-vs-Off;
   - unlabelled and randomised;
   - the same excerpt replayed, with about a 40 ms switch;
@@ -143,7 +145,7 @@
   - Section balances come from the profile's block ranges, with boundaries from a DSP novelty curve over the same spectra. That needs no heavy model. All-In-One and SongFormer are heavy, and SongFormer's weights depend on non-commercial MuQ [D:§RO1].
   - Change only when a section's deviation differs from the track's by a large margin, by ≤1–2 dB per region, a few times per track at most, and only at a boundary [B:§implications 6].
 - **The glide.** Add a `glideSeconds` hint to `Realizer::EqIntent` (`Realizer.h:89-93`), honoured as max(τ rule, hint). The real-time cap is 2 s (`EQModule.cpp:23-24`), and τ = 1.5 s settles 95 % in about 4.5 s.
-  - The loudness-neutral gain rides the same one-pole, so the level can't jump mid-glide [D:§RO8-3]. A section-local −ΔL uses the block-range variant of the predictor.
+  - The loudness-neutral gain rides the same one-pole, so the level can't jump mid-glide [D:§RO8-3]. *(Now: each band glides on its own one-pole (`EQTargets::rampsFor`) and the output gain on its own (`EQParams::gainRampSeconds`) — the hint must hold both to the same glide.)* A section-local −ΔL uses the block-range variant of the predictor.
 - **Must pass first:** the Stage 1c "did it move?" test. That needs about 70 trials, with the 95 % upper bound on correct answers below 0.6 [G:§2.1].
 - **Never** used to flatten contrast the artist made on purpose [B:B29].
 
@@ -154,7 +156,7 @@
   - run in Pure Mode;
   - switch the EQ on (only a user edit does that, `ui-plan.md:206`; the bit-perfect state is Intensity 0 with EQ Off);
   - touch the limiter, the normaliser target, Intensity, crossfeed, the output device or the timeline;
-  - override a band the user moved by hand. Under the future Arbiter it becomes the **content-adaptive contributor**, bound by the lock rule (`architecture.md:161-171`).
+  - override a band the user moved by hand. Under the future Arbiter it becomes the **content-adaptive contributor**, bound by the lock rule (architecture.md §4, "Arbiter arbitration rules (locked)", rule 1).
 - **The render thread** only ramps finished coefficients, as now (ADR-004/006).
 - **Loudness.** Loudness-neutral always, via −ΔL. A shape change must never also be a level change, because louder is preferred by listeners and by the critic models alike [D:M05; B:B23].
 - **Device correction.** When S12/S13 device correction (AutoEq) lands, themes sit *on top* of the corrected response, so taste isn't double-applied to the headphone target [E:§6.8].
@@ -174,13 +176,13 @@
 
 ### 3.7 What exists, and what's missing (repo)
 
-| Need | Status @ `8faff1a` |
+| Need | Status @ `8faff1a` *(now @ `a206107`)* |
 |---|---|
-| Read-ahead analysis of current + next, cached by file identity, never in Pure Mode | **Built** (`TrackLoudnessAnalyzer.swift:20-31`) |
-| Loudness-neutral gain for any curve | **Built** (`Realizer.mm:410, 479`) |
+| Read-ahead analysis of current + next, cached by file identity, never in Pure Mode | **Built** (`TrackLoudnessKit/TrackLoudnessAnalyzer.swift`) |
+| Loudness-neutral gain for any curve | **Built** (now `Realizer.mm:430` `loudness_.onDesign`, and `applyGainChange`) |
 | Presets as Tone vectors; Tone → 31 points | **Built** (`EQBuiltInPreset.swift:62-73`, `EQCurve.swift:43-52`) |
-| One EQ dispatch into the Realizer | **Built** (`EQViewModel.swift:195-198` → `Realizer::setPendingEq`) |
-| EQ2 (bridge cut-over, `EQSafetyClamp` retired, decision-29 ceiling) | Open (`AudioEngineBridge+EQControl.swift:27`) |
+| One EQ dispatch into the Realizer | **Built** (now `EQViewModel.publish()` → `AudioViewModel.publishEQ` → `AudioEngineBridge.publishEQ` → C-ABI `publishEQ` → `Realizer::setPendingEq`, `Realizer.mm:205`) |
+| EQ2 (bridge cut-over, `EQSafetyClamp` retired, decision-29 ceiling) | ~~Open~~ **Built** — EQ2 shipped in PR #73 (`EQSafetyClamp` gone; `Limiting/OutputCeiling.h`; `publishOutputTransport`) |
 | Band-balance summary + reference + decision + cache table | New |
 | Curve-vs-curve, blind, replayed-excerpt Compare | New (generalises EQ3 Compare) |
 | Preference model + durable feedback table | New |
@@ -242,7 +244,7 @@ The design above deliberately uses deterministic DSP measurement, hand-authored 
 
 - **Now (research only; respects the sprint boundaries):** Stage 0 in `research/adaptive-tone-poc/`, then Stage 1 with pre-rendered files in a small blind player. No product code.
 - **If Stage 1 passes:** build after R1 as Phase 2's first, lowest-risk item. It *is* the planned content-adaptive contributor and reuses Sprint EQ's infrastructure. The exact slot relative to S11–S14 is your call at R1 planning. Chunks, in dependency order:
-  - **AT1:** band balance + reference + themes as targets + the bounded suggestion layer + the "Why" line + the cache table (needs EQ2).
+  - **AT1:** band balance + reference + themes as targets + the bounded suggestion layer + the "Why" line + the cache table (needs EQ2 — shipped in PR #73).
   - **AT2:** the blind curve-vs-curve Compare (also a voicing tool).
   - **AT3:** the preference model + durable feedback + per-output offset.
   - **AT4 (gated by 1c):** section glides (`glideSeconds`, section −ΔL).
