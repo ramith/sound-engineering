@@ -1251,6 +1251,11 @@ keyboard / VoiceOver / appearance / grayscale walk, and the purple-accent test).
   - **Lesson:** silent aggregates over Microsoft Teams Audio can't be the system default, and Enhanced follows the
     default; device tests need device-level mute instead. macOS lowered the headphones' volume (69 → 57) while the
     default was switching; the app wrote none. It was restored.
+- **Follow-up (found by the device lane):** a device-loss pause reset the song to 0:00, which mattered now that Enhanced pauses too. The
+  tick's lost-device branch is now a real pause: a `ResumePoint` at the last playhead (`OutputDevicePolicy.resumeAfterDeviceLoss`),
+  the duration kept, and Play continuing there through the normal start (Pure re-decided on the new device). Nothing auto-resumes.
+  OUTDEV-17..19; the harness's LOSS-1..3 hold on Enhanced and Pure. The banner reads "Output device disconnected — playback
+  paused. Press Play to continue."
 - **Delivery:** nine lane PRs (#76–#84) were consolidated into one PR at the founder's ask (a linear cherry-pick of
   every lane, identical to the live-tested combination).
 - **Logged post-R1 (in addition to the breakers' 25):**
