@@ -192,19 +192,28 @@ extension AudioEngineBridge {
     }
 
     /// The engine half of `pauseForDeviceLoss`. On `engineQueue`.
+    ///
+    /// It does NOT stop the player (the disconnect freeze, S10.8 G). The engine has already stopped
+    /// itself on the configuration change the loss caused (AVAudioEngine.h,
+    /// `AVAudioEngineConfigurationChangeNotification`: "the engine stops itself"), so nothing
+    /// renders; and `-[AVAudioPlayerNode stop]` on the dying device waited ~7 s — destroying its
+    /// scheduled file asks the output for its latency (`AVAudioIOUnit::GetDeviceLatency`), which
+    /// waits until macOS has torn the device down — while holding the player's lock. The schedule it
+    /// leaves is cleared at the next Enhanced start, before the engine runs (`startEnhancedPlayback`).
     private func stopPlaybackAfterDeviceLoss() {
         tearDownPure()
-        // Clear the seam hooks and abandon in-flight resampler buffers BEFORE the stop: a stop
-        // fires a live-epoch completion that would otherwise roll a stale seam (review MINOR-3).
+        // Abandon in-flight resampler buffers and pending passthrough completions and clear the seam
+        // hooks, so nothing the left-over schedule does later can roll a seam (review MINOR-3).
         stopEnhancedResampler()
-        if let player = playerNodeRef, player.isPlaying {
-            player.stop()
-        }
+        // If the engine still runs (the loss was seen before AVFAudio's own configuration change),
+        // stop it so nothing plays on a fallback device. That may wait on the HAL as the player did —
+        // here, where nothing the user sees waits on it.
         if let engine = avEngineRef, engine.isRunning {
             engine.stop()
         }
         // Again: a start that ran on this queue in between cleared the flag, and has just stopped too.
         storeInterruptedSignalPath()
+        sampleTransport()
     }
 
     private func storeInterruptedSignalPath() {

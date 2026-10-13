@@ -86,32 +86,39 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Pure-path on-deck arm (S3 F3): open the next source OFF the leaf lock, then arm the
-    /// pre-opened decoder UNDER `withPureEngine` (the fast compat-check + pointer-swap, so a
-    /// concurrent device-loss teardown can't free the engine mid-arm). Split out of setNextTrack so
-    /// each transport path stays within the cyclomatic budget. result: 2 armed / 1 reconfigure / 0 error.
+    /// Pure-path on-deck arm (S3 F3): open the next source on a global queue (the network-slow step,
+    /// kept off every bridge queue), then arm the pre-opened decoder — or clear the deck — on
+    /// `engineQueue`, where every Pure C-ABI call is serialized with the clock, seek and teardown
+    /// (`withPureEngine`). Split out of setNextTrack so each transport path stays within the
+    /// cyclomatic budget. result: 2 armed / 1 reconfigure / 0 error.
     private func setPureNextTrack(_ fileURL: URL?) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global().async {
-                guard let url = fileURL else {
+            guard let url = fileURL else {
+                engineQueue.async {
                     _ = self.withPureEngine { pureModeEngineClearNextTrack($0) }
                     continuation.resume()
-                    return
                 }
+                return
+            }
+            DispatchQueue.global().async {
                 let didAccess = url.startAccessingSecurityScopedResource()
                 defer {
                     if didAccess {
                         url.stopAccessingSecurityScopedResource()
                     }
                 }
-                // Open OFF the leaf lock (the network-slow step); arm UNDER it (fast).
                 guard let decoder = url.path.withCString({ pureModeOpenDecodeSource($0) }) else {
                     logUX("pure setNextTrack '\(url.lastPathComponent)' → error (open failed)")
                     continuation.resume()
                     return
                 }
-                // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder off-lock.
-                if let result = self.withPureEngine({ pureModeEngineArmOpenedNextTrack($0, decoder) }) {
+                // engineQueue never waits on this global queue, so the sync can't deadlock; it holds
+                // only this worker while a transport change finishes.
+                let result = self.engineQueue.sync {
+                    // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder.
+                    self.withPureEngine { pureModeEngineArmOpenedNextTrack($0, decoder) }
+                }
+                if let result {
                     logUX("pure setNextTrack '\(url.lastPathComponent)' → \(Self.pureArmLabel(result))")
                 } else {
                     pureModeDestroyDecodeSource(decoder)
@@ -130,30 +137,8 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Monotonic count of completed gapless seams. The view model polls this at 20 Hz;
-    /// an increase signals that `onDeckURL` became the current track.
-    func trackTransitionCount() -> UInt64 {
-        // Pure path: the HAL GaplessSource owns the seam counter (polling it also reaps a retired
-        // source off-RT — that's why the VM polls every tick). Enhanced path: the resampler counter.
-        // `withPureEngine` reads the counter UNDER stateLock so a concurrent teardown cannot free the
-        // handle mid-call (S6 UAF-1); the reap it triggers joins an already-finished decode thread
-        // (quick) and never re-enters the bridge, so holding the leaf lock across it is deadlock-free.
-        if let count = withPureEngine({ pureModeEnginePollTrackAdvance($0) }) {
-            return count
-        }
-        return resampleQueue.sync { gaplessTransitionCount }
-    }
-
-    /// `true` once the current track ended with no next track on deck (queue exhausted).
-    /// Cleared on the next `startAudio`.
-    func playbackEnded() -> Bool {
-        // `withPureEngine` reads the ended flag UNDER stateLock (S6 UAF-1); nil ⇒ not Pure ⇒
-        // fall through to the Enhanced flag.
-        if let ended = withPureEngine({ pureModeEnginePlaybackEnded($0) == 1 }) {
-            return ended
-        }
-        return resampleQueue.sync { gaplessPlaybackEnded }
-    }
+    // The seam count and the end flag reach the view model through the transport snapshot
+    // (`transportSnapshot()`, AudioEngineBridge+TransportClock), sampled off the main thread.
 
     // MARK: - Arm helpers (called on resampleQueue)
 

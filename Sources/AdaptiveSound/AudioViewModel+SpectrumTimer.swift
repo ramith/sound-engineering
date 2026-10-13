@@ -54,8 +54,11 @@ extension AudioViewModel {
     /// (e.g. when its view is hidden) can never stall transport or auto-advance.
     @MainActor
     func tickTransport() {
+        // The engine's transport as its clock last sampled it — a copy, so the tick never waits on
+        // the player or the hardware (the disconnect freeze, S10.8 G).
+        let transport = engine.transportSnapshot()
         // Poll the playhead + loudness + signal path every tick.
-        pollPlayhead()
+        pollPlayhead(transport)
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
         // accrues only while playing → a pause/stall/seek never mis-counts).
         accruePlayThrough()
@@ -82,7 +85,7 @@ extension AudioViewModel {
 
         // --- Gapless auto-advance poll ---
         if isPlaying {
-            let currentCount = engine.trackTransitionCount()
+            let currentCount = transport.transitionCount
             if currentCount > lastTransitionCount {
                 // A gapless seam completed: the on-deck track is now current.
                 // Intentional: we advance by exactly ONE track per tick even if the count
@@ -92,7 +95,7 @@ extension AudioViewModel {
                 // This keeps selectedTrackIndex in sync with pendingNextIndex at all times.
                 lastTransitionCount = currentCount
                 handleTrackTransition()
-            } else if engine.playbackEnded() {
+            } else if transport.ended {
                 // Current track ended with no GAPLESS continuation. If a track is still queued
                 // (a Pure-path rate/format transition that couldn't be armed for a seamless seam),
                 // advance to it with a fresh start — a brief, honest reconfigure gap. Otherwise the
@@ -127,13 +130,13 @@ extension AudioViewModel {
     /// overwritten by the engine's last ticks (S10.8 G). While playing it follows the engine. Only a
     /// genuine stop (not playing, not paused) zeroes it.
     @MainActor
-    private func pollPlayhead() {
+    private func pollPlayhead(_ transport: TransportSnapshot) {
         if let resumeAt = pausedResumePosition {
             if playbackPosition != resumeAt {
                 playbackPosition = resumeAt
             }
         } else if isPlaying {
-            playbackPosition = engine.currentPlaybackPosition() ?? playbackPosition
+            playbackPosition = transport.position ?? playbackPosition
         } else if playbackPosition != 0 {
             playbackPosition = 0
         }
