@@ -209,11 +209,12 @@ extension LibraryModel {
             startFullMetadataPass(store, generation: result.generation)
         } catch is CancellationError {
             scanProgress = nil
-        } catch let unreachable as RootUnreachableError {
-            // Empty-walk safety guard tripped (unmounted/zombie volume or deleted root): the
-            // rows are preserved, NOT swept. Silent like cancellation — a background non-event.
-            logUX("performAddWalk: root unreachable (folder \(unreachable.folderID); "
-                + "\(unreachable.storedRowCount) rows preserved) — sweep refused")
+        } catch let refusal as SweepRefusal {
+            // The walk was not evidence of what is gone (the root vanished or is another drive, or the
+            // walk was incomplete or empty): the rows are preserved, NOT swept. Silent like
+            // cancellation — a background non-event.
+            logUX("performAddWalk: sweep refused (folder \(refusal.folderID): \(refusal.reason); "
+                + "\(refusal.storedRowCount) rows preserved)")
             scanProgress = nil
         } catch {
             scanProgress = nil

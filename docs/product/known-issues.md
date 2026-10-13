@@ -50,6 +50,12 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 ---
 
+## LIB-VOL-1 — A music folder is bound to its drive by volume UUID (R1 sweep-evidence fix)
+
+**Status:** OPEN (accepted limitations). A folder on a volume that reports no UUID (some network and FAT volumes) stays unbound, so another such volume at its path is still walked and swept as before; and a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7") stays paused, its songs kept but not updated, until the user removes and re-adds the folder (`LibraryStore+Roots`, `SweepRefusal`).
+
+---
+
 ## ENH-002 — UI loudness readout meter is L/R-only for >2-channel device output
 
 **Status:** OPEN (enhancement; UI-only, low priority). Surfaced by the S6 full-team review (MC-1).
