@@ -1298,3 +1298,56 @@ pointer. The full gate ran on every lane PR's CI and runs again on main.
 6. **Live device tests:** silent aggregates over a loopback driver can't be the system default, and Enhanced follows the
    default. Device-level mute is the safe method. macOS changed the headphones' volume during default switches;
    restore it afterwards.
+
+### Founder final check and the disconnect freeze (2026-10-13)
+
+**What the founder found:** the disconnect test passed functionally (it paused, kept the place, showed the banner),
+but the app **froze for 3–7 s** (a beach ball; "I thought it crashed").
+
+**The proof:** `sample` of the live app while the founder reproduced it.
+- macOS held the dying device's lock for about 7 s during teardown.
+- Our device-loss `player.stop()` waited on it in `AVAudioIOUnit::GetDeviceLatency` while holding AVFAudio's
+  **engine-wide** lock.
+- The main thread's 20 Hz tick then waited on that lock, in `-[AVAudioPlayerNode isPlaying]`.
+
+**An independent audit, walled off from the fix** (`docs/architecture/main-thread-audio-audit-2026-10.md`), found
+five main-thread paths into the engine, two of them on the tick. One was the EQ design-rate `auAudioUnit` read on
+every tick. It also found that a Pure seek could leave Pure silent.
+
+**The fix (PR #86):**
+- one `EngineSnapshot` / `TransportSnapshot` the main thread reads, published by a transport clock that runs only
+  while something plays;
+- numbered transport requests (epochs), so stale samples are ignored;
+- one owner of the AU handle; a leaf-only `stateLock`;
+- pause before any HAL read on device loss;
+- Master Gain's HAL calls off main, latest value wins;
+- Pure resume starts at its offset (`startAt:`);
+- a whole-app semgrep guard, and the `make main-thread-stall` gate self-test;
+- the Pure seek holds the render (`RenderGate`) instead of tearing the output down, and a failed seek is surfaced;
+- the threading rules in `architecture.md`.
+
+**Adversarial review:** three independent reviewers, then one revision and one verify. Evidence:
+`docs/architecture/evidence/main-thread-stall-2026-10/`.
+- The breaker's lock-hold harness: every main-thread call ≤0.91 ms during a 2.5 s hold.
+- All three reviewers found the stale-`ended` regression independently (it could stop the album at a Pure rate change);
+  the breaker also found a first-play crash. Both were fixed in the revision. Verify: **SHIP**.
+
+**Founder re-test:** "Fix is working". `sample`: macOS's teardown still took about 8 s in the background, and the main
+thread showed zero audio frames and no wait ≥20 ms across 6 minutes, covering the disconnect, Pure seeks, a pause /
+resume and a seek storm. **Merged** as f115cca.
+
+**The founder decided** the broader concurrency cleanup is needed but parked: "freeze fix only, decide later". The audit
+is its starting map.
+
+**Logged post-R1:**
+- the Enhanced playhead's latency compensation and seam domains (the track-B gain lands early on the resampler path);
+- a gap at the 48 kHz seam;
+- a narrow false seam on a Pure → Enhanced restart;
+- a `SpectrumDoubleBuffer` TSan race;
+- a fast play-then-pause during a start is lost;
+- port the breaker harness's engineQueue-holder and first-play modes into the self-test, and tighten it to <5 ms;
+- `accruePlayThrough` counts stalled ticks.
+
+**Retro note:** a freeze is invisible to every gate we had; only a human at the device found it, and only `sample`
+explained it. Live checks that *disconnect* real hardware belong in every audio-device change. The main-thread rule is
+now enforced (the guard and the self-test).
