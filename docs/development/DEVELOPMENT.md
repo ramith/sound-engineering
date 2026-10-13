@@ -8,22 +8,31 @@ The strict gate (`make strict-gate`) and the pre-commit hook require the full to
 Missing tools are now a **hard failure**, not a silent skip — install everything:
 
 ```bash
-# Swift format + lint
-brew install swiftformat swiftlint
+# Swift format + lint — VERSION-PINNED: SwiftFormat 0.63.0, SwiftLint 0.65.1 (the pins live in
+# scripts/strict-gate.sh; any other version fails its tool-skew guard). Install exactly those,
+# e.g. the release binaries .github/workflows/strict-ci.yml downloads.
 
-# C++ static analysis (keg-only clang-tidy, MAJOR-PINNED — see "known, accepted edges"
-# below) + supplementary checker
+# C++ static analysis (keg-only LLVM: clang-tidy MAJOR-PINNED to 23 — see "known, accepted
+# edges" below — and clang-format) + supplementary checker
 brew install llvm@23 cppcheck
+export PATH="/opt/homebrew/opt/llvm@23/bin:/opt/homebrew/opt/llvm/bin:$PATH"   # as CI does
 
-# Pattern-based safety bans (Swift force-try/cast; C++ unbounded string funcs)
+# Pattern-based bans (.semgrep.yml: Swift force-try/cast, the main-thread / engine-bridge rules,
+# C++ unsafe string funcs + thread detach, the UI design-system rules, …)
 brew install semgrep
 
-# clang-format ships with Xcode/LLVM. Verify the whole set:
-swiftformat --version
-swiftlint --version
+# Dead-code gate (REQUIRED by strict-gate) and FFmpeg (recommended: clang-tidy then also
+# analyses the FFmpeg decode branch; the app uses it at runtime for formats Apple can't open)
+brew install peripheryapp/periphery/periphery ffmpeg
+
+# Verify the whole set (leaks(1) comes with the Xcode Command Line Tools):
+swiftformat --version   # 0.63.0
+swiftlint --version     # 0.65.1
 clang-format --version
-/opt/homebrew/opt/llvm/bin/clang-tidy --version   # must report the pinned major (23)
+clang-tidy --version    # must report the pinned major (23)
 semgrep --version
+periphery version
+xcrun --find leaks
 cppcheck --version   # optional: strict-gate runs a supplementary pass if present
 ```
 
@@ -42,17 +51,11 @@ types you staged. `git commit --no-verify` is the deliberate escape hatch; the r
 
 ### Automatic Formatting
 
-**C++ Code**
 ```bash
-clang-format -i Sources/AudioDSP/**/*.{h,cpp}
+make format   # SwiftFormat over Sources + Tests, clang-format over every .h/.hpp/.cpp/.cc/.mm
 ```
 
-**Swift Code**
-```bash
-swiftformat Sources/AdaptiveSound/
-```
-
-Both formatters run automatically on save in VS Code and are enforced via pre-commit hooks.
+Both formatters are enforced by the pre-commit hook and `make strict-gate`. In VS Code, C++ formats on save (cpptools → clang-format, `.clang-format`). The repo's `.vscode/settings.json` also formats Swift on save with the Swift extension, which uses Apple's swift-format, **not** SwiftFormat — the two disagree (see the `make format` note in the `Makefile`), so rely on the hook / `make format` for Swift.
 
 ### Pre-Commit Hooks
 
@@ -81,11 +84,12 @@ Three tiers, fastest first:
 |---------|------|-------|--------------|
 | pre-commit hook | every `git commit` | staged files | swiftformat + clang-format (auto-fix), swiftlint (errors block), clang-tidy |
 | `make lint` | anytime / editor | whole repo, no mutation | swiftformat `--lint`, `swiftlint --strict`, `clang-format --dry-run --Werror`, semgrep |
-| `make strict-gate` | before PR / merge | whole repo | `make lint` + suppression policy + cppcheck + **clang-tidy fail-on-any** over first-party C++ (production + `Tests/*.cpp`) + `swift build` + `swift test` + `make gate` + **null-test source-list drift-guard** + **`-O2 -Werror` release compile** (`build-null-test.sh --release-strict`) + ASan/UBSan/TSan |
+| `make strict-gate` | before PR / merge | whole repo | tool check + version pins → `make lint` → suppression policy → the migrator never-erase and playlist reference-add guards → Kit-purity / Dynamic-Type guards → cppcheck (if installed) → **clang-tidy fail-on-any** (`Sources/AudioDSP` + `Sources/AudioDSPTestBridge` + `Tests/**`) → **Periphery** (dead code) → `swift build` → `swift test` → `make gate` → **`make main-thread-stall`** → **null-test source-list drift-guard** → **`-O2 -Werror` release compile** (`build-null-test.sh --release-strict`) → ASan/UBSan/TSan (`make sanitize` / `tsan` / `sanitize-library-store`) → **`make leak-check`** (`scripts/strict-gate.sh`) |
 
 `make ci` == `make strict-gate`; the CI workflow (`.github/workflows/strict-ci.yml`) runs the
-identical command on a self-hosted macOS 26 / Xcode 26 runner, so local and CI cannot diverge.
-(GitHub-hosted `macos-latest` cannot build this package until it ships Tahoe/Xcode 26.)
+identical command on GitHub-hosted **`macos-26`** (Apple Silicon, Xcode 26 — pinned, not
+`macos-latest`), so local and CI cannot diverge. Release builds (`.github/workflows/release.yml`,
+on a `v*` tag) use the same runner.
 
 `make format` auto-formats in place (SwiftFormat + clang-format) — local convenience, never CI.
 
@@ -94,25 +98,29 @@ identical command on a self-hosted macOS 26 / Xcode 26 runner, so local and CI c
 Every lint/analysis suppression in first-party code must be **accountable**, enforced by
 `scripts/check-suppressions.sh` (part of `make strict-gate`). Metadata rides on the same
 comment line as the directive (clang-tidy/semgrep ignore trailing text) — no multi-line
-blocks. Two classes:
+blocks. *Exception:* for `swiftlint:disable…`, put the PERMANENT/TEMP + reason on the comment
+line immediately before it (SwiftLint reads trailing tokens as rule ids). Two classes:
 
 - **PERMANENT** — an architectural necessity that does not expire (C-ABI `reinterpret_cast`,
-  CoreAudio `AudioObjectPropertyAddress[]` arrays, opaque-handle boundaries, `NSLog` varargs).
+  CoreAudio `AudioObjectPropertyAddress[]` arrays, opaque-handle boundaries, C11 ABI buffers).
+  *(The old `NSLog`/`fprintf` varargs sites are gone — `include/AsLog.h` replaced them.)*
   Carries a reason, **no** expiry.
 - **TEMP** — time-boxed tech debt. Requires `expiry=YYYY-MM-DD` (fails once past) **or**
   `issue=<#id|url>`.
 
 ```cpp
-// NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) PERMANENT reason="NSLog is the platform log API"
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays) PERMANENT reason="C11 ABI name buffer: std::array unavailable in ISO C11"
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays) PERMANENT reason="CoreAudio AudioObjectPropertyAddress[]"
 // nosemgrep: cpp-no-thread-detach PERMANENT reason="reviewed boundary; joined at teardown"
-// NOLINTNEXTLINE(some-check) TEMP reason="works around SDK bug" expiry=2026-09-01
+// NOLINTNEXTLINE(bugprone-narrowing-conversions) TEMP reason="works around SDK bug" expiry=2027-03-01
 ```
 
 Rules: rule-id mandatory (no blanket `// NOLINT`), exactly one of PERMANENT|TEMP, a
 `reason="…"` of ≥12 chars, owner resolved from the path→owner map in the script,
-`NOLINTBEGIN` balanced by `NOLINTEND` (same rules), and **no suppression of a rule already
-globally disabled in `.clang-tidy`** (dead → remove it). Fix the code first; suppress only a
+`NOLINTBEGIN` balanced by `NOLINTEND` (same rules), and **every NOLINT'd rule must be in the
+effective clang-tidy enabled set for that file's directory** (honouring the `Tests/` and
+`Sources/AudioDSPTestBridge/` `.clang-tidy` overrides) — a disabled, never-enabled or misspelled
+rule is a dead suppression and fails (remove it). Fix the code first; suppress only a
 genuine, documented necessity — never to quiet the gate.
 
 ### TODO policy
@@ -151,117 +159,51 @@ The C++ static-analysis gate is deliberately strict; these are the known, accept
   real FP, prefer a **narrowly-scoped `#pragma clang diagnostic push/ignored/pop`** carrying the
   suppression-policy comment (owner / reason / expiry) over a value-changing zero-init or clamp on
   the audio path — silencing a warning must never alter DSP output.
-- **Optional deferred polish** (nice-to-have, not blocking): move the off-RT-path meter-peak loop
-  in `LoudnessMeterBridge.mm` into a null-tested helper so it rides the `-O2`/sanitizer gates
-  instead of the live-only allowlist. (The former ARC/MRC-parity item — `-fobjc-arc` on the
-  null-test `.mm` compile — is now done; `build-null-test.sh` compiles Obj-C++ under ARC to match
-  the SwiftPM build.)
+- *(Done: the meter bridge — now `Loudness/LoudnessMeterBridge.cpp` — is compiled by the null
+  test, so it rides the `-O2`/sanitizer gates (`Loudness_MeterBridge_TruePeak`); its entry in the
+  `strict-gate.sh` live-only allowlist comment is now redundant. The former ARC/MRC-parity item —
+  `-fobjc-arc` on the null-test `.mm` compile — is also done.)*
 - **`ADAPTIVESOUND_TEST_DATA_DIR` is defined in two places.** `scripts/lib/cxx-analysis-flags.sh`
   (`cxx_test_extra_flags`, for analysis) and `scripts/build-null-test.sh` (the compile) each define
   it independently; they agree today (both `<repo>/test-data`). A clean single-source dedup isn't
-  possible without `build-null-test.sh` also inheriting `cxx_test_extra_flags`' unrelated flags
-  (libebur128 `-I`, `ADAPTIVE_FIXTURES_DIR`) that it neither wants nor uses, so it's left as a
-  low-risk known duplication.
+  possible without `build-null-test.sh` also inheriting `cxx_test_extra_flags`' `ADAPTIVE_FIXTURES_DIR`,
+  which the null test doesn't use (the libebur128 `-I` is likewise passed in both places), so it's
+  left as a low-risk known duplication.
 
 ---
 
 ## Swift Control Plane Best Practices
 
-Swift runs on the **UI/control plane** (not the audio render thread), so the constraints are different from C++. However, care is still needed when communicating with the C++ audio engine.
+Swift runs on the **UI/control plane** (not the audio render thread), so the constraints are different from C++. The binding rules for reaching the audio engine are the **[threading rules in architecture.md](../architecture/architecture.md#threading-rules-app--engine)** (Sprint G, after the disconnect freeze); this section is the practical summary. *(Rewritten 2026-10-13 to match the code: the earlier examples — an `ObservableObject` view model, a `weak var audioEngine: AudioEngineProtocol?`, an `@Atomic` property wrapper — described APIs this codebase does not have.)*
 
-### MUST DO (Swift/UI Thread Safe)
+### MUST DO
 
-✅ **Use Sendable types for thread-safe communication**
+✅ **Reach the engine only through `AudioPlaybackEngine`, injected as `any AudioPlaybackEngine`.** The view model holds it as a plain injected `let engine` (`AudioViewModel.swift`; a mock conforms in `Tests/AudioViewModelTests/MockAudioEngine.swift`). Outside the bridge's own files (`AudioEngineBridge*.swift`, `PureModeSession.swift`) never name the concrete `AudioEngineBridge` — semgrep `main-thread-no-concrete-bridge` fails the gate.
+
+✅ **Read engine state from one snapshot.** `engine.snapshot()` returns an `EngineSnapshot` (transport, signal path, loudness, EQ design rate) that the engine publishes from its own queues; the 20 Hz tick reads it and nothing else.
+
+✅ **Send intents as hand-offs.** The publishes (`publishEQ`, `publishIntensity`, `publishCrossfeed`, `publishOutputTransport`) borrow the effects AU without waiting; `publishMasterGain` and `requestDeviceVolume` queue the work (latest wins); start / stop / seek are `async` and numbered (`nextTransportEpoch()`), so a stale snapshot is ignored (`TransportSnapshot.isCurrent(for:)`).
+
+✅ **UI state is `@MainActor @Observable`.**
 ```swift
-// Define a Sendable param message
-struct AudioGainMessage: Sendable {
-    let newGain: Float
-    let timestamp: UInt64
-}
-
-// Send to audio engine via lock-free bridge
-audioEngine.setGain(message)
-```
-
-✅ **Use `@MainActor` for UI updates**
-```swift
-@MainActor
-class AudioViewModel: ObservableObject {
-    @Published var status = "Initializing"
-
-    // Must run on main thread
-    func updateStatus(_ newStatus: String) {
-        self.status = newStatus
+@MainActor @Observable
+final class AudioViewModel {
+    var intensity: Float = 0.20 {
+        didSet { /* clamp into a LOCAL, never re-assign `intensity` here (infinite recursion) */ }
     }
+    let engine: any AudioPlaybackEngine
 }
 ```
 
-✅ **Keep bindings simple — observe, don't mutate**
-```swift
-@State private var gain: Float = 1.0
+### MUST NOT
 
-var body: some View {
-    Slider(value: $gain, in: 0...1)
-        .onChange(of: gain) { oldVal, newVal in
-            // Pass to audio engine off-main-thread
-            Task.detached {
-                await audioEngine.setGain(newVal)
-            }
-        }
-}
-```
+❌ **Touch AVFAudio engine objects, the CoreAudio HAL, an AU or the Pure C-ABI from the app** — not even `isPlaying`, `volume` or `.auAudioUnit`: each takes AVFAudio's engine-wide lock, which a dying device can hold for seconds (the 3–7 s disconnect freeze). Semgrep `main-thread-no-audio-hardware` fails the gate.
 
----
+❌ **`.sync` onto a bridge queue, or take a lock held across engine work, from the main thread.** Add a snapshot field or an async / queued engine method instead — and register any new synchronous `AudioPlaybackEngine` member with the self-test's `EntryProbe` (`Debug/MainThreadStallSelfTest.swift`), which `make main-thread-stall` runs in the strict gate (no main-thread entry may take 25 ms while the engine lock is held for 2.5 s).
 
-### MUST NOT (Control Plane Mistakes)
+❌ **Put a CoreAudio property listener on the main queue** (semgrep `coreaudio-listener-not-on-main`) or a `@MainActor` declaration in the bridge's files (`bridge-not-main-actor`).
 
-❌ **Synchronous calls to audio engine (can block rendering)**
-```swift
-// BAD — blocks main thread waiting for audio thread
-let status = audioEngine.getStatusSync()  // slow!
-```
-
-✅ **GOOD — use async/await or atomics**
-```swift
-// GOOD — non-blocking, uses atomic reads
-let status = audioEngine.getStatusAsync()
-```
-
----
-
-❌ **Holding strong references to audio objects from UI**
-```swift
-// BAD
-class ViewController {
-    let audioEngine = AudioEngine()  // strong ref, circular?
-}
-```
-
-✅ **GOOD — weak or unowned references**
-```swift
-class AudioViewModel: ObservableObject {
-    weak var audioEngine: AudioEngineProtocol?
-    // Passed in by dependency injection
-}
-```
-
----
-
-❌ **Data races on bridged types**
-```swift
-// BAD — C++ object accessed from multiple threads unsafely
-let audioBuffer = audioEngine.getBuffer()  // can be accessed by render thread too!
-audioBuffer[0] = 1.0  // data race!
-```
-
-✅ **GOOD — use synchronization primitives**
-```swift
-// Use atomics or lock-free queues for parameter updates
-@Atomic private var targetGain = 1.0f
-
-// C++ reads: targetGain.load()
-// Swift writes: targetGain.store(newValue)
-```
+❌ **Share mutable state with the render thread from Swift.** Parameters cross into C++ through the C-ABI (`Sources/AudioDSP/include/*.h`) and the Realizer's published `TargetState` snapshot; the render thread never reads Swift objects.
 
 ---
 
@@ -412,7 +354,7 @@ for silence / bypass / coefficient-change detection.
 
 **Release builds stay PERMISSIVE on purpose** (`-Wall -Wextra` + the three new warnings, but
 **no** `-Werror`). Rationale: `-O2`-only, toolchain-version-dependent warnings
-(`-Wmaybe-uninitialized`, `-Wstringop-overflow`, …) must never brick a shippable /
+(`-Warray-bounds`, `-Wconditional-uninitialized`, …) must never brick a shippable /
 notarization build with no code change. Debug's full `-Werror` already gates everything
 except optimization-only diagnostics before release is ever built. (The `AudioDSPTestBridge`
 target is intentionally lighter — `-Wall -Wextra`, no `-Werror` — because the stub module
@@ -453,7 +395,7 @@ Runs automatically on pre-commit. Catches:
 
 **Run manually:**
 ```bash
-clang-tidy Sources/AudioDSP/EQ/EQModule.mm -- -x objective-c++ -std=gnu++2b -fobjc-arc -fblocks -I Sources/AudioDSP/include
+clang-tidy Sources/AudioDSP/EQ/EQModule.cpp -- -x c++ $(source scripts/lib/cxx-analysis-flags.sh && cxx_analysis_core_flags)
 ```
 
 **Configure rules** in `.clang-tidy` (already set up with audio-safe subset).
@@ -466,29 +408,29 @@ clang-tidy Sources/AudioDSP/EQ/EQModule.mm -- -x objective-c++ -std=gnu++2b -fob
 ```bash
 swift build -c debug
 ```
-- All warnings enabled & fail the build
-- clang-tidy runs (catches UB, threading bugs)
+- All warnings enabled & fail the build: C++ `-Werror`, and Swift warnings are errors (`treatAllWarnings(as: .error)`, debug only)
+- clang-tidy is **not** part of `swift build` — it runs in the pre-commit hook and `make strict-gate`
 - Optimizations off (faster compile, slower runtime—OK for dev)
 
 ### Release Build (Optimized)
 ```bash
 swift build -c release
 ```
-- Some warnings permissive (smaller, faster binary)
-- clang-tidy still catches critical issues
-- `-O3` optimization on C++ (real-time safe)
+- Warnings permissive on purpose (see "Compiler Flags" above); the strict gate's `--release-strict` null-test compile is where `-O2` diagnostics are made fatal
+- SwiftPM's default release optimization on C++ (no `-O` level is set in `Package.swift`)
 
 ### Run with AddressSanitizer (Catch Memory Bugs)
 ```bash
-# To enable ASAN, add to Package.swift cxxSettings:
-.unsafeFlags(["-fsanitize=address"], .when(configuration: .debug))
-
-# Then build & run:
-swift build -c debug
-swift run AdaptiveSound
+make sanitize                # the C++ null test under ASan + UBSan
+make tsan                    # the C++ null test under ThreadSanitizer
+make sanitize-library-store  # swift run --sanitize=address VerifyLibraryStore
+make leak-check              # leaks(1) over the C-ABI handle lifecycles
+# ad hoc, any target:
+swift run --sanitize=address <target>
 ```
 
-ASAN reports memory leaks, buffer overruns, use-after-free, etc. in real-time.
+ASan reports buffer overruns, use-after-free, double-free, etc. **Apple-Silicon ASan ships no
+LeakSanitizer** — leaks are covered by `make leak-check` (leaks(1)).
 
 ---
 
@@ -526,7 +468,7 @@ ASAN reports memory leaks, buffer overruns, use-after-free, etc. in real-time.
 
 **Check the `.clang-tidy` file** — Some rules are strict intentionally. If a warning seems spurious:
 1. Review the guideline (usually there's a reason)
-2. Use `// NOLINT(rule-name)` comment **sparingly** — document WHY
+2. Suppress only per the **Suppression policy** above — `// NOLINTNEXTLINE(rule) PERMANENT|TEMP reason="…"`; a blanket or unannotated `// NOLINT` fails the gate
 3. Discuss in PR before merging
 
 ---
@@ -539,6 +481,6 @@ ASAN reports memory leaks, buffer overruns, use-after-free, etc. in real-time.
 
 ---
 
-**Last Updated:** 2026-07-03 (strict build guardrails: `make strict-gate`, suppression policy, C++23)
+**Last Updated:** 2026-10-13 (product council: reconciled to the code — tool pins + Periphery, strict-gate contents, `macos-26` hosted CI, the Swift engine-access rules after Sprint G, sanitizer targets) · *previous: 2026-07-03, strict build guardrails*
 
 **Maintained By:** AdaptiveSound Team
