@@ -61,6 +61,23 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 
 ---
 
+## Planned, placement pending — Agent control surface (MCP) *(founder, 2026-10-13)*
+
+**Expose ALL of the player's functionality through a local [MCP](https://modelcontextprotocol.io) server**, so an
+LLM client (Claude Desktop / Claude Code, the open-source agent [OpenClaw](https://bigdataboutique.com/what-is-openclaw),
+or any MCP client) can drive AdaptiveSound: transport, queue, library search and browse, playlists, EQ and sound
+settings, output devices and Pure Mode, and read the player's state.
+
+- **One command layer, two front ends.** MCP tools call the SAME command / state API as the UI, never a second
+  path. That makes it depend on the 2026-10 council's transport command / reducer and engine-event work.
+- **Local and consented.** Off by default; enabled in Settings; local only (stdio or localhost); per-client scopes
+  (read-only / control / library-modify); destructive operations confirmed; hearing-safety clamps enforced
+  server-side for every client.
+- **Placement:** decided by the 2026-10 council, after the command-layer refactor wave. Backlog:
+  [EP-MCP](backlog.md#ep-mcp--agent-control-surface-mcp).
+- **Relationship to the 2026-07-12 cut:** in-app conversational tuning stays cut. This is an *external* control
+  surface. An LLM adjusting the EQ through MCP is a consequence the founder confirms explicitly (council decision list).
+
 ## Deferred / out-of-window
 
 - **Removed from scope (2026-07-12, founder decision):** **natural-language / conversational tuning** and **hearing personalization** (hearing-test → profile → compensation) were cut from the vision entirely — not deferred, removed. May be re-added later. Prior specs are in git history.
