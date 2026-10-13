@@ -35,6 +35,10 @@ struct AdaptiveSound: App {
             // `make songs-perf`: `-ASSongsPerf` times the Songs list's keys offscreen and exits — the
             // same no-lock, no-store, no-device rules as the sheets.
             SongsPerfRun.runIfRequested()
+            // `make main-thread-stall`: `-ASMainThreadStall <mode>` holds AVFAudio's engine-wide lock
+            // on an offline engine and times every main-thread entry, then exits — the same no-lock,
+            // no-store, no-device rules as the sheets.
+            MainThreadStallSelfTest.runIfRequested()
         #endif
         // Where everything persists, decided once (a debug `-ASTestLibrary` launch swaps in the
         // isolated test library), then injected — nothing below picks a path or defaults of its own.

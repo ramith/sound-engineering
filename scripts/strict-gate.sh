@@ -286,6 +286,12 @@ swift test
 step "make gate (C++ null test + VerifyAUGraph + VerifyLibraryStore)"
 make gate
 
+# S10.8 G (the disconnect freeze): hold AVFAudio's engine-wide lock for 2.5 s on an OFFLINE engine
+# (no device opened, nothing heard, no library, a private defaults suite) and fail if any
+# main-thread entry into the engine waits on it. Headless; ~15 s for the four modes.
+step "Main-thread stall self-test (no main-thread entry may wait on the engine lock)"
+make main-thread-stall
+
 # --------------------------------------------------------------------------- null-test coverage guard
 step "Null-test source-coverage drift guard"
 # The null test compiles the PURE-DSP kernels but DELIBERATELY excludes the CoreAudio/AU/
