@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import OutputDeviceKit
+import PlaybackQueueKit
 
 // MARK: - AudioViewModel transport + spectrum timers
 
@@ -59,15 +61,20 @@ extension AudioViewModel {
         accruePlayThrough()
         pollEngineReadouts()
 
-        // The output device disappeared (e.g. Bluetooth disconnected) and the engine paused —
-        // reflect it in the UI and prompt the user to pick a device.
-        if signalPath.interrupted, isPlaying {
-            logUX("device-loss interrupt — stopping playback")
+        // The output device disappeared (e.g. headphones switched off) and the engine paused — a
+        // real pause, like `pause()`: the song's place is kept (the last playhead read while it
+        // played; the engine reports none once its device is gone), the footer and duration stay,
+        // and Play resumes there on the output the pill now shows, through the normal start (Pure
+        // or Enhanced decided again for that device). Nothing resumes it but Play (founder: pause
+        // on disconnect, never auto-jump).
+        if signalPath.interrupted,
+           let resumeAt = OutputDevicePolicy.resumeAfterDeviceLoss(
+               isPlaying: isPlaying, lastPlayhead: playbackPosition, duration: duration
+           ) {
+            logUX("device-loss interrupt — paused at \(secs(resumeAt))s")
+            resumePoint = selectedSlotID.map { ResumePoint(slot: $0, seconds: resumeAt) }
             isPlaying = false
-            playbackPosition = 0
-            // Copy is precise: selecting a device does NOT auto-resume (and the playhead was reset
-            // above), so the user must press Play — don't promise "resume" (architect gate).
-            errorMessage = "Output device disconnected — playback paused. Select a device, then press Play."
+            errorMessage = "Output device disconnected — playback paused. Press Play to continue."
             // Clear pending on-deck track; device loss invalidates the gapless queue.
             pendingNextIndex = nil
             Task { await engine.setNextTrack(nil) }
