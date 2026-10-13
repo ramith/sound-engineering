@@ -5,7 +5,7 @@
 **Date**: 2026-06-13
 **Owner**: Product (ramith@wso2.com)
 **Phase**: Concept-era vision doc (2026-06-13), **reframed 2026-07-05 to lead with the player-maturity-first thesis** (see §1 / §3 / §4). Build is well underway — current status & sprint sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) + [`backlog.md`](backlog.md). The vision, personas, KPIs, locked decisions, and risks remain the north star — now **sequenced behind the player, not abandoned**; treat phase/status specifics here as historical.
-**Reconciled to the code:** 2026-10-13 (product council), against `main` at a206107 — **R1 shipped as v1.0.0-alpha** (PR #87; [release notes](../releases/v1.0.0-alpha.md)). The vision text below is unchanged; where the code now differs from a locked decision or a feature note, an *As-built* annotation says so and names the decision that changed it. Per-requirement status: [requirements.md §3.0](requirements.md#30-requirement-status-matrix). Per-story status and forward links: [backlog.md](backlog.md). Open defects: [known-issues.md](known-issues.md).
+**Reconciled to the code:** 2026-10-13 (product council), against `main` at a206107 — **R1 = v1.0.0-alpha — release in progress** (the release PR #87 is merged; the `v1.0.0-alpha` tag waits on a green CI — [sprint-plan §Status](../sprints/sprint-plan.md#status); [release notes](../releases/v1.0.0-alpha.md)). The vision text below is unchanged; where the code now differs from a locked decision or a feature note, an *As-built* annotation says so and names the decision that changed it. Per-requirement status: [requirements.md §3.0](requirements.md#30-requirement-status-matrix). Per-story status and forward links: [backlog.md](backlog.md). Open defects: [known-issues.md](known-issues.md).
 
 > **⚠️ Two "Phase" vocabularies — do not conflate.** This PRD's **Phase 0 / 1 / 1.5 / 2** is the *product-capability* axis: player MVP → mix-based core → stem object engine → system-wide. The **roadmap / sprint-plan** use **Phase 1 / Phase 2** for the *execution / release* axis: player-maturity parity → the differentiation pivot (S15–S18). They are **not** the same numbering. Rosetta: this PRD's "Phase 1 mix-core" and "Phase 1.5 stem engine" ship across execution **S15–S18** (roadmap Phase 2); this PRD's "Phase 2 system-wide" is **"Won't, this horizon"** on the execution roadmap. When in doubt, execution sequencing is authoritative in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).
 
@@ -31,7 +31,7 @@ These were confirmed with the founder and supersede any conflicting text below. 
 | LD-6 | **Ambient mic adaptation** | **On-demand sampling** (user taps "adapt to my environment"; mic samples ~3 s, then released). No always-on mic. | P0-11, P1-4 |
 | LD-7 | **HRTF** | **BRIR-first** (see LD-14 — BRIR supersedes the generic-HRTF-only approach in LD-7 v0.1). Default binaural experience = BRIR (HRTF + early reflections + late reverb). Dry HRTF = "minimal" fallback mode. SADIE-II (Apache-2.0) remains the anechoic HRIR core inside the BRIR. | P1-1 |
 | LD-8 | *Withdrawn 2026-07-12* | Natural-language / conversational tuning removed from scope (founder decision); may be re-added. |
-| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. OSS license deferred to post-MVP. *As-built (2026-10-13): the repository is public and R1 is released, with no licence file yet — see §6 and backlog US-REL-02.* | Whole doc |
+| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. OSS license deferred to post-MVP. *As-built (2026-10-13): the repository is public and the R1 release is in progress, with no licence file yet — see §6 and backlog US-REL-02.* | Whole doc |
 | LD-10 | **Quality-first / ample use of modern hardware** | Maximize quality using all modern hardware: multi-core + GPU (Metal) + Neural Engine, fast SSD (aggressive caching/precompute), optional network assist for non-sensitive latency-tolerant work. Hard limits: per-buffer RT deadline; core playback stays offline-capable; privacy (mic on-device); battery/thermal. In own-player, latency is free → exploit look-ahead. Kernel exposes latency/quality budget (max-quality in player, bounded-latency in Phase 2). | NFR-PERF-02/03/04 |
 | **LD-11** | **Source quality & non-goals** | Assume reasonably good sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise, de-clip, or upsampling to fix bad audio). Network may be used for non-sensitive, latency-tolerant work; **core playback + RT DSP stay offline-capable**. | §4, §7 |
 | **LD-12** | **Perceptual tonal model** | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial), not a single magnitude curve. The dB curve is a realization/interchange format only. | §4, Arbiter design |
@@ -389,7 +389,7 @@ Adaptive Sound is a **personal / open-source project**. It is free to use, free 
 
 The choice of open-source license is **deferred until post-MVP** (after Phase 0). It does not need to be settled to build or privately test the MVP; it only needs to be in place before the repository is made public. Until then, treat the code as "source-available, license TBD."
 
-> **As-built (2026-10-13) — a gap against this section:** the GitHub repository is already **public** and v1.0.0-alpha is released from it, but there is **no LICENSE file**, so nobody may legally reuse the code yet. This section said the licence "needs to be in place before the repository is made public". Raised as a council finding; backlog **US-REL-02**.
+> **As-built (2026-10-13) — a gap against this section:** the GitHub repository is already **public** and v1.0.0-alpha is being released from it, but there is **no LICENSE file**, so nobody may legally reuse the code yet. This section said the licence "needs to be in place before the repository is made public". Raised as a council finding; backlog **US-REL-02**.
 
 ---
 
@@ -427,7 +427,7 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 
 **Decision 3 — Distribution channels for Phase 2: App Store or direct-only?**
 
-> **As-built for the own-player (R1):** direct download only — a drag-to-Applications DMG and a zip on the GitHub release, built by a tag-triggered workflow with build-provenance attestation (PR #87). The app is **Developer-ID-style, not sandboxed** (S8.1 design D5), so the Mac App Store is not an option as built. R1 is ad-hoc signed and **not notarized** (founder decision 13; backlog US-REL-01). No Homebrew cask. The question below stays open for Phase 2 only.
+> **As-built for the own-player (R1):** direct download only — a drag-to-Applications DMG and a zip on the GitHub release, built by a tag-triggered workflow with build-provenance attestation (PR #87; the first tag is pending). The app is **Developer-ID-style, not sandboxed** (S8.1 design D5), so the Mac App Store is not an option as built. R1 is ad-hoc signed and **not notarized** (founder decision 13; backlog US-REL-01). No Homebrew cask. The question below stays open for Phase 2 only.
 
 For the **fallback AudioServerPlugIn path**: must ship as a notarized direct-download DMG (sandbox incompatible).
 
@@ -460,7 +460,7 @@ The exact curve from knob position to processing parameters (how fast clarity ra
 
 ## Appendix: Phasing Summary
 
-> **As-built pointer (2026-10-13):** the summary below is the concept-era capability phasing. What has shipped is the **Phase 0 player** as **R1** (v1.0.0-alpha), ordered player-maturity-first; its success gates as written (retention, "sounds better" surveys) are not measurable without telemetry. Execution order and releases: [roadmap.md](roadmap.md) (R1 → R2 after S14 → R3 after S17).
+> **As-built pointer (2026-10-13):** the summary below is the concept-era capability phasing. What has been built is the **Phase 0 player**, released as **R1** (v1.0.0-alpha, release in progress), ordered player-maturity-first; its success gates as written (retention, "sounds better" surveys) are not measurable without telemetry. Execution order and releases: [roadmap.md](roadmap.md) (R1 → R2 after S14 → R3 after S17).
 
 ```
 Phase 0 — Player MVP:     Local-file player MVP — prove the DSP spine
