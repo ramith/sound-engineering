@@ -4,7 +4,10 @@ import Foundation
 
 /// Where the analyzer's results go: the live engine (the playback bridge, through the AU's C-ABI).
 public protocol TrackLoudnessSink: Sendable {
-    /// A loudness profile for `token`: the prefix first, then the whole track.
+    /// A loudness profile for `token`: the prefix first, then the whole track. The same whole
+    /// profile can come again: every request is answered, so a prefetch that finished before its
+    /// track became current is published again, from the cache, when it does. A repeat must
+    /// change nothing (the engine's gain does not move for it).
     func publishLoudnessProfile(_ profile: TrackLoudnessProfileHandle, token: UInt64)
     /// `token` could not be analysed at all: the engine falls back to its running estimate.
     func reportLoudnessAnalysisFailure(token: UInt64)
@@ -20,7 +23,9 @@ public protocol TrackLoudnessSink: Sendable {
 ///
 /// - At most two jobs: the current track and the next (gapless prefetch). A new request for a
 ///   role replaces (cancels) that role's job — latest wins; asking for the next track as the
-///   current one promotes its job instead of restarting it.
+///   current one promotes its job, while it runs, instead of restarting it. A prefetch that has
+///   already finished is answered from the cache instead (the usual case: the next track becomes
+///   current minutes after its prefetch), so its whole profile is published twice.
 /// - A cache keyed by file identity (path + size + mtime) re-publishes a whole-track profile at
 ///   once, within a byte budget (least recently used first out).
 /// - A file that cannot be analysed is reported to the engine (which estimates from the audio as
