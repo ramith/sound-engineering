@@ -6,6 +6,8 @@ product market survey ([eq-market-research.md](../../product/eq-market-research.
 audio-dsp verification of today's engine (below). Founder decisions 21–23 in the
 [sweep plan](../../sprints/s10-8-glass-sweep-plan.md) §B; built as **Sprint EQ** (§E).*
 
+> **Status (reconciled 2026-10-13):** **shipped** as Sprint EQ — PR #73, merged 2026-10-11; record in the [sweep ledger](../../sprints/s10-8-sweep-ledger.md#sprint-eq--the-honest-31-point-eq-v1b-layout-decisions-2128). The code: `Sources/AudioDSP/EQ/GraphicEQDesigner.h` (the solve), `EQModule.h` (31 Simper SVF bells in double precision on NEON, per-band glide), the Realizer's loudness-neutral gain, `Sources/EQEditKit/` (session, presets, per-output pins) and `Sources/AdaptiveSound/UI/EQ/`; architecture §2.5. The "Why" section below describes the engine **before** Sprint EQ and is kept as rationale; the build items are annotated where the shipped design moved (decisions 25–33).
+
 ## Founder decisions
 
 - **21 — Full redesign before R1** (not the honest-fix-now / editor-later split the study recommended).
@@ -26,7 +28,7 @@ audio-dsp verification of today's engine (below). Founder decisions 21–23 in t
 - **28 — Compare = hold to hear without the EQ** at the same loudness. A pinned output remembers
   exactly what was last heard on it.
 - **29 — Loud masters, EQ-only path:** limiter ceiling −0.1 dBTP (like the original), −1 dBTP on
-  Bluetooth.
+  Bluetooth. *(As built: −1 dBTP on every re-encoding or unknown link — Bluetooth, BLE, AirPlay, virtual / aggregate / unknown; −0.1 dBTP on wired lossless outputs — `Limiting/OutputCeiling.h`.)*
 - **30–32 — Presets re-voiced** (smooth Tone-built shapes, +3 to +5 dB peaks); "Loudness" → "Bass & Treble";
   "Studio" → "Bass Boost" (a saved Studio loads as Flat). [plan/preset-revoice.md](plan/preset-revoice.md),
   ![old vs new presets](png/preset-revoice.png)
@@ -55,7 +57,7 @@ EQ. Records are in the [sweep ledger](../../sprints/s10-8-sweep-ledger.md) (Spri
   - **Header:** "Warm · Edited", the **"Used on <output>" pin** (per-output memory, also in the
     menu), Compare, Reset, Save.
   - **Body:** the 31-point graph, with **today's drag (neighbours follow)**, the played curve, the
-    headroom readout, the +12 dB ceiling and the analyzer lens.
+    ~~headroom readout~~ *(removed by decision 26)*, the +12 dB ceiling and the analyzer lens.
 - **Tone is a macro over the 31 points, not a second mode.**
   - Choosing a preset resets Tone to 0 ("Vocal starts clean").
   - Save bakes Tone into the saved preset.
@@ -69,7 +71,9 @@ EQ. Records are in the [sweep ledger](../../sprints/s10-8-sweep-ledger.md) (Spri
 More: [light](png/v1b-light-1000x720.png), [Tone folded at 880×640](png/v1b-toneCollapsed-dark-880x640.png),
 [V1 vs V1b](png/compare-v1-v1b-dark.png).
 
-## Why: today's EQ does not play what it shows (verified 2026-10-08)
+## Why: the pre-Sprint-EQ engine did not play what it showed (verified 2026-10-08; all fixed in PR #73)
+
+*Kept as rationale. The files cited here (`EQModuleCoefficients.h`, `EQSafetyClamp.swift`, `FrequencyResponseCanvas+Drawing.swift`, `outputPresetMap`) were deleted in Sprint EQ (EQ1b / EQ2 / EQ3); the graph axis is now ±15 dB (`EQEditKit/EQPlotMap.swift`).*
 
 Measured through the production coefficient code and `EQModule` (calculation vs test tones within
 0.007 dB):
@@ -92,19 +96,19 @@ Measured through the production coefficient code and `EQModule` (calculation vs 
 **Engine (audio-dsp; full DSP rigor — null tests, measured responses, the C++ gate):**
 - **E1 — an accurate 31-band graphic EQ:** one bell per band with interaction-solved gains
   (Välimäki & Liski, "Accurate Cascade Graphic Equalizer", IEEE SPL 24(2), 2017; DAFx-17
-  third-octave follow-up); section limit 10 → ≥ 31 (vDSP).
+  third-octave follow-up); section limit 10 → ≥ 31 (vDSP). *(As built: `GraphicEQDesigner` solves the 31 gains; `EQModule` runs them as a double-precision SVF cascade on NEON, not vDSP.)*
 - **Automatic headroom:** delete the summed-dB clamp (keep ±12 dB per band); preamp = −max(0, peak of
   the played response), computed off the audio thread, carried in the unused
   `EQParams.masterGainLinear` (already ramped, 32 ms) — no frequency ever plays louder than the
-  source (the AutoEq / Equalizer APO `Preamp:` convention).
+  source (the AutoEq / Equalizer APO `Preamp:` convention). *(Superseded by decision 26: a loudness-neutral output gain predicted from the track's profile — `EQParams.outputGainDb`, published by the Realizer.)*
 - **Played-curve read-back:** the engine reports the response it actually plays, from the real
   coefficients, so the graph never runs a Swift copy of the fitter.
 - **A preset FR test:** extend `Tests/EqFrequencyResponseSweepTests.inc` (`runEqSineAt` takes any
-  31-band array) to measure every preset's played response against its target.
+  31-band array) to measure every preset's played response against its target. *(As built: `kEqPresetCurves` / `EQ_ACGE_Presets_Tone_Smooth` in `Tests/EqDesignerTests.inc`.)*
 
 **The screen (UI; layout = V1b above):** the graph IS the editor — 31 draggable points over the ±12 dB range; the solid
 curve is the PLAYED response, the points are the targets; a readout while dragging (band, set,
-plays); a "Headroom −X dB" readout and the +12 dB ceiling drawn when a boost reaches it; EQ On/Off,
+plays); ~~a "Headroom −X dB" readout~~ *(removed by decision 26)* and the +12 dB ceiling drawn when a boost reaches it; EQ On/Off,
 level-matched Compare, Reset; the Preset menu with built-in + My Presets (rename / delete) and
 "Use on <output> ✓" (per-output memory, written); keyboard (move between points, ↑/↓ adjust) and
 VoiceOver (each point an adjustable element); **the keyboard cursor follows the point you click or drag** (founder, 2026-10-09: today's cursor stays where the keyboard left it, so ↑/↓ after a click adjust a different band), and like every keyboard ring in the app it shows only while navigating by keyboard (Sprint A rule); existing tokens only (light frozen, decision 16); the
@@ -112,15 +116,17 @@ analyzer lens (Sprint D grammar). The "Interpolation" picker retires.
 
 **Presets re-voiced** for the honest engine (they will sound stronger than today's clamped ones) —
 the founder's 10-minute listening check. Proposed: rename "Loudness" → "Low Volume" (it collides
-with S14's loudness compensation) — confirm at the check.
+with S14's loudness compensation) — confirm at the check. *(Decided: "Bass & Treble" — decision 31; `EQEditKit/EQBuiltInPreset.swift`.)*
 
 **Tone (decision 24):** five region macros (Bass, Body, Mids, Presence, Air) that move the 31
 points. The played response is still the one 31-band engine; Tone adds no filters of its own.
 
-**Size:** about 23 points (engine ~8: E1 4, headroom 2, read-back 2; UI ~9; Tone card ~3;
+**Size (estimate at design time; the sweep plan carries ~20):** about 23 points (engine ~8: E1 4, headroom 2, read-back 2; UI ~9; Tone card ~3;
 presets / memory / On/Off ~2; re-voice 1). Supersedes Sprint F's F3/F4 (3 points).
 
 ## Open questions for the DSP plan check
+
+*Resolved in [plan/amendments.md](plan/amendments.md) and shipped in PR #73: per-band (k, m1) one-pole glide (`EQModule.h`); the 7.1 CPU budget (`EQModule.h`); Compare level-matched by the loudness-neutral gain (decision 26/28); Tone as a separate layer shown in the points and baked on Save (`EQEditKit/EQCurve.swift`); the ±12 dB per-point clamp (`EQBands.pointLimitDb`). Kept for the record:*
 
 Filter-update smoothing while dragging (zipper-free coefficient interpolation); CPU at 31 sections ×
 channels (up to 7.1); whether Compare level-matches by the preamp alone or by measured loudness;
