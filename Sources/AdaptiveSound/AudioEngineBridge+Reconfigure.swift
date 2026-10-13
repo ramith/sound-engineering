@@ -50,7 +50,7 @@ extension AudioEngineBridge {
         // 1. Same-count guard — keep the existing path 100% untouched until a real reconfigure.
         guard channels != currentGraphWidth else { return }
         guard let engine = avEngine, let player = playerNode,
-              let effects = dspAudioUnit, let spatial = spatialAudioUnit else { return }
+              let effects = effectsNode, let spatial = spatialAudioUnit else { return }
 
         // 2. Quiesce the audio thread: stop any streaming-resampler loop (bump generation + drop
         //    session so no in-flight buffer schedules onto the graph we're about to reconnect), then
@@ -91,8 +91,9 @@ extension AudioEngineBridge {
                 return width
             }
         }
-        if !afterAnalyzers.isEmpty {
-            return AVAudioChannelCount(afterAnalyzers.count)
+        let monitored = tapAnalysis.after.count
+        if monitored > 0 {
+            return AVAudioChannelCount(monitored)
         }
         return 2
     }
@@ -142,12 +143,14 @@ extension AudioEngineBridge {
     /// Only ever called while the taps are removed (so no tap block can index a stale array).
     private func resizeAnalyzers(to channels: AVAudioChannelCount, sampleRate: Double) {
         let count = Int(channels)
-        beforeAnalyzers = (0 ..< count).map { _ in
+        var analysis = tapAnalysis
+        analysis.before = (0 ..< count).map { _ in
             SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: Float(sampleRate))
         }
-        afterAnalyzers = (0 ..< count).map { _ in
+        analysis.after = (0 ..< count).map { _ in
             SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: Float(sampleRate))
         }
+        setTapAnalysis(analysis)
     }
 
     /// Pause (or, offline, stop) the engine, reconnect the two-AU chain at `format`, resize

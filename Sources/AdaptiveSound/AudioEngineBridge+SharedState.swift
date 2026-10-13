@@ -6,8 +6,8 @@ import Synchronization
 // MARK: - AudioEngineBridge shared playback-context state (one leaf lock)
 
 /// One `os_unfair_lock` (`stateLock`) guarding the small set of playback-context fields that are
-/// READ on the MainActor 20 Hz poll (`currentSignalPath()` / `currentPlaybackPosition()`) while
-/// being WRITTEN from `engineQueue` / `configChangeQueue` / `resampleQueue` / the CoreAudio
+/// READ by the main thread's 20 Hz `snapshot()` and the control-plane borrows while being WRITTEN
+/// from `engineQueue` / `configChangeQueue` / `resampleQueue` / the CoreAudio
 /// listener queues. Before this change those fields (`cachedSignalPath`,
 /// `enhancedPositionBaseSeconds`, `lastKnownEnhancedPositionSeconds`, `currentDeviceID`,
 /// `lastFileURL`) were read and written with no synchronization at all (S6 finding P1-C).
@@ -22,7 +22,7 @@ import Synchronization
 ///   - call out to any other closure that could re-enter the lock.
 ///
 /// There is NO exception (S10.8 G, the disconnect freeze): the main thread takes this lock 20 times
-/// a second (`currentSignalPath`, the device and AU borrows), so holding it across any call into
+/// a second (`snapshot()`, the device and AU borrows), so holding it across any call into
 /// AVFAudio, the CoreAudio HAL or the Pure C-ABI — which can wait seconds while macOS tears a device
 /// down — would freeze the app. `withPureEngine` used to run Pure's C-ABI (seek's HAL stop/start
 /// included) under it; it now borrows the session under the lock and calls OUTSIDE it, on
@@ -44,7 +44,7 @@ extension AudioEngineBridge {
 
     // MARK: - cachedSignalPath
 
-    /// Thread-safe snapshot read of the cached signal path (MainActor poll + others).
+    /// Thread-safe snapshot read of the cached signal path (the main thread's `snapshot()` + others).
     func loadSignalPath() -> SignalPathInfo {
         withStateLock { storedCachedSignalPath }
     }
@@ -148,10 +148,9 @@ extension AudioEngineBridge {
     // `activePath` and `pureEngine` are declared on the main class body (extensions cannot add
     // stored properties) but — like the `stored*` fields above — must be touched ONLY through these
     // accessors. They are written from `engineQueue` (start/stop/seek/shutdown and the device-loss
-    // teardown), and read from the MainActor 20 Hz poll (`currentPlaybackPosition` /
-    // `trackTransitionCount` / `playbackEnded`) and the output rule on `configChangeQueue`, so every
-    // access is serialized on the leaf lock. Direct field access outside these accessors is a data
-    // race (S6 finding UAF-1).
+    // teardown), and read by the transport clock and the Pure calls (engineQueue), the output rule
+    // (configChangeQueue) and the alive listener, so every access is serialized on the leaf lock.
+    // Direct field access outside these accessors is a data race (S6 finding UAF-1).
 
     /// Thread-safe snapshot of the active output path. When you also need the Pure engine handle,
     /// prefer `withPureEngine` so the path check and the handle read are one atomic operation.
@@ -217,42 +216,67 @@ extension AudioEngineBridge {
         }
     }
 
-    // MARK: - dspAudioUnit (cross-domain effects-AU reference)
+    // MARK: - The effects AU (one value: the graph node + the control plane's AUAudioUnit)
 
-    // `dspAudioUnit` is declared on the main class body. It is WRITTEN on the arbitrary
-    // `AVAudioUnit.instantiate` completion queue (`+Graph`) and nil'd on `engineQueue` teardown
-    // (`+Lifecycle`), while the MainActor control-plane publishers (publishEQ /
-    // publishIntensity / publishCrossfeed / publishChannelLayout) read it. Those accesses MUST go
-    // through the accessors below so the field is serialized on the leaf lock AND the reader holds a
-    // STRONG ref for the whole C-ABI publish — otherwise a teardown-nil that drops the last ref
-    // between the reader's load and its use is a use-after-free (S3 review finding F1). The
-    // engineQueue-local reads (tap install/remove, teardown detach) stay direct: they are the owning
-    // domain and are already ordered after the instantiate write and serialized with the nil.
+    /// Set (instantiate completion, on `engineQueue`) or clear (teardown, on `engineQueue`) the
+    /// effects AU. Its `AUAudioUnit` is read here, off the main thread and before the unit is
+    /// attached, so no publisher ever asks the AVAudioUnit (an engine-wide lock once attached). A
+    /// replaced unit is released here, after every borrow in flight has ended — so the AU's last
+    /// release, and its Realizer barrier, never run on the main thread.
+    func setEffectsUnit(_ node: AVAudioUnit?) {
+        let value = node.map { EffectsUnit(node: $0, au: $0.auAudioUnit) }
+        let replaced = withStateLock { () -> EffectsUnit? in
+            let old = storedEffectsUnit
+            storedEffectsUnit = value
+            return old
+        }
+        guard let replaced else { return }
+        // No new borrow can find it now (the field changed under the lock); wait out the ones that
+        // did — each is one O(1) C call.
+        while effectsAUBorrows.load(ordering: .acquiring) > 0 {
+            sched_yield()
+        }
+        withExtendedLifetime(replaced) {} // the last reference, released here
+    }
 
-    /// Thread-safe write of the effects-AU reference (instantiate-completion + teardown). Its
-    /// `AUAudioUnit` is read here, on the writer's queue, so no publisher ever asks the AVAudioUnit.
-    func setDspAudioUnit(_ value: AVAudioUnit?) {
-        let handle = value?.auAudioUnit
-        // Swap under the lock, release after it: the AU's last release runs its Realizer barrier.
-        let replaced = withStateLock { () -> (AVAudioUnit?, AUAudioUnit?) in
-            let old = (dspAudioUnit, dspAUAudioUnit)
-            dspAudioUnit = value
-            dspAUAudioUnit = handle
+    /// The effects AU's graph node, for `engineQueue`'s graph work (connect, tap, detach). nil when
+    /// not instantiated.
+    var effectsNode: AVAudioUnit? {
+        withStateLock { storedEffectsUnit?.node }
+    }
+
+    /// Run `body` with the effects AU's opaque handle (our `AdaptiveSoundAU`, the control-plane
+    /// C-ABI's argument), or return nil when the AU isn't live. Main-thread safe: no AVFAudio, the
+    /// lock only for the read. The borrow keeps the AU alive across `body` and is counted, so a
+    /// teardown releases the AU only after it (`setEffectsUnit`).
+    func withEffectsAU<T>(_ body: (UnsafeMutableRawPointer) -> T) -> T? {
+        effectsAUBorrows.wrappingAdd(1, ordering: .acquiringAndReleasing)
+        defer { effectsAUBorrows.wrappingSubtract(1, ordering: .releasing) }
+        guard let unit = withStateLock({ storedEffectsUnit?.au }) else { return nil }
+        return withExtendedLifetime(unit) { body(Unmanaged.passUnretained(unit).toOpaque()) }
+    }
+
+    // MARK: - Tap analysis (one value: spectrum, loudness meter, monitoring analyzers)
+
+    /// A strong copy of the taps' analysis objects (any queue; the main thread's polls included).
+    var tapAnalysis: TapAnalysis {
+        withStateLock { storedTapAnalysis }
+    }
+
+    /// Replace the taps' analysis objects (`engineQueue`: build, resize, teardown — always with the
+    /// taps removed, so no RT tap holds a replaced object). Swap under the lock, release after it.
+    func setTapAnalysis(_ value: TapAnalysis) {
+        let replaced = withStateLock { () -> TapAnalysis in
+            let old = storedTapAnalysis
+            storedTapAnalysis = value
             return old
         }
         _ = replaced
     }
 
-    /// Thread-safe strong borrow of the effects AU's `AUAudioUnit` (nil when not instantiated) — the
-    /// handle the control-plane C-ABI takes. The strong ref keeps the AU alive across the caller's
-    /// publish even if teardown nils the field. Never touches AVFAudio: main-thread safe.
-    var dspAURef: AUAudioUnit? {
-        withStateLock { dspAUAudioUnit }
-    }
-
     // MARK: - avEngine / playerNode (cross-domain graph references)
 
-    // Like `dspAudioUnit`, these are WRITTEN on `engineQueue` (initialize / teardown) but READ from
+    // Like the effects unit, these are WRITTEN on `engineQueue` (initialize / teardown) but READ from
     // OFF-domain paths — the `AVAudioEngineConfigurationChange` handler and the CoreAudio device
     // listeners (configChangeQueue / the device-list listener queue). Those off-domain reads MUST go
     // through the strong-borrow accessors so a teardown-nil cannot free the engine/player between an

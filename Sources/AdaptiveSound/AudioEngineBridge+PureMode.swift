@@ -139,7 +139,7 @@ extension AudioEngineBridge {
         }
 
         // Publish the handle-then-path invariant: pureEngine is already set (above), so the instant
-        // activePath becomes .pure the poll's withPureEngine can safely borrow it.
+        // activePath becomes .pure a `withPureEngine` borrow finds it.
         setActivePath(.pure)
         var pureInfo = makeSignalPathInfo(from: state)
         // Master Gain shows the device's own volume on Pure: read it (never set it — engaging Pure must
@@ -208,7 +208,7 @@ extension AudioEngineBridge {
                 }
 
                 // The re-scheduled stream restarts the player's sampleTime at 0, so record the seek
-                // target as the position base — currentPlaybackPosition adds it to report the true
+                // target as the position base — liveEnhancedPosition adds it to report the true
                 // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
                 self.setEnhancedPositionBaseSeconds(max(seconds, 0))
 
@@ -259,12 +259,11 @@ extension AudioEngineBridge {
     /// the device's nominal sample rate. Safe to call when pureEngine is nil.
     func tearDownPure() {
         unwatchDeviceVolume()
-        // Detach the session + reset activePath to .enhanced UNDER stateLock, then do the SLOW HAL
+        // Detach the session + reset activePath to .enhanced under stateLock, then do the SLOW HAL
         // teardown OUTSIDE the lock: `stop()` restores the device rate + releases hog, and dropping
         // the wrapper at the end of this block runs its deinit → pureModeEngineDestroy (joins the
-        // decode thread). This guarantees a concurrent MainActor poll / seek / setNextTrack that
-        // borrowed the handle via withPureEngine either completed its C-ABI call before the detach
-        // returned, or now sees activePath == .enhanced and skips — never a freed handle (S6 UAF-1).
+        // decode thread). Every `withPureEngine` borrow runs on engineQueue too, so none is in
+        // flight here, and a later one sees activePath == .enhanced and skips (S6 UAF-1).
         // detachPureEngineForTeardown is idempotent, so a second teardown (a stop after the
         // device-loss pause) cannot double-free (it gets nil). The drop runs on the caller's queue
         // (engineQueue — the device-loss pause included), never under stateLock.

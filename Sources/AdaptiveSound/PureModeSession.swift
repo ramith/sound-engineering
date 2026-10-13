@@ -14,8 +14,9 @@ import Foundation
 /// The wrapper carries a raw C pointer, which is not `Sendable` on its own. It is safe to mark the
 /// class `@unchecked Sendable` because the instance is ONLY ever touched under `AudioEngineBridge`'s
 /// existing isolation discipline: the field that holds it is written under the bridge's `stateLock`
-/// (via `setPureEngine` / `detachPureEngineForTeardown`) and the handle is used only from the serial
-/// `engineQueue` / `configChangeQueue` or borrowed under `stateLock` (`withPureEngine`). No two
+/// (via `setPureEngine` / `detachPureEngineForTeardown`) and the handle is used only on the serial
+/// `engineQueue`, where every Pure C-ABI call and every teardown runs (`withPureEngine` enforces it
+/// and borrows the session strongly under `stateLock`, calling outside it). No two
 /// domains touch the same instance without that discipline, so the compiler-invisible confinement
 /// holds. The wrapper adds no state of its own beyond the immutable `handle`.
 ///
