@@ -57,6 +57,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     var dspAudioUnit: AVAudioUnit?
 
+    /// The effects AU's `AUAudioUnit` (our `AdaptiveSoundAU`), the handle every control-plane C-ABI
+    /// call takes. Read once from `dspAudioUnit` when the AU is set, off the main thread, so the
+    /// main-thread publishers never touch the AVAudioUnit itself. Guarded by `stateLock` with it.
+    var dspAUAudioUnit: AUAudioUnit?
+
     // MARK: - Transport clock (methods in AudioEngineBridge+TransportClock.swift)
 
     /// The transport as the clock last sampled it — what `transportSnapshot()` hands the main

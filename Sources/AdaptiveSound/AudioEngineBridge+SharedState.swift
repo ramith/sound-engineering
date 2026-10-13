@@ -207,15 +207,25 @@ extension AudioEngineBridge {
     // engineQueue-local reads (tap install/remove, teardown detach) stay direct: they are the owning
     // domain and are already ordered after the instantiate write and serialized with the nil.
 
-    /// Thread-safe write of the effects-AU reference (instantiate-completion + teardown).
+    /// Thread-safe write of the effects-AU reference (instantiate-completion + teardown). Its
+    /// `AUAudioUnit` is read here, on the writer's queue, so no publisher ever asks the AVAudioUnit.
     func setDspAudioUnit(_ value: AVAudioUnit?) {
-        withStateLock { dspAudioUnit = value }
+        let handle = value?.auAudioUnit
+        // Swap under the lock, release after it: the AU's last release runs its Realizer barrier.
+        let replaced = withStateLock { () -> (AVAudioUnit?, AUAudioUnit?) in
+            let old = (dspAudioUnit, dspAUAudioUnit)
+            dspAudioUnit = value
+            dspAUAudioUnit = handle
+            return old
+        }
+        _ = replaced
     }
 
-    /// Thread-safe strong borrow of the effects AU (nil when not instantiated). The returned strong
-    /// ref keeps the AU alive across the caller's C-ABI publish even if teardown nils the field.
-    var dspAudioUnitRef: AVAudioUnit? {
-        withStateLock { dspAudioUnit }
+    /// Thread-safe strong borrow of the effects AU's `AUAudioUnit` (nil when not instantiated) — the
+    /// handle the control-plane C-ABI takes. The strong ref keeps the AU alive across the caller's
+    /// publish even if teardown nils the field. Never touches AVFAudio: main-thread safe.
+    var dspAURef: AUAudioUnit? {
+        withStateLock { dspAUAudioUnit }
     }
 
     // MARK: - avEngine / playerNode (cross-domain graph references)
@@ -229,7 +239,13 @@ extension AudioEngineBridge {
 
     /// Thread-safe write of the AVAudioEngine reference (initialize / teardown).
     func setAvEngine(_ value: AVAudioEngine?) {
-        withStateLock { avEngine = value }
+        // Swap under the lock, release after it: the engine's last release disposes its I/O unit.
+        let replaced = withStateLock { () -> AVAudioEngine? in
+            let old = avEngine
+            avEngine = value
+            return old
+        }
+        _ = replaced
     }
 
     /// Thread-safe strong borrow of the AVAudioEngine (nil when torn down). Held for the caller's use.
@@ -239,7 +255,13 @@ extension AudioEngineBridge {
 
     /// Thread-safe write of the player-node reference (initialize / teardown).
     func setPlayerNode(_ value: AVAudioPlayerNode?) {
-        withStateLock { playerNode = value }
+        // Swap under the lock, release after it (a node's last release is AVFAudio work).
+        let replaced = withStateLock { () -> AVAudioPlayerNode? in
+            let old = playerNode
+            playerNode = value
+            return old
+        }
+        _ = replaced
     }
 
     /// Thread-safe strong borrow of the player node (nil when torn down). Held for the caller's use.
