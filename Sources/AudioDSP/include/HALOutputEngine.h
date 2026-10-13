@@ -76,6 +76,12 @@ namespace AdaptiveSound
         [[nodiscard]] bool holdRender();
         void releaseRender();
 
+        // True when the last stop() could not see the render go quiet: a pass was still inside
+        // after the unit was stopped and disposed (an RT render essentially never is). That pass
+        // holds pointers into this engine and its source, so neither may be freed — the owner
+        // parks them (PureModeBridge.cpp). Control-plane only.
+        [[nodiscard]] bool renderMayStillRun() const;
+
         // The real achieved state (lock-free snapshot for the UI / B3).
         [[nodiscard]] AchievedOutputState achievedState() const;
 
