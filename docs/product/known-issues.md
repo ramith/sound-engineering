@@ -31,7 +31,9 @@ and deletes only the genuinely-unreferenced ones. Proven by `VerifyLibraryStore`
 
 ## DUR-1 — Playlist durability across schema change (⚠️ HARD GATE before R1)
 
-**Status:** OPEN (deferred by founder decision — S10.1 design §0.1; keep it simple pre-release).
+**Status:** ✅ CLOSED in S10.3 (verified in code 2026-10-13, before R1): `LibraryStore` sets `eraseDatabaseOnSchemaChange = false` with additive-only, frozen-body migrations; `strict-gate`'s "Migrator posture guard" forbids re-enabling the erase; VerifyLibraryStore's `additive-migration-convergence` check catches an edited shipped migration. *The original note below is kept for history.*
+
+~~**Status:** OPEN (deferred by founder decision — S10.1 design §0.1; keep it simple pre-release).~~
 
 The store keeps `eraseDatabaseOnSchemaChange = true` (the rebuildable-cache "drop-and-recreate on
 schema change" discipline). That is correct for the track/album **cache** but **playlists are
