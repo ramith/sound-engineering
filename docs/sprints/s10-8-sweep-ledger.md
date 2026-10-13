@@ -1267,3 +1267,34 @@ keyboard / VoiceOver / appearance / grayscale walk, and the purple-accent test).
   - Next / Previous while paused keep the old duration;
   - the `eq-light-folded` sheet has a renderer flake;
   - check the EQ and Settings cards for stacked-shadow darkening under dark Reduce Transparency / Increase Contrast.
+
+### Merge (2026-10-13)
+
+PR #85 merged as 5b348fe. It is the one consolidated PR the founder asked for: a linear cherry-pick of the nine lane PRs
+#76–#84 plus the device-loss follow-up, byte-identical to the live-tested combination. The lane PRs were closed with a
+pointer. The full gate ran on every lane PR's CI and runs again on main.
+- **Reference branches (pushed, not merged):** `breakit/s10-8-g-playback-shell` (breaker B's VM harness and engine probe)
+  and `breakit/s10-8-g-library` (incl. the post-R1 G-LIB-07 genre-split red test).
+- **Reports:** `s10-8-g-breakit-library.md`, `s10-8-g-breakit-playback-shell.md`.
+- **Next:** the founder's final check on main, then R1.
+
+### Mini-retro — Sprint G
+
+1. **The whole-app break-it was the sprint's most valuable step.** It found 13 R1 blockers in OLDER code, among them
+   Library data loss, playback that kept running behind a stopped UI, and Enhanced continuing on the speakers after an
+   unplug. A glass sweep's close-out must keep a whole-app break-it.
+2. **Debug conveniences can mask bugs.** The DEBUG test library's launch rescan hid G-LIB-05 (no launch catch-up) in
+   every earlier live pass. Live passes should also exercise the plain app's launch path, or the test hook should
+   mirror production.
+3. **Parallel lanes with CI per lane were fast, but nine PRs with a merge-order rule were too much to hand over.** The
+   founder asked for one PR. Rule: lanes run in parallel, then a linear consolidated PR before handover. Force-push is
+   blocked, so follow-ups are built locally and cherry-picked, never pushed and rewritten.
+4. **Permission prompts silently declined four agents mid-sprint, and Claude Code restarted once.** Every agent resumed
+   by raw ID with nothing lost. Unchanged agent worktrees are auto-removed on stop and must be recreated from their
+   branches. One agent compiled from the main checkout; briefs now pin cwd to the worktree.
+5. **A flaky pre-existing test (ANALYZER-05) failed CI on two PRs.** It was fixed at its root: the contract was
+   documented, the test made deterministic, and ANALYZER-06 pins the interleaving. The CI re-run served only as
+   information.
+6. **Live device tests:** silent aggregates over a loopback driver can't be the system default, and Enhanced follows the
+   default. Device-level mute is the safe method. macOS changed the headphones' volume during default switches;
+   restore it afterwards.
