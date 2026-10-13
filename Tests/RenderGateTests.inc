@@ -15,9 +15,27 @@
 // run a runnable thread, never a deadline that a loaded runner can miss.
 //
 // Tests: RenderGate_ClosedGateTurnsRenderAway, RenderGate_CloseWaitsForRenderInside,
-//        RenderGate_PendingCloseBarsReentry, RenderGate_ConcurrentNeverOverlaps.
+//        RenderGate_PendingCloseBarsReentry, RenderGate_TeardownCloseNeverReopens,
+//        RenderGate_ConcurrentNeverOverlaps.
 
 #include "RenderGate.h"
+
+// Yield until `done()` holds, at most kSpinBound times. The waits below need a runnable thread to
+// be scheduled, never a deadline, so a correct gate ends them in a few yields; only a regression
+// exhausts the bound — and then the test FAILS instead of hanging the suite. No wall clock.
+template <typename Done> static auto spinUntil(Done done) -> bool
+{
+    constexpr uint64_t kSpinBound = 20'000'000U;
+    for (uint64_t spin = 0U; spin < kSpinBound; ++spin)
+    {
+        if (done())
+        {
+            return true;
+        }
+        std::this_thread::yield();
+    }
+    return done();
+}
 
 static auto testRenderGateClosedGateTurnsRenderAway() -> void
 {
@@ -98,9 +116,11 @@ static auto testRenderGateCloseWaitsForRenderInside() -> void
             closed.store(gate.close(RenderGate::kWaitForever), std::memory_order_relaxed);
             closerReturned.store(true, std::memory_order_release);
         });
-    while (!gate.isClosed()) // the close is pending: no new pass may start
+    // The close is pending: no new pass may start. (The first gate never got here while a pass
+    // was inside — bounded so that regression fails rather than hangs.)
+    if (!spinUntil([&gate] { return gate.isClosed(); }))
     {
-        std::this_thread::yield();
+        err += "a waiting close() never closed the gate to new passes; ";
     }
     if (closerReturned.load(std::memory_order_acquire))
     {
@@ -182,10 +202,56 @@ static auto testRenderGatePendingCloseBarsReentry() -> void
     }
 }
 
+// The teardown sequence (HALOutputEngine::teardown): requestClose, then a wait for quiet that may
+// give up, and NEVER a reopen. Even when the wait gives up with a pass inside, the gate stays
+// closed: once that pass leaves, no new pass can start against a source its owner is freeing (the
+// owner parks the source if the pass never leaves — HALOutputEngine::renderMayStillRun). One
+// thread, no clock.
+static auto testRenderGateTeardownCloseNeverReopens() -> void
+{
+    static const char* const kName = "RenderGate_TeardownCloseNeverReopens";
+    using AdaptiveSound::RenderGate;
+    std::string err;
+    RenderGate gate;
+    if (!gate.tryEnter()) // a pass is inside when teardown begins
+    {
+        logFail(kName, "a fresh gate turned the render away");
+        return;
+    }
+    if (!gate.requestClose() || gate.awaitQuiet(std::chrono::microseconds{0}))
+    {
+        err += "teardown did not see the pass inside; ";
+    }
+    if (!gate.isClosed())
+    {
+        err += "a teardown that gave up waiting left the gate open; ";
+    }
+    gate.leave();
+    if (gate.tryEnter())
+    {
+        err += "a new pass started after the teardown gave up waiting; ";
+        gate.leave();
+    }
+    if (!gate.awaitQuiet(std::chrono::microseconds{0}))
+    {
+        err += "the gate was not quiet once the pass left; ";
+    }
+    if (err.empty())
+    {
+        logPass(kName);
+    }
+    else
+    {
+        logFail(kName, err);
+    }
+}
+
 // A render thread pulls from a plain buffer inside the gate while the control plane closes the
 // gate, rewrites the buffer (a seek) and opens it, over and over. Exclusion is checked twice: an
 // atomic occupancy count must never see both sides at once, and every pull must read a buffer
-// whose words all carry ONE generation (a torn read means the seek ran under a render).
+// whose words all carry ONE generation (a torn read means the seek ran under a render). Every seek
+// waits for at least one pull since the previous one, so each generation is read while the next
+// seek may be closing in — the torn-read check samples every seek, not a few.
 namespace
 {
     struct RenderGateRace
@@ -201,6 +267,7 @@ namespace
         std::atomic<uint64_t> turnedAway{0U};
         std::atomic<bool> stop{false};
         std::chrono::steady_clock::duration slowestClose{}; // control thread only (info)
+        uint64_t pullsAtLastSeek = 0U;                      // control thread only
 
         // Count this side in; a second side already inside is an overlap.
         void occupy()
@@ -230,9 +297,9 @@ namespace
             {
                 torn.fetch_add(1U, std::memory_order_relaxed);
             }
+            pulls.fetch_add(1U, std::memory_order_relaxed); // counted inside: a pass that read
             vacate();
             gate.leave();
-            pulls.fetch_add(1U, std::memory_order_relaxed);
         }
 
         void renderLoop()
@@ -243,36 +310,40 @@ namespace
             }
         }
 
-        // Keep the gate closed until the render has been turned away once, so the run is known
-        // to have interleaved (the render loop never stops trying, so this always ends).
-        void awaitTurnAway()
+        // The control plane: one seek, after at least one pull since the previous one. "" when
+        // done, else what went wrong (a correct gate always closes: it waits for the one pass
+        // inside, however busy the render is).
+        auto seekOnce(int generation) -> std::string
         {
-            const uint64_t before = turnedAway.load(std::memory_order_relaxed);
-            while (turnedAway.load(std::memory_order_relaxed) == before)
+            if (!spinUntil([this]
+                           { return pulls.load(std::memory_order_relaxed) > pullsAtLastSeek; }))
             {
-                std::this_thread::yield();
+                return std::format("no render pull after seek {}; ", generation - 1);
             }
-        }
-
-        // The control plane: one seek. False when the gate would not close (a correct gate always
-        // does: it waits for the one pass inside, however busy the render is).
-        auto seekOnce(int generation) -> bool
-        {
             const auto began = std::chrono::steady_clock::now();
             if (!gate.close(AdaptiveSound::RenderGate::kWaitForever))
             {
-                return false;
+                return std::format("close() failed at seek {}; ", generation);
             }
             slowestClose = std::max(slowestClose, std::chrono::steady_clock::now() - began);
             if (generation % 100 == 0)
             {
-                awaitTurnAway();
+                // Hold the gate until the render has been turned away once: the run interleaves.
+                const uint64_t before = turnedAway.load(std::memory_order_relaxed);
+                if (!spinUntil([this, before]
+                               { return turnedAway.load(std::memory_order_relaxed) != before; }))
+                {
+                    gate.open();
+                    return std::format("the render never tried a closed gate at seek {}; ",
+                                       generation);
+                }
             }
             occupy();
             source.fill(static_cast<uint64_t>(generation));
             vacate();
+            pullsAtLastSeek = pulls.load(std::memory_order_relaxed); // stable: no pass is inside
             gate.open();
-            return true;
+            return "";
         }
 
         [[nodiscard]] auto verdict() const -> std::string
@@ -303,18 +374,10 @@ static auto testRenderGateConcurrentNeverOverlaps() -> void
     constexpr int kSeeks = 2000;
     RenderGateRace race;
     std::thread render([&race] { race.renderLoop(); });
-    // Start seeking only once the render is pulling, so the two really interleave.
-    while (race.pulls.load(std::memory_order_relaxed) == 0U)
-    {
-        std::this_thread::yield();
-    }
     std::string err;
     for (int seek = 1; seek <= kSeeks && err.empty(); ++seek)
     {
-        if (!race.seekOnce(seek))
-        {
-            err = std::format("close() failed at seek {}; ", seek);
-        }
+        err = race.seekOnce(seek); // the first one waits for the render's first pull
     }
     race.stop.store(true, std::memory_order_release);
     render.join();
