@@ -101,6 +101,29 @@ rules:
       - pattern-regex: '(AudioObject(Add|Remove)PropertyListenerBlock|AudioPropertyListener)\([\s\S]{0,160}?(DispatchQueue\.main|\.main\b|mainQueue)'
       - pattern-regex: 'AudioObject(Add|Remove)PropertyListenerBlock\(\s*[^,()]+,\s*[^,()]+,(?!\s*(queue|deviceVolumeQueue|configChangeQueue)\s*,)'
 
+  # The rule above names the bridge's accessors, but a downcast reaches every other member of the
+  # concrete class — `(engine as? AudioEngineBridge)?.applyMasterGain()` takes the engine-wide lock
+  # from the main thread under any name. So outside the bridge the app never names the concrete
+  # type: it holds `any AudioPlaybackEngine`. The one exception is the composition default in the
+  # view model's init (plus the DEBUG stall self-test, which drives the real bridge on purpose).
+  # Comment lines are skipped (the docs may name the bridge's files).
+  - id: main-thread-no-concrete-bridge
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      The app reaches the engine only through AudioPlaybackEngine: naming the concrete
+      AudioEngineBridge (a downcast, a stored reference) reaches its queue-confined members — AVFAudio
+      calls under the engine-wide lock — from the main thread, past the main-thread rule (S10.8 G).
+      Add what you need to AudioPlaybackEngine as a snapshot field or an async / queued method.
+    paths:
+      include:
+        - 'Sources/AdaptiveSound/'
+      exclude:
+        - 'Sources/AdaptiveSound/AudioEngineBridge*.swift'
+        - 'Sources/AdaptiveSound/PureModeSession.swift'
+        - 'Sources/AdaptiveSound/Debug/MainThreadStall*.swift'
+    pattern-regex: '(?m)^(?!\s*//)(?!.*\bengine: any AudioPlaybackEngine = AudioEngineBridge\(\)).*\bAudioEngineBridge\b'
+
   # The bridge is engine code, NOT main-actor code (AudioEngineBridge.swift's header): a @MainActor
   # member in its own files would run its AVFAudio / HAL reads on the main thread with the
   # main-thread rule above blind to it.
