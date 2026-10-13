@@ -7,7 +7,7 @@ This directory contains the sprint methodology, the forward sprint schedule, and
 - **[`sprint-plan.md`](sprint-plan.md) — the authoritative forward sprint schedule (S6–S18).** What we build next and in what order: Phase 1 (player maturity / competitive parity) → Phase 2 (the Adaptive Sound differentiation pivot). Encodes the founder's 2026-06-19 strategy. **Start here for "what's next."**
 - **[`00-sprint-model.md`](00-sprint-model.md) — the authoritative sprint / Kanban methodology** (5–10 SP sprints, done-done criteria, enabler-first ordering). The *how*, not the *what-next*.
 
-> **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (DSP-gate hardening). The old docs are historical records, not current plans.
+> **Sprint-numbering note:** `sprint-plan.md` opens a fresh forward sequence at **S6**. The older per-sprint docs below use their own historical numbers (Sprint 4 / 5 / 5b / "Sprint 6"). These do **not** map onto the new S6+ scheme — in particular the old **`06-sprint-6-adaptive-clarity`** ("Sprint 6") is **not** the new plan's **S6** (the architecture-review gate; DSP-gate hardening is S7). The old docs are historical records, not current plans.
 
 ## Organization
 
@@ -33,14 +33,16 @@ Files are named with numeric prefixes (`00-`, `01-`, …) for natural sorting. E
 - **s8-1-persistent-store-design.md**, **s8-2-folder-scan-design.md**, **s8-3-metadata-art-design.md**, **s8-4-live-watch-move-match-design.md** — S8 library-spine design (store now **GRDB-backed** — see the SUPERSEDED note in s8-1) — ✅ shipped
 - **s9-browse-search-ui-design.md**, **s9-library-ia-queue-design.md**, **s9-5-songs-search-design.md** (+ `-test-plan`), **s9-6-artists-genres-design.md** — S9 browse/search design — ✅ shipped
 - **s9-implementation-plan.md**, **s9-5-search-sort-design.md**, **s9-5-queue-toast-design.md**, **s9-5-customizable-columns-plan.md** — S9.5 execution/companion fragments — ⚠️ superseded/folded into `s9-5-songs-search-design.md`
-- **s10-8-deviations-plan.md**, **s10-8-realign-ledger.md** (part 1, Now Playing polish); **s10-8-library-ledger.md** (part 2, Library Twin Panels); **s10-8-glass-sweep-plan.md** (part 2, every remaining screen onto the shipped glass — founder decisions in §B), **s10-8-sweep-ledger.md** (its per-sprint record), **s10-8-browse-grid-design.md** (one shared tile grid for Albums, Artists and Genres) — S10.8 Liquid Glass sweep plans + implementation ledgers
+- **s10-queue-playlists-macos-plan.md** — the S10 breakdown into S10.1–S10.8; **s10-1-playlist-queue-store-design.md** (S10.1), **s10-2-queue-ux-design.md** (S10.2), **s10-3-playlists-ux-design.md** + **s10-3-playlists-ux-research.md** (S10.3), **s10-4-macos-system-control-design.md** (S10.4), **recently-played-frecency-design.md** (S10.6) — ✅ shipped (#53, #54, #59/#60, #58, #57)
+- **s10-7-liquid-glass-design.md** (the 8a build contract), **s10-7-visual-matrix.md** (acceptance ledger), **s10-7-retro.md** — S10.7 Liquid Glass release UX — ✅ shipped (#61)
+- **s10-8-deviations-plan.md**, **s10-8-realign-ledger.md** (part 1, Now Playing polish, #62); **s10-8-library-ledger.md** (part 2, Library Twin Panels, #63/#65/#66); **s10-8-glass-sweep-plan.md** (part 2, every remaining screen onto the shipped glass — founder decisions 1–37 in §B), **s10-8-sweep-ledger.md** (its per-sprint record: A–G, Sprint EQ, the disconnect freeze; and the "Logged post-R1" lists), **s10-8-browse-grid-design.md** (one shared tile grid for Albums, Artists and Genres), **s10-8-e-breakit-report.md**, **s10-8-g-breakit-library.md**, **s10-8-g-breakit-playback-shell.md** (break-it reports) — S10.8 Liquid Glass sweep plans + implementation ledgers — ✅ shipped (#62–#86)
 - **qw1-quick-win-differentiators-design.md** — QW1 crossfeed + Reimagine-intensity + tonal presets (crossfeed↔BRIR exclusivity invariant) — ✅ shipped
 
 **Cross-sprint topical design docs** (`{feature}-{design|plan}.md`, not owned by one sprint):
-- **layout-architecture-design.md**, **layout-implementation-plan.md**, **l3-footer-transport-design.md**, **eq-controls-redesign.md**, **music-folders-accordion.md** — GUI layout / control designs
+- **layout-architecture-design.md**, **layout-implementation-plan.md**, **l3-footer-transport-design.md**, **eq-controls-redesign.md**, **music-folders-accordion.md** — GUI layout / control designs (pre-Liquid-Glass; **eq-controls-redesign.md** is superseded by the Sprint EQ redesign, [../design/eq-lens/](../design/eq-lens/README.md))
 
 ### How tests actually run
-The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7267654BA01D315`). `swift test` runs the Swift suites headless (native swift-testing) as part of `make strict-gate`. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
+The DSP gate is the **C++ null-test harness**: `bash scripts/build-null-test.sh` (golden master `0xE7AF0C67F9340785` since Sprint EQ's EQ1b; it was `0xE7267654BA01D315`). `swift test` runs the Swift suites headless (native swift-testing) as part of `make strict-gate`. The Swift/XCTest suites described in the older `*-test-plan.md` docs (in `session-notes/`) were never built that way; treat those as historical.
 
 The **library store** (S8+) has its own headless gate — `swift run VerifyLibraryStore` (mirrors the `VerifyAUGraph` idiom). **`make gate`** runs all three: the C++ null test, `VerifyAUGraph`, and `VerifyLibraryStore`.
 
@@ -156,5 +158,5 @@ Each sprint includes three documents:
 
 ---
 
-**Last Updated:** 2026-10-06  
+**Last Updated:** 2026-10-13 (product council: S10.x records indexed, golden master, S6/S7 naming)  
 **Maintainer:** AdaptiveSound Team
