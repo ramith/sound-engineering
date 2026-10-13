@@ -3,8 +3,8 @@ import Foundation
 
 // MARK: - AudioEngineBridge Enhanced-path gapless engine
 
-/// Implements the three gapless protocol requirements (`setNextTrack`, `trackTransitionCount`,
-/// `playbackEnded`) for the Enhanced path (AVAudioEngine + streaming resampler).
+/// Gapless on the Enhanced path (the engine graph + streaming resampler): `setNextTrack`, and the
+/// seam count and end-of-queue flag the transport clock publishes in `TransportSnapshot`.
 ///
 /// ## Architecture overview
 ///
@@ -26,13 +26,13 @@ import Foundation
 ///
 /// ## Thread model
 ///
-/// All gapless state (`onDeckURL`, `gaplessTransitionCount`, `gaplessPlaybackEnded`,
-/// `onResamplerEOF`, `onPassthroughEOF`) is read and written exclusively on `resampleQueue`
-/// (the same serial queue that owns all resampler/converter state). The protocol methods
-/// `setNextTrack`, `trackTransitionCount`, and `playbackEnded` marshal onto `resampleQueue`
-/// via `async` or `sync` to honour this invariant. The VM polls the counter/flag at 20 Hz from
-/// `DispatchQueue.main`; `resampleQueue.sync` in the read path is instantaneous (the queue is
-/// never held under a slow operation when a protocol read arrives).
+/// The gapless seam state (`onDeckURL`, `onResamplerEOF`, `onPassthroughEOF`) is read and
+/// written only on `resampleQueue`, the serial queue that owns the resampler/converter state;
+/// `setNextTrack` hops there with `async`. The seam count and end flag
+/// (`gaplessTransitionCount`, `gaplessPlaybackEnded`) are written there too, but they are named
+/// acquire/release atomics: the transport clock reads them on `engineQueue` and publishes them in
+/// the `TransportSnapshot` copy. The main thread never reads them, nor syncs onto
+/// `resampleQueue` (S10.8 G).
 ///
 /// ## Gapless AAC/MP3 note
 ///
