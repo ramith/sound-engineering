@@ -915,11 +915,16 @@ class HALOutputEngine::Impl
 
     void teardown() noexcept
     {
-        // The barrier for the source is the render gate, not the unit stop: once it is closed no
-        // render pulls, even if AudioOutputUnitStop fails or the IO thread runs on until dispose.
-        if (!gate_.close(kHoldRenderTimeout))
+        // The barrier for the source is the render gate, not the unit stop: closed to new passes
+        // at once, and NEVER reopened here — a reopen would let a fresh pass start against a source
+        // its owner is about to free (start() opens it for the next session). Then wait for the
+        // one pass that may already be inside.
+        const bool quiet = !gate_.requestClose() || gate_.awaitQuiet(kHoldRenderTimeout);
+        if (!quiet)
         {
-            AdaptiveSound::log::line("[HALOutputEngine] teardown: a render pass did not finish");
+            AdaptiveSound::log::line(
+                "[HALOutputEngine] teardown: a render pass is still inside after {} ms",
+                kHoldRenderTimeout.count());
         }
         if (unit_ != nullptr)
         {
@@ -966,8 +971,27 @@ class HALOutputEngine::Impl
         achieved_.running = false;
         achieved_.didHog = false;
         source_.store(nullptr, std::memory_order_release);
+
+        // With the unit stopped and disposed, a pass still inside the gate is one the IO thread
+        // never finished (a stopped process, a page fault mid-pull — not an RT render's normal
+        // life). It holds pointers into this engine and the source: the owner must not free them
+        // (renderMayStillRun(); the Pure session parks both).
+        renderMayStillRun_ = !gate_.awaitQuiet(std::chrono::microseconds{0});
+        if (renderMayStillRun_)
+        {
+            AdaptiveSound::log::line(
+                "[HALOutputEngine] teardown: a render pass outlived the unit; its memory must stay");
+        }
     }
 
+  public:
+    // Set by teardown() just above, read by the public shell (HALOutputEngine::renderMayStillRun).
+    [[nodiscard]] bool renderMayStillRun() const noexcept
+    {
+        return renderMayStillRun_;
+    }
+
+  private:
     // ---- state ---------------------------------------------------------------------------
 
     AudioUnit unit_ = nullptr;
@@ -993,6 +1017,8 @@ class HALOutputEngine::Impl
     RenderGate gate_;
     // How long holdRender() / teardown wait for a render pass already inside the gate.
     static constexpr std::chrono::milliseconds kHoldRenderTimeout{100};
+    // The last teardown could not see the render go quiet (control plane only; see teardown()).
+    bool renderMayStillRun_ = false;
     uint32_t rfChannels_ = 0U;
     uint32_t rfBits_ = 0U;
     bool rfIsFloat_ = false;
@@ -1036,6 +1062,11 @@ bool HALOutputEngine::holdRender()
 void HALOutputEngine::releaseRender()
 {
     impl_->releaseRender();
+}
+
+bool HALOutputEngine::renderMayStillRun() const
+{
+    return impl_->renderMayStillRun();
 }
 
 AchievedOutputState HALOutputEngine::achievedState() const
