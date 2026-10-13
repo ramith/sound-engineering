@@ -118,6 +118,9 @@ Full step-by-step flows, per-journey **Phase** and **Status** (built / partially
 | 2.5 — Environment Change (Room Gets Noisy) | User in a room that has become noisier | One-shot on-demand mic sample adapts DSP, then releases the mic (LD-6) | [→ user-journeys.md](user-journeys.md#journey-25--environment-change-room-gets-noisy) |
 | 2.6 — Phase 2: System-Wide Enhancement | User enabling system-wide enhancement | Route all system audio through the DSP engine (tap primary / driver fallback) | [→ user-journeys.md](user-journeys.md#journey-26--phase-2-enabling-system-wide-enhancement) |
 | 2.7 | — | *Withdrawn 2026-07-12 (natural-language / conversational tuning removed from scope; may be re-added)* | — |
+| 2.8 — Add Music and Play from the Library *(added 2026-10-13)* | Listener with music folders | Add folders once, browse, play, survive relaunch and Finder moves — **built (R1)** | [→ user-journeys.md](user-journeys.md#journey-28--add-music-and-play-from-the-library-added-2026-10-13) |
+| 2.9 — Curate a Playlist *(added 2026-10-13)* | Listener | Create, fill, order and play a playlist; never move a file — **built (R1)** | [→ user-journeys.md](user-journeys.md#journey-29--curate-a-playlist-added-2026-10-13) |
+| 2.10 — Bit-Perfect Listening with Pure Mode *(added 2026-10-13)* | Audiophile with a USB DAC | The file's bits reach the DAC at its own rate — **built (R1)** | [→ user-journeys.md](user-journeys.md#journey-210--bit-perfect-listening-with-pure-mode-added-2026-10-13) |
 
 ---
 
