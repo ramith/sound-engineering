@@ -148,6 +148,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | FR-PLAY-04 | Delivered | Tags + embedded art off-main (S8.3 PR #15; `LibraryScan/MetadataExtractor.swift`, `ArtworkCache.swift`); Now Playing hero (S10.7 PR #61) | KI-PB-06 |
 | FR-PLAY-05 | Partial | Queue + track + offset + shuffle / repeat restored paused (`AdaptiveSound/AudioViewModel+QueueHydration.swift`, S10.2 PR #54); EQ state persists (`EQEditKit/EQStore.swift`) | Settings reset at launch → US-R1F-05 (KI-SET-01); no "profile" → S13 |
 | FR-PLAY-06 | Not built | The scan skips unlisted files silently (`LibraryScanner.swift:182-184`); there is no file import | S11 |
+| FR-AGENT-01 | Not built | **New 2026-10-13 (founder):** every user-facing player function is controllable through a local, opt-in MCP server, over the same command / state API as the UI (no second control path); hearing-safety limits enforced server-side | [EP-MCP](backlog.md#ep-mcp--agent-control-surface-mcp) — placement: 2026-10 council |
 | FR-SPAT-01 | Not built | `AudioDSP/Spatial/BRIRModule.h` is a bit-exact pass-through stub | S18 |
 | FR-SPAT-02 | Not built | — | after S18 |
 | FR-SPAT-03 | Delivered† | In-house Bauer crossfeed, opt-in, Relaxed / Default / Strong (`AudioDSP/Spatial/CrossfeedModule.h`; QW1, PR #15); licence question closed (OQ-17) | Headphone detection misses the built-in jack → US-R1F-06 (KI-DEV-01) |
