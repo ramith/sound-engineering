@@ -1193,3 +1193,72 @@ What the code holds today:
 
 At the end: the five-tab matrix in this ledger, then the founder's check on main (the quick look, the one-time
 keyboard / VoiceOver / appearance / grayscale walk, and the purple-accent test).
+
+### Build, break-it, fixes and live pass (2026-10-12 – 13)
+
+- **Lanes built in parallel** (each with the fast check; full local gate where C++, engine or store changed):
+  - **G1 Monitoring:** each channel on a lens drawn as one layer (drawn per row, each lens's shadow darkened the bars
+    above it); BEFORE / AFTER tags over their own halves; `MonitorLayout` (88 pt minimum lens; scrolls from 6 channels
+    at 1000×720 and 5 at 880×640); LAY-MON-01a–g; R4-MON on the lens, with R4-MON-01b for the bars' foot in the bleed.
+  - **2a:** `.accessibilityElement(children: .combine)` in the shared `pillMenuStyle()`, so every pill menu is one
+    VoiceOver element (device 4 → 1, Sort 3 → 1, Columns 2 → 1).
+  - **2b:** the C++ `DeviceListPolicy` hides devices with no outputs, hidden devices and private aggregates (the app's
+    own `CADefaultDeviceAggregate-<pid>` reports `aggregate=private`, confirmed live), plus a documented name backstop.
+    `CanBeDefaultDevice` was rejected: it would hide Microsoft Teams Audio.
+  - **3:** decision 37's wording, curly typography and matching VoiceOver; "24-bit int" → "24-bit" app-wide.
+- **Break-it, two breakers** (Library; playback / EQ / Settings / shell): 13 R1 blockers, 25 post-R1.
+  - **Playback (breaker B):** a VM harness compiled the real AudioViewModel sources against a fake engine; 10 of 11
+    scenarios failed on main, as reproduced by the coordinator.
+    - a scrub while paused was lost and could play the old song first;
+    - a scrub after the end of the queue drove a still-running engine;
+    - repeat / shuffle changes were ignored mid-song;
+    - queue edits while paused lost the place;
+    - Enhanced kept playing from the speakers after its output disconnected;
+    - an output change outside the app wasn't followed;
+    - in Pure, a device switch didn't move the sound;
+    - Master Gain read "+4.0 dB" while playing about −3 dB.
+  - **Library (breaker A):**
+    - **G-LIB-01:** concurrent same-folder walks deleted songs that were on disk (data loss);
+    - **.aif** wasn't scanned;
+    - removing a folder kept the queue's songs forever;
+    - changes made while the app was closed never showed (masked by the DEBUG test library's launch rescan);
+    - a second add cancelled the first scan.
+  - **Founder decisions (2026-10-12):** fix all 13 before R1; Master Gain = "show the real level" (turn-down only,
+    0 dB at the top).
+- **Fix lanes:**
+  - **transport:** `SeekRoute`, `ResumePoint`, `PlaybackOrder.onDeck`, `stopAtEndOfQueue`;
+  - **library:** `MAX(last_seen_scan, ?)`, `FolderWalkSchedule`, user-playlist-only `removeRoot`, launch catch-up,
+    queued adds; VerifyLibraryStore 157/157;
+  - **Master Gain:** `MasterGainLaw`, linear in dB over 60 dB with a silent stop; Pure shows the device's own volume
+    and reads it at start without ever writing it;
+  - **devices:** one `OutputDeviceMonitor` path plus an `OutputDevicePolicy` rule — pause on loss on both paths, the
+    system default watched, Pure moves with the device.
+  - **A flaky CI test, ANALYZER-05,** was fixed at its root: the cached re-publish is the contract; the test is now
+    deterministic, and ANALYZER-06 pins the CI interleaving.
+- **Combined check:** all lanes merged built cleanly, 702+ tests passed, periphery clean, and the harness held all 9
+  blocker scenarios (the post-R1 start race stays red).
+- **Live pass (coordinator, test library, outputs muted at device level), all passing:**
+  - the pill is one AX element; Settings wording and VoiceOver; Master Gain "0.0 dB"; one Monitoring element per
+    channel; the device menu shows only real outputs;
+  - a scrub while paused resumes there (`route=resumePoint`, no engine seek); switching songs after it starts clean;
+  - Repeat One loops; Repeat off mid-song moves on; Repeat All on the last song wraps;
+  - end of queue really stops, with an inert scrubber, and Space replays; removing a row while paused keeps the place;
+  - `.aif` is imported (format AIF); removing a folder leaves only the user playlist's 8 songs (not 15), with no
+    queue-save error; a relaunch restores the 10,043 songs;
+  - follow mode adopts an outside output change (pill, EQ slot, −1.0 dBTP Bluetooth ceiling); pinned re-asserts and
+    settles with no loop; in Pure, a device switch restarts at the playhead (falling back to Enhanced on Bluetooth).
+  - **Not live-checkable:** a device lost while playing (no hardware unplug) is the founder's check.
+  - **Lesson:** silent aggregates over Microsoft Teams Audio can't be the system default, and Enhanced follows the
+    default; device tests need device-level mute instead. macOS lowered the headphones' volume (69 → 57) while the
+    default was switching; the app wrote none. It was restored.
+- **Delivery:** nine lane PRs (#76–#84) were consolidated into one PR at the founder's ask (a linear cherry-pick of
+  every lane, identical to the live-tested combination).
+- **Logged post-R1 (in addition to the breakers' 25):**
+  - Repeat off mid-song moves on with a gap (the engine's seam isn't re-armed);
+  - HDMI / DisplayPort outputs show "(Unknown)";
+  - a queue-row double-click logs two plays;
+  - an Enhanced trim doesn't carry into Pure;
+  - shuffle on with repeat off never ends the queue;
+  - Next / Previous while paused keep the old duration;
+  - the `eq-light-folded` sheet has a renderer flake;
+  - check the EQ and Settings cards for stacked-shadow darkening under dark Reduce Transparency / Increase Contrast.
