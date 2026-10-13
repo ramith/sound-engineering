@@ -1,5 +1,7 @@
 # AdaptiveSound — Library screen (Twin Panels) handoff
 
+> **Status (reconciled 2026-10-13):** PR-A..D **shipped** — merged via PR #63 (2026-10-06), founder rounds via #65 / #66; the deliberate deviations and founder rounds are recorded in the [library ledger](../../sprints/s10-8-library-ledger.md). PR-E/F moved into the [glass sweep plan](../../sprints/s10-8-glass-sweep-plan.md) (Sprint D, PR #72, then Sprint E). The handoff text below is kept as the design input; **as built** differs where noted in *italics*.
+
 **For: a Claude session (Opus) in VS Code, repo `ramith/sound-engineering`.**
 This package redesigns the **Library** screen to match the Liquid Glass language already shipped on Now Playing. The visual truth is the **Twin Panels** design in this folder. Match it; don't invent a new layout.
 
@@ -15,6 +17,7 @@ png/02-list-card.png          ← right glass list card (the big change)
 png/03-list-header.png        ← list-card header row (title + filter + sort)
 png/04-playing-row.png        ← the currently-playing row treatment
 png/05-normal-row.png         ← a normal row
+png/06-columns.png, 07-columns-card.png, 08-columns-header.png ← the customizable-columns addendum (PR-D)
 html/Library - Twin Panels.dc.html  ← live interactive mock. Open in a browser;
 html/*.dc.html, support.js             keep ALL files in this folder together.
 ```
@@ -31,7 +34,7 @@ The Library becomes **two floating glass cards side by side** — a narrow navig
 
 ## Ground rules (repeated because they matter)
 
-- **Reuse, don't reinvent.** The Now Playing PRs already added `DesignSystem+Realign.swift` (teal tokens, `StyledGlassBar`, the mini-equalizer). Import those. If they aren't in the repo yet, do the Now Playing PR-A first.
-- **Colors** — teal family only: `#3FD0BA` bright, `#1FA893` mid, `#14897A` deep, teal text `#6FE0D0` / playing title `#7EE8D8`, dark-on-teal `#0C1413`. Non-lossless format tags (FLAC/WAV) use a muted gold `#CBB26A` — that is the ONLY non-teal accent, and it is optional.
-- **Glass** — the rail and the list are BOTH real material cards (`.ultraThinMaterial` tinted dark ~70%, 1px top highlight, hairline ring, big soft shadow). The top and bottom bars stay "styled glass" (no blur) exactly as Now Playing.
+- **Reuse, don't reinvent.** The Now Playing PRs already added `DesignSystem+Realign.swift` (teal tokens, `StyledGlassBar`, the mini-equalizer). Import those. If they aren't in the repo yet, do the Now Playing PR-A first. *(As built — no such file or type exists: the tokens are in `Sources/DesignTokenKit/Palette.swift`, the bars are `.chromeBand` (`DesignSystemGlass.swift`), the equalizer is `UI/MiniEqualizer.swift`; library ledger, deviation 1.)*
+- **Colors** — teal family only: `#3FD0BA` bright, `#1FA893` mid, `#14897A` deep, teal text `#6FE0D0` / playing title `#7EE8D8`, dark-on-teal `#0C1413`. Non-lossless format tags (FLAC/WAV) use a muted gold `#CBB26A` — that is the ONLY non-teal accent, and it is optional. *(Deferred — library ledger, deviation 8; not in code.)*
+- **Glass** — the rail and the list are BOTH real material cards (`.ultraThinMaterial` tinted dark ~70%, 1px top highlight, hairline ring, big soft shadow). *(As built: a 72 % "Regime-B" token fill with no blur, plus rim, hairline and shadow — the deliberate S10.7 material rule, [s10-7-liquid-glass-design.md](../../sprints/s10-7-liquid-glass-design.md).)* The top and bottom bars stay "styled glass" (no blur) exactly as Now Playing.
 - **One shared glow** sits behind BOTH cards (see `png/00-full-window.png`) — a single blurred teal radial, not one per card.

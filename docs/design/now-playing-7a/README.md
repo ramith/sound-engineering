@@ -1,11 +1,13 @@
 # Handoff: Adaptive Sound — Now Playing, variant 7a "Liquid Glass" (RELEASE)
 
+> **Status (reconciled 2026-10-13):** implemented as **8a** in S10.7 (PR #61 — [design](../../sprints/s10-7-liquid-glass-design.md), [acceptance ledger](../../sprints/s10-7-visual-matrix.md), [retro](../../sprints/s10-7-retro.md)), then **superseded for Now Playing styling** by the [Realigned Target](../now-playing-realigned/README.md) (S10.8 part 1, PR #62 — [realign ledger](../../sprints/s10-8-realign-ledger.md)). Kept as the design input. Notable as-built differences: panels use token fills, not blur (S10.7 material rule); the toolbar is a full-width styled band, not a floating capsule; the ENHANCED dot pulses 1 → 0.35.
+
 > **⚠ Repo-specific: read `INTEGRATION.md` first.** It maps this design onto the actual `ramith/sound-engineering` architecture (AppShell/ChromeBar/NowPlayingBar, DesignSystem tokens, existing SpectrumColorPalette) and gives the safe 6-PR plan. The Swift file here is a visual reference, NOT a drop-in — the repo already has a governed UI layer.
 
 ## What this is
 Final released design of the **Now Playing** screen, to be implemented in the existing Swift/macOS codebase (Sources/AdaptiveSound) using **VS Code + Claude Code**.
 
-**Layout is identical to variant 5a** (already specified in `design_handoff_5a/README.md`, reproduced as the base spec below via `NowPlayingView.swift` + `now-playing-base.html`). **7a changes only the material language** — it adopts macOS Liquid Glass. Implement the 5a layout, then apply the Liquid Glass layer described here.
+**Layout is identical to variant 5a** (already specified in `design_handoff_5a/README.md` — *that handoff was never committed to this repo* — reproduced as the base spec below via `NowPlayingView.swift` + `now-playing-base.html`). **7a changes only the material language** — it adopts macOS Liquid Glass. Implement the 5a layout, then apply the Liquid Glass layer described here.
 
 Open `Player Layout Variants.dc.html` in a browser and find the card labeled **7a** (turn 7; see **8a** in turn 8 for the final production polish — 8a IS the release target: 7a + polish).
 
