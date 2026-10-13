@@ -180,10 +180,9 @@ final class AudioViewModel {
         }
     }
 
-    /// The last level the user set on the output device while Pure plays, and what the device read
-    /// back then — so the knob holds the level asked for until something else moves the device
-    /// (`masterGainControl`).
-    var deviceVolumeRequest: DeviceVolumeRequest?
+    /// The last level the user asked of the output device while Pure plays — so the knob holds it
+    /// until the device answers, and while the device still reads that answer (`masterGainControl`).
+    var deviceVolumeAsked: Float?
 
     // MARK: - Spectrum Analyzer State
 

@@ -236,9 +236,12 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     /// The device Pure plays on, whose volume Master Gain shows and sets, and the listener following
     /// that volume (`watchDeviceVolume`); `nil` off Pure. Guarded by `stateLock`: set on
-    /// `engineQueue` (Pure start), taken on `engineQueue` / `configChangeQueue` (teardown), read on
-    /// the main thread (`setDeviceVolume`).
+    /// `engineQueue` (Pure start), taken on `engineQueue` (teardown), read on `deviceVolumeQueue`.
     var deviceVolumeWatch: DeviceVolumeWatch?
+
+    /// Serial queue for the Pure device's volume: the user's sets (`requestDeviceVolume`) and the
+    /// device's change listener — HAL calls that must never run on the main thread.
+    let deviceVolumeQueue = DispatchQueue(label: "com.adaptivesound.device-volume")
 
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 

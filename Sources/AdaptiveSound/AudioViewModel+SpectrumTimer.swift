@@ -163,6 +163,11 @@ extension AudioViewModel {
         if signalPath != freshPath {
             signalPath = freshPath
         }
+        // A level asked of the Pure device belongs to that session: off Pure, drop it, so the next
+        // Pure session's knob follows its device from the start.
+        if freshPath.path != .pure, deviceVolumeAsked != nil {
+            deviceVolumeAsked = nil
+        }
         refreshEQDesignRate()
     }
 

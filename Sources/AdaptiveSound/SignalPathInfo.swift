@@ -79,6 +79,10 @@ struct SignalPathInfo: Equatable {
     /// that turns the path Pure) and kept current by a listener on the device. `nil` on Enhanced.
     var deviceVolume: DeviceVolume?
 
+    /// The last level the user set on the device while Pure plays, and what the device read back
+    /// right after (`AudioPlaybackEngine.requestDeviceVolume`). `nil` until a set lands.
+    var deviceVolumeSet: DeviceVolumeRequest?
+
     // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
 
     /// Current Reimagine intensity in [0, 1], copied from `AudioViewModel.intensity` each tick.

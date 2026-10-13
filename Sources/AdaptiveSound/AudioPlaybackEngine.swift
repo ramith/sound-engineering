@@ -19,7 +19,7 @@ import PlaybackQueueKit
 /// I/O unit) or the CoreAudio HAL, take a lock held across such a call, or `.sync` onto a queue that
 /// makes one. They return a copy (`transportSnapshot`, `currentSignalPath`), an atomic, or a value
 /// read under a lock held only for the read. Anything that must touch the hardware is `async`, or
-/// hands its work to an engine queue and answers through a snapshot.
+/// hands its work to an engine queue and answers through a snapshot (`requestDeviceVolume`).
 extension AudioPlaybackEngine {
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
@@ -51,10 +51,8 @@ extension AudioPlaybackEngine {
     /// Default: no-op. Conformers with a player override this.
     func publishMasterGain(decibels _: Float) {}
 
-    /// Default: `nil` — nothing plays on Pure, so there is no device volume to set.
-    func setDeviceVolume(decibels _: Float) -> DeviceVolume? {
-        nil
-    }
+    /// Default: no-op — nothing plays on Pure, so there is no device volume to set.
+    func requestDeviceVolume(decibels _: Float) {}
 }
 
 protocol AudioPlaybackEngine: AnyObject, Sendable {
@@ -144,10 +142,11 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     func publishMasterGain(decibels: Float)
 
     /// While Pure plays, set the output device's own volume to `decibels` (clamped to the device's
-    /// range and to 0 dB at most; −∞ is its minimum) and return what the device reads afterwards,
-    /// which the signal-path snapshot carries too. `nil` when Pure is not playing. Synchronous —
-    /// call it on the main thread, where the device's volume listener also runs. Default impl: `nil`.
-    func setDeviceVolume(decibels: Float) -> DeviceVolume?
+    /// range and to 0 dB at most; −∞ is its minimum). Returns at once: the engine sets the device off
+    /// the main thread and puts what it reads back into the signal-path snapshot
+    /// (`deviceVolume`, and `deviceVolumeSet` for this request). Calls apply in the order made. A
+    /// no-op when Pure is not playing. Default impl: no-op.
+    func requestDeviceVolume(decibels: Float)
 
     // MARK: DSP Parameters
 
