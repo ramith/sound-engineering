@@ -140,7 +140,7 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         let frameLen = min(Int(frameCount), fftSize)
 
         // 1. Sum channels to mono into monoBuffer (zero the rest if frameCount < fftSize)
-        //    Channels are non-interleaved float32 from AVAudioEngine's standard format.
+        //    Channels are non-interleaved float32, the engine's standard format.
         if channelCount >= 2 {
             // Two channels: average L and R
             guard let ch0 = bufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }

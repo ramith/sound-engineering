@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Conforming types provide all I/O operations needed by AudioViewModel.
 /// The protocol enables unit-testing of AudioViewModel without a live
-/// AVAudioEngine: tests inject a `MockAudioEngine` instead.
+/// AVFAudio engine: tests inject a `MockAudioEngine` instead.
 ///
 /// Concurrency contract: all methods may be called from a background Task.
 /// Implementations are responsible for dispatching UI-bound side-effects to
@@ -70,7 +70,7 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Start playback of the audio file at `fileURL`, or a reference tone if nil, `startAt` seconds
     /// into it (0 = the top; a resume or a device move starts there, never from 0 then a seek).
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
-    /// HAL path is used; otherwise the Enhanced AVAudioEngine path is used. `epoch` numbers the
+    /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
     /// request: the snapshot's transport carries it from the start of the request on.
     func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
 
