@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets songs-perf main-thread-stall clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
+.PHONY: build run release run-release sheets songs-perf main-thread-stall clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help dist
 
 build:
 	swift build -c debug -j 8
@@ -53,6 +53,32 @@ release:
 
 run-release: release
 	@open "$$(cat /tmp/adaptive-sound-release-app-path)"
+
+# Distribution artifacts (R1+): the release bundle, signed, as a zip + a disk image + SHA-256 sums in
+# dist/. `.github/workflows/release.yml` runs this on GitHub's macOS runner when a `v*` tag is pushed,
+# attests the files' build provenance (Sigstore, like npm --provenance) and attaches them to the
+# GitHub Release, so a published build is traceable to its commit and workflow.
+# Signing: DIST_SIGN_IDENTITY defaults to "-" (ad-hoc): a consistent bundle signature, so a download
+# isn't reported as "damaged"; users still allow it once (Privacy & Security > Open Anyway). A
+# Developer ID identity + notarization slot in later; that also needs the hardened runtime, plus the
+# disable-library-validation entitlement for the FFmpeg dlopen.
+DIST_NAME ?= $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/AdaptiveSound/Info.plist)
+DIST_SIGN_IDENTITY ?= -
+DIST_DIR := dist
+dist: release
+	@APP="$$(cat /tmp/adaptive-sound-release-app-path)"; \
+		BASE="AdaptiveSound-$(DIST_NAME)-macos-arm64"; \
+		rm -rf "$(DIST_DIR)" && mkdir -p "$(DIST_DIR)/stage" || exit 1; \
+		ditto "$$APP" "$(DIST_DIR)/stage/AdaptiveSound.app" || exit 1; \
+		codesign --force --deep --sign "$(DIST_SIGN_IDENTITY)" "$(DIST_DIR)/stage/AdaptiveSound.app" || exit 1; \
+		codesign --verify --deep --strict --verbose=2 "$(DIST_DIR)/stage/AdaptiveSound.app" || exit 1; \
+		ditto -c -k --keepParent "$(DIST_DIR)/stage/AdaptiveSound.app" "$(DIST_DIR)/$$BASE.zip" || exit 1; \
+		ln -s /Applications "$(DIST_DIR)/stage/Applications"; \
+		hdiutil create -quiet -volname "AdaptiveSound $(DIST_NAME)" -srcfolder "$(DIST_DIR)/stage" \
+			-fs HFS+ -format UDZO "$(DIST_DIR)/$$BASE.dmg" || exit 1; \
+		rm -rf "$(DIST_DIR)/stage"; \
+		(cd "$(DIST_DIR)" && shasum -a 256 "$$BASE.zip" "$$BASE.dmg" > SHA256SUMS.txt) || exit 1; \
+		echo "✅ Distribution artifacts:"; ls -la "$(DIST_DIR)"
 
 # Picture sheets (S10.8 A4, debug only): render every screen × appearance × size from FIXTURE
 # models into $(SHEETS_DIR)/<tab>-<appearance>-<w>x<h>.png and exit non-zero if any sheet failed.
