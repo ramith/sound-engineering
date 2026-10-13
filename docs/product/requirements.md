@@ -134,7 +134,9 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 
 > **Implementation status (as-built vs. specified) — audit snapshot.** This PRD specifies *target* behavior: "shall" is a requirement, not a claim that the behavior exists today. Verified against `Sources/` on `main` as of this audit, the current build is a Phase-0 own-player implementing only a **subset** of what follows. The unbuilt requirements remain valid and STAY, but are **planned, not current** — confirm against the code before assuming any behavior is live. ~~For what is actually built vs. planned, see `sprint-plan.md` §Status + the source — this section does not enumerate it.~~ *(Superseded 2026-10-13: §3.0 below now enumerates it, per requirement, verified against the code; sprint-plan §Status stays the one prose status line.)*
 
-### 3.0 Requirement status matrix (verified against the code, 2026-10-13 — `main` a206107, R1 / v1.0.0-alpha)
+### 3.0 Requirement status matrix
+
+*Verified against the code on 2026-10-13 — `main` at a206107, R1 / v1.0.0-alpha.*
 
 **Status:** **Delivered** (as specified) · **Delivered†** (delivered with a recorded deviation — see the requirement's As-built note) · **Partial** · **Not built** · **Won't** (this horizon — roadmap "Deferred") · **Superseded** · **N/A**. Paths are under `Sources/` unless noted; PR numbers are GitHub PRs; KI-* are entries in [known-issues.md](known-issues.md); US-* are [backlog](backlog.md) stories.
 
