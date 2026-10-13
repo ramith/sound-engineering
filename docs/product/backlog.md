@@ -1715,7 +1715,7 @@ As a **developer** I want the known races and gaps in our own checks closed, so 
 As a **Tom** I want a 5.1 or 7.1 album to play all its channels on my stereo headphones or speakers, so that the centre (usually the lead vocal) and the surrounds are not simply missing.
 
 **Covers:** KI-MC-01 — today the spatial AU keeps the first M channels and drops the rest (`SpatialRenderKernel.cpp:59-89`).
-**Decision for the founder:** (a) an interim standard fold-down (ITU-R BS.775 coefficients, loudness-safe, clearly labelled as interim) until S18's binaural fold, which bends the "no naive downmix" rule for a short time; or (b) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) — silence for four channels is the worse violation of the rule's intent.
+**Decision for the founder:** (a) pull forward the fold the [S4 design](../sprints/05-sprint-5b-s4-binaural-design.md) §1 already chose — Apple's `AVAudioEnvironmentNode` / `AUSpatialMixer` (HRTFHQ, sources at ITU-R BS.775 positions) — as the interim device-boundary render; (b) an interim standard fold-down (BS.775 coefficients, loudness-safe, labelled interim), which bends the "no naive downmix" rule for a while; or (c) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) if it fits a small sprint, else (b) — silence for four channels is the worse violation of the rule's intent. (The architecture reconciliation raised the same finding as its F1.)
 **Priority:** Must (it is wrong audio) | **Estimate:** 2 sp | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final fix in **S18**
 
 #### US-QA-07 — THD+N oracle
