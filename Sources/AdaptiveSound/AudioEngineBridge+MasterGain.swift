@@ -35,15 +35,17 @@ extension AudioEngineBridge {
 
     // MARK: - Pure: the output device's own volume
 
-    /// See `AudioPlaybackEngine.setDeviceVolume`. Runs on the main thread, as the device's volume
-    /// listener does, so a listener read can never land between this write and its read-back and
-    /// leave an older level in the snapshot.
-    func setDeviceVolume(decibels: Float) -> DeviceVolume? {
-        guard let device = withStateLock({ deviceVolumeWatch?.deviceID }) else { return nil }
-        DeviceHardwareVolume.set(device, decibels: decibels)
-        let volume = DeviceHardwareVolume.read(device)
-        storeDeviceVolume(volume)
-        return volume
+    /// See `AudioPlaybackEngine.requestDeviceVolume`. Returns at once: the set and its read-back run
+    /// on `deviceVolumeQueue` — HAL calls, which can wait while macOS reconfigures a device, never on
+    /// the main thread. The device's volume listener runs on that queue too, so a listener read can
+    /// never land between this write and its read-back and leave an older level in the snapshot.
+    func requestDeviceVolume(decibels: Float) {
+        deviceVolumeQueue.async {
+            guard let device = self.withStateLock({ self.deviceVolumeWatch?.deviceID }) else { return }
+            DeviceHardwareVolume.set(device, decibels: decibels)
+            let volume = DeviceHardwareVolume.read(device)
+            self.storeDeviceVolume(volume, answering: decibels)
+        }
     }
 
     /// Read the volume of the device Pure has just started on and begin following it. Called by
@@ -53,11 +55,12 @@ extension AudioEngineBridge {
         unwatchDeviceVolume() // one watch at a time (a Pure restart re-registers)
         let device = AudioObjectID(deviceID)
         var address = DeviceHardwareVolume.scalarAddress
-        // On the main queue: serialized with `setDeviceVolume`. The block is cheap (one property read).
+        // On `deviceVolumeQueue`, serialized with `requestDeviceVolume` — never the main queue: the
+        // read is a HAL call, and the HAL announces volume changes while it tears a device down.
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             self?.storeDeviceVolume(DeviceHardwareVolume.read(device))
         }
-        let added = AudioObjectAddPropertyListenerBlock(device, &address, DispatchQueue.main, block) == noErr
+        let added = AudioObjectAddPropertyListenerBlock(device, &address, deviceVolumeQueue, block) == noErr
         if !added {
             // The slider still sets the device; only a change made elsewhere goes unseen.
             NSLog("[PureMode] could not follow the volume of device \(deviceID)")
@@ -66,9 +69,8 @@ extension AudioEngineBridge {
         return DeviceHardwareVolume.read(device)
     }
 
-    /// Stop following the device's volume. Idempotent across the two teardown domains (engineQueue
-    /// stop / configChangeQueue device loss): the watch is taken under the lock, so exactly one
-    /// caller removes it. Removal passes the exact (device, address, queue, block) the add used (F5).
+    /// Stop following the device's volume. Idempotent: the watch is taken under the lock, so exactly
+    /// one caller removes it. Removal passes the exact (device, address, queue, block) the add used (F5).
     func unwatchDeviceVolume() {
         let taken = withStateLock { () -> DeviceVolumeWatch? in
             let watch = deviceVolumeWatch
@@ -77,15 +79,18 @@ extension AudioEngineBridge {
         }
         guard let watch = taken, let listener = watch.listener else { return }
         var address = DeviceHardwareVolume.scalarAddress
-        AudioObjectRemovePropertyListenerBlock(watch.deviceID, &address, DispatchQueue.main, listener)
+        AudioObjectRemovePropertyListenerBlock(watch.deviceID, &address, deviceVolumeQueue, listener)
     }
 
     /// Put a device reading into the snapshot — only while the path is Pure, so a late listener
-    /// call after teardown can't paint a device volume onto Enhanced.
-    private func storeDeviceVolume(_ volume: DeviceVolume) {
+    /// call after teardown can't paint a device volume onto Enhanced. A reading taken right after the
+    /// user set `answering` dB is recorded as that request's answer (`deviceVolumeSet`).
+    private func storeDeviceVolume(_ volume: DeviceVolume, answering decibels: Float? = nil) {
         mutateSignalPath { info in
-            if info.path == .pure {
-                info.deviceVolume = volume
+            guard info.path == .pure else { return }
+            info.deviceVolume = volume
+            if let decibels {
+                info.deviceVolumeSet = DeviceVolumeRequest(decibels: decibels, answer: volume)
             }
         }
     }

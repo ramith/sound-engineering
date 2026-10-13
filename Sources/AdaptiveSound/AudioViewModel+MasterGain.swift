@@ -13,12 +13,18 @@ extension AudioViewModel {
     var masterGainControl: MasterGainControl {
         guard pureModeEngaged else { return .app(decibels: masterGain) }
         guard case let .decibels(shown) = signalPath.deviceVolume else { return .deviceFixed }
-        // The knob holds the level asked for while the device still reads what it read right after:
-        // a device can step its volume more coarsely than the slider, and the next key press must
-        // still move on from where the knob is. Anything else moving the device (the volume keys)
-        // changes the reading, and the knob follows the device again.
-        let held = deviceVolumeRequest.flatMap { $0.answer == .decibels(shown) ? $0.decibels : nil }
-        return .device(shown: shown, knob: held ?? shown)
+        return .device(shown: shown, knob: heldDeviceKnob(shown: shown) ?? shown)
+    }
+
+    /// Where the knob holds instead of following the device: at the level asked for, until the
+    /// device answers it (the set runs off the main thread), and then while the device still reads
+    /// its answer — a device can step its volume more coarsely than the slider, and the next key
+    /// press must still move on from where the knob is. Anything else moving the device (the volume
+    /// keys) changes the reading, and the knob follows the device again.
+    private func heldDeviceKnob(shown: Float) -> Float? {
+        guard let asked = deviceVolumeAsked else { return nil }
+        guard let set = signalPath.deviceVolumeSet, set.decibels == asked else { return asked }
+        return set.answer == .decibels(shown) ? asked : nil
     }
 
     /// The slider moved to `position`: set the app's gain, or on Pure the device's own volume.
@@ -30,16 +36,10 @@ extension AudioViewModel {
             }
             return
         }
-        guard let answer = engine.setDeviceVolume(decibels: level) else { return }
-        deviceVolumeRequest = DeviceVolumeRequest(decibels: level, answer: answer)
-        // The readout shows the device's answer now rather than at the next 20 Hz poll (which then
-        // reads the same answer from the engine's snapshot).
-        if signalPath.deviceVolume != answer {
-            signalPath.deviceVolume = answer
-        }
-        if case let .decibels(reading) = answer {
-            logMasterGain("device volume → \(MasterGainLaw.text(reading)) (Pure)")
-        }
+        // Off the main thread: the engine sets the device and the snapshot brings back its answer.
+        engine.requestDeviceVolume(decibels: level)
+        deviceVolumeAsked = level
+        logMasterGain("device volume → \(MasterGainLaw.text(level)) asked (Pure)")
     }
 
     /// Hand the engine the app's gain: on every change and at engine-ready
@@ -112,7 +112,8 @@ enum MasterGainControl: Equatable {
     }
 }
 
-/// A level the user set on the output device while Pure plays, and what the device read back.
+/// A level the user set on the output device while Pure plays, and what the device read back
+/// (`SignalPathInfo.deviceVolumeSet`).
 struct DeviceVolumeRequest: Equatable {
     let decibels: Float
     let answer: DeviceVolume
