@@ -5,6 +5,7 @@
 **Date**: 2026-06-13
 **Owner**: Product (ramith@wso2.com)
 **Phase**: Concept-era vision doc (2026-06-13), **reframed 2026-07-05 to lead with the player-maturity-first thesis** (see §1 / §3 / §4). Build is well underway — current status & sprint sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md) + [`backlog.md`](backlog.md). The vision, personas, KPIs, locked decisions, and risks remain the north star — now **sequenced behind the player, not abandoned**; treat phase/status specifics here as historical.
+**Reconciled to the code:** 2026-10-13 (product council), against `main` at a206107 — **R1 shipped as v1.0.0-alpha** (PR #87; [release notes](../releases/v1.0.0-alpha.md)). The vision text below is unchanged; where the code now differs from a locked decision or a feature note, an *As-built* annotation says so and names the decision that changed it. Per-requirement status: [requirements.md §3.0](requirements.md#30-requirement-status-matrix). Per-story status and forward links: [backlog.md](backlog.md). Open defects: [known-issues.md](known-issues.md).
 
 > **⚠️ Two "Phase" vocabularies — do not conflate.** This PRD's **Phase 0 / 1 / 1.5 / 2** is the *product-capability* axis: player MVP → mix-based core → stem object engine → system-wide. The **roadmap / sprint-plan** use **Phase 1 / Phase 2** for the *execution / release* axis: player-maturity parity → the differentiation pivot (S15–S18). They are **not** the same numbering. Rosetta: this PRD's "Phase 1 mix-core" and "Phase 1.5 stem engine" ship across execution **S15–S18** (roadmap Phase 2); this PRD's "Phase 2 system-wide" is **"Won't, this horizon"** on the execution roadmap. When in doubt, execution sequencing is authoritative in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).
 
@@ -30,17 +31,17 @@ These were confirmed with the founder and supersede any conflicting text below. 
 | LD-6 | **Ambient mic adaptation** | **On-demand sampling** (user taps "adapt to my environment"; mic samples ~3 s, then released). No always-on mic. | P0-11, P1-4 |
 | LD-7 | **HRTF** | **BRIR-first** (see LD-14 — BRIR supersedes the generic-HRTF-only approach in LD-7 v0.1). Default binaural experience = BRIR (HRTF + early reflections + late reverb). Dry HRTF = "minimal" fallback mode. SADIE-II (Apache-2.0) remains the anechoic HRIR core inside the BRIR. | P1-1 |
 | LD-8 | *Withdrawn 2026-07-12* | Natural-language / conversational tuning removed from scope (founder decision); may be re-added. |
-| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. OSS license deferred to post-MVP. | Whole doc |
+| LD-9 | **Project model** | Personal / open-source, non-commercial. No monetization, pricing, paywall, or feature-gating of any kind. OSS license deferred to post-MVP. *As-built (2026-10-13): the repository is public and R1 is released, with no licence file yet — see §6 and backlog US-REL-02.* | Whole doc |
 | LD-10 | **Quality-first / ample use of modern hardware** | Maximize quality using all modern hardware: multi-core + GPU (Metal) + Neural Engine, fast SSD (aggressive caching/precompute), optional network assist for non-sensitive latency-tolerant work. Hard limits: per-buffer RT deadline; core playback stays offline-capable; privacy (mic on-device); battery/thermal. In own-player, latency is free → exploit look-ahead. Kernel exposes latency/quality budget (max-quality in player, bounded-latency in Phase 2). | NFR-PERF-02/03/04 |
 | **LD-11** | **Source quality & non-goals** | Assume reasonably good sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise, de-clip, or upsampling to fix bad audio). Network may be used for non-sensitive, latency-tolerant work; **core playback + RT DSP stay offline-capable**. | §4, §7 |
 | **LD-12** | **Perceptual tonal model** | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial), not a single magnitude curve. The dB curve is a realization/interchange format only. | §4, Arbiter design |
 | **LD-13** | **Phase realization = minimum-phase by default** | Phase mode is chosen by **content** (transient density from pre-analysis); linear/mixed-phase is opt-in or band-limited where it genuinely helps. Pre-ringing (not latency) is the real cost. | §4 DSP, P1-DSP |
 | **LD-14** | **BRIR-first immersion** | Headphone spatialization defaults to a **binaural room response** (HRTF + early reflections + late reverb); dry HRTF is a "minimal" mode. Head-tracking is opt-in for music. Speaker immersion = M/S width + ambience extraction (mono-safe); crosstalk-cancellation is opt-in (centered near-field only). Crossfeed opt-in. | P1-1, P1-3, §4 spatial |
 | **LD-15** | **Stem-based object engine (Phase 1.5)** | Offline **6-stem** separation (vocals/drums/bass/guitar/piano/other), cached to SSD. Full **per-stem chains including spatial placement**, re-summed to binaural. Masking computed **between stems**. **Own-player-only** — the live tap path (Phase 2) is mix-level only; real-time-lite separation is a research track. | §4 Phase 1.5, P1.5-1…6 |
-| **LD-16** | **"Reimagine" intensity knob** | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → rising = clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. | §3b, P1-17, P1.5-7 |
+| **LD-16** | **"Reimagine" intensity knob** | One continuous control: **0% = original mix, stem engine bypassed (bit-faithful, zero separation artifacts)** → rising = clarity → spatial widening → **100% = full stem-based spatial reimagining**. Crossfades original↔stem-render + scales spatial spread / unmask depth. Mix-range in Phase 1; stem-range unlocked in Phase 1.5. *As-built (Sprint EQ decision 25, 2026-10-10, PR #73): the user's EQ plays in full ahead of the knob, which scales only the adaptive enhancement; bit-faithful = **0 % with the EQ Off**, or Pure Mode.* | §3b, P1-17, P1.5-7 |
 | **LD-17** | **Dynamics & loudness** | **No program DRC by default** (transparent LUFS normalization + true-peak safety limiter only). Loudness compensation = **fraction of the equal-loudness contour difference** (ISO 226) + per-device SPL calibration + loudness-matched makeup, **rate-limited to volume changes only**. | §4 dynamics, P1-6 |
 | **LD-18** | **Target hardware & runtime posture** | **Floor = Apple-Silicon Pro-class (M1 Pro, 2021) / ≥16 GB**; the shipping generation is far above it — **M4** (38-TOPS NE, ~120 GB/s) → **M4 Pro/Max** (10–12 P-cores, 273–546 GB/s, 64–128 GB) and **M5** (per-GPU-core neural accelerators, ~4× M4 GPU-AI compute, 153 GB/s base). The app is the **foreground, primary activity** ("lean-back listening"), free to **use many cores and occupy memory generously**. Net: the Phase-1.5 render has **large headroom on current hardware**; design for the M1 Pro floor and exploit the abundance above it. Supersedes the base-8 GB-Air framing; **downgrades Risk R-3 to Low**. Degrade gracefully if backgrounded. **Power:** default max-quality on AC; auto-lighter (Efficiency profile) on battery — user-overridable. | §15, NFR-PERF-06, R-3, personas |
-| **LD-19** | **App shape** | A focused **full-window lean-back listening app** (now-playing + scene visualizer + Reimagine dial) **plus a menu-bar extra** for quick control. Both surfaces share one engine. | FR-UI |
+| **LD-19** | **App shape** | A focused **full-window lean-back listening app** (now-playing + scene visualizer + Reimagine dial) **plus a menu-bar extra** for quick control. Both surfaces share one engine. *As-built (R1): five tabs (Now Playing, Library, EQ, Monitoring, Settings) in Liquid Glass, dark and light; the menu-bar extra has transport only (PR #25) — no Reimagine dial or volume there yet.* | FR-UI |
 
 ---
 
@@ -57,6 +58,8 @@ The one-line vision above is the **north star** — *sequenced behind the player
 ### What Adaptive Sound Is
 
 Near-term, Adaptive Sound is a **bit-perfect audiophile music player** for macOS — a real library player (scan, browse, search, queue, tags, cover art, media keys, gapless) that drives your DAC **bit-exact** (CoreAudio HAL-direct, hog mode, per-track sample-rate match). That mature player is the near-term product and the foundation everything else stands on.
+
+> **As-built (R1, v1.0.0-alpha, 2026-10-13):** this paragraph is now what ships — music folders with live updates, Songs / Albums / Artists / Genres with filter and sort, playlists, a persistent queue with shuffle / repeat and Recently Played, cover art, media keys and Control Center, gapless, Pure Mode (HAL-direct, hog mode, per-track rate; `HALOutputEngine`), a 31-band graphic EQ, loudness normalisation and a safety limiter. Not in R1: tag **editing** (tags are read, not written), CUE sheets, headphone correction and loudness compensation (S11–S14 → R2). macOS 26 on Apple Silicon; the build is not notarized yet.
 
 On that base it grows into an **object-based spatial music renderer** — the long-horizon differentiation, layered in once the player is credible. That layer does two things:
 
@@ -164,7 +167,7 @@ Adaptive Sound is the only Mac audio enhancer that continuously re-renders music
 The Reimagine intensity knob is the primary user-facing control for transformation depth. It is **not** an effects preset or a quality switch — it is a continuous spectrum from **"hear exactly what was recorded"** to **"hear the recording reimagined for your headphones."**
 
 Design principles:
-- **0% is a first-class listening mode.** It is not a "disable processing" fallback. At 0%, the audio path is verified bit-faithful (MD5-equal bypass, per NFR-QUAL). This is the anchor that earns user trust for higher settings.
+- **0% is a first-class listening mode.** It is not a "disable processing" fallback. At 0%, the audio path is verified bit-faithful (MD5-equal bypass, per NFR-QUAL). This is the anchor that earns user trust for higher settings. *(Amended by Sprint EQ decision 25, 2026-10-10: the knob used to blend the EQ with the dry signal, so below 100 % the EQ graph lied. Now the EQ always plays in full and the knob scales only the enhancement; the bit-faithful anchor is "0 % **with the EQ Off**" — the tooltip reads "0 % — Reimagine off (your EQ still plays)". The default is 20 %.)*
 - **The knob is the only control most users need.** Below the knob, the engine works automatically. Above, stems give expert users more resolution.
 - **Default should sit in the low-to-mid mix range.** Enough improvement to be immediately noticeable; far enough from the stem range that separation artifacts are never an out-of-box surprise.
 - **Phase 1 mix range and Phase 1.5 stem range are a single continuous control.** The ceiling raises when stems are available; the UX does not change.
@@ -190,6 +193,8 @@ Design principles:
 | macOS driver required | **Phase 2: no driver primary** (process tap, macOS 14.2+); libASPL fallback only | Yes | Yes | Yes | No | No |
 | Continuous adaptation (vs. static post-decode) | **Yes — adapts every buffer** | No | No | No | No | **No — static post-decode** |
 | Price | Free / open-source | Free | $19.99 | $39 | $99/yr | Free (Apple ecosystem) |
+
+> **As-built (R1) — read the "Adaptive Sound" column as the target, not the shipped product.** Of its rows, R1 has: own-player mode, the Reimagine knob's primitive, crossfeed, a manual EQ with presets and per-output memory, loudness normalisation, and free / source-available distribution. **Not built yet:** adaptive / content-aware / volume-aware processing (S14–S17), ambient sensing, BRIR and head tracking (S18 / unscheduled), headphone correction (S12–S13), speaker auto-switching, system-wide processing (Won't, this horizon). What R1 does have that the table does not list is the near-term wedge of §1: a bit-perfect Pure Mode and a real library.
 
 **Sharp differentiation in one sentence**: Every competitor — including Apple's Spatial Audio Foundation — applies a fixed, static profile decided at setup; Adaptive Sound continuously re-renders every buffer to your current audio, volume, and device.
 
@@ -221,25 +226,25 @@ Design principles:
 
 #### Features
 
-| # | Feature | Priority | Notes |
-|---|---|---|---|
-| P0-1 | Local file playback (FLAC, ALAC, MP3, AAC, WAV) | M | The player shell. AVAudioEngine for decode, format/SR conversion, device routing. |
-| P0-2 | Real-time spectral analysis of playing content | M | FFT via vDSP. Foundation of content-aware EQ. Meters + loudness up via seqlock/ring to UI at ≥30 fps. |
-| P0-3 | Content-aware adaptive EQ — auto-adjusts bands per spectral profile | M | Core differentiator. ERB/Bark perceptual domain (LD-12) in pre-analysis; first DSP results here. |
-| P0-4 | Volume-aware EQ (equal-loudness compensation) | M | Fractional equal-loudness contour difference per LD-17. Immediate "wow" for Persona B. |
-| P0-5 | Output device auto-detection (headphones vs. speakers) | M | Via `kAudioHardwarePropertyDefaultOutputDevice`. Switch profiles on plug/unplug. |
-| P0-6 | Built-in device preset library (Mac built-in speakers, AirPods, Sony, Bose, Sennheiser top models) | S | ~20 presets covering common output devices. Enables out-of-box experience. |
-| P0-7 | Manual EQ override with real-time visualization | S | Escape hatch for Persona C. Typed contribution; does not replace the engine. |
-| P0-8 | Basic crossfeed (reduce stereo separation for headphones) | S | Reduces listening fatigue. Opt-in per LD-14. |
-| P0-9 | Playback queue, basic library view, drag-and-drop | S | Minimum viable player UX. |
-| P0-10 | True-peak safety limiter + LUFS normalization | M | Per LD-17: transparent normalization + ≥4× oversampling limiter (−1 dBTP, ~1 ms look-ahead, ITU-R BS.1770-5). Non-optional. |
-| P0-11 | Psychoacoustic bass enhancement (device/SPL-gated) | C | Mono-sum NLD (avoids Waves US-11,102,577 per §7 patent risk). Gate on transducer capability. IP review required before release. |
-| P0-12 | Ambient noise sensing via built-in mic (on-demand, ~3 s sample) | C | LD-6: on-demand only. Requires mic-permission UX. Can defer to Phase 1. |
-| P0-13 | Head tracking via AirPods motion | W | Phase 1. |
-| P0-14 | BRIR binaural rendering (full spatial) | W | Phase 1 (LD-14). |
-| P0-16 | Streaming service integration | W | Phase 2 (requires system-wide process tap). |
-| P0-17 | System-wide audio processing | W | Phase 2 (process tap primary; libASPL fallback) — explicitly deferred. |
-| P0-18 | Windows / cross-platform | W | Not in roadmap. macOS-only. |
+| # | Feature | Priority | Notes | As-built (2026-10-13) |
+|---|---|---|---|---|
+| P0-1 | Local file playback (FLAC, ALAC, MP3, AAC, WAV) | M | The player shell. AVAudioEngine for decode, format/SR conversion, device routing. | **Shipped (R1)** — library scan + Apple / optional-FFmpeg decode (S8 PR #15, PR #85). No single-file open (backlog US-LIB-02); `.opus` unscanned (→ S11). |
+| P0-2 | Real-time spectral analysis of playing content | M | FFT via vDSP. Foundation of content-aware EQ. Meters + loudness up via seqlock/ring to UI at ≥30 fps. | **Shipped** — analyzer lens at 20 Hz + per-channel Monitoring (S10.7 PR #61, Sprint G PR #85). It feeds the display only; no adaptive EQ consumes it. |
+| P0-3 | Content-aware adaptive EQ — auto-adjusts bands per spectral profile | M | Core differentiator. ERB/Bark perceptual domain (LD-12) in pre-analysis; first DSP results here. | **Not built** → S15–S16 (masking / Clarity). Content classification itself is unscheduled. |
+| P0-4 | Volume-aware EQ (equal-loudness compensation) | M | Fractional equal-loudness contour difference per LD-17. Immediate "wow" for Persona B. | **Not built** → S14. |
+| P0-5 | Output device auto-detection (headphones vs. speakers) | M | Via `kAudioHardwarePropertyDefaultOutputDevice`. Switch profiles on plug/unplug. | **Partial** — pick or follow the output, pause on loss, per-output EQ (PR #73, #85). Headphone-vs-speaker detection is transport-only (known issue KI-DEV-01) → S13. |
+| P0-6 | Built-in device preset library (Mac built-in speakers, AirPods, Sony, Bose, Sennheiser top models) | S | ~20 presets covering common output devices. Enables out-of-box experience. | **Not built** → S13 (7 tonal presets exist; no device presets). |
+| P0-7 | Manual EQ override with real-time visualization | S | Escape hatch for Persona C. Typed contribution; does not replace the engine. | **Shipped** — accurate 31-band graphic EQ + Tone macros + played-curve graph (Sprint EQ, PR #73). |
+| P0-8 | Basic crossfeed (reduce stereo separation for headphones) | S | Reduces listening fatigue. Opt-in per LD-14. | **Shipped** — in-house Bauer crossfeed, off by default (QW1, PR #15). |
+| P0-9 | Playback queue, basic library view, drag-and-drop | S | Minimum viable player UX. | **Shipped (R1)** — library, browse, search, persistent queue, playlists (S8–S10.3: PR #15, #17, #23, #53, #54, #59, #60); drag onto playlists. No Finder file drop. |
+| P0-10 | True-peak safety limiter + LUFS normalization | M | Per LD-17: transparent normalization + ≥4× oversampling limiter (−1 dBTP, ~1 ms look-ahead, ITU-R BS.1770-5). Non-optional. | **Shipped** — 8× oversampled limiter + BS.1770 normalisation (Sprint 4, PR #14); EQ-only ceiling −0.1 dBTP on wired outputs (decision 29, PR #73). |
+| P0-11 | Psychoacoustic bass enhancement (device/SPL-gated) | C | Mono-sum NLD (avoids Waves US-11,102,577 per §7 patent risk). Gate on transducer capability. IP review required before release. | **Not built**; unscheduled (backlog US-TON-04). |
+| P0-12 | Ambient noise sensing via built-in mic (on-demand, ~3 s sample) | C | LD-6: on-demand only. Requires mic-permission UX. Can defer to Phase 1. | **Not built**; unscheduled (no microphone code). |
+| P0-13 | Head tracking via AirPods motion | W | Phase 1. | Not built; unscheduled. |
+| P0-14 | BRIR binaural rendering (full spatial) | W | Phase 1 (LD-14). | Not built → S18. |
+| P0-16 | Streaming service integration | W | Phase 2 (requires system-wide process tap). | Won't, this horizon. |
+| P0-17 | System-wide audio processing | W | Phase 2 (process tap primary; libASPL fallback) — explicitly deferred. | Won't, this horizon. |
+| P0-18 | Windows / cross-platform | W | Not in roadmap. macOS-only. | — |
 
 **What is explicitly NOT in Phase 0**: Any virtual audio device, sudo/install step, system-wide processing, streaming app integration, BRIR convolution, stem separation. Phase 0 is a music player with a smart DSP brain and a verified bypass mode.
 
@@ -252,21 +257,21 @@ Design principles:
 
 #### Features
 
-| # | Feature | Priority | Notes |
-|---|---|---|---|
-| P1-1 | **BRIR binaural rendering** — virtual soundstage externalized outside the head | M | LD-14 default. HRTF + early reflections + late reverb (room synthesis or CC0/CC-BY IRs). SADIE-II HRIR as anechoic core. libmysofa + vDSP/FFTConvolver. |
-| P1-2 | Head tracking via AirPods motion (opt-in) | M | CMHeadphoneMotionManager, macOS 14+. Opt-in per LD-14. |
-| P1-3 | Dry HRTF "minimal" mode (crossfeed opt-in) | S | Per LD-14: BRIR is default; dry HRTF is the minimal fallback for users who prefer less room. |
-| P1-4 | Ambient noise sensing via mic — adapts EQ/dynamics to room noise floor | S | On-demand per LD-6. |
-| P1-6 | Adaptive loudness — LUFS normalization across tracks + loudness-matched makeup | S | LD-17: fraction of equal-loudness contour diff; rate-limited to volume changes; per-device SPL calibration required. |
-| P1-7 | Profile system: save/load named profiles, iCloud sync | S | Device↔profile binding (per architecture §14). |
-| P1-8 | Genre / mood detection (Core ML, on-device) | S | LD-5: layered in during Phase 1. vDSP feature analysis (BPM/key/spectral) per ADR-005. |
-| P1-9 | Apple Music / iTunes library integration (local files only, no streaming) | C | Surfaces local library without drag-and-drop. |
-| P1-10 | A/B listening mode (bypass toggle with matched loudness) | S | Helps users perceive the enhancement. Bypass = Reimagine at 0% (bit-faithful per LD-16). |
-| P1-11 | Basic analytics dashboard: listening time, enhancement deltas | C | Engagement / habit-formation. |
-| P1-12 | Speaker immersion: M/S width + ambience extraction (mono-safe) | S | LD-14 speaker path. Hard mono-compatibility. Crosstalk-cancellation = opt-in near-field only. |
-| P1-17 | **Reimagine intensity knob (mix range, 0%–~60%)** | M | LD-16. 0% = bit-faithful bypass (verified MD5-equal). Rising = clarity + BRIR widening. Stem range ceiling unlocked in Phase 1.5. Single most prominent user control. |
-| P1-18 | System-wide audio (Phase 2 scope) | W | Gate between phases clean. |
+| # | Feature | Priority | Notes | As-built (2026-10-13) |
+|---|---|---|---|---|
+| P1-1 | **BRIR binaural rendering** — virtual soundstage externalized outside the head | M | LD-14 default. HRTF + early reflections + late reverb (room synthesis or CC0/CC-BY IRs). SADIE-II HRIR as anechoic core. libmysofa + vDSP/FFTConvolver. | **Not built** (pass-through stub) → S18. |
+| P1-2 | Head tracking via AirPods motion (opt-in) | M | CMHeadphoneMotionManager, macOS 14+. Opt-in per LD-14. | **Not built**; unscheduled. |
+| P1-3 | Dry HRTF "minimal" mode (crossfeed opt-in) | S | Per LD-14: BRIR is default; dry HRTF is the minimal fallback for users who prefer less room. | **Not built** → after S18. (Crossfeed shipped — P0-8.) |
+| P1-4 | Ambient noise sensing via mic — adapts EQ/dynamics to room noise floor | S | On-demand per LD-6. | **Not built**; unscheduled. |
+| P1-6 | Adaptive loudness — LUFS normalization across tracks + loudness-matched makeup | S | LD-17: fraction of equal-loudness contour diff; rate-limited to volume changes; per-device SPL calibration required. | **Partial** — LUFS normalisation shipped, with per-track load-time analysis (PR #14, #73); the equal-loudness part → S14. |
+| P1-7 | Profile system: save/load named profiles, iCloud sync | S | Device↔profile binding (per architecture §14). | **Not built** — per-output EQ memory + My Presets only (PR #73) → S13 (JSON). iCloud sync: Won't, this horizon. |
+| P1-8 | Genre / mood detection (Core ML, on-device) | S | LD-5: layered in during Phase 1. vDSP feature analysis (BPM/key/spectral) per ADR-005. | **Not built**; unscheduled. |
+| P1-9 | Apple Music / iTunes library integration (local files only, no streaming) | C | Surfaces local library without drag-and-drop. | **Not built**; unscheduled. The app has its own folder-based library instead (S8). |
+| P1-10 | A/B listening mode (bypass toggle with matched loudness) | S | Helps users perceive the enhancement. Bypass = Reimagine at 0% (bit-faithful per LD-16). | **Partial** — the EQ's hold-to-Compare, loudness-fair (decision 28, PR #73) → S12 for the full A/B. |
+| P1-11 | Basic analytics dashboard: listening time, enhancement deltas | C | Engagement / habit-formation. | **Not built**. Nearest: Recently Played with play counts (S10.6, PR #57). |
+| P1-12 | Speaker immersion: M/S width + ambience extraction (mono-safe) | S | LD-14 speaker path. Hard mono-compatibility. Crosstalk-cancellation = opt-in near-field only. | **Not built**; unscheduled. |
+| P1-17 | **Reimagine intensity knob (mix range, 0%–~60%)** | M | LD-16. 0% = bit-faithful bypass (verified MD5-equal). Rising = clarity + BRIR widening. Stem range ceiling unlocked in Phase 1.5. Single most prominent user control. | **Partial** — the knob and its blend shipped (QW1); it scales only the adaptive enhancement, and bit-faithful now means 0 % **with the EQ Off** (decision 25, PR #73). Mapping → S17. |
+| P1-18 | System-wide audio (Phase 2 scope) | W | Gate between phases clean. | Won't, this horizon. |
 
 ---
 
@@ -322,6 +327,8 @@ Design principles:
 ---
 
 ## 5. Success Metrics / KPIs by Phase
+
+> **As-built (R1):** the app has **no telemetry, no analytics and no crash reporting** — it makes no network calls at all (which satisfies NFR-PRIV-04 trivially). So every metric below that needs "in-app analytics", "telemetry" or "crash reporting" **cannot be measured** today; only the qualitative rows (daily use by the maintainer, GitHub signals) apply. Measuring the rest needs SPIKE-TELEMETRY + backlog US-PRIV-03 (unscheduled), or the KPIs should be restated for a personal / open-source project.
 
 ### Phase 0 KPIs (Local-File Player MVP)
 
@@ -382,6 +389,8 @@ Adaptive Sound is a **personal / open-source project**. It is free to use, free 
 
 The choice of open-source license is **deferred until post-MVP** (after Phase 0). It does not need to be settled to build or privately test the MVP; it only needs to be in place before the repository is made public. Until then, treat the code as "source-available, license TBD."
 
+> **As-built (2026-10-13) — a gap against this section:** the GitHub repository is already **public** and v1.0.0-alpha is released from it, but there is **no LICENSE file**, so nobody may legally reuse the code yet. This section said the licence "needs to be in place before the repository is made public". Raised as a council finding; backlog **US-REL-02**.
+
 ---
 
 ## 7. Top Risks and Open Product Decisions
@@ -399,7 +408,7 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 | macOS future OS updates break AudioServerPlugIn ABI (fallback path only) | R-7 | Medium | High | Fallback driver path only. Monitor Apple developer forums. Fast release cadence for compatibility patches. Primary tap path governed by a different API surface. |
 | App Store sandbox blocks Phase 2 AudioServerPlugIn (fallback path only) | R-8 | High | High | Fallback driver path: direct notarized DMG is the required distribution path. Verify whether primary process-tap path is App Store-eligible during Phase 2 planning. |
 | **Patent risk — psychoacoustic bass enhancement** | R-9 | Medium | High | Waves US-11,102,577 (stereo virtual bass, active ~2038). Mitigation: generate bass harmonics from mono-summed (L+R) low band only (per architecture §9). Do NOT implement per-channel/stereo virtual bass. Obtain formal IP review before any public release (OQ-16). |
-| **OSS license-compliance risk** | R-10 | Medium | High | All shipped code and data must be permissively licensed. Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole) are reference-only — do not copy or ship. Weights/data licenses are separate from code licenses (MIT-code + NC-weights is not shippable). Verify each dependency against `docs/session-notes/prior-art.md` §4–5 before vendoring. |
+| **OSS license-compliance risk** *(as-built: the only linked third-party code is GRDB.swift, MIT; libebur128, MIT, is test-only; FFmpeg is never bundled — it is loaded at runtime only if the user installed it; crossfeed is an in-house reimplementation, not libbs2b)* | R-10 | Medium | High | All shipped code and data must be permissively licensed. Copyleft libs (JUCE, KFR, Essentia, aubio, BlackHole) are reference-only — do not copy or ship. Weights/data licenses are separate from code licenses (MIT-code + NC-weights is not shippable). Verify each dependency against `docs/session-notes/prior-art.md` §4–5 before vendoring. |
 | Apple Spatial Audio / ASAF improvements narrow the differentiation gap | R-11 | Medium | Medium | Stay ahead on continuous content-awareness and per-stem spatial rendering — areas ASAF (static post-decode) structurally cannot address. Speed of iteration is the moat. |
 | BRIR quality not compelling out-of-box with generic HRTFs | R-12 | Medium | High | Invest in a high-quality default BRIR set (room synthesis + SADIE-II HRIR core). Offer personalization path (Phase 1). Ship A/B mode (Reimagine 0% vs. current setting). |
 | Phase 2 setup friction (permission grant or driver install) | R-13 | Medium | Medium | Primary tap path needs only a one-screen permission grant (no device switch, no sudo). Fallback: dedicated onboarding, guided installer. Study eqMac's UX. |
@@ -417,6 +426,8 @@ The choice of open-source license is **deferred until post-MVP** (after Phase 0)
 ---
 
 **Decision 3 — Distribution channels for Phase 2: App Store or direct-only?**
+
+> **As-built for the own-player (R1):** direct download only — a drag-to-Applications DMG and a zip on the GitHub release, built by a tag-triggered workflow with build-provenance attestation (PR #87). The app is **Developer-ID-style, not sandboxed** (S8.1 design D5), so the Mac App Store is not an option as built. R1 is ad-hoc signed and **not notarized** (founder decision 13; backlog US-REL-01). No Homebrew cask. The question below stays open for Phase 2 only.
 
 For the **fallback AudioServerPlugIn path**: must ship as a notarized direct-download DMG (sandbox incompatible).
 
@@ -448,6 +459,8 @@ The exact curve from knob position to processing parameters (how fast clarity ra
 ---
 
 ## Appendix: Phasing Summary
+
+> **As-built pointer (2026-10-13):** the summary below is the concept-era capability phasing. What has shipped is the **Phase 0 player** as **R1** (v1.0.0-alpha), ordered player-maturity-first; its success gates as written (retention, "sounds better" surveys) are not measurable without telemetry. Execution order and releases: [roadmap.md](roadmap.md) (R1 → R2 after S14 → R3 after S17).
 
 ```
 Phase 0 — Player MVP:     Local-file player MVP — prove the DSP spine
@@ -497,4 +510,4 @@ Phase 2 — System-wide:     System-wide via Core Audio process tap (primary, ma
 
 ---
 
-*Document owner: Ramith (ramith@wso2.com). Architecture source of truth: `docs/architecture/architecture.md`. This is the concept-era vision/why doc; execution status & sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md).*
+*Document owner: Ramith (ramith@wso2.com). Architecture source of truth: `docs/architecture/architecture.md`. This is the concept-era vision/why doc; execution status & sequencing live in [`../sprints/sprint-plan.md`](../sprints/sprint-plan.md). Reconciled to the code 2026-10-13 — the code is the state of the product; this document carries the vision and the rationale.*
