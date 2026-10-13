@@ -86,7 +86,7 @@ extension AudioViewModel {
             logUX("output: crossfeed auto-disabled (non-headphone device)")
         }
         guard moved else { return }
-        let path = engine.currentSignalPath()
+        let path = engine.snapshot().signalPath
         guard OutputDevicePolicy.playbackMovesWithOutput(
             isPlaying: isPlaying, onPure: path.path == .pure, interrupted: path.interrupted
         ) else { return }

@@ -34,8 +34,8 @@ extension AudioEngineBridge {
         }
     }
 
-    /// The rate the EQ is designed at (`AudioPlaybackEngine.eqSampleRate`): the live AU's — the
-    /// rate its Realizer designs at, the kernel's — else the graph format's 48 kHz, so the graph's
+    /// The rate the EQ is designed at (`EngineSnapshot.eqDesignRate`): the live AU's — the rate its
+    /// Realizer designs at, the kernel's, an atomic — else the graph format's 48 kHz, so the graph's
     /// played curve is designed exactly as the engine plays it.
     func eqSampleRate() -> Double {
         guard let unit = dspAURef else { return Self.graphSampleRate }

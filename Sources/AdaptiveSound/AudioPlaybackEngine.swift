@@ -17,9 +17,10 @@ import PlaybackQueueKit
 /// MAIN-THREAD RULE (S10.8 G, the disconnect freeze): the view model calls every SYNCHRONOUS
 /// requirement on the main thread, so none of them may call into AVFAudio (a node, the engine, its
 /// I/O unit) or the CoreAudio HAL, take a lock held across such a call, or `.sync` onto a queue that
-/// makes one. They return a copy (`transportSnapshot`, `currentSignalPath`), an atomic, or a value
-/// read under a lock held only for the read. Anything that must touch the hardware is `async`, or
-/// hands its work to an engine queue and answers through a snapshot (`requestDeviceVolume`).
+/// makes one. State comes back as ONE copy (`snapshot()`); the rest hand values to non-blocking
+/// sinks, or read a value under a lock held only for the read. Anything that must touch the hardware
+/// is `async`, or hands its work to an engine queue and answers through the snapshot
+/// (`requestDeviceVolume`).
 extension AudioPlaybackEngine {
     // MARK: Gapless defaults (overridden by the live engine + the mock)
 
@@ -114,24 +115,18 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// on `resampleQueue`; Pure: `pureModeEngineClearNextTrack`, which joins the dropped source off-RT.)
     func setNextTrack(_ fileURL: URL?) async
 
-    /// The transport as the engine last sampled it, off the main thread: the playhead within the
-    /// current track (re-zeroed at each seam), the seam count, and whether the queue ran out. A copy —
-    /// it never waits on the player, the engine or the hardware, however long they are stuck; it may
-    /// be a frame stale. After `startAudio`, `stopAudio` and `seek` return, it reflects them.
-    func transportSnapshot() -> TransportSnapshot
+    /// The engine's state as the main thread may read it — the ONE read the view model makes of it:
+    /// the transport as the engine last sampled it off the main thread (the playhead within the
+    /// current track, re-zeroed at each seam; the seam count; whether the queue ran out), the signal
+    /// path, the loudness and the EQ's design rate. A copy of published values — it never waits on
+    /// the player, the engine or the hardware, however long they are stuck. The transport may be a
+    /// clock tick stale; after `startAudio`, `stopAudio` and `seek` return, it reflects them.
+    func snapshot() -> EngineSnapshot
 
     /// Seek to `seconds` from the start of the current file.
     /// In the Pure path this is handled natively by the HAL engine. In the
     /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
     func seek(to seconds: Double) async
-
-    /// Snapshot of the active signal path (path kind, achieved rate, bit depth, etc.).
-    /// Lock-free; safe to poll from the UI at 20 Hz.
-    func currentSignalPath() -> SignalPathInfo
-
-    /// Latest BS.1770-5 loudness measurement (LUFS + sample-peak), measured on the
-    /// playback tap. Lock-free; safe to poll from the UI. `.unmeasured` if unavailable.
-    func currentLoudness() -> LoudnessSnapshot
 
     // MARK: Master Gain
 
@@ -156,11 +151,6 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// non-throwing; the engine validates its input (count, finite, ±12 dB) and coalesces bursts.
     /// No-op if no live AU (e.g. engine not initialized).
     func publishEQ(points: [Float], isOn: Bool)
-
-    /// The sample rate (Hz) the EQ is designed at — the live DSP AU's, else the graph's 48 kHz before
-    /// it exists — so the graph's played curve (`EQDesigner`) is designed exactly as the engine plays
-    /// it. Synchronous, off-RT, cheap enough to read on every redraw.
-    func eqSampleRate() -> Double
 
     /// Publish a new Reimagine intensity value ([0, 1]) to the live DSP AU.
     /// No-op if the AU is not yet instantiated. Default impl: no-op.

@@ -4,6 +4,7 @@ import EQEditKit
 import Foundation
 import os
 import PlaybackQueueKit
+import Synchronization
 import TrackLoudnessKit
 
 // MARK: - AudioEngineBridge
@@ -163,13 +164,15 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// consumed at EOF by the seam handler.
     var onDeckURL: URL?
 
-    /// Monotonic count of completed gapless seams (track transitions). Incremented on `resampleQueue`
-    /// at each real seam; read synchronously from `resampleQueue` by `trackTransitionCount()`.
-    var gaplessTransitionCount: UInt64 = 0
+    /// Monotonic count of completed gapless seams (track transitions): written on `resampleQueue`
+    /// at each real seam (the only writer), read by the transport clock without waiting on that
+    /// queue. Named acquire/release atomic; use `gaplessTransitionCount`.
+    let gaplessTransitionCounter = Atomic<UInt64>(0)
 
-    /// Set to `true` when the current track reaches EOF with no next track on deck. Cleared by the
-    /// next `startAudio`. Read synchronously from `resampleQueue` by `playbackEnded()`.
-    var gaplessPlaybackEnded: Bool = false
+    /// `true` once the current track reached EOF with no next track on deck; cleared by the next
+    /// `startAudio`. Written on `resampleQueue` / `engineQueue`, read by the transport clock.
+    /// Named acquire/release atomic; use `gaplessPlaybackEnded`.
+    let gaplessEndedFlag = Atomic<Bool>(false)
 
     /// Called on `resampleQueue` when the 48 kHz passthrough `scheduleFile` reaches playback-end
     /// (`.dataPlayedBack` fires). The gapless extension installs this to chain the next track or
@@ -201,7 +204,9 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// uses this instead of the transient `playerNode.isPlaying`, which a hardware reconfiguration
     /// (a device connecting/disconnecting) can momentarily flip to `false` — causing the re-establish
     /// to bail and leave playback silently dead. Intent is the durable truth; the node state is not.
-    var enhancedPlayIntent: Bool = false
+    /// A named acquire/release atomic (`enhancedPlayIntent`), so the device-loss decision reads and
+    /// clears it without waiting on `resampleQueue`, which can be busy in AVFAudio or a file open.
+    let enhancedPlayIntentFlag = Atomic<Bool>(false)
 
     /// Backing storage for "Keep playback on this device" — guarded by `stateLock` (written from the
     /// main actor, read by the output rule on `configChangeQueue` / `engineQueue`). `true` (default) =
@@ -318,7 +323,16 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     // EQ control plane (dspAURef + publishEQ) lives in AudioEngineBridge+EQControl.swift.
 
-    func currentLoudness() -> LoudnessSnapshot {
+    /// The engine's state for the main thread (`AudioPlaybackEngine.snapshot`): the transport clock's
+    /// last sample, the signal path (a copy under `stateLock`, whose holders never call out), the
+    /// meter's atomics and the EQ design rate (an atomic). No AVFAudio, no HAL, no queue hop.
+    func snapshot() -> EngineSnapshot {
+        EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
+                       loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
+    }
+
+    /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`).
+    private func loudnessReadout() -> LoudnessSnapshot {
         guard let meter = loudnessMeter?.handle else { return .unmeasured }
         let readout = loudnessMeterRead(meter)
         return LoudnessSnapshot(
@@ -326,10 +340,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
             shortTermLufs: readout.shortTermLufs,
             truePeakDb: readout.truePeakDb
         )
-    }
-
-    func currentSignalPath() -> SignalPathInfo {
-        loadSignalPath()
     }
 
     deinit {
