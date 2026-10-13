@@ -4,6 +4,8 @@
 **Verified on:** 2026-06-17  
 **Scope:** macOS music playback, digital signal processing, Apple Silicon acceleration, open-source audio projects, and AI-based enhancement.
 
+> **Pre-build survey (2026-06-17), kept as decision support — not a description of this codebase.** As shipped (2026-10-13): a custom BS.1770-5 `LufsMeter` at runtime with libebur128 as the test oracle; `AVAudioConverter(.max)` for SRC (not soxr / r8brain); a 31-band *graphic* EQ as a double-precision SVF cascade on NEON (not a parametric biquad EQ); FFmpeg only as the Pure-path `dlopen` fallback decoder; no ML. See [architecture.md §2.5](architecture.md#25-shipped-pipeline-sprints-45b-pure-mode-gapless-s6s108-incl-sprint-eq-and-sprint-g) and [audio-pipeline-stage-choices-review.md](audio-pipeline-stage-choices-review.md).
+
 ---
 
 ## 1. Executive conclusion
