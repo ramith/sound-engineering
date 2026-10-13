@@ -67,10 +67,11 @@ namespace AdaptiveSound
         void stop();
 
         // Hold the render: the callback outputs silence and leaves the source alone until
-        // releaseRender(); returns once no render pass is pulling (bounded by one pass, ~100 ms
-        // at most). No HAL call — the device keeps running and the session stays configured. For
-        // a control-plane operation on the source, e.g. a seek (FileDecodeSource::seek's
-        // precondition). False if a render pass did not finish in time: nothing is held.
+        // releaseRender(). Closed to new passes at once; returns once the one pass already inside
+        // (if any) has left — never waits on a pass that starts later (RenderGate.h). No HAL call:
+        // the device keeps running and the session stays configured. For a control-plane operation
+        // on the source, e.g. a seek (FileDecodeSource::seek's precondition). False only if that
+        // one pass is still inside after 100 ms (an RT render never is): nothing is held.
         // Control-plane only.
         [[nodiscard]] bool holdRender();
         void releaseRender();
