@@ -14,7 +14,7 @@
 ## Validation Philosophy
 
 **Three Pillars:**
-1. **Automated Testing** — Catch regressions quickly (null-test, THD+N, frequency response)
+1. **Automated Testing** — Catch regressions quickly (null-test / bit-exact bypass, golden master, frequency response, libebur128 LUFS/true-peak oracle; THD+N is planned — no THD+N test exists yet)
 2. **Integration Testing** — Verify end-to-end behavior (soak tests, device switching, parameter automation)
 3. **Listening Panel** — Validate perceptual quality (professional audio engineers, MUSHRA-style)
 
@@ -24,7 +24,7 @@
 
 ## Per-Merge Gates (Automated, < 15 Minutes)
 
-**Runs on every PR to `main`.** Must pass before merge.
+**Runs on every PR to `main`** (CI: `.github/workflows/strict-ci.yml` runs `make strict-gate` on GitHub-hosted `macos-26`). Must pass before merge. *(Reconciled to the code 2026-10-13, product council.)*
 
 ### Gate 1: DSP Test Harness (C++ null-test) — the primary gate
 
@@ -35,11 +35,11 @@ bash scripts/build-null-test.sh
 This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` + the `*.inc` area files). It is the **canonical DSP gate**.
 
 **Requirements:**
-- All harness tests pass (0 failures; the harness reports the count) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams.
-- Stereo **golden master** signature `0xE7267654BA01D315` (FNV-1a over the processed L+R of a deterministic chirp through +6 dB @ 1 kHz EQ + active limiter) must match. Any one-ULP change to stereo output flips it; re-baseline only on a founder-approved DSP change.
+- All harness tests pass (0 failures; the harness reports the count — 202 registered as of 2026-10-13) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams, crossfeed, Realizer, intensity ramp, the libebur128 LUFS/true-peak oracle, the 31-band FR sweep, the graphic-EQ designer vs its Python oracle, track-loudness profiling, EQ transitions and the RT EQ engine paths, the loudness-neutral gain, the Sprint EQ break-it / fix-round regressions, the device-list policy, the render gate, RT-allocation soaks and snapshot no-tear.
+- Stereo **golden master** signature `0xE7AF0C67F9340785` (`GoldenMaster_StereoN2_v1`, `Tests/MultichannelTests.inc:45`: FNV-1a over the processed L+R of a deterministic chirp through +6 dB @ 1 kHz EQ + active limiter) must match. Any one-ULP change to stereo output flips it; re-baseline only on a founder-approved DSP change. *(Re-baselined in Sprint EQ's EQ1b, when the +6 dB moved to the accurate SVF graphic EQ; it was `0xE7267654BA01D315`.)*
 - Fixtures are written + read in `<repo>/test-data/` (never `/tmp`); generated WAV/bin are git-ignored.
 
-**`swift test` runs headless** (native swift-testing) and **is** part of the pre-merge `make strict-gate`. The Swift test targets (`AudioViewModelTests`, `AudioDSPTests`) use the Swift Testing framework; the DSP golden-master gate, however, remains the C++ null-test harness, not `swift test`.
+**`swift test` runs headless** (native swift-testing) and **is** part of the pre-merge `make strict-gate`. The seven Swift test targets (`AudioViewModelTests`, `LibraryBrowseKitTests`, `EQEditKitTests`, `OutputDeviceKitTests`, `TrackLoudnessKitTests`, `DesignTokenKitTests`, `AudioDSPTests`) use the Swift Testing framework; the DSP golden-master gate, however, remains the C++ null-test harness, not `swift test`.
 
 **Companion offline checks (`swift run`, headless):**
 - `swift run VerifyAUGraph` — proves the custom v3 AU registers, instantiates, sits in the AVAudioEngine graph, and renders.
@@ -47,9 +47,9 @@ This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` +
 
 ### Gate 2: Bit-Exact Bypass (intensity-0 null test)
 
-**Purpose:** Verify that intensity 0% produces bit-identical output.
+**Purpose:** Verify that intensity 0% with the EQ flat or off produces bit-identical output.
 
-This is **not** a CLI invocation — it is the harness test `IntensityZero_BitExactPassthrough` (+ `IntensityZero_MultiChunkBitExact`) in `DspBypassTests.inc`: the kernel early-returns at `intensityLinear == 0`, and the output is compared byte-for-byte (`memcmp`) against the input. The Pure-Mode software-chain bit-exactness is covered by `RoundTripTests.inc` (decode → `convertFloatToNative`, zero tolerance, 16/24-bit).
+This is **not** a CLI invocation — it is the harness test `IntensityZero_BitExactPassthrough` (+ `IntensityZero_MultiChunkBitExact`) in `DspBypassTests.inc`, with `EQ_Off_BitExact` / `EQ_BitPerfect_P0` / `EQ_FlatIsBitTransparentBypass` for the EQ side. Intensity is ramped (τ = 32 ms); once it has settled at 0 the kernel runs EQ → limiter (path P1), and after a 2 s hold with an identity (flat or off) EQ it takes the bit-perfect path P0 and returns the block untouched (`DSPKernel.cpp:191-212`; since Sprint EQ, decision 25, Intensity 0 alone is no longer the bypass). The test settles the ramp with silent buffers, then compares byte-for-byte (`memcmp`) against the input. The Pure-Mode software-chain bit-exactness is covered by `RoundTripTests.inc` (decode → `convertFloatToNative`, zero tolerance, 16/24-bit).
 
 **Acceptance:** byte-identical (zero tolerance) for both the kernel bypass and the Pure software-chain round-trip. (Run via Gate 1.)
 
@@ -63,15 +63,18 @@ Harness tests `EQ_FrequencyResponseAccuracy` and `EQ_CoefficientSwapNoClick` (`E
 
 ### Gate 4: Sanitizers + clang-tidy (C++23)
 
-The C++ modules build under **`gnu++2b` / C++23** (see `Package.swift` `cxxLanguageStandard: .gnucxx2b` and `scripts/build-null-test.sh` `-std=gnu++2b`) — **not** C++17. Run the harness translation unit under ASan/UBSan, and clang-tidy with the C++23 standard:
+The C++ modules build under **`gnu++2b` / C++23** (see `Package.swift` `cxxLanguageStandard: .gnucxx2b` and `scripts/lib/cxx-analysis-flags.sh` `cxx_analysis_core_flags`: `-std=gnu++2b`, shared by `build-null-test.sh`, clang-tidy and the pre-commit hook) — **not** C++17. All of it runs from `make strict-gate`:
 
 ```bash
-# ASan/UBSan: add the sanitizer flags to the build-null-test.sh clang++ invocation
-#   (-fsanitize=address,undefined) and run ./Tests/DSPKernelNullTest.
-# clang-tidy on the C++ modules (std must be gnu++2b / c++2b, matching production):
-clang-tidy --checks=readability-*,cppcoreguidelines-* \
-  Sources/AudioDSP/*.mm Sources/AudioDSP/**/*.cpp -- -std=gnu++2b -I Sources/AudioDSP/include
+make sanitize               # the null test under ASan + UBSan
+make tsan                   # the null test under ThreadSanitizer
+make sanitize-library-store # VerifyLibraryStore under ASan (the FFmpeg metadata bridge)
+make leak-check             # leaks(1) — Apple-Silicon ASan ships no LeakSanitizer
+# clang-tidy: the repo .clang-tidy (WarningsAsErrors "*"), pinned LLVM 23, over Sources/AudioDSP,
+# Sources/AudioDSPTestBridge and Tests/ (.cpp/.mm/.cc), with the flags in scripts/lib/cxx-analysis-flags.sh
 ```
+
+*Also per merge (strict-gate, `scripts/strict-gate.sh`): SwiftFormat / SwiftLint / clang-format drift, semgrep (`.semgrep.yml`), the suppression policy, the migrator never-erase and playlist reference-add guards, Kit-purity / Dynamic-Type guards, cppcheck (if installed), Periphery, `swift build`, `swift test`, `make gate`, `make main-thread-stall`, the null-test source-coverage guard and a `--release-strict` (-O2, -Werror) compile.*
 
 **Acceptance:** zero sanitizer errors, zero clang-tidy violations.
 
@@ -83,13 +86,15 @@ The library store (`LibraryStore`, GRDB.swift over system libsqlite3) has no pla
 swift run VerifyLibraryStore     # or: make library-store-verify
 ```
 
-**Acceptance:** all checks PASS (schema/migration/corruption/restart-durability + CRUD/integrity, facets, WAL concurrency ending in `PRAGMA integrity_check=ok`, idempotency+identity, and filesystem-divergence), process exits 0. `make gate` runs Gate 1 + `VerifyAUGraph` + this in one command.
+**Acceptance:** all numbered checks PASS (S8.1 schema/migration/corruption/restart-durability + CRUD/integrity, facets, WAL concurrency ending in `PRAGMA integrity_check=ok`, idempotency+identity, filesystem-divergence; plus scan/reconcile, metadata + artwork, folder watch, move-match, reachability, FTS5 search, sort and play tracking, playlists, additive-migration convergence, album artists, store-open safety, genre covers), process exits 0. `make gate` runs Gate 1 + `VerifyAUGraph` + this in one command.
 
 ---
 
 ## Nightly Regression Suite (Full, ~30 Minutes)
 
-**Runs every night.** Designed to catch subtle regressions.
+> **Aspirational — no nightly job exists.** CI runs `make strict-gate` on every PR / push to `main` (`strict-ci.yml`) and the release build on `v*` tags (`release.yml`); there is no scheduled workflow. Each item below is marked with what covers it today.
+
+Designed to catch subtle regressions.
 
 ### Test 1: Biquad Fitting Stress
 ```cpp
@@ -114,13 +119,15 @@ for (int i = 0; i < 1000; i++) {
 
 **Acceptance:** All 1000 curves stable, gains within tolerance
 
+> **Covered per merge instead** (the bell fitter above was retired in Sprint EQ): the `GraphicEQDesigner` suite in `EqDesignerTests.inc` — `EQ_ACGE_Ramo1000` (1000 binary and integer ±12 dB commands), `EQ_ACGE_Hard`, `EQ_ACGE_SingleBand`, `EQ_Designer_MatchesOracle`, at 44.1–192 kHz.
+
 ### Test 2: 20-Track Corpus End-to-End
 
 > **Aspirational — no batch CLI exists.** There is no `./AdaptiveSound --input … --intensity N` command; the app is GUI-only. This corpus pass would need a small offline driver (e.g. extend `VerifyAUGraph` / a dedicated harness) that decodes each track, runs the kernel/graph offline, and measures the metrics below against `ffmpeg ebur128`. Until that driver exists, corpus-level LUFS/BRIR/RT metrics are measured ad hoc or via the C++ harness's synthetic signals.
 
 Planned measurements over a 20-track corpus (varied genres, dynamic range):
 - LUFS accuracy (vs. `ffmpeg ebur128`)
-- BRIR convolution correctness (correlation to reference) — *pending the BRIR module (Sprint 6+; currently a stub)*
+- BRIR convolution correctness (correlation to reference) — *pending the BRIR module (forward-plan S18; currently a pass-through stub)*
 - RT-safety metrics (no xruns, p99.9 render ≤ 5 ms)
 
 **Acceptance (when the driver exists):**
@@ -143,6 +150,8 @@ for (int frame = 0; frame < 480000; frame += 2400) { // 50 ms steps
 
 **Acceptance:** No spectral artifacts detected
 
+> **Covered per merge instead:** the EQ-transition harness (`EQ_Transitions_Realistic` / `_Adversarial` / `_SinglePoints`, `BreakIt_Transitions_LowBandGestures`, `EqEngineFixTests.inc`) and `EQ_CoefficientSwapNoClick`. (`eqModule.setGain` is not an API; the EQ takes 31 points through the Realizer.)
+
 ### Test 4: Clarity Masking Model (Reference Check)
 ```cpp
 // Synthetic masking test: 1 kHz (loud) + 4 kHz (soft)
@@ -159,6 +168,8 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 **Acceptance:** Threshold ≤ ±1 dB of reference
 
+> **Aspirational — not built.** `ClarityModule` is a pass-through stub with no masking model; this belongs to S15–S16 (SPIKE-MASKING-MODEL).
+
 ---
 
 ## Per-Sprint Final Validation (Manual + Scripted)
@@ -168,9 +179,9 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 ### SPRINT 4: Loudness Safety & Transparent Dynamics
 
 #### Automated Tests (see [../sprints/04-sprint-4-loudness-safety.md](../sprints/04-sprint-4-loudness-safety.md))
-- [ ] Limiter null-test: bypass = bit-identical
-- [ ] True-peak enforcement: output ≤ −1 dBTP
-- [ ] GR response: < 2 ms
+- [x] Limiter null-test: bypass = bit-identical (`Limiter_BypassIsIdentity`)
+- [x] True-peak enforcement: output ≤ −1 dBTP (`Limiter_TruePeak_CeilingGuarantee_vs_ebur128`)
+- [x] GR response: < 2 ms (`Limiter_GRResponseWithin2ms`)
 - [ ] Soak test: 1 hour, zero XRuns
 - [ ] Hearing-safety clamp: proportional scaling verified
 
@@ -197,13 +208,13 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 ### SPRINT 5 / 5b: Minimum-Phase EQ Wiring & Spectral Correction
 
 #### Automated Tests (see [../sprints/05-sprint-5-eq-foundation.md](../sprints/05-sprint-5-eq-foundation.md))
-- [ ] Biquad stability: all random curves stable
-- [ ] Null-test: 0 dB = bit-identical
-- [ ] Frequency response: ±0.5 dB per band center
+- [x] Biquad stability: all random curves stable (now the graphic-EQ designer: `EQ_ACGE_*`)
+- [x] Null-test: 0 dB = bit-identical (`EQ_FlatIsBitTransparentBypass`, `EQ_Off_BitExact`)
+- [ ] Frequency response: ±0.5 dB per band center *(gated at ±1.0 dB: `EQ_Sweep31Bands_48k` / `_44k`)*
 - [ ] Gain linearity: ±20 dB range both directions
 - [ ] Phase coherence (min-phase): no pre-ringing
-- [ ] Parameter ramping: no zipper noise
-- [ ] AutoEq profile loading: 5/5 profiles parse, apply
+- [x] Parameter ramping: no zipper noise (`EQ_Transitions_*`, `EQ_CoefficientSwapNoClick`)
+- [ ] AutoEq profile loading: 5/5 profiles parse, apply *(not built — S12)*
 
 #### Manual Tests (Scripted)
 - [ ] Log-sweep test: apply known curve → measure response
@@ -353,17 +364,17 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| C++ harness pass rate (120 tests) | 100% (0 failures) | DONE — passing |
-| Stereo golden master | `0xE7267654BA01D315` match | DONE — matching |
+| C++ harness pass rate (202 tests as of 2026-10-13; the harness reports the count) | 100% (0 failures) | DONE — passing |
+| Stereo golden master | `0xE7AF0C67F9340785` match (re-baselined in Sprint EQ; was `0xE7267654BA01D315`) | DONE — matching |
 | Code coverage (signal path) | ≥80% | TBD |
 | Null-test accuracy (THD+N) | ≤ −120 dB | TBD |
-| LUFS measurement accuracy | ±0.1 LUFS | TBD |
-| True-peak enforcement | ≤ −1 dBTP | TBD |
-| EQ frequency response | ±1 dB | TBD |
+| LUFS measurement accuracy | ±0.1 LUFS | Gated at ±0.2 LU vs libebur128 (`Loudness_Oracle_Integrated_vs_ebur128`); ±0.1 LU vs ffmpeg via `scripts/validate-lufs.sh` (manual) |
+| True-peak enforcement | ≤ −1 dBTP | DONE — gated (`Limiter_TruePeak_CeilingGuarantee_vs_ebur128`) |
+| EQ frequency response | ±1 dB | DONE — gated (`EQ_Sweep31Bands_48k` / `_44k`, ±1.0 dB) |
 | Listening panel consensus | ≥80% ≥4 rating | TBD |
 | Artifact reports | ≤10% of panelists | TBD |
 | Soak test (2 hr) | Zero XRuns | TBD |
-| Code quality (ASAN/TSan) | Zero violations | TBD |
+| Code quality (ASAN/TSan) | Zero violations | DONE — gated per merge (`make sanitize`, `tsan`, `sanitize-library-store`, `leak-check`) |
 
 ---
 
