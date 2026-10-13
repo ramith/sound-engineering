@@ -60,7 +60,7 @@ extension AudioEngineBridge {
 
         // Capture the playhead BEFORE restarting (the player may stop reporting a render time across
         // the reconfiguration; `lastKnownEnhancedPositionSeconds` is the freshest reliable value).
-        let resumePos = currentPlaybackPosition() ?? lastKnownEnhancedPositionSeconds
+        let resumePos = liveEnhancedPosition() ?? lastKnownEnhancedPositionSeconds
 
         if !engine.isRunning {
             do {

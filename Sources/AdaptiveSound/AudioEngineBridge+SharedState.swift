@@ -20,13 +20,13 @@ import os
 ///   - call any engine method (AVAudioEngine, CoreAudio), or
 ///   - call out to any other closure that could re-enter the lock.
 ///
-/// The ONE sanctioned exception is `withPureEngine` (below): it runs a Pure C-ABI *read* under the
-/// lock so the handle cannot be destroyed mid-call. That is deadlock-free because those C-ABI reads
-/// operate purely on the C++ session struct — they never re-enter the bridge, take `stateLock`, or
-/// dispatch onto a bridge queue — so no edge from `stateLock` back to any queue/lock exists. Every
-/// other closure obeys the no-call-out rule, so `stateLock` can never participate in a deadlock
-/// cycle. (Teardown deliberately does its slow HAL work — destroy/stop — OUTSIDE the lock; see
-/// `detachPureEngineForTeardown`.)
+/// There is NO exception (S10.8 G, the disconnect freeze): the main thread takes this lock 20 times
+/// a second (`currentSignalPath`, the device and AU borrows), so holding it across any call into
+/// AVFAudio, the CoreAudio HAL or the Pure C-ABI — which can wait seconds while macOS tears a device
+/// down — would freeze the app. `withPureEngine` used to run Pure's C-ABI (seek's HAL stop/start
+/// included) under it; it now borrows the session under the lock and calls OUTSIDE it, on
+/// `engineQueue`, where every Pure call and the Pure teardown are serialized. Teardown likewise does
+/// its slow HAL work outside the lock (see `detachPureEngineForTeardown`).
 ///
 /// `os_unfair_lock` is non-recursive; the leaf-only rule guarantees we never re-enter it — no
 /// closure passed to `withStateLock` / `withPureEngine` calls another `stateLock` accessor.
@@ -162,29 +162,20 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Borrow the live Pure engine handle for the duration of `body`, holding `stateLock` so a
-    /// concurrent teardown cannot destroy it mid-call. Returns `nil` WITHOUT invoking `body` when
-    /// the Pure path is not active (or no handle exists) — callers treat that as "not on the Pure
-    /// path" (e.g. the poll falls through to the Enhanced branch).
+    /// Borrow the live Pure engine handle for the duration of `body`. Returns `nil` WITHOUT invoking
+    /// `body` when the Pure path is not active (or no handle exists) — callers treat that as "not on
+    /// the Pure path" (e.g. the clock falls through to the Enhanced branch).
     ///
-    /// SAFE by construction (see the leaf-lock note at the top of this file):
-    ///   1. `body` may ONLY call the non-re-entrant Pure C-ABI reads
-    ///      (`pureModeEnginePositionSeconds` / `pureModeEnginePollTrackAdvance` /
-    ///      `pureModeEnginePlaybackEnded` / `pureModeEngineSeek` / `pureModeEngineArmOpenedNextTrack` /
-    ///      `pureModeEngineClearNextTrack`). Those touch only the C++ session; they never take
-    ///      `stateLock` or hop a bridge queue, so no lock cycle forms. Do NOT call `logUX`/`NSLog`
-    ///      or any `withStateLock` accessor inside `body`; log the returned result afterwards.
-    ///   2. Teardown detaches the handle UNDER this same lock (`detachPureEngineForTeardown`) and
-    ///      destroys it OUTSIDE the lock, so a borrower either finished its C-ABI call before the
-    ///      detach returned, or observes `activePath != .pure` here and skips — it can never
-    ///      dereference a freed handle.
+    /// ON `engineQueue` ONLY (enforced): every Pure C-ABI call (position, seam poll, end flag, seek,
+    /// arm, clear) and every Pure teardown run there, so they are serialized with each other. The
+    /// session is borrowed STRONGLY under `stateLock` and `body` runs OUTSIDE it: a seek's HAL
+    /// stop/start or a clear's thread join can take long, and the main thread must never wait on the
+    /// lock meanwhile. No teardown can run mid-call (same queue), and the strong borrow would keep the
+    /// handle alive anyway.
     func withPureEngine<T>(_ body: (UnsafeMutableRawPointer) -> T) -> T? {
-        withStateLock {
-            guard activePath == .pure, let session = pureEngine else { return nil }
-            // Borrow the RAW handle for the C-ABI read; the wrapper cannot be dropped/destroyed while
-            // we hold `stateLock` (teardown detaches under this same lock — see below).
-            return body(session.handle)
-        }
+        dispatchPrecondition(condition: .onQueue(engineQueue))
+        guard let session = withStateLock({ activePath == .pure ? pureEngine : nil }) else { return nil }
+        return body(session.handle)
     }
 
     /// Atomically (under `stateLock`) detach the Pure engine session for teardown: nil the field and
@@ -192,10 +183,8 @@ extension AudioEngineBridge {
     /// `stop()` and then DROP OUTSIDE the lock (its `deinit` runs `pureModeEngineDestroy`). Returning
     /// the wrapper — rather than dropping it here — is what keeps the slow HAL destroy off `stateLock`:
     /// the field is nil under the lock, but the wrapper's release (and thus `deinit`) happens in the
-    /// caller's controlled scope on `engineQueue`. Returns `nil` when no session was set. Idempotent
-    /// across the two teardown domains: if `engineQueue` (stop/shutdown) and `configChangeQueue`
-    /// (device-loss) race, exactly one caller gets the wrapper and destroys it; the loser gets `nil`
-    /// and skips — no double-free.
+    /// caller's controlled scope on `engineQueue`. Returns `nil` when no session was set. Idempotent:
+    /// a second teardown (a stop after the device-loss pause) gets `nil` and skips — no double-free.
     @discardableResult
     func detachPureEngineForTeardown() -> PureModeSession? {
         withStateLock {

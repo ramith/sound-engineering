@@ -3,6 +3,7 @@ import Accelerate
 import EQEditKit
 import Foundation
 import os
+import PlaybackQueueKit
 import TrackLoudnessKit
 
 // MARK: - AudioEngineBridge
@@ -55,6 +56,16 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// The custom DSP effects AU node (N->N), inserted as `player -> effectsAU -> spatialAU` (M1).
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     var dspAudioUnit: AVAudioUnit?
+
+    // MARK: - Transport clock (methods in AudioEngineBridge+TransportClock.swift)
+
+    /// The transport as the clock last sampled it — what `transportSnapshot()` hands the main
+    /// thread. Published on `engineQueue` only (the clock, and the end of start / stop / seek).
+    let transportSnapshots = SnapshotChannel(TransportSnapshot())
+
+    /// The clock: a timer on `engineQueue` that samples the transport ~30 times a second. Created in
+    /// `initialize()`, cancelled in the teardown; confined to `engineQueue`.
+    var transportClock: DispatchSourceTimer?
 
     /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as
     /// `effectsAU -> spatialAU -> mainMixer` (Sprint 5b M3-3). It is the stage that maps the
@@ -297,7 +308,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         return analyzers[channel].doubleBuffer.read(into: &out)
     }
 
-    // EQ control plane (dspAudioUnitRef + publishEQ) lives in AudioEngineBridge+EQControl.swift.
+    // EQ control plane (dspAURef + publishEQ) lives in AudioEngineBridge+EQControl.swift.
 
     func currentLoudness() -> LoudnessSnapshot {
         guard let meter = loudnessMeter?.handle else { return .unmeasured }

@@ -177,6 +177,7 @@ extension AudioEngineBridge {
                     if result != 1 {
                         NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
                     }
+                    self.sampleTransport()
                     continuation.resume()
                     return
                 }
@@ -195,6 +196,7 @@ extension AudioEngineBridge {
                 else {
                     logUX("engine seek: path=Enhanced target=\(secs(seconds))s "
                         + "result=no-op (\(playIntent ? "no player/url" : "no play intent"))")
+                    self.sampleTransport()
                     continuation.resume()
                     return
                 }
@@ -220,6 +222,7 @@ extension AudioEngineBridge {
                     self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
                     logUX("engine seek: path=Enhanced target=\(secs(seconds))s result=ok")
                 }
+                self.sampleTransport()
                 continuation.resume()
             }
         }

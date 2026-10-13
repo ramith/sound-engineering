@@ -14,10 +14,9 @@ extension AudioEngineBridge {
                     // A fresh startAudio always begins a new playback context: clear the end-of-queue
                     // sentinel and the on-deck slot so the new play starts clean (the caller must
                     // re-arm on-deck after startAudio if it wants gapless from the first track).
-                    // P2-3: the 20 Hz VM timer can call playbackEnded() (which reads gaplessPlaybackEnded
-                    // via resampleQueue.sync) concurrently with this startAudio body — write under
-                    // resampleQueue to prevent a race. stopEnhancedResampler() below also acquires
-                    // resampleQueue.sync; these two syncs are sequential (not nested) — safe.
+                    // Written on resampleQueue, which owns the gapless state (the seam handlers run
+                    // there). stopEnhancedResampler() below also acquires resampleQueue.sync; these
+                    // two syncs are sequential (not nested) — safe.
                     self.resampleQueue.sync {
                         self.gaplessPlaybackEnded = false
                         self.onDeckURL = nil
@@ -27,13 +26,15 @@ extension AudioEngineBridge {
                     // the fall-back flag and we continue to the Enhanced path below.
                     if self.attemptPureStart(fileURL: fileURL, pureMode: pureMode) {
                         self.loudnessAnalyzer.cancel(nil) // Pure Mode bypasses the EQ: no analysis
-                        continuation.resume(returning: ())
-                        return
+                    } else {
+                        try self.startEnhancedPlayback(fileURL: fileURL)
                     }
-
-                    try self.startEnhancedPlayback(fileURL: fileURL)
+                    // Before returning: the caller's next transport read (its seam baseline, the end
+                    // flag) must be this start's, not the clock's last sample from before it.
+                    self.sampleTransport()
                     continuation.resume(returning: ())
                 } catch {
+                    self.sampleTransport()
                     continuation.resume(throwing: error)
                 }
             }
@@ -91,6 +92,9 @@ extension AudioEngineBridge {
         alignOutputForEnhancedStart()
 
         if !engine.isRunning {
+            // A device-loss pause leaves the player's schedule in place (stopping it then waits on
+            // the dying device — the disconnect freeze); clear it before the engine renders again.
+            playerNode.stop()
             try engine.start()
         }
 
@@ -246,34 +250,10 @@ extension AudioEngineBridge {
                 self.loudnessAnalyzer.cancel(nil) // a deliberate stop: nothing left to analyse
                 self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
+                self.sampleTransport()
                 continuation.resume()
             }
         }
-    }
-
-    func currentPlaybackPosition() -> Double? {
-        // Route to the active path. `withPureEngine` reads the position C-ABI UNDER stateLock so a
-        // concurrent teardown (engineQueue stop/shutdown OR configChangeQueue device-loss) cannot
-        // free the handle mid-call (S6 UAF-1). Returns nil when not on the Pure path → fall through
-        // to Enhanced.
-        if let pos = withPureEngine({ pureModeEnginePositionSeconds($0) }) {
-            return pos > 0 ? pos : nil
-        }
-        // Enhanced path: AVAudioPlayerNode's sampleTime counts from 0 at EACH play() — it is
-        // time-since-play, not absolute file position. A seek does stop()+scheduleSegment(from:)+
-        // play(), which restarts sampleTime at 0, so we add the seek target (enhancedPositionBaseSeconds,
-        // 0 on a fresh play) to report the true playhead.
-        guard let playerNode, playerNode.isPlaying,
-              let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
-              playerTime.sampleRate > 0
-        else {
-            return nil
-        }
-        let position = enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
-        // Cache the freshest reliable playhead for the config-change re-establish path.
-        setLastKnownEnhancedPositionSeconds(position)
-        return position
     }
 
     // MARK: - Private helpers
