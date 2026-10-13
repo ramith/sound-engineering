@@ -147,7 +147,7 @@ A story is done when:
 > | EP-UI | Partly: Now Playing, EQ, Monitoring, Settings, Library in Liquid Glass, dark + light, VoiceOver / keyboard; no onboarding, l10n or adaptive feedback | S10.7 #61, S10.8 #62–#85 |
 > | EP-ADAPT / EP-PERCEPTUAL | Not built, except the signal-path readout (US-ADAPT-06) and load-time track loudness analysis | S15–S17 |
 > | EP-REIMAGINE | Knob shipped (QW1); it now scales only the adaptive enhancement (decision 25); the mapping is not built | S17 |
-> | EP-IMMERSION | Not built beyond crossfeed (BRIR stub) | S18 |
+> | EP-IMMERSION | Not built beyond crossfeed (BRIR stub); a 5.1 / 7.1 file on a stereo output loses centre, LFE and surrounds (KI-MC-01) | S18; interim US-R1F-08 |
 > | EP-PRIVACY | No microphone, network or telemetry code exists; the sandbox story is superseded (Developer-ID, not sandboxed) | US-PRIV-02 |
 > | EP-QA | Shipped, except the THD+N oracle | US-QA-07 (new) |
 
@@ -467,7 +467,7 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 - Edge case (related Pure same-rate gapless predicate limitation, deferred from Stage 2a): `sameRateGaplessCompatible` compares `bitsPerChannel`, which is `0` for compressed formats — so MIXING a compressed (AAC, bits=0) and an uncompressed (WAV, bits=16) track at the same rate forces a needless reconfigure gap even though both decode to the same float format. Either exclude bits-per-channel from the predicate when a source is compressed, or normalise the compressed value to the decoded float format. (Consecutive same-format tracks — e.g. an all-AAC library — are unaffected.)
 
 **Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** gapless Stage 1 (`cf33e5d`) + Stage 2a (`2e2242a`) — Pure `GaplessSource` + the `FileDecodeSource` FFmpeg backend
-**Status (2026-10-13):** Planned · still open in the code (`FileDecodeSource.cpp` relies on Apple's edit lists; `sameRateGaplessCompatible` still compares bits-per-channel, `GaplessSource.cpp:67`). **Forward:** S11 ("close gapless Stage 2b").
+**Status (2026-10-13):** Planned, **narrowed by the code**. The decoder opens every file with Apple first and uses FFmpeg only when Apple can't (`FileDecodeSource.cpp:7-16`), so AAC and MP3 decode through Apple on **both** paths and their priming / padding is already trimmed by the edit list (`AudioEngineBridge+Gapless.swift:36-41`). What remains: the FFmpeg fallback's own trim (Opus / Vorbis pre-skip), a seam test that proves AAC / MP3 on the Pure path, and the predicate edge case — `sameRateGaplessCompatible` still compares bits-per-channel (`GaplessSource.cpp:67-75`). **Forward:** S11 ("close gapless Stage 2b"), consistent with the S11 row's code fact in [sprint-plan.md](../sprints/sprint-plan.md).
 **Traceability:** FR-PLAY-01, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -1657,7 +1657,7 @@ True per-instrument source separation is the **Phase-1.5 own-player stem engine*
 
 ## Post-R1 fix pool *(new — 2026-10-13)*
 
-> **Why this section exists:** R1 (v1.0.0-alpha, PR #87) shipped with a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
+> **Why this section exists:** R1 (v1.0.0-alpha — release PR #87 merged, tag pending) carries a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
 
 #### US-R1F-01 — Transport and queue correctness after R1
 
@@ -1709,6 +1709,14 @@ As a **developer** I want the known races and gaps in our own checks closed, so 
 
 **Covers:** KI-ENG-01 (`SpectrumDoubleBuffer` → the named-atomic triple buffer), KI-ENG-02 (port the breaker's engineQueue-holder and first-play modes; bound <5 ms), KI-ENG-03, KI-ENG-04, KI-UI-01 (measure VoiceOver load before changing anything), ENH-002 (N-channel UI meter). Related, and **parked by the founder** until after R1: the broader app ↔ engine concurrency cleanup, whose starting map is [main-thread-audio-audit-2026-10.md](../architecture/main-thread-audio-audit-2026-10.md).
 **Priority:** Should / Could | **Estimate:** 3 sp | **Traceability:** NFR-PERF-01, NFR-QUAL-02, CON-01/02
+
+#### US-R1F-08 — Multichannel on a narrower output, until the binaural fold
+
+As a **Tom** I want a 5.1 or 7.1 album to play all its channels on my stereo headphones or speakers, so that the centre (usually the lead vocal) and the surrounds are not simply missing.
+
+**Covers:** KI-MC-01 — today the spatial AU keeps the first M channels and drops the rest (`SpatialRenderKernel.cpp:59-89`).
+**Decision for the founder:** (a) an interim standard fold-down (ITU-R BS.775 coefficients, loudness-safe, clearly labelled as interim) until S18's binaural fold, which bends the "no naive downmix" rule for a short time; or (b) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) — silence for four channels is the worse violation of the rule's intent.
+**Priority:** Must (it is wrong audio) | **Estimate:** 2 sp | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final fix in **S18**
 
 #### US-QA-07 — THD+N oracle
 
@@ -1938,7 +1946,7 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | OQ-01 — Phase 2 auto-switch system output | SPIKE-VDEVICE → US-SYS-02 installer UX (driver fallback path) | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-SYSWIDE/EP-VDEVICE, which are out-of-window |
 | ~~OQ-07 — macOS minimum deployment target~~ | ~~ASM-01 validation; CON-10 — tap path requires ≥ 14.2/14.4 (verify); affects Phase 2 mechanism choice~~ | **Resolved:** the floor is **macOS 26 on Apple Silicon** (`Package.swift` `.macOS(.v26)`; `Info.plist` `LSMinimumSystemVersion` 26.0, PR #87). Any future tap path is far above 14.2. |
 | OQ-10 — Crash reporting SDK | US-PRIV-03 / SPIKE-TELEMETRY output | Low — SPIKE-TELEMETRY resolves this. *(R1 ships with none: no network code at all.)* |
-| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design. *(R1 shipped publicly without bass enhancement, so it was not blocked.)* |
+| OQ-16 — Patent IP review (psychoacoustic bass, FR-TONAL-04) | SPIKE-IPREVIEW → public release of US-TON-04 | High — blocks public release only; engineering unblocked with mono-summed design. *(R1 contains no bass enhancement, so its public release is not blocked.)* |
 | ~~OQ-17 — libbs2b licence dispute (FR-SPAT-03 crossfeed)~~ | ~~SPIKE-LIBBS2B → US-DEVICE-07~~ | **Resolved (QW1 design §2):** bs2b treated as LGPL and not linked; the Bauer crossfeed was reimplemented in-house (`CrossfeedModule`). |
 | ~~OQ-04 — HRTF dataset selection~~ | ~~SPIKE-HRTF → US-SPAT-01~~ | **Resolved (prior-art pass):** SADIE II (Apache-2.0) is the default; libmysofa (BSD-3) + FFTConvolver (MIT) for convolution; Apple HRTF APIs not used. SPIKE-HRTF scope reduced to performance benchmarking only. |
 | ~~OQ-08 — Device correction library source~~ | ~~SPIKE-DEVCORRLIB → US-TON-02~~ | **Resolved (prior-art pass):** AutoEq computed parametric curves (MIT + attribution) confirmed as source. SPIKE-DEVCORRLIB continues for model selection and provenance verification. |
