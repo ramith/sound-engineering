@@ -35,38 +35,35 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
     var referenceToneBuffer: AVAudioPCMBuffer?
 
-    // MARK: - Spectrum Analyzer
+    // MARK: - Tap analysis (spectrum, loudness, monitoring)
 
-    /// Owns the FFT state and the lock-free double-buffer.
-    /// Created in `initialize()` (off the audio thread) so all buffers are
-    /// pre-allocated before the tap fires.
-    var spectrumAnalyzer: SpectrumAnalyzer?
-
-    /// RAII owner of the opaque BS.1770-5 LufsMeter handle (C bridge), fed from the same tap.
-    /// Created in `allocateAnalysisState` (off the audio thread), dropped in the graph teardown
-    /// AFTER `removeSpectrumTap()`. The wrapper's `deinit` is the backstop that closes the leak if a
-    /// bridge is ever released without `shutdown()`. The RT mixer tap captures the wrapper's RAW
-    /// `handle` once at install time (never the class), so no ARC touches the audio thread — see
-    /// `AudioEngineBridge+Graph.swift`.
-    var loudnessMeter: LoudnessMeterHandle?
+    /// The taps' analysis objects — the Now-Playing spectrum analyzer, the BS.1770-5 loudness meter
+    /// and the per-channel monitoring analyzers — as ONE value, guarded by `stateLock` (access ONLY
+    /// via `tapAnalysis` / `setTapAnalysis`). Built and resized on `engineQueue`, read by the main
+    /// thread's spectrum / meter / monitoring polls as a strong copy: a teardown or re-init
+    /// replacing it can no longer free an object under a read in flight (review: the snapshot's
+    /// meter read raced `retryInitialization`). The RT taps capture what they need once, at install.
+    var storedTapAnalysis = TapAnalysis()
 
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
     var tapInstalled = false
 
-    /// The custom DSP effects AU node (N->N), inserted as `player -> effectsAU -> spatialAU` (M1).
-    /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
-    var dspAudioUnit: AVAudioUnit?
+    /// The custom DSP effects AU (N->N), inserted as `player -> effectsAU -> spatialAU` (M1): the
+    /// graph's node and the `AUAudioUnit` the control plane publishes to, as ONE value so they can
+    /// never disagree. Guarded by `stateLock`; access ONLY via `effectsNode`, `withEffectsAU` and
+    /// `setEffectsUnit`. Held for the engine's lifetime; detached + released in `shutdown()`.
+    var storedEffectsUnit: EffectsUnit?
 
-    /// The effects AU's `AUAudioUnit` (our `AdaptiveSoundAU`), the handle every control-plane C-ABI
-    /// call takes. Read once from `dspAudioUnit` when the AU is set, off the main thread, so the
-    /// main-thread publishers never touch the AVAudioUnit itself. Guarded by `stateLock` with it.
-    var dspAUAudioUnit: AUAudioUnit?
+    /// Borrows of the effects AU in flight (`withEffectsAU`). The teardown waits for it to reach 0
+    /// before releasing the AU, so the release — and the AU's Realizer barrier — is never a
+    /// main-thread borrow's. Named acquire/release atomic.
+    let effectsAUBorrows = Atomic<Int>(0)
 
     // MARK: - Transport clock (methods in AudioEngineBridge+TransportClock.swift)
 
-    /// The transport as the clock last sampled it — what `transportSnapshot()` hands the main
-    /// thread. Published on `engineQueue` only (the clock, and the end of start / stop / seek).
+    /// The transport as the clock last sampled it — what `snapshot()` hands the main thread.
+    /// Published on `engineQueue` only (the clock, and the top and end of start / stop / seek).
     let transportSnapshots = SnapshotChannel(TransportSnapshot())
 
     /// The clock: a timer on `engineQueue` that samples the transport ~30 times a second while
@@ -86,14 +83,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// Held strongly for the engine's lifetime; detached + released in `shutdown()`.
     var spatialAudioUnit: AVAudioUnit?
 
-    // MARK: - Monitoring analyzers (per-channel before/after spectra)
+    // MARK: - Monitoring taps (per-channel before/after spectra; analyzers in `storedTapAnalysis`)
 
-    /// One spectrum analyzer PER CHANNEL for each tap point: `beforeAnalyzers` from the pre-DSP
-    /// player-node tap, `afterAnalyzers` from the post-DSP effects-AU tap. Sized to the stream's
-    /// channel count at init — N-channel by construction (stereo today; practical ceiling 7.1 / 8).
-    /// Read by the Monitoring tab; never resized on the audio thread.
-    var beforeAnalyzers: [SpectrumAnalyzer] = []
-    var afterAnalyzers: [SpectrumAnalyzer] = []
     /// Pre-DSP tap lives on the player node; post-DSP (after) tap on the EFFECTS AU output bus —
     /// NOT the mixer (which carries the device width M once the spatial AU is in the graph), and
     /// NOT the spatial AU (which renders the device-width signal; "after DSP" monitors the
@@ -136,7 +127,7 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var activePath: OutputPathKind = .enhanced
 
     /// Backing storage for `cachedSignalPath` — guarded by `stateLock`. Latest signal-path
-    /// snapshot, polled at 20 Hz on the MainActor by `currentSignalPath()` while it is written from
+    /// snapshot, read at 20 Hz by the main thread's `snapshot()` while it is written from
     /// engineQueue / configChangeQueue / the device-loss path. Access ONLY via the guarded
     /// accessors in `AudioEngineBridge+SharedState.swift`.
     var storedCachedSignalPath: SignalPathInfo = .init()
@@ -154,11 +145,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var storedEnhancedPositionBaseSeconds: Double = 0
 
     /// Backing storage for `lastKnownEnhancedPositionSeconds` — guarded by `stateLock`. Last non-nil
-    /// Enhanced playhead, cached every time `currentPlaybackPosition()` resolves a real position (the
-    /// view model polls it). Used to re-establish playback at the right point after an
-    /// `AVAudioEngineConfigurationChange` — at that instant the player may already report no render
-    /// time, so this cached value is the most recent reliable playhead. Also updated at gapless seams
-    /// so the new track's position re-zeroes correctly. Access ONLY via the guarded accessors.
+    /// Enhanced playhead, cached by the transport clock whenever it reads a real position. Used to
+    /// re-establish playback at the right point after an `AVAudioEngineConfigurationChange` — at
+    /// that instant the player may already report no render time, so this cached value is the most
+    /// recent reliable playhead. Also updated at gapless seams so the new track's position re-zeroes
+    /// correctly. Access ONLY via the guarded accessors.
     var storedLastKnownEnhancedPositionSeconds: Double = 0
 
     // MARK: - Gapless / on-deck state (methods in AudioEngineBridge+Gapless.swift)
@@ -253,6 +244,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// device's change listener — HAL calls that must never run on the main thread.
     let deviceVolumeQueue = DispatchQueue(label: "com.adaptivesound.device-volume")
 
+    /// The newest level asked of the Pure device, not yet applied, and whether a drain is posted
+    /// (latest value wins — `requestDeviceVolume`). Guarded by `stateLock`.
+    var pendingDeviceVolume: Float?
+    var deviceVolumeDrainPosted = false
+
     // MARK: - Output-device monitoring state (methods in AudioEngineBridge+OutputDeviceMonitor.swift)
 
     /// The device-list (`kAudioHardwarePropertyDevices`) and system-default-output
@@ -307,39 +303,42 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// data has been published yet (engine not running or no signal).
     @discardableResult
     func readSpectrumBands(into out: inout [Float]) -> Bool {
-        return spectrumAnalyzer?.doubleBuffer.read(into: &out) ?? false
+        tapAnalysis.spectrum?.doubleBuffer.read(into: &out) ?? false
     }
 
     // MARK: - Monitoring read (per-channel before/after)
 
     /// Number of channels being monitored (the graph's channel count). 0 until the engine is ready.
     var monitorChannelCount: Int {
-        afterAnalyzers.count
+        tapAnalysis.after.count
     }
 
     /// Copy the latest band magnitudes for one tap point + channel into `out`. Returns false if
     /// unavailable (engine not ready, channel out of range, or no data published yet).
     @discardableResult
     func readMonitorBands(_ tap: MonitorTap, channel: Int, into out: inout [Float]) -> Bool {
-        let analyzers = (tap == .before) ? beforeAnalyzers : afterAnalyzers
+        let analysis = tapAnalysis
+        let analyzers = (tap == .before) ? analysis.before : analysis.after
         guard channel >= 0, channel < analyzers.count else { return false }
         return analyzers[channel].doubleBuffer.read(into: &out)
     }
 
-    // EQ control plane (dspAURef + publishEQ) lives in AudioEngineBridge+EQControl.swift.
+    // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.
 
     /// The engine's state for the main thread (`AudioPlaybackEngine.snapshot`): the transport clock's
     /// last sample, the signal path (a copy under `stateLock`, whose holders never call out), the
-    /// meter's atomics and the EQ design rate (an atomic). No AVFAudio, no HAL, no queue hop.
+    /// meter's atomics (through a strong copy of the meter) and the EQ design rate (an atomic,
+    /// through a borrow of the AU). No AVFAudio, no HAL, no queue hop.
     func snapshot() -> EngineSnapshot {
         EngineSnapshot(transport: transportSnapshots.read(), signalPath: loadSignalPath(),
                        loudness: loudnessReadout(), eqDesignRate: eqSampleRate())
     }
 
-    /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`).
+    /// The playback tap's loudness: atomics the meter publishes (`loudnessMeterRead`), read through
+    /// a strong copy of the meter so a re-init can't free it mid-read.
     private func loudnessReadout() -> LoudnessSnapshot {
-        guard let meter = loudnessMeter?.handle else { return .unmeasured }
-        let readout = loudnessMeterRead(meter)
+        guard let meter = tapAnalysis.meter else { return .unmeasured }
+        let readout = withExtendedLifetime(meter) { loudnessMeterRead(meter.handle) }
         return LoudnessSnapshot(
             integratedLufs: readout.integratedLufs,
             shortTermLufs: readout.shortTermLufs,

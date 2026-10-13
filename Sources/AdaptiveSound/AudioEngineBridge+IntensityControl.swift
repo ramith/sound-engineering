@@ -15,16 +15,13 @@ private enum CIntensityABI {
 extension AudioEngineBridge {
     /// Publish a new Reimagine intensity value (wet/dry blend, [0, 1]) to the live DSP AU.
     ///
-    /// Mirrors the `publishEQ` pattern: borrows the AU handle passUnretained and calls
-    /// the `publishIntensity` C-ABI (S6 §1.5). No-op when the AU is not yet instantiated.
+    /// Mirrors the `publishEQ` pattern: borrows the AU (`withEffectsAU`) and calls the
+    /// `publishIntensity` C-ABI (S6 §1.5). No-op when the AU is not yet instantiated.
     /// Must be called from a single control thread (the `@MainActor`).
     func publishIntensity(_ intensity: Float) {
-        // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
-        guard let unit = dspAURef else {
-            logUX("[QW1] bridge.publishIntensity SKIP — no DSP AU handle (intensity=\(intensity))")
-            return
-        }
-        logUX("[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
-        CIntensityABI.publish(Unmanaged.passUnretained(unit).toOpaque(), intensity)
+        let published = withEffectsAU { CIntensityABI.publish($0, intensity) } != nil
+        logUX(!published
+            ? "[QW1] bridge.publishIntensity SKIP — no DSP AU handle (intensity=\(intensity))"
+            : "[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
     }
 }

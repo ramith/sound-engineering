@@ -16,7 +16,7 @@ private enum CCrossfeedABI {
 extension AudioEngineBridge {
     /// Publish a new crossfeed state to the live DSP AU (QW1 §3).
     ///
-    /// Mirrors the `publishIntensity` pattern: borrows the AU handle passUnretained and calls
+    /// Mirrors the `publishIntensity` pattern: borrows the AU (`withEffectsAU`) and calls
     /// the `publishCrossfeed` C-ABI. No-op when the AU is not yet instantiated.
     /// Must be called from a single control thread (the `@MainActor`).
     ///
@@ -24,16 +24,13 @@ extension AudioEngineBridge {
     ///   - enabled: `true` activates the crossfeed stage; `false` passes audio through bit-exactly.
     ///   - strength: The `CrossfeedStrength` preset, which resolves to a (level, presetIndex) pair.
     func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) {
-        // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
-        guard let unit = dspAURef else {
-            logUX("[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle "
-                + "(enabled=\(enabled) strength=\(strength))")
-            return
-        }
         let enabledFlag: UInt32 = enabled ? 1 : 0
-        logUX("[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
+        let published = withEffectsAU {
+            CCrossfeedABI.publish($0, enabledFlag, strength.dspLevel, strength.presetIndex)
+        } != nil
+        logUX(!published
+            ? "[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle (enabled=\(enabled) strength=\(strength))"
+            : "[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
             + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
-        CCrossfeedABI.publish(Unmanaged.passUnretained(unit).toOpaque(),
-                              enabledFlag, strength.dspLevel, strength.presetIndex)
     }
 }

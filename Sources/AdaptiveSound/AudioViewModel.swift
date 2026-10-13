@@ -360,7 +360,7 @@ final class AudioViewModel {
 
     // MARK: - Gapless / Auto-Advance State
 
-    /// Last observed `trackTransitionCount()` value. An increase means the on-deck
+    /// Last observed seam count (the snapshot's `transitionCount`). An increase means the on-deck
     /// track has become the current track (a gapless seam just completed).
     /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
     var lastTransitionCount: UInt64 = 0

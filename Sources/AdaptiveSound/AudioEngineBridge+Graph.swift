@@ -25,7 +25,7 @@ extension AudioEngineBridge {
         AVAudioUnit.instantiate(with: effectsDescription, options: []) { [weak self] effectsUnit, error in
             guard let self else { completion(false); return }
             guard let effectsUnit, error == nil else { completion(false); return }
-            self.setDspAudioUnit(effectsUnit)
+            self.setEffectsUnit(effectsUnit)
             engine.attach(effectsUnit)
 
             let spatialDescription = spatialRendererComponentDescription()
@@ -96,23 +96,23 @@ extension AudioEngineBridge {
     private func allocateAnalysisState(engine: AVAudioEngine, format: AVAudioFormat) {
         let mixerSampleRate = Float(engine.mainMixerNode.outputFormat(forBus: 0).sampleRate)
         let sampleRate = mixerSampleRate > 0 ? mixerSampleRate : 48000.0
-        spectrumAnalyzer = SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-        // Precondition: `loudnessMeter` is nil here. This runs only from initialize()'s graph build,
-        // and the LEAK #1 re-init guard tears down (nils the meter wrapper AFTER removeSpectrumTap)
-        // before any rebuild — so this assigns onto a nil field, never overwriting (and silently
-        // destroying) a meter whose raw handle a live tap might still hold. The wrapper's deinit is
-        // the backstop that frees the handle on teardown / abandonment.
-        loudnessMeter = LoudnessMeterHandle(sampleRate: Double(sampleRate))
-
+        // Precondition: no meter is set here. This runs only from initialize()'s graph build, and
+        // the LEAK #1 re-init guard tears down (drops the analysis AFTER removeSpectrumTap) before
+        // any rebuild — so this never replaces (and silently destroys) a meter whose raw handle a
+        // live tap might still hold. The wrapper's deinit is the backstop that frees the handle.
         // Per-channel monitoring analyzers (Sprint 5 M3) — one per channel of the graph format, for
         // the pre-DSP (player) and post-DSP (effects AU) tap points. N-channel by construction.
         let channelCount = Int(format.channelCount)
-        beforeAnalyzers = (0 ..< channelCount).map { _ in
-            SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-        }
-        afterAnalyzers = (0 ..< channelCount).map { _ in
-            SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
-        }
+        setTapAnalysis(TapAnalysis(
+            spectrum: SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate),
+            meter: LoudnessMeterHandle(sampleRate: Double(sampleRate)),
+            before: (0 ..< channelCount).map { _ in
+                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
+            },
+            after: (0 ..< channelCount).map { _ in
+                SpectrumAnalyzer(fftSize: SpectrumConstants.fftSize, sampleRate: sampleRate)
+            }
+        ))
     }
 
     // MARK: - Spectrum tap
@@ -136,12 +136,13 @@ extension AudioEngineBridge {
     private func installMixerTap(on mixer: AVAudioMixerNode) {
         let mixerFormat = mixer.outputFormat(forBus: 0)
         // Capture the loudness meter's RAW handle ONCE here (off the audio thread), NOT the class
-        // wrapper: reading the `loudnessMeter` class property on the audio thread would incur an ARC
+        // wrapper: reading the meter wrapper (`TapAnalysis.meter`) on the audio thread would incur an ARC
         // retain/release, which is forbidden on the RT tap. The captured value is a POD pointer. It
         // stays valid because removeSpectrumTap() always runs BEFORE the meter wrapper is dropped/
         // destroyed (constraint c), so this closure can never fire after the handle is freed.
-        let meterHandle = loudnessMeter?.handle
-        guard let analyzer = spectrumAnalyzer else { return }
+        let analysis = tapAnalysis
+        let meterHandle = analysis.meter?.handle
+        guard let analyzer = analysis.spectrum else { return }
         mixer.installTap(onBus: 0,
                          bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
                          format: mixerFormat) { [analyzer, meterHandle] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
@@ -179,7 +180,7 @@ extension AudioEngineBridge {
     private func installBeforeTap() {
         guard let player = playerNode else { return }
         let playerFormat = player.outputFormat(forBus: 0)
-        let analyzers = beforeAnalyzers // strong capture at install (BS2); see installMixerTap
+        let analyzers = tapAnalysis.before // strong capture at install (BS2); see installMixerTap
         player.installTap(onBus: 0,
                           bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
                           format: playerFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
@@ -199,9 +200,9 @@ extension AudioEngineBridge {
     /// and NOT the spatial AU. The mixer carries the device width M (post spatial-render), so
     /// "after DSP" monitoring observes the effects AU's N-channel processed output.
     private func installAfterTap() {
-        guard let effectsUnit = dspAudioUnit else { return }
+        guard let effectsUnit = effectsNode else { return }
         let auFormat = effectsUnit.outputFormat(forBus: 0)
-        let analyzers = afterAnalyzers // strong capture at install (BS2); see installMixerTap
+        let analyzers = tapAnalysis.after // strong capture at install (BS2); see installMixerTap
         effectsUnit.installTap(onBus: 0,
                                bufferSize: AVAudioFrameCount(SpectrumConstants.fftSize),
                                format: auFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
@@ -224,7 +225,7 @@ extension AudioEngineBridge {
             beforeTapInstalled = false
         }
         if afterTapInstalled {
-            dspAudioUnit?.removeTap(onBus: 0)
+            effectsNode?.removeTap(onBus: 0)
             afterTapInstalled = false
         }
         tapInstalled = false

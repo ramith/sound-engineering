@@ -6,7 +6,7 @@ import PlaybackQueueKit
 
 @MainActor
 extension AudioViewModel {
-    /// Invoked when `trackTransitionCount()` increases (a gapless seam completed).
+    /// Invoked when the snapshot's `transitionCount` increases (a gapless seam completed).
     /// Advances the highlighted index, resets the scrubber, refreshes duration,
     /// and queues the NEW next track on-deck.
     func handleTrackTransition() {

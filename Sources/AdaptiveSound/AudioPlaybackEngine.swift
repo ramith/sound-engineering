@@ -134,7 +134,7 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     /// Publish Master Gain — the app's own level in dB, ≤ 0 (−∞ = silent; `MasterGainLaw`). The
     /// player plays it at its linear gain from then on, on every Enhanced start and after a rebuild
-    /// too. Never reaches Pure: the bit-perfect stream is not scaled (see `setDeviceVolume`).
+    /// too. Never reaches Pure: the bit-perfect stream is not scaled (see `requestDeviceVolume`).
     /// Synchronous and off-RT; calls apply in the order made. Default impl: no-op.
     func publishMasterGain(decibels: Float)
 

@@ -85,8 +85,21 @@ extension AudioEngineBridge {
             objectID: AudioObjectID(target), selector: kAudioDevicePropertyDeviceIsAlive,
             queue: DispatchQueue.global(qos: .userInteractive)
         ) { [weak self] in
-            self?.outputDeviceDidChange(.targetAliveChanged)
+            self?.targetAliveDidChange(target)
         }
+    }
+
+    /// The app's device reported a change of its alive state. While something plays on it, that
+    /// change is its death (a device we play on is alive), so pause FIRST, right here, before any
+    /// HAL read: the reads on a dying device can wait seconds behind macOS's teardown, and the
+    /// play intent and `interrupted` are a non-blocking atomic and a leaf-locked store (review M1;
+    /// SFBAudioEngine clears its play flags first too). The output rule then runs as for any event,
+    /// on `configChangeQueue`, to adopt the new default and confirm.
+    private func targetAliveDidChange(_ device: UInt32) {
+        if device == currentDeviceID, enhancedPlayIntent || activePathKind == .pure {
+            pauseForDeviceLoss()
+        }
+        outputDeviceDidChange(.targetAliveChanged)
     }
 
     // MARK: - The device-state path
@@ -176,13 +189,15 @@ extension AudioEngineBridge {
     // MARK: - Pause on device loss
 
     /// Pause because the device the app plays on disappeared (founder decision, 94b263c: pause,
-    /// never carry on from another device), on Enhanced and Pure alike. On `configChangeQueue`.
-    /// The play intent and the `interrupted` flag are set here, first, so every later event on
-    /// this queue sees nothing playing and restarts nothing (P1-B); the view model reads
-    /// `interrupted`, clears `isPlaying` and asks the user to pick a device. The engines stop on
-    /// `engineQueue`, serialized with start / seek / stop, so this can't free a Pure session that
-    /// a start is using.
+    /// never carry on from another device), on Enhanced and Pure alike. From any queue — the alive
+    /// listener's (first) or `configChangeQueue` (the output rule) — and once: a second call finds
+    /// the pause already published. The play intent and the `interrupted` flag are set here, first,
+    /// with no HAL call and no wait, so every later event sees nothing playing and restarts nothing
+    /// (P1-B); the view model reads `interrupted`, clears `isPlaying` and keeps the song's place.
+    /// The engines stop on `engineQueue`, serialized with start / seek / stop, so this can't free a
+    /// Pure session that a start is using.
     private func pauseForDeviceLoss() {
+        guard !loadSignalPath().interrupted else { return }
         logUX("output device lost during playback — pausing")
         enhancedPlayIntent = false
         storeInterruptedSignalPath()

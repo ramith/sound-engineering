@@ -112,7 +112,7 @@ extension AudioViewModel {
                     // reassigns below — the Pure cross-rate reconfigure natural-completion site.
                     countPlayIfNaturalEndQualifies()
                     selectedTrackIndex = nextIdx
-                    // Clear the trigger SYNCHRONOUSLY before the async startPlayback: `playbackEnded()`
+                    // Clear the trigger SYNCHRONOUSLY before the async startPlayback: the end flag
                     // stays true until startPlayback's Task runs `pureModeEngineStart` (≤ a few ticks
                     // on a DAC reconfigure), so without this the next 20 Hz tick would re-enter and
                     // launch a second `startAudio` that interrupts B mid-startup. startPlayback
