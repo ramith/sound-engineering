@@ -424,6 +424,7 @@ namespace
         // Sprint G: the Pure seek's render gate (parallel-safe: own threads, no HAL, no env/tmp).
         {"RenderGate_ClosedGateTurnsRenderAway", testRenderGateClosedGateTurnsRenderAway, true},
         {"RenderGate_CloseWaitsForRenderInside", testRenderGateCloseWaitsForRenderInside, true},
+        {"RenderGate_PendingCloseBarsReentry", testRenderGatePendingCloseBarsReentry, true},
         {"RenderGate_ConcurrentNeverOverlaps", testRenderGateConcurrentNeverOverlaps, true},
         // S7 / US-QA-06 (automated half): RT-allocation-guard soak. SERIAL-ONLY — these arm a
         // process-wide operator new/delete override scoped to the calling thread via a thread_local

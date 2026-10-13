@@ -8,22 +8,34 @@
 // the stop was HALOutputEngine::stop() = teardown(): the unit was disposed, the restart failed and
 // every Pure seek went silent. Stopping the unit is a poor barrier anyway: on a dying device
 // AudioOutputUnitStop can fail or wait seconds on the HAL. The gate needs no HAL call. The render
-// callback ENTERS it before it pulls and LEAVES it after; the control plane CLOSES it, waiting only
-// for a render already inside (bounded by one render pass, never by the device), and while it is
-// closed the callback outputs silence; OPEN lets it pull again.
+// callback ENTERS it before it pulls and LEAVES it after; the control plane CLOSES it and, while it
+// is closed, the callback outputs silence; OPEN lets it pull again.
 //
-// One atomic word, three states:
-//   render:  Open -> Rendering (CAS, acquire) ... Rendering -> Open (store, release)
-//   control: Open -> Closed (CAS, acquire: pairs with the render's release, so everything the last
-//            render did happens-before what the control plane does next); Closed -> Open (CAS,
-//            release: the control plane's writes happen-before the next render's acquire).
-// Only the control plane can close or open, only from the matching state, so an open() can never
-// let a close() succeed while a render is inside. Named atomics, no standalone fence, so
-// ThreadSanitizer models every edge (see the null test's RenderGate suite).
+// The guarantee close() gives (R1 fix): it waits for AT MOST the one render pass already inside,
+// never for a render that starts after it. One atomic word with two bits:
+//   kClosed     set by close() (fetch_or) and cleared by open() — only the control plane writes it;
+//   kRendering  set by the render's tryEnter (CAS 0 -> kRendering) and cleared by leave()
+//               (fetch_and) — only the render writes it.
+// All four operations are read-modify-writes of ONE atomic, so they are totally ordered (its
+// modification order). close()'s fetch_or is the linearization point: a tryEnter ordered after it
+// sees kClosed and fails, so kRendering can only still be set by a pass that entered BEFORE it —
+// the in-flight one — and close() waits for that bit alone to clear. The render's side stays
+// wait-free (one CAS in, one fetch_and out).
 //
-// RT side: tryEnter() / leave() — wait-free, no allocation, lock or syscall.
-// Control side: close() / open() — one control thread at a time (the Pure C-ABI runs on the
-// bridge's engineQueue).
+// The first version (one state, close = CAS Open -> Closed, polled every 50 µs) promised the same
+// in its comment but did not keep it: close() could only win in the instant between one pass's
+// leave() and the next pass's tryEnter(), so a render re-entering back to back starved it. The null
+// test's back-to-back render made a GitHub runner's close() time out after 1 s (main a206107);
+// a periodic HAL IO thread leaves most of its period open, which hid it in the app.
+//
+// Ordering: tryEnter's acquire pairs with open()'s release (the control plane's writes — a moved
+// decoder — happen-before the next pass); leave()'s release pairs with close()'s acquire (every
+// access of the last pass happens-before what the control plane does next). Named atomics, no
+// standalone fence, so ThreadSanitizer models every edge (the null test's RenderGate suite).
+//
+// One render thread at a time (the AUHAL calls its render callback serially) — kRendering is a
+// bit, not a count — and one control thread at a time (the Pure C-ABI runs on the bridge's
+// engineQueue).
 //
 
 #include <atomic>
@@ -38,77 +50,75 @@ namespace AdaptiveSound
     {
       public:
         // RT: true -> the caller may pull and MUST call leave() after; false -> closed: render
-        // silence and do not touch the source.
+        // silence and do not touch the source. Wait-free.
         [[nodiscard]] bool tryEnter() noexcept
         {
-            State expected = State::Open;
+            uint8_t expected = 0U;
             return state_.compare_exchange_strong(
-                expected, State::Rendering, std::memory_order_acquire, std::memory_order_relaxed);
+                expected, kRendering, std::memory_order_acquire, std::memory_order_relaxed);
         }
 
-        // RT: the render that entered is done with the source.
+        // RT: the pass that entered is done with the source. Wait-free; keeps a pending kClosed.
         void leave() noexcept
         {
-            state_.store(State::Open, std::memory_order_release);
+            state_.fetch_and(static_cast<uint8_t>(~kRendering), std::memory_order_release);
         }
 
-        // Control plane: close the gate, waiting at most `timeout` for a render already inside to
-        // leave. True when closed (or already closed): no render is pulling, and none will until
-        // open(). False when a render stayed inside past the timeout: the gate is left as it was.
+        // Control plane: close the gate to new passes at once, then wait for the pass already
+        // inside, if any, to leave. True when closed with no pass inside: no render pulls until
+        // open(). The wait is for that ONE pass (a few hundred µs of RT work on the HAL IO thread);
+        // `timeout` is a safety net against a render thread stopped mid-pass, which an RT render
+        // never is — on it the gate reopens, nothing changed, and close() returns false.
         [[nodiscard]] bool close(std::chrono::microseconds timeout) noexcept
         {
-            const auto deadline = std::chrono::steady_clock::now() + timeout;
-            for (;;)
+            const uint8_t before = state_.fetch_or(kClosed, std::memory_order_acq_rel);
+            if ((before & kRendering) == 0U)
             {
-                State expected = State::Open;
-                if (state_.compare_exchange_weak(expected,
-                                                 State::Closed,
-                                                 std::memory_order_acquire,
-                                                 std::memory_order_acquire))
-                {
-                    return true;
-                }
-                if (expected == State::Closed)
-                {
-                    return true;
-                }
-                if (expected == State::Open)
-                {
-                    continue; // a spurious weak-CAS failure, not a render inside: try again
-                }
+                return true;
+            }
+            const auto deadline = std::chrono::steady_clock::now() + timeout;
+            int spins = 0;
+            while ((state_.load(std::memory_order_acquire) & kRendering) != 0U)
+            {
                 if (std::chrono::steady_clock::now() >= deadline)
                 {
+                    state_.fetch_and(static_cast<uint8_t>(~kClosed), std::memory_order_release);
                     return false;
                 }
-                std::this_thread::sleep_for(kPollStep);
+                // A pass is short: yield a few times, then sleep in small steps.
+                if (spins < kYieldSpins)
+                {
+                    ++spins;
+                    std::this_thread::yield();
+                }
+                else
+                {
+                    std::this_thread::sleep_for(kPollStep);
+                }
             }
+            return true;
         }
 
         // Control plane: let the render pull again. A no-op unless closed.
         void open() noexcept
         {
-            State expected = State::Closed;
-            (void)state_.compare_exchange_strong(
-                expected, State::Open, std::memory_order_release, std::memory_order_relaxed);
+            state_.fetch_and(static_cast<uint8_t>(~kClosed), std::memory_order_release);
         }
 
+        // Closed to new passes (a pass already inside may still be finishing until close()
+        // returns true).
         [[nodiscard]] bool isClosed() const noexcept
         {
-            return state_.load(std::memory_order_acquire) == State::Closed;
+            return (state_.load(std::memory_order_acquire) & kClosed) != 0U;
         }
 
       private:
-        enum class State : uint8_t
-        {
-            Open,
-            Rendering,
-            Closed,
-        };
-
-        // A render pass is well under a millisecond of CPU; poll at a fraction of it.
+        static constexpr uint8_t kRendering = 1U << 0U;
+        static constexpr uint8_t kClosed = 1U << 1U;
+        static constexpr int kYieldSpins = 64;
         static constexpr std::chrono::microseconds kPollStep{50};
 
-        std::atomic<State> state_{State::Open};
+        std::atomic<uint8_t> state_{0U};
     };
 
 } // namespace AdaptiveSound
