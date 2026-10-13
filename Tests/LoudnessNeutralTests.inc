@@ -720,6 +720,8 @@ static auto testTrackLoudnessGainRules() -> void
            "prefix → whole refines over 2 s");
     expect(std::abs(gain.gainDb() - own) < TrackLoudnessGain::kMinChangeDb,
            "the whole track's own gain");
+    expect(!gain.onProfile(kLnTrackA, profiles.whole).has_value(),
+           "the same whole profile again (the analyzer re-publishing its cache) changes nothing");
     expect(!gain.onProfile(kLnTrackA, profiles.prefix).has_value(),
            "a late prefix never replaces the whole track");
 
