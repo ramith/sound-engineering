@@ -59,30 +59,34 @@ rules:
       action disables it). .deleteForward is U+F728 — ⌦'s own NSDeleteFunctionKey — so not flagged.
     pattern-regex: '\.onKeyPress\([^)\n]*\.delete\b'
 
-  # S10.8 G (the disconnect freeze): the main thread must never call into AVFAudio or the CoreAudio
-  # HAL — when macOS holds a dying device's lock (~7 s on a headphone switch-off), such a call waits
-  # and the app beach-balls; every accessor on any node of a live AVAudioEngine (`.auAudioUnit` of an
-  # attached unit included) takes one engine-wide lock. The main actor reads the engine only through
-  # AudioPlaybackEngine.snapshot() (one EngineSnapshot copy); the hardware calls live in
-  # AudioEngineBridge*, on its queues.
-  - id: main-actor-no-audio-hardware
+  # S10.8 G (the disconnect freeze): the main thread must never wait on the audio side. Every
+  # AVFAudio accessor on a node of a live engine (`.auAudioUnit` of an attached unit included) takes
+  # ONE engine-wide lock, which a stop or start holds across the HAL's waits — ~7 s on a headphone
+  # switch-off. The app reaches the engine only through AudioPlaybackEngine, whose synchronous
+  # surface is copy-or-hand-off only: snapshot() (one EngineSnapshot), the publishes (borrowing the
+  # AU via withEffectsAU), requestDeviceVolume (queued), the spectrum / monitor reads, the pin and
+  # device id. Everything that touches the hardware lives in the bridge's own files, on its queues.
+  # So outside them: no engine-bound AVFAudio type (AVAudioFile / Format / PCMBuffer / Time are
+  # plain data and stay allowed), no AVFAudio or HAL accessor of the bridge, no HAL / AU / Pure C
+  # call, no `.sync` onto a bridge queue. The DEBUG stall self-test holds the lock on purpose.
+  - id: main-thread-no-audio-hardware
     languages: [swift]
     severity: ERROR
     message: >-
-      Main-actor code must not call AVFAudio nodes/engines or the CoreAudio HAL: they can wait
-      seconds while macOS reconfigures a device, freezing the app (S10.8 G). Read the engine's
-      snapshot (transportSnapshot / currentSignalPath), or add an async/queued engine method in
-      AudioEngineBridge.
+      Only the engine bridge (AudioEngineBridge*.swift, PureModeSession.swift) may touch AVFAudio engine objects, the
+      CoreAudio HAL, the Pure C-ABI or the bridge's queues: from the app they can wait seconds on
+      AVFAudio's engine-wide lock while macOS reconfigures a device, freezing the main thread
+      (S10.8 G). Read engine state from AudioPlaybackEngine.snapshot(); send work through an async
+      or queued engine method (see docs/architecture/architecture.md, "Threading rules").
     paths:
       include:
-        - 'Sources/AdaptiveSound/AudioViewModel*.swift'
-        - 'Sources/AdaptiveSound/EQViewModel*.swift'
-        - 'Sources/AdaptiveSound/NowPlayingController.swift'
-        - 'Sources/AdaptiveSound/AppDelegate.swift'
-        - 'Sources/AdaptiveSound/Library*Model*.swift'
-        - 'Sources/AdaptiveSound/PlaylistsModel.swift'
-        - 'Sources/AdaptiveSound/UI/'
-    pattern-regex: '\bAudioObject[A-Za-z]+\(|\bAudioUnit(Get|Set)Property\(|\bAudio(Output|Device)[A-Za-z]*(Start|Stop)\(|\bAVAudio(PlayerNode|Engine|IONode|InputNode|OutputNode|MixerNode|Unit)\b|\.auAudioUnit\b'
+        - 'Sources/AdaptiveSound/'
+      exclude:
+        - 'Sources/AdaptiveSound/AudioEngineBridge*.swift'
+        - 'Sources/AdaptiveSound/PureModeSession.swift'
+        - 'Sources/AdaptiveSound/Debug/MainThreadStall*.swift'
+    pattern-regex: >-
+      \bAVAudio(?!File\b|Format\b|PCMBuffer\b|Time\b|ChannelLayout\b|FrameCount\b|FramePosition\b|Converter\b)[A-Z]\w*|\.auAudioUnit\b|\b(playerNodeRef|avEngineRef|effectsNode|playerNode|avEngine)\b|\bpureMode\w+\(|\bAudio(Object(Get|Set|Has|Add|Remove|Is)|Unit(Get|Set|Initialize|Uninitialize|Render|Reset)|OutputUnit(Start|Stop)|Device(Start|Stop|GetProperty|SetProperty|CreateIOProc|DestroyIOProc)|Hardware)\w*\(|\bDeviceHardwareVolume\.|\b(getDefaultOutputDeviceID|selectOutputDeviceC|enumerateOutputDevicesC)\(|\b(engineQueue|resampleQueue|configChangeQueue|deviceVolumeQueue)\.sync\b
 
   - id: coreaudio-listener-not-on-main
     languages: [swift]
@@ -90,8 +94,28 @@ rules:
     message: >-
       A CoreAudio property listener must not run on the main queue: its handler reads the HAL, and
       the HAL fires listeners while it tears a device down — the read would wait on the device's
-      lock on the main thread (S10.8 G). Give it an engine queue and publish into a snapshot.
-    pattern-regex: 'AudioObject(Add|Remove)PropertyListenerBlock\([\s\S]{0,160}?DispatchQueue\.main'
+      lock on the main thread (S10.8 G). Give it a bridge queue and publish into a snapshot.
+    # Two nets: a main queue named inside the call (or the AudioPropertyListener wrapper's), and an
+    # allowlist on the raw call's queue argument — `let q = DispatchQueue.main` then `q` names no main.
+    pattern-either:
+      - pattern-regex: '(AudioObject(Add|Remove)PropertyListenerBlock|AudioPropertyListener)\([\s\S]{0,160}?(DispatchQueue\.main|\.main\b|mainQueue)'
+      - pattern-regex: 'AudioObject(Add|Remove)PropertyListenerBlock\(\s*[^,()]+,\s*[^,()]+,(?!\s*(queue|deviceVolumeQueue|configChangeQueue)\s*,)'
+
+  # The bridge is engine code, NOT main-actor code (AudioEngineBridge.swift's header): a @MainActor
+  # member in its own files would run its AVFAudio / HAL reads on the main thread with the
+  # main-thread rule above blind to it.
+  - id: bridge-not-main-actor
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      The engine bridge's own files hold engine code: no @MainActor declaration here — it would put
+      AVFAudio / HAL reads on the main thread where the main-thread rule cannot see them (S10.8 G).
+      Put main-thread code in the view model and reach the engine through AudioPlaybackEngine.
+    paths:
+      include:
+        - 'Sources/AdaptiveSound/AudioEngineBridge*.swift'
+        - 'Sources/AdaptiveSound/PureModeSession.swift'
+    pattern-regex: '(?m)^\s*@MainActor\b'
 
   # S10.8 C1: the isolated test library is only isolated if NOTHING picks its own place to persist.
   - id: persist-one-location

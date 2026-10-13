@@ -35,7 +35,7 @@ final class AudioViewModel {
     /// Re-entrant `initialize()` guard. `true` from the moment an init is kicked off
     /// (`initializeEngine()` / `retryInitialization()`) until its `Task` finishes (success OR
     /// failure). A second init while one is in-flight would race the retry's teardown over the
-    /// same ARC class refs (`avEngine` / `loudnessMeter` / `pureEngine`) → retain-count corruption.
+    /// same ARC class refs (the engine, the loudness meter, the Pure session) → retain-count corruption.
     /// Internal (NOT private) so the `+Lifecycle` / `+Devices` extensions (separate files) can
     /// read/write it; `@MainActor` isolation makes the flag check/set race-free. Not UI-bound.
     var isInitializing = false

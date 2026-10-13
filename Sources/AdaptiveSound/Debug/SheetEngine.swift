@@ -4,7 +4,7 @@
     // MARK: - Picture-sheet audio engine
 
     /// The renderer's `AudioPlaybackEngine`: hardware-free. Every lifecycle, transport and device verb
-    /// is a no-op answering "nothing is running", so a render never builds an `AVAudioEngine`, opens a
+    /// is a no-op answering "nothing is running", so a render never builds an AVFAudio engine, opens a
     /// HAL session or enumerates CoreAudio devices. Its one job is serving the fixture's per-channel
     /// before/after spectra, which the Monitoring tab polls straight from the engine
     /// (`MonitoringViewModel`) rather than through the audio view model.

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - OutputPathKind
 
-/// Whether the active signal path is the AVAudioEngine-based Enhanced path or the
+/// Whether the active signal path is the AVFAudio-engine Enhanced path or the
 /// bit-perfect Pure HAL path. Mutually exclusive at runtime.
 enum OutputPathKind {
     case enhanced
@@ -13,7 +13,7 @@ enum OutputPathKind {
 
 /// User-facing mirror of the C-layer `PureModeDecision` enum.
 /// `fullBitPerfect` — integer PCM delivered at the file's native rate.
-/// `rateMatchedFloat` — float PCM, rate matched without SRC (no AVAudioEngine resampler).
+/// `rateMatchedFloat` — float PCM, rate matched without SRC (no AVFAudio engine resampler).
 /// `fallbackEnhanced` — Pure was requested but the device or file forced an Enhanced fallback.
 enum PureModeDecisionUI {
     case fullBitPerfect

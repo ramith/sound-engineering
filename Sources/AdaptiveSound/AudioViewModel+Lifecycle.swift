@@ -134,7 +134,7 @@ extension AudioViewModel {
         // writes) by the time we free the C audio handles below. That preserves the P2-C ordering
         // the pre-F5 single-model shutdown enforced inline here.
         // P2-C: ordered teardown — `engine.shutdown()` runs only AFTER `performStop()` has fully
-        // completed, so shutdown can't tear down `avEngine`/the loudness meter/`pureEngine` while
+        // completed, so shutdown can't tear down the engine/the loudness meter/the Pure session while
         // `stopAudio()` is still mid-flight on another thread → use-after-free of the C handles.
         // Close the play-verb gate FIRST (break-it): during the two awaits below, a play from
         // the menu bar / Control Center could pass the `isEngineReady` guard and land on
