@@ -1,8 +1,8 @@
 # User Journeys — Adaptive Sound
 
 **Document ID:** JOURNEYS-ASE-001  
-**Version:** 1.0 — extracted from requirements.md v0.6  
-**Date:** 2026-06-13  
+**Version:** 1.1 — reconciled to the code at R1 / v1.0.0-alpha (2026-10-13); v1.0 extracted from requirements.md v0.6  
+**Date:** 2026-06-13 (statuses re-verified 2026-10-13)  
 **Extracted by:** Business Analyst (refactoring for clarity)  
 **Status:** Authoritative; cross-referenced from requirements.md
 
@@ -15,8 +15,9 @@ This document defines the core user journeys (workflows) for Adaptive Sound. Eac
 **Journeys are organized by persona and phase:**
 - **Journeys 2.1–2.5:** Phase 0 & Phase 1 (own-player focus)
 - **Journey 2.6:** Phase 2 (system-wide, two implementation paths)
+- **Journeys 2.8–2.10** *(added 2026-10-13)*: the journeys R1 is actually built around — the library, playlists and bit-perfect Pure Mode — written down so they trace to the code like the rest.
 
-> **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching. Each journey below carries a **Status** line marking how much is built. Onboarding, the automatic adaptivity engine, environment/mic sensing, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior.
+> **Implementation status (current build).** These journeys are product *specifications*, not descriptions of shipped behavior. ~~Verified against `Sources/` on `main`, the current app is a Phase-0 own-player: it launches straight into a four-tab window (Now Playing · EQ · Monitoring · Settings) with local-file playback, a 31-band EQ, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" (wet/dry) knob, a bit-perfect Pure Mode, gapless + multichannel playback, and automatic output-device switching.~~ **Re-verified 2026-10-13 (R1 / v1.0.0-alpha):** the app launches straight into a **five-tab** Liquid Glass window (Now Playing · Library · EQ · Monitoring · Settings), dark and light, plus a menu-bar extra. It has a persistent library (music folders, live updates, Songs / Albums / Artists / Genres with filter and sort), playlists, a persistent queue with shuffle / repeat and Recently Played, media keys and Control Center, a 31-band graphic EQ with Tone controls, presets and per-output memory, LUFS loudness normalization + a true-peak limiter, opt-in crossfeed, a Reimagine "Intensity" knob (which no longer touches the EQ), a bit-perfect Pure Mode, gapless + multichannel (≤ 7.1) playback, and an output-device rule (pick or follow; pause on loss). Each journey below carries a **Status** line marking how much is built. Onboarding, the automatic adaptivity engine, environment/mic sensing, and Phase-2 system-wide capture are **not yet built** — they remain valid *planned* journeys, not current behavior. Open defects are in [known-issues.md](known-issues.md).
 
 ---
 
@@ -40,7 +41,7 @@ Every journey below follows one template — reuse it for new use-cases:
 **Actor:** New user, app just launched for the first time.  
 **Goal:** Reach a working listening state with a meaningful default sound profile in under 3 minutes.  
 **Phase:** Phase 0 (Player MVP).  
-**Status:** NOT YET BUILT (planned). The app launches directly into the four-tab player; there is no welcome screen, mic-permission step, or first-run tooltip.
+**Status:** NOT YET BUILT (planned; unscheduled — backlog US-UI-03). The app launches directly into the five-tab player; there is no welcome screen, mic-permission step, or first-run tooltip. The nearest thing is the empty Library, which asks the user to add a music folder (Journey 2.8, Step 1).
 
 **Steps:**
 
@@ -85,7 +86,7 @@ Step 5 — First Listening Moment
 **Actor:** Returning user with a configured profile.  
 **Goal:** Listen to a music playlist with seamless adaptive enhancement.  
 **Phase:** Phase 1 (mix-level adaptation).  
-**Status:** PARTIALLY BUILT. Playback, manual 31-band EQ (+ per-device preset recall), LUFS loudness normalization + true-peak limiter, crossfeed, and the Reimagine "Intensity" wet/dry knob are live. The **automatic adaptivity** in Steps 3–5 is NOT built: there is no content/genre classifier and no Fletcher-Munson volume compensation (only a manual EQ + program-loudness normalization; no per-track curve cross-fades).
+**Status:** PARTIALLY BUILT. Playback, manual 31-band EQ (+ per-device preset recall), LUFS loudness normalization + true-peak limiter, crossfeed, and the Reimagine "Intensity" wet/dry knob are live. The **automatic adaptivity** in Steps 3–5 is NOT built: there is no content/genre classifier and no Fletcher-Munson volume compensation (only a manual EQ + program-loudness normalization; no per-track curve cross-fades). *(Re-verified 2026-10-13: Step 1 restores the queue, track, position, shuffle and repeat **paused** and the EQ for the current output, but not Master Gain, Pure Mode, Intensity or crossfeed — known issue KI-SET-01; Step 2's chain is EQ → crossfeed → loudness → limiter, with no spatialization stage yet; Step 6 persists the queue continuously. Steps 3–4 → S14–S16; the track-boundary smoothing of Step 5 holds for the loudness gain, which follows each track's own analysis.)*
 
 **Steps:**
 
@@ -128,7 +129,7 @@ Step 6 — Session End
 **Actor:** User listening on AirPods who unplugs or switches to laptop speakers.  
 **Goal:** Sound continues without interruption; DSP profile switches automatically.  
 **Phase:** Phase 1 onwards.  
-**Status:** PARTIALLY BUILT. Automatic output-device detection/switch and the follow-vs-pin preference work (`AudioEngineBridge+Devices` / `+ConfigChange`), and crossfeed auto-disables on non-headphone devices. Step 5's **spatialization-mode change** (HRTF binaural vs. speaker widening) is NOT built — the spatial render stage is an identity/stub, so the only headphone spatial effect is the opt-in crossfeed. Per-*device* EQ preset recall exists, but there is no full "DSP profile" concept.
+**Status:** PARTIALLY BUILT. Automatic output-device detection/switch and the follow-vs-pin preference work ~~(`AudioEngineBridge+Devices` / `+ConfigChange`)~~, and crossfeed auto-disables on non-headphone devices. Step 5's **spatialization-mode change** (HRTF binaural vs. speaker widening) is NOT built — the spatial render stage is an identity/stub, so the only headphone spatial effect is the opt-in crossfeed. Per-*device* EQ preset recall exists, but there is no full "DSP profile" concept. *(Re-verified 2026-10-13, after Sprint G (PR #85) and the freeze fix (PR #86): every output event goes through one device rule. Step 2 = the output's pinned EQ, else the shared EQ; Step 4 is **built** as a toast naming the output and its EQ ("AirPods Pro · Late Night"), which opens the EQ tab when tapped; the limiter ceiling and rate readout follow the output. A device **lost** while playing now pauses (both paths), keeps the place and says so — it does not continue on the speakers. Not built: Step 3's dedicated 200 ms profile crossfade (EQ changes glide through the engine's own smoothing), Step 5 (→ S18), whole profiles (→ S13). Wired headphones in the Mac's own jack are treated as speakers for crossfeed — KI-DEV-01.)*
 
 **Steps:**
 
@@ -166,7 +167,7 @@ Step 5 — Spatialization Mode Change
 **Actor:** User listening in a room that has become noisier (e.g., construction starts outside).  
 **Goal:** User triggers a one-shot environment sample; app adapts DSP to compensate, then releases the mic.  
 **Phase:** Phase 1 onwards (requires microphone permission, LD-6 on-demand sampling only).  
-**Status:** NOT YET BUILT (planned). There is no microphone access, ambient-SPL sampling, or noise-based adaptation anywhere in the code.
+**Status:** NOT YET BUILT (planned; unscheduled — backlog US-AMB-01). There is no microphone access, ambient-SPL sampling, or noise-based adaptation anywhere in the code (re-verified 2026-10-13).
 
 **Steps:**
 
@@ -211,7 +212,7 @@ Step 6 — Mic Permission Denied Fallback
 **Actor:** User who wants to enable the Phase 2 system-wide enhancement.  
 **Goal:** All system audio (Spotify, Apple Music, YouTube, etc.) routed through the DSP engine.  
 **Phase:** Phase 2 (system-wide, two implementation paths).  
-**Status:** NOT YET BUILT (planned — Phase 2). Neither path exists in the code: there is no Core Audio process tap (`CATapDescription` / `AudioHardwareCreateProcessTap`) and no AudioServerPlugIn driver. The current app processes only its own player output; the sole system-level output path is the bit-perfect Pure Mode HAL render, not a capture-all-apps tap.
+**Status:** NOT YET BUILT (planned — Phase 2; **"Won't, this horizon"** on the roadmap). Neither path exists in the code: there is no Core Audio process tap (`CATapDescription` / `AudioHardwareCreateProcessTap`) and no AudioServerPlugIn driver. The current app processes only its own player output; the sole system-level output path is the bit-perfect Pure Mode HAL render, not a capture-all-apps tap.
 
 **Architecture Note:**  
 See `docs/architecture/architecture.md` §13 and `docs/session-notes/prior-art.md` (ADR-002) for the technical foundation. The primary mechanism for macOS 14.2/14.4+ is a **Core Audio process tap** (no driver, no admin password, no coreaudiod restart). The **AudioServerPlugIn virtual device** (FALLBACK PATH) is used when the tap path is unavailable (macOS < 14.2) or when the user specifically wants a persistent, selectable output device.
@@ -297,11 +298,107 @@ Step 6 — Uninstall Path
 
 ---
 
+## Journey 2.8 — Add Music and Play from the Library *(added 2026-10-13)*
+
+**Actor:** A listener with music in one or more folders on their Mac or an external drive.  
+**Goal:** Point the app at their folders once, then find and play anything in a few clicks — and come back to it after a relaunch.  
+**Phase:** Phase 0 (the player — roadmap S8–S10, R1).  
+**Status:** BUILT (R1). Not built: playing a single file from outside the music folders (no Finder drop or Open…, backlog US-LIB-02); a visible state for an unplugged folder (KI-LIB-02).
+
+**Steps:**
+
+```
+Step 1 — Add a music folder
+  The empty Library offers "add a music folder"; the Library rail's Music Folders section adds more,
+  and removes one (songs a user playlist names stay as loose songs).
+  The scan walks each folder once at a time, reads tags and artwork in the background, and shows progress.
+
+Step 2 — Browse and find
+  Songs (sortable, customizable columns, keyboard selection), Albums, Artists and Genres
+  (tile grids, arrow keys), each with a detail page and a Filter field.
+
+Step 3 — Play
+  Double-click a song, or Play / Shuffle a page: the queue is replaced ("Restore previous queue"
+  undoes it for a few seconds). Play Next / Add to Queue insert without replacing.
+
+Step 4 — Live with it
+  Files added, moved or deleted in Finder show up live (FSEvents); a moved file keeps its identity,
+  play count and playlist places. Changes made while the app was closed are caught up at launch.
+
+Step 5 — Come back
+  Quit and relaunch: the queue, the track, its position, shuffle and repeat come back paused.
+```
+
+**Success Condition:** A 10,000-song library is browsable and playable with no beach ball, and survives a relaunch and a Finder move with every playlist entry intact.
+
+---
+
+## Journey 2.9 — Curate a Playlist *(added 2026-10-13)*
+
+**Actor:** A listener who wants a lasting selection of songs, separate from the play queue.  
+**Goal:** Create a playlist, fill it from anywhere in the library, order it, and play it — without ever moving a file.  
+**Phase:** Phase 0 (roadmap S10.1–S10.3, R1).  
+**Status:** BUILT (R1). Not built: adding a file from outside the library (US-PLIST-02); dragging from one playlist into another; "save queue as playlist". Dragging a multi-selection adds only one song (KI-LIB-04).
+
+**Steps:**
+
+```
+Step 1 — Create
+  The + on the Library rail's Playlists header ("New Playlist", then "New Playlist 2", …);
+  rename or delete it later.
+
+Step 2 — Fill
+  Drag a song onto the playlist in the rail, or use Add to Playlist on a song, a selection,
+  a detail page or a tile. Adding is always a reference: the file never moves.
+
+Step 3 — Order
+  Drag rows by their grip, or Move Up / Move Down; remove rows.
+
+Step 4 — Play
+  Play or Shuffle the playlist: it becomes the queue. A song whose file is missing is skipped,
+  badged, and can be re-pointed (Locate…) or removed ("Remove Missing…").
+```
+
+**Success Condition:** A playlist keeps its songs and order across relaunches, schema upgrades and Finder moves; no playlist action changes a file on disk.
+
+---
+
+## Journey 2.10 — Bit-Perfect Listening with Pure Mode *(added 2026-10-13)*
+
+**Actor:** An audiophile with a USB DAC who wants the file's bits to reach the DAC unaltered.  
+**Goal:** Play the library bit-perfect, at each track's own sample rate, and know at a glance that it is.  
+**Phase:** Phase 0 (the anchor story — "this Mac → this DAC, bit-perfect").  
+**Status:** BUILT (R1). Pure falls back to Enhanced on Bluetooth / AirPlay by design (the link re-encodes). Open: a mid-song Repeat / Shuffle change or queue edit may not reach Pure's next track (KI-PB-01, needs a live check); switching Pure on or off waits for a manual start (KI-PB-05). The founder's by-ear check on a USB DAC is still owed.
+
+**Steps:**
+
+```
+Step 1 — Turn it on
+  Settings › Pure Mode (Bit-Perfect) › "Play bit-perfect". It applies at the next track start.
+
+Step 2 — Play
+  The app takes the device directly (HAL, hog mode), switches it to each track's sample rate,
+  and bypasses every DSP stage, EQ included. Same-rate tracks join gaplessly.
+
+Step 3 — Check
+  Settings shows what is playing through ("Playing through: Pure") and the rate; Master Gain
+  becomes the device's own volume.
+
+Step 4 — Change device or lose it
+  Choosing another output restarts at the playhead on it (or falls back to Enhanced there);
+  unplugging the DAC pauses and keeps the place.
+```
+
+**Success Condition:** A loopback capture of a 24-bit FLAC at the device's rate is bit-identical to the file (NFR-QUAL-03).
+
+---
+
 ## Cross-References
 
 - **Requirements.md:** Journey descriptions in §2 link back to this document. (`docs/product/requirements.md` — exists.)
-- **UX-guidelines.md:** §2.2 (Core Journeys) references each journey's UX principles. *(Planned — this document does not yet exist in the repo.)*
-- **Test-and-qa-strategy.md:** §3.1 (Integration Test Journeys) uses these journeys as the basis for end-to-end testing. *(Planned — this document does not yet exist in the repo.)*
+- **UX-guidelines.md:** §2.2 (Core Journeys) references each journey's UX principles. *(Planned — this document does not yet exist in the repo. The closest live references are the design packages under `docs/design/` and [s10-7-liquid-glass-design.md](../sprints/s10-7-liquid-glass-design.md).)*
+- **Test-and-qa-strategy.md:** §3.1 (Integration Test Journeys) uses these journeys as the basis for end-to-end testing. *(Planned — this document does not yet exist in the repo. The QA strategy that exists is [validation-strategy.md](../architecture/validation-strategy.md), which does not use the journeys; the Sprint G break-it reports exercised Journeys 2.3, 2.4 and 2.8–2.10 by hand.)*
+- **Open defects:** [known-issues.md](known-issues.md). **Stories:** [backlog.md](backlog.md) (EP-LIBRARY / EP-PLAYLIST for 2.8–2.9; US-ENG-07 for 2.10).
 
 ---
 
