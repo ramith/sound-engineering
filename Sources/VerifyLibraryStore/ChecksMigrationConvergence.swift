@@ -27,8 +27,10 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// ONLY when a migration is appended, never from editing a shipped one. (A hash, not the full DDL,
 /// so the constant stays one short line.) v7 was AMENDED in place twice — by the S10.8 C2 fix rounds,
 /// before any real library had run it (only test stores, which `make reset-test-library` resets; the
-/// open path refuses one an earlier amendment migrated — `Schema.v7ShapeProblem`).
-let goldenSchemaFingerprintHashV7 = "1282ef7f4acef388"
+/// open path refuses one an earlier amendment migrated — `Schema.v7ShapeProblem`). v8 (R1) appended
+/// `folders.volume_uuid`: the v7 golden was 1282ef7f4acef388, and the v8 fingerprint without that one
+/// column hashes to it exactly.
+let goldenSchemaFingerprintHashV8 = "470fa8ed1281e861"
 
 // MARK: - Fingerprint
 
@@ -84,9 +86,9 @@ func checkAdditiveMigrationConvergence(number: Int, url _: URL) -> Bool {
             return false
         }
         let freshHash = fnv1a64Hex(freshFingerprint)
-        guard freshHash == goldenSchemaFingerprintHashV7 else {
+        guard freshHash == goldenSchemaFingerprintHashV8 else {
             printFail(number, "schema fingerprint drift — a SHIPPED migration body changed (or a new "
-                + "migration landed without updating goldenSchemaFingerprintHashV7). If this is an "
+                + "migration landed without updating goldenSchemaFingerprintHashV8). If this is an "
                 + "intentional NEW migration, set the golden to: \(freshHash)\nFingerprint:\n\(freshFingerprint)")
             return false
         }
