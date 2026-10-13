@@ -1,4 +1,4 @@
-.PHONY: build run release run-release sheets songs-perf clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
+.PHONY: build run release run-release sheets songs-perf main-thread-stall clean xcode profile test format lint periphery strict-gate ci library-store-verify gate sanitize tsan sanitize-library-store leak-check regenerate-metadata-fixtures stress-library run-test-library reset-test-library help
 
 build:
 	swift build -c debug -j 8
@@ -80,6 +80,19 @@ sheets:
 songs-perf:
 	swift build -c debug -j 8
 	@BIN="$$(swift build -c debug --show-bin-path)"; "$$BIN/AdaptiveSound" -ASSongsPerf
+
+# Main-thread stall self-test (S10.8 G, the disconnect freeze; debug only): the real engine bridge
+# and view model on an OFFLINE engine (no device opened, nothing heard), with AVFAudio's engine-wide
+# lock held for 2.5 s — in player.stop(), in a slow engine.start(), and through the device-loss pause
+# — while every main-thread entry is timed: each must return within 5 ms. Plus the queue-advance
+# regression (a slow start must not be stopped by the replaced track's end flag). Exits non-zero on a
+# miss. Like `sheets`: no library store, no app setting, no audio device.
+main-thread-stall:
+	swift build -c debug -j 8
+	@BIN="$$(swift build -c debug --show-bin-path)"; \
+		for mode in stop start device-loss ended-advance; do \
+			"$$BIN/AdaptiveSound" -ASMainThreadStall $$mode || exit 1; \
+		done
 
 # Stress library (S10.8 C1): ~10,000 tiny, real, tagged audio files (FLAC/MP3/M4A; long, CJK, RTL and
 # emoji names; flagged and unflagged compilations; same-title albums; 5.1 and 7.1 files; art and no
@@ -262,6 +275,7 @@ help:
 	@echo "  make run    - Build and launch app (debug)"
 	@echo "  make sheets - Render fixture picture sheets of every screen/appearance (debug) into .build/sheets/<sha>"
 	@echo "  make songs-perf - Time the Songs list's keys over 20,000 fixture songs against the 100 ms gate (debug)"
+	@echo "  make main-thread-stall - Hold AVFAudio's engine lock 2.5 s; every main-thread entry must stay under 5 ms (debug)"
 	@echo "  make stress-library - Write the ~10k-track stress library (needs ffmpeg) to STRESS_LIBRARY"
 	@echo "  make run-test-library   - Run a debug copy on an ISOLATED library + settings, scanning the stress library"
 	@echo "  make reset-test-library - Forget the test copy's library and settings (never touches your own)"
