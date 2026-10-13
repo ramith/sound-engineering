@@ -54,15 +54,17 @@ extension AudioViewModel {
     /// (e.g. when its view is hidden) can never stall transport or auto-advance.
     @MainActor
     func tickTransport() {
-        // The engine's transport as its clock last sampled it — a copy, so the tick never waits on
-        // the player or the hardware (the disconnect freeze, S10.8 G).
-        let transport = engine.transportSnapshot()
+        // The engine's state in ONE copy (the transport as its clock last sampled it, the signal
+        // path, the loudness, the EQ design rate), so the tick never waits on the player or the
+        // hardware (the disconnect freeze, S10.8 G).
+        let snapshot = engine.snapshot()
+        let transport = snapshot.transport
         // Poll the playhead + loudness + signal path every tick.
         pollPlayhead(transport)
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
         // accrues only while playing → a pause/stall/seek never mis-counts).
         accruePlayThrough()
-        pollEngineReadouts()
+        pollEngineReadouts(snapshot)
 
         // The output device disappeared (e.g. headphones switched off) and the engine paused — a
         // real pause, like `pause()`: the song's place is kept (the last playhead read while it
@@ -151,12 +153,12 @@ extension AudioViewModel {
     /// even while idle. These guards are what makes SignalPathInfo's "Equatable so redundant
     /// renders are suppressed" doc comment actually true.
     @MainActor
-    private func pollEngineReadouts() {
-        let freshLoudness = engine.currentLoudness()
+    private func pollEngineReadouts(_ snapshot: EngineSnapshot) {
+        let freshLoudness = snapshot.loudness
         if loudness != freshLoudness {
             loudness = freshLoudness
         }
-        var freshPath = engine.currentSignalPath()
+        var freshPath = snapshot.signalPath
         // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
         freshPath.intensityLinear = intensity
         freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
@@ -168,7 +170,7 @@ extension AudioViewModel {
         if freshPath.path != .pure, deviceVolumeAsked != nil {
             deviceVolumeAsked = nil
         }
-        refreshEQDesignRate()
+        refreshEQDesignRate(snapshot.eqDesignRate)
     }
 
     @MainActor

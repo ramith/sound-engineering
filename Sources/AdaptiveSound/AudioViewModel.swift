@@ -367,7 +367,7 @@ final class AudioViewModel {
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.defaults = defaults
         self.engine = engine
-        eqDesignRate = engine.eqSampleRate()
+        eqDesignRate = engine.snapshot().eqDesignRate
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
@@ -392,9 +392,9 @@ final class AudioViewModel {
     /// observed: the EQ graph's played curve is designed at it, and redraws when the output's rate moves.
     private(set) var eqDesignRate: Double
 
-    /// Re-reads the EQ's design rate, writing only on a change (Observation has no equality gate).
-    func refreshEQDesignRate() {
-        let rate = engine.eqSampleRate()
+    /// Takes the EQ's design rate from the tick's snapshot, writing only on a change (Observation has
+    /// no equality gate).
+    func refreshEQDesignRate(_ rate: Double) {
         if eqDesignRate != rate {
             eqDesignRate = rate
         }

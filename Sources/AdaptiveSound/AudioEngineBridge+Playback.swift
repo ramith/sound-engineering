@@ -74,7 +74,7 @@ extension AudioEngineBridge {
     /// Start (or re-establish) the Enhanced path: tear down any live Pure engine, start the AV
     /// engine + tap, schedule the file (or reference tone), and publish the Enhanced signal-path
     /// snapshot + play-intent. Runs on `engineQueue` (called directly from the `startAudio` body);
-    /// the `resampleQueue.sync` for `enhancedPlayIntent` is unchanged.
+    /// `enhancedPlayIntent` is an atomic, set last.
     private func startEnhancedPlayback(fileURL: URL?) throws {
         // If Pure was active, stop+destroy it before entering Enhanced
         // (releases hog mode + restores device rate).
@@ -116,7 +116,7 @@ extension AudioEngineBridge {
         }
 
         setActivePath(.enhanced)
-        resampleQueue.sync { enhancedPlayIntent = true }
+        enhancedPlayIntent = true
         let fellBack = loadSignalPath().fellBackToEnhanced
         // The device's actual output rate (the honest "device is running at" value, per the
         // field's doc + the D5 device-pill readout). Enhanced processes internally at the graph

@@ -43,8 +43,7 @@ extension AudioEngineBridge {
         // Use the durable play-INTENT, not `playerNode.isPlaying`: a reconfiguration (a device
         // connecting/disconnecting) can momentarily report the node as not-playing, and gating on
         // that left playback silently dead after e.g. a Bluetooth device connected mid-track.
-        // Read under resampleQueue (its designated owner) for a consistent snapshot.
-        let wasPlaying = resampleQueue.sync { enhancedPlayIntent }
+        let wasPlaying = enhancedPlayIntent
 
         // Idle (nothing playing, or a deliberate stop): do NOT start the engine. A config change
         // ALSO fires when a device merely CONNECTS and steals the system default (e.g. a Bluetooth
@@ -84,7 +83,7 @@ extension AudioEngineBridge {
         // MAJOR-2): a user Stop can complete on engineQueue between the read at the top of
         // this function and here — re-scheduling after a deliberate stop is zombie audio
         // under a stopped UI. The stop already tore playback down; undo our engine restart.
-        let intentStillLive = resampleQueue.sync { enhancedPlayIntent }
+        let intentStillLive = enhancedPlayIntent
         guard intentStillLive else {
             engine.stop()
             logUX("config-change: play intent cleared mid-reestablish — engine stopped, not resuming")

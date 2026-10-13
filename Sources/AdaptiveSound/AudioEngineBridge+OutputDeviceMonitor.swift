@@ -153,7 +153,7 @@ extension AudioEngineBridge {
         if activePathKind == .pure {
             playback = .pure
         } else {
-            playback = resampleQueue.sync { enhancedPlayIntent } ? .enhanced : .idle
+            playback = enhancedPlayIntent ? .enhanced : .idle
         }
         return OutputDeviceFacts(
             target: target,
@@ -184,7 +184,7 @@ extension AudioEngineBridge {
     /// a start is using.
     private func pauseForDeviceLoss() {
         logUX("output device lost during playback — pausing")
-        resampleQueue.sync { enhancedPlayIntent = false }
+        enhancedPlayIntent = false
         storeInterruptedSignalPath()
         engineQueue.async { [weak self] in
             self?.stopPlaybackAfterDeviceLoss()

@@ -23,11 +23,6 @@ extension AudioEngineBridge {
     /// sample (~33 ms) behind the hardware.
     private static let clockInterval = DispatchTimeInterval.milliseconds(33)
 
-    /// The tick's view of the transport (`AudioPlaybackEngine`). A copy; never waits on the engine.
-    func transportSnapshot() -> TransportSnapshot {
-        transportSnapshots.read()
-    }
-
     /// Start sampling (on `engineQueue`, from `initialize()`). Idempotent.
     func startTransportClock() {
         guard transportClock == nil else { return }
@@ -68,13 +63,13 @@ extension AudioEngineBridge {
             return TransportSnapshot(position: pure.position > 0 ? pure.position : nil,
                                      transitionCount: pure.count, ended: pure.ended)
         }
-        // Enhanced: read the playhead on resampleQueue together with the seam count and end flag,
-        // so a seam (`bumpTransitionCount`, on that queue) lands wholly before or after the sample.
-        return resampleQueue.sync {
-            TransportSnapshot(position: liveEnhancedPosition(),
-                              transitionCount: gaplessTransitionCount,
-                              ended: gaplessPlaybackEnded)
-        }
+        // Enhanced: the player's playhead, then the seam count and end flag (atomics — the clock
+        // never waits on resampleQueue, which can be busy in AVFAudio or opening the next file).
+        // Playhead first, for the same reason as Pure: a seam (`bumpTransitionCount` counts, then
+        // re-bases) between the reads shows as the old track's end then the advance.
+        let position = liveEnhancedPosition()
+        return TransportSnapshot(position: position, transitionCount: gaplessTransitionCount,
+                                 ended: gaplessPlaybackEnded)
     }
 
     /// The Enhanced playhead, read from the player — NEVER on the main thread (enforced): these

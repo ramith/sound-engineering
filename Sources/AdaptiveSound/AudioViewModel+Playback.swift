@@ -105,7 +105,7 @@ extension AudioViewModel {
     /// actor (the VM's isolation); the `engine.setNextTrack`/`trackTransitionCount` calls hop to
     /// the engine's own queues internally. Behaviour is identical to the previously-inlined block.
     private func primeGaplessPipeline(startIndex: Int?, pureMode: Bool) async {
-        lastTransitionCount = engine.transportSnapshot().transitionCount // fresh: startAudio sampled it
+        lastTransitionCount = engine.snapshot().transport.transitionCount // fresh: startAudio sampled it
 
         let currentIdx = startIndex ?? selectedTrackIndex
         let nextIdx = computeNextIndex(current: currentIdx ?? 0, playlistCount: playlist.count)
