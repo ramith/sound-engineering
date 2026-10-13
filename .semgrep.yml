@@ -59,6 +59,40 @@ rules:
       action disables it). .deleteForward is U+F728 — ⌦'s own NSDeleteFunctionKey — so not flagged.
     pattern-regex: '\.onKeyPress\([^)\n]*\.delete\b'
 
+  # S10.8 G (the disconnect freeze): the main thread must never call into AVFAudio or the CoreAudio
+  # HAL — when macOS holds a dying device's lock (~7 s on a headphone switch-off), such a call waits
+  # and the app beach-balls; every accessor on any node of a live AVAudioEngine (`.auAudioUnit` of an
+  # attached unit included) takes one engine-wide lock. The main actor reads the engine only through
+  # AudioPlaybackEngine.snapshot() (one EngineSnapshot copy); the hardware calls live in
+  # AudioEngineBridge*, on its queues.
+  - id: main-actor-no-audio-hardware
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      Main-actor code must not call AVFAudio nodes/engines or the CoreAudio HAL: they can wait
+      seconds while macOS reconfigures a device, freezing the app (S10.8 G). Read the engine's
+      snapshot (transportSnapshot / currentSignalPath), or add an async/queued engine method in
+      AudioEngineBridge.
+    paths:
+      include:
+        - 'Sources/AdaptiveSound/AudioViewModel*.swift'
+        - 'Sources/AdaptiveSound/EQViewModel*.swift'
+        - 'Sources/AdaptiveSound/NowPlayingController.swift'
+        - 'Sources/AdaptiveSound/AppDelegate.swift'
+        - 'Sources/AdaptiveSound/Library*Model*.swift'
+        - 'Sources/AdaptiveSound/PlaylistsModel.swift'
+        - 'Sources/AdaptiveSound/UI/'
+    pattern-regex: '\bAudioObject[A-Za-z]+\(|\bAudioUnit(Get|Set)Property\(|\bAudio(Output|Device)[A-Za-z]*(Start|Stop)\(|\bAVAudio(PlayerNode|Engine|IONode|InputNode|OutputNode|MixerNode|Unit)\b|\.auAudioUnit\b'
+
+  - id: coreaudio-listener-not-on-main
+    languages: [swift]
+    severity: ERROR
+    message: >-
+      A CoreAudio property listener must not run on the main queue: its handler reads the HAL, and
+      the HAL fires listeners while it tears a device down — the read would wait on the device's
+      lock on the main thread (S10.8 G). Give it an engine queue and publish into a snapshot.
+    pattern-regex: 'AudioObject(Add|Remove)PropertyListenerBlock\([\s\S]{0,160}?DispatchQueue\.main'
+
   # S10.8 C1: the isolated test library is only isolated if NOTHING picks its own place to persist.
   - id: persist-one-location
     languages: [swift]
