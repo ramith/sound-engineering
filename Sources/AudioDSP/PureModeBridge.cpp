@@ -106,20 +106,17 @@ namespace
         }
     }
 
-    // Engines and sources a render pass outlived (HALOutputEngine::renderMayStillRun): kept
-    // reachable, never freed — that pass may still be reading them. Never destroyed (a static
-    // destructor at exit would free them too). Control plane only (engineQueue). Empty in practice:
-    // it takes a render pass stuck inside the gate after its output unit was stopped and disposed.
-    struct ParkedRender
+    // Keep an engine and the source a render pass outlived (HALOutputEngine::renderMayStillRun)
+    // reachable and never freed — that pass may still be reading them. The lists are never
+    // destroyed (a static destructor at exit would free them too). Control plane only
+    // (engineQueue). Empty in practice: it takes a render pass stuck inside the gate after its
+    // output unit was stopped and disposed.
+    void parkRender(std::unique_ptr<GaplessSource> gapless, std::unique_ptr<HALOutputEngine> engine)
     {
-        std::unique_ptr<GaplessSource> gapless;
-        std::unique_ptr<HALOutputEngine> engine;
-    };
-
-    std::vector<ParkedRender>& parkedRenders()
-    {
-        static auto* parked = new std::vector<ParkedRender>();
-        return *parked;
+        static auto* parkedSources = new std::vector<std::unique_ptr<GaplessSource>>();
+        static auto* parkedEngines = new std::vector<std::unique_ptr<HALOutputEngine>>();
+        parkedSources->push_back(std::move(gapless));
+        parkedEngines->push_back(std::move(engine));
     }
 
     // After session.engine->stop(): if a render pass outlived it, park the engine and the source it
@@ -134,7 +131,7 @@ namespace
         AdaptiveSound::log::line(
             "[PureMode] a render pass outlived the output's teardown: "
             "parking its engine and source (kept, never freed)");
-        parkedRenders().push_back({std::move(session.gapless), std::move(session.engine)});
+        parkRender(std::move(session.gapless), std::move(session.engine));
         session.gapless = std::make_unique<GaplessSource>();
         session.engine = std::make_unique<HALOutputEngine>();
     }
