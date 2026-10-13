@@ -25,7 +25,7 @@ extension AudioEngineBridge {
     ///   - strength: The `CrossfeedStrength` preset, which resolves to a (level, presetIndex) pair.
     func publishCrossfeed(enabled: Bool, strength: CrossfeedStrength) {
         // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
-        guard let unit = dspAudioUnitRef else {
+        guard let unit = dspAURef else {
             logUX("[QW1] bridge.publishCrossfeed SKIP — no DSP AU handle "
                 + "(enabled=\(enabled) strength=\(strength))")
             return
@@ -33,7 +33,7 @@ extension AudioEngineBridge {
         let enabledFlag: UInt32 = enabled ? 1 : 0
         logUX("[QW1] bridge.publishCrossfeed → C-ABI enabled=\(enabledFlag) "
             + "level=\(strength.dspLevel) preset=\(strength.presetIndex)")
-        CCrossfeedABI.publish(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(),
+        CCrossfeedABI.publish(Unmanaged.passUnretained(unit).toOpaque(),
                               enabledFlag, strength.dspLevel, strength.presetIndex)
     }
 }

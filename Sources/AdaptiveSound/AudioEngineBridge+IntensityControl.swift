@@ -20,11 +20,11 @@ extension AudioEngineBridge {
     /// Must be called from a single control thread (the `@MainActor`).
     func publishIntensity(_ intensity: Float) {
         // Strong borrow under the leaf lock keeps the AU alive across the C-ABI call (S3 F1).
-        guard let unit = dspAudioUnitRef else {
+        guard let unit = dspAURef else {
             logUX("[QW1] bridge.publishIntensity SKIP — no DSP AU handle (intensity=\(intensity))")
             return
         }
         logUX("[QW1] bridge.publishIntensity → C-ABI intensity=\(intensity)")
-        CIntensityABI.publish(Unmanaged.passUnretained(unit.auAudioUnit).toOpaque(), intensity)
+        CIntensityABI.publish(Unmanaged.passUnretained(unit).toOpaque(), intensity)
     }
 }

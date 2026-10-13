@@ -75,7 +75,10 @@ extension AudioEngineBridge {
         // different rate, so the stored Enhanced snapshot's achievedSampleRate would otherwise
         // go stale. One field only (mutate, not store) so fellBackToEnhanced/interrupted stand.
         // On configChangeQueue here — the engine is settled, so this outputNode read is safe.
-        mutateSignalPath { $0.achievedSampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate }
+        // Read the rate BEFORE taking the lock: the main thread takes `stateLock` every tick, and this
+        // AVFAudio read waits on the engine's lock (the leaf-lock rule, AudioEngineBridge+SharedState).
+        let deviceRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        mutateSignalPath { $0.achievedSampleRate = deviceRate }
 
         // Re-validate the play INTENT immediately before touching the player (break-it
         // MAJOR-2): a user Stop can complete on engineQueue between the read at the top of
