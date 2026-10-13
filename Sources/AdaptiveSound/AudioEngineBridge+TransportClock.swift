@@ -15,16 +15,21 @@ import PlaybackQueueKit
 /// `engineQueue`; when they wait, the snapshot just goes stale and the main thread never notices.
 ///
 /// The clock runs on `engineQueue` on purpose: every transport change (start, stop, seek, the Pure
-/// calls, the device-loss teardown) runs there too, so a sample never interleaves with one, and each
-/// of them publishes a fresh sample before it returns — a reader after `await startAudio` sees the
-/// new track's seam count and a cleared end flag, never the clock's last pre-start sample.
+/// calls, the device-loss teardown) runs there too, so a sample never interleaves with one. Each
+/// change first publishes a transitional sample stamped with the request's EPOCH (before any slow
+/// work: a Pure rate change can take seconds), and a settled sample before it returns. The view
+/// model numbers its requests and ignores older samples (`TransportSnapshot.isCurrent(for:)`), so
+/// it never acts on the playback a request replaces — the old track's end flag, its playhead.
+///
+/// The clock runs only while something plays (from a start until the stop, the device-loss pause
+/// or the teardown), not 30 times a second forever.
 extension AudioEngineBridge {
-    /// How often the clock samples: a bit faster than the 20 Hz tick, so a tick is at most one
-    /// sample (~33 ms) behind the hardware.
+    /// How often the clock samples while playing: a bit faster than the 20 Hz tick.
     private static let clockInterval = DispatchTimeInterval.milliseconds(33)
 
-    /// Start sampling (on `engineQueue`, from `initialize()`). Idempotent.
+    /// Start sampling (on `engineQueue`, at every start). Idempotent.
     func startTransportClock() {
+        dispatchPrecondition(condition: .onQueue(engineQueue))
         guard transportClock == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: engineQueue)
         timer.schedule(deadline: .now(), repeating: Self.clockInterval, leeway: .milliseconds(5))
@@ -35,21 +40,37 @@ extension AudioEngineBridge {
         transportClock = timer
     }
 
-    /// Stop sampling (engine teardown, on `engineQueue`). The last sample stays readable.
+    /// Stop sampling (on `engineQueue`: a stop, the device-loss pause, the teardown). The caller
+    /// publishes a final sample; it stays readable.
     func stopTransportClock() {
+        dispatchPrecondition(condition: .onQueue(engineQueue))
         transportClock?.cancel()
         transportClock = nil
+    }
+
+    /// The top of a transport operation numbered `epoch` (start, seek, stop), on `engineQueue`,
+    /// before any slow work: publish its transitional sample — the place it goes to (`nil`: not
+    /// known yet), no end flag, the seam count the reader last saw (a count from the replaced
+    /// playback must not read as a seam) — and stamp every later sample with `epoch`.
+    func beginTransportOperation(epoch: UInt64, position: Double?) {
+        dispatchPrecondition(condition: .onQueue(engineQueue))
+        transportEpoch = max(transportEpoch, epoch)
+        let seen = transportSnapshots.read()
+        transportSnapshots.publish(TransportSnapshot(epoch: transportEpoch, position: position,
+                                                     transitionCount: seen.transitionCount, ended: false))
     }
 
     /// Sample the active path and publish it. On `engineQueue` only: the clock's handler, and the end
     /// of every start / stop / seek, so the tick's next read reflects them.
     func sampleTransport() {
         dispatchPrecondition(condition: .onQueue(engineQueue))
-        transportSnapshots.publish(liveTransport())
+        var sample = liveTransport()
+        sample.epoch = transportEpoch
+        transportSnapshots.publish(sample)
     }
 
-    /// The live reads. These may wait — on the player's lock, on `resampleQueue`, on the HAL — and
-    /// that is fine here, never on the main thread.
+    /// The live reads. These may wait — on the engine's lock, on the HAL — and that is fine here,
+    /// never on the main thread.
     private func liveTransport() -> TransportSnapshot {
         // Pure: the HAL GaplessSource's playhead, seam count (the poll also reaps a seam-retired
         // decode source off-RT, which is why it is polled every sample) and end flag. Position first:
@@ -63,33 +84,43 @@ extension AudioEngineBridge {
             return TransportSnapshot(position: pure.position > 0 ? pure.position : nil,
                                      transitionCount: pure.count, ended: pure.ended)
         }
-        // Enhanced: the player's playhead, then the seam count and end flag (atomics — the clock
-        // never waits on resampleQueue, which can be busy in AVFAudio or opening the next file).
-        // Playhead first, for the same reason as Pure: a seam (`bumpTransitionCount` counts, then
-        // re-bases) between the reads shows as the old track's end then the advance.
+        // Enhanced: the player's playhead between two reads of the seam count (atomics — the clock
+        // never waits on resampleQueue, which can be busy in AVFAudio or opening the next file). A
+        // seam (`bumpTransitionCount`: count, then re-base) landing in between leaves the playhead
+        // unknown for this one sample, and the seam's re-zeroed last-known playhead untouched.
+        let countBefore = gaplessTransitionCount
         let position = liveEnhancedPosition()
-        return TransportSnapshot(position: position, transitionCount: gaplessTransitionCount,
-                                 ended: gaplessPlaybackEnded)
+        let count = gaplessTransitionCount
+        guard count == countBefore else {
+            return TransportSnapshot(position: nil, transitionCount: count, ended: gaplessPlaybackEnded)
+        }
+        if let position {
+            setLastKnownEnhancedPositionSeconds(position) // the freshest reliable playhead (re-establish)
+        }
+        return TransportSnapshot(position: position, transitionCount: count, ended: gaplessPlaybackEnded)
     }
 
     /// The Enhanced playhead, read from the player — NEVER on the main thread (enforced): these
-    /// AVFAudio calls take the engine's lock, which a stop on a dying device can hold for seconds.
+    /// AVFAudio calls take the engine-wide lock, which a stop or start can hold for seconds.
     ///
     /// AVAudioPlayerNode's sampleTime counts from 0 at EACH play() — time-since-play, not file
     /// position. A seek does stop() + scheduleSegment(from:) + play(), which restarts sampleTime at
-    /// 0, so the seek target (`enhancedPositionBaseSeconds`, 0 on a fresh play) is added back.
-    /// Caches the result as the freshest reliable playhead for the configuration-change re-establish.
+    /// 0, so the seek target (`enhancedPositionBaseSeconds`, the start place on a fresh play) is
+    /// added back. Never negative.
     func liveEnhancedPosition() -> Double? {
         dispatchPrecondition(condition: .notOnQueue(.main))
+        // Between the first start + play and the first render, `lastRenderTime` exists but holds
+        // neither a valid sample time nor a valid host time, and `playerTime(forNodeTime:)` then
+        // raises an exception (AVFAudio: "nodeTime == nil || nodeTime.sampleTimeValid ||
+        // nodeTime.hostTimeValid"). Check first.
         guard let playerNode = playerNodeRef, playerNode.isPlaying,
               let nodeTime = playerNode.lastRenderTime,
+              nodeTime.isSampleTimeValid || nodeTime.isHostTimeValid,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
               playerTime.sampleRate > 0
         else {
             return nil
         }
-        let position = enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate
-        setLastKnownEnhancedPositionSeconds(position)
-        return position
+        return max(enhancedPositionBaseSeconds + Double(playerTime.sampleTime) / playerTime.sampleRate, 0)
     }
 }

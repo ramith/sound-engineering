@@ -151,7 +151,7 @@ namespace
         {
             return;
         }
-        (void)pureModeEngineStart(engine, /*deviceID=*/0U, kM4aPath);
+        (void)pureModeEngineStart(engine, /*deviceID=*/0U, kM4aPath, /*startSeconds=*/0.0);
         pureModeEngineDestroy(engine);
     }
 

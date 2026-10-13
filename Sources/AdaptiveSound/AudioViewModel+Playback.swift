@@ -13,9 +13,8 @@ extension AudioViewModel {
     // MARK: - Playback Control
 
     /// Start playback of the selected track. When `resumeFrom` is non-nil (a position-preserving
-    /// Pause resume, D2) the engine seeks to that offset immediately after starting, so playback
-    /// continues from where it was paused rather than the top. All other callers pass nil (start
-    /// from 0).
+    /// Pause resume, D2; a move to another device) the engine STARTS at that offset — never from 0
+    /// then a seek, which on Pure was audible. All other callers pass nil (start from 0).
     func startPlayback(resumeFrom: Double? = nil) {
         guard isEngineReady else {
             errorMessage = "Engine not ready"
@@ -52,15 +51,14 @@ extension AudioViewModel {
         // values that could change between now and when the Task body runs).
         let startIndex = selectedTrackIndex
         let pureModeSnapshot = pureModeEnabled
+        // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
+        // samples of the playback it replaces (the old track's playhead and end flag).
+        let epoch = nextTransportEpoch()
 
         Task {
             do {
-                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot)
-                // Position-preserving Pause resume: seek to the saved offset after the engine has
-                // started on the (possibly reconfigured) device.
-                if let resumeFrom, resumeFrom > 0 {
-                    await engine.seek(to: resumeFrom)
-                }
+                try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
+                                            startAt: resumeFrom ?? 0, epoch: epoch)
                 await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
                 isPlaying = true
                 errorMessage = nil
@@ -132,8 +130,9 @@ extension AudioViewModel {
             + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"), route=\(route))")
         switch route {
         case .engine:
+            let epoch = nextTransportEpoch() // the old playhead is ignored until the seek lands
             Task {
-                await engine.seek(to: seconds)
+                await engine.seek(to: seconds, epoch: epoch)
             }
         case .resumePoint:
             resumePoint?.move(to: seconds)

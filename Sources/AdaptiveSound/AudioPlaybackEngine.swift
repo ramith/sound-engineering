@@ -67,13 +67,15 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     // MARK: Playback
 
-    /// Start playback of the audio file at `fileURL`, or a reference tone if nil.
+    /// Start playback of the audio file at `fileURL`, or a reference tone if nil, `startAt` seconds
+    /// into it (0 = the top; a resume or a device move starts there, never from 0 then a seek).
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
-    /// HAL path is used; otherwise the Enhanced AVAudioEngine path is used.
-    func startAudio(fileURL: URL?, pureMode: Bool) async throws
+    /// HAL path is used; otherwise the Enhanced AVAudioEngine path is used. `epoch` numbers the
+    /// request: the snapshot's transport carries it from the start of the request on.
+    func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
 
-    /// Stop all playback immediately.
-    func stopAudio() async throws
+    /// Stop all playback immediately. `epoch` numbers the request, as for `startAudio`.
+    func stopAudio(epoch: UInt64) async throws
 
     // MARK: Gapless / continuous playback (poll-based — the view model reads a snapshot at 20 Hz)
 
@@ -125,7 +127,8 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Seek to `seconds` from the start of the current file.
     /// In the Pure path this is handled natively by the HAL engine. In the
     /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
-    func seek(to seconds: Double) async
+    /// `epoch` numbers the request, as for `startAudio`.
+    func seek(to seconds: Double, epoch: UInt64) async
 
     // MARK: Master Gain
 

@@ -129,8 +129,10 @@ extern "C"
         return new (std::nothrow) PureModeSession();
     }
 
-    int
-    pureModeEngineStart(void* engine, uint32_t deviceID, const char* filePath) AUDIODSP_C_NOEXCEPT
+    int pureModeEngineStart(void* engine,
+                            uint32_t deviceID,
+                            const char* filePath,
+                            double startSeconds) AUDIODSP_C_NOEXCEPT
     {
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || filePath == nullptr)
@@ -144,6 +146,14 @@ extern "C"
 
         auto source = std::make_unique<FileDecodeSource>();
         if (!source->open(filePath))
+        {
+            return 0;
+        }
+        // Start at the requested place (a resume from Pause, a move to another device): position
+        // the fresh source BEFORE it is installed and render starts — the seek precondition (no
+        // pullFloat running) holds trivially, and nothing from 0:00 is heard first.
+        const bool startsInside = startSeconds > 0.0 && std::isfinite(startSeconds);
+        if (startsInside && !source->seek(startSeconds))
         {
             return 0;
         }
@@ -175,7 +185,14 @@ extern "C"
 
         // Install the active source into the GaplessSource (render is stopped → precondition met),
         // then point the engine at the GaplessSource (its single, stable PureModeSource).
+        const double sourceRate = source->sampleRate();
         session->gapless->setCurrent(std::move(source));
+        if (startsInside && sourceRate > 0.0)
+        {
+            // Report the position from the start place (setCurrent re-zeroed it).
+            session->gapless->resetActiveBase(
+                static_cast<uint64_t>(std::llround(startSeconds * sourceRate)));
+        }
 
         if (!session->engine->configure(cap, eval, session->gapless.get()))
         {

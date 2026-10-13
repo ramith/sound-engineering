@@ -24,11 +24,11 @@
 
         func shutdown() async throws {}
 
-        func startAudio(fileURL _: URL?, pureMode _: Bool) async throws {}
+        func startAudio(fileURL _: URL?, pureMode _: Bool, startAt _: Double, epoch _: UInt64) async throws {}
 
-        func stopAudio() async throws {}
+        func stopAudio(epoch _: UInt64) async throws {}
 
-        func seek(to _: Double) async {}
+        func seek(to _: Double, epoch _: UInt64) async {}
 
         /// Nothing runs: the empty snapshot, at the graph format's rate.
         func snapshot() -> EngineSnapshot {
