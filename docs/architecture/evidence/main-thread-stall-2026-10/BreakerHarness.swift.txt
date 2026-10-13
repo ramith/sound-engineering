@@ -1,0 +1,888 @@
+#if DEBUG
+    // LOCAL BREAK-IT HARNESS (rev-breaker, S10.8 G main-thread-stall review). NOT FOR COMMIT.
+    // `AS_BREAKER=<mode> .build/debug/AdaptiveSound` runs it from AdaptiveSound.init and exits.
+    // OFFLINE manual rendering only: the AVAudioEngine never opens an output device.
+    // Modes: stop-config (player.stop() held on configChangeQueue), stop-engine (held on
+    // engineQueue), start (a slow engine.start() on engineQueue).
+    @preconcurrency import AVFoundation
+    import AudioToolbox
+    import Foundation
+
+    private func nowS() -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1e9
+    }
+
+    private func hlog(_ text: String) {
+        let line = String(format: "%9.3f ", nowS().truncatingRemainder(dividingBy: 10000)) + text + "\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+
+    /// Arms one sleep inside the engine-wide lock (a completion handler run by stop(), or a slow
+    /// allocateRenderResources run by start()).
+    final class BreakerGate: @unchecked Sendable {
+        static let shared = BreakerGate()
+        private let lock = NSLock()
+        private var armed: Double = 0
+        func arm(_ seconds: Double) {
+            lock.lock()
+            armed = seconds
+            lock.unlock()
+        }
+
+        func take() -> Double {
+            lock.lock()
+            defer { lock.unlock() }
+            let seconds = armed
+            armed = 0
+            return seconds
+        }
+    }
+
+    final class BreakerSlowAU: AUAudioUnit {
+        private var inBusses: AUAudioUnitBusArray?
+        private var outBusses: AUAudioUnitBusArray?
+
+        override init(componentDescription: AudioComponentDescription,
+                      options: AudioComponentInstantiationOptions = []) throws {
+            try super.init(componentDescription: componentDescription, options: options)
+            guard let fmt = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2) else { return }
+            inBusses = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [try AUAudioUnitBus(format: fmt)])
+            outBusses = AUAudioUnitBusArray(audioUnit: self, busType: .output, busses: [try AUAudioUnitBus(format: fmt)])
+        }
+
+        override var inputBusses: AUAudioUnitBusArray {
+            inBusses ?? super.inputBusses
+        }
+
+        override var outputBusses: AUAudioUnitBusArray {
+            outBusses ?? super.outputBusses
+        }
+
+        override func allocateRenderResources() throws {
+            try super.allocateRenderResources()
+            let seconds = BreakerGate.shared.take()
+            if seconds > 0 {
+                hlog("SlowAU.allocateRenderResources holding the engine lock \(seconds)s")
+                Thread.sleep(forTimeInterval: seconds)
+                hlog("SlowAU.allocateRenderResources released")
+            }
+        }
+
+        override var internalRenderBlock: AUInternalRenderBlock {
+            { _, _, frames, _, out, _, pull in
+                guard let pull else { return kAudioUnitErr_NoConnection }
+                var flags = AudioUnitRenderActionFlags()
+                var stamp = AudioTimeStamp()
+                return pull(&flags, &stamp, frames, 0, out)
+            }
+        }
+    }
+
+    final class BreakerBox<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: T
+        init(_ value: T) {
+            stored = value
+        }
+
+        var value: T {
+            get { lock.lock(); defer { lock.unlock() }; return stored }
+            set { lock.lock(); stored = newValue; lock.unlock() }
+        }
+    }
+
+    /// Main-queue responsiveness: a background thread posts a stamped block every 2 ms.
+    final class BreakerWatchdog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var maxLatency: Double = 0
+        private var running = true
+        func reset() {
+            lock.lock()
+            maxLatency = 0
+            lock.unlock()
+        }
+
+        func record(_ latency: Double) {
+            lock.lock()
+            maxLatency = Swift.max(maxLatency, latency)
+            lock.unlock()
+        }
+
+        var max: Double {
+            lock.lock()
+            defer { lock.unlock() }
+            return maxLatency
+        }
+
+        func stop() {
+            lock.lock()
+            running = false
+            lock.unlock()
+        }
+
+        var isRunning: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return running
+        }
+
+        func start() {
+            let thread = Thread { [self] in
+                while isRunning {
+                    let stamp = nowS()
+                    DispatchQueue.main.async { self.record(nowS() - stamp) }
+                    usleep(2000)
+                }
+            }
+            thread.start()
+        }
+    }
+
+    enum BreakerHarness {
+        @MainActor
+        static func runIfRequested() {
+            guard let mode = ProcessInfo.processInfo.environment["AS_BREAKER"] else { return }
+            let runner = BreakerRunner(mode: mode)
+            let code = runner.run()
+            exit(code)
+        }
+    }
+
+    @MainActor
+    final class BreakerRunner {
+        let mode: String
+        let bridge = AudioEngineBridge()
+        let engineBox = BreakerBox<AVAudioEngine?>(nil)
+        let playerBox = BreakerBox<AVAudioPlayerNode?>(nil)
+        let renderStop = BreakerBox(false)
+        let watchdog = BreakerWatchdog()
+        var stats: [String: (max: Double, count: Int)] = [:]
+        var order: [String] = []
+        let holdSeconds = Double(ProcessInfo.processInfo.environment["HOLD"] ?? "2.5") ?? 2.5
+
+        init(mode: String) {
+            self.mode = mode
+        }
+
+        func measure(_ name: String, _ body: () -> Void) {
+            let start = nowS()
+            body()
+            let elapsed = (nowS() - start) * 1000
+            if stats[name] == nil {
+                order.append(name)
+                stats[name] = (0, 0)
+            }
+            if let old = stats[name] {
+                stats[name] = (Swift.max(old.max, elapsed), old.count + 1)
+            }
+        }
+
+        func pump(_ seconds: Double) {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
+        }
+
+        func buildGraph() -> Bool {
+            registerAdaptiveAudioUnitSubclass()
+            registerSpatialRendererAUSubclass()
+            let slowDesc = AudioComponentDescription(componentType: kAudioUnitType_Effect,
+                                                     componentSubType: 0x736C_6F77,
+                                                     componentManufacturer: 0x4272_6B72,
+                                                     componentFlags: 0, componentFlagsMask: 0)
+            AUAudioUnit.registerSubclass(BreakerSlowAU.self, as: slowDesc, name: "Breaker: SlowAU", version: 1)
+            let done = DispatchSemaphore(value: 0)
+            let okBox = BreakerBox(false)
+            let bridge = self.bridge
+            let engineBox = self.engineBox
+            let playerBox = self.playerBox
+            let wantSlow = mode == "start"
+            bridge.engineQueue.async {
+                guard let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2) else {
+                    done.signal()
+                    return
+                }
+                let engine = AVAudioEngine()
+                do {
+                    try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
+                } catch {
+                    hlog("manual rendering failed: \(error)")
+                    done.signal()
+                    return
+                }
+                bridge.setAvEngine(engine)
+                let player = AVAudioPlayerNode()
+                bridge.setPlayerNode(player)
+                engine.attach(player)
+                engineBox.value = engine
+                playerBox.value = player
+                bridge.instantiateAndBuildGraph(engine: engine, player: player, format: format) { success in
+                    okBox.value = success
+                    if wantSlow {
+                        AVAudioUnit.instantiate(with: slowDesc, options: []) { unit, _ in
+                            if let unit {
+                                engine.attach(unit)
+                                let feeder = AVAudioPlayerNode()
+                                engine.attach(feeder)
+                                engine.connect(feeder, to: unit, format: format)
+                                let bus = engine.mainMixerNode.nextAvailableInputBus
+                                engine.connect(unit, to: engine.mainMixerNode, fromBus: 0, toBus: bus, format: format)
+                            }
+                            done.signal()
+                        }
+                    } else {
+                        done.signal()
+                    }
+                }
+            }
+            done.wait()
+            return okBox.value
+        }
+
+        func startOffline() {
+            let bridge = self.bridge
+            let engineBox = self.engineBox
+            let playerBox = self.playerBox
+            let done = DispatchSemaphore(value: 0)
+            bridge.engineQueue.async {
+                guard let engine = engineBox.value, let player = playerBox.value,
+                      let buffer = AVAudioPCMBuffer(pcmFormat: player.outputFormat(forBus: 0), frameCapacity: 48000 * 20)
+                else { done.signal(); return }
+                buffer.frameLength = buffer.frameCapacity
+                if let channels = buffer.floatChannelData {
+                    for frame in 0 ..< Int(buffer.frameLength) {
+                        let sample = Float(0.1 * sin(Double(frame) * 2 * Double.pi * 440 / 48000))
+                        channels[0][frame] = sample
+                        channels[1][frame] = sample
+                    }
+                }
+                bridge.installSpectrumTap()
+                do { try engine.start() } catch { hlog("engine.start failed \(error)") }
+                player.scheduleBuffer(buffer, at: nil)
+                player.play()
+                // One offline render BEFORE the clock: before the first render lastRenderTime is
+                // non-nil but invalid and playerTime(forNodeTime:) raises (finding — see report).
+                if ProcessInfo.processInfo.environment["NO_PRERENDER"] == nil,
+                   let out = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 4096) {
+                    _ = try? engine.renderOffline(480, to: out)
+                }
+                bridge.enhancedPlayIntent = true
+                bridge.startTransportClock()
+                done.signal()
+            }
+            done.wait()
+            // The "audio thread": pull the offline graph like a device would.
+            let stopFlag = renderStop
+            let thread = Thread {
+                guard let engine = engineBox.value,
+                      let out = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 4096)
+                else { return }
+                while !stopFlag.value {
+                    _ = try? engine.renderOffline(480, to: out)
+                    usleep(10000)
+                }
+            }
+            thread.start()
+        }
+
+        func armHold() {
+            let seconds = holdSeconds
+            let bridge = self.bridge
+            let playerBox = self.playerBox
+            let engineBox = self.engineBox
+            switch mode {
+            case "stop-config", "stop-engine":
+                guard let player = playerBox.value,
+                      let small = AVAudioPCMBuffer(pcmFormat: player.outputFormat(forBus: 0), frameCapacity: 4800)
+                else { return }
+                small.frameLength = 4800
+                player.scheduleBuffer(small, completionCallbackType: .dataConsumed) { _ in
+                    let hold = BreakerGate.shared.take()
+                    if hold > 0 {
+                        hlog("completion handler (inside player.stop) holding the engine lock \(hold)s")
+                        Thread.sleep(forTimeInterval: hold)
+                        hlog("completion handler released")
+                    }
+                }
+                BreakerGate.shared.arm(seconds)
+                let queue = mode == "stop-config" ? bridge.configChangeQueue : bridge.engineQueue
+                queue.async {
+                    let start = nowS()
+                    hlog("holder: player.stop() begin on \(self.modeQueueName)")
+                    player.stop()
+                    hlog(String(format: "holder: player.stop() returned after %.3fs", nowS() - start))
+                }
+            case "start":
+                BreakerGate.shared.arm(seconds)
+                bridge.engineQueue.async {
+                    let start = nowS()
+                    hlog("holder: engine.start() begin on engineQueue")
+                    do { try engineBox.value?.start() } catch { hlog("start threw \(error)") }
+                    hlog(String(format: "holder: engine.start() returned after %.3fs", nowS() - start))
+                }
+            default:
+                break
+            }
+        }
+
+        nonisolated var modeQueueName: String {
+            "queue"
+        }
+
+        func device(_ id: UInt32, _ uid: String, _ type: UInt8) -> AudioDeviceModel {
+            AudioDeviceModel(id: id, name: "dev-\(uid)", sampleRate: 48000, bufferFrameSize: 512, uid: uid,
+                             modelUID: nil, transportType: 0, type: AudioDeviceModel.DeviceType(rawValue: type))
+        }
+
+
+        /// Stress the pre-existing S1-E race the fix left in `snapshot()`: the tick reads
+        /// `loudnessMeter` (a plain var) while engineQueue replaces it, exactly as
+        /// resetGraphStateAfterShutdown (nil) and allocateAnalysisState (new meter) do.
+        func meterRace() -> Int32 {
+            let bridge = self.bridge
+            let stop = BreakerBox(false)
+            bridge.engineQueue.async {
+                var cycles = 0
+                while !stop.value {
+                    bridge.setTapAnalysis(TapAnalysis(meter: LoudnessMeterHandle(sampleRate: 48000)))
+                    bridge.setTapAnalysis(TapAnalysis())
+                    cycles += 1
+                }
+                hlog("engineQueue meter cycles: \(cycles)")
+            }
+            let start = nowS()
+            var reads = 0
+            while nowS() - start < 1.0 {
+                _ = bridge.snapshot()
+                reads += 1
+            }
+            stop.value = true
+            pump(0.2)
+            hlog("main snapshot() reads: \(reads)")
+            return 0
+        }
+
+        /// The stale `ended` across an auto-advance start: REAL AudioViewModel + REAL bridge (offline
+        /// engine). The engine reports the end of track A with track B still queued (the Pure
+        /// rate-change "reconfigure gap" path); the VM starts B. While B's start occupies engineQueue
+        /// (the Pure start's HAL work runs there — modelled by a 300 ms block queued ahead of it), the
+        /// snapshot keeps ended == true. What does the next tick do?
+        func endedAdvance() -> Int32 {
+            guard buildGraph() else { return 2 }
+            startOffline()
+            pump(0.3)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("breaker-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            guard let fmt = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2) else { return 2 }
+            var files: [AudioFile] = []
+            for name in ["A", "B", "C"] {
+                let url = dir.appendingPathComponent("\(name).caf")
+                if let file = try? AVAudioFile(forWriting: url, settings: fmt.settings),
+                   let buffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 96000) {
+                    buffer.frameLength = 96000
+                    try? file.write(from: buffer)
+                }
+                files.append(AudioFile(name: name, relativePath: "", absoluteURL: url, format: "CAF", durationSeconds: 2))
+            }
+            guard let defaults = UserDefaults(suiteName: "breaker.\(UUID().uuidString)") else { return 2 }
+            let viewModel = AudioViewModel(defaults: defaults, engine: bridge)
+            viewModel.isEngineReady = true
+            bridge.setCurrentDeviceID(getDefaultOutputDeviceID())
+            viewModel.queue = files.map { QueueItem(file: $0) }
+            viewModel.selectedTrackIndex = 0
+            viewModel.pendingNextIndex = 1
+            viewModel.isPlaying = true
+            // Track A ends with B queued but not armed (the engine's end flag).
+            bridge.gaplessPlaybackEnded = true
+            pump(0.1) // the clock publishes ended == true
+            hlog("before tick: snapshot.ended=\(bridge.snapshot().transport.ended) selected=\(String(describing: viewModel.selectedTrackIndex)) pending=\(String(describing: viewModel.pendingNextIndex))")
+            // The slow part of the start runs on engineQueue (Pure: evaluatePureViable + pureModeEngineStart).
+            bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.3) }
+            viewModel.tickTransport() // tick N: advance to B
+            hlog("tick N: selected=\(String(describing: viewModel.selectedTrackIndex)) pending=\(String(describing: viewModel.pendingNextIndex)) isPlaying=\(viewModel.isPlaying)")
+            for index in 1 ... 10 {
+                pump(0.05)
+                let ended = bridge.snapshot().transport.ended
+                viewModel.tickTransport()
+                hlog("tick N+\(index): snapshot.ended(before tick)=\(ended) isPlaying=\(viewModel.isPlaying) selected=\(String(describing: viewModel.selectedTrackIndex)) pending=\(String(describing: viewModel.pendingNextIndex))")
+            }
+            pump(1.0)
+            let playerPlaying = playerBox.value?.isPlaying ?? false
+            hlog("FINAL: vm.isPlaying=\(viewModel.isPlaying) selected=\(String(describing: viewModel.selectedTrackIndex)) "
+                + "engine.playIntent=\(bridge.enhancedPlayIntent) player.isPlaying=\(playerPlaying) "
+                + "snapshot=\(bridge.snapshot().transport)")
+            renderStop.value = true
+            return viewModel.isPlaying == bridge.enhancedPlayIntent ? 0 : 1
+        }
+
+
+        /// The founder's repro, offline: AVFAudio's own stop holds the engine lock (2.5 s, on a
+        /// queue that is not the bridge's) while the device-loss path runs for real
+        /// (outputDeviceDidChange → reconcile → pauseForDeviceLoss → engineQueue teardown) and the
+        /// REAL view model ticks on main.
+        func deviceLoss() -> Int32 {
+            guard buildGraph() else { return 2 }
+            startOffline()
+            let bridge = self.bridge
+            let ready = DispatchSemaphore(value: 0)
+            bridge.engineQueue.async {
+                bridge.setCurrentDeviceID(0x7FFF_FFF0) // the app's device: gone
+                bridge.registerOutputDeviceListeners()
+                ready.signal()
+            }
+            ready.wait()
+            let callbacks = BreakerBox(0)
+            bridge.onOutputDevicesChanged = { callbacks.value += 1 }
+            guard let defaults = UserDefaults(suiteName: "breaker.\(UUID().uuidString)") else { return 2 }
+            let viewModel = AudioViewModel(defaults: defaults, engine: bridge)
+            viewModel.isEngineReady = true
+            viewModel.queue = [QueueItem(file: AudioFile(name: "x", relativePath: "", absoluteURL: URL(fileURLWithPath: "/nonexistent/x.caf"), format: "CAF", durationSeconds: 20))]
+            viewModel.selectedTrackIndex = 0
+            viewModel.duration = 20
+            viewModel.isPlaying = true
+            for _ in 0 ..< 6 {
+                viewModel.tickTransport()
+                pump(0.05)
+            }
+            hlog("before loss: vm.position=\(viewModel.playbackPosition) snapshot=\(bridge.snapshot().transport)")
+            guard let player = playerBox.value,
+                  let small = AVAudioPCMBuffer(pcmFormat: player.outputFormat(forBus: 0), frameCapacity: 4800)
+            else { return 2 }
+            small.frameLength = 4800
+            player.scheduleBuffer(small, completionCallbackType: .dataConsumed) { _ in
+                let hold = BreakerGate.shared.take()
+                if hold > 0 {
+                    hlog("AVFAudio-internal stand-in: holding the engine lock \(hold)s")
+                    Thread.sleep(forTimeInterval: hold)
+                }
+            }
+            BreakerGate.shared.arm(holdSeconds)
+            DispatchQueue(label: "avfaudio-internal-standin").async { player.stop() }
+            pump(0.05)
+            let lossAt = nowS()
+            bridge.outputDeviceDidChange(.engineReconfigured)
+            bridge.outputDeviceDidChange(.targetAliveChanged)
+            watchdog.start()
+            watchdog.reset()
+            var pausedAt: Double?
+            while nowS() - lossAt < holdSeconds + 0.5 {
+                measure("device-loss: vm.tickTransport()") { viewModel.tickTransport() }
+                measure("device-loss: vm.tickSpectrum()") { viewModel.tickSpectrum() }
+                measure("device-loss: bridge.snapshot()") { _ = bridge.snapshot() }
+                if pausedAt == nil, !viewModel.isPlaying {
+                    pausedAt = nowS()
+                    hlog(String(format: "VM paused for the lost device %.0f ms after the event; position kept=%.2f; "
+                        + "pausedResumePosition=%@", (nowS() - lossAt) * 1000, viewModel.playbackPosition,
+                        String(describing: viewModel.pausedResumePosition)))
+                }
+                pump(0.01)
+            }
+            watchdog.stop()
+            renderStop.value = true
+            print("\n=== rev-breaker latency table: mode=device-loss hold=\(holdSeconds)s ===")
+            for name in order {
+                guard let stat = stats[name] else { continue }
+                print(String(format: "%-58@ max %8.3f ms  (n=%d)", name as NSString, stat.max, stat.count))
+            }
+            print(String(format: "%-58@ max %8.3f ms", "main-queue watchdog during loss+hold" as NSString, watchdog.max * 1000))
+            print("VM paused after: \(pausedAt.map { String(format: "%.0f ms", ($0 - lossAt) * 1000) } ?? "NEVER"); "
+                + "onOutputDevicesChanged callbacks: \(callbacks.value); final snapshot: \(bridge.snapshot().transport) "
+                + "interrupted=\(bridge.snapshot().signalPath.interrupted)")
+            return 0
+        }
+
+
+        // MARK: - verify-round modes
+
+        func startRenderThread(after delay: Double = 0) {
+            let engineBox = self.engineBox
+            let stopFlag = renderStop
+            let thread = Thread {
+                if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+                guard let engine = engineBox.value,
+                      let out = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 4096)
+                else { return }
+                while !stopFlag.value {
+                    if engine.isRunning { _ = try? engine.renderOffline(480, to: out) }
+                    usleep(10000)
+                }
+            }
+            thread.start()
+        }
+
+        func writeTracks(_ names: [String], seconds: Double) -> [AudioFile] {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("breaker-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            guard let fmt = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2) else { return [] }
+            return names.map { name in
+                let url = dir.appendingPathComponent("\(name).caf")
+                let frames = AVAudioFrameCount(seconds * 48000)
+                if let file = try? AVAudioFile(forWriting: url, settings: fmt.settings),
+                   let buffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames) {
+                    buffer.frameLength = frames
+                    try? file.write(from: buffer)
+                }
+                return AudioFile(name: name, relativePath: "", absoluteURL: url, format: "CAF", durationSeconds: seconds)
+            }
+        }
+
+        func makeVM(_ files: [AudioFile]) -> AudioViewModel? {
+            guard let defaults = UserDefaults(suiteName: "breaker.\(UUID().uuidString)") else { return nil }
+            let viewModel = AudioViewModel(defaults: defaults, engine: bridge)
+            viewModel.isEngineReady = true
+            viewModel.queue = files.map { QueueItem(file: $0) }
+            bridge.setCurrentDeviceID(getDefaultOutputDeviceID())
+            bridge.setPinPlaybackToSelectedDevice(false)
+            return viewModel
+        }
+
+        /// MAJOR-2 re-check: the REAL startAudio on a never-started engine; the clock samples before
+        /// the first render for 300 ms. Then a re-init (teardown + a fresh engine) and again.
+        func firstPlay() -> Int32 {
+            guard buildGraph() else { return 2 }
+            let files = writeTracks(["A", "B"], seconds: 10)
+            guard let viewModel = makeVM(files) else { return 2 }
+            startRenderThread(after: 0.3)
+            viewModel.selectedTrackIndex = 0
+            viewModel.startPlayback()
+            for _ in 0 ..< 20 { viewModel.tickTransport(); pump(0.05) }
+            hlog("first play: vm.isPlaying=\(viewModel.isPlaying) pos=\(viewModel.playbackPosition) snapshot=\(bridge.snapshot().transport)")
+            let firstOK = viewModel.isPlaying && viewModel.playbackPosition > 0.3
+            // retryInitialization analogue: full real teardown, then a fresh offline engine.
+            renderStop.value = true
+            let done = BreakerBox(false)
+            Task { try? await self.bridge.shutdown(); done.value = true }
+            while !done.value { pump(0.01) }
+            renderStop.value = false
+            guard buildGraph() else { return 2 }
+            startRenderThread(after: 0.3)
+            viewModel.selectedTrackIndex = 1
+            viewModel.startPlayback()
+            for _ in 0 ..< 20 { viewModel.tickTransport(); pump(0.05) }
+            hlog("after re-init: vm.isPlaying=\(viewModel.isPlaying) pos=\(viewModel.playbackPosition) snapshot=\(bridge.snapshot().transport)")
+            renderStop.value = true
+            let ok = firstOK && viewModel.isPlaying && viewModel.playbackPosition > 0.3
+            print("first-play: \(ok ? "PASS (no crash, playhead advances)" : "FAIL")")
+            return ok ? 0 : 1
+        }
+
+        /// MAJOR-1 extras: a slow seek and a slow track switch under the REAL 20 Hz timers: the
+        /// scrubber must never show the replaced place.
+        func staleUI() -> Int32 {
+            guard buildGraph() else { return 2 }
+            let files = writeTracks(["A", "B", "C"], seconds: 10)
+            guard let viewModel = makeVM(files) else { return 2 }
+            startRenderThread()
+            viewModel.selectedTrackIndex = 0
+            viewModel.startPlayback()
+            viewModel.startSpectrumTimer()
+            pump(1.2)
+            let before = viewModel.playbackPosition
+            // Slow seek forward to 4.0 s.
+            bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.3) }
+            viewModel.seek(to: 4.0)
+            var seekMin = Double.infinity
+            var seekSamples: [Double] = []
+            let seekAt = nowS()
+            while nowS() - seekAt < 0.8 {
+                pump(0.01)
+                seekMin = Swift.min(seekMin, viewModel.playbackPosition)
+                seekSamples.append(viewModel.playbackPosition)
+            }
+            hlog(String(format: "seek 4.0 from %.2f: min scrubber after seek %.3f; last %.3f", before, seekMin,
+                        seekSamples.last ?? -1))
+            // Slow track switch to B.
+            let oldPlace = viewModel.playbackPosition
+            bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.3) }
+            viewModel.playTrack(at: 1)
+            var switchMax = 0.0
+            let switchAt = nowS()
+            while nowS() - switchAt < 0.8 {
+                pump(0.01)
+                switchMax = Swift.max(switchMax, viewModel.playbackPosition - (nowS() - switchAt))
+            }
+            hlog(String(format: "switch A(%.2f s)→B: max (scrubber − elapsed) after switch %.3f; final %.2f playing=%@ selected=%d",
+                        oldPlace, switchMax, viewModel.playbackPosition, String(viewModel.isPlaying),
+                        viewModel.selectedTrackIndex ?? -1))
+            viewModel.stopSpectrumTimer()
+            renderStop.value = true
+            let seekOK = seekMin >= 3.99
+            let switchOK = switchMax < 0.1 && viewModel.isPlaying
+            print("stale-ui: seek \(seekOK ? "PASS" : "FAIL (jump-back)"), switch \(switchOK ? "PASS" : "FAIL (old place flashed)")")
+            return seekOK && switchOK ? 0 : 1
+        }
+
+        /// Epoch logic: Next storm, seek storm, stop during a slow start, pause→play race.
+        func epochStorm() -> Int32 {
+            guard buildGraph() else { return 2 }
+            let files = writeTracks((0 ..< 12).map { "T\($0)" }, seconds: 10)
+            guard let viewModel = makeVM(files) else { return 2 }
+            startRenderThread()
+            viewModel.selectedTrackIndex = 0
+            viewModel.startPlayback()
+            viewModel.startSpectrumTimer()
+            pump(0.6)
+            var failures: [String] = []
+            func settle(_ label: String) -> (Bool, String) {
+                pump(0.8)
+                let snap = bridge.snapshot().transport
+                let engineFile = bridge.lastFileURL?.lastPathComponent ?? "-"
+                let vmFile = viewModel.selectedTrackIndex.map { viewModel.playlist[$0].absoluteURL.lastPathComponent } ?? "-"
+                let enginePlays = bridge.enhancedPlayIntent
+                let line = "\(label): vm.isPlaying=\(viewModel.isPlaying) engine.intent=\(enginePlays) vmFile=\(vmFile) "
+                    + "engineFile=\(engineFile) vmEpoch=\(viewModel.transportEpoch) snapEpoch=\(snap.epoch) pos=\(viewModel.playbackPosition)"
+                hlog(line)
+                return (viewModel.isPlaying == enginePlays && (!enginePlays || vmFile == engineFile)
+                        && snap.epoch == viewModel.transportEpoch, line)
+            }
+            // 1. Next storm: 10 presses, engineQueue jittered.
+            for index in 0 ..< 10 {
+                if index % 3 == 0 { bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.08) } }
+                viewModel.nextTrack()
+                pump(Double.random(in: 0 ... 0.02))
+            }
+            var result = settle("next-storm")
+            if !result.0 { failures.append(result.1) }
+            // 2. Seek storm: 25 seeks.
+            for index in 0 ..< 25 {
+                if index % 5 == 0 { bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.05) } }
+                viewModel.seek(to: Double(index % 8) + 0.5)
+                pump(Double.random(in: 0 ... 0.01))
+            }
+            result = settle("seek-storm (last target 0.5)")
+            if !result.0 || abs(viewModel.playbackPosition - 0.5) > 1.2 { failures.append(result.1) }
+            // 3. Stop during a slow start.
+            bridge.engineQueue.async { Thread.sleep(forTimeInterval: 0.3) }
+            viewModel.playTrack(at: 2)
+            pump(0.02)
+            viewModel.stopPlayback()
+            result = settle("stop-during-start")
+            if !result.0 || viewModel.isPlaying { failures.append(result.1) }
+            // 4. Pause then play one run-loop turn later.
+            viewModel.playTrack(at: 3)
+            pump(0.6)
+            viewModel.pause()
+            pump(0.001)
+            viewModel.play()
+            result = settle("pause→play race")
+            if !result.0 { failures.append(result.1) }
+            // 5. Play then pause one turn later.
+            viewModel.pause()
+            pump(0.5)
+            viewModel.play()
+            pump(0.001)
+            viewModel.pause()
+            result = settle("play→pause race")
+            if !result.0 { failures.append(result.1) }
+            viewModel.stopSpectrumTimer()
+            renderStop.value = true
+            print("epoch-storm: \(failures.isEmpty ? "PASS" : "FAIL \(failures.count)")")
+            failures.forEach { print("  ✗ \($0)") }
+            return failures.isEmpty ? 0 : 1
+        }
+
+        /// The clock stops when idle; resume still updates; the pause's final sample.
+        func idleClock() -> Int32 {
+            guard buildGraph() else { return 2 }
+            let files = writeTracks(["A"], seconds: 10)
+            guard let viewModel = makeVM(files) else { return 2 }
+            startRenderThread()
+            viewModel.selectedTrackIndex = 0
+            viewModel.startPlayback()
+            viewModel.startSpectrumTimer()
+            pump(1.0)
+            let atPause = viewModel.playbackPosition
+            viewModel.pause()
+            pump(0.4)
+            let clockAlive = BreakerBox(true)
+            let ready = DispatchSemaphore(value: 0)
+            bridge.engineQueue.async { clockAlive.value = self.bridge.transportClock != nil; ready.signal() }
+            ready.wait()
+            let pausedSnap = bridge.snapshot().transport
+            hlog("paused at \(atPause): clock running=\(clockAlive.value) final sample=\(pausedSnap) vmEpoch=\(viewModel.transportEpoch) "
+                + "resume=\(String(describing: viewModel.pausedResumePosition)) scrubber=\(viewModel.playbackPosition)")
+            viewModel.play()
+            pump(0.3)
+            let p1 = viewModel.playbackPosition
+            pump(0.5)
+            let p2 = viewModel.playbackPosition
+            hlog(String(format: "after resume: %.2f → %.2f (expect ≥ %.2f and advancing)", p1, p2, atPause))
+            viewModel.stopSpectrumTimer()
+            renderStop.value = true
+            let ok = !clockAlive.value && !pausedSnap.ended && pausedSnap.epoch == viewModel.transportEpoch - 1
+                && p1 >= atPause - 0.05 && p2 > p1 + 0.3
+            print("idle-clock: \(ok ? "PASS" : "FAIL")")
+            return ok ? 0 : 1
+        }
+
+        /// Master Gain on Pure: a drag of 200 levels while the device queue is stuck.
+        func gainCoalesce() -> Int32 {
+            bridge.storeSignalPath(SignalPathInfo(path: .pure, decision: .rateMatchedFloat))
+            bridge.withStateLock { bridge.deviceVolumeWatch = DeviceVolumeWatch(deviceID: 0x7FFF_FF00, listener: nil) }
+            bridge.deviceVolumeQueue.async { Thread.sleep(forTimeInterval: 0.3) }
+            var worst = 0.0
+            for index in 0 ..< 200 {
+                let start = nowS()
+                bridge.requestDeviceVolume(decibels: -Float(index) / 10)
+                worst = Swift.max(worst, (nowS() - start) * 1000)
+            }
+            let drained = DispatchSemaphore(value: 0)
+            let pendingBlocks = BreakerBox(0)
+            bridge.deviceVolumeQueue.async { drained.signal() }
+            drained.wait()
+            let answer = bridge.snapshot().signalPath.deviceVolumeSet
+            hlog("200 asks: worst main-thread call \(worst) ms; answered=\(String(describing: answer)) pendingBlocks=\(pendingBlocks.value)")
+            let ok = worst < 1 && answer?.decibels == -19.9
+            print("gain-coalesce: \(ok ? "PASS (latest wins)" : "FAIL")")
+            return ok ? 0 : 1
+        }
+
+        // swiftlint:disable:next function_body_length
+        func run() -> Int32 {
+            hlog("mode=\(mode) hold=\(holdSeconds)s")
+            if mode == "meter-race" { return meterRace() }
+            if mode == "ended-advance" { return endedAdvance() }
+            if mode == "device-loss" { return deviceLoss() }
+            if mode == "first-play" { return firstPlay() }
+            if mode == "stale-ui" { return staleUI() }
+            if mode == "epoch-storm" { return epochStorm() }
+            if mode == "idle-clock" { return idleClock() }
+            if mode == "gain-coalesce" { return gainCoalesce() }
+            guard buildGraph() else {
+                hlog("graph build failed")
+                return 2
+            }
+            if mode != "start" {
+                startOffline()
+            } else {
+                bridge.engineQueue.async { self.bridge.startTransportClock() }
+            }
+            pump(0.5)
+            let suite = "breaker.\(UUID().uuidString)"
+            guard let defaults = UserDefaults(suiteName: suite) else { return 2 }
+            let viewModel = AudioViewModel(defaults: defaults, engine: bridge)
+            viewModel.isEngineReady = true
+            let eqModel = EQViewModel(audioViewModel: viewModel, defaults: defaults)
+            viewModel.onOutputIdentityChanged = { [weak eqModel] key in eqModel?.outputDidChange(to: key) }
+            viewModel.isPlaying = true
+            bridge.setCurrentDeviceID(getDefaultOutputDeviceID())
+            let devA = device(0x7FFF_0001, "A", 3)
+            let devB = device(0x7FFF_0002, "B", 1)
+            viewModel.selectedDevice = devA
+            hlog("pre-hold snapshot: \(bridge.snapshot().transport)")
+            var bands = [Float](repeating: 0, count: 64)
+            var monitor = [Float](repeating: 0, count: 64)
+            let zeros = [Float](repeating: 0, count: 31)
+
+            watchdog.start()
+            pump(0.05)
+            armHold()
+            pump(0.15) // let the holder get inside the lock
+            watchdog.reset()
+            let probeStart = nowS()
+            var toggle = false
+            var snapshotsDuringHold: [Double?] = []
+            while nowS() - probeStart < holdSeconds - 0.7 {
+                toggle.toggle()
+                let pureHalf = nowS() - probeStart > (holdSeconds - 0.7) / 2
+                if pureHalf, bridge.snapshot().signalPath.path != .pure {
+                    measure("bridge.storeSignalPath(.pure) [harness setup]") {
+                        bridge.storeSignalPath(SignalPathInfo(path: .pure, decision: .rateMatchedFloat))
+                        bridge.withStateLock { bridge.deviceVolumeWatch = DeviceVolumeWatch(deviceID: 0x7FFF_FF00, listener: nil) }
+                    }
+                }
+                measure("bridge.snapshot()") { snapshotsDuringHold.append(bridge.snapshot().transport.position) }
+                measure("vm.tickTransport()") { viewModel.tickTransport() }
+                measure("vm.tickSpectrum()") { viewModel.tickSpectrum() }
+                measure("monitor tick reads") {
+                    let count = bridge.monitorChannelCount
+                    for channel in 0 ..< count {
+                        _ = bridge.readMonitorBands(.before, channel: channel, into: &monitor)
+                        _ = bridge.readMonitorBands(.after, channel: channel, into: &monitor)
+                    }
+                }
+                measure("bridge.readSpectrumBands") { _ = bridge.readSpectrumBands(into: &bands) }
+                measure("vm.publishEQ (EQ send)") { viewModel.publishEQ(points: zeros, isOn: toggle) }
+                measure("vm.intensity didSet") { viewModel.intensity = toggle ? 0.3 : 0.2 }
+                measure("vm.crossfeedEnabled didSet") { viewModel.crossfeedEnabled = toggle }
+                measure("vm.crossfeedStrength didSet") {
+                    viewModel.crossfeedStrength = toggle ? .defaultStrength : .defaultStrength
+                }
+                measure("vm.selectedDevice didSet (identity→EQ, transport)") {
+                    viewModel.selectedDevice = toggle ? devB : devA
+                }
+                if pureHalf {
+                    measure("vm.setMasterGain (Pure → requestDeviceVolume)") {
+                        viewModel.setMasterGain(position: toggle ? 0.5 : 0.6)
+                    }
+                } else {
+                    measure("vm.setMasterGain (Enhanced → publishMasterGain)") {
+                        viewModel.setMasterGain(position: toggle ? 0.5 : 0.6)
+                    }
+                }
+                measure("vm.masterGainControl read") { _ = viewModel.masterGainControl }
+                measure("vm.pinPlaybackToSelectedDevice didSet") { viewModel.pinPlaybackToSelectedDevice = toggle }
+                measure("engine.currentOutputDeviceID()") { _ = bridge.currentOutputDeviceID() }
+                measure("vm.refreshDevices() [sync part]") { viewModel.refreshDevices() }
+                measure("vm.seek(to:) [sync part]") { viewModel.seek(to: 1.0) }
+                measure("bridge.publishChannelLayout") { bridge.publishChannelLayout(kAudioChannelLayoutTag_Stereo) }
+                pump(0.004)
+            }
+            let probeMaxWatchdog = watchdog.max * 1000
+            hlog(String(format: "probe window %.2fs; main-queue watchdog max latency %.1f ms",
+                        nowS() - probeStart, probeMaxWatchdog))
+            hlog("snapshot positions during hold (first/last): \(String(describing: snapshotsDuringHold.first)) / "
+                + "\(String(describing: snapshotsDuringHold.last)) n=\(snapshotsDuringHold.count)")
+            // CONTROL: the pre-fix reads, still blocked?
+            var control: [(String, Double)] = []
+            if mode == "start" {
+                let start = nowS()
+                _ = engineBox.value?.isRunning
+                control.append(("CONTROL engine.isRunning on main", (nowS() - start) * 1000))
+            } else {
+                let start = nowS()
+                _ = playerBox.value?.isPlaying
+                control.append(("CONTROL player.isPlaying on main", (nowS() - start) * 1000))
+            }
+            pump(0.6)
+            hlog("post-hold snapshot: \(bridge.snapshot().transport) path=\(bridge.snapshot().signalPath.path)")
+            watchdog.reset()
+            pump(1.0) // let queued Tasks (refreshDevices → adoptOutput) land
+            let postWatchdog = watchdog.max * 1000
+
+            // TEARDOWN race (for TSan): main keeps reading while the real shutdown runs.
+            let shutdownDone = BreakerBox(false)
+            Task {
+                try? await bridge.shutdown()
+                shutdownDone.value = true
+            }
+            let teardownStart = nowS()
+            while !shutdownDone.value, nowS() - teardownStart < 3 {
+                measure("teardown: bridge.snapshot()") { _ = bridge.snapshot() }
+                measure("teardown: readSpectrumBands") { _ = bridge.readSpectrumBands(into: &bands) }
+                measure("teardown: monitor reads") {
+                    let count = bridge.monitorChannelCount
+                    for channel in 0 ..< count {
+                        _ = bridge.readMonitorBands(.after, channel: channel, into: &monitor)
+                    }
+                }
+                measure("teardown: vm.publishEQ") { viewModel.publishEQ(points: zeros, isOn: true) }
+                pump(0.0005)
+            }
+            renderStop.value = true
+            watchdog.stop()
+
+            print("\n=== rev-breaker latency table: mode=\(mode) hold=\(holdSeconds)s ===")
+            var worst = 0.0
+            for name in order {
+                guard let stat = stats[name] else { continue }
+                worst = name.hasPrefix("teardown") ? worst : Swift.max(worst, stat.max)
+                print(String(format: "%-58@ max %8.3f ms  (n=%d)", name as NSString, stat.max, stat.count))
+            }
+            print(String(format: "%-58@ max %8.3f ms", "main-queue watchdog during hold" as NSString, probeMaxWatchdog))
+            print(String(format: "%-58@ max %8.3f ms", "main-queue watchdog 1s after hold" as NSString, postWatchdog))
+            for (name, value) in control {
+                print(String(format: "%-58@ %8.1f ms", name as NSString, value))
+            }
+            return worst > 5 || probeMaxWatchdog > 20 ? 1 : 0
+        }
+    }
+#endif

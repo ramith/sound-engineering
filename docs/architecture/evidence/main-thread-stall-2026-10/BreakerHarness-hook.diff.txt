@@ -1,0 +1,12 @@
+diff --git a/Sources/AdaptiveSound/AdaptiveSound.swift b/Sources/AdaptiveSound/AdaptiveSound.swift
+index d722a0a..79ded33 100644
+--- a/Sources/AdaptiveSound/AdaptiveSound.swift
++++ b/Sources/AdaptiveSound/AdaptiveSound.swift
+@@ -39,6 +39,7 @@ struct AdaptiveSound: App {
+             // on an offline engine and times every main-thread entry, then exits — the same no-lock,
+             // no-store, no-device rules as the sheets.
+             MainThreadStallSelfTest.runIfRequested()
++            BreakerHarness.runIfRequested()
+         #endif
+         // Where everything persists, decided once (a debug `-ASTestLibrary` launch swaps in the
+         // isolated test library), then injected — nothing below picks a path or defaults of its own.
