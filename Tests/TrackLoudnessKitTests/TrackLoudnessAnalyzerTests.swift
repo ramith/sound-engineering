@@ -2,7 +2,9 @@
 // amendments item 3): the prefix first and then the whole track, the cache, latest-wins and the
 // prefetch promotion, and a file that cannot be analysed — reported, logged once, never decoded
 // again. The fixtures are written at run time into test-data/ (never /tmp). Each test keeps its
-// analyzer alive until it has what it waits for: dropping the analyzer cancels its jobs.
+// analyzer alive until it has what it waits for: dropping the analyzer cancels its jobs. A test
+// that needs a job still running holds it at its prefix (RecordingSink(holdingPrefixOf:)) rather
+// than racing the decode.
 
 import AVFoundation
 import Foundation
@@ -77,16 +79,27 @@ struct TrackLoudnessAnalyzerTests {
 
     @Test("ANALYZER-05: asking for the prefetched next track as the current one promotes its job")
     func prefetchPromoted() async throws {
-        let url = try Fixtures.noise(named: "prefetch-promoted", seconds: 30)
+        let url = try Fixtures.noise(named: "prefetch-promoted", seconds: 6)
+        let other = try Fixtures.noise(named: "prefetch-promoted-other", seconds: 1)
         let identity = try #require(TrackIdentity(url: url))
-        let sink = RecordingSink()
+        let otherIdentity = try #require(TrackIdentity(url: other))
+        // The prefetch is held at its prefix: running, and it cannot finish until released.
+        let sink = RecordingSink(holdingPrefixOf: identity.token)
         let log = LogRecorder()
-        let analyzer = TrackLoudnessAnalyzer(log: log.record)
+        let analyzer = TrackLoudnessAnalyzer(prefixSeconds: 2, log: log.record)
+        analyzer.analyze(other, identity: otherIdentity, as: .current, sink: sink)
+        _ = await sink.wait(keeping: analyzer) { $0.count(whole: otherIdentity.token) == 1 }
         analyzer.analyze(url, identity: identity, as: .next, sink: sink)
+        _ = await sink.wait(keeping: analyzer) { $0.contains { $0.token == identity.token } }
         analyzer.analyze(url, identity: identity, as: .current, sink: sink)
-        let events = await sink.wait(keeping: analyzer) { $0.contains { $0.isWhole } }
-        #expect(log.count(containing: "analysing") == 1)
-        #expect(events.count { $0.isWhole } == 1)
+        // Requests are handled in order, so once the other track's cached profile comes again the
+        // .current request has been handled, while the prefetch was still held.
+        analyzer.analyze(other, identity: otherIdentity, as: .next, sink: sink)
+        _ = await sink.wait(keeping: analyzer) { $0.count(whole: otherIdentity.token) == 2 }
+        sink.release()
+        let events = await sink.wait(keeping: analyzer) { $0.count(whole: identity.token) >= 1 }
+        #expect(log.count(containing: "analysing '\(url.lastPathComponent)'") == 1)
+        #expect(events.count(whole: identity.token) == 1)
     }
 
     @Test("IDENTITY-01: the same file keeps its token; a rewritten file gets a new one; never 0")
@@ -104,17 +117,26 @@ struct TrackLoudnessAnalyzerTests {
 
 // MARK: - Support
 
-/// Records what the analyzer publishes (it calls from its own threads).
+/// Records what the analyzer publishes (it calls from its own threads). It can hold one track's
+/// job at its prefix until `release()`, so a test knows that job is still running.
 final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
     struct Event {
         let token: UInt64
         let isWhole: Bool
         let isFailure: Bool
         let seconds: Double
+        let profile: ObjectIdentifier? // which profile handle; nil for a failure
     }
 
     private let lock = NSLock()
     private var recorded: [Event] = []
+    private let gate = NSCondition()
+    private var held: UInt64? // the token whose prefix waits for `release()`; nil once released
+
+    /// `holdingPrefixOf`: a token whose job waits, after publishing its prefix, until `release()`.
+    init(holdingPrefixOf held: UInt64? = nil) {
+        self.held = held
+    }
 
     var events: [Event] {
         lock.withLock { recorded }
@@ -122,12 +144,29 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
 
     func publishLoudnessProfile(_ profile: TrackLoudnessProfileHandle, token: UInt64) {
         let event = Event(token: token, isWhole: profile.info.wholeTrack, isFailure: false,
-                          seconds: profile.info.analysedSeconds)
+                          seconds: profile.info.analysedSeconds, profile: ObjectIdentifier(profile))
         lock.withLock { recorded.append(event) }
+        guard !event.isWhole else { return }
+        // This is the job's own thread (it decodes synchronously there); the coordinator stays
+        // free. Bounded, so a broken test fails instead of hanging.
+        let deadline = Date().addingTimeInterval(30)
+        gate.lock()
+        while held == token, gate.wait(until: deadline) {}
+        gate.unlock()
     }
 
     func reportLoudnessAnalysisFailure(token: UInt64) {
-        lock.withLock { recorded.append(Event(token: token, isWhole: false, isFailure: true, seconds: 0)) }
+        lock.withLock {
+            recorded.append(Event(token: token, isWhole: false, isFailure: true, seconds: 0, profile: nil))
+        }
+    }
+
+    /// Let the held job run on to the whole track.
+    func release() {
+        gate.lock()
+        held = nil
+        gate.broadcast()
+        gate.unlock()
     }
 
     /// The events once `done` holds for them (or after `limit`), keeping `analyzer` alive meanwhile
@@ -140,6 +179,13 @@ final class RecordingSink: TrackLoudnessSink, @unchecked Sendable {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return events
+    }
+}
+
+extension [RecordingSink.Event] {
+    /// How many whole-track profiles were published for `token`.
+    func count(whole token: UInt64) -> Int {
+        count { $0.isWhole && $0.token == token }
     }
 }
 
