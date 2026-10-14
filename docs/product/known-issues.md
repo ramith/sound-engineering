@@ -43,15 +43,12 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-GAP-05 | An Enhanced gapless join to a file with a different channel count drops channels | HIGH | Engine sprint | US-R1F-02 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-PB-03 | Shuffle on + Repeat off never ends the queue | MEDIUM | R1.1-B (shuffle as a permutation) | US-R1F-01 |
-| KI-PB-04 | Play / Space during a slow start restarts the song instead of pausing | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-05 | Pure on / off does not apply at a gapless seam, though Settings says it does | MEDIUM | R1.1-A (Pure honesty) | US-R1F-13 |
 | KI-PB-06 | After a relaunch the restored song shows `--:--` and its scrubber is dead until Play | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-08 | Clicking the paused current queue row restarts it from 0:00 | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-10 | Add to Queue onto an empty queue leaves Play / Space disabled | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-11 | "Restore previous queue" restores the wrong queue | MEDIUM | pool | US-R1F-04 |
 | KI-PB-12 | A single click on a playlist row replaces the queue and plays | MEDIUM | pool | US-R1F-04 |
-| KI-PB-19 | Stop-then-Play or Pause-then-Play in quick succession can show "Playing" over silence | MEDIUM | R1.1-A | US-R1F-01 |
-| KI-PB-20 | A queued song can be skipped: one dragged in under the current song, or appended while a start primes | MEDIUM | R1.1-A | US-R1F-01 |
 | KI-PB-21 | A crash or force-quit loses your place in the queue | MEDIUM | R1.1-B (atomic queue restore) | US-R1F-01 |
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-02 | On resampled seams the title and track B's gain switch ~0.4 s early | MEDIUM | Engine sprint | US-R1F-02 |
@@ -71,7 +68,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-SEC-01 | If FFmpeg is installed, it parses every FLAC / Ogg / Opus file first during the scan, loaded from a user-writable path | MEDIUM | R1.1-A (opt-in, FD-3) | US-R1F-16 |
 | KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5) | US-ENG-07 |
 | KI-PB-07 | Next / Previous while paused keep the old song's duration | LOW | R1.1-A | US-R1F-01 |
-| KI-PB-09 | A double-click on a queue row starts the song twice | LOW | R1.1-A | US-R1F-01 |
 | KI-PB-13 | Two quick tile Plays can land out of order | LOW | pool | US-R1F-04 |
 | KI-PB-14 | Stalled ticks count as heard time (play counts) | LOW | pool | US-R1F-01 |
 | KI-PB-15 | Recent says "Nothing Played Yet" when the store is not ready or the read failed | LOW | pool | US-R1F-04 |
@@ -106,6 +102,8 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 *(KI-PB-01 — Pure ignored a changed next track — was fixed by PR #88 (council D41); see [Closed](#fixed-by-pr-88--the-r1-blockers-2026-10-14). Its residual windows are KI-PB-16 and KI-PB-17.)*
 
+*(KI-PB-04 — Space during a slow start restarted the song — and KI-PB-09 — a double-click on a queue row started it twice — were fixed in R1.1-A, with KI-PB-19 and KI-PB-20 (council C-15, C-17); see [Closed](#fixed-in-r11-a--playback-correctness-branch-r11atransport).)*
+
 ### KI-PB-02 — Repeat turned off mid-song moves on, but with a gap
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" (Sprint G) · **Scheduled (2026-10-14):** Engine sprint · **Forward:** US-R1F-02.
@@ -122,17 +120,6 @@ pick still opening when the song ends, or one of another rate or width, gives a 
 `QueueAdvance.nextIndex` returns a random pick before the end-of-queue check, and nothing records which songs have
 played (`Sources/PlaybackQueueKit/QueueAdvance.swift:38-45`). With Shuffle on and Repeat off, random songs repeat
 forever.
-
-### KI-PB-04 — Play / Space during a slow start restarts the song instead of pausing
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #1 (G-RACE-1) + freeze "Logged post-R1"
-(fast play-then-pause) · **Scheduled (2026-10-14):** R1.1-A (a starting / pausing state, council C-15) · **Forward:** US-R1F-01.
-
-`isPlaying` becomes true only after `engine.startAudio` returns and the start's on-deck prime settles
-(`AudioViewModel+Playback.swift:74`); `pause()` guards
-on it (`AudioViewModel+Transport.swift:46`) and the toggle calls `play()` again (`:57-62`). There is no "start in
-flight" state. PR #86 (86a1cbe) fixed only the Stop case (`transportStopEpoch`); `rev-verify.md` records the rest as
-still lost.
 
 ### KI-PB-05 — Pure on / off does not apply at a gapless seam, though Settings says it does
 
@@ -164,13 +151,6 @@ While paused, Next / Previous only move `selectedTrackIndex` (`AudioViewModel+Tr
 
 The row tap guards only on `isPlaying` (`UI/Playlist/PlaylistItemList.swift:173-174`) and calls `playTrack`, which
 clears the resume point (`AudioViewModel+Transport.swift:12`). Return on the same row resumes (`activateCursor`).
-
-### KI-PB-09 — A double-click on a queue row starts the song twice
-
-**Status:** OPEN · **Severity:** LOW · **Source:** sweep ledger, "Logged post-R1" · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-01.
-
-Same guard as KI-PB-08 (`PlaylistItemList.swift:165-175`): the second click lands before `isPlaying` flips, so a second
-start is requested (and a second play is logged).
 
 ### KI-PB-10 — Add to Queue onto an empty queue leaves Play / Space disabled
 
@@ -227,7 +207,9 @@ A seam reports a count, not which track it played, so two windows remain (archit
 any queue backlog) finds the old pick still armed: the old pick plays while the new one is shown; **A2′** — an edit made
 after a seam but before the view model's next tick (up to 50 ms, plus the 33 ms clock) is shown as playing while the
 pick the seam took plays. Pinned by the `LATE-REQUEST` scenario (`Tests/AdaptiveSoundTests/OnDeckContractTests.swift`);
-the explorer counts both windows apart (`OnDeckExplorerTests.swift`).
+the explorers count both windows apart (`OnDeckExplorerTests.swift`, and with Play, Pause and Stop against a busy engine
+`TransportExplorerTests.swift`, by one rule: `Rig.tickJudgingSeam`). Since R1.1-A a queue edit re-arms the next song
+in more cases (KI-PB-20), so more edits can meet these windows; the outcome in them is unchanged.
 
 ### KI-PB-17 — A scrub back into a track that has already ended is lost
 
@@ -556,24 +538,7 @@ The Enhanced roll compares only the sample rate (`AudioEngineBridge+GaplessRoll.
 drops the right channel; a 6-channel file after a stereo one drops centre, LFE and surrounds, or plays silence. The
 council default: a join that changes the format is an honest short gap with every channel present.
 
-### KI-PB-19 — Stop-then-Play or Pause-then-Play in quick succession can show "Playing" over silence
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-15 (P4 E1, reproduced on the real view-model sources) ·
-**Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-01.
-
-Stop and Pause take their epoch inside their `Task` (`AudioViewModel+Lifecycle.swift:160-161, 174-175`), Stop is two
-engine calls, and there is no starting or pausing state. A quick Play after Stop or Pause can leave the engine silent
-while the app shows Playing. KI-PB-04 is the same root seen from a slow start.
-
-### KI-PB-20 — A queued song can be skipped
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-17 (P4-4, P4-5) · **Scheduled (2026-10-14):** R1.1-A ·
-**Forward:** US-R1F-01.
-
-The on-deck pick is not recomputed after queue edits (`AudioViewModel+Queue.swift:183`, `guard isPlaying`). A song
-dragged in under the current one never plays; with Repeat All an append waits a whole cycle; a one-song shuffle plus an
-append stops. An append during a start's prime is not armed (its Play Next twin was fixed in R1, PR #88), and
-`playNextNow` ignores duplicates.
+*(KI-PB-19 — Playing shown over silence after a quick Stop-then-Play — and KI-PB-20 — a queued song skipped — were fixed in R1.1-A (council C-15, C-17); see [Closed](#fixed-in-r11-a--playback-correctness-branch-r11atransport).)*
 
 ### KI-PB-21 — A crash or force-quit loses your place in the queue
 
@@ -713,6 +678,78 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed in R1.1-A — playback correctness (branch `r1.1a/transport`)
+
+Council C-15 and C-17 (US-R1F-01). Two commits, named by their subjects: "play, pause and stop do what was asked
+last" and "what plays next follows the queue as edited". Each fix landed with its red test first, on the real view
+model against the engine model of the bridge's semantics, both paths, in either order the commands reach the engine
+(`Tests/AdaptiveSoundTests/TransportContractTests.swift`, `QueueEditContractTests.swift`), on the real bridge
+(`EnhancedCommandOrderTests.swift`), and as rules (`PlaybackOrderTests` VM-PO-11…15, `QueueInsertTests` VM-QI-07/08).
+The transport explorer (council P4's E1, on the shipped view model: `TransportExplorerTests.swift`) found "Playing"
+over a silent engine in 116 of 3000 random schedules on `b5c4cd3` (112 with commands overtaking each other), and 0
+after — no disagreement of any kind in 6000 schedules, nor in 30 000 more with other seeds; the A2 / A2′ residual
+(KI-PB-16) is counted apart.
+
+#### KI-PB-19 — Stop-then-Play or Pause-then-Play in quick succession can show "Playing" over silence
+
+**Status:** ✅ CLOSED in R1.1-A, "play, pause and stop do what was asked last" (council C-15). A Stop or Pause is
+numbered in the turn it is pressed, and is one engine call (the stop takes the on-deck pick with it). The engine runs a
+start, seek or stop only if it has not begun a newer one (`AudioEngineBridge.beginTransportOperation`), so a Stop that
+a Play overtook on its way to the engine is dropped; the view model applies a command's outcome only while it is still
+the newest (`AudioViewModel.transportCommand`, `finish`). STOP-THEN-PLAY, PAUSE-THEN-PLAY and a Stop and a click in one
+turn play what was asked, and show it. A Pause as a song ends no longer becomes an end of the queue that dropped the
+place (P4-7). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-15 (P4 E1, reproduced on the real view-model sources) · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-01.~~
+
+*(As found at `b5c4cd3`:)* Stop and Pause take their epoch inside their `Task` (`AudioViewModel+Lifecycle.swift:160-161, 174-175`), Stop is two
+engine calls, and there is no starting or pausing state. A quick Play after Stop or Pause can leave the engine silent
+while the app shows Playing. KI-PB-04 is the same root seen from a slow start.
+
+#### KI-PB-04 — Play / Space during a slow start restarts the song instead of pausing
+
+**Status:** ✅ CLOSED in R1.1-A, "play, pause and stop do what was asked last" (council C-15). The view model has a
+start state: a start, then its prime, until it settles (`transportCommand`). Space during a start pauses it at its
+own place — Play resumes there — and never starts it twice; Next during a start starts the next song, so what is heard
+is what is shown; a second Play (or Control Center's) joins the start. The play / pause control shows what was asked
+last (`playIntent`): Pause from the press of Play on. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #1 (G-RACE-1) + freeze "Logged post-R1" (fast play-then-pause) · **Scheduled (2026-10-14):** R1.1-A (a starting / pausing state, council C-15) · **Forward:** US-R1F-01.~~
+
+*(As found at `b5c4cd3`:)* `isPlaying` becomes true only after `engine.startAudio` returns and the start's on-deck prime settles
+(`AudioViewModel+Playback.swift:74`); `pause()` guards
+on it (`AudioViewModel+Transport.swift:46`) and the toggle calls `play()` again (`:57-62`). There is no "start in
+flight" state. PR #86 (86a1cbe) fixed only the Stop case (`transportStopEpoch`); `rev-verify.md` records the rest as
+still lost.
+
+#### KI-PB-09 — A double-click on a queue row starts the song twice
+
+**Status:** ✅ CLOSED in R1.1-A, "play, pause and stop do what was asked last" (council C-15). The row's guard reads
+what was asked (`playIntent`), so a second click on the row that is starting joins the start. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** LOW · **Source:** sweep ledger, "Logged post-R1" · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-01.~~
+
+*(As found at `b5c4cd3`:)* Same guard as KI-PB-08 (`PlaylistItemList.swift:165-175`): the second click lands before `isPlaying` flips, so a second
+start is requested (and a second play is logged).
+
+#### KI-PB-20 — A queued song can be skipped
+
+**Status:** ✅ CLOSED in R1.1-A, "what plays next follows the queue as edited" (council C-17). After a queue edit — an
+append, a drag, a removal — what plays next follows the edit, by one rule (`PlaybackOrder.onDeck(afterEditing:)`,
+through `keepOnDeck`) in place of three special cases (the drag's re-anchor, `QueueAdvance.appendArmIndex`, the
+removal's re-derive). In order it is the row now under the playing one: a song dragged in under it plays next, the next
+song dragged away doesn't, an append to the last song plays next — under Repeat All too — and a one-song shuffle that
+grew plays the new song. A shuffle pick or a Play Next stands. An append while the last song's start primes is armed
+(the F-P4-1 sibling): edits re-arm from a start's prime on (`onDeckIsLive`). Play-now of the playing song restarts its
+own slot, never an earlier copy of it (`QueueInsert.playNextNow` by slot, N6). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-17 (P4-4, P4-5) · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-01.~~
+
+*(As found at `b5c4cd3`:)* The on-deck pick is not recomputed after queue edits (`AudioViewModel+Queue.swift:183`, `guard isPlaying`). A song
+dragged in under the current one never plays; with Repeat All an append waits a whole cycle; a one-song shuffle plus an
+append stops. An append during a start's prime is not armed (its Play Next twin was fixed in R1, PR #88), and
+`playNextNow` ignores duplicates.
 
 ### Fixed in R1.1-A — a faithful default and the listener's settings kept (branch `r1.1a/faithful-default`)
 
