@@ -24,7 +24,7 @@
 
 ## Per-Merge Gates (Automated, < 15 Minutes)
 
-**Runs on every PR to `main`** (CI: `.github/workflows/strict-ci.yml` runs `make strict-gate` on GitHub-hosted `macos-26`). Must pass before merge. *(Reconciled to the code 2026-10-13, product council.)*
+**Runs on every PR to `main`** (CI: `.github/workflows/strict-ci.yml` runs `make strict-gate` on GitHub-hosted `macos-26`). Must pass before merge. *(Reconciled to the code 2026-10-13, product council; counts and targets re-checked after R1, 2026-10-14.)*
 
 ### Gate 1: DSP Test Harness (C++ null-test) — the primary gate
 
@@ -35,11 +35,11 @@ bash scripts/build-null-test.sh
 This builds and runs the standalone C++ harness (`Tests/DSPKernelNullTest.cpp` + the `*.inc` area files). It is the **canonical DSP gate**.
 
 **Requirements:**
-- All harness tests pass (0 failures; the harness reports the count — 202 registered as of 2026-10-13) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams, crossfeed, Realizer, intensity ramp, the libebur128 LUFS/true-peak oracle, the 31-band FR sweep, the graphic-EQ designer vs its Python oracle, track-loudness profiling, EQ transitions and the RT EQ engine paths, the loudness-neutral gain, the Sprint EQ break-it / fix-round regressions, the device-list policy, the render gate, RT-allocation soaks and snapshot no-tear.
+- All harness tests pass (0 failures; the harness reports the count — 220 registered as of 2026-10-14, after R1) — bypass/identity, EQ, limiter, loudness/BS.1770, multichannel, spatial passthrough, Pure-Mode policy/format/decode/round-trip, gapless seams, crossfeed, Realizer, intensity ramp, the libebur128 LUFS/true-peak oracle, the 31-band FR sweep, the graphic-EQ designer vs its Python oracle, track-loudness profiling, EQ transitions and the RT EQ engine paths, the loudness-neutral gain, the Sprint EQ break-it / fix-round regressions, the device-list policy, the render gate, the Pure gapless arm contract and the Pure format / conversion refusal table (both R1, PR #88), RT-allocation soaks and snapshot no-tear.
 - Stereo **golden master** signature `0xE7AF0C67F9340785` (`GoldenMaster_StereoN2_v1`, `Tests/MultichannelTests.inc:45`: FNV-1a over the processed L+R of a deterministic chirp through +6 dB @ 1 kHz EQ + active limiter) must match. Any one-ULP change to stereo output flips it; re-baseline only on a founder-approved DSP change. *(Re-baselined in Sprint EQ's EQ1b, when the +6 dB moved to the accurate SVF graphic EQ; it was `0xE7267654BA01D315`.)*
 - Fixtures are written + read in `<repo>/test-data/` (never `/tmp`); generated WAV/bin are git-ignored.
 
-**`swift test` runs headless** (native swift-testing) and **is** part of the pre-merge `make strict-gate`. The seven Swift test targets (`AudioViewModelTests`, `LibraryBrowseKitTests`, `EQEditKitTests`, `OutputDeviceKitTests`, `TrackLoudnessKitTests`, `DesignTokenKitTests`, `AudioDSPTests`) use the Swift Testing framework; the DSP golden-master gate, however, remains the C++ null-test harness, not `swift test`.
+**`swift test` runs headless** (native swift-testing) and **is** part of the pre-merge `make strict-gate`. The eight Swift test targets (`AudioViewModelTests`, `AdaptiveSoundTests` — added in R1, PR #88, the one target that imports the app itself to test the shipped view model — `LibraryBrowseKitTests`, `EQEditKitTests`, `OutputDeviceKitTests`, `TrackLoudnessKitTests`, `DesignTokenKitTests`, `AudioDSPTests`) use the Swift Testing framework; the DSP golden-master gate, however, remains the C++ null-test harness, not `swift test`.
 
 **Companion offline checks (`swift run`, headless):**
 - `swift run VerifyAUGraph` — proves the custom v3 AU registers, instantiates, sits in the AVAudioEngine graph, and renders.
@@ -364,7 +364,7 @@ assert(abs(threshold - reference) < 1.0f); // ±1 dB
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| C++ harness pass rate (202 tests as of 2026-10-13; the harness reports the count) | 100% (0 failures) | DONE — passing |
+| C++ harness pass rate (220 tests as of 2026-10-14; the harness reports the count) | 100% (0 failures) | DONE — passing |
 | Stereo golden master | `0xE7AF0C67F9340785` match (re-baselined in Sprint EQ; was `0xE7267654BA01D315`) | DONE — matching |
 | Code coverage (signal path) | ≥80% | TBD |
 | Null-test accuracy (THD+N) | ≤ −120 dB | TBD |

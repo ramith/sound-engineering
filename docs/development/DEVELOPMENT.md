@@ -178,11 +178,11 @@ Swift runs on the **UI/control plane** (not the audio render thread), so the con
 
 ### MUST DO
 
-✅ **Reach the engine only through `AudioPlaybackEngine`, injected as `any AudioPlaybackEngine`.** The view model holds it as a plain injected `let engine` (`AudioViewModel.swift`; a mock conforms in `Tests/AudioViewModelTests/MockAudioEngine.swift`). Outside the bridge's own files (`AudioEngineBridge*.swift`, `PureModeSession.swift`) never name the concrete `AudioEngineBridge` — semgrep `main-thread-no-concrete-bridge` fails the gate.
+✅ **Reach the engine only through `AudioPlaybackEngine`, injected as `any AudioPlaybackEngine`.** The view model holds it as a plain injected `let engine` (`AudioViewModel.swift`; a mock conforms in `Tests/AudioViewModelTests/MockAudioEngine.swift`, and since R1 scripted engines in `Tests/AdaptiveSoundTests/` — `OnDeckEngineModel`, `DeviceTestEngine` — drive the shipped view model). Outside the bridge's own files (`AudioEngineBridge*.swift`, `PureModeSession.swift`) never name the concrete `AudioEngineBridge` — semgrep `main-thread-no-concrete-bridge` fails the gate.
 
 ✅ **Read engine state from one snapshot.** `engine.snapshot()` returns an `EngineSnapshot` (transport, signal path, loudness, EQ design rate) that the engine publishes from its own queues; the 20 Hz tick reads it and nothing else.
 
-✅ **Send intents as hand-offs.** The publishes (`publishEQ`, `publishIntensity`, `publishCrossfeed`, `publishOutputTransport`) borrow the effects AU without waiting; `publishMasterGain` and `requestDeviceVolume` queue the work (latest wins); start / stop / seek are `async` and numbered (`nextTransportEpoch()`), so a stale snapshot is ignored (`TransportSnapshot.isCurrent(for:)`).
+✅ **Send intents as hand-offs.** The publishes (`publishEQ`, `publishIntensity`, `publishCrossfeed`, `publishOutputTransport`) borrow the effects AU without waiting; `publishMasterGain` and `requestDeviceVolume` queue the work (latest wins); start / stop / seek are `async` and numbered (`nextTransportEpoch()`), so a stale snapshot is ignored (`TransportSnapshot.isCurrent(for:)`). The next track goes only through `armOnDeck`, which numbers the request (`OnDeckTicket`); the engine applies only the newest of the current playback (`OnDeckGate`, R1 — council D41).
 
 ✅ **UI state is `@MainActor @Observable`.**
 ```swift
