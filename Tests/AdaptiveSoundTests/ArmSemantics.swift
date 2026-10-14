@@ -1,5 +1,24 @@
 import Foundation
 
+// MARK: - How an engine runs a start, a stop or a seek: the C-15 design, and what it replaced
+
+/// How the engine runs a transport command (start, stop, seek) that reaches its queue.
+enum CommandSemantics: Sendable, CustomStringConvertible {
+    /// b5c4cd3: every command runs, whatever its epoch — a stop overtaken by a later start on its way to
+    /// the queue still stops it.
+    case executesEvery
+    /// The design (council C-15): a command older than one the engine has already begun was overtaken
+    /// on its way, and is dropped — no effect at all.
+    case dropsOvertaken
+
+    var description: String {
+        switch self {
+        case .executesEvery: "b5c4cd3 (executes every command)"
+        case .dropsOvertaken: "design"
+        }
+    }
+}
+
 // MARK: - How an engine applies a "play next" request: the D41 design, and what it replaced
 
 /// How the engine applies a "play next" request.

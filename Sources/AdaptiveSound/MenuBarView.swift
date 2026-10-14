@@ -19,7 +19,7 @@ struct MenuBarView: View {
     var body: some View {
         if let track = currentTrack {
             Text(track.name)
-            Button(viewModel.isPlaying ? "Pause" : "Play") {
+            Button(viewModel.playIntent ? "Pause" : "Play") {
                 viewModel.togglePlayPause()
             }
             Button("Next Track") { viewModel.nextTrack() }

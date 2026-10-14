@@ -13,8 +13,12 @@ extension AudioEngineBridge {
             self.engineQueue.async {
                 // First, before any slow work (a Pure rate change can take seconds): this start's
                 // transitional sample — its place, no end flag — so the view model's next tick
-                // never acts on the end of the playback this start replaces.
-                self.beginTransportOperation(epoch: epoch, position: startAt > 0 ? startAt : nil)
+                // never acts on the end of the playback this start replaces. A start a newer command
+                // overtook is dropped: it never plays over what the user asked since.
+                guard self.beginTransportOperation(epoch: epoch, position: startAt > 0 ? startAt : nil) else {
+                    continuation.resume(returning: ())
+                    return
+                }
                 // A new playback: an on-deck request made for an earlier one is stale from here on.
                 self.onDeckGate.beginSession(epoch)
                 do {
@@ -213,7 +217,12 @@ extension AudioEngineBridge {
     func stopAudio(epoch: UInt64) async throws {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                self.beginTransportOperation(epoch: epoch, position: nil)
+                // A stop a newer command overtook (a Play after a Pause, a click after Stop) is dropped:
+                // it never silences what the user asked for since.
+                guard self.beginTransportOperation(epoch: epoch, position: nil) else {
+                    continuation.resume()
+                    return
+                }
                 // Nothing plays after a stop: every on-deck request made before it is stale.
                 self.onDeckGate.beginSession(epoch)
                 if self.activePathKind == .pure {
