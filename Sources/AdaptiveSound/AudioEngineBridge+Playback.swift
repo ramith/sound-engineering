@@ -231,7 +231,7 @@ extension AudioEngineBridge {
         let started = startEnhancedResampler(audioFile: audioFile, player: playerNode, startFrame: startFrame)
         if started {
             logUX("Enhanced started '\(fileURL.lastPathComponent)' "
-                + "(resample \(Int(fileRate))→\(Int(graphRate)) max)")
+                + "(resample \(Int(fileRate))→\(Int(graphRate)) mastering)")
         } else {
             // Converter unavailable / primed nothing → keep playback working via the proven path.
             playerNode.scheduleSegment(audioFile, startingFrame: startFrame,

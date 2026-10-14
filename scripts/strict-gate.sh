@@ -283,7 +283,7 @@ swift build -c debug
 step "Swift test"
 swift test
 
-step "make gate (C++ null test + VerifyAUGraph + VerifyLibraryStore)"
+step "make gate (C++ null test + VerifyAUGraph + SRCQualityMeasure + VerifyLibraryStore)"
 make gate
 
 # S10.8 G (the disconnect freeze): hold AVFAudio's engine-wide lock for 2.5 s on an OFFLINE engine

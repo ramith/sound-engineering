@@ -1,12 +1,14 @@
+import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Enhanced streaming-resampler path
 
 /// Replaces AVAudioEngine's hidden default sample-rate conversion on the ENHANCED playback path
-/// with an explicit, high-quality streaming resampler (`AVAudioConverter` at `.max` quality, the
-/// default Normal algorithm — NOT `.mastering`, which is an offline/high-latency algorithm that
-/// would stall live playback).
+/// with an explicit, high-quality streaming resampler: `StreamingResampler` (AudioFormatKit) —
+/// Apple's `AVAudioConverter` at the Mastering algorithm and max quality, configured in that one
+/// place, which `make gate`'s SRC check measures (R1.1-A, council C-26; it was the Normal algorithm,
+/// on a "Mastering would stall live playback" premise that was never measured and is false).
 ///
 /// Scope is deliberately bounded to RATE-MISMATCHED files: it runs only when the opened file's
 /// sample rate differs from the 48 kHz engine-graph rate. When the file is already 48 kHz the
@@ -14,12 +16,13 @@ import Foundation
 /// engine performs no SRC). So this new code's blast radius is exactly "files whose rate != 48 kHz".
 ///
 /// Design:
-/// - One `AVAudioConverter` per playback session, `from:` the file's processing format (file rate,
-///   N-channel float) `to:` `playerNode.outputFormat(forBus: 0)` (48 kHz, N-channel float). Matching
-///   the player's negotiated output format means `scheduleBuffer` triggers NO further engine SRC.
-/// - A background SERIAL queue (`resampleQueue`) reads file chunks into an input buffer, converts via
-///   the pull API `convert(to:error:withInputFrom:)` (which maintains rate-conversion state across
-///   calls), and `scheduleBuffer(_, completionCallbackType: .dataConsumed)` chaining: each completion
+/// - One `EnhancedResampleSession` per playback session: the file and its converter, `from:` the
+///   file's processing format (file rate, N-channel float) `to:` `playerNode.outputFormat(forBus: 0)`
+///   (48 kHz, N-channel float). Matching the player's negotiated output format means
+///   `scheduleBuffer` triggers NO further engine SRC.
+/// - A background SERIAL queue (`resampleQueue`) reads file chunks into an input buffer, converts
+///   them (`StreamingResampler.convert`, which keeps the rate-conversion state across chunks), and
+///   `scheduleBuffer(_, completionCallbackType: .dataConsumed)` chaining: each completion
 ///   dispatches the next read→convert→schedule on the serial queue.
 /// - A generation/epoch counter (`resampleGeneration`) makes seek/stop/track-change cancellation
 ///   correct: each iteration captures the generation it began under and bails if it has changed.
@@ -34,22 +37,9 @@ import Foundation
 extension AudioEngineBridge {
     // MARK: - Tuning constants
 
-    /// Input frames read from the file per chunk before conversion. 8192 input frames at 44.1 kHz is
-    /// ~186 ms — large enough to keep the converter fed cheaply, small enough that a seek/stop is
-    /// abandoned promptly. The matching output capacity is computed from the rate ratio + slack.
-    /// Internal (not private) so the gapless seam handlers can construct `EnhancedResampleSession`
-    /// with the same chunk size without duplicating the constant.
-    static let resampleInputChunkFrames: AVAudioFrameCount = 8192
-
     /// Number of buffers primed (scheduled) BEFORE `player.play()` so the player never underruns at
     /// start and there is no startup delay. Three ~186 ms chunks ≈ half a second of lead.
     private static let resamplePrimeCount: Int = 3
-
-    /// Slack frames added to the estimated output capacity per chunk. Absorbs the resampler's
-    /// interpolation tail so the final block is never truncated at a rate-conversion boundary.
-    /// Internal (not private) so `convertChunk` in `AudioEngineBridge+EnhancedResamplerSeam.swift`
-    /// can size the output buffer with the same slack.
-    static let resampleOutputCapacitySlack: AVAudioFrameCount = 4096
 
     // MARK: - Start
 
@@ -69,25 +59,10 @@ extension AudioEngineBridge {
         player: AVAudioPlayerNode,
         startFrame: AVAudioFramePosition
     ) -> Bool {
-        let outputFormat = player.outputFormat(forBus: 0)
-        let inputFormat = audioFile.processingFormat
-
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            NSLog("[AudioEngineBridge] AVAudioConverter creation failed (\(inputFormat.sampleRate)"
-                + " -> \(outputFormat.sampleRate)); caller falls back to scheduleFile")
-            return false
+        guard let session = EnhancedResampleSession(file: audioFile, outputFormat: player.outputFormat(forBus: 0))
+        else {
+            return false // the caller falls back to scheduleFile
         }
-        // Best REAL-TIME quality. Deliberately leave the algorithm at the default (Normal) — the
-        // `.mastering` algorithm is offline/high-latency and would stall live playback.
-        converter.sampleRateConverterQuality = .max
-
-        let session = EnhancedResampleSession(
-            converter: converter,
-            audioFile: audioFile,
-            inputFormat: inputFormat,
-            outputFormat: outputFormat,
-            inputChunkFrames: Self.resampleInputChunkFrames
-        )
 
         // Prime synchronously on the serial queue so the caller gets a definite success/failure
         // result for the fallback decision. Priming before play() gives the player a cushion.
@@ -95,9 +70,7 @@ extension AudioEngineBridge {
         // already on resampleQueue call primeEnhancedResamplerLocked directly (no sync).
         var primed = 0
         resampleQueue.sync {
-            primed = self.primeEnhancedResamplerLocked(
-                session: session, audioFile: audioFile, player: player, startFrame: startFrame
-            )
+            primed = self.primeEnhancedResamplerLocked(session: session, player: player, startFrame: startFrame)
         }
 
         // If the very first read produced nothing (e.g. empty/zero-length file), fall back so the
@@ -132,16 +105,14 @@ extension AudioEngineBridge {
     @discardableResult
     func primeEnhancedResamplerLocked(
         session: EnhancedResampleSession,
-        audioFile: AVAudioFile,
         player: AVAudioPlayerNode,
         startFrame: AVAudioFramePosition
     ) -> Int {
         dispatchPrecondition(condition: .onQueue(resampleQueue))
 
         // Position the file read head (0 for a fresh play; the seek target for a resampled seek).
-        let totalFrames = audioFile.length
-        let clampedStart = max(0, min(startFrame, totalFrames))
-        audioFile.framePosition = clampedStart
+        let totalFrames = session.audioFile.length
+        session.audioFile.framePosition = max(0, min(startFrame, totalFrames))
 
         // Bump the generation so any prior session's in-flight iterations abandon themselves,
         // then capture THIS session's generation for the loop to compare against.
@@ -193,7 +164,7 @@ extension AudioEngineBridge {
             resampleGeneration &+= 1
             passthroughGeneration &+= 1
 
-            let fileRate = session.inputFormat.sampleRate
+            let fileRate = session.resampler.inputFormat.sampleRate
             guard fileRate > 0 else { capturedSession = nil; return }
 
             let target = max(seconds, 0)
@@ -201,11 +172,6 @@ extension AudioEngineBridge {
             let totalFrames = session.audioFile.length
             guard frame >= 0, frame < totalFrames else { capturedSession = nil; return }
             targetFrame = frame
-
-            // Reset the converter's internal rate-conversion state so the post-seek stream does
-            // not inherit pre-seek interpolation history (which would smear the join).
-            session.converter.reset()
-            session.reachedEnd = false
         }
 
         guard let session = capturedSession else { return false }
@@ -215,9 +181,10 @@ extension AudioEngineBridge {
         // hardware callback isn't stalled while we hold resampleQueue.
         player.stop()
 
-        // Restart the loop from the target frame. startEnhancedResampler bumps the generation
-        // again (harmless — the old session's completions were already abandoned by the bump
-        // above) and re-primes + plays. It does its own resampleQueue.sync for the prime, which
+        // Restart the loop from the target frame. startEnhancedResampler builds a NEW session (a
+        // fresh converter: no pre-seek history smears the join), bumps the generation again
+        // (harmless — the old session's completions were already abandoned by the bump above) and
+        // re-primes + plays. It does its own resampleQueue.sync for the prime, which
         // is safe because we are NOT currently holding resampleQueue here (we exited the sync
         // block above before calling this).
         return startEnhancedResampler(
@@ -267,50 +234,32 @@ extension AudioEngineBridge {
 
 // MARK: - EnhancedResampleSession
 
-/// Per-playback-session state for the Enhanced streaming resampler. A class (reference type) so the
-/// completion-chained iterations and the input pull block share one instance; held by the bridge as
-/// `resampleSession` and only ever mutated on `resampleQueue`.
+/// One run of a file through the Enhanced streaming resampler: the open file and its converter. A
+/// class (reference type) so the completion-chained iterations share one instance; held by the
+/// bridge as `resampleSession` and only ever mutated on `resampleQueue`.
 ///
-/// `@unchecked Sendable` invariant: this session is created and *only ever mutated on*
-/// `resampleQueue`. The completion / input closures that capture it either run on
-/// `resampleQueue` or do nothing but re-dispatch onto it. Single-serial-queue confinement
-/// is the external synchronization that makes `@unchecked` truthful; it is never touched
-/// on the render/tap (RT) thread, so no allocation/lock is added there.
+/// `@unchecked Sendable` invariant: this session is created on a bridge queue and *only ever used
+/// and mutated on* `resampleQueue` once installed. The completion closures that capture it do
+/// nothing but re-dispatch onto `resampleQueue`. Single-serial-queue confinement is the external
+/// synchronization that makes `@unchecked` truthful; it is never touched on the render/tap (RT)
+/// thread, so no allocation/lock is added there.
 final class EnhancedResampleSession: @unchecked Sendable {
-    /// The high-quality streaming converter (file rate → 48 kHz, N→N), `.max` quality, Normal algo.
-    let converter: AVAudioConverter
+    /// The converter: file format → the player's format (the Mastering `StreamingResampler`).
+    let resampler: StreamingResampler
 
-    /// The open source file, read sequentially chunk-by-chunk. Re-used across a resampled seek
-    /// (its `framePosition` is repositioned). Owned for the session's lifetime.
+    /// The open source file, read sequentially chunk-by-chunk.
     let audioFile: AVAudioFile
-
-    /// File processing format (file rate, N-channel float) — the converter input + input buffers.
-    let inputFormat: AVAudioFormat
-
-    /// Player output format (48 kHz, N-channel float) — the converter output + scheduled buffers.
-    let outputFormat: AVAudioFormat
-
-    /// Input frames read per chunk (the converter's input buffer capacity).
-    let inputChunkFrames: AVAudioFrameCount
 
     /// Set once the file is exhausted / the converter signals end — stops further chaining.
     var reachedEnd: Bool = false
 
-    /// Per-`convert()`-call latch: ensures the just-read chunk is handed to the converter exactly
-    /// once, after which the input block reports end/no-data so the converter flushes its tail.
-    var inputConsumed: Bool = false
-
-    init(
-        converter: AVAudioConverter,
-        audioFile: AVAudioFile,
-        inputFormat: AVAudioFormat,
-        outputFormat: AVAudioFormat,
-        inputChunkFrames: AVAudioFrameCount
-    ) {
-        self.converter = converter
-        self.audioFile = audioFile
-        self.inputFormat = inputFormat
-        self.outputFormat = outputFormat
-        self.inputChunkFrames = inputChunkFrames
+    /// `nil` when Apple has no converter from `file`'s processing format to `outputFormat`.
+    init?(file: AVAudioFile, outputFormat: AVAudioFormat) {
+        guard let resampler = StreamingResampler(from: file.processingFormat, to: outputFormat) else {
+            NSLog("[AudioEngineBridge] no converter \(file.processingFormat) -> \(outputFormat)")
+            return nil
+        }
+        self.resampler = resampler
+        audioFile = file
     }
 }

@@ -24,7 +24,7 @@ extension AudioEngineBridge {
     ///
     /// Called on `resampleQueue` after the current resampler session reaches EOF (its final buffer
     /// has been consumed by the player's buffer queue). Opens the next file, creates a NEW
-    /// `AVAudioConverter` for it, and continues the resampler chain WITHOUT stopping the player.
+    /// resampler session for it, and continues the resampler chain WITHOUT stopping the player.
     /// Because the player's queue already contains A's audio tail and we are scheduling B's first
     /// buffers right behind it — with the player still running — the hardware clock is continuous
     /// and no silence is inserted.
@@ -216,8 +216,8 @@ extension AudioEngineBridge {
     }
 
     /// Continue (or start) the resampler chain for a rate-mismatched `nextFile`: build a fresh
-    /// converter and prime it via `primeEnhancedResamplerLocked` (called DIRECTLY — never via
-    /// `startEnhancedResampler`, preserving the C-1 deadlock guard). On any failure path
+    /// session (its own Mastering converter) and prime it via `primeEnhancedResamplerLocked` (called
+    /// DIRECTLY — never via `startEnhancedResampler`, preserving the C-1 deadlock guard). On any failure path
     /// (converter creation fails, or the prime schedules nothing for an empty file) it falls back
     /// to `scheduleFileChainingPassthrough` so the seam chain is preserved (S-1). MUST be called
     /// on `resampleQueue`.
@@ -228,7 +228,8 @@ extension AudioEngineBridge {
         nextRate: Double,
         graphRate: Double
     ) {
-        guard let converter = makeConverter(for: nextFile, player: player) else {
+        guard let nextSession = EnhancedResampleSession(file: nextFile, outputFormat: player.outputFormat(forBus: 0))
+        else {
             // Converter creation failed: fall back to scheduleFile (brief gap, chain preserved).
             // Clear the OLD track's exhausted session first (the P1-2 rule, same as the
             // empty-prime branch below): leaving it non-nil misroutes a later seek/reestablish
@@ -245,16 +246,7 @@ extension AudioEngineBridge {
             return
         }
 
-        let nextSession = EnhancedResampleSession(
-            converter: converter,
-            audioFile: nextFile,
-            inputFormat: nextFile.processingFormat,
-            outputFormat: player.outputFormat(forBus: 0),
-            inputChunkFrames: AudioEngineBridge.resampleInputChunkFrames
-        )
-        let primed = primeEnhancedResamplerLocked(
-            session: nextSession, audioFile: nextFile, player: player, startFrame: 0
-        )
+        let primed = primeEnhancedResamplerLocked(session: nextSession, player: player, startFrame: 0)
         if primed > 0 {
             bumpTransitionCount(player: player, nextURL: nextURL)
             armResamplerNextTrack(player: player)

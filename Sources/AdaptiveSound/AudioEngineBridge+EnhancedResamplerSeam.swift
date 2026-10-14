@@ -1,15 +1,16 @@
+import AudioFormatKit
 @preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioEngineBridge Enhanced resampler — read → convert → schedule iteration
 
-/// The per-iteration read → convert → schedule machinery of the Enhanced streaming resampler,
-/// split out of `AudioEngineBridge+EnhancedResampler.swift` to keep that file under the file-length
-/// limit. Everything here runs on `resampleQueue` (the prime loop drives it via the
-/// `resampleQueue.sync` in `startEnhancedResampler`; each `.dataConsumed` completion re-dispatches
-/// the next iteration onto `resampleQueue`). The cancellation predicate (`isCurrent`) and the
-/// `resampleGeneration` / `resampleSession` reads it performs are confined to `resampleQueue`,
-/// exactly as before — this is a pure relocation, not a behaviour change.
+/// The per-iteration read → convert → schedule machinery of the Enhanced streaming resampler.
+/// Everything here runs on `resampleQueue` (the prime loop drives it — from
+/// `startEnhancedResampler`'s `resampleQueue.sync`, or a seam handler already on the queue; each
+/// `.dataConsumed` completion re-dispatches the next iteration onto `resampleQueue`). The
+/// cancellation predicate (`isCurrent`) and the `resampleGeneration` / `resampleSession` reads it
+/// performs are confined to `resampleQueue`. The conversion itself is `StreamingResampler`'s
+/// (AudioFormatKit), which the `make gate` SRC check drives in the same chunks.
 extension AudioEngineBridge {
     // MARK: - Cancellation predicate
 
@@ -27,8 +28,7 @@ extension AudioEngineBridge {
 
     /// Read one input chunk, convert it via the pull API, and schedule the resulting 48 kHz buffer
     /// on `player` with a `.dataConsumed` completion that chains the next iteration. MUST run on
-    /// `resampleQueue` (the prime loop runs there via the `resampleQueue.sync` in
-    /// `startEnhancedResampler`; the completion re-dispatches onto `resampleQueue`).
+    /// `resampleQueue` (the prime loop runs there; the completion re-dispatches onto it).
     ///
     /// Returns `true` if a buffer was scheduled (more may follow); `false` at EOF / on error / when
     /// the generation no longer matches (the loop then stops chaining — no buffer is scheduled).
@@ -79,13 +79,14 @@ extension AudioEngineBridge {
     /// the session done (so the next convert flushes the resampler tail). Returns `nil` only if the
     /// input buffer could not be allocated. Runs on `resampleQueue`.
     private func readChunk(session: EnhancedResampleSession) -> AVAudioPCMBuffer? {
+        let frames = StreamingResampler.inputChunkFrames
         guard let inputBuffer = AVAudioPCMBuffer(
-            pcmFormat: session.inputFormat, frameCapacity: session.inputChunkFrames
+            pcmFormat: session.resampler.inputFormat, frameCapacity: frames
         ) else {
             return nil
         }
         do {
-            try session.audioFile.read(into: inputBuffer, frameCount: session.inputChunkFrames)
+            try session.audioFile.read(into: inputBuffer, frameCount: frames)
         } catch {
             session.reachedEnd = true
         }
@@ -95,70 +96,23 @@ extension AudioEngineBridge {
         return inputBuffer
     }
 
-    /// Convert `inputBuffer` through the session's converter into a freshly sized output buffer.
-    /// Returns the converted 48 kHz buffer, or `nil` on allocation/conversion error (the session is
-    /// marked done on a hard error). Runs on `resampleQueue`.
+    /// Convert `inputBuffer` through the session's `StreamingResampler` (the chunk it takes; at the
+    /// end of the file, the flush). Returns the converted 48 kHz buffer, or `nil` when the chunk could
+    /// not be converted — the session is then done. Runs on `resampleQueue`.
     private func convertChunk(
         session: EnhancedResampleSession,
         inputBuffer: AVAudioPCMBuffer
     ) -> AVAudioPCMBuffer? {
-        // Output capacity for a chunk of inFrames at the rate ratio, plus generous slack for the
-        // resampler's interpolation tail (avoids a truncated final block).
-        let rateRatio = session.outputFormat.sampleRate / session.inputFormat.sampleRate
-        let estimatedOut = Double(session.inputChunkFrames) * rateRatio
-        let outCapacity = AVAudioFrameCount(estimatedOut.rounded(.up)) + Self.resampleOutputCapacitySlack
-        guard let outputBuffer = AVAudioPCMBuffer(
-            pcmFormat: session.outputFormat, frameCapacity: outCapacity
-        ) else {
-            return nil
-        }
-
-        // The pull input block hands the converter the just-read chunk exactly once per convert()
-        // call; subsequent pulls report end/no-data so the converter flushes its interpolation tail.
-        session.inputConsumed = false
-        let inputBlock = makeInputBlock(session: session, inputBuffer: inputBuffer)
-
-        var conversionError: NSError?
-        let status = session.converter.convert(
-            to: outputBuffer, error: &conversionError, withInputFrom: inputBlock
-        )
-
-        switch status {
-        case .error:
-            if let conversionError {
-                NSLog("[AudioEngineBridge] resampler convert error: \(conversionError); ending stream")
+        do {
+            let chunk = try session.resampler.convert(inputBuffer, inputEnded: session.reachedEnd)
+            if chunk.endOfStream {
+                session.reachedEnd = true
             }
+            return chunk.buffer
+        } catch {
+            NSLog("[AudioEngineBridge] resampler convert error: \(error); ending stream")
             session.reachedEnd = true
             return nil
-        case .endOfStream:
-            session.reachedEnd = true
-        case .haveData, .inputRanDry:
-            break
-        @unknown default:
-            break
-        }
-        return outputBuffer
-    }
-
-    /// Build the `AVAudioConverterInputBlock` that hands `inputBuffer` to the converter exactly once
-    /// for the current convert() call, then reports end-of-stream / no-data so the converter does not
-    /// block and flushes its tail at EOF. Uses `session.inputConsumed` as the once-latch.
-    private func makeInputBlock(
-        session: EnhancedResampleSession,
-        inputBuffer: AVAudioPCMBuffer
-    ) -> AVAudioConverterInputBlock {
-        { [weak session] _, outStatus in
-            guard let session else {
-                outStatus.pointee = .endOfStream
-                return nil
-            }
-            if session.inputConsumed || inputBuffer.frameLength == 0 {
-                outStatus.pointee = session.reachedEnd ? .endOfStream : .noDataNow
-                return nil
-            }
-            session.inputConsumed = true
-            outStatus.pointee = .haveData
-            return inputBuffer
         }
     }
 }
