@@ -8,8 +8,9 @@
 //      re-voiced built-in reaches it;
 //   2. a v1 edit whose gains equal a saved preset is that My Preset (it was chosen and not touched);
 //   3. anything else is an edited Flat that plays exactly the v1 gains.
-// The EQ is on in every case (v1 had no Off). Unreadable, miscounted or non-finite v1 data — or none
-// at all, a fresh install — is Flat.
+// The EQ is on in every case (v1 had no Off). Unreadable, miscounted or non-finite v1 data is Flat. No
+// v1 data at all is a fresh install: Flat, and Off — a new install plays the music as it was recorded
+// (founder decision FD-2, 2026-10-14).
 //
 // A DOWNGRADE, THEN AN UPGRADE AGAIN (break-it B1). `eqLiveStateV1` stays on disk for one release,
 // so a v1 build still plays; a v1 build run in between writes its EQ there and never touches
@@ -36,6 +37,9 @@ public enum EQMigration {
         return store
     }
 
+    /// A fresh install's EQ: Flat, and Off (FD-2) — nothing plays until the listener turns it on.
+    static let freshInstall = EQState(preset: .builtIn(.flat), curve: nil, isOn: false)
+
     /// What a store records when it found no v1 blob to take in. Never a real fingerprint (those are
     /// hex), and never `nil`, which only a store from before the rule has.
     static let noV1Blob = "none"
@@ -60,10 +64,10 @@ public enum EQMigration {
         return caughtUp
     }
 
-    /// The state the v1 blob `live` migrates to (rules 1–3).
+    /// The state the v1 blob `live` migrates to (rules 1–3); with no blob, a fresh install's.
     static func state(fromV1 live: Data?, customPresets: [String: [Float]]) -> EQState {
-        guard let live, let v1 = try? JSONDecoder().decode(V1LiveState.self, from: live),
-              EQCurve.isWellFormed(v1.bandGains)
+        guard let live else { return freshInstall }
+        guard let v1 = try? JSONDecoder().decode(V1LiveState.self, from: live), EQCurve.isWellFormed(v1.bandGains)
         else { return .flat }
         // Rule 1, through the stored-id rule: a retired id plays its replacement (v1's "Studio" is
         // Flat, decision 32). An id no build knows was played as an edit in v1: rules 2–3.
