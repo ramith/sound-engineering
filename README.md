@@ -11,7 +11,7 @@ A personal, open-source music player for macOS — bit-perfect playback of your 
 ![License](https://img.shields.io/badge/license-TBD-lightgrey)
 ![Last commit](https://img.shields.io/github/last-commit/ramith/sound-engineering)
 
-**Status:** **R1 = v1.0.0-alpha — release in progress** (the release PR merged 2026-10-13; the tag waits on a green CI; [release notes](docs/releases/v1.0.0-alpha.md)). A **bit-perfect macOS audiophile player** first, then the adaptive-sound differentiation (masking-aware clarity, steerable *Reimagine*, spatial rendering). The one prose status line is [`docs/sprints/sprint-plan.md` §Status](docs/sprints/sprint-plan.md#status); the phase/release plan is [`docs/product/roadmap.md`](docs/product/roadmap.md).
+**Status:** **R1 = v1.0.0-alpha — shipped 2026-10-14** ([download](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha); [release notes](docs/releases/v1.0.0-alpha.md)). A **bit-perfect macOS audiophile player** first, then the adaptive-sound differentiation (masking-aware clarity, steerable *Reimagine*, spatial rendering). The one prose status line is [`docs/sprints/sprint-plan.md` §Status](docs/sprints/sprint-plan.md#status); the phase/release plan is [`docs/product/roadmap.md`](docs/product/roadmap.md).
 
 ---
 
@@ -133,9 +133,9 @@ For detailed setup, coding standards, pre-commit hooks, and profiling guidance, 
 
 **Strategy:** reach competitive parity as a *player* first, then build the Adaptive Sound differentiation on a credible base. Authoritative plan: [`docs/product/roadmap.md`](docs/product/roadmap.md) · [`docs/sprints/sprint-plan.md`](docs/sprints/sprint-plan.md).
 
-**Shipped (on `main`, released as R1 = v1.0.0-alpha):** loudness safety (Sprint 4) · N-channel multichannel + Monitoring (Sprint 5/5b) · bit-perfect **Pure Mode** + gapless playback · S6 architecture-review gate · S7 DSP regression gate · QW1 differentiators (crossfeed, Reimagine intensity knob, tonal presets) · the GRDB library spine + browse/search (S8–S9) · queue, playlists, Recently Played, media keys (S10.1–S10.6) · the Liquid Glass UI in dark and light (S10.7–S10.8) · an honest, loudness-neutral 31-band EQ (Sprint EQ) · the output-device and app↔engine threading rules (Sprint G).
+**Shipped (on `main`, released as R1 = v1.0.0-alpha):** loudness safety (Sprint 4) · N-channel multichannel + Monitoring (Sprint 5/5b) · bit-perfect **Pure Mode** + gapless playback · S6 architecture-review gate · S7 DSP regression gate · QW1 differentiators (crossfeed, Reimagine intensity knob, tonal presets) · the GRDB library spine + browse/search (S8–S9) · queue, playlists, Recently Played, media keys (S10.1–S10.6) · the Liquid Glass UI in dark and light (S10.7–S10.8) · an honest, loudness-neutral 31-band EQ (Sprint EQ) · the output-device and app↔engine threading rules (Sprint G) · the R1 blocker fixes from the 2026-10 council (PR #88).
 
-**Phase 1 — player maturity / parity (S8–S14):** library spine (S8 ✅) → browse/search (S9 ✅) → queue/playlists/media keys + the release UX (S10.x ✅) → CUE + format hardening (S11) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → loudness compensation (S14). → release **R1** after S10 (v1.0.0-alpha, in progress), **R2** ("audiophile-credible") after S14.
+**Phase 1 — player maturity / parity (S8–S14):** library spine (S8 ✅) → browse/search (S9 ✅) → queue/playlists/media keys + the release UX (S10.x ✅) → CUE + format hardening (S11) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → loudness compensation (S14). → release **R1** after S10 (v1.0.0-alpha, shipped 2026-10-14), **R2** ("audiophile-credible") after S14.
 
 **Phase 2 — the Adaptive Sound differentiation (S15–S18):** masking model → clarity / Arbiter → full Reimagine mapping → BRIR spatial render. → release **R3** after S17.
 
