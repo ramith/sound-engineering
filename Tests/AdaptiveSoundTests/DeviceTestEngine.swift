@@ -6,7 +6,7 @@ import Synchronization
 // MARK: - A recording engine for the output-device view-model tests
 
 /// An `AudioPlaybackEngine` with no hardware: it serves the device list and the device the engine
-/// plays on that a test sets, and records the picks, starts and publishes the view model sends it.
+/// plays on that a test sets, and records the picks, starts, seeks and publishes the view model sends it.
 /// It keeps the device the user chose as the bridge does (`OutputDeviceSelection`): a pick chooses
 /// it, turning "Keep playback on this device" on chooses the device in use, a restore brings back an
 /// earlier session's. It conforms to the app's own protocol, so the view model under test is the
@@ -34,6 +34,8 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var pinned = true
         /// The UID of the device the user chose (`chosenOutputUID`).
         var chosenUID: String?
+        /// Every `seek` call's target.
+        var seeks: [Double] = []
         var onOutputDevicesChanged: (@MainActor () -> Void)?
     }
 
@@ -62,7 +64,9 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         return snapshot
     }
 
-    func seek(to _: Double, epoch _: UInt64) async throws {}
+    func seek(to seconds: Double, epoch _: UInt64) async throws {
+        state.withLock { $0.seeks.append(seconds) }
+    }
 
     func publishMasterGain(decibels _: Float) {}
 

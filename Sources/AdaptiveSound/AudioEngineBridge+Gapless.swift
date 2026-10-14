@@ -12,14 +12,14 @@ import PlaybackQueueKit
 /// Two sub-paths exist on the Enhanced path, and gapless is handled differently for each:
 ///
 /// **Resampler sub-path** (file rate ≠ 48 kHz, driven by `AudioEngineBridge+EnhancedResampler`):
-///   The `onResamplerEOF` hook is installed on `resampleQueue` after `startEnhancedResampler`
-///   succeeds. When the resampler's completion chain reaches end-of-file it fires the hook (still
-///   on `resampleQueue`). If a next track is armed, `rollResamplerToNext` opens the new file,
-///   builds a NEW resampler session, and primes it (`primeEnhancedResamplerLocked`) without
-///   stopping the player — the buffer queue stays contiguous → gap-free.
+///   The `onResamplerEOF` hook is installed on `resampleQueue` when a next track is armed. When the
+///   resampler's completion chain reaches end-of-file it fires the hook (still on
+///   `resampleQueue`). `rollResamplerToNext` opens the new file, builds a NEW resampler session,
+///   and primes it (`primeEnhancedResamplerLocked`) without stopping the player — the buffer queue
+///   stays contiguous → gap-free.
 ///
 /// **Passthrough sub-path** (48 kHz file, `scheduleFile`):
-///   `playFile` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
+///   `commitEnhanced` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
 ///   onto `resampleQueue` when the hardware finishes playing the last sample. `onPassthroughEOF`
 ///   fires there. If a next track is armed and it is also 48 kHz → `scheduleFile` the new file
 ///   immediately (consecutive schedules play back-to-back, byte-exact); if the next track is a

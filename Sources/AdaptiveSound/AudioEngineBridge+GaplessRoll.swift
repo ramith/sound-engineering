@@ -15,8 +15,7 @@ import Foundation
 /// `gaplessPlaybackEnded`, the EOF hooks). The handlers are invoked from the EOF hooks installed
 /// by `armResamplerNextTrack` / `armPassthroughNextTrack`, both of which dispatch onto
 /// `resampleQueue`. The `primeEnhancedResamplerLocked` deadlock-guard is preserved: it is called
-/// DIRECTLY here (never via `startEnhancedResampler`, which would `resampleQueue.sync` onto
-/// ourselves → C-1 deadlock).
+/// DIRECTLY here (never through a `resampleQueue.sync`, which would trap on ourselves → C-1).
 extension AudioEngineBridge {
     // MARK: - Seam handlers (called on resampleQueue)
 
@@ -136,8 +135,9 @@ extension AudioEngineBridge {
     }
 
     /// The ONE ended-state surface (the channel `AudioViewModel.tickTransport` polls):
-    /// pioneered by `consumeOnDeckURL`'s empty branch, now shared by the nil-hook EOF paths.
-    private func markGaplessPlaybackEnded(reason: String) {
+    /// pioneered by `consumeOnDeckURL`'s empty branch, shared by the nil-hook EOF paths and the
+    /// Enhanced restart's "at or past the end" (`endEnhancedTrackNow`).
+    func markGaplessPlaybackEnded(reason: String) {
         gaplessPlaybackEnded = true
         enhancedPlayIntent = false // ended — don't auto-resume on a later config change
         logUX("gapless: \(reason)")
@@ -199,25 +199,19 @@ extension AudioEngineBridge {
         if resetFramePosition {
             file.framePosition = 0
         }
-        // Capture the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump —
-        // a seam schedule replaces one whose completion already fired legitimately). A later
+        // Under the CURRENT passthrough epoch (we're on resampleQueue, the owner; no bump — a
+        // seam schedule replaces one whose completion already fired legitimately). A later
         // stop/seek/reschedule bumps the epoch, and this completion then abandons at fire time
         // instead of rolling the seam off a non-EOF `player.stop()` (wrong-song bug).
-        let gen = passthroughGeneration
         player.scheduleFile(
-            file, at: nil, completionCallbackType: .dataPlayedBack
-        ) { [weak self, weak player] _ in
-            guard let self, let livePlayer = player else { return }
-            self.resampleQueue.async {
-                guard gen == self.passthroughGeneration else { return } // superseded
-                self.firePassthroughEOFOrEnd(player: livePlayer)
-            }
-        }
+            file, at: nil, completionCallbackType: .dataPlayedBack,
+            completionHandler: passthroughEndOfTrack(epoch: passthroughGeneration, player: player)
+        )
     }
 
     /// Continue (or start) the resampler chain for a rate-mismatched `nextFile`: build a fresh
     /// session (its own Mastering converter) and prime it via `primeEnhancedResamplerLocked` (called
-    /// DIRECTLY — never via `startEnhancedResampler`, preserving the C-1 deadlock guard). On any failure path
+    /// DIRECTLY — we are on resampleQueue; a sync onto it would trap, C-1). On any failure path
     /// (converter creation fails, or the prime schedules nothing for an empty file) it falls back
     /// to `scheduleFileChainingPassthrough` so the seam chain is preserved (S-1). MUST be called
     /// on `resampleQueue`.
@@ -232,10 +226,9 @@ extension AudioEngineBridge {
         else {
             // Converter creation failed: fall back to scheduleFile (brief gap, chain preserved).
             // Clear the OLD track's exhausted session first (the P1-2 rule, same as the
-            // empty-prime branch below): leaving it non-nil misroutes a later seek/reestablish
-            // to the resampler branch, whose stop() bumps only resampleGeneration — the live
-            // passthrough schedule would fire under an unbumped epoch and roll the seam
-            // (the wrong-song bug escaping through stale state; seam-fix review MAJOR-1).
+            // empty-prime branch below): a stale session would make the next on-deck arm
+            // (`armEnhancedOnDeck`) install the resampler's EOF hook on what is now a passthrough
+            // schedule, so the next seam would never roll.
             resampleSession = nil
             // S-1: the .dataPlayedBack completion keeps onPassthroughEOF firing for the next seam.
             bumpTransitionCount(player: player, nextURL: nextURL)
@@ -256,9 +249,9 @@ extension AudioEngineBridge {
         }
 
         // primeEnhancedResamplerLocked scheduled nothing (empty file). Fall back to scheduleFile.
-        // P1-2: clear resampleSession so a later seek/reestablish takes the passthrough branch
-        // rather than the (now-stale) resampler branch. primeEnhancedResamplerLocked sets it
-        // non-nil at the top of its prime even when 0 buffers are produced.
+        // P1-2: clear resampleSession so the next on-deck arm installs the passthrough hook, not
+        // the (now-stale) resampler one. primeEnhancedResamplerLocked sets it non-nil at the top of
+        // its prime even when 0 buffers are produced.
         resampleSession = nil
         // S-1: completion preserves the chain.
         bumpTransitionCount(player: player, nextURL: nextURL)
