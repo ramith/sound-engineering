@@ -56,6 +56,21 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 ---
 
+## DEV-1 — The chosen output device is forgotten when the app quits
+
+**Status:** OPEN (limitation; R1 ships with it). Left by the N92 fix ("Return to headphones", R1).
+
+Within a session the app remembers the output device the user chose (by UID) and returns to it
+when it reconnects (`OutputDeviceSelection`). Nothing persists that choice, or the "Keep playback
+on this device" switch, across launches: the app starts pinned to whatever the system default is
+at launch. So if the user quits while their headphones are off, relaunches on the speakers, then
+turns the headphones on, the app stays on the speakers (pinned; Play even puts them back as the
+system default) until they pick the headphones in the device menu. Fix with the settings persistence work: store the chosen UID and the switch, and
+at launch treat the speakers as the temporary fallback until the stored device appears. The
+in-session behaviour is guarded by `OutputDeviceReturnTests` and `OutputDeviceRuleSpaceTests`.
+
+---
+
 ## ENH-002 — UI loudness readout meter is L/R-only for >2-channel device output
 
 **Status:** OPEN (enhancement; UI-only, low priority). Surfaced by the S6 full-team review (MC-1).

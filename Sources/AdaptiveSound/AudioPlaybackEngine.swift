@@ -199,8 +199,10 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Return the full list of available output devices with real CoreAudio data.
     func enumerateOutputDevices() async throws -> [AudioDeviceModel]
 
-    /// Select an output device by its CoreAudio device ID.
-    /// Returns `true` on success.
+    /// The user picked the output device with this CoreAudio id (the pill, or the device the app
+    /// starts on): the app plays on it, and "Keep playback on this device" holds it from now on —
+    /// by UID, so it is the device playback returns to when it reconnects. Only the user's picks
+    /// come here, never a device the engine moved to. Returns `true` on success.
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
 
     /// The output device the engine is currently targeting (the app-selected / default-at-launch
@@ -208,13 +210,16 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// its selection in step with the bridge's `currentDeviceID`. `0` if none. Default impl: `0`.
     func currentOutputDeviceID() -> UInt32
 
-    /// Set "Keep playback on this device". `true` = the selected device wins over the system default
-    /// (re-asserted while Enhanced plays or starts). `false` = follow the system default. Default: no-op.
+    /// Set "Keep playback on this device". `true` = the device the user chose wins over the system
+    /// default (re-asserted while Enhanced plays or starts; returned to when it reconnects after a
+    /// loss); turning it on chooses the device in use. `false` = follow the system default.
+    /// Default: no-op.
     func setPinPlaybackToSelectedDevice(_ pin: Bool)
 
     /// Invoked on the main thread when the output changed: a device was added or removed, the
-    /// engine adopted the system default (follow), or it paused for a lost device. The view model
-    /// re-reads the devices and the engine's device (`currentOutputDeviceID`) in response.
+    /// engine adopted a device (the system default, or the chosen device back), or it paused for a
+    /// lost device. The view model re-reads the devices and the engine's device
+    /// (`currentOutputDeviceID`) in response.
     var onOutputDevicesChanged: (@MainActor () -> Void)? { get set }
 
     // MARK: Spectrum

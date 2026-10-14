@@ -3,6 +3,7 @@ import Accelerate
 import EQEditKit
 import Foundation
 import os
+import OutputDeviceKit
 import PlaybackQueueKit
 import Synchronization
 import TrackLoudnessKit
@@ -106,11 +107,15 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     // MARK: - Pure-Mode stored state (methods live in AudioEngineBridge+PureMode.swift)
 
-    /// Backing storage for `currentDeviceID` — guarded by `stateLock`. The device selected by
-    /// `selectDevice(_:)`, or the system default selected at `initialize()`. Pure Mode uses this to
-    /// open the HAL engine on the right device. Access ONLY via the guarded accessors in
-    /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `setCurrentDeviceID(_:)`).
-    var storedCurrentDeviceID: UInt32 = 0
+    /// Backing storage for the app's output devices — guarded by `stateLock` (`OutputDeviceSelection`,
+    /// OutputDeviceKit): the device it plays on (`currentDeviceID`: picked with `selectDevice(_:)`, the
+    /// system default at `initialize()`, or adopted by the output rule; Pure opens its HAL engine on it),
+    /// the device the user chose, which "Keep playback on this device" holds, and that switch. One value,
+    /// so the output rule reads them together; written from the main actor (the switch), `engineQueue`
+    /// and `configChangeQueue`. Access ONLY via the guarded accessors in
+    /// `AudioEngineBridge+SharedState.swift` (`currentDeviceID` / `outputSelection` /
+    /// `updateOutputSelection(_:)`).
+    var storedOutputSelection = OutputDeviceSelection()
 
     /// RAII owner of the opaque Pure-Mode engine handle (created lazily in `startPure`). The wrapper
     /// is dropped — running its `deinit` → `pureModeEngineDestroy` (slow HAL teardown) — by the
@@ -211,12 +216,6 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// A named acquire/release atomic (`enhancedPlayIntent`), so the device-loss decision reads and
     /// clears it without waiting on `resampleQueue`, which can be busy in AVFAudio or a file open.
     let enhancedPlayIntentFlag = Atomic<Bool>(false)
-
-    /// Backing storage for "Keep playback on this device" — guarded by `stateLock` (written from the
-    /// main actor, read by the output rule on `configChangeQueue` / `engineQueue`). `true` (default) =
-    /// pinned: the app's device wins over the system default. `false` = follow the system default.
-    /// Access ONLY via `setPinPlaybackToSelectedDevice(_:)` / `pinsPlaybackToSelectedDevice`.
-    var storedPinPlaybackToSelectedDevice: Bool = true
 
     // MARK: - Enhanced streaming-resampler state (methods in AudioEngineBridge+EnhancedResampler.swift)
 
