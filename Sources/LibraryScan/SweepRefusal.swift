@@ -64,14 +64,21 @@ public enum RootReachabilityProbe {
     /// The identity of what is at `root`'s path now — nil when it is not reachable. Its `(dev,
     /// inode)` is the `lstat` stamp `addRoot` dedups on; its volume UUID is that of the directory a
     /// symlinked root resolves to (where the songs are), read afresh — a URL caches resource values,
-    /// and a walk compares two reads. A volume that reports no UUID reads as nil. The default of
-    /// `LibraryScanner`'s seam: a walk reads it before it starts and again before it sweeps.
+    /// and a walk compares two reads. The default of `LibraryScanner`'s seam: a walk reads it before it
+    /// starts and again before it sweeps.
+    ///
+    /// The UUID reads as nil — the root stays unbound — for a volume that reports none, and for the
+    /// STARTUP volume. Nothing can be mounted in the startup volume's place, so no other drive can be at
+    /// a folder's path there; but its UUID (the Data volume's, which every path on it reports) changes
+    /// with the Mac — Migration Assistant, an erase-and-restore — while the library comes along with it,
+    /// and binding it would freeze every such folder on the new Mac.
     public static func identity(of root: URL) -> RootIdentity? {
         guard isReachable(root) else { return nil }
         let signature = FileSignature.deviceInode(of: root)
         var resolved = root.resolvingSymlinksInPath()
         resolved.removeAllCachedResourceValues()
-        let volumeUUID = try? resolved.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString
-        return RootIdentity(dev: signature.dev, inode: signature.inode, volumeUUID: volumeUUID ?? nil)
+        let volume = try? resolved.resourceValues(forKeys: [.volumeUUIDStringKey, .volumeIsRootFileSystemKey])
+        let volumeUUID = volume?.volumeIsRootFileSystem == true ? nil : volume?.volumeUUIDString
+        return RootIdentity(dev: signature.dev, inode: signature.inode, volumeUUID: volumeUUID)
     }
 }
