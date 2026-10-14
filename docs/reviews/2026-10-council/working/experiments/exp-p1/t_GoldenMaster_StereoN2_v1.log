@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] GoldenMaster_StereoN2_v1: output hash = 0xe7af0c67f9340785
+[PASS] GoldenMaster_StereoN2_v1
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

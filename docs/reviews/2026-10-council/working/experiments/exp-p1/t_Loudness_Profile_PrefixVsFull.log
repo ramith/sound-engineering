@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Profile_PrefixVsFull: 25 s prefix vs the 60 s track, worst |Δ|: pink 0.0424 (247 of 597 blocks) tonal 808 0.1030 (247 of 597 blocks) orchestral 0.0093 (247 of 597 blocks) dB (≤ 0.15); an intro → drop arrangement change: 9.392 dB (logged: the refine's job)
+[PASS] Loudness_Profile_PrefixVsFull
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

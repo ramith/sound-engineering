@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_NoSubnormalStates: blocks with a subnormal state — without FZ 1251, with FZ 0
+[PASS] EQ_NoSubnormalStates
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

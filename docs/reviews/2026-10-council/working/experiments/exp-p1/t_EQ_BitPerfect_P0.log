@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_BitPerfect_P0: bit-perfect again 2.219 s after the EQ was turned off
+[PASS] EQ_BitPerfect_P0
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Designer_Timing (debug -O0 build): design 552.4 µs + read-back (256 + 31) 63.0 µs per call at 48 kHz (budget 3000 µs) [2552.8]
+[PASS] Designer_Timing
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

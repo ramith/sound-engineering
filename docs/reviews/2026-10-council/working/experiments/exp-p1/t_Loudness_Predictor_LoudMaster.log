@@ -1,0 +1,15 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_LoudMaster: loud −9 LUFS master @ 48.0 kHz, -9.00 LUFS, 197 blocks; worst |predicted − measured| 0.0855 dB (bound 0.15)
+[info]     Presence                 measured  +0.340  predicted  +0.340  error +0.0005 dB
+[info]     Clarity                  measured  +0.219  predicted  +0.216  error -0.0027 dB
+[info]     Warm                     measured  +2.502  predicted  +2.498  error -0.0034 dB
+[info]     Bass & Treble            measured  +4.406  predicted  +4.396  error -0.0101 dB
+[info]     Vocal                    measured  -1.074  predicted  -1.070  error +0.0040 dB
+[info]     Bass Boost               measured  +4.392  predicted  +4.405  error +0.0134 dB
+[info]     +12 @ 100 Hz             measured  +7.606  predicted  +7.520  error -0.0855 dB
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +5.381  predicted  +5.346  error -0.0355 dB
+[PASS] Loudness_Predictor_LoudMaster
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

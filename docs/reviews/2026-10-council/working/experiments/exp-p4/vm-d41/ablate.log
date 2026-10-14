@@ -1,0 +1,210 @@
+===== today
+BROKEN D41/today/Pure/playNext: promised t9 armed t1 → HEARS t1 / SHOWS t9
+BROKEN D41/today/Pure/shuffle-on: promised t4 armed t1 → HEARS t1 / SHOWS t4
+BROKEN D41/today/Pure/shuffle-off: promised t1 armed t4 → HEARS t4 / SHOWS t1
+BROKEN D41/today/Pure/repeat-all→one: promised t0 armed t1 → HEARS t1 / SHOWS t0
+BROKEN D41/today/Pure/repeat-one→off: promised t1 armed t0 → HEARS t0 / SHOWS t1
+BROKEN D41/today/Pure/remove-on-deck: promised t2 armed t1 → HEARS t1 / SHOWS t2
+HOLDS  D41/today/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/today/Enh/shuffle-on: promised t3 armed t3 → HEARS t3 / SHOWS t3
+HOLDS  D41/today/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/today/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/today/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/today/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+BROKEN PURE-REARM-ORDER/today: ["deliver[0, 0] open[0, 0]: promised t11 armed t1", "deliver[0, 0] open[1, 0]: promised t11 armed t1", "deliver[1, 0] open[0, 0]: promised t11 armed t1", "deliver[1, 0] open[1, 0]: promised t11 armed t1"]
+HOLDS  NEXT-NEXT/today/Pure/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+BROKEN NEXT-NEXT/today/Pure/stale-inbound: armed under t2 = t2; heard ["t0", "t1", "t2", "t2"] shows t3
+HOLDS  NEXT-NEXT/today/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+BROKEN NEXT-NEXT/today/Enh/stale-inbound: armed under t2 = t2; heard ["t0", "t1", "t2", "t2"] shows t3
+BROKEN RETRACT-THEN-END/today: heard ["t0", "t1"] shows t9 log ["refused t1.flac"]
+BROKEN LATE-ARM-AFTER-END/today: heard ["t0", "t1"] (t9 started 0×) shows t9 log ["refused t1.flac"]
+BROKEN REPEAT-ONE/today/Pure: heard ["t0", "t0", "t0", "t0", "t0"] shows t1
+HOLDS  REMOVE-PLAYING/today/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/today/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/today/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/today/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/today/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/today/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/today/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/today/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/today/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/today/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/today/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+BROKEN SEEK-AFTER-END/today: after seek: engine t1@30.0 ended=false app t9 playing=true; final HEARS t1 / SHOWS t9 heard ["t0", "t1"]
+   [today] 81/3000 P4-2: app playing, engine silent
+      first: pure=true shuffle=true repeat=2 trace=stop,pause,T,S,D,D,V,E,V,next,D,repeat,D,S,V,D,D,E,T,D,E,D,E,D,E,E,D,V,E,D,O,O,E,D,E,D heard=["t0", "t3", "t4"] shows=t4 armed=t4 pending=t4 log=["refused t4.flac"]
+   [today] 243/3000 a track heard twice in a row (no repeat-one)
+      first: pure=true shuffle=false repeat=0 trace=next,S,T,T,T,S,append,T,D,E,append,stop heard=["t0", "t1", "t1"] shows=t1 armed=t51 pending=t51 log=[]
+   [today] 290/3000 idle: app next != engine armed
+      first: pure=true shuffle=true repeat=1 trace=repeat,repeat,S,D,S,T,T,T,T,V,T,E,O,D,T,T,D,D,E,D,V,E,E,O,E heard=["t0", "t0", "t0"] shows=t0 armed=t0 pending=t1 log=["refused t1.flac"]
+   [today] 39/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+      first: pure=false shuffle=true repeat=0 trace=shuffle,D,T,S,D,V,T,D,T,playNext,E,V,E heard=["t0", "t1"] shows=t4 armed=t51 pending=t51 log=[]
+   [today] 54/3000 wrong song (NOT A2)
+      first: pure=true shuffle=false repeat=2 trace=T,S,append,D,D,repeat heard=["t0", "t1"] shows=t0 armed=t0 pending=t0 log=["refused t0.flac"]
+===== clearThenArm
+HOLDS  D41/clearThenArm/Pure/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/clearThenArm/Pure/shuffle-on: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/clearThenArm/Pure/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/clearThenArm/Pure/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/clearThenArm/Pure/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/clearThenArm/Pure/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/clearThenArm/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/clearThenArm/Enh/shuffle-on: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/clearThenArm/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/clearThenArm/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/clearThenArm/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/clearThenArm/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+BROKEN PURE-REARM-ORDER/clearThenArm: ["deliver[0, 0] open[1, 0]: promised t11 armed t10", "deliver[1, 0] open[0, 0]: promised t11 armed t10"]
+BROKEN NEXT-NEXT/clearThenArm/Pure/stale-open: armed under t2 = t2; heard ["t0", "t1", "t2", "t2"] shows t3
+HOLDS  NEXT-NEXT/clearThenArm/Pure/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/clearThenArm/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+BROKEN NEXT-NEXT/clearThenArm/Enh/stale-inbound: armed under t2 = t2; heard ["t0", "t1", "t2", "t2"] shows t3
+BROKEN RETRACT-THEN-END/clearThenArm: heard ["t0", "t1"] shows t9 log []
+BROKEN LATE-ARM-AFTER-END/clearThenArm: heard ["t0", "t1"] (t9 started 0×) shows t9 log []
+HOLDS  REPEAT-ONE/clearThenArm/Pure: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/clearThenArm/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/clearThenArm/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/clearThenArm/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/clearThenArm/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/clearThenArm/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/clearThenArm/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/clearThenArm/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/clearThenArm/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/clearThenArm/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/clearThenArm/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/clearThenArm/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+BROKEN SEEK-AFTER-END/clearThenArm: after seek: engine t1@30.0 ended=false app t9 playing=true; final HEARS t1 / SHOWS t9 heard ["t0", "t1"]
+   [clearThenArm] 80/3000 P4-2: app playing, engine silent
+      first: pure=true shuffle=true repeat=2 trace=stop,pause,T,S,D,D,V,E,V,next,D,repeat,D,S,V,D,D,E,T,D,E,D,E,D,E,E,D,V,E,D,O,O,E,D,E,D heard=["t0", "t2", "t2"] shows=t2 armed=t2 pending=t2 log=[]
+   [clearThenArm] 277/3000 a track heard twice in a row (no repeat-one)
+      first: pure=true shuffle=false repeat=0 trace=next,S,T,T,T,S,append,T,D,E,append,stop heard=["t0", "t1", "t1"] shows=t1 armed=t51 pending=t51 log=[]
+   [clearThenArm] 77/3000 idle: app next != engine armed
+      first: pure=true shuffle=false repeat=0 trace=D,D,repeat,shuffle,play,removeDeck,S,S,D,D,D,D,T,E,D,T,V,E,O,T,E,V,E,O,V,T,D,E,E,V,O,T,T,E,D,D,E,D,T,T,O,E,T,D,T heard=["t0", "t0", "t0"] shows=t0 armed=t1 pending=t2 log=[]
+   [clearThenArm] 34/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+      first: pure=false shuffle=true repeat=0 trace=shuffle,D,T,S,D,V,T,D,T,playNext,E,V,E heard=["t0", "t1"] shows=t4 armed=t51 pending=t51 log=[]
+   [clearThenArm] 51/3000 wrong song (NOT A2)
+      first: pure=false shuffle=false repeat=1 trace=D,T,playNext,D,play,shuffle,V,E,S,shuffle,S,D,D,E,T,V,E,V,E,D,D,T,V,T,E,V,E heard=["t0", "t51", "t0"] shows=t51 armed=t1 pending=t51 log=[]
+===== gatedReplaceAfterOpen
+HOLDS  D41/gatedReplaceAfterOpen/Pure/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedReplaceAfterOpen/Pure/shuffle-on: promised t3 armed t3 → HEARS t3 / SHOWS t3
+HOLDS  D41/gatedReplaceAfterOpen/Pure/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedReplaceAfterOpen/Pure/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedReplaceAfterOpen/Pure/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedReplaceAfterOpen/Pure/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/gatedReplaceAfterOpen/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedReplaceAfterOpen/Enh/shuffle-on: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/gatedReplaceAfterOpen/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedReplaceAfterOpen/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedReplaceAfterOpen/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedReplaceAfterOpen/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  PURE-REARM-ORDER/gatedReplaceAfterOpen: all 4 delivery×open orders arm the newest
+HOLDS  NEXT-NEXT/gatedReplaceAfterOpen/Pure/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedReplaceAfterOpen/Pure/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedReplaceAfterOpen/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedReplaceAfterOpen/Enh/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+BROKEN RETRACT-THEN-END/gatedReplaceAfterOpen: heard ["t0", "t1"] shows t9 log []
+BROKEN LATE-ARM-AFTER-END/gatedReplaceAfterOpen: heard ["t0", "t1"] (t9 started 0×) shows t9 log []
+HOLDS  REPEAT-ONE/gatedReplaceAfterOpen/Pure: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedReplaceAfterOpen/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedReplaceAfterOpen/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/gatedReplaceAfterOpen/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedReplaceAfterOpen/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedReplaceAfterOpen/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedReplaceAfterOpen/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+BROKEN SEEK-AFTER-END/gatedReplaceAfterOpen: after seek: engine t1@30.0 ended=false app t9 playing=true; final HEARS t1 / SHOWS t9 heard ["t0", "t1"]
+   [gatedReplaceAfterOpen] 85/3000 P4-2: app playing, engine silent
+      first: pure=true shuffle=false repeat=0 trace=D,T,pause,D,D,repeat,next,D,V,D,T,S,E,E heard=["t0", "t0", "t1"] shows=t1 armed=none pending=t2 log=["stale, dropped 1:2", "stale, dropped 3:3"]
+   [gatedReplaceAfterOpen] 318/3000 a track heard twice in a row (no repeat-one)
+      first: pure=true shuffle=true repeat=0 trace=next,T,playNext,T,T,S,T,T,D,S,T,shuffle,E,V,D,T,append,E,T,D,T,O,E,T,D,T,V,E,D,D,O,E heard=["t0", "t1", "t1"] shows=t1 armed=t0 pending=t0 log=[]
+   [gatedReplaceAfterOpen] 42/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+      first: pure=false shuffle=true repeat=0 trace=shuffle,D,T,S,D,V,T,D,T,playNext,E,V,E heard=["t0", "t1"] shows=t4 armed=t51 pending=t51 log=[]
+   [gatedReplaceAfterOpen] 74/3000 wrong song (NOT A2)
+      first: pure=false shuffle=false repeat=0 trace=seek,S,play,playNext,T,append,T,S,D,V,D,E,D,D,D,T,T,E,E,T,T heard=["t0", "t1", "t0"] shows=t51 armed=t51 pending=t51 log=[]
+===== gatedRetractFirst(endFinal:false)
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/shuffle-on: promised t3 armed t3 → HEARS t3 / SHOWS t3
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Pure/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/shuffle-on: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:false)/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  PURE-REARM-ORDER/gatedRetractFirst(endFinal:false): all 4 delivery×open orders arm the newest
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:false)/Pure/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:false)/Pure/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:false)/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:false)/Enh/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  RETRACT-THEN-END/gatedRetractFirst(endFinal:false): heard ["t0", "t9"] shows t9 log []
+HOLDS  LATE-ARM-AFTER-END/gatedRetractFirst(endFinal:false): heard ["t0", "t9"] (t9 started 1×) shows t9 log ["LATE SEAM after end into t9.flac"]
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:false)/Pure: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:false)/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:false)/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:false)/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:false)/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:false)/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:false)/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  SEEK-AFTER-END/gatedRetractFirst(endFinal:false): after seek: engine t0@30.0 ended=true app t9 playing=true; final HEARS t9 / SHOWS t9 heard ["t0", "t9"]
+   [gatedRetractFirst(endFinal:false)] 75/3000 P4-2: app playing, engine silent
+      first: pure=true shuffle=false repeat=0 trace=D,T,pause,D,D,repeat,next,D,V,D,T,S,E,E heard=["t0", "t0", "t1"] shows=t1 armed=none pending=t2 log=["stale, dropped 1:2", "stale, dropped 3:3"]
+   [gatedRetractFirst(endFinal:false)] 332/3000 a track heard twice in a row (no repeat-one)
+      first: pure=true shuffle=true repeat=0 trace=next,T,playNext,T,T,S,T,T,D,S,T,shuffle,E,V,D,T,append,E,T,D,T,O,E,T,D,T,V,E,D,D,O,E heard=["t0", "t1", "t1"] shows=t1 armed=t3 pending=t3 log=[]
+   [gatedRetractFirst(endFinal:false)] 39/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+      first: pure=false shuffle=true repeat=0 trace=shuffle,D,T,S,D,V,T,D,T,playNext,E,V,E heard=["t0", "t1"] shows=t2 armed=t51 pending=t51 log=[]
+   [gatedRetractFirst(endFinal:false)] 65/3000 wrong song (NOT A2)
+      first: pure=false shuffle=false repeat=0 trace=seek,S,play,playNext,T,append,T,S,D,V,D,E,D,D,D,T,T,E,E,T,T heard=["t0", "t1", "t0"] shows=t51 armed=t51 pending=t51 log=[]
+===== gatedRetractFirst(endFinal:true)
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/shuffle-on: promised t3 armed t3 → HEARS t3 / SHOWS t3
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/shuffle-on: promised t5 armed t5 → HEARS t5 / SHOWS t5
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  PURE-REARM-ORDER/gatedRetractFirst(endFinal:true): all 4 delivery×open orders arm the newest
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Pure/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Pure/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Enh/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  RETRACT-THEN-END/gatedRetractFirst(endFinal:true): heard ["t0", "t9"] shows t9 log []
+HOLDS  LATE-ARM-AFTER-END/gatedRetractFirst(endFinal:true): heard ["t0", "t9"] (t9 started 1×) shows t9 log ["ended → not armed"]
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:true)/Pure: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:true)/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:true)/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:true)/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:true)/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:true)/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  SEEK-AFTER-END/gatedRetractFirst(endFinal:true): after seek: engine t0@30.0 ended=true app t9 playing=true; final HEARS t9 / SHOWS t9 heard ["t0", "t9"]
+   [gatedRetractFirst(endFinal:true)] 80/3000 P4-2: app playing, engine silent
+      first: pure=true shuffle=false repeat=1 trace=stop,D,play,D,S,play,S,E,V,E,T,D,E,D,T,V,T,E,D,T,T,D,E,D,T,T,T,D,T,D,D,T,T,T,T,T,D,T,T,T,D heard=["t0", "t1", "t0", "t0"] shows=t0 armed=none pending=t1 log=["stale, dropped 1:2", "stale, dropped 4:3"]
+   [gatedRetractFirst(endFinal:true)] 288/3000 a track heard twice in a row (no repeat-one)
+      first: pure=true shuffle=true repeat=0 trace=next,T,playNext,T,T,S,T,T,D,S,T,shuffle,E,V,D,T,append,E,T,D,T,O,E,T,D,T,V,T,D,T,T,T,D,D,D,D,V,D,E,O,D,E,E,D,T heard=["t0", "t1", "t1"] shows=t1 armed=t51 pending=t51 log=[]
+   [gatedRetractFirst(endFinal:true)] 21/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+      first: pure=false shuffle=false repeat=2 trace=D,T,D,D,T,T,D,playNext,D,S,play,D,S,E,T,V,D,E,T,D,D,D,V,T,E,T,D,V,E,T,D,D,D,D,T,D,D,T,T heard=["t0", "t0", "t0"] shows=t51 armed=t0 pending=t0 log=["stale, dropped 1:2"]
+   [gatedRetractFirst(endFinal:true)] 61/3000 wrong song (NOT A2)
+      first: pure=false shuffle=false repeat=0 trace=seek,S,play,playNext,T,append,T,S,D,V,D,E,D,D,D,T,T,E,E,T,T heard=["t0", "t1", "t0"] shows=t51 armed=t51 pending=t51 log=[]
+p4 d41 design review: 32 BROKEN

@@ -1,0 +1,55 @@
+P5A-RC a unbound=true walks=["refused(unrecognizedFolder, kept=5)", "refused(unrecognizedFolder, kept=5)"] rows=5 newSongsInLibrary=0/3
+✘ Test "RC-a: unbound root, every song deleted and replaced" recorded an issue with 1 argument unbound → true at P5aRecheckTests.swift:51:9: Expectation failed: (newInLibrary → 0) == 3
+P5A-FIX LIB-02a mode=0 walk=refused(incompleteWalk, kept=10) data=(rows: 10, entries: 10, plays: 10) | after restore+1 delete: ok(seen=9 swept=1)
+P5A-RC a unbound=false walks=["ok(seen=3 swept=5)", "ok(seen=3 swept=0)"] rows=3 newSongsInLibrary=3/3
+✘ Test "RC-a: unbound root, every song deleted and replaced" with 2 test cases failed after 0.087 seconds with 1 issue.
+P5A-FIX LIB-02a mode=444 walk=refused(incompleteWalk, kept=10) data=(rows: 10, entries: 10, plays: 10) | after restore+1 delete: ok(seen=9 swept=1)
+✔ Test "ORIG LIB-02a: unreadable subfolder (000 / 444)" with 2 test cases passed after 0.103 seconds.
+P5A-RC b unbound=true walk=refused(unrecognizedFolder, kept=6) movedRowFound=false idKept=false data=(rows: 6, entries: 6, plays: 6)
+✘ Test "RC-b: unbound root, every song moved inside the root" recorded an issue with 1 argument unbound → true at P5aRecheckTests.swift:73:9: Expectation failed: (walk.result → nil) != nil
+P5A-RC b unbound=false walk=ok(seen=6 swept=0) movedRowFound=true idKept=true data=(rows: 6, entries: 6, plays: 6)
+✘ Test "RC-b: unbound root, every song moved inside the root" with 2 test cases failed after 0.046 seconds with 1 issue.
+P5A-RC c first=ok(seen=0 swept=0) bound=startup-disk second=ok(seen=4 swept=0) rows=4
+✔ Test "RC-c: a new empty folder, then songs copied in" passed after 0.014 seconds.
+P5A-RC d walk=ok(seen=3 swept=37) bound=startup-disk
+✔ Test "RC-d: unbound first walk where only a few songs remain" passed after 0.050 seconds.
+✘ Test "ORIG LIB-02b: volume detached mid-walk (800 songs)" failed after 2.835 seconds with 1 issue.
+✘ Test "RC-e: unbound window, a same-named backup drive holding most of the songs at the same paths" failed after 3.431 seconds with 1 issue.
+P5A-FIX LIB-02d drive Y: refused(differentVolume, kept=60) data=(rows: 60, entries: 60, plays: 60) totalRows=60 | X back + 1 delete: ok(seen=59 swept=1) data=(rows: 59, entries: 59, plays: 59)
+✔ Test "ORIG LIB-02d: same-named different drive at the root's path, then the original returns" passed after 3.767 seconds.
+P5A-FIX ATK-1 depth=0 walk=refused(incompleteWalk, kept=6) data=(rows: 6, entries: 6, plays: 6)
+P5A-FIX ATK-1 depth=5 walk=refused(incompleteWalk, kept=6) data=(rows: 6, entries: 6, plays: 6)
+✔ Test "ATK-1: an error at the root itself vs deep inside" with 2 test cases passed after 0.044 seconds.
+P5A-FIX ATK-2 walk=ok(seen=3 swept=1) rows=3
+✔ Test "ATK-2: symlink loops inside the root — no hang, no refusal, genuine delete reaped" passed after 0.019 seconds.
+P5A-FIX ATK-3 walk=refused(incompleteWalk, kept=600) data=(rows: 600, entries: 600, plays: 600)
+✔ Test "ATK-3: permissions revoked mid-walk" passed after 0.685 seconds.
+P5A-FIX ATK-4 walk=refused(differentVolume, kept=400) data=(rows: 400, entries: 400, plays: 400) totalRows=400 xRowsRelocatedToYFiles=0 | X back: ok(seen=400 swept=0) data=(rows: 400, entries: 400, plays: 400) totalRows=400
+✔ Test "ATK-4: the volume is swapped mid-walk (same name, other drive)" passed after 4.830 seconds.
+✘ Test "ATK-5: a root on a volume with no UUID (FAT32 / exFAT): same-name swap" recorded an issue with 1 argument fs → "MS-DOS FAT32" at P5aFixBreakTests.swift:366:6: Caught error: SQLite error 1: no such table: folders - while executing `SELECT volume_uuid FROM folders WHERE id = ?`
+P5A-RC f run0: refused(differentVolume, kept=400) rows=400 relocated=0 data=(rows: 400, entries: 400, plays: 400) | run1: refused(differentVolume, kept=400) rows=400 relocated=0 data=(rows: 400, entries: 400, plays: 400) | run2: refused(differentVolume, kept=400) rows=400 relocated=0 data=(rows: 400, entries: 400, plays: 400)
+✔ Test "RC-f: volume swapped mid-walk — no foreign rows, no relocations (3 runs)" passed after 13.552 seconds.
+P5A-FIX ATK-5 ExFAT: uuidX=539F2324-A29E-3836-949F-C4D6E3E796B0 uuidY=E63DE212-325D-3AC2-AB76-F56367F1BAF8 bound=539F2324-A29E-3836-949F-C4D6E3E796B0 walk on Y=refused(differentVolume, kept=20) data=(rows: 20, entries: 20, plays: 20)
+✘ Test "ATK-5: a root on a volume with no UUID (FAT32 / exFAT): same-name swap" with 2 test cases failed after 6.325 seconds with 1 issue.
+P5A-FIX ATK-6a startup root: bound=startup-disk walk=ok(seen=4 swept=1) | drive root first=ok(seen=30 swept=0) stale-on-startup=refused(differentVolume, kept=30) kept=30/30 | back=ok(seen=30 swept=0)
+✔ Test "ATK-6a: startup-disk root is unbound; a bound drive's path found on the startup disk is refused" passed after 1.950 seconds.
+P5A-FIX ATK-6b unbound root, other drive at first walk: refused(unrecognizedFolder, kept=40) data=(rows: 40, entries: 40, plays: 40) totalRows=40 bound=nil | X back+1 delete: ok(seen=39 swept=1) bound=276EA81C-B565-45E1-B090-AEBA970371D4 (X=276EA81C-B565-45E1-B090-AEBA970371D4) data=(rows: 39, entries: 39, plays: 39)
+✔ Test "ATK-6b: an unbound (pre-v8) root whose first walk after the upgrade finds another drive" passed after 3.618 seconds.
+P5A-FIX ATK-6c unbound + stale startup-disk folder: refused(unrecognizedFolder, kept=30) data=(rows: 30, entries: 30, plays: 30) bound=nil | X back: ok(seen=30 swept=0) bound=10636DCA-1FD8-4F4F-BD5B-6DB5FECABC7F (X=10636DCA-1FD8-4F4F-BD5B-6DB5FECABC7F)
+✔ Test "ATK-6c: an unbound root, drive away, stale folder with songs on the startup disk" passed after 1.959 seconds.
+P5A-FIX ATK-9 away=refused(differentVolume, kept=20) data=(rows: 20, entries: 20, plays: 20) | back+1 delete=ok(seen=19 swept=1)
+✔ Test "ATK-9: the root IS a volume's root — unplugged, then back with a genuine delete" passed after 1.882 seconds.
+P5A-FIX ATK-7 bind=true other=false nilUUID=false same=true row=Optional([dev:3 inode:4 volume_uuid:"AAAA"])
+✔ Test "ATK-7: restampRoot with a different volume changes nothing" passed after 0.010 seconds.
+P5A-FIX ATK-8 cancelled=error(Optional(Swift.CancellationError())) data=(rows: 600, entries: 600, plays: 600) | next=ok(seen=599 swept=1)
+✔ Test "ATK-8: a cancelled walk sweeps nothing; the next clean walk reaps a genuine delete" passed after 0.758 seconds.
+P5A-FIX Q3 walks=["refused(incompleteWalk, kept=5)", "refused(incompleteWalk, kept=5)", "refused(incompleteWalk, kept=5)"] rowsFor4FilesOnDisk=5
+✘ Test "Q3: a permanently unreadable empty folder — do genuine deletes ever leave?" failed after 0.028 seconds with 1 issue.
+P5A-FIX MIG-8 from v1: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[]
+P5A-FIX MIG-8 from v2: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[]
+P5A-FIX MIG-8 from v3: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v4: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v5: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v6: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v7: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+✔ Test "MIG-8: user data survives the upgrade from every version v1…v7; volume_uuid NULL then bound" with 7 test cases passed after 0.135 seconds.

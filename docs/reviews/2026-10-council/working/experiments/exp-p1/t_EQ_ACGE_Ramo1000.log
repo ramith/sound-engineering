@@ -1,0 +1,8 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_ACGE_Ramo1000: worst |played − target| at the centres (dB)
+[info]   ramo binary+integer (1000 curves), bound 0.6 dB: 44.1k 0.4454 48.0k 0.4401 88.2k 0.4366 96.0k 0.4366 176.4k 0.4365 192.0k 0.4365  → worst 0.4454
+[PASS] EQ_ACGE_Ramo1000
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,23 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_RatesAndLayouts:
+[info]   5.1 @ 44.1 kHz: -14.514 LUFS (profile +0.0031 LU; LFE excluded by the MPEG_5_1_A weights)
+[info]     Warm                     measured  +0.975  predicted  +0.971  error -0.0039
+[info]     Bass & Treble            measured  +2.730  predicted  +2.725  error -0.0055
+[info]     +12 @ 100 Hz             measured  +4.027  predicted  +4.056  error +0.0289
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +4.156  predicted  +4.150  error -0.0060
+[info]   stereo pink @ 96 kHz, 271 bands (profile -0.0000 LU):
+[info]     Warm                     measured  -0.214  predicted  -0.215  error -0.0014 dB
+[info]     Bass & Treble            measured  +1.981  predicted  +1.980  error -0.0016 dB
+[info]     +12 @ 100 Hz             measured  +0.551  predicted  +0.549  error -0.0018 dB
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +3.692  predicted  +3.691  error -0.0015 dB
+[info]   stereo pink @ 192 kHz, 295 bands (profile -0.0000 LU):
+[info]     Warm                     measured  -0.229  predicted  -0.230  error -0.0008 dB
+[info]     Bass & Treble            measured  +1.757  predicted  +1.756  error -0.0007 dB
+[info]     +12 @ 100 Hz             measured  +0.509  predicted  +0.510  error +0.0013 dB
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +3.358  predicted  +3.357  error -0.0006 dB
+[info]   worst |predicted − measured| 0.0289 dB (bound 0.15)
+[PASS] Loudness_Predictor_RatesAndLayouts
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

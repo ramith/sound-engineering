@@ -1,0 +1,73 @@
+BROKEN D41/Pure/playNext: armed before=t1 app promised next=t9 engine armed after=t1 refused=["t9"] → HEARS t1 / SHOWS t9 queue=["t0", "t9", "t1", "t2", "t3", "t4", "t5"]
+BROKEN D41/Pure/shuffle-on: armed before=t1 app promised next=t2 engine armed after=t1 refused=["t2"] → HEARS t1 / SHOWS t2 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+BROKEN D41/Pure/shuffle-off: armed before=t4 app promised next=t1 engine armed after=t4 refused=["t1"] → HEARS t4 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure/repeat-off→all(mid): armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+BROKEN D41/Pure/repeat-all→one: armed before=t1 app promised next=t0 engine armed after=t1 refused=["t0"] → HEARS t1 / SHOWS t0 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+BROKEN D41/Pure/repeat-one→off: armed before=t0 app promised next=t1 engine armed after=t0 refused=["t1"] → HEARS t0 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+BROKEN D41/Pure/remove-on-deck: armed before=t1 app promised next=t2 engine armed after=t1 refused=["t2"] → HEARS t1 / SHOWS t2 queue=["t0", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure/remove-row-before-deck: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t3", "t4", "t5"]
+HOLDS  D41/Pure/append: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5", "t8"]
+HOLDS  D41/Pure/move-t3-to-next: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t3", "t1", "t2", "t4", "t5"]
+HOLDS  D41/Pure/next-skip: armed before=t1 app promised next=t1 engine armed after=t2 refused=[] → HEARS t2 / SHOWS t2 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/playNext: armed before=t1 app promised next=t9 engine armed after=t9 refused=[] → HEARS t9 / SHOWS t9 queue=["t0", "t9", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/shuffle-on: armed before=t1 app promised next=t3 engine armed after=t3 refused=[] → HEARS t3 / SHOWS t3 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/shuffle-off: armed before=t5 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/repeat-off→all(mid): armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/repeat-all→one: armed before=t1 app promised next=t0 engine armed after=t0 refused=[] → HEARS t0 / SHOWS t0 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/repeat-one→off: armed before=t0 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/remove-on-deck: armed before=t1 app promised next=t2 engine armed after=t2 refused=[] → HEARS t2 / SHOWS t2 queue=["t0", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Enh/remove-row-before-deck: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t3", "t4", "t5"]
+HOLDS  D41/Enh/append: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5", "t8"]
+HOLDS  D41/Enh/move-t3-to-next: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t3", "t1", "t2", "t4", "t5"]
+HOLDS  D41/Enh/next-skip: armed before=t1 app promised next=t1 engine armed after=t2 refused=[] → HEARS t2 / SHOWS t2 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+p4 vm harness: 6 BROKEN
+HOLDS  D41/Pure+remedy/playNext: armed before=t1 app promised next=t9 engine armed after=t9 refused=[] → HEARS t9 / SHOWS t9 queue=["t0", "t9", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure+remedy/shuffle-on: armed before=t1 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure+remedy/shuffle-off: armed before=t2 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure+remedy/repeat-all→one: armed before=t1 app promised next=t0 engine armed after=t0 refused=[] → HEARS t0 / SHOWS t0 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure+remedy/repeat-one→off: armed before=t0 app promised next=t1 engine armed after=t1 refused=[] → HEARS t1 / SHOWS t1 queue=["t0", "t1", "t2", "t3", "t4", "t5"]
+HOLDS  D41/Pure+remedy/remove-on-deck: armed before=t1 app promised next=t2 engine armed after=t2 refused=[] → HEARS t2 / SHOWS t2 queue=["t0", "t2", "t3", "t4", "t5"]
+p4 vm harness: 0 BROKEN
+BROKEN SEAM-AT-START/Enh: user clicked t3 as the t0→t1 seam landed; mid-start tick showed t1; HEARS t3 / SHOWS t1 pending=t4
+BROKEN SEAM-AT-START/Pure: user clicked t3 as the t0→t1 seam landed; mid-start tick showed t1; HEARS t3 / SHOWS t1 pending=t4
+BROKEN COUNT-DOMAIN/Pure→Enh: click t3 (falls back to Enhanced, cumulative count 4 vs Pure baseline 0): tick before the prime showed t1; final HEARS t3 / SHOWS t1
+p4 vm harness: 3 BROKEN
+BROKEN PURE-REARM-ORDER/today: two Play Next while t1 armed: app promises t11; engine armed t1; refused ["t11", "t10"]
+BROKEN PURE-REARM-ORDER/with P3a clear+arm remedy: two Play Next while t1 armed: app promises t11; engine armed t10; refused []
+BROKEN PAUSE-NEAR-END/mid-queue: pause at 199.9 s of t0 (t1 not armable): resume point=nil selected=t0 isPlaying=false — Play now starts t0 from 0
+BROKEN PLAY-THEN-PAUSE: Space, Space during a start: engine plays t0 (2 start(s)), app isPlaying=true
+HOLDS  PAUSE-DURING-SKIP: Next then Pause: engine none app isPlaying=false resume=0.0 pending=none
+BROKEN PAUSE-AT-END: pause at 199.9 s of the last track, end flag in the same tick: resume point=nil (pause became a STOP) position=0.0
+p4 vm harness: 5 BROKEN
+BROKEN NEXT-NEXT/Pure: Next, Next while the first prime's file open was in flight: engine armed t2 under current t2 (refused ["t3"]); after t2 ends HEARS t2 / SHOWS t3
+BROKEN STOP-THEN-PLAY/Enh: Stop, then double-click t2 while the engine was busy: engine SILENT, app isPlaying=true shows t2 position=0.0
+BROKEN PLAY-THEN-NEXT/Enh: Play then Next during the start: HEARS t0 / SHOWS t1 isPlaying=true
+BROKEN PAUSE-THEN-PLAY/Enh: Pause at 80 s, then Play while busy: engine SILENT, app isPlaying=true resume=nil position=80.0
+BROKEN STOP-THEN-PLAY/Pure: Stop, then double-click t2 while the engine was busy: engine SILENT, app isPlaying=true shows t2 position=0.0
+BROKEN PLAY-THEN-NEXT/Pure: Play then Next during the start: HEARS t0 / SHOWS t1 isPlaying=true
+BROKEN PAUSE-THEN-PLAY/Pure: Pause at 80 s, then Play while busy: engine SILENT, app isPlaying=true resume=nil position=80.0
+HOLDS  STOP-THEN-PLAY/Enh(resampleQueue free): Stop, then double-click t2 while the engine was busy: engine plays t2, app isPlaying=true shows t2 position=0.0
+HOLDS  PAUSE-THEN-PLAY/Enh(resampleQueue free): Pause at 80 s, then Play while busy: engine plays t0 at 80.0, app isPlaying=true resume=nil position=80.0
+p4 vm harness: 7 BROKEN
+BROKEN REORDER-LINEAR: queue now ["t3", "t0", "t2", "t1"] (t0 current): linear play should be t0,t2,t1; HEARD ["t0", "t1"] SHOWN ["t0", "t1"]
+BROKEN REORDER-DRAG-NEXT/Enh: drag t3 under the playing t0 → queue ["t0", "t3", "t1", "t2", "t4", "t5"]; HEARD to the end ["t0", "t1", "t2", "t4", "t5"]
+BROKEN REORDER-DRAG-NEXT/Pure: drag t3 under the playing t0 → queue ["t0", "t3", "t1", "t2", "t4", "t5"]; HEARD to the end ["t0", "t1", "t2", "t4", "t5"]
+BROKEN SHUFFLE-ENDS: 5-track queue, shuffle on, repeat off: played 41 tracks before stopping (cap 40), 5 distinct, 36 repeats; first 12: ["t0", "t4", "t0", "t1", "t2", "t0", "t1", "t3", "t2", "t3", "t2", "t1"]
+BROKEN SHUFFLE-PREVIOUS: 8 tracks, shuffle: Next then Previous returned to the song we came from 27/200 times
+p4 vm harness: 5 BROKEN
+BROKEN APPEND/shuffle, 1-track queue: append t7 while the last song plays: next heard = STOPPED (app shows t0)
+BROKEN APPEND/repeat-all, playing the last: append t7 while the last song plays: next heard = t0 (app shows t0)
+HOLDS  APPEND/linear, playing the last: append t7 while the last song plays: next heard = t7 (app shows t7)
+p4 vm harness: 2 BROKEN
+BROKEN STOP+PLAY-SAME-TURN: stop then play t2 in one turn: engine none app isPlaying=false (stop epoch numbered in its Task AFTER the start's: the start is abandoned)
+p4 vm harness: 1 BROKEN
+HOLDS  ID-STABILITY: 1500 random edit sequences: slots keep selection, on-deck, resume point
+p4 vm harness: 0 BROKEN
+BROKEN ACCRUE-SILENCE: 1.0 s of ticks while the engine produced nothing (device gone, interrupted not yet published): heard 1.01 s credited
+BROKEN ACCRUE-START: 0.6 s of a slow start (nothing audible yet): heard 0.56 s credited to t1
+p4 vm harness: 2 BROKEN
+BROKEN EXPLORE: 101/3000 schedules end with 'app shows playing, engine silent'. First: pure=true script=["stop", "next"] trace=stop,S,D,D,next,D,D,D,T,E,E,D,T,E,O,T,D,E,T,D,T,D,D,D → hears none shows t1 isPlaying=true armed=t2 pending=t2
+BROKEN EXPLORE: 52/3000 schedules end with 'app's next != engine's armed'. First: pure=true script=["next", "play", "next"] trace=S,T,D,O,next,E,T,T,D,play,T,E,D,E,T,next,O,T,E,T,T,D,O,D,E,E,D,D,T,T,T,T,D,O,T,E → hears t3 shows t3 isPlaying=true armed=t3 pending=t4
+BROKEN EXPLORE: 46/3000 schedules end with 'engine plays, app shows stopped/paused'. First: pure=true script=["stop", "pause", "play", "toggle"] trace=stop,pause,T,play,T,toggle,D,T,D,E,T,E,D,D,D,D,T,S,D,T,T,D,T,D,D,E,D,T,T,D,D,D → hears t0 shows t0 isPlaying=false armed=none pending=none
+BROKEN EXPLORE: 73/3000 schedules end with 'wrong song shown'. First: pure=true script=["play", "next", "pause"] trace=play,next,pause,D,T,D,E,T → hears t0 shows t1 isPlaying=true armed=t1 pending=t1
+p4 vm harness: 4 BROKEN

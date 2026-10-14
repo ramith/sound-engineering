@@ -1,0 +1,10 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Loudness_Multichannel_BS1770_Weights (a): stereo=-22.9933 5.1_LR_only=-22.9933 delta=0
+  [info] Loudness_Multichannel_BS1770_Weights (b1): LR=-22.9933 Surround=-21.4933 measuredBoost=1.5 expectedBoost=1.5 delta=2.66454e-15
+  [info] Loudness_Multichannel_BS1770_Weights (b2): LFE_only=-200 (expect kSilenceLufs=-200)
+  [info] Loudness_Multichannel_BS1770_Weights (c): production=-18.4334 oracle=-18.4334 delta=0
+[PASS] Loudness_Multichannel_BS1770_Weights
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

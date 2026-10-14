@@ -1,0 +1,19 @@
+===== gatedRetractFirst(endFinal:true)
+===== explorer today epochScopedCount=false
+   [today] 78/3000 P4-2: app playing, engine silent
+   [today] 292/3000 idle: app next != engine armed
+   [today] 71/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+   [today] 10/3000 wrong song (NOT A2)
+===== explorer today epochScopedCount=true
+   [today] 82/3000 P4-2: app playing, engine silent
+   [today] 294/3000 idle: app next != engine armed
+   [today] 66/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+   [today] 8/3000 wrong song (NOT A2)
+===== explorer gatedRetractFirst(endFinal:true) epochScopedCount=false
+   [gatedRetractFirst(endFinal:true)] 89/3000 P4-2: app playing, engine silent
+   [gatedRetractFirst(endFinal:true)] 74/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+   [gatedRetractFirst(endFinal:true)] 6/3000 wrong song (NOT A2)
+===== explorer gatedRetractFirst(endFinal:true) epochScopedCount=true
+   [gatedRetractFirst(endFinal:true)] 78/3000 P4-2: app playing, engine silent
+   [gatedRetractFirst(endFinal:true)] 65/3000 wrong song (A2 residual: a seam beat an unadmitted request)
+   [gatedRetractFirst(endFinal:true)] 1/3000 wrong song (NOT A2)

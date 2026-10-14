@@ -1,0 +1,9 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Cpu_7_1_AboveSupportedRates (unoptimised build): 8 ch, % of one core
+[info]   384 kHz: settled 42.60 %, gliding 53.03 % (budget 2000 %)
+[info]   768 kHz: settled 85.21 %, gliding 106.67 % (budget 4000 %)
+[PASS] EQ_Cpu_7_1_AboveSupportedRates
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

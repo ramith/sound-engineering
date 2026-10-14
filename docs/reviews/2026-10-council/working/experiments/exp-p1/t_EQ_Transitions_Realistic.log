@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Transitions_Realistic: 45 transitions, worst local +0.121 dB (Bass & Treble → Presence @ 235 Hz), worst peak +0.001 dB, longest above +1 dB 0.0 ms
+[PASS] EQ_Transitions_Realistic
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.
