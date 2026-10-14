@@ -50,9 +50,9 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 ---
 
-## LIB-VOL-1 — A music folder is bound to its drive by volume UUID (R1 sweep-evidence fix)
+## LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
 
-**Status:** OPEN (accepted limitations). A folder on a volume that reports no UUID (some network and FAT volumes) stays unbound, so another such volume at its path is still walked and swept as before; and a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7") stays paused, its songs kept but not updated, until the user removes and re-adds the folder. Folders on the startup disk are unbound by design: nothing can be mounted there, and its UUID changes with the Mac (`LibraryStore+Roots`, `SweepRefusal`).
+**Status:** OPEN (accepted limitations). A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26) stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk) stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7"); and a folder with a subfolder the app can never read never has its deleted songs swept (`LibraryStore+Roots`, `SweepRefusal`).
 
 ---
 
