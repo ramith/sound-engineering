@@ -9,9 +9,10 @@
 // rest of A, then immediately pull B into the same host buffer) → sample-accurate, no gap, no
 // inserted/dropped/duplicated frame.
 //
-// SAME-RATE ONLY: this source does no resampling. The control plane (the C-ABI bridge) must
-// pre-check sameRateGaplessCompatible() before arming the next track; a rate/format mismatch is
-// handled off-RT (drop + signal "needs reconfigure"), never at the seam.
+// SAME-RATE, SAME-WIDTH ONLY: this source does no resampling and no channel mapping. armNext
+// refuses a track that is not sameRateGaplessCompatible() with the active one; the control plane
+// (the C-ABI bridge) pre-checks the same predicate so a rate/format mismatch is handled off-RT
+// (drop + signal "needs reconfigure"), never at the seam.
 //
 // CoreAudio-FREE: pure C++ owning FileDecodeSources. Compiles into the C++ test harness.
 // -fno-exceptions / -fno-rtti clean (no throw / dynamic_cast / typeid).
@@ -65,11 +66,13 @@ namespace AdaptiveSound
         // pullFloat). Resets transition/ended/seek state for a fresh session. Takes ownership.
         void setCurrent(std::unique_ptr<FileDecodeSource> source) noexcept;
 
-        // Arm the next source to play gaplessly at the active track's true EOF. The caller MUST
-        // have pre-checked sameRateGaplessCompatible() against the active track. Takes ownership by
-        // value: on EITHER outcome `source` has been moved-from. One-slot — refuses a second arm
-        // while one is pending (returns false; the refused source is freed off-RT as the parameter
-        // goes out of scope, joining its decode thread). Returns true on success.
+        // Arm the next source to play gaplessly at the active track's true EOF. Refuses (returns
+        // false) a source that is not sameRateGaplessCompatible() with the active track — the
+        // running stream's rate and width — or when there is no active track; the caller pre-checks
+        // the same predicate to tell "needs reconfigure" from an error. Takes ownership by value:
+        // on EITHER outcome `source` has been moved-from. One-slot — refuses a second arm while one
+        // is pending (returns false; the refused source is freed off-RT as the parameter goes out
+        // of scope, joining its decode thread). Returns true on success.
         [[nodiscard]] bool armNext(std::unique_ptr<FileDecodeSource> source) noexcept;
 
         // Clear the armed-next slot (e.g. the user cleared the on-deck track). Joins the dropped

@@ -7,15 +7,19 @@
 // Tests: PureMode_HdmiBitPerfect, PureMode_HdmiRateUnsupported,
 //        PureMode_BluetoothLossy, PureMode_BuiltInRateMatchedFloat,
 //        PureMode_BuiltInRateUnsupported, PureMode_VirtualDevice,
-//        PureMode_RateEpsilonAndMax, Convert_Int16Saturation,
+//        PureMode_RateEpsilonAndMax, PureMode_ChannelCountMismatch, Convert_Int16Saturation,
 //        Convert_Int32Saturation, Convert_24In32Alignment,
-//        Convert_FloatPassthrough, Convert_UnsupportedWritesSilence,
+//        Convert_FloatPassthrough, PureFormat_FromAsbdOnlyExactLayouts,
+//        PureFormat_PickerOnlyWritableFormats, Convert_Packed24_ExactBytesRoundTrip,
+//        Convert_WriteBoundedByBufferBytes, Convert_NonFiniteIsSilence_FiniteUntouched,
+//        Convert_BitExact_Exhaustive16And24,
 //        ToneSource_FillsBuffer, PureModeBridge_TranslatesAllDecisionBranches,
 //        PureModeBridge_NullArgsAreNoOp, PureModeBridge_RateArrayCopiedFaithfully.
 // Helpers (area-local): makeHdmiCapability, makeBluetoothCapability,
-//   makeBuiltInCapability, makeVirtualCapability, makeFile, checkEval,
+//   makeBuiltInCapability, makeVirtualCapability, makeInterfaceCapability, makeFile, checkEval,
 //   readLeInt16, readLeWord32, kBitsXx, kMonoCh, kI16PosFull, kI16NegFull,
-//   kI32PosFull, kI32NegFullBits, toFlat (DeviceCapability → CDeviceCapability + rates).
+//   kI32PosFull, kI32NegFullBits, makeAsbd, convertInto, readWord, toFlat (DeviceCapability →
+//   CDeviceCapability + rates).
 
 // The flat C-ABI Pure-Mode policy bridge (pureModeEvaluate). TestSupport.h already pulls in
 // DeviceCapability.h (the C++ evaluatePureMode); this adds the C struct + function declarations.
@@ -136,12 +140,22 @@ namespace
         return cap;
     }
 
-    auto makeFile(double sampleRate) -> FileFormat
+    // A 4-output USB audio interface: integer PCM, 4 channels on its one output stream.
+    auto makeInterfaceCapability(uint32_t channels) -> DeviceCapability
+    {
+        DeviceCapability cap = makeHdmiCapability();
+        cap.transportType = 0U; // USB in reality; the policy never reads it
+        cap.physicalFormat.channels = channels;
+        cap.virtualFormat.channels = channels;
+        return cap;
+    }
+
+    auto makeFile(double sampleRate, uint32_t channels = TestConstants::kStereo) -> FileFormat
     {
         FileFormat file;
         file.sampleRate = sampleRate;
         file.bitsPerChannel = TestConstants::kBits24;
-        file.channels = TestConstants::kStereo;
+        file.channels = channels;
         file.isFloat = false;
         return file;
     }
@@ -441,42 +455,216 @@ static auto testPureModeRateEpsilonAndMax() -> void
     logPass(kName);
 }
 
+// Pure plays the file channel for channel: the device stream must carry the file's channel count.
+// Before the fix the policy never read the file's channels, so a mono file on the MacBook speakers
+// (2-ch float) went Pure and rendered silence that never ended (council D71 / DSP-03). Now:
+//   * a mono file on a stereo output, a stereo file on a 4- or 8-channel stream → FallbackEnhanced /
+//     ChannelCountMismatch, with no hog / rate change / target (Enhanced maps any width);
+//   * a matching width stays Pure and names the width the engine must find (targetChannels);
+//   * an unknown device width (0) or a 0-channel file never counts as a match;
+//   * the virtual format stands in when the physical width is unknown;
+//   * the rate is decided first (a mono 192 kHz file on the speakers is RateUnsupportedResample).
+static auto testPureModeChannelCountMismatch() -> void
+{
+    static const char* const kName = "PureMode_ChannelCountMismatch";
+    constexpr uint32_t kFourCh = 4U;
+    constexpr uint32_t kEightCh = 8U;
+    const DeviceCapability builtIn = makeBuiltInCapability();
+
+    const auto expectDecline =
+        [&](const char* label, const DeviceCapability& cap, const FileFormat& file) -> std::string
+    {
+        const PureModeEvaluation eval = evaluatePureMode(cap, file);
+        std::string err = checkEval(eval,
+                                    PureModeDecision::FallbackEnhanced,
+                                    PureModeReason::ChannelCountMismatch,
+                                    /*targetRate=*/0.0,
+                                    /*requiresRateChange=*/false,
+                                    /*requiresHog=*/false);
+        if (err.empty() && eval.targetChannels != 0U)
+        {
+            err = "targetChannels " + std::to_string(eval.targetChannels) + ", expected 0";
+        }
+        return err.empty() ? err : std::string(label) + ": " + err;
+    };
+    const auto expectPure = [&](const char* label,
+                                const DeviceCapability& cap,
+                                const FileFormat& file,
+                                PureModeDecision decision) -> std::string
+    {
+        const PureModeEvaluation eval = evaluatePureMode(cap, file);
+        if (eval.decision != decision || eval.targetChannels != file.channels)
+        {
+            return std::string(label) + ": decision " +
+                   std::to_string(static_cast<int>(eval.decision)) + " (" +
+                   pureModeReasonString(eval.reason) + "), targetChannels " +
+                   std::to_string(eval.targetChannels) + "; expected decision " +
+                   std::to_string(static_cast<int>(decision)) + ", targetChannels " +
+                   std::to_string(file.channels);
+        }
+        return {};
+    };
+
+    DeviceCapability unknownWidth = makeBuiltInCapability();
+    unknownWidth.physicalFormat.channels = 0U;
+    unknownWidth.virtualFormat.channels = 0U;
+    DeviceCapability virtualWidthOnly = makeBuiltInCapability();
+    virtualWidthOnly.physicalFormat.channels = 0U;
+
+    const std::array<std::string, 9> errors = {
+        // The founder's case: a mono file on the MacBook Pro Speakers.
+        expectDecline("mono on 2-ch speakers", builtIn, makeFile(TestConstants::kRate48k, 1U)),
+        expectDecline("stereo on a 4-ch interface",
+                      makeInterfaceCapability(kFourCh),
+                      makeFile(TestConstants::kRate48k)),
+        expectDecline("stereo on 8-ch HDMI",
+                      makeInterfaceCapability(kEightCh),
+                      makeFile(TestConstants::kRate48k)),
+        expectDecline(
+            "stereo on an unknown-width device", unknownWidth, makeFile(TestConstants::kRate48k)),
+        expectDecline("0-ch file on an unknown-width device",
+                      unknownWidth,
+                      makeFile(TestConstants::kRate48k, 0U)),
+        expectPure("stereo on 2-ch speakers",
+                   builtIn,
+                   makeFile(TestConstants::kRate44k),
+                   PureModeDecision::RateMatchedFloat),
+        expectPure("4-ch file on a 4-ch interface",
+                   makeInterfaceCapability(kFourCh),
+                   makeFile(TestConstants::kRate48k, kFourCh),
+                   PureModeDecision::FullBitPerfect),
+        expectPure("stereo, physical width unknown, virtual 2-ch",
+                   virtualWidthOnly,
+                   makeFile(TestConstants::kRate48k),
+                   PureModeDecision::RateMatchedFloat),
+        checkEval(evaluatePureMode(builtIn, makeFile(TestConstants::kRate192k, 1U)),
+                  PureModeDecision::FallbackEnhanced,
+                  PureModeReason::RateUnsupportedResample,
+                  TestConstants::kRate96k,
+                  /*requiresRateChange=*/false,
+                  /*requiresHog=*/false),
+    };
+    for (const std::string& err : errors)
+    {
+        if (!err.empty())
+        {
+            logFail(kName, err);
+            return;
+        }
+    }
+    logPass(kName);
+}
+
 // ===========================================================================
-// Pure-Mode format conversion (Phase B — B2a). Pure-unit tests of convertFloatToNative():
-// hand-built float inputs are converted to each native PCM layout and the raw bytes inspected.
-// All little-endian (the Mac norm); these never touch CoreAudio.
+// Pure-Mode native format + conversion (Phase B — B2a; the council's D74 / D76 fixes). Pure-unit
+// tests of NativePcmFormat::fromAsbd (which device formats Pure writes exactly),
+// pickIntegerPhysicalFormat (the integer physical format it sets), and convertFloatToNative: float
+// inputs are converted to each native PCM layout and the raw bytes inspected. Never touches the HAL.
 // ===========================================================================
 
 namespace
 {
-    // Decode a little-endian int16 from a byte buffer at sample index i.
-    auto readLeInt16(const std::vector<uint8_t>& bytes, size_t i) -> int16_t
+    constexpr uint32_t kBitsPerByteTest = 8U;
+    constexpr uint32_t kWord16Bytes = 2U;
+    constexpr uint32_t kWord32Bytes = 4U;
+
+    // The `width`-byte word at byte `offset`: least significant byte first, or most significant
+    // first when `bigEndian`. An oracle independent of the converter's own store.
+    auto readWord(std::span<const std::byte> bytes, size_t offset, uint32_t width, bool bigEndian)
+        -> uint32_t
     {
-        const auto lo = static_cast<uint16_t>(bytes[(2U * i)]);
-        const auto hi = static_cast<uint16_t>(bytes[(2U * i) + 1U]);
-        return static_cast<int16_t>(static_cast<uint16_t>(lo | (static_cast<uint32_t>(hi) << 8U)));
+        uint32_t word = 0U;
+        for (uint32_t idx = 0U; idx < width; ++idx)
+        {
+            const uint32_t byteIndex = bigEndian ? (width - 1U - idx) : idx;
+            word |= std::to_integer<uint32_t>(bytes[offset + idx])
+                    << (byteIndex * kBitsPerByteTest);
+        }
+        return word;
+    }
+
+    // Decode a little-endian int16 from a byte buffer at sample index i.
+    auto readLeInt16(std::span<const std::byte> bytes, size_t i) -> int16_t
+    {
+        return static_cast<int16_t>(
+            static_cast<uint16_t>(readWord(bytes, kWord16Bytes * i, kWord16Bytes, false)));
     }
 
     // Decode a little-endian uint32 word from a byte buffer at sample index i.
-    auto readLeWord32(const std::vector<uint8_t>& bytes, size_t i) -> uint32_t
+    auto readLeWord32(std::span<const std::byte> bytes, size_t i) -> uint32_t
     {
-        const size_t base = 4U * i;
-        return static_cast<uint32_t>(bytes[base]) |
-               (static_cast<uint32_t>(bytes[base + 1U]) << 8U) |
-               (static_cast<uint32_t>(bytes[base + 2U]) << 16U) |
-               (static_cast<uint32_t>(bytes[base + 3U]) << 24U);
+        return readWord(bytes, kWord32Bytes * i, kWord32Bytes, false);
     }
 
-    // Conversion-format flag bundles (named, no magic booleans at call sites).
+    // Conversion-format constants (named, no magic booleans at call sites).
     constexpr uint32_t kBits16 = 16U;
     constexpr uint32_t kBits24 = 24U;
     constexpr uint32_t kBits32 = 32U;
     constexpr uint32_t kMonoCh = 1U;
+    constexpr uint32_t kStereoCh = 2U;
 
     constexpr int16_t kI16PosFull = 0x7FFF;
     constexpr int16_t kI16NegFull = -0x8000;
     constexpr int32_t kI32PosFull = 0x7FFFFFFF;
     constexpr uint32_t kI32NegFullBits = 0x80000000U; // -0x80000000 as a bit pattern
+
+    constexpr std::byte kPoison{0xAA}; // marks bytes the converter must not have written
+
+    // Every layout the converter writes, for the per-layout sweeps.
+    constexpr std::array<NativeSampleLayout, 6> kAllLayouts = {
+        NativeSampleLayout::Float32,
+        NativeSampleLayout::Int16,
+        NativeSampleLayout::Int24Packed,
+        NativeSampleLayout::Int24In32High,
+        NativeSampleLayout::Int24In32Low,
+        NativeSampleLayout::Int32,
+    };
+
+    auto nativeFormat(NativeSampleLayout layout,
+                      uint32_t channels = kMonoCh,
+                      bool bigEndian = false) -> NativePcmFormat
+    {
+        NativePcmFormat format;
+        format.layout = layout;
+        format.channels = channels;
+        format.bigEndian = bigEndian;
+        return format;
+    }
+
+    // Convert `src` into a fresh poisoned buffer of exactly its frames' bytes.
+    auto convertInto(std::span<const float> src, const NativePcmFormat& format)
+        -> std::vector<std::byte>
+    {
+        std::vector<std::byte> dst((src.size() / format.channels) * format.bytesPerFrame(),
+                                   kPoison);
+        convertFloatToNative(src, dst, format);
+        return dst;
+    }
+
+    // A linear-PCM description as a device reports it (48 kHz, one frame per packet).
+    auto makeAsbd(AudioFormatFlags flags, uint32_t channels, uint32_t bits, uint32_t bytesPerSample)
+        -> AudioStreamBasicDescription
+    {
+        AudioStreamBasicDescription asbd{};
+        asbd.mSampleRate = TestConstants::kRate48k;
+        asbd.mFormatID = kAudioFormatLinearPCM;
+        asbd.mFormatFlags = flags;
+        asbd.mFramesPerPacket = 1U;
+        asbd.mChannelsPerFrame = channels;
+        asbd.mBitsPerChannel = bits;
+        asbd.mBytesPerFrame = channels * bytesPerSample;
+        asbd.mBytesPerPacket = asbd.mBytesPerFrame;
+        return asbd;
+    }
+
+    // The flag sets real output streams report (e.g. 0x9 for the MacBook speakers' float32).
+    constexpr AudioFormatFlags kFlagsFloat = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+    constexpr AudioFormatFlags kFlagsIntPacked =
+        kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+    constexpr AudioFormatFlags kFlags24In32Low = kAudioFormatFlagIsSignedInteger;
+    constexpr AudioFormatFlags kFlags24In32High =
+        kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsAlignedHigh;
+    constexpr uint32_t kBytes24Packed = 3U;
 } // namespace
 
 // +1.0 -> 0x7FFF, -1.0 -> -0x8000, 0 -> 0, and ±1.2 saturate (no wrap) for int16 packed LE.
@@ -484,18 +672,7 @@ static auto testConvertInt16Saturation() -> void
 {
     static const char* const kName = "Convert_Int16Saturation";
     const std::array<float, 5> src = {1.0F, -1.0F, 0.0F, 1.2F, -1.2F};
-    std::vector<uint8_t> dst(src.size() * 2U, 0xAAU); // poison to catch unwritten bytes
-
-    convertFloatToNative(src.data(),
-                         dst.data(),
-                         static_cast<uint32_t>(src.size()),
-                         kMonoCh,
-                         kBits16,
-                         /*isFloat=*/false,
-                         /*isSignedInt=*/true,
-                         /*isPacked=*/true,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    const std::vector<std::byte> dst = convertInto(src, nativeFormat(NativeSampleLayout::Int16));
 
     const std::array<int16_t, 5> expected = {kI16PosFull, kI16NegFull, 0, kI16PosFull, kI16NegFull};
     for (size_t i = 0; i < src.size(); ++i)
@@ -517,18 +694,7 @@ static auto testConvertInt32Saturation() -> void
 {
     static const char* const kName = "Convert_Int32Saturation";
     const std::array<float, 4> src = {1.0F, -1.0F, 0.0F, 1.5F};
-    std::vector<uint8_t> dst(src.size() * 4U, 0xAAU);
-
-    convertFloatToNative(src.data(),
-                         dst.data(),
-                         static_cast<uint32_t>(src.size()),
-                         kMonoCh,
-                         kBits32,
-                         /*isFloat=*/false,
-                         /*isSignedInt=*/true,
-                         /*isPacked=*/true,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    const std::vector<std::byte> dst = convertInto(src, nativeFormat(NativeSampleLayout::Int32));
 
     const std::array<uint32_t, 4> expected = {
         static_cast<uint32_t>(kI32PosFull),
@@ -559,48 +725,24 @@ static auto testConvert24In32Alignment() -> void
     const std::array<float, 1> src = {1.0F};
 
     // Aligned-high: 0x7FFFFF << 8 == 0x7FFFFF00.
+    const uint32_t high =
+        readLeWord32(convertInto(src, nativeFormat(NativeSampleLayout::Int24In32High)), 0);
+    if (high != 0x7FFFFF00U)
     {
-        std::vector<uint8_t> dst(4U, 0xAAU);
-        convertFloatToNative(src.data(),
-                             dst.data(),
-                             1U,
-                             kMonoCh,
-                             kBits24,
-                             /*isFloat=*/false,
-                             /*isSignedInt=*/true,
-                             /*isPacked=*/false,
-                             /*isAlignedHigh=*/true,
-                             /*isBigEndian=*/false);
-        const uint32_t got = readLeWord32(dst, 0);
-        if (got != 0x7FFFFF00U)
-        {
-            std::ostringstream oss;
-            oss << "aligned-high: expected 0x7FFFFF00, got 0x" << std::hex << got;
-            logFail(kName, oss.str());
-            return;
-        }
+        std::ostringstream oss;
+        oss << "aligned-high: expected 0x7FFFFF00, got 0x" << std::hex << high;
+        logFail(kName, oss.str());
+        return;
     }
     // Low-justified: 0x007FFFFF.
+    const uint32_t low =
+        readLeWord32(convertInto(src, nativeFormat(NativeSampleLayout::Int24In32Low)), 0);
+    if (low != 0x007FFFFFU)
     {
-        std::vector<uint8_t> dst(4U, 0xAAU);
-        convertFloatToNative(src.data(),
-                             dst.data(),
-                             1U,
-                             kMonoCh,
-                             kBits24,
-                             /*isFloat=*/false,
-                             /*isSignedInt=*/true,
-                             /*isPacked=*/false,
-                             /*isAlignedHigh=*/false,
-                             /*isBigEndian=*/false);
-        const uint32_t got = readLeWord32(dst, 0);
-        if (got != 0x007FFFFFU)
-        {
-            std::ostringstream oss;
-            oss << "low-justified: expected 0x007FFFFF, got 0x" << std::hex << got;
-            logFail(kName, oss.str());
-            return;
-        }
+        std::ostringstream oss;
+        oss << "low-justified: expected 0x007FFFFF, got 0x" << std::hex << low;
+        logFail(kName, oss.str());
+        return;
     }
     logPass(kName);
 }
@@ -610,18 +752,7 @@ static auto testConvertFloatPassthrough() -> void
 {
     static const char* const kName = "Convert_FloatPassthrough";
     const std::array<float, 6> src = {0.0F, 1.0F, -1.0F, 0.5F, -0.25F, 1.7F};
-    std::vector<float> dst(src.size(), -999.0F);
-
-    convertFloatToNative(src.data(),
-                         dst.data(),
-                         static_cast<uint32_t>(src.size()),
-                         kMonoCh,
-                         kBits32,
-                         /*isFloat=*/true,
-                         /*isSignedInt=*/false,
-                         /*isPacked=*/true,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    const std::vector<std::byte> dst = convertInto(src, nativeFormat(NativeSampleLayout::Float32));
 
     // Bit-identical (memcmp): passthrough must not even alter an out-of-range value.
     if (std::memcmp(dst.data(), src.data(), src.size() * sizeof(float)) != 0)
@@ -632,35 +763,518 @@ static auto testConvertFloatPassthrough() -> void
     logPass(kName);
 }
 
-// An unsupported flag combination must write silence (zeros), never garbage / UB.
-static auto testConvertUnsupportedWritesSilence() -> void
+// NativePcmFormat::fromAsbd admits exactly the formats the converter writes byte for byte — and
+// refuses everything else, so Pure declines rather than guesses (council D74: the converter used to
+// write every 24-bit format as 4-byte words, whatever mBytesPerFrame said). Accepted: float32,
+// int16, packed 24 (3 bytes), 24-in-32 high and low, int32, either endianness, any width. Refused:
+// non-interleaved, non-PCM, unsigned / 8-bit / 20-bit integers, 16-in-32, float64, flags that
+// contradict the byte size, and a frame size the channel count does not divide.
+static auto testPureFormatFromAsbdOnlyExactLayouts() -> void
 {
-    static const char* const kName = "Convert_UnsupportedWritesSilence";
-    const std::array<float, 4> src = {1.0F, -1.0F, 0.5F, -0.5F};
-    std::vector<uint8_t> dst(src.size() * 4U, 0xAAU);
-
-    // 20-bit signed is not a case we handle -> silence.
+    static const char* const kName = "PureFormat_FromAsbdOnlyExactLayouts";
+    constexpr uint32_t kEightCh = 8U;
+    constexpr uint32_t kBits8 = 8U;
     constexpr uint32_t kBits20 = 20U;
-    convertFloatToNative(src.data(),
-                         dst.data(),
-                         static_cast<uint32_t>(src.size()),
-                         kMonoCh,
-                         kBits20,
-                         /*isFloat=*/false,
-                         /*isSignedInt=*/true,
-                         /*isPacked=*/true,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    constexpr uint32_t kBits64 = 64U;
+    constexpr uint32_t kBytes8 = 8U;
+    constexpr uint32_t kOddBytesPerFrame = 7U;
 
-    for (size_t i = 0; i < dst.size(); ++i)
+    // Admitted as `layout`, with the description's width, frame size and byte order.
+    const auto admitsAs = [](const char* label,
+                             const AudioStreamBasicDescription& asbd,
+                             NativeSampleLayout layout) -> std::string
     {
-        if (dst[i] != 0U)
+        const std::optional<NativePcmFormat> got = NativePcmFormat::fromAsbd(asbd);
+        const bool bigEndian = (asbd.mFormatFlags & kAudioFormatFlagIsBigEndian) != 0U;
+        const bool ok = got.has_value() && got->layout == layout &&
+                        got->channels == asbd.mChannelsPerFrame &&
+                        got->bytesPerFrame() == asbd.mBytesPerFrame && got->bigEndian == bigEndian;
+        return ok ? std::string{} : std::string(label) + ": not admitted as the expected layout";
+    };
+    const auto refuses = [](const char* label, const AudioStreamBasicDescription& asbd)
+    {
+        return NativePcmFormat::fromAsbd(asbd).has_value()
+                   ? std::string(label) + ": admitted, but the converter cannot write it"
+                   : std::string{};
+    };
+
+    AudioStreamBasicDescription ac3 = makeAsbd(kFlagsIntPacked, kStereoCh, kBits16, 2U);
+    ac3.mFormatID = kAudioFormatAC3;
+    AudioStreamBasicDescription noChannels = makeAsbd(kFlagsIntPacked, kStereoCh, kBits16, 2U);
+    noChannels.mChannelsPerFrame = 0U;
+    AudioStreamBasicDescription oddFrame = makeAsbd(kFlagsIntPacked, kStereoCh, kBits24, 3U);
+    oddFrame.mBytesPerFrame = kOddBytesPerFrame;
+    AudioStreamBasicDescription noBytes = makeAsbd(kFlagsIntPacked, kStereoCh, kBits16, 2U);
+    noBytes.mBytesPerFrame = 0U;
+    constexpr AudioFormatFlags kNonInterleaved = kAudioFormatFlagIsNonInterleaved;
+
+    const std::array<std::string, 23> errors = {
+        admitsAs("float32 stereo (0x9)",
+                 makeAsbd(kFlagsFloat, kStereoCh, kBits32, 4U),
+                 NativeSampleLayout::Float32),
+        admitsAs("int16 stereo",
+                 makeAsbd(kFlagsIntPacked, kStereoCh, kBits16, 2U),
+                 NativeSampleLayout::Int16),
+        admitsAs("packed int24 stereo",
+                 makeAsbd(kFlagsIntPacked, kStereoCh, kBits24, kBytes24Packed),
+                 NativeSampleLayout::Int24Packed),
+        admitsAs("packed int24 8-ch",
+                 makeAsbd(kFlagsIntPacked, kEightCh, kBits24, kBytes24Packed),
+                 NativeSampleLayout::Int24Packed),
+        admitsAs("24-in-32 low",
+                 makeAsbd(kFlags24In32Low, kStereoCh, kBits24, 4U),
+                 NativeSampleLayout::Int24In32Low),
+        admitsAs("24-in-32 high",
+                 makeAsbd(kFlags24In32High, kStereoCh, kBits24, 4U),
+                 NativeSampleLayout::Int24In32High),
+        admitsAs("int32 stereo",
+                 makeAsbd(kFlagsIntPacked, kStereoCh, kBits32, 4U),
+                 NativeSampleLayout::Int32),
+        admitsAs("int16 big-endian",
+                 makeAsbd(kFlagsIntPacked | kAudioFormatFlagIsBigEndian, kStereoCh, kBits16, 2U),
+                 NativeSampleLayout::Int16),
+        refuses("non-interleaved float32 stereo (0x29)",
+                makeAsbd(kFlagsFloat | kNonInterleaved, kStereoCh, kBits32, 2U)),
+        refuses("non-interleaved int16 stereo",
+                makeAsbd(kFlagsIntPacked | kNonInterleaved, kStereoCh, kBits16, 1U)),
+        // Only the interleaving rule refuses these two: their sizes alone would pass.
+        refuses("non-interleaved float32 mono",
+                makeAsbd(kFlagsFloat | kNonInterleaved, kMonoCh, kBits32, 4U)),
+        refuses("non-interleaved float32 stereo, interleaved stride",
+                makeAsbd(kFlagsFloat | kNonInterleaved, kStereoCh, kBits32, 4U)),
+        refuses("AC-3 (not linear PCM)", ac3),
+        refuses("unsigned int16", makeAsbd(kAudioFormatFlagIsPacked, kStereoCh, kBits16, 2U)),
+        refuses("int8", makeAsbd(kFlagsIntPacked, kStereoCh, kBits8, 1U)),
+        refuses("20-bit in 3 bytes",
+                makeAsbd(kAudioFormatFlagIsSignedInteger, kStereoCh, kBits20, 3U)),
+        refuses("20-bit claiming packed in 3 bytes",
+                makeAsbd(kFlagsIntPacked, kStereoCh, kBits20, 3U)),
+        refuses("24-bit claiming packed in 4 bytes",
+                makeAsbd(kFlagsIntPacked, kStereoCh, kBits24, 4U)),
+        refuses("16-in-32", makeAsbd(kAudioFormatFlagIsSignedInteger, kStereoCh, kBits16, 4U)),
+        refuses("float64", makeAsbd(kFlagsFloat, kStereoCh, kBits64, kBytes8)),
+        refuses("0 channels", noChannels),
+        refuses("7-byte stereo frame", oddFrame),
+        refuses("0-byte frame", noBytes),
+    };
+    for (const std::string& err : errors)
+    {
+        if (!err.empty())
         {
-            std::ostringstream oss;
-            oss << "byte " << i << " not zeroed (got 0x" << std::hex << static_cast<int>(dst[i])
-                << ")";
-            logFail(kName, oss.str());
+            logFail(kName, err);
             return;
+        }
+    }
+    logPass(kName);
+}
+
+// The integer physical format Pure sets on a device is one the converter writes exactly: at the
+// target rate and width, the highest bit depth among the WRITABLE formats, then the device's own
+// flags (council D74 (b): the picker used to take the highest depth of any integer format, packed
+// 24-bit and non-interleaved included).
+static auto testPureFormatPickerOnlyWritableFormats() -> void
+{
+    static const char* const kName = "PureFormat_PickerOnlyWritableFormats";
+    constexpr uint32_t kEightCh = 8U;
+    constexpr uint32_t kBits20 = 20U;
+
+    const AudioStreamBasicDescription int16 = makeAsbd(kFlagsIntPacked, kStereoCh, kBits16, 2U);
+    const AudioStreamBasicDescription packed24 =
+        makeAsbd(kFlagsIntPacked, kStereoCh, kBits24, kBytes24Packed);
+    const AudioStreamBasicDescription low24 = makeAsbd(kFlags24In32Low, kStereoCh, kBits24, 4U);
+    const AudioStreamBasicDescription nonInterleaved32 =
+        makeAsbd(kFlagsIntPacked | kAudioFormatFlagIsNonInterleaved, kStereoCh, kBits32, 2U);
+    const AudioStreamBasicDescription int20 =
+        makeAsbd(kAudioFormatFlagIsSignedInteger, kStereoCh, kBits20, 3U);
+    AudioStreamBasicDescription packed24At44k = packed24;
+    packed24At44k.mSampleRate = TestConstants::kRate44k;
+    const AudioStreamBasicDescription packed24EightCh =
+        makeAsbd(kFlagsIntPacked, kEightCh, kBits24, kBytes24Packed);
+    const AudioStreamBasicDescription float32 = makeAsbd(kFlagsFloat, kStereoCh, kBits32, 4U);
+
+    const auto pick = [](std::span<const AudioStreamBasicDescription> available,
+                         const AudioStreamBasicDescription& current)
+    { return pickIntegerPhysicalFormat(available, current, TestConstants::kRate48k, kStereoCh); };
+    const auto same = [](const std::optional<AudioStreamBasicDescription>& got,
+                         const AudioStreamBasicDescription& want)
+    {
+        return got.has_value() && got->mSampleRate == want.mSampleRate &&
+               got->mFormatFlags == want.mFormatFlags &&
+               got->mBitsPerChannel == want.mBitsPerChannel &&
+               got->mBytesPerFrame == want.mBytesPerFrame &&
+               got->mChannelsPerFrame == want.mChannelsPerFrame;
+    };
+
+    // The 32-bit non-interleaved and the 20-bit formats rank higher by depth but cannot be written;
+    // the wrong-rate / wrong-width / float candidates never qualify. The packed 24-bit one wins.
+    const std::array<AudioStreamBasicDescription, 7> mixed = {
+        int16,
+        nonInterleaved32,
+        int20,
+        packed24At44k,
+        packed24EightCh,
+        float32,
+        packed24,
+    };
+    if (!same(pick(mixed, float32), packed24))
+    {
+        logFail(kName, "did not pick the writable packed 24-bit format");
+        return;
+    }
+    const std::array<AudioStreamBasicDescription, 3> unwritable = {
+        nonInterleaved32,
+        int20,
+        float32,
+    };
+    if (pick(unwritable, float32).has_value() || pick({}, float32).has_value())
+    {
+        logFail(kName, "picked a format from a list with no writable integer format");
+        return;
+    }
+    // Equal depth: the device's current flags win; otherwise the first stays.
+    const std::array<AudioStreamBasicDescription, 2> tie = {low24, packed24};
+    if (!same(pick(tie, packed24), packed24) || !same(pick(tie, low24), low24) ||
+        !same(pick(tie, float32), low24))
+    {
+        logFail(kName, "equal-depth tie-break does not prefer the device's current flags");
+        return;
+    }
+    logPass(kName);
+}
+
+namespace
+{
+    // One endianness of the packed 24-bit round trip: "" on success, else what went wrong.
+    auto packed24RoundTripError(bool bigEndian,
+                                std::span<const int32_t> codes,
+                                std::span<const float> src) -> std::string
+    {
+        constexpr size_t kGuardBytes = 64U;
+        constexpr uint32_t k24Mask = 0x00FFFFFFU;
+        constexpr uint32_t k24Sign = 0x00800000U;
+        constexpr uint32_t k24SignExtend = 0xFF000000U;
+        const std::string order = bigEndian ? "BE" : "LE";
+
+        const AudioFormatFlags flags =
+            kFlagsIntPacked | (bigEndian ? kAudioFormatFlagIsBigEndian : 0U);
+        const std::optional<NativePcmFormat> format =
+            NativePcmFormat::fromAsbd(makeAsbd(flags, kStereoCh, kBits24, kBytes24Packed));
+        if (!format.has_value() || format->layout != NativeSampleLayout::Int24Packed ||
+            format->bytesPerFrame() != kStereoCh * kBytes24Packed)
+        {
+            return order + ": the packed 24-bit description is not read as 3-byte samples";
+        }
+        const size_t frames = src.size() / kStereoCh;
+        const size_t exactBytes = frames * format->bytesPerFrame();
+
+        std::vector<std::byte> exact(exactBytes, kPoison); // an exact heap block: ASan's redzone
+        const size_t written = convertFloatToNative(src, exact, *format);
+
+        std::vector<std::byte> guarded(exactBytes + kGuardBytes, kPoison);
+        convertFloatToNative(src, std::span<std::byte>(guarded.data(), exactBytes), *format);
+        const bool guardIntact =
+            std::ranges::all_of(std::span<const std::byte>(guarded).subspan(exactBytes),
+                                [](std::byte value) { return value == kPoison; });
+        if (written != frames || !guardIntact)
+        {
+            return order + ": wrote " + std::to_string(written) + " of " + std::to_string(frames) +
+                   " frames, guard " + (guardIntact ? "intact" : "OVERWRITTEN");
+        }
+        for (size_t i = 0; i < codes.size(); ++i)
+        {
+            const uint32_t word = readWord(exact, i * kBytes24Packed, kBytes24Packed, bigEndian);
+            const auto got = static_cast<int32_t>(((word & k24Sign) != 0U) ? (word | k24SignExtend)
+                                                                           : (word & k24Mask));
+            if (got != codes[i])
+            {
+                return order + " sample " + std::to_string(i) + ": expected " +
+                       std::to_string(codes[i]) + ", got " + std::to_string(got);
+            }
+        }
+        return {};
+    }
+} // namespace
+
+// Packed 24-bit (3 bytes a sample, common on USB DACs) is written as 3-byte samples: exactly
+// frames x mBytesPerFrame bytes, every code back bit-exact, little- and big-endian. Before the fix
+// the converter wrote 4-byte words into the 3-byte buffer: a one-third heap overrun on the HAL IO
+// thread and corrupt audio (council D74). The buffer is an exact heap allocation, so the gate's
+// ASan stage catches a single byte past it; a guard zone catches it in the plain run.
+static auto testConvertPacked24ExactBytesRoundTrip() -> void
+{
+    static const char* const kName = "Convert_Packed24_ExactBytesRoundTrip";
+    constexpr uint32_t kFrames = 512U;
+    constexpr int32_t kI24Min = -8388608;
+    constexpr int32_t kI24Max = 8388607;
+    constexpr uint32_t kI24Codes = 16777216U; // 2^24
+    constexpr uint32_t kCodeStride = 16411U;  // odd: walks every byte pattern across the frames
+    constexpr float kI24Scale = 8388608.0F;
+
+    std::vector<int32_t> codes(static_cast<size_t>(kFrames) * kStereoCh);
+    for (size_t i = 0; i < codes.size(); ++i)
+    {
+        codes[i] =
+            static_cast<int32_t>((static_cast<uint32_t>(i) * kCodeStride) % kI24Codes) + kI24Min;
+    }
+    codes[0] = kI24Max; // both full scales, on both channels
+    codes[1] = kI24Min;
+    std::vector<float> src(codes.size());
+    std::ranges::transform(
+        codes, src.begin(), [](int32_t code) { return static_cast<float>(code) / kI24Scale; });
+
+    for (const bool bigEndian : {false, true})
+    {
+        const std::string err = packed24RoundTripError(bigEndian, codes, src);
+        if (!err.empty())
+        {
+            logFail(kName, err);
+            return;
+        }
+    }
+    logPass(kName);
+}
+
+// Every write is bounded by the buffer's real byte size and the format's real frame stride, never by
+// a size the bit depth implies (council D74 (c) / D76: the render clamped with ceil(bits / 8), so a
+// 24-in-32 or packed-24 buffer was overrun). For every layout: a buffer that holds fewer frames than
+// requested gets exactly the whole frames that fit, its partial trailing frame is silence, and not
+// one byte past it is touched (an exact heap block for ASan + a guard zone); a buffer longer than
+// the source plays silence past it; empty spans are no-ops.
+static auto testConvertWriteBoundedByBufferBytes() -> void
+{
+    static const char* const kName = "Convert_WriteBoundedByBufferBytes";
+    constexpr size_t kRequestedFrames = 100U;
+    constexpr size_t kFittingFrames = 37U;
+    constexpr size_t kGuardBytes = 64U;
+    constexpr float kLevel = 0.5F;
+
+    const std::vector<float> src(kRequestedFrames * kStereoCh, kLevel);
+    for (const NativeSampleLayout layout : kAllLayouts)
+    {
+        const NativePcmFormat format = nativeFormat(layout, kStereoCh);
+        const size_t bytesPerFrame = format.bytesPerFrame();
+        // Room for 37 whole frames and all but one byte of the 38th.
+        const size_t bufferBytes = (kFittingFrames * bytesPerFrame) + (bytesPerFrame - 1U);
+
+        std::vector<std::byte> exact(bufferBytes, kPoison);
+        const size_t written = convertFloatToNative(src, exact, format);
+
+        std::vector<std::byte> guarded(bufferBytes + kGuardBytes, kPoison);
+        convertFloatToNative(src, std::span<std::byte>(guarded.data(), bufferBytes), format);
+
+        const std::span<const std::byte> view(guarded);
+        const bool partialSilent =
+            std::ranges::all_of(view.subspan(kFittingFrames * bytesPerFrame, bytesPerFrame - 1U),
+                                [](std::byte value) { return value == std::byte{0}; });
+        const bool guardIntact = std::ranges::all_of(
+            view.subspan(bufferBytes), [](std::byte value) { return value == kPoison; });
+        if (written != kFittingFrames || !partialSilent || !guardIntact)
+        {
+            logFail(kName,
+                    "layout " + std::to_string(static_cast<int>(layout)) + ": wrote " +
+                        std::to_string(written) + " of " + std::to_string(kFittingFrames) +
+                        " frames, partial frame " + (partialSilent ? "silent" : "NOT silent") +
+                        ", guard " + (guardIntact ? "intact" : "OVERWRITTEN"));
+            return;
+        }
+
+        // A buffer longer than the source: the source frames, then silence (no stale bytes).
+        std::vector<std::byte> longer(2U * kRequestedFrames * bytesPerFrame, kPoison);
+        const size_t wroteLonger = convertFloatToNative(src, longer, format);
+        const bool tailSilent = std::ranges::all_of(
+            std::span<const std::byte>(longer).subspan(kRequestedFrames * bytesPerFrame),
+            [](std::byte value) { return value == std::byte{0}; });
+        if (wroteLonger != kRequestedFrames || !tailSilent)
+        {
+            logFail(kName,
+                    "layout " + std::to_string(static_cast<int>(layout)) +
+                        ": a longer buffer was not source-then-silence");
+            return;
+        }
+    }
+
+    // The shape the old ceil(24 / 8) bound produced: a 24-in-32 stereo buffer sized at 3 bytes a
+    // sample. Only the whole 8-byte frames that fit are written.
+    const NativePcmFormat word24 = nativeFormat(NativeSampleLayout::Int24In32High, kStereoCh);
+    std::vector<std::byte> undersized(kRequestedFrames * kStereoCh * kBytes24Packed, kPoison);
+    if (convertFloatToNative(src, undersized, word24) != undersized.size() / word24.bytesPerFrame())
+    {
+        logFail(kName, "24-in-32 into a 3-byte-per-sample buffer wrote past its whole frames");
+        return;
+    }
+
+    // Empty spans: nothing written, nothing read past.
+    std::vector<std::byte> some(kWord32Bytes, kPoison);
+    if (convertFloatToNative(src, {}, word24) != 0U ||
+        convertFloatToNative({}, some, word24) != 0U ||
+        !std::ranges::all_of(some, [](std::byte value) { return value == std::byte{0}; }))
+    {
+        logFail(kName, "an empty source or destination was not a silent no-op");
+        return;
+    }
+    logPass(kName);
+}
+
+// A NaN or an infinity plays as silence on the Pure path too, and every finite sample converts
+// exactly as it would alone — a finite float32 sample stays bit-identical (denormal and out-of-range
+// values included), so bit-perfect stays bit-perfect. Before the fix +Inf played at full scale (a
+// hearing-safety gap the Enhanced kernel already closed) and NaN -> int was undefined behaviour
+// (council D76). Every layout, both endiannesses.
+static auto testConvertNonFiniteIsSilenceFiniteUntouched() -> void
+{
+    static const char* const kName = "Convert_NonFiniteIsSilence_FiniteUntouched";
+    constexpr float kDenormal = 1.0e-40F;
+    constexpr float kOverRange = 1.7F;
+    constexpr float kNearFull = 0.999F;
+    const float qnan = std::numeric_limits<float>::quiet_NaN();
+    const float snan = std::numeric_limits<float>::signaling_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    const std::array<float, 11> src = {
+        0.5F,
+        qnan,
+        -0.25F,
+        inf,
+        kDenormal,
+        -inf,
+        -qnan,
+        kNearFull,
+        snan,
+        kOverRange,
+        -1.0F,
+    };
+
+    for (const NativeSampleLayout layout : kAllLayouts)
+    {
+        for (const bool bigEndian : {false, true})
+        {
+            const NativePcmFormat format = nativeFormat(layout, kMonoCh, bigEndian);
+            const uint32_t width = format.bytesPerSample();
+            const std::vector<std::byte> out = convertInto(src, format);
+            for (size_t i = 0; i < src.size(); ++i)
+            {
+                const uint32_t got = readWord(out, i * width, width, bigEndian);
+                uint32_t want = 0U; // a non-finite sample is silence
+                if (std::isfinite(src[i]))
+                {
+                    const std::array<float, 1> alone = {src[i]};
+                    want = (layout == NativeSampleLayout::Float32)
+                               ? std::bit_cast<uint32_t>(src[i])
+                               : readWord(convertInto(alone, format), 0U, width, bigEndian);
+                }
+                if (got != want)
+                {
+                    std::ostringstream oss;
+                    oss << "layout " << static_cast<int>(layout) << (bigEndian ? " BE" : " LE")
+                        << " sample " << i << " (" << src[i] << "): expected 0x" << std::hex << want
+                        << ", got 0x" << got;
+                    logFail(kName, oss.str());
+                    return;
+                }
+            }
+        }
+    }
+    logPass(kName);
+}
+
+// Exhaustive bit-exactness (the panels' H1, adopted): every 16-bit code into every integer layout,
+// and every 24-bit code into every 24- and 32-bit layout, comes out as that code exactly — the
+// decoder's int -> float (divide by 2^(N-1)) and the converter compose to the identity, now packed
+// 24-bit included. Streams the 2^24 codes in 64 Ki blocks to stay small.
+static auto testConvertBitExactExhaustive16And24() -> void
+{
+    static const char* const kName = "Convert_BitExact_Exhaustive16And24";
+    constexpr int32_t kI16Codes = 65536; // 2^16
+    constexpr int32_t kI16Min = -32768;  // -2^15
+    constexpr float kI16Scale = 32768.0F;
+    constexpr int32_t kI24Min = -8388608;   // -2^23
+    constexpr int32_t kI24Codes = 16777216; // 2^24
+    constexpr float kI24Scale = 8388608.0F;
+    constexpr int32_t kBlock = 65536; // codes per streamed block
+    constexpr uint32_t k16Mask = 0x0000FFFFU;
+    constexpr uint32_t k24Mask = 0x00FFFFFFU;
+    constexpr uint32_t kShift8 = 8U;
+
+    // The device word an integer `value` must become in `layout`, once shifted up by `shift` to the
+    // top of the layout's significant bits (exact while the code's depth fits), then justified.
+    const auto expectedWord = [](NativeSampleLayout layout, int32_t value, uint32_t shift)
+    {
+        const auto placed = static_cast<uint32_t>(value) << shift;
+        switch (layout)
+        {
+            case NativeSampleLayout::Int16:
+                return placed & k16Mask;
+            case NativeSampleLayout::Int24Packed:
+            case NativeSampleLayout::Int24In32Low:
+                return placed & k24Mask;
+            case NativeSampleLayout::Int24In32High:
+                return (placed & k24Mask) << kShift8;
+            case NativeSampleLayout::Float32:
+            case NativeSampleLayout::Int32:
+                return placed;
+        }
+        return placed;
+    };
+
+    // Every layout that holds a 16-bit code exactly, and every one that holds a 24-bit code.
+    constexpr std::array<NativeSampleLayout, 5> kHold16 = {
+        NativeSampleLayout::Int16,
+        NativeSampleLayout::Int24Packed,
+        NativeSampleLayout::Int24In32High,
+        NativeSampleLayout::Int24In32Low,
+        NativeSampleLayout::Int32,
+    };
+    constexpr std::array<NativeSampleLayout, 4> kHold24 = {
+        NativeSampleLayout::Int24Packed,
+        NativeSampleLayout::Int24In32High,
+        NativeSampleLayout::Int24In32Low,
+        NativeSampleLayout::Int32,
+    };
+    struct Sweep
+    {
+        int32_t first;
+        int32_t count;
+        float scale;
+        uint32_t validBits;
+        std::span<const NativeSampleLayout> layouts;
+    };
+    const std::array<Sweep, 2> sweeps = {
+        Sweep{kI16Min, kI16Codes, kI16Scale, kBits16, kHold16},
+        Sweep{kI24Min, kI24Codes, kI24Scale, kBits24, kHold24},
+    };
+
+    std::vector<float> src(static_cast<size_t>(kBlock));
+    std::vector<std::byte> dst(static_cast<size_t>(kBlock) * kWord32Bytes);
+    for (const Sweep& sweep : sweeps)
+    {
+        for (int32_t base = 0; base < sweep.count; base += kBlock)
+        {
+            for (int32_t i = 0; i < kBlock; ++i)
+            {
+                src[static_cast<size_t>(i)] =
+                    static_cast<float>(sweep.first + base + i) / sweep.scale;
+            }
+            for (const NativeSampleLayout layout : sweep.layouts)
+            {
+                const NativePcmFormat format = nativeFormat(layout);
+                const uint32_t width = format.bytesPerSample();
+                const uint32_t shift = format.validBits() - sweep.validBits;
+                const std::span<std::byte> out(dst.data(), static_cast<size_t>(kBlock) * width);
+                convertFloatToNative(src, out, format);
+                for (int32_t i = 0; i < kBlock; ++i)
+                {
+                    const int32_t code = sweep.first + base + i;
+                    const uint32_t got =
+                        readWord(out, static_cast<size_t>(i) * width, width, /*bigEndian=*/false);
+                    if (got != expectedWord(layout, code, shift))
+                    {
+                        std::ostringstream oss;
+                        oss << sweep.validBits << "-bit code " << code << " -> layout "
+                            << static_cast<int>(format.layout) << ": got 0x" << std::hex << got;
+                        logFail(kName, oss.str());
+                        return;
+                    }
+                }
+            }
         }
     }
     logPass(kName);
@@ -718,7 +1332,7 @@ static auto testToneSourceFillsBuffer() -> void
 // Bridge T1: every decision/reason branch translates faithfully. For each (device, file) the flat
 // pureModeEvaluate() result must match the C++ evaluatePureMode() result field-for-field (decision
 // + reason as uint8 of the enum, target rate within 1 Hz, the two boolean flags). The cases below
-// cover all five (decision, reason) pairs so the enum→uint8 ordering is fully pinned.
+// cover all six (decision, reason) pairs so the enum→uint8 ordering is fully pinned.
 static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
 {
     static const char* const kName = "PureModeBridge_TranslatesAllDecisionBranches";
@@ -769,7 +1383,7 @@ static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
         return oss.str();
     };
 
-    // Each case also documents the (decision, reason) pair it exercises (all five are covered).
+    // Each case also documents the (decision, reason) pair it exercises (all six are covered).
     struct BranchCase
     {
         const char* label = "";
@@ -778,7 +1392,7 @@ static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
         uint8_t expectDecision = 0U; // documented expectation, also asserted directly below
         uint8_t expectReason = 0U;
     };
-    const std::array<BranchCase, 5> cases = {
+    const std::array<BranchCase, 6> cases = {
         {
             // HDMI + 44.1k → FullBitPerfect / BitPerfectInteger.
             {"hdmi+44.1k", makeHdmiCapability(), makeFile(TestConstants::kRate44k), 0U, 0U},
@@ -790,6 +1404,14 @@ static auto testPureModeBridgeTranslatesAllDecisionBranches() -> void
             {"virtual+48k", makeVirtualCapability(), makeFile(TestConstants::kRate48k), 2U, 3U},
             // HDMI + 96k (unsupported) → FallbackEnhanced / RateUnsupportedResample.
             {"hdmi+96k", makeHdmiCapability(), makeFile(TestConstants::kRate96k), 2U, 4U},
+            // built-in (2-ch) + a mono 48k file → FallbackEnhanced / ChannelCountMismatch.
+            {
+                "builtin+mono",
+                makeBuiltInCapability(),
+                makeFile(TestConstants::kRate48k, 1U),
+                2U,
+                5U,
+            },
         },
     };
 

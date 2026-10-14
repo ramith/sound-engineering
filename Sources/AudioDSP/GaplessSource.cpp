@@ -128,6 +128,18 @@ namespace AdaptiveSound
         {
             return false;
         }
+        // Only a track the running stream can carry reaches the seam: the stream runs at the
+        // active track's rate and width (the engine refuses a session whose device stream is not
+        // the file's width), and the seam swaps sources without reconfiguring anything. A track of
+        // another rate or channel count is refused here — it would pull nothing at the seam and
+        // play silence that never ends — so it plays through the normal transition instead, where
+        // the policy decides its path. With nothing armed the RT thread cannot swap the active
+        // track, so reading it here is stable.
+        const FileDecodeSource* active = activeSource();
+        if (active == nullptr || !sameRateGaplessCompatible(*active, *source))
+        {
+            return false;
+        }
         Track* slot = freeSlotForArm();
         if (slot == nullptr)
         {
