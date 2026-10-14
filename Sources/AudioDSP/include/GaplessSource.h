@@ -9,10 +9,10 @@
 // rest of A, then immediately pull B into the same host buffer) → sample-accurate, no gap, no
 // inserted/dropped/duplicated frame.
 //
-// SAME-RATE, SAME-WIDTH ONLY: this source does no resampling and no channel mapping. armNext
-// refuses a track that is not sameRateGaplessCompatible() with the active one; the control plane
-// (the C-ABI bridge) pre-checks the same predicate so a rate/format mismatch is handled off-RT
-// (drop + signal "needs reconfigure"), never at the seam.
+// SAME-RATE, SAME-WIDTH ONLY: this source does no resampling and no channel mapping. tryArmNext
+// refuses a track that is not sameRateGaplessCompatible() with the active one (Incompatible), and
+// the control plane (the C-ABI bridge) signals "needs reconfigure": a rate/format mismatch is
+// handled off-RT, never at the seam.
 //
 // The arm contract (council D41; the bridge's side is in PureModeBridge.h):
 //   * One slot, never replaced: armNext refuses while a track is armed. To change the pick, the
@@ -23,14 +23,19 @@
 //     adopted. The caller starts the next track fresh (setCurrent).
 //   * Arming frees the slot the last seam retired (reapRetired, off-RT), so a track armed right
 //     after a seam, before the poll plane reaped, still arms.
+//   * Arming waits for a seam in flight: once the render has claimed the armed track, the slot
+//     reads empty, but until it publishes "old retired, claimed active" (a few instructions later)
+//     the claimed slot looks free and the active track is stale. tryArmNext waits — bounded — for
+//     that publish before it chooses a slot, so it never arms over the track being adopted.
 //
 // CoreAudio-FREE: pure C++ owning FileDecodeSources. Compiles into the C++ test harness.
 // -fno-exceptions / -fno-rtti clean (no throw / dynamic_cast / typeid).
 //
 // Thread model:
-//   * Control plane (off-RT): setCurrent / armNext / clearNext / reapRetired / resetActiveBase.
-//     setCurrent has the precondition that render is stopped. The others are safe while render
-//     runs because every shared transition goes through an atomic with the documented ordering.
+//   * Control plane (off-RT, ONE thread at a time): setCurrent / tryArmNext / armNext / clearNext /
+//     reapRetired / resetActiveBase. setCurrent has the precondition that render is stopped. The
+//     others are safe while render runs because every shared transition goes through an atomic
+//     with the documented ordering.
 //   * Poll plane (off-RT): transitionCount / renderedFramesCurrent / currentSampleRate / ended.
 //     Lock-free reads for the position display + auto-advance polling.
 //   * RT plane: pullFloat — NEVER allocates, locks, logs, throws, or touches Obj-C. The only
@@ -45,6 +50,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -76,17 +82,35 @@ namespace AdaptiveSound
         // pullFloat). Resets transition/ended/seek state for a fresh session. Takes ownership.
         void setCurrent(std::unique_ptr<FileDecodeSource> source) noexcept;
 
-        // Arm the next source to play gaplessly at the active track's true EOF. Returns true on
-        // success. Refuses (returns false):
-        //   * while a track is armed — one slot, never replaced: the caller clears it first;
-        //   * once the session ended (ended()) — the end is final;
-        //   * a source that is not sameRateGaplessCompatible() with the active track (the running
-        //     stream's rate and width), or when there is no active track; the caller pre-checks
-        //     the same predicate to tell "needs reconfigure" from an error.
+        // What tryArmNext did: armed, or why not.
+        enum class ArmOutcome : uint8_t
+        {
+            // Armed for a gapless seam at the active track's true end.
+            Armed,
+            // A track is armed: one slot, never replaced — the caller clears it first.
+            Occupied,
+            // The active track already ended with nothing armed: the end is final.
+            Ended,
+            // Nothing plays to arm behind (or a null source).
+            NoActiveTrack,
+            // Not sameRateGaplessCompatible() with the active track.
+            Incompatible,
+            // The render claimed the last armed track and did not publish it in time.
+            SeamInFlight,
+        };
+
+        // Arm the next source to play gaplessly at the active track's true EOF. Refuses while a
+        // track is armed, once the session ended, with no active track, and a source that is not
+        // sameRateGaplessCompatible() with the active track (the running stream's rate and width).
+        // When the render has claimed the last armed track but not yet published it as active, it
+        // first waits for that publish (bounded by kSeamPublishWait; SeamInFlight if it passes).
         // Before arming it frees the slot the last seam retired (reapRetired: joins that source's
         // decode thread, off-RT), so an arm right after a seam never waits for the poll plane.
-        // Takes ownership by value: on EITHER outcome `source` has been moved-from (a refused
+        // Takes ownership by value: on EVERY outcome `source` has been moved-from (a refused
         // source is freed off-RT as the parameter goes out of scope, joining its decode thread).
+        [[nodiscard]] ArmOutcome tryArmNext(std::unique_ptr<FileDecodeSource> source) noexcept;
+
+        // tryArmNext, answering only whether it armed.
         [[nodiscard]] bool armNext(std::unique_ptr<FileDecodeSource> source) noexcept;
 
         // Take the armed track off the slot (the user changed the pick, or cleared it). Joins the
@@ -146,6 +170,25 @@ namespace AdaptiveSound
         // as transitionCount() climbs — that is the leak the conformance test guards against.
         [[nodiscard]] uint64_t reapCount() const noexcept;
 
+        // --- Test instrumentation (the C++ null test only) ---
+        //
+        // The points a test can stop at: inside a seam, on the render thread, once the render has
+        // claimed the armed track (SeamClaimed) and once it has retired the old one (SeamRetired);
+        // and on the control plane where tryArmNext starts waiting for a claimed seam's publish
+        // (ArmWaitsForSeam). The hook exists only when ADAPTIVESOUND_GAPLESS_TEST_HOOKS is defined,
+        // which only the null test's build does: in the app every point compiles to nothing.
+        enum class TestPoint : uint8_t
+        {
+            SeamClaimed,
+            SeamRetired,
+            ArmWaitsForSeam,
+        };
+#ifdef ADAPTIVESOUND_GAPLESS_TEST_HOOKS
+        using TestHook = void (*)(TestPoint point, void* context) noexcept;
+        // Install (or remove, with nullptr) the hook, before the render runs.
+        void setTestHook(TestHook hook, void* context) noexcept;
+#endif
+
         // --- RT plane ---
 
         // RT render thread: drain interleaved float, straddling the A→B seam within this one call.
@@ -176,10 +219,33 @@ namespace AdaptiveSound
         std::atomic<bool> ended_{false};         // playlist exhausted (true EOF, no armed next)
         std::atomic<uint64_t> reapCount_{0U};    // off-RT: sources actually reaped by reapRetired
 
+        // The slot this control plane armed last, until it took it off again (clearNext) or saw the
+        // render adopt it (active_). While the render has claimed it but not yet published it, it
+        // reads as neither armed, active nor retired. Control plane only: the render never reads it.
+        Track* lastArmed_{nullptr};
+
+        // How long tryArmNext waits for a claimed seam to be published. The render publishes it a
+        // few instructions after its claim; the bound is for a render thread stopped mid-seam.
+        static constexpr std::chrono::milliseconds kSeamPublishWait{10};
+
+        // Wait until the render has adopted the last armed track, if it claimed it (nothing is armed
+        // and this plane did not take it off). False if kSeamPublishWait passed first.
+        [[nodiscard]] bool awaitSeamPublished() noexcept;
+
+#ifdef ADAPTIVESOUND_GAPLESS_TEST_HOOKS
+        std::atomic<TestHook> testHook_{nullptr};
+        std::atomic<void*> testContext_{nullptr};
+        void atTestPoint(TestPoint point) noexcept;
+#else
+        static void atTestPoint(TestPoint /*point*/) noexcept
+        {
+        }
+#endif
+
         // Pick the free slot for arming the next track: the one that is neither active nor retired.
-        // Returns nullptr if both non-active slots are occupied (should not happen — armNext
-        // refuses a second arm and reaps the retired slot first). Non-const: it hands back a
-        // mutable slot for the caller to populate.
+        // Returns nullptr if both non-active slots are occupied (should not happen — tryArmNext
+        // refuses a second arm, waits for a claimed seam's publish and reaps the retired slot
+        // first). Non-const: it hands back a mutable slot for the caller to populate.
         [[nodiscard]] Track* freeSlotForArm() noexcept;
     };
 } // namespace AdaptiveSound
