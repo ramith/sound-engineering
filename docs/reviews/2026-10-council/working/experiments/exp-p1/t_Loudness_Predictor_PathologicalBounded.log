@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_PathologicalBounded: 10 programmes × 8 curves — worst overshoot past the true change 2.78 dB (≤ 3); worst shortfall 8.10 dB (20.0 Hz sine −12 dBFS + pink −40 / alternating, negated)
+[PASS] Loudness_Predictor_PathologicalBounded
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] TrackLoudnessGain_Rules: prior +0.192 dB, own -2.892 dB
+[PASS] TrackLoudnessGain_Rules
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

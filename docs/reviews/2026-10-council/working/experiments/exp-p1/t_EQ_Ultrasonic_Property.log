@@ -1,0 +1,12 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Ultrasonic_Property: max above 20.2 kHz vs in-band peak (dB)
+[info]   44.1k +12 @ 20 kHz             +12.41 vs +12.12 (+0.29)
+[info]   44.1k edge -12/+12 (16k/20k)   +13.60 vs +12.19 (+1.42)
+[info]   44.1k all +12                  +11.81 vs +12.29 (-0.48)
+[info]   44.1k alternating              +13.07 vs +12.06 (+1.02)
+[info]   44.1k Tone Air +12             +11.81 vs +12.16 (-0.36)
+[PASS] EQ_Ultrasonic_Property
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

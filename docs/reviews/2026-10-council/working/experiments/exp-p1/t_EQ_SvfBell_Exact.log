@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_SvfBell_Exact: centre 1.6e-14 dB, cut+boost 2.8e-13 dB, SVF vs RBJ 1.2e-08 dB, half-dB bandwidth rel 7.0e-16
+[PASS] EQ_SvfBell_Exact
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

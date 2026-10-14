@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_ResponseIndependentOfIntensity: EQ shape vs read-back at r = 0 / 0.2 / 0.5 / 1: worst 0.0000 dB
+[PASS] EQ_ResponseIndependentOfIntensity
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

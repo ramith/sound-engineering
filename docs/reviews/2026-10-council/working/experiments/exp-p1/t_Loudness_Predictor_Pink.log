@@ -1,0 +1,15 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_Pink: gated pink noise @ 48.0 kHz, -18.00 LUFS, 197 blocks; worst |predicted − measured| 0.0037 dB (bound 0.15)
+[info]     Presence                 measured  +1.450  predicted  +1.450  error +0.0001 dB
+[info]     Clarity                  measured  +1.404  predicted  +1.404  error +0.0003 dB
+[info]     Warm                     measured  -0.193  predicted  -0.195  error -0.0024 dB
+[info]     Bass & Treble            measured  +2.155  predicted  +2.153  error -0.0025 dB
+[info]     Vocal                    measured  +1.099  predicted  +1.100  error +0.0007 dB
+[info]     Bass Boost               measured  +0.853  predicted  +0.850  error -0.0037 dB
+[info]     +12 @ 100 Hz             measured  +0.645  predicted  +0.645  error +0.0001 dB
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +3.994  predicted  +3.992  error -0.0022 dB
+[PASS] Loudness_Predictor_Pink
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Snapshot_Seqlock_ConcurrentNoTear_RACE1: acceptedReads=362687 publishes=200000 tornReads=0
+[PASS] Snapshot_Seqlock_ConcurrentNoTear_RACE1
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,11 @@
+[EQ] output transport 626c746e: EQ-only ceiling -0.1 dBTP
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain -0.67 dB
+[EQ] loudness: no track analysis — estimating from the audio as it plays
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_AnalysisFails_CausalFallback: prior -0.674 dB, own -7.915 dB; running estimate after 30 s -7.915 dB; worst per-second move 1.000 dB; fed 1440000 frames
+[PASS] Loudness_AnalysisFails_CausalFallback
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

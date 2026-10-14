@@ -1,0 +1,6 @@
+print("row at 1:", table.rect(ofRow: 1), table.isFlipped)
+reset(); print("after reset:", sel())
+click(1); print("click1:", sel())
+click(4); print("click4:", sel())
+click(4, .command); print("cmd4:", sel())
+click(7, .shift); print("sh7:", sel())

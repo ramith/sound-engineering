@@ -1,0 +1,145 @@
+Test Suite 'Selected tests' started at 2026-10-13 11:32:47.606 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' started at 2026-10-13 11:32:47.607 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' passed at 2026-10-13 11:32:47.607 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 11:32:47.607 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "P5b tokens — WCAG / compositing / glow audit holes / sampled glow" started.
+◇ Suite "P5b browse — selection vs NSTableView, moves, grid, writer, epoch, thumbnails, layout" started.
+◇ Suite "P5b output policy — full input space, fixed point, monitor model" started.
+◇ Test "N123 R4-GLOW-D8 lattice on a dense field: the {corner, brand} folds at their true worst points" started.
+◇ Test "N116 the 0.03928 (WCAG 2.0/2.1) vs 0.04045 (WCAG 2.2 / IEC 61966-2-1) threshold: worst difference" started.
+◇ Test "N119 falloff: continuous, monotone non-increasing, 1 at 0, 0 at ≥1, NaN-safe" started.
+◇ Test "N83 invariants over 20 000 random operation sequences (filters, re-sorts, reloads)" started.
+◇ Test "N116 known-value vectors (WCAG / WebAIM published ratios)" started.
+◇ Test "N89 dedupe keeps first-seen order (vs NSOrderedSet)" started.
+◇ Test "N120/N121 clamp + light pair: in-box, hue-preserving, idempotent, light ≥ pastel luminance, channels in [0,1]" started.
+◇ Test "N122 hue-bucket wrap: a red cover jittering across 0° splits its vote and loses to a smaller blue field" started.
+◇ Test "N116/N119 audit grid vs dense field: R4-GLOW-01/02/04 and R4-GLOW-APP-01/02 worst points" started.
+◇ Test "N83 informational: ⇧⌘-click, Home/End, arrow at an edge — where the kit and NSTableView differ" started.
+◇ Test "N115 source-over vs the W3C premultiplied formula, random colors, incl. translucent backdrops" started.
+◇ Test "N84 every grid of 0…40 tiles × 1…9 columns, every position, every key, anchored and seeded" started.
+◇ Test "N122 dominant colours: degenerate covers (empty, transparent, gray, single pixel, single colour)" started.
+◇ Test "N116 linear/encoded round trip and monotonicity across the threshold" started.
+◇ Test "N83 macOS reference: ⇧ after ⌘ keeps the ⌘-built rows (NSTableView T1/T2/T6)" started.
+◇ Test "N94 interleavings of an Enhanced start with a default change: no silent 'playing', pill = the device that plays" started.
+◇ Test "N72 two reads under ONE epoch (a filtered reload, then another) finishing out of order: the older wins" started.
+◇ Test "resumeAfterDeviceLoss: total over hostile doubles" started.
+◇ Test "N87 FixedRowReveal: the span ends up in view, by the minimal move; nil only when already in view" started.
+◇ Test "N83 the kit's own claim (break-it 7): ⇧-arrow after ⌘A narrows, never collapses — with an anchor" started.
+◇ Test "N75/N77 AlbumTrackOrder ignores read order (distinct titles); spans = an item-by-item height walk" started.
+◇ Test "SCENARIO pinned (the default) → the chosen device drops out and comes back → Play: where does sound go?" started.
+◇ Test "N85/N86 columns are the most that fit; tile fills the width; hostile inputs stay sane" started.
+◇ Test "all 360 (event × facts) cases agree with the rules written from the spec" started.
+◇ Test "fixed point: for every case, applying the action and replaying every non-engine event asks for nothing more" started.
+◇ Test "N80 random schedules: one write in flight, FIFO turns, newest per key, no stale after newer, nothing lost" started.
+◇ Test "N117/N118 AppearancePair + resolveSurface: the full flag cube, opaque whenever RT or IC" started.
+◇ Test "N79 every subset of up to 8 rows, every move: spec placement, block, relative orders, availability" started.
+◇ Test "N88 ImageIO can come out 1 px under the request from a larger source → 'whole image' → never upgraded" started.
+✘ Test "N122 hue-bucket wrap: a red cover jittering across 0° splits its vote and loses to a smaller blue field" recorded an issue at P5bTokenBreakTests.swift:252:9: Expectation failed: !(firstIsBlue → <not evaluated>)
+↳ the 40 % blue out-votes the 60 % red because 0° is a bucket edge
+✘ Test "N94 interleavings of an Enhanced start with a default change: no silent 'playing', pill = the device that plays" recorded an issue at P5bOutputPolicyBreakTests.swift:293:13: Expectation failed: (silent == 0 && wrongDevice == 0 → false) && (pinBroken == 0 → <not evaluated>)
+↳ pinned=true
+✘ Test "N94 interleavings of an Enhanced start with a default change: no silent 'playing', pill = the device that plays" recorded an issue at P5bOutputPolicyBreakTests.swift:293:13: Expectation failed: (silent == 0 && wrongDevice == 0 → false) && (pinBroken == 0 → <not evaluated>)
+↳ pinned=false
+✘ Test "N72 two reads under ONE epoch (a filtered reload, then another) finishing out of order: the older wins" recorded an issue at P5bBrowseBreakTests.swift:406:9: Expectation failed: (published → [2, 1]) == (newerResult → [3, 1, 2])
+↳ the stale snapshot Optional(Set([2, 1])) was published last
+P5b N122: red 60% (split 0°/360°) vs blue 40% → top = ["(0.13,0.37,0.85)", "(0.85,0.18,0.13)", "(0.85,0.13,0.19)"]
+P5b N83: ⇧⌘-click 7 after 5 → kit [5, 6, 7] (NSTableView {5,7}); Home after 2 → kit [0] (NSTableView {2}, scroll only); ↑ at the top with {0,1} → kit [0, 1] moved=nil (NSTableView {0})
+P5b N94 pinned=true: 16 interleavings; silent-while-playing 1; plays on ≠ app device 2; pinned but not on the pinned device 2
+   SILENT: S1 align · S2 engine.start (on 41) · X default→42 · R defaultChanged [idle] → nothing · R engineReconfigured [idle] → nothing · S3 intent=true
+   WRONG DEVICE: S1 align · X default→42 · S2 engine.start (on 42) · R defaultChanged [idle] → nothing · S3 intent=true
+   WRONG DEVICE: S1 align · X default→42 · R defaultChanged [idle] → nothing · S2 engine.start (on 42) · S3 intent=true
+P5b N94 pinned=false: 11 interleavings; silent-while-playing 1; plays on ≠ app device 0; pinned but not on the pinned device 0
+   SILENT: S1 align · S2 engine.start (on 41) · X default→42 · R defaultChanged [idle] → adopt 42 · R engineReconfigured [idle] → nothing · S3 intent=true
+P5b N92 scenario: after A returns as the default, Play → re-assert target as default
+◇ Test "N73/N81 the 2-character gate and the type-select match on Sinhala and CJK" started.
+✘ Test "N83 the kit's own claim (break-it 7): ⇧-arrow after ⌘A narrows, never collapses — with an anchor" recorded an issue at P5bBrowseBreakTests.swift:61:9: Expectation failed: (s.ids.count → 2) >= 9
+↳ // NSTableView (measured): {0…8}. The kit's doc: "narrows the range instead of collapsing it".
+↳ ⌘A then ⇧↑ collapsed the select-all to [8, 9]
+✘ Test "N83 the kit's own claim (break-it 7): ⇧-arrow after ⌘A narrows, never collapses — with an anchor" recorded an issue at P5bBrowseBreakTests.swift:67:9: Expectation failed: (m.ids.count → 2) >= 9
+↳ ⌘A then ⇧↓ from a middle anchor collapsed to [4, 5]
+✘ Test "SCENARIO pinned (the default) → the chosen device drops out and comes back → Play: where does sound go?" recorded an issue at P5bOutputPolicyBreakTests.swift:161:9: Expectation failed: !((play → re-assert target as default).reassertTarget → true → true)
+↳ // What the founder's rules ask for: "the user can resume playback after reconnecting" (NFR-REL-02),
+↳ // "nothing carries on from another device by itself", pin = keep THIS (the chosen) device.
+↳ Play re-asserts the SPEAKERS as the system default over the reconnected headphones
+✘ Test "N83 macOS reference: ⇧ after ⌘ keeps the ⌘-built rows (NSTableView T1/T2/T6)" recorded an issue at P5bBrowseBreakTests.swift:44:9: Expectation failed: (s.ids → [4, 6, 5, 7]) == ([1, 4, 5, 6, 7] → [4, 5, 7, 6, 1])
+↳ T1 NSTableView → {1,4,5,6,7}; kit → [4, 5, 6, 7]
+✘ Test "N83 macOS reference: ⇧ after ⌘ keeps the ⌘-built rows (NSTableView T1/T2/T6)" recorded an issue at P5bBrowseBreakTests.swift:50:9: Expectation failed: (t.ids → [6, 5]) == ([1, 5, 6] → [6, 1, 5])
+↳ T6 NSTableView → {1,5,6}; kit → [5, 6]
+P5b N116: worst |linear| diff over 8-bit = 0.0; worst |ratio| diff over all gray pairs = 0.0
+P5b N92: cases answering 're-assert device 0' (target 0 reported alive): 14
+P5b N92: Enhanced start on a dead target with no other default (start runs, next event pauses): 18 cases
+P5b N88: 506x185 source, request 64 → 63x23; servesUpTo = 9223372036854775807
+P5b N73: shouldQuery("කා") = false (2 scalars, 1 grapheme); shouldQuery("愛") = false
+✘ Test "N88 ImageIO can come out 1 px under the request from a larger source → 'whole image' → never upgraded" recorded an issue at P5bBrowseBreakTests.swift:451:9: Expectation failed: !(ThumbnailUpgrade.serves((servesUpTo → 9223372036854775807), request: 320) → true)
+↳ // The source is 506 px: a later 320-px grid tile must NOT be served the \(side)-px decode.
+↳ a 63-px decode is served for a 320-px tile, for good
+✘ Test "N122 hue-bucket wrap: a red cover jittering across 0° splits its vote and loses to a smaller blue field" failed after 0.147 seconds with 1 issue.
+✔ Test "N83 informational: ⇧⌘-click, Home/End, arrow at an edge — where the kit and NSTableView differ" passed after 0.147 seconds.
+✔ Test "N116 known-value vectors (WCAG / WebAIM published ratios)" passed after 0.147 seconds.
+✘ Test "N94 interleavings of an Enhanced start with a default change: no silent 'playing', pill = the device that plays" failed after 0.147 seconds with 2 issues.
+✘ Test "N72 two reads under ONE epoch (a filtered reload, then another) finishing out of order: the older wins" failed after 0.147 seconds with 1 issue.
+✘ Test "N73/N81 the 2-character gate and the type-select match on Sinhala and CJK" recorded an issue at P5bBrowseBreakTests.swift:419:9: Expectation failed: (match → "මිල") == "මාල"
+↳ type-select "මා" landed on Optional("මිල")
+✘ Test "N83 the kit's own claim (break-it 7): ⇧-arrow after ⌘A narrows, never collapses — with an anchor" failed after 0.147 seconds with 2 issues.
+✘ Test "SCENARIO pinned (the default) → the chosen device drops out and comes back → Play: where does sound go?" failed after 0.147 seconds with 1 issue.
+✘ Test "N83 macOS reference: ⇧ after ⌘ keeps the ⌘-built rows (NSTableView T1/T2/T6)" failed after 0.147 seconds with 2 issues.
+↳ /// Vectors measured by the panel's NSTableView harness (exp-p5b/nstable/oracle.swift): a 10-row
+↳ /// `NSTableView`, `allowsMultipleSelection`, clicks and keys sent as real NSEvents.
+✔ Test "N116 the 0.03928 (WCAG 2.0/2.1) vs 0.04045 (WCAG 2.2 / IEC 61966-2-1) threshold: worst difference" passed after 0.147 seconds.
+✔ Test "resumeAfterDeviceLoss: total over hostile doubles" passed after 0.147 seconds.
+✔ Test "all 360 (event × facts) cases agree with the rules written from the spec" passed after 0.147 seconds.
+✔ Test "fixed point: for every case, applying the action and replaying every non-engine event asks for nothing more" passed after 0.147 seconds.
+✔ Test "N117/N118 AppearancePair + resolveSurface: the full flag cube, opaque whenever RT or IC" passed after 0.147 seconds.
+✔ Test "N122 dominant colours: degenerate covers (empty, transparent, gray, single pixel, single colour)" passed after 0.147 seconds.
+✘ Test "N88 ImageIO can come out 1 px under the request from a larger source → 'whole image' → never upgraded" failed after 0.147 seconds with 1 issue.
+✘ Test "N73/N81 the 2-character gate and the type-select match on Sinhala and CJK" failed after 0.142 seconds with 1 issue.
+✘ Suite "P5b output policy — full input space, fixed point, monitor model" failed after 0.148 seconds with 3 issues.
+✔ Test "N115 source-over vs the W3C premultiplied formula, random colors, incl. translucent backdrops" passed after 0.171 seconds.
+✔ Test "N79 every subset of up to 8 rows, every move: spec placement, block, relative orders, availability" passed after 0.175 seconds.
+✔ Test "N89 dedupe keeps first-seen order (vs NSOrderedSet)" passed after 0.219 seconds.
+✔ Test "N119 falloff: continuous, monotone non-increasing, 1 at 0, 0 at ≥1, NaN-safe" passed after 0.396 seconds.
+P5b D8 mask 0: grid min 4.5259, dense min 4.4738 (statusWarningText on badge mask 0 @(0.2140,0.0670))
+P5b N116: worst encoded(linear(c)) - c = 1.6653345369377348e-16
+✔ Test "N116 linear/encoded round trip and monotonicity across the threshold" passed after 0.418 seconds.
+✔ Test "N84 every grid of 0…40 tiles × 1…9 columns, every position, every key, anchored and seeded" passed after 0.675 seconds.
+P5b D8 mask 1: grid min 4.5263, dense min 4.4769 (statusWarningText on badge mask 1 @(0.2140,0.0670))
+P5b AUDIT R4-GLOW-01 labelSecondary @1120pt: grid min 4.7598 @(0.208,0.062)  dense min 4.7202 @(0.2140,0.0670)  gap 0.0396
+P5b D8 mask 2: grid min 4.5259, dense min 4.4738 (statusWarningText on badge mask 2 @(0.2140,0.0670))
+✔ Test "N87 FixedRowReveal: the span ends up in view, by the minimal move; nil only when already in view" passed after 1.280 seconds.
+P5b D8 mask 3: grid min 4.5301, dense min 4.4769 (statusWarningText on badge mask 3 @(0.2140,0.0670))
+P5b D8 mask 4: grid min 4.5259, dense min 4.4738 (statusWarningText on badge mask 4 @(0.2140,0.0670))
+P5b AUDIT R4-GLOW-04 labelTertiary outside core @1120pt: grid min 4.5860 @(0.792,1.000)  dense min 4.5437 @(0.7860,0.9730)  gap 0.0423
+✔ Test "N75/N77 AlbumTrackOrder ignores read order (distinct titles); spans = an item-by-item height walk" passed after 1.705 seconds.
+P5b D8 mask 5: grid min 4.5263, dense min 4.4769 (statusWarningText on badge mask 5 @(0.2140,0.0670))
+P5b D8 mask 6: grid min 4.5259, dense min 4.4738 (statusWarningText on badge mask 6 @(0.2140,0.0670))
+P5b AUDIT R4-GLOW-02 label on rowSelected @1120pt: grid min 8.4968 @(0.208,0.062)  dense min 8.4040 @(0.2140,0.0670)  gap 0.0928
+P5b D8 mask 7: grid min 4.5301, dense min 4.4769 (statusWarningText on badge mask 7 @(0.2140,0.0670))
+✘ Test "N123 R4-GLOW-D8 lattice on a dense field: the {corner, brand} folds at their true worst points" recorded an issue at P5bTokenBreakTests.swift:353:9: Expectation failed: (overall.ratio → 4.473789007736876) >= (ContrastAuditTests.textAA → 4.5)
+↳ statusWarningText on badge mask 0 @(0.2140,0.0670) = 4.473789007736876
+✘ Test "N123 R4-GLOW-D8 lattice on a dense field: the {corner, brand} folds at their true worst points" failed after 2.368 seconds with 1 issue.
+P5b AUDIT R4-GLOW-APP-01 labelSecondary @1120pt: grid min 4.7982 @(0.375,0.312)  dense min 4.7202 @(0.3850,0.3000)  gap 0.0780
+P5b AUDIT R4-GLOW-APP-02 labelTertiary on card (dark) @1120pt: grid min 4.6211 @(0.375,0.312)  dense min 4.6081 @(0.3850,0.3000)  gap 0.0130
+✔ Test "N85/N86 columns are the most that fit; tile fills the width; hostile inputs stay sane" passed after 2.715 seconds.
+P5b AUDIT R4-GLOW-APP-02 labelTertiary on card (light) @1120pt: grid min 4.7347 @(0.000,0.000)  dense min 4.7347 @(0.0000,0.0000)  gap 0.0000
+P5b N121: accepted 176869; light channel range (low: 0.8345227445171661, high: 0.9999999999999999)
+✔ Test "N120/N121 clamp + light pair: in-box, hue-preserving, idempotent, light ≥ pastel luminance, channels in [0,1]" passed after 2.862 seconds.
+P5b AUDIT R4-GLOW-01 labelSecondary @880pt: grid min 4.7598 @(0.208,0.062)  dense min 4.7202 @(0.2140,0.0670)  gap 0.0396
+P5b AUDIT R4-GLOW-04 labelTertiary outside core @880pt: grid min 4.5860 @(0.792,1.000)  dense min 4.5437 @(0.7860,0.9730)  gap 0.0423
+P5b AUDIT R4-GLOW-02 label on rowSelected @880pt: grid min 8.4968 @(0.208,0.062)  dense min 8.4040 @(0.2140,0.0670)  gap 0.0928
+P5b AUDIT R4-GLOW-APP-01 labelSecondary @880pt: grid min 4.7982 @(0.375,0.312)  dense min 4.7202 @(0.3850,0.3000)  gap 0.0780
+P5b AUDIT R4-GLOW-APP-02 labelTertiary on card (dark) @880pt: grid min 4.6211 @(0.375,0.312)  dense min 4.6081 @(0.3850,0.3000)  gap 0.0130
+P5b AUDIT R4-GLOW-APP-02 labelTertiary on card (light) @880pt: grid min 4.7347 @(0.000,0.000)  dense min 4.7347 @(0.0000,0.0000)  gap 0.0000
+✔ Test "N116/N119 audit grid vs dense field: R4-GLOW-01/02/04 and R4-GLOW-APP-01/02 worst points" passed after 4.009 seconds.
+✘ Suite "P5b tokens — WCAG / compositing / glow audit holes / sampled glow" failed after 4.009 seconds with 2 issues.
+P5b N83: ⇧-arrow right after ⌘A on ≥ 3 rows: 2479 cases, 2461 collapsed (> 1 row lost)
+✘ Test "N83 invariants over 20 000 random operation sequences (filters, re-sorts, reloads)" recorded an issue at P5bBrowseBreakTests.swift:180:9: Expectation failed: (collapses → 2461) == 0
+↳ ⇧-arrow after ⌘A collapsed the selection in 2461/2479 cases
+✘ Test "N83 invariants over 20 000 random operation sequences (filters, re-sorts, reloads)" failed after 5.873 seconds with 1 issue.
+✔ Test "N80 random schedules: one write in flight, FIFO turns, newest per key, no stale after newer, nothing lost" passed after 43.011 seconds.
+✘ Suite "P5b browse — selection vs NSTableView, moves, grid, writer, epoch, thumbnails, layout" failed after 43.012 seconds with 8 issues.
+✘ Test run with 30 tests in 3 suites failed after 43.012 seconds with 13 issues.

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Profiler_Timing (debug -O0 build): 192 kHz × 8 ch 35.3 ms per second of audio (28× real time; budget 250; 57 blocks); 44.1 kHz stereo 2.13 ms per second (470× real time); predict 6000 × 247 bands 10.899 ms, every 4th block 2.892 ms (budget 40.0) [40.4]
+[PASS] Profiler_Timing
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,8 @@
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] Realizer.reinitializeKernel 48000 Hz, 1024 frames — EQ re-solved
+=== DSPKernel Null Test Suite (--filter) ===
+
+[PASS] EQ_Reallocate_KeepsCurve
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

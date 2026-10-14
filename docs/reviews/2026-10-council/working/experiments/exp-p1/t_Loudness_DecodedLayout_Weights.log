@@ -1,0 +1,9 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Loudness_DecodedLayout_Weights (b): lufsSurr=-21.4933 lufsLR=-22.9933 delta=1.5
+  [info] Loudness_DecodedLayout_Weights (b-lfe): lufsLfe=-200
+  [info] Loudness_DecodedLayout_Weights (c): meter=-18.3506 oracle=-18.3506 delta=0
+[PASS] Loudness_DecodedLayout_Weights
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.
