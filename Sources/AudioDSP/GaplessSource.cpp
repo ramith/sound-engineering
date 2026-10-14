@@ -46,9 +46,20 @@
 // running and the acquire-load at the top of every pullFloat sees its own prior release-store.
 //
 // retired_ is written by the RT thread (release) and read+cleared by reapRetired (off-RT). Only
-// one track can be parked at a time: a second seam needs a second arm, and armNext reaps the
-// retired slot before it arms (with nothing armed the RT thread cannot seam, so retired_ is
-// stable while it does), so retired_ never overwrites a live pending reap.
+// one track can be parked at a time: a second seam needs a second arm, and tryArmNext reaps the
+// retired slot before it arms, so retired_ never overwrites a live pending reap.
+//
+// A seam in flight (council D41, P3a §3). "Nothing is armed" does NOT mean "the render is not
+// mid-seam": right after its exchange claimed the armed track, armedNext_ reads null, but until
+// the two release stores (retired_, then active_) land, the claimed slot is neither armed, active
+// nor retired — it looks free — and active_ still names the old track. An arm in that window
+// would pick the claimed slot (destroying the track being adopted, which then seams into itself)
+// or check against a track it just reaped. So the control plane remembers the slot it armed last
+// (lastArmed_, control-only); if nothing is armed and it did not take that slot off itself, the
+// render claimed it, and tryArmNext waits — bounded, never on the RT thread — until active_ names
+// it. Its acquire load pairs with the render's release store of active_, so the retirement stored
+// before it is visible too, and from there the state is a quiet one: one active, one retired or
+// free. The RT path is unchanged and wait-free.
 //
 // renderedFrames is per-Track: written by the RT thread (release fetch_add), read by the poll
 // plane (acquire). seekBaseFrames is off-RT only (set by setCurrent/resetActiveBase while the
@@ -57,6 +68,8 @@
 //
 
 #include "include/GaplessSource.h"
+
+#include "include/BoundedWait.h"
 
 #include <algorithm>
 #include <atomic>
@@ -88,6 +101,7 @@ namespace AdaptiveSound
         transitions_.store(0U, std::memory_order_relaxed);
         ended_.store(false, std::memory_order_relaxed);
         reapCount_.store(0U, std::memory_order_relaxed);
+        lastArmed_ = nullptr;
 
         for (Track& track : tracks_)
         {
@@ -106,9 +120,9 @@ namespace AdaptiveSound
 
     GaplessSource::Track* GaplessSource::freeSlotForArm() noexcept
     {
-        // Callable only while armedNext_ == nullptr: with no slot armed the RT thread cannot be
-        // mid-seam (the seam straddle only fires on a non-null armed pointer), so the slot this
-        // returns is free of any concurrent RT access.
+        // Callable only while armedNext_ == nullptr AND no claimed seam is unpublished (tryArmNext
+        // waits for it): then the RT thread is not mid-seam, so the slot this returns is free of
+        // any concurrent RT access.
         assert(armedNext_.load(std::memory_order_acquire) == nullptr);
         const Track* active = active_.load(std::memory_order_acquire);
         const Track* retired = retired_.load(std::memory_order_acquire);
@@ -118,47 +132,57 @@ namespace AdaptiveSound
         return slot != tracks_.end() ? slot : nullptr;
     }
 
-    bool GaplessSource::armNext(std::unique_ptr<FileDecodeSource> source) noexcept
+    GaplessSource::ArmOutcome
+    GaplessSource::tryArmNext(std::unique_ptr<FileDecodeSource> source) noexcept
     {
+        // `source` was moved into this by-value parameter on the call, so on every early return its
+        // dtor frees the refused FileDecodeSource (joining its decode thread) off-RT — exactly what
+        // we want.
         if (source == nullptr)
         {
-            return false;
+            return ArmOutcome::NoActiveTrack;
         }
         // One slot, never replaced: refuse a second arm (the caller takes the old pick off first).
-        // `source` was moved into this by-value parameter on the call, so on this early return
-        // its dtor frees the refused FileDecodeSource (joining its decode thread) off-RT — exactly
-        // what we want.
         if (armedNext_.load(std::memory_order_acquire) != nullptr)
         {
-            return false;
+            return ArmOutcome::Occupied;
         }
         // The end is final: the active track already ended with nothing armed, so the session is
         // over and the caller starts the next track fresh. (If the end lands after this check, the
         // RT thread never adopts the arm — see pullFloat.)
         if (ended_.load(std::memory_order_acquire))
         {
-            return false;
+            return ArmOutcome::Ended;
+        }
+        // Nothing is armed — but the render may have claimed the last arm a moment ago and not
+        // published it yet: wait for that, so the slots and the active track read below are quiet.
+        if (!awaitSeamPublished())
+        {
+            return ArmOutcome::SeamInFlight;
         }
         // Free the slot the last seam retired before looking for one: a track armed right after a
-        // seam must not wait for the poll plane's reap. Nothing is armed, so the RT thread cannot
-        // seam and retired_ is stable here.
+        // seam must not wait for the poll plane's reap. Nothing is armed and no seam is in flight,
+        // so retired_ and active_ are stable here.
         reapRetired();
         // Only a track the running stream can carry reaches the seam: the stream runs at the
         // active track's rate and width (the engine refuses a session whose device stream is not
         // the file's width), and the seam swaps sources without reconfiguring anything. A track of
         // another rate or channel count is refused here — it would pull nothing at the seam and
         // play silence that never ends — so it plays through the normal transition instead, where
-        // the policy decides its path. With nothing armed the RT thread cannot swap the active
-        // track, so reading it here is stable.
+        // the policy decides its path.
         const FileDecodeSource* active = activeSource();
-        if (active == nullptr || !sameRateGaplessCompatible(*active, *source))
+        if (active == nullptr)
         {
-            return false;
+            return ArmOutcome::NoActiveTrack;
+        }
+        if (!sameRateGaplessCompatible(*active, *source))
+        {
+            return ArmOutcome::Incompatible;
         }
         Track* slot = freeSlotForArm();
         if (slot == nullptr)
         {
-            return false; // unreachable: the retired slot was reaped above
+            return ArmOutcome::Occupied; // unreachable: the retired slot was reaped above
         }
         slot->source = std::move(source);
         slot->renderedFrames.store(0U, std::memory_order_relaxed);
@@ -166,6 +190,35 @@ namespace AdaptiveSound
         // Release: publish the armed source's construction before the RT thread can adopt it via
         // the seam exchange (acq_rel) → active_.
         armedNext_.store(slot, std::memory_order_release);
+        lastArmed_ = slot;
+        return ArmOutcome::Armed;
+    }
+
+    bool GaplessSource::armNext(std::unique_ptr<FileDecodeSource> source) noexcept
+    {
+        return tryArmNext(std::move(source)) == ArmOutcome::Armed;
+    }
+
+    bool GaplessSource::awaitSeamPublished() noexcept
+    {
+        // Nothing is armed. If this plane armed a track and did not take it off (clearNext forgets
+        // it), the render claimed it; once active_ names it the seam is published.
+        if (lastArmed_ == nullptr)
+        {
+            return true;
+        }
+        if (active_.load(std::memory_order_acquire) != lastArmed_)
+        {
+            atTestPoint(TestPoint::ArmWaitsForSeam);
+            const bool published =
+                waitUntil([this] { return active_.load(std::memory_order_acquire) == lastArmed_; },
+                          kSeamPublishWait);
+            if (!published)
+            {
+                return false;
+            }
+        }
+        lastArmed_ = nullptr; // adopted: it is the active track now
         return true;
     }
 
@@ -181,7 +234,9 @@ namespace AdaptiveSound
             slot->source.reset(); // joins the dropped source's decode thread off-RT
             slot->renderedFrames.store(0U, std::memory_order_relaxed);
             slot->seekBaseFrames = 0U;
+            lastArmed_ = nullptr; // taken off: no seam can be claiming it
         }
+        // Otherwise the render claimed lastArmed_ (if any): the next arm waits for its publish.
     }
 
     void GaplessSource::reapRetired() noexcept
@@ -254,6 +309,22 @@ namespace AdaptiveSound
         return reapCount_.load(std::memory_order_acquire);
     }
 
+#ifdef ADAPTIVESOUND_GAPLESS_TEST_HOOKS
+    void GaplessSource::setTestHook(TestHook hook, void* context) noexcept
+    {
+        testContext_.store(context, std::memory_order_relaxed);
+        testHook_.store(hook, std::memory_order_release);
+    }
+
+    void GaplessSource::atTestPoint(TestPoint point) noexcept
+    {
+        if (const TestHook hook = testHook_.load(std::memory_order_acquire); hook != nullptr)
+        {
+            hook(point, testContext_.load(std::memory_order_relaxed));
+        }
+    }
+#endif
+
     uint32_t GaplessSource::pullFloat(float* out, uint32_t frames, uint32_t channels) noexcept
     {
         Track* cur = active_.load(std::memory_order_acquire);
@@ -297,7 +368,10 @@ namespace AdaptiveSound
 
         // Seam straddle: retire the old active off-RT (RT NEVER joins), adopt the next, and pull
         // its head into the SAME host buffer right behind A's tail → sample-accurate concatenation.
+        // (The test points compile to nothing outside the null test.)
+        atTestPoint(TestPoint::SeamClaimed);
         retired_.store(cur, std::memory_order_release);
+        atTestPoint(TestPoint::SeamRetired);
         active_.store(nxt, std::memory_order_release);
 
         // RT-path insurance: mirror the active-track guard. A slot with a null source can never be

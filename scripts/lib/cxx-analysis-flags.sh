@@ -49,19 +49,23 @@ cxx_analysis_core_flags() {
 }
 
 # cxx_test_extra_flags — the TEST-ONLY additions layered on top of the core flags for
-# translation units under Tests/: the vendored libebur128 oracle headers (a submodule)
-# and two quoted-string-literal path macros. The embedded double quotes are intentional
-# and survive the caller's word-splitting because the repo path is space-free.
+# translation units under Tests/: the vendored libebur128 oracle headers (a submodule),
+# two quoted-string-literal path macros and one switch. The embedded double quotes are
+# intentional and survive the caller's word-splitting because the repo path is space-free.
 #   - ADAPTIVESOUND_TEST_DATA_DIR — the DSP-kernel null-test data dir.
 #   - ADAPTIVE_FIXTURES_DIR       — the audio fixtures dir; Tests/HandleLeakHarness.mm hard
 #     `#error`s without it, so it must live HERE (not injected per-caller) or the pre-commit
 #     hook and the strict-gate tests-pass would drift — build-leak-check.sh passes the same
 #     value for the actual harness build.
+#   - ADAPTIVESOUND_GAPLESS_TEST_HOOKS — compiles GaplessSource's test points (the null test
+#     pauses the render inside a seam with them); build-null-test.sh defines it too. Never
+#     defined for the app: there every test point compiles to nothing.
 cxx_test_extra_flags() {
     local flags=(
         -I "$_cxx_repo_root/third_party/libebur128/ebur128"
         "-DADAPTIVESOUND_TEST_DATA_DIR=\"$_cxx_repo_root/test-data\""
         "-DADAPTIVE_FIXTURES_DIR=\"$_cxx_repo_root/Tests/Fixtures/artwork-audio\""
+        -DADAPTIVESOUND_GAPLESS_TEST_HOOKS=1
     )
     printf '%s ' "${flags[@]}"
 }
