@@ -36,7 +36,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 | ID | Issue | Severity | Scheduled | Forward link |
 |---|---|---|---|---|
-| KI-LIB-01 | "Remove Missing…" deletes entries whose drive is merely unplugged | HIGH | R1.1-A | US-R1F-03 |
 | KI-MC-01 | A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped | HIGH | R1.1-B (BS.775 fold-down, FD-9); S18 replaces it | US-R1F-08 |
 | KI-MC-02 | Channel roles come from positions, not the file's labels: an ALAC / AAC 5.1 file plays its centre on the left; 3-, 4-, 5- and 7-channel files fall back to stereo | HIGH | R1.1-B | US-R1F-08 |
 | KI-PB-18 | Dragging the scrubber to the end of a track that isn't 48 kHz stops playback for good | HIGH | R1.1-A | US-R1F-11 |
@@ -60,11 +59,10 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | pool (first candidate) | US-R1F-06 |
 | KI-DEV-01 | Crossfeed is unavailable on wired headphones in the Mac's own jack | MEDIUM | R1.1-A (with the crossfeed fix) | US-R1F-12, US-R1F-06 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
-| KI-LIB-02 | Paused / failed folders are invisible; an emptied folder keeps its songs | MEDIUM | R1.1-A | US-R1F-03 |
+| KI-LIB-02 | Paused / failed folders are invisible; an emptied folder keeps its songs | MEDIUM | R1.1-A (the paused display: founder decision) | US-R1F-03 |
 | LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
 | KI-LIB-03 | A failed first metadata pass leaves "No Music Yet", with no retry | MEDIUM | pool | US-R1F-03 |
 | KI-LIB-04 | Dragging a multi-selection onto a playlist adds one song | MEDIUM | pool | US-R1F-04 |
-| KI-LIB-11 | Search splits Sinhala words at vowel signs; text stored decomposed (NFD) can't be found | MEDIUM | R1.1-A (tokenizer + NFC); R1.1-B (one rule) | US-R1F-14 |
 | KI-SEC-01 | If FFmpeg is installed, it parses every FLAC / Ogg / Opus file first during the scan, loaded from a user-writable path | MEDIUM | R1.1-A (opt-in, FD-3) | US-R1F-16 |
 | KI-PURE-01 | On Pure, each pause and resume switches the DAC's sample rate twice (pause is a device teardown) — unverified on hardware | MEDIUM | parked (FD-5) | US-ENG-07 |
 | KI-PB-07 | Next / Previous while paused keep the old song's duration | LOW | R1.1-A | US-R1F-01 |
@@ -363,17 +361,6 @@ into the RT tap for a path that is not yet primary.
 
 ## Library and playlists
 
-### KI-LIB-01 — "Remove Missing…" deletes entries whose drive is merely unplugged
-
-**Status:** OPEN · **Severity:** HIGH (irreversible playlist data loss, behind an explicit confirm the founder accepted in
-Sprint E #12) · **Source:** breaker A post-R1 #13 · **Scheduled (2026-10-14):** R1.1-A (without a tombstone — FD-10) · **Forward:** US-R1F-03.
-
-Availability is a file-existence check only (`PlaylistsModel.swift:265-269`); `missingEntryIDs` ignores whether the
-song's music folder is paused / unreachable (`PlaylistsModel+DeadFiles.swift:33-34`). *(Not covered by R1's
-sweep-evidence fix, PR #88, which guards the scanner's sweep, not this dialog.)* With the music drive unplugged a
-playlist's songs show as missing, and the dialog ("files that are missing from disk will be removed. This can't be
-undone.", `UI/Playlist/PlaylistRemoveMissingDialog.swift:21-22`) removes them for good.
-
 ### KI-LIB-02 — Paused / failed folders are invisible; an emptied folder keeps its songs
 
 **Status:** OPEN (slightly improved by 95870a5, PR #85: launch now reconciles every folder and pauses an unreachable one)
@@ -385,13 +372,18 @@ guard refuses the sweep silently. There is no Rescan control. *(Since PR #88 a w
 unreachable, on another drive, unrecognized, read only in part, or empty — refuses its sweep (`SweepRefusal`, five
 reasons) and pauses the folder silently, on the reconcile and on the add walk alike
 (`LibraryModel+Reconcile.swift:153-154`, `:165-166`; `LibraryModel+Scan.swift:213-215`). Paused folders are now more
-common and still invisible; see LIB-VOL-1.)*
+common and still invisible; see LIB-VOL-1.)* *(R1.1-A, branch `r1.1a/library` — council C-55: a subfolder the walk
+can't read no longer pauses its folder. The walk is evidence of what it read: it spares the songs under what it could
+not read and sweeps, and reads the tags of, the rest (`LibraryScanner`, `LibraryStore.sweepOrphans(…sparing:)`); only a
+folder it cannot open at all is still refused, `.incompleteWalk`. Showing a paused folder waits for a founder decision on
+its treatment. Also: the volume monitor does not walk a folder whose drive was just unplugged (`handleVolumeChange`
+walks only reachable folders), so its state can read "watching" until a walk of it is refused.)*
 
 ### LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
 
 **Status:** OPEN (accepted limitations) · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-B ("Use this drive", council C-54) · **Forward:** US-R1F-03.
 
-A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26) stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk) stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7"); and a folder with a subfolder the app can never read never has its deleted songs swept (`LibraryStore+Roots`, `SweepRefusal`).
+A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26) stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk) stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7")~~; and a folder with a subfolder the app can never read never has its deleted songs swept~~ (`LibraryStore+Roots`, `SweepRefusal`). *(The struck limitation is fixed in R1.1-A, council C-55: the walk spares only the songs under what it could not read — see KI-LIB-02.)*
 
 **Do not remove and re-add a paused folder as a workaround:** removing a folder deletes every song of it that no
 playlist references, so re-adding it brings those songs back with new ids — their play counts, loved flags and
@@ -610,15 +602,6 @@ An Enhanced start races the output-device rule (`AudioEngineBridge+Playback.swif
 explored interleavings end silent or on the wrong device, for example Play right after Bluetooth headphones connect.
 R1's device-return fix (N92) did not change this.
 
-### KI-LIB-11 — Search splits Sinhala words; decomposed text can't be found
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-61 (P5A SRCH-1…5, P5B-07 / -11) · **Scheduled
-(2026-10-14):** R1.1-A (tokenizer categories + NFC); R1.1-B (one search rule + ⌘F) · **Forward:** US-R1F-14.
-
-The full-text tokenizer treats Sinhala vowel signs as separators, so "මාල" matches "මිල"; text stored decomposed (NFD)
-can't be found from a composed query; type-select folds marks; and three search semantics exist (KI-LIB-09)
-(`LibraryStore+Search.swift:16-48`).
-
 ### KI-SEC-01 — If FFmpeg is installed, it parses every FLAC / Ogg / Opus file first, from a user-writable path
 
 **Status:** OPEN · **Severity:** MEDIUM (security; only with FFmpeg installed) · **Source:** council C-99 (the
@@ -750,6 +733,61 @@ own slot, never an earlier copy of it (`QueueInsert.playNextNow` by slot, N6). *
 dragged in under the current one never plays; with Repeat All an append waits a whole cycle; a one-song shuffle plus an
 append stops. An append during a start's prime is not armed (its Play Next twin was fixed in R1, PR #88), and
 `playNextNow` ignores duplicates.
+
+### Fixed in R1.1-A — library safety and search (branch `r1.1a/library`)
+
+Council lane 6 (C-55, KI-LIB-01, the C-58 / P5B-01 fix, the C-61 slice). Four commits, named by their subjects: "a walk
+is evidence of what it read — an unreadable subfolder no longer stops its folder's sweeps", "Remove Missing never takes
+a song whose drive is only unplugged", "search reads a word in any script, however it is stored — store v9", "the newer
+of two filter reads always wins". Each fix landed with its red test first: the tests failed on `b5c4cd3` and pass after
+(`Tests/AdaptiveSoundTests/PlaylistRemoveMissingTests.swift`; in `Tests/LibraryBrowseKitTests/`: `SweepEvidenceTests`
+"C-55" and LIB-02a, `SearchScriptsTests`, `FileAvailabilityTests`, `SearchEpochTests` P5B-01; VerifyLibraryStore SE-2
+and ST-1, the v8 → v9 upgrade). Also closed here, with no entry of its own: council C-58's P5B-01 — a filtered reload's
+older read could land last and hide a newly scanned match (`SearchEpoch.beginRead`). Still open from the lane: the
+paused folder's display (KI-LIB-02, a founder decision).
+
+#### KI-LIB-01 — "Remove Missing…" deletes entries whose drive is merely unplugged
+
+**Status:** ✅ CLOSED in R1.1-A, "Remove Missing never takes a song whose drive is only unplugged" (without a tombstone —
+FD-10). A playlist entry's file is judged by the library's own sweep evidence (`LibraryScan/FileAvailability.swift`,
+`LibraryScanner.availability`): AVAILABLE when it is there; MISSING only when nothing is at its path (`lstat` ENOENT /
+ENOTDIR) and its music folder passes the check a walk makes before it starts (`LibraryScanner.rootAtPath`: there, on the
+drive it is bound to — unbound, holding some of its songs) — for a song in no music folder, when the folder it was in
+is there; otherwise UNREACHABLE (the drive unplugged, another drive with its name at its path, a folder the app may not
+read). Remove Missing… offers only missing entries; its dialog says how many unreachable ones stay; an unreachable row's
+badge says "Can't be reached — its drive may not be connected". The header still counts both as unavailable, and
+neither plays. Consequence, the scanner's own: a music folder deleted whole from disk reads as unreachable too (it
+can't be told from an unplugged drive, and the library keeps its songs alike), so its playlist entries are removed one
+by one (the row's Remove). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** HIGH (irreversible playlist data loss, behind an explicit confirm the founder accepted
+in Sprint E #12) · **Scheduled (2026-10-14):** R1.1-A (without a tombstone — FD-10) · **Forward:** US-R1F-03.~~
+
+*(As found at `b5c4cd3`:)* Availability is a file-existence check only (`PlaylistsModel.swift:265-269`); `missingEntryIDs`
+ignores whether the song's music folder is paused / unreachable (`PlaylistsModel+DeadFiles.swift:33-34`). *(Not covered
+by R1's sweep-evidence fix, PR #88, which guards the scanner's sweep, not this dialog.)* With the music drive unplugged a
+playlist's songs show as missing, and the dialog ("files that are missing from disk will be removed. This can't be
+undone.", `UI/Playlist/PlaylistRemoveMissingDialog.swift:21-22`) removes them for good.
+
+#### KI-LIB-11 — Search splits Sinhala words; decomposed text can't be found
+
+**Status:** ✅ CLOSED in R1.1-A (the C-61 slice), "search reads a word in any script, however it is stored — store v9".
+Store migration v9 (`Schema+SearchTokens.swift`, additive: the derived `tracks_fts` is recreated and rebuilt from
+`tracks` through the write path's own projection; user data untouched) gives the tokenizer every mark as a token
+character, `unicode61 remove_diacritics 2 categories 'L* N* Co M*'` (FTS5 §4.3.1): a Sinhala vowel sign is part of its
+word, and only a Latin letter's accents fold. The index and every query are put in one normal form first
+(`LibraryStore.searchText`) — NFKC, the compatibility form of the NFC the plan named, so a width or ligature variant
+(ＪＡＰＡＮ, ﬁ) also meets its plain letters, as type-to-select already promised. The grids' Filter and type-to-select read
+a word by the same rule (`LibraryBrowseKit/SearchFold.swift`, council N81 / P5B-07): "මා" selects "මාල", never "මිල".
+Consequences: Greek and Cyrillic marks count (ά ≠ α, й ≠ и), as in the index. The three match SHAPES (a word's start,
+a substring, the title's start) remain — KI-LIB-09, R1.1-B's one search rule. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (tokenizer categories + NFC); R1.1-B (one
+search rule + ⌘F) · **Forward:** US-R1F-14.~~
+
+*(As found at `b5c4cd3`:)* The full-text tokenizer treats Sinhala vowel signs as separators, so "මාල" matches "මිල"; text
+stored decomposed (NFD) can't be found from a composed query; type-select folds marks; and three search semantics exist
+(KI-LIB-09) (`LibraryStore+Search.swift:16-48`).
 
 ### Fixed in R1.1-A — a faithful default and the listener's settings kept (branch `r1.1a/faithful-default`)
 
