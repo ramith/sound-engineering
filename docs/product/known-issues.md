@@ -54,6 +54,12 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 **Status:** OPEN (accepted limitations). A folder is bound to its drive's volume UUID (the startup disk as itself, since its UUID changes with the Mac); one on a volume that reports no UUID (some network volumes; FAT32/exFAT report one on macOS 26) stays unbound and is walked only while some of its songs are where the library has them — so a folder all of whose files were moved or renamed at once while unbound (on such a volume, or between the v8 upgrade and its first walk) stays paused until it is removed and re-added; so does a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7"); and a folder with a subfolder the app can never read never has its deleted songs swept (`LibraryStore+Roots`, `SweepRefusal`).
 
+**Do not remove and re-add a paused folder as a workaround:** removing a folder deletes every song of it that no
+playlist references, so re-adding it brings those songs back with new ids — their play counts, loved flags and
+ratings are lost. A lossless "use this drive" action on a paused folder is on the council follow-up list (founder,
+2026-10-14). Also narrow: the first walk after the v8 upgrade binds whatever drive is at the folder's path, so a
+same-name *backup* drive mounted at that moment can be bound instead of the real one (found by the R1 break-it).
+
 ---
 
 ## DEV-1 — The chosen output device is forgotten when the app quits
