@@ -2,9 +2,10 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.6.1 — re-checked after R1's blocker fixes (PR #88, 2026-10-14); 2.6 reconciled to the code (product council, 2026-10-13, against a206107); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Version:** 2.7 — scheduled from the founder's decisions on the 2026-10 product council (2026-10-14); 2.6.1 re-checked after R1's blocker fixes (PR #88, 2026-10-14); 2.6 reconciled to the code (product council, 2026-10-13, against a206107); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
 **Change note (2026-10-13, council):** every story re-checked against `main` (a206107). S8–S10.8 deliveries marked with a back-link (PR / sprint ledger / design doc + the main code location); partial and missing work forward-linked to a roadmap sprint (S11–S18) or to the new **Post-R1 fix pool** (US-R1F-01…07) and release items (US-REL-01/02, US-QA-07). Reversed decisions are annotated, not deleted. Proven-by anchors that no longer exist in the code (`NowPlayingWidget`, `EQPresetPickerView`, the `VerifyAUGraph` FR sweep) were corrected.
 **Change note (2026-10-14, after R1):** R1 shipped as v1.0.0-alpha (tag on f098821) with the council's blocker fixes (PR #88). Stories they touched re-checked against `7761693`: US-ENG-07, US-PLAY-03, US-PLAY-05, US-DEVICE-09, US-LIB-01, US-PLIST-02 and the Post-R1 fix pool (KI-PB-01 closed; KI-PB-16 / -17, LIB-VOL-1 and DEV-1 placed).
+**Change note (2026-10-14, the council re-plan):** the founder decided FD-1…10 on the [council report](../reviews/2026-10-council/README.md). Every Post-R1 pool story now names where it is scheduled — **R1.1-A**, **R1.1-B**, the **Engine sprint** or **pool** (accepted, unscheduled) — and links the council's register rows (**C-xx**, [`stage5-architect.md` §1](../reviews/2026-10-council/working/stage5-architect.md#1-finding-register)). New: US-R1F-09…16 (the R1.1 items no story covered), [EP-PLAYENGINE](#ep-playengine--the-engine-sprint) (the Engine sprint, US-PE-01…03), [EP-RELEASE](#ep-release--release-readiness-deferred--fd-7-2026-10-14) (release readiness, deferred; US-REL-03…05 added beside US-REL-01/02), and US-MCP-00 (W2 + the command layer, which EP-MCP now waits for). Stories whose target a decision changed are annotated: US-ENG-06, US-ENG-07, US-ENG-09, US-PLAY-07, US-DEVICE-07, US-LIB-02, US-PLIST-02, US-RMG-01.
 **Change note (2026-07-12):** Removed natural-language tuning (EP-NLT/US-NLT-*/SPIKE-NLT-ARCH) and hearing personalization stories from scope — founder decision; git has the prior text.
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
@@ -124,7 +125,9 @@ A story is done when:
 | EP-IMMERSION | **(was EP-SPAT + EP-HEADTRACK)** BRIR-first binaural (HRTF + room reflections/reverb), room synthesis, head-tracking (opt-in), speaker M/S + ambience (mono-safe) | 1 | FR-SPAT-01..07, LD-14, DEP-03 | Externalisation works (ABX vs dry-HRTF); spatial adoption |
 | EP-ADAPT | **(absorbs EP-AMBIENT)** Pre-analysis pipeline (look-ahead, cached), content/genre, on-demand ambient, conservative cadence | 1 | FR-ADAPT-01/04..08, NFR-PERF-02/04 | Adaptation imperceptible-as-motion; adapts with foresight |
 | EP-REIMAGINE | **(new)** The single intensity control (0 = bit-faithful → full reimagine); mix-range now, stem-range at 1.5 | 1 (stem-range 1.5) | FR-REIMAGINE-01..04, NFR-QUAL-03, LD-16 | Reimagine engagement; intensity-0 verified bit-transparent |
-| EP-MCP | **(new, founder 2026-10-13)** Agent control surface: every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP client) can drive the app, over the same command / state API as the UI | unscheduled (placement: 2026-10 council) | FR-AGENT-01 | 100 % of user-facing actions have an MCP tool; an end-to-end agent demo (Claude Desktop + OpenClaw) |
+| EP-MCP | **(new, founder 2026-10-13)** Agent control surface: every player function exposed through a local MCP server, so an LLM client (Claude, OpenClaw, any MCP client) can drive the app, over the same command / state API as the UI | ~~unscheduled (placement: 2026-10 council)~~ after W2 + the command layer, R2 or later (FD-8, 2026-10-14) | FR-AGENT-01 | 100 % of user-facing actions have an MCP tool; an end-to-end agent demo (Claude Desktop + OpenClaw) |
+| EP-PLAYENGINE | **(new, founder 2026-10-14 — FD-4)** The Engine sprint: study SFBAudioEngine at code level, build our own Enhanced engine as its own module behind a clean interface, compare the two, decide | 0 (execution: after R1.1, before R2) | FR-PLAY-01/03, FR-DEVICE-06, NFR-QUAL-02/04, NFR-REL-02 | Same-format joins sample-continuous; the 11 measured checks pass; one Enhanced engine ships |
+| EP-RELEASE | **(new 2026-10-14 — deferred by FD-7)** Release readiness: the Apache-2.0 LICENSE and notices, Developer ID + notarization, diagnostics, playlist export + library backup, a clean-Mac first run | — (when the founder calls a wider release) | NFR-INSTALL-01, NFR-REL-01, LD-9, CON-12 | A tester installs, plays, and can send diagnostics back |
 | EP-PROFILE | Named profiles, device↔profile binding, A/B mode | 1 | FR-DEVICE-04/05 | D30 active-use > 40% |
 | EP-UI | Now Playing, DSP + **Reimagine** controls, onboarding, dark mode, accessibility, l10n-ready | 0→1 | FR-UI-01..07, NFR-ACC-01..04, NFR-L10N-01/03 | Rating > 4.3; onboarding < 3 min |
 | EP-PRIVACY | Mic permission (on-demand), sandbox | 1 | NFR-PRIV-01..05 | No mic data in outbound traffic |
@@ -251,6 +254,7 @@ As a **developer** I want a transparent true-peak limiter as the final stage in 
 As a **developer** I want the DSP chain to query the output device's preferred sample rate and perform high-quality SRC when the source file's rate differs, so that a 44.1 kHz file plays correctly on a 48 kHz device and vice versa.
 
 **Status (2026-10-13):** Shipped · proven-by: `SRCQualityMeasure` (US-QA-04) · `AudioEngineBridge+EnhancedResampler.swift` (Enhanced: an explicit `AVAudioConverter` at `.max` quality into the 48 kHz graph; 48 kHz files take the `scheduleFile` passthrough) + `HALOutputEngine` (Pure: the device is switched to each track's rate, US-ENG-07).
+*(Council 2026-10-14, C-26 / R-6: the Enhanced converter runs AVAudioConverter's **Normal** algorithm — −8.25 dB at 20 kHz, 192 → 48 kHz aliases at −21 dB — so the stopband criterion below is not met, and `SRCQualityMeasure` prints −7.23 dB at 20 kHz and still says PASS. **Scheduled:** R1.1-A — Apple's Mastering-quality converter and a gate that fails when it should → [US-R1F-11](#us-r1f-11--seek-to-the-end-and-treble-that-isnt-rolled-off); KI-SND-02.)*
 
 **Acceptance Criteria:**
 - See FR-DEVICE-06 Given/When/Then: 44.1 kHz file on 48 kHz device plays at correct pitch and duration.
@@ -268,6 +272,7 @@ As a **Ramith** I want a bit-perfect playback path that drives the DAC directly 
 
 **Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
 *(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:111-115`. **R1 blocker fixes (PR #88):** a track whose channel count is not the device stream's, or a device format Pure cannot write exactly, plays in Enhanced with a notice (it used to be endless silence, or an IO-buffer overrun for packed 24-bit) — `PureModePolicy.cpp:126-135`, `PureModeFormat.h`; NaN / Inf become silence; a changed next track reaches Pure (D41, KI-PB-01 closed); a teardown never reopens the render gate. Open: KI-PB-05, KI-PB-16, KI-SET-02 in [known-issues.md](known-issues.md). **Follow-up (unscheduled):** map channels inside Pure (AUHAL `kAudioOutputUnitProperty_ChannelMap`), so a mono file, or a stereo file on a multichannel interface, can stay bit-perfect.)*
+*(2026-10-14: the **USB-DAC check is parked** (FD-5) — no DAC for about two weeks, and the virtual-DAC rig waits for the founder's hardware rig. It owes: the integer path on real hardware; Pure pause and resume, which today tears the device down and switches its rate twice (council C-100, KI-PURE-01); the HAL device-state contract (C-31); and that HDMI is still accepted after R1's format rules. Pure honesty (the reason shown, "not bit-perfect" at a lower depth) is R1.1-A → [US-R1F-13](#us-r1f-13--pure-says-why).)*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -288,6 +293,7 @@ As a **Marcus** I want the engine to measure program loudness to the BS.1770-5 s
 
 **Status:** Shipped · proven-by: `LoudnessModule` (BS.1770-5 integrated-loudness meter + ramped LUFS-normalization makeup gain, off-RT; not applied in Pure Mode) + libebur128 oracle gate
 *(Since Sprint EQ, PR #73: each track is also analysed at load time, off the audio path — `TrackLoudnessKit/TrackLoudnessAnalyzer.swift` (a ~25 s prefix at once, then the whole track; the next track prefetched) — feeding the loudness-neutral EQ gain (decision 26). The normaliser's contribution fades in over Intensity 0 → 10 % and glides ~2 s when Intensity crosses 0 (decision 33), so at Intensity 0 a track plays at its original level. Target: −16 LUFS, `AudioConstants.h:34`. The runtime meter is the in-house `LufsMeter`; libebur128 is a test-only oracle.)*
+*(2026-10-14, FD-2 and council C-38: the normaliser is a session-long AGC — its make-up gain carries across tracks and a gapless run is never re-measured. **R1.1-A** turns leveling off by default ([US-R1F-09](#us-r1f-09--a-faithful-default)); **R1.1-B** makes leveling its own setting — Off / Album / Track, a static gain from the existing analysis, off by default ([US-R1F-10](#us-r1f-10--leveling-as-its-own-setting)).)*
 **Traceability:** FR-TONAL-07, NFR-QUAL-01, NFR-PERF-04
 
 ---
@@ -372,7 +378,7 @@ As a **developer** I want a soak test proving zero audio-thread allocations and 
 As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files into the app and hear them immediately, so that I can load my existing library without format conversion.
 
 **Status:** Shipped (decode path) · proven-by: `FileDecodeSource` (runtime FFmpeg-via-`dlopen` with baked major-version guard, or Apple `ExtAudioFile`; FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC). ~~⚠ Deviation: **Opus** replaced OGG-Vorbis on the shipped list. Broader player UX (flat in-memory playlist + folder monitor) is shipped; persistent library/browse/queue remains the unbuilt critical path (S8–S10).~~
-*(Corrected 2026-10-13 against the code: the import path is now the **library scan**, not a drag-in — the flat playlist + folder monitor were retired in the S9 IA change (7058667, PR #23). The scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`, `Sources/LibraryScan/LibraryScanner.swift:50-52`; `.aif` added by PR #85). So OGG **is** on the list and **Opus is not**: `.opus` / `.oga` play through the optional FFmpeg fallback but are never scanned (KI-LIB-05 → S11). Apple's decoder is the default; FFmpeg is used only when the user has it installed (R1 release notes). Persistent library / browse / queue shipped in S8–S10. Dragging a file in is not possible today → US-LIB-02.)*
+*(Corrected 2026-10-13 against the code: the import path is now the **library scan**, not a drag-in — the flat playlist + folder monitor were retired in the S9 IA change (7058667, PR #23). The scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`, `Sources/LibraryScan/LibraryScanner.swift:50-52`; `.aif` added by PR #85). So OGG **is** on the list and **Opus is not**: `.opus` / `.oga` play through the optional FFmpeg fallback but are never scanned (KI-LIB-05 → ~~S11~~ R1.1-A, US-R1F-16). *(Corrected 2026-10-14, council R-19: on macOS 26 Apple's `AVAudioFile` opens Ogg Vorbis and Opus natively; FFmpeg becomes an opt-in, off by default — FD-3.)* Apple's decoder is the default; FFmpeg is used only when the user has it installed (R1 release notes). Persistent library / browse / queue shipped in S8–S10. Dragging a file in is not possible today → US-LIB-02.)*
 **Traceability:** FR-PLAY-01, FR-PLAY-06
 
 ---
@@ -469,7 +475,7 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 - Edge case (related Pure same-rate gapless predicate limitation, deferred from Stage 2a): `sameRateGaplessCompatible` compares `bitsPerChannel`, which is `0` for compressed formats — so MIXING a compressed (AAC, bits=0) and an uncompressed (WAV, bits=16) track at the same rate forces a needless reconfigure gap even though both decode to the same float format. Either exclude bits-per-channel from the predicate when a source is compressed, or normalise the compressed value to the decoded float format. (Consecutive same-format tracks — e.g. an all-AAC library — are unaffected.)
 
 **Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** gapless Stage 1 (`cf33e5d`) + Stage 2a (`2e2242a`) — Pure `GaplessSource` + the `FileDecodeSource` FFmpeg backend
-**Status (2026-10-13):** Planned, **narrowed by the code**. The decoder opens every file with Apple first and uses FFmpeg only when Apple can't (`FileDecodeSource.cpp:7-16`), so AAC and MP3 decode through Apple on **both** paths and their priming / padding is already trimmed by the edit list (`AudioEngineBridge+Gapless.swift:37-42`). What remains: the FFmpeg fallback's own trim (Opus / Vorbis pre-skip), a seam test that proves AAC / MP3 on the Pure path, and the predicate edge case — `sameRateGaplessCompatible` still compares bits-per-channel (`GaplessSource.cpp:83-91`). **Forward:** S11 ("close gapless Stage 2b"), consistent with the S11 row's code fact in [sprint-plan.md](../sprints/sprint-plan.md).
+**Status (2026-10-13):** Planned, **narrowed by the code**. The decoder opens every file with Apple first and uses FFmpeg only when Apple can't (`FileDecodeSource.cpp:7-16`), so AAC and MP3 decode through Apple on **both** paths and their priming / padding is already trimmed by the edit list (`AudioEngineBridge+Gapless.swift:37-42`). What remains: the FFmpeg fallback's own trim (Opus / Vorbis pre-skip), a seam test that proves AAC / MP3 on the Pure path, and the predicate edge case — `sameRateGaplessCompatible` still compares bits-per-channel (`GaplessSource.cpp:83-91`). **Forward:** S11 ("close gapless Stage 2b"), consistent with the S11 row's code fact in [sprint-plan.md](../sprints/sprint-plan.md). *(2026-10-14: S11 runs last in R2, as S11-lite; FFmpeg is an opt-in, off by default (FD-3), so this trim matters only to those who turn it on. The predicate edge case moves to the Engine sprint's one format predicate — council C-37.)*
 **Traceability:** FR-PLAY-01, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -815,6 +821,7 @@ As a **Ramith** I want the app to automatically switch to stereo widening mode w
 As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed on headphones so that hard-panned elements feel less fatiguing and more natural over long listening sessions.
 
 **Status:** Shipped (QW1) · proven-by: `CrossfeedModule` (Bauer/bs2b, knob-scaled, headphone-gated) + `AudioEngineBridge+CrossfeedControl` + `CrossfeedStrength`. Founder by-ear verification still pending. ~~⚠ Open caveat: the **OQ-17 / SPIKE-LIBBS2B** licence gate (libbs2b MIT vs clean-room Bauer reimpl) is presumed resolved by shipping but its written spike outcome was **not** confirmed against code in this audit — see the OQ-17 row.~~ *(Resolved, verified 2026-10-13: the QW1 design §2 decided "do NOT link the LGPL bs2b library — implement the ~20 lines of math from first principles" ([qw1 design](../sprints/qw1-quick-win-differentiators-design.md)); the code is an in-house one-pole cross-path low-pass + ITD delay using bs2b's published coefficient sets — `Spatial/CrossfeedModule.h`, no libbs2b in `third_party/`. Crossfeed lives in the Now Playing inspector (`UI/NowPlaying/InspectorColumn.swift`), off by default; Relaxed / Default / Strong. **Defect:** unavailable on wired headphones in the Mac's own jack — KI-DEV-01.)*
+*(Council 2026-10-14, C-42: the crossfeed is not bs2b as claimed — it counts the interaural delay twice and leaves the direct path flat, a −4.2 to −6.3 dB centre notch near 1 kHz, and the "Default" preset is mislabelled (KI-SND-04). **Scheduled:** R1.1-A → [US-R1F-12](#us-r1f-12--the-sound-chain-does-what-it-says), with headphones detected by data source (KI-DEV-01).)*
 **Traceability:** FR-SPAT-03, DEP-16, CON-12, OQ-17
 
 ---
@@ -1058,7 +1065,7 @@ As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live
 
 As a **Ramith** I want to open and play a single audio file that is not inside any of my scan folders (e.g., a one-off download or an email attachment), so that I am not forced to import or copy a file into my library just to hear it once.
 
-**Status (2026-10-13):** Planned · **not delivered**. The schema supports it (nullable `folder_id`, `LibraryStore.addLooseFile`, `LibraryStore+DAO.swift:236`) and a loose file reads its embedded tags (S10.4, `EmbeddedMetadataReader`), but the app has **no entry point** for a single file: no Finder drop target, no Open… panel, no `CFBundleDocumentTypes` / `application(_:open:)`. The only file entry (the folder chooser that dumped a folder into the flat list) was removed with the S9 IA change (7058667, PR #23, [s9 IA design](../sprints/s9-library-ia-queue-design.md) §4/§5) and no replacement was built; the AC's "keep working exactly as it does today" no longer holds. Raised as a council finding. **Forward:** Post-R1 pool (unscheduled).
+**Status (2026-10-13):** Planned · **not delivered**. The schema supports it (nullable `folder_id`, `LibraryStore.addLooseFile`, `LibraryStore+DAO.swift:236`) and a loose file reads its embedded tags (S10.4, `EmbeddedMetadataReader`), but the app has **no entry point** for a single file: no Finder drop target, no Open… panel, no `CFBundleDocumentTypes` / `application(_:open:)`. The only file entry (the folder chooser that dumped a folder into the flat list) was removed with the S9 IA change (7058667, PR #23, [s9 IA design](../sprints/s9-library-ia-queue-design.md) §4/§5) and no replacement was built; the AC's "keep working exactly as it does today" no longer holds. Raised as a council finding. **Forward:** ~~Post-R1 pool (unscheduled)~~ **R1.1-B** (2026-10-14; council C-69 — loose-file Open…, drop and Open With, a council default).
 
 **Acceptance Criteria:**
 - A file opened via Finder drag-and-drop, the macOS Open panel, or "open with" plays immediately through the existing playback engine (US-PLAY-01/US-ENG-07/08) without requiring a library entry to exist first — this path must keep working exactly as it does today (S8.1 §7: "the running app is byte-identical" — this story extends that guarantee forward through S8.2+).
@@ -1197,7 +1204,7 @@ As a **Ramith** I want a track to be able to belong to any number of playlists a
 
 As a **Ramith** I want to add a single audio file to a playlist even when that file is not inside any of my scan folders, so that a one-off track (a promo download, a friend's demo) can live in a playlist alongside my scanned library without first importing it as a full library citizen.
 
-**Status (2026-10-13):** Planned · **store-only**. `addLooseFileToPlaylist` exists and is gated (`LibraryStore+Playlists.swift:422`, one transaction), but **no UI calls it** — no Finder drop onto a playlist, no Add File… (the only `.fileImporter` on a playlist is Locate…, `PlaylistDetailView.swift:55`). ~~`sprint-plan.md` lists "add a single non-library file" as shipped in S10.3; the code disagrees.~~ *(The S10.3 row now says it is store-only, 2026-10-14.)* Raised as a council finding. **Forward:** Post-R1 pool, with US-LIB-02.
+**Status (2026-10-13):** Planned · **store-only**. `addLooseFileToPlaylist` exists and is gated (`LibraryStore+Playlists.swift:422`, one transaction), but **no UI calls it** — no Finder drop onto a playlist, no Add File… (the only `.fileImporter` on a playlist is Locate…, `PlaylistDetailView.swift:55`). ~~`sprint-plan.md` lists "add a single non-library file" as shipped in S10.3; the code disagrees.~~ *(The S10.3 row now says it is store-only, 2026-10-14.)* Raised as a council finding. **Forward:** ~~Post-R1 pool~~ **R1.1-B**, with US-LIB-02 (2026-10-14; council C-69).
 
 **Acceptance Criteria:**
 - Adding a file via Finder drag-and-drop or the Open panel directly onto a playlist (not onto the main library view) creates a `tracks` row with `folder_id = NULL` (a "loose" / non-scan-folder track, per US-LIB-02's schema accommodation) if one doesn't already exist for that exact `url`, then adds a `playlist_entries` row referencing it.
@@ -1499,6 +1506,7 @@ As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can di
 
 **Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + ~~`NowPlayingWidget`~~ knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
 *(Updated 2026-10-13: the knob is the "Intensity" carved slider in the Now Playing inspector — `ReimagineSectionView`, `UI/NowPlaying/InspectorColumn.swift:79-114` (S10.7, PR #61); default 20 % (`AudioViewModel.swift:142`), not kept across launches (KI-SET-01). Since decision 25 (PR #73) it scales only the adaptive enhancement and never the EQ; "0 % — Reimagine off (your EQ still plays)". Bit-exact = Intensity 0 **and** EQ Off.)*
+*(2026-10-14, FD-2: the default becomes Intensity 0, and the control is **hidden until its effects are real** — Clarity and BRIR are stubs, so today it changes loudness, not sound (council C-41, C-40). R1.1-A → [US-R1F-09](#us-r1f-09--a-faithful-default); it returns with S17 and a correlation-compensated blend.)*
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
 
 **US-RMG-02 | Intensity→parameter mapping (mix-range)**
@@ -1660,6 +1668,8 @@ True per-instrument source separation is the **Phase-1.5 own-player stem engine*
 ## Post-R1 fix pool *(new — 2026-10-13)*
 
 > **Why this section exists:** R1 (v1.0.0-alpha, shipped 2026-10-14 — release PR #87, the council's blocker fixes PR #88) carries a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
+>
+> **Scheduled 2026-10-14** (the founder's decisions on the [council report](../reviews/2026-10-council/README.md)): each story below names its slot — **R1.1-A**, **R1.1-B**, the **Engine sprint** or **pool** (accepted, unscheduled; it rides with the next change that touches its code) — per item, as in the [roadmap](roadmap.md#the-post-r1-plan-council-2026-10-14) and [known-issues.md](known-issues.md). US-R1F-09…16 are new: the R1.1 items no story covered. Release items moved under [EP-RELEASE](#ep-release--release-readiness-deferred--fd-7-2026-10-14).
 
 #### US-R1F-01 — Transport and queue correctness after R1
 
@@ -1668,13 +1678,15 @@ As a **Marcus** I want play, pause, repeat, shuffle and the queue to do exactly 
 **Covers:** ~~KI-PB-01 (HIGH: Pure ignores a re-armed next track — clear the Pure deck before re-arming, and confirm on a USB DAC)~~ *(fixed by PR #88, council D41; the USB-DAC confirmation is still owed)*, KI-PB-16 (D41's residual windows — follow-up F1, seam identity), KI-PB-17 (`ended` latched across a seek — with the transport state-machine work), KI-PB-03, KI-PB-04 (a "start in flight" state both the toggle and `pause()` consult), KI-PB-05, KI-PB-06, KI-PB-07, KI-PB-08, KI-PB-09, KI-PB-10, KI-PB-14.
 **Acceptance:** each KI's scenario has a regression test (the breaker B VM harness pattern — `breakit/s10-8-g-playback-shell`, `Tests/BreakItG/vmharness`; since R1 the shipped view model can be driven directly, `Tests/AdaptiveSoundTests/`) and passes; ~~KI-PB-01 is reproduced and fixed on hardware~~ *(fixed in code by PR #88; heard on a USB DAC still owed)*.
 **Priority:** ~~Must (KI-PB-01)~~ Should | **Estimate:** 8 sp | **Traceability:** FR-PLAY-02, FR-PLAY-03, FR-PLAY-05, NFR-REL-03
+**Scheduled (2026-10-14):** **R1.1-A** — council C-15 (a starting / pausing state, Stop numbered at once, stale commands dropped: KI-PB-04, KI-PB-19) and C-17 (append during a prime armed, the next pick recomputed after edits, Play Next by slot: KI-PB-20), plus KI-PB-06, -07, -08, -09, -10. **R1.1-B** — C-16, shuffle as a permutation with history (KI-PB-03), and C-65, atomic queue restore (KI-PB-21). **Engine sprint** — C-14 / F1 seam identity (KI-PB-16, KI-PB-17). **Pool** — KI-PB-14 (C-19). ~~KI-PB-05~~ → US-R1F-13.
 
 #### US-R1F-02 — Seamless seams
 
 As a **Marcus** I want every track change to be seamless, so that gapless albums never get a silence or an early title change.
 
 **Covers:** KI-GAP-01 (48 kHz seam gap), KI-GAP-02 (resampled seams switch ~0.4 s early; apply presentation latency), KI-GAP-03, KI-PB-02, ENH-001 (2-deep on-deck). Natural partner of S11's gapless Stage 2b (US-PLAY-07).
-**Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-PLAY-01, NFR-QUAL-03 · candidate for **S11**
+**Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-PLAY-01, NFR-QUAL-03 · ~~candidate for **S11**~~
+**Scheduled (2026-10-14):** the **Engine sprint** (FD-4) — council C-21 (KI-GAP-01), C-22 (KI-GAP-04), C-23 (KI-GAP-02), C-24 (KI-GAP-05), KI-GAP-03, KI-PB-02, ENH-001 — inside [EP-PLAYENGINE](#ep-playengine--the-engine-sprint).
 
 #### US-R1F-03 — Library honesty and safety
 
@@ -1682,6 +1694,7 @@ As a **Ramith** I want the library to tell me when a folder is unreachable or a 
 
 **Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item), KI-LIB-03 (retry a failed metadata pass; refresh Songs), LIB-VOL-1 (a lossless "use this drive" action on a paused folder, so nobody removes and re-adds it — founder, 2026-10-14).
 **Priority:** Must (KI-LIB-01) / Should | **Estimate:** 5 sp | **Traceability:** EP-LIBRARY, US-LIB-01, US-PLIST-02
+**Scheduled (2026-10-14):** **R1.1-A** — KI-LIB-01 without a tombstone (FD-10) and KI-LIB-02 (council C-55: a refusal scoped to the unreadable subfolder, "paused" shown). **R1.1-B** — LIB-VOL-1, "Use this drive" (C-54; founder: "later, via the council list"). **Pool** — KI-LIB-03 (with C-68).
 
 #### US-R1F-04 — Library and playlist polish
 
@@ -1689,6 +1702,7 @@ As a **Tom** I want browsing, filtering and playlists to behave the same everywh
 
 **Covers:** KI-PB-11, KI-PB-12, KI-PB-13, KI-PB-15, KI-LIB-04 (drag the whole selection), KI-LIB-06, KI-LIB-07, KI-LIB-08, KI-LIB-09, KI-LIB-10.
 **Priority:** Should / Could | **Estimate:** 5 sp | **Traceability:** US-PLIST-03, US-PLAY-03, US-PLAY-10
+**Scheduled (2026-10-14):** **R1.1-A** — council C-58's two-line fix (no empty-list flash on reload). **R1.1-B** — ~~KI-LIB-09~~ → US-R1F-14 (one search rule). **Pool** — the rest (KI-PB-11, -12, -13, -15; KI-LIB-04, -06, -07, -08, -10). KI-PB-12 follows a council default: a single click selects, a double-click plays, everywhere.
 
 #### US-R1F-05 — Keep the listening settings, and one honest level
 
@@ -1697,6 +1711,7 @@ As a **Ramith** I want Pure Mode, the device pin, Master Gain, Intensity and cro
 **Covers:** KI-SET-01, KI-SET-02 (a Master Gain cut must carry into Pure, or Pure must show it is louder), KI-SET-03, DEV-1 (store the chosen output device's UID and the "Keep playback on this device" switch, and restore them at launch).
 **Acceptance:** each setting has a defaults key read at launch (Master Gain at least); switching Enhanced → Pure never raises the level without the user seeing it.
 **Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-PLAY-05, US-PLAY-05, NFR-REL-03
+**Scheduled (2026-10-14):** **R1.1-A** (FD-2) — remember Pure, Master Gain (**never restored louder than it was left** — council C-102, a hearing-safety fix), crossfeed, shuffle / repeat (already kept by the queue cursor) and the chosen device (DEV-1); switching Enhanced → Pure never raises the level unseen (KI-SET-02, C-29's slice). Intensity is not restored: FD-2 hides it and holds it at 0 (US-R1F-09). **Pool** — KI-SET-03.
 
 #### US-R1F-06 — EQ and output-device fixes
 
@@ -1704,6 +1719,7 @@ As a **Marcus** I want crossfeed on my wired headphones and an EQ that never sil
 
 **Covers:** KI-DEV-01 (classify the built-in jack's headphone data source as headphones — `kAudioDevicePropertyDataSource` — and stop treating AirPlay speakers as headphones), KI-DEV-02 (HDMI / DisplayPort transport types), KI-EQ-01 (unpin offers Bring back, or keeps the shared EQ), KI-EQ-02, KI-EQ-03 (visual check).
 **Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-SPAT-03, FR-DEVICE-03, US-DEVICE-03, US-DEVICE-07, US-TON-06
+**Scheduled (2026-10-14):** **R1.1-A** — KI-DEV-01, with the crossfeed fix in US-R1F-12 (council C-42, C-30's classification slice). **Pool** — KI-EQ-01 (the first candidate if a lane has room: it destroys user edits), KI-EQ-02, KI-EQ-03, KI-DEV-02.
 
 #### US-R1F-07 — Engine and test-harness hygiene
 
@@ -1711,14 +1727,108 @@ As a **developer** I want the known races and gaps in our own checks closed, so 
 
 **Covers:** KI-ENG-01 (`SpectrumDoubleBuffer` → the named-atomic triple buffer), KI-ENG-02 (port the breaker's engineQueue-holder and first-play modes; bound <5 ms), KI-ENG-03, KI-ENG-04, KI-UI-01 (measure VoiceOver load before changing anything), ENH-002 (N-channel UI meter). Related, and **parked by the founder** until after R1: the broader app ↔ engine concurrency cleanup, whose starting map is [main-thread-audio-audit-2026-10.md](../architecture/main-thread-audio-audit-2026-10.md).
 **Priority:** Should / Could | **Estimate:** 3 sp | **Traceability:** NFR-PERF-01, NFR-QUAL-02, CON-01/02
+**Scheduled (2026-10-14):** **R1.1-A** — hygiene: council C-86 (dead code and placeholders), C-87 (the effects render block's nil-pull guard), C-88 (stale contracts, comments, scripts — KI-ENG-03); ~~KI-ENG-01, KI-UI-01~~ → US-R1F-15. **Pool** — KI-ENG-02, KI-ENG-04, ENH-002. The concurrency cleanup stays out of any standalone wave (FD-1): its engine half is the Engine sprint, its transport half W2 (US-MCP-00).
 
 #### US-R1F-08 — Multichannel on a narrower output, until the binaural fold
 
 As a **Tom** I want a 5.1 or 7.1 album to play all its channels on my stereo headphones or speakers, so that the centre (usually the lead vocal) and the surrounds are not simply missing.
 
-**Covers:** KI-MC-01 — today the spatial AU keeps the first M channels and drops the rest (`SpatialRenderKernel.cpp:59-89`).
-**Decision for the founder:** (a) pull forward the fold the [S4 design](../sprints/05-sprint-5b-s4-binaural-design.md) §1 already chose — Apple's `AVAudioEnvironmentNode` / `AUSpatialMixer` (HRTFHQ, sources at ITU-R BS.775 positions) — as the interim device-boundary render; (b) an interim standard fold-down (BS.775 coefficients, loudness-safe, labelled interim), which bends the "no naive downmix" rule for a while; or (c) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) if it fits a small sprint, else (b) — silence for four channels is the worse violation of the rule's intent. (The architecture reconciliation raised the same finding as its F1.)
-**Priority:** Must (it is wrong audio) | **Estimate:** 2 sp | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final fix in **S18**
+**Covers:** KI-MC-01 — today the spatial AU keeps the first M channels and drops the rest (`SpatialRenderKernel.cpp:59-89`). *(Added 2026-10-14: KI-MC-02 — channel roles from the file's labels, council C-44 — and the BS.1770 channel weights, C-45, both preconditions of a correct fold.)*
+~~**Decision for the founder:**~~ *(Decided 2026-10-14, FD-9: option **(b)**, the standard ITU-R BS.775 fold-down, after the channel-order fix — council C-44, KI-MC-02: roles from the file's channel labels — with a safety ceiling after the spatial stage (C-43) and the loudness weights fixed (C-45). It also keeps FR-SPAT-01's rule that Apple's spatial nodes are not used. **Scheduled:** R1.1-B. Acceptance: every channel of a 5.0 / 5.1 / 7.1 file reaches a stereo output by the BS.775 coefficients (LFE omitted), checked by an independent oracle; the true peak after the fold stays under the ceiling.)* ~~(a) pull forward the fold the [S4 design](../sprints/05-sprint-5b-s4-binaural-design.md) §1 already chose — Apple's `AVAudioEnvironmentNode` / `AUSpatialMixer` (HRTFHQ, sources at ITU-R BS.775 positions) — as the interim device-boundary render; (b) an interim standard fold-down (BS.775 coefficients, loudness-safe, labelled interim), which bends the "no naive downmix" rule for a while; or (c) keep the truncation and warn (Monitoring / Settings) until S18. Recommended: (a) if it fits a small sprint, else (b) — silence for four channels is the worse violation of the rule's intent.~~ (The architecture reconciliation raised the same finding as its F1.)
+**Priority:** Must (it is wrong audio) | **Estimate:** ~~2 sp~~ 5 sp (with C-44 / C-45, 2026-10-14) | **Traceability:** FR-SPAT-07, NFR-QUAL-02 · final fix in **S18**
+
+#### US-R1F-09 — A faithful default
+
+As a **Ramith** I want a fresh launch to play my music as it is — no leveller, no blend, no EQ — so that "faithful" is what I hear until I choose otherwise.
+
+**Covers:** council C-41 — Intensity defaults to 20 % (`AudioViewModel.swift:142`), which switches on C-38's session-long leveller, C-40's +2 dB blend and the limiter's ceiling, while Clarity and BRIR are stubs (KI-SND-01). **Decision:** FD-2 (2026-10-14).
+**Acceptance:**
+- With no stored settings (a new install), Intensity is 0, leveling is off and the EQ is off; on Enhanced that is the bit-exact anchor of the C++ null test (NFR-QUAL-03).
+- The Intensity control is hidden and held at 0 until its effects are real (S17); an R1 user's stored Intensity is not restored above 0.
+- The EQ keeps its existing persistence; the listener's other settings are restored as US-R1F-05 says.
+- A test on the shipped view model (not a mirror) proves the defaults.
+**Scheduled:** R1.1-A. **Priority:** Must | **Estimate:** 1 sp | **Traceability:** FR-REIMAGINE-04, FR-TONAL-05, LD-17 (as changed by FD-2), US-RMG-01
+
+#### US-R1F-10 — Leveling as its own setting
+
+As a **Marcus** I want to choose Off, Album or Track leveling, so that albums keep their own dynamics, shuffled songs play at a similar level, and nothing is levelled unless I ask.
+
+**Covers:** council C-38 — the normaliser is a session-long AGC: its make-up gain carries across tracks, a gapless run is never re-measured, up to +12 dB of make-up feeds a −1 dBTP limiter (dynamic-range compression by default), and the make-up snaps to 0 dB on re-allocation. The product triage's "no explicit volume-leveling setting" (item 15). **Decision:** FD-2.
+**Acceptance:**
+- A setting: **Off** (the default) / **Album** / **Track**.
+- The gain is static per track (Track) or per album (Album, from the album's tracks), computed from the existing load-time analysis (`TrackLoudnessKit`), applied sample-accurately at the seam, and capped so the true peak stays under the ceiling without the limiter acting as a compressor.
+- Off changes nothing: the bit-exact anchor holds.
+- An independent oracle (libebur128) proves the gains.
+- Open: whether ReplayGain / R128 tags, when present, take precedence (C-38 notes they are not read today).
+**Scheduled:** R1.1-B. **Priority:** Should | **Estimate:** 5 sp | **Dependencies:** US-R1F-09 | **Traceability:** US-ENG-09, FR-TONAL-05, LD-17, NFR-QUAL-03
+
+#### US-R1F-11 — Seek to the end, and treble that isn't rolled off
+
+As a **Marcus** I want dragging to the end of a song to end it, and Enhanced to keep the top octave, so that the default path never stops dead or dulls the sound.
+
+**Covers:** council C-25 (KI-PB-18) and C-26 (KI-SND-02), with R-6 (the SRC check that passes a −7 dB error). **Decision:** FD-4 keeps exactly these two engine fixes in R1.1; the rest of the engine work moves to the Engine sprint.
+**Acceptance:**
+- A seek at or past the end ends the track and advances (or stops at the end of the queue), on every path; a non-finite target is rejected before it reaches the engine; the position base changes only when the seek succeeds.
+- Enhanced sample-rate conversion uses Apple's Mastering-quality converter ([engine research §1](../reviews/2026-10-council/working/engine-research.md#1-new-measurements-avaudioengines-own-sample-rate-conversion-offline-probes)); at equal rates it is bit-exact. The Engine sprint reuses the same converter.
+- The SRC gate requires ≤ 0.1 dB deviation to 20 kHz and ≤ −100 dB aliases for 44.1 / 88.2 / 96 / 176.4 / 192 → 48 kHz and 48 → 44.1 kHz, and is shown to fail on today's converter.
+**Scheduled:** R1.1-A. **Priority:** Must | **Estimate:** 3 sp | **Traceability:** FR-PLAY-02, FR-DEVICE-06, NFR-QUAL-04, US-ENG-06, US-QA-04
+
+#### US-R1F-12 — The sound chain does what it says
+
+As a **Marcus** I want the limiter, the crossfeed and the loudness readout to behave as their references describe, so that what I hear and what I read are right.
+
+**Covers:** council C-39 (KI-SND-03), C-42 (KI-SND-04, with KI-DEV-01's headphone detection — C-30's classification slice), C-46 (KI-UI-03), C-50 (flush-to-zero never restored). **Waits:** C-40 (the Intensity blend's +2 dB) until Intensity returns in S17.
+**Acceptance:**
+- **Limiter:** the fast release acts on a transient (each branch's time constant measured), and the −1 dBTP guarantee still holds (US-QA-03).
+- **Crossfeed:** each preset (Jmeier / Cmoy / bs2b) matches the bs2b reference response within a stated tolerance, checked by an independent oracle; libbs2b itself is not linked (OQ-17). It can be enabled on any output, and wired headphones in the built-in jack are detected as headphones (by data source).
+- **Readout:** "Integrated" resets per track; the analysis workers sleep while paused.
+- **Numerics:** flush-to-zero is scoped to the render call and restored.
+**Scheduled:** R1.1-A. **Priority:** Should | **Estimate:** 5 sp | **Traceability:** FR-TONAL-07, FR-SPAT-03, US-DEVICE-07, US-QA-01, US-QA-03
+
+#### US-R1F-13 — Pure says why
+
+As a **Ramith** I want Pure Mode to tell me why a track isn't bit-perfect, so that the badge never claims more than the output delivers.
+
+**Covers:** council C-34 (the C-ABI's int results flatten the reason Pure declined), C-33 (a 24-bit source on a 16-bit-only device is labelled bit-perfect and truncated), KI-PB-05 (Settings says the Pure switch "starts with the next track"; it applies only at a manual start).
+**Acceptance:**
+- A named reason crosses the C boundary as an enum and is shown in the UI whenever Pure declines or degrades.
+- A source deeper than the device's integer format is labelled "not bit-perfect".
+- The Pure on / off copy says exactly when the switch takes effect (or the switch applies at the next seam).
+**Scheduled:** R1.1-A. **Priority:** Should | **Estimate:** 2 sp | **Traceability:** US-ENG-07, US-ADAPT-06, NFR-QUAL-03
+
+#### US-R1F-14 — Search finds what I type
+
+As a **Ramith** I want search to work the same everywhere and to find Sinhala and accented text, so that I can reach any song from one place.
+
+**Covers:** council C-61 (KI-LIB-11, KI-LIB-09) — three search semantics; Sinhala vowel signs act as separators; NFD text can't be found; the store's sectioned global search is never called. **Decision:** a council default ("one search rule, global ⌘F").
+**Acceptance:**
+- **R1.1-A:** the tokenizer splits on Unicode categories, so combining marks (Sinhala vowel signs) stay inside a word; queries and stored text are normalised to NFC; fixtures in Sinhala, NFD and accented Latin.
+- **R1.1-B:** one rule — a ranked, Unicode-correct prefix search — in every tab's filter, and a global ⌘F over songs, albums, artists, genres and playlists, built on the store's existing sectioned search.
+**Scheduled:** R1.1-A (the tokenizer slice), R1.1-B (the rule and ⌘F). **Priority:** Should | **Estimate:** 5 sp | **Traceability:** EP-LIBRARY; [S9.5 search design](../sprints/s9-5-songs-search-design.md)
+
+#### US-R1F-15 — Live readouts that are right and cheap
+
+As a **Marcus** I want the spectrum and meters to read true and to cost nothing when nobody is looking, so that the app is honest and light on the battery.
+
+**Covers:** council C-51 (KI-UI-02, KI-ENG-01), C-52 (KI-UI-02), C-53 (KI-UI-01).
+**Acceptance:**
+- The analyser reads 0 dB for a full-scale sine (independent oracle), with an FFT size scaled to the sample rate; its hand-off has no data race under TSan.
+- The two 20 Hz timers stop when nothing plays or nothing is visible (paused, menu bar only); one Energy Impact reading (idle, paused, playing) is recorded in the release checklist.
+- The scrubber's elapsed time updates only when the shown value changes; live readings move out of accessibility labels into values.
+**Scheduled:** R1.1-A. **Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-UI-01, FR-UI-05, NFR-ACC-01, NFR-PERF-01
+
+#### US-R1F-16 — FFmpeg only when asked for
+
+As a **Ramith** I want FFmpeg used only when I turn it on, and every format my Mac decodes natively scanned, so that a crafted file can't reach a parser I never asked for.
+
+**Covers:** council C-99 (KI-SEC-01), C-08's scanner half (KI-LIB-05: `.opus` / `.oga`), C-35 (the FFmpeg seek ignores the stream's start time — live again, since FD-3 keeps FFmpeg). **Decision:** FD-3 (2026-10-14): keep FFmpeg as an opt-in, off by default; harden its load path; the metadata scan uses it only when it is on.
+**Acceptance:**
+- A setting turns FFmpeg on; it is off by default, and with it off no FFmpeg library is loaded, for decode or metadata (a test proves it).
+- With it on, FFmpeg loads only from fixed absolute paths (no bare-name lookup); the baked major-version guard stays.
+- The metadata scan reads tags through Apple first, and through FFmpeg only when it is on and Apple can't read the file.
+- `.opus` and `.oga` are scanned; a format-table test checks every extension the scanner claims against a real fixture.
+- The FFmpeg seek honours the stream's start time.
+**Scheduled:** R1.1-A. **Priority:** Must | **Estimate:** 3 sp | **Traceability:** FR-PLAY-01, FR-PLAY-06, CON-12, US-PLAY-07
 
 #### US-QA-07 — THD+N oracle
 
@@ -1727,11 +1837,19 @@ As a **developer** I want the bypass THD+N measured against the −90 dB budget 
 **Status:** Planned · the one S7 oracle never built (no THD measurement anywhere in `Tests/`). **Acceptance:** NFR-QUAL-01 (≤ −90 dB at 1 kHz, 0 dBFS, bypass) as a harness test; the Enhanced chain at Intensity 0 / EQ flat measured too.
 **Priority:** Should | **Estimate:** 2 sp | **Traceability:** NFR-QUAL-01 · candidate for **R2** ("QA gate green")
 
+### EP-RELEASE — Release readiness *(deferred — FD-7, 2026-10-14)*
+
+> **"Focus on features."** The licence is decided — **Apache-2.0** — and everything else here waits for a
+> release-readiness item, scheduled when the founder calls for a release beyond their own Mac (decision 13 already made
+> notarization the first item of such a release). Council root RC-9, "operating a public release was never designed":
+> rows C-10, C-101, C-103.
+
 #### US-REL-01 — Developer ID signing and notarization
 
 As a **Marcus** I want to open the downloaded app without a security detour, so that installing it feels trustworthy.
 
 **Status:** Planned · R1 is ad-hoc signed and not notarized by founder decision 13 ("the first item of any release beyond the founder's Mac"), `Makefile` `dist` + `.github/workflows/release.yml` (PR #87). **Acceptance:** Developer ID signature with the hardened runtime and the `disable-library-validation` entitlement the FFmpeg `dlopen` needs; notarized and stapled in the release workflow.
+*(2026-10-14: deferred to release readiness, FD-7. FFmpeg stays as an opt-in (FD-3), so the `disable-library-validation` question stays; decide it with notarization.)*
 **Priority:** Must before a wider release | **Estimate:** 2 sp | **Traceability:** NFR-INSTALL-01, ASM-03, CON-08
 
 #### US-REL-02 — Choose and add the open-source licence
@@ -1739,7 +1857,93 @@ As a **Marcus** I want to open the downloaded app without a security detour, so 
 As a **developer** I want the repository to carry a licence, so that others may legally use, share and build on it (LD-9).
 
 **Status:** Planned · the repository is **public** (GitHub `ramith/sound-engineering`) and has **no LICENSE file**, while PRD §6 says the licence "only needs to be in place before the repository is made public". Raised as a council finding. Note the dependency posture: GRDB.swift (MIT) is linked; FFmpeg is never bundled (it is `dlopen`ed only if the user installed it).
+*(2026-10-14, FD-7: the licence is **Apache-2.0**. Adding the LICENSE file and the notices — GRDB.swift's MIT notice bundled with the app — is deferred to release readiness.)*
 **Priority:** Must | **Estimate:** 1 sp | **Traceability:** LD-9, PRD §6, CON-12, R-10
+
+#### US-REL-03 — Diagnostics the alpha can send back
+
+As a **Ramith** I want logs and crash reports I can read after the fact, so that a tester's problem reaches me.
+
+**Status:** Planned · deferred to release readiness (FD-7, 2026-10-14) · council C-10: no `os.Logger`, no MetricKit, no "Copy Diagnostics", no issue template; `NSLog` from an `open`-launched app never reaches `log show`.
+**Acceptance:** `os.Logger` (subsystem and category) behind `logUX`; MetricKit crash and hang diagnostics written to the app's data folder; Help ▸ "Copy Diagnostics" (versions, the device list, the last hour's log); an issue template in `.github/`. Nothing leaves the Mac unless the user copies it (NFR-PRIV-04).
+**Priority:** Must before a wider release | **Estimate:** 3 sp | **Traceability:** NFR-REL-01, NFR-PRIV-04
+
+#### US-REL-04 — Playlist export and a library backup
+
+As a **Ramith** I want to export my playlists and back up my library data, so that one disk or store failure doesn't lose every playlist and my play history.
+
+**Status:** Planned · deferred to release readiness (FD-7, 2026-10-14) · council C-101: the only copies of playlists, plays, loved and ratings are one SQLite file and its pre-migration backups. *(Playlist **import** stays deprioritized — 2026-07-14.)*
+**Acceptance:** File ▸ Export Playlist… writes M3U8 (UTF-8, a stated path rule); "Back up library data…" writes a consistent copy of the store (GRDB backup or `VACUUM INTO`) that the app can restore from; a round-trip test for both.
+**Priority:** Should before a wider release | **Estimate:** 3 sp | **Traceability:** US-PLIST-01, US-LIB-08, DUR-1
+
+#### US-REL-05 — A clean-Mac first run
+
+As a **Marcus** I want the first launch on a fresh Mac to just work, so that nothing depends on the founder's machine.
+
+**Status:** Planned · deferred to release readiness (FD-7, 2026-10-14) · council C-103 (the clean-Mac first run was a decision-13 item never done).
+**Acceptance:** a first-run pass on a clean macOS 26 account or VM (no Homebrew, no FFmpeg, no developer tools): install, open, add a folder on an external drive, play; the GRDB notice is bundled; whether TCC grants survive an update is checked (each ad-hoc-signed release has a new identity); a decision on the 11 no-op security-scope calls and the unused `bookmark` column (Developer ID and never sandboxed → delete them, or create real bookmarks).
+**Priority:** Must before a wider release | **Estimate:** 2 sp | **Traceability:** NFR-INSTALL-01, NFR-PRIV-05, ASM-03
+
+---
+
+## The Engine sprint *(new — 2026-10-14)*
+
+### EP-PLAYENGINE — The Engine sprint
+
+> **Founder decision FD-4 (2026-10-14):** "understand SFBAudioEngine (clone it and analyse), then build our own with
+> that knowledge; we will compare at the code level which is better; it should be built as a different
+> module/component which gets plugged in with a clean interface; find areas we can improve (in our implementation)
+> during the discovery phase; a sprint of its own." **Placed** after R1.1 and before R2. **Root:** council RC-2 —
+> two engines, and Enhanced hands its queue to `AVAudioPlayerNode` and re-derives position, seams, end and seek from
+> completion callbacks. **Evidence:** [engine research](../reviews/2026-10-council/working/engine-research.md),
+> [P3 breaker](../reviews/2026-10-council/working/panel-p3-path-breaker.md),
+> [P3 state of the art](../reviews/2026-10-council/working/panel-p3-path-sota.md). **Replaces** the council's
+> one-week SFB adoption spike.
+
+**Carries (council rows):** C-07 (two engines); C-14 / F1 seam identity (KI-PB-16, KI-PB-17); C-21 (KI-GAP-01); C-22
+(KI-GAP-04); C-23 (KI-GAP-02); C-24 (KI-GAP-05); C-28 (KI-DEV-03); C-36 (seek and the decode ring); C-37 (one format
+predicate); C-48 (one rate domain); C-08 (one probe / decode path); C-04's bounded-source half; and, through
+US-R1F-02, ENH-001, KI-GAP-03 and KI-PB-02. **Not in it:** Pure's HAL output (FD-5), crossfade, CUE parsing.
+**Guardrails:** agents never play audio — checks that need ears or a device plugged in are the founder's; no engine
+call on the main thread (the PR #86 rule); finish-or-revert, and two Enhanced engines never ship.
+
+#### US-PE-01 [Spike] — Discovery: SFBAudioEngine at code level, and where ours can improve
+
+As a **developer** I want to understand how a mature open-source engine solves gapless, seek, format and device changes, so that our own engine starts from that knowledge rather than from today's workarounds.
+
+**Status:** Planned · Engine sprint, phase 1.
+**Acceptance:**
+- SFBAudioEngine is cloned at a pinned version (the council read 0.14.0 at 9ed712d; the version used is recorded) into a scratch folder outside the repo's build and read as data; none of its build scripts run.
+- A written analysis with file:line references: the decode-ahead ring and decode thread; the render block; same-format gapless and the "non-gapless join"; seek (clamped, asynchronous, stale audio dropped); configuration changes and device selection; which calls run on which thread, and the lock-free getters; the delegate events and their timestamps; where sample-rate conversion happens (implicit conversion inside AVAudioEngine fails our bar — engine research §1).
+- The same analysis of our Enhanced path, and a list of where **our** implementation can improve, each tied to a council row (at least those this epic carries).
+- The new module's interface: commands; events that carry the item's identity at the audible seam; errors; the threading contract (no engine call on main). It names a playable item by id and source, so a bounded source (a CUE region) can fit later (C-04). Reviewed by an adversarial design panel (one revision, one verify).
+- Output: a design doc in `docs/sprints/`.
+**Priority:** Must | **Estimate:** 5 sp (about 1 week) | **Dependencies:** R1.1 | **Traceability:** FR-PLAY-01, FR-PLAY-03, NFR-QUAL-02, NFR-QUAL-04
+
+#### US-PE-02 — Build: our own Enhanced engine as its own module
+
+As a **Marcus** I want gapless albums to join with no gap, click or early title change, and a seek to land where I put it, so that Enhanced is as solid as Pure.
+
+**Status:** Planned · Engine sprint, phase 2.
+**Acceptance:**
+- A new SwiftPM target — its own module — behind the interface from US-PE-01. The app depends only on that interface; AVFAudio and HAL types stay internal to the module.
+- Enhanced first: an `AVAudioSourceNode` pulls from Pure's proven C++ decode and gapless pipeline (`FileDecodeSource`, `GaplessSource`); the Mastering converter from US-R1F-11 converts to the device rate; our two audio units are unchanged. The decode layer is designed so Pure can share it later, with one format predicate (rate, channel count and layout — C-37).
+- Same-format joins are sample-continuous, proven by the P3 seam replicas as contract tests; a format change is an honest short gap with every channel present; seam events carry the item's identity at the audible moment, with the output's presentation latency; one seek path, one end flag, one playhead.
+- No engine call on the main thread; TSan clean; an Enhanced start and the output-device rule never end silent in the explored interleavings (C-28).
+- It lands behind a developer switch; today's path stays the default until US-PE-03 decides. A 2-week cap; finish-or-revert.
+**Priority:** Must | **Estimate:** 13 sp | **Dependencies:** US-PE-01, US-R1F-11 | **Traceability:** FR-PLAY-01, FR-PLAY-02, FR-PLAY-03, FR-DEVICE-06, NFR-QUAL-02, NFR-QUAL-04, NFR-REL-02
+
+#### US-PE-03 — Compare, then decide
+
+As a **Ramith** I want our engine and SFBAudioEngine compared on the same measured checks, so that I choose the default engine on evidence.
+
+**Status:** Planned · Engine sprint, phase 3.
+**Acceptance:**
+- The 11 checks of [engine research §5](../reviews/2026-10-council/working/engine-research.md#5-recommendation-and-spike-plan-refines-stage5-architect-45) run against both engines where each applies — SFB in a scratch harness outside the main checkout: P1 SRC; P2 our audio units in the graph; P3 same-format gapless; P4 format-change joins; P5 seek; P6 threads; P7 device and hardware-rate change; P8 formats and a real corpus; P9 Pure decode sharing; P10 supply chain; P11 real-time robustness. P7 and the by-ear part of P11 are the founder's.
+- A code-level comparison: size, complexity, threading model, test surface, dependencies and maintenance (SFB: one maintainer, a 0.x API, about 21 packages and 10 binary frameworks).
+- A licence check: the project is Apache-2.0 (FD-7), and CON-12 lets only permissive code ship. SFB's mpg123, libsndfile, lame and tta-cpp are LGPL, so adopting SFB as-is needs CON-12 amended, or those decoders left out.
+- The founder decides: our engine, SFBAudioEngine, or today's path with the R1.1 fixes. The losing path is deleted.
+**Priority:** Must | **Estimate:** 5 sp | **Dependencies:** US-PE-02 | **Traceability:** as US-PE-02, plus CON-12 and LD-9
 
 ---
 
@@ -1748,11 +1952,15 @@ As a **developer** I want the repository to carry a licence, so that others may 
 ### EP-MCP — Agent control surface (MCP)
 
 > **Founder decision 2026-10-13:** "expose all functionality of the player via a MCP so that a LLM (and even
-> openclaw) can drive it." **Placement and size:** set by the 2026-10 product council. **Depends on:** one command /
+> openclaw) can drive it." ~~**Placement and size:** set by the 2026-10 product council.~~ *(Placed — see below.)* **Depends on:** one command /
 > state API shared with the UI (the council's transport command / reducer and engine-event work). Without it, MCP
 > becomes a second, divergent control path. **Relationship to the 2026-07-12 cut:** in-app conversational tuning
 > (EP-NLT) stays withdrawn; this is an external control surface. An LLM adjusting the EQ through it is a consequence the
 > founder confirms explicitly.
+>
+> **Placement (FD-8, 2026-10-14):** EP-MCP waits for the full playback-ownership rework (W2) and the command layer,
+> in R2 or later — no early spike. An agent is a fast client, and today's transport breaks under single-client
+> interleavings (council C-14, C-15). EP-MCP is what funds W2 (US-MCP-00).
 
 **Principles:**
 - **One command layer:** every MCP tool maps 1:1 onto a UI command, and the coverage table is generated from the
@@ -1764,7 +1972,8 @@ As a **developer** I want the repository to carry a licence, so that others may 
 
 | ID | Story | Notes |
 |---|---|---|
-| SP-MCP-01 | **Spike: the connection design.** A stdio shim CLI (`adaptivesound-mcp`, launched by the MCP client) talking to the running app over XPC / a local socket, vs Streamable HTTP on localhost. Authentication, consent, discovery; sharing the command catalogue with App Intents | Decides US-MCP-01 |
+| US-MCP-00 [Enabler] | **W2 — one owner for playback, and the command layer** (council C-01, C-05, C-06, C-13, C-15 in full, C-18; the library lane C-58, C-59): a transport reducer that owns play / pause / seek / advance, a command catalogue the UI and MCP both call, and one engine event channel. Funded by EP-MCP (FD-8); also by S14's adaptive half or crossfade; triggered early by any wrong-song or silent-playing bug after R1.1's transport fixes | The Engine sprint delivers the engine half (seam events with the item's identity, one seek, one end flag); 2-week cap per slice, finish-or-revert (FD-1) |
+| SP-MCP-01 | *(2026-10-14: not run early — FD-8; it opens EP-MCP.)* **Spike: the connection design.** A stdio shim CLI (`adaptivesound-mcp`, launched by the MCP client) talking to the running app over XPC / a local socket, vs Streamable HTTP on localhost. Authentication, consent, discovery; sharing the command catalogue with App Intents | Decides US-MCP-01 |
 | US-MCP-01 | As a user, I can turn on "Allow AI agents to control AdaptiveSound", see which clients are connected, and revoke them; nothing is reachable when it's off | Local only; per-client token and scopes |
 | US-MCP-02 | As an agent, I can control **transport and the queue**: play / pause / stop / next / previous / seek; add, remove, reorder and clear the queue; shuffle and repeat; play next / add to queue | Same commands as the UI's transport |
 | US-MCP-03 | As an agent, I can **search and browse the library** (songs, albums, artists, genres, playlists) and play any of them, using stable entity ids exposed as MCP resources | One search semantics (council LIB-05) |
@@ -1988,4 +2197,4 @@ The following items are tracked from OQ-* and must be resolved before the storie
 | OQ-20 — 6-stem quality-gating policy | SPIKE-SEP-QUALITY → US-STEM-06 | ⛔ Won't, this horizon (re-anchor 2026-06-19) — gates EP-STEM, which is out-of-window |
 | OQ-21 — Reimagine intensity→parameter mapping | SPIKE-REIMAGINE-MAP → US-RMG-02 | Medium-High — before US-RMG-02 (→ S17). *(Narrowed by decision 25: the mapping must never include the EQ.)* |
 | OQ-22 — Masking + partial-loudness model choice | SPIKE-MASKING-MODEL → US-PERC-01/03, US-STEM-04 | Medium — before EP-PERCEPTUAL (→ S15) |
-| US-REL-02 — the open-source licence | the public repository (LD-9, PRD §6) | **High — the repository is already public without one** (new, council 2026-10-13) |
+| ~~US-REL-02 — the open-source licence~~ | ~~the public repository (LD-9, PRD §6)~~ | **Decided 2026-10-14 (FD-7): Apache-2.0.** The LICENSE file itself is deferred to release readiness (EP-RELEASE). *(Was: High — the repository is already public without one, council 2026-10-13.)* |
