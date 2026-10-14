@@ -82,6 +82,11 @@ extension LibraryModel {
         ((try? url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) ?? nil) ?? true
     }
 
+    /// The state of a folder at `root` after a walk that was evidence (an add's or a reconcile's).
+    func walkedState(of root: URL) -> ReconcileState {
+        isLocalVolume(root) ? .watching : .onDemandOnly
+    }
+
     /// Route one FSEvents batch (on @MainActor): reconcile each affected store root (debounced).
     /// The queue is not folder-bound (S9 IA change), so a disk change never rewrites it — only
     /// the library store reconciles.
@@ -139,19 +144,27 @@ extension LibraryModel {
             // folder add) may own the rest concurrently (S10.8 C2 fix round, B3) — and ends by
             // regrouping albums + reaping orphan facets (SF-2, S10.8 C2).
             await runMetadataPass(store, generation: result.generation, inFolder: folderID)
-            reconcileState[folderID] = isLocalVolume(root) ? .watching : .onDemandOnly
+            reconcileState[folderID] = walkedState(of: root)
             lastReconciledAt = Date()
             lastReconcileError = nil
             logUX("reconcile: folder \(folderID) — seen=\(result.filesSeen) swept=\(result.orphansSwept)")
         } catch is CancellationError {
             // expected on teardown / re-trigger
         } catch let refusal as SweepRefusal {
-            reconcileState[folderID] = .paused
-            logUX("reconcile: sweep refused (folder \(refusal.folderID): \(refusal.reason); "
-                + "\(refusal.storedRowCount) rows preserved) — paused")
+            pause(refusedBy: refusal, in: "reconcile")
         } catch {
             lastReconcileError = error.localizedDescription
             logUX("reconcile: folder \(folderID) failed — \(error.localizedDescription)")
         }
+    }
+
+    /// A walk was not evidence of which of its folder's songs are gone (`SweepRefusal`: the folder
+    /// vanished, is another drive or is unrecognized, or the walk was incomplete or empty): its rows are
+    /// kept, and it is paused until a walk is evidence again. The one consequence for both kinds of walk
+    /// (`walk` names it in the log) — silent, like cancellation: a background non-event.
+    func pause(refusedBy refusal: SweepRefusal, in walk: String) {
+        reconcileState[refusal.folderID] = .paused
+        logUX("\(walk): sweep refused (folder \(refusal.folderID): \(refusal.reason); "
+            + "\(refusal.storedRowCount) rows preserved) — paused")
     }
 }
