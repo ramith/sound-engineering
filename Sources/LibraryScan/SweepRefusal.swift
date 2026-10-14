@@ -11,8 +11,10 @@
 //   • the folder is UNRECOGNIZED — the root is not bound to a drive yet (added before v8, or on a volume
 //     with no UUID), and none of its songs is where the library has it: the folder at its path may be
 //     another drive's, or a stale one (R1, council P5A-02 break-it);
-//   • the walk was INCOMPLETE — it could not read part of the folder: a subfolder it may not open, an
-//     audio file it could not read, a drive that failed under it (R1, council P5A-01);
+//   • the walk was INCOMPLETE — it could not read the folder itself (its permissions, a privacy
+//     setting) (R1, council P5A-01). What it could not read BELOW the folder — a subfolder it may not
+//     open, an audio file it could not read — is no refusal: the sweep spares the rows there and reaps
+//     the rest (R1.1-A, council C-55);
 //   • the walk was EMPTY — it saw no file at all (S8.4 slice 3's founder-approved "never wipe on an
 //     empty walk": an unmounted or zombie-mounted volume reads exactly like "every file deleted").
 // A root that vanished, is on a different volume or is unrecognized when the walk would start is not
@@ -35,7 +37,7 @@ public struct SweepRefusal: Error, Sendable, Equatable {
         case differentVolume
         /// The root is bound to no drive, and none of its songs is where the library has it.
         case unrecognizedFolder
-        /// The walk could not read part of the folder.
+        /// The walk could not read the folder itself.
         case incompleteWalk
         /// The walk saw no file at all.
         case emptyWalk
