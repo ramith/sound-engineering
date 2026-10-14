@@ -41,25 +41,15 @@ extension AudioViewModel {
         playbackPosition = 0
         duration = 0 // zeroed now; async Task below refreshes from AVAudioFile
 
+        refreshDuration(for: advancedTrack.absoluteURL, logLabel: "trackTransition: duration")
+
         let newNextIdx = computeNextIndex(current: nextIdx, playlistCount: playlist.count)
-        pendingNextIndex = newNextIdx
-
-        let fileURL = advancedTrack.absoluteURL
-        let pureModeSnap = pureModeEnabled
-
-        refreshDuration(for: fileURL, logLabel: "trackTransition: duration")
-
-        Task { [weak self] in
-            guard let self else { return }
-            if let newIdx = newNextIdx, newIdx < playlist.count {
-                let nextURL = playlist[newIdx].absoluteURL
-                await engine.setNextTrack(nextURL)
-                logUX("trackTransition: primed next index=\(newIdx) pureMode=\(pureModeSnap)")
-            } else {
-                await engine.setNextTrack(nil)
-                logUX("trackTransition: no further track to queue")
-            }
+        if let newIdx = newNextIdx {
+            logUX("trackTransition: priming next index=\(newIdx) pureMode=\(pureModeEnabled)")
+        } else {
+            logUX("trackTransition: no further track to queue")
         }
+        armOnDeck(index: newNextIdx)
     }
 
     /// The queue ran out (S10.8 G): stop the engine for real. Flipping only the flags left it running

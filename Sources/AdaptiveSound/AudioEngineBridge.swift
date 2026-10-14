@@ -156,10 +156,16 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
 
     // MARK: - Gapless / on-deck state (methods in AudioEngineBridge+Gapless.swift)
 
+    /// Which on-deck request the engine applies (`OnDeckGate`, council D41): the playback session it
+    /// is in — begun by every start and stop, numbered by the request's epoch — and the newest
+    /// request admitted in it. Every `setNextTrack` passes it first; any other request is dropped,
+    /// whatever order the requests arrive in. Confined to `engineQueue`.
+    var onDeckGate = OnDeckGate()
+
     /// The track armed to play gaplessly after the current one. `nil` means no next track is queued.
     /// All access is serialized on `resampleQueue` (same queue that owns the resampler session + all
-    /// buffer scheduling). Written by `setNextTrack(_:)` (dispatched onto `resampleQueue`);
-    /// consumed at EOF by the seam handler.
+    /// buffer scheduling). Written by an admitted Enhanced `setNextTrack` (`armEnhancedOnDeck`, handed
+    /// over from `engineQueue` in admission order); consumed at EOF by the seam handler.
     var onDeckURL: URL?
 
     /// Monotonic count of completed gapless seams (track transitions): written on `resampleQueue`
