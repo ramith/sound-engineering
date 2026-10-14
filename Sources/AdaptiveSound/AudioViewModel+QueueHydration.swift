@@ -18,6 +18,10 @@ import PlaybackQueueKit
 // holes the entries) or a stale cursor after a non-clean exit degrades to "start at top", NEVER a
 // silent wrong-track/wrong-offset resume. Periodic (not quit-only) cursor persistence to shrink
 // the crash-divergence window is deferred durability polish = DUR-1.
+//
+// Shuffle and repeat are listening settings, not the cursor (R1.1-A): they come back at every launch,
+// queue or not, from the listener's settings (`+ListeningSettings`), which read R1's
+// `queue.cursor.shuffle` / `queue.cursor.repeatMode` once.
 
 @MainActor
 extension AudioViewModel {
@@ -25,8 +29,6 @@ extension AudioViewModel {
         static let position = "queue.cursor.position"
         static let positionTrackID = "queue.cursor.positionTrackID"
         static let offset = "queue.cursor.offset"
-        static let shuffle = "queue.cursor.shuffle"
-        static let repeatMode = "queue.cursor.repeatMode"
     }
 
     /// Restore the queue from the persistent "current" playlist, ONCE, on launch — RESTORE-PAUSED.
@@ -58,7 +60,7 @@ extension AudioViewModel {
         }
     }
 
-    /// Restore selection + offset + shuffle/repeat, PAUSED: `isPlaying` stays false. The offset is
+    /// Restore selection + offset, PAUSED: `isPlaying` stays false. The offset is
     /// clamped to the resolved track's duration, stashed in `resumePoint` (that slot's) so the FIRST
     /// Play resumes there (reusing the position-preserving resume seek), and mirrored into
     /// `playbackPosition` so the scrubber shows the resume point rather than 0:00 (QA #5b/#5c).
@@ -73,8 +75,6 @@ extension AudioViewModel {
                 playbackPosition = offset
             }
         }
-        shuffleEnabled = defaults.bool(forKey: QueueCursorKey.shuffle)
-        repeatMode = min(max(0, defaults.integer(forKey: QueueCursorKey.repeatMode)), 2) // QA #7 clamp
     }
 
     /// Resolve the saved cursor to a CURRENT queue index, tolerating a between-session shift (QA
@@ -99,7 +99,7 @@ extension AudioViewModel {
         return nil
     }
 
-    /// Persist the now-playing cursor (position + trackID-at-position, offset, shuffle, repeat).
+    /// Persist the now-playing cursor (position + trackID-at-position, offset).
     /// Called on quit-flush (`+Lifecycle.shutdown`), so a clean quit restores exactly where you
     /// left off. (Periodic persistence for crash resilience = DUR-1; the tolerant resolve above
     /// keeps a stale cursor safe.)
@@ -116,7 +116,5 @@ extension AudioViewModel {
             defaults.removeObject(forKey: QueueCursorKey.positionTrackID)
         }
         defaults.set(playbackPosition, forKey: QueueCursorKey.offset)
-        defaults.set(shuffleEnabled, forKey: QueueCursorKey.shuffle)
-        defaults.set(repeatMode, forKey: QueueCursorKey.repeatMode)
     }
 }
