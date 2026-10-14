@@ -133,7 +133,8 @@ final class LibraryBrowseModel {
     /// `runFilter`. `invalidate()` is called **synchronously on every `searchQuery` edit** (its
     /// `didSet`), not inside the debounced `runFilter` — so an already-dispatched `searchMatchingIDs`
     /// from a prior query is invalidated the instant the user edits and can't publish a stale result
-    /// after the field has moved on (review LOW-1). `.task(id:)` cancellation alone can't interrupt an
+    /// after the field has moved on (review LOW-1); and each `runFilter` begins its own read, so the
+    /// newer of two reads always wins (P5B-01). `.task(id:)` cancellation alone can't interrupt an
     /// in-flight actor call, hence the epoch.
     private var searchEpoch = SearchEpoch()
 
@@ -353,17 +354,18 @@ final class LibraryBrowseModel {
     /// Run the active filter: gate on ≥2 (trimmed) chars, hit the IDs-only membership read off-main,
     /// and publish newest-wins. `nil` = not filtering (restore full list); `[]` (junk /
     /// tokenizable-no-match) = zero results. A stale epoch OR a store error keeps the last-good set
-    /// (never a silent restore-to-full). The epoch is bumped in `searchQuery`'s `didSet`, so we only
-    /// CAPTURE it here; any newer edit that lands during the read drops this publish. Debounced +
-    /// cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
-    /// reload (§11 #4), where no edit occurred and the captured epoch simply stays current.
+    /// (never a silent restore-to-full). Each run begins its own read (`beginRead`), so any newer edit
+    /// (`searchQuery`'s `didSet`) OR newer run that lands during the read drops this publish. Debounced
+    /// + cancelled by the SongsView `.task(id:)` (§7); also called directly on a filtered background
+    /// reload (§11 #4), where no edit occurred — and two reloads' reads may finish in either order, so
+    /// only the newer may publish (council C-58 / P5B-01).
     func runFilter() async {
-        let captured = searchEpoch.value
+        let read = searchEpoch.beginRead()
         guard SearchQueryGate.shouldQuery(searchQuery) else {
             matchedIDs = nil
             return
         }
-        guard let ids = try? await store?.searchMatchingIDs(searchQuery), searchEpoch.isCurrent(captured)
+        guard let ids = try? await store?.searchMatchingIDs(searchQuery), searchEpoch.isCurrent(read)
         else { return } // stale epoch OR store error/not-ready → keep last-good, no publish
         matchedIDs = ids // [] on junk/no-match (never nil here) → drives zero-results
     }
