@@ -130,7 +130,15 @@ extension AudioViewModel {
     /// engine seeks. Paused: only the resume point moves, and Play resumes there — the engine is
     /// stopped, and a segment scheduled onto it would play ahead of the next song. Stopped: nothing
     /// is loaded, so nothing moves. Updates `playbackPosition` immediately to avoid UI jitter.
-    func seek(to seconds: Double) {
+    ///
+    /// The request is placed first by the one rule (`SeekTarget.place`, C-25): not a number → no seek
+    /// at all; otherwise inside 0…duration. The end itself is a place: the engine ends the track
+    /// there, and the tick advances as at any end.
+    func seek(to requested: Double) {
+        guard let seconds = SeekTarget.place(requested, duration: duration) else {
+            logUX("seek → \(requested) refused (not a place)")
+            return
+        }
         let route = SeekRoute.route(isPlaying: isPlaying, isPaused: pausedResumePosition != nil)
         logUX("seek → \(secs(seconds))s "
             + "(from \(secs(playbackPosition))s, dur \(secs(duration))s, "
@@ -142,7 +150,7 @@ extension AudioViewModel {
                 do {
                     try await engine.seek(to: seconds, epoch: epoch)
                 } catch {
-                    // A Pure seek that did not move: say so; the next tick shows where it plays.
+                    // A seek that did not move: say so; the next tick shows where it plays.
                     logUX("seek → \(secs(seconds))s failed: \(error.localizedDescription)")
                     errorMessage = error.localizedDescription
                 }
