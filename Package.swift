@@ -257,6 +257,15 @@ let package = Package(
             // broke @Suite/@Test expansion — "SuiteDeclarationMacro doesn't conform to
             // MemberMacro".)
         ),
+        // The SHIPPED AudioViewModel, through `@testable import AdaptiveSound` (council D41): what
+        // plays next, as the contract between the view model and an engine model that keeps the
+        // bridge's on-deck semantics with every step in any order — the scenarios, the ablations and
+        // the random-schedule explorer. The mirror suites above cannot express that contract.
+        .testTarget(
+            name: "AdaptiveSoundTests",
+            dependencies: ["AdaptiveSound", "PlaybackQueueKit"],
+            path: "Tests/AdaptiveSoundTests"
+        ),
         // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
         // Gates the sort-mapping, search-epoch newest-wins (incl. the cross-2-char boundary), the
         // ≥2-char gate, and the visible-subset row resolver directly (they used to be untested
