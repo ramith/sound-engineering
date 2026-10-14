@@ -21,6 +21,7 @@ let package = Package(
             dependencies: [
                 "AudioDSP", "AudioFormatKit", "LibraryStore", "LibraryScan", "PlaybackQueueKit",
                 "LibraryBrowseKit", "DesignTokenKit", "EQEditKit", "TrackLoudnessKit", "OutputDeviceKit",
+                "SettingsKit",
             ],
             path: "Sources/AdaptiveSound",
             // Info.plist is consumed by scripts/bundle-app.py, not by SwiftPM.
@@ -198,6 +199,16 @@ let package = Package(
             dependencies: [],
             path: "Sources/OutputDeviceKit"
         ),
+        // The listener's settings (R1.1-A, council C-12): one typed value (`ListeningSettings`, every
+        // default the faithful one) and the ONE store that keeps it in the launch's defaults, coalesced,
+        // with safe decoding — Master Gain never restored louder than it was left. Same rationale as
+        // PlaybackQueueKit: SettingsKitTests gate the exact rules the app restores by. Pure Swift over
+        // Foundation's UserDefaults; EQEditKit for the Master Gain law. No UI.
+        .target(
+            name: "SettingsKit",
+            dependencies: ["EQEditKit"],
+            path: "Sources/SettingsKit"
+        ),
         // Track loudness analysis (Sprint EQ, EQ1c part 2; amendments item 3): the analyzer that
         // decodes a track a second time (AVAudioFile) and streams it into AudioDSP's C++ profiler
         // (TrackLoudnessBridge.h, via the module map), with its jobs, cache and failure rules. Its
@@ -265,7 +276,7 @@ let package = Package(
         // with every step in any order — the scenarios, the ablations and the random-schedule explorer).
         .testTarget(
             name: "AdaptiveSoundTests",
-            dependencies: ["AdaptiveSound", "PlaybackQueueKit"],
+            dependencies: ["AdaptiveSound", "PlaybackQueueKit", "SettingsKit"],
             path: "Tests/AdaptiveSoundTests"
         ),
         // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
@@ -290,6 +301,13 @@ let package = Package(
             name: "OutputDeviceKitTests",
             dependencies: ["OutputDeviceKit"],
             path: "Tests/OutputDeviceKitTests"
+        ),
+        // R1.1-A: the listener's settings — the faithful default, the round trip, a bad field read as
+        // its default, Master Gain never louder, R1's shuffle / repeat taken in, coalesced writes.
+        .testTarget(
+            name: "SettingsKitTests",
+            dependencies: ["SettingsKit", "EQEditKit"],
+            path: "Tests/SettingsKitTests"
         ),
         // EQ1c part 2: the analyzer end to end on generated WAVs — prefix then whole, the cache,
         // latest-wins and promotion, failure reported once and never re-decoded.
