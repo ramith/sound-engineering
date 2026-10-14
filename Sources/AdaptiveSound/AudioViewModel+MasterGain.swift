@@ -7,8 +7,30 @@ import Foundation
 /// Pure that is the app's own gain (`masterGain`), which the engine has from engine-ready on. On Pure
 /// the bit-perfect stream is never scaled, so the one gain is the output device's own volume: the
 /// slider shows what the device reads and sets the device when moved. Engaging Pure reads that
-/// volume and never writes it — playing Pure must not make the device louder than it was.
+/// volume and never writes it — playing Pure must not make the device louder than it was — and Pure
+/// engages only with the app's gain at 0 dB, so switching to it never makes the music louder either
+/// (`startsOnPure`).
 extension AudioViewModel {
+    /// Whether a start plays Pure: asked for, and Master Gain at 0 dB (`pureWaitsForMasterGain`).
+    var startsOnPure: Bool {
+        pureModeEnabled && !pureWaitsForMasterGain
+    }
+
+    /// Pure is asked for, but Master Gain is turned down. Pure plays the file untouched, at the output
+    /// device's own volume: louder than Enhanced plays now, by the cut. So it waits, and Enhanced keeps
+    /// playing at the listener's level until Master Gain is back at 0 dB — switching Enhanced → Pure
+    /// never raises the level (council C-29, KI-SET-02). The Pure card says so. NaN reads as a cut, the
+    /// law's safe reading of a bad value.
+    var pureWaitsForMasterGain: Bool {
+        pureModeEnabled && !(masterGain >= MasterGainLaw.unity)
+    }
+
+    /// How the next start takes Pure, for the play log: "on", "off", or why it waits.
+    var pureStartNote: String {
+        guard pureModeEnabled else { return "off" }
+        return startsOnPure ? "on" : "waits (Master Gain \(MasterGainLaw.text(masterGain)))"
+    }
+
     /// What the Master Gain slider shows and moves right now.
     var masterGainControl: MasterGainControl {
         guard pureModeEngaged else { return .app(decibels: masterGain) }

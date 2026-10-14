@@ -22,6 +22,8 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var picks: [UInt32] = []
         /// Every `startAudio` call's start position.
         var starts: [Double] = []
+        /// Every `startAudio` call's `pureMode`.
+        var pureModes: [Bool] = []
         /// Every Intensity published.
         var intensities: [Float] = []
         /// Every crossfeed published: whether it plays.
@@ -43,8 +45,11 @@ final class DeviceTestEngine: AudioPlaybackEngine {
 
     func shutdown() async throws {}
 
-    func startAudio(fileURL _: URL?, pureMode _: Bool, startAt: Double, epoch _: UInt64) async throws {
-        state.withLock { $0.starts.append(startAt) }
+    func startAudio(fileURL _: URL?, pureMode: Bool, startAt: Double, epoch _: UInt64) async throws {
+        state.withLock {
+            $0.starts.append(startAt)
+            $0.pureModes.append(pureMode)
+        }
     }
 
     func stopAudio(epoch _: UInt64) async throws {}
