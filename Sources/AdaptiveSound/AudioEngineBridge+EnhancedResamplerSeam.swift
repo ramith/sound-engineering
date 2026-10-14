@@ -5,12 +5,12 @@ import Foundation
 // MARK: - AudioEngineBridge Enhanced resampler — read → convert → schedule iteration
 
 /// The per-iteration read → convert → schedule machinery of the Enhanced streaming resampler.
-/// Everything here runs on `resampleQueue` (the prime loop drives it — from
-/// `startEnhancedResampler`'s `resampleQueue.sync`, or a seam handler already on the queue; each
-/// `.dataConsumed` completion re-dispatches the next iteration onto `resampleQueue`). The
-/// cancellation predicate (`isCurrent`) and the `resampleGeneration` / `resampleSession` reads it
-/// performs are confined to `resampleQueue`. The conversion itself is `StreamingResampler`'s
-/// (AudioFormatKit), which the `make gate` SRC check drives in the same chunks.
+/// Everything here runs on `resampleQueue` (the prime loop drives it — from `commitEnhanced`'s
+/// `resampleQueue.sync`, or a seam handler already on the queue; each `.dataConsumed` completion
+/// re-dispatches the next iteration onto `resampleQueue`). The cancellation predicate (`isCurrent`)
+/// and the `resampleGeneration` / `resampleSession` reads it performs are confined to
+/// `resampleQueue`. The conversion itself is `StreamingResampler`'s (AudioFormatKit), which the
+/// `make gate` SRC check drives in the same chunks.
 extension AudioEngineBridge {
     // MARK: - Cancellation predicate
 

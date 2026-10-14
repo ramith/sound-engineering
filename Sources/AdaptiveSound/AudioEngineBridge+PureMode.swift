@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import CoreAudio
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioEngineBridge Pure-Mode methods (bit-perfect HAL path)
 
@@ -168,81 +169,69 @@ extension AudioEngineBridge {
 
     // MARK: - Seek
 
-    /// Seek to `seconds` in the current file.
+    /// Seek to `seconds` in the current file — the one seek entry, for both paths.
+    ///
+    /// First the one place rule (`SeekTarget`): a target that is not a number (NaN, ±∞) reaches no
+    /// engine — it throws `AudioBridgeError.seekFailed` and playback carries on where it was; a
+    /// negative target is 0. The request still begins its transport operation, so the view model's
+    /// numbered tick hears back either way.
     ///
     /// Pure path: `pureModeEngineSeek` holds render (silence; the device keeps running), seeks the
-    /// decoder and releases render. A seek that did not move throws `AudioBridgeError.seekFailed`.
+    /// decoder and releases render; a place past the end lands at the end, which ends the track. A
+    /// seek that did not move throws `seekFailed`.
     ///
-    /// Enhanced path: stops the player, reschedules the `AVAudioFile` from the
-    /// target frame to end. For rate-mismatched files the streaming resampler is
-    /// restarted from the target frame via `seekEnhancedResampler`.
+    /// Enhanced path (`restartEnhanced`): the current file, from the place — or, at or past its end,
+    /// the end of the track now (the snapshot's `ended`; the view model advances). It changes
+    /// nothing until it knows it can play: a seek that can't (the file no longer opens) throws
+    /// `seekFailed` and playback carries on where it was. Only with play intent: paused, stopped,
+    /// ended or after a device loss the engine is stopped and there is nothing to move — where a
+    /// paused song resumes is the view model's resume point (S10.8 G).
     ///
     /// `epoch` numbers the request (see `TransportSnapshot`): a transitional sample at the target is
     /// published first, so the view model's playhead never jumps back to the old place meanwhile.
     func seek(to seconds: Double, epoch: UInt64) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.engineQueue.async {
-                self.beginTransportOperation(epoch: epoch, position: max(seconds, 0))
+                let place = SeekTarget.place(seconds)
+                self.beginTransportOperation(epoch: epoch, position: place)
+                guard let place else {
+                    logUX("engine seek: target=\(seconds) refused (not a place)")
+                    self.sampleTransport() // the settled sample: still where it plays
+                    continuation.resume(throwing: AudioBridgeError.seekFailed)
+                    return
+                }
                 // Pure seek: `withPureEngine` borrows the session on engineQueue, where every Pure
                 // call and teardown is serialized, and calls OUTSIDE stateLock (the seek waits for
                 // a render pass and joins the decode thread). nil ⇒ not Pure ⇒ fall through to
                 // Enhanced.
-                if let result = self.withPureEngine({ pureModeEngineSeek($0, seconds) }) {
-                    logUX("engine seek: path=Pure target=\(secs(seconds))s "
+                if let result = self.withPureEngine({ pureModeEngineSeek($0, place) }) {
+                    logUX("engine seek: path=Pure target=\(secs(place))s "
                         + "result=\(result == 1 ? "ok" : "failed(\(result))")")
                     // The settled sample: after a failed seek, the place it really plays from.
                     self.sampleTransport()
                     if result == 1 {
                         continuation.resume()
                     } else {
-                        NSLog("[PureMode] seek to \(seconds)s failed — engine returned \(result)")
+                        NSLog("[PureMode] seek to \(place)s failed — engine returned \(result)")
                         continuation.resume(throwing: AudioBridgeError.seekFailed)
                     }
                     return
                 }
 
-                // Enhanced path: best-effort re-schedule.
-                // Stops the player and reschedules from the target frame. Rate-mismatched files
-                // use seekEnhancedResampler; 48 kHz passthrough files use seekEnhancedBestEffort.
-                // Only with play intent (S10.8 G): paused, stopped, ended or after a device loss the
-                // engine is stopped, and `play()` on a stopped engine is a no-op — the re-scheduled
-                // segment would stay queued on the player and play ahead of the next song. Where a
-                // paused song resumes is the view model's resume point, not the engine's.
-                let playIntent = self.enhancedPlayIntent
-                guard playIntent,
-                      let player = self.playerNode,
-                      let url = self.lastFileURL
-                else {
-                    logUX("engine seek: path=Enhanced target=\(secs(seconds))s "
-                        + "result=no-op (\(playIntent ? "no player/url" : "no play intent"))")
+                guard self.enhancedPlayIntent, let player = self.playerNode, self.lastFileURL != nil else {
+                    logUX("engine seek: path=Enhanced target=\(secs(place))s result=no-op (no file playing)")
                     self.sampleTransport()
                     continuation.resume()
                     return
                 }
-
-                // The re-scheduled stream restarts the player's sampleTime at 0, so record the seek
-                // target as the position base — liveEnhancedPosition adds it to report the true
-                // playhead (otherwise the scrubber snaps to 0 and creeps forward after a seek).
-                self.setEnhancedPositionBaseSeconds(max(seconds, 0))
-
-                // If a streaming-resampler session is active (rate-mismatched file), restart the
-                // resampler from the target frame (bumps the generation → abandons in-flight buffers,
-                // resets the converter, re-primes + plays). Otherwise the 48 kHz `scheduleFile`
-                // session uses the existing best-effort segment re-schedule (UNCHANGED).
-                // Read resampleSession under the lock for a consistent branch decision (avoids a
-                // TOCTOU race with primeEnhancedResamplerLocked / stopEnhancedResampler on
-                // resampleQueue).
-                let hasResampler = self.resampleQueue.sync { self.resampleSession != nil }
-                if hasResampler {
-                    let restarted = self.seekEnhancedResampler(to: seconds, player: player)
-                    logUX("engine seek: path=Enhanced(resample) target=\(secs(seconds))s "
-                        + "result=\(restarted ? "ok" : "failed")")
-                } else {
-                    self.seekEnhancedBestEffort(url: url, player: player, to: seconds)
-                    logUX("engine seek: path=Enhanced target=\(secs(seconds))s result=ok")
-                }
+                let outcome = self.restartEnhanced(at: place, player: player)
+                logUX("engine seek: path=Enhanced target=\(secs(place))s result=\(outcome)")
                 self.sampleTransport()
-                continuation.resume()
+                if outcome == .unchanged {
+                    continuation.resume(throwing: AudioBridgeError.seekFailed)
+                } else {
+                    continuation.resume()
+                }
             }
         }
     }
@@ -307,64 +296,5 @@ extension AudioEngineBridge {
             decoder: decoderUI,
             fellBackToEnhanced: false
         )
-    }
-
-    /// Seek `player` to `seconds` by re-scheduling the remaining segment of `url`.
-    ///
-    /// Silently returns when the file cannot be opened or the target frame is out of range.
-    /// Called from `seek(to:)` and `reestablishEnhancedAfterConfigChange` on the Enhanced path.
-    ///
-    /// S-2 / S-3 fix: the segment is scheduled with `completionCallbackType: .dataPlayedBack` so
-    /// `onPassthroughEOF` fires at the end of the remaining content. Without this the armed
-    /// on-deck track is never triggered after a seek or a device reconnect, silently killing the
-    /// gapless chain. `onDeckURL` is intentionally NOT cleared here — a seek must NOT consume
-    /// the armed next track. The hook is re-armed by whichever path set it (`setNextTrack`
-    /// re-arms on the next call; the config-change path leaves the existing hook intact because
-    /// `stopEnhancedResampler` is not called on the passthrough config-change branch).
-    func seekEnhancedBestEffort(url: URL, player: AVAudioPlayerNode, to seconds: Double) {
-        let didAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        guard let audioFile = try? AVAudioFile(forReading: url) else { return }
-
-        let sampleRate = audioFile.processingFormat.sampleRate
-        guard sampleRate > 0 else { return }
-
-        let targetFrame = AVAudioFramePosition(seconds * sampleRate)
-        let totalFrames = audioFile.length
-        guard targetFrame >= 0, targetFrame < totalFrames else { return }
-
-        let frameCount = AVAudioFrameCount(totalFrames - targetFrame)
-        // Bump the passthrough epoch BEFORE the stop: `player.stop()` fires the superseded
-        // schedule's `.dataPlayedBack` completion, which — with a next track armed — would
-        // otherwise roll the gapless seam and start the WRONG song (the founder's device-switch
-        // bug; user seek on a 48 kHz file had the same hazard). The new segment is installed
-        // under the new epoch; the stale completion abandons on the mismatch. Callers run on
-        // engineQueue (seek) / configChangeQueue (re-establish) — never resampleQueue — so the
-        // sync is deadlock-safe (the stopEnhancedResampler direction, C-1 discipline).
-        let gen: UInt64 = resampleQueue.sync {
-            passthroughGeneration &+= 1
-            return passthroughGeneration
-        }
-        player.stop()
-        audioFile.framePosition = targetFrame
-        player.scheduleSegment(
-            audioFile,
-            startingFrame: targetFrame,
-            frameCount: frameCount,
-            at: nil,
-            completionCallbackType: .dataPlayedBack
-        ) { [weak self, weak player] _ in
-            guard let self, let livePlayer = player else { return }
-            self.resampleQueue.async {
-                guard gen == self.passthroughGeneration else { return } // superseded
-                self.firePassthroughEOFOrEnd(player: livePlayer)
-            }
-        }
-        player.play()
     }
 }

@@ -258,6 +258,7 @@ let package = Package(
                 "ResumePointTests.swift",
                 "TransportSnapshotTests.swift",
                 "SeekRouteTests.swift",
+                "SeekTargetTests.swift",
                 "PlaybackOrderTests.swift",
                 "OnDeckGateTests.swift",
                 "PlayThroughTrackerTests.swift",

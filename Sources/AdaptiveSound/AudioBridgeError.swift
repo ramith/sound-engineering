@@ -5,8 +5,9 @@ import Foundation
 enum AudioBridgeError: Error {
     case engineNotInitialized
     case unsupportedFormat(String)
-    /// A Pure seek did not move: the decoder could not reposition, or the output would not go
-    /// quiet for it. Playback carries on where it was.
+    /// A seek did not happen: its target was not a number, the file no longer opens (Enhanced), or
+    /// the decoder could not reposition / the output would not go quiet for it (Pure). Playback
+    /// carries on where it was.
     case seekFailed
 }
 

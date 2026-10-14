@@ -157,11 +157,11 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// clock tick stale; after `startAudio`, `stopAudio` and `seek` return, it reflects them.
     func snapshot() -> EngineSnapshot
 
-    /// Seek to `seconds` from the start of the current file.
-    /// In the Pure path this is handled natively by the HAL engine. In the
-    /// Enhanced path this is a best-effort re-schedule (see `AudioEngineBridge+PureMode.swift`).
-    /// `epoch` numbers the request, as for `startAudio`. Throws `AudioBridgeError.seekFailed` when
-    /// the Pure path could not move (playback carries on where it was).
+    /// Seek to `seconds` from the start of the current file, on either path (the one rule:
+    /// `SeekTarget`). A place at or past the end ends the track — the transport's `ended` — as if it
+    /// had played out. Throws `AudioBridgeError.seekFailed` when the seek did not happen — a target
+    /// that is not a number, a file that no longer opens, a Pure decoder that could not move — and
+    /// playback carries on exactly where it was. `epoch` numbers the request, as for `startAudio`.
     func seek(to seconds: Double, epoch: UInt64) async throws
 
     // MARK: Master Gain
