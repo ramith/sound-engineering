@@ -281,8 +281,9 @@ final class MockAdvanceController {
 
     //
     // Sequencing scaffold (array + on-deck arming) mirroring AudioViewModel+Queue; the one
-    // real DECISION — whether an append re-arms — is the shipped `QueueAdvance.appendArmIndex`
-    // (not re-implemented here), so that logic is gated against real code.
+    // real DECISION — what an append arms next — is the shipped `PlaybackOrder.onDeck(afterEditing:)`
+    // (not re-implemented here), so that logic is gated against real code. (The real view model's
+    // queue verbs are driven directly in `Tests/AdaptiveSoundTests`.)
 
     func playNow(_ tracks: [String], startAt index: Int = 0) {
         guard !tracks.isEmpty else { return }
@@ -308,14 +309,13 @@ final class MockAdvanceController {
     func appendToQueue(_ tracks: [String]) -> Int {
         let tracks = dedupedAgainstQueue(tracks)
         guard !tracks.isEmpty else { return 0 }
-        let oldCount = playlist.count
-        playlist.append(contentsOf: tracks)
+        playlist.append(contentsOf: tracks) // an append moves no row: the armed index stands
         guard isPlaying, let current = selectedTrackIndex else { return tracks.count }
-        if let armIndex = QueueAdvance.appendArmIndex(
-            current: current, oldCount: oldCount, hasPending: pendingNextIndex != nil,
-            shuffle: shuffleEnabled, repeatMode: repeatMode
-        ) {
-            armOnDeck(armIndex)
+        let next = PlaybackOrder(shuffle: shuffleEnabled, repeatMode: repeatMode).onDeck(
+            afterEditing: current, count: playlist.count, armed: pendingNextIndex, randomPick: Self.deterministicPick
+        )
+        if next != pendingNextIndex {
+            armOnDeck(next)
         }
         return tracks.count
     }

@@ -8,7 +8,8 @@ import Testing
 //
 // Council P4's E1 explorer, on the shipped view model. Each schedule plays t0 or starts from stopped
 // (Pure or Enhanced), then interleaves a short script of what the user presses — Play, Pause, Space,
-// Stop, Next, a seek, a click on a row — with what the engine does in its own time: run a command
+// Stop, Next, a seek, a click on a row, and the queue edits of council C-17 (Add to Queue, Play
+// Next, a drag) — with what the engine does in its own time: run a command
 // waiting on its busy queue (the oldest, as `engineQueue` runs them; or, under `.any`, whichever — the
 // hops there keep no order), deliver an on-deck request, land a Pure open, end the track, a tick, and
 // the view model's tasks running. Then everything lands, a few ticks, and the end state is checked:
@@ -17,7 +18,7 @@ import Testing
 //   the engine plays ⇒ the app shows Playing
 //   both play ⇒ the same song, and the app's next is the engine's armed pick.
 //
-// A seam a request had not yet reached (A2 / A2′, KI-PB-16 — the Engine sprint's seam identity) is the
+// A seam an edit had not yet reached (A2 / A2′, KI-PB-16 — the Engine sprint's seam identity) is the
 // documented residual: counted apart, as the D41 explorer counts it (`Rig.tickJudgingSeam`).
 
 @MainActor
@@ -54,7 +55,7 @@ struct TransportExplorer {
     static let silentUnderPlaying = "app shows playing, engine silent"
 
     private enum Verb: String, CaseIterable {
-        case play, pause, toggle, stop, next, seek, click
+        case play, pause, toggle, stop, next, seek, click, append, playNext, drag
     }
 
     private enum Move: String {
@@ -197,6 +198,17 @@ struct TransportExplorer {
         case .next: rig.vm.nextTrack()
         case .seek: rig.vm.seek(to: 42)
         case .click: rig.vm.playTrack(at: random(rig.vm.queue.count))
+        case .append, .playNext, .drag: edit(verb, rig: rig)
+        }
+    }
+
+    /// A queue edit (council C-17).
+    private mutating func edit(_ verb: Verb, rig: Rig) {
+        let count = rig.vm.queue.count
+        switch verb {
+        case .append: rig.vm.appendToQueue([audioFile(100 + count)])
+        case .playNext: rig.vm.playNext([audioFile(100 + count)])
+        default: rig.vm.moveByDrop(fromID: rig.vm.queue[random(count)].id, toIndex: random(count))
         }
     }
 
