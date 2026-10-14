@@ -43,15 +43,6 @@ extension LibraryStore {
     /// Delete a single FTS row by rowid (== `tracks.id`).
     private static let deleteSearchRowSQL = "DELETE FROM tracks_fts WHERE rowid = ?;"
 
-    /// The set-membership FTS delete mirroring `sweepOrphans`'s predicate. `placeholders` is the
-    /// `?,?,…` list for the folder ids (the id set is bound, never spliced into SQL).
-    private static func deleteSearchRowsForSweepSQL(placeholders: String) -> String {
-        """
-        DELETE FROM tracks_fts WHERE rowid IN (
-            SELECT id FROM tracks WHERE folder_id IN (\(placeholders)) AND last_seen_scan < ?);
-        """
-    }
-
     /// (Re)index track `trackID` in `tracks_fts`: read its searchable fields and
     /// delete-then-insert its FTS row (rowid = id). A no-op if the track vanished.
     func syncSearchRow(_ db: Database, trackID: Int64) throws {
@@ -80,18 +71,5 @@ extension LibraryStore {
         for id in ids {
             try db.execute(sql: Self.deleteSearchRowSQL, arguments: [id])
         }
-    }
-
-    /// Delete the FTS rows for the tracks a folder-scoped orphan sweep is about to remove — a
-    /// single set-membership DELETE mirroring `sweepOrphans`'s predicate. MUST run BEFORE the
-    /// `tracks` DELETE: once the rows are gone the sub-select finds nothing and FTS rows leak.
-    func deleteSearchRowsForSweep(_ db: Database, inFolders folderIDs: [Int64], olderThan generation: Int64) throws {
-        guard !folderIDs.isEmpty else { return }
-        searchIndexWrites.withLock { $0 += 1 }
-        let placeholders = databaseQuestionMarks(count: folderIDs.count)
-        try db.execute(
-            sql: Self.deleteSearchRowsForSweepSQL(placeholders: placeholders),
-            arguments: StatementArguments(folderIDs + [generation])
-        )
     }
 }
