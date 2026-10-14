@@ -15,4 +15,4 @@ These docs are kept for their **findings and the rejected/deferred/reverted rati
 
 All stages merged to `main` — see the git log for the exact PRs. *(Stages 1–4: PRs #34–#46; Stage 5, the GRDB adoption: #47–#49.)*
 
-**Next review:** the post-R1 product council (2026-10-13) — product, process, architecture, roadmap and a staged code review; its report will live in `2026-10-council/` in this directory.
+**The post-R1 product council (2026-10-13 / 14)** — product, process, architecture, roadmap and a staged code review against six design-maturity criteria: [2026-10-council/README.md](2026-10-council/README.md) (the report, the founder's decisions FD-1…10 and the re-plan), with every working paper in [2026-10-council/working/](2026-10-council/working/). The full finding register is [`working/stage5-architect.md` §1](2026-10-council/working/stage5-architect.md#1-finding-register).
