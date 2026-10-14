@@ -135,7 +135,7 @@ For detailed setup, coding standards, pre-commit hooks, and profiling guidance, 
 
 **Shipped (on `main`, released as R1 = v1.0.0-alpha):** loudness safety (Sprint 4) · N-channel multichannel + Monitoring (Sprint 5/5b) · bit-perfect **Pure Mode** + gapless playback · S6 architecture-review gate · S7 DSP regression gate · QW1 differentiators (crossfeed, Reimagine intensity knob, tonal presets) · the GRDB library spine + browse/search (S8–S9) · queue, playlists, Recently Played, media keys (S10.1–S10.6) · the Liquid Glass UI in dark and light (S10.7–S10.8) · an honest, loudness-neutral 31-band EQ (Sprint EQ) · the output-device and app↔engine threading rules (Sprint G) · the R1 blocker fixes from the 2026-10 council (PR #88).
 
-**Phase 1 — player maturity / parity (S8–S14):** library spine (S8 ✅) → browse/search (S9 ✅) → queue/playlists/media keys + the release UX (S10.x ✅) → CUE + format hardening (S11) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → loudness compensation (S14). → release **R1** after S10 (v1.0.0-alpha, shipped 2026-10-14), **R2** ("audiophile-credible") after S14.
+**Phase 1 — player maturity / parity (S8–S14):** library spine (S8 ✅) → browse/search (S9 ✅) → queue/playlists/media keys + the release UX (S10.x ✅) → **R1.1** (a faithful default, remembered settings, the post-R1 fixes) → the **Engine sprint** (our own Enhanced playback engine, compared with SFBAudioEngine) → loudness compensation (S14-lite) → parametric EQ + AutoEq (S12) → device-correction EQ (S13) → CUE + format hardening (S11-lite). → release **R1** after S10 (v1.0.0-alpha, shipped 2026-10-14), **R1.1** after its fixes, **R2** ("audiophile-credible") after S11-lite. *(Re-planned 2026-10-14 from the [2026-10 product council](docs/reviews/2026-10-council/README.md); the order used to be S11 → S14.)*
 
 **Phase 2 — the Adaptive Sound differentiation (S15–S18):** masking model → clarity / Arbiter → full Reimagine mapping → BRIR spatial render. → release **R3** after S17.
 
@@ -165,7 +165,7 @@ The shipped UI is **Liquid Glass** on a teal `DesignSystem` (token fills, dark a
 
 ## License
 
-License deferred to post-MVP (personal / open-source). See docs for details.
+~~License deferred to post-MVP (personal / open-source).~~ The licence will be **Apache-2.0** (founder decision, 2026-10-14). The LICENSE file is not in the repository yet — it lands with the release-readiness work — so no licence is granted until it does. See the [roadmap](docs/product/roadmap.md#deferred--out-of-window).
 
 ---
 
