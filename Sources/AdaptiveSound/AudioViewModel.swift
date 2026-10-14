@@ -131,15 +131,23 @@ final class AudioViewModel {
 
     // MARK: - Reimagine Intensity (QW-A)
 
+    /// Whether the Intensity control is offered. Not until its effects are real (founder decision
+    /// FD-2, 2026-10-14): Clarity and BRIR are pass-through stubs, so today the blend changes loudness,
+    /// not sound (council C-41, C-40) — it returns with S17. Until then Intensity is held at 0, its
+    /// default, and never restored; the inspector leaves its control (`ReimagineSectionView`) out.
+    static let offersIntensity = false
+
     /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial, crossfeed). The EQ
     /// sits AHEAD of the blend and plays at every Intensity (Sprint EQ decision 25): 0.0 =
     /// Reimagine off — the EQ alone, bit-perfect when the EQ is Off or flat; 1.0 = full blend.
-    /// Default 0.20, published at engine-ready (`publishPlaybackIntents()`).
+    /// Default 0 — a faithful default (FD-2): the kernel's P0 / P1 path, so no leveller, no blend
+    /// and, with the EQ off, no limiter (it was 0.20, which turned all three on). Published at
+    /// engine-ready (`publishPlaybackIntents()`); hidden and held at 0 (`offersIntensity`).
     /// The slider binds this in 0...1, so the stored value is always in range; the engine call
     /// is clamped defensively with a LOCAL — NEVER re-assign `intensity` inside its own `didSet`
     /// (under @Observable a self-assignment re-fires the setter → infinite recursion → crash).
     /// Ops dispatched via `+IntensityControl`.
-    var intensity: Float = 0.20 {
+    var intensity: Float = 0 {
         didSet {
             logUX("intensity → \(Int(max(0, min(1, intensity)) * 100)) %")
             publishIntensity()

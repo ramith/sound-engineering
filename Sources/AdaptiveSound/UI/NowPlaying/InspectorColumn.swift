@@ -3,10 +3,11 @@ import SwiftUI
 
 // MARK: - Inspector Column (S10.7 PR 5 — founder decision D2: the 8a trailing glass column)
 
-/// The fixed-260pt trailing inspector: master gain, Reimagine intensity, the signal detail
-/// line (decoder/bit-depth — relocated from the hero badges per §5), loudness meters, and
-/// crossfeed. Content scrolls INSIDE the panel chrome (§5 mandated architecture: the panel's
-/// rim/hairline must never scroll away with the content), padded BEFORE the fixed frame (the
+/// The fixed-260pt trailing inspector: master gain, Reimagine intensity (hidden until S17 —
+/// `AudioViewModel.offersIntensity`), the signal detail line (decoder/bit-depth — relocated from the
+/// hero badges per §5), loudness meters, and crossfeed. Content scrolls INSIDE the panel chrome (§5
+/// mandated architecture: the panel's rim/hairline must never scroll away with the content), padded
+/// BEFORE the fixed frame (the
 /// S9 lesson's PR-5 form: pad-after-frame silently widens the column and steals queue width).
 /// Tertiary text is allowed here by the §3.3 placement rule (right side — never the teal core).
 struct InspectorColumn: View {
@@ -21,7 +22,9 @@ struct InspectorColumn: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.medium) {
                 MasterGainSliderView()
-                ReimagineSectionView()
+                if AudioViewModel.offersIntensity {
+                    ReimagineSectionView()
+                }
                 signalDetail
                 Hairline()
                 LoudnessMetersView()
@@ -75,7 +78,8 @@ struct InspectorColumn: View {
 
 // MARK: - Reimagine Intensity Section (QW-A)
 
-/// Horizontal carved slider for the global Reimagine intensity knob.
+/// Horizontal carved slider for the global Reimagine intensity knob. Not shown until Intensity's
+/// effects are real (FD-2: `AudioViewModel.offersIntensity`); kept whole for S17.
 struct ReimagineSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
