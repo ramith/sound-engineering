@@ -25,6 +25,7 @@
 #include "include/PureModeSource.h"
 
 #include <atomic>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -47,10 +48,12 @@ namespace
     constexpr uint8_t kDecoderBackendApple = 0U;
     constexpr uint8_t kDecoderBackendFFmpeg = 1U;
 
-    // Pure-gapless arm return codes (mirrored in PureModeBridge.h).
-    constexpr int kNextTrackError = 0;            // unreadable/unsupported/already-armed/null
-    constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch — caller reconfigures
+    // Pure-gapless arm return codes (mirrored in PureModeBridge.h). Not armed (1, 3): the track
+    // plays after a fresh start.
+    constexpr int kNextTrackError = 0;            // null handle/decoder, no active track, occupied
+    constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch
     constexpr int kNextTrackArmed = 2;            // compatible — armed for a gapless seam
+    constexpr int kNextTrackEnded = 3;            // the current track already ended
 
     // The opaque engine session behind the void* handle. The GaplessSource IS the engine's single
     // PureModeSource; it owns the active + armed-next FileDecodeSources internally.
@@ -392,19 +395,30 @@ extern "C"
         {
             return kNextTrackError; // nothing playing to arm behind
         }
+        // The end is final: the current track already ended with nothing armed, so the view model
+        // starts this one fresh. `next` is dropped (dtor joins its decode thread).
+        if (session->gapless->ended())
+        {
+            return kNextTrackEnded;
+        }
         // Same-rate-only gapless: a rate/channel/float/bit-depth mismatch can't be straddled at the
         // seam. `next` is dropped (dtor joins its decode thread); the caller reconfigures instead.
         if (!AdaptiveSound::sameRateGaplessCompatible(*active, *next))
         {
             return kNextTrackNeedsReconfigure;
         }
-        // Arm it. A second arm (one already pending) is refused → treat as error so the caller does
-        // not assume a gapless seam is queued. Ownership transfers into the engine only on success.
-        if (!session->gapless->armNext(std::move(next)))
+        // Arm it. Ownership transfers into the engine only on success.
+        if (session->gapless->armNext(std::move(next)))
         {
-            return kNextTrackError;
+            return kNextTrackArmed;
         }
-        return kNextTrackArmed;
+        // Refused: the end landed after the check above (final, as there) — or the slot was
+        // occupied, which the caller rules out by taking the old pick off first, on the same queue
+        // (arming never replaces).
+        const bool ended = session->gapless->ended();
+        assert(ended &&
+               "pureModeEngineArmOpenedNextTrack: slot occupied — clear the old pick first");
+        return ended ? kNextTrackEnded : kNextTrackError;
     }
 
     void pureModeDestroyDecodeSource(void* decoder) AUDIODSP_C_NOEXCEPT

@@ -29,7 +29,10 @@
 //     release half publishes the RT thread's pre-seam writes to a concurrent clearNext.
 //
 // On the no-next branch (nxt == null) we set ended_ (release) and return the short fill; the
-// engine zero-pads and the poll plane sees ended().
+// engine zero-pads and the poll plane sees ended(). The end is final: every later true-EOF pull
+// returns before the exchange, so a track armed after the end (an arm that passed armNext's
+// ended_ check just before the RT thread set it) is never adopted — the control plane starts it
+// fresh. The RT thread is the only writer of ended_ while rendering, so it reads it relaxed.
 //
 // On the take branch we publish the retirement + adoption with release stores:
 //   retired_.store(cur, release);   // park the old active for off-RT reap (RT never joins)
@@ -43,9 +46,9 @@
 // running and the acquire-load at the top of every pullFloat sees its own prior release-store.
 //
 // retired_ is written by the RT thread (release) and read+cleared by reapRetired (off-RT). Only
-// one track can be parked at a time: a second seam cannot occur until reapRetired frees the slot
-// (armNext refuses to arm into the not-yet-reaped slot), so retired_ never overwrites a live
-// pending reap.
+// one track can be parked at a time: a second seam needs a second arm, and armNext reaps the
+// retired slot before it arms (with nothing armed the RT thread cannot seam, so retired_ is
+// stable while it does), so retired_ never overwrites a live pending reap.
 //
 // renderedFrames is per-Track: written by the RT thread (release fetch_add), read by the poll
 // plane (acquire). seekBaseFrames is off-RT only (set by setCurrent/resetActiveBase while the
@@ -121,13 +124,25 @@ namespace AdaptiveSound
         {
             return false;
         }
-        // One-slot: refuse a second arm. `source` was moved into this by-value parameter on the
-        // call, so on this early return its dtor frees the refused FileDecodeSource (joining its
-        // decode thread) off-RT — exactly what we want.
+        // One slot, never replaced: refuse a second arm (the caller takes the old pick off first).
+        // `source` was moved into this by-value parameter on the call, so on this early return
+        // its dtor frees the refused FileDecodeSource (joining its decode thread) off-RT — exactly
+        // what we want.
         if (armedNext_.load(std::memory_order_acquire) != nullptr)
         {
             return false;
         }
+        // The end is final: the active track already ended with nothing armed, so the session is
+        // over and the caller starts the next track fresh. (If the end lands after this check, the
+        // RT thread never adopts the arm — see pullFloat.)
+        if (ended_.load(std::memory_order_acquire))
+        {
+            return false;
+        }
+        // Free the slot the last seam retired before looking for one: a track armed right after a
+        // seam must not wait for the poll plane's reap. Nothing is armed, so the RT thread cannot
+        // seam and retired_ is stable here.
+        reapRetired();
         // Only a track the running stream can carry reaches the seam: the stream runs at the
         // active track's rate and width (the engine refuses a session whose device stream is not
         // the file's width), and the seam swaps sources without reconfiguring anything. A track of
@@ -143,7 +158,7 @@ namespace AdaptiveSound
         Track* slot = freeSlotForArm();
         if (slot == nullptr)
         {
-            return false; // both non-active slots occupied (retired not yet reaped)
+            return false; // unreachable: the retired slot was reaped above
         }
         slot->source = std::move(source);
         slot->renderedFrames.store(0U, std::memory_order_relaxed);
@@ -158,7 +173,8 @@ namespace AdaptiveSound
     {
         // Race the RT seam claim: exactly one of {this, the RT seam exchange} reads the non-null
         // pointer. If we win, the slot is ours to tear down; if the RT thread already adopted it,
-        // we observe null and do nothing (the adopted track is now active / will be retired).
+        // we observe null and do nothing (the adopted track is now active / will be retired). It
+        // also frees a track that slipped in behind the end (armed, never adopted).
         Track* slot = armedNext_.exchange(nullptr, std::memory_order_acq_rel);
         if (slot != nullptr)
         {
@@ -260,6 +276,14 @@ namespace AdaptiveSound
         if (!cur->source->exhausted())
         {
             return produced; // HOLD — the engine zero-pads the remainder this callback
+        }
+
+        // The end is final: once this track ended with nothing armed, a track armed later is never
+        // adopted (the control plane starts it fresh). Only this thread sets ended_ while
+        // rendering, so a relaxed load reads its own store.
+        if (ended_.load(std::memory_order_relaxed))
+        {
+            return produced;
         }
 
         // True EOF. Try to adopt the armed-next source. The exchange guarantees exactly one
