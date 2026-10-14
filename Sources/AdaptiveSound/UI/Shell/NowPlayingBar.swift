@@ -175,12 +175,14 @@ private struct FooterTransportControls: View {
 
     /// Play/Pause — the glossy teal circle when loaded (S10.8 PR G: the shared `TealGloss`
     /// — inner top highlight + dark-only teal glow, same recipe as the active tab); a flat,
-    /// disabled card circle when idle (same 34pt frame, so no reflow between states).
+    /// disabled card circle when idle (same 34pt frame, so no reflow between states). It shows what
+    /// the user last asked (`playIntent`, council C-15): Pause from the press of Play on, so a second
+    /// press pauses the start it promises.
     private var playButton: some View {
         Button {
             viewModel.togglePlayPause()
         } label: {
-            Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+            Image(systemName: viewModel.playIntent ? "pause.fill" : "play.fill")
                 .font(.system(size: DesignSystem.Footer.playSymbol, weight: .semibold))
                 .foregroundStyle(isLoaded ? DesignSystem.Color.onAccent : DesignSystem.Color.labelDisabled)
                 .frame(width: DesignSystem.Footer.playButton, height: DesignSystem.Footer.playButton)
@@ -195,7 +197,7 @@ private struct FooterTransportControls: View {
         }
         .buttonStyle(FooterControlButtonStyle())
         .disabled(!isLoaded)
-        .accessibilityLabel(viewModel.isPlaying ? "Pause" : "Play")
+        .accessibilityLabel(viewModel.playIntent ? "Pause" : "Play")
     }
 }
 
