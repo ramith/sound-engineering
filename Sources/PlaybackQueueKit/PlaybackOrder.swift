@@ -1,5 +1,5 @@
-// PlaybackQueueKit — the play order (shuffle + repeat), and what changing it mid-song arms next
-// (S10.8 G).
+// PlaybackQueueKit — the play order (shuffle + repeat), and what it arms next when it changes mid-song
+// (S10.8 G) or the queue is edited mid-song (council C-17).
 //
 // Pure + `Sendable`, so the rule is unit-tested without the engine or the view model
 // (`PlaybackOrderTests`). The shuffle choice is the INJECTED picker `QueueAdvance` takes.
@@ -30,6 +30,29 @@ public struct PlaybackOrder: Sendable {
                        randomPick: (Int, Int) -> Int) -> Int? {
         let shufflePickStands = old.shuffle && shuffle && old.repeatMode != 2 && repeatMode != 2
         if shufflePickStands, let armed {
+            return armed
+        }
+        return QueueAdvance.nextIndex(current: current, count: count, shuffle: shuffle, repeatMode: repeatMode,
+                                      randomPick: randomPick)
+    }
+
+    /// The song to arm next after the queue was edited while `current` plays — an append, a move, a
+    /// removal — so the edit applies to the end of THIS song (council C-17). `current` and `armed` are
+    /// rows in the edited queue: the armed pick found again by its slot (`nil`: nothing was armed, or the
+    /// edit removed it).
+    ///
+    /// - In order, next is the row after the current one, as the queue now reads (VLC and foobar2000
+    ///   compute it at the track's end): a song dragged in under the playing one plays next, the next
+    ///   song dragged away doesn't, an append to the last song plays next — Repeat All wraps only after it.
+    /// - A pick the order did not take by position stands: a shuffle pick (an edit never re-rolls it),
+    ///   and under Repeat One this song, or a Play Next armed over it.
+    /// - With nothing armed, the next song under this order: a one-song shuffle that grew plays the new
+    ///   song.
+    ///
+    /// Returns `nil` when nothing should play after `current`.
+    public func onDeck(afterEditing current: Int, count: Int, armed: Int?,
+                       randomPick: (Int, Int) -> Int) -> Int? {
+        if let armed, shuffle || repeatMode == 2 {
             return armed
         }
         return QueueAdvance.nextIndex(current: current, count: count, shuffle: shuffle, repeatMode: repeatMode,
