@@ -15,10 +15,12 @@ import OutputDeviceKit
 ///   - `AVAudioEngineConfigurationChange` (AudioEngineBridge+ConfigChange.swift).
 /// Each is serialized onto `configChangeQueue`, where `reconcileOutputDevice` reads the facts fresh
 /// and asks `OutputDevicePolicy` (OutputDeviceKit, unit-tested) what to do: pause on a lost device,
-/// adopt the default (follow), put the app's device back as the default (pinned), restart the
-/// Enhanced engine. The view model is then told to re-read the device state (`refreshDevices`),
-/// which is where the pill, the per-output EQ, the limiter ceiling and the crossfeed check follow,
-/// and where a Pure session moves to a new device.
+/// adopt the default (follow, or the chosen device away) or the chosen device back, put the chosen
+/// device back as the default (pinned), restart the Enhanced engine. The rule moves only the target;
+/// the device the user chose moves only with the user (`OutputDeviceSelection`). The view model is
+/// then told to re-read the device state (`refreshDevices`), which is where the pill, the per-output
+/// EQ, the limiter ceiling and the crossfeed check follow, and where a Pure session moves to a new
+/// device.
 ///
 /// Queues: the two system listeners are registered and removed on `engineQueue` (initialize /
 /// teardown); the alive listener and `isMonitoringOutput` live on `configChangeQueue`; the
@@ -62,9 +64,10 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Make `deviceID` the device the app plays on, and watch that one for going away. Any queue.
-    func setOutputTarget(_ deviceID: UInt32) {
-        setCurrentDeviceID(deviceID)
+    /// Change the app's output devices (a pick, an adopt, an undone pick) and watch the target for
+    /// going away. `change` runs under the leaf lock (`updateOutputSelection`). Any queue.
+    func changeOutputSelection(_ change: (inout OutputDeviceSelection) -> Void) {
+        updateOutputSelection(change)
         configChangeQueue.async { [weak self] in
             self?.bindTargetAliveListener()
         }
@@ -145,23 +148,26 @@ extension AudioEngineBridge {
         }
     }
 
-    /// Adopt a new target and/or put the target back as the system default. The default change
-    /// this causes comes back as `.defaultChanged` with the default already on the app's device,
-    /// which the rule answers with nothing — so the app's own changes don't loop.
+    /// Adopt a new target and/or put the (new) target back as the system default. An adopt moves
+    /// the target only: the device the user chose stays the choice. The default change this causes
+    /// comes back as `.defaultChanged` with the default already on the app's device, which the rule
+    /// answers with nothing — so the app's own changes don't loop.
     private func applyTargetChange(_ action: OutputDeviceAction, facts: OutputDeviceFacts) {
         if let adopted = action.adoptTarget {
-            setOutputTarget(adopted)
+            let uid = Self.deviceUID(adopted)
+            changeOutputSelection { $0.adopt(adopted, uid: uid) }
         }
         if action.reassertTarget {
             // Best effort (selectOutputDeviceC logs a refused default, e.g. a device that can't be one).
-            let reasserted = selectOutputDeviceC(facts.target) != 0
-            logUX("output: re-assert \(facts.target) as default \(reasserted ? "ok" : "failed (device gone?)")")
+            let target = action.adoptTarget ?? facts.target
+            let reasserted = selectOutputDeviceC(target) != 0
+            logUX("output: re-assert \(target) as default \(reasserted ? "ok" : "failed (device gone?)")")
         }
     }
 
     /// The facts the rule decides from, read now. Any bridge queue except `resampleQueue`.
     private func readOutputDeviceFacts() -> OutputDeviceFacts {
-        let target = currentDeviceID
+        let selection = outputSelection
         let playback: OutputPlayback
         if activePathKind == .pure {
             playback = .pure
@@ -169,11 +175,12 @@ extension AudioEngineBridge {
             playback = enhancedPlayIntent ? .enhanced : .idle
         }
         return OutputDeviceFacts(
-            target: target,
-            targetAlive: Self.isDeviceAlive(target),
+            target: selection.target,
+            targetAlive: Self.isDeviceAlive(selection.target),
             systemDefault: getDefaultOutputDeviceID(),
             playback: playback,
-            pinned: pinsPlaybackToSelectedDevice
+            pinned: selection.pinned,
+            chosen: Self.liveDevice(uid: selection.chosenUID)
         )
     }
 
@@ -253,9 +260,30 @@ extension AudioEngineBridge {
         return status == noErr && alive != 0
     }
 
+    /// The device with this UID, if it is connected and alive now (0 if not, or no UID). Its id may
+    /// differ from the one it had when chosen: a reconnect can give a device a new id, never a new UID.
+    private static func liveDevice(uid: String) -> UInt32 {
+        guard !uid.isEmpty else { return 0 }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var qualifier = uid as CFString
+        var deviceID = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = withUnsafePointer(to: &qualifier) { uidPointer in
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address,
+                UInt32(MemoryLayout<CFString>.size), uidPointer, &size, &deviceID
+            )
+        }
+        return status == noErr && isDeviceAlive(deviceID) ? deviceID : 0
+    }
+
     private static func describe(_ facts: OutputDeviceFacts) -> String {
         "target=\(facts.target) alive=\(facts.targetAlive) default=\(facts.systemDefault) "
-            + "playback=\(facts.playback) pinned=\(facts.pinned)"
+            + "playback=\(facts.playback) pinned=\(facts.pinned) chosen=\(facts.chosen)"
     }
 }
 

@@ -257,10 +257,12 @@ let package = Package(
             // broke @Suite/@Test expansion — "SuiteDeclarationMacro doesn't conform to
             // MemberMacro".)
         ),
-        // The SHIPPED AudioViewModel, through `@testable import AdaptiveSound` (council D41): what
-        // plays next, as the contract between the view model and an engine model that keeps the
-        // bridge's on-deck semantics with every step in any order — the scenarios, the ablations and
-        // the random-schedule explorer. The mirror suites above cannot express that contract.
+        // The app's own code under test (`@testable import AdaptiveSound`: SwiftPM links an executable
+        // target into a test like a library) — for what no Kit or mirror can hold. Started by two R1
+        // fixes: the output-device fix (council N92: the real view model over a recording engine must
+        // follow the engine's device and never pick one itself), and what plays next (council D41: the
+        // contract between the view model and an engine model that keeps the bridge's on-deck semantics
+        // with every step in any order — the scenarios, the ablations and the random-schedule explorer).
         .testTarget(
             name: "AdaptiveSoundTests",
             dependencies: ["AdaptiveSound", "PlaybackQueueKit"],

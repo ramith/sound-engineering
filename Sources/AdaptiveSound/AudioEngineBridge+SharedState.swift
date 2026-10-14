@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import os
+import OutputDeviceKit
 import Synchronization
 
 // MARK: - AudioEngineBridge shared playback-context state (one leaf lock)
@@ -61,16 +62,22 @@ extension AudioEngineBridge {
         withStateLock { mutate(&storedCachedSignalPath) }
     }
 
-    // MARK: - currentDeviceID
+    // MARK: - The output devices (the target, the user's choice, the pin)
 
-    /// Thread-safe read of the current target device ID.
+    /// Thread-safe read of the device the app plays on (the target).
     var currentDeviceID: UInt32 {
-        withStateLock { storedCurrentDeviceID }
+        withStateLock { storedOutputSelection.target }
     }
 
-    /// Thread-safe write of the current target device ID.
-    func setCurrentDeviceID(_ value: UInt32) {
-        withStateLock { storedCurrentDeviceID = value }
+    /// Thread-safe copy of the output devices: the target, the user's choice and the pin, together.
+    var outputSelection: OutputDeviceSelection {
+        withStateLock { storedOutputSelection }
+    }
+
+    /// Thread-safe change of the output devices. `change` runs UNDER the leaf lock and so must only
+    /// call the value's own mutators (`choose`, `adopt`, `pin`) or replace it — no call-outs.
+    func updateOutputSelection(_ change: (inout OutputDeviceSelection) -> Void) {
+        withStateLock { change(&storedOutputSelection) }
     }
 
     // MARK: - Cross-queue flags (named acquire/release atomics — no lock, no queue hop)
@@ -96,15 +103,11 @@ extension AudioEngineBridge {
 
     // MARK: - "Keep playback on this device"
 
-    /// Thread-safe read of the pin preference (the output rule's `pinned` fact).
-    var pinsPlaybackToSelectedDevice: Bool {
-        withStateLock { storedPinPlaybackToSelectedDevice }
-    }
-
-    /// Thread-safe write of the pin preference (the `AudioPlaybackEngine` requirement; the view
-    /// model pushes its Settings switch here).
+    /// The pin switch (the `AudioPlaybackEngine` requirement; the view model pushes its Settings
+    /// switch here). Turning it on makes the device in use the user's choice. A field write under
+    /// the leaf lock — no HAL read — so the main thread may call it.
     func setPinPlaybackToSelectedDevice(_ pin: Bool) {
-        withStateLock { storedPinPlaybackToSelectedDevice = pin }
+        updateOutputSelection { $0.pin(pin) }
     }
 
     // MARK: - lastFileURL
