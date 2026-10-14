@@ -25,9 +25,11 @@
 //
 // R1 (council P5A-01/02) — a sweep needs POSITIVE evidence that what it deletes is gone; else the
 // scan throws `SweepRefusal` (SweepRefusal.swift has the reasons):
-//   • THE ROOT'S OWN DRIVE — the root is walked only when it is there, on the volume it is bound to
-//     (`LibraryStore.restampRoot`), and swept only if it is still that same directory on that same
-//     volume when the walk ends. The identity is read through a seam (`init(rootIdentity:)`).
+//   • THE ROOT'S OWN DRIVE — the root is walked only when it is there, on the drive it is bound to (an
+//     unbound root: only when some of its songs are where the library has them), and only while it
+//     stays that same directory on that same drive — checked before every batch is committed, so a
+//     drive swapped under the walk adds at most nothing more. Only then is an unbound root bound
+//     (`LibraryStore.restampRoot`). The identity is read through a seam (`init(rootIdentity:)`).
 //   • A COMPLETE WALK — every error the enumerator reports, and every audio file that is there but
 //     can't be read, makes the walk incomplete; so does a walk that saw nothing (S8.4 slice 3). An
 //     incomplete walk still commits what it found, and refuses the sweep when it would delete anything.
@@ -78,16 +80,17 @@ public struct LibraryScanner: Sendable {
     ///
     /// Call flow (per root, design §2 + §5, R1):
     ///   `let gen = try await store.beginScanGeneration()` (per-root, M-A) → read the root's identity
-    ///   and re-stamp it (`restampRoot`: refused on another drive) → walk → per file
-    ///   `try Task.checkCancellation()`, guard regular-file + supported ext → build `ScannedFile` →
-    ///   batch (~256) → `upsert` + fire `progress` → after the FULL walk, the root must still be the
-    ///   one walked → `sweepOrphans(inFolders:[folderID], olderThan:gen)`, given positive evidence.
+    ///   and check its drive (bound: the same drive; unbound: some of its songs where they were) →
+    ///   walk → per file `try Task.checkCancellation()`, guard regular-file + supported ext → build
+    ///   `ScannedFile` → batch (~256) → the root unchanged → `upsert` + fire `progress` → after the FULL
+    ///   walk, the root still the one walked → bind + re-stamp it (`restampRoot`) →
+    ///   `sweepOrphans(inFolders:[folderID], olderThan:gen)`, given positive evidence.
     ///
     /// - Throws: `CancellationError` if the task is cancelled mid-walk (the sweep is
     ///   then skipped; committed batches stay valid); `SweepRefusal` when the walk is not evidence of
-    ///   which of the root's songs are gone — the root is not there or is on another drive (not
-    ///   walked), it changed under the walk, or the walk was incomplete or empty while the sweep would
-    ///   delete something (rows preserved); or whatever `store` throws.
+    ///   which of the root's songs are gone — the root is not there, is on another drive or is
+    ///   unrecognized (not walked), it changed under the walk (stopped), or the walk was incomplete or
+    ///   empty while the sweep would delete something (rows preserved); or whatever `store` throws.
     /// - Returns: a `ScanResult` (generation, filesSeen, filesSkipped, orphansSwept,
     ///   trackIDs in walk order).
     public func scan(
@@ -99,19 +102,26 @@ public struct LibraryScanner: Sendable {
         func refusal(_ reason: SweepRefusal.Reason) -> SweepRefusal {
             SweepRefusal(folderID: folderID, reason: reason, storedRowCount: preCount)
         }
-        // THE ROOT'S OWN DRIVE: walk the root only when it is there, on the volume it is bound to. The
-        // re-stamp binds an unbound root and refreshes its (dev, inode); another drive is left untouched.
+        // THE ROOT'S OWN DRIVE: walk the root only when it is there, on the drive it is bound to — or,
+        // unbound, only when some of its songs are where the library has them: a stale folder or another
+        // drive at its path holds none, and walking it would leave rows that vouch for it next time.
         guard let identity = rootIdentity(root) else { throw refusal(.rootVanished) }
-        guard try await store.restampRoot(id: folderID, to: identity) else { throw refusal(.differentVolume) }
+        if let bound = try await store.boundVolume(ofRoot: folderID) {
+            guard bound == identity.volume else { throw refusal(.differentVolume) }
+        } else if preCount > 0, try await !holdsAnyOfItsSongs(folderID, in: store) {
+            throw refusal(.unrecognizedFolder)
+        }
         let walked = try await walk(
-            root: root, folderID: folderID, into: store,
-            generation: generation, progress: progress
+            root: root, as: identity,
+            into: WalkTarget(store: store, folderID: folderID, generation: generation), progress: progress
         )
         // The walk is evidence only of the root it began on — not of one that went away under it, or of
-        // another drive mounted at its path meanwhile.
-        if let reason = change(of: root, since: identity) {
+        // another drive mounted at its path meanwhile (the walk stopped at the first batch after).
+        if let reason = walked.rootChange ?? change(of: root, since: identity) {
             throw refusal(reason)
         }
+        // Confirmed: bind an unbound root to this drive, and refresh its (dev, inode).
+        guard try await store.restampRoot(id: folderID, to: identity) else { throw refusal(.differentVolume) }
         // End-of-walk sweep (design §5, §9 D-sweep): reconciles deletions for THIS root only (M-A),
         // reached ONLY after the walk completes (a cancellation throws in `walk`). A walk that could
         // not read everything, or saw nothing (S8.4 slice 3, founder-approved "never wipe on an empty
@@ -136,11 +146,34 @@ public struct LibraryScanner: Sendable {
     /// another directory there (replaced, or its volume remounted). nil when it is the same.
     private func change(of root: URL, since start: RootIdentity) -> SweepRefusal.Reason? {
         guard let now = rootIdentity(root) else { return .rootVanished }
-        guard now.volumeUUID == start.volumeUUID else { return .differentVolume }
+        guard now.volume == start.volume else { return .differentVolume }
         return now == start ? nil : .rootVanished
     }
 
+    /// Whether any of `folderID`'s songs is where the library has it — the evidence that the folder at
+    /// an UNBOUND root's path is the root's own. Looks page by page and stops at the first one found,
+    /// so a folder that is the root's costs a look or two; one that holds none of them costs a look per
+    /// song, and is then not walked.
+    private func holdsAnyOfItsSongs(_ folderID: Int64, in store: LibraryStore) async throws -> Bool {
+        var afterID: Int64 = 0
+        while true {
+            let page = try await store.trackURLs(inFolder: folderID, afterID: afterID, limit: Self.batchSize)
+            guard let last = page.last else { return false }
+            if page.contains(where: { FileSignature.deviceInode(of: $0.url).inode != nil }) {
+                return true
+            }
+            afterID = last.id
+        }
+    }
+
     // MARK: - Walk
+
+    /// Where a walk writes: the store, the root's folder row, and the walk's generation.
+    private struct WalkTarget {
+        let store: LibraryStore
+        let folderID: Int64
+        let generation: Int64
+    }
 
     /// The accumulated result of walking a root: what a full traversal upserted, and what it could
     /// not read.
@@ -150,6 +183,8 @@ public struct LibraryScanner: Sendable {
         /// Errors the enumerator reported (a folder it may not open, a drive failing under it) plus
         /// audio files that are there but could not be read. Any → the walk is incomplete.
         var unreadable = 0
+        /// How the root changed under the walk, seen before a batch was committed: the walk stopped.
+        var rootChange: SweepRefusal.Reason?
         var trackIDs: [Int64] = []
 
         /// Why this walk is not evidence that the songs it did not see are gone — nil when it is.
@@ -188,10 +223,11 @@ public struct LibraryScanner: Sendable {
     /// it can. ONE DRIVE PER ROOT: Apple documents that the enumerator traverses a mount point — another
     /// volume mounted inside the root — though on macOS 26 the URL enumerator was seen not to. Either
     /// way it is skipped here: the root's drive is the walk's evidence (`scan`), and songs on a drive
-    /// that comes and goes inside the root would be swept whenever it is away.
+    /// that comes and goes inside the root would be swept whenever it is away. Before each batch is
+    /// committed the root must still be `identity` — a drive swapped or gone under the walk stops it.
     private func walk(
-        root: URL, folderID: Int64, into store: LibraryStore,
-        generation: Int64, progress: (@Sendable (ScanProgress) -> Void)?
+        root: URL, as identity: RootIdentity, into target: WalkTarget,
+        progress: (@Sendable (ScanProgress) -> Void)?
     ) async throws -> WalkOutcome {
         var outcome = WalkOutcome()
         var batch: [ScannedFile] = []
@@ -208,6 +244,22 @@ public struct LibraryScanner: Sendable {
             }
         )
 
+        /// Commit the batch and fire a progress tick — unless the root changed since the walk began:
+        /// then it commits nothing, records the change and returns false (the walk stops).
+        func commit() async throws -> Bool {
+            if let change = change(of: root, since: identity) {
+                outcome.rootChange = change
+                return false
+            }
+            let ids = try await target.store.upsertReconciling(
+                batch, folderID: target.folderID, generation: target.generation
+            )
+            outcome.trackIDs.append(contentsOf: ids)
+            batch.removeAll(keepingCapacity: true)
+            progress?(ScanProgress(folderID: target.folderID, filesSeenSoFar: outcome.filesSeen))
+            return true
+        }
+
         if let enumerator {
             while let next = enumerator.nextObject() {
                 // Cancel WITHIN one file (design §5): committed batches stay valid,
@@ -219,20 +271,15 @@ public struct LibraryScanner: Sendable {
                 }
                 guard let scanned = outcome.record(Self.admit(fileURL: fileURL, root: root)) else { continue }
                 batch.append(scanned)
-                if batch.count >= Self.batchSize {
-                    let ids = try await store.upsertReconciling(batch, folderID: folderID, generation: generation)
-                    outcome.trackIDs.append(contentsOf: ids)
-                    batch.removeAll(keepingCapacity: true)
-                    progress?(ScanProgress(folderID: folderID, filesSeenSoFar: outcome.filesSeen))
+                if batch.count >= Self.batchSize, try await !commit() {
+                    break
                 }
             }
         }
 
-        // Flush the final partial batch + fire a closing progress tick.
-        if !batch.isEmpty {
-            let ids = try await store.upsertReconciling(batch, folderID: folderID, generation: generation)
-            outcome.trackIDs.append(contentsOf: ids)
-            progress?(ScanProgress(folderID: folderID, filesSeenSoFar: outcome.filesSeen))
+        // Commit the final partial batch (a stopped walk commits nothing more).
+        if !batch.isEmpty, outcome.rootChange == nil {
+            _ = try await commit()
         }
         outcome.unreadable += enumerationErrors
         return outcome
