@@ -72,6 +72,14 @@ final class AudioViewModel {
     /// it was abandoned while it ran, so its `Task` neither primes the queue nor marks playing over
     /// the stop (the UI showed Playing over a stopped engine — S10.8 G review). Not UI-bound.
     @ObservationIgnored var transportStopEpoch: UInt64 = 0
+    /// The playback the on-deck requests belong to (`OnDeckTicket.session`): the epoch of the newest
+    /// start. The engine applies only the newest request of the playback it is in (council D41).
+    /// Not UI-bound.
+    @ObservationIgnored var onDeckSession: UInt64 = 0
+    /// The number of the latest on-deck request (`OnDeckTicket.sequence`, `nextOnDeckTicket()`):
+    /// never reset, so the engine tells the newest request apart whatever order they reach it in.
+    /// Not UI-bound.
+    @ObservationIgnored var onDeckSequence: UInt64 = 0
     /// Duration of the currently loaded file in seconds. Computed from `AVAudioFile`
     /// after `startPlayback()` resolves the URL, so it is accurate for M4A files where
     /// `AudioFile.durationSeconds` (from the metadata scan) can read 0.
@@ -311,6 +319,13 @@ final class AudioViewModel {
         return transportStopEpoch
     }
 
+    /// Number the next on-deck request: the newest start's playback, and the next place in the
+    /// order requests are made. Call it synchronously, in the turn that decides the request.
+    func nextOnDeckTicket() -> OnDeckTicket {
+        onDeckSequence &+= 1
+        return OnDeckTicket(session: onDeckSession, sequence: onDeckSequence)
+    }
+
     /// The queue slot of the selected song (`nil` = none, or an index out of range).
     var selectedSlotID: UUID? {
         selectedTrackIndex.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].id : nil }
@@ -376,7 +391,7 @@ final class AudioViewModel {
     /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.
     var lastTransitionCount: UInt64 = 0
 
-    /// Playlist index of the track currently on deck (supplied via `setNextTrack`).
+    /// Playlist index of the track currently on deck (set with the engine's request by `armOnDeck`).
     /// `nil` means no track is queued (end of playlist, repeat-one handled inline,
     /// or playback has not started yet).
     /// Internal (not private) so the spectrum-timer and auto-advance extensions can read/write it.

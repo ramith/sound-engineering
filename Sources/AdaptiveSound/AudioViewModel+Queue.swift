@@ -186,18 +186,21 @@ extension AudioViewModel {
         return tracks.count
     }
 
-    /// Arm the gapless on-deck to `index` (or clear it) — the shared engine-arming
-    /// primitive for the queue-mutation ops. It sets `pendingNextIndex` and pushes the
-    /// URL to the engine, but DOES NOT call `computeNextIndex` (so it never re-rolls a
-    /// shuffle pick) and DOES NOT touch `lastTransitionCount` (that baseline belongs to
-    /// `startPlayback`/the transition, design §6). Also re-arms after a shuffle / repeat change
-    /// (`+Playlist`, S10.8 G).
-    func armOnDeck(index: Int?) {
+    /// Arm the gapless on-deck to `index` (or clear it, `nil`) — the ONE producer of on-deck
+    /// requests (council D41): the start's prime, the seam's re-arm, the queue verbs, a shuffle /
+    /// repeat change (`+Playlist`, S10.8 G), removing the on-deck row, a lost device. In one turn it
+    /// sets `pendingNextIndex`, resolves the URL and numbers the request (`nextOnDeckTicket()`), so
+    /// the engine applies exactly the newest pick, whatever order the requests reach it in. It DOES
+    /// NOT call `computeNextIndex` (so it never re-rolls a shuffle pick) and DOES NOT touch
+    /// `lastTransitionCount` (that baseline belongs to `startPlayback`/the transition, design §6).
+    /// Returns the request's task, for a caller that waits until the engine settled it.
+    @discardableResult
+    func armOnDeck(index: Int?) -> Task<Void, Never> {
         pendingNextIndex = index
         let url: URL? = index.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].file.absoluteURL : nil }
-        Task { [weak self] in
-            guard let self else { return }
-            await engine.setNextTrack(url)
+        let ticket = nextOnDeckTicket()
+        return Task { [engine] in
+            await engine.setNextTrack(url, ticket: ticket)
         }
     }
 }

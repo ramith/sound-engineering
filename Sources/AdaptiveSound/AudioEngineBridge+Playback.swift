@@ -11,6 +11,8 @@ extension AudioEngineBridge {
                 // transitional sample — its place, no end flag — so the view model's next tick
                 // never acts on the end of the playback this start replaces.
                 self.beginTransportOperation(epoch: epoch, position: startAt > 0 ? startAt : nil)
+                // A new playback: an on-deck request made for an earlier one is stale from here on.
+                self.onDeckGate.beginSession(epoch)
                 do {
                     // Record the intent for the device-change fallback restart path.
                     self.setLastFileURL(fileURL)
@@ -244,6 +246,8 @@ extension AudioEngineBridge {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
                 self.beginTransportOperation(epoch: epoch, position: nil)
+                // Nothing plays after a stop: every on-deck request made before it is stale.
+                self.onDeckGate.beginSession(epoch)
                 if self.activePathKind == .pure {
                     self.tearDownPure()
                 } else {
