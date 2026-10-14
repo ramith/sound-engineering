@@ -33,23 +33,12 @@ extension AudioViewModel {
                     return
                 }
 
-                // Enumerate real output devices from CoreAudio
+                // Enumerate real output devices from CoreAudio, and show the one the engine starts
+                // on (the system default). Starting on it is not the user's pick (founder decision,
+                // R1): nothing is chosen until they pick, so the pin follows the default until then,
+                // and a re-initialization keeps the device they did pick.
                 let devices = try await engine.enumerateOutputDevices()
-
-                availableDevices = devices
-                // Select the device that is ACTUALLY the engine's current target (the system default
-                // captured at init), not blindly "first" — otherwise the UI selection and the
-                // engine's currentDeviceID diverge, and the app-authority re-assert later tries to
-                // re-pin a stale id ("device gone"). Fall back to first if the default isn't listed.
-                let engineDeviceID = engine.currentOutputDeviceID()
-                let chosen = devices.first { $0.id == engineDeviceID } ?? devices.first
-                selectedDevice = chosen
-                // Assert the chosen device so currentDeviceID == selectedDevice == system default
-                // from the start. A valid default re-asserts to itself (no change); a stale/phantom
-                // default is corrected to the chosen device.
-                if let chosen {
-                    _ = try? await engine.selectDevice(chosen.id)
-                }
+                showEngineOutput(among: devices)
                 // Push the connect-behaviour preference so the engine acts on it from the first
                 // device change (its default matches, but this keeps them explicitly in step).
                 engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
@@ -64,7 +53,7 @@ extension AudioViewModel {
                 // ready-transition site, so it also covers device-loss `retryInitialization`.
                 onEngineReady?()
                 errorMessage = nil
-                logUX("initializeEngine: ready — \(devices.count) device(s), "
+                logUX("initializeEngine: ready — \(availableDevices.count) device(s), "
                     + "selected='\(selectedDevice?.name ?? "none")'")
                 startSpectrumTimer()
             } catch {

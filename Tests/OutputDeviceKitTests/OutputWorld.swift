@@ -2,15 +2,18 @@ import OutputDeviceKit
 
 // MARK: - The output world the device scenarios run in
 
-/// CoreAudio as the scenarios need it — which devices are connected (id → UID) and the system
-/// default — with the app's real output state (`OutputDeviceSelection`) and its real rule
-/// (`OutputDevicePolicy`) on top. The few lines that read the facts and apply an action do what
-/// the bridge does (`AudioEngineBridge+OutputDeviceMonitor`): an adopt moves the target only, a
-/// re-assert makes the (new) target the default, a pause stops what plays.
+/// CoreAudio as the scenarios need it — which devices are connected (id → UID), which have no output
+/// stream yet, and the system default — with the app's real output state (`OutputDeviceSelection`)
+/// and its real rule (`OutputDevicePolicy`) on top. The few lines that read the facts and apply an
+/// action do what the bridge does (`AudioEngineBridge+OutputDeviceMonitor`): an adopt moves the
+/// target only, a re-assert makes the (new) target the default, a pause stops what plays.
 struct OutputWorld {
     /// Connected, alive devices: id → UID.
     var devices: [UInt32: String]
     var systemDefault: UInt32
+    /// Connected devices with no output stream yet (a Bluetooth device mid-handshake): the device
+    /// menu doesn't list them.
+    var notReady: Set<UInt32> = []
     var selection = OutputDeviceSelection()
     var playback = OutputPlayback.idle
 
@@ -29,9 +32,11 @@ struct OutputWorld {
     }
 
     /// The facts, read as the bridge reads them: the chosen device found by its UID among the
-    /// connected devices, whatever its id is now.
+    /// connected devices, whatever its id is now, and taken only when it is ready to play on.
     func facts() -> OutputDeviceFacts {
-        let chosen = devices.first { $0.value == selection.chosenUID }?.key ?? 0
+        let resolved = devices.first { $0.value == selection.chosenUID }?.key ?? 0
+        let chosen = OutputDevicePolicy.chosenDevice(resolved, alive: devices[resolved] != nil,
+                                                     listed: !notReady.contains(resolved))
         return OutputDeviceFacts(
             target: selection.target, targetAlive: devices[selection.target] != nil,
             systemDefault: systemDefault, playback: playback, pinned: selection.pinned, chosen: chosen
@@ -60,6 +65,13 @@ struct OutputWorld {
         [OutputDeviceEvent.targetAliveChanged, .devicesChanged, .defaultChanged].map { handle($0) }
     }
 
+    /// The app starts — or re-initializes — on the system default (`initialize`): an adopt, never a
+    /// choice.
+    mutating func start() {
+        playback = .idle
+        selection.adopt(systemDefault, uid: devices[systemDefault] ?? "")
+    }
+
     /// The user picks `device` in the menu (`selectDevice`): the target and the choice, then the default.
     mutating func pick(_ device: UInt32) {
         selection.choose(device, uid: devices[device] ?? "")
@@ -85,11 +97,20 @@ struct OutputWorld {
         systemDefault = newDefault
     }
 
-    /// A device connects (perhaps under a new id) and, usually, takes the default.
-    mutating func connect(_ device: UInt32, uid: String, takesDefault: Bool) {
+    /// A device connects (perhaps under a new id, perhaps before its output exists) and, usually,
+    /// takes the default.
+    mutating func connect(_ device: UInt32, uid: String, takesDefault: Bool, outputReady: Bool = true) {
         devices[device] = uid
+        if !outputReady {
+            notReady.insert(device)
+        }
         if takesDefault {
             systemDefault = device
         }
+    }
+
+    /// A connected device's output stream appears (its Bluetooth handshake is done).
+    mutating func outputAppears(_ device: UInt32) {
+        notReady.remove(device)
     }
 }

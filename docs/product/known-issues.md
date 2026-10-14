@@ -60,14 +60,15 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 **Status:** OPEN (limitation; R1 ships with it). Left by the N92 fix ("Return to headphones", R1).
 
-Within a session the app remembers the output device the user chose (by UID) and returns to it
-when it reconnects (`OutputDeviceSelection`). Nothing persists that choice, or the "Keep playback
-on this device" switch, across launches: the app starts pinned to whatever the system default is
-at launch. So if the user quits while their headphones are off, relaunches on the speakers, then
-turns the headphones on, the app stays on the speakers (pinned; Play even puts them back as the
-system default) until they pick the headphones in the device menu. Fix with the settings persistence work: store the chosen UID and the switch, and
-at launch treat the speakers as the temporary fallback until the stored device appears. The
-in-session behaviour is guarded by `OutputDeviceReturnTests` and `OutputDeviceRuleSpaceTests`.
+Within a session the app remembers the output device the user picked (by UID) and returns to it
+when it reconnects (`OutputDeviceSelection`). Nothing persists that pick, or the "Keep playback on
+this device" switch, across launches. The device the app starts on is not a pick, so after a
+relaunch nothing is chosen and the app follows the system default until the user picks again. So
+if the user picked the speakers while their headphones were connected, then quit and relaunched,
+the app plays wherever macOS sends the sound (the headphones) until they pick the speakers again.
+Fix with the settings persistence work: store the chosen UID and the switch, and restore them at
+launch. The in-session behaviour is guarded by `OutputDeviceReturnTests`,
+`OutputDeviceChoiceTests` and `OutputDeviceRuleSpaceTests`.
 
 ---
 

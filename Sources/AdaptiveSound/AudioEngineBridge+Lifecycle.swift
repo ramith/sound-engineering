@@ -32,8 +32,8 @@ extension AudioEngineBridge {
                 }
 
                 // The app starts on the current default output (Pure opens its HAL engine on it).
-                // Moved by selectDevice(_:) and by the output rule (OutputDeviceMonitor). The view
-                // model then picks it (`selectDevice`), which makes it the user's choice.
+                // Moved by selectDevice(_:) and by the output rule (OutputDeviceMonitor). Starting on
+                // it is not a choice: a re-initialization keeps the user's, and a launch has none.
                 let startDevice = getDefaultOutputDeviceID()
                 let startUID = Self.deviceUID(startDevice)
                 self.updateOutputSelection { $0.adopt(startDevice, uid: startUID) }

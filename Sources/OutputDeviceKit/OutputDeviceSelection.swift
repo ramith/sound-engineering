@@ -10,10 +10,11 @@
 ///
 /// The target moves whenever the output rule adopts a device (`OutputDevicePolicy`): the system default
 /// after a lost device or in follow mode, or the chosen device when it comes back. The choice moves only
-/// by the user: a pick in the device menu (the device the app starts on counts as one), or turning the
-/// switch on, which keeps the device in use. Playing on a fallback is not a pick. The choice is held by
-/// UID (`kAudioDevicePropertyDeviceUID`): a reconnect can give a device a new id, never a new UID. It
-/// lasts for the session (nothing persists it across launches yet).
+/// by the user: a pick in the device menu, or turning the switch on, which keeps the device in use. The
+/// device the app starts on is not a choice (founder decision): until the user picks, there is none, and
+/// the pin follows the system default exactly as the switch off does. Playing on a fallback is not a
+/// pick either. The choice is held by UID (`kAudioDevicePropertyDeviceUID`): a reconnect can give a
+/// device a new id, never a new UID. It lasts for the session (nothing persists it across launches yet).
 public struct OutputDeviceSelection: Sendable, Equatable {
     /// The device the app plays on (0 = none).
     public private(set) var target: UInt32 = 0
@@ -26,11 +27,36 @@ public struct OutputDeviceSelection: Sendable, Equatable {
 
     public init() {}
 
+    /// A pick as `choose` made it, so that one the system refuses can be taken back (`undo`).
+    public struct Pick: Sendable {
+        let device: UInt32
+        let uid: String
+        let replacedTarget: UInt32
+        let replacedTargetUID: String
+        let replacedChosenUID: String
+    }
+
     /// The user picked this device: the app plays on it, and the pin holds it from now on.
-    public mutating func choose(_ device: UInt32, uid: String) {
+    @discardableResult
+    public mutating func choose(_ device: UInt32, uid: String) -> Pick {
+        let pick = Pick(device: device, uid: uid, replacedTarget: target, replacedTargetUID: targetUID,
+                        replacedChosenUID: chosenUID)
         target = device
         targetUID = uid
         chosenUID = uid
+        return pick
+    }
+
+    /// Take back a pick the system refused: only what it set, and only where it still stands. A move
+    /// the output rule made in the meantime, or the switch, stays.
+    public mutating func undo(_ pick: Pick) {
+        if target == pick.device {
+            target = pick.replacedTarget
+            targetUID = pick.replacedTargetUID
+        }
+        if chosenUID == pick.uid {
+            chosenUID = pick.replacedChosenUID
+        }
     }
 
     /// The output rule moved the app to this device. The user's choice stays where it was.

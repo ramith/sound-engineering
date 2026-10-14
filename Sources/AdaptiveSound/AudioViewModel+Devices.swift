@@ -16,7 +16,7 @@ extension AudioViewModel {
     }
 
     /// The pill: make `device` the output the app plays on — the user's pick, which "Keep playback on
-    /// this device" holds from now on (the engine's `selectDevice`).
+    /// this device" holds from now on (the engine's `selectDevice`). The one place the app picks.
     func selectDevice(_ device: AudioDeviceModel) {
         logUX("selectDevice: '\(device.name)' id=\(device.id)")
         Task {
@@ -44,21 +44,25 @@ extension AudioViewModel {
     func refreshDevices() {
         Task {
             guard let devices = try? await engine.enumerateOutputDevices() else { return }
-            availableDevices = devices
-            // The engine's device is the truth: the output rule keeps it, or moves it. One that isn't
-            // listed has just gone; the rule moves the engine off it (to the new default, or the
-            // chosen device) and calls back, and until then no device shows. The view model never
-            // picks a device itself (break-it MAJOR-1 used to): a pick is the user's, and the pin
-            // holds it, so a fallback picked here would become the device Play returns to (N92).
-            let engineDeviceID = engine.currentOutputDeviceID()
-            if let target = devices.first(where: { $0.id == engineDeviceID }) {
-                adoptOutput(target)
-            } else {
-                selectedDevice = nil
-            }
+            showEngineOutput(among: devices)
             logUX("refreshDevices: \(devices.count) device(s) "
                 + "[\(devices.map(\.name).joined(separator: " | "))] "
-                + "engine=\(engineDeviceID) selected='\(selectedDevice?.name ?? "none")'")
+                + "engine=\(engine.currentOutputDeviceID()) selected='\(selectedDevice?.name ?? "none")'")
+        }
+    }
+
+    /// List `devices` and show the one the engine plays on: the truth, which the output rule keeps or
+    /// moves. One that isn't listed has just gone (or isn't ready); the rule moves the engine off it
+    /// and calls back, and until then no device shows. The view model never picks a device itself
+    /// (break-it MAJOR-1 and the launch used to): a pick is the user's, and the pin holds it, so a
+    /// device picked here would become the one Play returns to (N92). At launch and on refresh.
+    func showEngineOutput(among devices: [AudioDeviceModel]) {
+        availableDevices = devices
+        let engineDeviceID = engine.currentOutputDeviceID()
+        if let target = devices.first(where: { $0.id == engineDeviceID }) {
+            adoptOutput(target)
+        } else {
+            selectedDevice = nil
         }
     }
 

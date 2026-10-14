@@ -199,15 +199,15 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Return the full list of available output devices with real CoreAudio data.
     func enumerateOutputDevices() async throws -> [AudioDeviceModel]
 
-    /// The user picked the output device with this CoreAudio id (the pill, or the device the app
-    /// starts on): the app plays on it, and "Keep playback on this device" holds it from now on —
-    /// by UID, so it is the device playback returns to when it reconnects. Only the user's picks
-    /// come here, never a device the engine moved to. Returns `true` on success.
+    /// The user picked the output device with this CoreAudio id in the device menu: the app plays on
+    /// it, and "Keep playback on this device" holds it from now on — by UID, so it is the device
+    /// playback returns to when it reconnects. Only the user's picks come here: never the device the
+    /// app starts on, nor one the engine moved to. Returns `true` on success.
     func selectDevice(_ deviceID: UInt32) async throws -> Bool
 
-    /// The output device the engine is currently targeting (the app-selected / default-at-launch
-    /// device id), so the view model can select the matching `AudioDeviceModel` on launch and keep
-    /// its selection in step with the bridge's `currentDeviceID`. `0` if none. Default impl: `0`.
+    /// The output device the engine plays on (picked by the user, the default at launch, or moved by
+    /// the output rule), so the view model shows the matching `AudioDeviceModel` and keeps its
+    /// selection in step with the bridge's `currentDeviceID`. `0` if none. Default impl: `0`.
     func currentOutputDeviceID() -> UInt32
 
     /// Set "Keep playback on this device". `true` = the device the user chose wins over the system

@@ -91,25 +91,25 @@ extension AudioEngineBridge {
         currentDeviceID
     }
 
-    /// The user picked `deviceID` (the pill, or the device the app starts on): the app plays on it,
-    /// and "Keep playback on this device" holds it — by UID — from now on (`OutputDeviceSelection`).
-    /// Only the user's picks come here; the output rule's own moves never do. The target and the
-    /// choice are set FIRST, then the system default: the default-output listener then finds the
+    /// The user picked `deviceID` in the device menu: the app plays on it, and "Keep playback on this
+    /// device" holds it — by UID — from now on (`OutputDeviceSelection`). Only the user's picks come
+    /// here; the device the app starts on and the output rule's own moves never do. The target and
+    /// the choice are set FIRST, then the system default: the default-output listener then finds the
     /// app's own change already matching its device, so the output rule neither fights it (pinned)
     /// nor re-adopts it (follow). Enhanced follows the new default through the configuration change;
     /// a playing Pure session is moved by the view model (`AudioViewModel.adoptOutput`).
     func selectDevice(_ deviceID: UInt32) async throws -> Bool {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                let previous = self.outputSelection
                 let uid = Self.deviceUID(deviceID)
-                self.changeOutputSelection { $0.choose(deviceID, uid: uid) }
+                let pick = self.changeOutputSelection { $0.choose(deviceID, uid: uid) }
                 // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
                 let result = selectOutputDeviceC(deviceID)
                 if result != 0 {
                     logUX("engine selectDevice: id=\(deviceID) uid=\(uid) result=ok")
                 } else {
-                    self.changeOutputSelection { $0 = previous } // a failed pick changes nothing
+                    // Only the pick is taken back: a move the output rule made meanwhile stays.
+                    self.changeOutputSelection { $0.undo(pick) }
                     logUX("engine selectDevice: id=\(deviceID) result=failed")
                 }
                 continuation.resume(returning: result != 0)

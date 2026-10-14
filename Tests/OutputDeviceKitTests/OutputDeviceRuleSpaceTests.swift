@@ -1,7 +1,8 @@
 // The output-device rule over its WHOLE input space (council P5b, extended for N92): every event
 // against every combination of facts, checked against rules written from the founder's decisions
 // (not from the code); the earlier decisions unchanged wherever the chosen device is the app's
-// device; device 0 never acted on; and a fixed point after every action.
+// device; nothing chosen (the launch state) or the choice away answering exactly as follow; device
+// 0 never acted on; and a fixed point after every action.
 
 import OutputDeviceKit
 import Testing
@@ -16,6 +17,8 @@ struct OutputDeviceRuleSpaceTests {
     ]
 
     /// playback × pinned × alive × target ∈ {0, A} × default ∈ {0, A, B} × chosen ∈ {0, A, B, C}.
+    /// chosen 0 covers both "nothing chosen yet" (the launch state) and "chosen, but away or without
+    /// an output stream": the bridge reports both as 0.
     private static var allFacts: [OutputDeviceFacts] {
         var out: [OutputDeviceFacts] = []
         for playback in [OutputPlayback.idle, .enhanced, .pure] {
@@ -57,7 +60,8 @@ struct OutputDeviceRuleSpaceTests {
             let enhanced = (starting || facts.playback == .enhanced) && !pause
             want.reassert = enhanced && facts.systemDefault != 0 && facts.systemDefault != facts.chosen
         } else if facts.systemDefault != 0, facts.systemDefault != facts.target {
-            // Follow, or the chosen device away: the system default becomes the app's device.
+            // Follow, nothing chosen yet (the device the app starts on is not a choice), or the
+            // chosen device away: the system default becomes the app's device.
             want.adopt = facts.systemDefault
         }
         // Enhanced restarts only when its engine stopped (a configuration change) or must move (an
@@ -118,6 +122,17 @@ struct OutputDeviceRuleSpaceTests {
             }
         }
         #expect(compared == 5 * (3 * 2 * 3 * 4 + 3 * 2 * 3)) // follow: any chosen; pinned: one
+    }
+
+    @Test("pinned with nothing chosen (the launch state) or the choice away answers exactly as follow")
+    func unpickedPinIsFollow() {
+        for event in Self.events {
+            for facts in Self.allFacts where facts.pinned && facts.chosen == 0 {
+                var follow = facts
+                follow.pinned = false
+                #expect(Self.actual(event, facts) == Self.actual(event, follow), "\(event) \(facts)")
+            }
+        }
     }
 
     @Test("device 0 is never adopted, never re-asserted, and only the chosen device is ever re-asserted")

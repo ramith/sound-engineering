@@ -75,8 +75,8 @@ extension AudioEngineBridge {
     }
 
     /// Thread-safe change of the output devices. `change` runs UNDER the leaf lock and so must only
-    /// call the value's own mutators (`choose`, `adopt`, `pin`) or replace it — no call-outs.
-    func updateOutputSelection(_ change: (inout OutputDeviceSelection) -> Void) {
+    /// call the value's own mutators (`choose`, `undo`, `adopt`, `pin`) — no call-outs.
+    func updateOutputSelection<T>(_ change: (inout OutputDeviceSelection) -> T) -> T {
         withStateLock { change(&storedOutputSelection) }
     }
 
