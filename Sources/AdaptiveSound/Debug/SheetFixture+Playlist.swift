@@ -1,4 +1,5 @@
 #if DEBUG
+    import LibraryScan
     import LibraryStore
 
     // MARK: - Picture-sheet fixture data: the playlist page (S10.8 E4)
@@ -12,14 +13,17 @@
         /// The failure notice's reason: Locate onto a file another track already owns.
         static let playlistFailure = "That file is already in your library under a different track."
 
-        /// The open playlist's songs, in the listener's order: the long title, non-Latin scripts, and two
-        /// whose files are gone — one with an artist, one untagged.
+        /// The open playlist's songs, in the listener's order: the long title, non-Latin scripts, one whose
+        /// file is gone (with an artist) and one out of reach on a drive that isn't connected (untagged).
         private static let playlistTitles = [
             "Clair de Lune", "Teardrop", playingTitle, longTitle, "Hallelujah", "夜に駆ける", "Nuvole Bianche",
             "Untitled Field Recording 03", "So What", "Svefn-g-englar", "கண்ணாளனே", "Archangel",
         ]
 
-        private static let missingTitles: Set = ["Hallelujah", "Untitled Field Recording 03"]
+        /// The songs that can't be played, and why.
+        private static let unavailableTitles: [String: FileAvailability] = [
+            "Hallelujah": .missing, "Untitled Field Recording 03": .unreachable,
+        ]
 
         /// Opens the playlist worlds' playlist: the rail lists it with two more, and the card shows it,
         /// through the models' own seeds (no store).
@@ -30,7 +34,8 @@
                 guard let song = byTitle[title] else { return nil }
                 let entry = PlaylistEntry(id: 1000 + Int64(position), playlistID: openPlaylist.id, trackID: song.id,
                                           position: position, addedAt: 0)
-                return PlaylistDetailEntry(entry: entry, display: song, isAvailable: !missingTitles.contains(title))
+                return PlaylistDetailEntry(entry: entry, display: song,
+                                           availability: unavailableTitles[title] ?? .available)
             }
             let tree = [
                 openPlaylist,
