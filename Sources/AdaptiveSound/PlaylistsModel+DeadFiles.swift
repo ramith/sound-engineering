@@ -1,4 +1,5 @@
 import Foundation
+import LibraryScan
 import LibraryStore
 
 // MARK: - PlaylistsModel + dead/missing-file resolution (F)
@@ -7,36 +8,49 @@ import LibraryStore
 /// verbs (`confirmRemoveMissing` / `relocateEntry`) stay in the main file (they move the dialog
 /// latch, which is file-private); these are stateless / read-only.
 extension PlaylistsModel {
-    /// Off-main file-existence resolution (F): entry ids whose track resolved AND whose file exists.
-    /// `PlaylistEntry` / `LibraryTrackDisplay` are `Sendable`, so the `fileExists` stat loop runs
-    /// detached at `.utility` off the main actor (a large playlist mustn't jank the open).
-    static func availableEntryIDs(entries: [PlaylistEntry],
-                                  displays: [Int64: LibraryTrackDisplay]) async -> Set<Int64> {
-        await Task.detached(priority: .utility) {
-            var available = Set<Int64>()
+    /// Off-main availability resolution (F; R1.1-A KI-LIB-01): each entry's `FileAvailability` — its
+    /// file there, or MISSING only when its music folder is there on its own drive (the library's own
+    /// sweep evidence, `LibraryScanner.availability`), else UNREACHABLE. An entry whose track did not
+    /// resolve has no file to look at: missing. `PlaylistEntry` / `LibraryTrackDisplay` are `Sendable`,
+    /// so the disk looks run detached at `.utility` off the main actor (a large playlist mustn't jank
+    /// the open).
+    static func entryAvailability(entries: [PlaylistEntry], displays: [Int64: LibraryTrackDisplay],
+                                  store: LibraryStore) async throws -> [Int64: FileAvailability] {
+        try await Task.detached(priority: .utility) {
+            let urls = entries.compactMap { displays[$0.trackID]?.url }
+            let byURL = try await LibraryScanner().availability(of: urls, in: store)
+            var availability: [Int64: FileAvailability] = [:]
             for entry in entries {
-                if let url = displays[entry.trackID]?.url, FileManager.default.fileExists(atPath: url.path) {
-                    available.insert(entry.id)
-                }
+                availability[entry.id] = displays[entry.trackID].flatMap { byURL[$0.url] } ?? .missing
             }
-            return available
+            return availability
         }.value
     }
 
-    /// Count of unavailable (missing-file) entries in the open detail — drives the "Remove missing"
-    /// affordance + the count-line suffix.
-    var missingEntryCount: Int {
+    /// Count of unavailable entries in the open detail (missing or unreachable) — the count line's
+    /// "· N unavailable".
+    var unavailableEntryCount: Int {
         detail.count { !$0.isAvailable }
     }
 
-    /// The unavailable (missing-file) entries of the open detail, in order: what Remove Missing asks
-    /// about, and what an open confirmation is re-checked against.
+    /// Count of missing entries in the open detail — drives the "Remove N Missing…" affordance.
+    var missingEntryCount: Int {
+        detail.count { $0.availability == .missing }
+    }
+
+    /// Count of unreachable entries in the open detail — the ones Remove Missing keeps, and says so.
+    var unreachableEntryCount: Int {
+        detail.count { $0.availability == .unreachable }
+    }
+
+    /// The missing entries of the open detail, in order: what Remove Missing asks about, and what an
+    /// open confirmation is re-checked against. Never an unreachable one (KI-LIB-01).
     var missingEntryIDs: [Int64] {
-        detail.filter { !$0.isAvailable }.map(\.id)
+        detail.filter { $0.availability == .missing }.map(\.id)
     }
 
     /// Whether a scan / metadata pass / reconcile is populating the library — availability is a live
-    /// `fileExists` snapshot that flickers "missing" mid-scan, so bulk "Remove missing" is gated off it.
+    /// look at the disk that flickers "missing" mid-scan, so bulk "Remove missing" is gated off it.
     var isLibraryPopulating: Bool {
         library.scanProgress != nil || library.metadataProgress != nil || library.isReconciling
     }

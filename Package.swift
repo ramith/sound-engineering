@@ -277,9 +277,12 @@ let package = Package(
         // follow the engine's device and never pick one itself), and what plays next (council D41: the
         // contract between the view model and an engine model that keeps the bridge's on-deck semantics
         // with every step in any order — the scenarios, the ablations and the random-schedule explorer).
+        // The library modules: the playlists model over a real store and real folders (KI-LIB-01).
         .testTarget(
             name: "AdaptiveSoundTests",
-            dependencies: ["AdaptiveSound", "PlaybackQueueKit", "SettingsKit"],
+            dependencies: [
+                "AdaptiveSound", "PlaybackQueueKit", "SettingsKit", "LibraryStore", "LibraryScan", "LibraryBrowseKit",
+            ],
             path: "Tests/AdaptiveSoundTests"
         ),
         // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
