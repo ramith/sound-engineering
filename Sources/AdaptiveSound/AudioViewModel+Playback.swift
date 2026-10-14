@@ -31,7 +31,7 @@ extension AudioViewModel {
         // Show the resume point immediately (avoid a scrubber flash to 0 before the seek lands).
         playbackPosition = resumeFrom ?? 0
         logUX("play: track[\(selectedIndex)] '\(playlist[selectedIndex].name)' "
-            + "pureMode=\(pureModeEnabled) device='\(selectedDevice?.name ?? "none")'"
+            + "pureMode=\(pureStartNote) device='\(selectedDevice?.name ?? "none")'"
             + (resumeFrom.map { " resumeFrom=\(secs($0))s" } ?? ""))
 
         refreshDuration(for: fileURL)
@@ -50,7 +50,7 @@ extension AudioViewModel {
         // Snapshot index and mode for use inside the Task (avoids capturing `self` for
         // values that could change between now and when the Task body runs).
         let startIndex = selectedTrackIndex
-        let pureModeSnapshot = pureModeEnabled
+        let pureModeSnapshot = startsOnPure
         // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
         // samples of the playback it replaces (the old track's playhead and end flag). Its on-deck
         // requests belong to it from now on (the engine drops any made for the playback it replaces).

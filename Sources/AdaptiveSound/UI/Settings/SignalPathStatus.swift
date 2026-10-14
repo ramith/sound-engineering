@@ -1,17 +1,22 @@
 import DesignTokenKit
+import EQEditKit
 import SwiftUI
 
 // MARK: - Signal-path status (Settings › Pure Mode)
 
 /// Compact live readout of the achieved signal path, at the foot of the Pure Mode card: Playing
 /// through, Format, Decoder and EQ Preset — omits Exclusive (always false) and Decision — then why
-/// Pure isn't playing yet, when it was asked for.
+/// Pure isn't playing yet, when it was asked for (the track or device can't, Master Gain is turned
+/// down, or it starts with the next track).
 ///
 /// The labels sit in a fixed column and the values take the rest of the card's width, wrapping rather
 /// than truncating (a My Preset's name is the user's own); SLOT-07 holds both at the 880 pt window.
 struct SignalPathStatus: View {
     let info: SignalPathInfo
     let requested: Bool
+    /// Master Gain's level while Pure waits for it to be back at 0 dB (`pureWaitsForMasterGain`),
+    /// else `nil`.
+    let waitingAtMasterGain: Float?
     /// Current EQ preset display name ("Flat", "Custom", etc.). Passed in as a
     /// value snapshot so the readout remains a pure function of its inputs.
     let eqPresetName: String
@@ -34,6 +39,12 @@ struct SignalPathStatus: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
+            } else if let level = waitingAtMasterGain {
+                Text("Master Gain is turned down (\(MasterGainLaw.text(level))). Pure Mode plays at your "
+                    + "device’s own volume, which would be louder, so it waits until Master Gain is back at 0 dB.")
+                    .font(DesignSystem.Font.caption)
+                    .foregroundStyle(DesignSystem.Color.labelSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if requested && info.path != .pure {
                 Text("Pure Mode starts with the next track.")
                     .font(DesignSystem.Font.caption)

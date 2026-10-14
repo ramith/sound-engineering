@@ -60,6 +60,14 @@ struct ListeningSettingsTests {
         }
     }
 
+    /// One song in the queue, selected.
+    private func queueOneSong(_ viewModel: AudioViewModel) {
+        let url = URL(fileURLWithPath: "/nonexistent/song.flac") // never opened: the engine records it
+        let song = AudioFile(name: "Song", relativePath: "", absoluteURL: url, format: "FLAC", durationSeconds: 240)
+        viewModel.queue = [QueueItem(file: song)]
+        viewModel.selectedTrackIndex = 0
+    }
+
     /// The listener's settings as a stored blob, written by hand (a damaged or foreign value).
     private func store(_ json: String) {
         defaults.set(Data(json.utf8), forKey: Self.settingsKey)
@@ -164,6 +172,38 @@ struct ListeningSettingsTests {
         // Never stored (an R1 user's first launch): unity, as R1 played.
         defaults.removeObject(forKey: Self.settingsKey)
         #expect(launch().masterGain == MasterGainLaw.unity)
+    }
+
+    // MARK: - Enhanced → Pure never raises the level (C-29 slice)
+
+    @Test("with Master Gain turned down, Pure waits: Enhanced keeps playing at the listener's level")
+    func pureWaitsForMasterGain() async {
+        let engine = DeviceTestEngine()
+        let viewModel = launch(engine)
+        viewModel.isEngineReady = true
+        queueOneSong(viewModel)
+        viewModel.masterGain = -20
+        viewModel.pureModeEnabled = true
+        viewModel.startPlayback()
+        await settle()
+        #expect(engine.state.withLock { $0.pureModes } == [false], "Pure plays at the device's volume: 20 dB louder")
+        #expect(viewModel.pureWaitsForMasterGain, "the Pure card says why")
+
+        // The same after a relaunch: both settings come back, and Pure still waits.
+        let relaunchedEngine = DeviceTestEngine()
+        let relaunched = launch(relaunchedEngine)
+        relaunched.isEngineReady = true
+        queueOneSong(relaunched)
+        relaunched.startPlayback()
+        await settle()
+        #expect(relaunchedEngine.state.withLock { $0.pureModes } == [false])
+
+        // Master Gain back at 0 dB: nothing is lost by going bit-perfect, and Pure starts.
+        viewModel.masterGain = MasterGainLaw.unity
+        viewModel.startPlayback()
+        await settle()
+        #expect(engine.state.withLock { $0.pureModes } == [false, true])
+        #expect(!viewModel.pureWaitsForMasterGain)
     }
 
     // MARK: - The chosen output device (DEV-1)

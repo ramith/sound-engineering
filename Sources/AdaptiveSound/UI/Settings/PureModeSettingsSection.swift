@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Pure Mode card (bit-perfect HAL output): a switch for user intent plus a live signal-path
 /// readout (polled into `AudioViewModel.signalPath` at the spectrum-timer rate). The switch records
-/// intent only; it takes effect on the next track / play.
+/// intent only; it takes effect on the next track / play, once Master Gain is at 0 dB.
 struct PureModeSettingsSection: View {
     @Bindable var audioViewModel: AudioViewModel
 
@@ -21,6 +21,7 @@ struct PureModeSettingsSection: View {
             SignalPathStatus(
                 info: audioViewModel.signalPath,
                 requested: audioViewModel.pureModeEnabled,
+                waitingAtMasterGain: audioViewModel.pureWaitsForMasterGain ? audioViewModel.masterGain : nil,
                 eqPresetName: eqPresetName
             )
         }
