@@ -1,5 +1,6 @@
 import Foundation
 import LibraryBrowseKit
+import LibraryScan
 import LibraryStore
 import SwiftUI
 
@@ -260,13 +261,13 @@ final class PlaylistsModel {
         do {
             let entries = try await store.entries(inPlaylist: id)
             let byID = try await store.tracksDisplay(ids: entries.map(\.trackID))
-            // File-existence is a disk stat per row — resolve it OFF the main actor so a large
-            // playlist doesn't jank (F). A resolved track whose file is gone = "unavailable".
-            let availableIDs = await Self.availableEntryIDs(entries: entries, displays: byID)
+            // Availability is a disk look per row — resolve it OFF the main actor so a large playlist
+            // doesn't jank (F). A file not there is "missing" only on its own drive (KI-LIB-01).
+            let availability = try await Self.entryAvailability(entries: entries, displays: byID, store: store)
             guard epoch == detailEpoch else { return } // a newer open/reload superseded this one
             let rows = entries.map {
                 PlaylistDetailEntry(entry: $0, display: byID[$0.trackID],
-                                    isAvailable: availableIDs.contains($0.id))
+                                    availability: availability[$0.id] ?? .missing)
             }
             // An order not saved yet is laid over what was read (E4): this read may predate its
             // write, and publishing the stored order would undo moves already on screen — and the

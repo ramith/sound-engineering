@@ -66,16 +66,34 @@ enum FileSignature {
     /// One `lstat` for the real `st_ino` and `st_dev`. Symlinks are NOT resolved
     /// (`lstat`), so a symlink stays its own entry. A failed `lstat` → both nil.
     static func deviceInode(of fileURL: URL) -> DeviceInode {
-        var info = stat()
-        // lstat over the null-terminated fs representation; never resolves symlinks.
-        let result = fileURL.withUnsafeFileSystemRepresentation { pointer -> Int32 in
-            guard let pointer else { return -1 }
-            return lstat(pointer, &info)
-        }
-        guard result == 0 else {
+        guard case let .found(info) = lstatResult(of: fileURL) else {
             return DeviceInode(inode: nil, dev: nil)
         }
         return DeviceInode(inode: Int64(info.st_ino), dev: Int64(info.st_dev))
+    }
+
+    /// Whether nothing is at `url`'s path: its `lstat` fails because the file, or a folder on its path,
+    /// does not exist (ENOENT / ENOTDIR). A path the app may not look into (EACCES), a failing drive
+    /// (EIO) or a dangling link is NOT absent: what is there is unknown.
+    static func isAbsent(_ url: URL) -> Bool {
+        guard case let .failed(code) = lstatResult(of: url) else { return false }
+        return code == ENOENT || code == ENOTDIR
+    }
+
+    /// What one `lstat` of a path found.
+    private enum LStat {
+        case found(stat)
+        case failed(errno: Int32)
+    }
+
+    /// `lstat` over the null-terminated fs representation — never resolves symlinks.
+    private static func lstatResult(of url: URL) -> LStat {
+        var info = stat()
+        let code = url.withUnsafeFileSystemRepresentation { pointer -> Int32 in
+            guard let pointer else { return ENOENT }
+            return lstat(pointer, &info) == 0 ? 0 : errno
+        }
+        return code == 0 ? .found(info) : .failed(errno: code)
     }
 
     /// Whether `url` is the root of a mounted volume (another drive mounted inside a walked folder).

@@ -21,7 +21,8 @@ struct PlaylistDialogSheet: ViewModifier {
             case let .confirmDelete(_, name):
                 PlaylistDeleteDialog(name: name, delete: deletePlaylist, cancel: playlists.cancelConfirmation)
             case let .confirmRemoveMissing(entries):
-                PlaylistRemoveMissingDialog(count: entries.count, isScanning: playlists.isLibraryPopulating,
+                PlaylistRemoveMissingDialog(count: entries.count, kept: playlists.unreachableEntryCount,
+                                            isScanning: playlists.isLibraryPopulating,
                                             remove: removeMissing, cancel: playlists.cancelConfirmation)
             }
         }

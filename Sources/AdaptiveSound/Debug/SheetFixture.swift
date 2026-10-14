@@ -122,6 +122,7 @@
             case .playlistRemoveMissing, .playlistRemoveMissingScan:
                 SheetDialogStandIn {
                     PlaylistRemoveMissingDialog(count: playlists.missingEntryCount,
+                                                kept: playlists.unreachableEntryCount,
                                                 isScanning: playlists.isLibraryPopulating, remove: {}, cancel: {})
                 }
             case .playlistFailure:
