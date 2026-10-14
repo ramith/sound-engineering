@@ -37,10 +37,16 @@ struct OnDeckEngineState {
         let intoNewestApplied: Bool
     }
 
+    /// One `setNextTrack` call; its caller resumes (`settled`) once the request is settled — dropped,
+    /// set, or (Pure) armed / left empty — as the bridge's does.
     struct Request {
         let url: URL?
         let ticket: OnDeckTicket
+        let settled: CheckedContinuation<Void, Never>
     }
+
+    /// The callers whose requests a step settled: the model resumes them once it has let go of its lock.
+    typealias Settled = [CheckedContinuation<Void, Never>]
 
     enum TransportOp {
         case start(URL?, pure: Bool, epoch: UInt64)
@@ -143,11 +149,14 @@ struct OnDeckEngineState {
 
     /// An inbound request reaches `engineQueue` — the `rank`-th oldest by its place in the view
     /// model's order: admission, then the arm.
-    mutating func deliver(rank: Int) {
+    mutating func deliver(rank: Int, settled: inout Settled) {
         let byAge = inbound.indices.sorted { inbound[$0].ticket.sequence < inbound[$1].ticket.sequence }
         let request = inbound.remove(at: byAge[rank])
         if semantics.gated {
-            guard gate.admit(request.ticket) else { return }
+            guard gate.admit(request.ticket) else {
+                settled.append(request.settled) // dropped
+                return
+            }
         }
         if request.ticket.sequence > newestApplied {
             newestApplied = request.ticket.sequence
@@ -155,6 +164,7 @@ struct OnDeckEngineState {
         }
         guard pure else {
             armed = request.url // Enhanced: the slot, at once
+            settled.append(request.settled)
             return
         }
         // Pure: a clear applies at once; a new pick takes the old one off at admission only in the
@@ -162,15 +172,18 @@ struct OnDeckEngineState {
         if request.url == nil || semantics.retractsAtAdmission {
             armed = nil
         }
-        if let url = request.url {
-            opened.append(url)
-            opening.append(request)
+        guard let url = request.url else {
+            settled.append(request.settled)
+            return
         }
+        opened.append(url)
+        opening.append(request) // settles when its open lands
     }
 
-    /// The Pure open at `index` lands on `engineQueue`.
-    mutating func finishOpen(_ index: Int) {
+    /// The Pure open at `index` lands on `engineQueue`; its request is settled either way.
+    mutating func finishOpen(_ index: Int, settled: inout Settled) {
         let request = opening.remove(at: index)
+        settled.append(request.settled)
         guard let url = armable(request) else { return }
         switch semantics {
         case .refuse:
