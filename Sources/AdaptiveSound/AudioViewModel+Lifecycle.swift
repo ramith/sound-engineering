@@ -169,7 +169,7 @@ extension AudioViewModel {
     func performPause() async {
         do {
             let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil)
+            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
             try await engine.stopAudio(epoch: epoch)
             isPlaying = false
         } catch {
@@ -183,7 +183,7 @@ extension AudioViewModel {
     func performStop() async {
         do {
             let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil)
+            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
             try await engine.stopAudio(epoch: epoch)
             isPlaying = false
             playbackPosition = 0

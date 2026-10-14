@@ -52,8 +52,10 @@ extension AudioViewModel {
         let startIndex = selectedTrackIndex
         let pureModeSnapshot = pureModeEnabled
         // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
-        // samples of the playback it replaces (the old track's playhead and end flag).
+        // samples of the playback it replaces (the old track's playhead and end flag). Its on-deck
+        // requests belong to it from now on (the engine drops any made for the playback it replaces).
         let epoch = nextTransportEpoch()
+        onDeckSession = epoch
 
         Task {
             do {
@@ -63,7 +65,11 @@ extension AudioViewModel {
                 // the queue nor mark playing over the stopped engine. (A seek or a newer start does
                 // not end this one — only a stop does.)
                 guard transportStopEpoch < epoch else { return }
-                await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                // A newer start owns the on-deck now and primes its own: a prime here would carry
+                // that start's playback with a pick computed for this replaced one.
+                if onDeckSession == epoch {
+                    await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                }
                 guard transportStopEpoch < epoch else { return }
                 isPlaying = true
                 errorMessage = nil
@@ -105,23 +111,19 @@ extension AudioViewModel {
 
     /// Prime the gapless pipeline after `startAudio` succeeds: reset the transition-counter
     /// baseline and arm the on-deck track so the engine can pre-schedule it. Runs on the main
-    /// actor (the VM's isolation): the baseline comes from the snapshot copy, and
-    /// `engine.setNextTrack` hops to the engine's own queues.
+    /// actor (the VM's isolation): the baseline comes from the snapshot copy, and the request
+    /// (`armOnDeck`) hops to the engine's own queues; it returns once the engine settled it.
     private func primeGaplessPipeline(startIndex: Int?, pureMode: Bool) async {
         lastTransitionCount = engine.snapshot().transport.transitionCount // fresh: startAudio sampled it
 
         let currentIdx = startIndex ?? selectedTrackIndex
         let nextIdx = computeNextIndex(current: currentIdx ?? 0, playlistCount: playlist.count)
-        pendingNextIndex = nextIdx
-
-        if let idx = nextIdx, idx < playlist.count {
-            let nextURL = playlist[idx].absoluteURL
-            await engine.setNextTrack(nextURL)
-            logUX("startPlayback: primed next index=\(idx) pureMode=\(pureMode)")
+        if let idx = nextIdx {
+            logUX("startPlayback: priming next index=\(idx) pureMode=\(pureMode)")
         } else {
-            await engine.setNextTrack(nil)
             logUX("startPlayback: no next track to prime (single-track or end of playlist)")
         }
+        await armOnDeck(index: nextIdx).value
     }
 
     /// Seek to `seconds` from the start of the current file (`SeekRoute`, S10.8 G). Playing: the

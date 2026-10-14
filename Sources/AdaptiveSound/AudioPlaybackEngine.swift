@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioPlaybackEngine Protocol + Default Implementations
 
@@ -29,7 +30,7 @@ extension AudioPlaybackEngine {
     // as "one track then stop" — the pre-gapless behaviour.
 
     /// Supply (or clear, with `nil`) the track to play gaplessly after the current one. Default: no-op.
-    func setNextTrack(_: URL?) async {}
+    func setNextTrack(_: URL?, ticket _: OnDeckTicket) async {}
 
     /// Default: no device targeted (0). The live engine overrides with its `currentDeviceID`.
     func currentOutputDeviceID() -> UInt32 {
@@ -98,6 +99,28 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     //      Enhanced re-bases at every seam in `bumpTransitionCount` (sets
     //      `enhancedPositionBaseSeconds = -(sampleTime/rate)`), called from EVERY seam path in
     //      `+GaplessRoll.swift`.
+    //   5. Newest per playback (council D41). Every request carries an `OnDeckTicket`: the epoch of
+    //      the start it follows, and its place in the order the view model made requests. A start or
+    //      stop begins a new playback (a seek does not; one older than the engine's playback changes
+    //      nothing); the engine applies only the newest request of its current playback and drops
+    //      every other, whatever order they arrive in — a dropped request has no effect.
+    //   6. Applied at once. An admitted request replaces the on-deck pick immediately: Enhanced sets
+    //      the slot; Pure takes the old pick off at once (it either already played or never will),
+    //      then arms the new one when its file opens, if it is still the newest. A pick that is
+    //      still opening when the current track ends, can't join gaplessly, or can't be read leaves
+    //      the deck empty: the current track ends (`ended`), and the view model starts the pick
+    //      fresh — a short gap, the right song.
+    //   7. The end is final. A track that ended with nothing on deck never seams into a pick armed
+    //      later; the view model starts it fresh.
+    //
+    // What the view model may rely on: once no request is in flight, the deck holds the newest
+    // request's pick, or is empty and `ended` follows. What it may NOT (the seam reports a count,
+    // not which track it played — follow-up F1 closes both):
+    //   A2.  A request not yet admitted when the current track ends — the rest of the main-thread
+    //        turn, one hop, and any `engineQueue` backlog (Enhanced: then `resampleQueue`'s) — finds
+    //        the old pick still armed: the old pick plays while the view model shows the new one.
+    //   A2'. An edit made after a seam but before the view model's tick saw it (up to 50 ms, plus
+    //        the 33 ms clock) is shown as playing, while the pick the seam took plays.
     //
     // ## Pure's polling side effect (S6 Tier-3 §4.4)
     //
@@ -106,15 +129,16 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     // engine's own transport clock does that, off the main thread (AudioEngineBridge+TransportClock).
 
     /// Supply the track to play gaplessly after the current one finishes, or `nil` to clear the
-    /// on-deck track. The engine pre-schedules (Enhanced) / arms (Pure) it so the transition is
-    /// seamless — no `stop()`, no inserted silence. Re-supply after each transition to keep one
-    /// track on deck. Reuses the current path (Enhanced/Pure) and mode. Default impl: no-op.
+    /// on-deck track — the request numbered `ticket` (invariants 5–7 above). The engine
+    /// pre-schedules (Enhanced) / arms (Pure) it so the transition is seamless — no `stop()`, no
+    /// inserted silence. Re-supply after each transition to keep one track on deck. Reuses the
+    /// current path (Enhanced/Pure) and mode. Returns once the request is settled. Default impl: no-op.
     ///
     /// Contract: `setNextTrack(nil)` CANCELS the on-deck track — it clears the armed slot and disarms
     /// any seam hook so no queued track silently begins later. A subsequent end-of-current-track with
     /// an empty deck sets `ended` rather than seaming. (Enhanced: clears `onDeckURL` + the EOF hooks
     /// on `resampleQueue`; Pure: `pureModeEngineClearNextTrack`, which joins the dropped source off-RT.)
-    func setNextTrack(_ fileURL: URL?) async
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async
 
     /// The engine's state as the main thread may read it — the ONE read the view model makes of it:
     /// the transport as the engine last sampled it off the main thread (the playhead within the
