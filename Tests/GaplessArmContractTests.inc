@@ -638,10 +638,23 @@ namespace
 {
     using TestPoint = GaplessSource::TestPoint;
 
-    // A render paused inside its first seam, at `pauseAt`, through GaplessSource's test hook. When
-    // tryArmNext starts waiting for that seam's publish (ArmWaitsForSeam), the hook lets the render
-    // go and waits until it has published the seam (the render counts a seam after it published the
-    // adopted track) — unless `holdThroughArmWait`, which keeps it paused until the test resumes it.
+    // A render paused inside its first seam, at `pauseAt`, through GaplessSource's test hook.
+    //
+    // Deterministic by construction: every hand-off between the render and the control plane is a
+    // wait with NO deadline, on a flag or on the source's own seam count, so no outcome depends on
+    // how the scheduler runs the two threads.
+    //   * The render stops at `pauseAt` until `resume`.
+    //   * When tryArmNext starts waiting for that seam's publish (ArmWaitsForSeam), the hook lets
+    //     the render go and waits until the seam is published (the render counts a seam after it
+    //     published the adopted track), so the arm's bounded wait sees the publish on its first
+    //     look — its deadline never decides. Unless `holdThroughArmWait`: then the render stays
+    //     paused, and the deadline has to pass (SeamPublishBounded).
+    //   * Right after the seam's render callback, the render holds until `armDone`: the control
+    //     plane still has to reap A and publish C, and a free-running render could otherwise play
+    //     all of B first, so C would land behind B's end (which the end-is-final rule rightly
+    //     ignores). A loaded CI runner did exactly that under ASan (PR #88).
+    //   * The render runs until the session ends, not for a fixed number of callbacks, so a decoder
+    //     starved under load (an underrun renders silence and retries) only makes it take longer.
     struct SeamPause
     {
         TestPoint pauseAt = TestPoint::SeamClaimed;
@@ -650,6 +663,8 @@ namespace
         std::atomic<bool> paused{false};
         std::atomic<bool> resume{false};
         std::atomic<bool> armWaited{false};
+        std::atomic<bool> armDone{false};
+        std::atomic<bool> renderDone{false};
     };
 
     void seamPauseHook(TestPoint point, void* context) noexcept
@@ -718,22 +733,37 @@ namespace
         pause.source = &gapless;
         gapless.setTestHook(seamPauseHook, &pause);
         std::thread render(
-            [&gapless, &run]
+            [&gapless, &run, &pause]
             {
                 std::vector<float> block(static_cast<std::size_t>(kArmRaceChunk) * kB2bChannels2,
                                          0.0F);
-                constexpr int kCallbacks = 160; // A + B + C (6848 frames) < 160 x 64
-                for (int callback = 0; callback < kCallbacks; ++callback)
+                // Until the session ends; the cap only stops a session that never would (a bug).
+                constexpr int kMaxCallbacks = 1048576;
+                for (int callback = 0; callback < kMaxCallbacks && !gapless.ended(); ++callback)
                 {
                     renderCallback(gapless, block, kArmRaceChunk, run.codes);
+                    // Past the seam: hold until the control plane's arm is done (see SeamPause).
+                    while (gapless.transitionCount() > 0U &&
+                           !pause.armDone.load(std::memory_order_acquire))
+                    {
+                        std::this_thread::yield();
+                    }
+                    std::this_thread::yield(); // let a starved decoder catch up on an underrun
                 }
+                pause.renderDone.store(true, std::memory_order_release);
             });
-        while (!pause.paused.load(std::memory_order_acquire))
+        while (!pause.paused.load(std::memory_order_acquire) &&
+               !pause.renderDone.load(std::memory_order_acquire))
         {
             std::this_thread::yield();
         }
+        if (!pause.paused.load(std::memory_order_acquire))
+        {
+            err += "the render never reached the seam point; ";
+        }
         gapless.clearNext(); // the render already claimed B: nothing to take off
         run.outcome = gapless.tryArmNext(std::move(trackC));
+        pause.armDone.store(true, std::memory_order_release);
         pause.resume.store(true, std::memory_order_release);
         render.join();
         gapless.setTestHook(nullptr, nullptr);
