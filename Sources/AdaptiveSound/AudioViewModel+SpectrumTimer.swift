@@ -163,7 +163,7 @@ extension AudioViewModel {
         var freshPath = snapshot.signalPath
         // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
         freshPath.intensityLinear = intensity
-        freshPath.crossfeedStrength = crossfeedEnabled ? crossfeedStrength : nil
+        freshPath.crossfeedStrength = crossfeedPlays ? crossfeedStrength : nil
         if signalPath != freshPath {
             signalPath = freshPath
         }

@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import SettingsKit
 
 // MARK: - AudioEngineBridge Crossfeed control plane
 

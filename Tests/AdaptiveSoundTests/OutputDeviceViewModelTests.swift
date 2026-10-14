@@ -9,7 +9,7 @@ import Foundation
 import Testing
 
 @MainActor
-@Suite("AudioViewModel — the output the engine moved to")
+@Suite("AudioViewModel — the output the engine moved to", .serialized)
 struct OutputDeviceViewModelTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
@@ -29,8 +29,11 @@ struct OutputDeviceViewModelTests {
     private let viewModel: AudioViewModel
 
     init() throws {
-        // A private, empty defaults suite: nothing here touches the app's own.
-        let defaults = try #require(UserDefaults(suiteName: "OutputDeviceViewModelTests.\(UUID().uuidString)"))
+        // This suite's own defaults, never the app's, emptied before each test: the view model keeps
+        // the listener's settings there (a pick is remembered), and one fixed name leaves one file.
+        let suiteName = "AdaptiveSoundTests.OutputDevice"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
         viewModel = AudioViewModel(defaults: defaults, engine: engine)
         viewModel.isEngineReady = true
         viewModel.selectedDevice = Self.headphones
