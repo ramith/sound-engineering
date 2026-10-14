@@ -3,10 +3,10 @@ import Testing
 // MARK: - Queue ops (S9-Q2): Play Now / Play Next / Add to Queue (VM-Q)
 
 //
-// Drives the MockAdvanceController state machine (AudioViewModel+Queue can't be
-// @testable-imported from the executable target). The one real decision — the append
-// re-arm — is the shipped `QueueAdvance.appendArmIndex` (also gated directly in
-// QueueAdvanceTests VM-QA-09); the rest is array + on-deck sequencing.
+// Drives the MockAdvanceController state machine (a mirror of AudioViewModel+Queue, from before the
+// real view model could be @testable-imported — it now is, in `Tests/AdaptiveSoundTests`). The one
+// real decision — what an append arms next — is the shipped `PlaybackOrder.onDeck(afterEditing:)`
+// (also gated directly in PlaybackOrderTests VM-PO-11…15); the rest is array + on-deck sequencing.
 
 @Suite("AudioViewModel — queue ops (VM-Q)")
 struct QueueOpsTests {

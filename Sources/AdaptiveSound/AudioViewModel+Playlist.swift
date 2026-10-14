@@ -7,17 +7,16 @@ extension AudioViewModel {
     /// Reorder playlist items (drag-drop or the context-menu Move commands).
     func movePlaylistItems(from source: IndexSet, to destination: Int) {
         logUX("movePlaylistItems: \(source.map { $0 }) → \(destination)")
-        // Capture the identities of the now-playing pointer AND the armed gapless on-deck BEFORE
-        // the move, then re-find them by id after — so a reorder that shifts (not just moves) the
-        // selected row keeps `selectedTrackIndex` on the right track, and `pendingNextIndex` keeps
-        // pointing at the SAME track the engine already armed (`armOnDeck`). Doing
-        // neither desynced audio ⟂ the ▶/History ⟂ play-count at the gapless seam (QA: reorder a
-        // playing queue → wrong next track). Dups-safe (QueueItem.id, not URL/index).
+        // Capture the identities of the now-playing pointer AND the armed gapless on-deck BEFORE the
+        // move, then re-find them by id after — so a reorder that shifts (not just moves) the selected
+        // row keeps `selectedTrackIndex` on the right track (QA: reorder a playing queue → wrong next
+        // track). Dups-safe (QueueItem.id, not URL/index). What plays next then follows the edit
+        // (`keepOnDeck`): in order, the row now under the playing one (council C-17).
         let selID = selectedSlotID
-        let pendingID = pendingNextIndex.flatMap { $0 < queue.count ? queue[$0].id : nil }
+        let armed = onDeckSlotID
         queue.move(fromOffsets: source, toOffset: destination)
         selectedTrackIndex = selID.flatMap { id in queue.firstIndex { $0.id == id } }
-        pendingNextIndex = pendingID.flatMap { id in queue.firstIndex { $0.id == id } }
+        keepOnDeck(armed: armed)
         scheduleQueueMirror()
     }
 
@@ -65,10 +64,9 @@ extension AudioViewModel {
         logUX("removeTrack: index=\(index) '\(queue[index].file.name)'")
 
         let removingCurrent = (selectedTrackIndex == index)
+        let armed = onDeckSlotID
         queue.remove(at: index)
         scheduleQueueMirror()
-
-        adjustPendingNextIndexAfterRemoval(removedIndex: index)
 
         // The song playing — or starting (council C-15) — left the queue: stop.
         if removingCurrent, playIntent {
@@ -78,7 +76,7 @@ extension AudioViewModel {
             return
         }
 
-        if selectedTrackIndex == index {
+        if removingCurrent {
             // The paused (or stopped) current song left the queue (S10.8 G): its place and length go
             // with it, so the song that slides into its row starts from the top and the footer shows
             // no stale length. The re-selection below drops its resume point (another slot).
@@ -88,25 +86,36 @@ extension AudioViewModel {
         } else if let cur = selectedTrackIndex, cur > index {
             selectedTrackIndex = cur - 1
         }
+        keepOnDeck(armed: armed)
     }
 
-    /// Keep `pendingNextIndex` (the on-deck track the engine has preloaded) in sync after
-    /// `playlist.remove(at: removedIndex)`: re-derive it if the on-deck track itself was removed,
-    /// or shift it down by one if it sat after the removed slot.
-    private func adjustPendingNextIndexAfterRemoval(removedIndex: Int) {
-        guard let pending = pendingNextIndex else { return }
+    /// The queue slot of the armed on-deck song (`nil` = none).
+    var onDeckSlotID: UUID? {
+        pendingNextIndex.flatMap { $0 >= 0 && $0 < queue.count ? queue[$0].id : nil }
+    }
 
-        if pending == removedIndex {
-            // The on-deck track was removed. Re-compute the next index from the current
-            // playing track so the engine stays primed (rather than leaving it with nil).
-            // P2-2: playlist.remove(at:) above has already shifted indices — if the
-            // currently-playing track was AFTER the removed slot its index is now one lower.
-            let rawCurrent = selectedTrackIndex ?? 0
-            let currentIdx = rawCurrent > removedIndex ? rawCurrent - 1 : rawCurrent
-            armOnDeck(index: computeNextIndex(current: currentIdx, playlistCount: queue.count))
-        } else if pending > removedIndex {
-            pendingNextIndex = pending - 1
+    /// After a queue edit — an append, a move, a removal — keep what plays next right (council C-17):
+    /// the pick armed before the edit (`armed`, its slot) is found again, and while the on-deck is live
+    /// (`onDeckIsLive`: a song plays, or a start primes) the next song follows the edit
+    /// (`PlaybackOrder.onDeck(afterEditing:)`): in order, the row now under the playing one; a shuffle
+    /// pick or a Play Next stays. A different slot is re-armed (`armOnDeck`, the one producer); the same
+    /// slot only moved rows. Paused, stopped or not yet begun, there is no deck: the start's prime picks
+    /// from the queue as it is then.
+    func keepOnDeck(armed: UUID?) {
+        let armedIndex = armed.flatMap { slot in queue.firstIndex { $0.id == slot } }
+        guard onDeckIsLive, let current = selectedTrackIndex else {
+            pendingNextIndex = armedIndex
+            return
         }
+        let next = playbackOrder.onDeck(afterEditing: current, count: queue.count, armed: armedIndex,
+                                        randomPick: QueueAdvance.uniformRandomExcluding)
+        guard next.map({ queue[$0].id }) != armed else {
+            pendingNextIndex = next
+            return
+        }
+        logUX("on-deck re-armed for the edited queue: \(armedIndex.map(String.init) ?? "none") → "
+            + (next.map(String.init) ?? "none"))
+        armOnDeck(index: next)
     }
 
     /// Clear the entire playlist. Stops playback and clears the on-deck track.
