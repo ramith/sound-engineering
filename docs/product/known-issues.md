@@ -96,7 +96,7 @@ remove) leaves the OLD next track armed. At the seam Pure plays it, while the vi
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" (Sprint G) · **Forward:** US-R1F-02.
 
-The view model re-arms correctly (`AudioViewModel+Playlist.swift:159-168` → `armOnDeck`). The seam is not re-armed
+The view model re-arms correctly (`AudioViewModel+Playlist.swift:150-159` → `armOnDeck`). The seam is not re-armed
 seamlessly: on 48 kHz files the gap is most likely KI-GAP-01; on Pure the re-arm is refused (KI-PB-01).
 
 ### KI-PB-03 — Shuffle on + Repeat off never ends the queue
@@ -112,7 +112,7 @@ forever.
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #1 (G-RACE-1) + freeze "Logged post-R1"
 (fast play-then-pause) · **Forward:** US-R1F-01.
 
-`isPlaying` becomes true only after `engine.startAudio` returns (`AudioViewModel+Playback.swift:68`); `pause()` guards
+`isPlaying` becomes true only after `engine.startAudio` returns (`AudioViewModel+Playback.swift:74`); `pause()` guards
 on it (`AudioViewModel+Transport.swift:46`) and the toggle calls `play()` again (`:57-62`). There is no "start in
 flight" state. PR #86 (86a1cbe) fixed only the Stop case (`transportStopEpoch`); `rev-verify.md` records the rest as
 still lost.
@@ -121,8 +121,8 @@ still lost.
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #3 · **Forward:** US-R1F-01.
 
-The next track is armed on the path that is playing (`AudioEngineBridge+Gapless.swift:57`); `pureModeEnabled`'s
-`didSet` only logs (`AudioViewModel.swift:98-100`). Settings still says "Starts with the next track."
+The next track is armed on the path that is playing (`AudioEngineBridge+Gapless.swift:67-71`, the path read when the request is admitted); `pureModeEnabled`'s
+`didSet` only logs (`AudioViewModel.swift:106-108`). Settings still says "Starts with the next track."
 (`UI/Settings/PureModeSettingsSection.swift:18`, `UI/Settings/SignalPathStatus.swift:38`). The switch takes effect
 only at a manual start or a rate-change reconfigure.
 
@@ -159,7 +159,7 @@ start is requested (and a second play is logged).
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #9 · **Forward:** US-R1F-01.
 
-`appendToQueue` never selects a track (`AudioViewModel+Queue.swift:173-186`); Controls ▸ Play / Space are disabled on
+`appendToQueue` never selects a track (`AudioViewModel+Queue.swift:176-189`); Controls ▸ Play / Space are disabled on
 `selectedTrackIndex == nil` (`AdaptiveSound.swift:167`) and the footer on `track != nil`
 (`UI/Shell/NowPlayingBar.swift:31`, `:197`), though `play()` would start track 1. Clicking a queue row works.
 
@@ -226,8 +226,8 @@ scrubber runs ahead of what is heard (more on Bluetooth).
 
 **Status:** OPEN · **Severity:** LOW · **Source:** freeze "Logged post-R1" · **Forward:** US-R1F-02.
 
-The Enhanced seam count is never reset (`AudioEngineBridge.swift:168`); the view model's baseline is reset only after
-`startAudio` returns (`AudioEngineBridge+Playback.swift:111`). In a narrow window after a Pure → Enhanced fallback the
+The Enhanced seam count is never reset (`AudioEngineBridge.swift:179`); the view model's baseline is reset only after
+`startAudio` returns (`AudioEngineBridge+Playback.swift:113`). In a narrow window after a Pure → Enhanced fallback the
 tick can see a seam that did not happen.
 
 ### ENH-001 — Short-track auto-advance is a reconfigure gap, not a seamless seam
@@ -236,7 +236,7 @@ tick can see a seam that did not happen.
 
 *(KI-001 — "the VM stops mid-playlist on short tracks" — was **RESOLVED 2026-07-02**: analysis showed the VM already continues via `tickSpectrum()`'s `playbackEnded → advance to pendingNextIndex` branch; the stale `VM-AA-RTR-1` assertion was corrected to the continue behavior. Founder's continue/advance decision is satisfied. The full triage/panel narration is in git.)*
 
-The short-track advance is a fresh-start reconfigure **gap**, not a gapless seam. Making it seamless for arbitrarily-short tracks needs an engine-side **2-deep on-deck queue** — a single on-deck slot can't arm track C until track B is current at the seam, and B may be shorter than the arm latency + the 20 Hz poll interval. Scheduled against the gapless backlog (US-PLAY-08 lineage); low priority (only tiny tracks; fallback is a brief gap, not a stop). ~~Guarded by `VM-AA-RTR-1` (`withKnownIssue` — fails when fixed, prompting a proper assertion).~~ *(Corrected 2026-10-13: `VM-AA-RTR-1` still exists — `Tests/AudioViewModelTests/AutoAdvanceReconfigureGapTests.swift:88` — but `withKnownIssue` was dropped in c63ba7f; it now asserts the fresh-start advance against mocks, so nothing fails when the seamless fix lands. The engine still has one on-deck slot: `onDeckURL`, `AudioEngineBridge.swift:163`.)*
+The short-track advance is a fresh-start reconfigure **gap**, not a gapless seam. Making it seamless for arbitrarily-short tracks needs an engine-side **2-deep on-deck queue** — a single on-deck slot can't arm track C until track B is current at the seam, and B may be shorter than the arm latency + the 20 Hz poll interval. Scheduled against the gapless backlog (US-PLAY-08 lineage); low priority (only tiny tracks; fallback is a brief gap, not a stop). ~~Guarded by `VM-AA-RTR-1` (`withKnownIssue` — fails when fixed, prompting a proper assertion).~~ *(Corrected 2026-10-13: `VM-AA-RTR-1` still exists — `Tests/AudioViewModelTests/AutoAdvanceReconfigureGapTests.swift:88` — but `withKnownIssue` was dropped in c63ba7f; it now asserts the fresh-start advance against mocks, so nothing fails when the seamless fix lands. The engine still has one on-deck slot: `onDeckURL`, `AudioEngineBridge.swift:174`.)*
 
 ---
 
@@ -264,9 +264,9 @@ The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" 
 **Status:** OPEN · **Severity:** MEDIUM (Master Gain and Pure); LOW (the rest) · **Source:** breaker B post-R1 #4 ·
 **Forward:** US-R1F-05.
 
-None has a defaults key: `pureModeEnabled = false` (`AudioViewModel.swift:98`), the pin `= true` (`:106`),
-`intensity = 0.20` (`:132`), `crossfeedEnabled = false` (`:143`), strength (`:151`), and Master Gain `= unity`
-(`:185`, commented "Not kept across launches (a post-R1 item)"). Only the EQ, the queue cursor (incl. shuffle / repeat),
+None has a defaults key: `pureModeEnabled = false` (`AudioViewModel.swift:106`), the pin `= true` (`:116`),
+`intensity = 0.20` (`:142`), `crossfeedEnabled = false` (`:153`), strength (`:161`), and Master Gain `= unity`
+(`:195`, commented "Not kept across launches (a post-R1 item)"). Only the EQ, the queue cursor (incl. shuffle / repeat),
 the Songs columns and the Tone-card fold persist. Someone who turned Master Gain down hears 0 dB after a relaunch.
 
 ### KI-SET-02 — A Master Gain cut in Enhanced does not carry into Pure
@@ -283,7 +283,7 @@ device's volume, which can be much louder.
 **Status:** OPEN (residual of breaker B post-R1 #5, partly fixed by 124178d in PR #85) · **Severity:** LOW ·
 **Forward:** US-R1F-05.
 
-Every Enhanced start re-applies the app's gain (`AudioEngineBridge+Playback.swift:108`), so the old double-attenuation
+Every Enhanced start re-applies the app's gain (`AudioEngineBridge+Playback.swift:110`), so the old double-attenuation
 and wrong readout are gone. The device volume set on Pure is the macOS output volume, and the Enhanced readout shows
 only the app's gain, not it.
 
@@ -323,8 +323,8 @@ stack.
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** product council, code reading 2026-10-13 · **Forward:** US-R1F-06
 (and S13 device identification).
 
-The headphone gate is "USB or wireless transport" (`AudioViewModel.swift:159-171`), and the device type comes from the
-transport alone (`Sources/AudioDSP/CoreAudioDevice.cpp:321-338`). The Mac's headphone jack reports the built-in
+The headphone gate is "USB or wireless transport" (`AudioViewModel.swift:169-181`), and the device type comes from the
+transport alone (`Sources/AudioDSP/CoreAudioDevice.cpp:326-343`). The Mac's headphone jack reports the built-in
 transport, so wired headphones there are "not headphones": crossfeed is disabled with the "Connect headphones" hint.
 The converse also holds: AirPlay speakers count as wireless headphones. The code comment names only the USB false
 positive.
@@ -333,7 +333,7 @@ positive.
 
 **Status:** OPEN · **Severity:** LOW · **Source:** sweep ledger, "Logged post-R1" · **Forward:** US-R1F-06.
 
-`classifyDeviceType` has no HDMI / DisplayPort case (`CoreAudioDevice.cpp:327-354`); the pill and Settings show
+`classifyDeviceType` has no HDMI / DisplayPort case (`CoreAudioDevice.cpp:332-359`); the pill and Settings show
 "<name> (Unknown)" (`Models/AudioDeviceModel.swift:86-88`).
 
 ### DEV-1 — The chosen output device is forgotten when the app quits
@@ -425,7 +425,7 @@ whole selection.
 
 **Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #3 · **Forward:** S11 (format hardening).
 
-`LibraryScanner.supportedExtensions` (`Sources/LibraryScan/LibraryScanner.swift:38-40`) has no `opus` / `oga`, while the
+`LibraryScanner.supportedExtensions` (`Sources/LibraryScan/LibraryScanner.swift:50-52`) has no `opus` / `oga`, while the
 decoder plays them through the optional FFmpeg fallback and the extractor reads their tags
 (`MetadataExtractor.swift:78`). PR #85 (f69421d) added only `.aif`. The scan says nothing about skipped files.
 
@@ -441,7 +441,7 @@ decoder plays them through the optional FFmpeg fallback and the extractor reads 
 
 **Status:** OPEN · **Severity:** LOW · **Source:** breaker A post-R1 #10 · **Forward:** US-R1F-04.
 
-`artists.name` / `genres.name` are `UNIQUE` with BINARY collation (`Sources/LibraryStore/Schema.swift:116-126`), and
+`artists.name` / `genres.name` are `UNIQUE` with BINARY collation (`Sources/LibraryStore/Schema.swift:119-129`), and
 genre names are not NFC-normalised (`LibraryTypes.swift`; artists are). "Rock" and "rock" are two tiles.
 
 ### KI-LIB-08 — Sorting Songs by Album orders each album's tracks by scan order
@@ -491,7 +491,7 @@ triple-buffer idiom the C++ snapshot already uses.
 **Status:** OPEN · **Severity:** internal · **Source:** freeze "Logged post-R1";
 [evidence README](../architecture/evidence/main-thread-stall-2026-10/README.md) · **Forward:** US-R1F-07.
 
-`Debug/MainThreadStallSelfTest.swift:26-42` runs `stop`, `start`, `device-loss` and `ended-advance` with a 25 ms bound
+`Debug/MainThreadStallSelfTest.swift:27-43` runs `stop`, `start`, `device-loss` and `ended-advance` with a 25 ms bound
 (1% may exceed 5 ms). Port the breaker harness's engineQueue-holder and first-play modes and tighten to <5 ms.
 
 ### KI-ENG-03 — A stale comment names the removed `loudnessMeter` field
@@ -518,7 +518,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool |
-| **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp:7-16` (Apple first, FFmpeg only if Apple can't open the file); `AudioEngineBridge+Gapless.swift:36-41` | US-PLAY-07 → S11 |
+| **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp:7-16` (Apple first, FFmpeg only if Apple can't open the file); `AudioEngineBridge+Gapless.swift:37-42` | US-PLAY-07 → S11 |
 | **DSD** is not supported | Deferred past R2, gated on a DSD DAC ([sprint-plan](../sprints/sprint-plan.md) §5) | post-R2 |
 
 ---
@@ -535,15 +535,15 @@ These are not defects; each is a decision or a planned feature. They are listed 
   is now picked case-blind (`LibraryStore+Playlists.swift:198-199`); regression test
   `Tests/LibraryBrowseKitTests/LibraryBreakItGTests.swift:93`.
 - **Breaker B post-R1 #2** — Pure leaked a device-alive listener per manual start: fixed by a4c5bc1 (PR #85), one
-  alive listener on the app's device (`AudioEngineBridge+OutputDeviceMonitor.swift:76-91`).
+  alive listener on the app's device (`AudioEngineBridge+OutputDeviceMonitor.swift:80-95`).
 - **Audit S1-E** — the loudness-meter snapshot race / potential use-after-free: fixed by cc976dc (PR #86),
-  `withExtendedLifetime(meter)` over a strong copy (`AudioEngineBridge.swift:341-343`).
+  `withExtendedLifetime(meter)` over a strong copy (`AudioEngineBridge.swift:346-348`).
 - **`passUnretained` without `withExtendedLifetime`** on the effects AU: fixed by 69b94aa / cc976dc (PR #86),
-  `withEffectsAU` (`AudioEngineBridge+SharedState.swift:252-256`).
+  `withEffectsAU` (`AudioEngineBridge+SharedState.swift:255-259`).
 - **R10, the engine-lock-held regression test:** added by a861cc6 (PR #86) as `make main-thread-stall` in the strict
   gate.
 - **Pure resume played the intro** (start-then-seek): fixed by 92c1801 (PR #86), `startAudio(…, startAt:)`
-  (`AudioEngineBridge+PureMode.swift:120`).
+  (`AudioEngineBridge+PureMode.swift:128`).
 
 ## SEQ-1 — Hard sequencing gates before S9/S10 playlists ship (library data integrity)
 
@@ -563,7 +563,7 @@ any playlist-referenced track (it detaches to loose, `folder_id → NULL`, entri
 and deletes only the genuinely-unreferenced ones. Proven by `VerifyLibraryStore` `pl-gate1-*` checks
 (referenced-kept + unreferenced-swept). (Table named `playlist_entries`, not the earlier
 `playlist_tracks` sketch.) *(Amended 2026-10-12, PR #85 / ff0e0da, G-LIB-04: the filter now counts **user** playlists
-only — `JOIN playlists p … WHERE p.is_builtin = 0`, `LibraryStore+DAO.swift:365-366` — so songs that were merely in the
+only — `JOIN playlists p … WHERE p.is_builtin = 0`, `LibraryStore+DAO.swift:388-389` — so songs that were merely in the
 queue (the built-in "current" playlist) no longer survive a folder removal as un-removable loose rows; the queue
 snapshot skips a song that is gone.)*
 
