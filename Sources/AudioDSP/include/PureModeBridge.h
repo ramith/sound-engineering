@@ -169,8 +169,8 @@ extern "C"
     /// @return 2 = armed (compatible, gapless seam ready);
     ///         1 = format/rate mismatch (not armed: the track plays after a fresh start);
     ///         3 = the current track already ended (not armed: it plays after a fresh start);
-    ///         0 = error (NULL handle/decoder, no active track, or the slot was occupied — a caller
-    ///             bug, asserted in DEBUG).
+    ///         0 = error (NULL handle/decoder, no active track, a seam the render claimed and did
+    ///             not publish in time, or the slot was occupied — a caller bug, asserted in DEBUG).
     int pureModeEngineArmOpenedNextTrack(void* engine, void* decoder) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy a decoder from pureModeOpenDecodeSource that was NEVER handed to

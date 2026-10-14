@@ -39,10 +39,11 @@
 // engineQueue).
 //
 
+#include "BoundedWait.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <thread>
 
 namespace AdaptiveSound
 {
@@ -51,7 +52,7 @@ namespace AdaptiveSound
     {
       public:
         // A timeout meaning "no deadline" for close() / awaitQuiet().
-        static constexpr std::chrono::microseconds kWaitForever = std::chrono::microseconds::max();
+        static constexpr std::chrono::microseconds kWaitForever = AdaptiveSound::kWaitForever;
 
         // RT: true -> the caller may pull and MUST call leave() after; false -> closed: render
         // silence and do not touch the source. Wait-free.
@@ -96,28 +97,10 @@ namespace AdaptiveSound
         // requestClose) has left. True once it has; false if `timeout` passed first.
         [[nodiscard]] bool awaitQuiet(std::chrono::microseconds timeout) const noexcept
         {
-            const bool bounded = timeout != kWaitForever;
-            const auto deadline = bounded ? std::chrono::steady_clock::now() + timeout
-                                          : std::chrono::steady_clock::time_point::max();
-            int spins = 0;
-            while ((state_.load(std::memory_order_acquire) & kRendering) != 0U)
-            {
-                if (bounded && std::chrono::steady_clock::now() >= deadline)
-                {
-                    return false;
-                }
-                // A pass is short: yield a few times, then sleep in small steps.
-                if (spins < kYieldSpins)
-                {
-                    ++spins;
-                    std::this_thread::yield();
-                }
-                else
-                {
-                    std::this_thread::sleep_for(kPollStep);
-                }
-            }
-            return true;
+            // A pass is short: BoundedWait yields a few times, then sleeps in small steps.
+            return waitUntil(
+                [this] { return (state_.load(std::memory_order_acquire) & kRendering) == 0U; },
+                timeout);
         }
 
         // Control plane: let the render pull again. A no-op unless closed.
@@ -136,8 +119,6 @@ namespace AdaptiveSound
       private:
         static constexpr uint8_t kRendering = 1U << 0U;
         static constexpr uint8_t kClosed = 1U << 1U;
-        static constexpr int kYieldSpins = 64;
-        static constexpr std::chrono::microseconds kPollStep{50};
 
         std::atomic<uint8_t> state_{0U};
     };

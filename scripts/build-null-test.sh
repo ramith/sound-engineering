@@ -139,6 +139,7 @@ xcrun clang++ \
     ${SAN_FLAGS[@]+"${SAN_FLAGS[@]}"} \
     ${RELEASE_STRICT_FLAGS[@]+"${RELEASE_STRICT_FLAGS[@]}"} \
     -DADAPTIVESOUND_TEST_DATA_DIR="\"$REPO_ROOT/test-data\"" \
+    -DADAPTIVESOUND_GAPLESS_TEST_HOOKS=1 \
     -I"$EBUR128_DIR" \
     "$REPO_ROOT/Sources/AudioDSP/DSPKernel.cpp" \
     "$REPO_ROOT/Sources/AudioDSP/EQ/EQModule.cpp" \

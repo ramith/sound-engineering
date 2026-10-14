@@ -10,7 +10,10 @@
 //   * the end is final — a track that ended with nothing armed never seams into a pick armed
 //     later (the view model starts that pick fresh: a short gap, the right song);
 //   * arming frees the slot the last seam retired, so a pick armed right after a seam, before the
-//     poll plane reaped, still arms.
+//     poll plane reaped, still arms;
+//   * arming waits for a seam in flight — the render claimed the armed track but has not yet
+//     published it as active — so it never arms over the track being adopted (council P3a §3).
+//     GaplessSource's test points (null test only) pause the render exactly there.
 //
 // Fixtures are constant-code tracks — every sample of A is 1000, of B 2000, of C 3000 (int16) —
 // so what plays after A is read straight off the output, frame by frame, as the device would get
@@ -21,7 +24,9 @@
 // openPureGaplessSource and FileDecodeTests' writeWav16 / kB2b* constants.
 //
 // Tests: ArmContract_RetractArmBeforeEnd, ArmContract_OccupiedRefuses, ArmContract_RetractEndArm,
-//        ArmContract_ArmBeforeReap, ArmContract_ClearRacesSeam, ArmContract_ArmRacesEnd.
+//        ArmContract_ArmBeforeReap, ArmContract_ClearRacesSeam, ArmContract_ArmRacesEnd,
+//        ArmContract_ArmWhileSeamClaimed, ArmContract_ArmWhileSeamRetired,
+//        ArmContract_SeamPublishBounded.
 
 namespace
 {
@@ -627,4 +632,289 @@ static auto testArmContractArmRacesEnd() -> void
                     endWon,
                     armedUnplayed));
     logPass(kName);
+}
+
+namespace
+{
+    using TestPoint = GaplessSource::TestPoint;
+
+    // A render paused inside its first seam, at `pauseAt`, through GaplessSource's test hook. When
+    // tryArmNext starts waiting for that seam's publish (ArmWaitsForSeam), the hook lets the render
+    // go and waits until it has published the seam (the render counts a seam after it published the
+    // adopted track) — unless `holdThroughArmWait`, which keeps it paused until the test resumes it.
+    struct SeamPause
+    {
+        TestPoint pauseAt = TestPoint::SeamClaimed;
+        bool holdThroughArmWait = false;
+        const GaplessSource* source = nullptr;
+        std::atomic<bool> paused{false};
+        std::atomic<bool> resume{false};
+        std::atomic<bool> armWaited{false};
+    };
+
+    void seamPauseHook(TestPoint point, void* context) noexcept
+    {
+        auto* pause = static_cast<SeamPause*>(context);
+        if (point == TestPoint::ArmWaitsForSeam) // the control plane
+        {
+            pause->armWaited.store(true, std::memory_order_release);
+            if (!pause->holdThroughArmWait)
+            {
+                pause->resume.store(true, std::memory_order_release);
+                while (pause->source->transitionCount() == 0U)
+                {
+                    std::this_thread::yield();
+                }
+            }
+            return;
+        }
+        // The render thread: pause the first time it reaches `pauseAt`.
+        if (point != pause->pauseAt || pause->paused.exchange(true, std::memory_order_acq_rel))
+        {
+            return;
+        }
+        while (!pause->resume.load(std::memory_order_acquire))
+        {
+            std::this_thread::yield();
+        }
+    }
+
+    // What the device played and how the session stands after one paused-seam trial.
+    struct SeamWindowRun
+    {
+        std::vector<int> codes;
+        GaplessSource::ArmOutcome outcome = GaplessSource::ArmOutcome::NoActiveTrack;
+        bool armWaited = false;
+        uint64_t transitions = 0U;
+        bool ended = false;
+        bool activeAfterReap = false; // the poll plane's reap left the active track alone
+    };
+
+    // A (1024 frames) plays with B (1024) armed; the render pauses inside the A→B seam at
+    // `pauseAt`; the control plane re-arms there as the bridge does — take the old pick off, arm the
+    // new one (C) — then lets the render go and renders on to the end.
+    auto runArmInSeamWindow(TestPoint pauseAt, bool holdThroughArmWait, std::string& err)
+        -> SeamWindowRun
+    {
+        SeamWindowRun run;
+        auto trackA = openArmTrack(kPathArmA);
+        auto trackB = openArmTrack(kPathArmB);
+        auto trackC = openArmTrack(kPathArmC);
+        if (trackA == nullptr || trackB == nullptr || trackC == nullptr)
+        {
+            err += "could not open the A/B/C fixtures; ";
+            return run;
+        }
+        GaplessSource gapless;
+        gapless.setCurrent(std::move(trackA));
+        if (!gapless.armNext(std::move(trackB)))
+        {
+            err += "armNext(B) refused; ";
+            return run;
+        }
+        SeamPause pause;
+        pause.pauseAt = pauseAt;
+        pause.holdThroughArmWait = holdThroughArmWait;
+        pause.source = &gapless;
+        gapless.setTestHook(seamPauseHook, &pause);
+        std::thread render(
+            [&gapless, &run]
+            {
+                std::vector<float> block(static_cast<std::size_t>(kArmRaceChunk) * kB2bChannels2,
+                                         0.0F);
+                constexpr int kCallbacks = 160; // A + B + C (6848 frames) < 160 x 64
+                for (int callback = 0; callback < kCallbacks; ++callback)
+                {
+                    renderCallback(gapless, block, kArmRaceChunk, run.codes);
+                }
+            });
+        while (!pause.paused.load(std::memory_order_acquire))
+        {
+            std::this_thread::yield();
+        }
+        gapless.clearNext(); // the render already claimed B: nothing to take off
+        run.outcome = gapless.tryArmNext(std::move(trackC));
+        pause.resume.store(true, std::memory_order_release);
+        render.join();
+        gapless.setTestHook(nullptr, nullptr);
+        run.armWaited = pause.armWaited.load(std::memory_order_acquire);
+        run.transitions = gapless.transitionCount();
+        run.ended = gapless.ended();
+        gapless.reapRetired();
+        run.activeAfterReap = gapless.activeSource() != nullptr;
+        return run;
+    }
+
+    // The frames of each track, in the order heard; 0 runs (silence) are skipped.
+    auto heardRuns(const std::vector<int>& codes) -> std::vector<std::pair<int, std::size_t>>
+    {
+        std::vector<std::pair<int, std::size_t>> runs;
+        for (const int code : codes)
+        {
+            if (code == 0)
+            {
+                continue;
+            }
+            if (runs.empty() || runs.back().first != code)
+            {
+                runs.emplace_back(code, 0U);
+            }
+            ++runs.back().second;
+        }
+        return runs;
+    }
+
+    auto describeRuns(const std::vector<std::pair<int, std::size_t>>& runs) -> std::string
+    {
+        std::string text;
+        for (const auto& [code, frames] : runs)
+        {
+            text += std::format("{}x{} ", code, frames);
+        }
+        return text.empty() ? "nothing" : text;
+    }
+
+    // Cases (a) and (b): the arm waited for the seam, B was not touched, and C follows it.
+    auto checkArmedAfterThePublish(const SeamWindowRun& run) -> std::string
+    {
+        std::string err;
+        const auto runs = heardRuns(run.codes);
+        const std::vector<std::pair<int, std::size_t>> expected = {
+            {kArmCodeA, kArmRaceTrackFrames},
+            {kArmCodeB, kArmRaceTrackFrames},
+            {kArmCodeC, kArmTrackFrames},
+        };
+        if (run.outcome != GaplessSource::ArmOutcome::Armed)
+        {
+            err +=
+                std::format("tryArmNext(C) refused (outcome {}) while the session had not ended; ",
+                            static_cast<int>(run.outcome));
+        }
+        if (!run.armWaited)
+        {
+            err += "the arm did not wait for the seam in flight; ";
+        }
+        if (runs != expected)
+        {
+            err += std::format("heard {}(expected A x{}, B x{}, C x{}); ",
+                               describeRuns(runs),
+                               kArmRaceTrackFrames,
+                               kArmRaceTrackFrames,
+                               kArmTrackFrames);
+        }
+        if (run.transitions != 2U || !run.ended)
+        {
+            err += std::format(
+                "transitions {}, ended {} (expected 2, true); ", run.transitions, run.ended);
+        }
+        if (!run.activeAfterReap)
+        {
+            err += "the poll plane's reap freed the ACTIVE track; ";
+        }
+        return err;
+    }
+} // namespace
+
+// Case (a), council P3a §3: the render has claimed B (the armed slot reads empty) and is paused
+// before it publishes B as active. The bridge's re-arm lands there: clearNext() finds nothing,
+// tryArmNext(C) must not take B's slot. It waits for the publish, then arms C into the slot A
+// leaves: A, B, C play whole, two seams, the end. Before the fix the arm picked B's slot: B was
+// destroyed, C played in its place and later "seamed" into itself, and the poll plane's reap
+// freed the active track.
+static auto testArmContractArmWhileSeamClaimed() -> void
+{
+    static const char* const kName = "ArmContract_ArmWhileSeamClaimed";
+    const ArmContractFixtures fixtures(kArmRaceTrackFrames, kArmRaceTrackFrames);
+    std::string err = fixtures.written ? "" : "could not write the fixtures; ";
+    if (err.empty())
+    {
+        const SeamWindowRun run = runArmInSeamWindow(TestPoint::SeamClaimed, false, err);
+        if (err.empty())
+        {
+            err = checkArmedAfterThePublish(run);
+        }
+    }
+    if (err.empty())
+    {
+        logPass(kName);
+    }
+    else
+    {
+        logFail(kName, err);
+    }
+}
+
+// Case (b): the render has retired A and is paused before it adopts B. The re-arm must neither
+// read the stale active track (A, whose source the arm's own reap frees) nor refuse while the
+// session plays on: it waits for the publish and arms C. Before the fix the arm was refused while
+// not ended — the bridge's DEBUG assert ("only an occupied slot") fired.
+static auto testArmContractArmWhileSeamRetired() -> void
+{
+    static const char* const kName = "ArmContract_ArmWhileSeamRetired";
+    const ArmContractFixtures fixtures(kArmRaceTrackFrames, kArmRaceTrackFrames);
+    std::string err = fixtures.written ? "" : "could not write the fixtures; ";
+    if (err.empty())
+    {
+        const SeamWindowRun run = runArmInSeamWindow(TestPoint::SeamRetired, false, err);
+        if (err.empty())
+        {
+            err = checkArmedAfterThePublish(run);
+        }
+    }
+    if (err.empty())
+    {
+        logPass(kName);
+    }
+    else
+    {
+        logFail(kName, err);
+    }
+}
+
+// The bound: a render that stays stopped inside a claimed seam (it never does in the app) does not
+// hold the control plane. tryArmNext waits kSeamPublishWait, then refuses with SeamInFlight and
+// touches nothing; once the render goes on, B — the track it claimed — plays whole and the session
+// ends (the app would start C fresh). The reap never frees the active track.
+static auto testArmContractSeamPublishBounded() -> void
+{
+    static const char* const kName = "ArmContract_SeamPublishBounded";
+    const ArmContractFixtures fixtures(kArmRaceTrackFrames, kArmRaceTrackFrames);
+    std::string err = fixtures.written ? "" : "could not write the fixtures; ";
+    SeamWindowRun run;
+    if (err.empty())
+    {
+        run = runArmInSeamWindow(TestPoint::SeamClaimed, true, err);
+    }
+    if (err.empty())
+    {
+        const auto runs = heardRuns(run.codes);
+        const std::vector<std::pair<int, std::size_t>> expected = {
+            {kArmCodeA, kArmRaceTrackFrames},
+            {kArmCodeB, kArmRaceTrackFrames},
+        };
+        if (run.outcome != GaplessSource::ArmOutcome::SeamInFlight || !run.armWaited)
+        {
+            err += std::format("outcome {} (waited {}), expected SeamInFlight after the wait; ",
+                               static_cast<int>(run.outcome),
+                               run.armWaited);
+        }
+        if (runs != expected || run.transitions != 1U || !run.ended || !run.activeAfterReap)
+        {
+            err += std::format(
+                "heard {}, transitions {}, ended {}, active after reap {} "
+                "(expected A then B whole, 1, true, true); ",
+                describeRuns(runs),
+                run.transitions,
+                run.ended,
+                run.activeAfterReap);
+        }
+    }
+    if (err.empty())
+    {
+        logPass(kName);
+    }
+    else
+    {
+        logFail(kName, err);
+    }
 }

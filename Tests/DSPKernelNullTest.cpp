@@ -29,7 +29,8 @@
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
 //   GaplessContractTests.inc — S6 Tier-3 (3d) Pure gapless behavioral-contract conformance suite
 //   GaplessArmContractTests.inc — council D41: the Pure arm contract (the old pick comes off,
-//                           arming never replaces, the end is final, arming frees the retired slot)
+//                           arming never replaces, the end is final, arming frees the retired slot,
+//                           arming waits for a seam in flight)
 //   LoudnessOracleTests.inc  — S7/US-QA-01 TEST-ONLY libebur128 conformance oracle (LUFS + TP)
 //   LimiterTruePeakTests.inc — S7/US-QA-02 TEST-ONLY limiter −1 dBTP ceiling guarantee +
 //                              ISP-detector accuracy vs the libebur128 true-peak oracle
@@ -272,6 +273,9 @@ namespace
         {"ArmContract_ArmBeforeReap", testArmContractArmBeforeReap, false},
         {"ArmContract_ClearRacesSeam", testArmContractClearRacesSeam, false},
         {"ArmContract_ArmRacesEnd", testArmContractArmRacesEnd, false},
+        {"ArmContract_ArmWhileSeamClaimed", testArmContractArmWhileSeamClaimed, false},
+        {"ArmContract_ArmWhileSeamRetired", testArmContractArmWhileSeamRetired, false},
+        {"ArmContract_SeamPublishBounded", testArmContractSeamPublishBounded, false},
         // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
         {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
         // QW1 CF-11: the 4th Realizer surface — crossfeed RMW + clamp (parallel-safe).
