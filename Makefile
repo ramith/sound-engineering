@@ -223,10 +223,12 @@ library-store-verify:
 	swift run VerifyLibraryStore
 
 # Full pre-merge gate (NOT the fast lint-only pre-commit hook): the C++ DSP null
-# test (golden master), the AU-graph offline integration check, and the library
+# test (golden master), the AU-graph offline integration check, the Enhanced SRC
+# check (the production converter's passband / stopband / bit-exactness / speed on
+# every rate pair, with a control that must fail — R1.1-A, C-26), and the library
 # store acceptance check. Any failure stops the chain (&&). Run before merging.
 gate:
-	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run VerifyLibraryStore
+	bash scripts/build-null-test.sh && swift run VerifyAUGraph && swift run SRCQualityMeasure && swift run VerifyLibraryStore
 
 # Runtime-instrumented C++ DSP null test. sanitize = AddressSanitizer + Undefined
 # Behavior Sanitizer (heap/stack overruns, use-after-free, signed overflow, bad
@@ -314,7 +316,7 @@ help:
 	@echo "  make strict-gate - FULL pre-merge gate (lint + static analysis + build + test + sanitizers + suppressions)"
 	@echo "  make ci     - CI entry point (alias for strict-gate)"
 	@echo "  make library-store-verify - Run the S8.1a library-store acceptance gate"
-	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + VerifyLibraryStore)"
+	@echo "  make gate   - Full pre-merge gate (null test + VerifyAUGraph + SRCQualityMeasure + VerifyLibraryStore)"
 	@echo "  make sanitize - Null test under AddressSanitizer + UBSan (runtime memory/UB check)"
 	@echo "  make tsan   - Null test under ThreadSanitizer (data-race check)"
 	@echo "  make sanitize-library-store - VerifyLibraryStore under ASan (M11: FFmpeg-metadata bridge memory safety)"
