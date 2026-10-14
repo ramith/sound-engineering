@@ -86,7 +86,7 @@ rules:
         - 'Sources/AdaptiveSound/PureModeSession.swift'
         - 'Sources/AdaptiveSound/Debug/MainThreadStall*.swift'
     pattern-regex: >-
-      \bAVAudio(?!File\b|Format\b|PCMBuffer\b|Time\b|ChannelLayout\b|FrameCount\b|FramePosition\b|Converter\b)[A-Z]\w*|\.auAudioUnit\b|\b(playerNodeRef|avEngineRef|effectsNode|playerNode|avEngine)\b|\bpureMode\w+\(|\bAudio(Object(Get|Set|Has|Add|Remove|Is)|Unit(Get|Set|Initialize|Uninitialize|Render|Reset)|OutputUnit(Start|Stop)|Device(Start|Stop|GetProperty|SetProperty|CreateIOProc|DestroyIOProc)|Hardware)\w*\(|\bDeviceHardwareVolume\.|\b(getDefaultOutputDeviceID|selectOutputDeviceC|enumerateOutputDevicesC)\(|\b(engineQueue|resampleQueue|configChangeQueue|deviceVolumeQueue)\.sync\b
+      \bAVAudio(?!File\b|Format\b|PCMBuffer\b|Time\b|ChannelLayout\b|FrameCount\b|FramePosition\b|Converter\b)[A-Z]\w*|\.auAudioUnit\b|\b(playerNodeRef|avEngineRef|effectsNode|playerNode|avEngine)\b|\bpureMode\w+\(|\bAudio(Object(Get|Set|Has|Add|Remove|Is)|Unit(Get|Set|Initialize|Uninitialize|Render|Reset)|OutputUnit(Start|Stop)|Device(Start|Stop|GetProperty|SetProperty|CreateIOProc|DestroyIOProc)|Hardware)\w*\(|\bDeviceHardwareVolume\.|\b(getDefaultOutputDeviceID|selectOutputDeviceC|enumerateOutputDevicesC|isListedOutputDeviceC)\(|\b(engineQueue|resampleQueue|configChangeQueue|deviceVolumeQueue)\.sync\b
 
   - id: coreaudio-listener-not-on-main
     languages: [swift]

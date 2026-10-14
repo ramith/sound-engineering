@@ -109,6 +109,11 @@ namespace AdaptiveSound
         return devices;
     }
 
+    bool CoreAudioDevice::isListedOutput(AudioDeviceID deviceID)
+    {
+        return deviceListVerdict(readDeviceListFacts(deviceID)) == DeviceListVerdict::Listed;
+    }
+
     AudioDevice CoreAudioDevice::queryDevice(AudioDeviceID deviceID)
     {
         AudioDevice device;

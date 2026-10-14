@@ -66,11 +66,12 @@ extension AudioEngineBridge {
 
     /// Change the app's output devices (a pick, an adopt, an undone pick) and watch the target for
     /// going away. `change` runs under the leaf lock (`updateOutputSelection`). Any queue.
-    func changeOutputSelection(_ change: (inout OutputDeviceSelection) -> Void) {
-        updateOutputSelection(change)
+    func changeOutputSelection<T>(_ change: (inout OutputDeviceSelection) -> T) -> T {
+        let result = updateOutputSelection(change)
         configChangeQueue.async { [weak self] in
             self?.bindTargetAliveListener()
         }
+        return result
     }
 
     /// Keep the alive listener on `currentDeviceID` (none while not monitoring). Idempotent. On
@@ -260,8 +261,10 @@ extension AudioEngineBridge {
         return status == noErr && alive != 0
     }
 
-    /// The device with this UID, if it is connected and alive now (0 if not, or no UID). Its id may
-    /// differ from the one it had when chosen: a reconnect can give a device a new id, never a new UID.
+    /// The chosen device, found by its UID, when it is here to play on: alive, and listed by the
+    /// device menu's own rule (`isListedOutputDeviceC` — a Bluetooth device mid-handshake has no
+    /// output stream yet). 0 if not, or no UID. Its id may differ from the one it had when chosen: a
+    /// reconnect can give a device a new id, never a new UID.
     private static func liveDevice(uid: String) -> UInt32 {
         guard !uid.isEmpty else { return 0 }
         var address = AudioObjectPropertyAddress(
@@ -278,7 +281,9 @@ extension AudioEngineBridge {
                 UInt32(MemoryLayout<CFString>.size), uidPointer, &size, &deviceID
             )
         }
-        return status == noErr && isDeviceAlive(deviceID) ? deviceID : 0
+        guard status == noErr else { return 0 }
+        return OutputDevicePolicy.chosenDevice(deviceID, alive: isDeviceAlive(deviceID),
+                                               listed: isListedOutputDeviceC(deviceID) != 0)
     }
 
     private static func describe(_ facts: OutputDeviceFacts) -> String {
