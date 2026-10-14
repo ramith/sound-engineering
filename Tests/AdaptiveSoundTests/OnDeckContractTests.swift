@@ -87,6 +87,13 @@ struct OnDeckContractTests {
         #expect(outcome.ok, "\(outcome)")
     }
 
+    @Test("F-P4-1: Play Next while a start's prime is still arming — the Play Next song plays next",
+          arguments: [true, false])
+    func playNextDuringPrime(pure: Bool) async throws {
+        let outcome = try await OnDeckScenarios.playNextDuringPrime(pure: pure, semantics: .design)
+        #expect(outcome.ok, "\(outcome)")
+    }
+
     @Test("LATE-REQUEST is the documented residual A2: not yet admitted at the end, the old pick plays",
           arguments: [true, false])
     func lateRequestIsA2(pure: Bool) async throws {

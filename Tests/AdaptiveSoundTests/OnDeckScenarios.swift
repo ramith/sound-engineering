@@ -78,7 +78,8 @@ enum OnDeckScenarios {
             try await rig.settle()
             let promised = rig.pending
             if change.isRandom, promised == armedBefore, attempt < attempts {
-                continue // the shuffle pick repeated the armed one: try again
+                rig.engine.drain() // settle what was sent, then try again
+                continue // the shuffle pick repeated the armed one
             }
             rig.engine.drain()
             let armedAfter = rig.engine.armed
@@ -269,6 +270,38 @@ enum OnDeckScenarios {
         rig.tick()
         let seam = rig.engine.takeProcessedSeam()
         let classifiedA2 = seam.map { $0.intoNewestApplied && sequenceAtTick > $0.newestApplied } ?? false
-        return LateRequest(heard: rig.engine.current, shown: rig.shown, classifiedA2: classifiedA2)
+        let result = LateRequest(heard: rig.engine.current, shown: rig.shown, classifiedA2: classifiedA2)
+        try await rig.follow() // let the late request land
+        return result
+    }
+
+    /// Council F-P4-1: from stopped, Play; while the start's prime is still arming t1 — `isPlaying`
+    /// still false (on Pure t1 is opening) — Play Next t9. t9 must be what plays next: before the
+    /// fix Play Next only inserted it, so the app promised t9 while the engine had t1, and t9 never
+    /// played.
+    static func playNextDuringPrime(pure: Bool, semantics: ArmSemantics) async throws -> Outcome {
+        let rig = Rig(tracks: 5, semantics: semantics)
+        rig.vm.pureModeEnabled = pure
+        rig.vm.play() // from stopped: t0
+        try await rig.settle() // the start ran; its prime's request for t1 is not settled yet
+        if pure {
+            rig.engine.hop(rank: 0) // admitted: t1's file is opening
+        }
+        let playingDuringPrime = rig.vm.isPlaying
+        rig.vm.playNext([audioFile(9)])
+        try await rig.settle()
+        rig.engine.drain()
+        try await rig.waitUntil("the start to finish its prime") { rig.vm.isPlaying }
+        rig.tick()
+        let promised = rig.pending
+        let armed = rig.engine.armed
+        try await rig.endTrackAndFollow()
+        let heard = rig.engine.current
+        let ok = !playingDuringPrime && promised == track(9) && armed == track(9) && heard == track(9)
+            && rig.shown == track(9)
+        let queue = rig.vm.queue.prefix(4).map { name($0.file.absoluteURL) }
+        return Outcome(ok: ok, detail: "PLAYNEXT-DURING-PRIME on \(pathName(pure)) [\(semantics)]: playing during the "
+            + "prime \(playingDuringPrime); promised \(name(promised)), armed \(name(armed)); after the end HEARS "
+            + "\(name(heard)) / SHOWS \(name(rig.shown)); queue \(queue)")
     }
 }
