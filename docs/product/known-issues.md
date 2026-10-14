@@ -56,14 +56,11 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-02 | On resampled seams the title and track B's gain switch ~0.4 s early | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-04 | A click at each join between resampled tracks (44.1 / 96 kHz albums) | MEDIUM | Engine sprint | US-R1F-02 |
-| KI-SND-01 | A fresh launch plays processed sound: Intensity 20 % turns on a session-long leveller, a +2 dB blend and the limiter | MEDIUM | R1.1-A (FD-2) | US-R1F-09 |
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
 | KI-SND-03 | The limiter's fast release never runs: one loud hit ducks the music for about a second | MEDIUM | R1.1-A | US-R1F-12 |
 | KI-SND-04 | Crossfeed notches the centre (−4 to −6 dB near 1 kHz); its "Default" preset is mislabelled | MEDIUM | R1.1-A | US-R1F-12 |
-| KI-SET-01 | Pure, device pin, Master Gain, Intensity and crossfeed reset at every launch | MEDIUM | R1.1-A (FD-2) | US-R1F-05 |
-| KI-SET-02 | A Master Gain cut in Enhanced does not carry into Pure (Pure plays at device volume) | MEDIUM | R1.1-A (FD-2) | US-R1F-05 |
+| KI-SND-05 | Crossfeed makes no sound while Intensity is held at 0 (its switch still turns on) | MEDIUM | R1.1-A (founder decision) | US-R1F-12 |
 | KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | pool (first candidate) | US-R1F-06 |
-| DEV-1 | The chosen output device is forgotten when the app quits | MEDIUM | R1.1-A (FD-2) | US-R1F-05 |
 | KI-DEV-01 | Crossfeed is unavailable on wired headphones in the Mac's own jack | MEDIUM | R1.1-A (with the crossfeed fix) | US-R1F-12, US-R1F-06 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
 | KI-LIB-02 | Paused / failed folders are invisible; an emptied folder keeps its songs | MEDIUM | R1.1-A | US-R1F-03 |
@@ -303,26 +300,6 @@ The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" 
 
 ## Settings and levels
 
-### KI-SET-01 — Pure, device pin, Master Gain, Intensity and crossfeed reset at every launch
-
-**Status:** OPEN · **Severity:** MEDIUM (Master Gain and Pure); LOW (the rest) · **Source:** breaker B post-R1 #4 ·
-**Scheduled (2026-10-14):** R1.1-A (FD-2: remember the listener's settings; Master Gain never restored louder — council C-102) · **Forward:** US-R1F-05.
-
-None has a defaults key: `pureModeEnabled = false` (`AudioViewModel.swift:106`), the pin `= true` (`:116`),
-`intensity = 0.20` (`:142`), `crossfeedEnabled = false` (`:153`), strength (`:161`), and Master Gain `= unity`
-(`:195`, commented "Not kept across launches (a post-R1 item)"). Only the EQ, the queue cursor (incl. shuffle / repeat),
-the Songs columns and the Tone-card fold persist. Someone who turned Master Gain down hears 0 dB after a relaunch. The
-output device the user chose is not kept either (DEV-1).
-
-### KI-SET-02 — A Master Gain cut in Enhanced does not carry into Pure
-
-**Status:** OPEN (by design today; close to hearing safety) · **Severity:** MEDIUM · **Source:** sweep ledger,
-"Logged post-R1" ("an Enhanced trim doesn't carry into Pure") · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-05.
-
-On Pure the slider shows and sets the device's own volume, and the app gain is not applied
-(`AudioViewModel+MasterGain.swift:9-17`). Turning Master Gain down in Enhanced, then switching to Pure, plays at the
-device's volume, which can be much louder.
-
 ### KI-SET-03 — A device volume lowered on Pure stays lowered on Enhanced
 
 **Status:** OPEN (residual of breaker B post-R1 #5, partly fixed by 124178d in PR #85) · **Severity:** LOW ·
@@ -368,7 +345,7 @@ stack.
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** product council, code reading 2026-10-13 · **Scheduled (2026-10-14):** R1.1-A (headphones detected by data source, with the crossfeed fix — council C-42, C-30) · **Forward:** US-R1F-12, US-R1F-06
 (and S13 device identification).
 
-The headphone gate is "USB or wireless transport" (`AudioViewModel.swift:169-181`), and the device type comes from the
+The headphone gate is "USB or wireless transport" (`AudioViewModel.isHeadphones`, `AudioViewModel+Devices.swift`), and the device type comes from the
 transport alone (`Sources/AudioDSP/CoreAudioDevice.cpp:326-343`). The Mac's headphone jack reports the built-in
 transport, so wired headphones there are "not headphones": crossfeed is disabled with the "Connect headphones" hint.
 The converse also holds: AirPlay speakers count as wireless headphones. The code comment names only the USB false
@@ -380,21 +357,6 @@ positive.
 
 `classifyDeviceType` has no HDMI / DisplayPort case (`CoreAudioDevice.cpp:332-359`); the pill and Settings show
 "<name> (Unknown)" (`Models/AudioDeviceModel.swift:86-88`).
-
-### DEV-1 — The chosen output device is forgotten when the app quits
-
-**Status:** OPEN (limitation; R1 ships with it) · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-05 (with KI-SET-01).
-Left by the N92 fix ("Return to headphones", R1).
-
-Within a session the app remembers the output device the user picked (by UID) and returns to it
-when it reconnects (`OutputDeviceSelection`). Nothing persists that pick, or the "Keep playback on
-this device" switch, across launches. The device the app starts on is not a pick, so after a
-relaunch nothing is chosen and the app follows the system default until the user picks again. So
-if the user picked the speakers while their headphones were connected, then quit and relaunched,
-the app plays wherever macOS sends the sound (the headphones) until they pick the speakers again.
-Fix with the settings persistence work: store the chosen UID and the switch, and restore them at
-launch. The in-session behaviour is guarded by `OutputDeviceReturnTests`,
-`OutputDeviceChoiceTests` and `OutputDeviceRuleSpaceTests`.
 
 ### ENH-002 — UI loudness readout meter is L/R-only for >2-channel device output
 
@@ -630,17 +592,6 @@ sprint · **Forward:** US-R1F-02.
 Each track gets its own sample-rate converter (`AudioEngineBridge+GaplessRoll.swift:248-257`), so the filter state
 restarts at the seam: a click 18 to 26 dB below peak at every join of a 44.1 or 96 kHz album.
 
-### KI-SND-01 — A fresh launch plays processed sound
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-41, with C-38, C-39 and C-40 (P2 panels; the
-pre-mortem) · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-09.
-
-Intensity defaults to 20 % (`AudioViewModel.swift:142`). That turns on the loudness normaliser, a session-long
-integrator whose make-up gain carries across tracks (`LoudnessModule.cpp:62, 283`); the equal-power blend's +2 dB on
-correlated material (`DSPKernel.cpp:274-275`); and the limiter's −1 dBTP ceiling. Clarity and BRIR are pass-through
-stubs, so the control changes loudness, not sound. FD-2: Intensity 0, leveling off, EQ off at a fresh launch;
-Intensity hidden until its effects are real (S17).
-
 ### KI-SND-02 — Enhanced sample-rate conversion rolls off the treble and lets aliases through
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-26 (P3 D37, D38; [engine research
@@ -669,6 +620,20 @@ R1.1-A · **Forward:** US-R1F-12.
 The crossfeed counts the interaural delay twice and leaves the direct path flat (`Spatial/CrossfeedModule.cpp:95-120`),
 so a centred voice gets a −4.2 to −6.3 dB notch near 1 kHz. The fix follows the bs2b ladder (Jmeier / Cmoy / bs2b),
 reimplemented from the published algorithm; libbs2b itself stays unlinked (OQ-17).
+
+### KI-SND-05 — Crossfeed makes no sound while Intensity is held at 0
+
+**Status:** OPEN · **Severity:** MEDIUM · **Source:** R1.1-A (FD-2) implementation, code reading 2026-10-15 ·
+**Scheduled:** R1.1-A — needs a founder decision · **Forward:** US-R1F-12.
+
+Crossfeed sits in the coloration chain that Intensity blends in (QW1 design: "the Reimagine knob scales it",
+[qw1 design](../sprints/qw1-quick-win-differentiators-design.md)). At Intensity 0 the kernel runs P0 (bit-exact) or
+P1 (EQ → limiter), and neither runs the chain (`DSPKernel.cpp:229-244`; P0's bypass test ignores crossfeed too). Before
+FD-2 the 0.20 default played a 20 % blend of it; now that Intensity is hidden and held at 0, the Headphones ▸
+Crossfeed switch turns on and is kept across launches, but nothing changes in the sound (the hero's "XF" chip, gated on
+Intensity > 0, already doesn't show). Recommended: US-R1F-12's bs2b rewrite moves crossfeed out of the blend, as an
+output stage after it and ahead of the limiter, so it plays at full strength whatever Intensity is; the alternative is
+to hide the switch with Intensity until S17.
 
 ### KI-DEV-03 — An Enhanced start just after a device connects can end silent or on the wrong device
 
@@ -738,6 +703,7 @@ These are not defects; each is a decision or a planned feature. They are listed 
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 — release readiness, deferred (FD-7, 2026-10-14) |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
 | **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
+| **Pure Mode waits while Master Gain is turned down**: with Master Gain below 0 dB, a start plays Enhanced at that level, and Settings says why ("Master Gain is turned down … it waits until Master Gain is back at 0 dB") | R1.1-A (council C-29 slice, KI-SET-02): Pure plays the file untouched at the device's own volume, so engaging it with a cut would play louder. `AudioViewModel.startsOnPure`. On Pure the slider sets the device's volume, as before | — (by design; the whole C-29 "one level" is pool) |
 | **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, d540c5c; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 — R1.1-B (2026-10-14) |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool (council C-57) |
@@ -747,6 +713,89 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed in R1.1-A — a faithful default and the listener's settings kept (branch `r1.1a/faithful-default`)
+
+Founder decision FD-2 (2026-10-14). Four commits, named by their subjects: "SettingsKit — the listener's settings and
+the one store that keeps them", "a faithful default", "remember the listener's settings", "Pure waits while Master
+Gain is turned down". Each fix landed with its red test first: the regression tests failed on `ed19d0e` and pass after
+(`Tests/AdaptiveSoundTests/ListeningSettingsTests.swift`, `Tests/SettingsKitTests/SettingsStoreTests.swift`,
+`Tests/OutputDeviceKitTests/OutputDeviceRelaunchTests.swift`, `EQMigrationTests` MIGRATE-04 / -10).
+
+#### KI-SND-01 — A fresh launch plays processed sound
+
+**Status:** ✅ CLOSED in R1.1-A, "a faithful default" (council C-41). Intensity defaults to 0, is hidden
+(`AudioViewModel.offersIntensity`) and held at 0 until S17 — never restored. At 0 the kernel runs P0 (bit-exact, with
+the EQ off) or P1 (EQ → limiter at the EQ-only ceiling): never the normaliser (leveling, C-38) nor the blend's +2 dB
+(C-40). A new install's EQ is Flat and Off (`EQMigration.freshInstall`); an existing EQ keeps its own memory. Leveling
+becomes its own setting, off by default, in R1.1-B (US-R1F-10). Consequence: KI-SND-05. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-09.~~
+
+*(As found at `ed19d0e`:)* Intensity defaults to 20 % (`AudioViewModel.swift:142`). That turns on the loudness normaliser, a session-long
+integrator whose make-up gain carries across tracks (`LoudnessModule.cpp:62, 283`); the equal-power blend's +2 dB on
+correlated material (`DSPKernel.cpp:274-275`); and the limiter's −1 dBTP ceiling. Clarity and BRIR are pass-through
+stubs, so the control changes loudness, not sound. FD-2: Intensity 0, leveling off, EQ off at a fresh launch;
+Intensity hidden until its effects are real (S17).
+
+#### KI-SET-01 — Pure, device pin, Master Gain, Intensity and crossfeed reset at every launch
+
+**Status:** ✅ CLOSED in R1.1-A, "SettingsKit" + "remember the listener's settings" (council C-102, C-12). Pure, Master
+Gain, crossfeed and its strength, shuffle, repeat, "Keep playback on this device" and the chosen output are one typed
+value (`SettingsKit.ListeningSettings`), kept by one store (`SettingsStore`, key `listeningSettingsV1`) in the
+launch's defaults and restored when the view model is built (`AudioViewModel+ListeningSettings.swift`). Master Gain is
+never restored louder than it was left: a stored level above unity or one that can't be read comes back Silent. A bad
+field reads as its faithful default. Crossfeed is kept as chosen, not as the output allowed (`crossfeedPlays`).
+Shuffle and repeat moved out of the queue cursor: kept on every change, restored with or without a queue. Intensity is
+deliberately not kept (KI-SND-01). *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM (Master Gain and Pure); LOW (the rest) · **Scheduled (2026-10-14):** R1.1-A
+(FD-2) · **Forward:** US-R1F-05.~~
+
+*(As found at `ed19d0e`:)* None has a defaults key: `pureModeEnabled = false` (`AudioViewModel.swift:106`), the pin `= true` (`:116`),
+`intensity = 0.20` (`:142`), `crossfeedEnabled = false` (`:153`), strength (`:161`), and Master Gain `= unity`
+(`:195`, commented "Not kept across launches (a post-R1 item)"). Only the EQ, the queue cursor (incl. shuffle / repeat),
+the Songs columns and the Tone-card fold persist. Someone who turned Master Gain down hears 0 dB after a relaunch. The
+output device the user chose is not kept either (DEV-1).
+
+#### KI-SET-02 — A Master Gain cut in Enhanced does not carry into Pure
+
+**Status:** ✅ CLOSED in R1.1-A (the C-29 slice), "Pure waits while Master Gain is turned down". Pure engages only with
+Master Gain at 0 dB (`AudioViewModel.startsOnPure`); while it is turned down, Pure waits, Enhanced keeps playing at
+the listener's level, and the Pure Mode card says why. Switching Enhanced → Pure never raises the level, in a session
+or after a relaunch. The rest of C-29 (one level across both paths, "Silent" on a device) stays in the pool with
+KI-SET-03; see *Known limitations*. *The original entry:*
+
+~~**Status:** OPEN (by design today; close to hearing safety) · **Severity:** MEDIUM · **Scheduled (2026-10-14):**
+R1.1-A (FD-2) · **Forward:** US-R1F-05.~~
+
+*(As found at `ed19d0e`:)* On Pure the slider shows and sets the device's own volume, and the app gain is not applied
+(`AudioViewModel+MasterGain.swift:9-17`). Turning Master Gain down in Enhanced, then switching to Pure, plays at the
+device's volume, which can be much louder.
+
+#### DEV-1 — The chosen output device is forgotten when the app quits
+
+**Status:** ✅ CLOSED in R1.1-A, "remember the listener's settings". The device the user chose (a pick, or turning
+"Keep playback on this device" on) is read back from the engine's `OutputDeviceSelection`, kept with the listener's
+settings, and handed back at engine-ready (`AudioPlaybackEngine.restoreChosenOutput` →
+`OutputDeviceSelection.restoreChoice`). Handing it back is not a pick: the output rule, asked with `.choiceRestored`,
+makes it the app's device when it is here — without touching the system default while nothing plays — and Play puts it
+back as the default as in a session. The device the app launches on is still never a choice. Tests:
+`OutputDeviceRelaunchTests`, `.choiceRestored` across `OutputDeviceRuleSpaceTests`, `ListeningSettingsTests` "the
+device the user chose comes back after a relaunch". *The original entry:*
+
+~~**Status:** OPEN (limitation; R1 ships with it) · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (FD-2) ·
+**Forward:** US-R1F-05 (with KI-SET-01).~~
+
+*(As found at `ed19d0e`:)* Within a session the app remembers the output device the user picked (by UID) and returns to it
+when it reconnects (`OutputDeviceSelection`). Nothing persists that pick, or the "Keep playback on
+this device" switch, across launches. The device the app starts on is not a pick, so after a
+relaunch nothing is chosen and the app follows the system default until the user picks again. So
+if the user picked the speakers while their headphones were connected, then quit and relaunched,
+the app plays wherever macOS sends the sound (the headphones) until they pick the speakers again.
+Fix with the settings persistence work: store the chosen UID and the switch, and restore them at
+launch. The in-session behaviour is guarded by `OutputDeviceReturnTests`,
+`OutputDeviceChoiceTests` and `OutputDeviceRuleSpaceTests`.
 
 ### Fixed by PR #88 — the R1 blockers (2026-10-14)
 
@@ -799,7 +848,7 @@ was not affected (`onDeckURL` is simply replaced).
   `OutputDeviceKit`), and playback returns to it once the device menu would list it; the device the app launches on is
   not a choice; a refused pick undoes only itself — 5e6644f, 7478d84. Tests: `OutputDeviceReturnTests`,
   `OutputDeviceChoiceTests`, `OutputDeviceRuleSpaceTests`, `Tests/AdaptiveSoundTests/OutputDeviceViewModelTests.swift`.
-  Limit: DEV-1.
+  Limit: DEV-1 (closed in R1.1-A).
 - **Play Next during a start's prime played the old pick (council F-P4-1, pre-existing)** — a840fe5: `playNext` arms
   when a pick is on deck or being primed.
 - **Settings copy** — with "Keep playback on this device" off, Settings now says "Playback follows your Mac's sound
