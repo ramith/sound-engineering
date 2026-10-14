@@ -21,10 +21,10 @@
 //                         no device, no ffmpeg). This is the PLANTABLE leg (see below).
 //   2. FileDecodeSource — open() the m4a fixture via Apple ExtAudioFile, pull a few blocks,
 //                         dtor joins the decode thread + frees the pimpl (no device, no ffmpeg).
-//   3. PureModeSession  — create → start(deviceID=0 → configure() fails, returns 0) → destroy.
+//   3. PureModeSession  — create → start(deviceID=0 → the policy declines, returns 0) → destroy.
 //                         With deviceID 0 there is no device access and no hang; the
-//                         FileDecodeSource the session opened is owned by its GaplessSource
-//                         and freed on destroy.
+//                         FileDecodeSource the start opened is freed on that declined return,
+//                         and the session (GaplessSource + engine) on destroy.
 //   4. FFmpeg metadata  — ffmpegOpenMetadata / scalar+tag+art accessors / Close over the flac
 //                         fixture (ffmpeg-gated on <libavformat/avformat.h>).
 //   5. EQ designer      — asEqDesignerCreate / asEqDesign (two rates) / asEqDesignerDestroy
@@ -141,9 +141,10 @@ namespace
         // source dtor here: close() joins the decode thread + frees the ring/pimpl.
     }
 
-    // Leg 3 — PureModeSession create/destroy + failed start. deviceID 0 makes configure()
-    // fail (no device access, no hang); pureModeEngineStart returns 0, but the FileDecodeSource
-    // it opened is owned by the session's GaplessSource and freed on pureModeEngineDestroy.
+    // Leg 3 — PureModeSession create/destroy + failed start. deviceID 0 has no capability (no
+    // rates, no stream), so the Pure policy declines before any device access (no hang);
+    // pureModeEngineStart returns 0 and frees the FileDecodeSource it opened, and
+    // pureModeEngineDestroy frees the session.
     void runPureModeLeg()
     {
         void* engine = pureModeEngineCreate();

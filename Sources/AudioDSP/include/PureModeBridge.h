@@ -50,7 +50,8 @@ typedef struct
 /// Flat mirror of AdaptiveSound::PureModeEvaluation.
 /// `decision` mirrors PureModeDecision order: 0 FullBitPerfect, 1 RateMatchedFloat,
 /// 2 FallbackEnhanced. `reason` mirrors PureModeReason order: 0 BitPerfectInteger,
-/// 1 RateMatchedFloatNoSRC, 2 LossyWirelessCodec, 3 VirtualDevice, 4 RateUnsupportedResample.
+/// 1 RateMatchedFloatNoSRC, 2 LossyWirelessCodec, 3 VirtualDevice, 4 RateUnsupportedResample,
+/// 5 ChannelCountMismatch.
 typedef struct
 {
     uint8_t decision;           ///< 0 FullBitPerfect, 1 RateMatchedFloat, 2 FallbackEnhanced

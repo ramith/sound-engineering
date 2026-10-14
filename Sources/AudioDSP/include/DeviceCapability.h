@@ -52,6 +52,10 @@ namespace AdaptiveSound
 
         // Largest availableRates entry, or 0 if there are none.
         [[nodiscard]] double maxRate() const;
+
+        // Channels per frame of the device's output stream: the physical format's (what goes over
+        // the wire), else the virtual format's; 0 when neither is known.
+        [[nodiscard]] uint32_t streamChannels() const;
     };
 
     // The format of the source file we are about to play.
@@ -79,13 +83,16 @@ namespace AdaptiveSound
         LossyWirelessCodec,      // BT / BT-LE / AirPlay codec sits below the HAL
         VirtualDevice,           // virtual / aggregate device — no real exclusive hardware path
         RateUnsupportedResample, // device cannot do the file's rate — Enhanced path must resample
+        ChannelCountMismatch,    // the device stream's channel count is not the file's — Pure maps
+                                 // no channels, so Enhanced plays it
     };
 
     // The full result of evaluating Pure Mode.
     struct PureModeEvaluation
     {
         PureModeDecision decision = PureModeDecision::FallbackEnhanced;
-        double targetDeviceRate = 0;     // rate to drive the device at (0 = leave as-is / N/A)
+        double targetDeviceRate = 0; // rate to drive the device at (0 = leave as-is / N/A)
+        uint32_t targetChannels = 0; // channels the device stream must carry (the file's; 0 = N/A)
         bool requiresRateChange = false; // device nominal rate must change to targetDeviceRate
         bool requiresHog = false;        // exclusive (hog-mode) access is required
         PureModeReason reason = PureModeReason::VirtualDevice;

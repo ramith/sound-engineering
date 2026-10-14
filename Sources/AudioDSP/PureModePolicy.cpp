@@ -40,6 +40,11 @@ namespace AdaptiveSound
         return std::ranges::max(availableRates);
     }
 
+    uint32_t DeviceCapability::streamChannels() const
+    {
+        return (physicalFormat.channels > 0U) ? physicalFormat.channels : virtualFormat.channels;
+    }
+
     const char* pureModeReasonString(PureModeReason reason)
     {
         switch (reason)
@@ -54,6 +59,8 @@ namespace AdaptiveSound
                 return "VirtualDevice";
             case PureModeReason::RateUnsupportedResample:
                 return "RateUnsupportedResample";
+            case PureModeReason::ChannelCountMismatch:
+                return "ChannelCountMismatch";
         }
         // Unreachable for a valid enumerator; keeps the function total without a throw.
         return "Unknown";
@@ -80,32 +87,31 @@ namespace AdaptiveSound
             }
             return best;
         }
+
+        // Hand the file to the Enhanced (DSP) path: no hog, no rate change, no stream format to
+        // drive. `rateHint` is the Enhanced resample target where the device's rate decided it.
+        PureModeEvaluation fallbackEnhanced(PureModeReason reason, double rateHint = 0.0)
+        {
+            PureModeEvaluation result;
+            result.decision = PureModeDecision::FallbackEnhanced;
+            result.reason = reason;
+            result.targetDeviceRate = rateHint;
+            return result;
+        }
     } // namespace
 
     PureModeEvaluation evaluatePureMode(const DeviceCapability& cap, const FileFormat& file)
     {
-        PureModeEvaluation result;
-
         // 1. Virtual / aggregate devices have no real exclusive hardware path: never bit-perfect.
         if (cap.isVirtualOrAggregate)
         {
-            result.decision = PureModeDecision::FallbackEnhanced;
-            result.reason = PureModeReason::VirtualDevice;
-            result.requiresHog = false;
-            result.requiresRateChange = false;
-            result.targetDeviceRate = 0.0;
-            return result;
+            return fallbackEnhanced(PureModeReason::VirtualDevice);
         }
 
         // 2. Lossy wireless transports (BT / BT-LE / AirPlay) re-encode below the HAL.
         if (cap.isLossyWireless)
         {
-            result.decision = PureModeDecision::FallbackEnhanced;
-            result.reason = PureModeReason::LossyWirelessCodec;
-            result.requiresHog = false;
-            result.requiresRateChange = false;
-            result.targetDeviceRate = 0.0;
-            return result;
+            return fallbackEnhanced(PureModeReason::LossyWirelessCodec);
         }
 
         // 3. Device cannot do the file's exact rate: hand off to the Enhanced (resampling) path.
@@ -113,17 +119,26 @@ namespace AdaptiveSound
         //    else the device maximum).
         if (!cap.supportsRate(file.sampleRate))
         {
-            result.decision = PureModeDecision::FallbackEnhanced;
-            result.reason = PureModeReason::RateUnsupportedResample;
-            result.requiresHog = false;
-            result.requiresRateChange = false;
-            result.targetDeviceRate = smallestRateAtLeast(cap, file.sampleRate);
-            return result;
+            return fallbackEnhanced(PureModeReason::RateUnsupportedResample,
+                                    smallestRateAtLeast(cap, file.sampleRate));
         }
 
-        // 4. Device supports the file's exact rate: seize it and drive at that rate.
+        // 4. Pure plays the file's samples exactly as they are, channel for channel: the device
+        //    stream must carry the file's channel count. A mono file on a stereo output, or a stereo
+        //    file on a 4- or 8-channel interface, goes to Enhanced, which maps any width onto the
+        //    device. (Rendering the mismatch would pull nothing: silence that never ends.) Mapping
+        //    inside Pure (mono onto both speakers, still bit-exact per channel) would route through
+        //    AUHAL's kAudioOutputUnitProperty_ChannelMap; not done yet.
+        if (file.channels == 0U || file.channels != cap.streamChannels())
+        {
+            return fallbackEnhanced(PureModeReason::ChannelCountMismatch);
+        }
+
+        // 5. Device supports the file's exact rate and width: seize it and drive at that rate.
+        PureModeEvaluation result;
         result.requiresHog = true;
         result.targetDeviceRate = file.sampleRate;
+        result.targetChannels = file.channels;
         result.requiresRateChange = std::fabs(cap.currentRate - file.sampleRate) > kRateEpsilonHz;
 
         if (cap.integerCapable)

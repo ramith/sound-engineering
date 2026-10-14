@@ -200,6 +200,16 @@ extern "C"
         const DeviceCapability cap =
             CoreAudioDevice::queryCapability(static_cast<AudioDeviceID>(deviceID));
         PureModeEvaluation eval = AdaptiveSound::evaluatePureMode(cap, fileFormat);
+        // The policy gates the engine too: a session it declines never starts, and the caller
+        // plays the file through Enhanced. The app checks the same policy first; this holds when
+        // the decoder reports the file differently (e.g. its channel count).
+        if (eval.decision == AdaptiveSound::PureModeDecision::FallbackEnhanced)
+        {
+            AdaptiveSound::log::line("[PureMode] declined for this file on device {}: {}",
+                                     deviceID,
+                                     AdaptiveSound::pureModeReasonString(eval.reason));
+            return 0;
+        }
 
         // Hog policy (refined after the HDMI smoke test):
         //   * FullBitPerfect (integer DAC — HDMI / USB): KEEP hog. Setting the device's INTEGER

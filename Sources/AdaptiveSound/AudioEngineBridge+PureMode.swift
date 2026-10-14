@@ -75,8 +75,16 @@ extension AudioEngineBridge {
             }
         }
 
-        // 0 = FullBitPerfect, 1 = RateMatchedFloat are both viable. 2 = FallbackEnhanced → reject.
-        return evaluation.decision != 2
+        // 0 = FullBitPerfect, 1 = RateMatchedFloat are both viable. 2 = FallbackEnhanced → reject,
+        // and the caller plays Enhanced with the "Pure unavailable" notice. The reason code follows
+        // PureModeReason's order (PureModeBridge.h), e.g. 5 = the device stream's channel count is
+        // not the file's.
+        guard evaluation.decision != 2 else {
+            NSLog("[PureMode] Not viable for \(fileURL.lastPathComponent) on device \(deviceID) "
+                + "(policy reason \(evaluation.reason))")
+            return false
+        }
+        return true
     }
 
     // MARK: - Pure Engine Start

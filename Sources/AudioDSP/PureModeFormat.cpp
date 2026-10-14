@@ -1,18 +1,27 @@
 //
-// PureModeFormat.cpp — bit-exact float -> device-native PCM conversion.
+// PureModeFormat.cpp — the device-native PCM format Pure renders into (NativePcmFormat), the
+// integer physical-format pick, and the bit-exact float -> native conversion.
 //
-// CoreAudio-FREE / Obj-C-FREE, -fno-exceptions / -fno-rtti clean. Compiled into both the AudioDSP
-// target and the unit-test harness.
+// CoreAudio TYPES only (no HAL / AudioUnit / Obj-C), -fno-exceptions / -fno-rtti clean. Compiled
+// into both the AudioDSP target and the unit-test harness.
 //
 // RT-safety: convertFloatToNative is noexcept, allocation-free and lock-free. It runs inside the
-// HAL render callback.
+// HAL render callback. fromAsbd and pickIntegerPhysicalFormat run on the control plane (configure).
 //
 
 #include "PureModeFormat.h"
 
+#include "FiniteSamples.h"
+
+#include <algorithm>
 #include <bit>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <optional>
+#include <span>
 
 namespace AdaptiveSound
 {
@@ -41,222 +50,317 @@ namespace AdaptiveSound
         constexpr uint32_t kBits24 = 24U;
         constexpr uint32_t kBits32 = 32U;
 
-        constexpr uint32_t kBytesFloat32 = 4U;
         constexpr uint32_t kBytesInt16 = 2U;
-        constexpr uint32_t kBytes32BitWord = 4U;
+        constexpr uint32_t kBytesInt24Packed = 3U;
+        constexpr uint32_t kBytes32BitWord = 4U; // float32, int32, 24-in-32
 
         constexpr uint32_t kBitsPerByte = 8U;
-        constexpr uint32_t kShift16 = 16U;
-        constexpr uint32_t kShift24 = 24U;
         constexpr uint32_t k24In32ShiftHigh = 8U;    // left-justify 24 bits in a 32-bit word
         constexpr uint32_t kByteMask = 0xFFU;        // low 8 bits
         constexpr uint32_t k24BitMask = 0x00FFFFFFU; // low 24 bits
 
-        // Clamp a float sample to [-1, 1] before scaling.
-        inline float clampUnit(float value) noexcept
+        // A candidate physical format's rate matches the target within this many Hz.
+        constexpr double kFormatRateEpsilonHz = 1.0;
+
+        [[nodiscard]] bool hasFlag(AudioFormatFlags flags, AudioFormatFlags flag) noexcept
         {
-            if (value > 1.0F)
-            {
-                return 1.0F;
-            }
-            if (value < -1.0F)
-            {
-                return -1.0F;
-            }
-            return value;
+            return (flags & flag) != 0U;
         }
 
-        inline int32_t toInt16(float value) noexcept
+        // The sample as a finite value in [-1, 1]. A NaN or an infinity is silence — the rule the
+        // Enhanced kernel applies (FiniteSamples.h): it is not audio, and converting it to an
+        // integer would be undefined behaviour. An out-of-range value saturates.
+        [[nodiscard]] float unitSample(float value) noexcept
+        {
+            return std::clamp(finiteOrSilence(value), -1.0F, 1.0F);
+        }
+
+        [[nodiscard]] int32_t toInt16(float value) noexcept
         {
             const auto scaled =
-                static_cast<int32_t>(static_cast<double>(clampUnit(value)) * kInt16Scale);
-            if (scaled > kInt16Max)
-            {
-                return kInt16Max;
-            }
-            if (scaled < kInt16Min)
-            {
-                return kInt16Min;
-            }
-            return scaled;
+                static_cast<int32_t>(static_cast<double>(unitSample(value)) * kInt16Scale);
+            return std::clamp(scaled, kInt16Min, kInt16Max);
         }
 
-        // 24-bit signed value, returned in the low 24 bits of an int32 (range [-2^23, 2^23-1]).
-        inline int32_t toInt24(float value) noexcept
+        // 24-bit signed value, returned in an int32 (range [-2^23, 2^23-1]).
+        [[nodiscard]] int32_t toInt24(float value) noexcept
         {
             const auto scaled =
-                static_cast<int32_t>(static_cast<double>(clampUnit(value)) * kInt24Scale);
-            if (scaled > kInt24Max)
-            {
-                return kInt24Max;
-            }
-            if (scaled < kInt24Min)
-            {
-                return kInt24Min;
-            }
-            return scaled;
+                static_cast<int32_t>(static_cast<double>(unitSample(value)) * kInt24Scale);
+            return std::clamp(scaled, kInt24Min, kInt24Max);
         }
 
-        inline int32_t toInt32(float value) noexcept
+        [[nodiscard]] int32_t toInt32(float value) noexcept
         {
             const auto scaled =
-                static_cast<int64_t>(static_cast<double>(clampUnit(value)) * kInt32Scale);
-            if (scaled > kInt32Max)
-            {
-                return static_cast<int32_t>(kInt32Max);
-            }
-            if (scaled < kInt32Min)
-            {
-                return static_cast<int32_t>(kInt32Min);
-            }
-            return static_cast<int32_t>(scaled);
+                static_cast<int64_t>(static_cast<double>(unitSample(value)) * kInt32Scale);
+            return static_cast<int32_t>(std::clamp(scaled, kInt32Min, kInt32Max));
         }
 
-        // Store a 16-bit pattern honouring endianness. dst points at the 2-byte slot.
-        inline void store16(std::uint8_t* dst, uint16_t bits, bool bigEndian) noexcept
+        // The device word for one sample, per layout (the bits; storeWord lays out the bytes).
+        [[nodiscard]] uint32_t float32Word(float sample) noexcept
         {
-            if (bigEndian)
-            {
-                dst[0] = static_cast<std::uint8_t>((static_cast<uint32_t>(bits) >> kBitsPerByte) &
-                                                   kByteMask);
-                dst[1] = static_cast<std::uint8_t>(bits & kByteMask);
-            }
-            else
-            {
-                dst[0] = static_cast<std::uint8_t>(bits & kByteMask);
-                dst[1] = static_cast<std::uint8_t>((static_cast<uint32_t>(bits) >> kBitsPerByte) &
-                                                   kByteMask);
-            }
+            return std::bit_cast<uint32_t>(finiteOrSilence(sample));
         }
 
-        // Store a 32-bit pattern honouring endianness. dst points at the 4-byte slot.
-        inline void store32(std::uint8_t* dst, uint32_t bits, bool bigEndian) noexcept
+        [[nodiscard]] uint32_t int16Word(float sample) noexcept
         {
-            if (bigEndian)
+            return static_cast<uint32_t>(toInt16(sample));
+        }
+
+        // The 24-bit value in the low 24 bits (packed, and 24-in-32 low-justified: top byte 0).
+        [[nodiscard]] uint32_t int24Word(float sample) noexcept
+        {
+            return static_cast<uint32_t>(toInt24(sample)) & k24BitMask;
+        }
+
+        // The 24-bit value left-justified in a 32-bit word (low byte 0).
+        [[nodiscard]] uint32_t int24HighWord(float sample) noexcept
+        {
+            return int24Word(sample) << k24In32ShiftHigh;
+        }
+
+        [[nodiscard]] uint32_t int32Word(float sample) noexcept
+        {
+            return static_cast<uint32_t>(toInt32(sample));
+        }
+
+        // Store the low `width` bytes of `bits` at dst: least significant first (little-endian, the
+        // Mac norm) or most significant first. `width` is 2, 3 or 4.
+        void storeWord(std::byte* dst, uint32_t bits, uint32_t width, bool bigEndian) noexcept
+        {
+            for (uint32_t idx = 0U; idx < width; ++idx)
             {
-                dst[0] = static_cast<std::uint8_t>((bits >> kShift24) & kByteMask);
-                dst[1] = static_cast<std::uint8_t>((bits >> kShift16) & kByteMask);
-                dst[2] = static_cast<std::uint8_t>((bits >> kBitsPerByte) & kByteMask);
-                dst[3] = static_cast<std::uint8_t>(bits & kByteMask);
-            }
-            else
-            {
-                dst[0] = static_cast<std::uint8_t>(bits & kByteMask);
-                dst[1] = static_cast<std::uint8_t>((bits >> kBitsPerByte) & kByteMask);
-                dst[2] = static_cast<std::uint8_t>((bits >> kShift16) & kByteMask);
-                dst[3] = static_cast<std::uint8_t>((bits >> kShift24) & kByteMask);
+                const uint32_t byteIndex = bigEndian ? (width - 1U - idx) : idx;
+                dst[idx] = static_cast<std::byte>((bits >> (byteIndex * kBitsPerByte)) & kByteMask);
             }
         }
 
-        // ---- per-format store loops (factored out of convertFloatToNative so its branching
-        //      stays within the clang-tidy cognitive-complexity budget). All RT-safe / noexcept.
-
-        void
-        storeFloat32(std::uint8_t* out, const float* src, uint32_t samples, bool bigEndian) noexcept
+        // One `width`-byte word per sample, its bits from `word` (one of the *Word functions).
+        void storeEach(std::span<const float> samples,
+                       std::byte* out,
+                       uint32_t width,
+                       bool bigEndian,
+                       uint32_t (*word)(float) noexcept) noexcept
         {
-            if (!bigEndian)
+            for (const float sample : samples)
             {
-                std::memcpy(out, src, static_cast<size_t>(samples) * kBytesFloat32);
+                storeWord(out, word(sample), width, bigEndian);
+                out += width;
+            }
+        }
+
+        void storeFloat32(std::span<const float> samples, std::byte* out, bool bigEndian) noexcept
+        {
+            // The common case — a little-endian float device and a block of finite samples — is a
+            // copy: bit for bit what the source decoded, out-of-range values included.
+            if (!bigEndian && samples.size() <= std::numeric_limits<uint32_t>::max() &&
+                allFinite(samples.data(), static_cast<uint32_t>(samples.size())))
+            {
+                std::memcpy(out, samples.data(), samples.size_bytes());
                 return;
             }
-            // Float big-endian is essentially never the Mac output format; byte-swap rather than
-            // risk a wrong-endian copy.
-            for (uint32_t idx = 0U; idx < samples; ++idx)
-            {
-                const uint32_t bits = std::bit_cast<uint32_t>(src[idx]);
-                store32(out + (static_cast<size_t>(idx) * kBytesFloat32), bits, /*bigEndian=*/true);
-            }
+            storeEach(samples, out, kBytes32BitWord, bigEndian, float32Word);
         }
 
-        void storeInt16Packed(std::uint8_t* out,
-                              const float* src,
-                              uint32_t samples,
-                              bool bigEndian) noexcept
+        // The layout a linear-PCM description's flags, bit depth and sample size state — only
+        // when the converter writes it exactly.
+        [[nodiscard]] std::optional<NativeSampleLayout>
+        sampleLayout(AudioFormatFlags flags, uint32_t bits, uint32_t bytes) noexcept
         {
-            for (uint32_t idx = 0U; idx < samples; ++idx)
+            // "Packed" promises the bits fill the sample's bytes; a description that says so while
+            // leaving bits over contradicts itself, and Pure does not guess which half is true.
+            if (hasFlag(flags, kAudioFormatFlagIsPacked) && bits != bytes * kBitsPerByte)
             {
-                const auto bits = static_cast<uint16_t>(toInt16(src[idx]));
-                store16(out + (static_cast<size_t>(idx) * kBytesInt16), bits, bigEndian);
+                return std::nullopt;
             }
-        }
-
-        void storeInt32Packed(std::uint8_t* out,
-                              const float* src,
-                              uint32_t samples,
-                              bool bigEndian) noexcept
-        {
-            for (uint32_t idx = 0U; idx < samples; ++idx)
+            if (hasFlag(flags, kAudioFormatFlagIsFloat))
             {
-                const auto bits = static_cast<uint32_t>(toInt32(src[idx]));
-                store32(out + (static_cast<size_t>(idx) * kBytes32BitWord), bits, bigEndian);
-            }
-        }
-
-        // 24-bit signed in a 32-bit container (HDMI / USB-DAC case): the 24-bit sample sits either
-        // left-justified (aligned-high: top 24 bits, low byte 0) or low-justified (bottom 24 bits).
-        void store24In32(std::uint8_t* out,
-                         const float* src,
-                         uint32_t samples,
-                         bool alignedHigh,
-                         bool bigEndian) noexcept
-        {
-            for (uint32_t idx = 0U; idx < samples; ++idx)
-            {
-                uint32_t bits = static_cast<uint32_t>(toInt24(src[idx])) & k24BitMask;
-                if (alignedHigh)
+                if (bits == kBits32 && bytes == kBytes32BitWord)
                 {
-                    bits <<= k24In32ShiftHigh; // left-justify into the 32-bit word
+                    return NativeSampleLayout::Float32;
                 }
-                store32(out + (static_cast<size_t>(idx) * kBytes32BitWord), bits, bigEndian);
+                return std::nullopt; // float64 and the like
             }
+            if (!hasFlag(flags, kAudioFormatFlagIsSignedInteger))
+            {
+                return std::nullopt; // unsigned integer PCM
+            }
+            if (bits == kBits16 && bytes == kBytesInt16)
+            {
+                return NativeSampleLayout::Int16;
+            }
+            if (bits == kBits32 && bytes == kBytes32BitWord)
+            {
+                return NativeSampleLayout::Int32;
+            }
+            if (bits == kBits24 && bytes == kBytesInt24Packed)
+            {
+                return NativeSampleLayout::Int24Packed;
+            }
+            if (bits == kBits24 && bytes == kBytes32BitWord)
+            {
+                return hasFlag(flags, kAudioFormatFlagIsAlignedHigh)
+                           ? NativeSampleLayout::Int24In32High
+                           : NativeSampleLayout::Int24In32Low;
+            }
+            return std::nullopt; // 8- / 20-bit, 16-in-32, and every other container
+        }
+
+        // An integer format at the rate and width Pure drives, that the converter writes exactly.
+        [[nodiscard]] bool isWritableIntegerMatch(const AudioStreamBasicDescription& fmt,
+                                                  double rateHz,
+                                                  uint32_t channels) noexcept
+        {
+            const std::optional<NativePcmFormat> native = NativePcmFormat::fromAsbd(fmt);
+            return native.has_value() && !native->isFloat() && native->channels == channels &&
+                   std::fabs(fmt.mSampleRate - rateHz) <= kFormatRateEpsilonHz;
+        }
+
+        // `candidate` over `incumbent`: the higher bit depth, then (at equal depth) the format
+        // whose flags are the device's current ones (its own packing / alignment / endianness).
+        [[nodiscard]] bool preferred(const AudioStreamBasicDescription& candidate,
+                                     const AudioStreamBasicDescription& incumbent,
+                                     const AudioStreamBasicDescription& current) noexcept
+        {
+            if (candidate.mBitsPerChannel != incumbent.mBitsPerChannel)
+            {
+                return candidate.mBitsPerChannel > incumbent.mBitsPerChannel;
+            }
+            return candidate.mFormatFlags == current.mFormatFlags &&
+                   incumbent.mFormatFlags != current.mFormatFlags;
         }
     } // namespace
 
-    void convertFloatToNative(const float* src,
-                              void* dst,
-                              uint32_t frames,
-                              uint32_t channels,
-                              uint32_t bitsPerChannel,
-                              bool isFloat,
-                              bool isSignedInt,
-                              bool isPacked,
-                              bool isAlignedHigh,
-                              bool isBigEndian) noexcept
+    std::optional<NativePcmFormat>
+    NativePcmFormat::fromAsbd(const AudioStreamBasicDescription& asbd) noexcept
     {
-        if (src == nullptr || dst == nullptr || frames == 0U || channels == 0U)
+        const uint32_t channels = asbd.mChannelsPerFrame;
+        // Pure writes ONE interleaved buffer of whole samples; anything else is not a layout the
+        // converter knows.
+        if (asbd.mFormatID != kAudioFormatLinearPCM ||
+            hasFlag(asbd.mFormatFlags, kAudioFormatFlagIsNonInterleaved) || channels == 0U ||
+            asbd.mBytesPerFrame % channels != 0U)
         {
-            return;
+            return std::nullopt;
         }
+        const std::optional<NativeSampleLayout> layout =
+            sampleLayout(asbd.mFormatFlags, asbd.mBitsPerChannel, asbd.mBytesPerFrame / channels);
+        if (!layout.has_value())
+        {
+            return std::nullopt;
+        }
+        NativePcmFormat format;
+        format.layout = *layout;
+        format.channels = channels;
+        format.bigEndian = hasFlag(asbd.mFormatFlags, kAudioFormatFlagIsBigEndian);
+        return format;
+    }
 
-        const uint32_t samples = frames * channels;
-        auto* out = static_cast<std::uint8_t*>(dst);
-        const bool intOk = !isFloat && isSignedInt; // from here only signed integer PCM is handled
+    uint32_t NativePcmFormat::bytesPerSample() const noexcept
+    {
+        switch (layout)
+        {
+            case NativeSampleLayout::Int16:
+                return kBytesInt16;
+            case NativeSampleLayout::Int24Packed:
+                return kBytesInt24Packed;
+            case NativeSampleLayout::Float32:
+            case NativeSampleLayout::Int24In32High:
+            case NativeSampleLayout::Int24In32Low:
+            case NativeSampleLayout::Int32:
+                return kBytes32BitWord;
+        }
+        return kBytes32BitWord; // unreachable for a valid enumerator; keeps the function total
+    }
 
-        if (isFloat && bitsPerChannel == kBits32)
-        {
-            storeFloat32(out, src, samples, isBigEndian);
-            return;
-        }
-        if (intOk && isPacked && bitsPerChannel == kBits16)
-        {
-            storeInt16Packed(out, src, samples, isBigEndian);
-            return;
-        }
-        if (intOk && isPacked && bitsPerChannel == kBits32)
-        {
-            storeInt32Packed(out, src, samples, isBigEndian);
-            return;
-        }
-        if (intOk && bitsPerChannel == kBits24)
-        {
-            store24In32(out, src, samples, isAlignedHigh, isBigEndian);
-            return;
-        }
+    uint32_t NativePcmFormat::bytesPerFrame() const noexcept
+    {
+        return channels * bytesPerSample();
+    }
 
-        // Unsupported combination: write silence (safe), never UB. Destination byte span follows
-        // the word size implied by the bit depth.
-        const uint32_t bytesPerSample = (bitsPerChannel == kBits16) ? kBytesInt16 : kBytes32BitWord;
-        std::memset(out, 0, static_cast<size_t>(samples) * bytesPerSample);
+    uint32_t NativePcmFormat::validBits() const noexcept
+    {
+        switch (layout)
+        {
+            case NativeSampleLayout::Int16:
+                return kBits16;
+            case NativeSampleLayout::Int24Packed:
+            case NativeSampleLayout::Int24In32High:
+            case NativeSampleLayout::Int24In32Low:
+                return kBits24;
+            case NativeSampleLayout::Float32:
+            case NativeSampleLayout::Int32:
+                return kBits32;
+        }
+        return kBits32; // unreachable for a valid enumerator; keeps the function total
+    }
+
+    bool NativePcmFormat::isFloat() const noexcept
+    {
+        return layout == NativeSampleLayout::Float32;
+    }
+
+    std::optional<AudioStreamBasicDescription>
+    pickIntegerPhysicalFormat(std::span<const AudioStreamBasicDescription> available,
+                              const AudioStreamBasicDescription& current,
+                              double rateHz,
+                              uint32_t channels) noexcept
+    {
+        std::optional<AudioStreamBasicDescription> best;
+        for (const AudioStreamBasicDescription& fmt : available)
+        {
+            if (isWritableIntegerMatch(fmt, rateHz, channels) &&
+                (!best.has_value() || preferred(fmt, *best, current)))
+            {
+                best = fmt;
+            }
+        }
+        return best;
+    }
+
+    std::size_t convertFloatToNative(std::span<const float> src,
+                                     std::span<std::byte> dst,
+                                     const NativePcmFormat& format) noexcept
+    {
+        // The frame stride comes from the format, never from the bit depth: a 24-bit sample is 3
+        // bytes packed and 4 in a 32-bit word, and the buffer's own byte size bounds the write.
+        const std::size_t bytesPerFrame =
+            static_cast<std::size_t>(format.channels) * format.bytesPerSample(); // no 32-bit wrap
+        const std::size_t frames = (bytesPerFrame == 0U) ? 0U
+                                                         : std::min(src.size() / format.channels,
+                                                                    dst.size() / bytesPerFrame);
+        if (frames > 0U)
+        {
+            const std::span<const float> samples = src.first(frames * format.channels);
+            std::byte* const out = dst.data();
+            const bool bigEndian = format.bigEndian;
+            switch (format.layout)
+            {
+                case NativeSampleLayout::Float32:
+                    storeFloat32(samples, out, bigEndian);
+                    break;
+                case NativeSampleLayout::Int16:
+                    storeEach(samples, out, kBytesInt16, bigEndian, int16Word);
+                    break;
+                case NativeSampleLayout::Int24Packed:
+                    storeEach(samples, out, kBytesInt24Packed, bigEndian, int24Word);
+                    break;
+                case NativeSampleLayout::Int24In32High:
+                    storeEach(samples, out, kBytes32BitWord, bigEndian, int24HighWord);
+                    break;
+                case NativeSampleLayout::Int24In32Low:
+                    storeEach(samples, out, kBytes32BitWord, bigEndian, int24Word);
+                    break;
+                case NativeSampleLayout::Int32:
+                    storeEach(samples, out, kBytes32BitWord, bigEndian, int32Word);
+                    break;
+            }
+        }
+        // Whatever no converted frame covers (room beyond src, a partial trailing frame) is
+        // silence, so the device never plays stale bytes.
+        std::ranges::fill(dst.subspan(frames * bytesPerFrame), std::byte{0});
+        return frames;
     }
 
 } // namespace AdaptiveSound
