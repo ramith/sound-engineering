@@ -2,7 +2,7 @@
 ## Phase Timeline & Release Plan
 
 **Strategy:** *Player-maturity first → differentiate later* (founder-reviewed 2026-06-19)
-**Release model:** GitHub releases R1 → R2 → R3, effort-driven (no calendar pressure). **R1 = v1.0.0-alpha — release in progress** (2026-10-13; see [sprint-plan §Status](../sprints/sprint-plan.md#status)).
+**Release model:** GitHub releases R1 → R2 → R3, effort-driven (no calendar pressure). **R1 = v1.0.0-alpha — shipped 2026-10-14** ([release](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha); see [sprint-plan §Status](../sprints/sprint-plan.md#status)). The 2026-10 council's re-planned roadmap is still to come; until the founder decides on it, the arc below stands.
 
 > **This is the high-altitude product view.** The authoritative, detailed sprint sequence — and the only place that narrates **what has shipped vs. what's next** — is [../sprints/sprint-plan.md](../sprints/sprint-plan.md) (S6–S18) + the source/git. Where the two overlap, sprint-plan.md wins.
 >
@@ -51,7 +51,7 @@ Built on the mature base, enabler-first, lowest-artifact-risk first. This is the
 
 | Release | After | Theme | Content |
 |---------|-------|-------|---------|
-| **R1 — "a real player"** = **v1.0.0-alpha** *(release in progress)* | S10.1–S10.4 + S10.7/S10.8 (release UX) | Daily-driver | Library, browse, search, queue, playlists, media keys, bit-perfect playback, in the Liquid Glass UI (dark + light) with the honest 31-band EQ — [release notes](../releases/v1.0.0-alpha.md) |
+| **R1 — "a real player"** = **v1.0.0-alpha** *(✅ shipped 2026-10-14)* | S10.1–S10.4 + S10.7/S10.8 (release UX) + the council's R1 blocker fixes (PR #88) | Daily-driver | Library, browse, search, queue, playlists, media keys, bit-perfect playback, in the Liquid Glass UI (dark + light) with the honest 31-band EQ — [release](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha), [release notes](../releases/v1.0.0-alpha.md) |
 | **R2 — "audiophile-credible"** | S14 | Parity (unlocks Phase 2) | CUE, format hardening, PEQ/AutoEq, presets, crossfeed, device correction, loudness compensation, QA gate green |
 | **R3 — "differentiated"** | S17 | The thesis | Clarity + steerable Reimagine — demonstrable and comparable |
 
