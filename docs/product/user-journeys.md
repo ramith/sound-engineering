@@ -1,8 +1,8 @@
 # User Journeys — Adaptive Sound
 
 **Document ID:** JOURNEYS-ASE-001  
-**Version:** 1.1 — reconciled to the code at R1 / v1.0.0-alpha (2026-10-13); v1.0 extracted from requirements.md v0.6  
-**Date:** 2026-06-13 (statuses re-verified 2026-10-13)  
+**Version:** 1.1.1 — reconciled to the code (2026-10-13), re-checked after R1's blocker fixes (PR #88, 2026-10-14; R1 = v1.0.0-alpha); v1.0 extracted from requirements.md v0.6  
+**Date:** 2026-06-13 (statuses re-verified 2026-10-13; journeys 2.4 and 2.10 re-checked 2026-10-14)  
 **Extracted by:** Business Analyst (refactoring for clarity)  
 **Status:** Authoritative; cross-referenced from requirements.md
 
@@ -129,7 +129,7 @@ Step 6 — Session End
 **Actor:** User listening on AirPods who unplugs or switches to laptop speakers.  
 **Goal:** Sound continues without interruption; DSP profile switches automatically.  
 **Phase:** Phase 1 onwards.  
-**Status:** PARTIALLY BUILT. Automatic output-device detection/switch and the follow-vs-pin preference work ~~(`AudioEngineBridge+Devices` / `+ConfigChange`)~~, and crossfeed auto-disables on non-headphone devices. Step 5's **spatialization-mode change** (HRTF binaural vs. speaker widening) is NOT built — the spatial render stage is an identity/stub, so the only headphone spatial effect is the opt-in crossfeed. Per-*device* EQ preset recall exists, but there is no full "DSP profile" concept. *(Re-verified 2026-10-13, after Sprint G (PR #85) and the freeze fix (PR #86): every output event goes through one device rule. Step 2 = the output's pinned EQ, else the shared EQ; Step 4 is **built** as a toast naming the output and its EQ ("AirPods Pro · Late Night"), which opens the EQ tab when tapped; the limiter ceiling and rate readout follow the output. A device **lost** while playing now pauses (both paths), keeps the place and says so — it does not continue on the speakers. Not built: Step 3's dedicated 200 ms profile crossfade (EQ changes glide through the engine's own smoothing), Step 5 (→ S18), whole profiles (→ S13). Wired headphones in the Mac's own jack are treated as speakers for crossfeed — KI-DEV-01.)*
+**Status:** PARTIALLY BUILT. Automatic output-device detection/switch and the follow-vs-pin preference work ~~(`AudioEngineBridge+Devices` / `+ConfigChange`)~~, and crossfeed auto-disables on non-headphone devices. Step 5's **spatialization-mode change** (HRTF binaural vs. speaker widening) is NOT built — the spatial render stage is an identity/stub, so the only headphone spatial effect is the opt-in crossfeed. Per-*device* EQ preset recall exists, but there is no full "DSP profile" concept. *(Re-verified 2026-10-13, after Sprint G (PR #85) and the freeze fix (PR #86): every output event goes through one device rule. Step 2 = the output's pinned EQ, else the shared EQ; Step 4 is **built** as a toast naming the output and its EQ ("AirPods Pro · Late Night"), which opens the EQ tab when tapped; the limiter ceiling and rate readout follow the output. A device **lost** while playing now pauses (both paths), keeps the place and says so — it does not continue on the speakers. Not built: Step 3's dedicated 200 ms profile crossfade (EQ changes glide through the engine's own smoothing), Step 5 (→ S18), whole profiles (→ S13). Wired headphones in the Mac's own jack are treated as speakers for crossfeed — KI-DEV-01.)* *(Since R1, PR #88 — council N92: the device the user picked is kept apart from the device the app falls back to, so when the picked device (say, Bluetooth headphones) reconnects, the next Play plays on it, not on the speakers it fell back to; until the user picks a device, the app follows the Mac's sound output. Within a session only: DEV-1.)*
 
 **Steps:**
 
@@ -368,7 +368,7 @@ Step 4 — Play
 **Actor:** An audiophile with a USB DAC who wants the file's bits to reach the DAC unaltered.  
 **Goal:** Play the library bit-perfect, at each track's own sample rate, and know at a glance that it is.  
 **Phase:** Phase 0 (the anchor story — "this Mac → this DAC, bit-perfect").  
-**Status:** BUILT (R1). Pure falls back to Enhanced on Bluetooth / AirPlay by design (the link re-encodes). Open: a mid-song Repeat / Shuffle change or queue edit may not reach Pure's next track (KI-PB-01, needs a live check); switching Pure on or off waits for a manual start (KI-PB-05). The founder's by-ear check on a USB DAC is still owed.
+**Status:** BUILT (R1). Pure falls back to Enhanced on Bluetooth / AirPlay by design (the link re-encodes), and — since PR #88 — for a track whose channel count is not the device's (a mono file on stereo speakers) or a device format it cannot write exactly, saying so in Settings. ~~Open: a mid-song Repeat / Shuffle change or queue edit may not reach Pure's next track (KI-PB-01, needs a live check);~~ *(fixed by PR #88, council D41: a changed next song reaches Pure; residual KI-PB-16)* Open: switching Pure on or off waits for a manual start (KI-PB-05). The founder's by-ear check on a USB DAC is still owed.
 
 **Steps:**
 
@@ -378,7 +378,9 @@ Step 1 — Turn it on
 
 Step 2 — Play
   The app takes the device directly (HAL, hog mode), switches it to each track's sample rate,
-  and bypasses every DSP stage, EQ included. Same-rate tracks join gaplessly.
+  and bypasses every DSP stage, EQ included. Same-rate tracks join gaplessly. A track Pure can't
+  play exactly (another channel count, a device format it can't write bit for bit) plays in
+  Enhanced, and Settings says so.
 
 Step 3 — Check
   Settings shows what is playing through ("Playing through: Pure") and the rate; Master Gain
@@ -386,7 +388,7 @@ Step 3 — Check
 
 Step 4 — Change device or lose it
   Choosing another output restarts at the playhead on it (or falls back to Enhanced there);
-  unplugging the DAC pauses and keeps the place.
+  unplugging the DAC pauses and keeps the place; when a DAC the user picked comes back, Play plays on it.
 ```
 
 **Success Condition:** A loopback capture of a 24-bit FLAC at the device's rate is bit-identical to the file (NFR-QUAL-03).

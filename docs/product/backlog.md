@@ -2,8 +2,9 @@
 ## Epics, User Stories, and Spikes
 
 **Document ID:** BACKLOG-ASE-001
-**Version:** 2.6 — reconciled to the code at R1 / v1.0.0-alpha (product council, 2026-10-13); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
+**Version:** 2.6.1 — re-checked after R1's blocker fixes (PR #88, 2026-10-14); 2.6 reconciled to the code (product council, 2026-10-13, against a206107); v2.5 back-filled QW1 (crossfeed / Reimagine intensity knob / tonal presets) as Done (2026-07-05); v2.4 added library/playlist epics; v2.3 re-anchored to shipped reality (sprint-plan.md §6), S6/S7 marked Done
 **Change note (2026-10-13, council):** every story re-checked against `main` (a206107). S8–S10.8 deliveries marked with a back-link (PR / sprint ledger / design doc + the main code location); partial and missing work forward-linked to a roadmap sprint (S11–S18) or to the new **Post-R1 fix pool** (US-R1F-01…07) and release items (US-REL-01/02, US-QA-07). Reversed decisions are annotated, not deleted. Proven-by anchors that no longer exist in the code (`NowPlayingWidget`, `EQPresetPickerView`, the `VerifyAUGraph` FR sweep) were corrected.
+**Change note (2026-10-14, after R1):** R1 shipped as v1.0.0-alpha (tag on f098821) with the council's blocker fixes (PR #88). Stories they touched re-checked against `7761693`: US-ENG-07, US-PLAY-03, US-PLAY-05, US-DEVICE-09, US-LIB-01, US-PLIST-02 and the Post-R1 fix pool (KI-PB-01 closed; KI-PB-16 / -17, LIB-VOL-1 and DEV-1 placed).
 **Change note (2026-07-12):** Removed natural-language tuning (EP-NLT/US-NLT-*/SPIKE-NLT-ARCH) and hearing personalization stories from scope — founder decision; git has the prior text.
 **Date:** 2026-06-19
 **Author:** Lead Business Analyst
@@ -136,15 +137,15 @@ A story is done when:
 
 > **Re-anchor note (v2.3, 2026-06-19):** Several Phase-0/Phase-1 epics now carry shipped Done stories (back-filled from the two-path engine, Pure Mode, decode, EQ, limiter, loudness, gapless, device-resilience, signal-path transparency). **EP-STEM**, **EP-SYSWIDE**, and **EP-VDEVICE** are tagged **⛔ Won't, this horizon** per sprint-plan.md §6B — entries retained as the future roadmap, marked out-of-window. **DSD** (a feature, not an epic) is deferred post-R2, gated on acquiring a DSD DAC. See the v2.3 change note.
 
-> **Epic status at R1 (verified in the code, 2026-10-13):**
+> **Epic status at R1 (verified in the code, 2026-10-13; the R1 blocker fixes, PR #88, added 2026-10-14):**
 >
 > | Epic | Where it stands | Back-link / forward link |
 > |---|---|---|
 > | EP-ENGINE | Shipped (two-path engine, param bus, Realizer plumbing); the perceptual Arbiter is not built | S6 (#15), S7 gates; Arbiter → S15–S16 |
-> | EP-PLAYER | Mostly shipped: library playback, transport, queue, metadata, gapless, persistence | S9 #23, S10.2 #54, S10.4 #58, S10.6 #57, PR #85; gaps → S11, US-R1F-01/05 |
-> | EP-LIBRARY / EP-PLAYLIST | Shipped except single-file play / loose add UI (US-LIB-02, US-PLIST-02), folder-to-folder move (US-LIB-07, superseded) and root recovery (US-LIB-08) | S8 #15 #17, S10.1 #53, S10.3 #59 #60, Sprint C #70, PR #85 |
+> | EP-PLAYER | Mostly shipped: library playback, transport, queue, metadata, gapless, persistence; what plays next is what the app shows (D41) | S9 #23, S10.2 #54, S10.4 #58, S10.6 #57, PR #85, PR #88; gaps → S11, US-R1F-01/05 |
+> | EP-LIBRARY / EP-PLAYLIST | Shipped except single-file play / loose add UI (US-LIB-02, US-PLIST-02), folder-to-folder move (US-LIB-07, superseded) and root recovery (US-LIB-08); a sweep deletes songs only on evidence, each folder bound to its drive (PR #88) | S8 #15 #17, S10.1 #53, S10.3 #59 #60, Sprint C #70, PR #85, PR #88; LIB-VOL-1 → US-R1F-03 |
 > | EP-TONAL | Partly: 31-band graphic EQ (Sprint EQ #73), presets, limiter, LUFS normalisation; no parametric, correction, loudness comp, bass enhancement | S12, S13, S14; US-TON-04 unscheduled |
-> | EP-DEVICE | Partly: enumeration, device policy (pin / follow, pause on loss), per-output EQ memory, crossfeed; no profiles, classification or spatial modes | PR #85, #73; S13 |
+> | EP-DEVICE | Partly: enumeration, device policy (pin / follow, pause on loss, return to the chosen device when it reconnects), per-output EQ memory, crossfeed; no profiles, classification or spatial modes | PR #85, #73, #88; S13; DEV-1 → US-R1F-05 |
 > | EP-UI | Partly: Now Playing, EQ, Monitoring, Settings, Library in Liquid Glass, dark + light, VoiceOver / keyboard; no onboarding, l10n or adaptive feedback | S10.7 #61, S10.8 #62–#85 |
 > | EP-ADAPT / EP-PERCEPTUAL | Not built, except the signal-path readout (US-ADAPT-06) and load-time track loudness analysis | S15–S17 |
 > | EP-REIMAGINE | Knob shipped (QW1); it now scales only the adaptive enhancement (decision 25); the mapping is not built | S17 |
@@ -266,7 +267,7 @@ As a **developer** I want the DSP chain to query the output device's preferred s
 As a **Ramith** I want a bit-perfect playback path that drives the DAC directly through the CoreAudio HAL, takes the device into hog mode, matches the device's physical sample rate to each track, and bypasses all DSP, so that the bits I bought reach the DAC unaltered — something Apple Music itself does not do on macOS.
 
 **Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
-*(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:111-115`. Open: KI-PB-01, KI-PB-05, KI-SET-02 in [known-issues.md](known-issues.md).)*
+*(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:111-115`. **R1 blocker fixes (PR #88):** a track whose channel count is not the device stream's, or a device format Pure cannot write exactly, plays in Enhanced with a notice (it used to be endless silence, or an IO-buffer overrun for packed 24-bit) — `PureModePolicy.cpp:126-135`, `PureModeFormat.h`; NaN / Inf become silence; a changed next track reaches Pure (D41, KI-PB-01 closed); a teardown never reopens the render gate. Open: KI-PB-05, KI-PB-16, KI-SET-02 in [known-issues.md](known-issues.md). **Follow-up (unscheduled):** map channels inside Pure (AUHAL `kAudioOutputUnitProperty_ChannelMap`), so a mono file, or a stereo file on a multichannel interface, can stay bit-perfect.)*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -396,7 +397,7 @@ As a **Marcus** I want play, pause, skip forward, skip backward, seek, and volum
 
 As a **Marcus** I want to build and reorder a playback queue and toggle shuffle and repeat, so that I can manage long listening sessions without manually restarting the app.
 
-**Status (2026-10-13):** Shipped · delivered: queue verbs in S9 (PR #23); persistent queue, Up Next｜History, grip-drag + context-menu (Move Up / Down / to Top) + keyboard reorder in S10.2 (PR #54, [design](../sprints/s10-2-queue-ux-design.md), `UI/Playlist/PlaylistItemList.swift`); a mid-song shuffle / repeat change re-arms the next track (PR #85, `PlaybackQueueKit/PlaybackOrder.swift`). Open: KI-PB-01 (Pure ignores the re-arm), KI-PB-02, KI-PB-03 (shuffle + repeat off never ends), KI-PB-08, KI-PB-09 → US-R1F-01/02. *(Drag from the Library into the queue was deprioritized 2026-07-14 — roadmap "Deferred".)*
+**Status (2026-10-13):** Shipped · delivered: queue verbs in S9 (PR #23); persistent queue, Up Next｜History, grip-drag + context-menu (Move Up / Down / to Top) + keyboard reorder in S10.2 (PR #54, [design](../sprints/s10-2-queue-ux-design.md), `UI/Playlist/PlaylistItemList.swift`); a mid-song shuffle / repeat change re-arms the next track (PR #85, `PlaybackQueueKit/PlaybackOrder.swift`). Every on-deck request is numbered and the engine applies only the newest, so a re-arm reaches Pure too (PR #88, council D41 — `PlaybackQueueKit/OnDeckTicket.swift`). Open: ~~KI-PB-01 (Pure ignores the re-arm)~~ *(closed by PR #88)*, KI-PB-02, KI-PB-03 (shuffle + repeat off never ends), KI-PB-08, KI-PB-09, KI-PB-16, KI-PB-17 → US-R1F-01/02. *(Drag from the Library into the queue was deprioritized 2026-07-14 — roadmap "Deferred".)*
 
 **Acceptance Criteria:**
 - See FR-PLAY-03 Given/When/Then: drag-to-reorder in a 5-track queue; new order reflected immediately; next track plays in updated order.
@@ -428,7 +429,7 @@ As a **Ramith** I want to see track title, artist, album, album art, and duratio
 
 As a **Marcus** I want the app to restore my queue and playback position when I reopen it, so that I can resume exactly where I stopped.
 
-**Status (2026-10-13):** Partly shipped · delivered: S10.2 (PR #54) — the queue lives in the built-in "current" playlist and is restored PAUSED at the saved track + offset, with shuffle / repeat (`AudioViewModel+QueueHydration.swift`, cursor keys `queue.cursor.*`); the EQ state persists (`EQEditKit/EQStore.swift`). **Missing:** the listening settings (Pure, device pin, Master Gain, Intensity, crossfeed) reset at launch (KI-SET-01 → US-R1F-05); the restored song's duration (KI-PB-06 → US-R1F-01). There is no "profile" concept (US-DEVICE-04 → S13). A queued file that moved is skipped on play (playlist dead-file handling, PR #60).
+**Status (2026-10-13):** Partly shipped · delivered: S10.2 (PR #54) — the queue lives in the built-in "current" playlist and is restored PAUSED at the saved track + offset, with shuffle / repeat (`AudioViewModel+QueueHydration.swift`, cursor keys `queue.cursor.*`); the EQ state persists (`EQEditKit/EQStore.swift`). **Missing:** the listening settings (Pure, device pin, Master Gain, Intensity, crossfeed) reset at launch (KI-SET-01 → US-R1F-05), and so does the output device the user chose (DEV-1 → US-R1F-05); the restored song's duration (KI-PB-06 → US-R1F-01). There is no "profile" concept (US-DEVICE-04 → S13). A queued file that moved is skipped on play (playlist dead-file handling, PR #60).
 
 **Acceptance Criteria:**
 - See FR-PLAY-05 Given/When/Then: app closed paused at 2:34; on relaunch, queue restored and track pre-loaded at 2:34 with same profile active.
@@ -846,7 +847,7 @@ As a **Marcus** I want the app to detect my Bluetooth device's native sample rat
 As a **Marcus** I want playback to survive a device disappearing (BT/USB unplug, sleep) and a setting that controls whether playback **follows** a newly-connected device or **pins** to the current one, so that an accidental disconnect doesn't kill the session and I decide what happens when a new DAC appears.
 
 **Status:** Shipped · proven-by: engine device-loss serialization (engineQueue + leaf lock; pause/recover, HAL hog-mode release, no `-10875` storm) + pin/follow connect-behavior setting (S6 P1-B/P1-C hardening, see [`s6-architecture-review-findings.md`](../sprints/s6-architecture-review-findings.md))
-*(Reworked before R1: Sprint G, PR #85, made it **one output-device path** with one tested rule (`OutputDeviceKit/OutputDevicePolicy.swift`, `AudioEngineBridge+OutputDeviceMonitor.swift`): a lost device **pauses on Enhanced too** (it used to carry on out of the speakers), keeps the song's place, and shows "Output device disconnected — playback paused. Press Play to continue."; a system-default change made outside the app is followed or re-asserted; Pure moves with a newly chosen device. PR #86 then removed the 3–7 s freeze on disconnect: the main thread never waits on the engine ([evidence](../architecture/evidence/main-thread-stall-2026-10/README.md)). The pin setting is not kept across launches — KI-SET-01.)*
+*(Reworked before R1: Sprint G, PR #85, made it **one output-device path** with one tested rule (`OutputDeviceKit/OutputDevicePolicy.swift`, `AudioEngineBridge+OutputDeviceMonitor.swift`): a lost device **pauses on Enhanced too** (it used to carry on out of the speakers), keeps the song's place, and shows "Output device disconnected — playback paused. Press Play to continue."; a system-default change made outside the app is followed or re-asserted; Pure moves with a newly chosen device. PR #86 then removed the 3–7 s freeze on disconnect: the main thread never waits on the engine ([evidence](../architecture/evidence/main-thread-stall-2026-10/README.md)). The pin setting is not kept across launches — KI-SET-01.)* *(R1, PR #88 — council N92: the device the user chose is kept apart from the device the app falls back to (`OutputDeviceKit/OutputDeviceSelection.swift`), so it is the app's device again once it reconnects and the device menu would list it; the device the app launches on is not a choice, so until the user picks, the pin follows the system default. In-session only — DEV-1 → US-R1F-05.)*
 **Traceability:** FR-DEVICE-01, FR-DEVICE-02, NFR-REL-01, NFR-REL-03
 
 ---
@@ -1040,7 +1041,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live Bootlegs," "Podcasts") and have the app treat each as an independent library root that I can play from, browse, or remove independently, so that I am not forced to consolidate my collection into one folder tree to get library features.
 
-**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:388-389`.)* Open: KI-LIB-02 (paused / failed folders are invisible).
+**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:388-389`.)* *(R1, PR #88: each folder is bound to its drive's volume UUID — `folders.volume_uuid`, migration v8 — and a walk sweeps only on evidence, else pauses the folder — `LibraryScan/SweepRefusal.swift`.)* Open: KI-LIB-02 (paused / failed folders are invisible), LIB-VOL-1 (a paused folder on a replaced or UUID-less drive has no lossless way back).
 
 **Acceptance Criteria:**
 - The store's `folders` table supports multiple root rows (`parent_id IS NULL`, `is_root = 1`); no artificial limit on the number of roots (S8.1 schema already supports this — `folders.id` is a normal auto-increment key, not a singleton).
@@ -1196,7 +1197,7 @@ As a **Ramith** I want a track to be able to belong to any number of playlists a
 
 As a **Ramith** I want to add a single audio file to a playlist even when that file is not inside any of my scan folders, so that a one-off track (a promo download, a friend's demo) can live in a playlist alongside my scanned library without first importing it as a full library citizen.
 
-**Status (2026-10-13):** Planned · **store-only**. `addLooseFileToPlaylist` exists and is gated (`LibraryStore+Playlists.swift:422`, one transaction), but **no UI calls it** — no Finder drop onto a playlist, no Add File… (the only `.fileImporter` on a playlist is Locate…, `PlaylistDetailView.swift:55`). `sprint-plan.md` lists "add a single non-library file" as shipped in S10.3; the code disagrees. Raised as a council finding. **Forward:** Post-R1 pool, with US-LIB-02.
+**Status (2026-10-13):** Planned · **store-only**. `addLooseFileToPlaylist` exists and is gated (`LibraryStore+Playlists.swift:422`, one transaction), but **no UI calls it** — no Finder drop onto a playlist, no Add File… (the only `.fileImporter` on a playlist is Locate…, `PlaylistDetailView.swift:55`). ~~`sprint-plan.md` lists "add a single non-library file" as shipped in S10.3; the code disagrees.~~ *(The S10.3 row now says it is store-only, 2026-10-14.)* Raised as a council finding. **Forward:** Post-R1 pool, with US-LIB-02.
 
 **Acceptance Criteria:**
 - Adding a file via Finder drag-and-drop or the Open panel directly onto a playlist (not onto the main library view) creates a `tracks` row with `folder_id = NULL` (a "loose" / non-scan-folder track, per US-LIB-02's schema accommodation) if one doesn't already exist for that exact `url`, then adds a `playlist_entries` row referencing it.
@@ -1658,15 +1659,15 @@ True per-instrument source separation is the **Phase-1.5 own-player stem engine*
 
 ## Post-R1 fix pool *(new — 2026-10-13)*
 
-> **Why this section exists:** R1 (v1.0.0-alpha — release PR #87 merged, tag pending) carries a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
+> **Why this section exists:** R1 (v1.0.0-alpha, shipped 2026-10-14 — release PR #87, the council's blocker fixes PR #88) carries a list of open defects logged by the Sprint G break-it rounds and the disconnect-freeze review, plus a few release items. None of them has a sprint in the roadmap (S11–S18 are feature sprints). The council reconciliation re-verified each against the code and filed them in [known-issues.md](known-issues.md); the stories below group them so every open issue has a forward link. **Priority is a proposal for the founder; scheduling is the sprint plan's call.** Each is `Planned` and unscheduled unless it says otherwise.
 
 #### US-R1F-01 — Transport and queue correctness after R1
 
 As a **Marcus** I want play, pause, repeat, shuffle and the queue to do exactly what the screen says, so that I never hear a different song from the one named, or a queue that never ends.
 
-**Covers:** KI-PB-01 (HIGH: Pure ignores a re-armed next track — clear the Pure deck before re-arming, and confirm on a USB DAC), KI-PB-03, KI-PB-04 (a "start in flight" state both the toggle and `pause()` consult), KI-PB-05, KI-PB-06, KI-PB-07, KI-PB-08, KI-PB-09, KI-PB-10, KI-PB-14.
-**Acceptance:** each KI's scenario has a regression test (the breaker B VM harness pattern — `breakit/s10-8-g-playback-shell`, `Tests/BreakItG/vmharness`) and passes; KI-PB-01 is reproduced and fixed on hardware.
-**Priority:** Must (KI-PB-01) / Should | **Estimate:** 8 sp | **Traceability:** FR-PLAY-02, FR-PLAY-03, FR-PLAY-05, NFR-REL-03
+**Covers:** ~~KI-PB-01 (HIGH: Pure ignores a re-armed next track — clear the Pure deck before re-arming, and confirm on a USB DAC)~~ *(fixed by PR #88, council D41; the USB-DAC confirmation is still owed)*, KI-PB-16 (D41's residual windows — follow-up F1, seam identity), KI-PB-17 (`ended` latched across a seek — with the transport state-machine work), KI-PB-03, KI-PB-04 (a "start in flight" state both the toggle and `pause()` consult), KI-PB-05, KI-PB-06, KI-PB-07, KI-PB-08, KI-PB-09, KI-PB-10, KI-PB-14.
+**Acceptance:** each KI's scenario has a regression test (the breaker B VM harness pattern — `breakit/s10-8-g-playback-shell`, `Tests/BreakItG/vmharness`; since R1 the shipped view model can be driven directly, `Tests/AdaptiveSoundTests/`) and passes; ~~KI-PB-01 is reproduced and fixed on hardware~~ *(fixed in code by PR #88; heard on a USB DAC still owed)*.
+**Priority:** ~~Must (KI-PB-01)~~ Should | **Estimate:** 8 sp | **Traceability:** FR-PLAY-02, FR-PLAY-03, FR-PLAY-05, NFR-REL-03
 
 #### US-R1F-02 — Seamless seams
 
@@ -1679,7 +1680,7 @@ As a **Marcus** I want every track change to be seamless, so that gapless albums
 
 As a **Ramith** I want the library to tell me when a folder is unreachable or a scan failed, and never to delete a playlist entry because a drive is unplugged, so that I can trust what I see.
 
-**Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item), KI-LIB-03 (retry a failed metadata pass; refresh Songs).
+**Covers:** KI-LIB-01 (HIGH: Remove Missing must exclude songs under a paused / unreachable folder, or say so), KI-LIB-02 (show paused / failed folders; a Rescan item), KI-LIB-03 (retry a failed metadata pass; refresh Songs), LIB-VOL-1 (a lossless "use this drive" action on a paused folder, so nobody removes and re-adds it — founder, 2026-10-14).
 **Priority:** Must (KI-LIB-01) / Should | **Estimate:** 5 sp | **Traceability:** EP-LIBRARY, US-LIB-01, US-PLIST-02
 
 #### US-R1F-04 — Library and playlist polish
@@ -1693,7 +1694,7 @@ As a **Tom** I want browsing, filtering and playlists to behave the same everywh
 
 As a **Ramith** I want Pure Mode, the device pin, Master Gain, Intensity and crossfeed to survive a relaunch, and Master Gain to mean the same level on both paths, so that the app never comes back louder than I left it.
 
-**Covers:** KI-SET-01, KI-SET-02 (a Master Gain cut must carry into Pure, or Pure must show it is louder), KI-SET-03.
+**Covers:** KI-SET-01, KI-SET-02 (a Master Gain cut must carry into Pure, or Pure must show it is louder), KI-SET-03, DEV-1 (store the chosen output device's UID and the "Keep playback on this device" switch, and restore them at launch).
 **Acceptance:** each setting has a defaults key read at launch (Master Gain at least); switching Enhanced → Pure never raises the level without the user seeing it.
 **Priority:** Should | **Estimate:** 3 sp | **Traceability:** FR-PLAY-05, US-PLAY-05, NFR-REL-03
 

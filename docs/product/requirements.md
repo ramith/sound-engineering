@@ -2,7 +2,7 @@
 ## Adaptive Sound — Object-Based Spatial Music Renderer (macOS)
 
 **Document ID:** PRD-ASE-001  
-**Version:** 0.8 — reconciled to the code at R1 / v1.0.0-alpha (2026-10-13); targets still aligned to architecture.md v0.3  
+**Version:** 0.8.1 — reconciled to the code (2026-10-13), re-checked after R1's blocker fixes (PR #88; R1 = v1.0.0-alpha, shipped 2026-10-14); targets still aligned to architecture.md v0.3  
 **Date:** 2026-06-13  
 **Author:** Business Analyst (Lead)  
 **Status:** Open for stakeholder review  
@@ -43,6 +43,8 @@
 > **v0.7 (2026-07-12): removed natural-language tuning (FR-NLT, LD-8) and hearing personalization (FR-HEAR, FR-ADAPT-06) from scope — founder decision.** Both features are withdrawn (neither was built) and may be re-added later. Also withdrawn as wholly-dependent on those features: FR-STEM-04 (per-stem NL targeting), OQ-05/OQ-11/OQ-12/OQ-13/OQ-14/OQ-15, ASM-09, Journeys 2.2 and 2.7, and the associated §5 matrix / stakeholder / glossary / registry rows. Prior specs remain in git history. Historical change notes (v0.2–v0.6) are left intact as a changelog and still name the withdrawn IDs.
 
 > **v0.8 (2026-10-13, product council): reconciled to the code.** The code is the state of the product. Added the **§3.0 Requirement status matrix** — every FR / NFR marked against `main` at a206107 (R1 / v1.0.0-alpha), with a back-link to the PR / design doc and the code location, and a forward link to the roadmap sprint (S11–S18) or backlog story that closes a gap. Requirements are **not** rewritten to match the code: where a founder decision changed the target, the requirement carries an **"As-built"** annotation naming the decision (Sprint EQ decisions 25 / 29 / 30 for FR-REIMAGINE-02, NFR-QUAL-03, FR-TONAL-06/07; S8.1 D5 for NFR-PRIV-05; QW1 §2 for OQ-17 / DEP-16); where the code looks like a defect, it is described and linked to [known-issues.md](known-issues.md). Resolved: OQ-07 (macOS 26 floor), OQ-17. Corrected: ASM-01, ASM-02, DEP-09, DEP-11, CON-12.
+>
+> **v0.8.1 (2026-10-14): after R1.** R1 shipped as v1.0.0-alpha (tag on f098821) with the council's blocker fixes (PR #88). The matrix rows those fixes touched were re-checked against `7761693`: FR-PLAY-03 (numbered on-deck requests close KI-PB-01), FR-PLAY-05 (DEV-1), FR-DEVICE-02 and NFR-REL-02 (the chosen device returns when it reconnects, in-session), NFR-REL-03, and NFR-QUAL-03 (whose golden-master value was also corrected to the Sprint EQ re-baseline).
 
 ---
 
@@ -62,7 +64,7 @@ Founder-confirmed decisions. These supersede any conflicting requirement text be
 | LD-6 | Ambient mic sensing | **On-demand sampling only** — no continuous/always-on mic. See revised FR-ADAPT-04 and Journey 2.5. |
 | LD-7 | Spatial | **BRIR-first** (superseded by LD-14): default binaural = BRIR (HRTF + early reflections + late reverb); dry HRTF = minimal mode; SADIE II (Apache-2.0) is the anechoic HRIR core. Custom HRTF measurement deferred. |
 | LD-8 | *Withdrawn 2026-07-12* | Natural-language / conversational tuning removed from scope (founder decision); may be re-added. |
-| LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. *As-built (2026-10-13): the repository is public and the R1 release is in progress, but no LICENSE file exists yet → backlog US-REL-02.* |
+| LD-9 | Project model | **Personal / open-source, non-commercial.** No monetization, pricing, paywall, or feature-gating of any kind. All features are free. There are no paid tiers, no entitlement checks for feature access, and no conversion-oriented analytics. The specific OSS license is **deferred to post-MVP** (post-Phase 0). This decision supersedes any conflicting text in this document and resolves OQ-02. *As-built (2026-10-14): the repository is public and R1 shipped (v1.0.0-alpha, a public GitHub release), but no LICENSE file exists yet → backlog US-REL-02.* |
 | LD-10 | Quality-first / ample use of modern hardware | Maximize quality by making ample use of all modern hardware: RAM, CPU, multi-core + GPU (Metal) + Neural Engine parallelism, fast SSD (disk caching/precompute), and fast networks (optional cloud assist for non-sensitive, latency-tolerant work). Prefer platform-native, hardware-accelerated multimedia frameworks/OS features over generic code (macOS-only project): Accelerate/vDSP/BNNS, Core ML (Neural Engine), Metal/MPS, Audio Workgroups (os_workgroup) for safe real-time parallelism, AVAudioEngine/AudioToolbox built-in units, hardware-accelerated decode + AVAudioConverter SRC, and Spatial Audio / head-tracking APIs. CPU/RAM/disk are not primary constraints. Hard limits that remain: (a) the real-time per-buffer deadline (NFR-PERF-01); (b) core playback stays offline-capable — network optional, never required; (c) privacy — sensitive data (mic) stays on-device; (d) laptop battery/thermal (optional efficiency mode). Own-player latency is free, so look-ahead/pre-analysis, linear-phase FIR EQ, oversampling, and long convolutions are all in scope. Default to the max-quality profile. Supersedes the former fixed CPU/RAM caps — see revised NFR-PERF-02/03/04. |
 | **LD-11** | Source quality & non-goals | Assume good-quality sources (lossless / high-bitrate). **Audio repair/restoration is a non-goal** (no de-noise/de-clip/upsample to "fix" bad audio). Network may be used for non-sensitive, latency-tolerant work; core playback + RT DSP stay **offline-capable**. |
 | **LD-12** | Perceptual tonal model | Clarity/adaptive decisions are made in **ERB/Bark with a masking + partial-loudness model** (Moore-Glasberg style), not raw dB-on-log. Contributors are **typed** (EQ-curve + per-band dynamic + transient + spatial); the dB curve is a realization/interchange format only. |
@@ -136,7 +138,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 
 ### 3.0 Requirement status matrix
 
-*Verified against the code on 2026-10-13 — `main` at a206107, R1 / v1.0.0-alpha.*
+*Verified against the code on 2026-10-13 — `main` at a206107; the rows R1's blocker fixes touched (PR #88) re-checked on 2026-10-14 against `7761693`. R1 = v1.0.0-alpha, tagged on f098821.*
 
 **Status:** **Delivered** (as specified) · **Delivered†** (delivered with a recorded deviation — see the requirement's As-built note) · **Partial** · **Not built** · **Won't** (this horizon — roadmap "Deferred") · **Superseded** · **N/A**. Paths are under `Sources/` unless noted; PR numbers are GitHub PRs; KI-* are entries in [known-issues.md](known-issues.md); US-* are [backlog](backlog.md) stories.
 
@@ -144,9 +146,9 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 |---|---|---|---|
 | FR-PLAY-01 | Delivered† | Library scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScan/LibraryScanner.swift:50-52`; S8.2 PR #15, `.aif` PR #85); decode = Apple `ExtAudioFile` / `AVAudioFile`, FFmpeg only as an optional runtime fallback (`AudioDSP/FileDecodeSource.cpp:7-16`) | `.opus` / `.oga` → S11 (KI-LIB-05); a single file outside the library → US-LIB-02 |
 | FR-PLAY-02 | Delivered | Transport + Master Gain (S9 PR #23, PR #24); media keys + Control Center (`AdaptiveSound/NowPlayingController.swift:89-104`, S10.4 PR #58); paused-scrub / end-of-queue fixes (PR #85) | KI-PB-04, KI-PB-07, KI-PB-10 → US-R1F-01 |
-| FR-PLAY-03 | Delivered | Grip-drag / menu / keyboard reorder, remove, shuffle, repeat (S10.2 PR #54; `UI/Playlist/PlaylistItemList.swift`, `PlaybackQueueKit/PlaybackOrder.swift`); mid-song re-arm (PR #85) | KI-PB-01 (HIGH), KI-PB-02, KI-PB-03 → US-R1F-01/02 |
+| FR-PLAY-03 | Delivered | Grip-drag / menu / keyboard reorder, remove, shuffle, repeat (S10.2 PR #54; `UI/Playlist/PlaylistItemList.swift`, `PlaybackQueueKit/PlaybackOrder.swift`); mid-song re-arm (PR #85); every on-deck request numbered, the engine applies only the newest (`OnDeckTicket` / `OnDeckGate`, PR #88 — council D41) | KI-PB-02, KI-PB-03, KI-PB-16, KI-PB-17 → US-R1F-01/02 *(KI-PB-01 closed by PR #88)* |
 | FR-PLAY-04 | Delivered | Tags + embedded art off-main (S8.3 PR #15; `LibraryScan/MetadataExtractor.swift`, `ArtworkCache.swift`); Now Playing hero (S10.7 PR #61) | KI-PB-06 |
-| FR-PLAY-05 | Partial | Queue + track + offset + shuffle / repeat restored paused (`AdaptiveSound/AudioViewModel+QueueHydration.swift`, S10.2 PR #54); EQ state persists (`EQEditKit/EQStore.swift`) | Settings reset at launch → US-R1F-05 (KI-SET-01); no "profile" → S13 |
+| FR-PLAY-05 | Partial | Queue + track + offset + shuffle / repeat restored paused (`AdaptiveSound/AudioViewModel+QueueHydration.swift`, S10.2 PR #54); EQ state persists (`EQEditKit/EQStore.swift`) | Settings reset at launch → US-R1F-05 (KI-SET-01, DEV-1); no "profile" → S13 |
 | FR-PLAY-06 | Not built | The scan skips unlisted files silently (`LibraryScanner.swift:319-321`); there is no file import | S11 |
 | FR-AGENT-01 | Not built | **New 2026-10-13 (founder):** every user-facing player function is controllable through a local, opt-in MCP server, over the same command / state API as the UI (no second control path); hearing-safety limits enforced server-side | [EP-MCP](backlog.md#ep-mcp--agent-control-surface-mcp) — placement: 2026-10 council |
 | FR-SPAT-01 | Not built | `AudioDSP/Spatial/BRIRModule.h` is a bit-exact pass-through stub | S18 |
@@ -171,7 +173,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | FR-ADAPT-07 | Partial | Signal-path readout only (`UI/Settings/SignalPathStatus.swift`, US-ADAPT-06) | S16–S17 (US-ADAPT-04) |
 | FR-ADAPT-08 | Not built | Nearest: the Intensity knob, which scales only the adaptive enhancement (decision 25) | S17 |
 | FR-DEVICE-01 | Delivered | `AudioDSP/CoreAudioDevice.cpp`; `DeviceListPolicy.cpp` hides hidden / private aggregate devices (PR #85); name, type, rate in `UI/Settings/DeviceDetailRow.swift` | KI-DEV-02 → US-R1F-06 |
-| FR-DEVICE-02 | Partial | Per-output EQ recall + output toast (`EQEditKit/EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`, PR #73); pin / follow / pause-on-loss rule (`OutputDeviceKit/OutputDevicePolicy.swift`, PR #85) | Whole profiles → S13 |
+| FR-DEVICE-02 | Partial | Per-output EQ recall + output toast (`EQEditKit/EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`, PR #73); pin / follow / pause-on-loss rule (`OutputDeviceKit/OutputDevicePolicy.swift`, PR #85); the device the user chose is kept apart from a fallback and returned to when it reconnects (`OutputDeviceKit/OutputDeviceSelection.swift`, PR #88 — council N92) | Whole profiles → S13; the choice is not kept across launches → US-R1F-05 (DEV-1) |
 | FR-DEVICE-03 | Partial | Transport-only: built-in / USB / wireless / unknown (`CoreAudioDevice.cpp:326-359`) | S13; KI-DEV-01 → US-R1F-06 |
 | FR-DEVICE-04 | Not built | Nearest: My Presets + per-output pins | S13 |
 | FR-DEVICE-05 | Not built | — | S13 |
@@ -196,14 +198,14 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | NFR-PERF-05 / -06 | Won't | — | — |
 | NFR-QUAL-01 | Not built (no gate) | No THD+N measurement in `Tests/` | US-QA-07 |
 | NFR-QUAL-02 | Partial | No in-app XRun counter; manual procedure | KI-GAP-01 (seam gap) → US-R1F-02 |
-| NFR-QUAL-03 | Delivered† | Golden master `0xE7267654BA01D315` (T-C1, `Tests/MultichannelTests.inc`, in the C++ null-test harness); Pure `Tests/RoundTripTests.inc`; decision 25 | — |
+| NFR-QUAL-03 | Delivered† | Golden master ~~`0xE7267654BA01D315`~~ `0xE7AF0C67F9340785` since Sprint EQ's re-baseline (T-C1, `Tests/MultichannelTests.inc:45`, in the C++ null-test harness); Pure `Tests/RoundTripTests.inc`, and every 16- and 24-bit code converts bit-exactly (`Convert_BitExact_Exhaustive16And24`, PR #88); decision 25 | — |
 | NFR-QUAL-04 | Delivered | `SRCQualityMeasure`; Pure plays the file's own rate | — |
 | NFR-PRIV-01 / -02 | N/A | No microphone access in the code | US-AMB-01 |
 | NFR-PRIV-04 | Delivered (trivially) | No telemetry and no network calls anywhere | — |
 | NFR-PRIV-05 | Superseded | Developer-ID, not sandboxed (S8.1 design D5); no entitlements file | US-REL-01 |
 | NFR-REL-01 | Not measurable | No crash reporting | SPIKE-TELEMETRY |
-| NFR-REL-02 | Delivered | Device loss pauses, keeps the place, shows a banner (PR #85); no main-thread freeze (PR #86) | — |
-| NFR-REL-03 | Partial | 13 blockers fixed (PR #85); open defects remain | US-R1F-01…06 |
+| NFR-REL-02 | Delivered | Device loss pauses, keeps the place, shows a banner (PR #85); no main-thread freeze (PR #86); when the device the user chose reconnects, the next Play plays on it (PR #88, council N92) — within a session | The choice is not kept across launches → US-R1F-05 (DEV-1) |
+| NFR-REL-03 | Partial | 13 Sprint G blockers fixed (PR #85); the council's R1 blockers fixed (PR #88: numbered on-deck requests, the chosen device kept apart from a fallback, a library sweep only on evidence); open defects remain | US-R1F-01…08 |
 | NFR-INSTALL-01 | Delivered† | Drag-to-Applications DMG, `make dist` + release workflow (PR #87); ad-hoc signed, not notarized (decision 13) | US-REL-01 |
 | NFR-INSTALL-02 / -03 | Won't | — | — |
 | NFR-INSTALL-04 | Partial | The library, artwork cache and backups stay in `~/Library/Application Support/AdaptiveSound/` after the app is deleted (`AdaptiveSound/AppDataLocation.swift`) | — |
@@ -848,7 +850,7 @@ If the audio engine encounters an unrecoverable error (e.g., device disconnected
 > When the error is detected,  
 > Then playback stops cleanly, an error banner appears, and the user can resume playback after reconnecting or selecting another device.
 
-> **As-built (PR #85, #86):** on device loss both paths pause, keep the song's place, and show "Output device disconnected — playback paused. Press Play to continue."; nothing auto-resumes; the selection moves to the new system default. Since PR #86 the main thread never waits on the dying device (no beach ball).
+> **As-built (PR #85, #86, #88):** on device loss both paths pause, keep the song's place, and show "Output device disconnected — playback paused. Press Play to continue."; nothing auto-resumes; the selection moves to the new system default. Since PR #86 the main thread never waits on the dying device (no beach ball). **Since R1 (PR #88, council N92) "resume after reconnecting" is met within a session:** the device the user chose is kept apart from the temporary fallback (`OutputDeviceSelection`), so when it reconnects — once the device menu would list it — the next Play plays on it, and playback that resumed on the fallback moves back. The choice is not kept across launches (known issue DEV-1 → US-R1F-05). The 3-second recovery bound is not measured.
 
 **NFR-REL-03** — State Consistency (P1)  
 No combination of user actions (rapid profile switching, device hotplug, simultaneous seek and device change) shall leave the DSP engine or UI in an inconsistent state (e.g., wrong profile applied, incorrect device shown).
