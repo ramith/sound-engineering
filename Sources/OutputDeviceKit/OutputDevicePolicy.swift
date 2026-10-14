@@ -17,6 +17,8 @@
 //     is away, the fallback is temporary: the app follows the system default as with the switch off,
 //     and never puts a fallback back as the default. When the chosen device returns it is the app's
 //     device again: the next Play plays on it, and playback that resumed on the fallback moves back.
+//   • The device the app starts on is not a choice (R1): only a pick in the device menu, or turning
+//     the switch on, is. Until then nothing is chosen, and pinned behaves exactly as follow.
 //   • OFF (follow): the app takes the system default as its device, playing or not.
 
 /// What the app is playing through when an output event arrives.
@@ -56,8 +58,9 @@ public struct OutputDeviceFacts: Sendable, Equatable {
     public var playback: OutputPlayback
     /// "Keep playback on this device".
     public var pinned: Bool
-    /// The device the user chose (`OutputDeviceSelection`), when it is connected and alive: its id
-    /// now, which a reconnect may have changed (0 = away, or none chosen).
+    /// The device the user chose (`OutputDeviceSelection`), when it is here to play on
+    /// (`chosenDevice(_:alive:listed:)`): its id now, which a reconnect may have changed (0 = away,
+    /// not ready yet, or none chosen).
     public var chosen: UInt32
 
     public init(
@@ -141,6 +144,14 @@ public enum OutputDevicePolicy {
         action.reestablishEnhanced = playback == .enhanced && !starting && !action.pauseForDeviceLoss
             && engineMustMove
         return action
+    }
+
+    /// The `chosen` fact for the device the chosen UID resolves to (`id`, 0 = none): that id when it
+    /// is alive and the device menu lists it (`listed`, DeviceListPolicy). A Bluetooth device appears
+    /// mid-handshake with no output stream, so it is not back until its output exists — the rule
+    /// would otherwise make it the target, or the default, with nothing to play on.
+    public static func chosenDevice(_ id: UInt32, alive: Bool, listed: Bool) -> UInt32 {
+        alive && listed ? id : 0
     }
 
     /// Whether playback must restart on the new output when the app's device changes (picked in

@@ -126,6 +126,11 @@ extern "C"
     uint32_t
     copyOutputDeviceModelUIDC(uint32_t deviceID, char* out, uint32_t capacity) AUDIODSP_C_NOEXCEPT;
 
+    /// 1 when the output-device menu would list this device (the same rule as
+    /// enumerateOutputDevicesC: an output stream, not hidden, not a process-private aggregate),
+    /// else 0. A Bluetooth device mid-handshake has no output stream yet, so it reads 0.
+    int isListedOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT;
+
     /// Return the default output device ID, or 0 if none is available.
     uint32_t getDefaultOutputDeviceID(void) AUDIODSP_C_NOEXCEPT;
 
