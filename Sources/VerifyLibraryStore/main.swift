@@ -217,7 +217,7 @@ func searchCheckCases() -> [CheckCase] {
         CheckCase(label: "fts-noop-rescan-zero-writes", run: checkFtsNoOpRescanZeroWrites),
         CheckCase(label: "fts-read-during-write", run: checkFtsReadDuringWrite),
         CheckCase(label: "fts-matching-ids", run: checkFtsMatchingIDsParity),
-    ]
+    ] + searchTokensCheckCases()
 }
 
 /// S8.4 Slice 1 — move-matching (id-preserving reconcile; closes SEQ-1/Gate-2). In its own
