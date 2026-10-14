@@ -193,7 +193,12 @@ extension AudioEngineBridge {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.engineQueue.async {
                 let place = SeekTarget.place(seconds)
-                self.beginTransportOperation(epoch: epoch, position: place)
+                // A seek a newer command overtook was meant for the playback that command replaced (or a
+                // place a newer seek moved on from): dropped, not failed.
+                guard self.beginTransportOperation(epoch: epoch, position: place) else {
+                    continuation.resume()
+                    return
+                }
                 guard let place else {
                     logUX("engine seek: target=\(seconds) refused (not a place)")
                     self.sampleTransport() // the settled sample: still where it plays

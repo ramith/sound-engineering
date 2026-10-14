@@ -22,7 +22,13 @@ extension AudioViewModel {
     /// - A track is already selected: (re)start it from the top.
     /// (Previously Play did nothing with no selection, so a freshly-loaded folder wouldn't start on
     /// the first Play press.)
+    /// A start already on its way is this Play (a second press, Control Center's Play): it joins it,
+    /// never starts the song again (council C-15).
     func play() {
+        switch transportCommand {
+        case .start, .prime: return
+        case .stop, nil: break
+        }
         // Resume from a Pause: consume + clear the saved offset and seek back to it after start.
         let resumeAt = pausedResumePosition
         resumePoint = nil
@@ -42,20 +48,24 @@ extension AudioViewModel {
     /// `play()` resumes from here via a seek. The engine has no suspend primitive, so this is a
     /// stop + resume-from-position (resume has a brief re-buffer gap), which the founder chose over
     /// a larger true-suspend engine change.
+    /// A start on its way is paused too (council C-15): it ends, at its own place, and Play resumes
+    /// there. The stop is numbered now, so a Play right after it is newer and wins.
     func pause() {
-        guard isPlaying else { return }
+        guard playIntent else { return }
         resumePoint = selectedSlotID.map { ResumePoint(slot: $0, seconds: playbackPosition) }
         logUX("pause at \(secs(playbackPosition))s")
-        // Clear the on-deck slot so `tickSpectrum` won't auto-advance after we stop the engine.
+        // The stop takes the engine's on-deck with it.
         pendingNextIndex = nil
-        Task { await performPause() }
+        let epoch = nextStopEpoch()
+        Task { await performPause(epoch: epoch) }
     }
 
     /// Position-preserving transport toggle — the single entry point every UI play/pause control
     /// (footer, Controls menu, queue, menu bar) routes through, so the behaviour can't drift between
-    /// them. `pause()` keeps the playhead; `play()` resumes from it.
+    /// them. `pause()` keeps the playhead; `play()` resumes from it. It follows what the user last
+    /// asked (`playIntent`), so a second press during a start pauses it, and one during a pause plays.
     func togglePlayPause() {
-        if isPlaying {
+        if playIntent {
             pause()
         } else {
             play()
@@ -66,17 +76,17 @@ extension AudioViewModel {
     /// `computeNextIndex` the auto-advance path uses, with `manualSkip: true` so repeat-one steps
     /// to the next track instead of repeating the current one. When shuffle is on the next track is
     /// random; repeat-all wraps at the end; with no repeat, Next on the last track is a no-op.
-    /// If currently playing, switches the ENGINE to the new track (startPlayback re-arms the gapless
-    /// on-deck); if paused, just re-selects. (Previously Next/Prev were LINEAR and ignored
-    /// shuffle/repeat, and only moved `selectedTrackIndex` while the audio kept playing the old
-    /// track.)
+    /// If currently playing — or starting (council C-15) — switches the ENGINE to the new track
+    /// (startPlayback re-arms the gapless on-deck); if paused, just re-selects. (Previously Next/Prev
+    /// were LINEAR and ignored shuffle/repeat, and only moved `selectedTrackIndex` while the audio kept
+    /// playing the old track.)
     func nextTrack() {
         guard let current = selectedTrackIndex else { return }
         guard let next = computeNextIndex(current: current, playlistCount: playlist.count,
                                           manualSkip: true) else { return }
         resumePoint = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = next
-        if isPlaying {
+        if playIntent {
             startPlayback()
         }
     }
@@ -90,7 +100,7 @@ extension AudioViewModel {
                                                   playlistCount: playlist.count) else { return }
         resumePoint = nil // explicit track change: don't resume the old paused offset
         selectedTrackIndex = previous
-        if isPlaying {
+        if playIntent {
             startPlayback()
         }
     }

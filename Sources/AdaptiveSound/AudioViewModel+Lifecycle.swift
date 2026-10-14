@@ -132,7 +132,7 @@ extension AudioViewModel {
         // the menu bar / Control Center could pass the `isEngineReady` guard and land on
         // engineQueue AFTER the teardown block → "engine not initialized" at quit.
         isEngineReady = false
-        await performStop()
+        await performStop(epoch: nextStopEpoch())
         do {
             try await engine.shutdown()
         } catch {
@@ -145,38 +145,43 @@ extension AudioViewModel {
 
     func stopPlayback() {
         logUX("stop (was at \(secs(playbackPosition))s)")
-        // Clear the on-deck state synchronously so `tickSpectrum` won't react after stop.
+        // The stop takes the engine's on-deck with it.
         pendingNextIndex = nil
         // An explicit stop is not a pause: drop any position-preserving resume point so the next
         // Play starts from the top (D2).
         resumePoint = nil
-        // Fire-and-forget for the normal (non-shutdown) stop path — behaviour unchanged.
-        // The actual stop sequence lives in `performStop()` so `shutdown()` can `await` it.
-        Task { await performStop() }
+        // Numbered now (council C-15): a Play right after it is newer, and wins at the engine whatever
+        // order the two reach it in. The stop itself lives in `performStop()` so `shutdown()` can
+        // `await` it.
+        let epoch = nextStopEpoch()
+        Task { await performStop(epoch: epoch) }
     }
 
-    /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2).
-    /// Mirrors `performStop()` but leaves `playbackPosition` and `duration` intact so the scrubber
-    /// stays at the paused spot; `pause()` has already recorded `pausedResumePosition` for resume.
-    func performPause() async {
+    /// Stop the engine WITHOUT resetting the playhead — the position-preserving Pause path (D2), for
+    /// the pause numbered `epoch`. Mirrors `performStop()` but leaves `playbackPosition` and `duration`
+    /// intact so the scrubber stays at the paused spot; `pause()` has already recorded
+    /// `pausedResumePosition` for resume.
+    func performPause(epoch: UInt64) async {
         do {
-            let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
             try await engine.stopAudio(epoch: epoch)
+            // A Play asked since owns the transport: it plays on (the engine dropped this stop if it had
+            // begun the Play first).
+            guard finish(.stop(epoch)) else { return }
             isPlaying = false
         } catch {
             errorMessage = "Pause failed: \(error.localizedDescription)"
         }
     }
 
-    /// Stop the engine and reset transport state. Returns only once `stopAudio()` has fully
-    /// completed, so callers that must tear the engine down afterwards (e.g. `shutdown()`) can
+    /// Stop the engine and reset transport state, for the stop numbered `epoch` (`nextStopEpoch()`).
+    /// One engine call: the stop takes the on-deck pick with it. Returns only once `stopAudio()` has
+    /// fully completed, so callers that must tear the engine down afterwards (e.g. `shutdown()`) can
     /// `await` this to guarantee ordering and avoid a use-after-free of the C handles (P2-C).
-    func performStop() async {
+    func performStop(epoch: UInt64) async {
         do {
-            let epoch = nextStopEpoch()
-            await engine.setNextTrack(nil, ticket: nextOnDeckTicket())
             try await engine.stopAudio(epoch: epoch)
+            // A start asked since owns the transport (and its playhead and length): leave them to it.
+            guard finish(.stop(epoch)) else { return }
             isPlaying = false
             playbackPosition = 0
             duration = 0

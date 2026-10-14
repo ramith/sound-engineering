@@ -82,9 +82,15 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
     /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
     /// request: the snapshot's transport carries it from the start of the request on.
+    ///
+    /// Newest stands (council C-15). The view model numbers its starts, stops and seeks in the order
+    /// the user asks; they can reach the engine in another order. One older than a request the engine
+    /// has already begun was overtaken: it returns at once and has no effect — never an error.
     func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
 
-    /// Stop all playback immediately. `epoch` numbers the request, as for `startAudio`.
+    /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
+    /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
+    /// as for `startAudio`, and an overtaken stop is dropped the same way.
     func stopAudio(epoch: UInt64) async throws
 
     // MARK: Gapless / continuous playback (poll-based — the view model reads a snapshot at 20 Hz)
@@ -161,7 +167,8 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// `SeekTarget`). A place at or past the end ends the track — the transport's `ended` — as if it
     /// had played out. Throws `AudioBridgeError.seekFailed` when the seek did not happen — a target
     /// that is not a number, a file that no longer opens, a Pure decoder that could not move — and
-    /// playback carries on exactly where it was. `epoch` numbers the request, as for `startAudio`.
+    /// playback carries on exactly where it was. `epoch` numbers the request, as for `startAudio`, and
+    /// an overtaken seek is dropped the same way (not a failure).
     func seek(to seconds: Double, epoch: UInt64) async throws
 
     // MARK: Master Gain

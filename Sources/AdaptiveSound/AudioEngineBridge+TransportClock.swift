@@ -51,13 +51,25 @@ extension AudioEngineBridge {
     /// The top of a transport operation numbered `epoch` (start, seek, stop), on `engineQueue`,
     /// before any slow work: publish its transitional sample — the place it goes to (`nil`: not
     /// known yet), no end flag, the seam count the reader last saw (a count from the replaced
-    /// playback must not read as a seam) — and stamp every later sample with `epoch`.
-    func beginTransportOperation(epoch: UInt64, position: Double?) {
+    /// playback must not read as a seam) — and stamp every later sample with `epoch`. Returns `true`:
+    /// run the operation.
+    ///
+    /// An operation older than one already begun was overtaken on its way here — the view model
+    /// numbers its requests in the order the user asks, and the hops to this queue keep no order. It
+    /// returns `false` and changes nothing, publishes nothing: the caller drops it, so the newer request
+    /// stands (council C-15; SFBAudioEngine's generation idiom, applied to commands). A Stop that a Play
+    /// overtook no longer silences the song the app shows as playing.
+    func beginTransportOperation(epoch: UInt64, position: Double?) -> Bool {
         dispatchPrecondition(condition: .onQueue(engineQueue))
-        transportEpoch = max(transportEpoch, epoch)
+        guard epoch > transportEpoch else {
+            logUX("transport e\(epoch) → overtaken by e\(transportEpoch), dropped")
+            return false
+        }
+        transportEpoch = epoch
         let seen = transportSnapshots.read()
         transportSnapshots.publish(TransportSnapshot(epoch: transportEpoch, position: position,
                                                      transitionCount: seen.transitionCount, ended: false))
+        return true
     }
 
     /// Sample the active path and publish it. On `engineQueue` only: the clock's handler, and the end

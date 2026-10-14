@@ -69,10 +69,12 @@ final class AudioViewModel {
     /// reaches the request — it can queue behind a slow device start — they describe the playback
     /// the request replaces. Not UI-bound.
     @ObservationIgnored var transportEpoch: UInt64 = 0
-    /// The number of the latest stop or pause request (`nextStopEpoch()`). A start numbered before
-    /// it was abandoned while it ran, so its `Task` neither primes the queue nor marks playing over
-    /// the stop (the UI showed Playing over a stopped engine — S10.8 G review). Not UI-bound.
-    @ObservationIgnored var transportStopEpoch: UInt64 = 0
+    /// The start or the stop (Stop, or Pause) still on its way to the engine: numbered, not finished
+    /// (council C-15, `+TransportCommands`). Set in the turn the user asks, so a press while it runs
+    /// acts on it — Space during a start pauses it, Next starts the next song, a second Play joins it —
+    /// and only the newest one's outcome is applied. `nil`: none; `isPlaying` says what plays. The play
+    /// / pause control reads it (`playIntent`).
+    var transportCommand: TransportCommand?
     /// The playback the on-deck requests belong to (`OnDeckTicket.session`): the epoch of the newest
     /// start. The engine applies only the newest request of the playback it is in (council D41).
     /// Not UI-bound.
@@ -330,26 +332,8 @@ final class AudioViewModel {
         }
     }
 
-    /// Number the next transport request (see `transportEpoch`). Call it synchronously, before the
-    /// request's `Task`, so no tick in between reads the replaced playback as current.
-    func nextTransportEpoch() -> UInt64 {
-        transportEpoch &+= 1
-        return transportEpoch
-    }
-
-    /// Number the next STOP or PAUSE request: a transport request (`nextTransportEpoch()`) that
-    /// also ends any start still in flight (`transportStopEpoch`).
-    func nextStopEpoch() -> UInt64 {
-        transportStopEpoch = nextTransportEpoch()
-        return transportStopEpoch
-    }
-
-    /// Number the next on-deck request: the newest start's playback, and the next place in the
-    /// order requests are made. Call it synchronously, in the turn that decides the request.
-    func nextOnDeckTicket() -> OnDeckTicket {
-        onDeckSequence &+= 1
-        return OnDeckTicket(session: onDeckSession, sequence: onDeckSequence)
-    }
+    // Numbering what the view model asks of the engine (transport requests, on-deck requests) lives
+    // in AudioViewModel+TransportCommands.swift.
 
     /// The queue slot of the selected song (`nil` = none, or an index out of range).
     var selectedSlotID: UUID? {

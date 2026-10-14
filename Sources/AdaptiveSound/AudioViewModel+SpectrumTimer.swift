@@ -88,7 +88,10 @@ extension AudioViewModel {
         }
 
         // --- Gapless auto-advance poll ---
-        if isPlaying, let transport {
+        // Only while nothing is on its way (council C-15): a start or a stop replaces the playback
+        // whose seam or end the engine reports, and a start's prime sets the seam baseline of its own
+        // (a Pause in the last tick of a song used to end the queue — P4-7).
+        if isPlaying, transportCommand == nil, let transport {
             let currentCount = transport.transitionCount
             if currentCount > lastTransitionCount {
                 // A gapless seam completed: the on-deck track is now current.
@@ -130,15 +133,16 @@ extension AudioViewModel {
 
     /// The scrubber's playhead, each tick. While PAUSED (position-preserving Pause, D2) it shows where
     /// Play resumes — also while pausing, before the engine has stopped, so a scrub then isn't
-    /// overwritten by the engine's last ticks (S10.8 G). While playing it follows the engine. Only a
-    /// genuine stop (not playing, not paused) zeroes it.
+    /// overwritten by the engine's last ticks (S10.8 G). While playing — or starting, from the place
+    /// the start goes to (council C-15) — it follows the engine. Only a genuine stop (not playing, not
+    /// paused) zeroes it.
     @MainActor
     private func pollPlayhead(_ transport: TransportSnapshot?) {
         if let resumeAt = pausedResumePosition {
             if playbackPosition != resumeAt {
                 playbackPosition = resumeAt
             }
-        } else if isPlaying {
+        } else if playIntent {
             playbackPosition = transport?.position ?? playbackPosition
         } else if playbackPosition != 0 {
             playbackPosition = 0
