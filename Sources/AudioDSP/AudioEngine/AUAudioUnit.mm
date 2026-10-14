@@ -328,6 +328,11 @@ uint32_t copyOutputDeviceModelUIDC(uint32_t deviceID, char* out, uint32_t capaci
     return copyDeviceString(AdaptiveSound::CoreAudioDevice::getDeviceModelUID(device), out, capacity);
 }
 
+int isListedOutputDeviceC(uint32_t deviceID) AUDIODSP_C_NOEXCEPT {
+    if (deviceID == 0) { return 0; }
+    return AdaptiveSound::CoreAudioDevice::isListedOutput(static_cast<AudioDeviceID>(deviceID)) ? 1 : 0;
+}
+
 uint32_t getDefaultOutputDeviceID() AUDIODSP_C_NOEXCEPT {
     AudioDeviceID id = AdaptiveSound::CoreAudioDevice::getDefaultOutputDevice();
     // kAudioObjectUnknown == 0 on all Apple platforms; return 0 to signal "none".

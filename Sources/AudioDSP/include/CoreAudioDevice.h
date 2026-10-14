@@ -37,6 +37,10 @@ namespace AdaptiveSound
         // (DeviceListPolicy.h) — no input-only, hidden or process-private devices.
         static std::vector<AudioDevice> enumerateOutputDevices();
 
+        // Whether the menu would list this one device (the same deviceListVerdict). A Bluetooth
+        // device mid-handshake is not listed yet: it has no output stream.
+        static bool isListedOutput(AudioDeviceID deviceID);
+
         // Query properties of a specific device
         static AudioDevice queryDevice(AudioDeviceID deviceID);
 

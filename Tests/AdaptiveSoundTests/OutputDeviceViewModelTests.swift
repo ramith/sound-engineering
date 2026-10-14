@@ -1,6 +1,7 @@
 // N92 — the view model's half of "Return to headphones" (R1), on the real `AudioViewModel`: it shows
 // the device the engine plays on, moves Pure playback when the engine moves, and never picks a device
-// itself — a pick is the user's, and the pin returns to it (OutputDeviceSelection).
+// itself — not after a loss, not at launch, not on a re-initialization: a pick is the user's, and the
+// pin returns to it (OutputDeviceSelection).
 
 @testable import AdaptiveSound
 import EQEditKit
@@ -97,6 +98,36 @@ struct OutputDeviceViewModelTests {
         #expect(identities.last??.uid == Self.headphones.uid, "the per-output EQ is the headphones' again")
         #expect(engine.state.withLock { $0.starts } == [90], "restarted on the headphones at the playhead")
         #expect(engine.state.withLock { $0.picks }.isEmpty)
+    }
+
+    @Test("launch shows the device the engine starts on and picks nothing (it is not the user's choice)")
+    func launchIsNotAPick() async {
+        engine.state.withLock {
+            $0.devices = [Self.speakers, Self.headphones]
+            $0.engineDevice = Self.speakers.id
+        }
+        viewModel.isEngineReady = false
+        viewModel.selectedDevice = nil
+        viewModel.initializeEngine()
+        await settle()
+        viewModel.stopSpectrumTimer()
+        #expect(viewModel.isEngineReady)
+        #expect(viewModel.selectedDevice?.id == Self.speakers.id)
+        #expect(engine.state.withLock { $0.picks }.isEmpty, "a launch pick would pin the speakers")
+    }
+
+    @Test("a re-initialization while the chosen headphones are away picks nothing: the choice stays")
+    func reinitializationIsNotAPick() async {
+        engine.state.withLock { $0.devices = [Self.speakers, Self.headphones] }
+        viewModel.selectDevice(Self.headphones) // the user's pick
+        await settle()
+        await engineMoves(to: Self.speakers.id, listing: [Self.speakers]) // lost; the rule fell back
+        viewModel.retryInitialization() // the Retry banner, or the engine-not-initialized self-heal
+        await settle()
+        viewModel.stopSpectrumTimer()
+        #expect(viewModel.isEngineReady)
+        #expect(viewModel.selectedDevice?.id == Self.speakers.id)
+        #expect(engine.state.withLock { $0.picks } == [Self.headphones.id], "only the user's own pick")
     }
 
     @Test("the user's pick goes to the engine as a pick (the pin moves with it)")
