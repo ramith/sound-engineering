@@ -14,6 +14,8 @@ struct OutputDevicePolicyTests {
         .devicesChanged, .defaultChanged, .targetAliveChanged, .engineReconfigured, .enhancedStarting,
     ]
 
+    /// The app's device is the one the user chose, so the chosen device is connected exactly while
+    /// it is alive (the N92 cases, where they differ, are in OutputDeviceReturnTests).
     private static func facts(
         target: UInt32 = deviceA,
         alive: Bool = true,
@@ -22,7 +24,7 @@ struct OutputDevicePolicyTests {
         pinned: Bool
     ) -> OutputDeviceFacts {
         OutputDeviceFacts(target: target, targetAlive: alive, systemDefault: systemDefault,
-                          playback: playback, pinned: pinned)
+                          playback: playback, pinned: pinned, chosen: alive ? target : 0)
     }
 
     private static func isNothing(_ action: OutputDeviceAction) -> Bool {

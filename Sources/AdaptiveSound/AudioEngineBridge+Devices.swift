@@ -1,13 +1,14 @@
 @preconcurrency import AVFoundation
 import CoreAudio
 import Foundation
+import OutputDeviceKit
 
 // MARK: - AudioEngineBridge: Device Enumeration
 
 /// Output-device enumeration + selection via the C-ABI CoreAudio bridge. Extracted from
 /// `AudioEngineBridge.swift` into a same-module extension to keep the core class body focused as
-/// the multichannel epic grows it. These methods use only the global C-ABI functions and
-/// `AudioDeviceModel` — no private engine state — so a separate file is safe.
+/// the multichannel epic grows it. Beyond the global C-ABI functions and `AudioDeviceModel`, they
+/// touch only the output devices (`outputSelection`), through its guarded accessors.
 extension AudioEngineBridge {
     /// Enumerate output devices using the C-ABI bridge to CoreAudio.
     /// Returns real device IDs, UIDs, names, sample rates, transports and types — no mock data.
@@ -35,7 +36,7 @@ extension AudioEngineBridge {
                         name: name,
                         sampleRate: info.sampleRate,
                         bufferFrameSize: info.bufferFrameSize,
-                        uid: Self.deviceString(info.deviceID, copyOutputDeviceUIDC),
+                        uid: Self.deviceUID(info.deviceID),
                         modelUID: modelUID.isEmpty ? nil : modelUID,
                         transportType: info.transportType,
                         type: deviceType
@@ -56,6 +57,13 @@ extension AudioEngineBridge {
                 continuation.resume(returning: models)
             }
         }
+    }
+
+    /// A device's persistent UID (`kAudioDevicePropertyDeviceUID`): what the app remembers a device
+    /// by, since its id can change across a reconnect. Empty when the device is gone or has none. A
+    /// HAL read: off the main thread.
+    static func deviceUID(_ deviceID: UInt32) -> String {
+        deviceString(deviceID, copyOutputDeviceUIDC)
     }
 
     /// Read one of the bridge's per-device strings (`copyOutputDeviceUIDC` /
@@ -83,22 +91,25 @@ extension AudioEngineBridge {
         currentDeviceID
     }
 
-    /// Make `deviceID` the device the app plays on (the pill). The target is set FIRST, then the
-    /// system default: the default-output listener then finds the app's own change already
-    /// matching its device, so the output rule neither fights it (pinned) nor re-adopts it
-    /// (follow). Enhanced follows the new default through the configuration change; a playing Pure
-    /// session is moved by the view model (`AudioViewModel.adoptOutput`).
+    /// The user picked `deviceID` (the pill, or the device the app starts on): the app plays on it,
+    /// and "Keep playback on this device" holds it — by UID — from now on (`OutputDeviceSelection`).
+    /// Only the user's picks come here; the output rule's own moves never do. The target and the
+    /// choice are set FIRST, then the system default: the default-output listener then finds the
+    /// app's own change already matching its device, so the output rule neither fights it (pinned)
+    /// nor re-adopts it (follow). Enhanced follows the new default through the configuration change;
+    /// a playing Pure session is moved by the view model (`AudioViewModel.adoptOutput`).
     func selectDevice(_ deviceID: UInt32) async throws -> Bool {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
-                let previous = self.currentDeviceID
-                self.setOutputTarget(deviceID)
+                let previous = self.outputSelection
+                let uid = Self.deviceUID(deviceID)
+                self.changeOutputSelection { $0.choose(deviceID, uid: uid) }
                 // selectOutputDeviceC returns Int32: 1 = success, 0 = failure
                 let result = selectOutputDeviceC(deviceID)
                 if result != 0 {
-                    logUX("engine selectDevice: id=\(deviceID) result=ok")
+                    logUX("engine selectDevice: id=\(deviceID) uid=\(uid) result=ok")
                 } else {
-                    self.setOutputTarget(previous)
+                    self.changeOutputSelection { $0 = previous } // a failed pick changes nothing
                     logUX("engine selectDevice: id=\(deviceID) result=failed")
                 }
                 continuation.resume(returning: result != 0)
