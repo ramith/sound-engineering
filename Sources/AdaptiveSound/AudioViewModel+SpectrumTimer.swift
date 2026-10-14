@@ -101,10 +101,9 @@ extension AudioViewModel {
                 handleTrackTransition()
             } else if transport.ended {
                 // Current track ended with no GAPLESS continuation. If a track is still queued
-                // (a Pure-path rate/format transition that couldn't be armed for a seamless seam),
-                // advance to it with a fresh start — a brief, honest reconfigure gap. Otherwise the
-                // queue is exhausted: stop. (Enhanced only reaches here with pendingNextIndex == nil,
-                // since its resampler arms any rate, so this advance is the Pure rate-change path.)
+                // (a Pure-path rate/format transition that couldn't be armed for a seamless seam, or
+                // a seek to the end on either path), advance to it with a fresh start — a brief,
+                // honest gap. Otherwise the queue is exhausted: stop.
                 if let nextIdx = pendingNextIndex, nextIdx < playlist.count {
                     logUX("playbackEnded — advancing to queued track[\(nextIdx)] (reconfigure gap)")
                     // §12.3: count the OUTGOING track (pre-advance selectedTrackIndex) before it
