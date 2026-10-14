@@ -52,31 +52,31 @@ extension AudioViewModel {
         let startIndex = selectedTrackIndex
         let pureModeSnapshot = startsOnPure
         // Numbered now, synchronously: until the engine begins this start, the ticks ignore the
-        // samples of the playback it replaces (the old track's playhead and end flag). Its on-deck
-        // requests belong to it from now on (the engine drops any made for the playback it replaces).
-        let epoch = nextTransportEpoch()
-        onDeckSession = epoch
+        // samples of the playback it replaces (the old track's playhead and end flag). It owns the
+        // transport and its on-deck requests from now on (the engine drops any made for the playback
+        // it replaces), until a newer start or a stop is asked (council C-15).
+        let epoch = nextStartEpoch()
 
         Task {
             do {
                 try await engine.startAudio(fileURL: fileURL, pureMode: pureModeSnapshot,
                                             startAt: resumeFrom ?? 0, epoch: epoch)
-                // A stop or pause asked while this start ran owns the transport now: neither prime
-                // the queue nor mark playing over the stopped engine. (A seek or a newer start does
-                // not end this one — only a stop does.)
-                guard transportStopEpoch < epoch else { return }
-                // A newer start owns the on-deck now and primes its own: a prime here would carry
-                // that start's playback with a pick computed for this replaced one.
-                if onDeckSession == epoch {
-                    await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
-                }
-                guard transportStopEpoch < epoch else { return }
+                // A stop, a pause or a newer start asked while this one ran owns the transport now
+                // (the engine dropped this start if it had begun that one first): neither prime the
+                // queue with a pick for a replaced playback nor mark playing over what was asked since.
+                guard transportCommand == .start(epoch) else { return }
+                transportCommand = .prime(epoch)
+                await primeGaplessPipeline(startIndex: startIndex, pureMode: pureModeSnapshot)
+                guard finish(.prime(epoch)) else { return }
                 isPlaying = true
                 errorMessage = nil
             } catch {
-                errorMessage = "Playback failed: \(error.localizedDescription)"
-                isPlaying = false
-                pendingNextIndex = nil
+                // A newer start or stop owns the transport: what plays now is its outcome, not this one.
+                if finish(.start(epoch)) {
+                    errorMessage = "Playback failed: \(error.localizedDescription)"
+                    isPlaying = false
+                    pendingNextIndex = nil
+                }
                 // Self-heal (break-it): engine-not-ready is recoverable — rebuild the graph
                 // so the NEXT play press succeeds. `retryInitialization` is internally
                 // guarded against re-entry while an init is already in flight.
@@ -131,6 +131,10 @@ extension AudioViewModel {
     /// stopped, and a segment scheduled onto it would play ahead of the next song. Stopped: nothing
     /// is loaded, so nothing moves. Updates `playbackPosition` immediately to avoid UI jitter.
     ///
+    /// A start or a stop on its way (council C-15) is not "playing" here: a seek numbered after it was
+    /// meant for the playback it replaces, and could overtake it and drop it at the engine. A pause on
+    /// its way has its resume point already, so a scrub then moves that.
+    ///
     /// The request is placed first by the one rule (`SeekTarget.place`, C-25): not a number → no seek
     /// at all; otherwise inside 0…duration. The end itself is a place: the engine ends the track
     /// there, and the tick advances as at any end.
@@ -139,7 +143,8 @@ extension AudioViewModel {
             logUX("seek → \(requested) refused (not a place)")
             return
         }
-        let route = SeekRoute.route(isPlaying: isPlaying, isPaused: pausedResumePosition != nil)
+        let route = SeekRoute.route(isPlaying: isPlaying && transportCommand == nil,
+                                    isPaused: pausedResumePosition != nil)
         logUX("seek → \(secs(seconds))s "
             + "(from \(secs(playbackPosition))s, dur \(secs(duration))s, "
             + "path=\(signalPath.path == .pure ? "Pure" : "Enhanced"), route=\(route))")

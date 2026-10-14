@@ -169,8 +169,9 @@ struct PlaylistItemList: View {
                 focus.wrappedValue = .content
                 cursorID = item.id
                 // Single-click plays the row, so the now-playing card always matches the audio (no
-                // select-without-play state). Re-clicking the playing track is a no-op (no restart).
-                guard !(viewModel.isPlaying && viewModel.selectedTrackIndex == index) else { return }
+                // select-without-play state). Re-clicking the playing — or starting — track is a no-op
+                // (no restart; a double-click starts it once, council C-15).
+                guard !(viewModel.playIntent && viewModel.selectedTrackIndex == index) else { return }
                 viewModel.playTrack(at: index)
             }
         )

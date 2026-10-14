@@ -70,9 +70,9 @@ extension AudioViewModel {
 
         adjustPendingNextIndexAfterRemoval(removedIndex: index)
 
-        if removingCurrent, isPlaying {
+        // The song playing — or starting (council C-15) — left the queue: stop.
+        if removingCurrent, playIntent {
             logUX("removeTrack: removed currently-playing track, stopping")
-            pendingNextIndex = nil
             stopPlayback()
             selectedTrackIndex = index < queue.count ? index : (index > 0 ? index - 1 : nil)
             return
@@ -142,13 +142,14 @@ extension AudioViewModel {
         PlaybackOrder(shuffle: shuffleEnabled, repeatMode: repeatMode)
     }
 
-    /// Re-arm the gapless on-deck after a shuffle / repeat change while a song plays, so the change
-    /// applies to THIS song's end (S10.8 G): the on-deck was picked under the old order when the song
-    /// started, and the engine plays whatever is armed at the seam. Repeat One arms this song; Repeat
-    /// All on the last song arms the first; Repeat off moves on (`PlaybackOrder.onDeck`). Not while
-    /// paused or stopped: resume (`primeGaplessPipeline`) picks under the order in force then.
+    /// Re-arm the gapless on-deck after a shuffle / repeat change while a song plays (or primes), so
+    /// the change applies to THIS song's end (S10.8 G): the on-deck was picked under the old order when
+    /// the song started, and the engine plays whatever is armed at the seam. Repeat One arms this song;
+    /// Repeat All on the last song arms the first; Repeat off moves on (`PlaybackOrder.onDeck`). Not
+    /// while paused, stopped or not yet begun: the start (`primeGaplessPipeline`) picks under the order
+    /// in force then.
     private func rearmOnDeck(switchingFrom old: PlaybackOrder) {
-        guard isPlaying, pausedResumePosition == nil, let current = selectedTrackIndex else { return }
+        guard onDeckIsLive, let current = selectedTrackIndex else { return }
         let next = playbackOrder.onDeck(switchingFrom: old, current: current, count: queue.count,
                                         armed: pendingNextIndex, randomPick: QueueAdvance.uniformRandomExcluding)
         guard next != pendingNextIndex else { return }

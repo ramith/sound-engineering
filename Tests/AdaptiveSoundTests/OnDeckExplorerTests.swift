@@ -88,9 +88,11 @@ struct OnDeckExplorer {
                 progress.residual = false
             }
         }
-        // Let everything land and the app follow, then check what it shows and promises.
+        // Let everything land and the app follow, then check what it shows and promises. The tick acts
+        // only once no start is on its way (council C-15): each waits for the view model to finish one.
         for _ in 0 ..< 6 {
             rig.engine.drain()
+            try await rig.waitUntil("the view model's start to finish") { rig.viewModelSettled }
             try await tick(rig, progress: &progress)
         }
         rig.engine.drain()
@@ -153,29 +155,25 @@ struct OnDeckExplorer {
         }
     }
 
-    /// One tick; when it takes a seam, the app must show what plays — or the seam is A2 / A2′: a
-    /// request the engine had not applied when the seam fired (made before it, still in flight, or
-    /// made after it, before this tick).
+    /// One tick; when it takes a seam, the app must show what plays — or the seam is A2 / A2′
+    /// (`Rig.tickJudgingSeam`).
     private mutating func tick(_ rig: Rig, progress: inout Progress) async throws {
-        let sequenceAtTick = rig.vm.onDeckSequence
-        let countBefore = rig.vm.lastTransitionCount
-        let hadSeam = rig.engine.hasUnprocessedSeam
-        rig.tick()
+        let verdict = rig.tickJudgingSeam()
         try await rig.settle()
-        guard hadSeam, rig.vm.lastTransitionCount != countBefore, let seam = rig.engine.takeProcessedSeam() else {
+        switch verdict {
+        case .none:
             return
-        }
-        if !seam.intoNewestApplied {
-            note("a seam into a pick other than the newest applied request's", rig: rig, trace: progress.trace)
-        } else if rig.engine.current == rig.shown {
+        case .shown:
             progress.residual = false
-        } else if sequenceAtTick > seam.newestApplied {
+        case .residual:
             report.residualA2 += 1
             if report.firstResidual.isEmpty {
                 report.firstResidual = describe(rig, trace: progress.trace)
             }
             progress.residual = true
-        } else {
+        case .intoStalePick:
+            note("a seam into a pick other than the newest applied request's", rig: rig, trace: progress.trace)
+        case .wrongSong:
             note("wrong song after a seam", rig: rig, trace: progress.trace)
         }
     }

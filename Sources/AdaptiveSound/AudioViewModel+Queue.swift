@@ -116,13 +116,12 @@ extension AudioViewModel {
         logUX("playNext: \(tracks.count) track(s) after index \(current) (playing=\(isPlaying))")
         queue.insert(contentsOf: tracks.map { QueueItem(file: $0) }, at: insertAt)
         scheduleQueueMirror()
-        // Playing — or starting, once its prime has picked the on-deck (`isPlaying` turns true
-        // only after the engine settled that pick; council F-P4-1) → arm the inserted slot as the
-        // on-deck (single-slot override, honors shuffle); the newest request supersedes the
-        // prime's. Paused or stopped (nothing on deck) → the insert alone plays it next under
-        // LINEAR order (the next start's primeGaplessPipeline derives computeNextIndex(current) =
-        // current+1).
-        if isPlaying || pendingNextIndex != nil {
+        // Playing — or a start priming its on-deck (`onDeckIsLive`; `isPlaying` turns true only after
+        // the engine settled the prime's pick, council F-P4-1) → arm the inserted slot as the on-deck
+        // (single-slot override, honors shuffle); the newest request supersedes the prime's. Paused,
+        // stopped or a start not yet begun (nothing on deck) → the insert alone plays it next under
+        // LINEAR order (the start's primeGaplessPipeline derives computeNextIndex(current) = current+1).
+        if onDeckIsLive {
             armOnDeck(index: insertAt)
         }
         return tracks.count

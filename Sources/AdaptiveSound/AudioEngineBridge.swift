@@ -75,7 +75,8 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var transportClock: DispatchSourceTimer?
 
     /// The epoch of the latest transport operation the engine has begun (`TransportSnapshot.epoch`),
-    /// stamped on every sample. Confined to `engineQueue`.
+    /// stamped on every sample; an operation older than it is dropped (`beginTransportOperation`).
+    /// Confined to `engineQueue`.
     var transportEpoch: UInt64 = 0
 
     /// The device-boundary spatial render AU (N->M, subtype 'aspz'), inserted as

@@ -21,6 +21,13 @@ struct OnDeckEngineState {
             return false
         }
 
+        var isStart: Bool {
+            if case .start = self {
+                return true
+            }
+            return false
+        }
+
         var description: String {
             switch self {
             case let .start(url): "start \(url.trackName)"
@@ -67,6 +74,7 @@ struct OnDeckEngineState {
     }
 
     let semantics: ArmSemantics
+    let commands: CommandSemantics
     let incompatible: Set<URL>
     let unreadable: Set<URL>
     var pure = false
@@ -75,6 +83,7 @@ struct OnDeckEngineState {
     var ended = false
     var pureCount: UInt64 = 0
     var enhancedCount: UInt64 = 0
+    /// The epoch of the newest transport command the engine has begun.
     var epoch: UInt64 = 0
     var gate = OnDeckGate()
     var newestApplied: UInt64 = 0
@@ -84,17 +93,31 @@ struct OnDeckEngineState {
     var opened: [URL] = []
     var arrivals: [OnDeckTicket] = []
     var holdsTransport = false
+    /// The transport commands waiting on a busy `engineQueue`, in the order they reached it.
     var held: [HeldOp] = []
-    var receivedEpoch: UInt64 = 0
-    var failedEpochs: Set<UInt64> = []
+    /// Every transport command that reached the engine (held or run), by epoch.
+    var receivedEpochs: Set<UInt64> = []
+    /// The commands dropped as overtaken (`CommandSemantics.dropsOvertaken`).
+    var droppedEpochs: [UInt64] = []
     var heard: [Heard] = []
     var unprocessedSeams: [Seam] = []
     var published = TransportSnapshot()
 
-    init(semantics: ArmSemantics, incompatible: Set<URL>, unreadable: Set<URL>) {
+    init(semantics: ArmSemantics, commands: CommandSemantics, incompatible: Set<URL>, unreadable: Set<URL>) {
         self.semantics = semantics
+        self.commands = commands
         self.incompatible = incompatible
         self.unreadable = unreadable
+    }
+
+    /// A transport command reached the engine (it runs now, or waits on the busy queue).
+    mutating func receive(_ op: TransportOp) {
+        receivedEpochs.insert(op.epoch)
+    }
+
+    /// Whether every request, open and transport command has landed.
+    var isIdle: Bool {
+        inbound.isEmpty && opening.isEmpty && held.isEmpty
     }
 
     var count: UInt64 {
@@ -110,8 +133,14 @@ struct OnDeckEngineState {
                                       transitionCount: count, ended: ended)
     }
 
-    /// Run a transport op as `engineQueue` does; returns whether a start failed (unreadable).
+    /// Run a transport op as `engineQueue` does; returns whether a start failed (unreadable). Under the
+    /// design, an op older than one already begun was overtaken on its way: dropped, it changes
+    /// nothing and publishes nothing (the bridge's `beginTransportOperation`).
     mutating func perform(_ op: TransportOp) -> Bool {
+        if commands == .dropsOvertaken, op.epoch <= epoch {
+            droppedEpochs.append(op.epoch)
+            return false
+        }
         epoch = max(epoch, op.epoch)
         defer { publish() }
         if case .seek = op {
@@ -120,7 +149,6 @@ struct OnDeckEngineState {
         beginPlayback(op.epoch)
         guard case let .start(url, isPure, _) = op else { return false } // a stop
         guard let url, !unreadable.contains(url) else {
-            failedEpochs.insert(op.epoch)
             return true
         }
         pure = isPure

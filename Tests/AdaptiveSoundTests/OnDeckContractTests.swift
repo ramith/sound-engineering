@@ -162,8 +162,11 @@ struct OnDeckContractTests {
     @Test("Ablation — sessions that roll back (the design as first written) lose the newest prime",
           arguments: [true, false])
     func rollingBackSessionsLoseThePrime(pure: Bool) async throws {
+        // On the engine as D41 found it, which ran an overtaken start (council C-15 drops it now, so
+        // it never begins a session: AMEND-1 is a second guard since).
         let semantics = ArmSemantics.gatedRetractFirst(endFinal: true, monotonicSessions: false)
-        let outcome = try await OnDeckScenarios.startOvertake(pure: pure, semantics: semantics)
+        let outcome = try await OnDeckScenarios.startOvertake(pure: pure, semantics: semantics,
+                                                              commands: .executesEvery)
         #expect(!outcome.ok, "\(outcome)")
     }
 }
