@@ -8,7 +8,7 @@ import SwiftUI
 /// (`LibraryPageActions`, the album, artist and genre pages' set) — Play (the teal pill), Shuffle and ⋯
 /// (`PlaylistMoreMenu`). No Filter: a playlist is played and moved in its own order.
 ///
-/// The count line is "12 songs · 48 min", ending "· 2 unavailable" while files are missing; where it
+/// The count line is "12 songs · 48 min", ending "· 2 unavailable" while songs can't be played; where it
 /// doesn't fit on one line the duration goes first ("12 songs · 2 unavailable"). VoiceOver reads it
 /// whole. The pills act once the playlist has loaded.
 struct PlaylistDetailHeader: View {
@@ -43,10 +43,11 @@ struct PlaylistDetailHeader: View {
         FacetCountLabel.songs(count: model.detail.count)
     }
 
-    /// `parts` joined by " · ", ending "· 2 unavailable" while some entries' files are missing.
+    /// `parts` joined by " · ", ending "· 2 unavailable" while some entries can't be played — their
+    /// files missing, or out of reach on a drive that isn't connected.
     private func line(_ parts: [String]) -> String {
-        let missing = model.missingEntryCount
-        let unavailable = missing > 0 ? ["\(missing.formatted(.number)) unavailable"] : []
+        let count = model.unavailableEntryCount
+        let unavailable = count > 0 ? ["\(count.formatted(.number)) unavailable"] : []
         return (parts + unavailable).joined(separator: " · ")
     }
 }

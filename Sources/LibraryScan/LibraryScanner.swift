@@ -29,7 +29,9 @@
 //     unbound root: only when some of its songs are where the library has them), and only while it
 //     stays that same directory on that same drive — checked before every batch is committed, so a
 //     drive swapped under the walk adds at most nothing more. Only then is an unbound root bound
-//     (`LibraryStore.restampRoot`). The identity is read through a seam (`init(rootIdentity:)`).
+//     (`LibraryStore.restampRoot`). The identity is read through a seam (`init(rootIdentity:)`). The
+//     check before a walk (`rootAtPath`) is also what a song's absence is judged by: a song is MISSING
+//     only when its folder passes it (`availability(of:in:)`, FileAvailability.swift — KI-LIB-01).
 //   • EVIDENCE OF WHAT IT READ — a walk is evidence only for what it could read. A folder the enumerator
 //     could not open, or an audio file that is there but can't be read, is no evidence of what is gone
 //     under it: the sweep SPARES every row at or under such a path, and reaps the rest of the root as
@@ -108,14 +110,11 @@ public struct LibraryScanner: Sendable {
         func refusal(_ reason: SweepRefusal.Reason) -> SweepRefusal {
             SweepRefusal(folderID: folderID, reason: reason, storedRowCount: preCount)
         }
-        // THE ROOT'S OWN DRIVE: walk the root only when it is there, on the drive it is bound to — or,
-        // unbound, only when some of its songs are where the library has them: a stale folder or another
-        // drive at its path holds none, and walking it would leave rows that vouch for it next time.
-        guard let identity = rootIdentity(root) else { throw refusal(.rootVanished) }
-        if let bound = try await store.boundVolume(ofRoot: folderID) {
-            guard bound == identity.volume else { throw refusal(.differentVolume) }
-        } else if preCount > 0, try await !holdsAnyOfItsSongs(folderID, in: store) {
-            throw refusal(.unrecognizedFolder)
+        // THE ROOT'S OWN DRIVE: walk the root only when it is there, on its own drive (`rootAtPath`).
+        let identity: RootIdentity
+        switch try await rootAtPath(root, folderID: folderID, in: store) {
+        case let .own(own): identity = own
+        case let .refused(reason): throw refusal(reason)
         }
         let walked = try await walk(
             root: root, as: identity,
@@ -158,17 +157,39 @@ public struct LibraryScanner: Sendable {
         return now == start ? nil : .rootVanished
     }
 
-    /// Whether any of `folderID`'s songs is where the library has it — the evidence that the folder at
-    /// an UNBOUND root's path is the root's own. Looks page by page and stops at the first one found,
-    /// so a folder that is the root's costs a look or two; one that holds none of them costs a look per
-    /// song, and is then not walked.
-    private func holdsAnyOfItsSongs(_ folderID: Int64, in store: LibraryStore) async throws -> Bool {
+    /// What a walk of a root finds at its path before it starts.
+    enum RootAtPath {
+        /// The root's own directory, on its own drive: walk it.
+        case own(RootIdentity)
+        /// Not the root's own: the walk is refused, for this reason.
+        case refused(SweepRefusal.Reason)
+    }
+
+    /// What is at `root`'s path now (R1): its own directory when it is there, on the drive it is bound
+    /// to — or, unbound, when some of its songs are where the library has them (a stale folder or
+    /// another drive at its path holds none, and walking it would leave rows that vouch for it next
+    /// time). Otherwise why a walk is refused: it is not there, it is on another drive, or it is
+    /// unrecognized. The check `scan` makes first — and the one a song's absence is judged by
+    /// (`availability(of:in:)`).
+    func rootAtPath(_ root: URL, folderID: Int64, in store: LibraryStore) async throws -> RootAtPath {
+        guard let identity = rootIdentity(root) else { return .refused(.rootVanished) }
+        if let bound = try await store.boundVolume(ofRoot: folderID) {
+            return bound == identity.volume ? .own(identity) : .refused(.differentVolume)
+        }
+        return try await holdsNoneOfItsSongs(folderID, in: store) ? .refused(.unrecognizedFolder) : .own(identity)
+    }
+
+    /// Whether `folderID` has songs and none of them is where the library has it — then the folder at an
+    /// UNBOUND root's path is not shown to be the root's own. A root with no songs has nothing to lose.
+    /// Looks page by page and stops at the first song found, so a folder that is the root's costs a look
+    /// or two; one that holds none of them costs a look per song, and is then not walked.
+    private func holdsNoneOfItsSongs(_ folderID: Int64, in store: LibraryStore) async throws -> Bool {
         var afterID: Int64 = 0
         while true {
             let page = try await store.trackURLs(inFolder: folderID, afterID: afterID, limit: Self.batchSize)
-            guard let last = page.last else { return false }
+            guard let last = page.last else { return afterID != 0 }
             if page.contains(where: { FileSignature.deviceInode(of: $0.url).inode != nil }) {
-                return true
+                return false
             }
             afterID = last.id
         }
