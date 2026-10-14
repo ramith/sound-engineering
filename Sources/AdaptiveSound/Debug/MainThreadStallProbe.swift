@@ -7,7 +7,8 @@
     /// One round = every way the main thread reaches the engine: the 20 Hz transport and spectrum
     /// ticks (the snapshot), the monitoring reads, the control-plane publishes the UI fires (EQ,
     /// intensity, crossfeed, the output's transport through `selectedDevice`), Master Gain on both
-    /// paths, the pin switch, a scrub. Each is timed; the slowest of each is kept.
+    /// paths, the pin switch and the chosen device (handed back, read back), a scrub. Each is timed;
+    /// the slowest of each is kept.
     @MainActor
     final class EntryProbe {
         private let viewModel: AudioViewModel
@@ -62,6 +63,8 @@
             measure("vm.setMasterGain (Enhanced)") { viewModel.setMasterGain(position: flip ? 0.5 : 0.6) }
             measure("engine.requestDeviceVolume (Pure)") { bridge.requestDeviceVolume(decibels: -10) }
             measure("vm.pinPlaybackToSelectedDevice didSet") { viewModel.pinPlaybackToSelectedDevice = flip }
+            measure("engine.restoreChosenOutput") { bridge.restoreChosenOutput(uid: flip ? devices[0].uid : nil) }
+            measure("engine.chosenOutputUID") { _ = bridge.chosenOutputUID() }
             measure("vm.seek(to:) [main-thread part]") { viewModel.seek(to: 1) }
             measure("engine.publishChannelLayout") { bridge.publishChannelLayout(kAudioChannelLayoutTag_Stereo) }
         }

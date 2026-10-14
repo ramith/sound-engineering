@@ -72,6 +72,18 @@ struct OutputWorld {
         selection.adopt(systemDefault, uid: devices[systemDefault] ?? "")
     }
 
+    /// The app quits and launches again (DEV-1): a fresh selection, started on the system default, then
+    /// the choice the listener's settings kept handed back and the rule asked (`restoreChosenOutput`).
+    @discardableResult
+    mutating func relaunch(pinned: Bool = true) -> OutputDeviceAction {
+        let kept = selection.chosenUID
+        selection = OutputDeviceSelection()
+        selection.pin(pinned)
+        start()
+        selection.restoreChoice(uid: kept)
+        return handle(.choiceRestored)
+    }
+
     /// The user picks `device` in the menu (`selectDevice`): the target and the choice, then the default.
     mutating func pick(_ device: UInt32) {
         selection.choose(device, uid: devices[device] ?? "")

@@ -11,7 +11,7 @@ struct OutputDevicePolicyTests {
     private static let deviceB: UInt32 = 94 // another output (WH-1000XM4)
 
     private static let allEvents: [OutputDeviceEvent] = [
-        .devicesChanged, .defaultChanged, .targetAliveChanged, .engineReconfigured, .enhancedStarting,
+        .devicesChanged, .defaultChanged, .targetAliveChanged, .engineReconfigured, .enhancedStarting, .choiceRestored,
     ]
 
     /// The app's device is the one the user chose, so the chosen device is connected exactly while

@@ -2,6 +2,7 @@ import DesignTokenKit
 import EQEditKit
 import Foundation
 import PlaybackQueueKit
+import SettingsKit
 
 // MARK: - AudioViewModel
 
@@ -93,6 +94,7 @@ final class AudioViewModel {
         didSet {
             announceOutputIdentityChange(from: oldValue)
             publishOutputTransport()
+            followHeadphones(from: oldValue)
         }
     }
 
@@ -102,9 +104,12 @@ final class AudioViewModel {
     /// User intent: whether to attempt the bit-perfect Pure HAL path on next playback start.
     /// Pure is mutually exclusive with DSP/EQ by construction (the bit-perfect stream is
     /// untouched). Setting this to `true` does NOT immediately affect running playback —
-    /// it takes effect on the next `startPlayback()` call.
+    /// it takes effect on the next `startPlayback()` call. Kept across launches (`ListeningSettings`).
     var pureModeEnabled: Bool = false {
-        didSet { logUX("pureMode → \(pureModeEnabled)") }
+        didSet {
+            logUX("pureMode → \(pureModeEnabled)")
+            rememberListeningSettings()
+        }
     }
 
     /// "Keep playback on this device". `true` (default): the device the user picks wins over the
@@ -112,13 +117,20 @@ final class AudioViewModel {
     /// and playback goes back to it when it reconnects; until they pick one (in the menu, or by
     /// turning this on), the app follows the default. `false`: the app follows the system default.
     /// Pushed to the engine, whose output rule (`OutputDevicePolicy`) acts on it; a lost device
-    /// pauses either way.
+    /// pauses either way. Kept across launches, with the device it holds (`rememberOutputChoice`).
     var pinPlaybackToSelectedDevice: Bool = true {
         didSet {
             engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
             logUX("pinPlaybackToSelectedDevice → \(pinPlaybackToSelectedDevice)")
+            rememberOutputChoice() // turning it on chooses the device in use
         }
     }
+
+    /// The UID of the output device the user chose, as the engine holds it (`OutputDeviceSelection`):
+    /// read back after a pick or the switch turned on, kept across launches, and handed back to the
+    /// engine at engine-ready (DEV-1). `nil` when nothing is chosen — the device the app launches on is
+    /// never a choice. Not UI-bound.
+    @ObservationIgnored var chosenOutputUID: String?
 
     /// Live signal-path snapshot: which path is active, achieved rate, bit depth, etc.
     /// Updated at 20 Hz in `tickSpectrum()`.
@@ -156,36 +168,36 @@ final class AudioViewModel {
 
     // MARK: - Crossfeed (QW-C)
 
-    /// Whether the headphone crossfeed stage is active. Auto-disabled on switch to
-    /// a non-headphone device (see `AudioViewModel+Devices.swift`).
+    /// Crossfeed as the listener chose it — the intent, kept across launches. It plays only on
+    /// headphones (`crossfeedPlays`): an output that isn't holds it off without switching the choice
+    /// off, so it plays again when headphones are back (council C-12: the effective value used to
+    /// overwrite the intent).
     var crossfeedEnabled: Bool = false {
         didSet {
             logUX("crossfeed → \(crossfeedEnabled ? "on" : "off") [\(crossfeedStrength.displayName)]")
             publishCrossfeed()
+            rememberListeningSettings()
         }
     }
 
-    /// Crossfeed strength preset. Changes take effect immediately when crossfeed is on.
+    /// Crossfeed strength preset. Changes take effect immediately while crossfeed plays.
     var crossfeedStrength: CrossfeedStrength = .defaultStrength {
         didSet {
-            guard crossfeedEnabled else { return }
+            rememberListeningSettings()
+            guard crossfeedPlays else { return }
             logUX("crossfeed strength → \(crossfeedStrength.displayName)")
             publishCrossfeed()
         }
     }
 
-    /// `true` when the selected output device is a headphone-class device (wireless or USB).
-    ///
-    /// Note: USB also matches USB audio interfaces connected to monitor speakers — a known
-    /// heuristic false-positive. Precise detection requires `kAudioDevicePropertyTransportType`
-    /// / DataSource queries (tracked for a future story). On a non-headphone device with
-    /// crossfeed accidentally enabled, the only audible consequence is a mild centre-image
-    /// change from the LPF cross path — benign and fully reversible by toggling crossfeed off.
+    /// Whether crossfeed plays: chosen, and the output is headphones. What the engine gets.
+    var crossfeedPlays: Bool {
+        crossfeedEnabled && deviceIsHeadphones
+    }
+
+    /// `true` when the selected output device is a headphone-class device (`isHeadphones`).
     var deviceIsHeadphones: Bool {
-        switch selectedDevice?.type {
-        case .wireless, .usb: true
-        default: false
-        }
+        Self.isHeadphones(selectedDevice)
     }
 
     // MARK: - Master Gain
@@ -195,15 +207,16 @@ final class AudioViewModel {
     var lastMasterGainLogged: String = ""
 
     /// Master Gain: the app's own level in dB (S10.8 G; founder decision 2026-10-12, "Show the real
-    /// level"). Turn-down only — 0 dB, unity, at the top and by default (what plays at launch);
-    /// `MasterGainLaw` maps it to the slider and to the player's linear gain, and the inspector reads
-    /// it back as it plays. Published on every change and at engine-ready. On Pure the bit-perfect
-    /// stream is never scaled: the slider shows and sets the output device's own volume instead
-    /// (`+MasterGain`). Not kept across launches (a post-R1 item).
+    /// level"). Turn-down only — 0 dB, unity, at the top and on a new install; `MasterGainLaw` maps
+    /// it to the slider and to the player's linear gain, and the inspector reads it back as it plays.
+    /// Published on every change and at engine-ready. On Pure the bit-perfect stream is never scaled:
+    /// the slider shows and sets the output device's own volume instead (`+MasterGain`). Kept across
+    /// launches and never restored louder than it was left (council C-102; `ListeningSettings`).
     var masterGain: Float = MasterGainLaw.unity {
         didSet {
             logMasterGain("master gain → \(MasterGainLaw.text(masterGain))")
             publishMasterGain()
+            rememberListeningSettings()
         }
     }
 
@@ -374,7 +387,7 @@ final class AudioViewModel {
 
     // MARK: - Playback Modes (WinAmp Style)
 
-    /// Shuffle mode: when enabled, plays tracks in random order.
+    /// Shuffle mode: when enabled, plays tracks in random order. Kept across launches.
     /// didSet: shuffle/repeat flip `canGoNext`/`canGoPrevious`, so refresh the remote-command
     /// enable state (S10.4 QA #1) — else Control Center's Next/Prev stay stale until the next play.
     var shuffleEnabled = false {
@@ -382,15 +395,17 @@ final class AudioViewModel {
             if shuffleEnabled != oldValue {
                 onNowPlayingRefresh?()
             }
+            rememberListeningSettings()
         }
     }
 
-    /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one
+    /// Repeat mode: 0 = no repeat, 1 = repeat all, 2 = repeat one. Kept across launches.
     var repeatMode: Int = 0 {
         didSet {
             if repeatMode != oldValue {
                 onNowPlayingRefresh?()
             }
+            rememberListeningSettings()
         }
     }
 
@@ -411,11 +426,17 @@ final class AudioViewModel {
     /// Where the now-playing cursor persists (`+QueueHydration`): the launch's
     /// `AppDataLocation.defaults`. The picture-sheet renderer injects its own suite.
     let defaults: UserDefaults
+    /// The listener's settings, kept in `defaults` (`+ListeningSettings`).
+    let settingsStore: SettingsStore
 
+    /// A view model over `defaults` that starts with the settings the listener left there — on a new
+    /// install, the faithful default (FD-2).
     init(defaults: UserDefaults, engine: any AudioPlaybackEngine = AudioEngineBridge()) {
         self.defaults = defaults
         self.engine = engine
+        settingsStore = SettingsStore(defaults: defaults)
         eqDesignRate = engine.snapshot().eqDesignRate
+        restoreListeningSettings()
     }
 
     // Engine lifecycle (initializeEngine, shutdown, stopPlayback, performStop) lives in
