@@ -50,7 +50,7 @@ namespace
 
     // Pure-gapless arm return codes (mirrored in PureModeBridge.h). Not armed (1, 3): the track
     // plays after a fresh start.
-    constexpr int kNextTrackError = 0;            // null handle/decoder, no active track, occupied
+    constexpr int kNextTrackError = 0;            // null handle/decoder, no active track, ...
     constexpr int kNextTrackNeedsReconfigure = 1; // format/rate mismatch
     constexpr int kNextTrackArmed = 2;            // compatible — armed for a gapless seam
     constexpr int kNextTrackEnded = 3;            // the current track already ended
@@ -383,42 +383,36 @@ extern "C"
         // Adopt ownership of the pre-opened decoder for the whole call: on EVERY outcome it is
         // either moved into the gapless engine (armed) or destroyed when `next` leaves scope — so
         // the caller never frees it after this returns. The slow file open already ran off-lock in
-        // pureModeOpenDecodeSource; only the fast compat check + pointer-swap arm run here.
+        // pureModeOpenDecodeSource; only the fast checks + pointer-swap arm run here.
         std::unique_ptr<FileDecodeSource> next(static_cast<FileDecodeSource*>(decoder));
         auto* session = static_cast<PureModeSession*>(engine);
         if (session == nullptr || next == nullptr)
         {
             return kNextTrackError;
         }
-        const FileDecodeSource* active = session->gapless->activeSource();
-        if (active == nullptr)
-        {
-            return kNextTrackError; // nothing playing to arm behind
-        }
-        // The end is final: the current track already ended with nothing armed, so the view model
-        // starts this one fresh. `next` is dropped (dtor joins its decode thread).
-        if (session->gapless->ended())
-        {
-            return kNextTrackEnded;
-        }
-        // Same-rate-only gapless: a rate/channel/float/bit-depth mismatch can't be straddled at the
-        // seam. `next` is dropped (dtor joins its decode thread); the caller reconfigures instead.
-        if (!AdaptiveSound::sameRateGaplessCompatible(*active, *next))
-        {
-            return kNextTrackNeedsReconfigure;
-        }
-        // Arm it. Ownership transfers into the engine only on success.
-        if (session->gapless->armNext(std::move(next)))
-        {
-            return kNextTrackArmed;
-        }
-        // Refused: the end landed after the check above (final, as there) — or the slot was
-        // occupied, which the caller rules out by taking the old pick off first, on the same queue
-        // (arming never replaces).
-        const bool ended = session->gapless->ended();
-        assert(ended &&
+        // GaplessSource decides, and says why it did not arm: the end is final, a rate / channel /
+        // float / bit-depth mismatch can't be straddled at the seam, and a seam the render claimed
+        // is waited for. Ownership of `next` moves into the engine only when it arms; otherwise
+        // its dtor joins its decode thread here.
+        using ArmOutcome = GaplessSource::ArmOutcome;
+        const ArmOutcome outcome = session->gapless->tryArmNext(std::move(next));
+        // Arming never replaces: the caller takes the old pick off first, on the same queue.
+        assert(outcome != ArmOutcome::Occupied &&
                "pureModeEngineArmOpenedNextTrack: slot occupied — clear the old pick first");
-        return ended ? kNextTrackEnded : kNextTrackError;
+        switch (outcome)
+        {
+            case ArmOutcome::Armed:
+                return kNextTrackArmed;
+            case ArmOutcome::Incompatible:
+                return kNextTrackNeedsReconfigure;
+            case ArmOutcome::Ended:
+                return kNextTrackEnded;
+            case ArmOutcome::Occupied:
+            case ArmOutcome::NoActiveTrack:
+            case ArmOutcome::SeamInFlight:
+                return kNextTrackError;
+        }
+        return kNextTrackError;
     }
 
     void pureModeDestroyDecodeSource(void* decoder) AUDIODSP_C_NOEXCEPT
