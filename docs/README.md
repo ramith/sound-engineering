@@ -1,6 +1,6 @@
 # Adaptive Sound — documentation
 
-A macOS music player for your own library — **bit-perfect playback first**, then **adaptive sound**: a perceptually-tuned, spatially-rendered mix you steer with one *Reimagine* control, on headphones and speakers. Personal / open-source. **R1 = v1.0.0-alpha** (release in progress, 2026-10-13 — [release notes](releases/v1.0.0-alpha.md)).
+A macOS music player for your own library — **bit-perfect playback first**, then **adaptive sound**: a perceptually-tuned, spatially-rendered mix you steer with one *Reimagine* control, on headphones and speakers. Personal / open-source. **R1 = v1.0.0-alpha** (shipped 2026-10-14 — [release](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha), [release notes](releases/v1.0.0-alpha.md)).
 
 *(Earlier wording promised a mix "you can steer in plain language" and a stem-aware player: natural-language tuning and hearing personalization were **cut** on 2026-07-12, and the stem engine is **won't, this horizon** — see the [roadmap](product/roadmap.md#deferred--out-of-window).)*
 
@@ -8,7 +8,7 @@ A macOS music player for your own library — **bit-perfect playback first**, th
 
 | # | Doc | What it is |
 |---|---|---|
-| 1 | [architecture/architecture.md](architecture/architecture.md) | **Canonical architecture** — start here. §2.5 is the shipped pipeline (reconciled to the code 2026-10-13: the two output paths, the kernel's four paths, the Sprint EQ engine, the device model, the **app ↔ engine threading rules**); the rest is the target design (spine, signal model, stem engine, Reimagine knob, ADRs + locked decisions LD-*). |
+| 1 | [architecture/architecture.md](architecture/architecture.md) | **Canonical architecture** — start here. §2.5 is the shipped pipeline (reconciled to the code 2026-10-13, re-checked after R1 on 2026-10-14: the two output paths, the kernel's four paths, the Sprint EQ engine, the device model, the **app ↔ engine threading rules**); the rest is the target design (spine, signal model, stem engine, Reimagine knob, ADRs + locked decisions LD-*). |
 | 2 | [product/PRD.md](product/PRD.md) | Vision, personas, positioning, locked decisions (LD-*), KPIs, risks — the *why*. (Its "Phase 0/1/1.5/2" is the product-capability axis; see the Phase Rosetta note in the PRD.) |
 | 3 | [product/roadmap.md](product/roadmap.md) | High-altitude product arc + the R1/R2/R3 release milestones (defers detailed sequencing to sprint-plan.md). |
 | 4 | [sprints/sprint-plan.md](sprints/sprint-plan.md) | **Authoritative forward schedule (S6–S18) — start here for "what's next."** Its §Status is the one prose status line. |
