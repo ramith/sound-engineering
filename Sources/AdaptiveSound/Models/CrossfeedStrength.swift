@@ -1,9 +1,11 @@
 import Foundation
+import SettingsKit
 
 // MARK: - CrossfeedStrength
 
 /// User-facing crossfeed strength levels, mapping to the bs2b coefficient sets
-/// in the C++ DSP kernel.
+/// in the C++ DSP kernel. The values themselves are a setting (`SettingsKit`); this is what each
+/// shows and plays.
 ///
 /// - Relaxed: subtlest, fc = 650 Hz, −9.5 dB cross level (bs2b "Jmeier").
 /// - defaultStrength: Bauer original, fc = 700 Hz, −9.0 dB (the safe default).
@@ -11,15 +13,7 @@ import Foundation
 ///
 /// The C++ enum uses `CrossfeedPreset::Bauer` (= 1) for what the user sees as
 /// "Default" (§5 F8: avoids the `default:` keyword clash in C++ switch statements).
-enum CrossfeedStrength: Int, CaseIterable, Identifiable {
-    case relaxed = 0
-    case defaultStrength = 1
-    case strong = 2
-
-    var id: Int {
-        rawValue
-    }
-
+extension CrossfeedStrength {
     /// Display label shown in the UI Picker.
     var displayName: String {
         switch self {

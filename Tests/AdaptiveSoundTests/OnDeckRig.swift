@@ -47,6 +47,11 @@ struct Rig {
         engine = OnDeckEngineModel(semantics: semantics, incompatible: incompatible, unreadable: unreadable)
         vm = AudioViewModel(defaults: UserDefaults(suiteName: "AdaptiveSoundTests.OnDeck") ?? .standard,
                             engine: engine)
+        // The view model restores the listener's settings from its defaults, which every rig shares
+        // and rigs in parallel tests write: each rig starts from the modes its scenario assumes.
+        vm.shuffleEnabled = false
+        vm.repeatMode = 0
+        vm.pureModeEnabled = false
         vm.isEngineReady = true
         vm.queue = (0 ..< tracks).map { QueueItem(file: audioFile($0)) }
     }

@@ -33,17 +33,19 @@ extension AudioViewModel {
                     return
                 }
 
-                // Enumerate real output devices from CoreAudio, and show the one the engine starts
-                // on (the system default). Starting on it is not the user's pick (founder decision,
-                // R1): nothing is chosen until they pick, so the pin follows the default until then,
-                // and a re-initialization keeps the device they did pick.
+                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth), or the
+                // engine moves to the chosen device below.
+                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
+                // The connect behaviour, then the device the user chose — in this session, or before
+                // the last quit (DEV-1). The engine starts on the system default, which is not the
+                // user's pick (founder decision, R1): handing the choice back is not a pick either,
+                // and the engine's output rule moves to it once it is here. Nothing chosen: the pin
+                // follows the default until the user picks.
+                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
+                engine.restoreChosenOutput(uid: chosenOutputUID)
+                // Enumerate real output devices from CoreAudio, and show the one the engine plays on.
                 let devices = try await engine.enumerateOutputDevices()
                 showEngineOutput(among: devices)
-                // Push the connect-behaviour preference so the engine acts on it from the first
-                // device change (its default matches, but this keeps them explicitly in step).
-                engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
-                // Keep the picker current when devices connect/disconnect (e.g. Bluetooth).
-                engine.onOutputDevicesChanged = { [weak self] in self?.refreshDevices() }
                 isEngineReady = true
                 // Launch publish (Sprint EQ engine-plan §5.4): the engine plays the Intensity,
                 // crossfeed and Master Gain the UI shows from the first block, not its own defaults.
@@ -93,9 +95,9 @@ extension AudioViewModel {
         engine.publishIntensity(max(0, min(1, intensity)))
     }
 
-    /// Publish the crossfeed state (On/Off and strength).
+    /// Publish the crossfeed that plays (`crossfeedPlays`: chosen, on headphones) and its strength.
     func publishCrossfeed() {
-        engine.publishCrossfeed(enabled: crossfeedEnabled, strength: crossfeedStrength)
+        engine.publishCrossfeed(enabled: crossfeedPlays, strength: crossfeedStrength)
     }
 
     /// AWAITABLE teardown. The terminate path (`AppDelegate.applicationShouldTerminate`) awaits
@@ -112,6 +114,7 @@ extension AudioViewModel {
         // library peer's own teardown has already run (AppDelegate ordering), but its `store` is
         // still live here, so this last SQLite write lands.
         persistQueueCursor()
+        settingsStore.flush() // a change made in the quit's own turn is written too
         queueMirrorTask?.cancel()
         await mirrorQueueNow()
         // Stop the spectrum timer FIRST so no further `tickSpectrum` is scheduled (it polls

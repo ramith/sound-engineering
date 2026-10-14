@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import PlaybackQueueKit
+import SettingsKit
 
 // MARK: - AudioPlaybackEngine Protocol + Default Implementations
 
@@ -39,6 +40,14 @@ extension AudioPlaybackEngine {
 
     /// Default: no-op. The live engine stores the preference and consults it on device changes.
     func setPinPlaybackToSelectedDevice(_: Bool) {}
+
+    /// Default: no-op — no output rule to hand the choice to.
+    func restoreChosenOutput(uid _: String?) {}
+
+    /// Default: nothing chosen.
+    func chosenOutputUID() -> String? {
+        nil
+    }
 
     /// Default: no-op. Conformers that host the DSP AU override this.
     func publishIntensity(_: Float) {}
@@ -215,6 +224,18 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// loss); turning it on chooses the device in use. `false` = follow the system default.
     /// Default: no-op.
     func setPinPlaybackToSelectedDevice(_ pin: Bool)
+
+    /// Hand back the device the user chose before the last quit (DEV-1), by UID (`nil`: none): "Keep
+    /// playback on this device" holds it again. Not a pick — the device the engine launched on stays
+    /// its device until the output rule moves to the chosen one, which it does as soon as that device
+    /// is here (never changing the system default while nothing plays). At engine-ready. Returns at
+    /// once: the rule runs off the main thread. Default: no-op.
+    func restoreChosenOutput(uid: String?)
+
+    /// The UID of the device the user chose — by a pick, or by turning "Keep playback on this device"
+    /// on — `nil` if none: what the listener's settings keep. A read under a lock held only for the
+    /// read. Default: `nil`.
+    func chosenOutputUID() -> String?
 
     /// Invoked on the main thread when the output changed: a device was added or removed, the
     /// engine adopted a device (the system default, or the chosen device back), or it paused for a

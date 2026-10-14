@@ -15,6 +15,31 @@ extension AudioViewModel {
         onOutputIdentityChanged?(key)
     }
 
+    /// Whether `device` is a headphone-class output (wireless or USB): where crossfeed plays.
+    ///
+    /// Note: USB also matches USB audio interfaces connected to monitor speakers — a known
+    /// heuristic false-positive — and the Mac's own headphone jack reads as built-in (KI-DEV-01).
+    /// Precise detection needs `kAudioDevicePropertyDataSource` (US-R1F-12). On a non-headphone
+    /// device with crossfeed playing, the only audible consequence is a mild centre-image change
+    /// from the LPF cross path — benign and fully reversible by toggling crossfeed off.
+    static func isHeadphones(_ device: AudioDeviceModel?) -> Bool {
+        switch device?.type {
+        case .wireless, .usb: true
+        default: false
+        }
+    }
+
+    /// `selectedDevice`'s `didSet`: crossfeed plays on headphones only, so when the output moves
+    /// between headphones and anything else the engine gets the crossfeed that plays now. The
+    /// listener's choice (`crossfeedEnabled`) stays as it was (council C-12).
+    func followHeadphones(from previous: AudioDeviceModel?) {
+        guard Self.isHeadphones(previous) != deviceIsHeadphones else { return }
+        if crossfeedEnabled {
+            logUX("output: crossfeed \(crossfeedPlays ? "plays again (headphones)" : "held off (not headphones)")")
+        }
+        publishCrossfeed()
+    }
+
     /// The pill: make `device` the output the app plays on — the user's pick, which "Keep playback on
     /// this device" holds from now on (the engine's `selectDevice`). The one place the app picks.
     func selectDevice(_ device: AudioDeviceModel) {
@@ -30,6 +55,7 @@ extension AudioViewModel {
                 errorMessage = nil
                 logUX("selectDevice: ok '\(device.name)' id=\(device.id) "
                     + "\(device.displayKHz) buf=\(device.bufferFrameSize)")
+                rememberOutputChoice() // the pick is the choice the next launch restores (DEV-1)
                 adoptOutput(device)
             } catch {
                 logUX("selectDevice: error '\(device.name)' — \(error.localizedDescription)")
@@ -68,8 +94,8 @@ extension AudioViewModel {
 
     /// Everything that follows the output the app plays on, in one place for the pill and the
     /// engine's own moves (follow, a lost device, the chosen device back): the selection (its
-    /// `didSet` re-keys the per-output EQ by UID and publishes the transport for the limiter
-    /// ceiling), the rate and buffer readouts, the crossfeed headphone check, and — when Pure is
+    /// `didSet` re-keys the per-output EQ by UID, publishes the transport for the limiter ceiling
+    /// and the crossfeed that plays on it), the rate and buffer readouts, and — when Pure is
     /// playing — playback itself: the HAL engine is bound to its device, so it restarts on the new
     /// one at the playhead (Pure if that device allows it, else Enhanced). Enhanced follows the
     /// system default on its own.
@@ -78,11 +104,6 @@ extension AudioViewModel {
         selectedDevice = device
         sampleRate = device.sampleRate
         bufferFrameSize = device.bufferFrameSize
-        // QW-C: auto-disable crossfeed when the output is not a headphone-class device.
-        if crossfeedEnabled, !deviceIsHeadphones {
-            crossfeedEnabled = false
-            logUX("output: crossfeed auto-disabled (non-headphone device)")
-        }
         guard moved else { return }
         let path = engine.snapshot().signalPath
         guard OutputDevicePolicy.playbackMovesWithOutput(

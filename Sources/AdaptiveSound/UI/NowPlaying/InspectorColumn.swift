@@ -1,4 +1,5 @@
 import DesignTokenKit
+import SettingsKit
 import SwiftUI
 
 // MARK: - Inspector Column (S10.7 PR 5 — founder decision D2: the 8a trailing glass column)
@@ -135,9 +136,10 @@ struct ReimagineSectionView: View {
 
 // MARK: - Headphones Section (QW-C)
 
-/// Crossfeed toggle + strength picker; disabled on non-headphone devices. The "Connect headphones"
-/// hint is instruction text, so it must stay AA: only the control row dims (`disabledDim`), never
-/// the hint or the heading.
+/// Crossfeed toggle + strength picker; disabled on non-headphone devices. The switch shows whether
+/// crossfeed plays (`crossfeedPlays`), and sets the listener's choice, which a non-headphone output
+/// holds off without switching off. The "Connect headphones" hint is instruction text, so it must
+/// stay AA: only the control row dims (`disabledDim`), never the hint or the heading.
 struct HeadphonesSectionView: View {
     @Environment(AudioViewModel.self) private var viewModel
 
@@ -167,10 +169,13 @@ struct HeadphonesSectionView: View {
             // ONE row (founder, PR-5 screenshot round): toggle leading, strength picker
             // trailing — the picker joins the row only while crossfeed is on.
             HStack(spacing: DesignSystem.Spacing.small) {
-                CrossfeedToggleRow(crossfeedEnabled: $bvm.crossfeedEnabled, deviceEnabled: isEnabled)
-                    .fixedSize()
+                CrossfeedToggleRow(
+                    crossfeedEnabled: Binding(get: { bvm.crossfeedPlays }, set: { bvm.crossfeedEnabled = $0 }),
+                    deviceEnabled: isEnabled
+                )
+                .fixedSize()
                 Spacer(minLength: 0)
-                if bvm.crossfeedEnabled && isEnabled {
+                if bvm.crossfeedPlays {
                     CrossfeedStrengthPicker(strength: $bvm.crossfeedStrength)
                         .fixedSize()
                 }
