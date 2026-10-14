@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Designer_MatchesOracle: max |C++ − oracle| solved gain 1.37e-08 dB over the 6 pinned cases
+[PASS] EQ_Designer_MatchesOracle
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

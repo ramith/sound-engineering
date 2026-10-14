@@ -1,0 +1,8 @@
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_ReadbackEqualsEngine: RT (k, m1) == design bit-exact; kernel vs read-back + gain (+0.192 dB) 0.0000 dB (measured/expected: 50 Hz +3.2033/+3.2033 200 Hz +2.2040/+2.2040 1000 Hz +0.1914/+0.1914 4000 Hz -1.3165/-1.3165 12000 Hz -1.8006/-1.8006)
+[PASS] EQ_ReadbackEqualsEngine
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

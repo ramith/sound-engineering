@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Profile_MatchesEbur128: pink -18.000 LUFS (-0.00000) tonal 808 -16.000 LUFS (-0.00000) orchestral -20.000 LUFS (-0.00000) loud master -9.000 LUFS (-0.00000) (≤ 0.01 LU)
+[PASS] Loudness_Profile_MatchesEbur128
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

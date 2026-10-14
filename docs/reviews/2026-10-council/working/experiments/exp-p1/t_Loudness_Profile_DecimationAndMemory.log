@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Profile_DecimationAndMemory: cap 64 → stride 4, 50 of 197 blocks, kept blocks exact, prediction vs undecimated worst 0.0013 dB (≤ 0.25); 12 min @ 8 kHz → 3599 blocks at stride 2, profile 2.66 MB (peak profiler 4.51 MB); bounds @ 192 kHz × 8: profile cap 7.08 MB (≤ 7.1), working set 4.30 MB (≤ 4.5)
+[PASS] Loudness_Profile_DecimationAndMemory
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

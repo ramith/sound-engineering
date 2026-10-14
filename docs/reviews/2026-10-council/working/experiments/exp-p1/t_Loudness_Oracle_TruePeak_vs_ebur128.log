@@ -1,0 +1,8 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Loudness_Oracle_TruePeak_vs_ebur128 @ 48000 Hz: samplePeak=-3.92545 dBFS, ours(8x)=-0.590831 dBTP, ebur128(4x)=-0.811624 dBTP, delta=0.220793 dB
+  [info] Loudness_Oracle_TruePeak_vs_ebur128 @ 44100 Hz: samplePeak=-3.92545 dBFS, ours(8x)=-0.590905 dBTP, ebur128(4x)=-0.811624 dBTP, delta=0.22072 dB
+[PASS] Loudness_Oracle_TruePeak_vs_ebur128
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

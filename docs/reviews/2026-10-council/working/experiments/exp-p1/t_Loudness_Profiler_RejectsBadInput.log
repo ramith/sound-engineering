@@ -1,0 +1,6 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[PASS] Loudness_Profiler_RejectsBadInput
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

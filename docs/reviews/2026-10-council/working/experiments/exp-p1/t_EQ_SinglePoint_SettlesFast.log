@@ -1,0 +1,23 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_SinglePoint_SettlesFast: 90 % settle (ms) at the band's centre — Off → +12 / Off → −12 / +11 → +12
+[info]       20 Hz:  808.1 /  294.7 /  417.3
+[info]       32 Hz:  708.1 /  319.1 /  374.8
+[info]       50 Hz:  449.5 /  204.0 /  238.9
+[info]       79 Hz:  285.8 /  130.9 /  152.9
+[info]      126 Hz:  182.5 /   84.8 /   98.7
+[info]      200 Hz:  117.4 /   55.7 /   64.5
+[info]      316 Hz:   76.2 /   37.3 /   42.7
+[info]      501 Hz:   50.3 /   29.9 /   32.1
+[info]      794 Hz:   32.8 /   30.4 /   30.7
+[info]     1259 Hz:   32.1 /   30.6 /   30.0
+[info]     1995 Hz:   31.6 /   30.8 /   29.6
+[info]     3162 Hz:   31.4 /   30.9 /   29.4
+[info]     5012 Hz:   31.3 /   30.9 /   29.2
+[info]     7943 Hz:   31.2 /   31.0 /   29.2
+[info]    12589 Hz:   31.2 /   31.1 /   29.1
+[info]    19953 Hz:   30.0 /   30.0 /   29.0
+[PASS] EQ_SinglePoint_SettlesFast
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

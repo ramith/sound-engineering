@@ -1,0 +1,10 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] EQ_CoefficientSwapNoClick_N4: ch0 boundaryStep=0.0181671 settledMaxStep=0.130616
+  [info] EQ_CoefficientSwapNoClick_N4: ch1 boundaryStep=0.0181671 settledMaxStep=0.130616
+  [info] EQ_CoefficientSwapNoClick_N4: ch2 boundaryStep=0.0181671 settledMaxStep=0.130616
+  [info] EQ_CoefficientSwapNoClick_N4: ch3 boundaryStep=0.0181671 settledMaxStep=0.130616
+[PASS] EQ_CoefficientSwapNoClick_N4
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

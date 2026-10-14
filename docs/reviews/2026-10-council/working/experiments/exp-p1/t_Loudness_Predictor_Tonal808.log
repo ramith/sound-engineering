@@ -1,0 +1,15 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_Tonal808: tonal 808 bass line @ 48.0 kHz, -16.00 LUFS, 197 blocks; worst |predicted − measured| 0.0502 dB (bound 0.15)
+[info]     Presence                 measured  +0.010  predicted  +0.010  error +0.0004 dB
+[info]     Clarity                  measured  -0.049  predicted  -0.053  error -0.0040 dB
+[info]     Warm                     measured  +2.923  predicted  +2.919  error -0.0033 dB
+[info]     Bass & Treble            measured  +4.793  predicted  +4.783  error -0.0109 dB
+[info]     Vocal                    measured  -1.940  predicted  -1.935  error +0.0049 dB
+[info]     Bass Boost               measured  +4.810  predicted  +4.801  error -0.0088 dB
+[info]     +12 @ 100 Hz             measured  +7.826  predicted  +7.776  error -0.0502 dB
+[info]     Tone B+6 Bo-3 P+4 A+6    measured  +5.714  predicted  +5.697  error -0.0164 dB
+[PASS] Loudness_Predictor_Tonal808
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

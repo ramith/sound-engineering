@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Realizer_LoudnessCost (debug -O0 build): 6000 × 295 bands at 192 kHz (7.1 MB; ≤ 4 kept): edit (design + decimated gain) 1.460 ms (budget 15.0), full refresh 13.135 ms (budget 100.0) [-22.1]
+[PASS] Realizer_LoudnessCost
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

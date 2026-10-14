@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Transitions_SinglePoints: 68 transitions, worst local +0.817 dB (+12 dB @ 79 Hz → Off @ 101 Hz), worst peak +0.562 dB
+[PASS] EQ_Transitions_SinglePoints
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

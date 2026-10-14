@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Soak_DSPKernel_ZeroRtAlloc_EqPaths: 98 targets / 510 blocks across P0–P3, 8 ch, rtAllocs = 0
+[PASS] Soak_DSPKernel_ZeroRtAlloc_EqPaths
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

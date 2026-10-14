@@ -1,0 +1,49 @@
+[0/1] Planning build
+Test Suite 'Selected tests' started at 2026-10-14 12:57:58.802 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' started at 2026-10-14 12:57:58.806 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' passed at 2026-10-14 12:57:58.806 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-14 12:57:58.806 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.004) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "P5b round 2 — the N92 fix: property space, scenarios, flapping, start interleavings" started.
+◇ Test "S7 flapping: 20 000 random histories — never a fallback or 0 re-asserted, settles, chosen wins when present" started.
+◇ Test "N94 rerun: start × {default moves, chosen leaves, chosen returns} × pin — pre-fix vs fix" started.
+◇ Test "fixed point: apply, replay every non-engine event — nothing more, no loop (every reachable case)" started.
+◇ Test "S3 resumed on the fallback (Enhanced), then A returns mid-play: playback moves to A, no pause, no loop" started.
+◇ Test "S6 pin turned off while the chosen device is away, then on again: the fallback becomes the choice (a user act)" started.
+◇ Test "S2 A returns under a NEW id and macOS does NOT make it the default → Play plays on A" started.
+◇ Test "S1 the panel's scenario: A drops, comes back as the default, Play → plays on A, default untouched" started.
+◇ Test "S5 Pure on the fallback, A returns: target moves (the VM restarts Pure there), default untouched" started.
+◇ Test "properties P1–P11 over every reachable (event × facts) case" started.
+✔ Test "S5 Pure on the fallback, A returns: target moves (the VM restarts Pure there), default untouched" passed after 0.001 seconds.
+✔ Test "S6 pin turned off while the chosen device is away, then on again: the fallback becomes the choice (a user act)" passed after 0.001 seconds.
+P5b R2 S6: after off→on while away, chosen = BuiltInSpeaker-UID
+✔ Test "S1 the panel's scenario: A drops, comes back as the default, Play → plays on A, default untouched" passed after 0.001 seconds.
+◇ Test "S4 an explicit pick of the speakers sticks when the headphones come back" started.
+✔ Test "S2 A returns under a NEW id and macOS does NOT make it the default → Play plays on A" passed after 0.001 seconds.
+✔ Test "S3 resumed on the fallback (Enhanced), then A returns mid-play: playback moves to A, no pause, no loop" passed after 0.001 seconds.
+P5b R2 N94 defaultMoves pinned=true: pre-fix silent 1 wrong 2 not-chosen 2 / 16  →  fix silent 1 wrong 2 not-chosen 2 bad-assert 0 / 16
+     fix example: SILENT S1 align · S2 start on 41 · X defaultMoves · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+✔ Test "S4 an explicit pick of the speakers sticks when the headphones come back" passed after 0.001 seconds.
+P5b R2 N94 defaultMoves pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 11  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 11
+     fix example: SILENT S1 align · S2 start on 41 · X defaultMoves · R defaultChanged[idle]→adopt 42 · R engineReconfigured[idle]→nothing · S3 intent
+P5b R2 N94 chosenLeaves pinned=true: pre-fix silent 1 wrong 0 not-chosen 0 / 36  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 36
+     fix example: SILENT S1 align · S2 start on 41 · X chosenLeaves · R devicesChanged[idle]→adopt 42 · R targetAliveChanged[idle]→nothing · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+P5b R2 N94 chosenLeaves pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 36  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 36
+     fix example: SILENT S1 align · S2 start on 41 · X chosenLeaves · R devicesChanged[idle]→adopt 42 · R targetAliveChanged[idle]→nothing · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+P5b R2 N94 chosenReturns pinned=true: pre-fix silent 1 wrong 3 not-chosen 26 / 30  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 21
+     fix example: SILENT S1 align · S2 start on 42 · X chosenReturns · R devicesChanged[idle]→adopt 41 · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+P5b R2 N94 chosenReturns pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 21  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 21
+     fix example: SILENT S1 align · S2 start on 42 · X chosenReturns · R devicesChanged[idle]→adopt 41 · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+✔ Test "N94 rerun: start × {default moves, chosen leaves, chosen returns} × pin — pre-fix vs fix" passed after 0.003 seconds.
+P5b R2: starts with no live device to play on (settle on the next event): 63
+✔ Test "fixed point: apply, replay every non-engine event — nothing more, no loop (every reachable case)" passed after 0.007 seconds.
+P5b R2: property space 2160 cases
+✔ Test "properties P1–P11 over every reachable (event × facts) case" passed after 0.026 seconds.
+P5b R2 flapping violations: 0
+✔ Test "S7 flapping: 20 000 random histories — never a fallback or 0 re-asserted, settles, chosen wins when present" passed after 3.803 seconds.
+✔ Suite "P5b round 2 — the N92 fix: property space, scenarios, flapping, start interleavings" passed after 3.803 seconds.
+✔ Test run with 10 tests in 1 suite passed after 3.803 seconds.

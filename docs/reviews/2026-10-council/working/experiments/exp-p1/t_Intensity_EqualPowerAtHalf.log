@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Intensity_EqualPowerAtHalf: halfRms/wetRms = 3.0103 dB (equal-power expects ~+3.01 dB for correlated wet==dry)
+[PASS] Intensity_EqualPowerAtHalf
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

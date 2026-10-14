@@ -1,0 +1,15 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] BreakIt_TauRule_SinglePointIsNotJagged: Off → one point, the rule's τ
+[info]   +12 dB @  1000 Hz: max |solved| 17.84 dB → τ 10 ms
+[info]   -12 dB @  1000 Hz: max |solved| 17.84 dB → τ 10 ms
+[info]   +12 dB @  1995 Hz: max |solved| 17.85 dB → τ 10 ms
+[info]   -12 dB @  1995 Hz: max |solved| 17.85 dB → τ 10 ms
+[info]   +12 dB @  5012 Hz: max |solved| 17.93 dB → τ 10 ms
+[info]   -12 dB @  5012 Hz: max |solved| 17.93 dB → τ 10 ms
+[info]   +12 dB @ 10000 Hz: max |solved| 18.16 dB → τ 10 ms
+[info]   -12 dB @ 10000 Hz: max |solved| 18.16 dB → τ 10 ms
+[PASS] BreakIt_TauRule_SinglePointIsNotJagged
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

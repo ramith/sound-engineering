@@ -1,0 +1,9 @@
+[EQ] Realizer.reinitializeKernel 44100 Hz, 512 frames — EQ re-solved
+[EQ] Realizer: no EQ design at 32000 Hz — playing flat
+[EQ] Realizer.reinitializeKernel 32000 Hz, 512 frames — EQ re-solved
+=== DSPKernel Null Test Suite (--filter) ===
+
+[PASS] EQ_Reallocate_NewRate
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_Readback_MatchesIndependentEval: vs complex RBJ product 2.2e-08 dB (≤ 1e-06); vs time-domain SVF 4.2e-07 dB (≤ 0.01)
+[PASS] EQ_Readback_MatchesIndependentEval
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

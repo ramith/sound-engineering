@@ -1,0 +1,10 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] EQ_NearNyquistBandsApplyGain: band 29 (15848.9 Hz @ 44.1k) +6->5.86959 dB, -6->-5.86959 dB
+  [info] EQ_NearNyquistBandsApplyGain: band 29 (15848.9 Hz @ 44.1k) +12->11.9073 dB, -12->-11.9073 dB
+  [info] EQ_NearNyquistBandsApplyGain: band 30 (19952.6 Hz @ 44.1k) +6->6.02461 dB, -6->-6.02481 dB
+  [info] EQ_NearNyquistBandsApplyGain: band 30 (19952.6 Hz @ 44.1k) +12->12.05 dB, -12->-12.0507 dB
+[PASS] EQ_NearNyquistBandsApplyGain
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

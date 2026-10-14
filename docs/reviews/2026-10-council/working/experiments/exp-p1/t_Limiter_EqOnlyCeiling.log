@@ -1,0 +1,25 @@
+[EQ] output transport 626c746e: EQ-only ceiling -0.1 dBTP
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain +5.83 dB
+[EQ] output transport 75736220: EQ-only ceiling -0.1 dBTP
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain +5.83 dB
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain +5.83 dB
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain +5.83 dB
+[EQ] output transport 626c746e: EQ-only ceiling -0.1 dBTP
+[EQ] Realizer.reinitializeKernel 48000 Hz, 512 frames — EQ re-solved
+[EQ] loudness: track 0000000a11ce5eed audible (fresh start) — gain +5.83 dB
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Limiter_EqOnlyCeiling: output true peak (libebur128 / sinc dBTP)
+  built-in, EQ-only        -0.33 / -0.33 dBTP (ceiling -0.1)
+  USB, EQ-only             -0.33 / -0.33 dBTP (ceiling -0.1)
+  Bluetooth, EQ-only       -1.22 / -1.23 dBTP (ceiling -1.0)
+  unknown, EQ-only         -1.22 / -1.23 dBTP (ceiling -1.0)
+  built-in, Intensity 0.5  -1.24 / -1.21 dBTP (ceiling -1.0)
+[PASS] Limiter_EqOnlyCeiling
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.
