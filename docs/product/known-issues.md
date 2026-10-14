@@ -3,15 +3,17 @@
 Tracked defects surfaced by tests/review that are not yet fixed. Each entry names the guarding test (or the
 red test on a reference branch) where one exists, the place in the code, and where the fix is planned.
 
-> **Reconciled to the code on 2026-10-13 (product council, against `main` at a206107 = R1 / v1.0.0-alpha).**
-> Every OPEN entry below was re-checked in the source after PR #85 (Sprint G) and PR #86 (the disconnect-freeze
-> fix); items those PRs fixed are listed under **Closed**. This page is the open list the
-> [R1 release notes](../releases/v1.0.0-alpha.md) point to.
+> **Reconciled to the code on 2026-10-13 (product council, against `main` at a206107), and re-checked on 2026-10-14
+> against `7761693`, after the R1 blocker fixes (PR #88, #89).** R1 shipped as **v1.0.0-alpha** on 2026-10-14 (tag on
+> f098821, [release](https://github.com/ramith/sound-engineering/releases/tag/v1.0.0-alpha)). Every OPEN entry below
+> was re-checked in the source after PR #85 (Sprint G), PR #86 (the disconnect-freeze fix) and PR #88; items those PRs
+> fixed are listed under **Closed**. This page is the open list the [R1 release notes](../releases/v1.0.0-alpha.md)
+> point to.
 >
 > - **Severity:** **HIGH** = wrong audio, a stuck state, or user data lost; **MEDIUM** = visibly wrong behaviour that
 >   has a workaround; **LOW** = rare, cosmetic or wording; **internal** = a developer-only follow-up.
 > - **Forward link:** the [backlog](backlog.md) story (or roadmap sprint) that will close the issue. Most post-R1 defects
->   sit in the backlog's **Post-R1 fix pool** (US-R1F-01…07), which is not yet scheduled into a sprint.
+>   sit in the backlog's **Post-R1 fix pool** (US-R1F-01…08), which is not yet scheduled into a sprint.
 > - **Sources:** the Sprint G break-it reports ([library](../sprints/s10-8-g-breakit-library.md),
 >   [playback / shell](../sprints/s10-8-g-breakit-playback-shell.md)), the "Logged post-R1" lists in the
 >   [sweep ledger](../sprints/s10-8-sweep-ledger.md), and the freeze evidence in
@@ -25,7 +27,6 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 | ID | Issue | Severity | Forward link |
 |---|---|---|---|
-| KI-PB-01 | Pure ignores a changed next track while another is armed (Repeat / Shuffle toggle, Play Next, reorder) | HIGH (needs a live check) | US-R1F-01 |
 | KI-LIB-01 | "Remove Missing…" deletes entries whose drive is merely unplugged | HIGH | US-R1F-03 |
 | KI-MC-01 | A 5.1 / 7.1 file on a stereo output plays only its front left and right: centre, LFE and surrounds are dropped | HIGH | S18 (binaural fold); interim → US-R1F-08 |
 | KI-PB-02 | Repeat turned off mid-song moves on, but with a gap | MEDIUM | US-R1F-02 |
@@ -53,6 +54,8 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-13 | Two quick tile Plays can land out of order | LOW | US-R1F-04 |
 | KI-PB-14 | Stalled ticks count as heard time (play counts) | LOW | US-R1F-01 |
 | KI-PB-15 | Recent says "Nothing Played Yet" when the store is not ready or the read failed | LOW | US-R1F-04 |
+| KI-PB-16 | A change of the next song in the last moments before a seam can still play the old pick (D41 residual A2 / A2′) | LOW | US-R1F-01 |
+| KI-PB-17 | A scrub back into a track that has already ended (nothing armed) is lost | LOW | US-R1F-01 |
 | KI-GAP-03 | A narrow false seam on a Pure → Enhanced restart | LOW | US-R1F-02 |
 | ENH-001 | Short-track auto-advance is a reconfigure gap, not a seamless seam | LOW | US-R1F-02 |
 | ENH-002 | The UI loudness readout is L/R-only on a >2-channel output | LOW | US-R1F-07 |
@@ -78,26 +81,16 @@ red test on a reference branch) where one exists, the place in the code, and whe
 
 ## Playback and transport
 
-### KI-PB-01 — Pure ignores a changed next track while another is armed
-
-**Status:** OPEN · **Severity:** HIGH (found by reading the code during this reconciliation; needs a live check on a USB
-DAC) · **Forward:** US-R1F-01.
-
-On the Pure path the gapless deck has one slot, and a second arm is refused: `pureModeEngineArmOpenedNextTrack` returns
-an error when a track is already armed (`Sources/AudioDSP/PureModeBridge.cpp:357-362`; `GaplessSource::armNext`,
-`Sources/AudioDSP/GaplessSource.cpp:124-129`). The view model's re-arm (`armOnDeck`,
-`Sources/AdaptiveSound/AudioViewModel+Queue.swift:195-201`) pushes the new URL without clearing the slot first
-(`setPureNextTrack` clears only for a `nil` URL, `AudioEngineBridge+Gapless.swift:94-100`). So in Pure, a mid-song
-Repeat / Shuffle change (the Sprint G re-arm, PR #85) or a queue edit that changes the next song (Play Next, reorder,
-remove) leaves the OLD next track armed. At the seam Pure plays it, while the view model advances to its own
-`pendingNextIndex` and names a different song. Enhanced is not affected (`onDeckURL` is simply replaced).
+*(KI-PB-01 — Pure ignored a changed next track — was fixed by PR #88 (council D41); see [Closed](#fixed-by-pr-88--the-r1-blockers-2026-10-14). Its residual windows are KI-PB-16 and KI-PB-17.)*
 
 ### KI-PB-02 — Repeat turned off mid-song moves on, but with a gap
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** sweep ledger, "Logged post-R1" (Sprint G) · **Forward:** US-R1F-02.
 
 The view model re-arms correctly (`AudioViewModel+Playlist.swift:150-159` → `armOnDeck`). The seam is not re-armed
-seamlessly: on 48 kHz files the gap is most likely KI-GAP-01; on Pure the re-arm is refused (KI-PB-01).
+seamlessly: on 48 kHz files the gap is most likely KI-GAP-01. ~~On Pure the re-arm is refused (KI-PB-01).~~ *(Since PR
+#88, D41: on Pure the re-arm is applied — the old pick comes off at once and the new one arms when its file opens; a
+pick still opening when the song ends, or one of another rate or width, gives a short gap and the right song.)*
 
 ### KI-PB-03 — Shuffle on + Repeat off never ends the queue
 
@@ -112,7 +105,8 @@ forever.
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** breaker B post-R1 #1 (G-RACE-1) + freeze "Logged post-R1"
 (fast play-then-pause) · **Forward:** US-R1F-01.
 
-`isPlaying` becomes true only after `engine.startAudio` returns (`AudioViewModel+Playback.swift:74`); `pause()` guards
+`isPlaying` becomes true only after `engine.startAudio` returns and the start's on-deck prime settles
+(`AudioViewModel+Playback.swift:74`); `pause()` guards
 on it (`AudioViewModel+Transport.swift:46`) and the toggle calls `play()` again (`:57-62`). There is no "start in
 flight" state. PR #86 (86a1cbe) fixed only the Stop case (`transportStopEpoch`); `rev-verify.md` records the rest as
 still lost.
@@ -200,6 +194,26 @@ counts and Recently Played.
 `UI/Playlist/QueueHistoryList.swift:36` never reads `historyState`, and nothing reloads it when the store becomes ready
 (`LibraryBrowseModel+History.swift:12`).
 
+### KI-PB-16 — A change of the next song in the last moments before a seam can still play the old pick
+
+**Status:** OPEN (the documented residual of the D41 fix, PR #88) · **Severity:** LOW (a window of tens of
+milliseconds) · **Forward:** US-R1F-01 (follow-up F1, *seam identity*).
+
+A seam reports a count, not which track it played, so two windows remain (architecture §2.5, "What plays next"):
+**A2** — a request not yet admitted on `engineQueue` when the track ends (the rest of the main-thread turn, one hop and
+any queue backlog) finds the old pick still armed: the old pick plays while the new one is shown; **A2′** — an edit made
+after a seam but before the view model's next tick (up to 50 ms, plus the 33 ms clock) is shown as playing while the
+pick the seam took plays. Pinned by the `LATE-REQUEST` scenario (`Tests/AdaptiveSoundTests/OnDeckContractTests.swift`);
+the explorer counts both windows apart (`OnDeckExplorerTests.swift`).
+
+### KI-PB-17 — A scrub back into a track that has already ended is lost
+
+**Status:** OPEN (named in the D41 contract, PR #88) · **Severity:** LOW · **Forward:** US-R1F-01 (with the transport
+state-machine work).
+
+`ended` stays latched across a seek, so a scrub back into a track that already ended with nothing armed is lost: the
+next tick starts the next track (architecture §2.5, "What plays next").
+
 ---
 
 ## Gapless seams
@@ -267,7 +281,8 @@ The R1 release notes advertise "per-channel before / after spectrum, up to 7.1" 
 None has a defaults key: `pureModeEnabled = false` (`AudioViewModel.swift:106`), the pin `= true` (`:116`),
 `intensity = 0.20` (`:142`), `crossfeedEnabled = false` (`:153`), strength (`:161`), and Master Gain `= unity`
 (`:195`, commented "Not kept across launches (a post-R1 item)"). Only the EQ, the queue cursor (incl. shuffle / repeat),
-the Songs columns and the Tone-card fold persist. Someone who turned Master Gain down hears 0 dB after a relaunch.
+the Songs columns and the Tone-card fold persist. Someone who turned Master Gain down hears 0 dB after a relaunch. The
+output device the user chose is not kept either (DEV-1).
 
 ### KI-SET-02 — A Master Gain cut in Enhanced does not carry into Pure
 
@@ -380,7 +395,8 @@ into the RT tap for a path that is not yet primary.
 Sprint E #12) · **Source:** breaker A post-R1 #13 · **Forward:** US-R1F-03.
 
 Availability is a file-existence check only (`PlaylistsModel.swift:265-269`); `missingEntryIDs` ignores whether the
-song's music folder is paused / unreachable (`PlaylistsModel+DeadFiles.swift:33-34`). With the music drive unplugged a
+song's music folder is paused / unreachable (`PlaylistsModel+DeadFiles.swift:33-34`). *(Not covered by R1's
+sweep-evidence fix, PR #88, which guards the scanner's sweep, not this dialog.)* With the music drive unplugged a
 playlist's songs show as missing, and the dialog ("files that are missing from disk will be removed. This can't be
 undone.", `UI/Playlist/PlaylistRemoveMissingDialog.swift:21-22`) removes them for good.
 
@@ -391,7 +407,11 @@ undone.", `UI/Playlist/PlaylistRemoveMissingDialog.swift:21-22`) removes them fo
 
 `reconcileState` / `lastReconcileError` (`LibraryModel.swift:118-120`) have no UI reader. Songs on an unplugged drive
 look normal and fail only on play; a folder whose files were all deleted keeps listing them, because the empty-walk
-guard refuses the sweep silently (`LibraryModel+Reconcile.swift:153-156`). There is no Rescan control.
+guard refuses the sweep silently. There is no Rescan control. *(Since PR #88 a walk that is not evidence — the folder
+unreachable, on another drive, unrecognized, read only in part, or empty — refuses its sweep (`SweepRefusal`, five
+reasons) and pauses the folder silently, on the reconcile and on the add walk alike
+(`LibraryModel+Reconcile.swift:153-154`, `:165-166`; `LibraryModel+Scan.swift:213-215`). Paused folders are now more
+common and still invisible; see LIB-VOL-1.)*
 
 ### LIB-VOL-1 — A music folder is bound to its drive; a sweep needs evidence (R1 sweep-evidence fix)
 
@@ -516,6 +536,8 @@ These are not defects; each is a decision or a planned feature. They are listed 
 |---|---|---|
 | The R1 build is ad-hoc signed and **not notarized**: macOS asks once (Open Anyway) | Founder decision 13 ([glass-sweep plan](../sprints/s10-8-glass-sweep-plan.md)); `Makefile` `dist`, PR #87 | US-REL-01 |
 | **Pure Mode on Bluetooth / AirPlay** falls back to Enhanced | The link re-encodes, so bit-perfect is impossible (`PureModePolicy.cpp`; `evaluatePureViable`) | — (by design) |
+| **Pure Mode plays a track only when its channel count is the device stream's**: a mono file on stereo speakers, or a stereo file on a 4- or 8-channel interface, plays in Enhanced, and Settings says so ("Pure Mode can't play this track on this device…") | R1 fix (PR #88, d540c5c; council D71): before it, such a track played endless silence. `PureModePolicy.cpp:126-135` (`ChannelCountMismatch`); mapping inside Pure (AUHAL `ChannelMap`) is not done | US-ENG-07 follow-up (unscheduled) |
+| **Pure Mode declines a device format it cannot write exactly** (non-interleaved, unsigned, 8- / 20-bit, 16-in-32, float64): the track plays in Enhanced | R1 fix (PR #88, d540c5c; council D74): `NativePcmFormat::fromAsbd` (`include/PureModeFormat.h`) admits only float32, int16, packed 24, 24-in-32 and int32 | — (by design) |
 | There is **no way to open or play a single file** outside the library (no Finder drop, Open… or Open With), and none to add a non-library file to a playlist | The store supports it (`addLooseFileToPlaylist`, `LibraryStore+Playlists.swift:422`), but the only UI entry was removed with the S9 IA change (7058667 in PR #23, "Now Playing is the queue only") and never re-added | US-LIB-02, US-PLIST-02 |
 | A **copy-then-delete move** (cross-volume drag, rsync) gets a new identity: play count, loved flag and playlist entries do not follow | Move-match keys on `(dev, inode, size, mtime)` + format (`LibraryStore+MoveMatch.swift`); `content_hash` is the deferred escape hatch (SEQ-1 Gate 2) | Post-R1 pool |
 | **Gapless on the FFmpeg fallback** (Opus / Vorbis pre-skip) is not trimmed. AAC and MP3 are fine: they decode through Apple on both paths, whose edit list trims the priming | `FileDecodeSource.cpp:7-16` (Apple first, FFmpeg only if Apple can't open the file); `AudioEngineBridge+Gapless.swift:37-42` | US-PLAY-07 → S11 |
@@ -524,6 +546,65 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed by PR #88 — the R1 blockers (2026-10-14)
+
+The council's R1 blocker fixes, approved by the founder before the `v1.0.0-alpha` tag (PR #88, merged 2026-10-14;
+PR #89 made one of its tests deterministic). Each was attacked by an independent break-it pass; the evidence is in the
+PR and the commit messages.
+
+#### KI-PB-01 — Pure ignored a changed next track while another was armed (council D41)
+
+**Status:** ✅ CLOSED by PR #88 (6492f73, 35b3519; the latent arm-inside-a-claimed-seam case a130b7c) — re-verified
+2026-10-14. *The original entry is kept below.* Every on-deck request now carries an `OnDeckTicket`
+(`PlaybackQueueKit/OnDeckTicket.swift`) from the view model's one producer, `armOnDeck`
+(`AudioViewModel+Queue.swift:201-208`); `engineQueue` admits only the newest request of the current playback
+(`OnDeckGate`), and Pure takes the old pick off at admission (`pureModeEngineClearNextTrack`) and arms the new one only
+if it is still the newest (`AudioEngineBridge+Gapless.swift:47-156`). In `GaplessSource` the end is final. Tests:
+`Tests/AudioViewModelTests/OnDeckGateTests.swift` (VM-OD-01…06), the shipped-view-model scenarios, ablations and
+3,000-schedule explorer in `Tests/AdaptiveSoundTests/`, and the null test's `ArmContract_*` suite. Residual windows:
+KI-PB-16, KI-PB-17. The founder's by-ear check on a USB DAC is still owed.
+
+~~**Status:** OPEN · **Severity:** HIGH (found by reading the code during this reconciliation; needs a live check on a
+USB DAC) · **Forward:** US-R1F-01.~~
+
+*(As found at a206107:)* On the Pure path the gapless deck has one slot, and a second arm is refused:
+`pureModeEngineArmOpenedNextTrack` returned an error when a track was already armed (`PureModeBridge.cpp`;
+`GaplessSource::armNext`). The view model's re-arm (`armOnDeck`) pushed the new URL without clearing the slot first
+(`setPureNextTrack` cleared only for a `nil` URL). So in Pure, a mid-song Repeat / Shuffle change (the Sprint G re-arm,
+PR #85) or a queue edit that changes the next song (Play Next, reorder, remove) left the OLD next track armed. At the
+seam Pure played it, while the view model advanced to its own `pendingNextIndex` and named a different song. Enhanced
+was not affected (`onDeckURL` is simply replaced).
+
+#### The other R1 blockers
+
+- **Render gate (the main-CI failure on a206107, `RenderGate_ConcurrentNeverOverlaps`)** — `close()` could only win
+  between two render passes, so a busy render starved it. Fixed by 5be24a4, 7e69c16, 5f78223: `close()` bars new
+  passes at once and waits only for the pass inside (`include/RenderGate.h`); the tests assert the guarantee step by
+  step, with no wall-clock deadline. **DSP-06:** a teardown never reopens the gate, and a pass that outlived its unit's
+  stop leaves its engine and source parked, never freed (2f23dd1, 74db104).
+- **Library data loss (council P5A-01 / P5A-02)** — an unreadable subfolder, a drive unplugged mid-walk or another
+  drive with the same name made the sweep delete songs with their playlist entries and play history. A sweep now needs
+  positive evidence (`LibraryScan/SweepRefusal.swift`), and each folder is bound to its drive's volume UUID
+  (`folders.volume_uuid`, additive migration v8) — adeff5e, 6ed2169, dbb52a2. Tests: `SweepEvidenceTests`,
+  VerifyLibraryStore SE-1…SE-4. Accepted limits: LIB-VOL-1.
+- **Pure Mode safety (council D71 / DSP-03, D74 / DSP-04, D76)** — a mono track (or any channel-count mismatch) played
+  silence that never ended; a packed 24-bit device format overran the IO buffer; NaN / Inf played at full scale. Fixed
+  by d540c5c: such a track plays in Enhanced with the existing notice, device formats are written exactly or declined
+  (`PureModeFormat.h`), and non-finite samples become silence (`FiniteSamples.h`). See the two Pure rows under *Known
+  limitations*.
+- **Return to the headphones (council N92)** — after Bluetooth headphones dropped and came back, Play moved the system
+  output back to the speakers. The chosen device is now kept apart from a temporary fallback (`OutputDeviceSelection`,
+  `OutputDeviceKit`), and playback returns to it once the device menu would list it; the device the app launches on is
+  not a choice; a refused pick undoes only itself — 5e6644f, 7478d84. Tests: `OutputDeviceReturnTests`,
+  `OutputDeviceChoiceTests`, `OutputDeviceRuleSpaceTests`, `Tests/AdaptiveSoundTests/OutputDeviceViewModelTests.swift`.
+  Limit: DEV-1.
+- **Play Next during a start's prime played the old pick (council F-P4-1, pre-existing)** — a840fe5: `playNext` arms
+  when a pick is on deck or being primed.
+- **Settings copy** — with "Keep playback on this device" off, Settings now says "Playback follows your Mac's sound
+  output." (f098821).
+- **PR #89** (7761693, after the tag; test-only) — the seam-window arm tests no longer depend on the scheduler (an ASan
+  flake on PR #88's CI).
 
 ### Fixed by PR #85 / PR #86 (re-verified 2026-10-13)
 
