@@ -52,7 +52,7 @@ shipped migration can't silently corrupt. Revisit as its own scoped task before 
 
 ## LIB-VOL-1 — A music folder is bound to its drive by volume UUID (R1 sweep-evidence fix)
 
-**Status:** OPEN (accepted limitations). A folder on a volume that reports no UUID (some network and FAT volumes) stays unbound, so another such volume at its path is still walked and swept as before; and a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7") stays paused, its songs kept but not updated, until the user removes and re-adds the folder (`LibraryStore+Roots`, `SweepRefusal`).
+**Status:** OPEN (accepted limitations). A folder on a volume that reports no UUID (some network and FAT volumes) stays unbound, so another such volume at its path is still walked and swept as before; and a folder whose drive is replaced by a different one with the same name (a new or reformatted "T7") stays paused, its songs kept but not updated, until the user removes and re-adds the folder. Folders on the startup disk are unbound by design: nothing can be mounted there, and its UUID changes with the Mac (`LibraryStore+Roots`, `SweepRefusal`).
 
 ---
 
