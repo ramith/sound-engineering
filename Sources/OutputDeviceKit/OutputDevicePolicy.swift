@@ -8,10 +8,15 @@
 // The founder's decisions this encodes:
 //   • A disconnect PAUSES (commit 94b263c). When the device the app plays on goes away, playback
 //     stops; nothing carries on from another device by itself.
-//   • "Keep playback on this device" ON (pinned): the app's device wins over the system default.
-//     The app puts it back as the default while Enhanced plays and just before Enhanced starts, but
-//     never while idle (connecting headphones for another app is not undone behind the user's back).
-//     Pure plays on the device directly, so it needs no default.
+//   • "Keep playback on this device" ON (pinned): the device the user CHOSE wins over the system
+//     default. The app puts it back as the default while Enhanced plays and just before Enhanced
+//     starts, but never while idle (connecting headphones for another app is not undone behind the
+//     user's back). Pure plays on the device directly, so it needs no default.
+//   • "Return to headphones" (R1, council N92): the pin holds the device the user chose, not the
+//     fallback the app moved to when it went away (`OutputDeviceSelection`). While the chosen device
+//     is away, the fallback is temporary: the app follows the system default as with the switch off,
+//     and never puts a fallback back as the default. When the chosen device returns it is the app's
+//     device again: the next Play plays on it, and playback that resumed on the fallback moves back.
 //   • OFF (follow): the app takes the system default as its device, playing or not.
 
 /// What the app is playing through when an output event arrives.
@@ -51,13 +56,24 @@ public struct OutputDeviceFacts: Sendable, Equatable {
     public var playback: OutputPlayback
     /// "Keep playback on this device".
     public var pinned: Bool
+    /// The device the user chose (`OutputDeviceSelection`), when it is connected and alive: its id
+    /// now, which a reconnect may have changed (0 = away, or none chosen).
+    public var chosen: UInt32
 
-    public init(target: UInt32, targetAlive: Bool, systemDefault: UInt32, playback: OutputPlayback, pinned: Bool) {
+    public init(
+        target: UInt32,
+        targetAlive: Bool,
+        systemDefault: UInt32,
+        playback: OutputPlayback,
+        pinned: Bool,
+        chosen: UInt32
+    ) {
         self.target = target
         self.targetAlive = targetAlive
         self.systemDefault = systemDefault
         self.playback = playback
         self.pinned = pinned
+        self.chosen = chosen
     }
 }
 
@@ -67,10 +83,12 @@ public struct OutputDeviceAction: Sendable, Equatable, CustomStringConvertible {
     /// The device the app plays on went away during playback: stop, and say so (never carry on
     /// from another device).
     public internal(set) var pauseForDeviceLoss = false
-    /// Make this device the app's device. The pill, the per-output EQ, the limiter ceiling and the
-    /// crossfeed check all follow it.
+    /// Make this device the app's device: the system default (follow, a lost device, or the chosen
+    /// device away), or the chosen device back. The pill, the per-output EQ, the limiter ceiling and
+    /// the crossfeed check all follow it. Never 0.
     public internal(set) var adoptTarget: UInt32?
-    /// Make the app's device the system default again (pinned, Enhanced playing or starting).
+    /// Make the app's device — the adopted one, if any — the system default (pinned to the chosen
+    /// device, Enhanced playing or starting). Only ever the chosen device: never a fallback, never 0.
     public internal(set) var reassertTarget = false
     /// Restart the stopped Enhanced engine and re-schedule from the playhead, on the target.
     public internal(set) var reestablishEnhanced = false
@@ -102,36 +120,34 @@ public enum OutputDevicePolicy {
     ///     for nothing more, so the app's own default changes cannot loop.
     ///   • `.enhancedStarting` never pauses and never restarts the engine (the start does that);
     ///     it only adopts a target or re-asserts one.
+    ///   • Device 0 ("none") is never adopted, kept as alive, or re-asserted.
     public static func action(for event: OutputDeviceEvent, facts: OutputDeviceFacts) -> OutputDeviceAction {
         let starting = event == .enhancedStarting
         let playback = starting ? OutputPlayback.enhanced : facts.playback
         var action = OutputDeviceAction()
-        guard facts.targetAlive else {
-            // The device is gone. Playing → pause, never jump on. Pinned or not, a pin can't hold a
-            // device that isn't there: the system default becomes the app's device.
-            action.pauseForDeviceLoss = playback != .idle && !starting
-            action.adoptTarget = defaultElsewhere(facts) ? facts.systemDefault : nil
-            return action
-        }
-        if defaultElsewhere(facts) {
-            if facts.pinned {
-                // Enhanced plays on the system default, so it must be the app's device again.
-                action.reassertTarget = playback == .enhanced
-            } else {
-                action.adoptTarget = facts.systemDefault
-            }
-        }
+        // The device is gone (no device at all is never alive). Playing → pause, never jump on. A
+        // start isn't playing yet: it plays on the new target below.
+        let targetAlive = facts.targetAlive && facts.target != 0
+        action.pauseForDeviceLoss = !targetAlive && playback != .idle && !starting
+        let next = destination(facts)
+        action.adoptTarget = next != facts.target ? next : nil
+        // Enhanced plays on the system default, so it must be the chosen device again.
+        action.reassertTarget = holdsChoice(facts) && playback == .enhanced && !action.pauseForDeviceLoss
+            && facts.systemDefault != 0 && facts.systemDefault != next
         // The Enhanced engine stops on a configuration change, and must follow an adopted device
-        // even if no configuration change is posted. The start itself starts the engine.
+        // even if no configuration change is posted. The start itself starts the engine; a pause
+        // restarts nothing.
         let engineMustMove = event == .engineReconfigured || action.adoptTarget != nil
-        action.reestablishEnhanced = playback == .enhanced && !starting && engineMustMove
+        action.reestablishEnhanced = playback == .enhanced && !starting && !action.pauseForDeviceLoss
+            && engineMustMove
         return action
     }
 
     /// Whether playback must restart on the new output when the app's device changes (picked in
-    /// the pill, or adopted by follow). The Enhanced engine follows the system default by itself;
-    /// the Pure HAL engine is bound to its device, so it is restarted there at the playhead (Pure
-    /// if the new device allows it, else Enhanced). Not after a lost device: that one pauses.
+    /// the pill, adopted by follow or after a loss, or the chosen device back). The Enhanced engine
+    /// follows the system default by itself; the Pure HAL engine is bound to its device, so it is
+    /// restarted there at the playhead (Pure if the new device allows it, else Enhanced). Not after
+    /// a lost device: that one pauses.
     public static func playbackMovesWithOutput(isPlaying: Bool, onPure: Bool, interrupted: Bool) -> Bool {
         isPlaying && onPure && !interrupted
     }
@@ -146,8 +162,20 @@ public enum OutputDevicePolicy {
         return duration > 0 ? min(atLeastZero, duration) : atLeastZero
     }
 
-    /// The system default is a real device other than the app's.
-    private static func defaultElsewhere(_ facts: OutputDeviceFacts) -> Bool {
-        facts.systemDefault != 0 && facts.systemDefault != facts.target
+    /// The device the app plays on after this event. Pinned with the chosen device here: that one,
+    /// wherever it is (a reconnect may have moved its id). Otherwise — follow, or the chosen device
+    /// away, so the target is a temporary fallback — the system default when it is a real device
+    /// other than the target; a pin never holds a device the user did not choose. Else the target.
+    private static func destination(_ facts: OutputDeviceFacts) -> UInt32 {
+        if holdsChoice(facts) {
+            return facts.chosen
+        }
+        let defaultElsewhere = facts.systemDefault != 0 && facts.systemDefault != facts.target
+        return defaultElsewhere ? facts.systemDefault : facts.target
+    }
+
+    /// The pin is on and the device it holds is connected.
+    private static func holdsChoice(_ facts: OutputDeviceFacts) -> Bool {
+        facts.pinned && facts.chosen != 0
     }
 }

@@ -2,6 +2,7 @@
     import AppKit
     @preconcurrency import AVFoundation
     import Foundation
+    import OutputDeviceKit
 
     // MARK: - `make main-thread-stall` (S10.8 G, the disconnect freeze)
 
@@ -113,7 +114,7 @@
             let bridge = rig.bridge
             let ready = DispatchSemaphore(value: 0)
             bridge.engineQueue.async {
-                bridge.setCurrentDeviceID(0x7FFF_FFF0) // the app's device: gone
+                bridge.updateOutputSelection { $0.adopt(0x7FFF_FFF0, uid: "") } // the app's device: gone
                 bridge.setPinPlaybackToSelectedDevice(false) // any adoption stays in the app
                 bridge.registerOutputDeviceListeners()
                 ready.signal()
@@ -159,7 +160,8 @@
             rig.startPlaying()
             pump(0.3)
             let bridge = rig.bridge
-            bridge.setCurrentDeviceID(getDefaultOutputDeviceID())
+            let device = getDefaultOutputDeviceID()
+            bridge.updateOutputSelection { $0.adopt(device, uid: "") }
             bridge.setPinPlaybackToSelectedDevice(false) // a start never re-asserts the system default
             guard let files = writeTracks(["A", "B", "C"]) else { return report("no test files") }
             defer { files.forEach { try? FileManager.default.removeItem(at: $0) } }
