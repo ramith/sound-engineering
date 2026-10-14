@@ -29,8 +29,10 @@ func migrationConvergenceCheckCases() -> [CheckCase] {
 /// before any real library had run it (only test stores, which `make reset-test-library` resets; the
 /// open path refuses one an earlier amendment migrated — `Schema.v7ShapeProblem`). v8 (R1) appended
 /// `folders.volume_uuid`: the v7 golden was 1282ef7f4acef388, and the v8 fingerprint without that one
-/// column hashes to it exactly.
-let goldenSchemaFingerprintHashV8 = "470fa8ed1281e861"
+/// column hashes to it exactly. v9 (R1.1-A, C-61) recreated `tracks_fts` with every mark a token
+/// character: the v8 golden was 470fa8ed1281e861, and the v9 fingerprint with that one table's v2 DDL
+/// hashes to it exactly.
+let goldenSchemaFingerprintHashV9 = "43e71785e404bffc"
 
 // MARK: - Fingerprint
 
@@ -86,9 +88,9 @@ func checkAdditiveMigrationConvergence(number: Int, url _: URL) -> Bool {
             return false
         }
         let freshHash = fnv1a64Hex(freshFingerprint)
-        guard freshHash == goldenSchemaFingerprintHashV8 else {
+        guard freshHash == goldenSchemaFingerprintHashV9 else {
             printFail(number, "schema fingerprint drift — a SHIPPED migration body changed (or a new "
-                + "migration landed without updating goldenSchemaFingerprintHashV8). If this is an "
+                + "migration landed without updating goldenSchemaFingerprintHashV9). If this is an "
                 + "intentional NEW migration, set the golden to: \(freshHash)\nFingerprint:\n\(freshFingerprint)")
             return false
         }

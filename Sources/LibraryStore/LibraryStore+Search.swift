@@ -9,6 +9,13 @@
 // (stripping ALL FTS5 syntax specials) then wrapped as quoted prefix terms, so a query can
 // never be a syntax error or an unintended full-table match — and an empty / all-punctuation
 // query yields `.empty`, never everything.
+//
+// What a word is (R1.1-A, council C-61 / KI-LIB-11): the index's tokenizer keeps every letter's marks
+// in its word (`Schema.createV9FtsStatement`: categories L* N* Co M*), so a Sinhala vowel sign no
+// longer splits one — "මාල" (necklace) no longer finds "මිල" (price) — and it folds case and a Latin
+// letter's accents only ("bjork" finds "Björk"; й stays й). It compares code points, so the index and
+// every query are put in one form first (`searchText`). The grids' Filter and type-to-select read
+// words by the same rule (`SearchFold`, LibraryBrowseKit).
 
 import Foundation
 import GRDB
@@ -31,16 +38,27 @@ public struct SearchResults: Sendable {
 }
 
 public extension LibraryStore {
-    /// The token characters — letters (incl. accented + CJK) and decimal digits. Mirrors what
-    /// `unicode61` treats as token characters, and is TIGHTER than `CharacterSet.alphanumerics`.
+    /// The token characters — letters with their marks (`CharacterSet.letters` is L* and M*, incl. CJK)
+    /// and decimal digits. Mirrors the tokens the index keeps (`Schema.createV9FtsStatement`), and is
+    /// TIGHTER than `CharacterSet.alphanumerics`.
     private static let ftsTokenCharacters = CharacterSet.letters.union(.decimalDigits)
 
+    /// Text as search stores and reads it: Unicode compatibility-composed (NFKC). The tokenizer
+    /// compares code points and normalises nothing, so the index and every query are put in this one
+    /// form: a word stored decomposed (NFD — an untagged song's filename from an older Mac drive or a
+    /// zip) meets the composed word the user types, and a width or ligature variant (ＪＡＰＡＮ, ﬁ)
+    /// meets its plain letters, as the grids' Filter and type-to-select already read it.
+    internal static func searchText(_ text: String) -> String {
+        text.precomposedStringWithCompatibilityMapping
+    }
+
     /// Build an FTS5 `MATCH` expression from raw user input, or `nil` when nothing searchable
-    /// remains (→ empty results; never a full-table match, never a syntax error). Split on
-    /// non-token boundaries (mirroring `unicode61`), each maximal run a quoted prefix term;
-    /// terms are implicit-ANDed. `unicode61 remove_diacritics 2` folds case + accents.
+    /// remains (→ empty results; never a full-table match, never a syntax error). The input is put in
+    /// the index's form (`searchText`), then split on non-token boundaries (mirroring the tokenizer),
+    /// each maximal run a quoted prefix term; terms are implicit-ANDed. The tokenizer folds case and a
+    /// Latin letter's accents.
     internal static func ftsMatchQuery(for raw: String) -> String? {
-        let tokens = raw.unicodeScalars
+        let tokens = searchText(raw).unicodeScalars
             .split(whereSeparator: { !ftsTokenCharacters.contains($0) })
             .map { String(String.UnicodeScalarView($0)) }
         guard !tokens.isEmpty else { return nil }
