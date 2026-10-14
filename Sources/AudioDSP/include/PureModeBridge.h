@@ -157,14 +157,20 @@ extern "C"
     void* pureModeOpenDecodeSource(const char* filePath) AUDIODSP_C_NOEXCEPT;
 
     /// Arm a PRE-OPENED decoder (from pureModeOpenDecodeSource) as the next track for a gapless seam
-    /// at the current track's true end-of-file. Same-rate only: runs sameRateGaplessCompatible() vs
-    /// the ACTIVE track first. TAKES OWNERSHIP of `decoder` on every outcome — it is either moved
-    /// into the engine (armed) or destroyed here — so the caller must NOT free it afterwards. Only
-    /// the fast compat check + pointer-swap arm run under the caller's lock (the open already ran
-    /// outside it). NULL-safe.
+    /// at the current track's true end-of-file. TAKES OWNERSHIP of `decoder` on every outcome — it is
+    /// either moved into the engine (armed) or destroyed here — so the caller must NOT free it
+    /// afterwards. Only the fast checks + pointer-swap arm run here (the open already ran outside
+    /// any lock). NULL-safe.
+    ///
+    /// Arming never replaces: the caller takes the old pick off first (pureModeEngineClearNextTrack,
+    /// on the same serial queue), so the slot is empty here. The end is final: once the current
+    /// track ended with nothing armed, nothing arms behind it. Same-rate only: runs
+    /// sameRateGaplessCompatible() vs the ACTIVE track.
     /// @return 2 = armed (compatible, gapless seam ready);
-    ///         1 = format/rate mismatch (caller should reconfigure for the next track itself);
-    ///         0 = error (NULL handle/decoder, no active track, or already armed).
+    ///         1 = format/rate mismatch (not armed: the track plays after a fresh start);
+    ///         3 = the current track already ended (not armed: it plays after a fresh start);
+    ///         0 = error (NULL handle/decoder, no active track, or the slot was occupied — a caller
+    ///             bug, asserted in DEBUG).
     int pureModeEngineArmOpenedNextTrack(void* engine, void* decoder) AUDIODSP_C_NOEXCEPT;
 
     /// Destroy a decoder from pureModeOpenDecodeSource that was NEVER handed to
@@ -172,8 +178,9 @@ extern "C"
     /// decode thread off-RT. Idempotent; NULL-safe. Do NOT call after a successful arm.
     void pureModeDestroyDecodeSource(void* decoder) AUDIODSP_C_NOEXCEPT;
 
-    /// Clear any armed next track (e.g. the user cleared the on-deck queue). Joins the dropped
-    /// source off-RT. Idempotent; NULL-safe.
+    /// Take any armed next track off the slot (the user changed or cleared the pick). An exactly-once
+    /// exchange with the render's seam claim: the armed track either already became current or never
+    /// will. Joins the dropped source off-RT. Idempotent; NULL-safe.
     void pureModeEngineClearNextTrack(void* engine) AUDIODSP_C_NOEXCEPT;
 
     /// Monotonic count of completed gapless seams. The view model polls this; an increase means
