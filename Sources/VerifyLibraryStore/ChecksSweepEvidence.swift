@@ -8,7 +8,10 @@
 //        that was never readable does not stop new songs (nor block them on a refusal), a song deleted
 //        while part of the folder is unreadable is kept, and the walk that reads it all reaps it;
 //   SE-3 the v7 → v8 upgrade adds `folders.volume_uuid` NULL with every root and all user data kept;
-//        the root's next walk binds it, and a walk on another drive is refused.
+//        the root's next walk binds it, and a walk on another drive is refused;
+//   SE-4 an upgraded (unbound) root whose path holds none of its songs — another drive with the same
+//        name, a stale folder — is not walked, bound or swept, the second time too; its own drive back,
+//        it binds (the breaker's ATK-6b/6c).
 // The drive is the walk's seam (`LibraryScanner(rootIdentity:)`): no disk image is mounted.
 
 import Foundation
@@ -23,6 +26,7 @@ func sweepEvidenceCheckCases() -> [CheckCase] {
         CheckCase(label: "se1-root-changes-under-walk", run: checkRootChangesUnderWalk),
         CheckCase(label: "se2-incomplete-walk-refuses-only-a-deletion", run: checkIncompleteWalkRefusesOnlyADeletion),
         CheckCase(label: "se3-v8-root-volume-upgrade", run: checkRootVolumeUpgrade),
+        CheckCase(label: "se4-unbound-root-unrecognized", run: checkUnboundRootUnrecognized),
     ]
 }
 
@@ -48,7 +52,7 @@ private final class DriveAtRoot: @unchecked Sendable {
 }
 
 /// Drive A's root directory.
-private let driveA = RootIdentity(dev: 41, inode: 410, volumeUUID: "VOL-A")
+private let driveA = RootIdentity(dev: 41, inode: 410, volume: "VOL-A")
 
 // MARK: - SE-1 — the root changes under the walk
 
@@ -61,10 +65,10 @@ private struct RootChange {
 
 func checkRootChangesUnderWalk(number: Int, url: URL) async -> Bool {
     let changes = [
-        RootChange(name: "another drive at its path", identity: RootIdentity(dev: 41, inode: 410, volumeUUID: "VOL-B"),
+        RootChange(name: "another drive at its path", identity: RootIdentity(dev: 41, inode: 410, volume: "VOL-B"),
                    reason: .differentVolume),
         RootChange(name: "gone from its path", identity: nil, reason: .rootVanished),
-        RootChange(name: "another directory there", identity: RootIdentity(dev: 42, inode: 410, volumeUUID: "VOL-A"),
+        RootChange(name: "another directory there", identity: RootIdentity(dev: 42, inode: 410, volume: "VOL-A"),
                    reason: .rootVanished),
     ]
     do {
@@ -197,10 +201,10 @@ func checkRootVolumeUpgrade(number: Int, url: URL) async -> Bool {
         }
         // The root's next walk binds it; a walk on another drive is refused, the song and its entry kept.
         _ = try await DriveAtRoot(driveA).scanner.scan(root: root, folderID: folderID, into: store)
-        guard try boundVolumes(at: url) == [driveA.volumeUUID] else {
+        guard try boundVolumes(at: url) == [driveA.volume] else {
             printFail(number, "SE-3: the root's first walk after the upgrade did not bind it"); return false
         }
-        let driveB = DriveAtRoot(RootIdentity(dev: 41, inode: 410, volumeUUID: "VOL-B"))
+        let driveB = DriveAtRoot(RootIdentity(dev: 41, inode: 410, volume: "VOL-B"))
         do {
             _ = try await driveB.scanner.scan(root: root, folderID: folderID, into: store)
             printFail(number, "SE-3: a walk on another drive was not refused"); return false
@@ -216,5 +220,49 @@ func checkRootVolumeUpgrade(number: Int, url: URL) async -> Bool {
         return true
     } catch {
         printFail(number, "SE-3 threw: \(error)"); return false
+    }
+}
+
+// MARK: - SE-4 — an unbound root whose path holds none of its songs
+
+func checkUnboundRootUnrecognized(number: Int, url: URL) async -> Bool {
+    do {
+        let root = try ScanFixtureBuilder.makeCaseRoot("se4")
+        let song = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["Album"], fileName: "kept.flac")
+        let trackID = try seedV7Store(at: url, root: root, song: song)
+        let store = try await LibraryStore(url: url, appBuild: "verify")
+        guard let folderID = try await store.roots().first?.id else {
+            printFail(number, "SE-4: the upgraded store has no root"); return false
+        }
+        // Its drive is away; another drive with the same name is at the path, holding other songs.
+        let away = root.deletingLastPathComponent().appendingPathComponent("se4-away-\(UUID().uuidString)")
+        try FileManager.default.moveItem(at: root.appendingPathComponent("Album"), to: away)
+        let other = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["Album"], fileName: "other.flac")
+        let driveB = DriveAtRoot(RootIdentity(dev: 41, inode: 410, volume: "VOL-B"))
+        for walk in 1 ... 2 {
+            do {
+                _ = try await driveB.scanner.scan(root: root, folderID: folderID, into: store)
+                printFail(number, "SE-4: walk \(walk) of another drive at an unbound root's path was not refused")
+                return false
+            } catch let refusal as SweepRefusal where refusal.reason == .unrecognizedFolder {}
+        }
+        guard try boundVolumes(at: url) == [nil], try await store.track(url: other) == nil,
+              try await store.userState(trackID: trackID)?.playCount == 3 else {
+            printFail(number, "SE-4: the other drive was walked or bound, or the root's song lost its data")
+            return false
+        }
+        // Its own drive is back: recognized, bound, nothing swept.
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Album"))
+        try FileManager.default.moveItem(at: away, to: root.appendingPathComponent("Album"))
+        let back = try await DriveAtRoot(driveA).scanner.scan(root: root, folderID: folderID, into: store)
+        guard back.orphansSwept == 0, try boundVolumes(at: url) == [driveA.volume] else {
+            printFail(number, "SE-4: the root's own drive, back, was swept or not bound"); return false
+        }
+        printPass(number, "SE-4 an upgraded root, still unbound, whose path holds none of its songs (another "
+            + "drive with the same name) is refused (.unrecognizedFolder) twice — not walked, not bound, its "
+            + "song's play count kept; its own drive back, the walk binds it and sweeps nothing")
+        return true
+    } catch {
+        printFail(number, "SE-4 threw: \(error)"); return false
     }
 }

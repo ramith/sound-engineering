@@ -8,15 +8,19 @@
 //     was replaced while it was walked;
 //   • a DIFFERENT VOLUME is at its path — another drive mounted under the same name (two "T7" SSDs, two
 //     "Untitled" sticks), before or during the walk (R1, council P5A-02);
+//   • the folder is UNRECOGNIZED — the root is not bound to a drive yet (added before v8, or on a volume
+//     with no UUID), and none of its songs is where the library has it: the folder at its path may be
+//     another drive's, or a stale one (R1, council P5A-02 break-it);
 //   • the walk was INCOMPLETE — it could not read part of the folder: a subfolder it may not open, an
 //     audio file it could not read, a drive that failed under it (R1, council P5A-01);
 //   • the walk was EMPTY — it saw no file at all (S8.4 slice 3's founder-approved "never wipe on an
 //     empty walk": an unmounted or zombie-mounted volume reads exactly like "every file deleted").
-// A root that vanished or is on a different volume when the walk would start is not walked at all (nor
-// re-stamped). After a walk, those two always refuse; an incomplete or empty walk refuses only when the
-// sweep would delete something — with nothing unseen there is nothing to refuse, and the walk ends as
-// usual. The rows a walk found are committed either way. Both walk callers catch this silently, like
-// `CancellationError` (a background non-event): logged, and the reconcile marks the root paused.
+// A root that vanished, is on a different volume or is unrecognized when the walk would start is not
+// walked at all (nor bound or re-stamped). A root that vanished or changed drive DURING the walk stops it
+// at the next batch, and always refuses. An incomplete or empty walk refuses only when the sweep would
+// delete something — with nothing unseen there is nothing to refuse, and the walk ends as usual; the
+// rows it found are committed either way. Both walk callers catch this silently, like
+// `CancellationError` (a background non-event): logged, and the root is marked paused.
 
 import Foundation
 import LibraryStore
@@ -29,6 +33,8 @@ public struct SweepRefusal: Error, Sendable, Equatable {
         case rootVanished
         /// The root's path is on a volume other than the one the root is bound to.
         case differentVolume
+        /// The root is bound to no drive, and none of its songs is where the library has it.
+        case unrecognizedFolder
         /// The walk could not read part of the folder.
         case incompleteWalk
         /// The walk saw no file at all.
@@ -67,18 +73,18 @@ public enum RootReachabilityProbe {
     /// and a walk compares two reads. The default of `LibraryScanner`'s seam: a walk reads it before it
     /// starts and again before it sweeps.
     ///
-    /// The UUID reads as nil — the root stays unbound — for a volume that reports none, and for the
-    /// STARTUP volume. Nothing can be mounted in the startup volume's place, so no other drive can be at
-    /// a folder's path there; but its UUID (the Data volume's, which every path on it reports) changes
-    /// with the Mac — Migration Assistant, an erase-and-restore — while the library comes along with it,
-    /// and binding it would freeze every such folder on the new Mac.
+    /// The drive reads as `RootIdentity.startupDisk` on the STARTUP volume, not as its UUID: nothing can
+    /// be mounted in the startup volume's place, but its UUID (the Data volume's, which every path on it
+    /// reports) changes with the Mac — Migration Assistant, an erase-and-restore — while the library
+    /// comes along with it, and binding that UUID would freeze every such folder on the new Mac. A
+    /// volume that reports no UUID reads as nil (the root stays unbound).
     public static func identity(of root: URL) -> RootIdentity? {
         guard isReachable(root) else { return nil }
         let signature = FileSignature.deviceInode(of: root)
         var resolved = root.resolvingSymlinksInPath()
         resolved.removeAllCachedResourceValues()
-        let volume = try? resolved.resourceValues(forKeys: [.volumeUUIDStringKey, .volumeIsRootFileSystemKey])
-        let volumeUUID = volume?.volumeIsRootFileSystem == true ? nil : volume?.volumeUUIDString
-        return RootIdentity(dev: signature.dev, inode: signature.inode, volumeUUID: volumeUUID)
+        let values = try? resolved.resourceValues(forKeys: [.volumeUUIDStringKey, .volumeIsRootFileSystemKey])
+        let volume = values?.volumeIsRootFileSystem == true ? RootIdentity.startupDisk : values?.volumeUUIDString
+        return RootIdentity(dev: signature.dev, inode: signature.inode, volume: volume)
     }
 }

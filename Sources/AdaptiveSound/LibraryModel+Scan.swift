@@ -203,6 +203,7 @@ extension LibraryModel {
                 }
             )
             publishScanResult(result)
+            reconcileState[root.folderID] = walkedState(of: root.url)
             // After the structural scan (NOT inline — locked decision): enrich new/changed rows
             // with tags + art, reusing this walk's generation. The pass ends by regrouping albums +
             // reaping orphan facets (SF-2, S10.8 C2) — no separate sweep here.
@@ -210,12 +211,8 @@ extension LibraryModel {
         } catch is CancellationError {
             scanProgress = nil
         } catch let refusal as SweepRefusal {
-            // The walk was not evidence of what is gone (the root vanished or is another drive, or the
-            // walk was incomplete or empty): the rows are preserved, NOT swept. Silent like
-            // cancellation — a background non-event.
-            logUX("performAddWalk: sweep refused (folder \(refusal.folderID): \(refusal.reason); "
-                + "\(refusal.storedRowCount) rows preserved)")
             scanProgress = nil
+            pause(refusedBy: refusal, in: "performAddWalk")
         } catch {
             scanProgress = nil
             onError?("Library scan failed: \(error.localizedDescription)")
