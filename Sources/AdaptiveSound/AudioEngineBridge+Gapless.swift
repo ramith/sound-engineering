@@ -15,15 +15,15 @@ import PlaybackQueueKit
 ///   The `onResamplerEOF` hook is installed on `resampleQueue` after `startEnhancedResampler`
 ///   succeeds. When the resampler's completion chain reaches end-of-file it fires the hook (still
 ///   on `resampleQueue`). If a next track is armed, `rollResamplerToNext` opens the new file,
-///   builds a NEW `AVAudioConverter`, and calls `startEnhancedResampler` without stopping the
-///   player — the buffer queue stays contiguous → gap-free.
+///   builds a NEW resampler session, and primes it (`primeEnhancedResamplerLocked`) without
+///   stopping the player — the buffer queue stays contiguous → gap-free.
 ///
 /// **Passthrough sub-path** (48 kHz file, `scheduleFile`):
 ///   `playFile` schedules the file with `completionCallbackType: .dataPlayedBack` and dispatches
 ///   onto `resampleQueue` when the hardware finishes playing the last sample. `onPassthroughEOF`
 ///   fires there. If a next track is armed and it is also 48 kHz → `scheduleFile` the new file
 ///   immediately (consecutive schedules play back-to-back, byte-exact); if the next track is a
-///   different rate → `startEnhancedResampler` for it without stopping the player.
+///   different rate → a new resampler session for it, primed without stopping the player.
 ///
 /// ## Thread model
 ///
@@ -238,26 +238,6 @@ extension AudioEngineBridge {
         setEnhancedPositionBaseSeconds(baseSeconds)
         setLastKnownEnhancedPositionSeconds(0)
         logUX("gapless: seam #\(gaplessTransitionCount) — position reset")
-    }
-
-    // MARK: - Converter factory (shared by seam handlers)
-
-    /// Create a `.max`-quality `AVAudioConverter` from `file`'s processing format to the player's
-    /// output format. Returns `nil` if the converter cannot be created (caller must fall back to
-    /// `scheduleFile`). MUST be called on `resampleQueue`.
-    func makeConverter(
-        for audioFile: AVAudioFile,
-        player: AVAudioPlayerNode
-    ) -> AVAudioConverter? {
-        let inputFormat = audioFile.processingFormat
-        let outputFormat = player.outputFormat(forBus: 0)
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            NSLog("[AudioEngineBridge] AVAudioConverter creation failed "
-                + "(\(inputFormat.sampleRate) -> \(outputFormat.sampleRate))")
-            return nil
-        }
-        converter.sampleRateConverterQuality = .max
-        return converter
     }
 }
 

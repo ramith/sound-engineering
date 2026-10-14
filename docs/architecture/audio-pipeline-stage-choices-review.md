@@ -93,7 +93,7 @@ each stage, return a verdict — **Confirm / Adjust / Reject** — with rational
 - **Internal format → Float32 RT / Float64 offline:** ✅ matches (RT kernel I/O is Float32; the EQ's filter state runs in double).
 - **Audio graph / mixing / output / bit-depth → Apple-native:** ✅ AVAudioEngine + AVAudioFile +
   AVAudioConverter, in the two-AU N-channel graph `player → effectsAU → spatialAU('aspz') → mixer`.
-- **Sample-rate conversion → decided: Apple `AVAudioConverter(.max)`.** ✅ The shipped runtime SRC is an
+- **Sample-rate conversion → decided: Apple `AVAudioConverter(.max)`.** ✅ *(Amended 2026-10-15, R1.1-A / council C-26: the algorithm is now **Mastering**, not Normal — the Normal algorithm measured −8.25 dB at 20 kHz and 192 → 48 kHz aliases at −21 dB; Mastering is flat to 20 kHz with images and aliases ≤ −148 dB at 1–7 % of one core, and the "would stall live playback" premise was false. Configured once in `AudioFormatKit.StreamingResampler`, gated by `SRCQualityMeasure` in `make gate`.)* The shipped runtime SRC is an
   explicit streaming `AVAudioConverter` at **`.max` quality** (the default Normal algorithm — *not*
   `.mastering`, which is offline/high-latency), engaged only for rate-mismatched files; 48 kHz files take
   a byte-identical passthrough. `.max` was **chosen over soxr-VHQ** for the runtime path and is

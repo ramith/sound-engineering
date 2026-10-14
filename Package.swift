@@ -144,13 +144,15 @@ let package = Package(
             ],
             path: "Sources/VerifyLibraryStore"
         ),
-        // B5 verification tool: characterises Apple's AVAudioConverter(.max) SRC — the exact
-        // converter the Enhanced (B4) resampler uses — by measuring imaging/aliasing on pure tones.
-        // Headless (AVAudioConverter is a pure DSP object, no device). REPLICATES the B4 setup; it
-        // imports no app-target code and changes no production audio path. `swift run SRCQualityMeasure`.
+        // The SRC gate (council C-26 / R-6, R1.1-A; in `make gate`): drives the PRODUCTION Enhanced
+        // converter — AudioFormatKit's StreamingResampler, in the app's chunks — over every rate pair
+        // the app converts, and fails unless the passband is flat to ±0.1 dB to 20 kHz, every image
+        // and alias is ≤ −100 dB, equal rates are bit-exact and it streams ≥ 2× real time; a control
+        // (the pre-R1.1 Normal algorithm) must fail. Headless (AVAudioConverter needs no device).
+        // `swift run SRCQualityMeasure`.
         .executableTarget(
             name: "SRCQualityMeasure",
-            dependencies: [],
+            dependencies: ["AudioFormatKit"],
             path: "Sources/SRCQualityMeasure"
         ),
         // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel
@@ -369,11 +371,11 @@ let package = Package(
                 // former CommandLineTools -F/-framework hack broke macro expansion).
             ]
         ),
-        // Pure-Swift format helper (Sprint 5b, M2-a): maps a channel count to the
-        // AVAudioFormat the engine graph is connected at (stereo standard-format path;
-        // 5.1 / 7.1 via CoreAudio layout tags). Its own library target so BOTH the app
-        // (AdaptiveSound) and the offline gate (VerifyAUGraph) link the identical
-        // implementation — no drift in the format logic between them.
+        // Pure-Swift format helpers (Sprint 5b, M2-a): maps a channel count to the AVAudioFormat
+        // the engine graph is connected at (stereo standard-format path; 5.1 / 7.1 via CoreAudio
+        // layout tags), and the Enhanced path's sample-rate converter (StreamingResampler, R1.1-A).
+        // Its own library target so the app (AdaptiveSound) and the offline gates (VerifyAUGraph,
+        // SRCQualityMeasure) link the identical implementation — no drift between them.
         .target(
             name: "AudioFormatKit",
             dependencies: [],
