@@ -266,7 +266,7 @@ As a **developer** I want the DSP chain to query the output device's preferred s
 As a **Ramith** I want a bit-perfect playback path that drives the DAC directly through the CoreAudio HAL, takes the device into hog mode, matches the device's physical sample rate to each track, and bypasses all DSP, so that the bits I bought reach the DAC unaltered — something Apple Music itself does not do on macOS.
 
 **Status:** Shipped · proven-by: `HALOutputEngine` (HAL-direct Pure path: hog mode + per-track physical-rate match, DSP bypassed) + C++ null-test bit-exactness gate. *By-ear check on a USB DAC still owed to the founder; B3/B4/B5/A2 polish tracked in the Pure-Mode sprint doc.*
-*(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:100-104`. Open: KI-PB-01, KI-PB-05, KI-SET-02 in [known-issues.md](known-issues.md).)*
+*(Since R1: Pure moves with a newly chosen device and pauses on device loss — PR #85, `OutputDevicePolicy`; a Pure seek holds the render (`RenderGate`) instead of tearing the output down, and resume starts at its offset — PR #86. Bluetooth / AirPlay fall back to Enhanced by design — `PureModePolicy.cpp:111-115`. Open: KI-PB-01, KI-PB-05, KI-SET-02 in [known-issues.md](known-issues.md).)*
 **Traceability:** FR-PLAY-01, FR-DEVICE-06, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -371,7 +371,7 @@ As a **developer** I want a soak test proving zero audio-thread allocations and 
 As a **Marcus** I want to drag FLAC, ALAC, MP3, AAC, WAV, AIFF, and OGG files into the app and hear them immediately, so that I can load my existing library without format conversion.
 
 **Status:** Shipped (decode path) · proven-by: `FileDecodeSource` (runtime FFmpeg-via-`dlopen` with baked major-version guard, or Apple `ExtAudioFile`; FLAC/ALAC/WAV/AIFF/Opus/MP3/AAC). ~~⚠ Deviation: **Opus** replaced OGG-Vorbis on the shipped list. Broader player UX (flat in-memory playlist + folder monitor) is shipped; persistent library/browse/queue remains the unbuilt critical path (S8–S10).~~
-*(Corrected 2026-10-13 against the code: the import path is now the **library scan**, not a drag-in — the flat playlist + folder monitor were retired in the S9 IA change (7058667, PR #23). The scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`, `Sources/LibraryScan/LibraryScanner.swift:38-40`; `.aif` added by PR #85). So OGG **is** on the list and **Opus is not**: `.opus` / `.oga` play through the optional FFmpeg fallback but are never scanned (KI-LIB-05 → S11). Apple's decoder is the default; FFmpeg is used only when the user has it installed (R1 release notes). Persistent library / browse / queue shipped in S8–S10. Dragging a file in is not possible today → US-LIB-02.)*
+*(Corrected 2026-10-13 against the code: the import path is now the **library scan**, not a drag-in — the flat playlist + folder monitor were retired in the S9 IA change (7058667, PR #23). The scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScanner.supportedExtensions`, `Sources/LibraryScan/LibraryScanner.swift:50-52`; `.aif` added by PR #85). So OGG **is** on the list and **Opus is not**: `.opus` / `.oga` play through the optional FFmpeg fallback but are never scanned (KI-LIB-05 → S11). Apple's decoder is the default; FFmpeg is used only when the user has it installed (R1 release notes). Persistent library / browse / queue shipped in S8–S10. Dragging a file in is not possible today → US-LIB-02.)*
 **Traceability:** FR-PLAY-01, FR-PLAY-06
 
 ---
@@ -444,7 +444,7 @@ As a **Marcus** I want the app to restore my queue and playback position when I 
 
 As a **Tom** I want the app to name the unsupported format and explain why it cannot play it when I drag in an unsupported file, so that I am not left wondering why the track is silent.
 
-**Status (2026-10-13):** Planned · not built: there is no file drag-in (US-LIB-02), and the scan skips unlisted extensions silently (`LibraryScanner.swift:182-184`). **Forward:** S11 (format hardening) — the scan should report what it skipped.
+**Status (2026-10-13):** Planned · not built: there is no file drag-in (US-LIB-02), and the scan skips unlisted extensions silently (`LibraryScanner.swift:319-321`). **Forward:** S11 (format hardening) — the scan should report what it skipped.
 
 **Acceptance Criteria:**
 - See FR-PLAY-06 Given/When/Then: unsupported format dragged in; inline error names the format and links to supported-formats list.
@@ -468,7 +468,7 @@ As a **Marcus** I want consecutive lossy tracks (AAC, MP3) to play gaplessly eve
 - Edge case (related Pure same-rate gapless predicate limitation, deferred from Stage 2a): `sameRateGaplessCompatible` compares `bitsPerChannel`, which is `0` for compressed formats — so MIXING a compressed (AAC, bits=0) and an uncompressed (WAV, bits=16) track at the same rate forces a needless reconfigure gap even though both decode to the same float format. Either exclude bits-per-channel from the predicate when a source is compressed, or normalise the compressed value to the decoded float format. (Consecutive same-format tracks — e.g. an all-AAC library — are unaffected.)
 
 **Priority:** Could | **Phase:** 1 | **Estimate:** 3 sp | **Dependencies:** gapless Stage 1 (`cf33e5d`) + Stage 2a (`2e2242a`) — Pure `GaplessSource` + the `FileDecodeSource` FFmpeg backend
-**Status (2026-10-13):** Planned, **narrowed by the code**. The decoder opens every file with Apple first and uses FFmpeg only when Apple can't (`FileDecodeSource.cpp:7-16`), so AAC and MP3 decode through Apple on **both** paths and their priming / padding is already trimmed by the edit list (`AudioEngineBridge+Gapless.swift:36-41`). What remains: the FFmpeg fallback's own trim (Opus / Vorbis pre-skip), a seam test that proves AAC / MP3 on the Pure path, and the predicate edge case — `sameRateGaplessCompatible` still compares bits-per-channel (`GaplessSource.cpp:67-75`). **Forward:** S11 ("close gapless Stage 2b"), consistent with the S11 row's code fact in [sprint-plan.md](../sprints/sprint-plan.md).
+**Status (2026-10-13):** Planned, **narrowed by the code**. The decoder opens every file with Apple first and uses FFmpeg only when Apple can't (`FileDecodeSource.cpp:7-16`), so AAC and MP3 decode through Apple on **both** paths and their priming / padding is already trimmed by the edit list (`AudioEngineBridge+Gapless.swift:37-42`). What remains: the FFmpeg fallback's own trim (Opus / Vorbis pre-skip), a seam test that proves AAC / MP3 on the Pure path, and the predicate edge case — `sameRateGaplessCompatible` still compares bits-per-channel (`GaplessSource.cpp:83-91`). **Forward:** S11 ("close gapless Stage 2b"), consistent with the S11 row's code fact in [sprint-plan.md](../sprints/sprint-plan.md).
 **Traceability:** FR-PLAY-01, NFR-QUAL-03, NFR-QUAL-04
 
 ---
@@ -748,7 +748,7 @@ As a **Marcus** I want the DSP profile to switch automatically within 500 ms whe
 
 As a **developer** I want connected output devices classified into six categories (in-ear headphones, over-ear headphones, built-in speakers, external speakers, DAC/amplifier, unknown) using device name heuristics and Core Audio transport type, so that spatialisation mode and bass enhancement are selected automatically.
 
-**Status (2026-10-13):** Partly shipped · the type comes from the CoreAudio transport alone — built-in / USB / wireless (Bluetooth, BLE, AirPlay) / unknown, with a name fallback (`CoreAudioDevice.cpp:321-354`); "headphones" means USB or wireless (`AudioViewModel.swift:159-171`). No in-ear / over-ear / DAC split, no data-source query. **Defect:** wired headphones in the Mac's own jack report the built-in transport, so crossfeed is disabled for them (KI-DEV-01). **Forward:** S13 (identified-device correction needs this) + US-R1F-06 for KI-DEV-01.
+**Status (2026-10-13):** Partly shipped · the type comes from the CoreAudio transport alone — built-in / USB / wireless (Bluetooth, BLE, AirPlay) / unknown, with a name fallback (`CoreAudioDevice.cpp:326-359`); "headphones" means USB or wireless (`AudioViewModel.swift:169-181`). No in-ear / over-ear / DAC split, no data-source query. **Defect:** wired headphones in the Mac's own jack report the built-in transport, so crossfeed is disabled for them (KI-DEV-01). **Forward:** S13 (identified-device correction needs this) + US-R1F-06 for KI-DEV-01.
 
 **Acceptance Criteria:**
 - See FR-DEVICE-03 Given/When/Then: AirPods Pro identified as "in-ear headphones"; HRTF + headphone correction pipeline auto-selected.
@@ -797,7 +797,7 @@ As a **Tom** I want to export any profile as a JSON file and import it on anothe
 
 As a **Ramith** I want the app to automatically switch to stereo widening mode when I am using MacBook speakers and back to HRTF mode when I plug in headphones, so that I get the appropriate spatialisation for each device without manual intervention.
 
-**Status (2026-10-13):** Planned · not built (no speaker M/S or HRTF mode exists; `BRIRModule.h` is a pass-through stub). Only crossfeed auto-disables on a non-headphone output (`AudioViewModel+Devices.swift:83-86`). **Forward:** S18 for the headphone side (BRIR); the speaker M/S + ambience mode is **unscheduled**.
+**Status (2026-10-13):** Planned · not built (no speaker M/S or HRTF mode exists; `BRIRModule.h` is a pass-through stub). Only crossfeed auto-disables on a non-headphone output (`AudioViewModel+Devices.swift:81-84`). **Forward:** S18 for the headphone side (BRIR); the speaker M/S + ambience mode is **unscheduled**.
 
 **Acceptance Criteria:**
 - See FR-SPAT-06 Given/When/Then: active output is speakers; HRTF inactive; stereo width processing applied; mid/side balance adjustable.
@@ -822,7 +822,7 @@ As a **Marcus** I want the app to apply Bauer stereophonic-to-binaural crossfeed
 
 As a **Marcus** I want the app to detect my Bluetooth device's native sample rate (e.g., 44.1 kHz on AirPods) and automatically adapt to it, rather than forcing 48 kHz resampling on the device, so that I get better battery life and lower latency on wireless headphones.
 
-**Status (2026-10-13):** Planned · not built; unscheduled (Phase 1.5 Could). Today Enhanced runs a 48 kHz graph whatever the device, and Pure falls back to Enhanced on Bluetooth by design (`PureModePolicy.cpp:100-104`).
+**Status (2026-10-13):** Planned · not built; unscheduled (Phase 1.5 Could). Today Enhanced runs a 48 kHz graph whatever the device, and Pure falls back to Enhanced on Bluetooth by design (`PureModePolicy.cpp:111-115`).
 
 **Acceptance Criteria:**
 - See FR-DEVICE-01 + new AC: device enumerated; native sample rate detected via CoreAudio property API (kAudioDevicePropertyNominalSampleRate).
@@ -1040,7 +1040,7 @@ As a **developer** I want an opt-in analytics framework that is clearly describe
 
 As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live Bootlegs," "Podcasts") and have the app treat each as an independent library root that I can play from, browse, or remove independently, so that I am not forced to consolidate my collection into one folder tree to get library features.
 
-**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:365-366`.)* Open: KI-LIB-02 (paused / failed folders are invisible).
+**Status (2026-10-13):** Shipped · delivered: S8.1 / S8.2 (PR #15) store + scan; Music Folders management in the Library sidebar (S9, PR #23 — `UI/Library/MusicFoldersSection.swift`, `MusicFolderRemoveDialog.swift`); one walk per folder at a time, queued adds and a launch catch-up of every folder (PR #85, `LibraryScan/FolderWalkSchedule.swift`) · proven-by: VerifyLibraryStore (`ChecksScan*.swift`, `ChecksWalkOverlap.swift`). *(Amended by PR #85, G-LIB-04: on removal, only songs a **user** playlist names are kept as loose rows; songs that were merely queued now leave with the folder — `LibraryStore+DAO.swift:388-389`.)* Open: KI-LIB-02 (paused / failed folders are invisible).
 
 **Acceptance Criteria:**
 - The store's `folders` table supports multiple root rows (`parent_id IS NULL`, `is_root = 1`); no artificial limit on the number of roots (S8.1 schema already supports this — `folders.id` is a normal auto-increment key, not a singleton).
@@ -1057,7 +1057,7 @@ As a **Ramith** I want to register several scan folders (e.g., "Lossless," "Live
 
 As a **Ramith** I want to open and play a single audio file that is not inside any of my scan folders (e.g., a one-off download or an email attachment), so that I am not forced to import or copy a file into my library just to hear it once.
 
-**Status (2026-10-13):** Planned · **not delivered**. The schema supports it (nullable `folder_id`, `LibraryStore.addLooseFile`, `LibraryStore+DAO.swift:226`) and a loose file reads its embedded tags (S10.4, `EmbeddedMetadataReader`), but the app has **no entry point** for a single file: no Finder drop target, no Open… panel, no `CFBundleDocumentTypes` / `application(_:open:)`. The only file entry (the folder chooser that dumped a folder into the flat list) was removed with the S9 IA change (7058667, PR #23, [s9 IA design](../sprints/s9-library-ia-queue-design.md) §4/§5) and no replacement was built; the AC's "keep working exactly as it does today" no longer holds. Raised as a council finding. **Forward:** Post-R1 pool (unscheduled).
+**Status (2026-10-13):** Planned · **not delivered**. The schema supports it (nullable `folder_id`, `LibraryStore.addLooseFile`, `LibraryStore+DAO.swift:236`) and a loose file reads its embedded tags (S10.4, `EmbeddedMetadataReader`), but the app has **no entry point** for a single file: no Finder drop target, no Open… panel, no `CFBundleDocumentTypes` / `application(_:open:)`. The only file entry (the folder chooser that dumped a folder into the flat list) was removed with the S9 IA change (7058667, PR #23, [s9 IA design](../sprints/s9-library-ia-queue-design.md) §4/§5) and no replacement was built; the AC's "keep working exactly as it does today" no longer holds. Raised as a council finding. **Forward:** Post-R1 pool (unscheduled).
 
 **Acceptance Criteria:**
 - A file opened via Finder drag-and-drop, the macOS Open panel, or "open with" plays immediately through the existing playback engine (US-PLAY-01/US-ENG-07/08) without requiring a library entry to exist first — this path must keep working exactly as it does today (S8.1 §7: "the running app is byte-identical" — this story extends that guarantee forward through S8.2+).
@@ -1497,7 +1497,7 @@ Traceability: LD-12, FR-ADAPT, OQ-22
 As **Ramith** I want one simple knob from "faithful" to "reimagined" so I can dial how much the app transforms my music.
 
 **Status:** Shipped (QW1) · proven-by: steerable equal-power wet/dry intensity primitive (intensity-0 = bit-exact anchor, see US-ENG-08) + `AudioEngineBridge+IntensityControl` + ~~`NowPlayingWidget`~~ knob UI. Founder by-ear verification still pending; the full intensity→parameter *mapping* (US-RMG-02) stays not-done — `ClarityModule`/`BRIRModule` are empty stubs (S15–S17).
-*(Updated 2026-10-13: the knob is the "Intensity" carved slider in the Now Playing inspector — `ReimagineSectionView`, `UI/NowPlaying/InspectorColumn.swift:79-114` (S10.7, PR #61); default 20 % (`AudioViewModel.swift:132`), not kept across launches (KI-SET-01). Since decision 25 (PR #73) it scales only the adaptive enhancement and never the EQ; "0 % — Reimagine off (your EQ still plays)". Bit-exact = Intensity 0 **and** EQ Off.)*
+*(Updated 2026-10-13: the knob is the "Intensity" carved slider in the Now Playing inspector — `ReimagineSectionView`, `UI/NowPlaying/InspectorColumn.swift:79-114` (S10.7, PR #61); default 20 % (`AudioViewModel.swift:142`), not kept across launches (KI-SET-01). Since decision 25 (PR #73) it scales only the adaptive enhancement and never the EQ; "0 % — Reimagine off (your EQ still plays)". Bit-exact = Intensity 0 **and** EQ Off.)*
 Traceability: FR-REIMAGINE-01, FR-REIMAGINE-02, NFR-QUAL-03, LD-16
 
 **US-RMG-02 | Intensity→parameter mapping (mix-range)**

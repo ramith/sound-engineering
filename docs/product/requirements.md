@@ -142,12 +142,12 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 
 | Req | Status | Where it lives / back-link | Forward link |
 |---|---|---|---|
-| FR-PLAY-01 | Delivered† | Library scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScan/LibraryScanner.swift:38-40`; S8.2 PR #15, `.aif` PR #85); decode = Apple `ExtAudioFile` / `AVAudioFile`, FFmpeg only as an optional runtime fallback (`AudioDSP/FileDecodeSource.cpp:7-16`) | `.opus` / `.oga` → S11 (KI-LIB-05); a single file outside the library → US-LIB-02 |
+| FR-PLAY-01 | Delivered† | Library scan admits `flac mp3 wav aac m4a alac aiff aif ogg` (`LibraryScan/LibraryScanner.swift:50-52`; S8.2 PR #15, `.aif` PR #85); decode = Apple `ExtAudioFile` / `AVAudioFile`, FFmpeg only as an optional runtime fallback (`AudioDSP/FileDecodeSource.cpp:7-16`) | `.opus` / `.oga` → S11 (KI-LIB-05); a single file outside the library → US-LIB-02 |
 | FR-PLAY-02 | Delivered | Transport + Master Gain (S9 PR #23, PR #24); media keys + Control Center (`AdaptiveSound/NowPlayingController.swift:89-104`, S10.4 PR #58); paused-scrub / end-of-queue fixes (PR #85) | KI-PB-04, KI-PB-07, KI-PB-10 → US-R1F-01 |
 | FR-PLAY-03 | Delivered | Grip-drag / menu / keyboard reorder, remove, shuffle, repeat (S10.2 PR #54; `UI/Playlist/PlaylistItemList.swift`, `PlaybackQueueKit/PlaybackOrder.swift`); mid-song re-arm (PR #85) | KI-PB-01 (HIGH), KI-PB-02, KI-PB-03 → US-R1F-01/02 |
 | FR-PLAY-04 | Delivered | Tags + embedded art off-main (S8.3 PR #15; `LibraryScan/MetadataExtractor.swift`, `ArtworkCache.swift`); Now Playing hero (S10.7 PR #61) | KI-PB-06 |
 | FR-PLAY-05 | Partial | Queue + track + offset + shuffle / repeat restored paused (`AdaptiveSound/AudioViewModel+QueueHydration.swift`, S10.2 PR #54); EQ state persists (`EQEditKit/EQStore.swift`) | Settings reset at launch → US-R1F-05 (KI-SET-01); no "profile" → S13 |
-| FR-PLAY-06 | Not built | The scan skips unlisted files silently (`LibraryScanner.swift:182-184`); there is no file import | S11 |
+| FR-PLAY-06 | Not built | The scan skips unlisted files silently (`LibraryScanner.swift:319-321`); there is no file import | S11 |
 | FR-AGENT-01 | Not built | **New 2026-10-13 (founder):** every user-facing player function is controllable through a local, opt-in MCP server, over the same command / state API as the UI (no second control path); hearing-safety limits enforced server-side | [EP-MCP](backlog.md#ep-mcp--agent-control-surface-mcp) — placement: 2026-10 council |
 | FR-SPAT-01 | Not built | `AudioDSP/Spatial/BRIRModule.h` is a bit-exact pass-through stub | S18 |
 | FR-SPAT-02 | Not built | — | after S18 |
@@ -155,7 +155,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | FR-SPAT-04 | Not built | No `CMHeadphoneMotionManager` use | Unscheduled (US-HT-01) |
 | FR-SPAT-05 | Not built | — | S18 |
 | FR-SPAT-06 | Not built | — | Unscheduled (US-DEVICE-06) |
-| FR-SPAT-07 | Partial | Only crossfeed auto-disables on a non-headphone output (`AdaptiveSound/AudioViewModel+Devices.swift:83-86`). **Defect:** a 5.1 / 7.1 file on a stereo output keeps only L / R (`AudioDSP/Spatial/SpatialRenderKernel.cpp:59-89`, an interim truncation stub) | S18 / US-DEVICE-06; KI-MC-01 (HIGH) → US-R1F-08 |
+| FR-SPAT-07 | Partial | Only crossfeed auto-disables on a non-headphone output (`AdaptiveSound/AudioViewModel+Devices.swift:81-84`). **Defect:** a 5.1 / 7.1 file on a stereo output keeps only L / R (`AudioDSP/Spatial/SpatialRenderKernel.cpp:59-89`, an interim truncation stub) | S18 / US-DEVICE-06; KI-MC-01 (HIGH) → US-R1F-08 |
 | FR-TONAL-01 | Delivered† | 31-band graphic EQ, ±12 dB per point, an exact SVF bell per band (`AudioDSP/EQ/GraphicEQBands.h`, `EQEditKit/EQBands.swift:24-33`; Sprint EQ PR #73) | Parametric bands → S12 |
 | FR-TONAL-02 | Not built | Nearest: per-output EQ memory (`EQEditKit/EQOutputPin.swift`, PR #73) | S12 (AutoEq import) + S13 |
 | FR-TONAL-03 | Not built | — | S14 |
@@ -172,7 +172,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | FR-ADAPT-08 | Not built | Nearest: the Intensity knob, which scales only the adaptive enhancement (decision 25) | S17 |
 | FR-DEVICE-01 | Delivered | `AudioDSP/CoreAudioDevice.cpp`; `DeviceListPolicy.cpp` hides hidden / private aggregate devices (PR #85); name, type, rate in `UI/Settings/DeviceDetailRow.swift` | KI-DEV-02 → US-R1F-06 |
 | FR-DEVICE-02 | Partial | Per-output EQ recall + output toast (`EQEditKit/EQOutputSwitch.swift`, `UI/Shell/EQOutputToast.swift`, PR #73); pin / follow / pause-on-loss rule (`OutputDeviceKit/OutputDevicePolicy.swift`, PR #85) | Whole profiles → S13 |
-| FR-DEVICE-03 | Partial | Transport-only: built-in / USB / wireless / unknown (`CoreAudioDevice.cpp:321-354`) | S13; KI-DEV-01 → US-R1F-06 |
+| FR-DEVICE-03 | Partial | Transport-only: built-in / USB / wireless / unknown (`CoreAudioDevice.cpp:326-359`) | S13; KI-DEV-01 → US-R1F-06 |
 | FR-DEVICE-04 | Not built | Nearest: My Presets + per-output pins | S13 |
 | FR-DEVICE-05 | Not built | — | S13 |
 | FR-DEVICE-06 | Delivered | Enhanced: `AVAudioConverter` at `.max` into the 48 kHz graph (`AdaptiveSound/AudioEngineBridge+EnhancedResampler.swift`); Pure: the device follows each track's rate (`HALOutputEngine`) | — |
@@ -187,7 +187,7 @@ Requirements are grouped by capability area. Each requirement carries a stable I
 | FR-REIMAGINE-01 | Delivered | "Intensity" slider (`UI/NowPlaying/InspectorColumn.swift:79-114`); equal-power blend (`DSPKernel.cpp`) | — |
 | FR-REIMAGINE-02 | Delivered† | Bit-exact at Intensity 0 **with the EQ Off** (`DSPKernel.cpp:191-210`; decision 25); C++ null test | — |
 | FR-REIMAGINE-03 | Not built | — | S17 |
-| FR-REIMAGINE-04 | Partial | Default 20 % (`AudioViewModel.swift:132`); no stem range to gate | S17 |
+| FR-REIMAGINE-04 | Partial | Default 20 % (`AudioViewModel.swift:142`); no stem range to gate | S17 |
 | FR-STEM-01…06 | Won't | — | — |
 | NFR-PERF-01 | Partial | RT-allocation soak in the gate; the 60-minute XRun check is a manual Instruments procedure ([s7-soak](../sprints/s7-soak-instruments-procedure.md)) | — |
 | NFR-PERF-02 | Delivered | Quality-first posture (`.max` SRC, 8× ISP limiter, double-precision off-RT design) | — |
