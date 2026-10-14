@@ -24,9 +24,9 @@ import Synchronization
 // A start, stop or seek runs when the view model calls it (a start or stop begins a new playback,
 // so anything still queued for the old one is dropped — the same outcome as `engineQueue`'s FIFO) —
 // or, while `holdsTransport`, waits until `runHeld` runs it, so a scenario can let two starts reach
-// the engine in the other order. `setNextTrack` returns once the request is recorded; the bridge
-// returns once it is settled — that moves only when a start's `isPlaying = true` lands, which no
-// scenario here depends on (they act from a settled, playing state).
+// the engine in the other order. `setNextTrack` returns once its request is settled — dropped, set,
+// or (Pure) armed / left empty — as the bridge's does: a start's prime holds `isPlaying` false until
+// then (council F-P4-1 hid behind a model that returned at record).
 //
 // `semantics` selects the arm behaviour: the design, or one of the behaviours it replaced — the
 // ablations that show each piece of the design is necessary.
@@ -81,9 +81,11 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
     }
 
     func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async {
-        state.withLock { model in
-            model.arrivals.append(ticket)
-            model.inbound.append(OnDeckEngineState.Request(url: fileURL, ticket: ticket))
+        await withCheckedContinuation { (settled: CheckedContinuation<Void, Never>) in
+            state.withLock { model in
+                model.arrivals.append(ticket)
+                model.inbound.append(OnDeckEngineState.Request(url: fileURL, ticket: ticket, settled: settled))
+            }
         }
     }
 
@@ -141,12 +143,22 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
 
     /// Deliver an inbound request to `engineQueue`: the `rank`-th oldest by the view model's order.
     func hop(rank: Int) {
-        state.withLock { $0.deliver(rank: rank) }
+        settle { model, settled in model.deliver(rank: rank, settled: &settled) }
     }
 
     /// The Pure open at `index` lands on `engineQueue`.
     func finishOpen(_ index: Int) {
-        state.withLock { $0.finishOpen(index) }
+        settle { model, settled in model.finishOpen(index, settled: &settled) }
+    }
+
+    /// Run `step` under the lock, then let the callers whose requests it settled go on.
+    private func settle(_ step: (inout OnDeckEngineState, inout OnDeckEngineState.Settled) -> Void) {
+        let settled = state.withLock { model -> OnDeckEngineState.Settled in
+            var settled: OnDeckEngineState.Settled = []
+            step(&model, &settled)
+            return settled
+        }
+        settled.forEach { $0.resume() }
     }
 
     /// The current track's true end: a seam into the armed pick, or the end flag.
@@ -166,12 +178,12 @@ final class OnDeckEngineModel: AudioPlaybackEngine {
     /// Deliver everything in flight — requests in the order they were made, then the opens in the
     /// order they started — until nothing is left.
     func drain() {
-        state.withLock { model in
+        settle { model, settled in
             while !model.inbound.isEmpty || !model.opening.isEmpty {
                 if model.inbound.isEmpty {
-                    model.finishOpen(0)
+                    model.finishOpen(0, settled: &settled)
                 } else {
-                    model.deliver(rank: 0)
+                    model.deliver(rank: 0, settled: &settled)
                 }
             }
         }

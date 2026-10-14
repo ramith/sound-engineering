@@ -108,13 +108,13 @@ struct Rig {
     }
 
     /// A few ticks, each followed by everything it sent landing: a seam's re-arm, an end's fresh start.
+    /// Ends settled: no request is left with its caller waiting.
     func follow() async throws {
-        for _ in 0 ..< 3 {
+        for _ in 0 ..< 4 {
             tick()
             try await settle()
             engine.drain()
         }
-        tick()
     }
 
     /// The current track runs out, and the app follows.
