@@ -8,8 +8,9 @@ import Testing
 //
 // Each schedule starts track 0 (Pure or Enhanced, a random order mode) and mixes, at random, what
 // the user does while it plays (Play Next, shuffle, repeat, remove the on-deck row, Next, Add to
-// Queue) with what the engine does in its own time (deliver a request — any of them —, land an open
-// — any of them —, end the current track, a render callback after the end, a tick). Two invariants:
+// Queue, drag a row — council C-17) with what the engine does in its own time (deliver a request —
+// any of them —, land an open — any of them —, end the current track, a render callback after the
+// end, a tick). Two invariants:
 //
 //   I1  when nothing is in flight, the engine's armed pick is the app's promised next (or the deck is
 //       empty because that pick can't join gaplessly);
@@ -42,7 +43,7 @@ struct OnDeckExplorer {
     }
 
     private enum Move: String {
-        case tick, playNext, shuffle, repeatMode, removeOnDeck, next, append, deliver, open, end, renderAfterEnd
+        case tick, playNext, shuffle, repeatMode, removeOnDeck, next, append, drag, deliver, open, end, renderAfterEnd
     }
 
     let semantics: ArmSemantics
@@ -123,7 +124,7 @@ struct OnDeckExplorer {
     private mutating func nextMove(_ rig: Rig, progress: Progress) -> Move {
         var moves: [Move] = [.tick, .tick]
         if progress.userActions < 6 {
-            moves += [.playNext, .shuffle, .repeatMode, .next, .append]
+            moves += [.playNext, .shuffle, .repeatMode, .next, .append, .drag]
             if let pending = rig.vm.pendingNextIndex, pending != rig.vm.selectedTrackIndex {
                 moves.append(.removeOnDeck)
             }
@@ -143,7 +144,7 @@ struct OnDeckExplorer {
         return moves[random(moves.count)]
     }
 
-    private func user(_ move: Move, rig: Rig, fresh: Int) {
+    private mutating func user(_ move: Move, rig: Rig, fresh: Int) {
         switch move {
         case .playNext: rig.vm.playNext([audioFile(fresh)])
         case .shuffle: rig.vm.toggleShuffle()
@@ -151,6 +152,9 @@ struct OnDeckExplorer {
         case .next: rig.vm.nextTrack()
         case .append: rig.vm.appendToQueue([audioFile(fresh)])
         case .removeOnDeck: rig.vm.removeTrack(at: rig.vm.pendingNextIndex ?? 0)
+        case .drag:
+            let count = rig.vm.queue.count
+            rig.vm.moveByDrop(fromID: rig.vm.queue[random(count)].id, toIndex: random(count))
         default: break
         }
     }
