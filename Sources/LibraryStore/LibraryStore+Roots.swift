@@ -14,13 +14,16 @@
 //
 // A volume that reports no UUID (some network and FAT volumes) leaves its root unbound: it is walked
 // as it always was, with no defence against another volume at its path (docs/product/known-issues.md).
+// So does the STARTUP volume, by design: no other drive can be at a path on it, and its UUID changes
+// with the Mac the library migrates to (`RootReachabilityProbe.identity(of:)`).
 
 import Foundation
 import GRDB
 
 /// What is at a root's path right now: the directory's `(dev, inode)` (an `lstat`, as `addRoot`
-/// dedups on) and the persistent UUID of the volume it is on — nil when that volume reports none.
-/// `LibraryScan` reads it (`RootReachabilityProbe.identity(of:)`); the store binds and checks it.
+/// dedups on) and the persistent UUID of the volume it is on — nil when that volume reports none, or
+/// is the startup volume. `LibraryScan` reads it (`RootReachabilityProbe.identity(of:)`); the store
+/// binds and checks it.
 public struct RootIdentity: Sendable, Equatable {
     public let dev: Int64?
     public let inode: Int64?

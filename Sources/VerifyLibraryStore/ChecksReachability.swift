@@ -20,11 +20,19 @@ func checkRootReachability(number: Int, url _: URL) async -> Bool {
             printFail(number, "reachability: a FILE was reported reachable (must be a directory)"); return false
         }
         let gone = dir.appendingPathComponent("nope-\(UUID().uuidString)", isDirectory: true)
-        guard !RootReachabilityProbe.isReachable(gone) else {
+        guard !RootReachabilityProbe.isReachable(gone), RootReachabilityProbe.identity(of: gone) == nil else {
             printFail(number, "reachability: a non-existent path was reported reachable"); return false
         }
+        // The fixture is on the startup volume: its identity is its lstat, unbound to any drive.
+        let signature = LibraryScanner.deviceInode(of: dir)
+        guard RootReachabilityProbe.identity(of: dir)
+            == RootIdentity(dev: signature.dev, inode: signature.inode, volumeUUID: nil) else {
+            printFail(number, "reachability: a folder on the startup volume read a volume UUID, or not its lstat")
+            return false
+        }
         printPass(number, "reachability probe: a live directory is reachable; a file or a missing path is "
-            + "NOT — what a walk reads first, so an unmounted/deleted root is not walked (SweepRefusal)")
+            + "NOT — what a walk reads first, so an unmounted/deleted root is not walked (SweepRefusal); a "
+            + "folder on the startup volume reads its lstat and no volume UUID (unbound by design)")
         return true
     } catch {
         printFail(number, "reachability threw: \(error)"); return false
