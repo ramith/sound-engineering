@@ -302,6 +302,7 @@ public final class LibraryStore: Sendable {
             // checks its OWN references (see the loop below).
             (Schema.MigrationID.v7, { try Schema.migrateV6toV7($0, appBuild: appBuild, timestamp: $1) }),
             (Schema.MigrationID.v8, { try Schema.migrateV7toV8($0, appBuild: appBuild, timestamp: $1) }),
+            (Schema.MigrationID.v9, { try Schema.migrateV8toV9($0, appBuild: appBuild, timestamp: $1) }),
         ]
         assert(steps.count == currentSchemaVersion, "currentSchemaVersion must equal the registered step count")
         let clock = timestamp ?? { nowSeconds() }
