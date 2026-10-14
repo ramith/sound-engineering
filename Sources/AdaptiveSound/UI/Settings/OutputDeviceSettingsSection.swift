@@ -41,6 +41,6 @@ struct OutputDeviceSettingsSection: View {
         audioViewModel.pinPlaybackToSelectedDevice
             ? "Playback stays on the device you choose here and goes back to it when it reconnects. "
             + "Until you choose one, it follows your Mac’s sound output."
-            : "Playback follows a newly connected device."
+            : "Playback follows your Mac’s sound output."
     }
 }
