@@ -84,8 +84,7 @@ extension AudioViewModel {
             isPlaying = false
             errorMessage = "Output device disconnected — playback paused. Press Play to continue."
             // Clear pending on-deck track; device loss invalidates the gapless queue.
-            pendingNextIndex = nil
-            Task { await engine.setNextTrack(nil) }
+            armOnDeck(index: nil)
         }
 
         // --- Gapless auto-advance poll ---

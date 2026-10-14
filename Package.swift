@@ -227,6 +227,7 @@ let package = Package(
             //   AutoAdvanceGaplessSeamTests.swift           — VM-AA-14..19
             //   AutoAdvanceReconfigureGapTests.swift        — VM-AA-RGAP-1, VM-AA-RTR-1
             //   AutoAdvanceDeviceLossTests.swift            — VM-AA-06..07, VM-AA-13, VM-AA-18
+            //   OnDeckGateTests.swift                       — VM-OD-01..06 (council D41)
             sources: [
                 "AudioViewModelTests.swift",
                 "MockAudioEngine.swift",
@@ -245,6 +246,7 @@ let package = Package(
                 "TransportSnapshotTests.swift",
                 "SeekRouteTests.swift",
                 "PlaybackOrderTests.swift",
+                "OnDeckGateTests.swift",
                 "PlayThroughTrackerTests.swift",
                 "NowPlayingSnapshotTests.swift",
             ]

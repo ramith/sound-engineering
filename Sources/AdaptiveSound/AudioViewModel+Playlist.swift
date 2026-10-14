@@ -10,7 +10,7 @@ extension AudioViewModel {
         // Capture the identities of the now-playing pointer AND the armed gapless on-deck BEFORE
         // the move, then re-find them by id after — so a reorder that shifts (not just moves) the
         // selected row keeps `selectedTrackIndex` on the right track, and `pendingNextIndex` keeps
-        // pointing at the SAME track the engine already armed (`engine.setNextTrack`). Doing
+        // pointing at the SAME track the engine already armed (`armOnDeck`). Doing
         // neither desynced audio ⟂ the ▶/History ⟂ play-count at the gapless seam (QA: reorder a
         // playing queue → wrong next track). Dups-safe (QueueItem.id, not URL/index).
         let selID = selectedSlotID
@@ -103,16 +103,7 @@ extension AudioViewModel {
             // currently-playing track was AFTER the removed slot its index is now one lower.
             let rawCurrent = selectedTrackIndex ?? 0
             let currentIdx = rawCurrent > removedIndex ? rawCurrent - 1 : rawCurrent
-            let newNextIdx = computeNextIndex(current: currentIdx, playlistCount: queue.count)
-            pendingNextIndex = newNextIdx
-            Task { [weak self] in
-                guard let self else { return }
-                if let newIdx = newNextIdx, newIdx < queue.count {
-                    await engine.setNextTrack(queue[newIdx].file.absoluteURL)
-                } else {
-                    await engine.setNextTrack(nil)
-                }
-            }
+            armOnDeck(index: computeNextIndex(current: currentIdx, playlistCount: queue.count))
         } else if pending > removedIndex {
             pendingNextIndex = pending - 1
         }

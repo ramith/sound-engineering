@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import PlaybackQueueKit
 
 // MARK: - AudioEngineBridge Enhanced-path gapless engine
 
@@ -27,11 +28,11 @@ import Foundation
 /// ## Thread model
 ///
 /// The gapless seam state (`onDeckURL`, `onResamplerEOF`, `onPassthroughEOF`) is read and
-/// written only on `resampleQueue`, the serial queue that owns the resampler/converter state;
-/// `setNextTrack` hops there with `async`. The seam count and end flag
-/// (`gaplessTransitionCount`, `gaplessPlaybackEnded`) are written there too, but they are named
-/// acquire/release atomics: the transport clock reads them on `engineQueue` and publishes them in
-/// the `TransportSnapshot` copy. The main thread never reads them, nor syncs onto
+/// written only on `resampleQueue`, the serial queue that owns the resampler/converter state; an
+/// admitted `setNextTrack` hands it there from `engineQueue` (`armEnhancedOnDeck`). The seam count
+/// and end flag (`gaplessTransitionCount`, `gaplessPlaybackEnded`) are written there too, but they
+/// are named acquire/release atomics: the transport clock reads them on `engineQueue` and publishes
+/// them in the `TransportSnapshot` copy. The main thread never reads them, nor syncs onto
 /// `resampleQueue` (S10.8 G).
 ///
 /// ## Gapless AAC/MP3 note
@@ -43,100 +44,135 @@ import Foundation
 extension AudioEngineBridge {
     // MARK: - Protocol requirements (AudioPlaybackEngine)
 
-    /// Supply (or clear, with `nil`) the track to play gaplessly after the current one finishes.
+    /// Supply (or clear, with `nil`) the track to play gaplessly after the current one: the on-deck
+    /// request numbered `ticket` (`AudioPlaybackEngine.setNextTrack`, council D41). On `engineQueue`:
     ///
-    /// - If called while an Enhanced session is active, arms the appropriate EOF hook.
-    /// - If called with `nil`, clears the on-deck slot and disarms any armed hook.
-    /// - A seek must NOT consume the on-deck track; user stop clears it (done in `stopAudio`).
-    /// - Safe to call from any thread; all state is marshalled onto `resampleQueue`.
-    func setNextTrack(_ fileURL: URL?) async {
-        // Pure path: route to the HAL GaplessSource C-ABI. A same-format next track arms a
-        // sample-accurate seam (result 2); a rate/format mismatch (result 1) is NOT armed — the
-        // track still plays, but via a fresh start (the brief reconfigure gap) when the VM sees
-        // playbackEnded with a track still queued. result 0 = error (unreadable/unsupported).
-        if activePathKind == .pure {
-            await setPureNextTrack(fileURL)
-            return
-        }
-
-        guard activePathKind == .enhanced else { return }
-        // Prefetch the armed track's loudness profile for its seam (the engine switches to it
-        // only when it becomes AUDIBLE, at bumpTransitionCount — never here).
-        prefetchTrackLoudness(fileURL)
+    /// - **Admission.** Only the newest request of the current playback passes `onDeckGate`; any other
+    ///   is dropped and has no effect (a Pure pick is never opened). The path is read here, on the
+    ///   queue that changes it, so a request can't be routed to a path a start just replaced.
+    /// - **Applied at once.** Enhanced sets the on-deck slot (`armEnhancedOnDeck`). Pure takes the old
+    ///   pick off now and arms the new one once its file opens, if it is still the newest
+    ///   (`retractThenArmPure`).
+    ///
+    /// A seek does not consume the on-deck track; a start or stop begins a new playback (every
+    /// earlier request is stale). Returns once the request is settled: dropped, set, or armed / left
+    /// empty. Safe to call from any thread.
+    func setNextTrack(_ fileURL: URL?, ticket: OnDeckTicket) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            resampleQueue.async {
-                self.onDeckURL = fileURL
-                if fileURL == nil {
-                    // Disarm: clear both EOF hooks so no stale handler fires.
-                    self.onResamplerEOF = nil
-                    self.onPassthroughEOF = nil
+            engineQueue.async {
+                guard self.onDeckGate.admit(ticket) else {
+                    logUX("setNextTrack '\(fileURL?.lastPathComponent ?? "none")' (\(ticket)) → stale, dropped")
                     continuation.resume()
                     return
                 }
-                // Arm the correct hook based on which sub-path is currently active.
-                if let player = self.playerNode {
-                    if self.resampleSession != nil {
-                        self.armResamplerNextTrack(player: player)
-                    } else {
-                        self.armPassthroughNextTrack(player: player)
-                    }
+                if self.activePathKind == .pure {
+                    self.retractThenArmPure(fileURL, ticket: ticket) { continuation.resume() }
+                } else {
+                    self.armEnhancedOnDeck(fileURL) { continuation.resume() }
                 }
-                continuation.resume()
             }
         }
     }
 
-    /// Pure-path on-deck arm (S3 F3): open the next source on a global queue (the network-slow step,
-    /// kept off every bridge queue), then arm the pre-opened decoder — or clear the deck — on
-    /// `engineQueue`, where every Pure C-ABI call is serialized with the clock, seek and teardown
-    /// (`withPureEngine`). Split out of setNextTrack so each transport path stays within the
-    /// cyclomatic budget. result: 2 armed / 1 reconfigure / 0 error.
-    private func setPureNextTrack(_ fileURL: URL?) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            guard let url = fileURL else {
-                engineQueue.async {
-                    _ = self.withPureEngine { pureModeEngineClearNextTrack($0) }
-                    continuation.resume()
-                }
+    /// The Enhanced arm, for an admitted request (on `engineQueue`): prefetch the pick's loudness
+    /// profile, then set the on-deck slot on `resampleQueue` (which owns the seam state) and arm the
+    /// EOF hook of the sub-path playing now — or, for `nil`, clear the slot and disarm both hooks so
+    /// no stale handler fires. `done` runs once the slot is set.
+    ///
+    /// `async`, not `sync`: admissions are serialized here and `resampleQueue` is FIFO, so the slot
+    /// takes them — and a start's or stop's clear — in admission order, while a seam busy opening the
+    /// next file can't hold `engineQueue` (the clock and every transport op) behind it.
+    private func armEnhancedOnDeck(_ fileURL: URL?, done: @escaping @Sendable () -> Void) {
+        dispatchPrecondition(condition: .onQueue(engineQueue))
+        // The engine switches to the profile only when the track becomes AUDIBLE
+        // (bumpTransitionCount) — never here.
+        prefetchTrackLoudness(fileURL)
+        resampleQueue.async {
+            defer { done() }
+            self.onDeckURL = fileURL
+            guard fileURL != nil else {
+                self.onResamplerEOF = nil
+                self.onPassthroughEOF = nil
                 return
             }
-            DispatchQueue.global().async {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                defer {
-                    if didAccess {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-                guard let decoder = url.path.withCString({ pureModeOpenDecodeSource($0) }) else {
-                    logUX("pure setNextTrack '\(url.lastPathComponent)' → error (open failed)")
-                    continuation.resume()
-                    return
-                }
-                // Hand the opened decoder to engineQueue by its address (a C handle; the ownership
-                // moves with it): no worker blocks while a transport change finishes there.
-                let decoderAddress = UInt(bitPattern: decoder)
-                self.engineQueue.async {
-                    guard let decoder = UnsafeMutableRawPointer(bitPattern: decoderAddress) else {
-                        continuation.resume()
-                        return
-                    }
-                    // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder.
-                    if let result = self.withPureEngine({ pureModeEngineArmOpenedNextTrack($0, decoder) }) {
-                        logUX("pure setNextTrack '\(url.lastPathComponent)' → \(Self.pureArmLabel(result))")
-                    } else {
-                        pureModeDestroyDecodeSource(decoder)
-                    }
-                    continuation.resume()
-                }
+            guard let player = self.playerNode else { return }
+            if self.resampleSession != nil {
+                self.armResamplerNextTrack(player: player)
+            } else {
+                self.armPassthroughNextTrack(player: player)
             }
         }
     }
 
-    /// Label for a `pureModeEngineArmOpenedNextTrack` result (2 armed / 1 reconfigure / 0 error).
+    /// The Pure arm, for an admitted request (on `engineQueue`). The old pick comes off now —
+    /// `pureModeEngineClearNextTrack` is an exactly-once exchange with the render's seam claim, so it
+    /// either already played or never will. The new pick's file opens on a global queue (the
+    /// network-slow step, off every bridge queue) and arms back on `engineQueue`, where every Pure
+    /// C-ABI call is serialized with the clock, seek and teardown, only if its request is still the
+    /// newest. A pick the running stream can't carry, a file that doesn't open, or a track that
+    /// already ended leave the slot empty: the current track ends, and the view model starts the pick
+    /// fresh (a short gap, the right song). `done` runs once the request is settled.
+    private func retractThenArmPure(_ fileURL: URL?, ticket: OnDeckTicket,
+                                    done: @escaping @Sendable () -> Void) {
+        dispatchPrecondition(condition: .onQueue(engineQueue))
+        _ = withPureEngine { pureModeEngineClearNextTrack($0) }
+        guard let url = fileURL else {
+            logUX("pure setNextTrack none (\(ticket)) → cleared")
+            done()
+            return
+        }
+        logUX("pure setNextTrack '\(url.lastPathComponent)' (\(ticket)) → old pick retracted, opening")
+        DispatchQueue.global().async {
+            guard let decoder = Self.openPureDecoder(url) else {
+                logUX("pure setNextTrack '\(url.lastPathComponent)' (\(ticket)) → error (open failed)")
+                done()
+                return
+            }
+            // Hand the opened decoder to engineQueue by its address (a C handle; the ownership
+            // moves with it): no worker blocks while a transport change finishes there.
+            let decoderAddress = UInt(bitPattern: decoder)
+            self.engineQueue.async {
+                self.armOpenedPure(decoderAddress: decoderAddress, url: url, ticket: ticket)
+                done()
+            }
+        }
+    }
+
+    /// Arm a decoder opened for `ticket` (on `engineQueue`), if that request is still the newest
+    /// and Pure still plays; otherwise free it.
+    private func armOpenedPure(decoderAddress: UInt, url: URL, ticket: OnDeckTicket) {
+        guard let decoder = UnsafeMutableRawPointer(bitPattern: decoderAddress) else { return }
+        guard onDeckGate.isCurrent(ticket) else {
+            pureModeDestroyDecodeSource(decoder)
+            logUX("pure setNextTrack '\(url.lastPathComponent)' (\(ticket)) → superseded, dropped")
+            return
+        }
+        // arm TAKES OWNERSHIP; nil (no longer Pure) ⇒ arm never ran ⇒ free the decoder.
+        if let result = withPureEngine({ pureModeEngineArmOpenedNextTrack($0, decoder) }) {
+            logUX("pure setNextTrack '\(url.lastPathComponent)' (\(ticket)) → \(Self.pureArmLabel(result))")
+        } else {
+            pureModeDestroyDecodeSource(decoder)
+        }
+    }
+
+    /// Open `url` into a Pure decode source under its security scope; `nil` when it can't be read.
+    private static func openPureDecoder(_ url: URL) -> UnsafeMutableRawPointer? {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        return url.path.withCString { pureModeOpenDecodeSource($0) }
+    }
+
+    /// Label for a `pureModeEngineArmOpenedNextTrack` result (2 armed / 1 reconfigure / 3 ended /
+    /// 0 error).
     private static func pureArmLabel(_ result: Int32) -> String {
         switch result {
         case 2: return "armed (gapless)"
         case 1: return "needs-reconfigure (gap on advance)"
+        case 3: return "ended → not armed (fresh start)"
         default: return "error"
         }
     }
