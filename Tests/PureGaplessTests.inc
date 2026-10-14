@@ -15,10 +15,12 @@
 //   * exhausted() is false mid-stream and true only after finished_ ∧ ring-drained;
 //   * sameRateGaplessCompatible is true for matching sources, false for each differing field
 //     (rate / channels / float / bits);
-//   * playlist end (no armed next) → ended() true, no crash.
+//   * playlist end (no armed next) → ended() true, no crash;
+//   * armNext refuses a successor the running stream cannot carry (another width or rate).
 //
 // Tests: PureGapless_SeamSampleAccurate, PureGapless_ExhaustedPredicate,
-//        PureGapless_SameRateCompatible, PureGapless_PlaylistEndNoNext.
+//        PureGapless_SameRateCompatible, PureGapless_PlaylistEndNoNext,
+//        PureGapless_ArmRefusesOtherWidth.
 
 namespace
 {
@@ -420,6 +422,102 @@ static auto testPureGaplessPlaylistEndNoNext() -> void
     if (!ended)
     {
         logFail(kName, "ended() not true at playlist end");
+        return;
+    }
+    logPass(kName);
+}
+
+// Pure-gapless 5: a successor the running stream cannot carry is never armed. The stream runs at
+// the active track's rate and width (the engine refuses a device stream that is not the file's
+// width), and the seam swaps sources without reconfiguring. A mono track behind a stereo one would
+// be pulled at 2 channels after the seam: zero frames, a decoder that is never drained, silence
+// that never ends and no end-of-track for the queue to advance on. armNext itself now refuses it
+// (and a rate change), so the active track plays out to a clean end and the normal transition takes
+// the next track — where the policy decides its path (Enhanced, for a mono file on a stereo device).
+// A compatible successor still arms. Without an active track nothing arms.
+static auto testPureGaplessArmRefusesOtherWidth() -> void
+{
+    static const char* const kName = "PureGapless_ArmRefusesOtherWidth";
+
+    const std::vector<int16_t> seg = makeGaplessRampSegment(0U, kGaplessSegmentFrames);
+    const std::vector<int16_t> monoSeg(
+        seg.begin(), seg.begin() + static_cast<std::ptrdiff_t>(kGaplessSegmentFrames));
+    const bool wrote = writeWav16(kPathPureGaplessA, seg, kB2bChannels2, kB2bRate48k) &&
+                       writeWav16(kPathPureGaplessB, seg, kB2bChannels2, kB2bRate48k) &&
+                       writeWav16(kPathPureGaplessMono, monoSeg, kB2bChannels1, kB2bRate48k) &&
+                       writeWav16(kPathPureGaplessB44k, seg, kB2bChannels2, kB2bRate44k);
+    const auto cleanup = []
+    {
+        std::remove(kPathPureGaplessA);
+        std::remove(kPathPureGaplessB);
+        std::remove(kPathPureGaplessMono);
+        std::remove(kPathPureGaplessB44k);
+    };
+    if (!wrote)
+    {
+        cleanup();
+        logFail(kName, "could not write the fixtures");
+        return;
+    }
+
+    GaplessSource gapless;
+    // No active track: there is no stream to fit, so nothing arms.
+    if (auto orphan = openPureGaplessSource(kPathPureGaplessB);
+        orphan == nullptr || gapless.armNext(std::move(orphan)))
+    {
+        cleanup();
+        logFail(kName, "armed a successor with no active track (or the fixture did not open)");
+        return;
+    }
+
+    auto stereoA = openPureGaplessSource(kPathPureGaplessA);
+    auto mono = openPureGaplessSource(kPathPureGaplessMono);
+    auto stereo44k = openPureGaplessSource(kPathPureGaplessB44k);
+    auto stereoB = openPureGaplessSource(kPathPureGaplessB);
+    if (stereoA == nullptr || mono == nullptr || stereo44k == nullptr || stereoB == nullptr)
+    {
+        cleanup();
+        logFail(kName, "could not open the fixtures");
+        return;
+    }
+    gapless.setCurrent(std::move(stereoA));
+
+    std::string err;
+    if (gapless.armNext(std::move(mono)))
+    {
+        err = "armed a mono successor behind a stereo stream";
+    }
+    else if (gapless.armNext(std::move(stereo44k)))
+    {
+        err = "armed a 44.1 kHz successor behind a 48 kHz stream";
+    }
+    else if (!gapless.armNext(std::move(stereoB)))
+    {
+        err = "refused a compatible stereo 48 kHz successor";
+    }
+    gapless.clearNext(); // the compatible one was only the control; play A out alone
+    if (!err.empty())
+    {
+        cleanup();
+        logFail(kName, err);
+        return;
+    }
+
+    std::vector<float> out(static_cast<std::size_t>(kGaplessSegmentFrames + kPureGaplessPullChunk) *
+                               kB2bChannels2,
+                           0.0F);
+    const uint32_t total = drainGapless(gapless, out, kGaplessSegmentFrames, kB2bChannels2);
+    const bool ended = pollGaplessEnded(gapless);
+    const uint64_t transitions = gapless.transitionCount();
+    cleanup();
+
+    if (total != kGaplessSegmentFrames || !ended || transitions != 0U)
+    {
+        std::ostringstream oss;
+        oss << "the active track did not play out to a clean end: " << total << " of "
+            << kGaplessSegmentFrames << " frames, ended " << ended << ", transitions "
+            << transitions;
+        logFail(kName, oss.str());
         return;
     }
     logPass(kName);
