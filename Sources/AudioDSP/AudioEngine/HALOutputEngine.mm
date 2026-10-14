@@ -4,7 +4,7 @@
 // Obj-C++. Drives one output device via a kAudioUnitSubType_HALOutput AudioUnit. The CoreAudio
 // query / mutate patterns (first output stream, hog acquire/release, nominal-rate set + poll,
 // RAII restore) are lifted from scripts/hal-spike.mm; the render-callback float->native conversion
-// uses the CoreAudio-free convertFloatToNative().
+// is convertFloatToNative() into the NativePcmFormat the AU negotiated (PureModeFormat.h).
 //
 // SAFETY: device mutation (hog, nominal rate) happens only in configure()/stop() on the control
 // thread. The original nominal rate is saved up front and ALWAYS restored on teardown; hog is
@@ -22,15 +22,17 @@
 #include "../include/PureModeSource.h"
 #include "../include/RenderGate.h"
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <format>
+#include <optional>
+#include <span>
 #include <unistd.h> // getpid
 #include <vector>
 
@@ -51,9 +53,6 @@ namespace
 
     constexpr double kMsPerSec = 1000.0;
     constexpr double kNsPerMs = 1.0e6;
-
-    // Rate match tolerance when comparing a candidate physical format's sample rate to the target.
-    constexpr double kFormatRateEpsilonHz = 1.0;
 
     // Upper bound on the number of available physical formats we will enumerate. HDMI / USB DACs
     // advertise on the order of a dozen; 256 is comfortably above any real device.
@@ -246,26 +245,6 @@ namespace
         return AudioObjectSetPropertyData(stream, &addr, 0, nullptr, sizeof(fmt), &fmt) == noErr;
     }
 
-    // Predicate: integer (non-float) linear-PCM ASBD at the target rate with the target channel
-    // count. The integer (bit-perfect) physical-format candidates we are willing to select.
-    bool isIntegerMatch(const AudioStreamBasicDescription& fmt, double targetRate,
-                        uint32_t targetChannels) noexcept
-    {
-        if (fmt.mFormatID != kAudioFormatLinearPCM)
-        {
-            return false;
-        }
-        if ((fmt.mFormatFlags & kAudioFormatFlagIsFloat) != 0U)
-        {
-            return false;
-        }
-        if (std::fabs(fmt.mSampleRate - targetRate) > kFormatRateEpsilonHz)
-        {
-            return false;
-        }
-        return fmt.mChannelsPerFrame == targetChannels;
-    }
-
     double nowMs() noexcept
     {
         struct timespec ts
@@ -431,9 +410,25 @@ class HALOutputEngine::Impl
             return false;
         }
 
-        // 4) Choose + apply the stream format (no AU-internal SRC).
-        if (!applyStreamFormat(cap, eval))
+        // 4) Choose + apply the stream format (no AU-internal SRC). It fails when the AU's format
+        // is not one the converter writes exactly (NativePcmFormat::fromAsbd) — Pure declines.
+        if (!applyStreamFormat(eval))
         {
+            teardown();
+            return false;
+        }
+
+        // 4b) Channel-match gate. Pure maps no channels (evaluatePureMode), so the stream the AU
+        // negotiated must carry exactly the file's channels: a mismatch would pull nothing and play
+        // silence that never ends. The policy compared the device's first stream; this checks what
+        // the render will really pull (e.g. a multi-stream device's AU spans every stream). Decline
+        // so the bridge falls back to Enhanced, which maps any width.
+        if (renderFormat_.channels != eval.targetChannels)
+        {
+            AdaptiveSound::log::line(
+                "[HALOutputEngine] device stream carries {} channels, the file {} — Pure maps no "
+                "channels; declining Pure so Enhanced plays it",
+                renderFormat_.channels, eval.targetChannels);
             teardown();
             return false;
         }
@@ -507,55 +502,6 @@ class HALOutputEngine::Impl
   private:
     // ---- format selection ----------------------------------------------------------------
 
-    // From a list of advertised physical formats, pick the best integer (bit-perfect) candidate at
-    // the target rate with the target channel count. Preference: highest bit depth (e.g. 24-in-32
-    // over 16), then the format whose layout most closely matches the device's CURRENT physical
-    // format (so we don't fight the driver's preferred packing / endianness). Returns false if no
-    // integer format matches at the target rate.
-    static bool pickIntegerPhysicalFormat(const std::vector<AudioStreamBasicDescription>& formats,
-                                          const AudioStreamBasicDescription& current,
-                                          double targetRate, uint32_t targetChannels,
-                                          AudioStreamBasicDescription& out) noexcept
-    {
-        bool found = false;
-        AudioStreamBasicDescription best{};
-        for (const AudioStreamBasicDescription& fmt : formats)
-        {
-            if (!isIntegerMatch(fmt, targetRate, targetChannels))
-            {
-                continue;
-            }
-            if (!found)
-            {
-                best = fmt;
-                found = true;
-                continue;
-            }
-            // Prefer the higher valid bit depth.
-            if (fmt.mBitsPerChannel > best.mBitsPerChannel)
-            {
-                best = fmt;
-                continue;
-            }
-            if (fmt.mBitsPerChannel == best.mBitsPerChannel)
-            {
-                // Tie-break: prefer the candidate whose flags match the device's current physical
-                // format (its own preferred packing / alignment / endianness).
-                const bool fmtMatchesCurrent = (fmt.mFormatFlags == current.mFormatFlags);
-                const bool bestMatchesCurrent = (best.mFormatFlags == current.mFormatFlags);
-                if (fmtMatchesCurrent && !bestMatchesCurrent)
-                {
-                    best = fmt;
-                }
-            }
-        }
-        if (found)
-        {
-            out = best;
-        }
-        return found;
-    }
-
     bool createUnitAndBind()
     {
         AudioComponentDescription desc{};
@@ -591,22 +537,22 @@ class HALOutputEngine::Impl
     //     physical format produced. This is the real bit-perfect route the spike proved.
     //   RateMatchedFloat (built-in / Bluetooth, shared): leave the physical format alone and use
     //     the AU's native (float) output format verbatim on both scopes. This path already works.
-    bool applyStreamFormat(const DeviceCapability& cap, const PureModeEvaluation& eval)
+    bool applyStreamFormat(const PureModeEvaluation& eval)
     {
         if (eval.decision == PureModeDecision::FullBitPerfect)
         {
-            return applyBitPerfectFormat(cap, eval);
+            return applyBitPerfectFormat(eval);
         }
         return applyFloatFormat();
     }
 
     // FullBitPerfect: enumerate -> choose -> set device physical format -> match AU input to the AU
     // output scope. Falls back to the device's current format (never silence) if no integer match.
-    bool applyBitPerfectFormat(const DeviceCapability& cap, const PureModeEvaluation& eval)
+    bool applyBitPerfectFormat(const PureModeEvaluation& eval)
     {
         const double targetRate =
             (achieved_.achievedRate > 0.0) ? achieved_.achievedRate : eval.targetDeviceRate;
-        const uint32_t channels = deviceChannelCount(cap);
+        const uint32_t channels = eval.targetChannels;
 
         AudioObjectID stream = firstOutputStream(deviceID_);
         if (stream == kAudioObjectUnknown)
@@ -652,20 +598,21 @@ class HALOutputEngine::Impl
                 "[HALOutputEngine]   (could not enumerate available physical formats)");
         }
 
-        // Choose the best integer physical format at the target rate.
-        AudioStreamBasicDescription chosen{};
-        const bool picked =
-            haveList && pickIntegerPhysicalFormat(available, currentPhys, targetRate, channels,
-                                                  chosen);
-        if (!picked)
+        // Choose the best integer physical format at the target rate that the converter writes
+        // exactly (a packed-24 or 24-in-32 word, never a layout it would have to guess at).
+        const std::optional<AudioStreamBasicDescription> picked =
+            haveList ? pickIntegerPhysicalFormat(available, currentPhys, targetRate, channels)
+                     : std::nullopt;
+        if (!picked.has_value())
         {
             AdaptiveSound::log::line(
-                "[HALOutputEngine]   no integer physical format matched (rate={:.1f} Hz, ch={}); "
-                "graceful fallback to the AU native (float) format — device will still play, "
-                "but NOT bit-perfect",
+                "[HALOutputEngine]   no writable integer physical format matched (rate={:.1f} Hz, "
+                "ch={}); graceful fallback to the AU native (float) format — device will still "
+                "play, but NOT bit-perfect",
                 targetRate, channels);
             return applyFloatFormat();
         }
+        const AudioStreamBasicDescription chosen = *picked;
         logASBD("CHOSEN  physical", chosen);
 
         // Set the device's physical stream format (hog is held -> permitted).
@@ -710,8 +657,7 @@ class HALOutputEngine::Impl
             return false;
         }
         logASBD("AU input (cached)", actual);
-        cacheRenderFormat(actual);
-        return true;
+        return adoptRenderFormat(actual);
     }
 
     // RateMatchedFloat (and the graceful fallback): use the AU's native output-scope format on both
@@ -748,42 +694,30 @@ class HALOutputEngine::Impl
             return false;
         }
         logASBD("AU input (cached)", actual);
-        cacheRenderFormat(actual);
-        return true;
+        return adoptRenderFormat(actual);
     }
 
-    // Channels the device expects for the bit-perfect path: prefer the physical format's channel
-    // count (it is what goes over the wire), then virtual, then a stereo default.
-    static uint32_t deviceChannelCount(const DeviceCapability& cap) noexcept
+    // Adopt the AU's negotiated input format as the RT render format — only when the converter
+    // writes it exactly (interleaved, a known layout, a frame stride its bit depth explains).
+    // Anything else declines Pure rather than render a guess. Configure path, render stopped.
+    bool adoptRenderFormat(const AudioStreamBasicDescription& asbd)
     {
-        if (cap.physicalFormat.channels > 0U)
+        const std::optional<NativePcmFormat> format = NativePcmFormat::fromAsbd(asbd);
+        if (!format.has_value())
         {
-            return cap.physicalFormat.channels;
+            AdaptiveSound::log::line("[HALOutputEngine] the AU's format is not one Pure writes "
+                                     "exactly; declining Pure");
+            return false;
         }
-        if (cap.virtualFormat.channels > 0U)
-        {
-            return cap.virtualFormat.channels;
-        }
-        return 2U;
-    }
+        renderFormat_ = *format;
 
-    void cacheRenderFormat(const AudioStreamBasicDescription& asbd) noexcept
-    {
-        rfChannels_ = asbd.mChannelsPerFrame;
-        rfBits_ = asbd.mBitsPerChannel;
-        rfIsFloat_ = (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
-        rfIsSignedInt_ = (asbd.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
-        rfIsPacked_ = (asbd.mFormatFlags & kAudioFormatFlagIsPacked) != 0;
-        rfIsAlignedHigh_ = (asbd.mFormatFlags & kAudioFormatFlagIsAlignedHigh) != 0;
-        rfIsBigEndian_ = (asbd.mFormatFlags & kAudioFormatFlagIsBigEndian) != 0;
-
-        achieved_.achievedBitsPerChannel = rfBits_;
-        achieved_.achievedIsFloat = rfIsFloat_;
+        achieved_.achievedBitsPerChannel = renderFormat_.validBits();
+        achieved_.achievedIsFloat = renderFormat_.isFloat();
 
         // Pre-allocate the float scratch buffer OFF the RT thread (configure path). Sized to the
-        // host frame ceiling × channel ceiling so pullFloat never needs more room.
-        const uint32_t ch = (rfChannels_ > 0U) ? rfChannels_ : 1U;
-        scratch_.assign(static_cast<size_t>(kMaxRenderFrames) * ch, 0.0F);
+        // host frame ceiling × the stream's channels so pullFloat never needs more room.
+        scratch_.assign(static_cast<size_t>(kMaxRenderFrames) * renderFormat_.channels, 0.0F);
+        return true;
     }
 
     bool installRenderCallback()
@@ -818,7 +752,7 @@ class HALOutputEngine::Impl
             return noErr;
         }
 
-        const uint32_t channels = (rfChannels_ > 0U) ? rfChannels_ : 1U;
+        const uint32_t channels = renderFormat_.channels; // >= 1: fromAsbd admits no 0-wide format
         const uint32_t frames = numberFrames;
 
         // Guard against an unexpectedly large request (scratch is sized to kMaxRenderFrames). If the
@@ -852,29 +786,19 @@ class HALOutputEngine::Impl
             std::memset(scratch_.data() + startSample, 0, tailSamples * sizeof(float));
         }
 
-        // The AUHAL input format is interleaved (one buffer). Convert float -> native into it.
+        // The render format is interleaved (fromAsbd admits nothing else): one buffer. Convert
+        // float -> native into it. The write is bounded by the buffer's OWN byte size and the
+        // format's real frame stride (mBytesPerFrame: 3 bytes a sample packed, 4 in a 32-bit
+        // word), never by a size implied by the bit depth; whatever is left is written silent.
         AudioBuffer& buf = ioData->mBuffers[0];
         if (buf.mData == nullptr)
         {
             return noErr;
         }
-
-        // Hard bound the write by the buffer's own capacity. convertFloatToNative writes into
-        // buf.mData without consulting buf.mDataByteSize; if the device renegotiated format
-        // mid-stream (bytes/frame shrank, or fewer frames requested than buffer claims) writing
-        // `frames` could overrun the heap on the RT thread. Clamp to what fits.
-        const uint32_t bytesPerSample = (rfBits_ + 7U) / 8U; // ceil to whole bytes
-        const uint32_t bytesPerFrame = bytesPerSample * channels;
-        uint32_t writableFrames = frames;
-        if (bytesPerFrame > 0U)
-        {
-            const uint32_t maxFramesWritable =
-                static_cast<uint32_t>(buf.mDataByteSize / bytesPerFrame);
-            writableFrames = std::min(writableFrames, maxFramesWritable);
-        }
-        convertFloatToNative(scratch_.data(), buf.mData, writableFrames, channels, rfBits_,
-                             rfIsFloat_, rfIsSignedInt_, rfIsPacked_, rfIsAlignedHigh_,
-                             rfIsBigEndian_);
+        convertFloatToNative(std::span<const float>(scratch_.data(), needed),
+                             std::span<std::byte>(static_cast<std::byte*>(buf.mData),
+                                                  buf.mDataByteSize),
+                             renderFormat_);
         return noErr;
     }
 
@@ -1003,15 +927,15 @@ class HALOutputEngine::Impl
 
     AchievedOutputState achieved_;
 
-    // RT render format (decoded ASBD flags), read on the audio thread.
+    // RT render format, read on the audio thread.
     //
-    // Sole-accessor invariant: the rf* fields below are a non-atomic multi-word block written
-    // ONLY by cacheRenderFormat() on the configure/format path (while the engine is stopped, no
-    // render callback installed/running) and read ONLY by render() on the RT thread. They are
-    // frozen for the entire lifetime of a started session — start()/stop() bracket every mutation,
-    // so there is no concurrent reader during a write and no torn read on the RT thread. If the
-    // format ever needed to change mid-session these would have to be published atomically (e.g.
-    // packed into a POD behind DoubleBufferSnapshot<T>); today that path does not exist.
+    // Sole-accessor invariant: renderFormat_ (a non-atomic multi-word POD) is written ONLY by
+    // adoptRenderFormat() on the configure/format path (while the engine is stopped, no render
+    // callback installed/running) and read ONLY by render() on the RT thread. It is frozen for the
+    // entire lifetime of a started session — start()/stop() bracket every mutation, so there is no
+    // concurrent reader during a write and no torn read on the RT thread. If the format ever needed
+    // to change mid-session it would have to be published atomically (e.g. behind
+    // DoubleBufferSnapshot<T>); today that path does not exist.
     std::atomic<PureModeSource*> source_{nullptr};
     // Render ⇄ control-plane handshake around every source access (RenderGate.h).
     RenderGate gate_;
@@ -1019,13 +943,7 @@ class HALOutputEngine::Impl
     static constexpr std::chrono::milliseconds kHoldRenderTimeout{100};
     // The last teardown could not see the render go quiet (control plane only; see teardown()).
     bool renderMayStillRun_ = false;
-    uint32_t rfChannels_ = 0U;
-    uint32_t rfBits_ = 0U;
-    bool rfIsFloat_ = false;
-    bool rfIsSignedInt_ = false;
-    bool rfIsPacked_ = false;
-    bool rfIsAlignedHigh_ = false;
-    bool rfIsBigEndian_ = false;
+    NativePcmFormat renderFormat_;
 
     // Pre-allocated interleaved-float scratch (sized in configure(); never resized on the RT path).
     std::vector<float> scratch_;

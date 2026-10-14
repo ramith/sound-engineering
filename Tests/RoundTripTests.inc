@@ -3,9 +3,10 @@
 // B5 / L1 verification: the Pure-Mode SOFTWARE chain is sample-exact end-to-end.
 // #included into Tests/DSPKernelNullTest.cpp AFTER FileDecodeTests.inc (it reuses that file's
 // helpers: writeWav16, writeWav24, BackendGuard/Backend, ffmpegLegUnavailable, drainFrames; and
-// PureModeTests.inc's readLeInt16 / readLeWord32). It mirrors the real device-boundary conversion
-// performed in production: decode (ExtAudioFile / FFmpeg) -> convertFloatToNative() with the exact
-// AudioStreamBasicDescription a real output device of that depth advertises.
+// PureModeTests.inc's readLeInt16 / readLeWord32 / makeAsbd). It mirrors the real device-boundary
+// conversion performed in production: decode (ExtAudioFile / FFmpeg) -> convertFloatToNative() into
+// the NativePcmFormat read (fromAsbd) from the exact AudioStreamBasicDescription a real output
+// device of that depth advertises.
 //
 // What is proven (L1): the chain decode -> convertFloatToNative is BYTE-IDENTICAL to the source
 // integers for 16- and 24-bit stereo @ 48 kHz, with patterns that hit the format edges:
@@ -26,17 +27,24 @@
 
 namespace
 {
-    // Native output-device descriptors used by the round-trip (the SAME ASBD flags a real device of
-    // that depth presents to convertFloatToNative). 16-bit: packed signed LE. 24-bit: 24-in-32
-    // container, low-justified signed LE (the founder's HDMI / USB-DAC case).
+    // Native output-device descriptors used by the round-trip (the SAME ASBD a real device of that
+    // depth presents; the converter's format is read from it). 16-bit: packed signed LE. 24-bit:
+    // 24-in-32 container, low-justified signed LE (the founder's HDMI / USB-DAC case).
     constexpr uint32_t kRtRate48k = 48000U;
     constexpr uint32_t kRtChannels2 = 2U;
 
-    constexpr uint32_t kRtBitsPerChannel16 = 16U; // 16-bit PCM depth passed to convertFloatToNative
-    constexpr uint32_t kRtBitsPerChannel24 = 24U; // 24-bit PCM depth passed to convertFloatToNative
+    constexpr uint32_t kRtBitsPerChannel16 = 16U; // 16-bit PCM depth of the device description
+    constexpr uint32_t kRtBitsPerChannel24 = 24U; // 24-bit PCM depth of the device description
 
     constexpr uint32_t kRtBytesInt16 = 2U;   // packed 16-bit word
     constexpr uint32_t kRtBytes24In32 = 4U;  // 24-bit sits in a 32-bit container
+
+    // The device's native format as the converter reads it from the device's description.
+    auto rtDeviceFormat(AudioFormatFlags flags, uint32_t bits, uint32_t bytesPerSample)
+        -> std::optional<NativePcmFormat>
+    {
+        return NativePcmFormat::fromAsbd(makeAsbd(flags, kRtChannels2, bits, bytesPerSample));
+    }
 
     // /tmp fixture paths for the 16- and 24-bit round-trip WAV files.
     constexpr const char* kRtPath16 = ADAPTIVESOUND_TEST_DATA_DIR "/adaptivesound_b5_roundtrip16.wav";
@@ -52,7 +60,7 @@ namespace
     // Decode the signed 24-bit value held in the low 24 bits of a 32-bit little-endian word at
     // sample index `i` (the low-justified 24-in-32 layout convertFloatToNative writes). Sign-extends
     // the top byte so the result is a correct negative int32 for samples with the 24-bit sign set.
-    auto readLe24In32(const std::vector<uint8_t>& bytes, size_t i) -> int32_t
+    auto readLe24In32(std::span<const std::byte> bytes, size_t i) -> int32_t
     {
         const uint32_t word = readLeWord32(bytes, i) & kRt24BitMask;
         const uint32_t extended = ((word & kRt24SignBit) != 0U) ? (word | kRt24SignExtend) : word;
@@ -108,17 +116,19 @@ static auto roundTrip16Body(const std::vector<int16_t>& source) -> std::string
     }
 
     // Float -> native int16 packed signed LE (the EXACT descriptor a 16-bit device advertises).
-    std::vector<uint8_t> native(source.size() * kRtBytesInt16, 0xAAU); // poison to catch gaps
-    convertFloatToNative(decoded.data(),
-                         native.data(),
-                         frameCount,
-                         kRtChannels2,
-                         /*bitsPerChannel=*/kRtBitsPerChannel16,
-                         /*isFloat=*/false,
-                         /*isSignedInt=*/true,
-                         /*isPacked=*/true,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    const std::optional<NativePcmFormat> format =
+        rtDeviceFormat(kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+                       kRtBitsPerChannel16,
+                       kRtBytesInt16);
+    if (!format.has_value())
+    {
+        return "the 16-bit device description was refused";
+    }
+    std::vector<std::byte> native(source.size() * kRtBytesInt16, kPoison); // poison to catch gaps
+    if (convertFloatToNative(decoded, native, *format) != frameCount)
+    {
+        return "converted fewer frames than decoded";
+    }
 
     for (std::size_t idx = 0U; idx < source.size(); ++idx)
     {
@@ -150,17 +160,17 @@ static auto roundTrip24Body(const std::vector<int32_t>& source) -> std::string
 
     // Float -> native 24-in-32 low-justified signed LE (the EXACT descriptor the founder's HDMI /
     // USB-DAC presents: 24 valid bits in a 32-bit word, bottom-justified, packed=false).
-    std::vector<uint8_t> native(source.size() * kRtBytes24In32, 0xAAU);
-    convertFloatToNative(decoded.data(),
-                         native.data(),
-                         frameCount,
-                         kRtChannels2,
-                         /*bitsPerChannel=*/kRtBitsPerChannel24,
-                         /*isFloat=*/false,
-                         /*isSignedInt=*/true,
-                         /*isPacked=*/false,
-                         /*isAlignedHigh=*/false,
-                         /*isBigEndian=*/false);
+    const std::optional<NativePcmFormat> format =
+        rtDeviceFormat(kAudioFormatFlagIsSignedInteger, kRtBitsPerChannel24, kRtBytes24In32);
+    if (!format.has_value())
+    {
+        return "the 24-in-32 device description was refused";
+    }
+    std::vector<std::byte> native(source.size() * kRtBytes24In32, kPoison);
+    if (convertFloatToNative(decoded, native, *format) != frameCount)
+    {
+        return "converted fewer frames than decoded";
+    }
 
     for (std::size_t idx = 0U; idx < source.size(); ++idx)
     {

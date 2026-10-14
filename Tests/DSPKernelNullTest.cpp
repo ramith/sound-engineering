@@ -151,12 +151,22 @@ namespace
         {"PureMode_BuiltInRateUnsupported", testPureModeBuiltInRateUnsupported, true},
         {"PureMode_VirtualDevice", testPureModeVirtualDevice, true},
         {"PureMode_RateEpsilonAndMax", testPureModeRateEpsilonAndMax, true},
+        {"PureMode_ChannelCountMismatch", testPureModeChannelCountMismatch, true},
         // Pure-Mode format conversion (Phase B — B2a)
         {"Convert_Int16Saturation", testConvertInt16Saturation, true},
         {"Convert_Int32Saturation", testConvertInt32Saturation, true},
         {"Convert_24In32Alignment", testConvert24In32Alignment, true},
         {"Convert_FloatPassthrough", testConvertFloatPassthrough, true},
-        {"Convert_UnsupportedWritesSilence", testConvertUnsupportedWritesSilence, true},
+        {"PureFormat_FromAsbdOnlyExactLayouts", testPureFormatFromAsbdOnlyExactLayouts, true},
+        {"PureFormat_PickerOnlyWritableFormats", testPureFormatPickerOnlyWritableFormats, true},
+        {"Convert_Packed24_ExactBytesRoundTrip", testConvertPacked24ExactBytesRoundTrip, true},
+        {"Convert_WriteBoundedByBufferBytes", testConvertWriteBoundedByBufferBytes, true},
+        {
+            "Convert_NonFiniteIsSilence_FiniteUntouched",
+            testConvertNonFiniteIsSilenceFiniteUntouched,
+            true,
+        },
+        {"Convert_BitExact_Exhaustive16And24", testConvertBitExactExhaustive16And24, true},
         {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
         // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
         {
@@ -233,6 +243,7 @@ namespace
         {"PureGapless_ExhaustedPredicate", testPureGaplessExhaustedPredicate, false},
         {"PureGapless_SameRateCompatible", testPureGaplessSameRateCompatible, false},
         {"PureGapless_PlaylistEndNoNext", testPureGaplessPlaylistEndNoNext, false},
+        {"PureGapless_ArmRefusesOtherWidth", testPureGaplessArmRefusesOtherWidth, false},
         // S6 Tier-3 (3d) Pure gapless behavioral-contract conformance — SERIAL: write fixtures.
         {
             "GaplessContract_TransitionCountPerSeam",

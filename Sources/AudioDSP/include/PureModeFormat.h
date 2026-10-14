@@ -1,52 +1,88 @@
 #pragma once
 
 //
-// PureModeFormat.h — bit-exact float -> device-native PCM conversion (Pure Mode).
+// PureModeFormat.h — the device-native PCM format Pure Mode renders into, and the bit-exact
+// float -> native conversion.
 //
-// CoreAudio-FREE BY DESIGN, exactly like DeviceCapability.h: no CoreAudio / Obj-C headers, so the
-// C++ test harness (which links neither) can unit-test the conversion. -fno-exceptions / -fno-rtti
-// clean (no throw / dynamic_cast / typeid).
+// CoreAudio TYPES only: CoreAudioBaseTypes.h supplies AudioStreamBasicDescription and the format
+// flag constants (header declarations, nothing linked), so the C++ test harness unit-tests the
+// format rules with the very descriptions a device reports. No HAL / AudioUnit / Obj-C here.
+// -fno-exceptions / -fno-rtti clean (no throw / dynamic_cast / typeid).
 //
-// The engine extracts the format flags from the AU's ACTUAL chosen AudioStreamBasicDescription and
-// passes them here as plain booleans, so this stays a pure function with no AudioToolbox
-// dependency.
+// The HAL engine (HALOutputEngine.mm) builds a NativePcmFormat from the AU's ACTUAL negotiated
+// input format at configure time. A format the converter cannot write exactly yields no value, and
+// the engine declines Pure (the bridge then plays the file through Enhanced) rather than guess.
 //
 
+#include <CoreAudioTypes/CoreAudioBaseTypes.h> // AudioStreamBasicDescription + flags (types only)
+
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace AdaptiveSound
 {
 
-    // Convert `frames * channels` interleaved float samples in [-1, 1] to the device's native PCM
-    // sample format, writing into `dst`. RT-SAFE: noexcept, no allocation, no locks. Out-of-range
-    // inputs are saturated to the destination range (never wrapped). An unsupported flag
-    // combination writes silence (all-zero bytes for the frame span) rather than invoking undefined
-    // behaviour.
+    // How the device stores one sample. Each is a layout convertFloatToNative writes exactly.
+    enum class NativeSampleLayout : uint8_t
+    {
+        Float32,       // IEEE 754 single precision, 4 bytes (raw passthrough)
+        Int16,         // signed 16-bit, 2 bytes
+        Int24Packed,   // signed 24-bit, 3 bytes (no padding; common on USB DACs)
+        Int24In32High, // signed 24-bit in a 4-byte word, left-justified (low byte 0)
+        Int24In32Low,  // signed 24-bit in a 4-byte word, right-justified (top byte 0)
+        Int32,         // signed 32-bit, 4 bytes
+    };
+
+    // The device-native PCM format Pure renders into: interleaved frames of `channels` samples of
+    // one layout, in ONE buffer. The frame stride is derived from the layout, so it cannot
+    // disagree with what the converter writes; fromAsbd only yields a format whose description
+    // states that same stride (mBytesPerFrame).
+    struct NativePcmFormat
+    {
+        NativeSampleLayout layout = NativeSampleLayout::Float32;
+        uint32_t channels = 0;
+        bool bigEndian = false;
+
+        // The format a description states, when the converter writes it EXACTLY: linear PCM,
+        // interleaved, one of the layouts above, and mBytesPerFrame == channels x the layout's
+        // sample size. Anything else — non-interleaved, unsigned or 8/20-bit integers, float64,
+        // a byte size the bit depth does not explain — yields std::nullopt (Pure declines).
+        [[nodiscard]] static std::optional<NativePcmFormat>
+        fromAsbd(const AudioStreamBasicDescription& asbd) noexcept;
+
+        [[nodiscard]] uint32_t bytesPerSample() const noexcept;
+        [[nodiscard]] uint32_t bytesPerFrame() const noexcept;
+        [[nodiscard]] uint32_t validBits() const noexcept; // significant bits per sample
+        [[nodiscard]] bool isFloat() const noexcept;
+    };
+
+    // The integer (bit-perfect) physical format to set on a device: among `available`, the linear
+    // PCM integer formats at `rateHz` (±1 Hz) with `channels` that NativePcmFormat::fromAsbd
+    // accepts (so whatever the AU then hands the render is one the converter writes exactly).
+    // Preference: the highest bit depth, then a format whose flags equal `current`'s (the device's
+    // own packing / alignment / endianness). std::nullopt when none qualifies.
+    [[nodiscard]] std::optional<AudioStreamBasicDescription>
+    pickIntegerPhysicalFormat(std::span<const AudioStreamBasicDescription> available,
+                              const AudioStreamBasicDescription& current,
+                              double rateHz,
+                              uint32_t channels) noexcept;
+
+    // Convert interleaved float samples (whole frames of format.channels, nominally in [-1, 1]) to
+    // the device-native bytes `dst`. RT-SAFE: noexcept, no allocation, no locks.
     //
-    // Parameters mirror the decoded fields of an AudioStreamBasicDescription:
-    //   bitsPerChannel : valid sample bits (16, 24 or 32 are handled)
-    //   isFloat        : kAudioFormatFlagIsFloat            (float32 passthrough)
-    //   isSignedInt    : kAudioFormatFlagIsSignedInteger    (integer PCM is signed)
-    //   isPacked       : kAudioFormatFlagIsPacked           (no padding bits in the word)
-    //   isAlignedHigh  : kAudioFormatFlagIsAlignedHigh      (sample left-justified in its word)
-    //   isBigEndian    : kAudioFormatFlagIsBigEndian        (false == little-endian, the Mac norm)
-    //
-    // Container/width handling (the cases that actually occur on macOS output devices):
-    //   * float32                              -> raw passthrough (bit-identical)
-    //   * 16-bit signed packed                 -> int16 little/big-endian
-    //   * 32-bit signed packed                 -> int32 little/big-endian
-    //   * 24-bit signed in a 32-bit container  -> isAlignedHigh ? left-justified : low-justified
-    //
-    // The format is decided ONCE per call; the per-sample loop is branch-free on the format.
-    void convertFloatToNative(const float* src,
-                              void* dst,
-                              uint32_t frames,
-                              uint32_t channels,
-                              uint32_t bitsPerChannel,
-                              bool isFloat,
-                              bool isSignedInt,
-                              bool isPacked,
-                              bool isAlignedHigh,
-                              bool isBigEndian) noexcept;
+    //   * Writes min(frames in src, whole frames dst holds) frames, then zero-fills the rest of
+    //     `dst` (room beyond src, a partial trailing frame): every byte of dst is defined and
+    //     nothing past dst.size() is touched. Returns the frames converted.
+    //   * A sample that is not a finite number (NaN, ±Inf) converts to silence — the rule the
+    //     Enhanced kernel applies (FiniteSamples.h). Every finite sample converts exactly as it
+    //     would alone, and a finite float32 block is copied bit for bit, so bit-perfect stays
+    //     bit-perfect.
+    //   * Integers: scale by 2^(N-1) and clamp (the CoreAudio / libsndfile convention), so every
+    //     16- and 24-bit source code round-trips exactly; out-of-range input saturates, never wraps.
+    std::size_t convertFloatToNative(std::span<const float> src,
+                                     std::span<std::byte> dst,
+                                     const NativePcmFormat& format) noexcept;
 
 } // namespace AdaptiveSound
