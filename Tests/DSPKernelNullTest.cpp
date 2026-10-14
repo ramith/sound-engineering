@@ -28,6 +28,8 @@
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
 //   GaplessContractTests.inc — S6 Tier-3 (3d) Pure gapless behavioral-contract conformance suite
+//   GaplessArmContractTests.inc — council D41: the Pure arm contract (the old pick comes off,
+//                           arming never replaces, the end is final, arming frees the retired slot)
 //   LoudnessOracleTests.inc  — S7/US-QA-01 TEST-ONLY libebur128 conformance oracle (LUFS + TP)
 //   LimiterTruePeakTests.inc — S7/US-QA-02 TEST-ONLY limiter −1 dBTP ceiling guarantee +
 //                              ISP-detector accuracy vs the libebur128 true-peak oracle
@@ -69,6 +71,7 @@
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
 #include "GaplessContractTests.inc"
+#include "GaplessArmContractTests.inc" // after PureGaplessTests.inc (openPureGaplessSource)
 #include "RealizerTests.inc"
 #include "IntensityTests.inc"
 #include "CrossfeedTests.inc"
@@ -262,6 +265,13 @@ namespace
             testGaplessContractPollReapsRetiredSource,
             false,
         },
+        // Council D41: the Pure arm contract — SERIAL: write fixtures to test-data/.
+        {"ArmContract_RetractArmBeforeEnd", testArmContractRetractArmBeforeEnd, false},
+        {"ArmContract_OccupiedRefuses", testArmContractOccupiedRefuses, false},
+        {"ArmContract_RetractEndArm", testArmContractRetractEndArm, false},
+        {"ArmContract_ArmBeforeReap", testArmContractArmBeforeReap, false},
+        {"ArmContract_ClearRacesSeam", testArmContractClearRacesSeam, false},
+        {"ArmContract_ArmRacesEnd", testArmContractArmRacesEnd, false},
         // S6 Tier-3 (3a) Realizer multi-surface RMW contract (parallel-safe: no env/tmp).
         {"Realizer_MultiSurfaceRMW_NoClobber_SeqMonotonic", testRealizerMultiSurfaceRMW, true},
         // QW1 CF-11: the 4th Realizer surface — crossfeed RMW + clamp (parallel-safe).

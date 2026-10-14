@@ -14,6 +14,16 @@
 // (the C-ABI bridge) pre-checks the same predicate so a rate/format mismatch is handled off-RT
 // (drop + signal "needs reconfigure"), never at the seam.
 //
+// The arm contract (council D41; the bridge's side is in PureModeBridge.h):
+//   * One slot, never replaced: armNext refuses while a track is armed. To change the pick, the
+//     caller takes the old one off first (clearNext — an exactly-once exchange with the seam
+//     claim, so the old pick either already became current or never will).
+//   * The end is final: once the active track hit its true EOF with nothing armed (ended()), the
+//     session is over — armNext refuses, and an arm that lost the race with the end is never
+//     adopted. The caller starts the next track fresh (setCurrent).
+//   * Arming frees the slot the last seam retired (reapRetired, off-RT), so a track armed right
+//     after a seam, before the poll plane reaped, still arms.
+//
 // CoreAudio-FREE: pure C++ owning FileDecodeSources. Compiles into the C++ test harness.
 // -fno-exceptions / -fno-rtti clean (no throw / dynamic_cast / typeid).
 //
@@ -66,22 +76,27 @@ namespace AdaptiveSound
         // pullFloat). Resets transition/ended/seek state for a fresh session. Takes ownership.
         void setCurrent(std::unique_ptr<FileDecodeSource> source) noexcept;
 
-        // Arm the next source to play gaplessly at the active track's true EOF. Refuses (returns
-        // false) a source that is not sameRateGaplessCompatible() with the active track — the
-        // running stream's rate and width — or when there is no active track; the caller pre-checks
-        // the same predicate to tell "needs reconfigure" from an error. Takes ownership by value:
-        // on EITHER outcome `source` has been moved-from. One-slot — refuses a second arm while one
-        // is pending (returns false; the refused source is freed off-RT as the parameter goes out
-        // of scope, joining its decode thread). Returns true on success.
+        // Arm the next source to play gaplessly at the active track's true EOF. Returns true on
+        // success. Refuses (returns false):
+        //   * while a track is armed — one slot, never replaced: the caller clears it first;
+        //   * once the session ended (ended()) — the end is final;
+        //   * a source that is not sameRateGaplessCompatible() with the active track (the running
+        //     stream's rate and width), or when there is no active track; the caller pre-checks
+        //     the same predicate to tell "needs reconfigure" from an error.
+        // Before arming it frees the slot the last seam retired (reapRetired: joins that source's
+        // decode thread, off-RT), so an arm right after a seam never waits for the poll plane.
+        // Takes ownership by value: on EITHER outcome `source` has been moved-from (a refused
+        // source is freed off-RT as the parameter goes out of scope, joining its decode thread).
         [[nodiscard]] bool armNext(std::unique_ptr<FileDecodeSource> source) noexcept;
 
-        // Clear the armed-next slot (e.g. the user cleared the on-deck track). Joins the dropped
-        // source's decode thread off-RT. Safe while render runs: the exchange races the RT seam
-        // claim so exactly one side wins (no double-adopt, no leak).
+        // Take the armed track off the slot (the user changed the pick, or cleared it). Joins the
+        // dropped source's decode thread off-RT. Safe while render runs: the exchange races the RT
+        // seam claim so exactly one side wins — the armed track either already became current or
+        // never will (no double-adopt, no leak).
         void clearNext() noexcept;
 
-        // Join + free a source retired at the last seam, off-RT. Call from the poll plane
-        // (pureModeEnginePollTrackAdvance). No-op when nothing is parked.
+        // Join + free a source retired at the last seam, off-RT. Called by the poll plane
+        // (pureModeEnginePollTrackAdvance) and by armNext. No-op when nothing is parked.
         void reapRetired() noexcept;
 
         // Re-base the ACTIVE track's per-track frame counter after a seek so position display
@@ -109,6 +124,8 @@ namespace AdaptiveSound
         [[nodiscard]] double currentSampleRate() const noexcept;
 
         // True once the active track hit its true EOF with no armed next (playlist exhausted).
+        // Final for the session: no later arm seams (armNext refuses; an arm that slipped in
+        // behind the end is never adopted). Only setCurrent clears it.
         [[nodiscard]] bool ended() const noexcept;
 
         // --- Observability (off-RT; conformance-test surface) ---
@@ -147,8 +164,8 @@ namespace AdaptiveSound
         };
 
         // Two stable slots are enough: at most one active + one armed at any instant. After a seam
-        // the retired slot is reaped (its source freed) before it can be re-armed, so two never
-        // collides.
+        // the retired slot is reaped (its source freed) before it can be re-armed — armNext reaps
+        // it first — so two never collides.
         static constexpr std::size_t kTrackSlots = 2U;
         std::array<Track, kTrackSlots> tracks_{};
 
@@ -161,8 +178,8 @@ namespace AdaptiveSound
 
         // Pick the free slot for arming the next track: the one that is neither active nor retired.
         // Returns nullptr if both non-active slots are occupied (should not happen — armNext
-        // refuses a second arm and reapRetired frees the retired slot first). Non-const: it hands
-        // back a mutable slot for the caller to populate.
+        // refuses a second arm and reaps the retired slot first). Non-const: it hands back a
+        // mutable slot for the caller to populate.
         [[nodiscard]] Track* freeSlotForArm() noexcept;
     };
 } // namespace AdaptiveSound
