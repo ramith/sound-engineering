@@ -5,7 +5,7 @@ import Synchronization
 // MARK: - A recording engine for the output-device view-model tests
 
 /// An `AudioPlaybackEngine` with no hardware: it serves the device list and the device the engine
-/// plays on that a test sets, and records the picks and starts the view model sends it. It conforms
+/// plays on that a test sets, and records the picks, starts and Intensity the view model sends it. It conforms
 /// to the app's own protocol, so the view model under test is the real one.
 final class DeviceTestEngine: AudioPlaybackEngine {
     /// What a test sets and reads.
@@ -18,6 +18,8 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var picks: [UInt32] = []
         /// Every `startAudio` call's start position.
         var starts: [Double] = []
+        /// Every Intensity published.
+        var intensities: [Float] = []
         var onOutputDevicesChanged: (@MainActor () -> Void)?
     }
 
@@ -51,7 +53,9 @@ final class DeviceTestEngine: AudioPlaybackEngine {
 
     func publishEQ(points _: [Float], isOn _: Bool) {}
 
-    func publishIntensity(_: Float) {}
+    func publishIntensity(_ intensity: Float) {
+        state.withLock { $0.intensities.append(intensity) }
+    }
 
     func publishOutputTransport(_: UInt32) {}
 

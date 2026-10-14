@@ -1,7 +1,8 @@
 // MIGRATE — the v1 → v2 upgrade (EQ3a; review F7/F8), from the formats v1 really wrote:
 // `eqLiveStateV1` = JSONEncoder over `EQLiveState { presetRaw: String?; bandGains: [Float] }` (the
 // preset omitted once the user had edited), and `eqCustomPresetsV1` = `[String: [Float]]`.
-// One fixture per rule, plus the invalid inputs, which all play Flat. The EQ is on in every case.
+// One fixture per rule, plus the invalid inputs, which all play Flat. The EQ is on in every case but a
+// fresh install's, which starts Off (FD-2, a faithful default).
 
 @testable import EQEditKit
 import Foundation
@@ -76,9 +77,9 @@ struct EQMigrationTests {
         #expect(Self.migrate(Self.v1(nil, EQFixture.points([:]))) == .flat)
     }
 
-    @Test("MIGRATE-04: nothing stored (a fresh install), or anything unreadable, plays Flat")
+    @Test("MIGRATE-04: nothing stored (a fresh install) is Flat and Off (FD-2); anything unreadable plays Flat")
     func invalidPlaysFlat() {
-        #expect(Self.migrate(nil) == .flat)
+        #expect(Self.migrate(nil) == EQState(preset: .builtIn(.flat), curve: nil, isOn: false))
         #expect(Self.migrate(Data("not json".utf8)) == .flat)
         #expect(Self.migrate(Data(#"{"presetRaw":"Warm"}"#.utf8)) == .flat, "no gains")
         #expect(Self.migrate(Self.v1("Warm", [1, 2, 3])) == .flat, "wrong count")
@@ -150,7 +151,7 @@ struct EQMigrationTests {
     func freshInstallThenDowngrade() {
         // No v1 blob at first launch: the store says so, which is not the pre-rule "no fingerprint".
         var store = EQMigration.store(fromV1: nil, customPresets: [:])
-        #expect(store[slot: nil] == .flat)
+        #expect(store[slot: nil] == EQState(preset: .builtIn(.flat), curve: nil, isOn: false))
         #expect(store.v1Fingerprint == EQMigration.noV1Blob)
         // The user edits here, then runs a v1 build, which chooses Vocal and writes eqLiveStateV1.
         store[slot: nil] = EQState(preset: .builtIn(.warm), curve: EQFixture.curve([20: 5]))

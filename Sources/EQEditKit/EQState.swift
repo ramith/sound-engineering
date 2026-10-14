@@ -22,7 +22,8 @@ public struct EQState: Equatable, Sendable {
     /// Whether the EQ plays at all (Off is a true bypass).
     public var isOn: Bool
 
-    /// Flat, unedited, on: a fresh install, and what a slot that can't be read plays.
+    /// Flat, unedited, on: what a slot that can't be read plays. (A fresh install starts Flat and Off —
+    /// `EQMigration.freshInstall`.)
     public static let flat = EQState(preset: .builtIn(.flat), curve: nil)
 
     /// A state in canonical form: a built-in's curve that plays the built-in becomes the
