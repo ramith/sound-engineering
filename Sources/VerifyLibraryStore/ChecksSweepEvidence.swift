@@ -4,9 +4,10 @@
 // unreadable subfolder, a drive gone mid-walk, another drive at the root's path, a genuine delete).
 //   SE-1 the root CHANGES under the walk — another drive at its path, gone from it, or another
 //        directory there — and the sweep is refused, whatever the walk saw;
-//   SE-2 an INCOMPLETE walk refuses its sweep only when the sweep would delete something: a folder
-//        that was never readable does not stop new songs (nor block them on a refusal), a song deleted
-//        while part of the folder is unreadable is kept, and the walk that reads it all reaps it;
+//   SE-2 a walk is evidence of what it READ (R1.1-A, council C-55): a subfolder it may not open keeps
+//        its songs while a song deleted elsewhere in the folder is swept and a new one admitted (no
+//        refusal, so the tag pass runs); a folder it cannot open at all refuses its sweep, every song
+//        kept; readable again, the complete walk reaps nothing that is there;
 //   SE-3 the v7 → v8 upgrade adds `folders.volume_uuid` NULL with every root and all user data kept;
 //        the root's next walk binds it, and a walk on another drive is refused;
 //   SE-4 an upgraded (unbound) root whose path holds none of its songs — another drive with the same
@@ -24,7 +25,7 @@ import LibraryStore
 func sweepEvidenceCheckCases() -> [CheckCase] {
     [
         CheckCase(label: "se1-root-changes-under-walk", run: checkRootChangesUnderWalk),
-        CheckCase(label: "se2-incomplete-walk-refuses-only-a-deletion", run: checkIncompleteWalkRefusesOnlyADeletion),
+        CheckCase(label: "se2-evidence-of-what-it-read", run: checkEvidenceOfWhatItRead),
         CheckCase(label: "se3-v8-root-volume-upgrade", run: checkRootVolumeUpgrade),
         CheckCase(label: "se4-unbound-root-unrecognized", run: checkUnboundRootUnrecognized),
     ]
@@ -100,9 +101,9 @@ func checkRootChangesUnderWalk(number: Int, url: URL) async -> Bool {
     }
 }
 
-// MARK: - SE-2 — an incomplete walk refuses only a deletion
+// MARK: - SE-2 — a walk is evidence of what it read (C-55)
 
-func checkIncompleteWalkRefusesOnlyADeletion(number: Int, url: URL) async -> Bool {
+func checkEvidenceOfWhatItRead(number: Int, url: URL) async -> Bool {
     guard getuid() != 0 else {
         printPass(number, "SE-2 skipped: running as root, a chmod 000 folder is still readable")
         return true
@@ -113,37 +114,45 @@ func checkIncompleteWalkRefusesOnlyADeletion(number: Int, url: URL) async -> Boo
         let songs = try (0 ..< 3).map {
             try ScanFixtureBuilder.writeFile(at: root, subdirs: ["A"], fileName: "a\($0).flac")
         }
+        let locked = try ScanFixtureBuilder.makeDirectory(at: root, ["#recycle"])
+        let kept = try ScanFixtureBuilder.writeFile(at: locked, fileName: "kept.flac")
         let folderID = try await store.addRoot(root)
         _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-        // A folder the walk may not open arrives with a new song elsewhere: nothing would be deleted.
-        let locked = try ScanFixtureBuilder.makeDirectory(at: root, ["Locked"])
-        _ = try ScanFixtureBuilder.writeFile(at: locked, fileName: "hidden.flac")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        }
+        // A subfolder the walk may not open; meanwhile one song is deleted and one added elsewhere.
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
-        let added = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["A"], fileName: "new.flac")
-        let quiet = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-        guard quiet.orphansSwept == 0, try await store.track(url: added) != nil else {
-            printFail(number, "SE-2: an incomplete walk with nothing unseen did not end as usual"); return false
-        }
-        // A genuine delete while the folder is still unreadable: kept, the sweep refused.
         try FileManager.default.removeItem(at: songs[0])
-        do {
-            _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-            printFail(number, "SE-2: an incomplete walk swept"); return false
-        } catch let refusal as SweepRefusal where refusal.reason == .incompleteWalk {}
-        guard try await store.track(url: songs[0]) != nil else {
-            printFail(number, "SE-2: an incomplete walk's refusal still lost the deleted song's row"); return false
-        }
-        // Readable again: the complete walk reaps exactly the delete.
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
-        let complete = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
-        guard complete.orphansSwept == 1, try await store.track(url: songs[0]) == nil else {
-            printFail(number, "SE-2: the complete walk swept \(complete.orphansSwept), expected the 1 delete")
+        let added = try ScanFixtureBuilder.writeFile(at: root, subdirs: ["A"], fileName: "new.flac")
+        let scoped = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+        guard scoped.orphansSwept == 1, try await store.track(url: songs[0]) == nil,
+              try await store.track(url: kept) != nil, try await store.track(url: added) != nil else {
+            printFail(number, "SE-2: beside an unreadable subfolder the walk swept \(scoped.orphansSwept) "
+                + "(expected the 1 delete), or lost the subfolder's song, or missed the new one")
             return false
         }
-        printPass(number, "SE-2 an incomplete walk (a folder it may not open) refuses its sweep only when the "
-            + "sweep would delete something: with nothing unseen it ends as usual and admits the new song; a "
-            + "song deleted meanwhile is kept (.incompleteWalk); the walk that reads it all reaps exactly it")
+        // The folder itself unreadable: the walk is evidence of nothing — refused, every song kept.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: root.path)
+        do {
+            _ = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+            printFail(number, "SE-2: a walk of a folder it could not open was not refused"); return false
+        } catch let refusal as SweepRefusal where refusal.reason == .incompleteWalk {}
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        guard try await store.trackCount(inFolder: folderID) == 4 else {
+            printFail(number, "SE-2: the refused walk of an unreadable folder lost rows"); return false
+        }
+        // Readable again: the complete walk reaps nothing that is there.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+        let complete = try await LibraryScanner().scan(root: root, folderID: folderID, into: store)
+        guard complete.orphansSwept == 0, try await store.trackCount(inFolder: folderID) == 4 else {
+            printFail(number, "SE-2: the complete walk swept \(complete.orphansSwept), expected 0"); return false
+        }
+        printPass(number, "SE-2 a walk is evidence of what it read (C-55): beside a subfolder it may not open "
+            + "it sweeps the 1 song deleted elsewhere, admits the new one and keeps the subfolder's song (no "
+            + "refusal); a folder it cannot open at all refuses (.incompleteWalk), every song kept; readable "
+            + "again, nothing that is there is swept")
         return true
     } catch {
         printFail(number, "SE-2 threw: \(error)"); return false
