@@ -1,0 +1,34 @@
+===== gatedRetractFirst(endFinal:true)
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/shuffle-on: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Pure/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/playNext: promised t9 armed t9 → HEARS t9 / SHOWS t9
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/shuffle-on: promised t5 armed t5 → HEARS t5 / SHOWS t5
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/shuffle-off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/repeat-all→one: promised t0 armed t0 → HEARS t0 / SHOWS t0
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/repeat-one→off: promised t1 armed t1 → HEARS t1 / SHOWS t1
+HOLDS  D41/gatedRetractFirst(endFinal:true)/Enh/remove-on-deck: promised t2 armed t2 → HEARS t2 / SHOWS t2
+HOLDS  PURE-REARM-ORDER/gatedRetractFirst(endFinal:true): all 4 delivery×open orders arm the newest
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Pure/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Pure/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Enh/stale-open: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  NEXT-NEXT/gatedRetractFirst(endFinal:true)/Enh/stale-inbound: armed under t2 = t3; heard ["t0", "t1", "t2", "t3"] shows t3
+HOLDS  RETRACT-THEN-END/gatedRetractFirst(endFinal:true): heard ["t0", "t9"] shows t9 log []
+HOLDS  LATE-ARM-AFTER-END/gatedRetractFirst(endFinal:true): heard ["t0", "t9"] (t9 started 1×) shows t9 log ["ended → not armed"]
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:true)/Pure: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:true)/Pure: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Pure/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:true)/Pure: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  REPEAT-ONE/gatedRetractFirst(endFinal:true)/Enh: heard ["t0", "t0", "t0", "t0", "t1"] shows t1
+HOLDS  REMOVE-PLAYING/gatedRetractFirst(endFinal:true)/Enh: engine none armed none app playing=false selected t2
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat0: after the end: engine none ended=true app playing=false heard ["t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat1: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+HOLDS  QUEUE-OF-1/gatedRetractFirst(endFinal:true)/Enh/repeat2: after the end: engine t0 ended=false app playing=true heard ["t0", "t0"]
+BROKEN LATE-REQUEST/gatedRetractFirst(endFinal:true)/Enh: request unadmitted at the end (A2=true): HEARS t1 / SHOWS t9 — design §6 risk 2 says "a gap, never a wrong song"
+HOLDS  SEEK-AFTER-END/gatedRetractFirst(endFinal:true): after seek: engine t0@30.0 ended=true app t9 playing=true; final HEARS t9 / SHOWS t9 heard ["t0", "t9"]
+p4 d41 design review: 2 BROKEN

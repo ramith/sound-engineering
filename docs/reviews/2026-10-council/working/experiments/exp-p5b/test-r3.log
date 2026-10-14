@@ -1,0 +1,193 @@
+[0/1] Planning build
+Test Suite 'Selected tests' started at 2026-10-14 1:40:15.206 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' started at 2026-10-14 1:40:15.209 PM.
+Test Suite 'AdaptiveSoundPackageTests.xctest' passed at 2026-10-14 1:40:15.209 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-14 1:40:15.209 PM.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.003) seconds
+◇ Test run started.
+↳ Testing Library Version: 1902
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Output device — playback returns to the device the user chose" started.
+◇ Suite "AudioViewModel — the output the engine moved to" started.
+◇ Suite "OutputDevicePolicy — what happens when the output changes" started.
+◇ Suite "P5b round 2 — the N92 fix: property space, scenarios, flapping, start interleavings" started.
+◇ Suite "Output device — what counts as the user's choice" started.
+◇ Suite "OutputDevicePolicy — the whole input space" started.
+◇ Test "resumed on the speakers, then the headphones come back: Enhanced moves back to them" started.
+◇ Test "the headphones come back under a new device id: the same UID finds them" started.
+◇ Test "the headphones come back while paused: Play plays on them, not the speakers" started.
+◇ Test "while the chosen device is away, a fallback is never put back: the app follows the default" started.
+◇ Test "a pick of the speakers sticks: the headphones coming back don't take playback" started.
+◇ Test "the switch keeps the device in use: turning it on chooses it, wherever the app followed to" started.
+◇ Test "a re-initialization while the chosen headphones are away picks nothing: the choice stays" started.
+◇ Test "only the user moves the choice: an adopt moves the target and keeps the choice" started.
+◇ Test "R3-1 launch on the speakers, headphones connect and take the default, Play → headphones" started.
+◇ Test "S1 the panel's scenario: A drops, comes back as the default, Play → plays on A, default untouched" started.
+◇ Test "launch shows the device the engine starts on and picks nothing (it is not the user's choice)" started.
+◇ Test "the user's pick goes to the engine as a pick (the pin moves with it)" started.
+◇ Test "resumed on the speakers on Pure, then the headphones come back: playback moves with the output" started.
+◇ Test "Play on the fallback is not a pick" started.
+◇ Test "S6 pin turned off while the chosen device is away, then on again: the fallback becomes the choice (a user act)" started.
+◇ Test "R3-3 H2: a refused pick racing a rule move keeps the rule's move; the switch survives too" started.
+◇ Test "a re-initialization while the chosen device is away keeps the choice; it returns to it" started.
+◇ Test "S7 flapping: 20 000 random histories — never a fallback or 0 re-asserted, settles, chosen wins when present" started.
+◇ Test "chosen headphones back without an output stream yet: not targeted, not re-asserted, until it exists" started.
+◇ Test "launched on the speakers, headphones connect: Play plays on the headphones (nothing chosen yet)" started.
+◇ Test "S2 A returns under a NEW id and macOS does NOT make it the default → Play plays on A" started.
+◇ Test "a refused pick takes back only itself: the rule's move and the switch made meanwhile stay" started.
+◇ Test "R3-1 a re-init while the chosen device is away keeps the choice; it returns to it" started.
+◇ Test "S4 an explicit pick of the speakers sticks when the headphones come back" started.
+◇ Test "properties P1–P11 over every reachable (event × facts) case" started.
+◇ Test "every earlier decision holds where the app's device is the chosen one (or the switch is off)" started.
+◇ Test "the chosen device's id counts only when it is alive and listed" started.
+◇ Test "pinned with nothing chosen (the launch state) or the choice away answers exactly as follow" started.
+◇ Test "N94 rerun: start × {default moves, chosen leaves, chosen returns} × pin — pre-fix vs fix" started.
+◇ Test "the chosen headphones come back under a new id while Pure plays on the fallback: playback moves" started.
+◇ Test "fixed point: apply, replay every non-engine event — nothing more, no loop (every reachable case)" started.
+◇ Test "launched on the speakers and playing, headphones connect: playback follows them" started.
+◇ Test "a lost device is never replaced by a pick: the fallback is the engine's, not the user's" started.
+◇ Test "all 1440 (event × facts) cases agree with the rules written from the founder's decisions" started.
+◇ Test "R3-4 flapping with unpicked launches, picks, and not-ready outputs: 20 000 histories" started.
+◇ Test "device 0 is never adopted, never re-asserted, and only the chosen device is ever re-asserted" started.
+◇ Test "R3-2 H1: the chosen device alive with 0 output streams is neither targeted nor re-asserted until it lists" started.
+◇ Test "S3 resumed on the fallback (Enhanced), then A returns mid-play: playback moves to A, no pause, no loop" started.
+◇ Test "OUTDEV-08: follow: the new default becomes the app's device on every path; Enhanced restarts on it" started.
+◇ Test "fixed point: after any action, every device event asks for nothing more" started.
+P5b R3 H2 same-device race: target after undo = 41 (the rule had adopted 43)
+◇ Test "OUTDEV-12: applying the action and deciding again asks for nothing more" started.
+◇ Test "OUTDEV-06: … but pressing Play puts the pinned device back before Enhanced starts" started.
+P5b R2 S6: after off→on while away, chosen = BuiltInSpeaker-UID
+◇ Test "S5 Pure on the fallback, A returns: target moves (the VM restarts Pure there), default untouched" started.
+◇ Test "OUTDEV-01: a lost device pauses Enhanced and Pure alike, pinned or not, whatever event says so first" started.
+◇ Test "OUTDEV-13: a configuration change with the default on the app's device restarts Enhanced, only" started.
+◇ Test "OUTDEV-19: nothing playing → no pause to keep; and no device event resumes a lost-device pause" started.
+◇ Test "OUTDEV-18: the kept place stays within the song" started.
+◇ Test "OUTDEV-14: no system default at all is never a reason to move" started.
+◇ Test "OUTDEV-17: a device lost at 1:30 pauses at 1:30, not 0:00" started.
+◇ Test "OUTDEV-16: the action reads in the log" started.
+◇ Test "OUTDEV-11: once the default is the app's device, nothing more is asked for (no loop)" started.
+◇ Test "OUTDEV-07: pinned, Pure playing: Pure plays on its device directly — no default fight" started.
+◇ Test "OUTDEV-10: starting on a device that's gone plays on the default instead of pausing" started.
+◇ Test "OUTDEV-15: a device change moves playback only for Pure, playing, not after a lost device" started.
+◇ Test "OUTDEV-02: a lost device while idle doesn't pause; the pill moves to the system default" started.
+✔ Test "the switch keeps the device in use: turning it on chooses it, wherever the app followed to" passed after 0.001 seconds.
+P5b R2 N94 defaultMoves pinned=true: pre-fix silent 1 wrong 2 not-chosen 2 / 16  →  fix silent 1 wrong 2 not-chosen 2 bad-assert 0 / 16
+     fix example: SILENT S1 align · S2 start on 41 · X defaultMoves · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+◇ Test "OUTDEV-04: pinned, Enhanced playing: the app's device is put back as the default" started.
+2026-10-14 13:40:15.268 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+✔ Test "the headphones come back while paused: Play plays on them, not the speakers" passed after 0.001 seconds.
+✔ Test "a pick of the speakers sticks: the headphones coming back don't take playback" passed after 0.001 seconds.
+✔ Test "the headphones come back under a new device id: the same UID finds them" passed after 0.001 seconds.
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] selectDevice: 'Headphones' id=41
+✔ Test "resumed on the speakers on Pure, then the headphones come back: playback moves with the output" passed after 0.001 seconds.
+✔ Test "R3-3 H2: a refused pick racing a rule move keeps the rule's move; the switch survives too" passed after 0.001 seconds.
+✔ Test "launched on the speakers, headphones connect: Play plays on the headphones (nothing chosen yet)" passed after 0.001 seconds.
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] selectDevice: 'Speakers' id=42
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+✔ Test "S6 pin turned off while the chosen device is away, then on again: the fallback becomes the choice (a user act)" passed after 0.001 seconds.
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'none' uid=- model=- transport=-
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+2026-10-14 13:40:15.269 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+✔ Test "S1 the panel's scenario: A drops, comes back as the default, Play → plays on A, default untouched" passed after 0.001 seconds.
+✔ Test "resumed on the speakers, then the headphones come back: Enhanced moves back to them" passed after 0.001 seconds.
+✔ Test "R3-1 launch on the speakers, headphones connect and take the default, Play → headphones" passed after 0.001 seconds.
+P5b R2 N94 defaultMoves pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 11  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 11
+     fix example: SILENT S1 align · S2 start on 41 · X defaultMoves · R defaultChanged[idle]→adopt 42 · R engineReconfigured[idle]→nothing · S3 intent
+✔ Test "only the user moves the choice: an adopt moves the target and keeps the choice" passed after 0.001 seconds.
+✔ Test "the chosen device's id counts only when it is alive and listed" passed after 0.001 seconds.
+✔ Test "a refused pick takes back only itself: the rule's move and the switch made meanwhile stay" passed after 0.001 seconds.
+◇ Test "OUTDEV-05: pinned, idle: nothing now (another app's headphones are not undone) …" started.
+◇ Test "OUTDEV-03: after the pause (idle), the configuration change the disconnect fires restarts nothing" started.
+✔ Test "R3-1 a re-init while the chosen device is away keeps the choice; it returns to it" passed after 0.001 seconds.
+✔ Test "chosen headphones back without an output stream yet: not targeted, not re-asserted, until it exists" passed after 0.001 seconds.
+✔ Test "a re-initialization while the chosen device is away keeps the choice; it returns to it" passed after 0.001 seconds.
+✔ Test "while the chosen device is away, a fallback is never put back: the app follows the default" passed after 0.002 seconds.
+P5b R2 N94 chosenLeaves pinned=true: pre-fix silent 1 wrong 0 not-chosen 0 / 36  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 36
+     fix example: SILENT S1 align · S2 start on 41 · X chosenLeaves · R devicesChanged[idle]→adopt 42 · R targetAliveChanged[idle]→nothing · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+◇ Test "OUTDEV-09: follow, about to start: the default is adopted and the start plays on it" started.
+✔ Test "S2 A returns under a NEW id and macOS does NOT make it the default → Play plays on A" passed after 0.002 seconds.
+✔ Test "S4 an explicit pick of the speakers sticks when the headphones come back" passed after 0.002 seconds.
+✔ Test "launched on the speakers and playing, headphones connect: playback follows them" passed after 0.002 seconds.
+✔ Test "S3 resumed on the fallback (Enhanced), then A returns mid-play: playback moves to A, no pause, no loop" passed after 0.002 seconds.
+✔ Test "OUTDEV-08: follow: the new default becomes the app's device on every path; Enhanced restarts on it" passed after 0.001 seconds.
+✔ Test "R3-2 H1: the chosen device alive with 0 output streams is neither targeted nor re-asserted until it lists" passed after 0.002 seconds.
+✔ Test "OUTDEV-06: … but pressing Play puts the pinned device back before Enhanced starts" passed after 0.001 seconds.
+✔ Test "OUTDEV-12: applying the action and deciding again asks for nothing more" passed after 0.001 seconds.
+✔ Test "S5 Pure on the fallback, A returns: target moves (the VM restarts Pure there), default untouched" passed after 0.001 seconds.
+✔ Test "OUTDEV-01: a lost device pauses Enhanced and Pure alike, pinned or not, whatever event says so first" passed after 0.001 seconds.
+✔ Test "OUTDEV-13: a configuration change with the default on the app's device restarts Enhanced, only" passed after 0.001 seconds.
+✔ Test "pinned with nothing chosen (the launch state) or the choice away answers exactly as follow" passed after 0.002 seconds.
+✔ Test "OUTDEV-14: no system default at all is never a reason to move" passed after 0.001 seconds.
+✔ Test "OUTDEV-17: a device lost at 1:30 pauses at 1:30, not 0:00" passed after 0.001 seconds.
+✔ Test "OUTDEV-19: nothing playing → no pause to keep; and no device event resumes a lost-device pause" passed after 0.001 seconds.
+✔ Test "OUTDEV-16: the action reads in the log" passed after 0.001 seconds.
+✔ Test "OUTDEV-10: starting on a device that's gone plays on the default instead of pausing" passed after 0.001 seconds.
+✔ Test "OUTDEV-07: pinned, Pure playing: Pure plays on its device directly — no default fight" passed after 0.001 seconds.
+P5b R2 N94 chosenLeaves pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 36  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 36
+     fix example: SILENT S1 align · S2 start on 41 · X chosenLeaves · R devicesChanged[idle]→adopt 42 · R targetAliveChanged[idle]→nothing · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+✔ Test "OUTDEV-15: a device change moves playback only for Pure, playing, not after a lost device" passed after 0.001 seconds.
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] selectDevice: ok 'Headphones' id=41 48 kHz buf=512
+✔ Test "OUTDEV-02: a lost device while idle doesn't pause; the pill moves to the system default" passed after 0.001 seconds.
+✔ Suite "Output device — playback returns to the device the user chose" passed after 0.003 seconds.
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] selectDevice: ok 'Speakers' id=42 48 kHz buf=512
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+✔ Test "OUTDEV-04: pinned, Enhanced playing: the app's device is put back as the default" passed after 0.001 seconds.
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 1 device(s) [Speakers] engine=42 selected='Speakers'
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+✔ Test "OUTDEV-05: pinned, idle: nothing now (another app's headphones are not undone) …" passed after 0.001 seconds.
+✔ Test "OUTDEV-03: after the pause (idle), the configuration change the disconnect fires restarts nothing" passed after 0.001 seconds.
+✔ Test "every earlier decision holds where the app's device is the chosen one (or the switch is off)" passed after 0.002 seconds.
+2026-10-14 13:40:15.270 swiftpm-testing-helper[42723:36788543] [UX] initializeEngine: ready — 2 device(s), selected='Speakers'
+✔ Test "OUTDEV-11: once the default is the app's device, nothing more is asked for (no loop)" passed after 0.002 seconds.
+✔ Test "OUTDEV-09: follow, about to start: the default is adopted and the start plays on it" passed after 0.002 seconds.
+✔ Test "OUTDEV-18: the kept place stays within the song" passed after 0.002 seconds.
+✔ Suite "OutputDevicePolicy — what happens when the output changes" passed after 0.003 seconds.
+P5b R2 N94 chosenReturns pinned=true: pre-fix silent 1 wrong 3 not-chosen 26 / 30  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 21
+     fix example: SILENT S1 align · S2 start on 42 · X chosenReturns · R devicesChanged[idle]→adopt 41 · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+✔ Suite "Output device — what counts as the user's choice" passed after 0.003 seconds.
+2026-10-14 13:40:15.271 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+2026-10-14 13:40:15.271 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 1 device(s) [Speakers] engine=42 selected='Speakers'
+2026-10-14 13:40:15.271 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'none' uid=- model=- transport=-
+2026-10-14 13:40:15.271 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 1 device(s) [Speakers] engine=41 selected='none'
+P5b R2 N94 chosenReturns pinned=false: pre-fix silent 1 wrong 0 not-chosen 0 / 21  →  fix silent 1 wrong 0 not-chosen 0 bad-assert 0 / 21
+     fix example: SILENT S1 align · S2 start on 42 · X chosenReturns · R devicesChanged[idle]→adopt 41 · R defaultChanged[idle]→nothing · R engineReconfigured[idle]→nothing · S3 intent
+✔ Test "N94 rerun: start × {default moves, chosen leaves, chosen returns} × pin — pre-fix vs fix" passed after 0.003 seconds.
+✔ Test "all 1440 (event × facts) cases agree with the rules written from the founder's decisions" passed after 0.003 seconds.
+✔ Test "device 0 is never adopted, never re-asserted, and only the chosen device is ever re-asserted" passed after 0.003 seconds.
+✔ Test "fixed point: after any action, every device event asks for nothing more" passed after 0.003 seconds.
+✔ Suite "OutputDevicePolicy — the whole input space" passed after 0.004 seconds.
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] play: track[0] 'Song' pureMode=false device='Speakers'
+✔ Test "launch shows the device the engine starts on and picks nothing (it is not the user's choice)" passed after 0.004 seconds.
+✔ Test "the user's pick goes to the engine as a pick (the pin moves with it)" passed after 0.004 seconds.
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Headphones' uid=AA-BB-CC-DD-EE-FF:output model=- transport=none
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] output moved while Pure plays — restarting on 'Headphones' at 90.00s
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] play: track[0] 'Song' pureMode=false device='Headphones' resumeFrom=90.00s
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 2 device(s) [Speakers | Headphones] engine=57 selected='Headphones'
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] startPlayback: no next track to prime (single-track or end of playlist)
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 1 device(s) [Speakers] engine=42 selected='Speakers'
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] output identity → 'Speakers' uid=BuiltInSpeakerDevice model=- transport=none
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] refreshDevices: 1 device(s) [Speakers] engine=42 selected='Speakers'
+2026-10-14 13:40:15.272 swiftpm-testing-helper[42723:36788543] [UX] startPlayback: no next track to prime (single-track or end of playlist)
+2026-10-14 13:40:15.273 swiftpm-testing-helper[42723:36788543] [UX] initializeEngine: ready — 1 device(s), selected='Speakers'
+✔ Test "the chosen headphones come back under a new id while Pure plays on the fallback: playback moves" passed after 0.006 seconds.
+✔ Test "Play on the fallback is not a pick" passed after 0.006 seconds.
+✔ Test "a lost device is never replaced by a pick: the fallback is the engine's, not the user's" passed after 0.006 seconds.
+2026-10-14 13:40:15.274 swiftpm-testing-helper[42723:36788543] [UX] duration = 0.00s
+2026-10-14 13:40:15.274 swiftpm-testing-helper[42723:36788543] [UX] duration = 0.00s
+✔ Test "a re-initialization while the chosen headphones are away picks nothing: the choice stays" passed after 0.007 seconds.
+✔ Suite "AudioViewModel — the output the engine moved to" passed after 0.007 seconds.
+P5b R2: starts with no live device to play on (settle on the next event): 63
+✔ Test "fixed point: apply, replay every non-engine event — nothing more, no loop (every reachable case)" passed after 0.009 seconds.
+P5b R2: property space 2160 cases
+✔ Test "properties P1–P11 over every reachable (event × facts) case" passed after 0.028 seconds.
+P5b R2 flapping violations: 0
+✔ Test "S7 flapping: 20 000 random histories — never a fallback or 0 re-asserted, settles, chosen wins when present" passed after 3.790 seconds.
+P5b R3 flapping violations: 0
+✔ Test "R3-4 flapping with unpicked launches, picks, and not-ready outputs: 20 000 histories" passed after 4.167 seconds.
+✔ Suite "P5b round 2 — the N92 fix: property space, scenarios, flapping, start interleavings" passed after 4.168 seconds.
+✔ Test run with 59 tests in 6 suites passed after 4.168 seconds.

@@ -1,0 +1,9 @@
+[EQ] Realizer.setPendingEq REJECT — point 12 is not finite
+[EQ] Realizer.setPendingEq REJECT — point 12 is not finite
+[EQ] Realizer.setPendingEq REJECT — point 12 is not finite
+=== DSPKernel Null Test Suite (--filter) ===
+
+[PASS] EQ_PublishRejectsNonFinite
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

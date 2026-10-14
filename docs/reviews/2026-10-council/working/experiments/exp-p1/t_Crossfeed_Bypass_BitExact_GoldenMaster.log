@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Crossfeed_Bypass_BitExact_GoldenMaster: output hash = 0xe7af0c67f9340785
+[PASS] Crossfeed_Bypass_BitExact_GoldenMaster
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,37 @@
+P5A-FIX LIB-02a mode=0 walk=refused(incompleteWalk, kept=10) data=(rows: 10, entries: 10, plays: 10) | after restore+1 delete: ok(seen=9 swept=1)
+P5A-FIX LIB-02a mode=444 walk=refused(incompleteWalk, kept=10) data=(rows: 10, entries: 10, plays: 10) | after restore+1 delete: ok(seen=9 swept=1)
+✔ Test "ORIG LIB-02a: unreadable subfolder (000 / 444)" with 2 test cases passed after 0.118 seconds.
+P5A-FIX LIB-02b bound=DE7FF23C-175C-4FC4-94E1-6F9C5F4F8C5F walk=refused(rootVanished, kept=800) data=(rows: 800, entries: 800, plays: 800) totalRows=800 | remount: ok(seen=800 swept=0) data=(rows: 800, entries: 800, plays: 800) totalRows=800
+✔ Test "ORIG LIB-02b: volume detached mid-walk (800 songs)" passed after 3.792 seconds.
+P5A-FIX LIB-02d drive Y: refused(differentVolume, kept=60) data=(rows: 60, entries: 60, plays: 60) totalRows=60 | X back + 1 delete: ok(seen=59 swept=1) data=(rows: 59, entries: 59, plays: 59)
+✔ Test "ORIG LIB-02d: same-named different drive at the root's path, then the original returns" passed after 3.449 seconds.
+P5A-FIX ATK-1 depth=0 walk=refused(incompleteWalk, kept=6) data=(rows: 6, entries: 6, plays: 6)
+P5A-FIX ATK-1 depth=5 walk=refused(incompleteWalk, kept=6) data=(rows: 6, entries: 6, plays: 6)
+✔ Test "ATK-1: an error at the root itself vs deep inside" with 2 test cases passed after 0.039 seconds.
+P5A-FIX ATK-2 walk=ok(seen=3 swept=1) rows=3
+✔ Test "ATK-2: symlink loops inside the root — no hang, no refusal, genuine delete reaped" passed after 0.018 seconds.
+P5A-FIX ATK-3 walk=refused(incompleteWalk, kept=600) data=(rows: 600, entries: 600, plays: 600)
+✔ Test "ATK-3: permissions revoked mid-walk" passed after 0.734 seconds.
+P5A-FIX ATK-4 walk=refused(differentVolume, kept=400) data=(rows: 400, entries: 400, plays: 400) totalRows=520
+✘ Test "ATK-4: the volume is swapped mid-walk (same name, other drive)" failed after 5.895 seconds with 1 issue.
+P5A-FIX ATK-5 MS-DOS FAT32: uuidX=80F78B1D-4D13-313F-ACD3-7FB8A4B67F42 uuidY=D5C720DF-9471-3339-9C3C-295B1FF9C1C9 bound=80F78B1D-4D13-313F-ACD3-7FB8A4B67F42 walk on Y=refused(differentVolume, kept=20) data=(rows: 20, entries: 20, plays: 20)
+P5A-FIX ATK-5 ExFAT: uuidX=AB9BBA5B-663C-3A3C-AC8B-8BD6EC46F1E9 uuidY=74A9ED05-2FB0-3818-A3BC-254AB5B44251 bound=AB9BBA5B-663C-3A3C-AC8B-8BD6EC46F1E9 walk on Y=refused(differentVolume, kept=20) data=(rows: 20, entries: 20, plays: 20)
+✔ Test "ATK-5: a root on a volume with no UUID (FAT32 / exFAT): same-name swap" with 2 test cases passed after 7.932 seconds.
+P5A-FIX ATK-6a startup root: bound=nil walk=ok(seen=4 swept=1) | drive root first=ok(seen=30 swept=0) stale-on-startup=refused(differentVolume, kept=30) kept=30/30 | back=ok(seen=30 swept=0)
+✔ Test "ATK-6a: startup-disk root is unbound; a bound drive's path found on the startup disk is refused" passed after 1.879 seconds.
+P5A-FIX ATK-6b unbound root, other drive at first walk: ok(seen=3 swept=37) data=(rows: 3, entries: 3, plays: 3)
+✘ Test "ATK-6b: an unbound (pre-v8) root whose first walk after the upgrade finds another drive" failed after 2.933 seconds with 1 issue.
+P5A-FIX ATK-7 bind=true other=false nilUUID=false same=true row=Optional([dev:3 inode:4 volume_uuid:"AAAA"])
+✔ Test "ATK-7: restampRoot with a different volume changes nothing" passed after 0.012 seconds.
+P5A-FIX ATK-8 cancelled=error(Optional(Swift.CancellationError())) data=(rows: 600, entries: 600, plays: 600) | next=ok(seen=599 swept=1)
+✔ Test "ATK-8: a cancelled walk sweeps nothing; the next clean walk reaps a genuine delete" passed after 0.776 seconds.
+P5A-FIX Q3 walks=["refused(incompleteWalk, kept=5)", "refused(incompleteWalk, kept=5)", "refused(incompleteWalk, kept=5)"] rowsFor4FilesOnDisk=5
+✘ Test "Q3: a permanently unreadable empty folder — do genuine deletes ever leave?" failed after 0.023 seconds with 1 issue.
+P5A-FIX MIG-8 from v1: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[]
+P5A-FIX MIG-8 from v2: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[]
+P5A-FIX MIG-8 from v3: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v4: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v5: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v6: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+P5A-FIX MIG-8 from v7: schema=8 unbound=Optional(true) firstWalk=ok(seen=3 swept=0) plays=[1, 2, 3] entries=[30, 10, 20]
+✔ Test "MIG-8: user data survives the upgrade from every version v1…v7; volume_uuid NULL then bound" with 7 test cases passed after 0.164 seconds.

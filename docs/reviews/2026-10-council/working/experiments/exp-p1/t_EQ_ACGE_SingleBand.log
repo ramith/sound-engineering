@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_ACGE_SingleBand: worst ±6 0.1304 dB (≤ 0.25), ±12 0.1521 dB (≤ 0.3)
+[PASS] EQ_ACGE_SingleBand
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

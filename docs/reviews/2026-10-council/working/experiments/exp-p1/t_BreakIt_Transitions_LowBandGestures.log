@@ -1,0 +1,31 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] BreakIt_Transitions_LowBandGestures: TD overshoot local / peak (dB), τ by the rule
+[info]   Off → +6 dB @ 20 Hz      τ ≤ 213 ms: local +0.33 @   25 Hz / peak +0.29
+[info]   +6 dB @ 20 Hz → Off      τ ≤ 213 ms: local +0.17 @   25 Hz / peak +0.17
+[info]   Off → +8 dB @ 20 Hz      τ ≤ 245 ms: local +0.41 @   25 Hz / peak +0.38
+[info]   +8 dB @ 20 Hz → Off      τ ≤ 245 ms: local +0.19 @   25 Hz / peak +0.19
+[info]   Off → +6 dB @ 25 Hz      τ ≤ 184 ms: local +0.19 @   33 Hz / peak +0.08
+[info]   +6 dB @ 25 Hz → Off      τ ≤ 184 ms: local +0.09 @   33 Hz / peak +0.00
+[info]   Off → +8 dB @ 25 Hz      τ ≤ 218 ms: local +0.23 @   33 Hz / peak +0.14
+[info]   +8 dB @ 25 Hz → Off      τ ≤ 218 ms: local +0.10 @   33 Hz / peak +0.00
+[info]   Off → +6 dB @ 32 Hz      τ ≤ 146 ms: local +0.42 @   25 Hz / peak +0.04
+[info]   +6 dB @ 32 Hz → Off      τ ≤ 146 ms: local +0.28 @   25 Hz / peak -0.00
+[info]   Off → +8 dB @ 32 Hz      τ ≤ 173 ms: local +0.50 @   25 Hz / peak +0.08
+[info]   +8 dB @ 32 Hz → Off      τ ≤ 173 ms: local +0.39 @   25 Hz / peak -0.00
+[info]   Off → +6 dB @ 40 Hz      τ ≤ 116 ms: local +0.28 @   50 Hz / peak +0.02
+[info]   +6 dB @ 40 Hz → Off      τ ≤ 116 ms: local +0.29 @   50 Hz / peak -0.00
+[info]   Off → +8 dB @ 40 Hz      τ ≤ 137 ms: local +0.34 @   50 Hz / peak +0.05
+[info]   +8 dB @ 40 Hz → Off      τ ≤ 137 ms: local +0.41 @   50 Hz / peak -0.00
+[info]   Off → +6 dB @ 50 Hz      τ ≤  92 ms: local +0.34 @   38 Hz / peak +0.01
+[info]   +6 dB @ 50 Hz → Off      τ ≤  92 ms: local +0.16 @   38 Hz / peak +0.00
+[info]   Off → +8 dB @ 50 Hz      τ ≤ 109 ms: local +0.40 @   38 Hz / peak +0.03
+[info]   +8 dB @ 50 Hz → Off      τ ≤ 109 ms: local +0.25 @   38 Hz / peak +0.00
+[info]   Off → +6 dB @ 63 Hz      τ ≤  73 ms: local +0.33 @   50 Hz / peak +0.00
+[info]   +6 dB @ 63 Hz → Off      τ ≤  73 ms: local +0.31 @   50 Hz / peak +0.00
+[info]   Off → +8 dB @ 63 Hz      τ ≤  87 ms: local +0.38 @   50 Hz / peak +0.01
+[info]   +8 dB @ 63 Hz → Off      τ ≤  87 ms: local +0.48 @   50 Hz / peak +0.00
+[PASS] BreakIt_Transitions_LowBandGestures
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

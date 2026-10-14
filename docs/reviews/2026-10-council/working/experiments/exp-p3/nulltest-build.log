@@ -1,0 +1,8 @@
+Sanitizer: ASan+UBSan
+Compiling libebur128 (test-only oracle, C99) ...
+/Users/ramith/code/sound-engineering/.claude/worktrees/panel-p3-breaker/third_party/libebur128/ebur128/ebur128.c:609:2: warning: "manual FTZ is being used, please enable SSE2 (-msse2 -mfpmath=sse)" [-W#warnings]
+  609 | #warning "manual FTZ is being used, please enable SSE2 (-msse2 -mfpmath=sse)"
+      |  ^
+1 warning generated.
+Building null test...
+Built: /Users/ramith/code/sound-engineering/.claude/worktrees/panel-p3-breaker/Tests/DSPKernelNullTest

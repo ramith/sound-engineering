@@ -1,0 +1,61 @@
+P5A MIG-1 from v1: schema=7 plays=[1, 2, 3, 4, 5] entries=[] backups=1
+P5A META-1 pendingAfterEdit=true pendingAfterStaleApply=false
+P5A UPS-1 storedInode=Optional(59244051) diskInode=Optional(59244242) idAfterRename=Optional(4) originalID=2
+✘ Test "META-1: an apply of tags read before a modification leaves the song pending" failed after 0.066 seconds with 1 issue.
+P5A LIB-02a mode=0 seen=5 skipped=2 swept=5 kept=5 filesStillOnDisk=true songRow=false entries=0 plays=nil
+✘ Test "UPS-1: after a replace-in-place, a rename still keeps the song's id" failed after 0.070 seconds with 2 issues.
+P5A SRCH-1 අමරදේව→["අමරදේව ගීත"] ; ගීත→["අමරදේව ගීත", "ගීතය"] ; ගීතය→["ගීතය"] ; මාල→["මාල", "මිල", "මුල"] ; මිල→["මාල", "මිල", "මුල"] ; මුල→["මාල", "මිල", "මුල"]
+✘ Test "SRCH-1: a Sinhala query matches only the word typed" failed after 0.075 seconds with 1 issue.
+P5A MIG-1 from v2: schema=7 plays=[1, 2, 3, 4, 5] entries=[] backups=1
+P5A SRCH-2 노래(2sc)→0 ; Café(4sc)→1 ; cafe(4sc)→1 ; මේ(2sc)→1
+✘ Test "SRCH-2: an NFD filename is found by the NFC spelling" failed after 0.021 seconds with 1 issue.
+P5A LIB-02a mode=444 seen=5 skipped=2 swept=5 kept=5 filesStillOnDisk=true songRow=false entries=0 plays=nil
+✘ Test "LIB-02a: an unreadable subfolder's songs survive a reconcile" with 2 test cases failed after 0.105 seconds with 4 issues.
+P5A MIG-1 from v3: schema=7 plays=[1, 2, 3, 4, 5] entries=[30, 10, 50] backups=1
+P5A SRCH-3 東京→["東京", "東京事変"] ; 事変→["事変の夜"]
+✘ Test "SRCH-3: CJK — a word inside a run of ideographs" failed after 0.020 seconds with 1 issue.
+P5A MIG-1 from v4: schema=7 plays=[1, 2, 3, 4, 5] entries=[30, 10, 50] backups=1
+P5A LIB-03a oldRootFirst=true newID=Optional(61) oldID=28 entries=0 plays=nil
+P5A MIG-1 from v5: schema=7 plays=[1, 2, 3, 4, 5] entries=[30, 10, 50] backups=1
+P5A MIG-1 from v6: schema=7 plays=[1, 2, 3, 4, 5] entries=[30, 10, 50] backups=1
+✔ Test "MIG-1: user data survives the upgrade from every historical version" with 6 test cases passed after 0.180 seconds.
+P5A LIB-03a oldRootFirst=false newID=Optional(28) oldID=28 entries=1 plays=Optional(3)
+✘ Test "LIB-03a: a cross-root move keeps its id when the OLD root reconciles first" with 2 test cases failed after 0.240 seconds with 2 issues.
+P5A PL-1 reorder mismatches=0/300; case/normalization variants accepted as distinct playlists: 5/5
+P5A SRCH-4 fuzz thrown=0 matchedAll=0; 'rock OR jazz'→[] 'NOT'→["NOT Fade Away"] 'title:jazz'→[] '"rock'→["Rock and Roll"] 'near'→["Near Far"]
+✔ Test "SRCH-4: FTS5 syntax in the query is inert" passed after 0.243 seconds.
+✔ Test "PL-1: reorderPlaylist == ListOrder.applying on random orders" passed after 0.362 seconds.
+P5A SRCH-5 'ear' vs 'Pearl Jam': songs=false facets=true ; 'මාල' vs 'මිල': songs=true facets=true ; '事変' vs '東京事変': songs=false facets=true ; 'jam' vs 'Pearl Jam': songs=true facets=true
+✘ Test "SRCH-5: one query, one meaning across tabs" failed after 0.021 seconds with 1 issue.
+P5A SORT-1 26 orders checked; mismatches: []
+✔ Test "SORT-1: each TrackSort equals its spec on random data with ties, NULLs and non-ASCII" passed after 0.436 seconds.
+P5A YEAR-1 store.dominantYear=Optional(1995) facetPage=Optional(1994) oracle(latest)=Optional(1995)
+✘ Test "YEAR-1: the store and the facet pages pick the same year for a tie" failed after 0.001 seconds with 1 issue.
+✔ Test "YEAR-2: dominantYear equals a brute-force oracle on random inputs" passed after 0.151 seconds.
+P5A SCHED-1 violations=0 
+✔ Test "SCHED-1: safety + liveness over random operation sequences" passed after 1.521 seconds.
+P5A LIB-03b trials=20 idLost=0 sameGeneration=20
+✘ Test "LIB-03b: concurrent reconciles of both roots after a cross-root move (20 trials)" failed after 1.698 seconds with 1 issue.
+P5A LIB-03c G=3 newID=61 oldID=28 ghostStillThere=true ghostURL=007 A.flac sweptA=29
+✘ Test "LIB-03c: a shared generation turns a move into a new id plus a ghost row" failed after 0.052 seconds with 1 issue.
+P5A LIB-03d hard-link renames: aaa.flac:LOST
+✘ Test "LIB-03d: renaming one of two hard links keeps its id" failed after 0.023 seconds with 1 issue.
+P5A LIB-03e pendingAfterRewrite=false
+✘ Test "LIB-03e: a same-size rewrite within the same second is re-read" failed after 0.014 seconds with 1 issue.
+P5A LIB-03f caseVariantRejected=false symlinkRejected=false innerRootID=2 outerRootID=1 rowsFor4Files=4
+✘ Test "LIB-03f: a nested root in another case / via a symlink is rejected" failed after 0.018 seconds with 1 issue.
+P5A LIB-03g rows=1 keyIsNFC=true keyOpens=true storedName=8scalars rowsAfterRescan=1
+✔ Test "LIB-03g: an NFD filename gets an NFC key that still opens" passed after 0.013 seconds.
+P5A LIB-03h /private/tmp -> /tmp; /private/tmp/<missing> -> /private/tmp/p5a-does-not-exist
+✘ Test "LIB-03h: PathNormalizer gives one key regardless of file existence" failed after 0.001 seconds with 1 issue.
+P5A LIB-02b seen=280 skipped=20 swept=544 kept=280/800 playlistEntries=256/800
+P5A LIB-02d surviving playlist rows now point at: []
+P5A LIB-02b after remount: 800/800 files on disk
+✘ Test "LIB-02b: a volume that goes away mid-walk keeps the songs the walk had not reached" failed after 5.087 seconds with 2 issues.
+✔ Test "LIB-02 control: a genuine delete is still swept" passed after 0.017 seconds.
+P5A LIB-02d reachable=true sameRootIdentity=true seen=2 swept=60 playlistEntries=0/60
+✘ Test "LIB-02d: a same-named drive at the root's path does not delete the other drive's songs" failed after 6.611 seconds with 2 issues.
+P5A LIB-03b2 trials=10 idLost=10
+✘ Test "LIB-03b2: concurrent reconciles, old root small, new root large (10 trials)" failed after 25.342 seconds with 1 issue.
+P5A LIB-03f2 walk(1) gen=1 swept=0 outer=4 inner=0 | walk(2) gen=2 swept=0 outer=0 inner=4 | walk(1) gen=3 swept=0 outer=4 inner=0 | walk(2) gen=4 swept=0 outer=0 inner=4 | concurrent: totalRows=4 for 4 files
+✔ Test "LIB-03f2: a case-variant nested root ping-pongs rows between the two roots" passed after 0.024 seconds.

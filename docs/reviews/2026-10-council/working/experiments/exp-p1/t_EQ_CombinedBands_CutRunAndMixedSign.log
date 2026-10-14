@@ -1,0 +1,8 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] EQ_CombinedBands_CutRunAndMixedSign: cut-run deep band 15 (630 Hz) measured -12.028 dB (target -12)
+  [info] EQ_CombinedBands_CutRunAndMixedSign: mixed run band 20 (2 kHz) 5.95086 dB (boost), band 21 (2.5 kHz) -5.9513 dB (cut) — signs must be +/- (magnitude cancels: adjacent wide-Q filters)
+[PASS] EQ_CombinedBands_CutRunAndMixedSign
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

@@ -1,0 +1,18 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+  [info] Loudness_Oracle_Integrated: sine1k_-23dBFS @ 48000 Hz: ours=-22.9933 LUFS, ebur128=-22.9933 LUFS, delta=3.08731e-12 LU
+  [info] Loudness_Oracle_Integrated: sine1k_-16dBFS @ 48000 Hz: ours=-15.9933 LUFS, ebur128=-15.9933 LUFS, delta=3.02691e-12 LU
+  [info] Loudness_Oracle_Integrated: sine1k_-6dBFS @ 48000 Hz: ours=-5.9933 LUFS, ebur128=-5.9933 LUFS, delta=2.94076e-12 LU
+  [info] Loudness_Oracle_Integrated: white_-20dBFS @ 48000 Hz: ours=-18.6191 LUFS, ebur128=-18.6191 LUFS, delta=1.53122e-12 LU
+  [info] Loudness_Oracle_Integrated: pink_-20dBFS @ 48000 Hz: ours=-32.0116 LUFS, ebur128=-32.0116 LUFS, delta=1.27088e-10 LU
+  [info] Loudness_Oracle_Integrated: gated_tone+silence @ 48000 Hz: ours=-23.1256 LUFS, ebur128=-23.1256 LUFS, delta=3.0731e-12 LU
+  [info] Loudness_Oracle_Integrated: sine1k_-23dBFS @ 44100 Hz: ours=-22.9905 LUFS, ebur128=-22.9905 LUFS, delta=1.26832e-12 LU
+  [info] Loudness_Oracle_Integrated: sine1k_-16dBFS @ 44100 Hz: ours=-15.9905 LUFS, ebur128=-15.9905 LUFS, delta=1.31628e-12 LU
+  [info] Loudness_Oracle_Integrated: sine1k_-6dBFS @ 44100 Hz: ours=-5.99054 LUFS, ebur128=-5.99054 LUFS, delta=1.26299e-12 LU
+  [info] Loudness_Oracle_Integrated: white_-20dBFS @ 44100 Hz: ours=-18.6348 LUFS, ebur128=-18.6348 LUFS, delta=2.16716e-13 LU
+  [info] Loudness_Oracle_Integrated: pink_-20dBFS @ 44100 Hz: ours=-32.1061 LUFS, ebur128=-32.1061 LUFS, delta=1.38698e-11 LU
+  [info] Loudness_Oracle_Integrated: gated_tone+silence @ 44100 Hz: ours=-23.1228 LUFS, ebur128=-23.1228 LUFS, delta=1.27898e-12 LU
+[PASS] Loudness_Oracle_Integrated_vs_ebur128
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

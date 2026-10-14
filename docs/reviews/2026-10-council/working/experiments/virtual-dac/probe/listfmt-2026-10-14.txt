@@ -1,0 +1,37 @@
+DEVICE 94 'VA279HG' transport='hdmi' nominal=48000 hog=-1(st=0) bufFrames=512
+  rates: 32000 44100 48000
+  STREAM 95
+    CURphy 'lpcm' rate=48000 [0..0] ch=2 bits=24 B/frame=8 sint 
+    CURvir 'lpcm' rate=48000 [0..0] ch=2 bits=32 B/frame=8 float packed 
+    avPHY  'lpcm' rate=48000 [48000..48000] ch=2 bits=24 B/frame=8 sint 
+    avPHY  'lpcm' rate=44100 [44100..44100] ch=2 bits=24 B/frame=8 sint 
+    avPHY  'lpcm' rate=32000 [32000..32000] ch=2 bits=24 B/frame=8 sint 
+    avPHY  'lpcm' rate=48000 [48000..48000] ch=2 bits=20 B/frame=8 sint 
+    avPHY  'lpcm' rate=44100 [44100..44100] ch=2 bits=20 B/frame=8 sint 
+    avPHY  'lpcm' rate=32000 [32000..32000] ch=2 bits=20 B/frame=8 sint 
+    avPHY  'lpcm' rate=48000 [48000..48000] ch=2 bits=16 B/frame=4 sint packed 
+    avPHY  'lpcm' rate=44100 [44100..44100] ch=2 bits=16 B/frame=4 sint packed 
+    avPHY  'lpcm' rate=32000 [32000..32000] ch=2 bits=16 B/frame=4 sint packed 
+    avVIR  'lpcm' rate=48000 [48000..48000] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=44100 [44100..44100] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=32000 [32000..32000] ch=2 bits=32 B/frame=8 float packed 
+DEVICE 82 'MacBook Pro Speakers' transport='bltn' nominal=48000 hog=-1(st=0) bufFrames=512
+  rates: 44100 48000 88200 96000
+  STREAM 83
+    CURphy 'lpcm' rate=48000 [0..0] ch=2 bits=32 B/frame=8 float packed 
+    CURvir 'lpcm' rate=48000 [0..0] ch=2 bits=32 B/frame=8 float packed 
+    avPHY  'lpcm' rate=96000 [96000..96000] ch=2 bits=32 B/frame=8 float packed 
+    avPHY  'lpcm' rate=88200 [88200..88200] ch=2 bits=32 B/frame=8 float packed 
+    avPHY  'lpcm' rate=48000 [48000..48000] ch=2 bits=32 B/frame=8 float packed 
+    avPHY  'lpcm' rate=44100 [44100..44100] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=96000 [96000..96000] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=88200 [88200..88200] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=48000 [48000..48000] ch=2 bits=32 B/frame=8 float packed 
+    avVIR  'lpcm' rate=44100 [44100..44100] ch=2 bits=32 B/frame=8 float packed 
+DEVICE 58 'Microsoft Teams Audio' transport='virt' nominal=48000 hog=-1(st=0) bufFrames=512
+  rates: 48000
+  STREAM 59
+    CURphy 'lpcm' rate=48000 [0..0] ch=1 bits=32 B/frame=4 float packed 
+    CURvir 'lpcm' rate=48000 [0..0] ch=1 bits=32 B/frame=4 float packed 
+    avPHY  'lpcm' rate=48000 [48000..48000] ch=1 bits=32 B/frame=4 float packed 
+    avVIR  'lpcm' rate=48000 [48000..48000] ch=1 bits=32 B/frame=4 float packed 

@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Profile_NoWindow_ParsevalAndTonal: Parseval worst 1.79e-07 (≤ 1e-05; a Hann-windowed block is off by up to 163.2 %); bands vs the double reference 1.82e-07 (≤ 1e-05); tonal 808, +12 @ 100 Hz: measured +7.826, no window +7.7759 (error -0.0502), Hann +8.2493 (error +0.4231) dB
+[PASS] Loudness_Profile_NoWindow_ParsevalAndTonal
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

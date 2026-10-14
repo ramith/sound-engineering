@@ -1,0 +1,8 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] EQ_ACGE_Hard: worst |played − target| at the centres (dB)
+[info]   hard + 4 breaker (35 curves), bound 0.6 dB: 44.1k 0.3215 48.0k 0.3214 88.2k 0.3223 96.0k 0.3223 176.4k 0.3226 192.0k 0.3226  → worst 0.3226
+[PASS] EQ_ACGE_Hard
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.

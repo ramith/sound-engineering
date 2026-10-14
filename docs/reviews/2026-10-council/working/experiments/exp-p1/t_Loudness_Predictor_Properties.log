@@ -1,0 +1,7 @@
+=== DSPKernel Null Test Suite (--filter) ===
+
+[info] Loudness_Predictor_Properties: flat 0 dB exactly; uniform +6 → +6.000000000000 dB; 96 kHz track at 48 kHz plays 246 of 271 bands; blockStep 4 vs 1 worst 0.0013 dB (≤ 0.1)
+[PASS] Loudness_Predictor_Properties
+
+=== Results: 1 passed, 0 failed ===
+All null tests passed. Identity and bypass paths are intact.
