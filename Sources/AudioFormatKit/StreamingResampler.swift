@@ -19,6 +19,13 @@ import Foundation
 /// playback", which was never measured and is false: the first chunk holds back about 13 ms, the
 /// end flushes it, and the totals are exact.
 ///
+/// **One stream across a same-format join** (council C-22, KI-GAP-04). The next track of the same
+/// format feeds the SAME converter (`canContinue(with:)`): its frames follow the last track's, so the
+/// filter's history spans the join and the two convert exactly as one input would. A converter per
+/// track borders each with silence instead — a click at every join (13–27 dB below the peak, ±240
+/// frames). `inputFrames` / `outputFrames` and `outputFrame(atInputFrame:)` place the join in the
+/// output.
+///
 /// One instance per stream, used from one serial queue (its owner's): not thread-safe.
 public final class StreamingResampler {
     /// Input frames per `convert` call — the Enhanced resampler's chunk (~186 ms at 44.1 kHz).
@@ -37,6 +44,12 @@ public final class StreamingResampler {
     /// The player's format (the graph's rate, N-channel float) — what `convert` returns.
     public let outputFormat: AVAudioFormat
 
+    /// Input frames the converter has taken since the stream began (every track it carried).
+    public private(set) var inputFrames: Int64 = 0
+
+    /// Output frames it has returned since the stream began.
+    public private(set) var outputFrames: Int64 = 0
+
     private let converter: AVAudioConverter
 
     /// `nil` when Apple has no converter between the two formats. `algorithm` is the production one
@@ -50,6 +63,40 @@ public final class StreamingResampler {
         self.inputFormat = inputFormat
         self.outputFormat = outputFormat
     }
+
+    // MARK: - The stream's timeline
+
+    /// Whether input of `format` can go on through this stream: the same rate, channel count and
+    /// layout as its input. A track of another format needs its own converter.
+    public func canContinue(with format: AVAudioFormat) -> Bool {
+        format == inputFormat
+    }
+
+    /// Where input frame `inputFrame` (counted from the stream's start) begins in the output: the
+    /// first output frame at or after its time. The output lines up with the input's timeline —
+    /// output frame j sits at input time j × inRate / outRate, with no offset (measured: ≤ 0.001
+    /// frame on every rate pair the app converts) — so this is ⌈inputFrame × outRate / inRate⌉,
+    /// exact in integers (44.1 → 48 kHz is 147 : 160).
+    public func outputFrame(atInputFrame inputFrame: Int64) -> Int64 {
+        let (inRate, outRate) = (inputFormat.sampleRate, outputFormat.sampleRate)
+        guard inRate == inRate.rounded(), outRate == outRate.rounded(), inRate >= 1, outRate >= 1 else {
+            return Int64((Double(inputFrame) * outRate / inRate).rounded(.up))
+        }
+        let divisor = Self.greatestCommonDivisor(Int64(inRate), Int64(outRate))
+        let (numerator, denominator) = (Int64(outRate) / divisor, Int64(inRate) / divisor)
+        let (quotient, remainder) = inputFrame.quotientAndRemainder(dividingBy: denominator)
+        return quotient * numerator + (remainder * numerator + denominator - 1) / denominator
+    }
+
+    private static func greatestCommonDivisor(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        var (larger, smaller) = (lhs, rhs)
+        while smaller != 0 {
+            (larger, smaller) = (smaller, larger % smaller)
+        }
+        return larger
+    }
+
+    // MARK: - Converting
 
     /// One converted chunk.
     public struct Chunk {
@@ -68,13 +115,14 @@ public final class StreamingResampler {
     }
 
     /// Convert one chunk of input (up to `inputChunkFrames` frames). The converter keeps its state
-    /// across calls, so consecutive chunks join seamlessly. `inputEnded`: no input follows this chunk
+    /// across calls, so consecutive chunks join seamlessly — the next track's too, when it has the
+    /// same format. `inputEnded`: no input follows this chunk
     /// (an empty chunk with `inputEnded` just flushes) — the converter then outputs the frames it
     /// held back, and reports the end once it has.
     public func convert(_ input: AVAudioPCMBuffer, inputEnded: Bool) throws -> Chunk {
         let ratio = outputFormat.sampleRate / inputFormat.sampleRate
-        let inputFrames = max(input.frameLength, Self.inputChunkFrames)
-        let capacity = AVAudioFrameCount((Double(inputFrames) * ratio).rounded(.up)) + Self.outputSlackFrames
+        let chunkFrames = max(input.frameLength, Self.inputChunkFrames)
+        let capacity = AVAudioFrameCount((Double(chunkFrames) * ratio).rounded(.up)) + Self.outputSlackFrames
         guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
             throw Failure.outputAllocation
         }
@@ -83,6 +131,10 @@ public final class StreamingResampler {
         let status = converter.convert(to: output, error: &error) { _, outStatus in
             feed.next(outStatus)
         }
+        if feed.handedOver {
+            inputFrames += Int64(input.frameLength)
+        }
+        outputFrames += Int64(output.frameLength)
         switch status {
         case .error:
             throw error ?? Failure.conversion
@@ -102,7 +154,8 @@ public final class StreamingResampler {
 private final class OneShotInput: @unchecked Sendable {
     private let buffer: AVAudioPCMBuffer
     private let ended: Bool
-    private var handedOver = false
+    /// The converter took the chunk.
+    private(set) var handedOver = false
 
     init(buffer: AVAudioPCMBuffer, ended: Bool) {
         self.buffer = buffer
