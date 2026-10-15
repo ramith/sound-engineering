@@ -549,3 +549,113 @@ static auto testLimiterIspDetectorAccuracy() -> void
     }
     logPass(kName);
 }
+
+// ===========================================================================
+// Test: the ceiling holds with crossfeed on (R1.1-A). Crossfeed is now an output stage of its own
+// that plays at Intensity 0, and it can ADD level: bs2b's direct path is a high-boost shelf and
+// its cross path a low-pass, so a hard-panned or decorrelated programme can peak higher than it
+// went in. The limiter follows crossfeed, so its ceiling must still hold — on the EQ-only path
+// (P1, where crossfeed now plays by default) at both of its ceilings: −1 dBTP (a lossy or unknown
+// link) and −0.1 dBTP (a wired output, founder decision 29). Through the whole kernel, Strong
+// (bs2b default, the deepest feed); the same two-meter rule and 0 dB margin as the battery above.
+// ===========================================================================
+static auto testLimiterTruePeakCeilingWithCrossfeed() -> void
+{
+    static const char* const kName = "Limiter_TruePeak_CeilingWithCrossfeed";
+    const uint32_t fs = kOracleRate48k;
+    const auto frames = static_cast<uint32_t>(2U * fs);
+
+    // Planar stereo fixtures: (label, left, right).
+    struct Fixture
+    {
+        const char* label;
+        std::vector<float> left;
+        std::vector<float> right;
+    };
+    const auto planar = [](const std::vector<float>& interleaved, uint32_t channel)
+    {
+        std::vector<float> out(interleaved.size() / kOracleStereo);
+        for (size_t n = 0; n < out.size(); ++n)
+        {
+            out[n] = interleaved[(kOracleStereo * n) + channel];
+        }
+        return out;
+    };
+    std::vector<float> square(frames);
+    for (uint32_t n = 0U; n < frames; ++n)
+    {
+        square[n] = ((n / 240U) % 2U == 0U) ? 1.0F : -1.0F; // a 100 Hz square at 0 dBFS
+    }
+    const std::vector<float> silence(frames, 0.0F);
+    const std::vector<float> pinkL = genStereoPinkNoise(3.0, 2.0, fs, 0xCF5EA101U);
+    const std::vector<float> pinkR = genStereoPinkNoise(3.0, 2.0, fs, 0xCF5EA102U);
+    const std::vector<float> sine = planar(genTpSine(0.0, 1000.0, 2.0, fs), 0U);
+    const std::array<Fixture, 4U> fixtures = {
+        {
+            {.label = "square100_hardLeft_0dBFS", .left = square, .right = silence},
+            {.label = "pink_+3dBFS_decorrelated", .left = planar(pinkL, 0U), .right = planar(pinkR, 0U)},
+            {.label = "sine1k_centre_0dBFS", .left = sine, .right = sine},
+            {
+                .label = "square100_left_sine1k_right",
+                .left = square,
+                .right = planar(genTpSine(-1.0, 1000.0, 2.0, fs), 0U),
+            },
+        },
+    };
+
+    std::string fail;
+    for (const float eqOnlyCeiling : {kTruePeakCeilingLinear, kEqOnlyWiredCeilingLinear})
+    {
+        TargetState state = makeIdentityState();
+        state.intensityLinear = 0.0F; // P1: crossfeed → limiter at the EQ-only ceiling
+        state.limiter.truePeakCeilingLinear = kTruePeakCeilingLinear;
+        state.limiter.eqOnlyCeilingLinear = eqOnlyCeiling;
+        state.crossfeed = deriveCfParams(1U, kCfPresetStrong, fs);
+        const double ceilingDb = 20.0 * std::log10(static_cast<double>(eqOnlyCeiling));
+
+        for (const Fixture& fixture : fixtures)
+        {
+            const StereoOut out = runKernelStream(state, fs, fixture.left, fixture.right);
+            std::vector<float> interleavedIn(static_cast<size_t>(frames) * kOracleStereo);
+            std::vector<float> interleavedOut(static_cast<size_t>(frames) * kOracleStereo);
+            for (size_t n = 0U; n < frames; ++n)
+            {
+                interleavedIn[kOracleStereo * n] = fixture.left[n];
+                interleavedIn[(kOracleStereo * n) + 1U] = fixture.right[n];
+                interleavedOut[kOracleStereo * n] = out.left[n];
+                interleavedOut[(kOracleStereo * n) + 1U] = out.right[n];
+            }
+            const std::vector<float> measured = dropWarmup(interleavedOut, kTpWarmupFrames);
+            double inDb = 0.0;
+            double outDb = 0.0;
+            if (!oracleDbTp(interleavedIn, fs, inDb) || !oracleDbTp(measured, fs, outDb))
+            {
+                fail += std::string("\n  ") + fixture.label + ": libebur128 true_peak call failed";
+                continue;
+            }
+            const double sincDb = sincTruePeakDbTp(settledWindow(measured));
+            logInfo(std::format("  [info] {}: {} @ ceiling {:.2f} dBTP: in {:.2f} dBTP, out {:.3f} (ebur128 4x) "
+                                "/ {:.3f} (sinc 32x) dBTP\n",
+                                kName,
+                                fixture.label,
+                                ceilingDb,
+                                inDb,
+                                outDb,
+                                sincDb));
+            if (outDb > ceilingDb + kCeilingMarginDb && sincDb > ceilingDb + kCeilingMarginDb)
+            {
+                fail += std::format("\n  {} @ {:.2f} dBTP: out {:.3f} / {:.3f} dBTP — REAL FINDING",
+                                    fixture.label,
+                                    ceilingDb,
+                                    outDb,
+                                    sincDb);
+            }
+        }
+    }
+    if (!fail.empty())
+    {
+        logFail(kName, "the ceiling breaks with crossfeed on:" + fail);
+        return;
+    }
+    logPass(kName);
+}

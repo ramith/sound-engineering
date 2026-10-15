@@ -187,8 +187,11 @@ namespace AdaptiveSound
             settled && intensityRamp_.target == 1.0F && loudnessContribution_ == 1.0F;
 
         // P0 eligibility, with the 2 s hysteresis. The first block after initialize() has no
-        // previous output to stay continuous with, so it snaps to its path.
-        const bool identity = atZero && eqModule_->isIdentity();
+        // previous output to stay continuous with, so it snaps to its path. Crossfeed is an output
+        // stage of its own: while it plays (or glides out) the kernel is off the bit-perfect path,
+        // whatever Intensity is (founder decision 2026-10-14).
+        const bool identity = atZero && eqModule_->isIdentity() &&
+                              crossfeedModule_->isBypassed(state.crossfeed, block.channels());
         identityHeldFrames_ = identity ? (identityHeldFrames_ + block.frames()) : 0U;
         if (firstBlock_ && identity)
         {
@@ -230,14 +233,14 @@ namespace AdaptiveSound
         eqModule_->process(block);
         if (intensityAtZero)
         {
-            // P1: EQ → Limiter. No coloration, no normaliser; the limiter at the EQ-only ceiling
-            // (decision 29: −0.1 dBTP on a wired output, so a loud master's EQ On is not
-            // squashed under its bit-perfect Off). It only ever RAISES the ceiling, so a bypassed
-            // limiter (ceiling ≥ 1) stays bypassed.
+            // P1: EQ → Crossfeed → Limiter. No coloration, no normaliser; the limiter at the
+            // EQ-only ceiling (decision 29: −0.1 dBTP on a wired output, so a loud master's EQ On
+            // is not squashed under its bit-perfect Off). It only ever RAISES the ceiling, so a
+            // bypassed limiter (ceiling ≥ 1) stays bypassed.
             LimiterParams eqOnly = state.limiter;
             eqOnly.truePeakCeilingLinear =
                 std::max(state.limiter.truePeakCeilingLinear, state.limiter.eqOnlyCeilingLinear);
-            limiterModule_->process(eqOnly, block);
+            renderOutput(state, block, eqOnly);
             return;
         }
         if (intensityAtOne)
@@ -245,7 +248,7 @@ namespace AdaptiveSound
             // P2: the full chain in place.
             runColorationChain(state, block);
             loudnessModule_->process(state.loudness, block);
-            limiterModule_->process(state.limiter, block);
+            renderOutput(state, block, state.limiter);
             return;
         }
         runBlendPath(state, block);
@@ -292,10 +295,22 @@ namespace AdaptiveSound
 
         // (d) Loudness on the blend, its contribution faded toward 0 dB as r → 0 so this path meets
         //     the normaliser-free EQ-only path with no level step (amendment 2), and slowly
-        //     (decision 33); then the limiter.
+        //     (decision 33); then the output stages.
         loudnessModule_->process(
             state.loudness, block, std::span<const float>(loudnessWeightBuf_.data(), safeCount));
-        limiterModule_->process(state.limiter, block);
+        renderOutput(state, block, state.limiter);
+    }
+
+    // The output stages, on every processed path, after Intensity: the headphone crossfeed — an
+    // output-rendering stage of its own, at its preset's full strength whatever Intensity is
+    // (founder decision 2026-10-14), an exact pass-through when off — then the true-peak limiter,
+    // last, because crossfeed can add level.
+    void DSPKernel::renderOutput(const TargetState& state,
+                                 const MultichannelView& block,
+                                 const LimiterParams& limiter) noexcept
+    {
+        crossfeedModule_->process(state.crossfeed, block);
+        limiterModule_->process(limiter, block);
     }
 
     void DSPKernel::copyBlock(const MultichannelView& block,
@@ -394,14 +409,13 @@ namespace AdaptiveSound
         }
     }
 
-    // Wet-region coloration chain, in place: Clarity → BRIR → Crossfeed (default-off crossfeed is a
-    // bit-exact pass-through). The EQ runs ahead of it, before the dry tap.
+    // Wet-region coloration chain, in place: Clarity → BRIR — what Intensity blends in. The EQ
+    // runs ahead of it, before the dry tap; the crossfeed after the blend (renderOutput).
     void DSPKernel::runColorationChain(const TargetState& state,
                                        const MultichannelView& block) noexcept
     {
         clarityModule_->process(state.clarity, block);
         brirModule_->process(state.brir, block);
-        crossfeedModule_->process(state.crossfeed, block);
     }
 
 } // namespace AdaptiveSound

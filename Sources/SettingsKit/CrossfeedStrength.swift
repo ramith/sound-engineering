@@ -3,7 +3,8 @@
 // to its label and to the DSP kernel's coefficient set (`Models/CrossfeedStrength.swift`).
 
 /// The crossfeed strength the listener chose. The raw value is what is stored, and the C++ kernel's
-/// `CrossfeedPreset` index (Relaxed = 0, Bauer = 1 — "Default" to the user — Strong = 2).
+/// `CrossfeedPreset` index — bs2b's levels: Relaxed = 0 (Jmeier), Default = 1 (Cmoy), Strong = 2
+/// (bs2b's own default).
 public enum CrossfeedStrength: Int, CaseIterable, Identifiable, Sendable {
     case relaxed = 0
     case defaultStrength = 1
