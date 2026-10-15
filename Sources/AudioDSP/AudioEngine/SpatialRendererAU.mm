@@ -2,7 +2,6 @@
 #import <AVFoundation/AVFoundation.h>
 #include "../include/AudioConstants.h"
 #include "../include/AudioUnitRegistrationBridge.h" // C prototypes for the registration funcs
-#include "../include/FlushToZero.h"                 // shared FPCR.FZ helper (AR-1)
 #include "../include/MultichannelView.h"
 #include "../Spatial/SpatialRenderKernel.h"
 #include <cstddef>
@@ -183,8 +182,8 @@ namespace
         (void)busNum; // single output bus; index unused by this in-process AU
         (void)events; // MIDI not used by this AU
 
-        // Set FPCR.FZ on this render thread so subnormals are flushed to zero (~1 cycle on M1).
-        enableFlushToZero();
+        // Flush-to-zero is the kernel's, scoped to its process() (council C-50), never set over
+        // the pull() below, which runs the upstream nodes on this thread.
 
         // No upstream to pull, or scratch not yet allocated — nothing valid to render.
         if (pull == nullptr) { return kAudioUnitErr_NoConnection; }

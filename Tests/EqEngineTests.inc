@@ -25,7 +25,8 @@
 //                                    another rate are ignored; the last good target keeps playing
 //   EQ_NaNInput_Recovers           — a NaN input recovers in one block (module); the kernel
 //                                    never lets it in (amendment 14: it plays as silence)
-//   EQ_FZ_Set_OnRenderThread       — the kernel sets FPCR.FZ on whatever thread renders
+//   EQ_FZ_OnWhileRendering         — the EQ renders with FPCR.FZ on, on whatever thread calls the
+//                                    kernel, and the thread gets its own mode back (council C-50)
 //   EQ_NoSubnormalStates           — seeded states decaying in silence: subnormal without FZ (the
 //                                    test CAN fail), none with it
 //   RtSwappableResource_Lifecycle  — the swap template's publish/adopt/reclaim contract (F17)
@@ -681,30 +682,71 @@ static auto testEqNaNInputRecovers() -> void
 }
 
 // ---------------------------------------------------------------------------
-// EQ_FZ_Set_OnRenderThread — engine-plan §7: FPCR.FZ is on wherever the kernel renders.
+// EQ_FZ_OnWhileRendering — engine-plan §7, scoped by council C-50: the EQ renders with FPCR.FZ on,
+// on whatever thread calls the kernel, and that thread gets its own floating-point mode back. The
+// probe is the arithmetic itself: a subnormal input through the EQ plays as exact silence only
+// while FZ flushes it — the module run bare on the same kind of thread (the control) passes a
+// subnormal through, so the probe can fail. Before C-50 the kernel set FZ and left it set.
 // ---------------------------------------------------------------------------
-static auto testEqFzSetOnRenderThread() -> void
+static auto testEqFzOnWhileRendering() -> void
 {
-    static const char* const kName = "EQ_FZ_Set_OnRenderThread";
+    static const char* const kName = "EQ_FZ_OnWhileRendering";
 #ifdef __aarch64__
     constexpr uint64_t kFz = 1ULL << 24U;
-    DSPKernel kernel;
-    kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
+    constexpr float kSubnormal = 1e-40F; // < FLT_MIN (1.18e-38)
+    const EQParams params = makeEqParams(eqFlatCurveWith(17U, 6.0F), static_cast<uint32_t>(kEngineFs));
+    const auto anyNonZero = [](const TestABL& abl)
+    {
+        return std::ranges::any_of(abl.left, [](float v) { return v != 0.0F; });
+    };
+
+    // Each probe on a fresh thread: FZ off until something on it turns it on.
+    bool controlPassesSubnormals = false;
+    std::thread control(
+        [&]
+        {
+            EQModule module;
+            module.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
+            module.update(params);
+            TestABL abl(kEngineBlock);
+            std::ranges::fill(abl.left, kSubnormal);
+            std::ranges::fill(abl.right, kSubnormal);
+            module.process(MultichannelView::fromABL(abl.abl(), kEngineBlock));
+            controlPassesSubnormals = anyNonZero(abl);
+        });
+    control.join();
+
     uint64_t before = 0U;
     uint64_t after = 0U;
+    bool kernelPassesSubnormals = true;
     std::thread render(
         [&]
         {
-            // A fresh thread: FZ off until something on it turns it on.
+            DSPKernel kernel;
+            TargetState state = makeIdentityState(); // limiter bypassed, normaliser off
+            state.intensityLinear = 0.0F;            // P1: EQ → crossfeed (off) → limiter (bypassed)
+            state.eq = params;
+            kernel.publishTargetState(state);
+            kernel.initialize(static_cast<uint32_t>(kEngineFs), kEngineBlock);
             before = __builtin_arm_rsr64("fpcr") & kFz;
             TestABL abl(kEngineBlock);
+            std::ranges::fill(abl.left, kSubnormal);
+            std::ranges::fill(abl.right, kSubnormal);
             kernel.process(abl.abl(), kEngineBlock);
             after = __builtin_arm_rsr64("fpcr") & kFz;
+            kernelPassesSubnormals = anyNonZero(abl);
         });
     render.join();
-    if (before != 0U || after == 0U)
+
+    if (!controlPassesSubnormals || kernelPassesSubnormals || before != 0U || after != 0U)
     {
-        logFail(kName, std::format("FPCR.FZ before {} after {} (want 0 then set)", before, after));
+        logFail(kName,
+                std::format("control passes subnormals {} (want true); the kernel's EQ passes them {} "
+                            "(want false: FZ on while rendering); FPCR.FZ before {} after {} (want 0, 0)",
+                            controlPassesSubnormals,
+                            kernelPassesSubnormals,
+                            before,
+                            after));
         return;
     }
     logPass(kName);
@@ -733,9 +775,10 @@ static auto testEqNoSubnormalStates() -> void
         std::thread worker(
             [&]
             {
+                std::optional<ScopedFlushToZero> flushing;
                 if (flushToZero)
                 {
-                    enableFlushToZero();
+                    flushing.emplace();
                 }
                 EQModule module;
                 module.initialize(kFs, kFrames);
