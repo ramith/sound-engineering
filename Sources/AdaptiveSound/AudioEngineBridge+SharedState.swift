@@ -134,6 +134,11 @@ extension AudioEngineBridge {
         withStateLock { storedEnhancedPositionBaseSeconds = value }
     }
 
+    /// Thread-safe move of the Enhanced position base offset by `delta` seconds (one lock hold).
+    func moveEnhancedPositionBaseSeconds(by delta: Double) {
+        withStateLock { storedEnhancedPositionBaseSeconds += delta }
+    }
+
     // MARK: - lastKnownEnhancedPositionSeconds
 
     /// Thread-safe read of the last known Enhanced playhead (seconds).

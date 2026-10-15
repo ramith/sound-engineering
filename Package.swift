@@ -281,7 +281,8 @@ let package = Package(
         .testTarget(
             name: "AdaptiveSoundTests",
             dependencies: [
-                "AdaptiveSound", "PlaybackQueueKit", "SettingsKit", "LibraryStore", "LibraryScan", "LibraryBrowseKit",
+                "AdaptiveSound", "AudioFormatKit", "PlaybackQueueKit", "SettingsKit", "LibraryStore", "LibraryScan",
+                "LibraryBrowseKit",
             ],
             path: "Tests/AdaptiveSoundTests"
         ),

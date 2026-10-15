@@ -6,7 +6,8 @@ import Foundation
 /// The two seam handlers (`rollResamplerToNext` / `rollPassthroughToNext`) and their shared
 /// sub-steps, split out of `AudioEngineBridge+Gapless.swift` to keep that file under the
 /// file-length limit and to keep each handler under the body-length / cyclomatic-complexity
-/// limits.
+/// limits — and the same-format resampled seam, which needs no roll: the next track continues the
+/// stream through the same converter (`continueStreamIntoNextTrack`, `commitJoin`).
 ///
 /// ## Thread model (unchanged)
 ///
@@ -17,9 +18,68 @@ import Foundation
 /// `resampleQueue`. The `primeEnhancedResamplerLocked` deadlock-guard is preserved: it is called
 /// DIRECTLY here (never through a `resampleQueue.sync`, which would trap on ourselves → C-1).
 extension AudioEngineBridge {
+    // MARK: - The same-format resampled seam: one stream (council C-22, P3 D39–D40; KI-GAP-04)
+
+    /// Track A's input has run out (the reader is about to read past its end, into the empty
+    /// `chunk`): if the next track is armed and has A's format (rate, channel count, layout), its
+    /// first frames fill the chunk and the SAME converter goes on — the two tracks convert as one input would, with no
+    /// click and no frame lost or added. The seam is counted later, when the player reaches it
+    /// (`commitJoin`).
+    ///
+    /// When: at the read after A's last, the latest moment that keeps the join seamless — the player
+    /// still holds A's last full chunk and its last partial one (186–372 ms at 44.1 kHz) — so a
+    /// change of the next track up to then still counts, and the next file opens, reads and
+    /// converts with a whole chunk of lead. (A roll at A's end-of-file had only A's last partial
+    /// chunk and the converter's flush: the race that left 279 frames of silence, P3 D39 b.)
+    ///
+    /// Leaves everything as it was — A ends, and its end-of-file roll takes the next track with a
+    /// fresh converter (`rollResamplerToNext`) — when nothing is armed, the next file won't open or
+    /// read, its format differs (remembered, so it isn't opened twice for a join), or a join is
+    /// already pending. MUST be called on `resampleQueue`.
+    func continueStreamIntoNextTrack(session: EnhancedResampleSession, filling chunk: AVAudioPCMBuffer) {
+        guard chunk.frameLength == 0, session.pendingJoin == nil, onResamplerEOF != nil,
+              let nextURL = onDeckURL, nextURL != session.refusedJoin, let nextFile = openOnDeckFile(nextURL)
+        else { return }
+        guard session.resampler.canContinue(with: nextFile.processingFormat) else {
+            session.refusedJoin = nextURL
+            return
+        }
+        guard (try? nextFile.read(into: chunk, frameCount: chunk.frameCapacity)) != nil, chunk.frameLength > 0 else {
+            chunk.frameLength = 0
+            return
+        }
+        // Taken, as a roll takes it: the slot and its one-shot hook.
+        onDeckURL = nil
+        onResamplerEOF = nil
+        session.continueStream(into: nextFile, url: nextURL)
+        logUX("gapless: '\(nextURL.lastPathComponent)' continues the stream "
+            + "(one converter, \(Int(nextFile.processingFormat.sampleRate)) Hz)")
+    }
+
+    /// The player has consumed the last frame before the pending join (the completion of the
+    /// buffer that ends there): the next track is audible now. Count the seam — the title, its
+    /// loudness gain — and move the playhead base back by the ending track's length, exactly: the
+    /// playhead reads the next track's own time from its first frame, however late this runs. Then
+    /// an end that waited for the join (`endAwaitsJoin`). Abandons when a seek, stop or track change
+    /// superseded the session. MUST be called on `resampleQueue`.
+    func commitJoin(session: EnhancedResampleSession, player: AVAudioPlayerNode, generation: UInt64) {
+        guard isCurrent(generation: generation, session: session), let join = session.takePendingJoin() else {
+            return
+        }
+        setLastFileURL(join.url)
+        bumpTransitionCount(player: player, nextURL: join.url, endingTrackSeconds: join.endingTrackSeconds)
+        logUX("gapless: one-stream seam '\(join.url.lastPathComponent)' reached at output frame "
+            + "\(join.outputFrame)")
+        if session.endAwaitsJoin {
+            session.endAwaitsJoin = false
+            fireResamplerEOFOrEnd(session: session, player: player)
+        }
+    }
+
     // MARK: - Seam handlers (called on resampleQueue)
 
-    /// Gapless roll for the resampler sub-path.
+    /// Gapless roll for the resampler sub-path, at a seam the stream could not continue through
+    /// (another rate or channel count, or a next track armed too late to join the stream).
     ///
     /// Called on `resampleQueue` after the current resampler session reaches EOF (its final buffer
     /// has been consumed by the player's buffer queue). Opens the next file, creates a NEW
@@ -143,18 +203,24 @@ extension AudioEngineBridge {
         logUX("gapless: \(reason)")
     }
 
-    /// Open `nextURL` for reading. On success returns the file (and releases the security scope,
-    /// since `AVAudioFile` retains its own handle). On failure, falls back to a clean restart on
+    /// Open `nextURL` for reading under its security scope, which it then releases (`AVAudioFile`
+    /// retains its own handle); `nil` when it can't be opened.
+    private func openOnDeckFile(_ nextURL: URL) -> AVAudioFile? {
+        let didAccess = nextURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                nextURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        return try? AVAudioFile(forReading: nextURL)
+    }
+
+    /// Open `nextURL` for reading (`openOnDeckFile`). On failure, falls back to a clean restart on
     /// the global queue — and if THAT also fails, sets `gaplessPlaybackEnded` on `resampleQueue`
     /// (the channel the VM polls) so the VM stops cleanly instead of polling a stopped engine
     /// (P3-3). Returns `nil` on the failure path. MUST be called on `resampleQueue`.
     private func openNextFileOrRestart(_ nextURL: URL, player: AVAudioPlayerNode) -> AVAudioFile? {
-        let didAccess = nextURL.startAccessingSecurityScopedResource()
-
-        guard let nextFile = try? AVAudioFile(forReading: nextURL) else {
-            if didAccess {
-                nextURL.stopAccessingSecurityScopedResource()
-            }
+        guard let nextFile = openOnDeckFile(nextURL) else {
             logUX("gapless: roll failed — cannot open '\(nextURL.lastPathComponent)'")
             // Degradation: fall back to a clean start on the global queue (stops + restarts,
             // brief gap). Sets gaplessPlaybackEnded if avEngine is gone (engine was shut down).
@@ -177,11 +243,6 @@ extension AudioEngineBridge {
                 }
             }
             return nil
-        }
-        // Security-scoped resource lifecycle: stop access after we open the file (AVAudioFile
-        // retains its own file handle; we no longer need the security scope).
-        if didAccess {
-            nextURL.stopAccessingSecurityScopedResource()
         }
         return nextFile
     }
