@@ -152,8 +152,9 @@ final class AudioViewModel {
     /// default, and never restored; the inspector leaves its control (`ReimagineSectionView`) out.
     static let offersIntensity = false
 
-    /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial, crossfeed). The EQ
-    /// sits AHEAD of the blend and plays at every Intensity (Sprint EQ decision 25): 0.0 =
+    /// Reimagine's wet/dry blend of the coloration stages (clarity, spatial). The EQ sits AHEAD of
+    /// the blend and plays at every Intensity (Sprint EQ decision 25), and crossfeed after it, at its
+    /// own full strength (founder decision 2026-10-14): 0.0 =
     /// Reimagine off — the EQ alone, bit-perfect when the EQ is Off or flat; 1.0 = full blend.
     /// Default 0 — a faithful default (FD-2): the kernel's P0 / P1 path, so no leveller, no blend
     /// and, with the EQ off, no limiter (it was 0.20, which turned all three on). Published at

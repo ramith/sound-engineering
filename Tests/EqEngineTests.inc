@@ -1097,7 +1097,6 @@ static auto testCrossfeedRederivedOnRateChange() -> void
     auto realizer = std::make_shared<AdaptiveSound::Realizer>(kernel, kEngineFs);
     constexpr AdaptiveSound::Realizer::CrossfeedIntent kStrong{
         .enabled = 1U,
-        .level = 1.0F,
         .preset = 2U,
     };
     realizer->applyCrossfeed(kStrong);
@@ -1110,15 +1109,17 @@ static auto testCrossfeedRederivedOnRateChange() -> void
     const CrossfeedParams fresh96k = reference->canonicalState().crossfeed;
     realizer->shutdown();
     reference->shutdown();
-    if (at96k.delayFrames == at48k.delayFrames || at96k.lpfPole != fresh96k.lpfPole ||
-        at96k.delayFrames != fresh96k.delayFrames || at96k.enabled != 1U)
+    if (at96k.crossPole == at48k.crossPole || at96k.enabled != 1U ||
+        std::memcmp(&at96k, &fresh96k, sizeof(CrossfeedParams)) != 0)
     {
         logFail(kName,
-                std::format("crossfeed after 48 → 96 kHz: delay {} (fresh {}), pole {} (fresh {})",
-                            at96k.delayFrames,
-                            fresh96k.delayFrames,
-                            at96k.lpfPole,
-                            fresh96k.lpfPole));
+                std::format("crossfeed after 48 → 96 kHz: cross pole {} (48 kHz {}, fresh 96 kHz {}), "
+                            "shelf pole {} (fresh {})",
+                            at96k.crossPole,
+                            at48k.crossPole,
+                            fresh96k.crossPole,
+                            at96k.directPole,
+                            fresh96k.directPole));
         return;
     }
     logPass(kName);
@@ -1165,7 +1166,7 @@ static auto testRealizerReinitDuringDrain() -> void
                 curve[i % 31U] = static_cast<float>((i % 25U)) - 12.0F;
                 (void)realizer->setPendingEq(curve.data(), 31U, true);
                 realizer->setPendingIntensity(static_cast<float>(i % 10U) / 10.0F);
-                realizer->setPendingCrossfeed(i % 2U, 0.5F, i % 3U);
+                realizer->setPendingCrossfeed(i % 2U, i % 3U);
                 ++i;
                 std::this_thread::sleep_for(std::chrono::microseconds(50)); // a fast UI, not a spin
             }

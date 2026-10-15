@@ -5,7 +5,7 @@
 // Architecture
 // ============
 // Final stage of the signal chain (see DSPKernel.h):
-//   EQ → Clarity → BRIR → Loudness → [Limiter] → Device Output
+//   EQ → Clarity → BRIR → [Intensity blend] → Loudness → Crossfeed → [Limiter] → Device Output
 //
 // Enforces a true-peak ceiling (default −1 dBTP) transparently. Quality-first
 // design (CPU/RAM assumed abundant — see docs/sprints/04-sprint-4-loudness-safety-plan.md):

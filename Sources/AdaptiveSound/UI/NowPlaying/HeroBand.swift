@@ -103,7 +103,7 @@ private struct SignalBadgeRow: View {
                 // No bits/decoder capsules: relocated to the inspector's signal-detail
                 // line (§5) — the hero-left's 300pt minimum budget (LAY-01) assumes the
                 // SHORT badge set.
-                if info.intensityLinear > 0, let strength = info.crossfeedStrength {
+                if let strength = info.audibleCrossfeed {
                     BadgeCapsule(height: badgeHeight) {
                         Text("XF:\(strength.displayName)")
                             .badgeText(DesignSystem.Color.label)
@@ -237,6 +237,9 @@ enum SignalPathAccessibility {
         }
         if info.path == .pure, let decoder = info.decoder {
             parts.append(decoder == .apple ? "Apple decoder" : "FFmpeg decoder")
+        }
+        if let strength = info.audibleCrossfeed {
+            parts.append("crossfeed \(strength.displayName)")
         }
         var result = parts.joined(separator: ", ")
         if info.fellBackToEnhanced {
