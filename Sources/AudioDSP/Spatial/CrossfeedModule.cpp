@@ -103,7 +103,8 @@ namespace AdaptiveSound
                 (directB0 * dryR) + (directB1 * stateR.directIn) + (directPole * stateR.directOut);
             stateR.directIn = dryR;
 
-            // Each channel's cross path, the low-pass (bs2b lo_filter): y[n] = b0·x[n] + pole·y[n−1].
+            // Each channel's cross path, the low-pass (bs2b lo_filter):
+            //   y[n] = b0·x[n] + pole·y[n−1]
             stateL.crossOut = (crossB0 * dryL) + (crossPole * stateL.crossOut);
             stateR.crossOut = (crossB0 * dryR) + (crossPole * stateR.crossOut);
 

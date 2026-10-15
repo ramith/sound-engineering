@@ -92,9 +92,10 @@ namespace AdaptiveSound
     // (libbs2b bs2b.c) at the owned rate, its output gain folded into the numerators:
     //   direct path (high-boost shelf):  y = directB0·x + directB1·x[n−1] + directPole·y[n−1]
     //   cross path (low-pass):           y = crossB0·x + crossPole·y[n−1]
-    // Concrete layout (F2 — protects the golden master): intent bytes first, then the off-RT-derived
-    // coefficients; EVERY field explicitly defaulted so canonical_{} zero/identity-inits to "off"
-    // (enabled = 0, unity direct, no cross) → bit-exact pass-through → golden master unchanged.
+    // Concrete layout (F2 — protects the golden master): intent bytes first, then the off-RT
+    // derived coefficients; EVERY field explicitly defaulted so canonical_{} zero/identity-inits to
+    // "off" (enabled = 0, unity direct, no cross) → bit-exact pass-through → golden master
+    // unchanged.
     //
     // Invariant (record now; enforce at S18 — QW1 §2/§9): crossfeed and a future binaural BRIR
     // are MUTUALLY EXCLUSIVE output-rendering modes (both synthesize the head-related cross-path;
