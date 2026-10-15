@@ -104,6 +104,11 @@ namespace TestConstants
     constexpr float kChirpAmpl = 0.5F;   // chirp amplitude
     constexpr float kChirpDuration = 1.0F;
 
+    // The committed bit-exact signature of the stereo chain's output on the chirp above
+    // (GoldenMaster_StereoN2_v1, and Crossfeed_Bypass_BitExact_GoldenMaster with crossfeed present
+    // but off). Re-baseline ONLY on a deliberate DSP change — history in GoldenMaster_StereoN2_v1.
+    constexpr uint64_t kGoldenMasterStereoN2Hash = 0xF0E1D4EF83763709ULL;
+
     // Multichannel per-channel independence test constants (S1-A2 T-C3).
     constexpr uint32_t kNChannels4 = 4U;
     constexpr uint32_t kNChannels6 = 6U;

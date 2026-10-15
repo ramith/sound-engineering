@@ -36,17 +36,13 @@ namespace
     // kIspSafetyMargin = 0.891 * 0.96939 ≈ 0.8638 (≈ −1.27 dBTP), so a correctly settled
     // limiter leaves ~0.27 dB of headroom UNDER the published ceiling.
     //
-    // The ceiling guarantee is therefore checked against −1 dBTP with a +0.30 dB margin.
-    // That margin must absorb:
-    //   * the one-pole attack ramp (τ = 0.5 ms): at a hard signal ONSET the gain envelope
-    //     takes a few samples to reach target, so the very first transient edge inside the
-    //     lookahead window can momentarily exceed the ceiling before GR settles. We discard
-    //     a short warm-up region (kTpWarmupFrames) to let the envelope settle, but a fast
-    //     transient mid-stream still relies on lookahead + this margin.
-    //   * float quantisation of the gain envelope and the gain multiply.
-    // 0.30 dB is small relative to the 1+ dB of reduction the limiter applies on these
-    // saturating signals; an output above −0.70 dBTP would be a genuine ceiling breach.
-    constexpr double kCeilingMarginDb = 0.30;
+    // The ceiling guarantee is checked against the PUBLISHED ceiling itself: margin 0 dB. It used to
+    // allow +0.30 dB, which proved only ≤ −0.70 dBTP (council C-39 / P2 D31–D32). The working
+    // ceiling's 0.27 dB covers the detector's worst under-read (< 0.17 dB) and the one-pole attack's
+    // residual at a hard onset inside the look-ahead (≈ 0.4 % of the reduction in dB: 5.5 τ in
+    // 2.75 ms); kTpWarmupFrames discards only the artificial silence → full-scale step at t = 0. The
+    // battery's worst reading is −1.18 dBTP (libebur128), so a breach of −1.00 is a real finding.
+    constexpr double kCeilingMarginDb = 0.0;
 
     // -----------------------------------------------------------------------------
     // Two independent true-peak meters — and why a breach requires BOTH to agree.
