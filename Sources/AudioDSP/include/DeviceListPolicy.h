@@ -1,12 +1,14 @@
 #pragma once
 
 //
-// DeviceListPolicy.h — which CoreAudio devices the output-device menu may list (Sprint G).
+// DeviceListPolicy.h — which CoreAudio devices the output-device menu may list (Sprint G), and
+// what each listed output is (R1.1-A).
 //
-// The pure half of device enumeration. CoreAudioDevice.cpp reads each device's properties into a
-// DeviceListFacts (the only part that talks to the HAL); deviceListVerdict() decides from those
-// facts alone whether a user may see and pick the device. Keeping the rule here, HAL-free, lets
-// the C++ test harness check every case with hand-built facts and no real hardware.
+// The pure half of device enumeration. CoreAudioDevice.cpp reads each device's properties into
+// facts (the only part that talks to the HAL); deviceListVerdict() decides from those facts alone
+// whether a user may see and pick the device, and classifyOutputDevice() what kind of output it
+// is. Keeping the rules here, HAL-free, lets the C++ test harness check every case with
+// hand-built facts and no real hardware.
 //
 // What is hidden: devices with no output stream; devices CoreAudio marks hidden; aggregates that
 // are private to the process that built them — above all the `CADefaultDeviceAggregate-<pid>-<n>`
@@ -62,6 +64,36 @@ namespace AdaptiveSound
     // its privacy. Reads the dictionary only — the caller keeps ownership and releases it. A null
     // dictionary or a private value that is neither a CFNumber nor a CFBoolean is Unknown.
     [[nodiscard]] AggregatePrivacy aggregatePrivacyFromComposition(CFDictionaryRef composition);
+
+    // An output's family, by its transport — the menu's label and icon: the Mac's own, USB,
+    // wireless (Bluetooth, Bluetooth LE, AirPlay), or unknown. (AudioDevice::Type.)
+    enum class OutputDeviceType : std::uint8_t
+    {
+        Builtin,
+        USB,
+        Wireless,
+        Unknown,
+    };
+
+    // What the output classifier reads. Filled by CoreAudioDevice::queryDevice.
+    struct OutputDeviceFacts
+    {
+        std::uint32_t transportType = 0; // kAudioDevicePropertyTransportType FourCC; 0 = unknown
+        std::uint32_t dataSource = 0;    // kAudioDevicePropertyDataSource (output scope); 0 = none
+        std::string name;                // kAudioObjectPropertyName
+    };
+
+    // What an output is: its family, and whether it is headphones — where crossfeed plays (the
+    // output's data source first, then its transport; the rule is in DeviceListPolicy.cpp).
+    struct OutputDeviceClass
+    {
+        OutputDeviceType type = OutputDeviceType::Unknown;
+        bool headphones = false;
+    };
+
+    // The one output classifier (council DUP-3 / C-30: the app classified outputs four ways). Pure;
+    // no HAL calls.
+    [[nodiscard]] OutputDeviceClass classifyOutputDevice(const OutputDeviceFacts& facts);
 
     // Human-readable names for logging and tests. Never return nullptr.
     [[nodiscard]] const char* deviceListVerdictString(DeviceListVerdict verdict);

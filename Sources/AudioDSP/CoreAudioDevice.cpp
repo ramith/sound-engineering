@@ -122,7 +122,13 @@ namespace AdaptiveSound
         device.sampleRate = getDeviceSampleRate(deviceID);
         device.bufferFrameSize = getDeviceBufferFrameSize(deviceID);
         device.transportType = getDeviceTransportType(deviceID);
-        device.type = classifyDeviceType(device.transportType, device.name);
+        const OutputDeviceClass output = classifyOutputDevice({
+            .transportType = device.transportType,
+            .dataSource = getDeviceDataSource(deviceID),
+            .name = device.name,
+        });
+        device.type = output.type;
+        device.isHeadphones = output.headphones;
         return device;
     }
 
@@ -323,40 +329,14 @@ namespace AdaptiveSound
                                  });
     }
 
-    AudioDevice::Type CoreAudioDevice::classifyDeviceType(uint32_t transportType,
-                                                          const std::string& name)
+    uint32_t CoreAudioDevice::getDeviceDataSource(AudioDeviceID deviceID)
     {
-        // Prefer the authoritative CoreAudio transport type (kAudioDevicePropertyTransportType);
-        // a USB DAC named "SomeDAC" or a non-Apple BT headset would be misclassified by a name
-        // heuristic. Fall back to the name only when the transport type is unavailable/unrecognized.
-        switch (transportType)
-        {
-            case kAudioDeviceTransportTypeBluetooth:
-            case kAudioDeviceTransportTypeBluetoothLE:
-            case kAudioDeviceTransportTypeAirPlay:
-                return AudioDevice::Type::Wireless;
-            case kAudioDeviceTransportTypeUSB:
-                return AudioDevice::Type::USB;
-            case kAudioDeviceTransportTypeBuiltIn:
-                return AudioDevice::Type::Builtin;
-            default:
-                break; // unknown (0) or unrecognized transport — fall through to the name heuristic
-        }
-
-        // Fallback heuristic when the transport type is unknown.
-        if (name.contains("AirPods") || name.contains("Bluetooth") || name.contains("wireless"))
-        {
-            return AudioDevice::Type::Wireless;
-        }
-        if (name.contains("USB"))
-        {
-            return AudioDevice::Type::USB;
-        }
-        if (name.contains("Built-in"))
-        {
-            return AudioDevice::Type::Builtin;
-        }
-        return AudioDevice::Type::Unknown;
+        return getUInt32Property(deviceID,
+                                 {
+                                     kAudioDevicePropertyDataSource,
+                                     kAudioObjectPropertyScopeOutput,
+                                     kAudioObjectPropertyElementMain,
+                                 });
     }
 
     // MARK: - Pure-Mode capability querying (Phase B — B1)

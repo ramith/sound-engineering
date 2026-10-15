@@ -13,11 +13,11 @@ import Testing
 struct ListeningSettingsTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless
+        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
     private static let speakers = AudioDeviceModel(
         id: 42, name: "Speakers", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin
+        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin, isHeadphones: false
     )
 
     /// Where the listener's settings are kept (`SettingsStore`): a versioned key, so a later format

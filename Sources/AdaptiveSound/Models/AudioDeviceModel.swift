@@ -48,6 +48,12 @@ struct AudioDeviceModel: Identifiable, Equatable, Hashable {
 
     let type: DeviceType
 
+    /// Whether the output is headphones — where crossfeed plays. The engine's one output
+    /// classifier decides it (`classifyOutputDevice`, `DeviceListPolicy.cpp`): the output's data
+    /// source first ('hdpn' — the Mac's own headphone jack included — or a speaker), then its
+    /// transport (Bluetooth and USB yes, AirPlay no).
+    let isHeadphones: Bool
+
     /// This output as the EQ keys it: by UID, with the model UID as the fallback and the name for
     /// display.
     var outputKey: EQOutputKey {
