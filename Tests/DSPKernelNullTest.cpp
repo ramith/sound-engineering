@@ -321,6 +321,17 @@ namespace
         {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
         // QW1 CF-10: crossfeed ebur128 loudness-neutrality (real decorrelated stereo).
         {"Crossfeed_ebur128_LevelNeutral", testCrossfeedLoudnessNeutral, true},
+        // R1.1-A (council C-46): the UI's Integrated is the track's, not the session's.
+        {
+            "Loudness_MeterBridge_IntegratedPerTrack",
+            testLoudnessMeterBridgeIntegratedPerTrack,
+            true,
+        },
+        {
+            "Loudness_MeterBridge_BeginTrack_Concurrent",
+            testLoudnessMeterBridgeBeginTrackConcurrent,
+            true,
+        },
         // S7 / US-QA-02: TEST-ONLY limiter true-peak ceiling guarantee + ISP-detector accuracy
         // (parallel-safe: pure DSP, no env/tmp).
         {
