@@ -52,11 +52,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
-| KI-SND-03 | The limiter's fast release never runs: one loud hit ducks the music for about a second | MEDIUM | R1.1-A | US-R1F-12 |
-| KI-SND-04 | Crossfeed notches the centre (−4 to −6 dB near 1 kHz); its "Default" preset is mislabelled | MEDIUM | R1.1-A | US-R1F-12 |
-| KI-SND-05 | Crossfeed makes no sound while Intensity is held at 0 (its switch still turns on) | MEDIUM | R1.1-A (founder decision) | US-R1F-12 |
 | KI-EQ-01 | Unpinning an output overwrites the shared EQ, with no undo | MEDIUM | pool (first candidate) | US-R1F-06 |
-| KI-DEV-01 | Crossfeed is unavailable on wired headphones in the Mac's own jack | MEDIUM | R1.1-A (with the crossfeed fix) | US-R1F-12, US-R1F-06 |
 | KI-DEV-03 | An Enhanced start just after a device connects can end silent or on the wrong device | MEDIUM | Engine sprint | EP-PLAYENGINE |
 | KI-LIB-02 | Paused / failed folders are invisible; an emptied folder keeps its songs | MEDIUM | R1.1-A (the paused display: founder decision) | US-R1F-03 |
 | LIB-VOL-1 | A paused folder on a replaced or UUID-less drive stays paused; re-adding it loses play stats | MEDIUM | R1.1-B ("Use this drive") | US-R1F-03 |
@@ -85,7 +81,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-LIB-10 | An empty playlist says "No Tracks Yet" (the app says "songs") | LOW | pool | US-R1F-04 |
 | KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays (release notes; not verifiable from code) | LOW | R1.1-A | US-R1F-15 |
 | KI-UI-02 | The spectrum analyser reads about 4 dB high; two 20 Hz timers run while paused or in the menu bar | LOW | R1.1-A | US-R1F-15 |
-| KI-UI-03 | The loudness "Integrated" readout spans the whole session, not the track | LOW | R1.1-A | US-R1F-12 |
+| KI-UI-03 | The real-time analysis workers poll about 200 times a second while paused (its "Integrated" half is closed) | LOW | R1.1-A | US-R1F-12 |
 | KI-ENG-01 | `SpectrumDoubleBuffer` data race (TSan) | internal | R1.1-A | US-R1F-15 |
 | KI-ENG-02 | The main-thread stall self-test lacks the breaker's two extra modes and the 5 ms bound | internal | pool | US-R1F-07 |
 | KI-ENG-03 | A stale comment names the removed `loudnessMeter` field | internal | R1.1-A (hygiene) | US-R1F-07 |
@@ -329,17 +325,6 @@ stack.
 
 ## Output devices
 
-### KI-DEV-01 — Crossfeed is unavailable on wired headphones in the Mac's own jack
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** product council, code reading 2026-10-13 · **Scheduled (2026-10-14):** R1.1-A (headphones detected by data source, with the crossfeed fix — council C-42, C-30) · **Forward:** US-R1F-12, US-R1F-06
-(and S13 device identification).
-
-The headphone gate is "USB or wireless transport" (`AudioViewModel.isHeadphones`, `AudioViewModel+Devices.swift`), and the device type comes from the
-transport alone (`Sources/AudioDSP/CoreAudioDevice.cpp:326-343`). The Mac's headphone jack reports the built-in
-transport, so wired headphones there are "not headphones": crossfeed is disabled with the "Connect headphones" hint.
-The converse also holds: AirPlay speakers count as wireless headphones. The code comment names only the USB false
-positive.
-
 ### KI-DEV-02 — HDMI / DisplayPort outputs read "(Unknown)"
 
 **Status:** OPEN · **Severity:** LOW · **Source:** sweep ledger, "Logged post-R1" · **Scheduled (2026-10-14):** pool · **Forward:** US-R1F-06.
@@ -561,38 +546,6 @@ The Enhanced resampler uses `AVAudioConverter`'s Normal algorithm (`AudioEngineB
 conversion. `SRCQualityMeasure` prints −7.23 dB at 20 kHz and still says PASS (council R-6). Apple's Mastering
 converter measured flat to 21 kHz, with aliases at or below −160 dB.
 
-### KI-SND-03 — The limiter's fast release never runs
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-39 (P2-1, D34) · **Scheduled (2026-10-14):** R1.1-A ·
-**Forward:** US-R1F-12.
-
-The dual-release branch is dead code (`LimiterModule.h:398-416`); in practice it is one 500 ms release. A single snare
-hit that touches the ceiling ducks the music for about a second. Only audible when the limiter engages (Enhanced, with
-Intensity above 0 or the EQ on).
-
-### KI-SND-04 — Crossfeed notches the centre; its "Default" preset is mislabelled
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-42 (P2-3, D44, D45) · **Scheduled (2026-10-14):**
-R1.1-A · **Forward:** US-R1F-12.
-
-The crossfeed counts the interaural delay twice and leaves the direct path flat (`Spatial/CrossfeedModule.cpp:95-120`),
-so a centred voice gets a −4.2 to −6.3 dB notch near 1 kHz. The fix follows the bs2b ladder (Jmeier / Cmoy / bs2b),
-reimplemented from the published algorithm; libbs2b itself stays unlinked (OQ-17).
-
-### KI-SND-05 — Crossfeed makes no sound while Intensity is held at 0
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** R1.1-A (FD-2) implementation, code reading 2026-10-15 ·
-**Scheduled:** R1.1-A — needs a founder decision · **Forward:** US-R1F-12.
-
-Crossfeed sits in the coloration chain that Intensity blends in (QW1 design: "the Reimagine knob scales it",
-[qw1 design](../sprints/qw1-quick-win-differentiators-design.md)). At Intensity 0 the kernel runs P0 (bit-exact) or
-P1 (EQ → limiter), and neither runs the chain (`DSPKernel.cpp:229-244`; P0's bypass test ignores crossfeed too). Before
-FD-2 the 0.20 default played a 20 % blend of it; now that Intensity is hidden and held at 0, the Headphones ▸
-Crossfeed switch turns on and is kept across launches, but nothing changes in the sound (the hero's "XF" chip, gated on
-Intensity > 0, already doesn't show). Recommended: US-R1F-12's bs2b rewrite moves crossfeed out of the blend, as an
-output stage after it and ahead of the limiter, so it plays at full strength whatever Intensity is; the alternative is
-to hide the switch with Intensity until S17.
-
 ### KI-DEV-03 — An Enhanced start just after a device connects can end silent or on the wrong device
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-28 (P5B-04; [reconnect re-check
@@ -633,13 +586,17 @@ The analyser reads +4.26 dB high and uses N = 4096 at every sample rate (`Spectr
 tears frames (KI-ENG-01). Two 20 Hz main-thread timers run from engine-ready to shutdown, also while paused and while
 the app sits in the menu bar (`AudioViewModel+SpectrumTimer.swift:14-41`).
 
-### KI-UI-03 — The loudness "Integrated" readout spans the whole session
+### KI-UI-03 — The real-time analysis workers poll about 200 times a second while paused
 
-**Status:** OPEN · **Severity:** LOW · **Source:** council C-46 (DSP-09, D59, P2-10) · **Scheduled (2026-10-14):**
-R1.1-A · **Forward:** US-R1F-12.
+**Status:** OPEN (narrowed) · **Severity:** LOW · **Source:** council C-46 (DSP-09, D59, P2-10) · **Scheduled
+(2026-10-14):** R1.1-A · **Forward:** US-R1F-12.
 
-The UI's "Integrated" integrates over the session, not the track, and the real-time analysis workers poll about 200
-times a second while paused (`LoudnessModule.cpp:240-244`, `LoudnessMeterBridge.cpp:51-60`).
+The real-time analysis workers poll about 200 times a second while paused (`LoudnessModule.cpp:240-244`). ~~The UI's
+"Integrated" integrates over the session, not the track.~~ *(Closed in R1.1-A, "“Integrated” measures the playing track, not the session": "Integrated"
+measures the playing track — a new track, by a fresh start or at a gapless seam, starts a new measurement interval
+(EBU Tech 3341 §2.3); the same track announced again (a resume, a seek, a move to another device) carries on
+(`loudnessMeterBeginTrack`, `LufsMeter::restartIntegration`; `Loudness_MeterBridge_IntegratedPerTrack`, against
+libebur128 over each interval). A quiet track after a loud one read the loud one's −6 LUFS; it reads its own −26.7.)*
 
 ---
 
@@ -662,6 +619,105 @@ These are not defects; each is a decision or a planned feature. They are listed 
 ---
 
 ## Closed
+
+### Fixed in R1.1-A — the sound chain does what it says (branch `r1.1a/sound`)
+
+Council C-39, C-42 (with C-30's classification slice), C-46 and C-50, and the founder's decision of 2026-10-14 that
+crossfeed works on its own (US-R1F-12). Five commits, named by their subjects: "flush-to-zero only while our DSP runs — scoped, then restored", "one hit on the ceiling no longer ducks the music for a second — a program-dependent release",
+"crossfeed plays on its own, and it is bs2b — no centre notch", "headphones in the Mac's own jack get crossfeed, an AirPlay speaker does not — one output classifier", "“Integrated” measures the playing track, not the session". Each fix landed with its red test first: the tests failed on
+`481c822` and pass after (in the C++ null test: `Crossfeed_CentreFlat_vs_bs2b`, `Crossfeed_ChannelSeparation`,
+`Crossfeed_CoeffRecomputeAcrossRates`, `Crossfeed_MatchesBs2bReference`, `Crossfeed_PlaysAtAnyIntensity`,
+`Crossfeed_Off_BitExact`, `Limiter_Release_TransientIsFast`, `Limiter_TruePeak_CeilingWithCrossfeed`,
+`Render_FlushToZero_Scoped`, `Loudness_MeterBridge_IntegratedPerTrack`, `OutputDevice_Headphones`; in Swift:
+`Tests/AdaptiveSoundTests/CrossfeedPlaysTests.swift`). Also closed here, with no entry of its own: council C-50 —
+flush-to-zero was set on every render call and never restored, on AVAudioEngine's I/O thread (which Apple's own nodes
+share, inside our pull) and on the libdispatch thread that ran `initialize()`; it is now scoped to our own render calls
+and workers and restored (`ScopedFlushToZero`, JUCE's `ScopedNoDenormals`), and the `LufsMeter.h` comment that FZ
+doesn't flush doubles is corrected (it does, council D67). Still open from the lane: the analysis workers' polling
+while paused (KI-UI-03).
+
+#### KI-SND-05 — Crossfeed makes no sound while Intensity is held at 0
+
+**Status:** ✅ CLOSED in R1.1-A, "crossfeed plays on its own, and it is bs2b — no centre notch" (founder decision 2026-10-14). Crossfeed is an output stage of the
+kernel of its own — after the Intensity blend and the normaliser, before the limiter (`DSPKernel::renderOutput`) — and
+plays at its preset's full strength whatever Intensity is. Turned on at Intensity 0 it takes the kernel off the
+bit-perfect path (P0 → P1: EQ → crossfeed → limiter); turned off, it glides out over 32 ms and the kernel is bit-exact
+again after the 2 s hold. The level control that scaled it twice (the app sent each preset's α as a "level", and the
+Realizer multiplied the preset's α by it: Relaxed played α² ≈ 0.11) is gone. Measured (`Crossfeed_PlaysAtAnyIntensity`):
+a left-only 300 Hz tone, Strong — near ear −3.836 dB, far ear −9.291 dB at Intensity 0, ½ and 1, as bs2b (before: the
+far ear silent at 0, −13.3 dB at ½). The hero's "XF" chip shows whenever crossfeed plays (`SignalPathInfo.audibleCrossfeed`),
+and VoiceOver reads it. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** R1.1-A (FD-2) implementation, code reading 2026-10-15 · **Scheduled:** R1.1-A — needs a founder decision · **Forward:** US-R1F-12.~~
+
+*(As found at `481c822`:)* Crossfeed sits in the coloration chain that Intensity blends in (QW1 design: "the Reimagine knob scales it",
+[qw1 design](../sprints/qw1-quick-win-differentiators-design.md)). At Intensity 0 the kernel runs P0 (bit-exact) or
+P1 (EQ → limiter), and neither runs the chain (`DSPKernel.cpp:229-244`; P0's bypass test ignores crossfeed too). Before
+FD-2 the 0.20 default played a 20 % blend of it; now that Intensity is hidden and held at 0, the Headphones ▸
+Crossfeed switch turns on and is kept across launches, but nothing changes in the sound (the hero's "XF" chip, gated on
+Intensity > 0, already doesn't show). Recommended: US-R1F-12's bs2b rewrite moves crossfeed out of the blend, as an
+output stage after it and ahead of the limiter, so it plays at full strength whatever Intensity is; the alternative is
+to hide the switch with Intensity until S17.
+
+#### KI-SND-04 — Crossfeed notches the centre; its "Default" preset is mislabelled
+
+**Status:** ✅ CLOSED in R1.1-A, "crossfeed plays on its own, and it is bs2b — no centre notch" (council C-42). The crossfeed is bs2b, re-implemented from libbs2b's
+published `bs2b.c` (MIT; not linked — OQ-17): a high-boost shelf on the direct path and a low-pass on the cross path, the
+interaural delay being the low-pass's own group delay (~0.25 ms) — no delay line (`Spatial/CrossfeedModule`, coefficients
+from bs2b's `init()` in `Realizer.mm`). The strengths are bs2b's own levels: Relaxed = Jmeier (650 Hz, 9.5 dB),
+Default = Cmoy (700 Hz, 6.0 dB), Strong = bs2b's default (700 Hz, 4.5 dB — its strongest). Measured against a
+transcription of `cross_feed_d()` as the oracle: centred content 0.1–10 kHz now falls smoothly to −1.06 / −1.48 /
+−1.75 dB (bs2b's own shelf; was a −4.2 / −4.5 / −6.3 dB notch at 1 kHz), within 0.0001 dB of bs2b; the module matches
+bs2b sample for sample within 1.5e-7; the low-frequency feed is −9.53 / −6.03 / −4.53 dB. Gates:
+`Crossfeed_CentreFlat_vs_bs2b`, `Crossfeed_MatchesBs2bReference`, `Crossfeed_ChannelSeparation`. With crossfeed on, the
+true-peak ceiling still holds (`Limiter_TruePeak_CeilingWithCrossfeed`: worst −1.19 dBTP at −1, −0.32 at −0.1). *The
+original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-42 (P2-3, D44, D45) · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-12.~~
+
+*(As found at `481c822`:)* The crossfeed counts the interaural delay twice and leaves the direct path flat (`Spatial/CrossfeedModule.cpp:95-120`),
+so a centred voice gets a −4.2 to −6.3 dB notch near 1 kHz. The fix follows the bs2b ladder (Jmeier / Cmoy / bs2b),
+reimplemented from the published algorithm; libbs2b itself stays unlinked (OQ-17).
+
+#### KI-DEV-01 — Crossfeed is unavailable on wired headphones in the Mac's own jack
+
+**Status:** ✅ CLOSED in R1.1-A, "headphones in the Mac's own jack get crossfeed, an AirPlay speaker does not — one output classifier" (council C-42, C-30's classification slice). One output classifier
+decides an output's family and whether it is headphones (`classifyOutputDevice`, `DeviceListPolicy.cpp`, HAL-free and
+tested case by case — `OutputDevice_Headphones`); `CoreAudioDevice` reads the facts, the view model only reads the
+verdict (`AudioDeviceModel.isHeadphones`). The output's data source decides first (`kAudioDevicePropertyDataSource`):
+'hdpn' is headphones — the Mac's own jack included, on its built-in transport — and the internal or an external speaker
+is not ('ispk' / 'espk'; the MacBook Pro's speakers read 'ispk'). Without one, or with a line or digital out, the
+transport decides: Bluetooth and USB yes, AirPlay no (a receiver: a HomePod, a TV). Limits: a Bluetooth speaker that
+reports no data source still reads as headphones (crossfeed plays there only if the listener turned it on); a pre-2018
+Mac whose single built-in device switches its data source when headphones go in is read when the device list is, with
+no data-source listener. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** product council, code reading 2026-10-13 · **Scheduled (2026-10-14):** R1.1-A (headphones detected by data source, with the crossfeed fix — council C-42, C-30) · **Forward:** US-R1F-12, US-R1F-06 (and S13 device identification).~~
+
+*(As found at `481c822`:)* The headphone gate is "USB or wireless transport" (`AudioViewModel.isHeadphones`, `AudioViewModel+Devices.swift`), and the device type comes from the
+transport alone (`Sources/AudioDSP/CoreAudioDevice.cpp:326-343`). The Mac's headphone jack reports the built-in
+transport, so wired headphones there are "not headphones": crossfeed is disabled with the "Connect headphones" hint.
+The converse also holds: AirPlay speakers count as wireless headphones. The code comment names only the USB false
+positive.
+
+#### KI-SND-03 — The limiter's fast release never runs
+
+**Status:** ✅ CLOSED in R1.1-A, "one hit on the ceiling no longer ducks the music for a second — a program-dependent release" (council C-39). The release is program-dependent: two branches, the
+deeper wins, each attacking with its own speed — the fast one in 0.5 ms (it holds the ceiling), the slow one in 100 ms
+(so only sustained limiting charges it) — and releasing with its own τ, 100 ms and 500 ms, after its own 50 ms LF
+hold (`LimiterModule::EnvelopeBranch`; a hold the fast branch's attacks kept re-arming must not pin a deeper slow branch
+down, which `Intensity_EndpointsBitExact_Settled` caught in review). Measured on a 5 ms burst at 7.7 dB of reduction: −1.71 dB at 200 ms, −0.23 at
+500 ms, −0.09 at 1 s, τ 99.5 ms (was −5.71 / −3.13 / −1.15, τ 500 ms); after 2 s of sustained limiting the release is
+still the slow one, τ 499.5 ms (`Limiter_Release_TransientIsFast`, `Limiter_Release_SustainedIsSlow`). The ceiling test
+now holds the published −1 dBTP itself, not −1 + 0.30 dB (worst −1.18 dBTP). The golden master was re-baselined
+(`0xF0E1D4EF83763709`): its boosted chirp touches the ceiling; with only the old release restored the hash is the old
+one, bit for bit. *The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-39 (P2-1, D34) · **Scheduled (2026-10-14):** R1.1-A · **Forward:** US-R1F-12.~~
+
+*(As found at `481c822`:)* The dual-release branch is dead code (`LimiterModule.h:398-416`); in practice it is one 500 ms release. A single snare
+hit that touches the ceiling ducks the music for about a second. Only audible when the limiter engages (Enhanced, with
+Intensity above 0 or the EQ on).
 
 ### Fixed in R1.1-A — playback correctness (branch `r1.1a/transport`)
 
@@ -834,7 +890,8 @@ Gain is turned down". Each fix landed with its red test first: the regression te
 (`AudioViewModel.offersIntensity`) and held at 0 until S17 — never restored. At 0 the kernel runs P0 (bit-exact, with
 the EQ off) or P1 (EQ → limiter at the EQ-only ceiling): never the normaliser (leveling, C-38) nor the blend's +2 dB
 (C-40). A new install's EQ is Flat and Off (`EQMigration.freshInstall`); an existing EQ keeps its own memory. Leveling
-becomes its own setting, off by default, in R1.1-B (US-R1F-10). Consequence: KI-SND-05. *The original entry:*
+becomes its own setting, off by default, in R1.1-B (US-R1F-10). Consequence: KI-SND-05 (closed by the sound lane:
+crossfeed now plays on its own). *The original entry:*
 
 ~~**Status:** OPEN · **Severity:** MEDIUM · **Scheduled (2026-10-14):** R1.1-A (FD-2) · **Forward:** US-R1F-09.~~
 
