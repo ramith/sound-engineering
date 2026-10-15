@@ -15,18 +15,10 @@ extension AudioViewModel {
         onOutputIdentityChanged?(key)
     }
 
-    /// Whether `device` is a headphone-class output (wireless or USB): where crossfeed plays.
-    ///
-    /// Note: USB also matches USB audio interfaces connected to monitor speakers — a known
-    /// heuristic false-positive — and the Mac's own headphone jack reads as built-in (KI-DEV-01).
-    /// Precise detection needs `kAudioDevicePropertyDataSource` (US-R1F-12). On a non-headphone
-    /// device with crossfeed playing, the only audible consequence is a mild centre-image change
-    /// from the LPF cross path — benign and fully reversible by toggling crossfeed off.
+    /// Whether `device` is headphones: where crossfeed plays. The engine's classifier decided it
+    /// when it read the device (`AudioDeviceModel.isHeadphones`); no output, no headphones.
     static func isHeadphones(_ device: AudioDeviceModel?) -> Bool {
-        switch device?.type {
-        case .wireless, .usb: true
-        default: false
-        }
+        device?.isHeadphones ?? false
     }
 
     /// `selectedDevice`'s `didSet`: crossfeed plays on headphones only, so when the output moves

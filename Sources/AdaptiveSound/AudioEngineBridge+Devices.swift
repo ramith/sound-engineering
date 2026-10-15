@@ -39,7 +39,8 @@ extension AudioEngineBridge {
                         uid: Self.deviceUID(info.deviceID),
                         modelUID: modelUID.isEmpty ? nil : modelUID,
                         transportType: info.transportType,
-                        type: deviceType
+                        type: deviceType,
+                        isHeadphones: info.isHeadphones != 0
                     ))
                 }
 

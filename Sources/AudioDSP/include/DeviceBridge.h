@@ -58,6 +58,7 @@ typedef struct
     uint32_t bufferFrameSize; ///< Hardware buffer frame size in frames
     uint32_t transportType;   ///< kAudioDevicePropertyTransportType FourCC (0 = unknown)
     uint8_t deviceType;       ///< 0=Unknown 1=Builtin 2=USB 3=Wireless
+    uint8_t isHeadphones;     ///< 1 = headphones (where crossfeed plays; classifyOutputDevice)
     // Fixed-size C name buffer for the Swift bridging header. All four suppressed rules are
     // irreducible in THIS file, which must be valid ISO C11 (see the file header): the c-array
     // rules can't use std::array (not valid C / not Swift-bridgeable), and every way to NAME the

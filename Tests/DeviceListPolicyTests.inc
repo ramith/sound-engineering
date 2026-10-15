@@ -10,11 +10,13 @@
 //
 // Tests: DeviceList_KeepsRealOutputs, DeviceList_KeepsVirtualAndUserAggregates,
 //        DeviceList_HidesInternalDevices, DeviceList_RuleOrder,
-//        DeviceList_CompositionDecode, DeviceList_VerdictStrings.
+//        DeviceList_CompositionDecode, DeviceList_VerdictStrings,
+//        OutputDevice_Family, OutputDevice_Headphones (R1.1-A: the one output classifier).
 // Helpers (area-local): makeOutputFacts, checkVerdict, createComposition.
 
 #include "DeviceListPolicy.h"
 #include <CoreAudio/AudioHardware.h> // kAudioAggregateDeviceIsPrivateKey (a string macro only)
+#include <IOKit/audio/IOAudioTypes.h> // kIOAudioOutputPortSubType* — the data-source codes
 
 namespace
 {
@@ -304,6 +306,227 @@ static auto testDeviceListVerdictStrings() -> void
     if (!err.empty())
     {
         logFail(kName, err);
+        return;
+    }
+    logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// The one output classifier (R1.1-A; council C-30 / DUP-3, C-42, P2 D44, KI-DEV-01).
+// ---------------------------------------------------------------------------
+namespace
+{
+    struct ClassifierCase
+    {
+        const char* what;
+        uint32_t transport;
+        uint32_t dataSource;
+        const char* name;
+        OutputDeviceType type;
+        bool headphones;
+    };
+
+    auto checkClassifier(const ClassifierCase& c, bool checkType, bool checkHeadphones) -> std::string
+    {
+        const OutputDeviceClass got =
+            classifyOutputDevice({.transportType = c.transport, .dataSource = c.dataSource, .name = c.name});
+        std::string fail;
+        if (checkType && got.type != c.type)
+        {
+            fail += std::format("\n  {}: family {} (expected {})",
+                                c.what,
+                                static_cast<int>(got.type),
+                                static_cast<int>(c.type));
+        }
+        if (checkHeadphones && got.headphones != c.headphones)
+        {
+            fail += std::format("\n  {}: headphones {} (expected {})", c.what, got.headphones, c.headphones);
+        }
+        return fail;
+    }
+
+    // The fixtures. Data sources are the SDK's codes (IOAudioTypes.h): 'hdpn' headphones, 'ispk'
+    // the internal speaker, 'espk' an external speaker, 'line' a line out. The Mac's own speakers
+    // read 'ispk' (probed read-only on the founder's MacBook Pro, 2026-10-15); a Bluetooth or
+    // AirPlay device reports none (VLC's auhal headphone check, which keys on the same property).
+    constexpr std::array<ClassifierCase, 17U> kClassifierCases = {
+        {
+            {
+                .what = "the Mac's headphone jack",
+                .transport = kAudioDeviceTransportTypeBuiltIn,
+                .dataSource = kIOAudioOutputPortSubTypeHeadphones,
+                .name = "External Headphones",
+                .type = OutputDeviceType::Builtin,
+                .headphones = true,
+            },
+            {
+                .what = "the Mac's speakers",
+                .transport = kAudioDeviceTransportTypeBuiltIn,
+                .dataSource = kIOAudioOutputPortSubTypeInternalSpeaker,
+                .name = "MacBook Pro Speakers",
+                .type = OutputDeviceType::Builtin,
+                .headphones = false,
+            },
+            {
+                .what = "a built-in output with no data source",
+                .transport = kAudioDeviceTransportTypeBuiltIn,
+                .dataSource = 0U,
+                .name = "Built-in Output",
+                .type = OutputDeviceType::Builtin,
+                .headphones = false,
+            },
+            {
+                .what = "a built-in line out",
+                .transport = kAudioDeviceTransportTypeBuiltIn,
+                .dataSource = kIOAudioOutputPortSubTypeLine,
+                .name = "Line Out",
+                .type = OutputDeviceType::Builtin,
+                .headphones = false,
+            },
+            {
+                .what = "Bluetooth headphones",
+                .transport = kAudioDeviceTransportTypeBluetooth,
+                .dataSource = 0U,
+                .name = "AirPods Pro",
+                .type = OutputDeviceType::Wireless,
+                .headphones = true,
+            },
+            {
+                .what = "Bluetooth LE headphones",
+                .transport = kAudioDeviceTransportTypeBluetoothLE,
+                .dataSource = 0U,
+                .name = "Buds",
+                .type = OutputDeviceType::Wireless,
+                .headphones = true,
+            },
+            {
+                .what = "a Bluetooth speaker that says so",
+                .transport = kAudioDeviceTransportTypeBluetooth,
+                .dataSource = kIOAudioOutputPortSubTypeExternalSpeaker,
+                .name = "Speaker",
+                .type = OutputDeviceType::Wireless,
+                .headphones = false,
+            },
+            {
+                .what = "an AirPlay receiver",
+                .transport = kAudioDeviceTransportTypeAirPlay,
+                .dataSource = 0U,
+                .name = "Living Room",
+                .type = OutputDeviceType::Wireless,
+                .headphones = false,
+            },
+            {
+                .what = "a USB headphone DAC",
+                .transport = kAudioDeviceTransportTypeUSB,
+                .dataSource = 0U,
+                .name = "Modi+",
+                .type = OutputDeviceType::USB,
+                .headphones = true,
+            },
+            {
+                .what = "a USB DAC's line out",
+                .transport = kAudioDeviceTransportTypeUSB,
+                .dataSource = kIOAudioOutputPortSubTypeLine,
+                .name = "DAC",
+                .type = OutputDeviceType::USB,
+                .headphones = true,
+            },
+            {
+                .what = "a USB interface's speaker out",
+                .transport = kAudioDeviceTransportTypeUSB,
+                .dataSource = kIOAudioOutputPortSubTypeExternalSpeaker,
+                .name = "Interface",
+                .type = OutputDeviceType::USB,
+                .headphones = false,
+            },
+            {
+                .what = "a Thunderbolt interface's headphone out",
+                .transport = kAudioDeviceTransportTypeThunderbolt,
+                .dataSource = kIOAudioOutputPortSubTypeHeadphones,
+                .name = "Apollo",
+                .type = OutputDeviceType::Unknown,
+                .headphones = true,
+            },
+            {
+                .what = "a Thunderbolt interface",
+                .transport = kAudioDeviceTransportTypeThunderbolt,
+                .dataSource = 0U,
+                .name = "Apollo",
+                .type = OutputDeviceType::Unknown,
+                .headphones = false,
+            },
+            {
+                .what = "an HDMI display",
+                .transport = kAudioDeviceTransportTypeHDMI,
+                .dataSource = 0U,
+                .name = "LG UltraFine",
+                .type = OutputDeviceType::Unknown,
+                .headphones = false,
+            },
+            {
+                .what = "a virtual device",
+                .transport = kAudioDeviceTransportTypeVirtual,
+                .dataSource = 0U,
+                .name = "Microsoft Teams Audio",
+                .type = OutputDeviceType::Unknown,
+                .headphones = false,
+            },
+            {
+                .what = "an unknown transport, AirPods by name",
+                .transport = 0U,
+                .dataSource = 0U,
+                .name = "Ramith's AirPods",
+                .type = OutputDeviceType::Wireless,
+                .headphones = true,
+            },
+            {
+                .what = "an unknown transport, nothing known",
+                .transport = 0U,
+                .dataSource = 0U,
+                .name = "Mystery",
+                .type = OutputDeviceType::Unknown,
+                .headphones = false,
+            },
+        },
+    };
+} // namespace
+
+// The family (the menu's label and icon) is the transport, else the name — unchanged by R1.1-A,
+// pinned because the rule moved here from CoreAudioDevice.
+static auto testOutputDeviceFamily() -> void
+{
+    static const char* const kName = "OutputDevice_Family";
+    std::string fail;
+    for (const ClassifierCase& c : kClassifierCases)
+    {
+        fail += checkClassifier(c, true, false);
+    }
+    if (!fail.empty())
+    {
+        logFail(kName, "an output's family:" + fail);
+        return;
+    }
+    logPass(kName);
+}
+
+// Headphones — where crossfeed plays. The output's data source says what is plugged in where it
+// reports one ('hdpn' yes; 'ispk' / 'espk' no); a line or digital out could feed either, so the
+// transport decides then. By transport: Bluetooth and USB are personal outputs (a Bluetooth
+// speaker reads as headphones unless it says otherwise — crossfeed still plays only if the
+// listener turned it on); AirPlay is a receiver (a HomePod, a TV, a speaker), never headphones.
+// Before R1.1 the rule was "wireless or USB transport": wired headphones in the Mac's own jack
+// (built-in transport) could not use crossfeed, and an AirPlay speaker could.
+static auto testOutputDeviceHeadphones() -> void
+{
+    static const char* const kName = "OutputDevice_Headphones";
+    std::string fail;
+    for (const ClassifierCase& c : kClassifierCases)
+    {
+        fail += checkClassifier(c, false, true);
+    }
+    if (!fail.empty())
+    {
+        logFail(kName, "headphones or not:" + fail);
         return;
     }
     logPass(kName);
