@@ -50,8 +50,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-PB-12 | A single click on a playlist row replaces the queue and plays | MEDIUM | pool | US-R1F-04 |
 | KI-PB-21 | A crash or force-quit loses your place in the queue | MEDIUM | R1.1-B (atomic queue restore) | US-R1F-01 |
 | KI-GAP-01 | A short gap at the seam between 48 kHz tracks | MEDIUM | Engine sprint | US-R1F-02 |
-| KI-GAP-02 | On resampled seams the title and track B's gain switch ~0.4 s early | MEDIUM | Engine sprint | US-R1F-02 |
-| KI-GAP-04 | A click at each join between resampled tracks (44.1 / 96 kHz albums) | MEDIUM | Engine sprint | US-R1F-02 |
+| KI-GAP-02 | At a resampled seam to another rate or width, the title and track B's gain switch up to ~0.2 s early | MEDIUM | Engine sprint | US-R1F-02 |
 | KI-SND-02 | Enhanced sample-rate conversion rolls off the treble (−8.25 dB at 20 kHz) and lets aliases through | MEDIUM | R1.1-A | US-R1F-11 |
 | KI-SND-03 | The limiter's fast release never runs: one loud hit ducks the music for about a second | MEDIUM | R1.1-A | US-R1F-12 |
 | KI-SND-04 | Crossfeed notches the centre (−4 to −6 dB near 1 kHz); its "Default" preset is mislabelled | MEDIUM | R1.1-A | US-R1F-12 |
@@ -198,7 +197,7 @@ counts and Recently Played.
 ### KI-PB-16 — A change of the next song in the last moments before a seam can still play the old pick
 
 **Status:** OPEN (the documented residual of the D41 fix, PR #88) · **Severity:** LOW (a window of tens of
-milliseconds) · **Scheduled (2026-10-14):** Engine sprint (seam identity, council C-14) · **Forward:** US-R1F-01 (follow-up F1, *seam identity*).
+milliseconds; a chunk longer before a same-format resampled join, below) · **Scheduled (2026-10-14):** Engine sprint (seam identity, council C-14) · **Forward:** US-R1F-01 (follow-up F1, *seam identity*).
 
 A seam reports a count, not which track it played, so two windows remain (architecture §2.5, "What plays next"):
 **A2** — a request not yet admitted on `engineQueue` when the track ends (the rest of the main-thread turn, one hop and
@@ -207,7 +206,10 @@ after a seam but before the view model's next tick (up to 50 ms, plus the 33 ms 
 pick the seam took plays. Pinned by the `LATE-REQUEST` scenario (`Tests/AdaptiveSoundTests/OnDeckContractTests.swift`);
 the explorers count both windows apart (`OnDeckExplorerTests.swift`, and with Play, Pause and Stop against a busy engine
 `TransportExplorerTests.swift`, by one rule: `Rig.tickJudgingSeam`). Since R1.1-A a queue edit re-arms the next song
-in more cases (KI-PB-20), so more edits can meet these windows; the outcome in them is unchanged.
+in more cases (KI-PB-20), so more edits can meet these windows; the outcome in them is unchanged. Since R1.1-A's
+one-converter seam (KI-GAP-04), a same-format resampled track's next track is taken when the stream reads past the
+playing track's end — 186–372 ms before the join is heard at 44.1 kHz, where the end-of-file roll took it 0–186 ms
+before — so A2 is one chunk longer there. Taking it later would bring back the roll's race (P3 D39 b).
 
 ### KI-PB-17 — A scrub back into a track that has already ended is lost
 
@@ -229,15 +231,22 @@ The 48 kHz passthrough schedules the next file only after track A has played bac
 (`AudioEngineBridge+GaplessRoll.swift:68-90`, `scheduleFile(… .dataPlayedBack)` at `:207-213`), so 48 kHz albums have a
 short silence between tracks.
 
-### KI-GAP-02 — On resampled seams the title and track B's gain switch ~0.4 s early
+### KI-GAP-02 — At a resampled seam to another rate or width, the title and track B's gain switch early
 
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** freeze "Logged post-R1" (playhead latency compensation and seam
-domains) · **Scheduled (2026-10-14):** Engine sprint (council C-23) · **Forward:** US-R1F-02.
+**Status:** OPEN (narrowed in R1.1-A) · **Severity:** MEDIUM · **Source:** freeze "Logged post-R1" (playhead latency
+compensation and seam domains) · **Scheduled (2026-10-14):** Engine sprint (council C-23) · **Forward:** US-R1F-02.
 
 The resampler seam bumps the transition count when B is primed, i.e. when A's decode reaches end-of-file
 (`AudioEngineBridge+GaplessRoll.swift:256-259` → `+Gapless.swift:184-186`), not when B becomes audible; no
 presentation latency is applied anywhere. On 44.1 kHz music the title and B's loudness gain switch early, and the
-scrubber runs ahead of what is heard (more on Bluetooth).
+scrubber runs ahead of what is heard (more on Bluetooth). *(Corrected by the council, P3 D40: early by A's last
+partial chunk and the converter's flush, 0–186 ms at 44.1 kHz, not ~0.4 s.)*
+
+*Narrowed in R1.1-A ("one converter across a same-rate seam", council C-22; see KI-GAP-04 under Closed):* a seam to a
+track of the same rate and channel count — an album — is counted when the player has consumed A's last frame
+(`commitJoin`), and the playhead re-bases by exactly A's length; `EnhancedSeamTests` pins both. Still early: a
+resampled track followed by one of another rate or width (the end-of-file roll, as above). Still everywhere: no
+presentation latency, so the title and scrubber lead what is heard by the device's latency.
 
 ### KI-GAP-03 — A narrow false seam on a Pure → Enhanced restart
 
@@ -541,14 +550,6 @@ The queue cursor reaches UserDefaults only on a clean quit (`AudioViewModel+Life
 mirror's debounce can race its quit-flush (`AudioViewModel+QueueMirror.swift:25-36`), although the kit already has a
 coalescing writer for exactly this (`LibraryBrowseKit/CoalescingWriter.swift`).
 
-### KI-GAP-04 — A click at each join between resampled tracks
-
-**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-22 (P3 D39 c) · **Scheduled (2026-10-14):** Engine
-sprint · **Forward:** US-R1F-02.
-
-Each track gets its own sample-rate converter (`AudioEngineBridge+GaplessRoll.swift:248-257`), so the filter state
-restarts at the seam: a click 18 to 26 dB below peak at every join of a 44.1 or 96 kHz album.
-
 ### KI-SND-02 — Enhanced sample-rate conversion rolls off the treble and lets aliases through
 
 **Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-26 (P3 D37, D38; [engine research
@@ -788,6 +789,36 @@ search rule + ⌘F) · **Forward:** US-R1F-14.~~
 *(As found at `b5c4cd3`:)* The full-text tokenizer treats Sinhala vowel signs as separators, so "මාල" matches "මිල"; text
 stored decomposed (NFD) can't be found from a composed query; type-select folds marks; and three search semantics exist
 (KI-LIB-09) (`LibraryStore+Search.swift:16-48`).
+
+### Fixed in R1.1-A — one converter across a same-rate seam (branch `r1.1a/seam-converter`)
+
+Council C-22 (P3 D39 b–d, D40), brought forward from the Engine sprint by the founder (2026-10-14, "Fix now in
+R1.1-A"), to ship with the Mastering converter (KI-SND-02), whose longer filter made the per-track click longer. One
+commit, "a same-rate gapless join plays as one conversion". Its tests came first and failed on `481c822`:
+`Tests/AdaptiveSoundTests/EnhancedSeamTests.swift` plays two 44.1 kHz tracks cut from one sound through the real bridge
+on an offline engine, paced at a device's speed, records what the player plays (a tap, before the effects chain) and
+compares it with ONE Mastering conversion of the joined input; it also pins the seam's frame, the playhead, a seek
+before the join is heard, a next track shorter than a chunk, and a join to another rate or width. Five runs under a
+16-process CPU load and a ThreadSanitizer run passed.
+
+#### KI-GAP-04 — A click at each join between resampled tracks
+
+**Status:** ✅ CLOSED in R1.1-A, "a same-rate gapless join plays as one conversion" (council C-22). A next track of the same
+rate, channel count and layout continues the stream through the same converter (`continueStreamIntoNextTrack`), so a
+join converts as one input would: the player's output equals one continuous conversion bit for bit (peak error 0, no
+frame inserted or lost) with A ending 64, 4096 or 8100 frames into its last chunk. At `481c822` the join error was
+0.019, 0.053 and 0.012 (−22, −13.5 and −26.5 dB re peak), and B came one frame early when A's converted length was
+not whole. The seam is counted when the player has consumed A's last frame, with the playhead re-based by exactly A's
+length (KI-GAP-02 narrowed). The P3 replica's 279-frame race at a short last chunk did not reproduce on the real code
+at `481c822` (Mastering's flush gave its roll ~13 ms of lead, the replica's Normal converter ~1 ms); for these seams it
+is gone by construction — no roll at the end of file, and the next file opens with a whole chunk of lead. A join to
+another rate or channel count keeps a fresh converter, its click and its end-of-file roll (the Engine sprint's).
+*The original entry:*
+
+~~**Status:** OPEN · **Severity:** MEDIUM · **Source:** council C-22 (P3 D39 c) · **Scheduled (2026-10-14):** Engine sprint · **Forward:** US-R1F-02.~~
+
+*(As found at `481c822`:)* Each track gets its own sample-rate converter (`AudioEngineBridge+GaplessRoll.swift:225`),
+so the filter state restarts at the seam: a click 18 to 26 dB below peak at every join of a 44.1 or 96 kHz album.
 
 ### Fixed in R1.1-A — a faithful default and the listener's settings kept (branch `r1.1a/faithful-default`)
 
