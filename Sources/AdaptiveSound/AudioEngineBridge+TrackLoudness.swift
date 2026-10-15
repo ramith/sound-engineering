@@ -13,19 +13,26 @@ private enum CTrackLoudnessABI {
     static let current: @Sendable (UnsafeMutableRawPointer?, UInt64, Bool) -> Void = setCurrentTrack
 }
 
-/// The loudness-neutral EQ gain follows the AUDIBLE track (amendments item 3). The bridge is the
-/// only place that knows when a track becomes audible — a fresh start in `playFile`, or a gapless
-/// seam at `bumpTransitionCount` — and the only caller of `setCurrentTrack`; the analyzer is the
+/// The loudness-neutral EQ gain follows the AUDIBLE track (amendments item 3), and so does the
+/// loudness readout's "Integrated" (council C-46). The bridge is the only place that knows when a
+/// track becomes audible — a fresh start in `playFile`, or a gapless seam at `bumpTransitionCount`
+/// — and the only caller of `setCurrentTrack` and `loudnessMeterBeginTrack`; the analyzer is the
 /// only caller of `publishTrackLoudnessProfile` / `reportTrackLoudnessFailure` (through this sink).
 /// The EQ view model never touches either. Enhanced path only: Pure Mode bypasses the EQ, so it
-/// analyses nothing.
+/// analyses nothing, and installs no meter.
 extension AudioEngineBridge: TrackLoudnessSink {
     /// `url` became the audible track: by a fresh start, or at a gapless seam (`gaplessSeam`) —
-    /// never when it is merely scheduled. The engine switches the gain to it, and the analyzer
+    /// never when it is merely scheduled. The engine switches the gain to it, the readout's
+    /// "Integrated" measures it — from its start when it is a new track, carrying on when the same
+    /// one is announced again (a resume, a seek, a move to another device) — and the analyzer
     /// profiles it (promoting the next-track prefetch, or re-publishing a cached profile).
     func trackBecameAudible(_ url: URL, gaplessSeam: Bool) {
         let identity = TrackIdentity(url: url)
-        withLoudnessAU { CTrackLoudnessABI.current($0, identity?.token ?? 0, gaplessSeam) }
+        let token = identity?.token ?? 0
+        withLoudnessAU { CTrackLoudnessABI.current($0, token, gaplessSeam) }
+        if let meter = tapAnalysis.meter {
+            withExtendedLifetime(meter) { loudnessMeterBeginTrack(meter.handle, token) }
+        }
         if let identity {
             loudnessAnalyzer.analyze(url, identity: identity, as: .current, sink: self)
         }
