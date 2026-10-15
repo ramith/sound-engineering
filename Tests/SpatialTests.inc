@@ -3,7 +3,7 @@
 // SpatialRenderKernel tests (Sprint 5b, M3-1).
 // #included into Tests/DSPKernelNullTest.cpp after TestSupport.h.
 //
-// Tests: SpatialRender_PassthroughRoute.
+// Tests: SpatialRender_PassthroughRoute, Render_FlushToZero_Scoped.
 // Helpers (area-local): spatialFillNoise, spatialCheckZeroFill, spatialCheckSoakBuffer,
 //   spatialCheckIdentityRoute, spatialCheckNarrowerSourceRoute, spatialCheckIdentitySoak.
 
@@ -242,4 +242,80 @@ static auto testSpatialRenderPassthroughRoute() -> void
         return;
     }
     logPass(kName);
+}
+
+// ---------------------------------------------------------------------------
+// Render_FlushToZero_Scoped (council C-50; DSP-11, D67): flush-to-zero is ours only while our DSP
+// runs. Each render entry — DSPKernel::process and SpatialRenderKernel::process — sets FPCR.FZ for
+// its own call and gives the caller its FPCR back (JUCE's ScopedNoDenormals), and initialize()
+// touches nothing. They run on AVAudioEngine's render thread, which Apple's own nodes share, and
+// initialize() on a libdispatch pool thread: before R1.1 every call set FZ there and left it set.
+// Both ways round: a caller without FZ gets none back; a caller with FZ keeps it.
+// ---------------------------------------------------------------------------
+static auto testRenderFlushToZeroScoped() -> void
+{
+    static const char* const kName = "Render_FlushToZero_Scoped";
+#ifdef __aarch64__
+    constexpr uint64_t kFz = 1ULL << 24U; // FPCR.FZ
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kFrames = TestConstants::kFrames512;
+    const auto fz = [] { return (__builtin_arm_rsr64("fpcr") & kFz) != 0U; };
+    const auto setFz = [](bool on)
+    {
+        const uint64_t fpcr = __builtin_arm_rsr64("fpcr");
+        __builtin_arm_wsr64("fpcr", on ? (fpcr | kFz) : (fpcr & ~kFz));
+    };
+    const uint64_t callersFpcr = __builtin_arm_rsr64("fpcr");
+
+    std::string fail;
+    const auto expect = [&](bool callerFz, const char* after)
+    {
+        if (fz() != callerFz)
+        {
+            fail += std::format("\n  caller FZ {} → {} after {}", callerFz ? "on" : "off", fz() ? "on" : "off", after);
+            setFz(callerFz);
+        }
+    };
+    for (const bool callerFz : {false, true})
+    {
+        setFz(callerFz);
+
+        DSPKernel kernel;
+        kernel.initialize(kSR, kFrames);
+        expect(callerFz, "DSPKernel::initialize");
+        std::array<float, kEqBands> gains{};
+        gains[kBand1kHzIndex] = 6.0F; // the EQ runs: the processed path, not the bypass
+        TargetState state = makeIdentityState();
+        state.eq = makeEqParams(gains, kSR);
+        state.limiter.truePeakCeilingLinear = kTruePeakCeilingLinear;
+        kernel.publishTargetState(state);
+        TestABL block(kFrames);
+        for (uint32_t i = 0U; i < kFrames; ++i)
+        {
+            block.left[i] = 0.5F * std::sin(2.0F * std::numbers::pi_v<float> * 1000.0F * static_cast<float>(i) /
+                                            static_cast<float>(kSR));
+            block.right[i] = block.left[i];
+        }
+        kernel.process(block.abl(), kFrames);
+        expect(callerFz, "DSPKernel::process");
+
+        SpatialRenderKernel spatial;
+        spatial.initialize(kSR, kFrames);
+        expect(callerFz, "SpatialRenderKernel::initialize");
+        spatial.configure(2U, 2U);
+        TestABL out(kFrames);
+        spatial.process(MultichannelView::fromABL(block.abl(), kFrames), MultichannelView::fromABL(out.abl(), kFrames));
+        expect(callerFz, "SpatialRenderKernel::process");
+    }
+    __builtin_arm_wsr64("fpcr", callersFpcr);
+
+    if (!fail.empty())
+    {
+        logFail(kName, "flush-to-zero leaks out of our render calls:" + fail);
+        return;
+    }
+    logPass(kName);
+#else
+    logPending(kName, "FPCR.FZ is AArch64-only");
+#endif
 }

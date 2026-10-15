@@ -218,7 +218,7 @@ namespace AdaptiveSound
 
     void CausalLoudnessTap::run(const std::stop_token& stopToken) noexcept
     {
-        enableFlushToZero(); // the profiler's K-weighting biquads run here
+        const ScopedFlushToZero flushToZero; // the profiler's K-weighting biquads run here
         Worker worker;
         while (!stopToken.stop_requested())
         {
