@@ -5,7 +5,7 @@
 //
 // Tests: Limiter_BypassIsIdentity, Limiter_CeilingEnforcement,
 //        Limiter_GRResponseWithin2ms, Limiter_NearNyquistCeiling,
-//        Limiter_HotNoiseSoak.
+//        Limiter_HotNoiseSoak, Limiter_Release_TransientIsFast, Limiter_Release_SustainedIsSlow.
 // Helpers (area-local): limiterHotNoiseSoakBody, limiterLinkedGainVerifyGR.
 // Note: testLimiterLinkedGainLockstep and testLimiterHotNoiseSoakN8 are
 //       in MultichannelTests.inc (they belong to the multichannel epic).
@@ -444,4 +444,161 @@ static auto limiterLinkedGainVerifyGR(const TestABLN& abl,
         }
     }
     return {};
+}
+
+// ---------------------------------------------------------------------------
+// The limiter's release (council C-39; P2-1, D34): program-dependent, on two branches. A transient
+// releases on the FAST branch — τ 100 ms after the 50 ms LF hold — because only sustained limiting
+// charges the SLOW branch (its own attack, τ 100 ms), which then releases over τ 500 ms. Before
+// R1.1 both branches attacked alike, so the slow one was always the deeper, "deeper wins" always
+// picked it, and one snare hit that touched the ceiling ducked the music for about a second.
+//
+// The probe: a DC level of 0.1 (−20 dBFS, under the ceiling), so once the burst has passed the
+// gain is read exactly, sample by sample, as out / 0.1 — plus a 1 kHz burst at amplitude 2
+// (+6 dBFS, ≈ 7.7 dB of gain reduction). t = 0 is the burst's end in OUTPUT time (its end at the
+// input plus the 3 ms look-ahead): where the window maximum lets go and the hold begins.
+// ---------------------------------------------------------------------------
+namespace
+{
+    constexpr double kReleaseProbeLevel = 0.1;
+    constexpr double kReleaseHoldSeconds = 0.05; // LimiterModule's kLfHoldSeconds
+
+    struct ReleaseTrace
+    {
+        double deepestDb = 0.0;      // the deepest gain during the burst (dB, ≤ 0)
+        std::vector<double> afterDb; // the gain from t = 0, one value per output sample (dB)
+    };
+
+    auto limiterReleaseTrace(double burstSeconds) -> ReleaseTrace
+    {
+        constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+        constexpr uint32_t kBlock = TestConstants::kFrames512;
+        constexpr double kBurstAmplitude = 2.0;
+        constexpr double kBurstHz = 1000.0;
+        const uint32_t lead = kSR / 2U;
+        const auto burst = static_cast<uint32_t>(std::lround(burstSeconds * kSR));
+        const uint32_t tail = 2U * kSR;
+        const uint32_t total = lead + burst + tail;
+
+        std::vector<float> input(total);
+        for (uint32_t n = 0U; n < total; ++n)
+        {
+            const bool inBurst = n >= lead && n < lead + burst;
+            input[n] = static_cast<float>(
+                kReleaseProbeLevel +
+                (inBurst ? kBurstAmplitude * std::sin(2.0 * std::numbers::pi * kBurstHz * n / kSR) : 0.0));
+        }
+
+        LimiterModule limiter;
+        limiter.initialize(kSR, kBlock);
+        LimiterParams params{};
+        params.truePeakCeilingLinear = kTruePeakCeilingLinear;
+        std::vector<float> output(total);
+        for (uint32_t offset = 0U; offset < total; offset += kBlock)
+        {
+            const uint32_t chunk = std::min(kBlock, total - offset);
+            TestABL abl(chunk);
+            std::copy_n(input.begin() + offset, chunk, abl.left.begin());
+            std::copy_n(input.begin() + offset, chunk, abl.right.begin());
+            limiter.process(params, MultichannelView::fromABL(abl.abl(), chunk));
+            std::copy_n(abl.left.begin(), chunk, output.begin() + offset);
+        }
+
+        ReleaseTrace trace;
+        constexpr uint32_t kLook = kLimiterLookaheadFrames; // 3 ms at 48 kHz
+        for (uint32_t n = lead + kLook; n < lead + burst + kLook; ++n)
+        {
+            const double in = input[n - kLook];
+            if (std::abs(in) > 0.5) // away from the burst's zero crossings
+            {
+                trace.deepestDb = std::min(trace.deepestDb, 20.0 * std::log10(std::abs(output[n] / in)));
+            }
+        }
+        for (uint32_t n = lead + burst + kLook; n < total; ++n)
+        {
+            trace.afterDb.push_back(20.0 * std::log10(output[n] / kReleaseProbeLevel));
+        }
+        return trace;
+    }
+
+    // The gain `seconds` after t = 0 (dB).
+    auto releaseGainAt(const ReleaseTrace& trace, double seconds) -> double
+    {
+        const auto index = static_cast<size_t>(std::lround(seconds * TestConstants::kSampleRate48k));
+        return trace.afterDb[std::min(index, trace.afterDb.size() - 1U)];
+    }
+
+    // The release time constant: the time from the end of the hold until the gain is back to
+    // 1/e of its deepest (in dB), in seconds.
+    auto releaseTimeConstant(const ReleaseTrace& trace) -> double
+    {
+        const double target = trace.deepestDb / std::numbers::e;
+        for (size_t n = 0U; n < trace.afterDb.size(); ++n)
+        {
+            if (trace.afterDb[n] >= target)
+            {
+                return (static_cast<double>(n) / TestConstants::kSampleRate48k) - kReleaseHoldSeconds;
+            }
+        }
+        return std::numeric_limits<double>::infinity();
+    }
+} // namespace
+
+// One 5 ms burst (a snare hit at the ceiling): the gain recovers on the fast branch — τ 100 ms
+// after the hold (±15 ms); within 2 dB 200 ms on (council P2-1's bar), 0.5 dB at 500 ms, 0.1 dB
+// at 1 s. Before R1.1: −5.7 dB at 200 ms, τ 500 ms.
+static auto testLimiterReleaseTransientIsFast() -> void
+{
+    static const char* const kName = "Limiter_Release_TransientIsFast";
+    const ReleaseTrace trace = limiterReleaseTrace(0.005);
+    const double at200 = releaseGainAt(trace, 0.2);
+    const double at500 = releaseGainAt(trace, 0.5);
+    const double at1000 = releaseGainAt(trace, 1.0);
+    const double tau = releaseTimeConstant(trace);
+    logInfo(std::format("  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms, {:.2f} at 500 ms, {:.3f} at "
+                        "1 s; τ {:.1f} ms after the hold\n",
+                        kName,
+                        trace.deepestDb,
+                        at200,
+                        at500,
+                        at1000,
+                        tau * 1000.0));
+    if (trace.deepestDb > -6.0 || at200 < -2.0 || at500 < -0.5 || at1000 < -0.1 ||
+        std::abs(tau - 0.100) > 0.015)
+    {
+        logFail(kName,
+                std::format("a 5 ms burst: {:.2f} dB at 200 ms (bar −2), {:.2f} at 500 ms (bar −0.5), "
+                            "{:.3f} at 1 s (bar −0.1), τ {:.1f} ms (want 100 ± 15)",
+                            at200,
+                            at500,
+                            at1000,
+                            tau * 1000.0));
+        return;
+    }
+    logPass(kName);
+}
+
+// Two seconds over the ceiling (sustained limiting): the slow branch has charged, so the release
+// is the slow one — τ 500 ms after the hold (±50 ms), still ≤ −4 dB at 200 ms. Program dependence,
+// not a single fast release.
+static auto testLimiterReleaseSustainedIsSlow() -> void
+{
+    static const char* const kName = "Limiter_Release_SustainedIsSlow";
+    const ReleaseTrace trace = limiterReleaseTrace(2.0);
+    const double at200 = releaseGainAt(trace, 0.2);
+    const double tau = releaseTimeConstant(trace);
+    logInfo(std::format("  [info] {}: deepest {:.2f} dB; {:.2f} dB at 200 ms; τ {:.1f} ms after the hold\n",
+                        kName,
+                        trace.deepestDb,
+                        at200,
+                        tau * 1000.0));
+    if (trace.deepestDb > -6.0 || at200 > -4.0 || std::abs(tau - 0.500) > 0.050)
+    {
+        logFail(kName,
+                std::format("2 s over the ceiling: {:.2f} dB at 200 ms (bar ≤ −4), τ {:.1f} ms (want 500 ± 50)",
+                            at200,
+                            tau * 1000.0));
+        return;
+    }
+    logPass(kName);
 }
