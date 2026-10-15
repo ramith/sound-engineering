@@ -106,6 +106,12 @@ extern "C"
     /// Read the latest measured loudness (any thread; lock-free).
     CLoudnessReadout loudnessMeterRead(void* meter) AUDIODSP_C_NOEXCEPT;
 
+    /// The track `trackToken` became audible (any thread but the tap's; lock-free). "Integrated"
+    /// measures the playing track: a different track starts a new measurement interval, the same
+    /// one announced again (a resume, a seek) continues it, and 0 (an unknown track) always starts
+    /// one. The tap applies it at its next buffer. NULL-safe.
+    void loudnessMeterBeginTrack(void* meter, uint64_t trackToken) AUDIODSP_C_NOEXCEPT;
+
     /// Enumerate output devices and populate the caller-supplied array.
     ///
     /// @param outDevices  Caller-allocated array of CDeviceInfo; must fit maxCount entries.
