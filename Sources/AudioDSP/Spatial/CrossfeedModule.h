@@ -6,55 +6,39 @@
 #include "../include/TargetState.h"
 #include <array>
 #include <AudioToolbox/AudioToolbox.h>
-#include <cmath>
 #include <cstdint>
 
 namespace AdaptiveSound
 {
 
-    // The inter-aural delay constant (QW1 §2): delayFrames = round(0.0003178·fs) seconds.
-    constexpr double kCrossfeedItdSeconds = 0.0003178;
-
-    // Round a non-negative double to the nearest integer at compile time. Floor(x + 0.5) is the
-    // round-half-up rule; written without `static_cast<int>(x + 0.5)` so it is not flagged by
-    // bugprone-incorrect-roundings (the std::lround the checker suggests is not constexpr in this
-    // toolchain). For the small, exactly-representable ITD products here the floor form is exact.
-    [[nodiscard]] constexpr auto roundToNearestInt(double value) -> int
-    {
-        constexpr double kRoundHalf = 0.5; // round-half-up threshold (named to satisfy lint)
-        const auto truncated = static_cast<int>(value);
-        return ((value - static_cast<double>(truncated)) >= kRoundHalf) ? (truncated + 1)
-                                                                        : truncated;
-    }
-
-    // Fixed worst-case ITD delay-line capacity. The largest supported rate (192 kHz) gives
-    // round(0.0003178·192000) = round(61.0) = 61, so a 64-element line covers every rate with
-    // headroom. A power-of-two cap also makes the wrap mask cheap. (QW1 §2; refactoring F7.)
-    constexpr int kMaxCrossfeedDelayFrames = 64;
-
-    // Compile-time guard (refactoring F7): the 192 kHz worst case MUST fit the fixed line.
-    // round(0.0003178 * 192000) = 61 < 64. Computed as a constexpr so a future rate bump that
-    // would overflow the array trips at build time rather than corrupting the RT path.
-    constexpr int kCrossfeedDelay192k = roundToNearestInt(kCrossfeedItdSeconds * 192000.0);
-    static_assert(kCrossfeedDelay192k < kMaxCrossfeedDelayFrames,
-                  "192 kHz ITD delay must fit the fixed crossfeed delay line");
-
     // ---------------------------------------------------------------------------
-    // CrossfeedModule (QW1 §2/§3) — symmetrical stereo headphone crossfeed.
+    // CrossfeedModule — headphone crossfeed, bs2b (council C-42, R1.1-A).
     //
-    //   Lout = gDirect·L + gCross·H(z)·z^-D·R
-    //   Rout = gDirect·R + gCross·H(z)·z^-D·L
+    // Bauer stereophonic-to-binaural, as libbs2b implements it (src/bs2b.c, cross_feed_d(); MIT,
+    // © 2005 Boris Mikhaylov — re-implemented here from the published algorithm, not linked:
+    // OQ-17). Each ear hears its own channel through a first-order HIGH-BOOST shelf (the direct
+    // path) plus the other channel through a first-order LOW-PASS (the cross path):
     //
-    // where H(z) is a one-pole low-pass on the CROSS path only (exact-RC form, p = exp(-2π·fc/fs))
-    // and z^-D is the ITD delay (D = round(0.0003178·fs)). Direct path is unfiltered/undelayed.
-    // Coefficients (gDirect/gCross/lpfB0/lpfPole/delayFrames) are derived OFF-RT in the Realizer
-    // and arrive in CrossfeedParams; process() is pure scalar per-sample DSP, no allocation.
+    //   Lout = Hhi(z)·L + Hlo(z)·R        Hhi(z) = (directB0 + directB1·z⁻¹) / (1 − directPole·z⁻¹)
+    //   Rout = Hhi(z)·R + Hlo(z)·L        Hlo(z) =  crossB0                  / (1 − crossPole·z⁻¹)
     //
-    // Shape mirrors EQModule: initialize(sr,maxFrames) + process(const CrossfeedParams&,
-    // MultichannelView&); all copy/move deleted. RT-safe (FTZ is set on the render thread).
+    // The interaural delay is the low-pass's own group delay against the shelf's (≈ 0.25 ms at
+    // low frequencies, a ±30° loudspeaker pair): there is no delay line. The shelf is what keeps a
+    // centred (L = R) voice smooth — a shelf of 0 dB at DC to −1.1 … −1.8 dB at high frequencies,
+    // no notch. The crossfeed this replaces stacked an explicit 0.318 ms delay on the low-pass's
+    // own and left the direct path flat, so a centred voice lost 4.2–6.3 dB near 1 kHz (council
+    // P2-3). The coefficients — bs2b's init(), with its output gain folded into the numerators —
+    // are derived OFF-RT in the Realizer and arrive in CrossfeedParams; process() is scalar
+    // per-sample DSP, no allocation.
+    //
+    // It is an output stage of the kernel of its own, ahead of the limiter, at its preset's full
+    // strength whatever Intensity is (founder decision 2026-10-14). Enabling or disabling glides
+    // over a 32 ms one-pole between the input and the crossfed signal; once the glide out has
+    // ended it is a bit-exact pass-through again (isBypassed()). Stereo only: any other width
+    // passes through untouched.
     //
     // The #1 crossfeed implementation bug is read-one/write-one (writing the new L before reading
-    // the old L to feed R). This module READS BOTH L,R then WRITES BOTH — see process().
+    // the old L to feed R). This module READS BOTH L, R then WRITES BOTH — see process().
     // ---------------------------------------------------------------------------
     class CrossfeedModule
     {
@@ -67,33 +51,33 @@ namespace AdaptiveSound
         CrossfeedModule(CrossfeedModule&&) = delete;
         CrossfeedModule& operator=(CrossfeedModule&&) = delete;
 
-        // Off-RT: reset the per-cross-path state (delay lines, LPF memory) and snap the
-        // enable/level ramp to the initial (off) value so the first buffer does not fade in.
+        // Off-RT: clear the filter memory and snap the enable glide to off, so the first buffer
+        // neither fades in from an undefined state nor plays a stale tail.
         void initialize(uint32_t sampleRate, uint32_t maxFrames) noexcept;
 
-        // RT: apply crossfeed in place on the stereo MultichannelView. Top-of-process early
-        // return on `enabled == 0 || channels() != 2` → BIT-EXACT pass-through. Stereo-only.
+        // RT: crossfeed in place on a stereo view. A non-stereo view, or crossfeed off with its
+        // glide out ended, is a BIT-EXACT pass-through (an early return).
         void process(const CrossfeedParams& params, const MultichannelView& block) noexcept;
 
+        // Whether process() would leave a block of `channels` untouched: crossfeed off and its
+        // glide out ended, or not stereo. The kernel's bit-perfect path (P0) asks this.
+        [[nodiscard]] bool isBypassed(const CrossfeedParams& params,
+                                      uint32_t channels) const noexcept;
+
       private:
-        // One cross path (R→L or L→R): a fixed circular ITD delay line plus the one-pole LPF
-        // memory. Trivial state; value-initialised to silence in initialize(). The delay line is
-        // sized to the 192 kHz worst case so process() never allocates or resizes.
-        struct CrossPath
+        // One input channel's filter memory: its direct-path shelf (last input, last output) and
+        // its cross-path low-pass (last output). Index 0 = L, 1 = R.
+        struct ChannelState
         {
-            std::array<float, kMaxCrossfeedDelayFrames> delayLine{};
-            uint32_t writeIndex = 0U; // next write position into delayLine (circular)
-            float lpfState = 0.0F;    // one-pole LPF memory y[n-1]
+            float directIn = 0.0F;
+            float directOut = 0.0F;
+            float crossOut = 0.0F;
         };
+        std::array<ChannelState, 2U> state_{};
 
-        // Index 0 = the R→L cross path (feeds the left output); index 1 = the L→R cross path
-        // (feeds the right output). Exactly two — crossfeed is stereo-only.
-        std::array<CrossPath, 2U> crossPaths_{};
-
-        // Enable/level smoother (32 ms one-pole, QW1 §3) for click-free enable/disable and level
-        // changes. target ∈ {0,1}: 0 = bypass-blend, 1 = full crossfeed. The processed (wet) and
-        // dry signals are blended by mix_ so toggling never clicks. Snapped to 0 (off) in
-        // initialize().
+        // The enable glide (32 ms one-pole, QW1 §3): 0 = the input, 1 = the crossfed signal.
+        // Snapped to 0 in initialize(); snapped to its endpoint once settled, so off is bit-exact
+        // and on is exactly bs2b.
         ParameterRamp mixRamp_{};
 
         uint32_t sampleRate_ = kDefaultSampleRate;

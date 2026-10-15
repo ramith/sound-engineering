@@ -90,10 +90,16 @@ struct SignalPathInfo: Equatable {
     /// Used by the signal-path badge to display "… · 23%". Default 0.
     var intensityLinear: Float = 0
 
-    /// Active crossfeed strength, or `nil` when crossfeed is off.
-    /// Gated on `intensityLinear > 0` before being shown in the badge (§9 nice-to-have:
-    /// don't display an inaudible-chain badge at 0 % intensity).
+    /// The crossfeed strength while crossfeed plays (chosen, on headphones), copied from the view
+    /// model each tick; `nil` when it doesn't.
     var crossfeedStrength: CrossfeedStrength?
+
+    /// The crossfeed the listener hears — the hero's "XF" chip: its strength while it plays, on the
+    /// Enhanced path, whatever Intensity is (crossfeed is an output stage of its own, founder
+    /// decision 2026-10-14); `nil` on Pure, which bypasses the DSP.
+    var audibleCrossfeed: CrossfeedStrength? {
+        path == .enhanced ? crossfeedStrength : nil
+    }
 }
 
 // MARK: - Display helpers

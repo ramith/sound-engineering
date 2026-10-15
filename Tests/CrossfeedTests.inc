@@ -1,85 +1,263 @@
 // CrossfeedTests.inc
 //
-// QW1 §6 — crossfeed DSP conformance (CF-1..CF-9). The crossfeed stage is fully gated in this
-// C++ harness; CF-10 (ebur128 neutrality) lives in LoudnessOracleTests.inc, CF-11 (4-surface
-// Realizer RMW) in RealizerTests.inc, CF-12 (RT-alloc soak) in SoakRtAllocTests.inc.
+// The headphone crossfeed: bs2b, faithfully (council C-42), as an output stage of its own that plays
+// at its preset's full strength whatever Intensity is (founder decision 2026-10-14, KI-SND-05).
 //
 // #included into Tests/DSPKernelNullTest.cpp after IntensityTests.inc.
 //
-// Tests:
+// The oracle is bs2b itself: libbs2b's init() and cross_feed_d() (src/bs2b.c, libbs2b 3.1.0, MIT,
+// © 2005 Boris Mikhaylov), transcribed below in double precision from the published source, with
+// the levels bs2b.h defines. libbs2b is not linked (OQ-17). The UI's three strengths are bs2b's own
+// levels (council P2-3): Relaxed = BS2B_JMEIER_CLEVEL (650 Hz, 9.5 dB), Default = BS2B_CMOY_CLEVEL
+// (700 Hz, 6.0 dB), Strong = BS2B_DEFAULT_CLEVEL (700 Hz, 4.5 dB) — bs2b's default is its strongest.
+//
+// Tests (module):
 //   CF-1 Crossfeed_Bypass_BitExact_GoldenMaster  — module present-but-off re-asserts the hash.
 //   CF-2 Crossfeed_NonStereo_PassThrough          — N=1 / N=6 byte-identical.
-//   CF-3 Crossfeed_Mono_LevelNeutral              — mono (L==R) sum loudness-neutral.
-//   CF-4 Crossfeed_ChannelSeparation              — cross/direct = alpha per preset, both ways.
-//   CF-5 Crossfeed_LpfCharacteristic              — -3 dB at fc; >=9 dB down at 8 kHz.
+//   CF-3 Crossfeed_CentreFlat_vs_bs2b             — centre (L = R) response 0.1–10 kHz = bs2b's.
+//   CF-4 Crossfeed_ChannelSeparation              — low-frequency feed = the bs2b level, both ways.
+//   CF-5 Crossfeed_LpfCharacteristic              — the cross path is −3 dB at the bs2b cut.
 //   CF-6 Crossfeed_NoNaNInf                       — noise / transient / DC stay finite.
 //   CF-7 Crossfeed_ClickFreeEnableDisable         — boundaryStep <= 3x settledMaxStep.
-//   CF-8 Crossfeed_CoeffRecomputeAcrossRates      — separation consistent 44.1/48/192k; D<64.
-//   CF-9 Crossfeed_ReadBothWriteBoth              — distinct L/R tones vs analytic (the #1 bug).
+//   CF-8 Crossfeed_CoeffRecomputeAcrossRates      — bs2b at 44.1 / 48 / 96 / 192 kHz.
+//   CF-9 Crossfeed_MatchesBs2bReference           — sample for sample against cross_feed_d().
+// Tests (the kernel's own crossfeed stage):
+//   CF-13 Crossfeed_PlaysAtAnyIntensity           — full preset strength at Intensity 0, ½ and 1.
+//   CF-14 Crossfeed_Off_BitExact                  — on is audible; off is bit-exact (P0 and P1).
+// Elsewhere: CF-10 (libebur128 neutrality) in LoudnessOracleTests.inc, CF-11 (Realizer RMW) in
+// RealizerTests.inc, CF-12 (RT-alloc soak) in SoakRtAllocTests.inc, and the true-peak ceiling with
+// crossfeed on in LimiterTruePeakTests.inc (Limiter_TruePeak_CeilingWithCrossfeed).
 
 #include "../Sources/AudioDSP/AudioEngine/Realizer.h"
 #include "../Sources/AudioDSP/Spatial/CrossfeedModule.h"
 
 namespace
 {
-    // Crossfeed preset indices (mirror CrossfeedPreset; named to avoid magic numbers).
-    constexpr uint32_t kCfPresetRelaxed = 0U;
-    constexpr uint32_t kCfPresetBauer = 1U; // Swift-facing "Default"
-    constexpr uint32_t kCfPresetStrong = 2U;
+    // The UI's strengths by their CrossfeedPreset index (the value SettingsKit stores).
+    constexpr uint32_t kCfPresetRelaxed = 0U; // bs2b Jmeier
+    constexpr uint32_t kCfPresetDefault = 1U; // bs2b Cmoy
+    constexpr uint32_t kCfPresetStrong = 2U;  // bs2b default
 
-    // Reference alpha / fc per preset (QW1 §2 table) — the analytic targets the tests compare to.
-    constexpr float kCfAlphaRelaxed = 0.335F;
-    constexpr float kCfAlphaBauer = 0.355F;
-    constexpr float kCfAlphaStrong = 0.501F;
-    constexpr float kCfFcRelaxed = 650.0F;
-    constexpr float kCfFcBauer = 700.0F;
-    constexpr float kCfFcStrong = 700.0F;
+    // bs2b.h's level for each preset: the cut frequency (Hz) and the feed (dB). The oracle's inputs.
+    struct Bs2bLevel
+    {
+        const char* label;
+        uint32_t preset;
+        double fcutHz;
+        double feedDb;
+    };
+    constexpr std::array<Bs2bLevel, 3U> kBs2bLevels = {
+        {
+            {.label = "Relaxed (bs2b Jmeier)", .preset = kCfPresetRelaxed, .fcutHz = 650.0, .feedDb = 9.5},
+            {.label = "Default (bs2b Cmoy)", .preset = kCfPresetDefault, .fcutHz = 700.0, .feedDb = 6.0},
+            {.label = "Strong (bs2b default)", .preset = kCfPresetStrong, .fcutHz = 700.0, .feedDb = 4.5},
+        },
+    };
 
-    // Derive a CrossfeedParams POD using the SHIPPING off-RT derivation path (the Realizer), so the
-    // tests exercise the exact coefficient math production uses. A throwaway Realizer + a fresh
-    // kernel is cheap; applyCrossfeed packs the canonical state synchronously on this thread.
-    auto deriveCfParams(uint32_t enabled, float level, uint32_t preset, uint32_t sampleRate)
-        -> CrossfeedParams
+    // bs2b, as published (src/bs2b.c): init() builds a first-order low-pass for the cross path (cut
+    // Fc_lo, gain G_lo) and a first-order high-boost shelf for the direct path (Fc_hi, 1 − G_hi at
+    // DC), plus the gain that keeps the centre at 0 dB at DC; cross_feed_d() runs them. Double
+    // precision throughout, as cross_feed_d() does.
+    class Bs2bReference
+    {
+      public:
+        Bs2bReference(double fcutHz, double feedDb, double sampleRate) noexcept
+        {
+            const double gbLo = (feedDb * -5.0 / 6.0) - 3.0; // GB_lo: low-pass gain (dB)
+            const double gbHi = (feedDb / 6.0) - 3.0;        // GB_hi: high-boost gain (dB)
+            const double gLo = std::pow(10.0, gbLo / 20.0);
+            const double gHi = 1.0 - std::pow(10.0, gbHi / 20.0);
+            const double fcHi = fcutHz * std::pow(2.0, (gbLo - (20.0 * std::log10(gHi))) / 12.0);
+
+            double pole = std::exp(-2.0 * std::numbers::pi * fcutHz / sampleRate);
+            b1Lo_ = pole;
+            a0Lo_ = gLo * (1.0 - pole);
+
+            pole = std::exp(-2.0 * std::numbers::pi * fcHi / sampleRate);
+            b1Hi_ = pole;
+            a0Hi_ = 1.0 - (gHi * (1.0 - pole));
+            a1Hi_ = -pole;
+
+            gain_ = 1.0 / (1.0 - gHi + gLo);
+        }
+
+        // cross_feed_d(): one stereo frame, in place.
+        void process(double& left, double& right) noexcept
+        {
+            loL_ = (a0Lo_ * left) + (b1Lo_ * loL_);
+            loR_ = (a0Lo_ * right) + (b1Lo_ * loR_);
+            hiL_ = (a0Hi_ * left) + (a1Hi_ * asisL_) + (b1Hi_ * hiL_);
+            hiR_ = (a0Hi_ * right) + (a1Hi_ * asisR_) + (b1Hi_ * hiR_);
+            asisL_ = left;
+            asisR_ = right;
+            left = (hiL_ + loR_) * gain_;
+            right = (hiR_ + loL_) * gain_;
+        }
+
+        // The same coefficients' steady-state responses at freqHz: the direct path, gain·H_hi(z),
+        // and the cross path, gain·H_lo(z), on the unit circle.
+        [[nodiscard]] auto direct(double freqHz, double sampleRate) const -> std::complex<double>
+        {
+            const std::complex<double> zInv = unitDelay(freqHz, sampleRate);
+            return gain_ * (a0Hi_ + (a1Hi_ * zInv)) / (1.0 - (b1Hi_ * zInv));
+        }
+        [[nodiscard]] auto cross(double freqHz, double sampleRate) const -> std::complex<double>
+        {
+            const std::complex<double> zInv = unitDelay(freqHz, sampleRate);
+            return gain_ * a0Lo_ / (1.0 - (b1Lo_ * zInv));
+        }
+        // Centre (L = R) content: |direct + cross|, in dB.
+        [[nodiscard]] auto centreDb(double freqHz, double sampleRate) const -> double
+        {
+            return 20.0 * std::log10(std::abs(direct(freqHz, sampleRate) + cross(freqHz, sampleRate)));
+        }
+        // One channel only: the far ear against the near one, in dB.
+        [[nodiscard]] auto separationDb(double freqHz, double sampleRate) const -> double
+        {
+            return 20.0 *
+                   std::log10(std::abs(cross(freqHz, sampleRate)) / std::abs(direct(freqHz, sampleRate)));
+        }
+
+      private:
+        [[nodiscard]] static auto unitDelay(double freqHz, double sampleRate) -> std::complex<double>
+        {
+            return std::polar(1.0, -2.0 * std::numbers::pi * freqHz / sampleRate);
+        }
+
+        double a0Lo_ = 0.0;
+        double b1Lo_ = 0.0;
+        double a0Hi_ = 0.0;
+        double a1Hi_ = 0.0;
+        double b1Hi_ = 0.0;
+        double gain_ = 1.0;
+        double loL_ = 0.0;
+        double loR_ = 0.0;
+        double hiL_ = 0.0;
+        double hiR_ = 0.0;
+        double asisL_ = 0.0;
+        double asisR_ = 0.0;
+    };
+
+    // The CrossfeedParams the Realizer publishes for a preset at sampleRate: the SHIPPING off-RT
+    // derivation, so the tests check the coefficients production plays. A throwaway Realizer over a
+    // fresh kernel; applyCrossfeed packs the canonical state synchronously on this thread.
+    auto deriveCfParams(uint32_t enabled, uint32_t preset, uint32_t sampleRate) -> CrossfeedParams
     {
         auto kernel = std::make_shared<DSPKernel>();
         kernel->initialize(sampleRate, TestConstants::kFrames512);
         auto realizer =
             std::make_shared<AdaptiveSound::Realizer>(kernel, static_cast<double>(sampleRate));
-        realizer->applyCrossfeed({.enabled = enabled, .level = level, .preset = preset});
+        realizer->applyCrossfeed({.enabled = enabled, .preset = preset});
         const CrossfeedParams params = realizer->canonicalState().crossfeed;
         realizer->shutdown();
         return params;
     }
 
-    // Run a stereo pair (L,R buffers) through a freshly-initialised CrossfeedModule at a fixed
-    // params, returning the processed L,R. The module snaps its mix ramp to off in initialize(),
-    // so we WARM it (feed the same input repeatedly) to drive the ramp to its settled state before
-    // capturing — matching the runIntensityOnce warm-up pattern.
     struct StereoOut
     {
         std::vector<float> left;
         std::vector<float> right;
     };
 
-    auto runCrossfeedSettled(const CrossfeedParams& params, uint32_t sampleRate,
-                             const std::vector<float>& inL, const std::vector<float>& inR)
-        -> StereoOut
+    // A continuous stereo stream through a fresh CrossfeedModule, in 512-frame blocks (as the
+    // kernel calls it). The module's enable ramp starts at off, so a caller measures after it has
+    // settled (≫ 5 × 32 ms).
+    auto runCrossfeedStream(const CrossfeedParams& params,
+                            uint32_t sampleRate,
+                            const std::vector<float>& inL,
+                            const std::vector<float>& inR) -> StereoOut
     {
+        constexpr uint32_t kBlock = TestConstants::kFrames512;
         const auto frames = static_cast<uint32_t>(inL.size());
-        constexpr uint32_t kWarm = 256U; // >> 5 tau so the mix ramp settles before capture
         CrossfeedModule module;
-        module.initialize(sampleRate, frames);
-
-        TestABL abl(frames);
-        for (uint32_t b = 0U; b <= kWarm; ++b)
+        module.initialize(sampleRate, kBlock);
+        StereoOut out{.left = inL, .right = inR};
+        for (uint32_t offset = 0U; offset < frames; offset += kBlock)
         {
-            std::memcpy(abl.left.data(), inL.data(), frames * sizeof(float));
-            std::memcpy(abl.right.data(), inR.data(), frames * sizeof(float));
-            const MultichannelView view = MultichannelView::fromABL(abl.abl(), frames);
-            module.process(params, view);
+            const uint32_t chunk = std::min(kBlock, frames - offset);
+            TestABL abl(chunk);
+            std::copy_n(inL.begin() + offset, chunk, abl.left.begin());
+            std::copy_n(inR.begin() + offset, chunk, abl.right.begin());
+            module.process(params, MultichannelView::fromABL(abl.abl(), chunk));
+            std::copy_n(abl.left.begin(), chunk, out.left.begin() + offset);
+            std::copy_n(abl.right.begin(), chunk, out.right.begin() + offset);
         }
-        return StereoOut{abl.left, abl.right};
+        return out;
     }
+
+    // The same stream through a whole DSPKernel (state published BEFORE initialize(), so the
+    // Intensity ramp and the normaliser's share start settled where the state asks).
+    auto runKernelStream(const TargetState& state,
+                         uint32_t sampleRate,
+                         const std::vector<float>& inL,
+                         const std::vector<float>& inR) -> StereoOut
+    {
+        constexpr uint32_t kBlock = TestConstants::kFrames512;
+        const auto frames = static_cast<uint32_t>(inL.size());
+        DSPKernel kernel;
+        kernel.publishTargetState(state);
+        kernel.initialize(sampleRate, kBlock);
+        StereoOut out{.left = inL, .right = inR};
+        for (uint32_t offset = 0U; offset < frames; offset += kBlock)
+        {
+            const uint32_t chunk = std::min(kBlock, frames - offset);
+            TestABL abl(chunk);
+            std::copy_n(inL.begin() + offset, chunk, abl.left.begin());
+            std::copy_n(inR.begin() + offset, chunk, abl.right.begin());
+            kernel.process(abl.abl(), chunk);
+            std::copy_n(abl.left.begin(), chunk, out.left.begin() + offset);
+            std::copy_n(abl.right.begin(), chunk, out.right.begin() + offset);
+        }
+        return out;
+    }
+
+    // A sine of `amplitude` at freqHz, `frames` long.
+    auto cfTone(double freqHz, double amplitude, uint32_t frames, uint32_t sampleRate)
+        -> std::vector<float>
+    {
+        std::vector<float> tone(frames);
+        for (uint32_t n = 0U; n < frames; ++n)
+        {
+            tone[n] = static_cast<float>(
+                amplitude * std::sin(2.0 * std::numbers::pi * freqHz * n / sampleRate));
+        }
+        return tone;
+    }
+
+    // The amplitude of the sine at freqHz in buf[start, end): the least-squares fit of
+    // a·sin + b·cos, exact for a steady tone over any window (no whole-period requirement).
+    auto toneAmplitude(const std::vector<float>& buf,
+                       size_t start,
+                       size_t end,
+                       double freqHz,
+                       uint32_t sampleRate) -> double
+    {
+        double ss = 0.0;
+        double cc = 0.0;
+        double sc = 0.0;
+        double xs = 0.0;
+        double xc = 0.0;
+        for (size_t n = start; n < end; ++n)
+        {
+            const double phase = 2.0 * std::numbers::pi * freqHz * static_cast<double>(n) / sampleRate;
+            const double s = std::sin(phase);
+            const double c = std::cos(phase);
+            const double x = buf[n];
+            ss += s * s;
+            cc += c * c;
+            sc += s * c;
+            xs += x * s;
+            xc += x * c;
+        }
+        const double det = (ss * cc) - (sc * sc);
+        const double a = ((xs * cc) - (xc * sc)) / det;
+        const double b = ((xc * ss) - (xs * sc)) / det;
+        return std::hypot(a, b);
+    }
+
+    // The steady second half of a 1 s stream: where the 32 ms enable ramp has long settled.
+    constexpr uint32_t kCfStreamFrames = 48000U;
+    constexpr size_t kCfSettledFrom = kCfStreamFrames / 2U;
 } // namespace
 
 // ===========================================================================
@@ -168,7 +346,7 @@ static auto testCrossfeedNonStereoPassThrough() -> void
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
     constexpr uint32_t kFrames = TestConstants::kFrames512;
 
-    const CrossfeedParams params = deriveCfParams(1U, 1.0F, kCfPresetBauer, kSR);
+    const CrossfeedParams params = deriveCfParams(1U, kCfPresetDefault, kSR);
 
     for (const uint32_t numCh : {TestConstants::kMono, TestConstants::kNChannels6})
     {
@@ -208,250 +386,172 @@ static auto testCrossfeedNonStereoPassThrough() -> void
 }
 
 // ===========================================================================
-// CF-3: mono level-neutral. For a MONO source (L==R), the gain-neutral design (gDirect=1/(1+α),
-// gCross=α/(1+α)) makes the steady-state sum loudness-neutral: at DC/low frequency the cross-path
-// LPF passes near-unity, so Lout = (gDirect+gCross)·L = ((1+α)/(1+α))·L = L. We probe with a LOW
-// (60 Hz) mono tone — well below every preset fc — where the design's "sum is unity" claim is the
-// operative one: |Δ| <= 0.1 dB Bauer ("Default"), <= 0.3 dB Strong.
-//
-// (At HIGHER frequencies the cross-path LPF deliberately attenuates the cross contribution → the
-// summed mono level falls; that is the inherent, benign crossfeed coloration the design flags
-// (QW1 §2 risk 1), NOT a level-neutrality violation. CF-10's ebur128 oracle covers real-content
-// loudness; CF-5 covers the LPF shape.)
+// CF-3: centre (L = R) content keeps bs2b's response. bs2b is a smooth shelf for centred sound —
+// 0 dB at DC falling to −1.06 / −1.48 / −1.75 dB (Relaxed / Default / Strong) — because its delay
+// is the cross low-pass's own group delay against a high-boost shelf on the direct path (council
+// P2-3). The pre-R1.1 crossfeed added an explicit 0.318 ms delay on top and a flat direct path, and
+// notched a centred voice by −4.2 to −6.3 dB near 1 kHz. Every probe 0.1–10 kHz must match the bs2b
+// oracle within 0.02 dB, and none may fall below bs2b's own floor of −1.8 dB.
 // ===========================================================================
-static auto testCrossfeedMonoLevelNeutral() -> void
+static auto testCrossfeedCentreFlatVsBs2b() -> void
 {
-    static const char* const kName = "Crossfeed_Mono_LevelNeutral";
+    static const char* const kName = "Crossfeed_CentreFlat_vs_bs2b";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
-    constexpr uint32_t kFrames = 16384U;
-    constexpr float kLowToneHz = 60.0F; // << every preset fc → cross-path LPF ~ unity
-
-    // Correlated (mono) low-frequency tone — the design's loudness-neutral case.
-    std::vector<float> mono(kFrames);
-    for (uint32_t i = 0U; i < kFrames; ++i)
-    {
-        mono[i] = 0.25F * std::sin(2.0F * std::numbers::pi_v<float> * kLowToneHz *
-                                   static_cast<float>(i) / static_cast<float>(kSR));
-    }
-
-    struct Case
-    {
-        const char* label;
-        uint32_t preset;
-        double tolDb;
-    };
-    const std::array<Case, 2U> cases = {
-        {
-            {"Bauer", kCfPresetBauer, 0.1},
-            {"Strong", kCfPresetStrong, 0.3},
-        },
+    constexpr double kAmp = 0.25;
+    constexpr double kOracleTolDb = 0.02;
+    constexpr double kBs2bFloorDb = -1.8; // the deepest bs2b level (default) bottoms at −1.75 dB
+    constexpr std::array<double, 13U> kProbesHz = {
+        100.0, 150.0, 200.0, 300.0, 500.0, 700.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0,
     };
 
     std::string fail;
-    double measuredBauer = 0.0;
-    double measuredStrong = 0.0;
-    for (const auto& c : cases)
+    for (const Bs2bLevel& level : kBs2bLevels)
     {
-        const CrossfeedParams params = deriveCfParams(1U, 1.0F, c.preset, kSR);
-        const StereoOut out = runCrossfeedSettled(params, kSR, mono, mono);
-
-        // Measure the settled second half (after the mix ramp + delay line fill).
-        const double inRms = sliceRms(mono, kFrames / 2U, kFrames);
-        const double outRms = sliceRms(out.left, kFrames / 2U, kFrames);
-        if (inRms <= 0.0)
+        const CrossfeedParams params = deriveCfParams(1U, level.preset, kSR);
+        const Bs2bReference oracle(level.fcutHz, level.feedDb, kSR);
+        double worstDevDb = 0.0;
+        double lowestDb = 0.0;
+        double lowestAtHz = 0.0;
+        for (const double hz : kProbesHz)
         {
-            fail += "\n  input RMS is zero";
-            continue;
+            const std::vector<float> tone = cfTone(hz, kAmp, kCfStreamFrames, kSR);
+            const StereoOut out = runCrossfeedStream(params, kSR, tone, tone);
+            for (const std::vector<float>* channel : {&out.left, &out.right})
+            {
+                const double gainDb =
+                    20.0 * std::log10(toneAmplitude(*channel, kCfSettledFrom, kCfStreamFrames, hz, kSR) /
+                                      kAmp);
+                worstDevDb = std::max(worstDevDb, std::abs(gainDb - oracle.centreDb(hz, kSR)));
+                if (gainDb < lowestDb)
+                {
+                    lowestDb = gainDb;
+                    lowestAtHz = hz;
+                }
+            }
         }
-        const double deltaDb = 20.0 * std::log10(outRms / inRms);
-        if (c.preset == kCfPresetBauer) { measuredBauer = deltaDb; }
-        if (c.preset == kCfPresetStrong) { measuredStrong = deltaDb; }
-
-        std::ostringstream info;
-        info << "  [info] " << kName << ": " << c.label << " mono level delta = " << deltaDb
-             << " dB (tol +-" << c.tolDb << ")\n";
-        logInfo(info.str());
-
-        if (std::abs(deltaDb) > c.tolDb)
+        logInfo(std::format("  [info] {}: {}: centre lowest {:.3f} dB at {} Hz; worst deviation from "
+                            "bs2b {:.4f} dB\n",
+                            kName,
+                            level.label,
+                            lowestDb,
+                            lowestAtHz,
+                            worstDevDb));
+        if (worstDevDb > kOracleTolDb || lowestDb < kBs2bFloorDb)
         {
-            std::ostringstream oss;
-            oss << "\n  " << c.label << " mono level delta " << deltaDb << " dB exceeds +-" << c.tolDb;
-            fail += oss.str();
+            fail += std::format("\n  {}: centre {:.2f} dB at {} Hz (bs2b floor {} dB); worst deviation "
+                                "from bs2b {:.3f} dB (tolerance {} dB)",
+                                level.label,
+                                lowestDb,
+                                lowestAtHz,
+                                kBs2bFloorDb,
+                                worstDevDb,
+                                kOracleTolDb);
         }
     }
-
-    std::ostringstream summary;
-    summary << "  [measured] CF-3 mono level-neutral: Bauer=" << measuredBauer
-            << " dB, Strong=" << measuredStrong << " dB\n";
-    logInfo(summary.str());
-
     if (!fail.empty())
     {
-        logFail(kName, "mono level neutrality failure:" + fail);
+        logFail(kName, "the centre is not bs2b's:" + fail);
         return;
     }
     logPass(kName);
 }
 
 // ===========================================================================
-// CF-4: channel separation. Feed a tone in ONE channel only (the other silent); the cross-channel
-// leakage at the output relative to the direct channel must equal the preset's cross-level alpha
-// (in dB), within tolerance, in BOTH directions (L-only and R-only). Measured at a LOW frequency
-// (well below fc) so the LPF passes the cross path near-unity, isolating the gain ratio.
-//   Relaxed: -9.5 dB +-1.5,  Bauer: -9.0 +-1.5,  Strong: -6.0 +-1.5.
-// gCross/gDirect = (α/(1+α)) / (1/(1+α)) = α, so 20·log10(α) is the analytic separation.
+// CF-4: channel separation. A tone in ONE channel: the far ear's level against the near ear's is
+// the bs2b response (oracle, 0.02 dB), which at low frequency is the preset's feed level — −9.5 /
+// −6.0 / −4.5 dB (bs2b.h; ±0.2 dB at 50 Hz). Both directions.
 // ===========================================================================
 static auto testCrossfeedChannelSeparation() -> void
 {
     static const char* const kName = "Crossfeed_ChannelSeparation";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
-    constexpr uint32_t kFrames = 16384U;
-    constexpr float kProbeHz = 120.0F; // well below every preset fc → LPF ~ unity on the cross path
-    constexpr double kTolDb = 1.5;
+    constexpr double kProbeHz = 50.0;
+    constexpr double kAmp = 0.25;
+    constexpr double kOracleTolDb = 0.02;
+    constexpr double kFeedTolDb = 0.2;
 
-    std::vector<float> tone(kFrames);
-    const std::vector<float> silence(kFrames, 0.0F);
-    for (uint32_t i = 0U; i < kFrames; ++i)
-    {
-        tone[i] = 0.25F * std::sin(2.0F * std::numbers::pi_v<float> * kProbeHz *
-                                   static_cast<float>(i) / static_cast<float>(kSR));
-    }
-
-    struct Case
-    {
-        const char* label;
-        uint32_t preset;
-        float alpha;
-    };
-    const std::array<Case, 3U> cases = {
-        {
-            {"Relaxed", kCfPresetRelaxed, kCfAlphaRelaxed},
-            {"Bauer", kCfPresetBauer, kCfAlphaBauer},
-            {"Strong", kCfPresetStrong, kCfAlphaStrong},
-        },
-    };
+    const std::vector<float> tone = cfTone(kProbeHz, kAmp, kCfStreamFrames, kSR);
+    const std::vector<float> silence(kCfStreamFrames, 0.0F);
+    const auto amplitude = [&](const std::vector<float>& buf)
+    { return toneAmplitude(buf, kCfSettledFrom, kCfStreamFrames, kProbeHz, kSR); };
 
     std::string fail;
-    double measuredBauer = 0.0;
-    double measuredRelaxed = 0.0;
-    double measuredStrong = 0.0;
-    for (const auto& c : cases)
+    for (const Bs2bLevel& level : kBs2bLevels)
     {
-        const CrossfeedParams params = deriveCfParams(1U, 1.0F, c.preset, kSR);
-        const double expectedDb = 20.0 * std::log10(static_cast<double>(c.alpha));
-
-        // L-only: tone in L, silence in R. The CROSS into R is the leakage; the DIRECT in L is the
-        // reference. Measure RMS over the second half (after the ramp + delay-line fill settle).
-        const StereoOut outL = runCrossfeedSettled(params, kSR, tone, silence);
-        const double directL = sliceRms(outL.left, kFrames / 2U, kFrames);
-        const double crossToR = sliceRms(outL.right, kFrames / 2U, kFrames);
-
-        // R-only: tone in R, silence in L → cross into L.
-        const StereoOut outR = runCrossfeedSettled(params, kSR, silence, tone);
-        const double directR = sliceRms(outR.right, kFrames / 2U, kFrames);
-        const double crossToL = sliceRms(outR.left, kFrames / 2U, kFrames);
-
-        if (directL <= 0.0 || directR <= 0.0)
+        const CrossfeedParams params = deriveCfParams(1U, level.preset, kSR);
+        const double expectedDb = Bs2bReference(level.fcutHz, level.feedDb, kSR).separationDb(kProbeHz, kSR);
+        const StereoOut leftOnly = runCrossfeedStream(params, kSR, tone, silence);
+        const StereoOut rightOnly = runCrossfeedStream(params, kSR, silence, tone);
+        const double leftToRightDb = 20.0 * std::log10(amplitude(leftOnly.right) / amplitude(leftOnly.left));
+        const double rightToLeftDb = 20.0 * std::log10(amplitude(rightOnly.left) / amplitude(rightOnly.right));
+        logInfo(std::format("  [info] {}: {}: L→R {:.3f} dB, R→L {:.3f} dB (bs2b {:.3f} dB; feed −{} dB)\n",
+                            kName,
+                            level.label,
+                            leftToRightDb,
+                            rightToLeftDb,
+                            expectedDb,
+                            level.feedDb));
+        for (const double sepDb : {leftToRightDb, rightToLeftDb})
         {
-            fail += "\n  direct-channel RMS is zero";
-            continue;
-        }
-        const double sepLtoR = 20.0 * std::log10(crossToR / directL);
-        const double sepRtoL = 20.0 * std::log10(crossToL / directR);
-        if (c.preset == kCfPresetBauer) { measuredBauer = sepLtoR; }
-        if (c.preset == kCfPresetRelaxed) { measuredRelaxed = sepLtoR; }
-        if (c.preset == kCfPresetStrong) { measuredStrong = sepLtoR; }
-
-        std::ostringstream info;
-        info << "  [info] " << kName << ": " << c.label << " sep L->R=" << sepLtoR
-             << " dB R->L=" << sepRtoL << " dB (expected " << expectedDb << " +-" << kTolDb << ")\n";
-        logInfo(info.str());
-
-        if (std::abs(sepLtoR - expectedDb) > kTolDb || std::abs(sepRtoL - expectedDb) > kTolDb)
-        {
-            std::ostringstream oss;
-            oss << "\n  " << c.label << " separation L->R=" << sepLtoR << " R->L=" << sepRtoL
-                << " expected " << expectedDb << " +-" << kTolDb;
-            fail += oss.str();
+            if (std::abs(sepDb - expectedDb) > kOracleTolDb || std::abs(sepDb + level.feedDb) > kFeedTolDb)
+            {
+                fail += std::format("\n  {}: separation {:.3f} dB, bs2b {:.3f} dB, feed −{} dB",
+                                    level.label,
+                                    sepDb,
+                                    expectedDb,
+                                    level.feedDb);
+            }
         }
     }
-
-    std::ostringstream summary;
-    summary << "  [measured] CF-4 separation (L->R): Relaxed=" << measuredRelaxed
-            << " dB, Bauer=" << measuredBauer << " dB, Strong=" << measuredStrong << " dB\n";
-    logInfo(summary.str());
-
     if (!fail.empty())
     {
-        logFail(kName, "channel-separation failure:" + fail);
+        logFail(kName, "separation is not bs2b's:" + fail);
         return;
     }
     logPass(kName);
 }
 
 // ===========================================================================
-// CF-5: LPF characteristic on the cross path. Probe the cross-channel leakage (tone in one
-// channel, measure the other) at fc and at 8 kHz, normalised to the low-frequency (120 Hz)
-// leakage. The one-pole LPF must be ~-3 dB at fc and >= 9 dB down at 8 kHz, relative to the LF
-// reference. Use the Bauer preset (fc = 700 Hz).
+// CF-5: the cross path is bs2b's first-order low-pass: −3 dB at the preset's cut against its
+// low-frequency level (±0.1 dB), and well down by 8 kHz (≤ −18 dB; a one-pole is ~−21 dB there).
 // ===========================================================================
 static auto testCrossfeedLpfCharacteristic() -> void
 {
     static const char* const kName = "Crossfeed_LpfCharacteristic";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
-    constexpr uint32_t kFrames = 32768U;
-    constexpr float kFc = kCfFcBauer;     // 700 Hz
-    constexpr float kRefHz = 120.0F;      // LF reference (LPF ~ unity)
-    constexpr float k8kHz = 8000.0F;
-
-    const CrossfeedParams params = deriveCfParams(1U, 1.0F, kCfPresetBauer, kSR);
-
-    // Cross-channel RMS for a tone at freqHz placed in L only (leakage appears in R).
-    const auto crossRmsAt = [&](float freqHz) -> double
-    {
-        std::vector<float> tone(kFrames);
-        const std::vector<float> silence(kFrames, 0.0F);
-        for (uint32_t i = 0U; i < kFrames; ++i)
-        {
-            tone[i] = 0.25F * std::sin(2.0F * std::numbers::pi_v<float> * freqHz *
-                                       static_cast<float>(i) / static_cast<float>(kSR));
-        }
-        const StereoOut out = runCrossfeedSettled(params, kSR, tone, silence);
-        return sliceRms(out.right, kFrames / 2U, kFrames);
-    };
-
-    const double ref = crossRmsAt(kRefHz);
-    if (ref <= 0.0)
-    {
-        logFail(kName, "LF reference cross RMS is zero");
-        return;
-    }
-    const double atFcDb = 20.0 * std::log10(crossRmsAt(kFc) / ref);
-    const double at8kDb = 20.0 * std::log10(crossRmsAt(k8kHz) / ref);
-
-    std::ostringstream info;
-    info << "  [info] " << kName << ": LPF @ fc(" << kFc << ")=" << atFcDb << " dB, @ 8kHz="
-         << at8kDb << " dB (rel. to " << kRefHz << " Hz)\n";
-    logInfo(info.str());
+    constexpr double kRefHz = 20.0;
+    constexpr double kHighHz = 8000.0;
+    constexpr double kAmp = 0.25;
 
     std::string fail;
-    // -3 dB at fc, +-1.0 dB slack (one-pole exact-RC is -3.01 dB at fc by construction).
-    if (std::abs(atFcDb - (-3.0)) > 1.0)
+    for (const Bs2bLevel& level : kBs2bLevels)
     {
-        std::ostringstream oss;
-        oss << "\n  LPF at fc=" << atFcDb << " dB, expected ~-3 dB +-1.0";
-        fail += oss.str();
-    }
-    // >= 9 dB down at 8 kHz (a one-pole gives ~21 dB down here; 9 dB is a conservative floor).
-    if (at8kDb > -9.0)
-    {
-        std::ostringstream oss;
-        oss << "\n  LPF at 8kHz=" << at8kDb << " dB, expected <= -9 dB";
-        fail += oss.str();
+        const CrossfeedParams params = deriveCfParams(1U, level.preset, kSR);
+        const std::vector<float> silence(kCfStreamFrames, 0.0F);
+        const auto crossAmplitude = [&](double hz)
+        {
+            const StereoOut out =
+                runCrossfeedStream(params, kSR, cfTone(hz, kAmp, kCfStreamFrames, kSR), silence);
+            return toneAmplitude(out.right, kCfSettledFrom, kCfStreamFrames, hz, kSR);
+        };
+        const double reference = crossAmplitude(kRefHz);
+        const double atCutDb = 20.0 * std::log10(crossAmplitude(level.fcutHz) / reference);
+        const double atHighDb = 20.0 * std::log10(crossAmplitude(kHighHz) / reference);
+        logInfo(std::format("  [info] {}: {}: cross path {:.3f} dB at {} Hz, {:.2f} dB at 8 kHz\n",
+                            kName,
+                            level.label,
+                            atCutDb,
+                            level.fcutHz,
+                            atHighDb));
+        if (std::abs(atCutDb + 3.01) > 0.1 || atHighDb > -18.0)
+        {
+            fail += std::format(
+                "\n  {}: {:.3f} dB at the cut, {:.2f} dB at 8 kHz", level.label, atCutDb, atHighDb);
+        }
     }
     if (!fail.empty())
     {
-        logFail(kName, "LPF characteristic failure:" + fail);
+        logFail(kName, "the cross path is not bs2b's low-pass:" + fail);
         return;
     }
     logPass(kName);
@@ -466,7 +566,7 @@ static auto testCrossfeedNoNaNInf() -> void
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
     constexpr uint32_t kFrames = 4096U;
 
-    const CrossfeedParams params = deriveCfParams(1U, 1.0F, kCfPresetStrong, kSR);
+    const CrossfeedParams params = deriveCfParams(1U, kCfPresetStrong, kSR);
 
     // Battery: white noise, a unit transient (impulse at 0), and DC.
     std::vector<std::pair<std::vector<float>, std::vector<float>>> battery;
@@ -497,7 +597,7 @@ static auto testCrossfeedNoNaNInf() -> void
 
     for (size_t c = 0U; c < battery.size(); ++c)
     {
-        const StereoOut out = runCrossfeedSettled(params, kSR, battery[c].first, battery[c].second);
+        const StereoOut out = runCrossfeedStream(params, kSR, battery[c].first, battery[c].second);
         for (uint32_t i = 0U; i < kFrames; ++i)
         {
             if (!std::isfinite(out.left[i]) || !std::isfinite(out.right[i]))
@@ -523,11 +623,11 @@ static auto testCrossfeedClickFreeEnableDisable() -> void
     constexpr uint32_t kBlocks = 64U; // ~0.68 s — ample to settle the ramp each phase
     constexpr float kToneHz = 440.0F;
 
-    // Toggling crossfeed off keeps the strength selection (the UI flow): same level+preset, only
+    // Toggling crossfeed off keeps the strength selection (the UI flow): the same preset, only
     // enabled flips. The off POD therefore carries the active coefficients so the module's mix ramp
     // glides the still-crossfed wet down to dry (click-free), then settles bit-exact.
-    const CrossfeedParams onParams = deriveCfParams(1U, 1.0F, kCfPresetStrong, kSR);
-    const CrossfeedParams offParams = deriveCfParams(0U, 1.0F, kCfPresetStrong, kSR);
+    const CrossfeedParams onParams = deriveCfParams(1U, kCfPresetStrong, kSR);
+    const CrossfeedParams offParams = deriveCfParams(0U, kCfPresetStrong, kSR);
 
     CrossfeedModule module;
     module.initialize(kSR, kBlock);
@@ -567,8 +667,8 @@ static auto testCrossfeedClickFreeEnableDisable() -> void
     runPhase(offParams, kBlocks);
 
     // The no-click bound compares the transition step to the SETTLED per-sample step of the SAME
-    // regime — the crossfed (ON) waveform has steeper intrinsic slopes than the dry (OFF) tone
-    // (the delayed+filtered cross path adds slew), so a single dry-regime reference would unfairly
+    // regime — the crossfed (ON) waveform's slopes differ from the dry (OFF) tone's (the
+    // filtered cross path and the high-boost direct path change the slew), so a single dry-regime reference would unfairly
     // flag the crossfed signal's own steps as a "click". We take the max settled step across BOTH
     // a settled OFF block (final block) and a settled ON block (last block of the on phase).
     const auto maxStepInBlock = [&](size_t end) -> float
@@ -609,168 +709,308 @@ static auto testCrossfeedClickFreeEnableDisable() -> void
 }
 
 // ===========================================================================
-// CF-8: coefficient recompute on sample-rate change. The Realizer re-derives the POD per rate;
-// channel separation (alpha) must be consistent within +-0.5 dB across 44.1/48/192 kHz, and the
-// derived ITD delayFrames must satisfy < 64 at every rate (the fixed-line invariant).
+// CF-8: the Realizer re-derives bs2b at each rate: the separation at 50 Hz matches the oracle at
+// that rate (0.02 dB) and is the same feed level at 44.1, 48, 96 and 192 kHz (0.05 dB).
 // ===========================================================================
 static auto testCrossfeedCoeffRecomputeAcrossRates() -> void
 {
     static const char* const kName = "Crossfeed_CoeffRecomputeAcrossRates";
-    constexpr float kProbeHz = 120.0F; // LF: LPF ~ unity so we isolate the alpha gain
-    constexpr uint32_t kFrames = 16384U;
-    constexpr double kConsistencyTolDb = 0.5;
-
-    const std::array<uint32_t, 3U> rates = {44100U, 48000U, 192000U};
-    const double expectedDb = 20.0 * std::log10(static_cast<double>(kCfAlphaBauer));
+    constexpr double kProbeHz = 50.0;
+    constexpr double kAmp = 0.25;
+    constexpr double kOracleTolDb = 0.02;
+    constexpr double kConsistencyTolDb = 0.05;
+    constexpr std::array<uint32_t, 4U> kRates = {44100U, 48000U, 96000U, 192000U};
+    const Bs2bLevel& level = kBs2bLevels[1U]; // Default (Cmoy)
 
     std::string fail;
-    double firstSep = 0.0;
-    bool haveFirst = false;
-    for (const uint32_t sr : rates)
+    std::optional<double> firstSepDb;
+    for (const uint32_t rate : kRates)
     {
-        const CrossfeedParams params = deriveCfParams(1U, 1.0F, kCfPresetBauer, sr);
-
-        // Fixed-line invariant: derived ITD must fit the 64-tap delay line at every rate.
-        if (params.delayFrames < 0 || params.delayFrames >= kMaxCrossfeedDelayFrames)
+        const CrossfeedParams params = deriveCfParams(1U, level.preset, rate);
+        const uint32_t frames = rate; // 1 s at every rate
+        const std::vector<float> silence(frames, 0.0F);
+        const StereoOut out = runCrossfeedStream(params, rate, cfTone(kProbeHz, kAmp, frames, rate), silence);
+        const double sepDb = 20.0 * std::log10(toneAmplitude(out.right, frames / 2U, frames, kProbeHz, rate) /
+                                               toneAmplitude(out.left, frames / 2U, frames, kProbeHz, rate));
+        const double expectedDb = Bs2bReference(level.fcutHz, level.feedDb, rate).separationDb(kProbeHz, rate);
+        logInfo(std::format("  [info] {}: {} Hz: separation {:.4f} dB (bs2b {:.4f} dB)\n",
+                            kName,
+                            rate,
+                            sepDb,
+                            expectedDb));
+        if (std::abs(sepDb - expectedDb) > kOracleTolDb)
         {
-            std::ostringstream oss;
-            oss << "\n  delayFrames=" << params.delayFrames << " at " << sr
-                << " Hz violates < " << kMaxCrossfeedDelayFrames;
-            fail += oss.str();
+            fail += std::format("\n  {} Hz: {:.4f} dB vs bs2b {:.4f} dB", rate, sepDb, expectedDb);
         }
-
-        std::vector<float> tone(kFrames);
-        const std::vector<float> silence(kFrames, 0.0F);
-        for (uint32_t i = 0U; i < kFrames; ++i)
+        if (!firstSepDb)
         {
-            tone[i] = 0.25F * std::sin(2.0F * std::numbers::pi_v<float> * kProbeHz *
-                                       static_cast<float>(i) / static_cast<float>(sr));
+            firstSepDb = sepDb;
         }
-        const StereoOut out = runCrossfeedSettled(params, sr, tone, silence);
-        const double direct = sliceRms(out.left, kFrames / 2U, kFrames);
-        const double cross = sliceRms(out.right, kFrames / 2U, kFrames);
-        if (direct <= 0.0)
+        else if (std::abs(sepDb - *firstSepDb) > kConsistencyTolDb)
         {
-            fail += "\n  direct RMS zero";
-            continue;
-        }
-        const double sepDb = 20.0 * std::log10(cross / direct);
-
-        std::ostringstream info;
-        info << "  [info] " << kName << ": " << sr << " Hz sep=" << sepDb << " dB delayFrames="
-             << params.delayFrames << " (expected sep " << expectedDb << ")\n";
-        logInfo(info.str());
-
-        if (!haveFirst)
-        {
-            firstSep = sepDb;
-            haveFirst = true;
-        }
-        else if (std::abs(sepDb - firstSep) > kConsistencyTolDb)
-        {
-            std::ostringstream oss;
-            oss << "\n  separation drift at " << sr << " Hz: " << sepDb << " dB vs " << firstSep
-                << " dB (> " << kConsistencyTolDb << ")";
-            fail += oss.str();
+            fail += std::format("\n  {} Hz drifts to {:.4f} dB from {:.4f} dB", rate, sepDb, *firstSepDb);
         }
     }
-
     if (!fail.empty())
     {
-        logFail(kName, "coeff-recompute consistency failure:" + fail);
+        logFail(kName, "bs2b is not re-derived per rate:" + fail);
         return;
     }
     logPass(kName);
 }
 
 // ===========================================================================
-// CF-9: read-both-then-write-both guard (the #1 crossfeed bug). Feed DISTINCT L and R tones at
-// different frequencies. The output L must contain the analytic blend gDirect·L + gCross·(LPF·
-// delayed·R), and likewise for R — NOT a value contaminated by the just-written L. We verify by
-// reconstructing the expected output OFFLINE with the same coefficients and comparing per-sample
-// (steady-state region) within +-1 dB of the measured-vs-analytic energy. A read-one/write-one
-// bug would feed the freshly-written L into R's cross path → measurable divergence.
+// CF-9: sample for sample, the module IS bs2b: distinct L and R content (two tones plus
+// independent noise) through the module and through cross_feed_d() (the oracle, double precision)
+// agree within 1e-5 once the enable ramp has settled. This also guards the #1 crossfeed bug —
+// writing the new L before reading it for R (read-one/write-one) — which no level test can see.
 // ===========================================================================
-static auto testCrossfeedReadBothWriteBoth() -> void
+static auto testCrossfeedMatchesBs2bReference() -> void
 {
-    static const char* const kName = "Crossfeed_ReadBothWriteBoth";
+    static const char* const kName = "Crossfeed_MatchesBs2bReference";
     constexpr uint32_t kSR = TestConstants::kSampleRate48k;
-    constexpr uint32_t kFrames = 16384U;
-    constexpr float kFreqL = 300.0F;
-    constexpr float kFreqR = 900.0F;
-
-    const CrossfeedParams params = deriveCfParams(1U, 1.0F, kCfPresetBauer, kSR);
+    constexpr uint32_t kFrames = 2U * kSR;
+    constexpr double kTolerance = 1e-5;
 
     std::vector<float> inL(kFrames);
     std::vector<float> inR(kFrames);
-    for (uint32_t i = 0U; i < kFrames; ++i)
-    {
-        inL[i] = 0.3F * std::sin(2.0F * std::numbers::pi_v<float> * kFreqL *
-                                 static_cast<float>(i) / static_cast<float>(kSR));
-        inR[i] = 0.3F * std::sin(2.0F * std::numbers::pi_v<float> * kFreqR *
-                                 static_cast<float>(i) / static_cast<float>(kSR));
-    }
-
-    const StereoOut out = runCrossfeedSettled(params, kSR, inL, inR);
-
-    // Offline reference (mix fully settled to 1.0). Reproduce the exact per-sample math:
-    //   crossToL[n] = LPF(delayed R)[n];  outL[n] = gDirect·L[n] + gCross·crossToL[n].
-    const auto delay = static_cast<uint32_t>(params.delayFrames);
-    std::vector<float> refL(kFrames, 0.0F);
-    std::vector<float> refR(kFrames, 0.0F);
-    float lpfRL = 0.0F; // R->L cross-path LPF state
-    float lpfLR = 0.0F; // L->R cross-path LPF state
-    std::array<float, kMaxCrossfeedDelayFrames> dlR{};
-    std::array<float, kMaxCrossfeedDelayFrames> dlL{};
-    uint32_t wR = 0U;
-    uint32_t wL = 0U;
+    std::mt19937 gen(0xB52B0001U);
+    std::uniform_real_distribution<float> noise(-0.1F, 0.1F);
     for (uint32_t n = 0U; n < kFrames; ++n)
     {
-        const float dryL = inL[n];
-        const float dryR = inR[n];
-
-        const uint32_t rIdxR = (wR + kMaxCrossfeedDelayFrames - delay) %
-                               static_cast<uint32_t>(kMaxCrossfeedDelayFrames);
-        const float delayedR = dlR[rIdxR];
-        dlR[wR] = dryR;
-        wR = (wR + 1U) % static_cast<uint32_t>(kMaxCrossfeedDelayFrames);
-        lpfRL = (params.lpfB0 * delayedR) + (params.lpfPole * lpfRL);
-
-        const uint32_t rIdxL = (wL + kMaxCrossfeedDelayFrames - delay) %
-                               static_cast<uint32_t>(kMaxCrossfeedDelayFrames);
-        const float delayedL = dlL[rIdxL];
-        dlL[wL] = dryL;
-        wL = (wL + 1U) % static_cast<uint32_t>(kMaxCrossfeedDelayFrames);
-        lpfLR = (params.lpfB0 * delayedL) + (params.lpfPole * lpfLR);
-
-        refL[n] = (params.gDirect * dryL) + (params.gCross * lpfRL);
-        refR[n] = (params.gDirect * dryR) + (params.gCross * lpfLR);
+        const double t = static_cast<double>(n) / kSR;
+        inL[n] = static_cast<float>(0.3 * std::sin(2.0 * std::numbers::pi * 300.0 * t)) + noise(gen);
+        inR[n] = static_cast<float>(0.3 * std::sin(2.0 * std::numbers::pi * 900.0 * t)) + noise(gen);
     }
 
-    // Compare energy in the settled region: module-vs-analytic within +-1 dB on both channels.
-    const double moduleL = sliceRms(out.left, kFrames / 2U, kFrames);
-    const double moduleR = sliceRms(out.right, kFrames / 2U, kFrames);
-    const double refLrms = sliceRms(refL, kFrames / 2U, kFrames);
-    const double refRrms = sliceRms(refR, kFrames / 2U, kFrames);
-    if (refLrms <= 0.0 || refRrms <= 0.0)
+    std::string fail;
+    for (const Bs2bLevel& level : kBs2bLevels)
     {
-        logFail(kName, "analytic reference RMS is zero");
+        const StereoOut out = runCrossfeedStream(deriveCfParams(1U, level.preset, kSR), kSR, inL, inR);
+        Bs2bReference oracle(level.fcutHz, level.feedDb, kSR);
+        double worst = 0.0;
+        uint32_t worstAt = 0U;
+        for (uint32_t n = 0U; n < kFrames; ++n)
+        {
+            double left = inL[n];
+            double right = inR[n];
+            oracle.process(left, right);
+            if (n < kSR) // the first second: the enable ramp settling
+            {
+                continue;
+            }
+            const double err = std::max(std::abs(out.left[n] - left), std::abs(out.right[n] - right));
+            if (err > worst)
+            {
+                worst = err;
+                worstAt = n;
+            }
+        }
+        logInfo(std::format("  [info] {}: {}: worst |module − bs2b| = {:.3g} at frame {}\n",
+                            kName,
+                            level.label,
+                            worst,
+                            worstAt));
+        if (worst > kTolerance)
+        {
+            fail += std::format("\n  {}: |module − bs2b| = {:.3g} at frame {}", level.label, worst, worstAt);
+        }
+    }
+    if (!fail.empty())
+    {
+        logFail(kName, "the module is not bs2b sample for sample:" + fail);
         return;
     }
-    const double dLdB = 20.0 * std::log10(moduleL / refLrms);
-    const double dRdB = 20.0 * std::log10(moduleR / refRrms);
+    logPass(kName);
+}
 
-    std::ostringstream info;
-    info << "  [info] " << kName << ": module-vs-analytic L=" << dLdB << " dB R=" << dRdB
-         << " dB (read-both-then-write-both)\n";
-    logInfo(info.str());
+// ===========================================================================
+// CF-13: crossfeed plays on its own (founder decision 2026-10-14, KI-SND-05). It is an output stage
+// of the kernel — after the Intensity blend, before the limiter — so it plays at its preset's full
+// strength whatever Intensity is: at 0 (the faithful default, where it was silent), at ½ and at 1.
+// A tone in the left channel only: the right ear gets bs2b's cross path, the left its direct path,
+// each matching the oracle (0.02 dB) — the ratio at every Intensity, the levels where no blend or
+// normaliser touches them (Intensity 0 and 1).
+// ===========================================================================
+static auto testCrossfeedPlaysAtAnyIntensity() -> void
+{
+    static const char* const kName = "Crossfeed_PlaysAtAnyIntensity";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr double kProbeHz = 300.0;
+    constexpr double kAmp = 0.1;
+    constexpr double kTolDb = 0.02;
+    const Bs2bLevel& level = kBs2bLevels[2U]; // Strong (bs2b default)
+    const Bs2bReference oracle(level.fcutHz, level.feedDb, kSR);
+    const double directDb = 20.0 * std::log10(std::abs(oracle.direct(kProbeHz, kSR)));
+    const double crossDb = 20.0 * std::log10(std::abs(oracle.cross(kProbeHz, kSR)));
 
-    if (std::abs(dLdB) > 1.0 || std::abs(dRdB) > 1.0)
+    const std::vector<float> tone = cfTone(kProbeHz, kAmp, kCfStreamFrames, kSR);
+    const std::vector<float> silence(kCfStreamFrames, 0.0F);
+    std::string fail;
+    for (const float intensity : {0.0F, 0.5F, 1.0F})
     {
-        std::ostringstream oss;
-        oss << "read/write-order divergence: L=" << dLdB << " dB R=" << dRdB
-            << " dB vs analytic (> +-1 dB) — likely a read-one/write-one bug";
-        logFail(kName, oss.str());
+        TargetState state = makeIdentityState(); // EQ flat, normaliser off, limiter bypassed
+        state.intensityLinear = intensity;
+        state.crossfeed = deriveCfParams(1U, level.preset, kSR);
+        const StereoOut out = runKernelStream(state, kSR, tone, silence);
+        const double nearDb =
+            20.0 * std::log10(toneAmplitude(out.left, kCfSettledFrom, kCfStreamFrames, kProbeHz, kSR) / kAmp);
+        const double farDb =
+            20.0 * std::log10(toneAmplitude(out.right, kCfSettledFrom, kCfStreamFrames, kProbeHz, kSR) / kAmp);
+        logInfo(std::format("  [info] {}: Intensity {}: near {:.3f} dB, far {:.3f} dB (bs2b {:.3f} / {:.3f})\n",
+                            kName,
+                            intensity,
+                            nearDb,
+                            farDb,
+                            directDb,
+                            crossDb));
+        const bool ratioOff = !std::isfinite(farDb - nearDb) ||
+                              std::abs((farDb - nearDb) - (crossDb - directDb)) > kTolDb;
+        const bool levelsOff = (intensity == 0.0F || intensity == 1.0F) &&
+                               (std::abs(nearDb - directDb) > kTolDb || std::abs(farDb - crossDb) > kTolDb);
+        if (ratioOff || levelsOff)
+        {
+            fail += std::format("\n  Intensity {}: near {:.3f} dB, far {:.3f} dB; bs2b near {:.3f}, far {:.3f}",
+                                intensity,
+                                nearDb,
+                                farDb,
+                                directDb,
+                                crossDb);
+        }
+    }
+    if (!fail.empty())
+    {
+        logFail(kName, "crossfeed does not play at full strength at every Intensity:" + fail);
+        return;
+    }
+    logPass(kName);
+}
+
+// ===========================================================================
+// CF-14: crossfeed off is bit-exact. (a) At Intensity 0 with the EQ flat, crossfeed on is audible;
+// turned off it glides out (~160 ms) and, after the 2 s hold, the kernel is back on the bit-perfect
+// path — the output IS the input, bit for bit. (b) With the EQ on (P1), a crossfeed turned on and
+// then off leaves the output bit-identical to a kernel whose crossfeed was never on (the level stays
+// under the limiter's ceiling, so the limiter's history cannot differ), and an off crossfeed that
+// still carries its coefficients plays bit-identically to the default, coefficient-free one.
+// ===========================================================================
+static auto testCrossfeedOffBitExact() -> void
+{
+    static const char* const kName = "Crossfeed_Off_BitExact";
+    constexpr uint32_t kSR = TestConstants::kSampleRate48k;
+    constexpr uint32_t kOnFrames = kSR;       // 1 s on
+    constexpr uint32_t kOffFrames = 3U * kSR; // ramp out + the 2 s hold + the 5 ms fade, and more
+    constexpr uint32_t kTail = kSR / 2U;      // the last 0.5 s is compared
+    constexpr uint32_t kTotal = kOnFrames + kOffFrames;
+    constexpr float kAudibleFloor = 0.01F;    // −40 dBFS of difference: plainly audible
+
+    std::vector<float> inL(kTotal);
+    std::vector<float> inR(kTotal);
+    for (uint32_t n = 0U; n < kTotal; ++n)
+    {
+        const double t = static_cast<double>(n) / kSR;
+        inL[n] = static_cast<float>(0.3 * std::sin(2.0 * std::numbers::pi * 300.0 * t));
+        inR[n] = static_cast<float>(0.2 * std::sin(2.0 * std::numbers::pi * 500.0 * t));
+    }
+    const CrossfeedParams on = deriveCfParams(1U, kCfPresetStrong, kSR);
+    const CrossfeedParams offCarrying = deriveCfParams(0U, kCfPresetStrong, kSR);
+
+    // Run `phases` back to back through one kernel; each phase is (state, frames).
+    const auto runPhases = [&](const std::vector<std::pair<TargetState, uint32_t>>& phases) -> StereoOut
+    {
+        constexpr uint32_t kBlock = TestConstants::kFrames512;
+        DSPKernel kernel;
+        kernel.publishTargetState(phases.front().first);
+        kernel.initialize(kSR, kBlock);
+        StereoOut out{.left = inL, .right = inR};
+        uint32_t offset = 0U;
+        for (const auto& [state, frames] : phases)
+        {
+            kernel.publishTargetState(state);
+            const uint32_t end = offset + frames;
+            while (offset < end)
+            {
+                const uint32_t chunk = std::min(kBlock, end - offset);
+                TestABL abl(chunk);
+                std::copy_n(inL.begin() + offset, chunk, abl.left.begin());
+                std::copy_n(inR.begin() + offset, chunk, abl.right.begin());
+                kernel.process(abl.abl(), chunk);
+                std::copy_n(abl.left.begin(), chunk, out.left.begin() + offset);
+                std::copy_n(abl.right.begin(), chunk, out.right.begin() + offset);
+                offset += chunk;
+            }
+        }
+        return out;
+    };
+    const auto tailEqual = [&](const StereoOut& a, const std::vector<float>& refL, const std::vector<float>& refR)
+    {
+        const size_t from = kTotal - kTail;
+        return std::memcmp(a.left.data() + from, refL.data() + from, kTail * sizeof(float)) == 0 &&
+               std::memcmp(a.right.data() + from, refR.data() + from, kTail * sizeof(float)) == 0;
+    };
+    const auto maxDifference = [&](const StereoOut& a, uint32_t from, uint32_t to)
+    {
+        float worst = 0.0F;
+        for (uint32_t n = from; n < to; ++n)
+        {
+            worst = std::max({worst, std::abs(a.left[n] - inL[n]), std::abs(a.right[n] - inR[n])});
+        }
+        return worst;
+    };
+
+    std::string fail;
+
+    // (a) Intensity 0, EQ flat: on → audible; off → the bit-perfect path again.
+    TargetState flat = makeIdentityState();
+    flat.intensityLinear = 0.0F;
+    TargetState flatOn = flat;
+    flatOn.crossfeed = on;
+    TargetState flatOff = flat;
+    flatOff.crossfeed = offCarrying;
+    const StereoOut a = runPhases({{flatOn, kOnFrames}, {flatOff, kOffFrames}});
+    const float audible = maxDifference(a, kOnFrames / 2U, kOnFrames);
+    logInfo(std::format("  [info] {}: Intensity 0, EQ flat: crossfeed on changes the output by up to "
+                        "{:.4f}\n",
+                        kName,
+                        audible));
+    if (audible < kAudibleFloor)
+    {
+        fail += std::format("\n  crossfeed on at Intensity 0 changed the output by only {:.3g} (silent)", audible);
+    }
+    if (!tailEqual(a, inL, inR))
+    {
+        fail += std::format("\n  crossfeed off at Intensity 0: not bit-exact {} s later (max |Δ| {:.3g})",
+                            kOffFrames / kSR,
+                            maxDifference(a, kTotal - kTail, kTotal));
+    }
+
+    // (b) Intensity 0, EQ on (P1), the limiter active but untouched by this level.
+    std::array<float, kEqBands> gains{};
+    gains[kBand1kHzIndex] = 3.0F;
+    TargetState eqOn = makeIdentityState();
+    eqOn.intensityLinear = 0.0F;
+    eqOn.eq = makeEqParams(gains, kSR);
+    eqOn.limiter.truePeakCeilingLinear = kTruePeakCeilingLinear;
+    TargetState eqOnCrossfeed = eqOn;
+    eqOnCrossfeed.crossfeed = on;
+    TargetState eqOnOffCarrying = eqOn;
+    eqOnOffCarrying.crossfeed = offCarrying;
+    const StereoOut never = runPhases({{eqOn, kTotal}});
+    const StereoOut toggled = runPhases({{eqOnCrossfeed, kOnFrames}, {eqOnOffCarrying, kOffFrames}});
+    const StereoOut carrying = runPhases({{eqOnOffCarrying, kTotal}});
+    if (!tailEqual(toggled, never.left, never.right))
+    {
+        fail += "\n  EQ on: crossfeed on then off is not bit-identical to crossfeed never on";
+    }
+    if (std::memcmp(carrying.left.data(), never.left.data(), kTotal * sizeof(float)) != 0 ||
+        std::memcmp(carrying.right.data(), never.right.data(), kTotal * sizeof(float)) != 0)
+    {
+        fail += "\n  EQ on: an off crossfeed carrying its coefficients is not bit-identical to the default";
+    }
+
+    if (!fail.empty())
+    {
+        logFail(kName, "crossfeed on/off:" + fail);
         return;
     }
     logPass(kName);

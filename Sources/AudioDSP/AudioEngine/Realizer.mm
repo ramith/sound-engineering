@@ -16,90 +16,78 @@ namespace AdaptiveSound
 
 namespace
 {
-    // Preset → (fc, alpha) resolution table (QW1 §2/§5). The middle case is `Bauer`; the Swift
-    // label stays "Default". These are bs2b-INSPIRED, not the bs2b coefficient sets: the DSP model
-    // is a simplified Chu-Moy-style flat-direct + one-pole-LPF-cross (see CrossfeedModule), not
-    // bs2b's complementary low/high-shelf topology, so the values approximate rather than reproduce
-    // it. The cut frequencies match bs2b (650/700/700 Hz); the alphas are chosen to form a
-    // MONOTONIC crossfeed-depth ladder Relaxed < Bauer < Strong (gCross = α/(1+α) is monotonic in
-    // α). Off-RT only (called from the Realizer's serial queue / a test).
-    //
-    // Stage-1 review AC-3 (deferred, founder call): Bauer (0.355) sits only ~0.5 dB of gCross above
-    // Relaxed (0.335), so the "Default" middle preset is barely distinct from Relaxed. The review
-    // noted 0.355 doesn't match bs2b's Default 4.5 dB feed, but do NOT blindly set α=0.596 — that
-    // exceeds Strong (0.501) and inverts the ladder. Any change here is a listening/UX decision
-    // about how distinct the three rungs should be, not a mechanical coefficient correction.
-    struct CrossfeedPresetCoeffs
+    // The crossfeed presets: bs2b's levels (libbs2b bs2b.h, BS2B_*_CLEVEL) — the cut frequency of
+    // the cross-path low-pass and the feed, the low-frequency level of the cross path against the
+    // direct path. Council P2-3 / C-42: the UI's three strengths are bs2b's own levels.
+    struct Bs2bLevel
     {
-        float fcHz;
-        float alpha;
+        double fcutHz;
+        double feedDb;
     };
+    constexpr Bs2bLevel kBs2bJmeier = {.fcutHz = 650.0, .feedDb = 9.5};  // BS2B_JMEIER_CLEVEL
+    constexpr Bs2bLevel kBs2bCmoy = {.fcutHz = 700.0, .feedDb = 6.0};    // BS2B_CMOY_CLEVEL
+    constexpr Bs2bLevel kBs2bDefault = {.fcutHz = 700.0, .feedDb = 4.5}; // BS2B_DEFAULT_CLEVEL
 
-    // Labels are the UX depth rungs; the bs2b names are the design origins of each cut frequency.
-    constexpr CrossfeedPresetCoeffs kCrossfeedRelaxed = {.fcHz = 650.0F, .alpha = 0.335F}; // ~Jmeier fc
-    constexpr CrossfeedPresetCoeffs kCrossfeedBauer = {.fcHz = 700.0F, .alpha = 0.355F};   // ~Default fc
-    constexpr CrossfeedPresetCoeffs kCrossfeedStrong = {.fcHz = 700.0F, .alpha = 0.501F};  // ~Cmoy fc
-
-    // 2π for the exact-RC one-pole pole: p = exp(-2π·fc/fs).
-    constexpr float kTwoPi = 6.28318530717958647692F;
-
-    [[nodiscard]] auto resolveCrossfeedPreset(uint32_t preset) -> CrossfeedPresetCoeffs
+    [[nodiscard]] auto bs2bLevel(uint32_t preset) -> Bs2bLevel
     {
-        const auto value = static_cast<CrossfeedPreset>(static_cast<uint8_t>(preset));
-        switch (value)
+        switch (static_cast<CrossfeedPreset>(static_cast<uint8_t>(preset)))
         {
-        case CrossfeedPreset::Strong:
-            return kCrossfeedStrong;
-        case CrossfeedPreset::Relaxed:
-            return kCrossfeedRelaxed;
-        case CrossfeedPreset::Bauer:
-            return kCrossfeedBauer;
+        case CrossfeedPreset::Jmeier:
+            return kBs2bJmeier;
+        case CrossfeedPreset::Cmoy:
+            return kBs2bCmoy;
+        case CrossfeedPreset::Bs2bDefault:
+            return kBs2bDefault;
         }
-        return kCrossfeedBauer; // unreachable (preset is clamped at the surface); safe default
+        return kBs2bCmoy; // unreachable (the preset is clamped at the surface)
     }
 
-    // Derive the CrossfeedParams POD off-RT from the user intent {enabled, level, preset} and the
-    // design sample rate. The cross-path attenuation alpha is SCALED by `level` (the crossfeed
-    // depth control) so the audible amount tracks the UI level continuously; the gains stay
-    // loudness-neutral (gDirect=1/(1+α), gCross=α/(1+α)).
+    // 20·log10: linear amplitude ↔ dB (bs2b's gains; the ceiling in its log line).
+    constexpr double kAmplitudeDbScale = 20.0;
+    constexpr double kTwoPi = 6.28318530717958647692;
+
+    // The CrossfeedParams the module plays for {enabled, preset} at sampleRate: bs2b's init()
+    // (libbs2b src/bs2b.c, MIT © 2005 Boris Mikhaylov; re-implemented from the published source,
+    // not linked — OQ-17), in double precision, with its output gain folded into the numerators:
+    //   GB_lo = −feed·5/6 − 3 dB, GB_hi = feed/6 − 3 dB     (so GB_lo − GB_hi = −feed)
+    //   G_lo = 10^(GB_lo/20),  G_hi = 1 − 10^(GB_hi/20),  Fc_hi = Fc_lo·2^((GB_lo − 20·log10 G_hi)/12)
+    //   low-pass (cross):  a0_lo = G_lo·(1 − x_lo), b1_lo = x_lo,        x_lo = e^(−2π·Fc_lo/fs)
+    //   high-boost (direct): a0_hi = 1 − G_hi·(1 − x_hi), a1_hi = −x_hi, b1_hi = x_hi = e^(−2π·Fc_hi/fs)
+    //   gain = 1 / (1 − G_hi + G_lo)   — a centred (L = R) signal at DC passes at exactly 0 dB.
     //
-    // IMPORTANT (click-free DISABLE): the coefficients are ALWAYS computed, even when enabled==0.
-    // `enabled` drives only the module's mix-ramp TARGET (1=fade in, 0=fade out); the coefficients
-    // describe the crossfeed the module fades between. If a disable zeroed the coefficients, the
-    // module's wet path would equal the dry path INSTANTLY (gCross=0) — a snap-cut click — and the
-    // mix ramp would have nothing to fade. Carrying the last-active coefficients lets the module
-    // glide the still-crossfed `wet` down to dry, then early-return bit-exact once the ramp settles
-    // at 0 (which keeps the golden master / CF-1 anchor: the DEFAULT CrossfeedParams{} is enabled=0
-    // with zero coefficients and a never-enabled module's mix stays at 0).
-    [[nodiscard]] auto deriveCrossfeedParams(uint32_t enabled, float level, uint32_t preset,
-                                             double sampleRate) -> CrossfeedParams
+    // IMPORTANT (click-free DISABLE): the coefficients are ALWAYS derived, even when enabled == 0.
+    // `enabled` drives only the module's glide target; the coefficients are the crossfeed it glides
+    // out of. Zeroed coefficients would make the crossfed signal the input instantly — a snap — and
+    // leave the glide nothing to fade. The DEFAULT CrossfeedParams{} (enabled = 0, the identity) is
+    // what a never-enabled kernel plays (the golden master / CF-1 anchor).
+    [[nodiscard]] auto deriveCrossfeedParams(uint32_t enabled, uint32_t preset, double sampleRate)
+        -> CrossfeedParams
     {
-        CrossfeedParams params{}; // all fields default to "off"
+        CrossfeedParams params{};
         params.enabled = (enabled != 0U) ? 1U : 0U;
         params.preset = static_cast<uint8_t>(preset);
 
-        const CrossfeedPresetCoeffs coeffs = resolveCrossfeedPreset(preset);
-        // Scale the cross attenuation by the depth level: level=0 → no cross (transparent),
-        // level=1 → the preset's full alpha. Keeps enable/level a continuous, loudness-neutral
-        // control (the module's per-sample mix ramp handles the click-free transition).
-        const float alpha = coeffs.alpha * level;
+        const Bs2bLevel level = bs2bLevel(preset);
+        constexpr double kLowPassShare = -5.0 / 6.0;
+        constexpr double kHighShelfShare = 1.0 / 6.0;
+        constexpr double kGainOffsetDb = -3.0;
+        constexpr double kSemitonesPerOctave = 12.0;
+        const double gainLowDb = (level.feedDb * kLowPassShare) + kGainOffsetDb;
+        const double gainHighDb = (level.feedDb * kHighShelfShare) + kGainOffsetDb;
+        const double gainLow = std::pow(10.0, gainLowDb / kAmplitudeDbScale);
+        const double gainHigh = 1.0 - std::pow(10.0, gainHighDb / kAmplitudeDbScale);
+        const double cutHighHz =
+            level.fcutHz *
+            std::pow(2.0, (gainLowDb - (kAmplitudeDbScale * std::log10(gainHigh))) / kSemitonesPerOctave);
+        const double gain = 1.0 / (1.0 - gainHigh + gainLow);
 
-        params.gDirect = 1.0F / (1.0F + alpha);
-        params.gCross = alpha / (1.0F + alpha);
-
-        // One-pole LPF (exact-RC form): p = exp(-2π·fc/fs); b0 = 1 - p; y[n]=b0·x[n]+p·y[n-1].
-        const float fs = static_cast<float>(sampleRate);
-        const float pole = std::exp(-(kTwoPi * coeffs.fcHz) / fs);
-        params.lpfPole = pole;
-        params.lpfB0 = 1.0F - pole;
-
-        // ITD: delayFrames = round(0.0003178·fs). Clamped to the fixed line capacity (defensive;
-        // 192 kHz worst case is 61 < 64, already asserted at compile time in CrossfeedModule.h).
-        // roundToNearestInt (CrossfeedModule.h) avoids the bugprone-incorrect-roundings pattern.
-        const int delayFrames =
-            std::clamp(roundToNearestInt(kCrossfeedItdSeconds * sampleRate), 0,
-                       kMaxCrossfeedDelayFrames - 1);
-        params.delayFrames = delayFrames;
+        const double poleLow = std::exp(-kTwoPi * level.fcutHz / sampleRate);
+        const double poleHigh = std::exp(-kTwoPi * cutHighHz / sampleRate);
+        params.crossB0 = static_cast<float>(gain * gainLow * (1.0 - poleLow));
+        params.crossPole = static_cast<float>(poleLow);
+        params.directB0 = static_cast<float>(gain * (1.0 - (gainHigh * (1.0 - poleHigh))));
+        params.directB1 = static_cast<float>(-gain * poleHigh);
+        params.directPole = static_cast<float>(poleHigh);
         return params;
     }
 } // namespace
@@ -112,9 +100,6 @@ namespace
 
     // The idle debounce before an edit's gain is refreshed at full resolution (A6).
     constexpr int64_t kLoudnessRefreshDelayNs = 150 * static_cast<int64_t>(NSEC_PER_MSEC);
-
-    // 20·log10: linear amplitude → dB (the ceiling in its log line).
-    constexpr double kAmplitudeDbScale = 20.0;
 
     // Run `work(Realizer&)` on `queue` if the Realizer still exists by then. A block captures a
     // C++ REFERENCE by reference, so the work and the weak reference move to the heap and the
@@ -243,17 +228,16 @@ void Realizer::setPendingIntensity(float value)
     }
 }
 
-void Realizer::setPendingCrossfeed(uint32_t enabled, float level, uint32_t preset)
+void Realizer::setPendingCrossfeed(uint32_t enabled, uint32_t preset)
 {
-    constexpr uint32_t kMaxPreset = static_cast<uint32_t>(CrossfeedPreset::Strong);
+    constexpr uint32_t kMaxPreset = static_cast<uint32_t>(CrossfeedPreset::Bs2bDefault);
     const CrossfeedIntent intent{
         .enabled = enabled,
-        .level = std::clamp(level, 0.0F, 1.0F),
         .preset = std::clamp(preset, 0U, kMaxPreset),
     };
     const bool post = writeSlot(pendingCrossfeed_, intent);
-    AdaptiveSound::log::debug("[QW1] Realizer.setPendingCrossfeed enabled={} level={:.4f} preset={} -> {}",
-                              intent.enabled, intent.level, intent.preset,
+    AdaptiveSound::log::debug("[QW1] Realizer.setPendingCrossfeed enabled={} preset={} -> {}",
+                              intent.enabled, intent.preset,
                               post ? "POST drain" : "coalesced (drain pending)");
     if (post)
     {
@@ -432,8 +416,7 @@ void Realizer::realizeEq()
 
 void Realizer::realizeCrossfeed()
 {
-    canonical_.crossfeed =
-        deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.level, crossfeed_.preset, sampleRate_);
+    canonical_.crossfeed = deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.preset, sampleRate_);
 }
 
 template <typename Work> void Realizer::runOnQueue(const Work& work)

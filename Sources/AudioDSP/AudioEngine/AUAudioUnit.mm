@@ -510,15 +510,14 @@ void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT {
     }
 }
 
-void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset) AUDIODSP_C_NOEXCEPT {
+void publishCrossfeed(void* auUnit, uint32_t enabled, uint32_t preset) AUDIODSP_C_NOEXCEPT {
     // QW1 §3: the single crossfeed control surface. Sets the Realizer's pending-crossfeed slot
-    // (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain when
-    // none is pending; the off-RT coefficient derivation, the canonical read-modify-write,
-    // and the atomic publish happen off-main in the Realizer's serial queue. The crossfeed slot is
-    // SEPARATE from the EQ/intensity slots, so an interleaved crossfeed intent is never dropped.
-    // The Realizer derives the coefficients at the rate it owns. Off-RT; no-op if null.
-    AdaptiveSound::log::debug("[QW1] C-ABI publishCrossfeed enabled={} level={:.4f} preset={}",
-                              enabled, level, preset);
+    // (preset clamped to the valid enum range) and posts a drain when none is pending; the off-RT
+    // coefficient derivation, the canonical read-modify-write, and the atomic publish happen
+    // off-main in the Realizer's serial queue. The crossfeed slot is SEPARATE from the
+    // EQ/intensity slots, so an interleaved crossfeed intent is never dropped. The Realizer
+    // derives the coefficients at the rate it owns. Off-RT; no-op if null.
+    AdaptiveSound::log::debug("[QW1] C-ABI publishCrossfeed enabled={} preset={}", enabled, preset);
     if (auUnit == nullptr) {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — auUnit == nullptr");
         return;
@@ -526,7 +525,7 @@ void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t pres
     AdaptiveSoundAU* audioUnit = (__bridge AdaptiveSoundAU*)auUnit; // non-owning borrow
     std::shared_ptr<AdaptiveSound::Realizer> realizer = [audioUnit realizer];
     if (realizer != nullptr) {
-        realizer->setPendingCrossfeed(enabled, level, preset);
+        realizer->setPendingCrossfeed(enabled, preset);
     } else {
         AdaptiveSound::log::line("[QW1] C-ABI publishCrossfeed SKIP — realizer == nil");
     }
