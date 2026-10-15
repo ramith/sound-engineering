@@ -2,6 +2,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import PlaybackQueueKit
+import Synchronization
 import Testing
 
 // MARK: - The real Enhanced path on an offline engine, for the transport tests
@@ -47,12 +48,16 @@ final class EnhancedTransportRig: @unchecked Sendable {
     /// The track's length as the view model computes it (`refreshDuration`: frames / rate).
     let duration: Double
     private var nextEpoch: UInt64 = 0
+    /// Further fixture files a test wrote (`writeTrack`), removed with the track by `finish`.
+    private var fixtures: [URL] = []
 
     /// Build the graph, write `tones` (Hz, equal levels summing to `toneAmplitude`) at `path`'s
-    /// rate, and play the file from the top.
-    init(path: SubPath, name: String, tones: [Double] = [440]) async throws {
+    /// rate — `frames` long (default `toneSeconds`) — and play the file from the top.
+    init(path: SubPath, name: String, tones: [Double] = [440], frames: Int? = nil) async throws {
         try #require(stall.buildGraph(slowUnit: false), "the real graph did not build offline")
-        url = try Self.writeTones(tones, named: "\(name)-\(path.rawValue)", rate: path.fileRate)
+        let length = frames ?? Int(Self.toneSeconds * path.fileRate)
+        url = try Self.writeTones(tones, named: "\(name)-\(path.rawValue)", rate: path.fileRate,
+                                  frames: 0 ..< length)
         let file = try AVAudioFile(forReading: url)
         duration = Double(file.length) / file.processingFormat.sampleRate
         try await play()
@@ -112,10 +117,16 @@ final class EnhancedTransportRig: @unchecked Sendable {
     /// Pull `seconds` of output, the device stand-in, and return its left channel (`nil`: the render
     /// failed). The resampler's queue is drained after every block, so its chain keeps up.
     func samples(seconds: Double) -> [Float]? {
+        samples(frames: Int(seconds * Self.graphRate))
+    }
+
+    /// Pull exactly `frames` of output in blocks of at most 512 and return its left channel (`nil`:
+    /// the render failed). `paced`: each block takes as long as it lasts, as a device pulls it, so
+    /// the completion-driven chain runs on a device's time — what a seam's timing depends on.
+    func samples(frames total: Int, paced: Bool = false) -> [Float]? {
         guard let engine = bridge.avEngineRef,
               let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)
         else { return nil }
-        let total = Int(seconds * Self.graphRate)
         var left: [Float] = []
         left.reserveCapacity(total)
         while left.count < total {
@@ -123,9 +134,48 @@ final class EnhancedTransportRig: @unchecked Sendable {
             guard (try? engine.renderOffline(frames, to: buffer)) == .success,
                   let channel = buffer.floatChannelData?[0] else { return nil }
             left += UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
+            if paced {
+                Thread.sleep(forTimeInterval: Double(frames) / Self.graphRate)
+            }
             bridge.resampleQueue.sync {}
         }
         return left
+    }
+
+    /// Record what the player itself plays from now on — the bridge's schedule, before the effects
+    /// chain — through a tap on its output. Call before the first render: the recording then starts
+    /// at the player's first frame.
+    func recordPlayer() throws -> PlayerRecording {
+        let player = try #require(bridge.playerNodeRef)
+        let recording = PlayerRecording()
+        player.installTap(onBus: 0, bufferSize: 4800, format: player.outputFormat(forBus: 0)) { buffer, _ in
+            recording.append(buffer)
+        }
+        return recording
+    }
+
+    /// The left channel of what the player played (`recordPlayer`). AVFAudio hands a tap its frames
+    /// off the render, in whole tap buffers, so a read waits for them.
+    final class PlayerRecording: Sendable {
+        private let left = Mutex<[Float]>([])
+
+        func append(_ buffer: AVAudioPCMBuffer) {
+            guard let channel = buffer.floatChannelData?[0] else { return }
+            let frames = UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
+            left.withLock { $0 += frames }
+        }
+
+        /// The first `frames` frames, once delivered (`nil`: not within two seconds).
+        func samples(frames: Int) -> [Float]? {
+            for _ in 0 ..< 200 {
+                let recorded = left.withLock { $0.count >= frames ? Array($0[..<frames]) : nil }
+                if let recorded {
+                    return recorded
+                }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            return nil
+        }
     }
 
     /// Pull `seconds` of output and return its peak after the first `skipping` seconds (the DSP's
@@ -140,13 +190,35 @@ final class EnhancedTransportRig: @unchecked Sendable {
     func finish() async {
         try? await bridge.shutdown()
         try? FileManager.default.removeItem(at: url)
+        for fixture in fixtures {
+            try? FileManager.default.removeItem(at: fixture)
+        }
     }
 
     // MARK: - Fixture
 
-    /// Stereo `tones` (equal levels, summing to `toneAmplitude`), `toneSeconds` long, as 32-bit float
-    /// PCM at `rate`, in test-data/.
-    private static func writeTones(_ tones: [Double], named name: String, rate: Double) throws -> URL {
+    /// Write another track (removed by `finish`): `frames` of the same tone program at `rate`, on
+    /// `channels` channels — `frames` starting where the playing track ends continues its sound.
+    func writeTrack(_ tones: [Double], named name: String, rate: Double, frames: Range<Int>,
+                    channels: AVAudioChannelCount = 2) throws -> URL {
+        let track = try Self.writeTones(tones, named: name, rate: rate, frames: frames, channels: channels)
+        fixtures.append(track)
+        return track
+    }
+
+    /// Frame `frame` of the tone program at `rate`: `tones` (Hz) at equal levels summing to
+    /// `toneAmplitude`, every one starting at phase 0 at frame 0 — so consecutive frame ranges
+    /// written as separate files join into one continuous sound.
+    static func toneSample(_ tones: [Double], frame: Int, rate: Double) -> Float {
+        let level = Double(toneAmplitude) / Double(max(tones.count, 1))
+        let time = Double(frame) / rate
+        return Float(tones.reduce(0) { $0 + level * sin(2 * Double.pi * $1 * time) })
+    }
+
+    /// `frames` of the tone program (`toneSample`) as 32-bit float PCM at `rate` on `channels`
+    /// channels, in test-data/.
+    private static func writeTones(_ tones: [Double], named name: String, rate: Double, frames: Range<Int>,
+                                   channels: AVAudioChannelCount = 2) throws -> URL {
         let directory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // AdaptiveSoundTests
             .deletingLastPathComponent() // Tests
@@ -155,21 +227,20 @@ final class EnhancedTransportRig: @unchecked Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(name)-\(UUID().uuidString).wav")
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 2,
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: channels,
             AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsBigEndianKey: false,
         ]
         let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32,
                                    interleaved: false)
-        let frames = AVAudioFrameCount(toneSeconds * rate)
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames))
-        buffer.frameLength = frames
-        let channels = try #require(buffer.floatChannelData)
-        let level = Double(toneAmplitude) / Double(max(tones.count, 1))
-        for frame in 0 ..< Int(frames) {
-            let time = Double(frame) / rate
-            let sample = Float(tones.reduce(0) { $0 + level * sin(2 * Double.pi * $1 * time) })
-            channels[0][frame] = sample
-            channels[1][frame] = sample
+        let count = AVAudioFrameCount(frames.count)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count))
+        buffer.frameLength = count
+        let data = try #require(buffer.floatChannelData)
+        for (index, frame) in frames.enumerated() {
+            let sample = toneSample(tones, frame: frame, rate: rate)
+            for channel in 0 ..< Int(channels) {
+                data[channel][index] = sample
+            }
         }
         try file.write(from: buffer)
         return url
