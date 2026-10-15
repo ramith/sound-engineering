@@ -7,7 +7,6 @@
 #include "../include/CoreAudioDevice.h"
 #include "../include/DeviceBridge.h"   // enforce extern "C" signature agreement for device functions
 #include "../include/DSPKernel.h"
-#include "../include/FlushToZero.h" // shared FPCR.FZ helper (AR-1)
 #include "../include/TargetState.h"
 #include "Realizer.h"                         // off-main single-producer control owner (S6 Tier-3 3a)
 #include "../Loudness/ChannelLayoutDecoder.h" // OFF-RT AudioChannelLayoutTag -> ChannelLayout
@@ -95,9 +94,9 @@ namespace
         (void)busNum;   // single output bus; index unused by this in-process AU
         (void)events;   // MIDI not used by this AU
 
-        // Set FPCR.FZ on this render thread so subnormals are flushed to zero.
-        // Called once per render callback; the register write is ~1 cycle on M1.
-        enableFlushToZero();
+        // Flush-to-zero is the kernel's, scoped to its process() (council C-50): set here, before
+        // pull(), it would also run Apple's upstream nodes — which render inside pull() on this
+        // thread — in a floating-point mode that is not theirs.
 
         // Fix #11 + #4: pull input directly into the output buffers (in-place effect),
         // then process in place. This removes the stack-declared AudioBufferList (which

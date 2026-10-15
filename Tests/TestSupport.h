@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <span>
 #include <sstream>
