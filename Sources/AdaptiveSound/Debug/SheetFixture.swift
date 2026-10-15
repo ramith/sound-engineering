@@ -138,11 +138,12 @@
         private func seedDevices() {
             let speakers = AudioDeviceModel(id: 1, name: "MacBook Pro Speakers", sampleRate: 48000,
                                             bufferFrameSize: 512, uid: "BuiltInSpeakerDevice", modelUID: nil,
-                                            transportType: kAudioDeviceTransportTypeBuiltIn, type: .builtin)
+                                            transportType: kAudioDeviceTransportTypeBuiltIn, type: .builtin,
+                                            isHeadphones: false)
             let dac = AudioDeviceModel(id: 2, name: "Modi+ USB DAC", sampleRate: 96000,
                                        bufferFrameSize: 512, uid: "AppleUSBAudioEngine:Schiit:Modi+:1",
                                        modelUID: "Modi+:30BE:0001",
-                                       transportType: kAudioDeviceTransportTypeUSB, type: .usb)
+                                       transportType: kAudioDeviceTransportTypeUSB, type: .usb, isHeadphones: true)
             audio.availableDevices = [speakers, dac]
             audio.selectedDevice = speakers
         }

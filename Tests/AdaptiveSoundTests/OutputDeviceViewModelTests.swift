@@ -13,16 +13,16 @@ import Testing
 struct OutputDeviceViewModelTests {
     private static let headphones = AudioDeviceModel(
         id: 41, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless
+        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
     private static let speakers = AudioDeviceModel(
         id: 42, name: "Speakers", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin
+        uid: "BuiltInSpeakerDevice", modelUID: nil, transportType: 0, type: .builtin, isHeadphones: false
     )
     /// The headphones back from a reconnect: a new id, the same UID.
     private static let headphonesBack = AudioDeviceModel(
         id: 57, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
-        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless
+        uid: "AA-BB-CC-DD-EE-FF:output", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true
     )
 
     private let engine = DeviceTestEngine()

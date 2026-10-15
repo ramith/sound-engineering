@@ -22,9 +22,9 @@
         private var bands = [Float](repeating: 0, count: 64)
         private let devices = [
             AudioDeviceModel(id: 0x7FFF_0001, name: "Stall A", sampleRate: 48000, bufferFrameSize: 512,
-                             uid: "stall-a", modelUID: nil, transportType: 0, type: .wireless),
+                             uid: "stall-a", modelUID: nil, transportType: 0, type: .wireless, isHeadphones: true),
             AudioDeviceModel(id: 0x7FFF_0002, name: "Stall B", sampleRate: 48000, bufferFrameSize: 512,
-                             uid: "stall-b", modelUID: nil, transportType: 0, type: .builtin),
+                             uid: "stall-b", modelUID: nil, transportType: 0, type: .builtin, isHeadphones: false),
         ]
 
         init(viewModel: AudioViewModel, bridge: AudioEngineBridge) {
