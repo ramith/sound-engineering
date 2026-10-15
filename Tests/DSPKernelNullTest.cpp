@@ -147,6 +147,8 @@ namespace
         {"Kernel_LargeBuffer_ConsecutiveBuffers", testLargeBufferConsecutiveBuffers, true},
         // SpatialRenderKernel (Sprint 5b, M3-1)
         {"SpatialRender_PassthroughRoute", testSpatialRenderPassthroughRoute, true},
+        // R1.1-A (council C-50): flush-to-zero is scoped to our render calls, then restored.
+        {"Render_FlushToZero_Scoped", testRenderFlushToZeroScoped, true},
         // Pure-Mode policy (Phase B — B1)
         {"PureMode_HdmiBitPerfect", testPureModeHdmiBitPerfect, true},
         {"PureMode_HdmiRateUnsupported", testPureModeHdmiRateUnsupported, true},
@@ -387,7 +389,7 @@ namespace
         {"EQ_PublishRejectsNonFinite", testEqPublishRejectsNonFinite, true},
         {"EQ_RT_IgnoresBadSnapshot", testEqRtIgnoresBadSnapshot, true},
         {"EQ_NaNInput_Recovers", testEqNaNInputRecovers, true},
-        {"EQ_FZ_Set_OnRenderThread", testEqFzSetOnRenderThread, false},
+        {"EQ_FZ_OnWhileRendering", testEqFzOnWhileRendering, false},
         {"EQ_NoSubnormalStates", testEqNoSubnormalStates, false},
         {"RtSwappableResource_Lifecycle", testRtSwappableResourceLifecycle, true},
         {"Soak_DSPKernel_ZeroRtAlloc_EqPaths", testSoakDspKernelZeroRtAllocEqPaths, false},

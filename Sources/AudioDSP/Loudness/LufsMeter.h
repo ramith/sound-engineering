@@ -121,11 +121,13 @@ namespace AdaptiveSound
             z1 = (b1 * input) - (a1 * out) + z2;
             z2 = (b2 * input) - (a2 * out);
             // Denormal guard (S6 LOUD-1): fed exact-silence, this stable IIR's state decays
-            // geometrically through the double subnormal range (< ~2.2e-308) before reaching 0.
-            // Subnormal doubles are slow on some hardware, and — unlike single precision — AArch64
-            // FPCR.FZ does NOT flush them, so a thread-level FTZ would not help; flush here
-            // instead. Only true subnormals are zeroed, so no normal value (hence no LUFS reading)
-            // changes.
+            // geometrically through the double subnormal range (< ~2.2e-308) before reaching 0,
+            // and subnormal doubles are slow on some hardware. AArch64 FPCR.FZ does flush double
+            // subnormals as well as single ones (measured on M-series, council D67) — but the meter
+            // must not depend on its thread's mode: the UI readout's meter runs on AVAudioEngine's
+            // tap thread, which never flushes, and flush-to-zero is now scoped to our own render
+            // calls and workers (ScopedFlushToZero). So it flushes its own state, here. Only true
+            // subnormals are zeroed, so no normal value (hence no LUFS reading) changes.
             flushSubnormal(z1);
             flushSubnormal(z2);
             return out;

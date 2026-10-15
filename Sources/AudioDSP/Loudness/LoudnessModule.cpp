@@ -194,9 +194,9 @@ namespace AdaptiveSound
 
     void LoudnessModule::runMeasurementLoop(const std::stop_token& stopToken) noexcept
     {
-        // FPCR is per-thread: the measurement worker runs the K-weighting biquads, so it must
-        // set flush-to-zero itself (shared definition in include/FlushToZero.h — AR-1).
-        enableFlushToZero();
+        // FPCR is per-thread: the measurement worker runs the K-weighting biquads, so it flushes
+        // subnormals itself, for as long as it runs (include/FlushToZero.h).
+        const ScopedFlushToZero flushToZero;
 
         // Track the channel count and layout generation we last configured the meter for.
         // Use UINT32_MAX as the sentinel so the very first loop iteration always reconfigures

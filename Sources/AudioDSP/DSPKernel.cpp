@@ -56,9 +56,6 @@ namespace AdaptiveSound
         sampleRate_ = sampleRate;
         maxFrames_ = maxFrames;
 
-        // Enable flush-to-zero on the init/control thread (process() sets it on the render thread).
-        enableFlushToZero();
-
         eqModule_ = std::make_unique<EQModule>();
         clarityModule_ = std::make_unique<ClarityModule>();
         brirModule_ = std::make_unique<BRIRModule>();
@@ -144,9 +141,10 @@ namespace AdaptiveSound
 
     void DSPKernel::process(AudioBufferList* ioData, uint32_t inNumberFrames) noexcept
     {
-        // FPCR.FZ on whichever thread renders (the AU sets it too; this makes it structural for
-        // every host of the kernel, so subnormal filter tails can never cost CPU).
-        enableFlushToZero();
+        // Subnormals flush to zero while the kernel renders, on whichever thread calls it, and the
+        // caller's floating-point mode comes back on return (council C-50): structural for every
+        // host of the kernel, and never left set on a thread Apple's own nodes share.
+        const ScopedFlushToZero flushToZero;
 
         // Copy the snapshot ONCE into RT-owned storage (S6 RACE-1); wait-free, always succeeds.
         (void)targetStateSnapshot_.tryCopySnapshot(scratchState_);
