@@ -85,10 +85,9 @@ namespace
 // ===========================================================================
 // CF-1: bypass is bit-exact (module present-but-off) → re-asserts the golden master hash.
 // This is the canary: with crossfeed inserted into the chain but DISABLED, the full stereo
-// chain output must hash to exactly 0xE7AF0C67F9340785 (zero tolerance; re-baselined with the
-// GoldenMaster in EQ1b — the accurate SVF EQ replaced the retired biquad fitter). It reuses the same
-// chirp + non-trivial state as GoldenMaster_StereoN2_v1; the default-off CrossfeedParams keep
-// the chain byte-identical to the pre-QW1 output.
+// chain output must hash to exactly GoldenMaster_StereoN2_v1's (TestConstants::
+// kGoldenMasterStereoN2Hash, zero tolerance). It reuses the same chirp + non-trivial state; the
+// default-off CrossfeedParams keep the chain byte-identical to the chain without a crossfeed.
 // ===========================================================================
 static auto testCrossfeedBypassBitExactGoldenMaster() -> void
 {
@@ -97,7 +96,7 @@ static auto testCrossfeedBypassBitExactGoldenMaster() -> void
     constexpr uint32_t kChunk = TestConstants::kFrames512;
     constexpr uint32_t kTotal = TestConstants::kTotalFrames1s;
     constexpr float kBoostDb = 6.0F;
-    constexpr uint64_t kGoldenHash = 0xE7AF0C67F9340785ULL;
+    constexpr uint64_t kGoldenHash = TestConstants::kGoldenMasterStereoN2Hash;
     constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
 
     std::vector<float> chirp(kTotal);

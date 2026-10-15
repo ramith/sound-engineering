@@ -115,6 +115,9 @@ namespace
         {"Limiter_GRResponseWithin2ms", testLimiterGRResponseTime, true},
         {"Limiter_NearNyquistCeiling", testLimiterNearNyquistCeiling, true},
         {"Limiter_HotNoiseSoak", testLimiterHotNoiseSoak, true},
+        // R1.1-A (council C-39): the release is program-dependent — a transient is fast.
+        {"Limiter_Release_TransientIsFast", testLimiterReleaseTransientIsFast, true},
+        {"Limiter_Release_SustainedIsSlow", testLimiterReleaseSustainedIsSlow, true},
         // Loudness / BS.1770-5 tests (Sprint 4 — Milestone 2)
         {"Loudness_KWeightingLowCut", testLoudnessKWeightingLowCut, true},
         {"Loudness_IntegratedAccuracy", testLoudnessIntegratedAccuracy, true},

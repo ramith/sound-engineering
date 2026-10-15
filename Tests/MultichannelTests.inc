@@ -41,8 +41,12 @@ static auto testGoldenMasterStereoN2() -> void
     // Re-baselined in Sprint EQ's EQ1b (deliberate DSP change, engine-plan §9 "golden master
     // re-baseline"): the +6 dB @ 1 kHz is now the accurate SVF graphic EQ (GraphicEQDesigner's
     // 31 solved bells) instead of the single RBJ biquad of the retired fitter. Was
-    // 0xE7267654BA01D315.
-    constexpr uint64_t kGoldenHash = 0xE7AF0C67F9340785ULL;
+    // 0xE7267654BA01D315. Re-baselined in R1.1-A (council C-39, deliberate): the boosted chirp
+    // reaches the limiter's ceiling around 1 kHz, and the limiter's release is now program-
+    // dependent — that brief limiting releases on the fast branch, not the 500 ms one. The EQ path
+    // is unchanged: with only the limiter's old release restored, the hash is the EQ1b one,
+    // 0xE7AF0C67F9340785, bit for bit.
+    constexpr uint64_t kGoldenHash = TestConstants::kGoldenMasterStereoN2Hash;
     constexpr uint64_t kFnvOffsetBasis = 0xCBF29CE484222325ULL;
 
     // Deterministic 1 s linear chirp 20 Hz -> 20 kHz, amplitude 0.5 (no RNG).
