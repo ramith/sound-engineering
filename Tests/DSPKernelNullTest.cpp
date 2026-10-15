@@ -455,6 +455,9 @@ namespace
         {"DeviceList_RuleOrder", testDeviceListRuleOrder, true},
         {"DeviceList_CompositionDecode", testDeviceListCompositionDecode, true},
         {"DeviceList_VerdictStrings", testDeviceListVerdictStrings, true},
+        // R1.1-A: the one output classifier — family, and headphones (crossfeed's gate).
+        {"OutputDevice_Family", testOutputDeviceFamily, true},
+        {"OutputDevice_Headphones", testOutputDeviceHeadphones, true},
         // Sprint G: the Pure seek's render gate (parallel-safe: own threads, no HAL, no env/tmp).
         {"RenderGate_ClosedGateTurnsRenderAway", testRenderGateClosedGateTurnsRenderAway, true},
         {"RenderGate_CloseWaitsForRenderInside", testRenderGateCloseWaitsForRenderInside, true},

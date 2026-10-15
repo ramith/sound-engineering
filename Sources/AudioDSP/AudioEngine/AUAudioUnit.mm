@@ -305,6 +305,7 @@ uint32_t enumerateOutputDevicesC(CDeviceInfo* outDevices, uint32_t maxCount) AUD
         out.bufferFrameSize = dev.bufferFrameSize;
         out.transportType   = dev.transportType;
         out.deviceType      = deviceTypeToByte(dev.type);
+        out.isHeadphones    = dev.isHeadphones ? 1U : 0U;
 
         // Safe copy: ensure null-termination even if name is too long.
         constexpr size_t kNameBufSize = sizeof(out.name);

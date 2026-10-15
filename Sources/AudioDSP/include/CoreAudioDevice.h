@@ -13,13 +13,7 @@ namespace AdaptiveSound
     // Audio device information
     struct AudioDevice
     {
-        enum class Type : std::uint8_t
-        {
-            Builtin,
-            USB,
-            Wireless,
-            Unknown,
-        };
+        using Type = OutputDeviceType; // the family (DeviceListPolicy.h)
 
         AudioDeviceID id = 0;
         std::string name;
@@ -27,6 +21,7 @@ namespace AdaptiveSound
         uint32_t bufferFrameSize = 0;
         Type type = Type::Unknown;
         uint32_t transportType = 0; // kAudioDevicePropertyTransportType FourCC; 0 = unknown
+        bool isHeadphones = false;  // where crossfeed plays (classifyOutputDevice)
     };
 
     // Core Audio device enumeration and management
@@ -68,10 +63,9 @@ namespace AdaptiveSound
         // same model. Empty when the device reports none.
         static std::string getDeviceModelUID(AudioDeviceID deviceID);
 
-        // Classify a device (builtin, USB, wireless) from its transport, falling back to its name
-        // when the transport is unknown or unrecognized.
-        static AudioDevice::Type classifyDeviceType(uint32_t transportType,
-                                                    const std::string& name);
+        // The device's selected output data source (kAudioDevicePropertyDataSource, output
+        // scope: an IOAudioTypes.h port code such as 'hdpn' or 'ispk'); 0 when it reports none.
+        static uint32_t getDeviceDataSource(AudioDeviceID deviceID);
 
         // MARK: - Pure-Mode capability querying (Phase B — B1)
 
