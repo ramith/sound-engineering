@@ -259,9 +259,27 @@ namespace AdaptiveSound
             histCount_.fill(0U);
             histSumEnergy_.fill(0.0);
             gatedBlockCount_ = 0U;
+            integrationHops_ = 0U;
+            hopStraddlesRestart_ = false;
             momentaryLufs_ = kSilenceLufs;
             shortTermLufs_ = kSilenceLufs;
             integratedLufs_ = kSilenceLufs;
+        }
+
+        // Start a new integration interval at the next sample — EBU Tech 3341 §2.3's start/reset
+        // of the measurement interval (council C-46: the UI's "Integrated" is the playing
+        // track's). The gating histogram is cleared, so Integrated covers only what follows, and
+        // only 400 ms blocks wholly inside the new interval are integrated: the hop in progress,
+        // which straddles the restart, is left out. The K-weighting state and the momentary /
+        // short-term windows run on — they slide over the signal itself, not the interval.
+        void restartIntegration() noexcept
+        {
+            histCount_.fill(0U);
+            histSumEnergy_.fill(0.0);
+            gatedBlockCount_ = 0U;
+            integratedLufs_ = kSilenceLufs;
+            integrationHops_ = 0U;
+            hopStraddlesRestart_ = hopSampleCount_ > 0U;
         }
 
         // Feed interleaved N-channel samples (ch0_fr0, ch1_fr0, …, ch0_fr1, …).
@@ -386,6 +404,16 @@ namespace AdaptiveSound
             {
                 ++subFilled_;
             }
+            // Whole hops inside the integration interval (restartIntegration): the hop that
+            // straddled a restart does not count.
+            if (hopStraddlesRestart_)
+            {
+                hopStraddlesRestart_ = false;
+            }
+            else if (integrationHops_ < static_cast<uint32_t>(kBlockHops))
+            {
+                ++integrationHops_;
+            }
 
             updateMomentaryAndIntegrated();
             updateShortTerm();
@@ -402,7 +430,9 @@ namespace AdaptiveSound
             const double loudness = blockLoudness(energy);
             momentaryLufs_ = loudness;
 
-            if (loudness >= kAbsoluteGateLufs)
+            // Integrated takes only blocks wholly inside the integration interval.
+            if (integrationHops_ >= static_cast<uint32_t>(kBlockHops) &&
+                loudness >= kAbsoluteGateLufs)
             {
                 addBlockToHistogram(loudness, energy);
                 ++gatedBlockCount_;
@@ -491,6 +521,11 @@ namespace AdaptiveSound
         std::array<uint64_t, kHistBins> histCount_{};
         std::array<double, kHistBins> histSumEnergy_{};
         uint32_t gatedBlockCount_ = 0U;
+
+        // Whole hops since the integration interval began (reset / restartIntegration), saturating
+        // at a block's 4; and whether the hop in progress straddles a restart.
+        uint32_t integrationHops_ = 0U;
+        bool hopStraddlesRestart_ = false;
 
         double momentaryLufs_ = kSilenceLufs;
         double shortTermLufs_ = kSilenceLufs;
