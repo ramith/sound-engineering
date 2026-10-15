@@ -136,22 +136,20 @@ extern "C"
     /// @param intensity Intensity in [0,1]; values outside the range are clamped.
     void publishIntensity(void* auUnit, float intensity) AUDIODSP_C_NOEXCEPT;
 
-    /// Publish a new crossfeed state (the wet-region headphone-soundstage stage) to the live
-    /// AdaptiveSoundAU (QW1 §3). Off-RT control plane: sets the Realizer's pending-crossfeed slot
-    /// (level clamped to [0,1], preset clamped to the valid enum range) and posts a drain block
-    /// when none is pending; the off-RT coefficient derivation (from {preset, level, fs}),
-    /// the canonical read-modify-write, and the atomic publish all happen in the Realizer's serial
-    /// queue. Crossfeed is a WET-region stage, so its audible depth is `crossfeed × intensity`
-    /// (QW1 §4) — the Reimagine knob scales it. Must be called from a single control thread (the
+    /// Publish a new crossfeed state (the headphone crossfeed, bs2b) to the live AdaptiveSoundAU
+    /// (QW1 §3; R1.1-A). Off-RT control plane: sets the Realizer's pending-crossfeed slot (preset
+    /// clamped to the valid enum range) and posts a drain block when none is pending; the off-RT
+    /// coefficient derivation (bs2b's, from {preset, fs}), the canonical read-modify-write and the
+    /// atomic publish all happen in the Realizer's serial queue. Crossfeed is an output stage of
+    /// its own, ahead of the limiter: it plays at the preset's full strength whatever Intensity is
+    /// (founder decision 2026-10-14). Must be called from a single control thread (the
     /// @MainActor). No-op if auUnit is null.
     ///
     /// @param auUnit   Borrowed (passUnretained) AUAudioUnit*; no-op if null.
-    /// @param enabled  0 = bypass (bit-exact pass-through); non-zero = active.
-    /// @param level    Crossfeed level in [0,1]; values outside the range are clamped.
-    /// @param preset   CrossfeedPreset value (0 = Relaxed, 1 = Bauer/"Default", 2 = Strong);
-    ///                 out-of-range values are clamped to the nearest valid preset.
-    void publishCrossfeed(void* auUnit, uint32_t enabled, float level, uint32_t preset)
-        AUDIODSP_C_NOEXCEPT;
+    /// @param enabled  0 = off (glides out, then a bit-exact pass-through); non-zero = on.
+    /// @param preset   CrossfeedPreset value — bs2b's levels: 0 = Jmeier ("Relaxed"), 1 = Cmoy
+    ///                 ("Default"), 2 = bs2b default ("Strong"); out of range clamps to the nearest.
+    void publishCrossfeed(void* auUnit, uint32_t enabled, uint32_t preset) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus
 } // extern "C"

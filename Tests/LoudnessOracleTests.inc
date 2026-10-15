@@ -405,31 +405,28 @@ static auto testLoudnessOracleTruePeak() -> void
 
 // ===========================================================================
 // CF-10 (QW1 §6): crossfeed is loudness-neutral, measured by the libebur128 integrated-LUFS
-// oracle on REAL stereo content where the design's neutrality claim is operative. The gain-neutral
-// design (gDirect=1/(1+α), gCross=α/(1+α)) makes the summed magnitude unity AT DC and near-unity
-// through the cross-path LPF passband — i.e. for CENTRED, BASS/LOW-MID content (the content
-// crossfeed is designed to preserve). Above fc the LPF deliberately attenuates the cross path (the
-// inherent, benign coloration QW1 §2 flags; the downstream LoudnessModule absorbs that residual).
+// oracle on REAL stereo content where bs2b's neutrality is operative. bs2b's output gain makes the
+// centred (L = R) sum exactly unity AT DC, and its shelf falls only gently above the cut (−1.5 dB
+// for this preset at high frequencies — CF-3 pins the whole curve against bs2b itself).
 //
 // So we measure on a correlated bass stereo bed (a sustained chord, 60-180 Hz, well within the
-// cross-path LPF passband) through the Bauer ("Default", the safe default) preset: crossfeed ON vs
-// OFF must agree within 0.3 LUFS via the ebur128 oracle. (The broader broadband residual on
-// HF-dominant content is by-design and not a neutrality bug -- see CF-3 / CF-5.)
+// cross-path low-pass's passband) through the "Default" preset (bs2b Cmoy): crossfeed ON vs OFF
+// must agree within 0.3 LUFS via the ebur128 oracle.
 // ===========================================================================
 static auto testCrossfeedLoudnessNeutral() -> void
 {
     static const char* const kName = "Crossfeed_ebur128_LevelNeutral";
     constexpr double kCfLufsTolLu = 0.3;
-    constexpr uint32_t kCfBauerPreset = 1U; // CrossfeedPreset::Bauer ("Default", safe default)
+    constexpr uint32_t kCfDefaultPreset = 1U; // CrossfeedPreset::Cmoy ("Default")
 
-    // Derive the Bauer-preset POD via the shipping Realizer path.
+    // Derive the preset's POD via the shipping Realizer path.
     AdaptiveSound::CrossfeedParams params{};
     {
         auto kernel = std::make_shared<DSPKernel>();
         kernel->initialize(kOracleRate48k, 512U);
         auto realizer =
             std::make_shared<AdaptiveSound::Realizer>(kernel, static_cast<double>(kOracleRate48k));
-        realizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kCfBauerPreset});
+        realizer->applyCrossfeed({.enabled = 1U, .preset = kCfDefaultPreset});
         params = realizer->canonicalState().crossfeed;
         realizer->shutdown();
     }
@@ -483,8 +480,8 @@ static auto testCrossfeedLoudnessNeutral() -> void
         module.initialize(fs, static_cast<uint32_t>(frames));
 
         // Warm-up the mix ramp (process a short prefix repeatedly does NOT reset state, so instead
-        // we run the full buffer twice: pass 1 warms the ramp + delay line, pass 2 is the measured
-        // steady state. The input is restored before pass 2.)
+        // we run the full buffer twice: pass 1 warms the ramp + filter memory, pass 2 is the
+        // measured steady state. The input is restored before pass 2.)
         TestABL warm(static_cast<uint32_t>(frames));
         std::memcpy(warm.left.data(), inL.data(), frames * sizeof(float));
         std::memcpy(warm.right.data(), inR.data(), frames * sizeof(float));

@@ -118,8 +118,8 @@ static auto testRealizerMultiSurfaceRMW() -> void
 //   1. multi-surface RMW does NOT clobber unrelated fields: EQ, then intensity, then crossfeed,
 //      then EQ again → the intensity AND the crossfeed survive the final EQ apply.
 //   2. sequenceNumber is STRICTLY +1 per apply across all four applies.
-// Plus the clamp check: setPendingCrossfeed clamps level to [0,1] and preset to the valid enum
-// range. (The Realizer owns the design rate, so there is no rate to reject.)
+// Plus the clamp check: setPendingCrossfeed clamps the preset to the valid enum range. (The
+// Realizer owns the design rate, so there is no rate to reject.)
 // ---------------------------------------------------------------------------
 static auto testRealizerCrossfeedSurfaceRMW() -> void
 {
@@ -147,9 +147,10 @@ static auto testRealizerCrossfeedSurfaceRMW() -> void
     realizer->applyIntensity(kIntensity);
     const uint64_t seq2 = realizer->canonicalState().sequenceNumber;
 
-    // Surface 3: crossfeed (Strong, full level). Coeffs derived off-RT; EQ + intensity must survive.
-    constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Strong
-    realizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kStrongPreset});
+    // Surface 3: crossfeed ("Strong", bs2b default). Coeffs derived off-RT; EQ + intensity must
+    // survive.
+    constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Bs2bDefault
+    realizer->applyCrossfeed({.enabled = 1U, .preset = kStrongPreset});
     const TargetState s3 = realizer->canonicalState();
     const uint64_t seq3 = s3.sequenceNumber;
     if (s3.crossfeed.enabled != 1U)
@@ -157,14 +158,10 @@ static auto testRealizerCrossfeedSurfaceRMW() -> void
         logFail(kName, "applyCrossfeed did not enable crossfeed");
         return;
     }
-    if (s3.crossfeed.gCross <= 0.0F || s3.crossfeed.gDirect <= 0.0F)
+    if (s3.crossfeed.crossB0 <= 0.0F || s3.crossfeed.directB0 <= 0.0F ||
+        s3.crossfeed.crossPole <= 0.0F || s3.crossfeed.directPole <= 0.0F)
     {
-        logFail(kName, "applyCrossfeed did not derive active gains (gCross/gDirect)");
-        return;
-    }
-    if (s3.crossfeed.delayFrames <= 0 || s3.crossfeed.delayFrames >= kMaxCrossfeedDelayFrames)
-    {
-        logFail(kName, "applyCrossfeed delayFrames out of the fixed-line range");
+        logFail(kName, "applyCrossfeed did not derive the bs2b filters");
         return;
     }
     if (s3.intensityLinear != kIntensity)
@@ -187,7 +184,7 @@ static auto testRealizerCrossfeedSurfaceRMW() -> void
         logFail(kName, "final applyEq clobbered intensityLinear");
         return;
     }
-    if (s4.crossfeed.enabled != 1U || s4.crossfeed.gCross != s3.crossfeed.gCross)
+    if (s4.crossfeed.enabled != 1U || s4.crossfeed.crossB0 != s3.crossfeed.crossB0)
     {
         logFail(kName, "final applyEq clobbered the crossfeed field");
         return;
@@ -201,19 +198,18 @@ static auto testRealizerCrossfeedSurfaceRMW() -> void
     }
 
     // --- Clamp check on setPendingCrossfeed (the surface that clamps). ---
-    realizer->setPendingCrossfeed(1U, 5.0F, 99U);
+    realizer->setPendingCrossfeed(1U, 99U);
     realizer->shutdown(); // dispatch_sync barrier flushes the pending drain
     const TargetState& sc = realizer->canonicalState();
-    // Clamped level 5.0 → 1.0 (full alpha) and preset 99 → Strong (2): the gains must match the
-    // surface-3 (level=1, Strong) derivation exactly.
+    // Preset 99 clamps to the strongest (2): the filters must match the surface-3 derivation.
     if (sc.crossfeed.preset != kStrongPreset)
     {
-        logFail(kName, "setPendingCrossfeed did not clamp preset 99 → Strong");
+        logFail(kName, "setPendingCrossfeed did not clamp preset 99 → Bs2bDefault");
         return;
     }
-    if (std::abs(sc.crossfeed.gCross - s3.crossfeed.gCross) > 1e-6F)
+    if (std::memcmp(&sc.crossfeed, &s3.crossfeed, sizeof(CrossfeedParams)) != 0)
     {
-        logFail(kName, "setPendingCrossfeed did not clamp level 5.0 → 1.0 (gCross diverged)");
+        logFail(kName, "setPendingCrossfeed's clamped preset derived other filters than surface 3");
         return;
     }
 

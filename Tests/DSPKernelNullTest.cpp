@@ -299,20 +299,23 @@ namespace
             true,
         },
         {"Intensity_NoNaNAndFastStepSettles", testIntensityNoNaNFastStepSettles, true},
-        // QW1 — crossfeed DSP conformance CF-1..CF-9 (parallel-safe: pure DSP, no env/tmp).
+        // Crossfeed: bs2b conformance CF-1..CF-9 and its own kernel stage CF-13 / CF-14
+        // (parallel-safe: pure DSP, no env/tmp).
         {
             "Crossfeed_Bypass_BitExact_GoldenMaster",
             testCrossfeedBypassBitExactGoldenMaster,
             true,
         },
         {"Crossfeed_NonStereo_PassThrough", testCrossfeedNonStereoPassThrough, true},
-        {"Crossfeed_Mono_LevelNeutral", testCrossfeedMonoLevelNeutral, true},
+        {"Crossfeed_CentreFlat_vs_bs2b", testCrossfeedCentreFlatVsBs2b, true},
         {"Crossfeed_ChannelSeparation", testCrossfeedChannelSeparation, true},
         {"Crossfeed_LpfCharacteristic", testCrossfeedLpfCharacteristic, true},
         {"Crossfeed_NoNaNInf", testCrossfeedNoNaNInf, true},
         {"Crossfeed_ClickFreeEnableDisable", testCrossfeedClickFreeEnableDisable, true},
         {"Crossfeed_CoeffRecomputeAcrossRates", testCrossfeedCoeffRecomputeAcrossRates, true},
-        {"Crossfeed_ReadBothWriteBoth", testCrossfeedReadBothWriteBoth, true},
+        {"Crossfeed_MatchesBs2bReference", testCrossfeedMatchesBs2bReference, true},
+        {"Crossfeed_PlaysAtAnyIntensity", testCrossfeedPlaysAtAnyIntensity, true},
+        {"Crossfeed_Off_BitExact", testCrossfeedOffBitExact, true},
         // S7 / US-QA-01: TEST-ONLY libebur128 conformance oracle (parallel-safe: no env/tmp).
         {"Loudness_Oracle_Integrated_vs_ebur128", testLoudnessOracleIntegrated, true},
         {"Loudness_Oracle_TruePeak_vs_ebur128", testLoudnessOracleTruePeak, true},
@@ -326,6 +329,7 @@ namespace
             true,
         },
         {"Limiter_IspDetector_Accuracy_vs_ebur128", testLimiterIspDetectorAccuracy, true},
+        {"Limiter_TruePeak_CeilingWithCrossfeed", testLimiterTruePeakCeilingWithCrossfeed, true},
         // S7 / US-QA-03: 31-band EQ frequency-response sweep + bit-transparent bypass.
         // Parallel-safe: pure DSP, no env/tmp, fresh kernel per run.
         {"EQ_Sweep31Bands_48k", testEqSweep31Bands48k, true},

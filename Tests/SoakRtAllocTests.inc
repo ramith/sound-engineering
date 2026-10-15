@@ -234,8 +234,8 @@ namespace
             cfKernel->initialize(kSoakSampleRate, kSoakFrames);
             auto cfRealizer = std::make_shared<AdaptiveSound::Realizer>(
                 cfKernel, static_cast<double>(kSoakSampleRate));
-            constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Strong
-            cfRealizer->applyCrossfeed({.enabled = 1U, .level = 1.0F, .preset = kStrongPreset});
+            constexpr uint32_t kStrongPreset = 2U; // CrossfeedPreset::Bs2bDefault ("Strong")
+            cfRealizer->applyCrossfeed({.enabled = 1U, .preset = kStrongPreset});
             state.crossfeed = cfRealizer->canonicalState().crossfeed;
             cfRealizer->shutdown();
         }

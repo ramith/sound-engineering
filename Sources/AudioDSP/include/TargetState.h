@@ -75,43 +75,45 @@ namespace AdaptiveSound
         std::array<uint8_t, 3> pad_ = {};
     };
 
-    // User-facing crossfeed strength presets (QW1 §5). The middle case is `Bauer` (NOT
-    // `Default`) to avoid the `default:` keyword clash in switch statements (refactoring F8);
-    // the Swift-facing label for `Bauer` stays "Default". Underlying type is uint8_t so it packs
-    // alongside the other intent bytes in CrossfeedParams without padding surprises. (uint8_t is
-    // already the minimal type, so performance-enum-size does not fire — no suppression needed.)
+    // The crossfeed strengths (QW1 §5; R1.1-A, council C-42): bs2b's own levels, as libbs2b's
+    // bs2b.h defines them (cut frequency, feed). The stored value — SettingsKit's CrossfeedStrength
+    // raw value — is the index; the Swift labels are Relaxed / Default / Strong. bs2b's own default
+    // is its strongest level, so it is the "Strong" rung, and Cmoy the "Default" (council P2-3).
     enum class CrossfeedPreset : uint8_t
     {
-        Relaxed = 0, // bs2b "Jmeier": fc 650 Hz, cross -9.5 dB (alpha 0.335) — subtlest
-        Bauer = 1,   // bs2b "Default": fc 700 Hz, cross -9.0 dB (alpha 0.355) — safe default
-        Strong = 2,  // bs2b "Cmoy": fc 700 Hz, cross -6.0 dB (alpha 0.501) — most spacious
+        Jmeier = 0,      // "Relaxed": BS2B_JMEIER_CLEVEL — 650 Hz, 9.5 dB feed (the subtlest)
+        Cmoy = 1,        // "Default": BS2B_CMOY_CLEVEL — 700 Hz, 6.0 dB
+        Bs2bDefault = 2, // "Strong": BS2B_DEFAULT_CLEVEL — 700 Hz, 4.5 dB (the strongest)
     };
 
-    // Crossfeed (QW1 §2/§3): a wet-region headphone-soundstage stage between BRIR and the
-    // Limiter. Symmetrical stereo crossfeed (Bauer/bs2b): cross path = one-pole LPF + ITD delay
-    // + attenuation; direct path unfiltered/undelayed. Concrete layout (F2 — protects the golden
-    // master): intent bytes first, then off-RT-derived coefficients; EVERY field explicitly
-    // defaulted so canonical_{} zero/identity-inits to "off" (enabled=0, unity direct, zero
-    // cross) → bit-exact pass-through → golden master unchanged.
+    // Crossfeed (QW1; R1.1-A): headphone crossfeed, bs2b (CrossfeedModule), an output stage of the
+    // kernel of its own — after the normaliser, before the limiter — at its preset's full strength
+    // whatever Intensity is (founder decision 2026-10-14). The coefficients are bs2b's init()
+    // (libbs2b bs2b.c) at the owned rate, its output gain folded into the numerators:
+    //   direct path (high-boost shelf):  y = directB0·x + directB1·x[n−1] + directPole·y[n−1]
+    //   cross path (low-pass):           y = crossB0·x + crossPole·y[n−1]
+    // Concrete layout (F2 — protects the golden master): intent bytes first, then the off-RT-derived
+    // coefficients; EVERY field explicitly defaulted so canonical_{} zero/identity-inits to "off"
+    // (enabled = 0, unity direct, no cross) → bit-exact pass-through → golden master unchanged.
     //
     // Invariant (record now; enforce at S18 — QW1 §2/§9): crossfeed and a future binaural BRIR
     // are MUTUALLY EXCLUSIVE output-rendering modes (both synthesize the head-related cross-path;
     // running both would double-apply). The control layer (Realizer/VM) must never enable both.
-    // No arbitration code in QW1 (BRIRModule is an empty stub — nothing to arbitrate). When S18
+    // No arbitration code yet (BRIRModule is an empty stub — nothing to arbitrate). When S18
     // BRIR ships, treat `crossfeed.enabled && brir.active` as a control-layer bug and
     // deterministically prefer one (document which then).
     struct CrossfeedParams
     {
         // --- Intent (set by the control layer / UI) ---
-        uint8_t enabled = 0;              // 0 = bypass (bit-exact pass-through); 1 = active
-        uint8_t preset = 0;               // CrossfeedPreset value (Relaxed=0 default)
+        uint8_t enabled = 0;              // 0 = off (bit-exact once its glide out ends); 1 = on
+        uint8_t preset = 0;               // CrossfeedPreset value (Jmeier = 0)
         std::array<uint8_t, 2> pad_ = {}; // explicit pad → trivial, deterministic layout
-        // --- Derived (computed off-RT in the Realizer from {preset, level, fs}) ---
-        float gDirect = 1.0F;    // direct-path gain = 1/(1+alpha)  (off: unity)
-        float gCross = 0.0F;     // cross-path gain  = alpha/(1+alpha) (off: zero → no cross)
-        float lpfB0 = 0.0F;      // one-pole cross LPF input coeff (1-p) (off: zero)
-        float lpfPole = 0.0F;    // one-pole cross LPF pole coeff p = exp(-2π·fc/fs) (off: zero)
-        int32_t delayFrames = 0; // ITD delay in frames = round(0.0003178·fs) (off: zero)
+        // --- Derived (computed off-RT in the Realizer from {preset, fs}) ---
+        float directB0 = 1.0F;   // gain·a0_hi (off: unity)
+        float directB1 = 0.0F;   // gain·a1_hi
+        float directPole = 0.0F; // b1_hi
+        float crossB0 = 0.0F;    // gain·a0_lo (off: no cross path)
+        float crossPole = 0.0F;  // b1_lo
     };
 
     struct LimiterParams
@@ -135,7 +137,7 @@ namespace AdaptiveSound
         ClarityParams clarity;
         LoudnessParams loudness;
         BRIRParams brir;
-        CrossfeedParams crossfeed; // QW1: wet-region crossfeed, between brir and limiter
+        CrossfeedParams crossfeed; // headphone crossfeed: the output stage ahead of the limiter
         LimiterParams limiter;
         float intensityLinear = 1.0F;
         uint64_t sequenceNumber = 0;
