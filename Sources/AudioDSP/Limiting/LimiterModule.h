@@ -26,10 +26,15 @@
 //      is oversampled (x42/zita-dpl1 model). Ref: ITU-R BS.1770 Annex 2; libebur128.
 //
 //   3. Sliding-window peak (monotonic deque, amortized O(1)) → gain reduction in
-//      the **dB domain** with a **dual-stage release** (fast + slow, deeper wins)
-//      and **LF hold-extension** (don't release between bass-spaced peaks). Ref:
-//      Giannoulis/Massberg/Reiss, JAES 2012; x42 hold-extension. Gain applied via
-//      vDSP_vmul. All sidechain math is double; only the final gain is float.
+//      the **dB domain** (the log-domain smoothing after the gain computer of
+//      Giannoulis/Massberg/Reiss, JAES 2012) with a **program-dependent release** on two
+//      branches, deeper wins: a FAST branch (attack 0.5 ms — it holds the ceiling —
+//      release 100 ms) and a SLOW branch that only sustained limiting charges (attack
+//      100 ms, release 500 ms). A transient releases fast; sustained limiting releases
+//      slowly, without pumping (council C-39: before R1.1 both branches attacked alike,
+//      so every release was the 500 ms one). Each branch has its own **LF hold-extension**
+//      (don't release between bass-spaced peaks; x42), armed by its own attacks. Gain
+//      applied via vDSP_vmul. All sidechain math is double; only the final gain is float.
 //
 // Why NOT a K-weighted/HP sidechain (the withdrawn "B5"): a true-peak ceiling must
 // catch low-frequency inter-sample peaks too — weighting the detector would make it
@@ -68,7 +73,7 @@
 // ==========
 // - ITU-R BS.1770-4/-5 Annex 2 (true-peak / oversampled ISP measurement)
 // - Giannoulis, Massberg & Reiss, "Digital Dynamic Range Compressor Design",
-//   JAES 60(6), 2012 (dB-domain gain computer, dual-stage release)
+//   JAES 60(6), 2012 (dB-domain gain computer and smoothing)
 // - Julius O. Smith III, "Introduction to Digital Filters" §1.3.1 (one-pole RC)
 // - Oppenheim & Schafer §7.6 (Kaiser window); Schafer & Rabiner 1973 (polyphase)
 // - jiixyj/libebur128, x42/dpl.lv2 (oversampled true-peak detection)
@@ -99,10 +104,14 @@ namespace AdaptiveSound
     // → −0.27 dB = 10^(−0.27/20). (Was −0.5 dB / 0.94406 under M1 linear-interp.)
     inline constexpr double kIspSafetyMargin = 0.96939327;
 
-    // --- Ballistics (dB domain, dual-stage release + LF hold) -------------------
-    inline constexpr float kLimiterAttackMs = 0.5F;        // attack τ
-    inline constexpr float kLimiterFastReleaseMs = 100.0F; // fast release τ
-    inline constexpr float kLimiterSlowReleaseMs = 500.0F; // slow release τ (sustained)
+    // --- Ballistics (dB domain, program-dependent release + LF hold) ------------
+    inline constexpr float kLimiterAttackMs = 0.5F; // fast-branch attack τ (holds the ceiling)
+    inline constexpr float kLimiterFastReleaseMs = 100.0F; // fast-branch release τ (transients)
+    // The slow branch attacks this slowly, so a transient barely charges it (a 5 ms hit:
+    // ~8 % of its reduction) while sustained limiting does — council P2-1's remedy (a), within
+    // its 50–150 ms range.
+    inline constexpr float kLimiterSlowAttackMs = 100.0F;
+    inline constexpr float kLimiterSlowReleaseMs = 500.0F; // slow-branch release τ (sustained)
     inline constexpr float kMillisToSeconds = 0.001F;
     inline constexpr double kLimiterDbScale = 20.0;   // 20·log10 (amplitude ↔ dB)
     inline constexpr double kLimiterDbBase = 10.0;    // base for dB → linear
@@ -153,9 +162,14 @@ namespace AdaptiveSound
             // Ring size: lookahead window + one full host buffer. At maxFrames_=512 / 48 kHz
             // this equals the former kLimiterRingSize (656), preserving bit-exactness.
             ringSize_ = lookaheadFrames_ + maxFrames_;
-            attackCoeff_ = onePoleCoeff(kLimiterAttackMs, fs);
-            releaseFastCoeff_ = onePoleCoeff(kLimiterFastReleaseMs, fs);
-            releaseSlowCoeff_ = onePoleCoeff(kLimiterSlowReleaseMs, fs);
+            fast_ = EnvelopeBranch{
+                .attackCoeff = onePoleCoeff(kLimiterAttackMs, fs),
+                .releaseCoeff = onePoleCoeff(kLimiterFastReleaseMs, fs),
+            };
+            slow_ = EnvelopeBranch{
+                .attackCoeff = onePoleCoeff(kLimiterSlowAttackMs, fs),
+                .releaseCoeff = onePoleCoeff(kLimiterSlowReleaseMs, fs),
+            };
             holdFrames_ = static_cast<uint32_t>(std::lround(kLfHoldSeconds * fs));
 
             // Allocate and zero each channel's ring. Do NOT call rings_.reset() here:
@@ -168,10 +182,6 @@ namespace AdaptiveSound
 
             readHead_ = 0U;
             writeHead_ = lookaheadFrames_;
-
-            envFastDb_ = 0.0;
-            envSlowDb_ = 0.0;
-            lfHoldCounter_ = 0U;
 
             // grBuf_: heap-allocated to maxFrames_ (off-RT, the only allocation site).
             grBuf_.assign(maxFrames_, 0.0F);
@@ -188,7 +198,7 @@ namespace AdaptiveSound
         // process() — RT-safe; noexcept; no allocation. In-place on ioData.
         //   Bypass (ceiling ≥ 1.0): immediate zero-latency identity return.
         //   Active: per sample → write ring, polyphase ISP, deque window-max,
-        //   dB-domain dual-stage gain, then read delayed output and apply gain.
+        //   dB-domain two-branch gain, then read delayed output and apply gain.
         // -----------------------------------------------------------------------
         void process(const LimiterParams& params, const MultichannelView& block) noexcept
         {
@@ -321,9 +331,8 @@ namespace AdaptiveSound
         // deque in order, exactly as process() would have.
         void reseedDetector(uint32_t numChannels) noexcept
         {
-            envFastDb_ = 0.0;
-            envSlowDb_ = 0.0;
-            lfHoldCounter_ = 0U;
+            fast_.reset();
+            slow_.reset();
             dequeHead_ = 0U;
             dequeCount_ = 0U;
             for (uint32_t back = lookaheadFrames_; back > 0U; --back)
@@ -343,6 +352,53 @@ namespace AdaptiveSound
         {
             uint64_t index = 0U;
             double value = 0.0;
+        };
+
+        // One branch of the program-dependent envelope: a dB-domain one-pole that attacks toward a
+        // deeper target and releases toward a shallower one, each with its own coefficient, with
+        // its own LF hold-extension — an attack into ≥ 0.5 dB of reduction arms it, and for 50 ms
+        // after its last attack the branch does not release (no release between bass-spaced
+        // peaks). The fast branch (attack 0.5 ms, release 100 ms) is exactly the single envelope
+        // this limiter used to have, with its release; the slow one (attack 100 ms, release
+        // 500 ms) only charges under sustained limiting. Each branch holds only on its OWN attacks,
+        // so dense peaks that keep the fast branch held never pin a deeper slow branch down.
+        struct EnvelopeBranch
+        {
+            double attackCoeff = 0.0;
+            double releaseCoeff = 0.0;
+            double envDb = 0.0;        // the branch's gain, dB (≤ 0)
+            uint32_t holdCounter = 0U; // frames left in its LF hold
+
+            void advance(double targetDb, uint32_t holdFrames) noexcept
+            {
+                if (targetDb < envDb)
+                {
+                    envDb += attackCoeff * (targetDb - envDb);
+                    if (-targetDb >= kLfHoldThresholdDb)
+                    {
+                        holdCounter = holdFrames;
+                    }
+                }
+                else if ((-envDb >= kLfHoldThresholdDb) && (holdCounter > 0U))
+                {
+                    --holdCounter; // LF hold: no release between bass-spaced peaks
+                }
+                else
+                {
+                    envDb += releaseCoeff * (targetDb - envDb);
+                    if (holdCounter > 0U)
+                    {
+                        --holdCounter;
+                    }
+                }
+            }
+
+            // Back to no reduction, no hold (the coefficients stay).
+            void reset() noexcept
+            {
+                envDb = 0.0;
+                holdCounter = 0U;
+            }
         };
 
         // RC-exact one-pole coefficient: α = 1 − exp(−1/(τ·fs))  (JOS §1.3.1).
@@ -390,37 +446,13 @@ namespace AdaptiveSound
             return ceilingDb - (kLimiterDbScale * std::log10(peak));
         }
 
-        // Advance the dual-stage dB envelope toward targetDb (≤ 0) with attack /
-        // dual release + LF hold-extension; returns the deeper (more-reduced) of the
-        // fast/slow branches in dB.
+        // Advance both branches toward targetDb (≤ 0) and return the deeper (more reduced) one, in
+        // dB. The fast branch holds the ceiling — the output is never shallower than it.
         [[nodiscard]] auto advanceEnvelopeDb(double targetDb) noexcept -> double
         {
-            const double effDb = std::min(envFastDb_, envSlowDb_);
-            if (targetDb < effDb)
-            {
-                // Attack: both branches track toward more reduction; arm LF hold.
-                envFastDb_ += attackCoeff_ * (targetDb - envFastDb_);
-                envSlowDb_ += attackCoeff_ * (targetDb - envSlowDb_);
-                if (-targetDb >= kLfHoldThresholdDb)
-                {
-                    lfHoldCounter_ = holdFrames_;
-                }
-            }
-            else if ((-effDb >= kLfHoldThresholdDb) && (lfHoldCounter_ > 0U))
-            {
-                // LF hold: freeze release between bass-spaced peaks.
-                --lfHoldCounter_;
-            }
-            else
-            {
-                envFastDb_ += releaseFastCoeff_ * (targetDb - envFastDb_);
-                envSlowDb_ += releaseSlowCoeff_ * (targetDb - envSlowDb_);
-                if (lfHoldCounter_ > 0U)
-                {
-                    --lfHoldCounter_;
-                }
-            }
-            return std::min(envFastDb_, envSlowDb_);
+            fast_.advance(targetDb, holdFrames_);
+            slow_.advance(targetDb, holdFrames_);
+            return std::min(fast_.envDb, slow_.envDb);
         }
 
         // Monotonic-deque sliding-window maximum over the lookahead window;
@@ -504,12 +536,9 @@ namespace AdaptiveSound
         // lookahead window, not maxFrames_.
         std::array<PeakEntry, kPeakDequeCapacity> peakDeque_{};
 
-        // dB-domain dual-stage envelope state (≤ 0 dB) and ballistics coefficients.
-        double envFastDb_ = 0.0;
-        double envSlowDb_ = 0.0;
-        double attackCoeff_ = 0.0;
-        double releaseFastCoeff_ = 0.0;
-        double releaseSlowCoeff_ = 0.0;
+        // The program-dependent envelope's two branches (coefficients set in initialize()).
+        EnvelopeBranch fast_{};
+        EnvelopeBranch slow_{};
 
         uint64_t sampleCounter_ = 0U; // monotonic sample index (deque window)
 
@@ -517,8 +546,7 @@ namespace AdaptiveSound
         uint32_t writeHead_ = kLimiterLookaheadFrames;
         uint32_t dequeHead_ = 0U;
         uint32_t dequeCount_ = 0U;
-        uint32_t lfHoldCounter_ = 0U; // frames remaining in LF hold-extension
-        uint32_t holdFrames_ = 0U;    // LF hold span (computed in initialize())
+        uint32_t holdFrames_ = 0U; // LF hold span (computed in initialize())
         uint32_t sampleRate_ = kDefaultSampleRate;
         uint32_t maxFrames_ = kDefaultMaxFrames;
         // Look-ahead frame count, derived from kLimiterLookaheadSeconds · fs in initialize()
