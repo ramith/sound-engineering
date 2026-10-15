@@ -36,16 +36,17 @@ namespace AdaptiveSound
         }
 
         // Headphones — where crossfeed plays (council C-42 / P2 D44, KI-DEV-01). First what the
-        // output says is plugged in, where it says: its data source (kAudioDevicePropertyDataSource,
-        // the SDK's IOAudioTypes.h port codes) — 'hdpn' is headphones, the internal or an
-        // external speaker is not (the Mac's headphone jack reads 'hdpn' on its built-in
-        // transport; its speakers 'ispk'). A line or digital out could feed either, so then the
-        // transport decides: Bluetooth (LE) and USB are personal outputs — a Bluetooth speaker
-        // that reports nothing reads as headphones, and crossfeed still plays only if the listener
-        // turned it on — and AirPlay is a receiver (a HomePod, a TV, a speaker), never
-        // headphones. Everything else — the built-in transport without 'hdpn', HDMI, DisplayPort,
-        // Thunderbolt / PCI / FireWire interfaces, virtual and aggregate devices — is not, unless
-        // its data source says so. (VLC's auhal headphone check keys on the same 'hdpn'.)
+        // output says is plugged in, where it says: its data source
+        // (kAudioDevicePropertyDataSource, the SDK's IOAudioTypes.h port codes) — 'hdpn' is
+        // headphones, the internal or an external speaker is not (the Mac's headphone jack reads
+        // 'hdpn' on its built-in transport; its speakers 'ispk'). A line or digital out could feed
+        // either, so then the transport decides: Bluetooth (LE) and USB are personal outputs — a
+        // Bluetooth speaker that reports nothing reads as headphones, and crossfeed still plays
+        // only if the listener turned it on — and AirPlay is a receiver (a HomePod, a TV, a
+        // speaker), never headphones. Everything else — the built-in transport without 'hdpn',
+        // HDMI, DisplayPort, Thunderbolt / PCI / FireWire interfaces, virtual and aggregate
+        // devices — is not, unless its data source says so. (VLC's auhal headphone check keys on
+        // the same 'hdpn'.)
         bool isHeadphoneOutput(const OutputDeviceFacts& facts, OutputDeviceType type)
         {
             switch (facts.dataSource)

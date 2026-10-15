@@ -148,7 +148,8 @@ extern "C"
     /// @param auUnit   Borrowed (passUnretained) AUAudioUnit*; no-op if null.
     /// @param enabled  0 = off (glides out, then a bit-exact pass-through); non-zero = on.
     /// @param preset   CrossfeedPreset value — bs2b's levels: 0 = Jmeier ("Relaxed"), 1 = Cmoy
-    ///                 ("Default"), 2 = bs2b default ("Strong"); out of range clamps to the nearest.
+    ///                 ("Default"), 2 = bs2b default ("Strong"); out of range clamps to the
+    ///                 nearest.
     void publishCrossfeed(void* auUnit, uint32_t enabled, uint32_t preset) AUDIODSP_C_NOEXCEPT;
 
 #ifdef __cplusplus

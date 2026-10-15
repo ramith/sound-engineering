@@ -49,11 +49,13 @@ namespace
     // The CrossfeedParams the module plays for {enabled, preset} at sampleRate: bs2b's init()
     // (libbs2b src/bs2b.c, MIT © 2005 Boris Mikhaylov; re-implemented from the published source,
     // not linked — OQ-17), in double precision, with its output gain folded into the numerators:
-    //   GB_lo = −feed·5/6 − 3 dB, GB_hi = feed/6 − 3 dB     (so GB_lo − GB_hi = −feed)
-    //   G_lo = 10^(GB_lo/20),  G_hi = 1 − 10^(GB_hi/20),  Fc_hi = Fc_lo·2^((GB_lo − 20·log10 G_hi)/12)
-    //   low-pass (cross):  a0_lo = G_lo·(1 − x_lo), b1_lo = x_lo,        x_lo = e^(−2π·Fc_lo/fs)
-    //   high-boost (direct): a0_hi = 1 − G_hi·(1 − x_hi), a1_hi = −x_hi, b1_hi = x_hi = e^(−2π·Fc_hi/fs)
-    //   gain = 1 / (1 − G_hi + G_lo)   — a centred (L = R) signal at DC passes at exactly 0 dB.
+    //   GB_lo = −feed·5/6 − 3 dB,  GB_hi = feed/6 − 3 dB      (so GB_lo − GB_hi = −feed)
+    //   G_lo = 10^(GB_lo/20),  G_hi = 1 − 10^(GB_hi/20)
+    //   Fc_hi = Fc_lo·2^((GB_lo − 20·log10 G_hi)/12)
+    //   low-pass (cross):     a0_lo = G_lo·(1 − x_lo), b1_lo = x_lo = e^(−2π·Fc_lo/fs)
+    //   high-boost (direct):  a0_hi = 1 − G_hi·(1 − x_hi), a1_hi = −x_hi,
+    //                         b1_hi = x_hi = e^(−2π·Fc_hi/fs)
+    //   gain = 1 / (1 − G_hi + G_lo) — a centred (L = R) signal at DC passes at exactly 0 dB.
     //
     // IMPORTANT (click-free DISABLE): the coefficients are ALWAYS derived, even when enabled == 0.
     // `enabled` drives only the module's glide target; the coefficients are the crossfeed it glides
@@ -71,14 +73,14 @@ namespace
         constexpr double kLowPassShare = -5.0 / 6.0;
         constexpr double kHighShelfShare = 1.0 / 6.0;
         constexpr double kGainOffsetDb = -3.0;
-        constexpr double kSemitonesPerOctave = 12.0;
+        constexpr double kHighCutExponentDivisor = 12.0; // bs2b.c init(): Fc_hi's 2^(…/12)
         const double gainLowDb = (level.feedDb * kLowPassShare) + kGainOffsetDb;
         const double gainHighDb = (level.feedDb * kHighShelfShare) + kGainOffsetDb;
         const double gainLow = std::pow(10.0, gainLowDb / kAmplitudeDbScale);
         const double gainHigh = 1.0 - std::pow(10.0, gainHighDb / kAmplitudeDbScale);
-        const double cutHighHz =
-            level.fcutHz *
-            std::pow(2.0, (gainLowDb - (kAmplitudeDbScale * std::log10(gainHigh))) / kSemitonesPerOctave);
+        const double cutHighExponent =
+            (gainLowDb - (kAmplitudeDbScale * std::log10(gainHigh))) / kHighCutExponentDivisor;
+        const double cutHighHz = level.fcutHz * std::pow(2.0, cutHighExponent);
         const double gain = 1.0 / (1.0 - gainHigh + gainLow);
 
         const double poleLow = std::exp(-kTwoPi * level.fcutHz / sampleRate);
@@ -416,7 +418,8 @@ void Realizer::realizeEq()
 
 void Realizer::realizeCrossfeed()
 {
-    canonical_.crossfeed = deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.preset, sampleRate_);
+    canonical_.crossfeed =
+        deriveCrossfeedParams(crossfeed_.enabled, crossfeed_.preset, sampleRate_);
 }
 
 template <typename Work> void Realizer::runOnQueue(const Work& work)
