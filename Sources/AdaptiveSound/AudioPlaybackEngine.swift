@@ -94,8 +94,11 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
     /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
-    /// as for `startAudio`, and an overtaken stop is dropped the same way.
-    func stopAudio(epoch: UInt64) async throws
+    /// as for `startAudio`, and an overtaken stop is dropped the same way. `pausing`: playback is meant
+    /// to resume from here, so on Pure the output device keeps the volume Pure set (founder decision
+    /// 2026-10-16, `PureVolumeEvent.paused`); otherwise playback ended (Stop, the end of the queue, the
+    /// queue cleared, quit), Pure is left, and the device gets its own level back.
+    func stopAudio(epoch: UInt64, pausing: Bool) async throws
 
     // MARK: Gapless / continuous playback (poll-based — the view model reads a snapshot at 20 Hz)
 

@@ -26,7 +26,7 @@
 
         func startAudio(fileURL _: URL, pureMode _: Bool, startAt _: Double, epoch _: UInt64) async throws {}
 
-        func stopAudio(epoch _: UInt64) async throws {}
+        func stopAudio(epoch _: UInt64, pausing _: Bool) async throws {}
 
         func seek(to _: Double, epoch _: UInt64) async {}
 

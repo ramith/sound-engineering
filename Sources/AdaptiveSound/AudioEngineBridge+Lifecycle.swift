@@ -118,7 +118,9 @@ extension AudioEngineBridge {
     /// detach the shared two-AU `AVAudioEngine` graph. Split out of `shutdown()` so each teardown
     /// concern (path-specific engine vs. the shared graph) reads as one step.
     private func tearDownActiveEngine() {
-        // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate).
+        // Stop + destroy the Pure-Mode engine if live (releases hog mode + device rate), and leave Pure:
+        // the device gets its own level back (a pause in Pure kept it lowered) — quitting ends playback.
+        defer { pureVolumeEvent(.stopped) }
         if activePathKind == .pure {
             tearDownPure()
         } else {

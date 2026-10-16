@@ -76,6 +76,7 @@ extension AudioEngineBridge {
         stopEnhancedPlayback()
         // Master Gain on Pure is the device's own volume: lowered by the cut before Pure renders — or,
         // on a device with no volume the app can set, Pure waits and Enhanced plays at the app's level.
+        // (Enhanced starting gives the device's own level back: `startEnhancedPlayback`.)
         guard enterPureVolume(deviceID: currentDeviceID) == .engaged else {
             NSLog("[AudioEngineBridge] Pure waits: Master Gain is turned down, the device has no volume to set")
             mutateSignalPath { $0.pureReason = .waitsForMasterGain }
@@ -85,7 +86,6 @@ extension AudioEngineBridge {
             return true
         }
         NSLog("[AudioEngineBridge] Pure Mode start failed (\(failed)) — falling back to Enhanced")
-        leavePureVolume() // Enhanced plays the cut in the app: the device's own level goes back
         mutateSignalPath { $0.pureReason = failed }
         return false
     }
@@ -100,6 +100,9 @@ extension AudioEngineBridge {
         if activePathKind == .pure {
             tearDownPure()
         }
+        // Pure is left — also from a pause in Pure, whose hold on the device's volume outlived its
+        // session: the device gets its own level back, and Master Gain plays in the app.
+        pureVolumeEvent(.enhancedStarted)
 
         // Enhanced path (original startAudio body).
         guard let engine = avEngine, let playerNode else {
@@ -212,7 +215,7 @@ extension AudioEngineBridge {
         return outcome
     }
 
-    func stopAudio(epoch: UInt64) async throws {
+    func stopAudio(epoch: UInt64, pausing: Bool) async throws {
         return await withCheckedContinuation { continuation in
             self.engineQueue.async {
                 // A stop a newer command overtook (a Play after a Pause, a click after Stop) is dropped:
@@ -228,6 +231,10 @@ extension AudioEngineBridge {
                 } else {
                     self.stopEnhancedPlayback()
                 }
+                // A pause keeps Pure's hold on the device's volume — playback resumes there; a stop
+                // that ends playback leaves Pure, and the device gets its own level back (founder
+                // decision 2026-10-16). After the render stopped.
+                self.pureVolumeEvent(pausing ? .paused : .stopped)
                 // Clear the on-deck slot and play-intent on user stop: a stop is a deliberate
                 // abort, not an end-of-queue, so the armed next track must not silently begin
                 // playing later. Serialized on resampleQueue so it cannot race with an in-flight
