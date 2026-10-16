@@ -74,8 +74,9 @@ struct MusicFoldersSection: View {
         return HStack(spacing: DesignSystem.Spacing.small) {
             // The glyph, the path and the status line are ONE VoiceOver element — "~/Music, Not found
             // — is its drive connected?" — the caption read as part of the row; the glyph is hidden
-            // (the caption says it in words). The Remove button stays its own element (below).
-            HStack(spacing: DesignSystem.Spacing.small) {
+            // (the caption says it in words). The Remove button stays its own element (below). The glyph
+            // sits on the path's line, however many lines the reason wraps to.
+            HStack(alignment: .firstTextBaseline, spacing: DesignSystem.Spacing.small) {
                 Image(systemName: isPaused ? "folder.badge.questionmark" : "folder")
                     .foregroundStyle(isPaused ? DesignSystem.Color.statusWarningText
                         : DesignSystem.Color.labelSecondary)
@@ -108,6 +109,8 @@ struct MusicFoldersSection: View {
             .help("Remove from Library")
             .accessibilityLabel("Remove \(abbreviatedPath(root.path)) from library")
         }
+        // A one-line row stays 34 pt; a row with a status line keeps room at both dividers.
+        .padding(.vertical, DesignSystem.Spacing.xSmall)
         .frame(minHeight: 34)
         // `.contain` (not `.combine`): keep the Remove button a first-class, directly-activatable
         // VoiceOver element rather than demoting it to an Actions-rotor custom action (review S3).
