@@ -89,14 +89,10 @@ namespace AdaptiveSound
         void push(const MultichannelView& block) noexcept;
 
         // Diagnostics (any thread): frames the worker has fed to the current estimate (reset when
-        // the worker begins a new one), and frames the RT side dropped because the ring was full.
+        // the worker begins a new one).
         [[nodiscard]] uint64_t fedFrames() const noexcept
         {
             return fedFrames_.load(std::memory_order_acquire);
-        }
-        [[nodiscard]] uint64_t droppedFrames() const noexcept
-        {
-            return droppedFrames_.load(std::memory_order_relaxed);
         }
 
       private:
@@ -129,7 +125,6 @@ namespace AdaptiveSound
         SpscRing<float, kRingElems> ring_;
         std::vector<float> pushBuf_; // maxFrames × kMaxChannels, interleaved (RT-owned)
         std::atomic<uint32_t> channelCount_{0U};
-        std::atomic<uint64_t> droppedFrames_{0U};
 
         // Control → worker / RT.
         std::atomic<bool> running_{false};
