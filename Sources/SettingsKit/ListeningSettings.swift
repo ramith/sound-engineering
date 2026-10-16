@@ -40,6 +40,10 @@ public struct ListeningSettings: Equatable, Sendable {
     /// "Use FFmpeg for other formats": FFmpeg may read a file Apple's decoder can't (R1.1-A, FD-3).
     /// Off by default.
     public var useFFmpeg: Bool
+    /// The output devices whose own volume Pure turned down and has not yet put back
+    /// (`MasterGainOnPure.allLoans`) — kept, so a crash or a device that went away gets its level back
+    /// at the next launch. Empty on a new install, and whenever nothing is lowered.
+    public var pureVolumeLoans: [PureVolumeLoan]
 
     /// Settings as given; every default is the faithful one (`faithful`).
     public init(
@@ -51,7 +55,8 @@ public struct ListeningSettings: Equatable, Sendable {
         repeatMode: Int = 0,
         keepPlaybackOnDevice: Bool = true,
         chosenOutputUID: String? = nil,
-        useFFmpeg: Bool = false
+        useFFmpeg: Bool = false,
+        pureVolumeLoans: [PureVolumeLoan] = []
     ) {
         self.pureMode = pureMode
         self.masterGainDecibels = masterGainDecibels
@@ -62,6 +67,7 @@ public struct ListeningSettings: Equatable, Sendable {
         self.keepPlaybackOnDevice = keepPlaybackOnDevice
         self.chosenOutputUID = chosenOutputUID
         self.useFFmpeg = useFFmpeg
+        self.pureVolumeLoans = pureVolumeLoans
     }
 
     /// A new install: the music as it was recorded.
@@ -92,7 +98,7 @@ public struct ListeningSettings: Equatable, Sendable {
 extension ListeningSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case version, pureMode, masterGainDecibels, crossfeed, crossfeedStrength, shuffle, repeatMode
-        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg
+        case keepPlaybackOnDevice, chosenOutputUID, useFFmpeg, pureVolumeLoans
     }
 
     /// The format this build writes.
@@ -113,7 +119,8 @@ extension ListeningSettings: Codable {
             repeatMode: Self.validRepeatMode(container.field(.repeatMode)),
             keepPlaybackOnDevice: container.field(.keepPlaybackOnDevice) ?? faithful.keepPlaybackOnDevice,
             chosenOutputUID: container.field(.chosenOutputUID).flatMap { (uid: String) in uid.isEmpty ? nil : uid },
-            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg
+            useFFmpeg: container.field(.useFFmpeg) ?? faithful.useFFmpeg,
+            pureVolumeLoans: container.field(.pureVolumeLoans) ?? faithful.pureVolumeLoans
         )
     }
 
@@ -129,6 +136,7 @@ extension ListeningSettings: Codable {
         try container.encode(keepPlaybackOnDevice, forKey: .keepPlaybackOnDevice)
         try container.encodeIfPresent(chosenOutputUID, forKey: .chosenOutputUID)
         try container.encode(useFFmpeg, forKey: .useFFmpeg)
+        try container.encode(pureVolumeLoans, forKey: .pureVolumeLoans)
     }
 }
 

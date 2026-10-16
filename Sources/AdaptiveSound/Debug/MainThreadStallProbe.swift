@@ -61,7 +61,7 @@
                 viewModel.selectedDevice = devices[flip ? 0 : 1]
             }
             measure("vm.setMasterGain (Enhanced)") { viewModel.setMasterGain(position: flip ? 0.5 : 0.6) }
-            measure("engine.requestDeviceVolume (Pure)") { bridge.requestDeviceVolume(decibels: -10) }
+            measure("engine.returnPureVolumeLoans") { bridge.returnPureVolumeLoans([]) }
             measure("vm.pinPlaybackToSelectedDevice didSet") { viewModel.pinPlaybackToSelectedDevice = flip }
             measure("engine.restoreChosenOutput") { bridge.restoreChosenOutput(uid: flip ? devices[0].uid : nil) }
             measure("engine.chosenOutputUID") { _ = bridge.chosenOutputUID() }

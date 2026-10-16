@@ -43,6 +43,9 @@ extension AudioViewModel {
                 // follows the default until the user picks.
                 engine.setPinPlaybackToSelectedDevice(pinPlaybackToSelectedDevice)
                 engine.restoreChosenOutput(uid: chosenOutputUID)
+                // A device Pure turned down and never put back (the app died, or the device went away
+                // mid-Pure) gets its level back, if it still reads what Pure set (`MasterGainOnPure`).
+                engine.returnPureVolumeLoans(pureVolumeLoans)
                 // Enumerate real output devices from CoreAudio, and show the one the engine plays on.
                 let devices = try await engine.enumerateOutputDevices()
                 showEngineOutput(among: devices)
@@ -133,6 +136,10 @@ extension AudioViewModel {
         // engineQueue AFTER the teardown block → "engine not initialized" at quit.
         isEngineReady = false
         await performStop(epoch: nextStopEpoch())
+        // The stop put the Pure device's own volume back: keep what is still out (a device that went
+        // away), written now — the tick that would have read it has stopped.
+        rememberPureVolumeLoans(engine.snapshot().pureVolumeLoans)
+        settingsStore.flush()
         do {
             try await engine.shutdown()
         } catch {

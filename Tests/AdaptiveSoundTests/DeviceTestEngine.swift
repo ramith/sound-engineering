@@ -1,4 +1,5 @@
 @testable import AdaptiveSound
+import EQEditKit
 import Foundation
 import SettingsKit
 import Synchronization
@@ -36,6 +37,10 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         var chosenUID: String?
         /// Every `seek` call's target.
         var seeks: [Double] = []
+        /// Every Master Gain published.
+        var masterGains: [Float] = []
+        /// Every `returnPureVolumeLoans` call: the loans an earlier run left, handed back at engine-ready.
+        var returnedLoans: [[PureVolumeLoan]] = []
         var onOutputDevicesChanged: (@MainActor () -> Void)?
     }
 
@@ -68,9 +73,13 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         state.withLock { $0.seeks.append(seconds) }
     }
 
-    func publishMasterGain(decibels _: Float) {}
+    func publishMasterGain(decibels: Float) {
+        state.withLock { $0.masterGains.append(decibels) }
+    }
 
-    func requestDeviceVolume(decibels _: Float) {}
+    func returnPureVolumeLoans(_ loans: [PureVolumeLoan]) {
+        state.withLock { $0.returnedLoans.append(loans) }
+    }
 
     func publishEQ(points _: [Float], isOn _: Bool) {}
 

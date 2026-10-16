@@ -34,8 +34,8 @@ enum DecoderKindUI {
 // MARK: - DeviceVolume
 
 /// The output device's own (hardware) volume, as Pure Mode reads it. Pure never scales the
-/// bit-perfect stream, so this is the one gain on the Pure path — what Master Gain shows and sets
-/// while Pure plays.
+/// bit-perfect stream, so this is the one gain on the Pure path — what Master Gain turns down while
+/// Pure plays (`MasterGainOnPure`).
 enum DeviceVolume: Equatable {
     /// The device has no volume the app can set (none on its main output, or not settable): its
     /// level is set on the device itself.
@@ -87,12 +87,9 @@ struct SignalPathInfo: Equatable {
     var interrupted: Bool = false
 
     /// The output device's own volume while Pure plays — read when Pure starts (in the same snapshot
-    /// that turns the path Pure) and kept current by a listener on the device. `nil` on Enhanced.
+    /// that turns the path Pure) and kept current by a listener on the device. `.fixed` holds the
+    /// Master Gain slider at 0 dB (the device has no volume to turn down). `nil` on Enhanced.
     var deviceVolume: DeviceVolume?
-
-    /// The last level the user set on the device while Pure plays, and what the device read back
-    /// right after (`AudioPlaybackEngine.requestDeviceVolume`). `nil` until a set lands.
-    var deviceVolumeSet: DeviceVolumeRequest?
 
     // MARK: - Enhancement overlay (F4 — copied from VM in tickSpectrum)
 
