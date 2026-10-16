@@ -4,8 +4,10 @@
 // - The peak caps hold 0.6 s, then fall 1.25 of full scale a second — in real time. Frames arrive
 //   once per tap buffer (100 ms); before R1.1 each frame advanced the caps by a nominal 1/20 s, so
 //   they held 1.2 s and fell at half speed.
-// - With no view showing the spectrum, nothing reads it. Before R1.1 a 20 Hz main-thread timer read
-//   it from engine-ready to quit.
+// - With no view showing the spectrum, nothing reads it; once a pause has settled, the transport
+//   tick stops too. Before R1.1 two 20 Hz main-thread timers ran from engine-ready to quit. With the
+//   tick asleep, what it used to carry while paused still reaches the screen at once: the scrubber
+//   when the paused song changes, the hero's crossfeed chip when crossfeed is turned on.
 
 @testable import AdaptiveSound
 import Foundation
@@ -93,6 +95,67 @@ struct LiveReadoutsTests {
         runMainLoop(0.35)
         let reads = engine.state.withLock { $0.spectrumReads } - before
         #expect(reads == 0, "playing, with no view showing it, the spectrum was read \(reads) times in 0.35 s")
-        viewModel.stopTransportTick()
+        viewModel.disarmTransportTick()
+    }
+
+    @Test("the transport tick runs while a song plays and stops once a pause has settled")
+    func transportTickStopsWhenPaused() async {
+        let engine = DeviceTestEngine()
+        let viewModel = await readyViewModel(engine)
+        viewModel.playTrack(at: 0)
+        await settle()
+        let playingFrom = engine.state.withLock { $0.snapshotReads }
+        runMainLoop(0.35)
+        #expect(engine.state.withLock { $0.snapshotReads } > playingFrom, "playing, the tick reads the engine")
+
+        viewModel.pause()
+        await settle()
+        #expect(!viewModel.isPlaying)
+        runMainLoop(0.1) // the tick that finds nothing playing is the last
+        let pausedFrom = engine.state.withLock { $0.snapshotReads }
+        runMainLoop(0.35)
+        let reads = engine.state.withLock { $0.snapshotReads } - pausedFrom
+        #expect(reads == 0, "paused, the transport tick read the engine \(reads) times in 0.35 s")
+        viewModel.disarmTransportTick()
+    }
+
+    @Test("paused, the scrubber follows the paused song at once: a scrub moves it, another song zeroes it")
+    func pausedScrubberNeedsNoTick() async {
+        let engine = DeviceTestEngine()
+        let viewModel = await readyViewModel(engine)
+        let url = URL(fileURLWithPath: "/nonexistent/live-readouts-2.flac")
+        viewModel.queue.append(QueueItem(file: AudioFile(name: "Next", relativePath: "", absoluteURL: url,
+                                                         format: "FLAC", durationSeconds: 200)))
+        viewModel.duration = 240
+        viewModel.playTrack(at: 0)
+        await settle()
+        viewModel.seek(to: 81)
+        viewModel.pause()
+        await settle()
+        runMainLoop(0.1) // the tick that finds nothing playing is the last
+        #expect(viewModel.transportTimer == nil, "paused, the tick sleeps")
+        viewModel.seek(to: 120) // a scrub while paused moves the resume point
+        #expect(viewModel.playbackPosition == 120)
+        viewModel.selectedTrackIndex = 1 // another song selected: the paused place is not its place
+        #expect(viewModel.playbackPosition == 0, "the scrubber kept the other song's place")
+        viewModel.disarmTransportTick()
+    }
+
+    @Test("paused, turning crossfeed on shows in the hero at once")
+    func pausedIntentReachesTheHero() async {
+        let engine = DeviceTestEngine()
+        let headphones = AudioDeviceModel(id: 7, name: "Headphones", sampleRate: 48000, bufferFrameSize: 512,
+                                          uid: "hp", modelUID: nil, transportType: 0, type: .builtin,
+                                          isHeadphones: true)
+        engine.state.withLock {
+            $0.devices = [headphones]
+            $0.engineDevice = headphones.id
+        }
+        let viewModel = await readyViewModel(engine)
+        #expect(viewModel.transportTimer == nil, "nothing plays: the tick sleeps")
+        viewModel.crossfeedEnabled = true
+        #expect(viewModel.signalPath.crossfeedStrength == viewModel.crossfeedStrength,
+                "the hero's crossfeed chip waits for a tick that never comes")
+        viewModel.disarmTransportTick()
     }
 }

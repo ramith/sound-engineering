@@ -113,7 +113,7 @@ struct OutputDeviceViewModelTests {
         viewModel.selectedDevice = nil
         viewModel.initializeEngine()
         await settle()
-        viewModel.stopTransportTick()
+        viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
         #expect(engine.state.withLock { $0.picks }.isEmpty, "a launch pick would pin the speakers")
@@ -127,7 +127,7 @@ struct OutputDeviceViewModelTests {
         await engineMoves(to: Self.speakers.id, listing: [Self.speakers]) // lost; the rule fell back
         viewModel.retryInitialization() // the Retry banner, or the engine-not-initialized self-heal
         await settle()
-        viewModel.stopTransportTick()
+        viewModel.disarmTransportTick()
         #expect(viewModel.isEngineReady)
         #expect(viewModel.selectedDevice?.id == Self.speakers.id)
         #expect(engine.state.withLock { $0.picks } == [Self.headphones.id], "only the user's own pick")

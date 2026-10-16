@@ -49,7 +49,7 @@ struct CrossfeedPlaysTests {
         let viewModel = AudioViewModel(defaults: defaults, engine: engine)
         viewModel.initializeEngine()
         await settle()
-        viewModel.stopTransportTick()
+        viewModel.disarmTransportTick()
 
         viewModel.crossfeedEnabled = true
         #expect(viewModel.crossfeedPlays, "wired headphones in the built-in jack are headphones")
