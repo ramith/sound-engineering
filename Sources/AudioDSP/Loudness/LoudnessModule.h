@@ -2,7 +2,8 @@
 
 // LoudnessModule — ITU-R BS.1770-5 gated loudness measurement + auto makeup gain.
 //
-// Chain position (DSPKernel.h):  EQ → Clarity → BRIR → [Loudness] → Limiter.
+// Chain position (DSPKernel.h):  EQ → Clarity → BRIR → Intensity blend → [Loudness] → Crossfeed
+// → Limiter.
 //
 // Unlike the other modules, Loudness runs a MEASUREMENT FEEDBACK LOOP that must
 // stay off the render thread:
@@ -78,7 +79,7 @@ namespace AdaptiveSound
     {
       public:
         LoudnessModule() = default;
-        ~LoudnessModule(); // joins the measurement jthread (defined in .mm)
+        ~LoudnessModule(); // joins the measurement jthread (defined in the .cpp)
 
         // Owns a jthread + ring: non-copyable, non-movable (C.21, C.67).
         LoudnessModule(const LoudnessModule&) = delete;

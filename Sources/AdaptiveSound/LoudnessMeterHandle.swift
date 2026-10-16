@@ -22,11 +22,11 @@ import Foundation
 ///
 /// ## `deinit` is a BACKSTOP, not the primary teardown
 ///
-/// The controlled teardown path drops the wrapper (nils `loudnessMeter`) on `engineQueue` AFTER
-/// `removeSpectrumTap()` has run, so no RT tap can still hold the raw handle when `deinit` destroys
-/// it. `deinit` only exists to close the leak on the abandonment path (a bridge released without
-/// `shutdown()`, where the tap is likewise already gone with the engine). `loudnessMeterDestroy` is
-/// NULL-safe, so destroying here is always well-formed.
+/// The controlled teardown path drops the wrapper (it resets the taps' analysis, `setTapAnalysis`)
+/// on `engineQueue` AFTER `removeSpectrumTap()` has run, so no RT tap can still hold the raw handle
+/// when `deinit` destroys it. `deinit` only exists to close the leak on the abandonment path (a bridge
+/// released without `shutdown()`, where the tap is likewise already gone with the engine).
+/// `loudnessMeterDestroy` is NULL-safe, so destroying here is always well-formed.
 final class LoudnessMeterHandle: @unchecked Sendable {
     /// The opaque loudness-meter handle. Immutable for the wrapper's lifetime, so the raw pointer the
     /// mixer tap captures once at install time never races the owner.

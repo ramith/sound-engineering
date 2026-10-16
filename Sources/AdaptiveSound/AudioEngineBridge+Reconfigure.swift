@@ -7,7 +7,7 @@ import Foundation
 /// The live-graph re-width lifecycle, factored out of `AudioEngineBridge.swift` into a same-module
 /// extension to keep the core class body focused (SwiftLint `type_body_length`). The public entry
 /// point is `reconfigureGraph(to:)`; the helpers below are `private` so they stay scoped to this
-/// file. The members it touches (`avEngine`, `playerNode`, `dspAudioUnit`, `spatialAudioUnit`, the
+/// file. The members it touches (`avEngine`, `playerNode`, `effectsNode`, `spatialAudioUnit`, the
 /// analyzer arrays, the tap install/remove) are module-internal on the base class so
 /// this extension — in a separate file — can reach them.
 /// The four live-graph node references threaded through the reconfigure lifecycle's private

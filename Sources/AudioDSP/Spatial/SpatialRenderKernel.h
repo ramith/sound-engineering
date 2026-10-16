@@ -14,7 +14,7 @@
 //   out >= in  — copy input channel ch -> output channel ch for ch in [0, in).
 //                Zero-fill output channels [in, out).
 //                Implemented with vDSP_mmov per channel (bit-exact copy).
-//   out < in   — S4 binaural stub; see TODO(S4) in SpatialRenderKernel.mm.
+//   out < in   — S4 binaural stub; see TODO(S4) in SpatialRenderKernel.cpp.
 //
 // RT-safety contract:
 //   process() is REAL-TIME SAFE: no allocation, no lock, no syscall, no Obj-C

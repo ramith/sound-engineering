@@ -1,7 +1,6 @@
 // VerifyLibraryStore — headless S8.1 acceptance gate for the persistent library
-// store (design §6). `swift test` is unusable here (swift-testing macro skew), so
-// this is a runnable executable (`swift run VerifyLibraryStore`) that asserts,
-// against the REAL LibraryStore code, the harness plan:
+// store (design §6), in `make gate`: a runnable executable (`swift run VerifyLibraryStore`)
+// that asserts, against the REAL LibraryStore code, the harness plan:
 //
 //   S8.1a (store foundation):
 //     SCHEMA-1  fresh create → user_version == 1, integrity_check ok, WAL +
