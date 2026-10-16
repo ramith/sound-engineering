@@ -85,4 +85,35 @@ namespace AdaptiveSound
                                      std::span<std::byte> dst,
                                      const NativePcmFormat& format) noexcept;
 
+    // TPDF dither for a float → integer step that drops bits (R1.1-A, founder decision 2026-10-16;
+    // council C-33): each sample gets the difference of two independent uniform draws — triangular
+    // on (−1, +1) LSB of the output word, zero-mean, variance 1/6 LSB² — so the quantization error is
+    // signal-independent noise (no distortion, no DC, no noise modulation) rather than truncation's
+    // staircase. RT-SAFE: the generator is a 64-bit xorshift* state held here — no allocation, no
+    // lock, no system call. One per render thread (it is not thread-safe, and need not be).
+    class TpdfDither
+    {
+      public:
+        static constexpr uint64_t kDefaultSeed = 0x9E3779B97F4A7C15ULL;
+
+        explicit TpdfDither(uint64_t seed = kDefaultSeed) noexcept;
+
+        // One dither value, in LSB of the output word: (−1, +1), triangular.
+        [[nodiscard]] double next() noexcept;
+
+      private:
+        [[nodiscard]] double uniform() noexcept; // [0, 1)
+        uint64_t state_;
+    };
+
+    // convertFloatToNative for a word that holds fewer bits than the source: each integer sample is
+    // the float scaled to the word, plus `dither`, rounded to nearest and clamped. A float32 layout
+    // has no integer step and is written exactly as convertFloatToNative writes it. Same bounds,
+    // zero-fill and non-finite rules. RT-SAFE: noexcept, no allocation, no locks. Use it only where
+    // bits are reduced (ditherWhenConverting): at the exact depth the plain conversion is bit-exact.
+    std::size_t convertFloatToNativeDithered(std::span<const float> src,
+                                             std::span<std::byte> dst,
+                                             const NativePcmFormat& format,
+                                             TpdfDither& dither) noexcept;
+
 } // namespace AdaptiveSound

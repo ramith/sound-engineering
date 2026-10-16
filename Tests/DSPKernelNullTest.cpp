@@ -85,6 +85,7 @@
 #include "EqDesignerTests.inc"
 #include "TrackLoudnessTests.inc"
 #include "SoakRtAllocTests.inc"
+#include "PureDitherTests.inc" // after SoakRtAllocTests.inc (RtGuardScope) + PureModeTests.inc (makeFile)
 #include "SnapshotConcurrencyTests.inc"
 #include "EqTransitionTests.inc" // after EqDesignerTests.inc (its curves)
 #include "EqEngineTests.inc"     // after SoakRtAllocTests.inc (its RT-alloc guard)
@@ -169,6 +170,13 @@ namespace
         {"PureMode_ChannelCountMismatch", testPureModeChannelCountMismatch, true},
         {"PureMode_BitExactness_DepthRule", testPureModeBitExactnessDepthRule, true},
         {"PureMode_ReasonCodes_BridgeOrder", testPureModeReasonCodesAreTheBridgeOrder, true},
+        // TPDF dither where Pure reduces bits (R1.1-A, founder 2026-10-16). Serial: RtSafe arms the
+        // thread-local allocation guard.
+        {"PureDither_TpdfShape", testPureDitherTpdfShape, true},
+        {"PureDither_NoDcNoNoiseModulation", testPureDitherNoDcNoNoiseModulation, true},
+        {"PureDither_QuietSineIsToneInNoise", testPureDitherQuietSineIsToneInNoise, true},
+        {"PureDither_OnlyWhenReducing", testPureDitherOnlyWhenReducing, true},
+        {"PureDither_RtSafe", testPureDitherRtSafe, false},
         // Pure-Mode format conversion (Phase B — B2a)
         {"Convert_Int16Saturation", testConvertInt16Saturation, true},
         {"Convert_Int32Saturation", testConvertInt32Saturation, true},
