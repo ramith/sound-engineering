@@ -265,7 +265,7 @@ func checkCompilationDoesNotSplit(number: Int, url: URL) async -> Bool {
             "Hits": ["\(variousArtistsName) ×3"], "Best Of Dan": ["\(variousArtistsName) ×2"],
         ], "compilations", number: number) else { return false }
         printPass(number, "ALB-02 a compilation does not split: the flag is read from a real m4a (AVFoundation "
-            + "cpil), flac (FFmpeg COMPILATION), mp3 (TXXX:TCMP) and ogg/opus (ITUNESCOMPILATION), absent on the "
+            + "cpil), flac (Vorbis COMPILATION), mp3 (TXXX:TCMP) and ogg/opus (ITUNESCOMPILATION), absent on the "
             + "plain fixtures, and both paths read the album-artist tag (FLAC's normalised album_artist and the "
             + "ogg/opus ALBUMARTIST included); a flagged 3-artist "
             + "compilation across 'CD 1'/'CD 2' is ONE \(variousArtistsName) album, and a flagged "
@@ -280,9 +280,11 @@ func checkCompilationDoesNotSplit(number: Int, url: URL) async -> Bool {
 /// not where it's absent), and the album-artist tag — which the FFmpeg path once dropped for every
 /// FLAC (FFmpeg normalises Vorbis ALBUMARTIST to `album_artist`; found scanning the C1 stress
 /// library), crediting tagged FLAC albums to "Unknown Artist" before C2. The fix round (C7) adds the
-/// keys other taggers use: an mp3 `TXXX:TCMP` frame (AVFoundation path), and the Vorbis
-/// `ITUNESCOMPILATION` + `ALBUMARTIST` comments in ogg and opus (FFmpeg path — opus used to go to
-/// AVFoundation first, which reads neither).
+/// keys other taggers use: an mp3 `TXXX:TCMP` frame, and the Vorbis `ITUNESCOMPILATION` + `ALBUMARTIST`
+/// comments in ogg and opus. Since R1.1-A (FD-3) AVFoundation reads every fixture first (their
+/// `vorb/…` comments included) and FFmpeg is an opt-in, off by default — so this reads each fixture
+/// through the extractor as the app runs it (FFmpeg off), then through FFmpeg alone, turned on, where
+/// it is installed (its tag mapping still serves a file Apple can't read).
 private func bothExtractorsReadTheAlbumTags(number: Int) async -> Bool {
     let expected: [String: (flag: Bool, albumArtist: String?)] = [
         "compilation.m4a": (true, nil), "compilation.flac": (true, nil), "compilation.mp3": (true, nil),
@@ -296,11 +298,17 @@ private func bothExtractorsReadTheAlbumTags(number: Int) async -> Bool {
             printFail(number, "ALB-02: \(file) could not be read — run `make regenerate-metadata-fixtures`")
             return false
         }
-        guard read.metadata.isCompilation == flag, read.metadata.albumArtistName == albumArtist else {
-            printFail(number, "ALB-02: \(file) read compilation=\(read.metadata.isCompilation) album artist="
-                + "\(String(describing: read.metadata.albumArtistName)), expected \(flag) / "
-                + "\(String(describing: albumArtist))")
-            return false
+        FFmpegOptIn.isOn = true
+        let viaFFmpeg = MetadataExtractor.ffmpegExtract(fixture) // nil where FFmpeg isn't installed
+        FFmpegOptIn.isOn = false
+        for (path, metadata) in [("Apple", read.metadata), ("FFmpeg", viaFFmpeg?.metadata)] {
+            guard let metadata else { continue }
+            guard metadata.isCompilation == flag, metadata.albumArtistName == albumArtist else {
+                printFail(number, "ALB-02: \(file) read (\(path)) compilation=\(metadata.isCompilation) "
+                    + "album artist=\(String(describing: metadata.albumArtistName)), expected \(flag) / "
+                    + "\(String(describing: albumArtist))")
+                return false
+            }
         }
     }
     return true

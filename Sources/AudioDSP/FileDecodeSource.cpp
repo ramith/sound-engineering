@@ -4,16 +4,19 @@
 // Decodes on a background std::thread into an SpscRing<float>; the RT render thread drains the ring
 // via pullFloat(). Decoding goes through a pluggable DecodeBackend selected at open():
 //
-//   open() decoder policy (FALLBACK-ONLY): Apple first, FFmpeg only if Apple can't open the file.
-//     ADAPTIVESOUND_DECODER=apple|ffmpeg forces exactly one backend (diagnostics/tests).
+//   open() decoder policy (FALLBACK-ONLY): Apple first, FFmpeg only if Apple can't open the file
+//   AND the listener turned FFmpeg on (off by default — R1.1-A, FD-3; FFmpegLoader.h).
+//     ADAPTIVESOUND_DECODER=apple|ffmpeg forces exactly one backend (diagnostics/tests); forcing
+//     FFmpeg while it is off opens nothing.
 //     AppleDecodeBackend   — ExtAudioFile (AudioToolbox). Always available; the DEFAULT + the
 //                            bit/timing-exactness reference (trims lossy encoder delay via the
 //                            file's edit list, keeping common formats gapless + Apple-identical).
 //     FFmpegDecodeBackend  — FFmpeg via dlopen/dlsym (no link-time dependency, nothing to bundle).
-//                            FALLBACK only, for formats Apple's decoder cannot open (e.g. Opus).
-//                            Compiled only where FFmpeg headers are present (__has_include) and used
-//                            only when a runtime FFmpeg whose MAJOR versions match the ones baked into
-//                            this binary is found (FFmpeg guarantees ABI only within a major).
+//                            OPT-IN FALLBACK, for a file Apple's decoder cannot open. Compiled only
+//                            where FFmpeg headers are present (__has_include); loaded only while it
+//                            is on, only from fixed absolute paths a vetted file sits at
+//                            (FFmpegLoader.h), and used only when its MAJOR versions match the ones
+//                            baked into this binary (FFmpeg guarantees ABI only within a major).
 //
 // Either backend decodes to interleaved float at the file's NATIVE sample rate (no SRC) — bit-exact
 // for 16/24-bit + float sources. A true 32-bit-integer source loses its low 8 bits at the float
@@ -27,6 +30,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "../include/AsLog.h" // AdaptiveSound::log::line — off-RT control-plane logging seam
+#include "../include/FFmpegLoader.h"
 #include "../include/FileDecodeSource.h"
 #include "../include/MetadataBridge.h"
 #include "../include/SpscRing.h"
@@ -42,6 +46,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 #if __has_include(<libavformat/avformat.h>)
@@ -380,26 +385,20 @@ namespace AdaptiveSound
             decltype(&::swresample_version) swresample_version = nullptr;
         };
 
-        // dlopen a versioned libav* dylib by its exact MAJOR soname, across Homebrew (AS/Intel), an
-        // in-bundle Frameworks dir, and the default dyld search path.
-        void* openVersionedLib(const char* base, int major) noexcept
+        // A libav* library by its exact MAJOR name, from the fixed absolute folders only, vetted
+        // and verified (ffmpeg::openLibrary — never a bare name, @loader_path or a DYLD search).
+        // `refused` is set when a library was there but another user could change it.
+        void* openVersionedLib(const char* base,
+                               int major,
+                               const char* probeSymbol,
+                               bool& refused) noexcept
         {
-            const std::array<const char*, 4> prefixes = {
-                "/opt/homebrew/lib/",
-                "/usr/local/lib/",
-                "@loader_path/../Frameworks/",
-                "",
-            };
-            for (const char* prefix : prefixes)
+            const ffmpeg::OpenedLibrary opened = ffmpeg::openLibrary(base, major, probeSymbol);
+            if (opened.handle == nullptr && opened.verdict != ffmpeg::LibraryVerdict::Missing)
             {
-                const std::string soname = std::format("{}{}.{}.dylib", prefix, base, major);
-                void* handle = dlopen(soname.c_str(), RTLD_NOW | RTLD_LOCAL);
-                if (handle != nullptr)
-                {
-                    return handle;
-                }
+                refused = true;
             }
-            return nullptr;
+            return opened.handle;
         }
 
         template <typename Fn> bool resolveSym(void* handle, const char* symbol, Fn& outFn) noexcept
@@ -411,13 +410,21 @@ namespace AdaptiveSound
         FFmpegApi loadFFmpegApi() noexcept
         {
             FFmpegApi api;
-            void* hutil = openVersionedLib("libavutil", kBuiltAvutilMajor);
-            void* hswr = openVersionedLib("libswresample", kBuiltSwresampleMajor);
-            void* hcodec = openVersionedLib("libavcodec", kBuiltAvcodecMajor);
-            void* hfmt = openVersionedLib("libavformat", kBuiltAvformatMajor);
+            bool refused = false;
+            void* hutil =
+                openVersionedLib("libavutil", kBuiltAvutilMajor, "avutil_version", refused);
+            void* hswr = openVersionedLib(
+                "libswresample", kBuiltSwresampleMajor, "swresample_version", refused);
+            void* hcodec =
+                openVersionedLib("libavcodec", kBuiltAvcodecMajor, "avcodec_version", refused);
+            void* hfmt =
+                openVersionedLib("libavformat", kBuiltAvformatMajor, "avformat_version", refused);
             if (hutil == nullptr || hswr == nullptr || hcodec == nullptr || hfmt == nullptr)
             {
-                return api; // FFmpeg not present at the expected major; Apple decoder will be used.
+                // Not there at the expected majors, or refused: the Apple decoder is used.
+                ffmpeg::recordLoadOutcome(refused ? ffmpeg::LoadOutcome::Refused
+                                                  : ffmpeg::LoadOutcome::NotFound);
+                return api;
             }
 
             // A single && sequence (not 27 statements) keeps cognitive complexity low; resolveSym
@@ -457,6 +464,7 @@ namespace AdaptiveSound
             {
                 AdaptiveSound::log::line(
                     "[FileDecodeSource] FFmpeg symbol resolution failed; Apple decoder");
+                ffmpeg::recordLoadOutcome(ffmpeg::LoadOutcome::WrongVersion);
                 return api;
             }
 
@@ -473,31 +481,37 @@ namespace AdaptiveSound
                     "using Apple decoder",
                     kBuiltAvformatMajor,
                     fmtMajor);
+                ffmpeg::recordLoadOutcome(ffmpeg::LoadOutcome::WrongVersion);
                 return api;
             }
             api.loaded = true;
+            ffmpeg::recordLoadOutcome(ffmpeg::LoadOutcome::Loaded);
             return api;
         }
 
-        const FFmpegApi& ffmpegApi() noexcept
+        // The resolved entry points, or nullptr: FFmpeg is off (then nothing loads — FD-3), or it
+        // could not be loaded. Resolved once, the first time a file needs FFmpeg while it is on,
+        // for the process lifetime: turning it off later stops every NEW use (a source already
+        // open keeps its decoder until it closes), and a failed load is retried only after a
+        // relaunch.
+        const FFmpegApi* ffmpegApi() noexcept
         {
-            static const FFmpegApi api = loadFFmpegApi(); // resolved once, process lifetime
-            return api;
-        }
-
-        bool ffmpegAvailable() noexcept
-        {
-            return ffmpegApi().loaded;
+            if (!ffmpeg::isEnabled())
+            {
+                return nullptr;
+            }
+            static const FFmpegApi api = loadFFmpegApi();
+            return api.loaded ? &api : nullptr;
         }
 
         // FFmpeg decode backend: av_read_frame -> avcodec_send/receive -> swr_convert to interleaved
         // float at the file's NATIVE rate (out-rate == in-rate, so no sample-rate conversion).
         //
-        // INVARIANT: ffmpegApi().loaded is true ONLY after every entry point resolved non-null
-        // (loadFFmpegApi returns early otherwise), and open()/seekToFrame() bail when !loaded — so
-        // every api.*() call below runs through a non-null function pointer. close() is safe under
-        // !loaded too: it guards each owned pointer (frame_/pkt_/…), all of which stay null unless a
-        // prior open() succeeded (which itself requires loaded).
+        // INVARIANT: open() takes the resolved entry points (`api_`, non-null only when every one
+        // resolved — loadFFmpegApi returns early otherwise) and keeps them for the backend's life,
+        // so a switch turned off later can't strand the context it opened. seekToFrame() /
+        // readChunk() run only after a successful open(); close() guards each owned pointer
+        // (frame_/pkt_/…), all of which stay null unless a prior open() succeeded.
         class FFmpegDecodeBackend final : public DecodeBackend
         {
           public:
@@ -513,11 +527,16 @@ namespace AdaptiveSound
 
             bool open(const char* path) override
             {
-                const FFmpegApi& api = ffmpegApi();
-                if (!api.loaded || path == nullptr || fmt_ != nullptr)
+                if (path == nullptr || fmt_ != nullptr)
                 {
                     return false;
                 }
+                api_ = ffmpegApi();
+                if (api_ == nullptr)
+                {
+                    return false;
+                }
+                const FFmpegApi& api = *api_;
                 if (api.avformat_open_input(&fmt_, path, nullptr, nullptr) < 0)
                 {
                     AdaptiveSound::log::line("[FileDecodeSource] avformat_open_input failed");
@@ -598,7 +617,11 @@ namespace AdaptiveSound
 
             void close() noexcept override
             {
-                const FFmpegApi& api = ffmpegApi();
+                if (api_ == nullptr)
+                {
+                    return; // never opened: nothing owned
+                }
+                const FFmpegApi& api = *api_;
                 if (frame_ != nullptr)
                 {
                     api.av_frame_free(&frame_);
@@ -629,12 +652,12 @@ namespace AdaptiveSound
             // first frame handed to the ring starts exactly at `frame`.
             bool seekToFrame(int64_t frame) noexcept override
             {
-                const FFmpegApi& api = ffmpegApi();
-                if (!api.loaded || fmt_ == nullptr || codecCtx_ == nullptr || swr_ == nullptr ||
+                if (api_ == nullptr || fmt_ == nullptr || codecCtx_ == nullptr || swr_ == nullptr ||
                     audioStream_ < 0)
                 {
                     return false;
                 }
+                const FFmpegApi& api = *api_;
                 const AVStream* stream = fmt_->streams[audioStream_];
                 const double timeBase = av_q2d(stream->time_base);
                 int64_t ts = 0;
@@ -662,7 +685,7 @@ namespace AdaptiveSound
             Status readChunk(std::vector<float>& out, uint32_t& framesOut) override
             {
                 framesOut = 0U;
-                const FFmpegApi& api = ffmpegApi();
+                const FFmpegApi& api = *api_;
                 for (;;)
                 {
                     const int ret = api.avcodec_receive_frame(codecCtx_, frame_);
@@ -858,6 +881,7 @@ namespace AdaptiveSound
                 return Status::Ok;
             }
 
+            const FFmpegApi* api_ = nullptr; // the entry points open() took (process lifetime)
             AVFormatContext* fmt_ = nullptr;
             AVCodecContext* codecCtx_ = nullptr;
             SwrContext* swr_ = nullptr;
@@ -877,7 +901,8 @@ namespace AdaptiveSound
 
         // Explicit backend constructors. Apple (ExtAudioFile) is always available and is the
         // bit/timing-exactness reference (it trims lossy encoder delay via the file's edit list).
-        // FFmpeg is optional (loaded via dlopen) and may be unavailable — returns nullptr then.
+        // FFmpeg is opt-in (off by default) and may be unavailable — returns nullptr then, and
+        // while it is off nothing is loaded to find out.
         std::unique_ptr<DecodeBackend> makeAppleBackend()
         {
             return std::make_unique<AppleDecodeBackend>();
@@ -885,12 +910,69 @@ namespace AdaptiveSound
         std::unique_ptr<DecodeBackend> makeFFmpegBackend()
         {
 #if __has_include(<libavformat/avformat.h>)
-            if (ffmpegAvailable())
+            if (ffmpegApi() != nullptr)
             {
                 return std::make_unique<FFmpegDecodeBackend>();
             }
+#else
+            if (ffmpeg::isEnabled())
+            {
+                ffmpeg::recordLoadOutcome(ffmpeg::LoadOutcome::NotFound); // a build without FFmpeg
+            }
 #endif
             return nullptr;
+        }
+
+        // The one decoder policy, for open() and probe() alike: Apple first (the reference); FFmpeg
+        // only when Apple can't open the file and FFmpeg is on. ADAPTIVESOUND_DECODER=apple|ffmpeg
+        // forces exactly one backend (diagnostics/tests) — FFmpeg forced while it is off opens
+        // nothing. Returns the backend that opened `path`, or nullptr with `outcome` saying why: a
+        // file that is there but Apple can't read while FFmpeg is off NeedsFFmpeg; anything else no
+        // allowed decoder reads is Unreadable.
+        std::unique_ptr<DecodeBackend> openBackend(const char* path, FileProbe::Outcome& outcome)
+        {
+            outcome = FileProbe::Outcome::Unreadable;
+            if (path == nullptr)
+            {
+                return nullptr;
+            }
+            const char* forced = std::getenv("ADAPTIVESOUND_DECODER");
+            const bool forceApple = (forced != nullptr) && (std::strcmp(forced, "apple") == 0);
+            const bool forceFFmpeg = (forced != nullptr) && (std::strcmp(forced, "ffmpeg") == 0);
+
+            // Open a candidate; the first that opens `path` wins and is returned.
+            auto tryOpen =
+                [path](std::unique_ptr<DecodeBackend> candidate) -> std::unique_ptr<DecodeBackend>
+            {
+                if (candidate == nullptr || !candidate->open(path))
+                {
+                    return nullptr;
+                }
+                return candidate;
+            };
+            std::unique_ptr<DecodeBackend> opened;
+            if (!forceFFmpeg)
+            {
+                opened = tryOpen(makeAppleBackend());
+                if (opened != nullptr || forceApple)
+                {
+                    outcome = opened != nullptr ? FileProbe::Outcome::Opened
+                                                : FileProbe::Outcome::Unreadable;
+                    return opened;
+                }
+            }
+            if (!ffmpeg::isEnabled())
+            {
+                // Only FFmpeg might read it, and it is off: say so — but not for a file that isn't
+                // there or can't be read at all.
+                outcome = (::access(path, R_OK) == 0) ? FileProbe::Outcome::NeedsFFmpeg
+                                                      : FileProbe::Outcome::Unreadable;
+                return nullptr;
+            }
+            opened = tryOpen(makeFFmpegBackend());
+            outcome =
+                opened != nullptr ? FileProbe::Outcome::Opened : FileProbe::Outcome::Unreadable;
+            return opened;
         }
     } // namespace
 
@@ -918,45 +1000,16 @@ namespace AdaptiveSound
                 return false;
             }
 
-            // Decoder policy (FALLBACK-ONLY): Apple's ExtAudioFile is the DEFAULT and the
-            // bit/timing-exactness reference (it trims lossy encoder delay via the file's edit
-            // list, so common formats stay gapless + Apple-identical). FFmpeg is a FALLBACK,
-            // tried only when Apple cannot open the file (a format Apple doesn't support, e.g.
-            // Opus). This prevents FFmpeg from silently becoming the decoder for Apple-decodable
-            // formats (which would change the sound + tick lossy gapless seams).
-            // ADAPTIVESOUND_DECODER=apple|ffmpeg forces exactly one backend (diagnostics/tests).
-            const char* forced = std::getenv("ADAPTIVESOUND_DECODER");
-            const bool forceApple = (forced != nullptr) && (std::strcmp(forced, "apple") == 0);
-            const bool forceFFmpeg = (forced != nullptr) && (std::strcmp(forced, "ffmpeg") == 0);
-
-            // Open each candidate at most ONCE; the first that opens `path` wins and is retained.
-            auto tryOpen = [&](std::unique_ptr<DecodeBackend> candidate) -> bool
+            // Decoder policy (FALLBACK-ONLY, openBackend): Apple's ExtAudioFile is the DEFAULT and
+            // the bit/timing-exactness reference (it trims lossy encoder delay via the file's edit
+            // list, so common formats stay gapless + Apple-identical). FFmpeg is an opt-in
+            // FALLBACK, tried only when Apple cannot open the file and the listener turned it on.
+            // This prevents FFmpeg from silently becoming the decoder for Apple-decodable formats
+            // (which would change the sound + tick lossy gapless seams).
+            FileProbe::Outcome outcome = FileProbe::Outcome::Unreadable;
+            backend_ = openBackend(path, outcome);
+            if (backend_ == nullptr)
             {
-                if (candidate == nullptr || !candidate->open(path))
-                {
-                    return false;
-                }
-                backend_ = std::move(candidate);
-                return true;
-            };
-
-            bool opened = false;
-            if (forceFFmpeg)
-            {
-                opened = tryOpen(makeFFmpegBackend());
-            }
-            else if (forceApple)
-            {
-                opened = tryOpen(makeAppleBackend());
-            }
-            else
-            {
-                // Default: Apple first (bit-exact reference); FFmpeg only if Apple can't open it.
-                opened = tryOpen(makeAppleBackend()) || tryOpen(makeFFmpegBackend());
-            }
-            if (!opened)
-            {
-                backend_.reset();
                 return false;
             }
             // Cache the format so the RT pull path and getters never call the backend.
@@ -1163,6 +1216,22 @@ namespace AdaptiveSound
     {
         return impl_->open(path);
     }
+
+    FileProbe FileDecodeSource::probe(const char* path)
+    {
+        FileProbe probe;
+        std::unique_ptr<DecodeBackend> backend = openBackend(path, probe.outcome);
+        if (backend != nullptr)
+        {
+            probe.format.sampleRate = backend->sampleRate();
+            probe.format.channels = backend->channels();
+            probe.format.bitsPerChannel = backend->sourceBitsPerChannel();
+            probe.format.isFloat = backend->sourceIsFloat();
+            probe.decoder = backend->kind();
+            backend->close();
+        }
+        return probe;
+    }
     void FileDecodeSource::close() noexcept
     {
         impl_->close();
@@ -1275,11 +1344,12 @@ namespace AdaptiveSound
     // Open `path` and fill a NEW owned handle, or nullptr on failure (caller frees).
     static CFileMetadataHandle* openFFmpegMetadataImpl(const char* path)
     {
-        const FFmpegApi& api = ffmpegApi();
-        if (!api.loaded)
+        const FFmpegApi* loaded = ffmpegApi(); // nullptr while FFmpeg is off: nothing loads
+        if (loaded == nullptr)
         {
             return nullptr;
         }
+        const FFmpegApi& api = *loaded;
         AVFormatContext* fmt = nullptr;
         if (api.avformat_open_input(&fmt, path, nullptr, nullptr) < 0 || fmt == nullptr)
         {

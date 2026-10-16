@@ -24,6 +24,8 @@
 //   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource,
 //                           + C-ABI bridge (pureModeEvaluate) tests (tests 36-51)
 //   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
+//   FFmpegLoaderTests.inc — FFmpeg opt-in (off loads nothing), the hardened load's vetting rule,
+//                           the fixed paths, and the probe's "needs FFmpeg" (R1.1-A, FD-3)
 //   GaplessTests.inc      — gapless DECODE-LAYER decode->concatenate contract (tests 73-77)
 //   RoundTripTests.inc    — B5/L1 Pure-Mode software-chain bit-exact round-trip (tests 78-79)
 //   PureGaplessTests.inc  — Pure-path gapless STAGE 2 (GaplessSource) seam contract (tests 80-83)
@@ -68,6 +70,7 @@
 #include "SpatialTests.inc"
 #include "PureModeTests.inc"
 #include "FileDecodeTests.inc"
+#include "FFmpegLoaderTests.inc" // after FileDecodeTests.inc (BackendGuard, writeWav16)
 #include "GaplessTests.inc"
 #include "RoundTripTests.inc"
 #include "PureGaplessTests.inc"
@@ -234,6 +237,18 @@ namespace
             testFileDecodeSeekMidStreamDistinctChannels,
             false,
         },
+        // FFmpeg as an opt-in, off by default, hardened load (R1.1-A, FD-3, C-99) — SERIAL: the
+        // switch is process-wide.
+        {"FFmpeg_OffByDefault_LoadsNothing", testFFmpegOffByDefaultLoadsNothing, false},
+        {"FFmpeg_VetLibrary_Rules", testFFmpegVetLibraryRules, false},
+        {"FFmpeg_LibraryPaths_FixedAndAbsolute", testFFmpegLibraryPathsFixedAndAbsolute, false},
+        {"FFmpeg_ReadFacts_RealFiles", testFFmpegReadFactsRealFiles, false},
+        {
+            "FFmpeg_OpenLibrary_RefusesWhatOthersCanChange",
+            testFFmpegOpenLibraryRefusesWhatOthersCanChange,
+            false,
+        },
+        {"FFmpeg_ProbeNamesWhyAFileWontOpen", testFFmpegProbeNamesWhyAFileWontOpen, false},
         // Gapless DECODE-LAYER decode->concatenate contract — SERIAL: write fixtures to test-data/.
         {"Gapless_SeamFrameAccuracy", testGaplessSeamFrameAccuracy, false},
         {"Gapless_TotalFrameCount_48kOnly", testGaplessTotalFrameCount48kOnly, false},
