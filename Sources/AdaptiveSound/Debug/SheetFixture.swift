@@ -166,8 +166,8 @@
             path.intensityLinear = audio.intensity
             audio.signalPath = path
             audio.loudness = LoudnessSnapshot(integratedLufs: -15.9, shortTermLufs: -14.2, truePeakDb: -3.2)
-            audio.spectrumBars = Self.spectrum(count: SpectrumConstants.displayBarCount, phase: 0)
-            audio.peakCaps = audio.spectrumBars.map { min($0 + 0.08, 1) }
+            let bars = Self.spectrum(count: SpectrumConstants.displayBarCount, phase: 0)
+            audio.spectrum.showStill(bars: bars, caps: bars.map { min($0 + 0.08, 1) })
         }
     }
 #endif

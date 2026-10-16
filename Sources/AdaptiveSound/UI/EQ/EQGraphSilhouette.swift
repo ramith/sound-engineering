@@ -7,8 +7,9 @@ import SwiftUI
 /// The music's shape behind the EQ curve: the analyzer's live bars as one soft silhouette in the
 /// analyzer's own teal → lime ramp (`EQGraphDecor.silhouette`), each bar at its TRUE frequency on the
 /// EQ's axis (`SpectrumConstants.barCentreHz`) — from 40 Hz up to the analyzer's top band, never
-/// stretched. Its own layer, so its 20 Hz redraw never repaints the curve. Decorative: hit-transparent
-/// and hidden from VoiceOver.
+/// stretched. Its own layer on the live clock (`LiveTimeline`, each frame as it comes), so its redraw
+/// never repaints the curve, and it draws only while a song plays and the window shows. Decorative:
+/// hit-transparent and hidden from VoiceOver.
 struct EQGraphSilhouette: View {
     @Environment(AudioViewModel.self) private var audio
 
@@ -16,8 +17,15 @@ struct EQGraphSilhouette: View {
     private static let smoothingPasses = 3
 
     var body: some View {
-        // Read here, not in the Canvas closure: the body is what observes the analyzer's 20 Hz bars.
-        let bars = Self.smoothed(audio.spectrumBars)
+        let sampler = audio.spectrum
+        LiveTimeline(.frames, running: audio.isPlaying) { date in
+            silhouette(Self.smoothed(sampler.bars(at: date)))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func silhouette(_ bars: [Float]) -> some View {
         Canvas { context, size in
             let map = EQPlotMap.eqGraph(in: size)
             guard bars.count > 1, map.width > 0, map.height > 0 else { return }
@@ -40,8 +48,6 @@ struct EQGraphSilhouette: View {
                                                      startPoint: CGPoint(x: firstX, y: 0),
                                                      endPoint: CGPoint(x: lastX, y: 0)))
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     /// The bars in 0…1, averaged over their neighbours a few times.

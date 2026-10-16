@@ -35,6 +35,8 @@ struct ContentView: View {
             NowPlayingBar()
                 .environment(viewModel)
         }
+        // Live visuals stop drawing while none of the window can be seen (council C-52).
+        .readsWindowVisibility()
         // Engine init/teardown intentionally NOT here — it's owned by the app/scene lifecycle
         // (AdaptiveSound.swift `.onAppear` starts it; AppDelegate.applicationShouldTerminate
         // tears it down, awaited). Binding it to a view's `.task`/`.onDisappear` made teardown

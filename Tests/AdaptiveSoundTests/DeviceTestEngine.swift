@@ -42,6 +42,12 @@ final class DeviceTestEngine: AudioPlaybackEngine {
         /// Every `returnPureVolumeLoans` call: the loans an earlier run left, handed back at engine-ready.
         var returnedLoans: [[PureVolumeLoan]] = []
         var onOutputDevicesChanged: (@MainActor () -> Void)?
+        /// How often the view model read the engine's state (`snapshot`) — its transport tick.
+        var snapshotReads = 0
+        /// How often anything read the analyser's latest frame (`readSpectrumBands`).
+        var spectrumReads = 0
+        /// The analyser frames still to serve, oldest first: each read takes one (44 bands in 0…1).
+        var spectrumFrames: [[Float]] = []
     }
 
     let state = Mutex(State())
@@ -65,7 +71,10 @@ final class DeviceTestEngine: AudioPlaybackEngine {
 
     func snapshot() -> EngineSnapshot {
         var snapshot = EngineSnapshot()
-        snapshot.signalPath = state.withLock { $0.signalPath }
+        snapshot.signalPath = state.withLock { state in
+            state.snapshotReads += 1
+            return state.signalPath
+        }
         return snapshot
     }
 
@@ -136,8 +145,14 @@ final class DeviceTestEngine: AudioPlaybackEngine {
     }
 
     @discardableResult
-    func readSpectrumBands(into _: inout [Float]) -> Bool {
-        false
+    func readSpectrumBands(into out: inout [Float]) -> Bool {
+        let frame: [Float]? = state.withLock { state in
+            state.spectrumReads += 1
+            return state.spectrumFrames.isEmpty ? nil : state.spectrumFrames.removeFirst()
+        }
+        guard let frame else { return false }
+        out = frame
+        return true
     }
 
     var monitorChannelCount: Int {

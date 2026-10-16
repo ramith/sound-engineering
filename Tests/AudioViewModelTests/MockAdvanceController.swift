@@ -112,7 +112,7 @@ final class MockAdvanceController {
         }
     }
 
-    // MARK: - Mirror of tickSpectrum() — gapless poll section
+    // MARK: - Mirror of tickTransport() — gapless poll section
 
     /// Call this to simulate one 20 Hz tick.  The caller controls `engineTransitionCount`
     /// and `engineEndedFlag` to drive the state machine.
