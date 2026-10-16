@@ -6,6 +6,7 @@
 @testable import AdaptiveSound
 import EQEditKit
 import Foundation
+import LibraryScan
 import Testing
 
 @MainActor
@@ -236,6 +237,25 @@ struct ListeningSettingsTests {
     }
 
     // MARK: - A damaged value falls back to the faithful default
+
+    @Test("FFmpeg is off on a new install; turned on, it is kept and opens the process's switch (FD-3)")
+    func ffmpegOptIn() async {
+        defer { FFmpegOptIn.isOn = false }
+        let fresh = launch()
+        #expect(!fresh.useFFmpeg)
+        #expect(!FFmpegOptIn.isOn, "a new install never loads FFmpeg")
+
+        fresh.useFFmpeg = true
+        #expect(FFmpegOptIn.isOn)
+        await settle()
+        FFmpegOptIn.isOn = false // a new process starts with the switch off
+        let relaunched = launch()
+        #expect(relaunched.useFFmpeg)
+        #expect(FFmpegOptIn.isOn, "the switch is set from the kept setting at launch, before any library work")
+
+        relaunched.useFFmpeg = false
+        #expect(!FFmpegOptIn.isOn)
+    }
 
     @Test("a stored value that can't be read is the faithful default (Master Gain: Silent)")
     func corruptValuesFallBack() {

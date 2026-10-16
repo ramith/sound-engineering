@@ -39,7 +39,7 @@ struct SettingsStoreTests {
     /// Every setting away from its default.
     private static let changed = ListeningSettings(
         pureMode: true, masterGainDecibels: -17, crossfeed: true, crossfeedStrength: .relaxed, shuffle: true,
-        repeatMode: 1, keepPlaybackOnDevice: false, chosenOutputUID: "AppleUSBAudioEngine:DAC:1"
+        repeatMode: 1, keepPlaybackOnDevice: false, chosenOutputUID: "AppleUSBAudioEngine:DAC:1", useFFmpeg: true
     )
 
     @Test("SETTINGS-01: a new install reads the faithful default, and reading writes nothing")
@@ -49,6 +49,7 @@ struct SettingsStoreTests {
         #expect(!settings.pureMode && settings.masterGainDecibels == MasterGainLaw.unity && !settings.crossfeed)
         #expect(settings.crossfeedStrength == .defaultStrength && !settings.shuffle && settings.repeatMode == 0)
         #expect(settings.keepPlaybackOnDevice && settings.chosenOutputUID == nil)
+        #expect(!settings.useFFmpeg, "FFmpeg is an opt-in (FD-3)")
         #expect(defaults.object(forKey: Self.key) == nil)
     }
 
@@ -119,6 +120,17 @@ struct SettingsStoreTests {
         // A later build's value: its new fields are ignored, the known ones read.
         stored(#"{"version":2,"shuffle":true,"leveling":"album","masterGainDecibels":-6}"#)
         #expect(load() == ListeningSettings(masterGainDecibels: -6, shuffle: true))
+    }
+
+    @Test("SETTINGS-09: FFmpeg is off on a new install and after an R1.1 value without it; a bad value reads off")
+    func ffmpegIsAnOptIn() {
+        // A value written before the setting existed: off.
+        stored(#"{"version":1,"pureMode":true}"#)
+        #expect(!load().useFFmpeg)
+        stored(#"{"version":1,"useFFmpeg":"yes"}"#)
+        #expect(!load().useFFmpeg, "a bad value is the faithful default: off")
+        stored(#"{"version":1,"useFFmpeg":true}"#)
+        #expect(load().useFFmpeg, "turned on, it stays on")
     }
 
     @Test("SETTINGS-06: Master Gain is never restored louder than it was left")

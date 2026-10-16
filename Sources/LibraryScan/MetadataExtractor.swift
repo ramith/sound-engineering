@@ -2,9 +2,14 @@
 //
 // A stateless `Sendable` value type; a pure PRODUCER — it never touches `LibraryStore`.
 // The MetadataScanner pass calls `extract`, then hands the result to the store's
-// `applyExtractedResult` + the ArtworkCache. AVFoundation is primary (mp3/m4a/aac/alac/
-// aiff/wav); the FFmpeg dlopen backend (via the AudioDSP C bridge) fills FLAC/Ogg/Opus and
-// anything AVFoundation returns empty for — mirroring the decode path's fallback model.
+// `applyExtractedResult` + the ArtworkCache.
+//
+// APPLE FIRST, FFMPEG ONLY WHEN ASKED FOR (R1.1-A, founder decision FD-3, council C-99): AVFoundation
+// reads every format the scan admits — the Vorbis comments of flac / ogg / oga / opus included, through
+// their raw `vorb/…` identifiers. FFmpeg, an in-process C parser for files from anywhere, reads a file
+// only when the listener turned it on ("Use FFmpeg for other formats", off by default) AND Apple can't
+// read the file, or reads none of its core tags (a cross-fill). It used to read every FLAC / Ogg / Opus
+// file first (KI-SEC-01).
 //
 // `extract` is non-throwing + Optional: every failure is "skip/partial", never
 // caller-actionable (mirrors LibraryScanner.makeScannedFile). `nil` means ONLY
@@ -49,33 +54,33 @@ public struct MetadataExtractor: MetadataExtracting {
     /// against a pathological multi-MB cover — design §2 edge cases).
     static let maxArtBytes = 32 * 1024 * 1024
 
-    public init() {}
+    /// Whether FFmpeg may read a file Apple can't (`FFmpegOptIn`; off by default).
+    let usesFFmpeg: Bool
+    /// The FFmpeg read (the AudioDSP C bridge, `ffmpegExtract`) — a seam, so a test sees whether it ran.
+    let ffmpegRead: @Sendable (URL) -> ExtractedMetadata?
 
-    /// Read `url`'s tags + embedded art. Extension-routed (design §4): the Vorbis-comment
-    /// formats (flac, ogg/oga, opus) → FFmpeg first (AVFoundation reads their core tags but not
-    /// the album artist or compilation keys — S10.8 C2 fix round, C7), others → AVFoundation
-    /// first with an FFmpeg cross-fill when the core fields came back empty. `nil` ONLY for
-    /// unreadable/vanished.
+    /// An extractor that follows the listener's switch as it stands now (`FFmpegOptIn.isOn`).
+    public init() {
+        self.init(usesFFmpeg: FFmpegOptIn.isOn, ffmpegRead: Self.ffmpegExtract)
+    }
+
+    init(usesFFmpeg: Bool, ffmpegRead: @escaping @Sendable (URL) -> ExtractedMetadata?) {
+        self.usesFFmpeg = usesFFmpeg
+        self.ffmpegRead = ffmpegRead
+    }
+
+    /// Read `url`'s tags + embedded art: through AVFoundation; through FFmpeg only when it is on and
+    /// AVFoundation can't open the file (`nil`) or reads none of its core tags (FFmpeg fills the gaps,
+    /// AVFoundation's fields win). `nil` ONLY for unreadable/vanished.
     public func extract(from url: URL) async -> ExtractedMetadata? {
-        if Self.vorbisCommentExtensions.contains(url.pathExtension.lowercased()) {
-            // FFmpeg first; if it is absent/unavailable, best-effort AVFoundation.
-            if let viaFFmpeg = ffmpegExtract(url) {
-                return viaFFmpeg
-            }
-            return await avFoundationExtract(url)
-        }
         guard let viaApple = await avFoundationExtract(url) else {
-            // AVFoundation could not open it → last-chance FFmpeg (nil if it also can't).
-            return ffmpegExtract(url)
+            return usesFFmpeg ? ffmpegRead(url) : nil
         }
-        if viaApple.metadata.hasNoCoreTags, let viaFFmpeg = ffmpegExtract(url) {
+        if usesFFmpeg, viaApple.metadata.hasNoCoreTags, let viaFFmpeg = ffmpegRead(url) {
             return viaApple.merged(with: viaFFmpeg)
         }
         return viaApple
     }
-
-    /// The containers whose tags are Vorbis comments — FFmpeg-first.
-    static let vorbisCommentExtensions: Set<String> = ["flac", "ogg", "oga", "opus"]
 }
 
 // MARK: - Merge (AVFoundation primary, FFmpeg cross-fill)

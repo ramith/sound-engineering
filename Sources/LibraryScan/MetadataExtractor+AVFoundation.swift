@@ -1,8 +1,10 @@
 // MetadataExtractor+AVFoundation — the Apple-native extraction path (design §2).
 //
-// Primary for mp3/m4a/aac/alac/aiff/wav. Uses async `AVAsset.load` (required in Swift 6):
-// tags via `AVMetadataItem` (common → iTunes → ID3 identifier precedence), duration via
-// `.duration`, and audio properties from the audio track's `CMAudioFormatDescription`.
+// Primary for every format the scan admits (R1.1-A: FFmpeg is an opt-in, off by default). Uses async
+// `AVAsset.load` (required in Swift 6): tags via `AVMetadataItem` (common → iTunes → ID3 → Vorbis
+// comment identifier precedence — flac / ogg / opus expose their comments as raw `vorb/…` items),
+// duration via `.duration`, and audio properties from the audio track's `CMAudioFormatDescription`.
+// The one thing AVFoundation doesn't expose, a FLAC's PICTURE block, is read in Swift (`FLACPicture`).
 // Everything non-Sendable (the asset, the items) stays local to this async function.
 
 import AVFoundation
@@ -36,20 +38,24 @@ extension MetadataExtractor {
                 .id3MetadataRecordingTime, .id3MetadataYear,
             ])),
             trackNo: await Self.trackOrDiscNumber(
-                items, stringIdentifiers: [.iTunesMetadataTrackNumber, .id3MetadataTrackNumber], binaryAtom: "trkn"
+                items,
+                stringIdentifiers: [.iTunesMetadataTrackNumber, .id3MetadataTrackNumber, Self.vorbis("TRACKNUMBER")],
+                binaryAtom: "trkn"
             ),
             discNo: await Self.trackOrDiscNumber(
-                items, stringIdentifiers: [.iTunesMetadataDiscNumber, .id3MetadataPartOfASet], binaryAtom: "disk"
+                items,
+                stringIdentifiers: [.iTunesMetadataDiscNumber, .id3MetadataPartOfASet, Self.vorbis("DISCNUMBER")],
+                binaryAtom: "disk"
             ),
             genres: Self.parseGenres(await Self.firstString(items, [
-                .iTunesMetadataUserGenre, .iTunesMetadataPredefinedGenre, .id3MetadataContentType,
+                .iTunesMetadataUserGenre, .iTunesMetadataPredefinedGenre, .id3MetadataContentType, Self.vorbis("GENRE"),
             ])),
             durationMs: await Self.durationMs(asset),
             sampleRate: props.sampleRate,
             bitDepth: props.bitDepth,
             channels: props.channels
         )
-        return ExtractedMetadata(metadata: meta, artwork: await Self.artwork(items))
+        return ExtractedMetadata(metadata: meta, artwork: await Self.artwork(items, of: url))
     }
 
     /// Audio-stream properties from the format description (any nil when unavailable).
@@ -61,23 +67,26 @@ extension MetadataExtractor {
 
     // MARK: - Field helpers
 
+    /// A Vorbis comment's identifier: the SDK has no constants for them, so the raw `vorb/<NAME>`.
+    static func vorbis(_ name: String) -> AVMetadataIdentifier {
+        AVMetadataIdentifier(rawValue: "vorb/" + name)
+    }
+
     /// Where the album-artist tag lives: the iTunes `aART` atom, ID3 `TPE2`, and the Vorbis
-    /// `ALBUMARTIST` / `ALBUM ARTIST` comments (ogg/opus/flac when FFmpeg is absent — C2 fix
-    /// round, C7; no SDK constants, so the raw `vorb/…` identifiers).
+    /// `ALBUMARTIST` / `ALBUM ARTIST` comments (ogg/opus/flac — C2 fix round, C7).
     static let albumArtistIdentifiers: [AVMetadataIdentifier] = [
-        .iTunesMetadataAlbumArtist, .id3MetadataBand,
-        AVMetadataIdentifier(rawValue: "vorb/ALBUMARTIST"), AVMetadataIdentifier(rawValue: "vorb/ALBUM ARTIST"),
+        .iTunesMetadataAlbumArtist, .id3MetadataBand, vorbis("ALBUMARTIST"), vorbis("ALBUM ARTIST"),
     ]
 
     /// Where the compilation flag lives, by container (S10.8 C2): the iTunes `cpil` atom (m4a),
     /// iTunes' ID3 `TCMP` frame (mp3 — no SDK constant, so the raw `id3/TCMP` identifier) and
-    /// the Vorbis `COMPILATION` / `ITUNESCOMPILATION` comments (flac/ogg/opus when FFmpeg is
-    /// absent). `firstString` reads a `cpil` boolean atom through its number value ("1").
+    /// the Vorbis `COMPILATION` / `ITUNESCOMPILATION` comments (flac/ogg/opus). `firstString` reads
+    /// a `cpil` boolean atom through its number value ("1").
     static let compilationIdentifiers: [AVMetadataIdentifier] = [
         .iTunesMetadataDiscCompilation,
         AVMetadataIdentifier(rawValue: "id3/TCMP"),
-        AVMetadataIdentifier(rawValue: "vorb/COMPILATION"),
-        AVMetadataIdentifier(rawValue: "vorb/ITUNESCOMPILATION"),
+        vorbis("COMPILATION"),
+        vorbis("ITUNESCOMPILATION"),
     ]
 
     /// The ID3 user-text frame (`TXXX`), whose DESCRIPTION names the value.
@@ -140,9 +149,17 @@ extension MetadataExtractor {
         }
         return AudioProperties(
             sampleRate: asbd.mSampleRate > 0 ? Int(asbd.mSampleRate) : nil,
-            bitDepth: asbd.mBitsPerChannel > 0 ? Int(asbd.mBitsPerChannel) : nil,
+            bitDepth: asbd.mBitsPerChannel > 0 ? Int(asbd.mBitsPerChannel) : losslessSourceDepth(asbd),
             channels: asbd.mChannelsPerFrame > 0 ? Int(asbd.mChannelsPerFrame) : nil
         )
+    }
+
+    /// A lossless file's source bit depth: Apple describes FLAC and ALAC as compressed (no bits per
+    /// channel) and states the source depth in the format flags instead — `kAppleLosslessFormatFlag_…
+    /// BitSourceData`, 1 → 16, 2 → 20, 3 → 24, 4 → 32 (`afinfo`: "from 16-bit source"). nil otherwise.
+    static func losslessSourceDepth(_ asbd: AudioStreamBasicDescription) -> Int? {
+        guard asbd.mFormatID == kAudioFormatFLAC || asbd.mFormatID == kAudioFormatAppleLossless else { return nil }
+        return [1: 16, 2: 20, 3: 24, 4: 32][asbd.mFormatFlags]
     }
 
     /// Track/disc number across taggers: an ID3/string atom ("3/12" → 3) first, else the
@@ -171,8 +188,10 @@ extension MetadataExtractor {
     }
 
     /// The first embedded cover art (≤ `maxArtBytes`), sniffed for its UTI, or nil. Reads
-    /// the common-key artwork (mp3 APIC / most formats) then the iTunes `covr` data atom.
-    static func artwork(_ items: [AVMetadataItem]) async -> ExtractedArtwork? {
+    /// the common-key artwork (mp3 APIC / most formats), the iTunes `covr` data atom, an Ogg
+    /// METADATA_BLOCK_PICTURE comment, then a FLAC's PICTURE block (`FLACPicture` — AVFoundation
+    /// exposes no FLAC picture, and FFmpeg is off by default).
+    static func artwork(_ items: [AVMetadataItem], of url: URL) async -> ExtractedArtwork? {
         for item in AVMetadataItem.metadataItems(from: items, filteredByIdentifier: .commonIdentifierArtwork) {
             if let data = try? await item.load(.dataValue), !data.isEmpty, data.count <= maxArtBytes {
                 return ExtractedArtwork(data: data, uti: utiFromSniff(data))
@@ -181,6 +200,9 @@ extension MetadataExtractor {
         if let data = await firstDataValue(items, atomSuffix: "covr"), data.count <= maxArtBytes {
             return ExtractedArtwork(data: data, uti: utiFromSniff(data))
         }
-        return nil
+        let comment = await firstString(items, [vorbis("METADATA_BLOCK_PICTURE")])
+        guard let picture = comment.flatMap(FLACPicture.init(base64Comment:)) ?? FLACPicture.cover(inFileAt: url),
+              picture.data.count <= maxArtBytes else { return nil }
+        return ExtractedArtwork(data: picture.data, uti: utiFromMime(picture.mime) ?? utiFromSniff(picture.data))
     }
 }
