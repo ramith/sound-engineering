@@ -237,6 +237,17 @@ namespace
             testFileDecodeSeekMidStreamDistinctChannels,
             false,
         },
+        // C-35: the FFmpeg seek honours the stream start; a refused seek keeps the buffered audio.
+        {
+            "FileDecode_Seek_FFmpegHonoursStreamStart",
+            testFileDecodeSeekFFmpegHonoursStreamStart,
+            false,
+        },
+        {
+            "FileDecode_Seek_RefusedKeepsBufferedAudio",
+            testFileDecodeSeekRefusedKeepsBufferedAudio,
+            false,
+        },
         // FFmpeg as an opt-in, off by default, hardened load (R1.1-A, FD-3, C-99) — SERIAL: the
         // switch is process-wide.
         {"FFmpeg_OffByDefault_LoadsNothing", testFFmpegOffByDefaultLoadsNothing, false},
