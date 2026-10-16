@@ -60,7 +60,7 @@ extension AudioViewModel {
                 errorMessage = nil
                 logUX("initializeEngine: ready — \(availableDevices.count) device(s), "
                     + "selected='\(selectedDevice?.name ?? "none")'")
-                startTransportTick()
+                armTransportTick()
             } catch {
                 logUX("initializeEngine: error — \(error.localizedDescription)")
                 errorMessage = "Engine initialization failed: \(error.localizedDescription)"
@@ -93,14 +93,18 @@ extension AudioViewModel {
     /// Publish `intensity`, clamped with a LOCAL (never re-assigned — see `intensity`).
     /// Synchronous, off-RT control-plane call (borrows the AU under the leaf lock). No Task:
     /// publishIntensity has no suspension point, and an unstructured Task only risks applying an
-    /// earlier value after a later one under rapid slider drags (S3 finding F4).
+    /// earlier value after a later one under rapid slider drags (S3 finding F4). The signal path
+    /// carries it for the hero, so it is refreshed now — paused, no tick would.
     func publishIntensity() {
         engine.publishIntensity(max(0, min(1, intensity)))
+        refreshSignalPathIntents()
     }
 
-    /// Publish the crossfeed that plays (`crossfeedPlays`: chosen, on headphones) and its strength.
+    /// Publish the crossfeed that plays (`crossfeedPlays`: chosen, on headphones) and its strength;
+    /// the hero's "XF" chip reads it from the signal path, refreshed now — paused, no tick would.
     func publishCrossfeed() {
         engine.publishCrossfeed(enabled: crossfeedPlays, strength: crossfeedStrength)
+        refreshSignalPathIntents()
     }
 
     /// AWAITABLE teardown. The terminate path (`AppDelegate.applicationShouldTerminate`) awaits
@@ -121,8 +125,8 @@ extension AudioViewModel {
         queueMirrorTask?.cancel()
         await mirrorQueueNow()
         // Stop the transport tick FIRST so no further tick is scheduled (it polls the engine and could
-        // otherwise touch handles we're about to tear down).
-        stopTransportTick()
+        // otherwise touch handles we're about to tear down); disarmed, the stop below starts none.
+        disarmTransportTick()
         // S3 F5: the library subsystem (FSEvents watcher, volume monitor, in-flight scan/reconcile)
         // now lives on the LibraryModel peer, whose `shutdown()` the app-lifecycle owner
         // (AppDelegate) awaits BEFORE this — so the store is already quiescent (no scan/reconcile
