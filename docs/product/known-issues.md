@@ -622,6 +622,11 @@ divided by the window's sum, each band owns the bins inside its 1/6-octave span,
 Measured (`SpectrumAnalyzerOracleTests`, an independent sine oracle): a tone at each of the 44 band centres reads its
 dBFS within 0.35 dB, in its own band, at 44.1–192 kHz (before: +1.6…+4.2 dB, the 100 Hz tone in a neighbour's band
 from 88.2 kHz up); a burst late in a buffer shows; DC lights nothing. The bars sit ~4 dB (5 % of the lens) lower.
+*The range* (founder decision 2026-10-16, "the analyser shows 20 Hz – 20 kHz"): the 44 bands were 1/6 octave from
+37.8 Hz to 6.05 kHz under a "20 Hz – 20 kHz" axis — nothing above 6 kHz showed, and 1 kHz lit the bar under "2 kHz".
+They now tile 20 Hz – 20 kHz in equal log steps (≈ 0.23 octave, `SpectrumConstants.bandEdgeHz`), zero-padded ×4 so
+the narrowest (20–23.4 Hz) still owns a bin at every rate; tones at 30 Hz, 1 kHz, 10 kHz and 18 kHz read 0 dBFS in
+their own bands at every rate, and the worst error over the 44 band centres is 0.09 dB.
 *The timers* ("one live clock", "the transport tick sleeps"): the lens, the EQ's silhouette and Monitoring draw on one
 display clock (`LiveTimeline`), running only while a song plays and the window can be seen, and read one
 non-observable sampler (`SpectrumSampler`); the lens is one `Canvas` in the shipped look (picture sheets: EQ and
