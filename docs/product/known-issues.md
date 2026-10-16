@@ -76,10 +76,7 @@ red test on a reference branch) where one exists, the place in the code, and whe
 | KI-LIB-08 | Sorting Songs by Album orders each album's tracks by scan order | LOW | pool | US-R1F-04 |
 | KI-LIB-09 | Two Filter semantics (Songs: token prefix; grids: substring) | LOW | R1.1-B (one search rule) | US-R1F-14 |
 | KI-LIB-10 | An empty playlist says "No Tracks Yet" (the app says "songs") | LOW | pool | US-R1F-04 |
-| KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays (release notes; not verifiable from code) | LOW | R1.1-A | US-R1F-15 |
-| KI-UI-02 | The spectrum analyser reads about 4 dB high; two 20 Hz timers run while paused or in the menu bar | LOW | R1.1-A | US-R1F-15 |
-| KI-UI-03 | The real-time analysis workers poll about 200 times a second while paused (its "Integrated" half is closed) | LOW | R1.1-A | US-R1F-12 |
-| KI-ENG-01 | `SpectrumDoubleBuffer` data race (TSan) | internal | R1.1-A | US-R1F-15 |
+| KI-UI-01 | VoiceOver keeps the app fairly busy while a song plays — its code causes are fixed (R1.1-A, live readouts); not yet confirmed with VoiceOver | LOW | R1.1-A (founder's VoiceOver check) | US-R1F-15 |
 | KI-ENG-02 | The main-thread stall self-test lacks the breaker's two extra modes and the 5 ms bound | internal | pool | US-R1F-07 |
 | KI-ENG-03 | A stale comment names the removed `loudnessMeter` field | internal | R1.1-A (hygiene) | US-R1F-07 |
 | KI-ENG-04 | The `eq-light-folded` picture sheet flakes in the renderer | internal | pool | US-R1F-07 |
@@ -425,20 +422,22 @@ not the Songs filter (`LibraryBrowseModel+Sidebar.swift:24-27`).
 
 ### KI-UI-01 — VoiceOver keeps the app fairly busy while a song plays
 
-**Status:** OPEN (reported in the [R1 release notes](../releases/v1.0.0-alpha.md); a runtime observation that code
-reading can't confirm) · **Severity:** LOW · **Scheduled (2026-10-14):** R1.1-A (council C-53) · **Forward:** ~~US-R1F-07~~ US-R1F-15.
+**Status:** OPEN — its code causes are fixed in R1.1-A ("VoiceOver hears live readings as values, polled"); the
+runtime symptom waits for a VoiceOver check (reported in the [R1 release notes](../releases/v1.0.0-alpha.md); code
+reading can't confirm it) · **Severity:** LOW · **Scheduled (2026-10-14):** R1.1-A (council C-53) · **Forward:**
+~~US-R1F-07~~ US-R1F-15.
 
-The likely driver is the 20 Hz main-thread tick invalidating observed state the accessibility tree reads; measure before
-changing anything.
+What the code did, and does now: the loudness meters put their readings in the accessibility *label*, so three
+elements changed their names up to 20 times a second — the readings are now values, quantised for speech (LUFS to
+the LU, the true peak up to the dB), under a fixed label, with `.updatesFrequently`
+(`liveReadout(_:value:)`, `UI/Controls/LiveReadout.swift`). The scrubber's accessibility element re-evaluated 20 times
+a second for a value that changes once; it now reads the playhead in whole seconds (`AudioViewModel.elapsedSeconds`),
+and only its groove follows the 20 Hz playhead. The 20 Hz analyser views (88 animated views) are one `Canvas`,
+hidden from accessibility as before, drawn only while a song plays and the window shows. To close: a Time Profiler
+run (or Activity Monitor's CPU) with VoiceOver on, Now Playing showing, a song playing.
 
-### KI-ENG-01 — `SpectrumDoubleBuffer` data race
-
-**Status:** OPEN · **Severity:** internal (also an RT-safety follow-up) · **Source:** freeze "Logged post-R1" ·
-**Scheduled (2026-10-14):** R1.1-A (council C-51) · **Forward:** ~~US-R1F-07~~ US-R1F-15.
-
-Two slots in a Swift array (`Spectrum/SpectrumDoubleBuffer.swift:32`): the writer (`:61`) can lap the reader (`:85`),
-giving a torn spectrum frame and a theoretical copy-on-write allocation on the tap thread. Use the named-atomic
-triple-buffer idiom the C++ snapshot already uses.
+*(KI-ENG-01 — the spectrum hand-off's data race — was fixed in R1.1-A; see
+[Closed](#fixed-in-r11-a--live-readouts-branch-r11areadouts).)*
 
 ### KI-ENG-02 — The main-thread stall self-test lacks the breaker's extra modes
 
@@ -563,26 +562,9 @@ and restores the device's original nominal rate (`HALOutputEngine.mm:350-351`). 
 48 kHz switches rate at every pause and again at resume. Many DACs click or mute when that happens, and another app
 can take the device during the pause.
 
-### KI-UI-02 — The spectrum analyser reads about 4 dB high; two timers run while idle
-
-**Status:** OPEN · **Severity:** LOW · **Source:** council C-51, C-52 (P1 D53–D57; UI-2) · **Scheduled (2026-10-14):**
-R1.1-A · **Forward:** US-R1F-15.
-
-The analyser reads +4.26 dB high and uses N = 4096 at every sample rate (`SpectrumAnalyzer.swift:109`); its hand-off
-tears frames (KI-ENG-01). Two 20 Hz main-thread timers run from engine-ready to shutdown, also while paused and while
-the app sits in the menu bar (`AudioViewModel+SpectrumTimer.swift:14-41`).
-
-### KI-UI-03 — The real-time analysis workers poll about 200 times a second while paused
-
-**Status:** OPEN (narrowed) · **Severity:** LOW · **Source:** council C-46 (DSP-09, D59, P2-10) · **Scheduled
-(2026-10-14):** R1.1-A · **Forward:** US-R1F-12.
-
-The real-time analysis workers poll about 200 times a second while paused (`LoudnessModule.cpp:240-244`). ~~The UI's
-"Integrated" integrates over the session, not the track.~~ *(Closed in R1.1-A, "“Integrated” measures the playing track, not the session": "Integrated"
-measures the playing track — a new track, by a fresh start or at a gapless seam, starts a new measurement interval
-(EBU Tech 3341 §2.3); the same track announced again (a resume, a seek, a move to another device) carries on
-(`loudnessMeterBeginTrack`, `LufsMeter::restartIntegration`; `Loudness_MeterBridge_IntegratedPerTrack`, against
-libebur128 over each interval). A quiet track after a loud one read the loud one's −6 LUFS; it reads its own −26.7.)*
+*(KI-UI-02 — the spectrum analyser read about 4 dB high and two 20 Hz timers ran while idle — and KI-UI-03 — the
+analysis workers polled about 200 times a second while paused — were fixed in R1.1-A; see
+[Closed](#fixed-in-r11-a--live-readouts-branch-r11areadouts).)*
 
 ---
 
@@ -607,6 +589,60 @@ These are not defects; each is a decision or a planned feature. They are listed 
 
 ## Closed
 
+### Fixed in R1.1-A — live readouts (branch `r1.1a/readouts`)
+
+Council C-51, C-52, C-53 and C-46's last half (US-R1F-15, US-R1F-12). Seven commits, named by their subjects: "the
+analyser hands the main thread whole frames — a triple buffer, no torn frame", "the spectrum analyser reads true —
+every sample, its own band, 0 dBFS for a full-scale sine, at every rate", "the analysis workers sleep while no audio
+reaches them", "one live clock — the analyser drawn as one Canvas, sampled only while a song plays and shows; caps in
+real time", "the transport tick sleeps when nothing plays", "VoiceOver hears live readings as values, polled", "a
+paused lens shows the latest frame as it is". Each fix
+landed with its red test first; the tests failed on `2c6e4df` and pass after (Swift: `SpectrumAnalyzerOracleTests`,
+`SpectrumHandoffTests`, `LiveReadoutsTests`, `LiveReadoutSpeechTests`; the null test: `Loudness_WorkersSleepWhileIdle`).
+KI-UI-01 (VoiceOver's load) has its code causes fixed and waits for a VoiceOver check (above).
+
+#### KI-UI-02 — The spectrum analyser reads about 4 dB high; two timers run while idle
+
+**Status:** ✅ CLOSED in R1.1-A. *The level and the resolution* ("the spectrum analyser reads true"): a 0 dBFS sine
+read +3…+4.26 dB (vDSP's normalised Hann scaled as a plain one), the analyser read only the first 4096 frames of each
+~100 ms tap buffer (21 % of the audio at 192 kHz) with N = 4096 at every rate (47 Hz bins at 192 kHz: bands shared
+bins, the lowest took in DC). Now a short-time FFT runs over every sample — a Hann window of the shipped 85 ms at
+every rate (4096 / 8192 / 16 384 frames at 48 / 96 / 192 kHz), half-window hops, zero-padded ×2 — each magnitude is
+divided by the window's sum, each band owns the bins inside its 1/6-octave span, and the window's mean is removed.
+Measured (`SpectrumAnalyzerOracleTests`, an independent sine oracle): a tone at each of the 44 band centres reads its
+dBFS within 0.35 dB, in its own band, at 44.1–192 kHz (before: +1.6…+4.2 dB, the 100 Hz tone in a neighbour's band
+from 88.2 kHz up); a burst late in a buffer shows; DC lights nothing. The bars sit ~4 dB (5 % of the lens) lower.
+*The timers* ("one live clock", "the transport tick sleeps"): the lens, the EQ's silhouette and Monitoring draw on one
+display clock (`LiveTimeline`), running only while a song plays and the window can be seen, and read one
+non-observable sampler (`SpectrumSampler`); the lens is one `Canvas` in the shipped look (picture sheets: EQ and
+Monitoring identical to the pixel; Now Playing within 5 / 13 of 255 levels on 0.13–0.21 % of pixels, at cap edges).
+The 20 Hz transport tick runs only while a song plays or a start, pause or stop is on its way. Measured on the real
+views offscreen, under the app's run loop: the lens while playing 116 → 32.6 ms of main-thread CPU a second (6.3 →
+0.54 ms per update, drawn 60 times a second instead of 20); paused, 40 engine reads a second → 0, Monitoring's 70 →
+0. The peak caps run in real time (they held 1.2 s and fell at half speed: frames come every ~100 ms, each fed a
+nominal 1/20 s) — `LiveReadoutsTests`. An energy reading (Activity Monitor's Energy Impact: idle, paused, playing) is
+the release checklist's, on the founder's Mac.
+
+#### KI-UI-03 — The real-time analysis workers poll about 200 times a second while paused
+
+**Status:** ✅ CLOSED in R1.1-A ("the analysis workers sleep while no audio reaches them"; its "Integrated" half
+closed in the sound lane, above). The normaliser's meter (`LoudnessModule`) polled its ring every 5 ms and the causal
+loudness estimate (`CausalLoudnessTap`) every 50 ms, for the AU's whole life — also while playing with leveling off
+(the faithful default) or bit-perfect, which feed the normaliser nothing. One primitive, `WorkerParking`
+(`include/WorkerParking.h`), serves both: a worker naps while audio flows and, after 200 ms with nothing, parks on a
+`std::atomic` wait until the render thread hands it a block (one atomic add per push; a futex wake only when parked)
+or it is asked to stop. Measured (`Loudness_WorkersSleepWhileIdle`, the process's context switches in 300 ms of idle):
+57 / 60 / 80 on `2c6e4df` (the normaliser paused, a kernel at rest, a causal estimate waiting), 1–3 now; clean under
+TSan.
+
+#### KI-ENG-01 — `SpectrumDoubleBuffer` data race
+
+**Status:** ✅ CLOSED in R1.1-A ("the analyser hands the main thread whole frames"). The two-slot buffer let the tap
+thread lap a slow reader and overwrite the slot it was copying. `SpectrumTripleBuffer` is the C++ snapshot's
+wait-free triple buffer (`DoubleBufferSnapshot.h`) in Swift: three raw slots and one control word, swapped with one
+acquire-release exchange per side. `SpectrumHandoffTests` (a writer that never pauses against a reader slowed
+mid-read, 1 s): about one read in ten tore on `2c6e4df`, none now; clean under TSan.
+
 ### Fixed in R1.1-A — the sound chain does what it says (branch `r1.1a/sound`)
 
 Council C-39, C-42 (with C-30's classification slice), C-46 and C-50, and the founder's decision of 2026-10-14 that
@@ -620,8 +656,8 @@ crossfeed works on its own (US-R1F-12). Five commits, named by their subjects: "
 flush-to-zero was set on every render call and never restored, on AVAudioEngine's I/O thread (which Apple's own nodes
 share, inside our pull) and on the libdispatch thread that ran `initialize()`; it is now scoped to our own render calls
 and workers and restored (`ScopedFlushToZero`, JUCE's `ScopedNoDenormals`), and the `LufsMeter.h` comment that FZ
-doesn't flush doubles is corrected (it does, council D67). Still open from the lane: the analysis workers' polling
-while paused (KI-UI-03).
+doesn't flush doubles is corrected (it does, council D67). The analysis workers' polling while paused (KI-UI-03),
+still open after this lane, was closed by the live-readouts lane (below).
 
 #### KI-SND-05 — Crossfeed makes no sound while Intensity is held at 0
 
