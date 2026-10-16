@@ -50,7 +50,7 @@ struct ListeningSettingsTests {
         let viewModel = launch(engine)
         viewModel.initializeEngine()
         await settle()
-        viewModel.stopTransportTick()
+        viewModel.disarmTransportTick()
         return (viewModel, engine)
     }
 

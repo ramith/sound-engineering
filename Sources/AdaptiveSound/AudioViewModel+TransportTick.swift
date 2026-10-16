@@ -7,9 +7,35 @@ import PlaybackQueueKit
 
 @MainActor
 extension AudioViewModel {
-    /// Start the 20 Hz transport tick at engine-ready. Safe to call more than once.
-    func startTransportTick() {
-        guard transportTimer == nil else { return }
+    /// Whether the transport tick has anything to follow: a song plays, or a start, a pause or a stop
+    /// is on its way to the engine (council C-52). Paused or stopped, nothing moves — the engine's own
+    /// clock stops too (`AudioEngineBridge+TransportClock`) — so the tick sleeps; a device change, an
+    /// intent, a scrub while paused reach the screen through their own paths, not a poll.
+    var transportTickIsLive: Bool {
+        transportTickArmed && (isPlaying || transportCommand != nil)
+    }
+
+    /// From engine-ready (`initializeEngine`): the tick may run. One tick now settles the readouts
+    /// (the EQ's design rate, the signal path) the engine came up with; then it runs whenever
+    /// something plays.
+    func armTransportTick() {
+        transportTickArmed = true
+        tickTransport()
+        runTransportTickIfLive()
+    }
+
+    /// At shutdown, and in tests that tick by hand: no tick runs from here on.
+    func disarmTransportTick() {
+        transportTickArmed = false
+        transportTimer?.invalidate()
+        transportTimer = nil
+    }
+
+    /// Start the 20 Hz transport tick if something plays or is on its way. Called whenever that may
+    /// have changed (`isPlaying`, `transportCommand`). The tick stops itself: the tick that finds
+    /// nothing live is the last, after it has read the settled engine once more.
+    func runTransportTickIfLive() {
+        guard transportTimer == nil, transportTickIsLive else { return }
         let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             // Scheduled on RunLoop.main (below), so this always fires on the main thread:
             // assumeIsolated proves it to the compiler with no per-tick Task allocation.
@@ -22,16 +48,10 @@ extension AudioViewModel {
         transportTimer = timer
     }
 
-    /// At shutdown, and in tests that tick by hand.
-    func stopTransportTick() {
-        transportTimer?.invalidate()
-        transportTimer = nil
-    }
-
-    /// Called at 20 Hz on the main thread by the transport timer. Polls the playhead, loudness, and
-    /// signal path, handles device-loss, and drives gapless auto-advance. Never touches the live
-    /// spectrum — the visuals draw on their own clock (VM-3), so whether one shows can never stall
-    /// transport or auto-advance.
+    /// Called at 20 Hz on the main thread by the transport timer while something plays or is on its
+    /// way. Polls the playhead, loudness, and signal path, handles device-loss, and drives gapless
+    /// auto-advance. Never touches the live spectrum — the visuals draw on their own clock (VM-3), so
+    /// whether one shows can never stall transport or auto-advance.
     func tickTransport() {
         // The engine's state in ONE copy (the transport as its clock last sampled it, the signal
         // path, the loudness, the EQ design rate), so the tick never waits on the player or the
@@ -42,7 +62,7 @@ extension AudioViewModel {
         let transport: TransportSnapshot? =
             snapshot.transport.isCurrent(for: transportEpoch) ? snapshot.transport : nil
         // Poll the playhead + loudness + signal path every tick.
-        pollPlayhead(transport)
+        placePlayhead(transport)
         // S10.6: accrue ≥60%-heard play-through time (advances the monotonic reference every tick;
         // accrues only while playing → a pause/stall/seek never mis-counts).
         accruePlayThrough()
@@ -108,23 +128,48 @@ extension AudioViewModel {
                 }
             }
         }
+
+        // Nothing plays and nothing is on its way: this tick read the settled engine; it is the last.
+        if !transportTickIsLive {
+            transportTimer?.invalidate()
+            transportTimer = nil
+        }
     }
 
-    /// The scrubber's playhead, each tick. While PAUSED (position-preserving Pause, D2) it shows where
-    /// Play resumes — also while pausing, before the engine has stopped, so a scrub then isn't
+    /// The scrubber's playhead: at each tick, from the engine's latest sample (`transport`), and when
+    /// the resume point moves (`nil`: no sample). While PAUSED (position-preserving Pause, D2) it shows
+    /// where Play resumes — also while pausing, before the engine has stopped, so a scrub then isn't
     /// overwritten by the engine's last ticks (S10.8 G). While playing — or starting, from the place
     /// the start goes to (council C-15) — it follows the engine. Only a genuine stop (not playing, not
-    /// paused) zeroes it.
-    private func pollPlayhead(_ transport: TransportSnapshot?) {
-        if let resumeAt = pausedResumePosition {
-            if playbackPosition != resumeAt {
-                playbackPosition = resumeAt
-            }
+    /// paused) zeroes it. Writes only a change: Observation has no equality gate of its own.
+    func placePlayhead(_ transport: TransportSnapshot?) {
+        let position: Double = if let resumeAt = pausedResumePosition {
+            resumeAt
         } else if playIntent {
-            playbackPosition = transport?.position ?? playbackPosition
-        } else if playbackPosition != 0 {
-            playbackPosition = 0
+            transport?.position ?? playbackPosition
+        } else {
+            0
         }
+        if playbackPosition != position {
+            playbackPosition = position
+        }
+    }
+
+    /// Show an intent the signal path carries for the hero — Intensity, the crossfeed that plays — at
+    /// once: the tick carries them while a song plays, but paused it sleeps.
+    func refreshSignalPathIntents() {
+        let fresh = withIntents(signalPath)
+        if signalPath != fresh {
+            signalPath = fresh
+        }
+    }
+
+    /// `path` with the intents the hero reads from it (F4: the badge is a pure function of it).
+    private func withIntents(_ path: SignalPathInfo) -> SignalPathInfo {
+        var path = path
+        path.intensityLinear = intensity
+        path.crossfeedStrength = crossfeedPlays ? crossfeedStrength : nil
+        return path
     }
 
     /// Poll loudness + the signal path, SUPPRESSING same-value writes (break-it MINOR-3):
@@ -137,10 +182,7 @@ extension AudioViewModel {
         if loudness != freshLoudness {
             loudness = freshLoudness
         }
-        var freshPath = snapshot.signalPath
-        // F4: copy enhancement overlay fields so the badge is a pure function of the snapshot.
-        freshPath.intensityLinear = intensity
-        freshPath.crossfeedStrength = crossfeedPlays ? crossfeedStrength : nil
+        let freshPath = withIntents(snapshot.signalPath)
         if signalPath != freshPath {
             signalPath = freshPath
         }
