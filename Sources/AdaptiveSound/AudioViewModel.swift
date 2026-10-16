@@ -59,7 +59,19 @@ final class AudioViewModel {
     }
 
     /// Live playhead position in seconds (polled at the transport tick's rate).
-    var playbackPosition: Double = 0
+    var playbackPosition: Double = 0 {
+        didSet {
+            let whole = playbackPosition.isFinite ? Int(max(0, playbackPosition)) : 0
+            if whole != elapsedSeconds {
+                elapsedSeconds = whole
+            }
+        }
+    }
+
+    /// The playhead in whole seconds — what the scrubber's time and its VoiceOver value show — written
+    /// only when the second changes (council C-53, VM-4): the readouts that show it re-evaluate once a
+    /// second, not with each of the tick's 20 playhead writes.
+    private(set) var elapsedSeconds = 0
     /// Resume point for a position-preserving Pause (D2 / UI-3): set by `pause()` to the playhead
     /// at the moment of pausing, moved by a scrub while paused, consumed + cleared by `play()` to
     /// resume from there via a seek. It belongs to the paused song's queue SLOT, not its row
