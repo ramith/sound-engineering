@@ -58,9 +58,9 @@ let package = Package(
                 ]),
             ]
         ),
-        // Headless M1 acceptance gate: proves the custom v3 AU registers, instantiates, sits
-        // in the AVAudioEngine graph, and renders. `swift run VerifyAUGraph`. (swift test is
-        // broken here; this is the runnable integration check for the AU-graph path.)
+        // Headless AU-graph gate (in `make gate`): proves the custom v3 AUs register, instantiate,
+        // sit in an offline AVAudioEngine graph and render, at every channel width and through
+        // re-allocation. `swift run VerifyAUGraph`.
         .executableTarget(
             name: "VerifyAUGraph",
             dependencies: ["AudioDSP", "AudioFormatKit"],
@@ -130,8 +130,8 @@ let package = Package(
         // Headless S8.1a acceptance gate: proves the store opens/creates/migrates, the v1 schema
         // is correct, the migration runner is transactional + downgrade-guarded, corruption is
         // quarantined (with -wal/-shm sidecars) + rebuilt, and data survives restart. Mirrors the
-        // VerifyAUGraph idiom (numbered PASS/FAIL, exit(0) all-pass). `swift run VerifyLibraryStore`.
-        // (swift test is broken here; this is the runnable verification for the store path.)
+        // VerifyAUGraph idiom (numbered PASS/FAIL, exit(0) all-pass). `swift run VerifyLibraryStore`
+        // (in `make gate`).
         .executableTarget(
             name: "VerifyLibraryStore",
             // GRDB directly: the migration-mechanics / concurrency / corruption checks drive the
@@ -155,26 +155,25 @@ let package = Package(
             dependencies: ["AudioFormatKit"],
             path: "Sources/SRCQualityMeasure"
         ),
-        // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel
-        // (an executable target SPM can't @testable-import) so BOTH the app and the
-        // AudioViewModelTests suite link the identical next/previous-index logic — no
-        // hand-mirror to drift. Pure Swift, zero deps, off the audio path entirely.
+        // Pure queue/advance decision core (Sprint 9, S9-Q1). Extracted from AudioViewModel so
+        // BOTH the app and the AudioViewModelTests suite link the identical next/previous-index
+        // logic — no hand-mirror to drift. Pure Swift, zero deps, off the audio path entirely.
         .target(
             name: "PlaybackQueueKit",
             dependencies: [],
             path: "Sources/PlaybackQueueKit"
         ),
         // Pure Library-browse decision core (S9.5). Same rationale as PlaybackQueueKit: extracted
-        // from LibraryBrowseModel/SongsView (an executable target SPM can't @testable-import) so the
-        // app and LibraryBrowseKitTests link the identical sort-mapping / search-epoch / row-resolver
-        // logic — no untested UI-glue. Depends on LibraryStore only for the sort-column types.
+        // from LibraryBrowseModel/SongsView so the app and LibraryBrowseKitTests link the identical
+        // sort-mapping / search-epoch / row-resolver logic — no untested UI-glue. Depends on
+        // LibraryStore only for the sort-column types.
         .target(
             name: "LibraryBrowseKit",
             dependencies: ["LibraryStore"],
             path: "Sources/LibraryBrowseKit"
         ),
         // Design-token data + pure surface/accessibility resolvers (S10.7 R0). Same rationale
-        // as PlaybackQueueKit/LibraryBrowseKit: extracted from the non-importable app target so
+        // as PlaybackQueueKit/LibraryBrowseKit: extracted from the app target so
         // the token values, the RT/IC resolution, and the WCAG contrast audit are headlessly
         // gated forever. ZERO SwiftUI/AppKit imports (strict-gate purity guard) — the app-side
         // DesignSystemGlass.swift bridges this data into SwiftUI values (single source).
@@ -185,7 +184,7 @@ let package = Package(
         ),
         // Pure EQ editing contract (Sprint EQ, EQ0). Same rationale as PlaybackQueueKit: the
         // band grid, the Tone weights, the curve maths (base + tone -> points) and the built-in
-        // presets live outside the non-importable app target, so EQEditKitTests gate the exact
+        // presets live outside the app target, so EQEditKitTests gate the exact
         // code the editor and the engine adapter run. Pure Swift, zero deps, no AppKit/SwiftUI.
         .target(
             name: "EQEditKit",
@@ -194,7 +193,7 @@ let package = Package(
         ),
         // Pure output-device rule (Sprint G): what the engine does when its device goes away, the
         // system default changes, or the engine reconfigures — pinned vs follow, Enhanced vs Pure.
-        // Same rationale as PlaybackQueueKit: outside the non-importable app target so
+        // Same rationale as PlaybackQueueKit: outside the app target so
         // OutputDeviceKitTests gate the exact rule the bridge runs. Pure Swift, zero deps, no UI.
         .target(
             name: "OutputDeviceKit",
@@ -224,46 +223,11 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
             ]
         ),
-        // Pure-Swift ViewModel tests — uses the Swift Testing framework shipped
-        // with CLT (Testing.framework), not XCTest.
+        // Pure-Swift view-model tests (swift-testing, not XCTest): every file in the folder.
         .testTarget(
             name: "AudioViewModelTests",
             dependencies: ["PlaybackQueueKit"],
-            path: "Tests/AudioViewModelTests",
-            // Source files build together:
-            //   AudioViewModelTests.swift                   — original playlist logic tests
-            //   MockAudioEngine.swift                       — MockAudioEngine (AudioPlaybackEngineMirror)
-            //   AudioEngineProtocolTests.swift              — protocol contract + sort order tests
-            //   AutoAdvanceTests.swift                      — redirect comment (split below)
-            //   MockAdvanceController.swift                 — state-machine mirror + helpers
-            //   AutoAdvanceLinearRepeatShuffleTests.swift   — VM-AA-01..12
-            //   AutoAdvanceGaplessSeamTests.swift           — VM-AA-14..19
-            //   AutoAdvanceReconfigureGapTests.swift        — VM-AA-RGAP-1, VM-AA-RTR-1
-            //   AutoAdvanceDeviceLossTests.swift            — VM-AA-06..07, VM-AA-13, VM-AA-18
-            //   OnDeckGateTests.swift                       — VM-OD-01..06 (council D41)
-            sources: [
-                "AudioViewModelTests.swift",
-                "MockAudioEngine.swift",
-                "AudioEngineProtocolTests.swift",
-                "AutoAdvanceTests.swift",
-                "MockAdvanceController.swift",
-                "AutoAdvanceLinearRepeatShuffleTests.swift",
-                "AutoAdvanceGaplessSeamTests.swift",
-                "AutoAdvanceReconfigureGapTests.swift",
-                "AutoAdvanceDeviceLossTests.swift",
-                "QueueAdvanceTests.swift",
-                "QueueOpsTests.swift",
-                "QueueInsertTests.swift",
-                "QueueRestorePointTests.swift",
-                "ResumePointTests.swift",
-                "TransportSnapshotTests.swift",
-                "SeekRouteTests.swift",
-                "SeekTargetTests.swift",
-                "PlaybackOrderTests.swift",
-                "OnDeckGateTests.swift",
-                "PlayThroughTrackerTests.swift",
-                "NowPlayingSnapshotTests.swift",
-            ]
+            path: "Tests/AudioViewModelTests"
             // swift-testing is provided natively by the toolchain under swift-tools 6.2;
             // no manual Testing.framework linkage. (The former -F/-framework hack pointed
             // at CommandLineTools' Testing.framework, whose macro plugin was built against
@@ -290,7 +254,7 @@ let package = Package(
         // Pure Library-browse decision tests (S9.5) — swift-testing, mirrors AudioViewModelTests.
         // Gates the sort-mapping, search-epoch newest-wins (incl. the cross-2-char boundary), the
         // ≥2-char gate, and the visible-subset row resolver directly (they used to be untested
-        // UI-glue in the non-importable app target).
+        // UI-glue in the app target).
         .testTarget(
             name: "LibraryBrowseKitTests",
             dependencies: ["LibraryBrowseKit", "LibraryStore", "LibraryScan"],
@@ -335,8 +299,8 @@ let package = Package(
         // C++ test bridge: wraps the production graphic EQ (GraphicEQDesigner + the real-time
         // EQModule) in a pure-C interface (EQTestBridge.h) for Swift test consumption.
         //
-        // Separated from AudioDSPTests because SwiftPM 5.9 does not support
-        // mixed-language source targets (Swift + Obj-C++ in the same directory).
+        // Separated from AudioDSPTests because SwiftPM does not support mixed-language
+        // source targets (Swift + C++ in the same directory).
         //
         // Depends on AudioDSP so EQModule.cpp is already compiled and linked.
         .target(

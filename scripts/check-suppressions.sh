@@ -45,8 +45,15 @@ cd "$repo_root"
 
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 required for check-suppressions.sh" >&2; exit 1; }
 
+# The pinned clang-tidy, from the ONE resolver the strict gate and the pre-commit hook use
+# (opt/llvm@N, then opt/llvm, then PATH) — empty when there is none.
+# shellcheck source=scripts/lib/cxx-analysis-flags.sh
+source "$repo_root/scripts/lib/cxx-analysis-flags.sh"
+CHECK_SUPPRESSIONS_CLANG_TIDY="$(cxx_clang_tidy_path || true)"
+export CHECK_SUPPRESSIONS_CLANG_TIDY
+
 python3 - "$@" <<'PY'
-import os, re, sys, subprocess, datetime, shutil
+import os, re, sys, subprocess, datetime
 
 REPO = os.getcwd()
 # .inc included: the C++ test fragments (#included into a .cpp TU) carry LIVE clang-tidy
@@ -77,14 +84,8 @@ def owner_for(path):
             return owner
     return DEFAULT_OWNER
 
-def _resolve_clang_tidy():
-    """Prefer keg-only Homebrew LLVM (matches strict-gate/pre-commit), fall back to PATH."""
-    cand = '/opt/homebrew/opt/llvm/bin/clang-tidy'
-    if os.path.isfile(cand) and os.access(cand, os.X_OK):
-        return cand
-    return shutil.which('clang-tidy')
-
-CLANG_TIDY = _resolve_clang_tidy()
+# Resolved by the shell above (scripts/lib/cxx-analysis-flags.sh: cxx_clang_tidy_path).
+CLANG_TIDY = os.environ.get('CHECK_SUPPRESSIONS_CLANG_TIDY') or None
 _CT_WARNED = [False]
 _enabled_cache = {}
 
