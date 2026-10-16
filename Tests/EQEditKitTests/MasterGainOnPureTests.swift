@@ -214,4 +214,76 @@ struct MasterGainOnPureTests {
         waiting.returnUnreturned { _ in nil as FakeVolumeDevice? }
         #expect(waiting.unreturned.count == 1)
     }
+
+    // MARK: - The hold lasts while Pure is this device's path (founder decision 2026-10-16)
+
+    /// The engine's devices, by UID.
+    private static func devices(_ list: [String: FakeVolumeDevice]) -> (String) -> FakeVolumeDevice {
+        { uid in list[uid] ?? FakeVolumeDevice(level: 0) }
+    }
+
+    @Test("pause and resume in Pure never touch the device's volume")
+    func pauseKeepsTheLevel() {
+        let dac = FakeVolumeDevice(level: -20)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac) // lowered to -32: one set
+        let ended1 = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
+        #expect(!ended1, "a pause is not leaving Pure")
+        #expect(dac.level == -32 && dac.sets.count == 1)
+        let resumed = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        #expect(resumed == .engaged)
+        #expect(dac.level == -32 && dac.sets.count == 1)
+
+        // The listener's own change while paused is still theirs.
+        dac.listenerSets(-35)
+        rule.deviceChanged(gain: -12, device: dac)
+        _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        #expect(dac.level == -35 && dac.sets.count == 1, "never undone, not even on resume")
+    }
+
+    @Test("leaving Pure gives the level back once: a stop, or Enhanced starting")
+    func leavingGivesItBackOnce() {
+        for leaving in [PureVolumeEvent.stopped, .enhancedStarted] {
+            let dac = FakeVolumeDevice(level: -20)
+            var rule = MasterGainOnPure()
+            _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+            _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
+            let ended2 = rule.handle(leaving, device: Self.devices([Self.uid: dac]))
+            #expect(ended2)
+            #expect(dac.level == -20 && dac.sets.count == 2 && rule.loan == nil)
+            let ended3 = rule.handle(.stopped, device: Self.devices([Self.uid: dac]))
+            #expect(!ended3, "nothing left to give back")
+            #expect(dac.sets.count == 2)
+        }
+    }
+
+    @Test("the output moving to another device gives the level back on the old one")
+    func outputMovedGivesBackTheOldDevice() {
+        let dac = FakeVolumeDevice(level: -20)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        _ = rule.handle(.paused, device: Self.devices([Self.uid: dac]))
+        let ended4 = rule.handle(.outputMoved(toUID: Self.uid), device: Self.devices([Self.uid: dac]))
+        #expect(!ended4)
+        #expect(dac.level == -32, "the same device: still Pure's")
+        let ended5 = rule.handle(.outputMoved(toUID: "BuiltInSpeakerDevice"), device: Self.devices([Self.uid: dac]))
+        #expect(ended5)
+        #expect(dac.level == -20 && rule.loan == nil)
+    }
+
+    @Test("a lost device keeps the hold: nothing is asked of a dying device, its loan is not lost")
+    func deviceLostKeepsTheHold() {
+        let dac = FakeVolumeDevice(level: -20)
+        var rule = MasterGainOnPure()
+        _ = rule.enter(deviceUID: Self.uid, gain: -12, device: dac)
+        dac.isPresent = false
+        let ended6 = rule.handle(.deviceLost, device: Self.devices([Self.uid: dac]))
+        #expect(!ended6)
+        #expect(rule.allLoans.map(\.deviceUID) == [Self.uid])
+        // Quit with the device still gone: the loan stays out, kept for the next launch.
+        let ended7 = rule.handle(.stopped, device: Self.devices([Self.uid: dac]))
+        #expect(ended7)
+        #expect(rule.unreturned.map(\.deviceUID) == [Self.uid])
+    }
 }
