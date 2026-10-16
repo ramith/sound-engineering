@@ -21,7 +21,7 @@
 //   MultichannelTests.inc — multichannel epic safety net, BS.1770 multichannel,
 //                           large-buffer fence (tests 20-34)
 //   SpatialTests.inc      — SpatialRenderKernel passthrough tests (test 35)
-//   PureModeTests.inc     — Pure-Mode policy, format conversion, ToneSource,
+//   PureModeTests.inc     — Pure-Mode policy, format conversion,
 //                           + C-ABI bridge (pureModeEvaluate) tests (tests 36-51)
 //   FileDecodeTests.inc   — file-decode bit-exact + expanded B2b coverage + seek (tests 52-72)
 //   FFmpegLoaderTests.inc — FFmpeg opt-in (off loads nothing), the hardened load's vetting rule,
@@ -184,7 +184,6 @@ namespace
             true,
         },
         {"Convert_BitExact_Exhaustive16And24", testConvertBitExactExhaustive16And24, true},
-        {"ToneSource_FillsBuffer", testToneSourceFillsBuffer, true},
         // Pure-Mode C-ABI bridge (pureModeEvaluate) — PARALLEL-SAFE: pure functions, no env/tmp
         {
             "PureModeBridge_TranslatesAllDecisionBranches",

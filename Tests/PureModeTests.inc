@@ -1,7 +1,7 @@
 // PureModeTests.inc
 //
 // Pure-Mode policy tests (Phase B — B1) and format conversion tests (B2a),
-// plus ToneSource and inline file-decode bootstrap tests (B2b).
+// plus the Pure-Mode C-ABI bridge tests.
 // #included into Tests/DSPKernelNullTest.cpp after TestSupport.h.
 //
 // Tests: PureMode_HdmiBitPerfect, PureMode_HdmiRateUnsupported,
@@ -13,7 +13,7 @@
 //        PureFormat_PickerOnlyWritableFormats, Convert_Packed24_ExactBytesRoundTrip,
 //        Convert_WriteBoundedByBufferBytes, Convert_NonFiniteIsSilence_FiniteUntouched,
 //        Convert_BitExact_Exhaustive16And24,
-//        ToneSource_FillsBuffer, PureModeBridge_TranslatesAllDecisionBranches,
+//        PureModeBridge_TranslatesAllDecisionBranches,
 //        PureModeBridge_NullArgsAreNoOp, PureModeBridge_RateArrayCopiedFaithfully.
 // Helpers (area-local): makeHdmiCapability, makeBluetoothCapability,
 //   makeBuiltInCapability, makeVirtualCapability, makeInterfaceCapability, makeFile, checkEval,
@@ -1275,48 +1275,6 @@ static auto testConvertBitExactExhaustive16And24() -> void
                     }
                 }
             }
-        }
-    }
-    logPass(kName);
-}
-
-// ToneSource fills the requested frames on every channel, in [-amp, amp], identical across
-// channels, and returns the full frame count.
-static auto testToneSourceFillsBuffer() -> void
-{
-    static const char* const kName = "ToneSource_FillsBuffer";
-    constexpr double kFreq = 1000.0;
-    constexpr float kAmp = 0.5F;
-    constexpr uint32_t kFrames = 256U;
-    constexpr uint32_t kChannels = 2U;
-
-    ToneSource tone(kFreq, kAmp, static_cast<double>(TestConstants::kSampleRate48k));
-    std::vector<float> out(static_cast<size_t>(kFrames) * kChannels, -999.0F);
-    const uint32_t produced = tone.pullFloat(out.data(), kFrames, kChannels);
-
-    if (produced != kFrames)
-    {
-        logFail(kName,
-                "pullFloat returned " + std::to_string(produced) + ", expected " +
-                    std::to_string(kFrames));
-        return;
-    }
-    for (uint32_t f = 0U; f < kFrames; ++f)
-    {
-        const float left = out[(static_cast<size_t>(f) * kChannels)];
-        const float right = out[(static_cast<size_t>(f) * kChannels) + 1U];
-        if (left != right)
-        {
-            logFail(kName, "channels differ at frame " + std::to_string(f));
-            return;
-        }
-        if (left > kAmp + 1e-6F || left < -kAmp - 1e-6F)
-        {
-            std::ostringstream oss;
-            oss << "frame " << f << " sample " << left << " outside [-" << kAmp << ", " << kAmp
-                << "]";
-            logFail(kName, oss.str());
-            return;
         }
     }
     logPass(kName);
