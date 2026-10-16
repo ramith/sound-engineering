@@ -646,7 +646,7 @@ TSan.
 
 **Status:** ✅ CLOSED in R1.1-A ("the analyser hands the main thread whole frames"). The two-slot buffer let the tap
 thread lap a slow reader and overwrite the slot it was copying. `SpectrumTripleBuffer` is the C++ snapshot's
-wait-free triple buffer (`DoubleBufferSnapshot.h`) in Swift: three raw slots and one control word, swapped with one
+wait-free triple buffer (`TripleBufferSnapshot.h`) in Swift: three raw slots and one control word, swapped with one
 acquire-release exchange per side. `SpectrumHandoffTests` (a writer that never pauses against a reader slowed
 mid-read, 1 s): about one read in ten tore on `2c6e4df`, none now; clean under TSan.
 
