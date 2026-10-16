@@ -6,10 +6,10 @@ import SwiftUI
 
 /// The music's shape behind the EQ curve: the analyzer's live bars as one soft silhouette in the
 /// analyzer's own teal → lime ramp (`EQGraphDecor.silhouette`), each bar at its TRUE frequency on the
-/// EQ's axis (`SpectrumConstants.barCentreHz`) — from 40 Hz up to the analyzer's top band, never
-/// stretched. Its own layer on the live clock (`LiveTimeline`, each frame as it comes), so its redraw
-/// never repaints the curve, and it draws only while a song plays and the window shows. Decorative:
-/// hit-transparent and hidden from VoiceOver.
+/// EQ's axis (`SpectrumConstants.barCentreHz`) — the analyser's bands tile 20 Hz – 20 kHz, the
+/// graph's own axis, so the shape spans it, never stretched. Its own layer on the live clock
+/// (`LiveTimeline`, each frame as it comes), so its redraw never repaints the curve, and it draws only
+/// while a song plays and the window shows. Decorative: hit-transparent and hidden from VoiceOver.
 struct EQGraphSilhouette: View {
     @Environment(AudioViewModel.self) private var audio
 
