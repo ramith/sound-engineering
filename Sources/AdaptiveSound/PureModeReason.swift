@@ -66,8 +66,10 @@ enum PureModeReason: Equatable, CaseIterable {
     func detail(in info: SignalPathInfo, masterGain: Float) -> String {
         switch self {
         case .notBitPerfect:
-            "This \(info.sourceBitDepth)-bit track plays through a \(info.bitDepth)-bit output, so its lowest bits "
-                + "are dropped: Pure Mode is playing it untouched otherwise, but not bit-perfect."
+            "This \(info.sourceBitDepth)-bit track plays through a \(info.bitDepth)-bit output, so "
+                + (Self.dithers(info) ? "Pure Mode reduces it to \(info.bitDepth) bits with dither"
+                    : "its lowest bits are dropped")
+                + ": it plays untouched otherwise, but not bit-perfect."
         case .waitsForMasterGain:
             "Master Gain is turned down (\(MasterGainLaw.text(masterGain))), and this device has no volume the app "
                 + "can set. Pure Mode plays at the device’s own volume, which would be louder, so it waits until "
@@ -75,6 +77,12 @@ enum PureModeReason: Equatable, CaseIterable {
         default:
             declined
         }
+    }
+
+    /// Whether Pure reduces the track to an integer word with TPDF dither (the engine's
+    /// `ditherWhenConverting`, R1.1-A): an integer output narrower than 32 bits.
+    private static func dithers(_ info: SignalPathInfo) -> Bool {
+        !info.isFloat && info.bitDepth > 0 && info.bitDepth < 32
     }
 
     /// Why Pure declined, and that Enhanced plays — for the reasons that carry no numbers.

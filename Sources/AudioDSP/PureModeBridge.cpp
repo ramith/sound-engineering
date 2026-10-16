@@ -308,6 +308,12 @@ extern "C"
             tellReason(outReason, PureModeReason::DeviceWouldNotStart);
             return 0;
         }
+        // The word the device was set to may hold fewer bits than the file (a 24-bit file on a 16-bit
+        // DAC): then the float → integer step is TPDF-dithered, not truncated. Still "not bit-perfect"
+        // (bitExactness): the achieved state says so.
+        const AchievedOutputState configured = session->engine->achievedState();
+        session->engine->setDither(AdaptiveSound::ditherWhenConverting(
+            fileFormat, configured.achievedBitsPerChannel, configured.achievedIsFloat));
         if (!session->engine->start())
         {
             session->engine->stop();

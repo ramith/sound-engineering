@@ -57,6 +57,12 @@ struct PureModeReasonTests {
         info.bitDepth = 16
         let depth = PureModeReason.notBitPerfect.detail(in: info, masterGain: 0)
         #expect(depth.contains("24-bit") && depth.contains("16-bit"))
+        #expect(depth.contains("with dither"), "a 16-bit word: Pure reduces with TPDF dither (2026-10-16)")
+        info.sourceBitDepth = 32
+        info.bitDepth = 32
+        info.isFloat = true
+        #expect(!PureModeReason.notBitPerfect.detail(in: info, masterGain: 0).contains("dither"),
+                "a float output has no integer step to dither")
         let waits = PureModeReason.waitsForMasterGain.detail(in: info, masterGain: -12)
         #expect(waits.contains("-12.0 dB"))
         #expect(PureModeReason.needsFFmpeg.detail(in: info, masterGain: 0).contains("FFmpeg"))
