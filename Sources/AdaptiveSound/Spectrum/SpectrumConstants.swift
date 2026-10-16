@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Spectrum Constants
 
 enum SpectrumConstants {
-    /// The frames each analysis tap asks for. AVAudioEngine delivers at least 100 ms whatever is asked
+    /// The frames each analysis tap asks for. The engine's tap delivers at least 100 ms whatever is asked
     /// (Apple's floor: 4410 at 44.1 kHz, 19 200 at 192 kHz); the analyser takes every one.
     static let tapBufferFrames: Int = 4096
     /// The analysis window's length in time: the shipped 4096 frames at 48 kHz (85.3 ms). The analyser
