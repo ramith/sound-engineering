@@ -1,6 +1,7 @@
 //
 // PureModeFormat.cpp — the device-native PCM format Pure renders into (NativePcmFormat), the
-// integer physical-format pick, and the bit-exact float -> native conversion.
+// integer physical-format pick, the bit-exact float -> native conversion, and the TPDF-dithered one
+// for a word that holds fewer bits than the source (R1.1-A).
 //
 // CoreAudio TYPES only (no HAL / AudioUnit / Obj-C), -fno-exceptions / -fno-rtti clean. Compiled
 // into both the AudioDSP target and the unit-test harness.
@@ -207,6 +208,89 @@ namespace AdaptiveSound
             return std::nullopt; // 8- / 20-bit, 16-in-32, and every other container
         }
 
+        // How a layout stores an integer sample: its bytes, the scale to the word (2^(N−1)), the
+        // range, and where the significant bits sit in the stored word. nullopt for float32.
+        struct IntegerWord
+        {
+            uint32_t width;
+            double scale;
+            int64_t low;
+            int64_t high;
+            uint32_t mask;
+            uint32_t shift;
+        };
+
+        [[nodiscard]] std::optional<IntegerWord> integerWord(NativeSampleLayout layout) noexcept
+        {
+            constexpr uint32_t kAllBits = 0xFFFFFFFFU;
+            // The 24-bit layouts differ only in their bytes and where the bits sit in the word.
+            auto word24 = [](uint32_t width, uint32_t shift)
+            {
+                return IntegerWord{
+                    .width = width,
+                    .scale = kInt24Scale,
+                    .low = kInt24Min,
+                    .high = kInt24Max,
+                    .mask = k24BitMask,
+                    .shift = shift,
+                };
+            };
+            switch (layout)
+            {
+                case NativeSampleLayout::Float32:
+                    return std::nullopt;
+                case NativeSampleLayout::Int16:
+                    return IntegerWord{
+                        .width = kBytesInt16,
+                        .scale = kInt16Scale,
+                        .low = kInt16Min,
+                        .high = kInt16Max,
+                        .mask = kAllBits,
+                        .shift = 0U,
+                    };
+                case NativeSampleLayout::Int24Packed:
+                    return word24(kBytesInt24Packed, 0U);
+                case NativeSampleLayout::Int24In32High:
+                    return word24(kBytes32BitWord, k24In32ShiftHigh);
+                case NativeSampleLayout::Int24In32Low:
+                    return word24(kBytes32BitWord, 0U);
+                case NativeSampleLayout::Int32:
+                    return IntegerWord{
+                        .width = kBytes32BitWord,
+                        .scale = kInt32Scale,
+                        .low = kInt32Min,
+                        .high = kInt32Max,
+                        .mask = kAllBits,
+                        .shift = 0U,
+                    };
+            }
+            return std::nullopt; // unreachable for a valid enumerator; keeps the function total
+        }
+
+        // The whole frames to convert: as many as src has and dst's own byte size holds — the frame
+        // stride comes from the format, never from the bit depth.
+        [[nodiscard]] std::size_t wholeFrames(std::span<const float> src,
+                                              std::span<std::byte> dst,
+                                              const NativePcmFormat& format) noexcept
+        {
+            const std::size_t bytesPerFrame = static_cast<std::size_t>(format.channels) *
+                                              format.bytesPerSample(); // no 32-bit wrap
+            return (bytesPerFrame == 0U)
+                       ? 0U
+                       : std::min(src.size() / format.channels, dst.size() / bytesPerFrame);
+        }
+
+        // Whatever no converted frame covers (room beyond src, a partial trailing frame) is silence,
+        // so the device never plays stale bytes.
+        void zeroTail(std::span<std::byte> dst,
+                      std::size_t frames,
+                      const NativePcmFormat& format) noexcept
+        {
+            const std::size_t bytesPerFrame =
+                static_cast<std::size_t>(format.channels) * format.bytesPerSample();
+            std::ranges::fill(dst.subspan(frames * bytesPerFrame), std::byte{0});
+        }
+
         // An integer format at the rate and width Pure drives, that the converter writes exactly.
         [[nodiscard]] bool isWritableIntegerMatch(const AudioStreamBasicDescription& fmt,
                                                   double rateHz,
@@ -325,11 +409,7 @@ namespace AdaptiveSound
     {
         // The frame stride comes from the format, never from the bit depth: a 24-bit sample is 3
         // bytes packed and 4 in a 32-bit word, and the buffer's own byte size bounds the write.
-        const std::size_t bytesPerFrame =
-            static_cast<std::size_t>(format.channels) * format.bytesPerSample(); // no 32-bit wrap
-        const std::size_t frames = (bytesPerFrame == 0U) ? 0U
-                                                         : std::min(src.size() / format.channels,
-                                                                    dst.size() / bytesPerFrame);
+        const std::size_t frames = wholeFrames(src, dst, format);
         if (frames > 0U)
         {
             const std::span<const float> samples = src.first(frames * format.channels);
@@ -357,9 +437,60 @@ namespace AdaptiveSound
                     break;
             }
         }
-        // Whatever no converted frame covers (room beyond src, a partial trailing frame) is
-        // silence, so the device never plays stale bytes.
-        std::ranges::fill(dst.subspan(frames * bytesPerFrame), std::byte{0});
+        zeroTail(dst, frames, format);
+        return frames;
+    }
+
+    TpdfDither::TpdfDither(uint64_t seed) noexcept : state_(seed != 0U ? seed : kDefaultSeed)
+    {
+    }
+
+    double TpdfDither::uniform() noexcept
+    {
+        // xorshift64* (Vigna 2016): a full-period 64-bit generator; the top 53 bits make a double.
+        constexpr uint64_t kMultiplier = 0x2545F4914F6CDD1DULL;
+        constexpr uint32_t kShiftA = 12U;
+        constexpr uint32_t kShiftB = 25U;
+        constexpr uint32_t kShiftC = 27U;
+        constexpr uint32_t kDoubleBits = 11U; // 64 − 53 mantissa bits
+        constexpr double kUnit = 0x1.0p-53;
+        state_ ^= state_ >> kShiftA;
+        state_ ^= state_ << kShiftB;
+        state_ ^= state_ >> kShiftC;
+        return static_cast<double>((state_ * kMultiplier) >> kDoubleBits) * kUnit;
+    }
+
+    double TpdfDither::next() noexcept
+    {
+        const double first = uniform();
+        return first - uniform(); // two independent uniforms: triangular on (−1, +1)
+    }
+
+    std::size_t convertFloatToNativeDithered(std::span<const float> src,
+                                             std::span<std::byte> dst,
+                                             const NativePcmFormat& format,
+                                             TpdfDither& dither) noexcept
+    {
+        const std::optional<IntegerWord> word = integerWord(format.layout);
+        if (!word.has_value())
+        {
+            return convertFloatToNative(src, dst, format); // float32: no integer step to dither
+        }
+        const std::size_t frames = wholeFrames(src, dst, format);
+        std::byte* out = dst.data();
+        for (const float sample : src.first(frames * format.channels))
+        {
+            const double scaled =
+                (static_cast<double>(unitSample(sample)) * word->scale) + dither.next();
+            const int64_t code =
+                std::clamp(static_cast<int64_t>(std::floor(scaled + 0.5)), word->low, word->high);
+            storeWord(out,
+                      (static_cast<uint32_t>(code) & word->mask) << word->shift,
+                      word->width,
+                      format.bigEndian);
+            out += word->width;
+        }
+        zeroTail(dst, frames, format);
         return frames;
     }
 
