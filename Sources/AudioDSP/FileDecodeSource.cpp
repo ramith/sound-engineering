@@ -649,7 +649,9 @@ namespace AdaptiveSound
             // Reposition to absolute file-frame `frame`, sample-accurately. av_seek_frame with
             // AVSEEK_FLAG_BACKWARD lands at or before `frame` (typically a packet/keyframe
             // boundary); the readChunk discard logic then drops the surplus head samples so the
-            // first frame handed to the ring starts exactly at `frame`.
+            // first frame handed to the ring starts exactly at `frame`. Stream timestamps count
+            // from the stream's start time, frames from 0 (council C-35): the target is offset by it.
+            // A refused seek changes nothing here — not even the decoder's buffers.
             bool seekToFrame(int64_t frame) noexcept override
             {
                 if (api_ == nullptr || fmt_ == nullptr || codecCtx_ == nullptr || swr_ == nullptr ||
@@ -660,10 +662,10 @@ namespace AdaptiveSound
                 const FFmpegApi& api = *api_;
                 const AVStream* stream = fmt_->streams[audioStream_];
                 const double timeBase = av_q2d(stream->time_base);
-                int64_t ts = 0;
+                int64_t ts = streamStart();
                 if (timeBase > 0.0)
                 {
-                    ts = std::llround(static_cast<double>(frame) / sampleRate_ / timeBase);
+                    ts += std::llround(static_cast<double>(frame) / sampleRate_ / timeBase);
                 }
                 if (api.av_seek_frame(fmt_, audioStream_, ts, AVSEEK_FLAG_BACKWARD) < 0)
                 {
@@ -762,6 +764,14 @@ namespace AdaptiveSound
             }
 
           private:
+            // The audio stream's first timestamp, in its time base: what its timestamps count from
+            // (0 when the container gives none). Frames count from the stream's start.
+            [[nodiscard]] int64_t streamStart() const noexcept
+            {
+                const int64_t start = fmt_->streams[audioStream_]->start_time;
+                return (start == AV_NOPTS_VALUE) ? 0 : start;
+            }
+
             // Empty swresample's internal buffer (feed null input until it yields nothing) so no
             // pre-seek tail leaks into the post-seek output. Called from seekToFrame, off-RT
             // (allocation permitted); never on the RT pull path.
@@ -801,7 +811,7 @@ namespace AdaptiveSound
                 const AVStream* stream = fmt_->streams[audioStream_];
                 const double timeBase = av_q2d(stream->time_base);
                 const int64_t startFrame =
-                    std::llround(static_cast<double>(pts) * timeBase * sampleRate_);
+                    std::llround(static_cast<double>(pts - streamStart()) * timeBase * sampleRate_);
                 const int64_t frameEnd = startFrame + frame_->nb_samples;
                 if (frameEnd <= targetFrame_)
                 {
@@ -1037,7 +1047,9 @@ namespace AdaptiveSound
         // Off-RT control plane. PRECONDITION: pullFloat() (the RT consumer) is NOT running — the
         // HAL engine stops render around a seek. We then quiesce the producer (join the decode
         // thread), reposition the backend, discard the buffered pre-seek audio while we are the
-        // ring's sole accessor, and restart decoding from the new position.
+        // ring's sole accessor, and restart decoding from the new position. A reposition the
+        // backend refuses moves nothing: the buffered audio is still what plays next, so it stays
+        // (council C-35 — dropping it skipped ahead to wherever the decoder had read to).
         bool seek(double seconds) noexcept
         {
             if (backend_ == nullptr)
@@ -1048,9 +1060,12 @@ namespace AdaptiveSound
             const int64_t targetFrame = std::llround(clamped * sampleRate_);
             joinDecodeThread(); // producer quiesced; consumer absent by precondition
             const bool ok = backend_->seekToFrame(targetFrame);
-            ring_.reset();    // sole owner: discard buffered pre-seek audio
-            carryCount_ = 0U; // consumer-side straggler reset (consumer stopped)
-            startDecodeThread();
+            if (ok)
+            {
+                ring_.reset();    // sole owner: discard buffered pre-seek audio
+                carryCount_ = 0U; // consumer-side straggler reset (consumer stopped)
+            }
+            startDecodeThread(); // from the new place, or decoding on from where it was
             return ok;
         }
 

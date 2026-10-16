@@ -39,7 +39,9 @@
 #include <utility>
 #include <vector>
 
+#include <csignal>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
