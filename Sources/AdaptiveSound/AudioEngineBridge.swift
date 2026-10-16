@@ -24,19 +24,20 @@ import TrackLoudnessKit
 /// leaf `os_unfair_lock` (`stateLock`, see `AudioEngineBridge+SharedState.swift`) for the small
 /// set of fields the main thread's `snapshot()` and borrows read while a queue writes. The main
 /// thread never waits on a queue or on AVFAudio: docs/architecture/architecture.md, "Threading
-/// rules (app ↔ engine)". The lock is a leaf (no other lock/queue taken while held) so no deadlock
-/// cycle exists. That is the model; it is a convention, not a type, and the council found it
-/// broken in three places (BR-1) that the one transport owner (W2) is to close: the
+/// rules (app ↔ engine)". That is the model, held by convention, not by a type: the council found
+/// it broken in three places (BR-1) that the one transport owner (W2) is to close — the
 /// configuration-change re-establish drives the engine and player from `configChangeQueue` while
 /// `engineQueue` runs the transport (a play-intent re-check narrows that race, it does not close
 /// it); a failed gapless roll restarts through `playFile` on a global queue
 /// (`openNextFileOrRestart`); and the two AU instantiate completions finish the graph build on
-/// whatever queue AVFAudio calls them on (`instantiateAndBuildGraph`). The three `installTap`
-/// blocks (`+Graph.swift`) are the only render/tap (RT) touchpoints and only read pre-allocated,
-/// lock-free state (SpectrumAnalyzer / SpectrumTripleBuffer / the C loudness-meter handle). The
-/// public API is called from any thread on that model — hence `@unchecked Sendable`: the compiler
-/// cannot see the queue/lock model. An `actor` would violate RT-safety (executor hops on the
-/// control path, cannot express the tap/render boundary).
+/// whatever queue AVFAudio calls them on (`instantiateAndBuildGraph`). The lock is a leaf (no
+/// other lock/queue taken while held) so no deadlock
+/// cycle exists. The three `installTap` blocks (`+Graph.swift`) are the only render/tap
+/// (RT) touchpoints and only read pre-allocated, lock-free state (SpectrumAnalyzer /
+/// SpectrumTripleBuffer / the C loudness-meter handle). The public API is therefore safe
+/// to call from any thread — which is why the class can honestly be `Sendable` even though
+/// the compiler cannot see the queue/lock model. An `actor` would violate RT-safety
+/// (executor hops on the control path, cannot express the tap/render boundary).
 final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var avEngine: AVAudioEngine?
     var playerNode: AVAudioPlayerNode?
