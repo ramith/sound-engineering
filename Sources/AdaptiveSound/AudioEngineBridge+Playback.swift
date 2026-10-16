@@ -5,7 +5,7 @@ import PlaybackQueueKit
 // MARK: - AudioEngineBridge playback transport
 
 extension AudioEngineBridge {
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt requested: Double, epoch: UInt64) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool, startAt requested: Double, epoch: UInt64) async throws {
         // The one place rule (`SeekTarget`): a start must start somewhere, so a place that is not a
         // number is the top. Pure and Enhanced both take it from here.
         let startAt = SeekTarget.place(requested) ?? 0
@@ -61,8 +61,8 @@ extension AudioEngineBridge {
     /// Pure not asked for, no reason. Runs on `engineQueue` (called directly from the `startAudio`
     /// body — no new dispatch, and the `resampleQueue.sync` sequencing inside
     /// `startPure`/`stopEnhancedPlayback` is unchanged).
-    private func attemptPureStart(fileURL: URL?, pureMode: Bool, startAt: Double) -> Bool {
-        guard pureMode, let url = fileURL else {
+    private func attemptPureStart(fileURL url: URL, pureMode: Bool, startAt: Double) -> Bool {
+        guard pureMode else {
             mutateSignalPath { $0.pureReason = nil }
             return false
         }
@@ -91,10 +91,10 @@ extension AudioEngineBridge {
     }
 
     /// Start (or re-establish) the Enhanced path: tear down any live Pure engine, start the AV
-    /// engine + tap, schedule the file (or reference tone), and publish the Enhanced signal-path
+    /// engine + tap, schedule the file, and publish the Enhanced signal-path
     /// snapshot + play-intent. Runs on `engineQueue` (called directly from the `startAudio` body);
     /// `enhancedPlayIntent` is an atomic, set last.
-    private func startEnhancedPlayback(fileURL: URL?, startAt: Double) throws {
+    private func startEnhancedPlayback(fileURL url: URL, startAt: Double) throws {
         // If Pure was active, stop+destroy it before entering Enhanced
         // (releases hog mode + restores device rate).
         if activePathKind == .pure {
@@ -124,18 +124,11 @@ extension AudioEngineBridge {
 
         // Whether anything plays: a start at or past the end of its file ends the track at once (the
         // end flag is up, the view model advances), and leaves no play intent for a device change to
-        // resume.
-        var playing = true
-        if let url = fileURL {
-            // playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
-            // line. Append only the Pure-fallback note here so it isn't double-logged.
-            playing = try playFile(at: url, engine: engine, playerNode: playerNode, startAt: startAt) != .ended
-            if let reason = loadSignalPath().pureReason {
-                logUX("Enhanced started '\(url.lastPathComponent)' (Pure declined: \(reason))")
-            }
-        } else {
-            playReferenceTone(on: playerNode)
-            logUX("Enhanced started reference tone")
+        // resume. playFile emits the mode-specific "Enhanced started ... (passthrough|resample)"
+        // line; only the Pure-fallback note is appended here, so it isn't double-logged.
+        let playing = try playFile(at: url, engine: engine, playerNode: playerNode, startAt: startAt) != .ended
+        if let reason = loadSignalPath().pureReason {
+            logUX("Enhanced started '\(url.lastPathComponent)' (Pure declined: \(reason))")
         }
 
         setActivePath(.enhanced)
@@ -244,7 +237,6 @@ extension AudioEngineBridge {
                     self.enhancedPlayIntent = false
                 }
                 self.removeSpectrumTap()
-                self.referenceToneBuffer = nil
                 self.loudnessAnalyzer.cancel(nil) // a deliberate stop: nothing left to analyse
                 self.setActivePath(.enhanced)
                 self.storeSignalPath(.init())
@@ -252,24 +244,6 @@ extension AudioEngineBridge {
                 self.sampleTransport()
                 continuation.resume()
             }
-        }
-    }
-
-    // MARK: - Private helpers
-
-    /// Fallback path when no file is supplied: schedule a 1 kHz reference tone on the player.
-    private func playReferenceTone(on playerNode: AVAudioPlayerNode) {
-        referenceToneBuffer = generateReferenceTone(
-            frequency: 1000.0,
-            duration: 5.0,
-            sampleRate: 48000.0
-        )
-
-        if let buffer = referenceToneBuffer {
-            if !playerNode.isPlaying {
-                playerNode.play()
-            }
-            playerNode.scheduleBuffer(buffer, at: nil)
         }
     }
 }

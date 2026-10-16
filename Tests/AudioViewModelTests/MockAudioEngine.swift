@@ -43,7 +43,7 @@ struct SignalPathInfoMirror: Equatable {
 protocol AudioPlaybackEngineMirror: AnyObject {
     func initialize() async throws -> Bool
     func shutdown() async throws
-    func startAudio(fileURL: URL?, pureMode: Bool) async throws
+    func startAudio(fileURL: URL, pureMode: Bool) async throws
     func stopAudio() async throws
     func seek(to seconds: Double) async
     func currentPlaybackPosition() -> Double?
@@ -65,7 +65,7 @@ protocol AudioPlaybackEngineMirror: AnyObject {
 
 extension AudioPlaybackEngineMirror {
     /// Backward-compatible convenience: start without Pure mode.
-    func startAudio(fileURL: URL?) async throws {
+    func startAudio(fileURL: URL) async throws {
         try await startAudio(fileURL: fileURL, pureMode: false)
     }
 
@@ -210,7 +210,7 @@ final class MockAudioEngine: AudioPlaybackEngineMirror {
         shutdownCallCount += 1
     }
 
-    func startAudio(fileURL: URL?, pureMode: Bool) async throws {
+    func startAudio(fileURL: URL, pureMode: Bool) async throws {
         startAudioCallCount += 1
         lastStartedURL = fileURL
         lastStartedPureMode = pureMode

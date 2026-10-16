@@ -35,8 +35,6 @@ import TrackLoudnessKit
 final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     var avEngine: AVAudioEngine?
     var playerNode: AVAudioPlayerNode?
-    /// Internal (not private) so `AudioEngineBridge+Playback.swift` can read/write it.
-    var referenceToneBuffer: AVAudioPCMBuffer?
 
     // MARK: - Tap analysis (spectrum, loudness, monitoring)
 
