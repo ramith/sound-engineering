@@ -151,6 +151,8 @@ namespace AdaptiveSound
             {
                 droppedFrames_.fetch_add(safeCount, std::memory_order_relaxed);
             }
+            // Wakes the worker only if it parked (a resume): no syscall in steady playback.
+            parking_.notify();
 
             makeupGainRamp_.target = makeupGainLinear_.load(std::memory_order_acquire);
         }
@@ -204,13 +206,18 @@ namespace AdaptiveSound
         uint32_t configuredCh = 0U;
         uint32_t configuredGen = std::numeric_limits<uint32_t>::max();
 
+        // Nothing to measure: nap while audio flows, park once none has come for a while; the next
+        // process() push wakes it, and so does a stop.
+        const auto hasSamples = [this] { return !sampleRing_.isEmpty(); };
+        const std::stop_callback wakeToStop(stopToken, [this] noexcept { parking_.notify(); });
+
         while (!stopToken.stop_requested())
         {
             // Read the channel count published by process() (acquire pairs with release store).
             const uint32_t nowCh = channelCount_.load(std::memory_order_acquire);
             if (nowCh == 0U)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
+                parking_.idle(stopToken, hasSamples);
                 continue;
             }
 
@@ -239,9 +246,10 @@ namespace AdaptiveSound
             const std::size_t got = sampleRing_.popBlock(workerChunk_.data(), cap);
             if (got == 0U)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(kWorkerIdleSleepMs));
+                parking_.idle(stopToken, hasSamples);
                 continue;
             }
+            parking_.worked();
 
             // got is always a multiple of configuredCh because:
             //   - process() only ever pushes multiples of numChannels, and

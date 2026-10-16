@@ -5,18 +5,11 @@
 #include "../include/FlushToZero.h"
 #include "TrackLoudnessProfiler.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <utility>
 
 namespace AdaptiveSound
 {
-    namespace
-    {
-        // The worker's sleep with no estimate running, and with the ring empty while one runs.
-        constexpr auto kIdleSleep = std::chrono::milliseconds(50);
-        constexpr auto kDrainSleep = std::chrono::milliseconds(10);
-    } // namespace
 
     CausalLoudnessTap::~CausalLoudnessTap()
     {
@@ -43,6 +36,7 @@ namespace AdaptiveSound
         }
         generation_.fetch_add(1U, std::memory_order_acq_rel);
         running_.store(true, std::memory_order_release);
+        parking_.notify(); // the worker parks while no estimate runs
     }
 
     void CausalLoudnessTap::stop() noexcept
@@ -100,6 +94,8 @@ namespace AdaptiveSound
         {
             droppedFrames_.fetch_add(frames, std::memory_order_relaxed);
         }
+        // Wakes the worker only if it parked (a resume): no syscall in steady playback.
+        parking_.notify();
     }
 
     std::unique_ptr<TrackLoudnessProfiler>
@@ -219,21 +215,30 @@ namespace AdaptiveSound
     void CausalLoudnessTap::run(const std::stop_token& stopToken) noexcept
     {
         const ScopedFlushToZero flushToZero; // the profiler's K-weighting biquads run here
+        // No estimate running: park until start(). One running, its ring empty: nap while audio
+        // flows, park once none has come for a while (paused) until the next push. A stop wakes it.
+        const auto running = [this] { return running_.load(std::memory_order_acquire); };
+        const auto hasAudio = [this] { return !ring_.isEmpty(); };
+        const std::stop_callback wakeToStop(stopToken, [this] noexcept { parking_.notify(); });
         Worker worker;
         while (!stopToken.stop_requested())
         {
-            if (!running_.load(std::memory_order_acquire))
+            if (!running())
             {
                 // Idle: discard whatever the RT side pushed before it saw the stop, so the next
                 // estimate starts with only its own audio in the ring.
                 discardRing();
                 worker.profiler.reset();
-                std::this_thread::sleep_for(kIdleSleep);
+                parking_.park(stopToken, running);
                 continue;
             }
-            if (!prepare(worker) || !drainOnce(worker))
+            if (prepare(worker) && drainOnce(worker))
             {
-                std::this_thread::sleep_for(kDrainSleep);
+                parking_.worked();
+            }
+            else
+            {
+                parking_.idle(stopToken, hasAudio);
             }
         }
     }

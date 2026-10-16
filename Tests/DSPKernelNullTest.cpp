@@ -129,6 +129,9 @@ namespace
         {"Loudness_MakeupRoundTrip", testLoudnessMakeupRoundTrip, true},
         {"Loudness_TruePeakKernel_InterSample", testLoudnessTruePeakKernelInterSample, true},
         {"Loudness_MeterBridge_TruePeak", testLoudnessMeterBridgeTruePeak, true},
+        // R1.1-A (council C-46, KI-UI-03): the analysis workers sleep while no audio reaches them.
+        // SERIAL: it counts the whole process's context switches.
+        {"Loudness_WorkersSleepWhileIdle", testLoudnessWorkersSleepWhileIdle, false},
         // EQ audibility tests (Sprint 5 — Milestone 2)
         {"EQ_FrequencyResponseAccuracy", testEQFrequencyResponseAccuracy, true},
         {"EQ_CoefficientSwapNoClick", testEQCoefficientSwapNoClick, true},
