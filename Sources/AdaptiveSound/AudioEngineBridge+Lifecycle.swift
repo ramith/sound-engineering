@@ -153,7 +153,6 @@ extension AudioEngineBridge {
         spatialAudioUnit = nil
         setAvEngine(nil)
         setPlayerNode(nil)
-        referenceToneBuffer = nil
         setActivePath(.enhanced)
         storeSignalPath(.init())
         // Tap already removed above (removeSpectrumTap ran in shutdown before tearDownActiveEngine),

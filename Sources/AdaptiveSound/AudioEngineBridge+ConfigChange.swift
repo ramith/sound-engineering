@@ -98,12 +98,7 @@ extension AudioEngineBridge {
     /// the one Enhanced restart (`restartEnhanced`) — the same playback at the same place, its
     /// on-deck track still armed. Runs on `configChangeQueue` with the engine already restarted.
     private func resumeEnhancedAfterReestablish(player: AVAudioPlayerNode, resumePos: Double) {
-        guard lastFileURL != nil else {
-            if !player.isPlaying {
-                player.play() // reference tone / no source file
-            }
-            return
-        }
+        guard lastFileURL != nil else { return } // every start names its file: none, nothing played
         // The configuration change flushed the player's queue: only a re-schedule makes sound again.
         let outcome = restartEnhanced(at: resumePos, player: player)
         if outcome == .unchanged {

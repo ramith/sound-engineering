@@ -50,7 +50,7 @@ let package = Package(
                     "-disable-bridging-pch",
                 ]),
                 // Opt the Swift Accelerate overlay into the new-LAPACK CBLAS headers so the
-                // `cblas_scopy` deprecation clears here too (Spectrum* + ReferenceTone). The
+                // `cblas_scopy` deprecation clears here too (the Spectrum* files import Accelerate). The
                 // flag reaches the underlying Clang module via `-Xcc`. No ILP64 (32-bit int
                 // counts unchanged) — matches the AudioDSP C++ target above.
                 .unsafeFlags([
