@@ -82,6 +82,15 @@ struct LiveReadoutsTests {
         #expect(abs(resumed - (fallen - 0.25)) < 0.02, "0.2 s after resuming the cap stands at \(resumed)")
     }
 
+    @Test("paused, the lens shows the latest frame as it is: it draws once, so never part-way through an ease")
+    func pausedLensShowsTheLatestFrame() {
+        let engine = DeviceTestEngine()
+        let viewModel = AudioViewModel(defaults: defaults, engine: engine)
+        engine.state.withLock { $0.spectrumFrames = [Self.frame(0.5)] }
+        let shown = viewModel.spectrum.lens(at: Date(), isPlaying: false, isPure: false, reduceMotion: false)
+        #expect(shown.bars.allSatisfy { abs($0 - 0.5) < 1e-6 }, "paused, the lens drew \(shown.bars.prefix(3))…")
+    }
+
     // MARK: Idle (C-52)
 
     @Test("with no view showing the spectrum nothing reads it, playing or paused")
