@@ -112,14 +112,6 @@ struct AudioEngineProtocolTests {
         #expect(mock.startAudioCallCount == 1)
     }
 
-    @Test("startAudio(fileURL: nil) does not crash")
-    func startAudioNilURL() async throws {
-        let mock = MockAudioEngine()
-        try await mock.startAudio(fileURL: nil)
-        #expect(mock.startAudioCallCount == 1)
-        #expect(mock.lastStartedURL == nil)
-    }
-
     @Test("stopAudio() increments call counter")
     func stopAudioCallCounter() async throws {
         let mock = MockAudioEngine()

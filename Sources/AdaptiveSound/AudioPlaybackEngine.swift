@@ -81,7 +81,7 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
 
     // MARK: Playback
 
-    /// Start playback of the audio file at `fileURL`, or a reference tone if nil, `startAt` seconds
+    /// Start playback of the audio file at `fileURL`, `startAt` seconds
     /// into it (0 = the top; a resume or a device move starts there, never from 0 then a seek).
     /// When `pureMode` is `true` and the device + file support it, the bit-perfect
     /// HAL path is used; otherwise the Enhanced (AVFAudio engine) path is used. `epoch` numbers the
@@ -90,7 +90,7 @@ protocol AudioPlaybackEngine: AnyObject, Sendable {
     /// Newest stands (council C-15). The view model numbers its starts, stops and seeks in the order
     /// the user asks; they can reach the engine in another order. One older than a request the engine
     /// has already begun was overtaken: it returns at once and has no effect — never an error.
-    func startAudio(fileURL: URL?, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
+    func startAudio(fileURL: URL, pureMode: Bool, startAt: Double, epoch: UInt64) async throws
 
     /// Stop all playback immediately; the on-deck pick goes with it (a stop begins a new playback, so
     /// every on-deck request made before it is stale — invariant 5 below). `epoch` numbers the request,
