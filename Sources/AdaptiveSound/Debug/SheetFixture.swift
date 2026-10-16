@@ -70,6 +70,9 @@
                 Self.seedPlaylist(playlists, browse: browse, songs: songs)
             }
             library.isReconciling = variant == .playlistRemoveMissingScan // a scan under way: Remove is off
+            if variant == .folderPaused {
+                Self.seedPausedFolders(browse, library: library)
+            }
             seedDevices()
             seedPlayback(songs)
             Self.seedSettings(audio, for: variant)

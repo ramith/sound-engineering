@@ -19,12 +19,23 @@ struct WatchedRoot: Equatable {
     }
 }
 
-/// Per-root live reconcile state (coarse — for the S9 browse UI's reassurance affordance).
+/// Per-root live reconcile state (coarse — the Music Folders row reads the pause and its reason).
 enum ReconcileState: Equatable {
     case watching // local volume, live-watched via FSEvents
     case onDemandOnly // network volume — no FSEvents; reconciles at launch + on a volume change
-    case paused // its last walk was refused (SweepRefusal): unreachable, another drive, or not read in full
+    /// Its last walk was refused (`SweepRefusal`) for this reason — unreachable, another drive,
+    /// unrecognized, unreadable or empty — so its songs are kept until a walk is evidence again.
+    case paused(SweepRefusal.Reason)
     case catchingUp // a reconcile is running
+
+    /// Why the folder is paused, or nil when it is not.
+    var pauseReason: SweepRefusal.Reason? {
+        if case let .paused(reason) = self {
+            reason
+        } else {
+            nil
+        }
+    }
 }
 
 // MARK: - LibraryModel live folder-watch + reconcile seam (S8.4 slice 5a — was AudioViewModel+Reconcile)
@@ -160,10 +171,11 @@ extension LibraryModel {
 
     /// A walk was not evidence of which of its folder's songs are gone (`SweepRefusal`: the folder
     /// vanished, is another drive or is unrecognized, or the walk was incomplete or empty): its rows are
-    /// kept, and it is paused until a walk is evidence again. The one consequence for both kinds of walk
-    /// (`walk` names it in the log) — silent, like cancellation: a background non-event.
+    /// kept, and it is paused — with the reason, which its Music Folders row says — until a walk is
+    /// evidence again. The one consequence for both kinds of walk (`walk` names it in the log); no alert
+    /// or banner: a background non-event, shown only on its row.
     func pause(refusedBy refusal: SweepRefusal, in walk: String) {
-        reconcileState[refusal.folderID] = .paused
+        reconcileState[refusal.folderID] = .paused(refusal.reason)
         logUX("\(walk): sweep refused (folder \(refusal.folderID): \(refusal.reason); "
             + "\(refusal.storedRowCount) rows preserved) — paused")
     }
