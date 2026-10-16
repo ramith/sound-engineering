@@ -10,6 +10,9 @@
 //   RT process()  ──push samples──▶  SpscRing  ──▶  measurement jthread (LufsMeter)
 //   RT process()  ◀──atomic float──  makeupGainLinear_  ◀──  measurement jthread
 //
+// The worker naps while audio flows and parks once none has come for a while (WorkerParking): while
+// paused, with leveling off and on the bit-perfect path it wakes nobody (KI-UI-03).
+//
 // The RT thread NEVER measures and NEVER blocks: it relays lufsTarget/enabled to
 // the worker via atomics, pushes post-BRIR samples into a lock-free SPSC ring
 // (DROP on full — measurement degrades, audio never stalls), reads the atomic
@@ -32,11 +35,13 @@
 #include "../include/ParameterRamp.h" // ParameterRamp (shared EQ/Loudness infra)
 #include "../include/SpscRing.h"
 #include "../include/TargetState.h"
+#include "../include/WorkerParking.h"
 #include "LufsMeter.h"
 #include <array>
 #include <atomic>
 #include <AudioToolbox/AudioToolbox.h>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <thread>
@@ -62,7 +67,10 @@ namespace AdaptiveSound
     inline constexpr std::size_t kWorkerChunkFrames = 1024U;
     inline constexpr std::size_t kWorkerChunkElems = kWorkerChunkFrames * kMaxChannels;
 
-    inline constexpr int kWorkerIdleSleepMs = 5; // off-RT sleep when ring empty
+    // The worker's nap while audio flows (its ring empties between render blocks), and how long it
+    // finds nothing before it parks until the next block (WorkerParking: paused, leveling off, P0).
+    inline constexpr std::chrono::milliseconds kWorkerNap{5};
+    inline constexpr std::chrono::milliseconds kWorkerParkAfter{200};
     inline constexpr float kUnityGainLinear = 1.0F;
     inline constexpr float kLoudnessUnmeasuredLufs = -200.0F; // telemetry sentinel
 
@@ -133,6 +141,7 @@ namespace AdaptiveSound
         // --- 8-byte-aligned members ---
         std::atomic<uint64_t> droppedFrames_{0U}; // RT→diagnostics
         double currentMakeupDb_ = 0.0;            // worker-owned (measurementThread_ only)
+        WorkerParking parking_{kWorkerNap, kWorkerParkAfter}; // RT/control → worker wake-ups
         // Per-sample gain scratch and interleave scratch: heap-allocated to maxFrames_ (and
         // maxFrames_*kMaxChannels) in initialize() so they scale with the host's
         // maximumFramesToRender. process() asserts frameCount <= maxFrames_ and never
