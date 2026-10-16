@@ -7,7 +7,7 @@ import Synchronization
 // MARK: - Wait-free SPSC triple buffer
 
 /// Hands frames of `count` floats from ONE producer (an analyser's tap thread) to ONE consumer (the
-/// main thread), whole. It is the C++ RT snapshot's design (`DoubleBufferSnapshot.h`, whose proof
+/// main thread), whole. It is the C++ RT snapshot's design (`TripleBufferSnapshot.h`, whose proof
 /// it follows) in Swift: three slots and one atomic control word holding the READY slot's index and
 /// a FRESH bit, which each side swaps with a single `exchange`.
 ///
