@@ -177,17 +177,14 @@ extension AudioEngineBridge {
         guard let player = playerNode else { return }
         let playerFormat = player.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.before // strong capture at install (BS2); see installMixerTap
+        let monitoring = monitorAnalysis
         player.installTap(onBus: 0,
                           bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
-                          format: playerFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                          format: playerFormat) { [analyzers, monitoring] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` is captured strongly at
             // install and stays valid until removeSpectrumTap() drops this block (reconfigure only
             // resizes the arrays while the taps are removed).
-            let abl = buffer.mutableAudioBufferList
-            let channels = min(analyzers.count, Int(buffer.format.channelCount))
-            for index in 0 ..< channels {
-                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-            }
+            Self.analyseChannels(buffer, with: analyzers, shown: monitoring.isOn)
         }
         beforeTapInstalled = true
     }
@@ -199,18 +196,29 @@ extension AudioEngineBridge {
         guard let effectsUnit = effectsNode else { return }
         let auFormat = effectsUnit.outputFormat(forBus: 0)
         let analyzers = tapAnalysis.after // strong capture at install (BS2); see installMixerTap
+        let monitoring = monitorAnalysis
         effectsUnit.installTap(onBus: 0,
                                bufferSize: AVAudioFrameCount(SpectrumConstants.tapBufferFrames),
-                               format: auFormat) { [analyzers] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
+                               format: auFormat) { [analyzers, monitoring] (buffer: AVAudioPCMBuffer, _: AVAudioTime) in
             // --- AUDIO THREAD --- no weak-self load, no ARC: `analyzers` captured strongly at install
             // (valid until removeSpectrumTap() drops this block; reconfigure resizes tap-removed).
-            let abl = buffer.mutableAudioBufferList
-            let channels = min(analyzers.count, Int(buffer.format.channelCount))
-            for index in 0 ..< channels {
-                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
-            }
+            Self.analyseChannels(buffer, with: analyzers, shown: monitoring.isOn)
         }
         afterTapInstalled = true
+    }
+
+    /// A per-channel tap's buffer: each channel through its analyser while Monitoring shows, every
+    /// analyser resting otherwise (council C-52). AUDIO THREAD: real-time safe.
+    private static func analyseChannels(_ buffer: AVAudioPCMBuffer, with analyzers: [SpectrumAnalyzer], shown: Bool) {
+        let abl = buffer.mutableAudioBufferList
+        let channels = min(analyzers.count, Int(buffer.format.channelCount))
+        for index in 0 ..< channels {
+            if shown {
+                analyzers[index].processTapBuffer(abl, frameCount: buffer.frameLength, channel: index)
+            } else {
+                analyzers[index].rest()
+            }
+        }
     }
 
     func removeSpectrumTap() {

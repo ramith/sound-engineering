@@ -48,6 +48,9 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
     /// meter read raced `retryInitialization`). The RT taps capture what they need once, at install.
     var storedTapAnalysis = TapAnalysis()
 
+    /// Whether Monitoring shows: its analysers run only then. Captured by the before / after taps.
+    let monitorAnalysis = MonitorAnalysisSwitch()
+
     /// Tap is installed on mainMixerNode's output; the node's format fixes
     /// the sample rate that `SpectrumAnalyzer` must be initialised with.
     var tapInstalled = false
@@ -341,6 +344,11 @@ final class AudioEngineBridge: AudioPlaybackEngine, @unchecked Sendable {
         let analyzers = (tap == .before) ? analysis.before : analysis.after
         guard channel >= 0, channel < analyzers.count else { return false }
         return analyzers[channel].frames.read(into: &out)
+    }
+
+    /// Run the per-channel analysers (Monitoring shows) or rest them. One atomic store.
+    func setMonitorAnalysis(_ isOn: Bool) {
+        monitorAnalysis.set(isOn)
     }
 
     // EQ control plane (withEffectsAU + publishEQ) lives in AudioEngineBridge+EQControl.swift.

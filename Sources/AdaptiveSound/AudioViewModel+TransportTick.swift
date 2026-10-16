@@ -3,56 +3,35 @@ import Foundation
 import OutputDeviceKit
 import PlaybackQueueKit
 
-// MARK: - AudioViewModel transport + spectrum timers
+// MARK: - AudioViewModel: the transport tick
 
 @MainActor
 extension AudioViewModel {
-    /// Start BOTH the always-on transport timer and the spectrum-visualizer timer at 20 Hz.
-    /// Safe to call multiple times — each guards against a duplicate timer. (VM-3: transport and the
-    /// visualizer are driven by SEPARATE timers so auto-advance never depends on the visualizer's
-    /// lifecycle.) Named `startSpectrumTimer` for call-site compatibility; it owns both timers.
-    func startSpectrumTimer() {
-        startTransportTimer()
-
-        guard spectrumTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            // The timer is scheduled on RunLoop.main (below), so this callback always fires on
-            // the main thread. assumeIsolated proves that to the compiler with no per-tick Task
-            // allocation, letting us call the @MainActor tickSpectrum() directly.
-            MainActor.assumeIsolated {
-                self?.tickSpectrum()
-            }
-        }
-        spectrumTimer = timer
-        // Include in common run-loop modes so the timer fires during tracking
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    /// Start the transport-polling timer (playhead, gapless auto-advance, device-loss) — always on
-    /// while the engine is alive, independent of the spectrum visualizer (VM-3).
-    private func startTransportTimer() {
+    /// Start the 20 Hz transport tick at engine-ready. Safe to call more than once.
+    func startTransportTick() {
         guard transportTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+            // Scheduled on RunLoop.main (below), so this always fires on the main thread:
+            // assumeIsolated proves it to the compiler with no per-tick Task allocation.
             MainActor.assumeIsolated {
                 self?.tickTransport()
             }
         }
-        transportTimer = timer
+        // Common modes: the tick fires during tracking (a slider drag, a scroll) too.
         RunLoop.main.add(timer, forMode: .common)
+        transportTimer = timer
     }
 
-    func stopSpectrumTimer() {
-        spectrumTimer?.invalidate()
-        spectrumTimer = nil
+    /// At shutdown, and in tests that tick by hand.
+    func stopTransportTick() {
         transportTimer?.invalidate()
         transportTimer = nil
     }
 
-    /// Called at 20 Hz on the main thread by the TRANSPORT timer. Polls the playhead, loudness, and
-    /// signal path, handles device-loss, and drives gapless auto-advance. Deliberately does NOT
-    /// touch the spectrum bars — that is the visualizer's concern (VM-3), so gating the visualizer
-    /// (e.g. when its view is hidden) can never stall transport or auto-advance.
-    @MainActor
+    /// Called at 20 Hz on the main thread by the transport timer. Polls the playhead, loudness, and
+    /// signal path, handles device-loss, and drives gapless auto-advance. Never touches the live
+    /// spectrum — the visuals draw on their own clock (VM-3), so whether one shows can never stall
+    /// transport or auto-advance.
     func tickTransport() {
         // The engine's state in ONE copy (the transport as its clock last sampled it, the signal
         // path, the loudness, the EQ design rate), so the tick never waits on the player or the
@@ -136,7 +115,6 @@ extension AudioViewModel {
     /// overwritten by the engine's last ticks (S10.8 G). While playing — or starting, from the place
     /// the start goes to (council C-15) — it follows the engine. Only a genuine stop (not playing, not
     /// paused) zeroes it.
-    @MainActor
     private func pollPlayhead(_ transport: TransportSnapshot?) {
         if let resumeAt = pausedResumePosition {
             if playbackPosition != resumeAt {
@@ -149,15 +127,11 @@ extension AudioViewModel {
         }
     }
 
-    /// Called at 20 Hz on the main thread by the SPECTRUM timer. Reads the latest band magnitudes
-    /// from the double-buffer, interpolates 44 bands → 88 display bars, and writes into
-    /// `spectrumBars` to trigger SwiftUI observation. Pure visualizer work — no transport state.
     /// Poll loudness + the signal path, SUPPRESSING same-value writes (break-it MINOR-3):
     /// Observation has no equality gate of its own, so unconditional assignment re-evaluated
     /// every signalPath/loudness observer (pill, hero badges, inspector, footer slot) 20×/s
     /// even while idle. These guards are what makes SignalPathInfo's "Equatable so redundant
     /// renders are suppressed" doc comment actually true.
-    @MainActor
     private func pollEngineReadouts(_ snapshot: EngineSnapshot) {
         let freshLoudness = snapshot.loudness
         if loudness != freshLoudness {
@@ -172,39 +146,5 @@ extension AudioViewModel {
         }
         rememberPureVolumeLoans(snapshot.pureVolumeLoans)
         refreshEQDesignRate(snapshot.eqDesignRate)
-    }
-
-    @MainActor
-    func tickSpectrum() {
-        guard engine.readSpectrumBands(into: &spectrumScratch) else {
-            // Pure mode installs no spectrum tap (bit-perfect path) — without this reset the
-            // lens FROZE at the last Enhanced frame at full opacity, a static lie during the
-            // flagship mode (break-it). Zero once; the contains-check keeps it idempotent.
-            if signalPath.path == .pure, spectrumBars.contains(where: { $0 > 0 }) {
-                spectrumBars = [Float](repeating: 0, count: SpectrumConstants.displayBarCount)
-                peakCaps = [Float](repeating: 0, count: SpectrumConstants.displayBarCount)
-                peakTracker.reset(to: [])
-            }
-            return
-        }
-        // Upsample 44 bands → 88 bars by linear interpolation between adjacent bands.
-        // Bar i maps to fractional band position i / 2.0 (even bars fall on band centres).
-        let bandCount = SpectrumConstants.bandCount
-        let barCount = SpectrumConstants.displayBarCount
-        for bar in 0 ..< barCount {
-            let frac = Float(bar) / Float(barCount - 1) * Float(bandCount - 1)
-            let lower = Int(frac)
-            let upper = min(lower + 1, bandCount - 1)
-            let weight = frac - Float(lower)
-            spectrumBars[bar] = spectrumScratch[lower] * (1 - weight) + spectrumScratch[upper] * weight
-        }
-        // Peak-hold caps (S10.7 PR 3): fed the SAME tick, nominal 20 Hz step — belt-and-
-        // braces isPlaying gate so caps freeze even if the engine keeps producing frames
-        // while paused (the tracker itself freezes structurally when unfed). Both arrays
-        // mutate in one run-loop turn → one @Observable invalidation.
-        if isPlaying {
-            peakTracker.update(bars: spectrumBars.map(Double.init), elapsed: 1.0 / 20.0)
-            peakCaps = peakTracker.caps.map(Float.init)
-        }
     }
 }

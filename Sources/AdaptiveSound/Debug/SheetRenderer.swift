@@ -96,10 +96,10 @@
         private static let scale: CGFloat = 2
 
         /// Hosts `view` in a borderless window that is never ordered on screen, lets SwiftUI settle
-        /// (`.task`s run, Monitoring's poll ticks), and writes the hosting view's own drawing as a PNG:
-        /// drawn at `scale` into a Display P3 bitmap, then converted to sRGB — never the attached
-        /// display's density or colour profile, so sheet-to-sheet diffs hold across displays (text
-        /// aside: see `scale`). Returns why it failed, or `nil` on success.
+        /// (`.task`s run, the live views draw their first frame), and writes the hosting view's own
+        /// drawing as a PNG: drawn at `scale` into a Display P3 bitmap, then converted to sRGB — never
+        /// the attached display's density or colour profile, so sheet-to-sheet diffs hold across
+        /// displays (text aside: see `scale`). Returns why it failed, or `nil` on success.
         private static func snapshot(_ view: some View, appearance: NSAppearance, size: NSSize,
                                      to url: URL) -> String? {
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],

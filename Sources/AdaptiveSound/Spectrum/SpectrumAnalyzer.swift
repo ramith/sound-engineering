@@ -79,6 +79,8 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         var windows = 0
         /// Audio since the last publish, in seconds: the release's Δt.
         var unpublishedSeconds = 0.0
+        /// Set while nobody shows this analyser (`rest()`): the next buffer starts afresh.
+        var resting = false
     }
 
     // MARK: Init (off the tap thread: it allocates)
@@ -164,9 +166,23 @@ final class SpectrumAnalyzer: @unchecked Sendable {
         analyse(left: samples, right: nil, count: Int(frameCount))
     }
 
+    /// The tap runs but nobody shows this analyser (Monitoring is not on screen): skip the buffer.
+    /// The first time, publish silence, so a view that comes back never shows the last frame; the
+    /// next analysed buffer starts afresh, with no stale history or levels. Tap thread only.
+    /// Real-time safe.
+    func rest() {
+        guard !tap.pointee.resting else { return }
+        tap.pointee = TapState(resting: true)
+        history.update(repeating: 0, count: windowLength)
+        bufferPeak.update(repeating: 0, count: SpectrumConstants.bandCount)
+        shown.update(repeating: 0, count: SpectrumConstants.bandCount)
+        frames.write(UnsafeBufferPointer(start: shown, count: SpectrumConstants.bandCount))
+    }
+
     /// Run `count` frames — `left`, or the mean of `left` and `right` — through the windows, then
     /// publish the buffer's frame.
     private func analyse(left: UnsafePointer<Float>, right: UnsafePointer<Float>?, count: Int) {
+        tap.pointee.resting = false
         var offset = 0
         while offset < count {
             let state = tap.pointee
