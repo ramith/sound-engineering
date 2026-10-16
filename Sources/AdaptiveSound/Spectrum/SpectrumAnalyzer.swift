@@ -1,36 +1,32 @@
 // SpectrumAnalyzer.swift
 //
-// Lock-free spectrum analysis pipeline for the real-time audio tap.
+// The analyser behind every live spectrum — Now Playing's lens, the EQ's silhouette, Monitoring's
+// before / after halves: a tap's audio in, the 44 bands' levels out, handed to the main thread.
 //
-// Threading contract
-// ------------------
-// - The audio tap callback (audio thread) calls `processTapBuffer(_:sampleRate:)`.
-//   That method does *no allocation*, *no lock*, and *no Swift runtime calls* beyond
-//   indexed buffer access and Accelerate/vDSP.
-// - The main thread reads at ~20 Hz (via `SpectrumTripleBuffer.read(into:)`) to copy the
-//   last computed band magnitudes: a wait-free triple buffer, so no lock is ever taken on either
-//   side and a frame is never torn.
+// What it measures (council C-51; panel P1 D53, D54 — held to it by `SpectrumAnalyzerOracleTests`):
+// - Every sample. A short-time FFT runs over the stream as it arrives, a Hann window of ≈ 85 ms
+//   hopping by half a window, so each sample is analysed twice whatever buffer size the tap delivers
+//   (100–400 ms, Apple's range). A frame is how loud each band got over one tap buffer — a
+//   peak-reading display — published once per buffer. (Before: the first 4096 frames of each buffer
+//   only, 21 % of the audio at 192 kHz.)
+// - The same resolution at every rate. The window keeps the shipped 48 kHz window's length in time
+//   (4096 frames), as a power of two: 4096 at 44.1 / 48 kHz, 8192 at 88.2 / 96, 16 384 at
+//   176.4 / 192. Its bins are ≈ 11 Hz apart at every rate, zero-padded ×2 to ≈ 5.5 Hz, which bounds
+//   the window's scalloping to 0.35 dB. (Before: 4096 at every rate, 47 Hz bins at 192 kHz.)
+// - True levels. A sine of amplitude A reads A: each bin's magnitude is divided by the window's sum
+//   (vDSP's real FFT returns twice the DFT, which the sine's two-sided split cancels), so a
+//   full-scale sine reads 0 dBFS. (Before: +4.26 dB — the normalised Hann's gain taken as 1/2.)
+// - Bands, not bins. Each band owns the bins inside its 1/6-octave span; no bin is in two bands. A
+//   band narrower than a bin reads the spectrum at its centre. The window's mean is removed first:
+//   DC is not music, and no band holds it. (Before: shared bins, and DC in the lowest bands.)
+// - Meter ballistics: instant attack; release y = max(x, α·y) on the display's 0…1 scale, with
+//   α = exp(−Δt / τ) for the buffer's own duration Δt — the shipped 0.85 per 100 ms buffer,
+//   now whatever buffer size the system picks.
 //
-// FFT design
-// ----------
-// - N = 4096 float32 real FFT via vDSP_fft_zrip (Apple Accelerate).
-// - Hann window pre-computed at init; applied per buffer via vDSP_vmul.
-// - If the engine runs at 44.1 kHz, bin resolution = 44100/4096 ≈ 10.8 Hz.
-// - If the engine runs at 48 kHz, bin resolution = 48000/4096 ≈ 11.7 Hz.
-// - Stereo input is summed to mono (vDSP_vadd + vDSP_vsmul 0.5) before windowing.
-//
-// Band mapping
-// ------------
-// - 44 bands, log-spaced at 1/6-octave steps from 40 Hz — so up to ~5.7 kHz, not 20 kHz.
-// - Band center frequencies: f_k = 40 * 2^(k/6), k = 0..43 (`SpectrumConstants.bandCentreHz`).
-// - Band magnitude = max FFT bin magnitude inside the band's [lo, hi] range.
-// - Result mapped to dB (floor −80 dB), normalised to [0, 1].
-//
-// Meter ballistics (in the tap, allocation-free)
-// -----------------------------------------------
-// - Attack: instant (peak hold).
-// - Release: first-order IIR y[n] = max(x[n], α·y[n-1]).
-//   α = 0.85 gives ≈150 ms decay at 20 Hz display rate.
+// Threading: `init` allocates everything (the FFT setup, every buffer, the band table) off the tap
+// thread. The tap thread alone calls `processTapBuffer`: raw-pointer access and Accelerate only — no
+// allocation, lock, ARC, copy-on-write or exclusivity check. Frames reach the main thread through
+// `frames`, a wait-free triple buffer.
 
 import Accelerate
 import AudioToolbox
@@ -39,289 +35,290 @@ import Foundation
 
 // MARK: - Spectrum Analyzer
 
-/// Owns the FFT setup, Hann window, band mapping, and meter ballistics.
-/// Lives inside `AudioEngineBridge`. All real-time-safe methods are marked
-/// with a comment; all allocating setup methods must be called off the audio thread.
+/// One analyser: one tap point (the mixer's output, or one channel of the player or the effects AU).
 ///
-/// `@unchecked Sendable` invariant: all scratch/FFT buffers are pre-allocated at `init`
-/// OFF the audio thread. After init the RT-safe entry points (`processTapBuffer`,
-/// `computeAndPublish`) are called from exactly ONE thread — the tap block that owns this
-/// analyzer instance — so no concurrent mutation of the scratch buffers occurs, and the
-/// only cross-thread publication is through the SPSC `SpectrumTripleBuffer` (itself audited
-/// `@unchecked Sendable`). This is what lets the tap closure capture a Sendable analyzer
-/// without any lock. No lock/queue/allocation is added on the RT path.
+/// `@unchecked Sendable` invariant: everything the tap thread touches is allocated at `init` and
+/// owned by that ONE tap thread from then on; the only cross-thread hand-over is `frames` (itself an
+/// audited SPSC triple buffer). That lets the tap closure capture the analyser strongly at install
+/// and use it with no lock, queue or reference counting.
 final class SpectrumAnalyzer: @unchecked Sendable {
-    // MARK: - Pre-allocated FFT state (set up off-RT, read-only on RT)
+    /// The frames, tap thread → main thread: each band's level in 0…1 over the display's dB range
+    /// (`SpectrumConstants.noiseFloorDB` … 0 dBFS).
+    let frames: SpectrumTripleBuffer
+    /// The rate the analyser was built for.
+    let sampleRate: Double
+    /// Samples per analysis window at this rate (`windowLength(sampleRate:)`).
+    let windowLength: Int
 
-    private let fftSize: Int
-    private let log2n: vDSP_Length
-    private var fftSetup: FFTSetup?
+    private let fftLength: Int
+    private let log2FFTLength: vDSP_Length
+    private let hop: Int
+    private let fftSetup: FFTSetup
+    /// A sine's amplitude per unit of FFT magnitude: 1 / the window's sum.
+    private let amplitudePerMagnitude: Float
+    /// Which bins each band reads.
+    private let layout: RealtimeBandLayout
 
-    private var hannWindow: [Float] // length = fftSize
-    private var monoBuffer: [Float] // length = fftSize
-    private var windowedBuffer: [Float] // length = fftSize
-    private var complexReal: [Float] // length = fftSize/2
-    private var complexImag: [Float] // length = fftSize/2
-    private var magnitudes: [Float] // length = fftSize/2 + 1 (DC..Nyquist)
-    private var bandMagnitudes: [Float] // length = bandCount
-    private var smoothedBands: [Float] // IIR state; length = bandCount
+    private let hann: UnsafeMutablePointer<Float> // windowLength
+    private let history: UnsafeMutablePointer<Float> // windowLength: the latest samples, a ring
+    private let windowed: UnsafeMutablePointer<Float> // fftLength: the window's samples, zero-padded
+    private let real: UnsafeMutablePointer<Float> // fftLength / 2
+    private let imaginary: UnsafeMutablePointer<Float> // fftLength / 2
+    private let power: UnsafeMutablePointer<Float> // fftLength / 2: |X|² per bin
+    private let bufferPeak: UnsafeMutablePointer<Float> // bandCount: the loudest amplitude this buffer
+    private let shown: UnsafeMutablePointer<Float> // bandCount: the published levels (ballistics state)
+    private let tap: UnsafeMutablePointer<TapState>
 
-    // MARK: - Band-to-bin mapping (precomputed, immutable after init)
-
-    private struct BandRange {
-        let lo: Int // first FFT bin (inclusive)
-        let hi: Int // last FFT bin (inclusive)
+    /// The tap thread's running state.
+    private struct TapState {
+        /// Where the next sample goes in `history` (also its oldest sample).
+        var writeIndex = 0
+        /// Samples since the last window was analysed.
+        var sinceHop = 0
+        /// Windows analysed into `bufferPeak` since the last publish.
+        var windows = 0
+        /// Audio since the last publish, in seconds: the release's Δt.
+        var unpublishedSeconds = 0.0
     }
 
-    private var bandRanges: [BandRange] // length = bandCount
+    // MARK: Init (off the tap thread: it allocates)
 
-    // MARK: - Lock-free output
-
-    /// The frames, tap thread → main thread.
-    let frames: SpectrumTripleBuffer
-
-    // MARK: - Init (must be called OFF the audio thread)
-
-    /// - Parameters:
-    ///   - fftSize: Must be a power of two. Defaults to `SpectrumConstants.fftSize`.
-    ///   - sampleRate: The engine's current sample rate (used for bin→Hz mapping).
-    init(fftSize: Int = SpectrumConstants.fftSize, sampleRate: Float = 48000) {
-        self.fftSize = fftSize
-        log2n = vDSP_Length(log2(Float(fftSize)))
-
-        // Allocate FFT setup
-        fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
-
-        // Pre-allocate all processing buffers
-        hannWindow = [Float](repeating: 0, count: fftSize)
-        monoBuffer = [Float](repeating: 0, count: fftSize)
-        windowedBuffer = [Float](repeating: 0, count: fftSize)
-        complexReal = [Float](repeating: 0, count: fftSize / 2)
-        complexImag = [Float](repeating: 0, count: fftSize / 2)
-        magnitudes = [Float](repeating: 0, count: fftSize / 2 + 1)
-        bandMagnitudes = [Float](repeating: 0, count: SpectrumConstants.bandCount)
-        smoothedBands = [Float](repeating: 0, count: SpectrumConstants.bandCount)
-
+    init(sampleRate: Double) {
+        let rate = sampleRate > 0 ? sampleRate : 48000
+        self.sampleRate = rate
+        windowLength = Self.windowLength(sampleRate: rate)
+        fftLength = 2 * windowLength
+        log2FFTLength = vDSP_Length(fftLength.trailingZeroBitCount)
+        hop = windowLength / 2
+        guard let setup = vDSP_create_fftsetup(log2FFTLength, FFTRadix(kFFTRadix2)) else {
+            fatalError("vDSP_create_fftsetup failed for 2^\(log2FFTLength) points")
+        }
+        fftSetup = setup
         frames = SpectrumTripleBuffer(count: SpectrumConstants.bandCount)
-        bandRanges = []
+        layout = RealtimeBandLayout(Self.bandLayout(binHertz: rate / Double(fftLength), binCount: fftLength / 2))
 
-        // Pre-compute Hann window: w[n] = 0.5 * (1 - cos(2π·n/(N-1)))
-        vDSP_hann_window(&hannWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
-
-        // Pre-compute band-to-bin mapping
-        bandRanges = Self.makeBandRanges(
-            bandCount: SpectrumConstants.bandCount,
-            fftSize: fftSize,
-            sampleRate: sampleRate
-        )
+        hann = Self.zeroed(windowLength)
+        vDSP_hann_window(hann, vDSP_Length(windowLength), Int32(vDSP_HANN_DENORM))
+        var windowSum: Float = 0
+        vDSP_sve(hann, 1, &windowSum, vDSP_Length(windowLength))
+        amplitudePerMagnitude = 1 / windowSum
+        history = Self.zeroed(windowLength)
+        windowed = Self.zeroed(fftLength)
+        real = Self.zeroed(fftLength / 2)
+        imaginary = Self.zeroed(fftLength / 2)
+        power = Self.zeroed(fftLength / 2)
+        bufferPeak = Self.zeroed(SpectrumConstants.bandCount)
+        shown = Self.zeroed(SpectrumConstants.bandCount)
+        tap = .allocate(capacity: 1)
+        tap.initialize(to: TapState())
     }
 
     deinit {
-        if let setup = fftSetup {
-            vDSP_destroy_fftsetup(setup)
+        vDSP_destroy_fftsetup(fftSetup)
+        for buffer in [hann, history, windowed, real, imaginary, power, bufferPeak, shown] {
+            buffer.deallocate()
         }
+        tap.deallocate()
+        layout.deallocate()
     }
 
-    // MARK: - RT-safe processing
+    private static func zeroed(_ count: Int) -> UnsafeMutablePointer<Float> {
+        let buffer = UnsafeMutablePointer<Float>.allocate(capacity: count)
+        buffer.initialize(repeating: 0, count: count)
+        return buffer
+    }
 
-    /// Process one tap buffer. REAL-TIME SAFE: no allocation, no lock, no ObjC.
-    ///
-    /// - Parameters:
-    ///   - bufferList: The `AVAudioPCMBuffer.mutableAudioBufferList` pointer from the tap.
-    ///   - frameCount: Number of valid frames in the buffer.
-    ///   - channelCount: Number of interleaved channels (1 = mono, 2 = stereo non-interleaved).
+    /// The analysis window at `sampleRate`: the shipped 48 kHz window's length in time
+    /// (`SpectrumConstants.windowSeconds`, 4096 frames), as the power of two that holds it.
+    static func windowLength(sampleRate: Double) -> Int {
+        let frames = max(2, Int((sampleRate * SpectrumConstants.windowSeconds).rounded()))
+        return 1 << (Int.bitWidth - (frames - 1).leadingZeroBitCount)
+    }
+
+    // MARK: Tap thread
+
+    /// The mixer tap: the mean of the first two channels (one channel if the buffer has one).
+    /// Tap thread only. Real-time safe.
     func processTapBuffer(
         _ bufferList: UnsafeMutablePointer<AudioBufferList>,
         frameCount: AVAudioFrameCount,
         channelCount: UInt32
     ) {
-        guard fftSetup != nil else { return }
-
-        let frameLen = min(Int(frameCount), fftSize)
-
-        // 1. Sum channels to mono into monoBuffer (zero the rest if frameCount < fftSize)
-        //    Channels are non-interleaved float32, the engine's standard format.
-        if channelCount >= 2 {
-            // Two channels: average L and R
-            guard let ch0 = bufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }
-            // Non-interleaved: channel 1 is at the next AudioBuffer in the list
-            let abls = UnsafeMutableAudioBufferListPointer(bufferList)
-            guard abls.count >= 2,
-                  let ch1 = abls[1].mData?.assumingMemoryBound(to: Float.self)
-            else {
-                // Fallback: copy channel 0 only (straight stride-1 copy, non-allocating).
-                monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: ch0, count: frameLen) }
-                zeroMonoTail(from: frameLen)
-                return
-            }
-            // mono[i] = 0.5 * (ch0[i] + ch1[i])
-            vDSP_vadd(ch0, 1, ch1, 1, &monoBuffer, 1, vDSP_Length(frameLen))
-            var half: Float = 0.5
-            // Scale in-place: obtain a single raw pointer so Swift's exclusivity
-            // checker sees one borrow rather than two overlapping ones.
-            monoBuffer.withUnsafeMutableBufferPointer { mono in
-                guard let ptr = mono.baseAddress else { return }
-                vDSP_vsmul(ptr, 1, &half, ptr, 1, vDSP_Length(frameLen))
-            }
-        } else {
-            // Mono input — copy directly (straight stride-1 copy, non-allocating).
-            guard let ch0 = bufferList.pointee.mBuffers.mData?.assumingMemoryBound(to: Float.self) else { return }
-            monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: ch0, count: frameLen) }
-        }
-
-        // Zero-pad the tail if the tap delivered fewer frames than the FFT window
-        zeroMonoTail(from: frameLen)
-
-        computeAndPublish()
+        let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
+        guard !buffers.isEmpty, let left = buffers[0].mData?.assumingMemoryBound(to: Float.self) else { return }
+        let right = channelCount >= 2 && buffers.count >= 2
+            ? buffers[1].mData?.assumingMemoryBound(to: Float.self) : nil
+        analyse(left: left, right: right, count: Int(frameCount))
     }
 
-    /// Zero the `monoBuffer` tail `[frameLen, fftSize)` when the tap delivered a short
-    /// buffer. REAL-TIME SAFE: no allocation, no lock; a stable base pointer avoids the
-    /// `&monoBuffer + frameLen` temporary-pointer form.
-    private func zeroMonoTail(from frameLen: Int) {
-        guard frameLen < fftSize else { return }
-        monoBuffer.withUnsafeMutableBufferPointer { buf in
-            guard let base = buf.baseAddress else { return }
-            vDSP_vclr(base + frameLen, 1, vDSP_Length(fftSize - frameLen))
-        }
-    }
-
-    /// Process ONE channel (0 = L, 1 = R) of a non-interleaved tap buffer through the same
-    /// pipeline as the mono-sum path. Used by the Monitoring tab's per-channel analyzers.
-    /// REAL-TIME SAFE: no allocation, no lock, no ObjC.
+    /// One channel (0 = L, 1 = R, …) of a non-interleaved buffer: Monitoring's per-channel taps.
+    /// Tap thread only. Real-time safe.
     func processTapBuffer(
         _ bufferList: UnsafeMutablePointer<AudioBufferList>,
         frameCount: AVAudioFrameCount,
         channel: Int
     ) {
-        guard fftSetup != nil else { return }
-        let frameLen = min(Int(frameCount), fftSize)
-        let abls = UnsafeMutableAudioBufferListPointer(bufferList)
-        guard channel >= 0, channel < abls.count,
-              let chPtr = abls[channel].mData?.assumingMemoryBound(to: Float.self) else { return }
-        // Straight stride-1 copy, non-allocating.
-        monoBuffer.withUnsafeMutableBufferPointer { $0.baseAddress?.update(from: chPtr, count: frameLen) }
-        zeroMonoTail(from: frameLen)
-        computeAndPublish()
+        let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
+        guard channel >= 0, channel < buffers.count,
+              let samples = buffers[channel].mData?.assumingMemoryBound(to: Float.self) else { return }
+        analyse(left: samples, right: nil, count: Int(frameCount))
     }
 
-    /// Windowing → FFT → band map → dB/normalise → ballistics → publish, on the already-filled
-    /// `monoBuffer`. Shared by the mono-sum and per-channel entry points. REAL-TIME SAFE.
-    private func computeAndPublish() {
-        guard let fftSetup else { return }
-
-        // 2. Apply Hann window: windowed[i] = mono[i] * hann[i]
-        vDSP_vmul(&monoBuffer, 1, &hannWindow, 1, &windowedBuffer, 1, vDSP_Length(fftSize))
-
-        // 3. Real FFT via vDSP_fft_zrip
-        //    Pack real sequence into complex format DSPSplitComplex expects:
-        //    even samples → real part, odd samples → imaginary part.
-        windowedBuffer.withUnsafeMutableBufferPointer { wPtr in
-            complexReal.withUnsafeMutableBufferPointer { rPtr in
-                complexImag.withUnsafeMutableBufferPointer { iPtr in
-                    guard let wBase = wPtr.baseAddress,
-                          let rBase = rPtr.baseAddress,
-                          let iBase = iPtr.baseAddress else { return }
-                    var splitComplex = DSPSplitComplex(realp: rBase, imagp: iBase)
-                    wBase.withMemoryRebound(to: DSPComplex.self, capacity: fftSize / 2) { dspComplexPtr in
-                        vDSP_ctoz(dspComplexPtr, 2, &splitComplex, 1, vDSP_Length(fftSize / 2))
-                    }
-                    vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
-
-                    // 4. Compute power spectrum magnitudes: mag[k] = sqrt(re^2 + im^2)
-                    //    vDSP_zvmags gives re^2 + im^2; then vvsqrtf for sqrt.
-                    //    Use magnitudes array (length = fftSize/2) — DC is index 0.
-                    vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(fftSize / 2))
-                    // magnitudes now holds squared magnitudes; take sqrt in-place.
-                    // vvsqrtf and vDSP_vsmul support src == dst, but Swift's
-                    // exclusivity checker needs a single &-borrow; obtain it once.
-                    magnitudes.withUnsafeMutableBufferPointer { magBuf in
-                        guard let magPtr = magBuf.baseAddress else { return }
-                        var count = Int32(fftSize / 2)
-                        vvsqrtf(magPtr, magPtr, &count)
-                        // Normalise by 2/N (vDSP_fft_zrip scale convention)
-                        var scale = Float(2.0) / Float(fftSize)
-                        vDSP_vsmul(magPtr, 1, &scale, magPtr, 1, vDSP_Length(fftSize / 2))
-                    }
-
-                    // 5. Map FFT bins → log-spaced bands (max magnitude per band)
-                    for bandIdx in 0 ..< SpectrumConstants.bandCount {
-                        let range = bandRanges[bandIdx]
-                        let lo = max(0, range.lo)
-                        let hi = min(fftSize / 2 - 1, range.hi)
-                        guard hi >= lo else {
-                            bandMagnitudes[bandIdx] = 0
-                            continue
-                        }
-                        var peakMag: Float = 0
-                        // vDSP_maxv over the slice of magnitudes
-                        magnitudes.withUnsafeBufferPointer { mPtr in
-                            guard let mBase = mPtr.baseAddress else { return }
-                            vDSP_maxv(mBase + lo, 1, &peakMag, vDSP_Length(hi - lo + 1))
-                        }
-                        bandMagnitudes[bandIdx] = peakMag
-                    }
-
-                    // 6. Convert magnitudes to dB and normalise to [0, 1]
-                    //    dB = 20 * log10(mag), floored at noiseFloorDB.
-                    //    Map [noiseFloor, 0] → [0, 1].
-                    for bandIdx in 0 ..< SpectrumConstants.bandCount {
-                        let mag = bandMagnitudes[bandIdx]
-                        // Avoid log10(0): clamp to a tiny positive value
-                        let safeMag = max(mag, 1e-9)
-                        var dbVal = 20.0 * log10(safeMag)
-                        dbVal = max(dbVal, SpectrumConstants.noiseFloorDB)
-                        // Normalise: 0 dB → 1.0, noiseFloorDB → 0.0
-                        let normalised = (dbVal - SpectrumConstants.noiseFloorDB) /
-                            (-SpectrumConstants.noiseFloorDB)
-                        bandMagnitudes[bandIdx] = normalised
-                    }
-
-                    // 7. Meter ballistics: instant attack, IIR release
-                    //    y[n] = max(x[n], alpha * y[n-1])
-                    let alpha = SpectrumConstants.releaseAlpha
-                    for bandIdx in 0 ..< SpectrumConstants.bandCount {
-                        let prev = smoothedBands[bandIdx] * alpha
-                        smoothedBands[bandIdx] = max(bandMagnitudes[bandIdx], prev)
-                    }
-
-                    // 8. Publish to the triple buffer for the main thread
-                    smoothedBands.withUnsafeBufferPointer { sPtr in
-                        frames.write(sPtr)
-                    }
-
-                    // Keep rBase and iBase alive through the closure
-                    _ = rBase
-                    _ = iBase
-                }
+    /// Run `count` frames — `left`, or the mean of `left` and `right` — through the windows, then
+    /// publish the buffer's frame.
+    private func analyse(left: UnsafePointer<Float>, right: UnsafePointer<Float>?, count: Int) {
+        var offset = 0
+        while offset < count {
+            let state = tap.pointee
+            // Up to the next hop, and up to the ring's end.
+            let take = min(count - offset, hop - state.sinceHop, windowLength - state.writeIndex)
+            let destination = history + state.writeIndex
+            if let right {
+                var half: Float = 0.5
+                vDSP_vasm(left + offset, 1, right + offset, 1, &half, destination, 1, vDSP_Length(take))
+            } else {
+                destination.update(from: left + offset, count: take)
+            }
+            offset += take
+            tap.pointee.writeIndex = (state.writeIndex + take) % windowLength
+            tap.pointee.sinceHop = state.sinceHop + take
+            if tap.pointee.sinceHop == hop {
+                tap.pointee.sinceHop = 0
+                analyseWindow()
             }
         }
+        tap.pointee.unpublishedSeconds += Double(count) / sampleRate
+        publishIfAnalysed()
     }
 
-    // MARK: - Band range computation (called off RT at init)
-
-    /// Pre-compute FFT bin index ranges for each log-spaced band.
-    /// f_k = minHz * 2^(k/6), k = 0..bandCount-1 (1/6-octave spacing; `SpectrumConstants.bandCentreHz`).
-    /// Band k covers [f_k / 2^(1/12), f_k * 2^(1/12)] (half-step on each side).
-    private static func makeBandRanges(
-        bandCount: Int,
-        fftSize: Int,
-        sampleRate: Float
-    ) -> [BandRange] {
-        let hzPerBin = sampleRate / Float(fftSize)
-        var ranges: [BandRange] = []
-        ranges.reserveCapacity(bandCount)
-
-        let halfSemitone = powf(2.0, 1.0 / 12.0) // one half-step ratio
-
-        for band in 0 ..< bandCount {
-            let center = SpectrumConstants.bandCentreHz(Float(band))
-            let lo = center / halfSemitone
-            let hi = center * halfSemitone
-            let loBin = Int(lo / hzPerBin)
-            let hiBin = Int(hi / hzPerBin)
-            ranges.append(BandRange(lo: loBin, hi: max(loBin, hiBin)))
+    /// The latest `windowLength` samples: remove their mean, window them, transform, and fold each
+    /// band's loudest amplitude into this buffer's peaks.
+    private func analyseWindow() {
+        let length = vDSP_Length(windowLength)
+        // The ring, oldest sample first.
+        let oldest = tap.pointee.writeIndex
+        windowed.update(from: history + oldest, count: windowLength - oldest)
+        (windowed + (windowLength - oldest)).update(from: history, count: oldest)
+        var mean: Float = 0
+        vDSP_meanv(windowed, 1, &mean, length)
+        var negatedMean = -mean
+        vDSP_vsadd(windowed, 1, &negatedMean, windowed, 1, length)
+        vDSP_vmul(windowed, 1, hann, 1, windowed, 1, length)
+        // windowed[windowLength...] stays zero: the ×2 padding.
+        let halfLength = vDSP_Length(fftLength / 2)
+        var split = DSPSplitComplex(realp: real, imagp: imaginary)
+        windowed.withMemoryRebound(to: DSPComplex.self, capacity: fftLength / 2) { pairs in
+            vDSP_ctoz(pairs, 2, &split, 1, halfLength)
         }
-        return ranges
+        vDSP_fft_zrip(fftSetup, &split, 1, log2FFTLength, FFTDirection(FFT_FORWARD))
+        vDSP_zvmags(&split, 1, power, 1, halfLength) // bin 0 packs DC and Nyquist: no band reads it
+        for band in 0 ..< SpectrumConstants.bandCount {
+            let magnitude = layout.magnitude(of: band, in: power)
+            bufferPeak[band] = max(bufferPeak[band], magnitude * amplitudePerMagnitude)
+        }
+        tap.pointee.windows += 1
+    }
+
+    /// After a buffer: if a window was analysed, turn the peaks into display levels through the
+    /// ballistics and publish them.
+    private func publishIfAnalysed() {
+        guard tap.pointee.windows > 0 else { return }
+        let floor = SpectrumConstants.noiseFloorDB
+        let release = Float(exp(-tap.pointee.unpublishedSeconds / SpectrumConstants.releaseSeconds))
+        for band in 0 ..< SpectrumConstants.bandCount {
+            let decibels = 20 * log10f(max(bufferPeak[band], 1e-9))
+            let level = min(max((decibels - floor) / -floor, 0), 1)
+            shown[band] = max(level, release * shown[band])
+            bufferPeak[band] = 0
+        }
+        tap.pointee.windows = 0
+        tap.pointee.unpublishedSeconds = 0
+        frames.write(UnsafeBufferPointer(start: shown, count: SpectrumConstants.bandCount))
+    }
+
+    // MARK: Band layout (off the tap thread)
+
+    /// Where one band reads the spectrum.
+    enum BandSpan: Equatable {
+        /// The bins inside its span: their loudest.
+        case bins(ClosedRange<Int>)
+        /// Narrower than a bin: the spectrum at its centre, `position` bins up (interpolated).
+        case centre(position: Double)
+        /// Above Nyquist at this rate: nothing.
+        case silent
+
+        /// The bins it reads, if it reads bins.
+        var bins: ClosedRange<Int>? {
+            guard case let .bins(range) = self else { return nil }
+            return range
+        }
+
+        /// Where it reads the spectrum, if it reads it at its centre.
+        var centre: Double? {
+            guard case let .centre(position) = self else { return nil }
+            return position
+        }
+    }
+
+    /// Each band's span over `binCount` bins `binHertz` apart. Band b spans
+    /// [minHz·2^((b − ½)/6), minHz·2^((b + ½)/6)) — half a 1/6-octave step either side of its centre;
+    /// a bin belongs to the band whose span holds its frequency, so no bin is in two bands, and bin 0
+    /// (DC) is below every band.
+    static func bandLayout(binHertz: Double, binCount: Int) -> [BandSpan] {
+        let edges = (0 ... SpectrumConstants.bandCount).map { edge in
+            Double(SpectrumConstants.minHz) * pow(2.0, (Double(edge) - 0.5) / 6.0)
+        }
+        return (0 ..< SpectrumConstants.bandCount).map { band in
+            let first = max(1, Int((edges[band] / binHertz).rounded(.up)))
+            let last = min(binCount - 1, Int((edges[band + 1] / binHertz).rounded(.up)) - 1)
+            if first <= last {
+                return .bins(first ... last)
+            }
+            let centre = Double(SpectrumConstants.bandCentreHz(Float(band))) / binHertz
+            return centre + 1 < Double(binCount) ? .centre(position: centre) : .silent
+        }
+    }
+}
+
+// MARK: - The band layout, for the tap thread
+
+/// `SpectrumAnalyzer.bandLayout` as raw arrays the tap thread reads without ARC: per band, a bin
+/// range (`first...last`; empty when last < first) and an interpolation position (< 0: silent).
+private struct RealtimeBandLayout {
+    private let first: UnsafeMutablePointer<Int>
+    private let last: UnsafeMutablePointer<Int>
+    private let centre: UnsafeMutablePointer<Float>
+
+    init(_ spans: [SpectrumAnalyzer.BandSpan]) {
+        first = .allocate(capacity: spans.count)
+        last = .allocate(capacity: spans.count)
+        centre = .allocate(capacity: spans.count)
+        for (band, span) in spans.enumerated() {
+            // An empty range (1...0) for a band read at its centre, and for a silent one.
+            (first + band).initialize(to: span.bins?.lowerBound ?? 1)
+            (last + band).initialize(to: span.bins?.upperBound ?? 0)
+            (centre + band).initialize(to: span.centre.map(Float.init) ?? -1)
+        }
+    }
+
+    /// The owner's `deinit` frees the arrays (a struct has no `deinit`).
+    func deallocate() {
+        first.deallocate()
+        last.deallocate()
+        centre.deallocate()
+    }
+
+    /// Band `band`'s FFT magnitude, from `power` (|X|² per bin). Real-time safe.
+    func magnitude(of band: Int, in power: UnsafePointer<Float>) -> Float {
+        if first[band] <= last[band] {
+            var loudest: Float = 0
+            vDSP_maxv(power + first[band], 1, &loudest, vDSP_Length(last[band] - first[band] + 1))
+            return sqrtf(loudest)
+        }
+        let position = centre[band]
+        guard position >= 0 else { return 0 }
+        let below = Int(position)
+        let fraction = position - Float(below)
+        return sqrtf(power[below]) * (1 - fraction) + sqrtf(power[below + 1]) * fraction
     }
 }
