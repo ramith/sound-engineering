@@ -17,8 +17,6 @@ namespace AdaptiveSound
                   "LoudnessModule requires lock-free float atomics for RT safety");
     static_assert(std::atomic<uint8_t>::is_always_lock_free,
                   "LoudnessModule requires lock-free uint8 atomics for RT safety");
-    static_assert(std::atomic<uint64_t>::is_always_lock_free,
-                  "LoudnessModule requires lock-free uint64 atomics for RT safety");
     static_assert(std::atomic<uint32_t>::is_always_lock_free,
                   "LoudnessModule requires lock-free uint32 atomics for RT safety");
 
@@ -145,12 +143,10 @@ namespace AdaptiveSound
                 }
             }
             // All or nothing: a partial push on a full ring would leave a part-frame in it and
-            // shift the worker's channel interleave for good (its reads are frame-aligned).
+            // shift the worker's channel interleave for good (its reads are frame-aligned). A full
+            // ring drops the block whole: the measurement degrades, the audio never waits.
             const std::size_t want = static_cast<std::size_t>(safeCount) * numChannels;
-            if (!sampleRing_.tryPushAll(pushBuf_.data(), want))
-            {
-                droppedFrames_.fetch_add(safeCount, std::memory_order_relaxed);
-            }
+            static_cast<void>(sampleRing_.tryPushAll(pushBuf_.data(), want));
             // Wakes the worker only if it parked (a resume): no syscall in steady playback.
             parking_.notify();
 
@@ -319,10 +315,6 @@ namespace AdaptiveSound
     float LoudnessModule::currentMakeupGainLinear() const noexcept
     {
         return makeupGainLinear_.load(std::memory_order_acquire);
-    }
-    uint64_t LoudnessModule::droppedFrameCount() const noexcept
-    {
-        return droppedFrames_.load(std::memory_order_relaxed);
     }
 
 } // namespace AdaptiveSound
