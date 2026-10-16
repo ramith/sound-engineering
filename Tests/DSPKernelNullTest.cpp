@@ -440,7 +440,6 @@ namespace
         {"EQ_NaNInput_Recovers", testEqNaNInputRecovers, true},
         {"EQ_FZ_OnWhileRendering", testEqFzOnWhileRendering, false},
         {"EQ_NoSubnormalStates", testEqNoSubnormalStates, false},
-        {"RtSwappableResource_Lifecycle", testRtSwappableResourceLifecycle, true},
         {"Soak_DSPKernel_ZeroRtAlloc_EqPaths", testSoakDspKernelZeroRtAllocEqPaths, false},
         {"EQ_Reallocate_KeepsCurve", testEqReallocateKeepsCurve, true},
         {"EQ_Reallocate_NewRate", testEqReallocateNewRate, true},

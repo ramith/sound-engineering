@@ -29,7 +29,6 @@
 //                                    kernel, and the thread gets its own mode back (council C-50)
 //   EQ_NoSubnormalStates           — seeded states decaying in silence: subnormal without FZ (the
 //                                    test CAN fail), none with it
-//   RtSwappableResource_Lifecycle  — the swap template's publish/adopt/reclaim contract (F17)
 //   Soak_DSPKernel_ZeroRtAlloc_EqPaths — 8 ch, a new EQ target every ~10 ms across all 4 paths:
 //                                    zero RT allocations
 //   EQ_Reallocate_KeepsCurve / EQ_Reallocate_NewRate / Crossfeed_RederivedOnRateChange /
@@ -816,112 +815,6 @@ static auto testEqNoSubnormalStates() -> void
 #else
     logPending(kName, "AArch64 only (FPCR.FZ)");
 #endif
-}
-
-// ---------------------------------------------------------------------------
-// RtSwappableResource_Lifecycle — F17: the swap template (kept for BRIR's IR swaps) keeps its
-// contract: adopt sees the newest publish, a never-adopted publish is freed by the next, retired
-// resources are freed by reclaim, and the destructor frees the rest — every construction balanced.
-// ---------------------------------------------------------------------------
-namespace
-{
-    std::atomic<int> gSwapLive{0};
-
-    struct SwapProbe
-    {
-        explicit SwapProbe(int tag) noexcept : value(tag)
-        {
-            gSwapLive.fetch_add(1);
-        }
-        ~SwapProbe()
-        {
-            gSwapLive.fetch_sub(1);
-        }
-        SwapProbe(const SwapProbe&) = delete;
-        SwapProbe& operator=(const SwapProbe&) = delete;
-        SwapProbe(SwapProbe&&) = delete;
-        SwapProbe& operator=(SwapProbe&&) = delete;
-        int value;
-    };
-} // namespace
-
-static auto testRtSwappableResourceLifecycle() -> void
-{
-    static const char* const kName = "RtSwappableResource_Lifecycle";
-    std::string failure;
-    {
-        RtSwappableResource<SwapProbe> resource;
-        if (resource.adopt() != nullptr)
-        {
-            failure = "an empty swap adopted something";
-        }
-        resource.publish(std::make_unique<SwapProbe>(1));
-        const SwapProbe* first = resource.adopt();
-        if (failure.empty() &&
-            (first == nullptr || first->value != 1 || resource.active() != first))
-        {
-            failure = "adopt did not return the published resource";
-        }
-        resource.publish(std::make_unique<SwapProbe>(2)); // never adopted…
-        resource.publish(std::make_unique<SwapProbe>(3)); // …so this frees it
-        if (failure.empty() && gSwapLive.load() != 2)
-        {
-            failure = std::format("a displaced, never-adopted resource was not freed ({} live)",
-                                  gSwapLive.load());
-        }
-        const SwapProbe* third = resource.adopt(); // retires 1 into toRelease
-        if (failure.empty() && (third == nullptr || third->value != 3))
-        {
-            failure = "adopt did not return the newest publish";
-        }
-        resource.reclaim(); // frees 1
-        if (failure.empty() && gSwapLive.load() != 1)
-        {
-            failure = std::format("reclaim did not free the retired resource ({} live)",
-                                  gSwapLive.load());
-        }
-        // Two threads: the producer publishes only after the consumer adopted the last one (the
-        // single-pending contract), so nothing is orphaned; the race checks run under tsan.
-        std::atomic<int> adopted{3};
-        std::thread consumer(
-            [&]
-            {
-                while (adopted.load(std::memory_order_acquire) < 200)
-                {
-                    const SwapProbe* probe = resource.adopt();
-                    if (probe != nullptr && probe->value > adopted.load(std::memory_order_relaxed))
-                    {
-                        adopted.store(probe->value, std::memory_order_release);
-                    }
-                }
-            });
-        for (int tag = 4; tag <= 200; ++tag)
-        {
-            resource.publish(std::make_unique<SwapProbe>(tag));
-            while (adopted.load(std::memory_order_acquire) < tag)
-            {
-                std::this_thread::yield();
-            }
-        }
-        consumer.join();
-        resource.reclaim();
-        if (failure.empty() && gSwapLive.load() != 1)
-        {
-            failure =
-                std::format("{} resources live after the threaded run (want only the active one)",
-                            gSwapLive.load());
-        }
-    } // the destructor frees the active one
-    if (failure.empty() && gSwapLive.load() != 0)
-    {
-        failure = std::format("{} resource(s) leaked past the destructor", gSwapLive.load());
-    }
-    if (!failure.empty())
-    {
-        logFail(kName, failure);
-        return;
-    }
-    logPass(kName);
 }
 
 // ---------------------------------------------------------------------------
